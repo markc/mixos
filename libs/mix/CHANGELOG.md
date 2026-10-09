@@ -8,6 +8,15 @@
   builtins. Archives use zstd (default), gzip or no codec. `tar_unpack`
   validates every member, extracts into a staging directory and renames it
   into place only after the stream verifies. See `mix man tar`.
+- Harden archive builtins: count trailing padding against the shared decoded
+  stream budget, reject oversized declared files before creation and bound
+  copying, cap GNU/PAX metadata payloads before buffering, and refuse unread
+  gzip input or additional members. Packing captures capabilities only with
+  `keep_special_bits:true` and walks pinned directory/file descriptors without
+  following replacement symlinks. Rollback restores directory access and
+  reports cleanup failures. Empty/truncated zstd headers now raise
+  `ARCHIVE_STREAM_CORRUPT`. GNU sparse entries are refused; `tar_list` also
+  accepts `max_entries`. Each fix has targeted archive regression coverage.
 - `analyzer::Analysis` carries `handlers`: one `HandlerDeclaration` (`command`,
   `file`, `line`) per `on <command>` statement in the parsed AST, in source
   order, with duplicates kept. `analyze()` collects them with the existing
