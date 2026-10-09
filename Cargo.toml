@@ -52,6 +52,14 @@ tracing-appender = "0.2"
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
 uuid = { version = "=1.24.1", features = ["fast-rng", "serde", "v7"] }
 
+# GUI (AGENTS.md §4.1): egui on wgpu from crates.io, one version of each.
+eframe = { version = "=0.36.2", default-features = false, features = ["accesskit", "default_fonts", "wayland", "wgpu"] }
+egui = { version = "=0.36.2", default-features = false, features = ["default_fonts"] }
+egui_extras = { version = "=0.36.2", default-features = false, features = ["svg"] }
+egui_kittest = { version = "=0.36.2", features = ["snapshot", "wgpu"] }
+fluent-bundle = "=0.15.3"
+futures = "=0.3.34"
+
 # Shared libraries (libs/).
 assets = { path = "libs/assets" }
 buildinfo = { path = "libs/buildinfo" }
@@ -65,6 +73,7 @@ mix = { path = "libs/mix" }
 props = { path = "libs/props" }
 settings = { path = "libs/settings" }
 strict = { path = "libs/strict" }
+toolkit = { path = "libs/toolkit" }
 
 # noded private crates (services/noded/crates/).
 mesh = { path = "services/noded/crates/mesh" }

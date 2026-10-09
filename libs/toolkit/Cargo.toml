@@ -1,0 +1,32 @@
+# toolkit: the shared shell for MixOS egui applications — theme, fonts,
+# icons, the command registry and Fluent strings (AGENTS.md §4.1).
+[package]
+name = "toolkit"
+description = "Shared egui application shell: design theme, fonts, Lucide icons, command registry, Fluent strings"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "toolkit"
+kind = "lib"
+layer = "desktop"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+config.workspace = true
+design.workspace = true
+egui.workspace = true
+egui_extras.workspace = true
+fluent-bundle.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+egui_kittest.workspace = true
+tempfile.workspace = true

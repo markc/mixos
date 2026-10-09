@@ -17,6 +17,18 @@ Microsoft Edit buffer and syntax sources: Microsoft Corporation, MIT,
 revision 826b4c097b6f14ba0a846dc56f2f0223a3aaf73a; see vendor/msedit.
 editd retains source from cosmix e0297242305f3a3c3de09f1ca01e8faa771768da (Mark Constable, MIT).
 
+Toolkit assets (libs/toolkit/assets)
+------------------------------------
+
+Fonts, unmodified upstream static faces embedded by the toolkit, each with its
+licence beside it in libs/toolkit/assets/fonts: Inter 4.1 Light, Regular,
+Medium and SemiBold (The Inter Project Authors, SIL OFL 1.1) and JetBrains Mono
+2.304 Regular (The JetBrains Mono Project Authors, SIL OFL 1.1).
+
+Icons, unmodified SVGs from Lucide 1.54.0 (https://github.com/lucide-icons/lucide),
+Lucide Icons and Contributors, ISC; the Feather-derived icons among them are
+also Cole Bemis (Feather), MIT. Licence in libs/toolkit/assets/icons/LICENSE-lucide.txt.
+
 Site assets (docs/web)
 ----------------------
 
