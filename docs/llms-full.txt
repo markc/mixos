@@ -365,7 +365,7 @@ checked separately by the layering gate.
 
 | Package | Owner | Kind | Layer | Contract | Version |
 |---|---|---|---|---|---|
-| [mix-shell](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml) | mix-shell | cli | mix | public | 0.109.4 |
+| [mix-shell](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml) | mix-shell | cli | mix | public | 0.111.0 |
 | [assets](https://github.com/markc/mixos/blob/main/libs/assets/Cargo.toml) | assets | lib | core | public | 0.1.1 |
 | [buildinfo](https://github.com/markc/mixos/blob/main/libs/buildinfo/Cargo.toml) | buildinfo | lib | core | none | 0.1.1 |
 | [bus](https://github.com/markc/mixos/blob/main/libs/bus/Cargo.toml) | bus | lib | core | none | 0.1.1 |
@@ -374,7 +374,7 @@ checked separately by the layering gate.
 | [edit](https://github.com/markc/mixos/blob/main/libs/edit/Cargo.toml) | edit | lib | core | none | 0.1.1 |
 | [expr](https://github.com/markc/mixos/blob/main/libs/expr/Cargo.toml) | expr | lib | core | none | 0.1.1 |
 | [logging](https://github.com/markc/mixos/blob/main/libs/logging/Cargo.toml) | logging | lib | core | none | 0.1.1 |
-| [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.109.1 |
+| [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.111.0 |
 | [props](https://github.com/markc/mixos/blob/main/libs/props/Cargo.toml) | props | lib | core | none | 0.1.1 |
 | [settings](https://github.com/markc/mixos/blob/main/libs/settings/Cargo.toml) | settings | lib | core | public | 0.3.4 |
 | [strict](https://github.com/markc/mixos/blob/main/libs/strict/Cargo.toml) | strict | lib | core | none | 0.1.1 |
@@ -422,8 +422,8 @@ durable recovery. The session supplies its own state root. See
 
 Mix is the MixOS shell and scripting language. The interpreter lives in the
 `mix` library; `cli/mix-shell` owns the binary, interactive shell and native ABP
-citizen runtime. The current language version is 0.109.1 and the shell source
-version is 0.109.4.
+citizen runtime. The current language version is 0.111.0 and the shell source
+version is 0.111.0.
 
 Use `mix builtins --names` to discover valid builtin names, and `mix builtins
 <name>` for their contracts. `mix man overview` and `mix man syntax` explain the

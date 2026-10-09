@@ -2051,7 +2051,7 @@ dependencies = [
 
 [[package]]
 name = "mix"
-version = "0.109.1"
+version = "0.111.0"
 dependencies = [
  "base64",
  "bcrypt",
@@ -2099,7 +2099,7 @@ dependencies = [
 
 [[package]]
 name = "mix-shell"
-version = "0.109.4"
+version = "0.111.0"
 dependencies = [
  "blake3",
  "buildinfo",
