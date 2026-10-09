@@ -1196,6 +1196,7 @@ which("cmd")    the PATH entry joined with cmd if EXECUTABLE, else nil
 has_builtin(n)  does THIS mix have the named builtin? -> bool (v0.78.0)
 mix_version()   {major, minor, patch, string} — the runtime version (v0.78.0)
 script_version() the entry script's provenance map, nil outside a script (v0.95.0)
+script_path()   the entry script's absolute path, fixed at start; nil outside a file
 exit([code])    unwind finally, then terminate with status code (default 0)
 sleep(secs)     suspend for secs seconds (fractional ok; async-aware)
 ```
@@ -1222,6 +1223,28 @@ dirty}}` — the facts `mix SCRIPT --version` prints, as data, so a script can
 log its own provenance. `version` comes from the `-- version: X.Y.Z` header
 (nil when absent); the map is nil in the REPL and under `-c`. See
 [`--version` for scripts](invocation.md#--version-for-scripts).
+
+`script_path()` answers the question `$0` leaves open: where the running
+script lives on disk. It is `realpath($0)` — symlinks resolved, absolute —
+worked out **once, when the script starts**, before any of its code runs.
+So a relative script name is resolved against the directory the script was
+started in: a `chdir()` later in the script does not move the answer. A
+symlinked entry answers with its **target**, not the link, the same as
+`realpath($0)`, so a script finds its siblings in the real tree. The answer
+is not re-checked later: a file deleted after start still reports its path.
+It is **nil** under `mix -c`, in the REPL, for `mix -` (stdin), and when the
+path cannot be resolved at start. It always describes the **entry script**:
+a `require`d module calling it, even during its own top-level init, gets the
+entry script's path, not its own. `mix --serve` resolves its script the same
+way, once, at start.
+There is no `module_path()`; a module's own location is not a lexical fact
+the evaluator tracks, so a `require`d module must take its directory from
+the entry script or from its caller.
+
+```mix
+-- where am I?
+$data = path_join(dirname(script_path()), "data.mix")
+```
 
 `env` reads an environment variable, returning `""` (not nil, no raise) when
 unset — distinct from the string-interpolation `${NAME}` form, which walks

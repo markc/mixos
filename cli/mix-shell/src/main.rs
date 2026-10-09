@@ -833,6 +833,13 @@ fn run_source(
         // Register AI extension functions
         repl::register_ai_extensions(&mut eval);
 
+        // script_path() reads the entry's absolute path, resolved before the
+        // prelude (a user prelude override may chdir()) and before any script
+        // code runs.
+        if let Some(name) = filename {
+            eval.set_entry_script(name);
+        }
+
         // Load prelude
         if !no_prelude {
             match until_shutdown(eval.load_prelude()).await {
@@ -1611,6 +1618,9 @@ fn run_serve(script_path: &str, service_name: &str, no_prelude: bool) -> i32 {
         ) -> Evaluator {
             let mut eval = Evaluator::new();
             eval.set_interrupt_flag(interrupt_flag.clone());
+            // Same entry identity as a script run: resolved before the prelude
+            // or the init body can chdir().
+            eval.set_entry_script(script_path);
             eval.set_limits(script_limits());
             apply_arity_mode(&mut eval);
             eval.set_bus_handler(bus_handler.clone());

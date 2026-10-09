@@ -357,6 +357,7 @@ builtin_table! {
     ("chdir", CapabilityClass::Process,           "system",  "Change current working directory", contract!((path: string) -> nil; failure[raises])),
     ("platform", CapabilityClass::Env,        "system",  "Return OS platform string (linux, macos, windows, etc.)", contract!(() -> map("platform"))),
     ("has_builtin", CapabilityClass::Pure,    "type",    "Does THIS mix have the named builtin? has_builtin(name) -> bool. `mix builtins NAME` exits 0 for any name and cannot answer this; use for feature gates and compat shims: `if not has_builtin(\"ws_connect\") then die \"needs mix >= 0.74\" end`. A feature-gated name absent from this build still reads true (the binary knows it, and calling raises 'requires the X feature') (v0.78.0)", contract!((name: string) -> bool)),
+    ("script_path", CapabilityClass::FsRead, "system",  "The absolute, symlink-resolved path of the running ENTRY script, fixed when it starts: the same answer as realpath($0) at start, and a chdir() does not move it. nil under `mix -c`, in the REPL and for `mix -` (stdin). Always the entry script: a require()d module, even during its top-level init, gets the entry script's path, not its own (unreleased)", contract!(() -> any_of(string, nil); failure[raises])),
     ("script_version", CapabilityClass::Pure, "system",  "The running entry script's provenance: {name, version, sha, sha256, modified, mix: {version, sha, dirty}} — `version` is the `-- version: X.Y.Z` header (nil when absent or malformed), `sha` the first 12 hex of the content SHA-256, `modified` the file mtime as RFC 3339 UTC (nil for `mix -`). Always the ENTRY script (a require()d module gets its caller's record); held per evaluator, so each --serve RELOAD generation answers for its own file. Returns nil in the REPL, under `mix -c`, and in embedders that install no record. The same facts `mix SCRIPT --version` prints, as data (v0.95.0)", contract!(() -> any_of(map, nil))),
     ("mix_version", CapabilityClass::Pure,    "type",    "The language runtime version as structured data: {major, minor, patch, string} — so a version gate never parses --version text (v0.78.0)", contract!(() -> map("mix_version"))),
     ("which", CapabilityClass::Env,           "system",  "Locate an EXECUTABLE in PATH: a PATH entry is returned only if it is a regular file the kernel says this process may execute (faccessat2 X_OK, so POSIX ACLs count), never merely a file that exists, and never a directory. cmd must be a string and is not coerced. Returns nil when nothing on PATH is runnable under that name (executability enforced since v0.52.0)", contract!((cmd: string) -> any_of(string, nil); failure[raises])),
@@ -942,6 +943,7 @@ pub const EVAL_SPECIAL_BUILTINS: &[&str] = &[
     "eprint_raw",
     "serve_name",
     "script_version",
+    "script_path",
     // Socket subscriptions are evaluator-special (generation ownership of
     // the reader thread). ws_recv/tcp_recv/tcp_recv_line stay in is_builtin:
     // only their string-source Class C form is intercepted by the inline
