@@ -12,7 +12,10 @@
 //! Scenes, as in the evidence: `idle`; `menu` (File open, Down twice);
 //! `sub` (File open, Down four times, Right into the submenu);
 //! `titlehover` (pointer on the Edit title); `closehover` and `minhover`
-//! (pointer on Close and Minimize).
+//! (pointer on Close and Minimize); `tooltip` (pointer rested on the search
+//! button); `combo` (the workspace dropdown open); `dialog` (an Image Size
+//! dialog as tall as the evidence's, its body a blank stand-in); `help`
+//! (the Help menu open on its search field).
 
 #[path = "support/fixture.rs"]
 mod fixture;
@@ -25,7 +28,7 @@ use std::path::PathBuf;
 /// The harness's own margin round the window, in points.
 const MARGIN: f32 = 8.0;
 
-const SCENES: [&str; 6] = ["idle", "menu", "sub", "titlehover", "closehover", "minhover"];
+const SCENES: [&str; 10] = ["idle", "menu", "sub", "titlehover", "closehover", "minhover", "tooltip", "combo", "dialog", "help"];
 
 fn keys(h: &mut Harness<'_, fixture::Fixture>, keys: &[Key]) {
     for key in keys {
@@ -61,6 +64,23 @@ fn render_chrome_scenes_for_comparison() {
                 "titlehover" => hover(&mut h, "Edit"),
                 "closehover" => hover(&mut h, "Close"),
                 "minhover" => hover(&mut h, "Minimize"),
+                "tooltip" => {
+                    hover(&mut h, "Search commands (Ctrl+K)");
+                    // Rest still past the tooltip delay.
+                    h.run_steps(40);
+                }
+                "combo" => {
+                    h.get_by_role(egui::accesskit::Role::ComboBox).click();
+                    h.run();
+                }
+                "dialog" => {
+                    h.state_mut().dialog = true;
+                    h.run();
+                }
+                "help" => {
+                    h.get_by_label("Help").click();
+                    h.run();
+                }
                 _ => {}
             }
             let image = h.render().expect("wgpu render");

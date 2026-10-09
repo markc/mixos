@@ -110,7 +110,32 @@ pub fn registry() -> Registry<Engine> {
         icon: None,
         enabled: undialogued,
         run: |e| e.open(Dialog::About),
+    })
+    // The title bar's right-hand controls (no menu of their own).
+    .add(Command {
+        id: "view.search",
+        submenu: None,
+        group: 0,
+        label: "search-services",
+        menu: None,
+        shortcut: key(Modifiers::COMMAND, Key::F),
+        icon: Some(Icon::Search),
+        enabled: undialogued,
+        run: Engine::focus_filter,
+    })
+    .add(Command {
+        id: "view.mode",
+        submenu: None,
+        group: 0,
+        label: "toggle-mode",
+        menu: None,
+        shortcut: None,
+        icon: None,
+        enabled: toolkit::command::always,
+        run: Engine::toggle_mode,
     });
+    // Help opens with a field that searches every command.
+    r.search_menu("help");
     r
 }
 

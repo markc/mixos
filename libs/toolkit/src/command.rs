@@ -75,11 +75,13 @@ pub struct Described {
 /// The application's commands, in menu order.
 pub struct Registry<S> {
     commands: Vec<Command<S>>,
+    /// Fluent key of the menu that opens with a search field (§3.5).
+    search_menu: Option<&'static str>,
 }
 
 impl<S> Default for Registry<S> {
     fn default() -> Self {
-        Self { commands: Vec::new() }
+        Self { commands: Vec::new(), search_menu: None }
     }
 }
 
@@ -103,6 +105,13 @@ impl<S> Registry<S> {
             );
         }
         self.commands.push(command);
+        self
+    }
+
+    /// Open the menu `menu` (a Fluent menu key, usually Help) with a field
+    /// that searches every command (§3.5).
+    pub fn search_menu(&mut self, menu: &'static str) -> &mut Self {
+        self.search_menu = Some(menu);
         self
     }
 
@@ -183,7 +192,12 @@ impl<S> Registry<S> {
     /// Returns the ids chosen this frame.
     pub fn menus(&self, ui: &mut egui::Ui, state: &S, strings: &Strings) -> Vec<&'static str> {
         let model = self.model(ui.ctx(), state, strings);
-        menu::bar(ui, &model).into_iter().collect()
+        let search = self.search_menu.and_then(|key| {
+            let title = strings.get(key);
+            let menu = model.iter().position(|m| m.title == title)?;
+            Some(menu::Search { menu, hint: crate::strings::own("search-menus"), empty: crate::strings::own("no-matching-commands") })
+        });
+        menu::bar_with(ui, &model, search.as_ref()).into_iter().collect()
     }
 
     /// The menu model: one menu per distinct `menu` key in first-use order,

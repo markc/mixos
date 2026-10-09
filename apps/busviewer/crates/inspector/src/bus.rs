@@ -7,7 +7,7 @@ use ::bus::native_client::{
     BoundedIncomingEvent, ConnState, IncomingCommand, NodedClient, SupervisedClient,
     SupervisedError,
 };
-use futures::SinkExt;
+use futures::{FutureExt, SinkExt};
 use futures::channel::{mpsc, oneshot};
 use serde_json::{Value, json};
 use std::{
@@ -88,13 +88,24 @@ pub struct Handle {
     tx: tokio::sync::mpsc::Sender<Effect>,
     control: tokio::sync::mpsc::UnboundedSender<Control>,
     done: Arc<(Mutex<bool>, Condvar)>,
-    #[cfg(test)]
-    records: Arc<Mutex<Vec<(u64, u8, Value)>>>,
-    #[cfg(test)]
-    stopped: Arc<std::sync::atomic::AtomicBool>,
+    /// What this handle was asked to do, in order (tests only).
+    #[cfg(any(test, feature = "testing"))]
+    log: Arc<Mutex<Vec<Logged>>>,
 }
+
+/// One thing a test handle was asked to do.
+#[cfg(any(test, feature = "testing"))]
+#[derive(Clone, Debug, PartialEq)]
+pub enum Logged {
+    Call { service: String, verb: String, body: String },
+    Reply { id: u64, rc: u8, body: Value },
+    Quit,
+}
+
 impl Handle {
     pub async fn raw(&self, service: &str, verb: &str, body: String) -> Result<Reply, CallError> {
+        #[cfg(any(test, feature = "testing"))]
+        self.log.lock().unwrap().push(Logged::Call { service: service.into(), verb: verb.into(), body: body.clone() });
         let (tx, rx) = oneshot::channel();
         self.tx
             .send(Effect::Call(service.into(), verb.into(), body, tx))
@@ -109,17 +120,16 @@ impl Handle {
             .map_err(|e| e.to_string())
     }
     pub fn reply(&self, id: u64, rc: u8, body: Value) {
-        #[cfg(test)]
-        self.records.lock().unwrap().push((id, rc, body.clone()));
+        #[cfg(any(test, feature = "testing"))]
+        self.log.lock().unwrap().push(Logged::Reply { id, rc, body: body.clone() });
         // Only the GUI sends replies, once per accepted command (at most 32).
         // This separate queue cannot lose a reply to outgoing call backpressure.
         // A closed receiver means the native connection has already ended.
         let _ = self.control.send(Control::Reply(id, rc, body));
     }
     pub fn quit(&self) {
-        #[cfg(test)]
-        self.stopped
-            .store(true, std::sync::atomic::Ordering::SeqCst);
+        #[cfg(any(test, feature = "testing"))]
+        self.log.lock().unwrap().push(Logged::Quit);
         // FIFO with replies: accepted replies are flushed before close.
         let _ = self.control.send(Control::Quit);
     }
@@ -138,7 +148,9 @@ impl Handle {
             Err("Bus shutdown did not complete".into())
         }
     }
-    #[cfg(test)]
+    /// A handle with no connection: calls fail unsent, replies and the
+    /// quit are only logged.
+    #[cfg(any(test, feature = "testing"))]
     pub fn sink() -> Self {
         let (tx, _rx) = tokio::sync::mpsc::channel(64);
         let (control, _rx) = tokio::sync::mpsc::unbounded_channel();
@@ -146,17 +158,24 @@ impl Handle {
             tx,
             control,
             done: Arc::new((Mutex::new(true), Condvar::new())),
-            records: Arc::new(Mutex::new(Vec::new())),
-            stopped: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            log: Arc::new(Mutex::new(Vec::new())),
         }
     }
-    #[cfg(test)]
-    pub fn responses(&self) -> Vec<(u64, u8, Value)> {
-        self.records.lock().unwrap().clone()
+    #[cfg(any(test, feature = "testing"))]
+    pub fn log(&self) -> Vec<Logged> {
+        self.log.lock().unwrap().clone()
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
+    pub fn responses(&self) -> Vec<(u64, u8, Value)> {
+        let replies = self.log().into_iter().filter_map(|l| match l {
+            Logged::Reply { id, rc, body } => Some((id, rc, body)),
+            _ => None,
+        });
+        replies.collect()
+    }
+    #[cfg(any(test, feature = "testing"))]
     pub fn has_quit(&self) -> bool {
-        self.stopped.load(std::sync::atomic::Ordering::SeqCst)
+        self.log().contains(&Logged::Quit)
     }
 }
 
@@ -205,10 +224,8 @@ pub fn start(service: &str, url: &str) -> Result<(Handle, mpsc::Receiver<Deliver
             tx,
             control,
             done,
-            #[cfg(test)]
-            records: Arc::new(Mutex::new(Vec::new())),
-            #[cfg(test)]
-            stopped: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            #[cfg(any(test, feature = "testing"))]
+            log: Arc::new(Mutex::new(Vec::new())),
         },
         receive,
     ))
@@ -265,7 +282,22 @@ async fn worker(
                             let _ = tokio::time::timeout(Duration::from_secs(2),client.respond(&command,rc,&value.to_string())).await;
                         }
                     }
-                    Some(Control::Quit) | None => break,
+                    // Replies are FIFO with the quit, so whatever is still pending
+                    // was never answered; nor was any request the client already
+                    // buffered (the biased select takes the quit first). The
+                    // broker never answers for a responder that disconnects, so
+                    // admit nothing more, answer them all while the transport is
+                    // still open, and close only once a drain finds none.
+                    Some(Control::Quit) | None => {
+                        let mut owed = unanswered(std::mem::take(&mut pending), || incoming.recv().now_or_never().flatten());
+                        while !owed.is_empty() {
+                            for command in &owed {
+                                let _ = tokio::time::timeout(Duration::from_secs(2),client.respond(command,10,CLOSING)).await;
+                            }
+                            owed = unanswered(HashMap::new(), || incoming.recv().now_or_never().flatten());
+                        }
+                        break;
+                    }
                 }
             }
             command = incoming.recv() => {
@@ -333,6 +365,29 @@ async fn worker(
     let _ = send.try_send(Delivery::Disconnected);
     let _ = tokio::time::timeout(Duration::from_secs(2), client.close()).await;
 }
+/// The answer every request gets once BusViewer is closing.
+const CLOSING: &str = "{\"error_code\":\"BUSY\",\"message\":\"BusViewer is closing\"}";
+
+/// The requests a closing worker still owes an answer: those `pending` (in
+/// arrival order), then every one already buffered, taken with `next_ready`
+/// until it has nothing ready. Topic deliveries expect no answer.
+fn unanswered(
+    pending: HashMap<u64, IncomingCommand>,
+    mut next_ready: impl FnMut() -> Option<BoundedIncomingEvent>,
+) -> Vec<IncomingCommand> {
+    let mut pending: Vec<_> = pending.into_iter().collect();
+    pending.sort_by_key(|(id, _)| *id);
+    let mut owed: Vec<_> = pending.into_iter().map(|(_, command)| command).collect();
+    while let Some(event) = next_ready() {
+        if let BoundedIncomingEvent::Command(command) = event
+            && command.topic().is_none()
+        {
+            owed.push(command);
+        }
+    }
+    owed
+}
+
 fn anonymous(url: &str, service: &str, verb: &str, args: Value) -> Result<Reply, String> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -505,5 +560,36 @@ mod tests {
         assert!(!CallError::transport(SupervisedError::Disconnected).outcome_unknown);
         assert!(!CallError::transport(SupervisedError::ShuttingDown).outcome_unknown);
         assert!(CallError::from("lost response").outcome_unknown);
+    }
+
+    fn request(verb: &str, topic: Option<&str>) -> IncomingCommand {
+        IncomingCommand {
+            generation: 1,
+            from: "caller".into(),
+            command: verb.into(),
+            id: Some(verb.into()),
+            args: Value::Null,
+            body: "{}".into(),
+            headers: topic.map(|t| ("topic".to_owned(), t.to_owned())).into_iter().collect(),
+        }
+    }
+
+    /// sol final pass: a quit that wins the race with buffered requests
+    /// still owes each of them an answer, after the pending ones.
+    #[test]
+    fn a_closing_worker_owes_pending_and_buffered_requests() {
+        let pending: HashMap<u64, IncomingCommand> = [(2, request("b.second", None)), (1, request("a.first", None))].into();
+        let mut buffered = vec![
+            BoundedIncomingEvent::Command(request("c.buffered", None)),
+            BoundedIncomingEvent::Overflow { dropped: 3 },
+            BoundedIncomingEvent::Command(request("", Some("theme.changed"))),
+            BoundedIncomingEvent::Command(request("d.buffered", None)),
+        ]
+        .into_iter();
+        let owed = unanswered(pending, || buffered.next());
+        let verbs: Vec<_> = owed.iter().map(|c| c.command.as_str()).collect();
+        assert_eq!(verbs, ["a.first", "b.second", "c.buffered", "d.buffered"]);
+        assert!(buffered.next().is_none(), "drained until nothing was ready");
+        assert!(unanswered(HashMap::new(), || None).is_empty());
     }
 }

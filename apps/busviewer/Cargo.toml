@@ -33,6 +33,7 @@ toolkit.workspace = true
 [dev-dependencies]
 design.workspace = true
 egui_kittest.workspace = true
+inspector = { path = "crates/inspector", features = ["testing"] }
 
 [build-dependencies]
 buildinfo.workspace = true

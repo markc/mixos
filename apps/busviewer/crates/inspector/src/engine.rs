@@ -35,6 +35,12 @@ pub enum Effect {
     Commands { id: u64 },
     /// Run registry command `command` and answer `id`.
     Execute { id: u64, command: String },
+    /// Answer `id` with the whole Bus surface (`app.describe`), or only its
+    /// verbs (`HELP`): the engine's and the window's drive verbs.
+    Describe { id: u64, help: bool },
+    /// Hand the window-level verb `verb` (without the `busviewer.` prefix:
+    /// `ui.click`, `window`, …) to the toolkit drive layer.
+    Drive { id: u64, verb: String, args: Value },
     /// Put `text` on the clipboard.
     Copy(String),
     /// Close: stop the Bus connection and the window.
@@ -79,6 +85,14 @@ pub struct UiState {
     pub body: String,
     pub split: f32,
     pub dialog: Option<Dialog>,
+    /// Show the opposite mode (light or dark) of the session's theme, in
+    /// this window only; the session's theme file is never written.
+    #[serde(default)]
+    pub invert_mode: bool,
+    /// The view should give the services filter the keyboard (set by
+    /// `view.search`, cleared by the view once it has); not saved.
+    #[serde(skip)]
+    pub focus_filter: bool,
 }
 
 impl Default for UiState {
@@ -91,6 +105,8 @@ impl Default for UiState {
             body: String::new(),
             split: 0.34,
             dialog: None,
+            invert_mode: false,
+            focus_filter: false,
         }
     }
 }
@@ -114,6 +130,9 @@ pub struct Engine {
     pub status: String,
     pub connected: bool,
     pub quitting: bool,
+    /// `busviewer.split` set the split: the shell drops the panel width
+    /// egui remembers, so the window takes the new one.
+    pub split_requested: bool,
     next_ticket: u64,
     discovery: Option<(u64, Option<u64>)>,
     call: Option<Call>,
@@ -134,6 +153,7 @@ impl Engine {
             status: label("connecting"),
             connected: true,
             quitting: false,
+            split_requested: false,
             next_ticket: 0,
             discovery: None,
             call: None,
@@ -178,6 +198,12 @@ impl Engine {
 
     /// The whole state as `busviewer.info` reports it.
     pub fn info(&self) -> Value {
+        let mut info = self.state();
+        info["ui"]["split"] = json!(rounded(self.ui.split));
+        info
+    }
+
+    fn state(&self) -> Value {
         json!({"schema":"busviewer.v1","app_id":APP_ID,"version":env!("CARGO_PKG_VERSION"),"pid":std::process::id(),
             "connected":self.connected,"busy":self.busy(),"discovering":self.discovery.is_some(),"calling":self.call.is_some(),
             "selection":self.ui.selected,"body":self.ui.body,"reply":self.last_reply,"status":self.status,"snapshot":self.snapshot,
@@ -303,6 +329,30 @@ impl Engine {
     }
 
     // ---- edits ------------------------------------------------------------
+
+    /// Ask the view to focus the services filter.
+    pub fn focus_filter(&mut self) {
+        if self.ui.dialog.is_none() {
+            self.ui.focus_filter = true;
+        }
+    }
+
+    /// The view has focused the filter.
+    pub fn filter_focused(&mut self) {
+        self.ui.focus_filter = false;
+    }
+
+    /// Flip this window between the session theme's mode and its opposite.
+    pub fn toggle_mode(&mut self) {
+        self.ui.invert_mode = !self.ui.invert_mode;
+    }
+
+    /// Show the session theme's mode (`false`) or its opposite (`true`):
+    /// the window's own toggle sends where it is going, so a click seen
+    /// twice lands in the same place.
+    pub fn set_mode(&mut self, invert: bool) {
+        self.ui.invert_mode = invert;
+    }
 
     pub fn set_filter(&mut self, filter: String) {
         if self.ui.dialog.is_none() {
@@ -455,6 +505,12 @@ impl Engine {
             Ok(args) if args.is_object() => args,
             _ => return self.error(id, "ARGUMENT", "arguments must be a JSON object"),
         };
+        if let Some(window) = verb.strip_prefix("busviewer.").filter(|v| v.starts_with("ui.") || v.starts_with("window")) {
+            return self.effects.push(Effect::Drive { id, verb: window.to_owned(), args });
+        }
+        if !model::VERBS.contains(&verb) {
+            return self.error(id, "UNKNOWN_VERB", "unknown BusViewer verb");
+        }
         let idle = !self.busy() && self.ui.dialog.is_none() && !self.quitting;
         match verb {
             "busviewer.ping" => self.effects.push(Effect::Reply {
@@ -463,8 +519,19 @@ impl Engine {
                 body: json!({"schema":"busviewer.v1","version":env!("CARGO_PKG_VERSION")}),
             }),
             "busviewer.info" => self.effects.push(Effect::Reply { id, rc: 0, body: self.info() }),
-            "HELP" => self.effects.push(Effect::Reply { id, rc: 0, body: model::describe()["verbs"].clone() }),
-            "app.describe" => self.effects.push(Effect::Reply { id, rc: 0, body: model::describe() }),
+            "HELP" => self.effects.push(Effect::Describe { id, help: true }),
+            "app.describe" => self.effects.push(Effect::Describe { id, help: false }),
+            "busviewer.tree"
+            | "busviewer.reply"
+            | "busviewer.filter"
+            | "busviewer.body"
+            | "busviewer.split"
+            | "busviewer.expand"
+            | "busviewer.select_row"
+            | "busviewer.dialog" => match self.edit(verb, &args) {
+                Ok(body) => self.effects.push(Effect::Reply { id, rc: 0, body }),
+                Err((code, message)) => self.error(id, code, &message),
+            },
             "busviewer.commands" => self.effects.push(Effect::Commands { id }),
             "busviewer.execute" => match args.get("id").and_then(Value::as_str) {
                 Some(command) => self.effects.push(Effect::Execute { id, command: command.to_owned() }),
@@ -505,6 +572,116 @@ impl Engine {
             }
             _ => self.error(id, "UNKNOWN_VERB", "unknown BusViewer verb"),
         }
+    }
+
+    /// The state verbs: a read, or one edit as the window makes it. Refused
+    /// under a dialog (as the window refuses them), and the body while a
+    /// call holds it.
+    fn edit(&mut self, verb: &str, args: &Value) -> Result<Value, (&'static str, String)> {
+        let text = |key: &str| {
+            args.get(key).and_then(Value::as_str).map(str::to_owned).ok_or_else(|| ("ARGUMENT", format!("{key} must be a string")))
+        };
+        match verb {
+            "busviewer.tree" => return Ok(json!({"rows":self.rows()})),
+            "busviewer.reply" => return Ok(json!({"text":self.reply,"value":self.last_reply})),
+            "busviewer.dialog" => {
+                let dialog = match args.get("open") {
+                    Some(Value::Null) => None,
+                    Some(Value::String(name)) if name == "about" => Some(Dialog::About),
+                    Some(Value::String(name)) if name == "shortcuts" => Some(Dialog::Shortcuts),
+                    _ => return Err(("ARGUMENT", "open must be \"about\", \"shortcuts\" or null".into())),
+                };
+                match dialog {
+                    None => self.close_dialog(),
+                    Some(_) if self.ui.dialog.is_some() || self.quitting => return Err(("BUSY", self.label("busy"))),
+                    Some(dialog) => self.open(dialog),
+                }
+                return Ok(json!({"dialog":dialog_name(self.ui.dialog)}));
+            }
+            _ => {}
+        }
+        if self.ui.dialog.is_some() {
+            return Err(("BUSY", self.label("busy")));
+        }
+        match verb {
+            "busviewer.filter" => {
+                self.set_filter(text("text")?);
+                Ok(json!({"filter":self.ui.filter,"rows":self.rows()}))
+            }
+            "busviewer.body" => {
+                let body = text("text")?;
+                if self.calling() {
+                    return Err(("BUSY", self.label("busy")));
+                }
+                if body.len() > model::BODY_LIMIT {
+                    return Err(("ARGUMENT", self.label("body-too-large")));
+                }
+                self.set_body(body);
+                Ok(json!({"body":self.ui.body}))
+            }
+            "busviewer.split" => {
+                let value = args
+                    .get("value")
+                    .and_then(Value::as_f64)
+                    .filter(|v| (0.0..=1.0).contains(v))
+                    .ok_or(("ARGUMENT", "value must be a number from 0 to 1".to_owned()))?;
+                self.set_split(value as f32);
+                self.split_requested = true;
+                Ok(json!({"split":rounded(self.ui.split)}))
+            }
+            "busviewer.expand" => {
+                let key = text("key")?;
+                let open = args.get("open").and_then(Value::as_bool).ok_or(("ARGUMENT", "open must be a bool".to_owned()))?;
+                // Only rows the window draws a chevron on open and close.
+                if find(&self.tree(), &key).is_none_or(|row| row.children.is_empty()) {
+                    return Err(("ARGUMENT", "no row with children has that key".into()));
+                }
+                if open != self.ui.expanded.contains(&key) {
+                    self.toggle(&key);
+                }
+                let expanded = find(&self.tree(), &key).is_some_and(|row| row.expanded);
+                Ok(json!({"key":key,"expanded":expanded,"rows":self.rows()}))
+            }
+            "busviewer.select_row" => {
+                let key = text("key")?;
+                let row = find(&self.tree(), &key).cloned().ok_or(("ARGUMENT", "no row has that key".to_owned()))?;
+                self.select_row(&row);
+                Ok(json!({"row_key":self.ui.row_key,"selection":self.ui.selected}))
+            }
+            _ => Err(("UNKNOWN_VERB", "unknown BusViewer verb".into())),
+        }
+    }
+
+    /// The rows the tree shows, depth first, as `busviewer.tree` reports
+    /// them: each row's key, kind, label (as the window draws it), depth,
+    /// whether it is open and selected, and how many children it has.
+    pub fn rows(&self) -> Vec<Value> {
+        fn walk(engine: &Engine, rows: &[Row], depth: usize, out: &mut Vec<Value>) {
+            for row in rows {
+                let (kind, label) = match &row.kind {
+                    RowKind::Service(name) => ("service", name.clone()),
+                    RowKind::Verb(target) => ("verb", target.verb.clone()),
+                    RowKind::Error(_) => ("error", engine.label("descriptions-failed")),
+                    RowKind::Peers => ("peers", engine.label("peers")),
+                    RowKind::Peer(name) => ("peer", name.clone()),
+                    RowKind::NoPeers => ("no_peers", engine.label("no-peers")),
+                };
+                let mut entry = json!({"key":row.key,"kind":kind,"label":label,"depth":depth,"expanded":row.expanded,
+                    "children":row.children.len(),"selected":engine.ui.row_key.as_deref() == Some(row.key.as_str())});
+                match &row.kind {
+                    RowKind::Verb(target) => entry["selection"] = json!(target),
+                    RowKind::Error(error) => entry["error"] = json!(error),
+                    _ => {}
+                }
+                out.push(entry);
+                if row.expanded {
+                    walk(engine, &row.children, depth + 1, out);
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(self, &self.tree(), 0, &mut out);
+        out
     }
 
     /// Restore and focus the window; `reply` is the Bus command that asked.
@@ -608,6 +785,25 @@ impl Engine {
             self.refresh(None);
         }
     }
+}
+
+/// The row `key` anywhere in `rows`.
+pub fn find<'a>(rows: &'a [Row], key: &str) -> Option<&'a Row> {
+    rows.iter().find_map(|r| if r.key == key { Some(r) } else { find(&r.children, key) })
+}
+
+/// `split` to 4 places, as the Bus reports it (an f32 widened to f64
+/// would print 0.4000000059604645).
+fn rounded(split: f32) -> f64 {
+    (f64::from(split) * 10_000.0).round() / 10_000.0
+}
+
+/// A dialog as the Bus names it.
+fn dialog_name(dialog: Option<Dialog>) -> Option<&'static str> {
+    dialog.map(|d| match d {
+        Dialog::About => "about",
+        Dialog::Shortcuts => "shortcuts",
+    })
 }
 
 #[cfg(test)]
@@ -814,14 +1010,194 @@ mod tests {
         assert!(!tree.iter().any(|r| r.key == "service:broken"));
     }
 
+    /// Send `verb` with `body` and return the one reply.
+    fn ask(e: &mut Engine, verb: &str, body: Value) -> (u8, Value) {
+        e.command(9, verb, &body.to_string());
+        match &e.take_effects()[..] {
+            [Effect::Reply { id: 9, rc, body }] => (*rc, body.clone()),
+            other => panic!("{verb}: {other:?}"),
+        }
+    }
+
+    fn code(reply: (u8, Value)) -> String {
+        assert_eq!(reply.0, 10, "{}", reply.1);
+        reply.1["error_code"].as_str().unwrap_or_default().to_owned()
+    }
+
+    #[test]
+    fn every_verb_is_answered_and_the_rest_are_unknown() {
+        for verb in model::VERBS {
+            let mut e = engine();
+            e.command(1, verb, "{}");
+            let effects = e.take_effects();
+            assert!(
+                !effects.iter().any(|x| matches!(x, Effect::Reply { body, .. } if body["error_code"] == "UNKNOWN_VERB")),
+                "{verb}: {effects:?}"
+            );
+        }
+        let mut e = engine();
+        assert_eq!(code(ask(&mut e, "busviewer.nope", json!({}))), "UNKNOWN_VERB");
+        e.command(2, "HELP", "{}");
+        e.command(3, "app.describe", "{}");
+        assert_eq!(e.take_effects(), [Effect::Describe { id: 2, help: true }, Effect::Describe { id: 3, help: false }]);
+    }
+
+    #[test]
+    fn window_verbs_go_to_the_drive_layer() {
+        let mut e = engine();
+        e.command(1, "busviewer.ui.click", r#"{"label":"File"}"#);
+        e.command(2, "busviewer.window", r#"{"action":"maximize"}"#);
+        e.command(3, "busviewer.window.state", "{}");
+        let effects = e.take_effects();
+        assert_eq!(effects[0], Effect::Drive { id: 1, verb: "ui.click".into(), args: json!({"label":"File"}) });
+        assert!(matches!(&effects[1], Effect::Drive { id: 2, verb, .. } if verb == "window"));
+        assert!(matches!(&effects[2], Effect::Drive { id: 3, verb, .. } if verb == "window.state"));
+    }
+
+    #[test]
+    fn filter_sets_the_filter_and_returns_the_rows() {
+        let mut e = engine();
+        let (rc, body) = ask(&mut e, "busviewer.filter", json!({"text":"echo"}));
+        assert_eq!(rc, 0);
+        assert_eq!(e.ui.filter, "echo");
+        let keys: Vec<_> = body["rows"].as_array().unwrap().iter().map(|r| r["key"].as_str().unwrap().to_owned()).collect();
+        assert_eq!(keys, ["service:example", "verb:example:echo", "mesh", "mesh:empty"]);
+        assert_eq!(code(ask(&mut e, "busviewer.filter", json!({"text":5}))), "ARGUMENT");
+        e.open(Dialog::About);
+        assert_eq!(code(ask(&mut e, "busviewer.filter", json!({"text":"x"}))), "BUSY");
+        assert_eq!(e.ui.filter, "echo");
+    }
+
+    #[test]
+    fn body_respects_the_limit_and_the_call_holding_it() {
+        let mut e = engine();
+        let (rc, body) = ask(&mut e, "busviewer.body", json!({"text":"{\"a\":1}"}));
+        assert_eq!((rc, body["body"].as_str()), (0, Some("{\"a\":1}")));
+        assert_eq!(code(ask(&mut e, "busviewer.body", json!({"text":"x".repeat(model::BODY_LIMIT + 1)}))), "ARGUMENT");
+        assert_eq!(code(ask(&mut e, "busviewer.body", json!({}))), "ARGUMENT");
+        e.ui.selected = Some(target());
+        e.call_selected();
+        e.take_effects();
+        assert_eq!(code(ask(&mut e, "busviewer.body", json!({"text":"{}"}))), "BUSY");
+        assert_eq!(e.ui.body, "{\"a\":1}", "frozen while calling");
+    }
+
+    #[test]
+    fn split_is_bounded() {
+        let mut e = engine();
+        let (rc, body) = ask(&mut e, "busviewer.split", json!({"value":0.5}));
+        assert_eq!((rc, body["split"].as_f64()), (0, Some(0.5)));
+        assert_eq!(ask(&mut e, "busviewer.split", json!({"value":0.9})).1["split"].as_f64(), Some(0.65));
+        assert_eq!(ask(&mut e, "busviewer.split", json!({"value":0.4})).1["split"].as_f64(), Some(0.4), "rounded, not 0.4000000059604645");
+        assert!(e.split_requested, "the shell is told to resize the panel");
+        assert_eq!(code(ask(&mut e, "busviewer.split", json!({"value":1.5}))), "ARGUMENT");
+        assert_eq!(code(ask(&mut e, "busviewer.split", json!({"value":"half"}))), "ARGUMENT");
+    }
+
+    #[test]
+    fn tree_lists_the_visible_rows() {
+        let mut e = engine();
+        let rows = ask(&mut e, "busviewer.tree", json!({})).1["rows"].clone();
+        let keys: Vec<_> = rows.as_array().unwrap().iter().map(|r| r["key"].as_str().unwrap()).collect();
+        assert_eq!(keys, ["service:broken", "service:example", "mesh"], "everything starts closed");
+        assert_eq!(rows[1]["kind"], "service");
+        assert_eq!(rows[1]["children"], 1);
+        assert_eq!(rows[2]["label"], "peers");
+        assert_eq!(rows[0]["depth"], 0);
+    }
+
+    #[test]
+    fn expand_opens_and_closes_rows_with_children() {
+        let mut e = engine();
+        let (rc, body) = ask(&mut e, "busviewer.expand", json!({"key":"service:example","open":true}));
+        assert_eq!((rc, body["expanded"].as_bool()), (0, Some(true)));
+        let verb = body["rows"].as_array().unwrap().iter().find(|r| r["key"] == "verb:example:echo").cloned().unwrap();
+        assert_eq!((verb["kind"].as_str(), verb["depth"].as_u64()), (Some("verb"), Some(1)));
+        assert_eq!(verb["selection"], json!({"service":"example","verb":"echo"}));
+        ask(&mut e, "busviewer.expand", json!({"key":"service:example","open":true}));
+        assert!(e.ui.expanded.contains("service:example"), "opening twice leaves it open");
+        let (_, body) = ask(&mut e, "busviewer.expand", json!({"key":"service:example","open":false}));
+        assert_eq!(body["expanded"], false);
+        assert_eq!(code(ask(&mut e, "busviewer.expand", json!({"key":"verb:example:echo","open":true}))), "ARGUMENT");
+        assert_eq!(code(ask(&mut e, "busviewer.expand", json!({"key":"nope","open":true}))), "ARGUMENT");
+        assert_eq!(code(ask(&mut e, "busviewer.expand", json!({"key":"mesh"}))), "ARGUMENT");
+    }
+
+    #[test]
+    fn select_row_takes_any_row_kind() {
+        let mut e = engine();
+        let (rc, body) = ask(&mut e, "busviewer.select_row", json!({"key":"verb:example:echo"}));
+        assert_eq!(rc, 0);
+        assert_eq!(body["selection"], json!({"service":"example","verb":"echo"}));
+        assert_eq!(e.ui.selected, Some(target()));
+        let (_, body) = ask(&mut e, "busviewer.select_row", json!({"key":"error:broken"}));
+        assert_eq!((body["row_key"].as_str(), &body["selection"]), (Some("error:broken"), &Value::Null));
+        assert_eq!(e.ui.selected, None, "a non-verb row clears the verb");
+        assert_eq!(code(ask(&mut e, "busviewer.select_row", json!({"key":"nope"}))), "ARGUMENT");
+        e.open(Dialog::Shortcuts);
+        assert_eq!(code(ask(&mut e, "busviewer.select_row", json!({"key":"mesh"}))), "BUSY");
+    }
+
+    #[test]
+    fn dialog_opens_and_closes() {
+        let mut e = engine();
+        let (rc, body) = ask(&mut e, "busviewer.dialog", json!({"open":"about"}));
+        assert_eq!((rc, body["dialog"].as_str()), (0, Some("about")));
+        assert_eq!(e.ui.dialog, Some(Dialog::About));
+        assert_eq!(code(ask(&mut e, "busviewer.dialog", json!({"open":"shortcuts"}))), "BUSY", "one dialog at a time");
+        let (rc, body) = ask(&mut e, "busviewer.dialog", json!({"open":null}));
+        assert_eq!((rc, &body["dialog"]), (0, &Value::Null));
+        assert_eq!(e.ui.dialog, None, "a close is never refused as an edit under the dialog");
+        let (rc, body) = ask(&mut e, "busviewer.dialog", json!({"open":null}));
+        assert_eq!((rc, &body["dialog"], e.ui.dialog), (0, &Value::Null, None), "closing nothing is still closed");
+        assert_eq!(code(ask(&mut e, "busviewer.dialog", json!({"open":"settings"}))), "ARGUMENT");
+        assert_eq!(code(ask(&mut e, "busviewer.dialog", json!({}))), "ARGUMENT");
+        e.quit();
+        e.take_effects();
+        assert_eq!(code(ask(&mut e, "busviewer.dialog", json!({"open":"about"}))), "BUSY");
+    }
+
+    #[test]
+    fn reply_reads_the_last_reply() {
+        let mut e = engine();
+        assert_eq!(ask(&mut e, "busviewer.reply", json!({})).1, json!({"text":"","value":null}));
+        e.ui.selected = Some(target());
+        e.call_selected();
+        let Some(Effect::Call { ticket, .. }) = e.take_effects().pop() else { panic!() };
+        e.completed(ticket, Ok(Reply { rc: 0, body: "{\"ok\":true}".into() }));
+        let (rc, body) = ask(&mut e, "busviewer.reply", json!({}));
+        assert_eq!(rc, 0);
+        assert!(body["text"].as_str().unwrap().contains("rc = 0"));
+        assert_eq!(body["value"]["rc"], 0);
+    }
+
     #[test]
     fn ui_state_round_trips() {
         let mut e = engine();
         e.ui.selected = Some(target());
         e.ui.filter = "ex".into();
         e.toggle("mesh");
+        e.toggle_mode();
         let saved = serde_json::to_string(&e.ui).unwrap();
         let back: UiState = serde_json::from_str(&saved).unwrap();
         assert_eq!(back, e.ui);
+        assert!(back.invert_mode);
+    }
+
+    #[test]
+    fn a_filter_focus_request_is_never_saved_and_older_state_still_loads() {
+        let mut e = engine();
+        e.focus_filter();
+        assert!(e.ui.focus_filter);
+        let back: UiState = serde_json::from_str(&serde_json::to_string(&e.ui).unwrap()).unwrap();
+        assert!(!back.focus_filter, "a one-off request, not state");
+        let mut old = serde_json::to_value(UiState::default()).unwrap();
+        old.as_object_mut().unwrap().remove("invert_mode");
+        let loaded: UiState = serde_json::from_value(old).unwrap();
+        assert!(!loaded.invert_mode, "state saved before the toggle existed loads");
+        e.open(Dialog::About);
+        e.filter_focused();
+        e.focus_filter();
+        assert!(!e.ui.focus_filter, "not under a dialog");
     }
 }

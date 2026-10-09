@@ -134,9 +134,35 @@ pub fn bounded(body: &str, marker: &str) -> String {
     format!("{}\n{marker}", &body[..end])
 }
 
-/// The app's own Bus surface (`HELP` / `app.describe`).
+/// Every verb the engine answers itself. The window-level verbs
+/// (`busviewer.ui.*`, `busviewer.window*`) belong to the toolkit drive layer.
+pub const VERBS: [&str; 19] = [
+    "HELP",
+    "app.describe",
+    "busviewer.ping",
+    "busviewer.info",
+    "busviewer.show",
+    "busviewer.refresh",
+    "busviewer.select",
+    "busviewer.call",
+    "busviewer.commands",
+    "busviewer.execute",
+    "busviewer.quit",
+    "busviewer.tree",
+    "busviewer.reply",
+    "busviewer.filter",
+    "busviewer.body",
+    "busviewer.split",
+    "busviewer.expand",
+    "busviewer.select_row",
+    "busviewer.dialog",
+];
+
+/// The engine's Bus surface (`HELP` / `app.describe` add the drive verbs).
 pub fn describe() -> Value {
     json!({"schema":"busviewer.v1","app_id":APP_ID,"verbs":[
+        {"name":"HELP","description":"List every verb","read_only":true},
+        {"name":"app.describe","description":"Describe the app and every verb with its arguments","read_only":true},
         {"name":"busviewer.ping","description":"Probe BusViewer","read_only":true},
         {"name":"busviewer.info","description":"Inspect discovery, selection, reply and UI state","read_only":true},
         {"name":"busviewer.show","description":"Restore and focus the existing window","read_only":false},
@@ -144,14 +170,28 @@ pub fn describe() -> Value {
         {"name":"busviewer.select","args":{"service":"string","verb":"string"},"description":"Select an advertised verb","read_only":false},
         {"name":"busviewer.call","args":{"service":"optional string","verb":"optional string","body":"optional JSON text"},"description":"Call exactly once; target's safety is unchanged","read_only":false},
         {"name":"busviewer.commands","description":"List the app's commands with labels, shortcuts and enablement","read_only":true},
-        {"name":"busviewer.execute","args":{"id":"string"},"description":"Run one app command by id, as its menu item or shortcut would","read_only":false},
-        {"name":"busviewer.quit","description":"Close when idle","read_only":false}
+        {"name":"busviewer.execute","args":{"id":"string"},"description":"Run one app command by id, as its menu item or shortcut would (file.refresh, file.quit, edit.format, edit.clear, edit.copy, bus.call, help.shortcuts, help.about)","read_only":false},
+        {"name":"busviewer.quit","description":"Close when idle","read_only":false},
+        {"name":"busviewer.tree","description":"The rows the services tree shows: key, kind, label, depth, expanded, selected, children","read_only":true},
+        {"name":"busviewer.reply","description":"The reply panel's text and the last reply's value","read_only":true},
+        {"name":"busviewer.filter","args":{"text":"string"},"description":"Set the services filter, as typing in the search field does","read_only":false},
+        {"name":"busviewer.body","args":{"text":format!("string, at most {BODY_LIMIT} bytes")},"description":"Set the JSON body; refused while a call holds it","read_only":false},
+        {"name":"busviewer.split","args":{"value":"number from 0 to 1 (kept within 0.2 to 0.65)"},"description":"Set the services pane's share of the window","read_only":false},
+        {"name":"busviewer.expand","args":{"key":"row key","open":"bool"},"description":"Open or close a tree row that has children","read_only":false},
+        {"name":"busviewer.select_row","args":{"key":"row key"},"description":"Select any tree row; a verb row also selects its verb","read_only":false},
+        {"name":"busviewer.dialog","args":{"open":"\"about\", \"shortcuts\" or null"},"description":"Open a dialog, or close the open one","read_only":false}
     ]})
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_engine_verb_is_described_once() {
+        let described: Vec<_> = describe()["verbs"].as_array().unwrap().iter().map(|v| v["name"].as_str().unwrap().to_owned()).collect();
+        assert_eq!(described, VERBS);
+    }
 
     #[test]
     fn descriptions_preserve_legacy_unknown_safety_and_sort() {

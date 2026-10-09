@@ -6162,7 +6162,9 @@ dependencies = [
  "egui_extras",
  "egui_kittest",
  "fluent-bundle",
+ "png 0.18.1",
  "serde",
+ "serde_json",
  "tempfile",
 ]
 

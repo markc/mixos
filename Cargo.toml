@@ -59,6 +59,8 @@ egui_extras = { version = "=0.36.2", default-features = false, features = ["svg"
 egui_kittest = { version = "=0.36.2", features = ["snapshot", "wgpu"] }
 fluent-bundle = "=0.15.3"
 futures = "=0.3.34"
+# Window captures over the Bus (toolkit::drive); the version image already uses.
+png = "=0.18.1"
 
 # Shared libraries (libs/).
 assets = { path = "libs/assets" }

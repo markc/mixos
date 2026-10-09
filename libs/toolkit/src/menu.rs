@@ -27,8 +27,8 @@
 use crate::chrome::{Chrome, DISABLED_ALPHA, WEAK_ALPHA};
 use egui::emath::GuiRounding;
 use egui::{
-    Area, Color32, Context, Frame, Id, Key, Modifiers, Order, PointerButton, Pos2, Rect, ScrollArea, Sense, Stroke, Ui,
-    UiKind, Vec2, WidgetInfo, WidgetType, pos2, text::Galley, vec2,
+    Area, Color32, Context, Frame, Id, Key, Modifiers, Order, PointerButton, Pos2, Rect, ScrollArea, Sense, Stroke,
+    TextEdit, Ui, UiKind, Vec2, WidgetInfo, WidgetType, pos2, text::Galley, vec2,
 };
 use std::sync::Arc;
 
@@ -102,6 +102,82 @@ pub fn tidy(entries: Vec<Entry>) -> Vec<Entry> {
         out.pop();
     }
     out
+}
+
+/// A search field at the top of one top-level menu (§3.5: Help).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Search {
+    /// The index of the menu that carries it.
+    pub menu: usize,
+    pub hint: String,
+    /// Shown, weak, when nothing matches.
+    pub empty: String,
+}
+
+/// The most results a search lists (§3.5).
+pub const SEARCH_RESULTS: usize = 15;
+
+/// Joins a result's menu path (§3.5).
+pub const PATH_SEPARATOR: &str = " › ";
+
+/// The search field's width (§3.5) and the separator band after it.
+const SEARCH_WIDTH: f32 = 220.0;
+
+/// The command rows of `menus` matching `query` (case-insensitive), each
+/// labelled with its menu path joined by [`PATH_SEPARATOR`], ranked: the
+/// label starts with the query, then a word of it does, then the label
+/// contains it, then the path does (§3.5). At most [`SEARCH_RESULTS`].
+pub fn matching(menus: &[Menu], query: &str) -> Vec<Row> {
+    let query = query.trim().to_lowercase();
+    if query.is_empty() {
+        return Vec::new();
+    }
+    fn walk<'a>(entries: &'a [Entry], path: &mut Vec<&'a str>, out: &mut Vec<(Vec<&'a str>, &'a Row)>) {
+        for row in entries.iter().filter_map(Entry::row) {
+            if row.is_submenu() {
+                path.push(&row.label);
+                walk(&row.children, path, out);
+                path.pop();
+            } else if row.id.is_some() {
+                out.push((path.clone(), row));
+            }
+        }
+    }
+    let mut all = Vec::new();
+    for menu in menus {
+        walk(&menu.entries, &mut vec![menu.title.as_str()], &mut all);
+    }
+    let rank = |path: &[&str], row: &Row| {
+        let label = row.label.to_lowercase();
+        if label.starts_with(&query) {
+            Some(0)
+        } else if label.split_whitespace().any(|word| word.starts_with(&query)) {
+            Some(1)
+        } else if label.contains(&query) {
+            Some(2)
+        } else if path.join(PATH_SEPARATOR).to_lowercase().contains(&query) {
+            Some(3)
+        } else {
+            None
+        }
+    };
+    let mut ranked: Vec<(u8, String, &Row)> = all
+        .into_iter()
+        .filter_map(|(path, row)| {
+            let rank = rank(&path, row)?;
+            let mut shown = path.join(PATH_SEPARATOR);
+            shown.push_str(PATH_SEPARATOR);
+            shown.push_str(&row.label);
+            Some((rank, shown, row))
+        })
+        .collect();
+    // Stable: menu order within a rank.
+    ranked.sort_by_key(|(rank, ..)| *rank);
+    ranked
+        .into_iter()
+        .take(SEARCH_RESULTS)
+        .map(|(_, shown, row)| Row { label: shown, ..row.clone() })
+        .collect()
 }
 
 /// A navigation key (§3.6). Space acts as [`NavKey::Enter`].
@@ -340,6 +416,16 @@ struct State {
     /// to a submenu across other rows.
     frames: Vec<Rect>,
     current: Option<Current>,
+    /// The search field's text, cleared each time its menu opens.
+    query: String,
+    /// The search menu just opened: give its field the keyboard once the
+    /// pointer settles.
+    focus_search: bool,
+    /// Keyboard events held back to the next frame: a navigation key typed
+    /// after text in one frame, and the keys and text after it.
+    deferred: Vec<egui::Event>,
+    /// The menu those keys were typed in.
+    deferred_menu: Option<usize>,
 }
 
 fn state_id() -> Id {
@@ -370,28 +456,129 @@ const KEYS: [(Key, NavKey); 7] = [
 /// and any open menu above everything, and return the command chosen this
 /// frame. Titles are packed edge to edge (§3.3).
 pub fn bar(ui: &mut Ui, menus: &[Menu]) -> Option<&'static str> {
+    bar_with(ui, menus, None)
+}
+
+/// Whether `event` edits the search field's text.
+fn edits_text(event: &egui::Event) -> bool {
+    match event {
+        egui::Event::Text(_) | egui::Event::Paste(_) | egui::Event::Cut | egui::Event::Ime(_) => true,
+        egui::Event::Key { key, pressed: true, .. } => matches!(key, Key::Backspace | Key::Delete),
+        _ => false,
+    }
+}
+
+/// The results are built from the query before this frame's typing reaches
+/// it, so a navigation key after typing in the same frame would act on the
+/// old results: take it, and the keyboard events after it, out of this
+/// frame to replay first in the next, when the query includes the typing.
+/// Pointer and wheel events stay: egui has already applied them this frame.
+fn defer_after_typing(ui: &mut Ui) -> Vec<egui::Event> {
+    ui.input_mut(|i| {
+        let mut typed = false;
+        let cut = i.events.iter().position(|event| {
+            let navigation = matches!(
+                event,
+                egui::Event::Key { key: Key::Enter | Key::ArrowUp | Key::ArrowDown, pressed: true, .. }
+            );
+            if navigation && typed {
+                return true;
+            }
+            typed |= edits_text(event);
+            false
+        });
+        let Some(at) = cut else { return Vec::new() };
+        let keyboard = |event: &egui::Event| {
+            matches!(event, egui::Event::Key { .. } | egui::Event::Text(_) | egui::Event::Paste(_) | egui::Event::Cut | egui::Event::Copy | egui::Event::Ime(_))
+        };
+        let tail = i.events.split_off(at);
+        let (deferred, kept): (Vec<_>, Vec<_>) = tail.into_iter().partition(keyboard);
+        i.events.extend(kept);
+        deferred
+    })
+}
+
+/// The id of the search field (§3.5), for focus and tests.
+pub fn search_field_id() -> Id {
+    state_id().with("search")
+}
+
+/// [`bar`] with a search field at the top of one menu (§3.5). While the
+/// field has the keyboard, typing, Space, Left and Right edit the query;
+/// Up and Down move the highlight over the results; Enter runs the
+/// highlighted result, else the first enabled one; Escape closes. A click
+/// inside that menu never closes it.
+pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<&'static str> {
     let ctx = ui.ctx().clone();
     let chrome = Chrome::of(&ctx);
     let mut st: State = ctx.data(|d| d.get_temp(state_id())).unwrap_or_default();
+    // While a query is typed, the search menu lists its results instead of
+    // its rows; navigation and drawing work on that view of the model.
+    let searching = |st: &State| search.filter(|s| st.nav.open == Some(s.menu));
+    // Keys held back last frame come first, now that the text typed before
+    // them is in the query; but only into the menu and field they were
+    // typed in. If the menu closed or the field lost the keyboard since,
+    // they are dropped, never replayed into the application.
+    let field_focused = ctx.memory(|m| m.has_focus(search_field_id()));
+    let deferred = std::mem::take(&mut st.deferred);
+    if !deferred.is_empty() && st.nav.open == st.deferred_menu && searching(&st).is_some() && field_focused {
+        ui.input_mut(|i| {
+            i.events.splice(0..0, deferred);
+        });
+    }
+    st.deferred_menu = None;
+    if searching(&st).is_some() && field_focused {
+        st.deferred = defer_after_typing(ui);
+        if !st.deferred.is_empty() {
+            st.deferred_menu = st.nav.open;
+            ctx.request_repaint();
+        }
+    }
+    let view: Vec<Menu>;
+    let menus = match searching(&st) {
+        Some(s) if !st.query.trim().is_empty() => {
+            let mut changed = menus.to_vec();
+            changed[s.menu].entries = matching(menus, &st.query).into_iter().map(Entry::Row).collect();
+            view = changed;
+            view.as_slice()
+        }
+        _ => menus,
+    };
     st.nav.validate(menus);
     let before = st.nav.clone();
     let mut fired = None;
+    let typing = searching(&st).is_some() && ctx.memory(|m| m.has_focus(search_field_id()));
 
     // The open menu's keys come first: before focused widgets, which are
     // drawn later in the frame, and before global shortcuts (see `is_open`).
     // Keys apply in arrival order, each repeat its own step; once the menus
-    // close, later keys are left for the application.
+    // close, later keys are left for the application. The search field
+    // keeps Space, Left and Right for its text.
     let mut keyed = false;
     if st.nav.open.is_some() {
         ui.input_mut(|i| {
             i.events.retain(|event| {
                 let egui::Event::Key { key, pressed: true, modifiers, .. } = event else { return true };
+                if typing && matches!(key, Key::Space | Key::ArrowLeft | Key::ArrowRight) {
+                    return true;
+                }
                 let nav = KEYS.iter().find(|(k, _)| k == key).map(|&(_, nav)| nav);
                 let Some(nav) = nav.filter(|_| st.nav.open.is_some() && modifiers.matches_logically(Modifiers::NONE)) else {
                     return true;
                 };
                 keyed = true;
-                if let Outcome::Run(id) = st.nav.key(nav, menus) {
+                if typing && nav == NavKey::Enter && st.nav.highlight().first().copied().flatten().is_none() {
+                    // Enter with nothing highlighted runs the first enabled
+                    // result (none while the query is empty).
+                    let open = if st.query.trim().is_empty() { usize::MAX } else { st.nav.open.unwrap_or_default() };
+                    let first = menus.get(open).and_then(|m| {
+                        m.entries.iter().filter_map(Entry::row).find(|r| r.enabled && r.id.is_some()).and_then(|r| r.id)
+                    });
+                    if let Some(id) = first {
+                        fired = Some(id);
+                        st.nav.close();
+                    }
+                } else if let Outcome::Run(id) = st.nav.key(nav, menus) {
                     fired = Some(id);
                 }
                 false
@@ -432,6 +619,24 @@ pub fn bar(ui: &mut Ui, menus: &[Menu]) -> Option<&'static str> {
         }
         titles.push((rect, galley, response.hovered()));
     }
+    // The search field is cleared and takes the keyboard each time its menu
+    // opens, by pointer or by key (§3.5).
+    if let Some(s) = search
+        && st.nav.open == Some(s.menu)
+        && before.open_menu() != Some(s.menu)
+    {
+        st.query.clear();
+        st.focus_search = true;
+    }
+    // Focus waits for the pointer to settle: egui hands focus back from a
+    // field on the frame of any press or click that lands elsewhere, which
+    // the press on the title would be.
+    if st.focus_search && !ui.input(|i| i.pointer.any_pressed() || i.pointer.any_released() || i.pointer.any_down()) {
+        st.focus_search = false;
+        if searching(&st).is_some() {
+            ctx.memory_mut(|m| m.request_focus(search_field_id()));
+        }
+    }
     let ppp = ctx.pixels_per_point();
     for (index, (rect, galley, hovered)) in titles.iter().enumerate() {
         if *hovered || st.nav.open == Some(index) {
@@ -469,12 +674,22 @@ pub fn bar(ui: &mut Ui, menus: &[Menu]) -> Option<&'static str> {
                 origin.x = origin.x.min(screen.right() - metrics.edge_gap - outer.x).max(screen.left());
             }
             let rect = Rect::from_min_size(origin, outer);
-            let max_height = (bottom - origin.y).max(metrics.menu_row_height + margin.sum().y) - margin.sum().y;
+            // The search menu's field and its separator band sit above the rows.
+            let header = searching(&st).filter(|_| level == 0);
+            // The field, the separator and their item spacing come to about
+            // one row and a separator band; the no-matches line is a row.
+            let header_height = header.map_or(0.0, |_| {
+                let empty = entries.is_empty() && !st.query.trim().is_empty();
+                metrics.menu_row_height * if empty { 2.0 } else { 1.0 } + metrics.menu_separator_height + 6.0
+            });
+            let max_height =
+                (bottom - origin.y).max(metrics.menu_row_height + margin.sum().y) - margin.sum().y - header_height;
             let deeper = st.frames.get(level + 1).copied().filter(|_| st.nav.submenu_open(level));
             // A key reveals the highlight of every level it acts through, so
             // a submenu entered by keyboard brings its parent row into view.
             let view = View { max_height, moved, keyed: keyed && level <= st.nav.depth(), deeper };
-            let shown = show_level(&ctx, &chrome, level, entries, &layout, rect, &mut st.nav, menus, view);
+            let header = header.map(|s| (s, &mut st.query));
+            let shown = show_level(&ctx, &chrome, level, entries, &layout, rect, &mut st.nav, menus, view, header);
             frames.push(shown.frame);
             bars.extend(shown.bar);
             if let Some(index) = shown.under {
@@ -546,7 +761,9 @@ pub fn bar(ui: &mut Ui, menus: &[Menu]) -> Option<&'static str> {
                     st.nav.key(NavKey::Right, menus);
                 }
             }
-            _ if st.inside_press && pointer.is_some_and(inside) => st.nav.close(),
+            // A click inside the search menu (on its field, say) keeps it
+            // open: only a click outside closes it (§3.5).
+            _ if st.inside_press && pointer.is_some_and(inside) && searching(&st).is_none() => st.nav.close(),
             _ => {}
         }
         st.title_press = false;
@@ -565,7 +782,10 @@ pub fn bar(ui: &mut Ui, menus: &[Menu]) -> Option<&'static str> {
         depth: st.nav.depth,
     });
     st.frames = frames;
-    if st.nav != before {
+    if st.nav.open.is_none() {
+        st.query.clear();
+    }
+    if st.nav != before || st.focus_search {
         ctx.request_repaint();
     }
     ctx.data_mut(|d| d.insert_temp(state_id(), st));
@@ -654,6 +874,7 @@ fn show_level(
     nav: &mut Nav,
     menus: &[Menu],
     view: View,
+    header: Option<(&Search, &mut String)>,
 ) -> Shown {
     let View { max_height, moved, keyed, deeper } = view;
     let id = state_id().with(level);
@@ -666,6 +887,9 @@ fn show_level(
         .show(ctx, |ui| {
             Frame::menu(ui.style())
                 .show(ui, |ui| {
+                    if let Some((search, query)) = header {
+                        search_header(ui, chrome, search, query, layout.size.x, entries.is_empty());
+                    }
                     let out = ScrollArea::vertical()
                         .id_salt(id.with("scroll"))
                         .max_height(max_height)
@@ -692,6 +916,33 @@ fn show_level(
         });
     let ((rows, under, activated), view, bar) = area.inner;
     Shown { frame: area.response.rect, rows, under, activated, view, bar }
+}
+
+/// The search menu's field (§3.5): egui's single-line field, 220 wide, in
+/// egui's menu style (so no resting border), then egui's separator, then
+/// the weak "no matches" line when a query found nothing. Measured: the
+/// field spans 35 to 52.5 pt under a 32 pt bar and the rule sits at 62.
+fn search_header(ui: &mut Ui, chrome: &Chrome, search: &Search, query: &mut String, width: f32, empty: bool) {
+    let m = &chrome.metrics;
+    ui.scope(|ui| {
+        egui::containers::menu::menu_style(ui.style_mut());
+        let field = TextEdit::singleline(query)
+            .id(search_field_id())
+            .hint_text(search.hint.as_str())
+            .desired_width(width.max(SEARCH_WIDTH));
+        if ui.add(field).changed() {
+            ui.ctx().request_repaint();
+        }
+    });
+    ui.separator();
+    if empty && !query.trim().is_empty() {
+        let (row, response) = ui.allocate_exact_size(vec2(width, m.menu_row_height), Sense::hover());
+        response.widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, &search.empty));
+        let ink = chrome.palette.text.gamma_multiply(WEAK_ALPHA);
+        let galley = ui.painter().layout_no_wrap(search.empty.clone(), Chrome::menu_font(ui.style()), ink);
+        let at = pos2(row.left() + m.menu_row_padding.x, row.center().y - galley.size().y / 2.0);
+        ui.painter().galley(at, galley, ink);
+    }
 }
 
 /// The rows of one level, inside its scroll area.

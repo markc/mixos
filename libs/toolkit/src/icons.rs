@@ -54,11 +54,17 @@ macro_rules! icons {
 icons! {
     ChevronDown => "chevron-down",
     ChevronRight => "chevron-right",
+    ChevronsRight => "chevrons-right",
     CircleAlert => "circle-alert",
     CircleCheck => "circle-check",
     Copy => "copy",
+    Ellipsis => "ellipsis",
+    Info => "info",
+    Keyboard => "keyboard",
     LoaderCircle => "loader-circle",
+    MessageSquare => "message-square",
     Minus => "minus",
+    Moon => "moon",
     Play => "play",
     Plug => "plug",
     RefreshCw => "refresh-cw",
@@ -66,6 +72,7 @@ icons! {
     Server => "server",
     Settings => "settings",
     Square => "square",
+    Sun => "sun",
     Unplug => "unplug",
     X => "x",
 }
@@ -79,6 +86,22 @@ pub fn stroke_width(theme: &Theme) -> f32 {
         .get("icon.stroke_width")
         .filter(|metric| metric.kind == ResolvedMetricKind::Px && metric.value > 0.0)
         .map_or(DEFAULT_STROKE, |metric| metric.value as f32)
+}
+
+fn stroke_key() -> egui::Id {
+    egui::Id::new("toolkit.icon-stroke")
+}
+
+/// Make `stroke` the width [`stroke_of`] returns on `ctx` (done by
+/// [`crate::install`] from the theme).
+pub fn install(ctx: &egui::Context, stroke: f32) {
+    ctx.data_mut(|d| d.insert_temp(stroke_key(), stroke));
+}
+
+/// The icon stroke width installed on `ctx`, else [`DEFAULT_STROKE`]: the
+/// toolkit's own widgets draw their icons with it.
+pub fn stroke_of(ctx: &egui::Context) -> f32 {
+    ctx.data(|d| d.get_temp(stroke_key())).unwrap_or(DEFAULT_STROKE)
 }
 
 /// `icon`'s SVG source with its stroke at `stroke` and coloured [`MASK`].

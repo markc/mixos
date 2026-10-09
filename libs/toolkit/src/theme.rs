@@ -150,6 +150,14 @@ impl Theme {
         }
     }
 
+    /// The embedded design in this theme's scheme and contrast, in the
+    /// opposite mode: an app's own light/dark switch, which never touches
+    /// the session's theme file.
+    pub fn opposite_mode(&self) -> Self {
+        let mode = if self.mode() == Mode::Dark { Mode::Light } else { Mode::Dark };
+        Self::for_context(DesignContext { mode, ..self.context.clone() })
+    }
+
     pub fn context(&self) -> &DesignContext {
         &self.context
     }
@@ -222,6 +230,14 @@ mod tests {
                 assert_eq!((theme.scheme(), theme.mode()), (scheme, mode));
             }
         }
+    }
+
+    #[test]
+    fn the_opposite_mode_keeps_the_scheme() {
+        let pro = Theme::for_context(DesignContext { scheme: Scheme::Pro, mode: Mode::Dark, ..DesignContext::default() });
+        let flipped = pro.opposite_mode();
+        assert_eq!((flipped.scheme(), flipped.mode()), (Scheme::Pro, Mode::Light));
+        assert_eq!(flipped.opposite_mode().mode(), Mode::Dark);
     }
 
     #[test]

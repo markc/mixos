@@ -8,6 +8,7 @@
 mod fixture;
 
 use design::{Mode, Scheme};
+use egui::accesskit::Role;
 use egui::{Event, Key, Modifiers, PointerButton, Pos2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
@@ -328,6 +329,132 @@ fn a_submenu_closes_when_its_row_scrolls_out_of_view() {
     let bar_bottom = h.get_by_label("File").rect().bottom();
     assert!(h.get_by_label("Open Recent").rect().center().y < bar_bottom, "the row scrolled up out of view");
     assert_eq!(current(&h).map(|c| c.path.len()), Some(1), "and took its submenu with it");
+}
+
+fn open_help(h: &mut Harness<'_, Fixture>) {
+    h.get_by_label("Help").click();
+    h.run();
+}
+
+fn typed(h: &mut Harness<'_, Fixture>, text: &str) {
+    h.event(Event::Text(text.to_owned()));
+    h.run();
+}
+
+#[test]
+fn help_opens_with_a_focused_empty_search_that_lists_ranked_matches() {
+    let mut h = window();
+    open_help(&mut h);
+    let field = h.get_by_role(Role::TextInput);
+    assert!(field.is_focused(), "the field has the keyboard as Help opens");
+    typed(&mut h, "clo");
+    // "Close", "Close All" and "Close Others" start with it.
+    let _ = h.get_by_label("File › Close");
+    let _ = h.get_by_label("File › Close Others");
+    let _ = h.get_by_label("Help").rect();
+    press(&mut h, Key::Enter);
+    assert_eq!(h.state().ran, ["file.close"], "Enter runs the first enabled result");
+    assert!(current(&h).is_none(), "and closes the menus");
+    open_help(&mut h);
+    assert_eq!(h.get_by_role(Role::TextInput).value().as_deref(), Some(""), "cleared each time it opens");
+}
+
+#[test]
+fn space_and_left_right_edit_the_query_while_up_down_move_the_highlight() {
+    let mut h = window();
+    open_help(&mut h);
+    typed(&mut h, "close");
+    // A Space key press arrives with its text: the key must not activate.
+    h.key_press(Key::Space);
+    typed(&mut h, " a");
+    assert!(h.state().ran.is_empty(), "Space never runs a result while typing");
+    assert_eq!(h.get_by_role(Role::TextInput).value().as_deref(), Some("close a"), "Space types a space");
+    press(&mut h, Key::ArrowLeft);
+    assert_eq!(path(&h).map(|p| p.0), Some("Help".to_owned()), "Left stays in the field, Help stays open");
+    press(&mut h, Key::ArrowDown);
+    assert_eq!(path(&h), labels("Help", &[Some("File › Close All")]), "Down highlights the first result");
+    press(&mut h, Key::Enter);
+    assert_eq!(h.state().ran, ["file.close-all"]);
+}
+
+#[test]
+fn nothing_matching_says_so_and_a_click_inside_help_keeps_it_open() {
+    let mut h = window();
+    open_help(&mut h);
+    typed(&mut h, "zzz");
+    let empty = h.get_by_role(Role::TextInput).rect();
+    let _ = h.get_by_label("No matching commands");
+    pointer(&h, empty.center(), Some(true));
+    h.run();
+    pointer(&h, empty.center(), Some(false));
+    h.run();
+    assert_eq!(path(&h).map(|p| p.0), Some("Help".to_owned()), "a click in the field keeps Help open");
+    press(&mut h, Key::Enter);
+    assert!(h.state().ran.is_empty(), "Enter with no results runs nothing");
+}
+
+/// Text and then Enter in one frame (one RawInput).
+fn type_then_enter(h: &mut Harness<'_, Fixture>, text: &str) {
+    let enter = |pressed| Event::Key { key: Key::Enter, physical_key: None, pressed, repeat: false, modifiers: Modifiers::NONE };
+    h.input_mut().events.extend([Event::Text(text.to_owned()), enter(true), enter(false)]);
+    h.run();
+}
+
+#[test]
+fn enter_in_the_same_frame_as_typing_acts_on_the_new_query() {
+    let mut h = window();
+    open_help(&mut h);
+    typed(&mut h, "clo");
+    type_then_enter(&mut h, "zzz");
+    assert!(h.state().ran.is_empty(), "\"clozzz\" matches nothing, so Enter runs nothing");
+    assert_eq!(h.get_by_role(Role::TextInput).value().as_deref(), Some("clozzz"));
+    let _ = h.get_by_label("No matching commands");
+
+    let mut h = window();
+    open_help(&mut h);
+    typed(&mut h, "clo");
+    type_then_enter(&mut h, "se a");
+    assert_eq!(h.state().ran, ["file.close-all"], "\"close a\" is Close All, not the stale first result Close");
+}
+
+/// sol final review, 4: typing, Enter and a press outside Help in one
+/// RawInput. The press closes Help this frame; the held-back Enter belongs
+/// to Help's field and is dropped, never replayed into the application.
+#[test]
+fn enter_held_back_for_help_is_dropped_when_a_press_closes_it() {
+    let mut h = window();
+    open_help(&mut h);
+    typed(&mut h, "clo");
+    let outside = Pos2::new(450.0, 400.0);
+    let enter = |pressed| Event::Key { key: Key::Enter, physical_key: None, pressed, repeat: false, modifiers: Modifiers::NONE };
+    let button = |pressed| Event::PointerButton { pos: outside, button: PointerButton::Primary, pressed, modifiers: Modifiers::NONE };
+    h.input_mut().events.extend([
+        Event::Text("se".into()),
+        enter(true),
+        enter(false),
+        Event::PointerMoved(outside),
+        button(true),
+        button(false),
+    ]);
+    h.run();
+    assert!(current(&h).is_none(), "the press outside closed Help");
+    assert!(h.state().ran.is_empty(), "nothing ran: {:?}", h.state().ran);
+    // Nothing is left to replay later either.
+    h.run_steps(3);
+    assert!(h.state().ran.is_empty(), "nothing ran later: {:?}", h.state().ran);
+}
+
+#[test]
+fn search_ranks_label_prefix_word_prefix_contains_then_path() {
+    let row = |id: &'static str, label: &str| Entry::Row(Row::command(id, label, None, true));
+    let menus = vec![
+        Menu { title: "Image".into(), entries: vec![row("a", "Rotate Canvas"), row("b", "Canvas Size…"), row("c", "Precanvas")] },
+        Menu { title: "Canvas".into(), entries: vec![row("d", "Flip")] },
+    ];
+    let ids: Vec<_> = menu::matching(&menus, "canvas").iter().map(|r| r.id.unwrap()).collect();
+    assert_eq!(ids, ["b", "a", "c", "d"]);
+    assert_eq!(menu::matching(&menus, "flip")[0].label, "Canvas › Flip");
+    assert!(menu::matching(&menus, "  ").is_empty());
 }
 
 #[test]

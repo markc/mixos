@@ -228,6 +228,7 @@ fn pair_visuals(theme: &Theme) -> Visuals {
 pub fn apply(ctx: &egui::Context, theme: &Theme) {
     ctx.set_global_style(style(theme));
     crate::chrome::install(ctx, &crate::chrome::Chrome::for_theme(theme));
+    crate::icons::install(ctx, crate::icons::stroke_width(theme));
     crate::fonts::install(ctx, theme);
 }
 

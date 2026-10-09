@@ -1,6 +1,14 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Accepted Bus verb registry, schema 1. Each component registers its verbs
 -- here when it enters the tree (AGENTS.md §5).
+--
+-- The toolkit drive verbs (docs/drive.md) are one family that every egui
+-- app answers under its own prefix: <app>.ui.tree, .ui.click, .ui.pointer,
+-- .ui.scroll, .ui.key, .ui.type, .ui.menu, .ui.capture, <app>.window and
+-- <app>.window.state. This schema has no family entries, so each app
+-- registers its concrete names, owned by the app that answers them.
+-- HELP and app.describe are protocol verbs every service answers; they are
+-- not registered per component.
 {
   schema: 1,
   verbs: [
@@ -9,6 +17,33 @@
     {name:"settings.validate", owner:"settingsd", version:"0.1.0", status:"accepted"},
     {name:"settings.apply", owner:"settingsd", version:"0.1.0", status:"accepted"},
     {name:"settings.reset", owner:"settingsd", version:"0.1.0", status:"accepted"},
-    {name:"settings.status", owner:"settingsd", version:"0.1.0", status:"accepted"}
+    {name:"settings.status", owner:"settingsd", version:"0.1.0", status:"accepted"},
+    {name:"busviewer.ping", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.info", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.show", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.refresh", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.select", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.call", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.commands", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.execute", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.quit", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.tree", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.reply", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.filter", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.body", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.split", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.expand", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.select_row", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.dialog", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.ui.tree", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.ui.click", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.ui.pointer", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.ui.scroll", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.ui.key", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.ui.type", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.ui.menu", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.ui.capture", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.window", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.window.state", owner:"busviewer", version:"0.1.1", status:"accepted"}
   ]
 }

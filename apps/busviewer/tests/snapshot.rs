@@ -8,7 +8,7 @@ use design::{DesignContext, Mode, Scheme};
 use egui_kittest::Harness;
 use inspector::bus::Reply;
 use inspector::model::Verb;
-use inspector::{Effect, Engine, Selection, Snapshot};
+use inspector::{Dialog, Effect, Engine, Selection, Snapshot};
 use toolkit::{Theme, icons};
 
 fn fixture() -> Snapshot {
@@ -51,7 +51,13 @@ fn engine() -> Engine {
 }
 
 fn window(theme: Theme, name: &str) {
-    let engine = engine();
+    window_with(theme, name, None);
+}
+
+/// The window, optionally with `dialog` open.
+fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
+    let mut engine = engine();
+    engine.ui.dialog = dialog;
     let registry = commands::registry();
     let strings = strings();
     let stroke = icons::stroke_width(&theme);
@@ -73,6 +79,34 @@ fn window_light() {
 #[test]
 fn window_pro_light() {
     window(Theme::for_context(DesignContext { scheme: Scheme::Pro, mode: Mode::Light, ..DesignContext::default() }), "window_pro_light");
+}
+
+fn chrome(scheme: Scheme, mode: Mode) -> Theme {
+    Theme::for_context(DesignContext { scheme, mode, ..DesignContext::default() })
+}
+
+/// The chrome scheme studio, dark: cards and pills.
+#[test]
+fn window_studio_dark() {
+    window(chrome(Scheme::Studio, Mode::Dark), "window_studio_dark");
+}
+
+/// The chrome scheme classic: bevels, square corners.
+#[test]
+fn window_classic() {
+    window(chrome(Scheme::Classic, Mode::Light), "window_classic");
+}
+
+/// About as a modal dialog over the undimmed window.
+#[test]
+fn about_pro_light() {
+    window_with(chrome(Scheme::Pro, Mode::Light), "about_pro_light", Some(Dialog::About));
+}
+
+/// Keyboard shortcuts as a modal dialog.
+#[test]
+fn shortcuts_studio_light() {
+    window_with(chrome(Scheme::Studio, Mode::Light), "shortcuts_studio_light", Some(Dialog::Shortcuts));
 }
 
 #[test]

@@ -38,8 +38,8 @@ use crate::style::colour;
 use crate::theme::Theme;
 use design::{Mode, ResolvedChrome, Scheme};
 use egui::{
-    Color32, Context, CornerRadius, FontFamily, FontId, Id, Margin, Shadow, Stroke, Style, TextStyle, Vec2, Visuals,
-    style::ScrollStyle, vec2,
+    Color32, Context, CornerRadius, FontFamily, FontId, Id, Margin, Rect, Shadow, Stroke, Style, TextStyle, Vec2,
+    Visuals, style::ScrollStyle, vec2,
 };
 
 /// The layout grammar a scheme follows (specification §1.1).
@@ -63,6 +63,16 @@ impl Grammar {
             Scheme::Classic => Self::Classic,
             _ => Self::Plain,
         }
+    }
+
+    /// The flat Pro grammar: tab strips, checkboxes, pill push buttons.
+    pub fn is_pro(self) -> bool {
+        self == Self::Pro
+    }
+
+    /// Classic: bevels replace outlines on surfaces (§1.4).
+    pub fn has_bevel(self) -> bool {
+        self == Self::Classic
     }
 
     /// The corner radii (small, default, large) of a chrome grammar (§1.3).
@@ -177,6 +187,33 @@ impl Palette {
     pub fn selection(&self, grammar: Grammar) -> Color32 {
         if grammar == Grammar::Studio { self.accent_soft } else { self.accent }
     }
+
+    /// A bevel's lit edge (§1.4: white), which the Classic theme authors as
+    /// `field`.
+    pub fn bevel_light(&self) -> Color32 {
+        self.field
+    }
+
+    /// A bevel's shaded edge (§1.4: `#404040`), authored as `text_dim`.
+    pub fn bevel_dark(&self) -> Color32 {
+        self.text_dim
+    }
+}
+
+/// A Classic bevel round `rect` (§1.4): a raised surface is lit on its top
+/// and left edges and shaded on its bottom and right; a sunken one swaps
+/// them. Each edge is 1 pt, inside the rect.
+pub fn bevel(painter: &egui::Painter, rect: Rect, raised: bool, palette: &Palette) {
+    let (lit, shade) = if raised {
+        (palette.bevel_light(), palette.bevel_dark())
+    } else {
+        (palette.bevel_dark(), palette.bevel_light())
+    };
+    let r = rect.shrink(0.5);
+    painter.line_segment([r.left_bottom(), r.left_top()], Stroke::new(1.0, lit));
+    painter.line_segment([r.left_top(), r.right_top()], Stroke::new(1.0, lit));
+    painter.line_segment([r.right_top(), r.right_bottom()], Stroke::new(1.0, shade));
+    painter.line_segment([r.right_bottom(), r.left_bottom()], Stroke::new(1.0, shade));
 }
 
 /// Weak text is the text colour at this opacity (§1.4, egui's default).

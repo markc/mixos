@@ -10,6 +10,8 @@ use design::{DesignContext, Mode, Scheme};
 use egui::{Key, KeyboardShortcut, Modifiers};
 use egui_kittest::{Harness, HarnessBuilder};
 use toolkit::command::{Command, Registry, always};
+use toolkit::dialog::{Choice, Dialog, Role};
+use toolkit::titlebar::Control;
 use toolkit::{Icon, Strings, Theme, titlebar};
 
 pub const FTL: &str = "\
@@ -44,7 +46,13 @@ blur = Blur
 zoom = Zoom In
 tile = Tile Windows
 about = About
+search = Search commands
+theme = Toggle Theme
+community = Community
 ";
+
+/// The workspaces of the title bar's dropdown.
+pub const WORKSPACES: [&str; 4] = ["Essentials", "Photography", "Painting", "Graphic and Web"];
 
 /// The title the fixture's window shows.
 pub const TITLE: &str = "Untitled";
@@ -53,7 +61,15 @@ pub const TITLE: &str = "Untitled";
 #[derive(Default)]
 pub struct Fixture {
     pub ran: Vec<&'static str>,
+    /// The title bar dropdown's selection.
+    pub workspace: usize,
+    /// An "Image Size" dialog is open.
+    pub dialog: bool,
 }
+
+/// The height of the dialog's stand-in body: with its title, rule and
+/// buttons the dialog is as tall as the evidence's Image Size dialog.
+pub const DIALOG_BODY: f32 = 190.0;
 
 fn never(_: &Fixture) -> bool {
     false
@@ -106,6 +122,15 @@ pub fn registry() -> Registry<Fixture> {
         "window.tile" "tile" "menu-window" None, 0, None, always;
         "help.about" "about" "menu-help" None, 0, None, always;
     }
+    // The title bar's right-hand controls: commands outside the menus.
+    for (id, label, shortcut) in [
+        ("help.search", "search", key(CTRL, Key::K)),
+        ("view.theme", "theme", None),
+        ("help.community", "community", None),
+    ] {
+        r.add(Command { id, label, menu: None, submenu: None, group: 0, shortcut, icon: None, enabled: always, run: |_| {} });
+    }
+    r.search_menu("menu-help");
     r
 }
 
@@ -123,17 +148,37 @@ pub const CHROME_THEMES: [(&str, Scheme, Mode); 5] = [
     ("classic", Scheme::Classic, Mode::Light),
 ];
 
-/// A window of the fixture: global shortcuts, then the title bar, then an
-/// empty body and the resize edges, every chosen command executed.
+/// A window of the fixture: global shortcuts, then the title bar with its
+/// right-hand controls (workspace dropdown, search, theme toggle and a
+/// link), then an empty body and the resize edges, every chosen command
+/// executed.
 pub fn harness(builder: HarnessBuilder<Fixture>, theme: &Theme) -> Harness<'static, Fixture> {
     let registry = registry();
     let strings = Strings::new(FTL);
     let stroke = toolkit::icons::stroke_width(theme);
+    let dark = toolkit::chrome::dark_base(theme.scheme(), theme.mode());
+    let workspaces: Vec<String> = WORKSPACES.iter().map(|w| (*w).to_owned()).collect();
     let mut harness = builder.build_ui_state(
         move |ui, state: &mut Fixture| {
             let mut fired = registry.shortcuts(ui.ctx(), state);
-            fired.extend(titlebar::show(ui, TITLE, Some(Icon::Square), stroke, &registry, state, &strings));
+            let mut workspace = state.workspace;
+            let mut controls = [
+                Control::Combo { id: "workspace", selected: &mut workspace, options: &workspaces },
+                Control::Icon { command: "help.search", icon: Icon::Search, selected: false },
+                Control::Icon { command: "view.theme", icon: titlebar::theme_icon(dark), selected: false },
+                Control::Link { command: "help.community", icon: Icon::MessageSquare },
+            ];
+            let title = titlebar::show_with(ui, TITLE, Some(Icon::Square), stroke, &registry, state, &strings, &mut controls);
+            fired.extend(title);
+            state.workspace = workspace;
             egui::CentralPanel::default().show(ui, |_| {});
+            if state.dialog {
+                let choices = vec![Choice::new("OK", Role::Default), Choice::new("Cancel", Role::Cancel)];
+                let shown = Dialog::new("image-size", "Image Size").buttons(choices).show(ui.ctx(), |ui| {
+                    ui.allocate_space(egui::vec2(ui.available_width(), DIALOG_BODY));
+                });
+                state.dialog = shown.chosen.is_none();
+            }
             titlebar::edges(ui);
             for id in fired {
                 let _ = registry.execute(id, state);

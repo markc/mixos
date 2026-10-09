@@ -28,3 +28,8 @@ thread_local! {
 pub fn label(key: &str) -> String {
     STRINGS.with(|s| s.get(key))
 }
+
+/// `key` from the catalogue with named arguments.
+pub fn label_with(key: &str, args: &[(&str, &str)]) -> String {
+    STRINGS.with(|s| s.with(key, args))
+}

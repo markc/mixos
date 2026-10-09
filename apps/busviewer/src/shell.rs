@@ -8,15 +8,20 @@
 //! [`settle`]d before the next event is read, so a later delivery can never
 //! change what an earlier command acts on. Within a frame, edits are applied
 //! before commands ([`apply_ui`]), so a call uses the body the person sees.
+//! Bus commands also wait behind window input accepted before them (the
+//! toolkit drive layer), so `ui.type` then `busviewer.call` calls with the
+//! typed body; and every accepted command is answered before the Bus stops.
 use crate::view::{UiEvent, view};
 use crate::{label, strings};
 use futures::StreamExt;
 use inspector::bus::{self, CallError, Delivery, Handle, Reply};
-use inspector::{Effect, Engine, Snapshot};
+use inspector::{Effect, Engine, Snapshot, model};
 use serde_json::{Value, json};
-use std::sync::mpsc;
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex, mpsc};
+use std::task::Poll;
 use toolkit::command::CommandError;
-use toolkit::{Registry, Strings, Theme, icons};
+use toolkit::{Registry, Strings, Theme, drive, icons};
 
 /// What finished off the UI thread.
 pub enum Event {
@@ -51,14 +56,29 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
             UiEvent::Body(body) => engine.set_body(body),
             UiEvent::Split(split) => engine.set_split(split),
             UiEvent::CloseDialog => engine.close_dialog(),
+            UiEvent::FilterFocused => engine.filter_focused(),
+            UiEvent::SetMode(invert) => engine.set_mode(invert),
         }
     }
 }
 
+/// The app prefix of BusViewer's verbs, and of its drive verbs.
+pub const APP: &str = "busviewer";
+
+/// The whole Bus surface: the engine's verbs and the window's drive verbs.
+pub fn describe() -> Value {
+    let mut surface = model::describe();
+    if let Some(verbs) = surface["verbs"].as_array_mut() {
+        verbs.extend(drive::describe(APP));
+    }
+    surface
+}
+
 /// Resolve the effects that only need the registry (`busviewer.commands`
-/// and `busviewer.execute`) right now, in order, and return the rest for
-/// the shell to perform. Running an executed command here, before any
-/// later event, is what keeps its target the one selected when it arrived.
+/// and `busviewer.execute`) or the description right now, in order, and
+/// return the rest for the shell to perform. Running an executed command
+/// here, before any later event, is what keeps its target the one selected
+/// when it arrived.
 pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &Strings) -> Vec<Effect> {
     let mut out = Vec::new();
     loop {
@@ -84,6 +104,11 @@ pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &String
                     };
                     out.push(Effect::Reply { id, rc, body });
                 }
+                Effect::Describe { id, help } => {
+                    let surface = describe();
+                    let body = if help { surface["verbs"].clone() } else { surface };
+                    out.push(Effect::Reply { id, rc: 0, body });
+                }
                 other => out.push(other),
             }
         }
@@ -102,7 +127,25 @@ pub struct Shell {
     rx: mpsc::Receiver<Event>,
     ctx: egui::Context,
     exiting: bool,
+    /// Bus commands waiting behind drive input accepted before them.
+    held: VecDeque<Event>,
+    /// The Bus deliveries not yet forwarded. Shutdown closes and drains it
+    /// under its lock, which the forwarder holds while it hands one on, so
+    /// every command is in this inbox or in `rx`, never between the two.
+    inbox: Arc<Mutex<Deliveries>>,
+    /// Whether the installed theme is the session theme's opposite mode.
+    inverted: bool,
 }
+
+type Deliveries = futures::channel::mpsc::Receiver<Delivery>;
+
+fn locked(inbox: &Mutex<Deliveries>) -> std::sync::MutexGuard<'_, Deliveries> {
+    inbox.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// The egui id of the services panel in [`view`]: an agent-set split
+/// clears its remembered width so the panel takes the new default.
+const SERVICES_PANEL: &str = "services";
 
 impl Shell {
     /// A window on `bus`, with its deliveries forwarded from `deliveries`.
@@ -119,16 +162,26 @@ impl Shell {
             .enable_all()
             .build()
             .map_err(|e| e.to_string())?;
+        drive::install(&ctx, APP);
         let (tx, rx) = mpsc::channel();
         let forward = tx.clone();
         let wake = ctx.clone();
+        let inbox = Arc::new(Mutex::new(deliveries));
+        let source = inbox.clone();
         runtime.spawn(async move {
-            let mut deliveries = deliveries;
-            while let Some(delivery) = deliveries.next().await {
-                if forward.send(Event::Delivery(delivery)).is_err() {
-                    return;
+            loop {
+                // Take one delivery and hand it on under the inbox lock.
+                let next = futures::future::poll_fn(|cx| match locked(&source).poll_next_unpin(cx) {
+                    Poll::Ready(Some(delivery)) => Poll::Ready(Some(forward.send(Event::Delivery(delivery)).is_ok())),
+                    Poll::Ready(None) => Poll::Ready(None),
+                    Poll::Pending => Poll::Pending,
+                })
+                .await;
+                match next {
+                    Some(true) => wake.request_repaint(),
+                    Some(false) => return,
+                    None => break,
                 }
-                wake.request_repaint();
             }
             let _ = forward.send(Event::Delivery(Delivery::Disconnected));
             wake.request_repaint();
@@ -145,6 +198,9 @@ impl Shell {
             rx,
             ctx,
             exiting: false,
+            held: VecDeque::new(),
+            inbox,
+            inverted: false,
         };
         shell.settle();
         Ok(shell)
@@ -162,14 +218,55 @@ impl Shell {
         });
     }
 
-    /// Apply every finished event, settling after each one.
+    pub fn engine(&self) -> &Engine {
+        &self.engine
+    }
+
+    pub fn engine_mut(&mut self) -> &mut Engine {
+        &mut self.engine
+    }
+
+    /// Apply every finished event, settling after each one. A Bus command
+    /// is held, in order, while drive input accepted before it is still
+    /// unanswered; completions are applied at once.
     fn pump(&mut self) {
         while let Ok(event) = self.rx.try_recv() {
             if let Event::Delivery(Delivery::Theme) = event {
                 self.theme = Theme::load();
-                toolkit::install(&self.ctx, &self.theme);
+                self.install_theme();
                 continue;
             }
+            if let Event::Delivery(Delivery::Command { id, .. }) = event
+                && self.exiting
+            {
+                self.refuse_closing(id);
+                continue;
+            }
+            if let Event::Delivery(Delivery::Command { .. }) = event {
+                self.held.push_back(event);
+                self.release();
+                continue;
+            }
+            apply_event(&mut self.engine, event);
+            self.settle();
+        }
+        self.release();
+    }
+
+    fn refuse_closing(&self, id: u64) {
+        self.bus.reply(id, 10, json!({"error_code":"BUSY","message":label("quitting")}));
+    }
+
+    /// Run held Bus commands in order. Input that only joins the drive
+    /// queue goes straight on; anything else waits until the drive input
+    /// before it is answered.
+    fn release(&mut self) {
+        while let Some(Event::Delivery(Delivery::Command { verb, .. })) = self.held.front() {
+            let joins_queue = verb.strip_prefix("busviewer.").is_some_and(drive::queues);
+            if self.exiting || (drive::pending(&self.ctx) && !joins_queue) {
+                return;
+            }
+            let event = self.held.pop_front().expect("a held command");
             apply_event(&mut self.engine, event);
             self.settle();
         }
@@ -196,21 +293,75 @@ impl Shell {
                 self.spawn(async move { Event::Shown(ticket, reply, bus::show(bus, comp).await) });
             }
             Effect::Reply { id, rc, body } => self.bus.reply(id, rc, body),
+            Effect::Drive { id, verb, args } => {
+                if let Some(answer) = drive::request(&self.ctx, id, &verb, &args) {
+                    self.bus.reply(answer.id, answer.rc, answer.body);
+                }
+            }
             Effect::Copy(text) => self.ctx.copy_text(text),
             Effect::Exit => {
                 self.exiting = true;
+                // Every accepted command gets its answer before the Bus stops:
+                // drive work settled or cancelled, held commands refused.
+                for answer in drive::finish(&self.ctx) {
+                    self.bus.reply(answer.id, answer.rc, answer.body);
+                }
+                // Then every command not yet run: held, forwarded, or still in
+                // the inbox, which closes so nothing more arrives.
+                let mut refused: Vec<u64> = Vec::new();
+                let command = |event: Event| match event {
+                    Event::Delivery(Delivery::Command { id, .. }) => Some(id),
+                    _ => None,
+                };
+                refused.extend(std::mem::take(&mut self.held).into_iter().filter_map(command));
+                {
+                    let mut inbox = locked(&self.inbox);
+                    inbox.close();
+                    while let Ok(delivery) = inbox.try_recv() {
+                        refused.extend(command(Event::Delivery(delivery)));
+                    }
+                    // Forwarded ones; completions are moot once idle and quitting.
+                    while let Ok(event) = self.rx.try_recv() {
+                        refused.extend(command(event));
+                    }
+                }
+                for id in refused {
+                    self.refuse_closing(id);
+                }
                 self.bus.quit();
                 self.ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
             // `settle` resolves these; nothing reaches here.
-            Effect::Commands { .. } | Effect::Execute { .. } => {}
+            Effect::Commands { .. } | Effect::Execute { .. } | Effect::Describe { .. } => {}
         }
     }
-}
 
-impl eframe::App for Shell {
-    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    /// Install the session theme, or its opposite mode while the window's
+    /// light/dark toggle (`view.mode`) is on. The session's theme file is
+    /// never written.
+    fn install_theme(&mut self) {
+        let theme = if self.engine.ui.invert_mode { self.theme.opposite_mode() } else { self.theme.clone() };
+        toolkit::install(&self.ctx, &theme);
+        self.inverted = self.engine.ui.invert_mode;
+    }
+
+    /// The toggle changed since the theme was installed: install again.
+    fn follow_mode(&mut self) {
+        if self.engine.ui.invert_mode != self.inverted {
+            self.install_theme();
+            self.ctx.request_repaint();
+        }
+    }
+
+    /// One frame's logic; it runs even while the window is hidden.
+    pub fn logic(&mut self, ctx: &egui::Context) {
+        // Drive answers first: a `window close` answer goes out before the
+        // close it asked for is handled.
+        for answer in drive::logic(ctx) {
+            self.bus.reply(answer.id, answer.rc, answer.body);
+        }
         self.pump();
+        self.follow_mode();
         // Closing waits for accepted work: the engine quits once it is idle.
         if ctx.input(|i| i.viewport().close_requested()) && !self.exiting {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
@@ -220,13 +371,35 @@ impl eframe::App for Shell {
         }
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    /// One frame's drawing and interaction.
+    pub fn ui(&mut self, ui: &mut egui::Ui) {
+        if std::mem::take(&mut self.engine.split_requested) {
+            let panel = egui::Id::new(SERVICES_PANEL);
+            ui.ctx().data_mut(|d| d.remove::<egui::containers::panel::PanelState>(panel));
+        }
         let fired = self.commands.shortcuts(ui.ctx(), &self.engine);
         let stroke = icons::stroke_width(&self.theme);
         let mut events = view(ui, &self.engine, &self.commands, &self.strings, stroke);
         events.extend(fired.into_iter().map(UiEvent::Command));
         apply_ui(&mut self.engine, &self.commands, events);
         self.settle();
+        // A command this frame may have been the last thing holding others.
+        self.release();
+        // A mode change is installed by the next frame's logic, before any
+        // drawing: never midway through the frame that saw the click.
+        if self.engine.ui.invert_mode != self.inverted {
+            ui.ctx().request_repaint();
+        }
+    }
+}
+
+impl eframe::App for Shell {
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        Shell::logic(self, ctx);
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        Shell::ui(self, ui);
     }
 }
 
@@ -290,6 +463,89 @@ mod tests {
         let effects = settle(&mut e, &commands, &strings);
         assert!(matches!(&effects[..], [Effect::Call { body, .. }] if body == "{\"new\":2}"), "{effects:?}");
         assert_eq!(e.ui.body, "{\"new\":2}");
+    }
+
+    /// The Bus and the window are one surface: filter → expand → select a
+    /// row → body → call over the Bus leaves the state the same UI events
+    /// leave, and sends the same call.
+    #[test]
+    fn bus_verbs_and_ui_events_reach_the_same_state() {
+        let (commands, strings) = (crate::commands::registry(), crate::strings());
+        let mut bus = engine();
+        let mut performed = Vec::new();
+        let steps = [
+            ("busviewer.filter", json!({"text":"b"})),
+            ("busviewer.expand", json!({"key":"mesh","open":true})),
+            ("busviewer.select_row", json!({"key":"verb:example:b"})),
+            ("busviewer.body", json!({"text":"{\"n\":1}"})),
+            ("busviewer.execute", json!({"id":"bus.call"})),
+        ];
+        for (id, (verb, body)) in (1..).zip(steps) {
+            apply_event(&mut bus, Event::Delivery(Delivery::Command { id, verb: verb.into(), body: body.to_string() }));
+            performed.extend(settle(&mut bus, &commands, &strings));
+        }
+        assert!(performed.iter().all(|x| !matches!(x, Effect::Reply { rc: 10, .. })), "{performed:?}");
+
+        let mut ui = engine();
+        let row = inspector::engine::find(&ui.tree(), "verb:example:b").cloned().unwrap();
+        let frame = vec![UiEvent::Filter("b".into()), UiEvent::Toggle("mesh".into())];
+        apply_ui(&mut ui, &commands, frame);
+        let frame = vec![UiEvent::Select(row), UiEvent::Body("{\"n\":1}".into()), UiEvent::Command("bus.call")];
+        apply_ui(&mut ui, &commands, frame);
+        let by_hand = settle(&mut ui, &commands, &strings);
+
+        assert_eq!(bus.ui, ui.ui);
+        assert_eq!(call_targets(&performed), ["b"]);
+        assert_eq!(call_targets(&performed), call_targets(&by_hand));
+        let body = |effects: &[Effect]| effects.iter().find_map(|e| match e {
+            Effect::Call { body, .. } => Some(body.clone()),
+            _ => None,
+        });
+        assert_eq!(body(&performed), body(&by_hand));
+        assert_eq!(body(&performed).as_deref(), Some("{\"n\":1}"));
+    }
+
+    #[test]
+    fn every_verb_is_described_and_every_described_verb_is_handled() {
+        let surface = describe();
+        let names: Vec<String> = surface["verbs"].as_array().unwrap().iter().map(|v| v["name"].as_str().unwrap().into()).collect();
+        let mut expected: Vec<String> = model::VERBS.iter().map(|v| (*v).to_owned()).collect();
+        expected.extend(drive::VERBS.iter().map(|v| format!("{APP}.{v}")));
+        assert_eq!(names, expected);
+        for name in &names {
+            let mut e = engine();
+            e.command(1, name, "{}");
+            let effects = settle(&mut e, &crate::commands::registry(), &crate::strings());
+            assert!(
+                !effects.iter().any(|x| matches!(x, Effect::Reply { body, .. } if body["error_code"] == "UNKNOWN_VERB")),
+                "{name}: {effects:?}"
+            );
+            if let Some(verb) = name.strip_prefix("busviewer.").filter(|v| drive::VERBS.contains(v)) {
+                assert!(matches!(&effects[..], [Effect::Drive { verb: v, .. }] if v == verb), "{name}: {effects:?}");
+            }
+        }
+        let help = {
+            let mut e = engine();
+            e.command(1, "HELP", "{}");
+            settle(&mut e, &crate::commands::registry(), &crate::strings())
+        };
+        assert!(matches!(&help[..], [Effect::Reply { rc: 0, body, .. }] if body == &surface["verbs"]));
+    }
+
+    #[test]
+    fn every_command_is_reachable_by_execute() {
+        let (commands, strings) = (crate::commands::registry(), crate::strings());
+        for command in commands.iter() {
+            let mut e = engine();
+            e.ui.selected = Some(target("a"));
+            e.command(1, "busviewer.execute", &json!({"id":command.id}).to_string());
+            let effects = settle(&mut e, &commands, &strings);
+            assert!(
+                effects.iter().any(|x| matches!(x, Effect::Reply { id: 1, rc: 0, .. })),
+                "{}: {effects:?}",
+                command.id
+            );
+        }
     }
 
     #[test]

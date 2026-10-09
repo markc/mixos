@@ -7,7 +7,10 @@
 //! - the app mark, after the bar's inner margin;
 //! - the registry's menus ([`crate::menu`]), starting one mark gap later;
 //! - the window title, centred on the whole bar and sliding or eliding to
-//!   keep clear of the menus and the caption buttons;
+//!   keep clear of the menus and the controls;
+//! - an optional right-hand group of [`Control`]s ([`show_with`]): a
+//!   dropdown, icon buttons and a link, which give way as the bar narrows
+//!   ([`fit`]);
 //! - minimize, maximize/restore and close, [`BUTTON_WIDTH`] wide each and
 //!   the full bar height, with Close flush in the top-right corner.
 //!
@@ -19,6 +22,7 @@
 //! frame so it wins at the borders. Every colour and size comes from the
 //! theme's [`Chrome`].
 
+use crate::button::{ICON_BUTTON, IconButton, Link};
 use crate::chrome::{CLOSE_PRESSED_ALPHA, Chrome};
 use crate::command::Registry;
 use crate::icons::{self, Icon};
@@ -41,14 +45,8 @@ pub const CORNER: f32 = 12.0;
 /// The title is elided into the gap only when the gap is wider than this.
 const MIN_TITLE_ROOM: f32 = 80.0;
 
-const CATALOGUE: &str = include_str!("../i18n/en/toolkit.ftl");
-
-thread_local! {
-    static STRINGS: Strings = Strings::new(CATALOGUE);
-}
-
 fn label(key: &str) -> String {
-    STRINGS.with(|s| s.get(key))
+    crate::strings::own(key)
 }
 
 /// An undecorated window for a MixOS app: the title bar is drawn by [`show`].
@@ -74,6 +72,69 @@ enum Caption {
     Close,
 }
 
+/// One control of the right-hand group (§3.1), which runs right to left
+/// from the caption buttons in the order given. Icons and links run
+/// registry commands, so their labels, tooltips and enablement come from
+/// the registry like the menus'.
+pub enum Control<'a> {
+    /// A dropdown, [`COMBO_WIDTH`] wide, shrinking to its minimum before
+    /// anything else gives way (a workspace switcher).
+    Combo { id: &'a str, selected: &'a mut usize, options: &'a [String] },
+    /// A 28 pt icon button; `selected` shows it toggled on.
+    Icon { command: &'static str, icon: Icon, selected: bool },
+    /// A frameless text link with a 14 pt icon.
+    Link { command: &'static str, icon: Icon },
+}
+
+/// The right-hand group's combo width range (§3.1).
+pub const COMBO_WIDTH: egui::Rangef = egui::Rangef { min: 90.0, max: 130.0 };
+
+/// Spacing within the right-hand group (§3.1): an icon's slot is its 28 pt
+/// plus this, the specified 34.
+const CONTROL_SPACING: f32 = 6.0;
+
+/// A link shows only while this much of the bar stays free (§3.1).
+const LINK_ROOM: f32 = 120.0;
+
+/// The theme toggle's icon: a sun while the theme is dark, else a moon.
+pub fn theme_icon(dark: bool) -> Icon {
+    if dark { Icon::Sun } else { Icon::Moon }
+}
+
+/// A control's room in the group, for [`fit`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Slot {
+    Combo,
+    /// An icon or link this wide.
+    Fixed(f32),
+    Link(f32),
+}
+
+/// Which controls of the group fit in `free` points: the combo's width and
+/// how many controls show, nearest the caption buttons first. Controls drop
+/// from the far end (§3.1: the link, then the theme toggle, then search),
+/// the combo shrinks to its minimum before any does, and a link shows only
+/// while [`LINK_ROOM`] stays free besides it.
+pub fn fit(free: f32, slots: &[Slot]) -> (f32, usize) {
+    let need = |n: usize, combo: f32| {
+        let width: f32 = slots[..n]
+            .iter()
+            .map(|s| CONTROL_SPACING + match s {
+                Slot::Combo => combo,
+                Slot::Fixed(w) | Slot::Link(w) => *w,
+            })
+            .sum();
+        let link = slots[..n].iter().any(|s| matches!(s, Slot::Link(_)));
+        width + if link { LINK_ROOM } else { 0.0 }
+    };
+    let mut shown = slots.len();
+    while shown > 0 && need(shown, COMBO_WIDTH.min) > free {
+        shown -= 1;
+    }
+    let combo = (free - need(shown, 0.0)).clamp(COMBO_WIDTH.min, COMBO_WIDTH.max);
+    (combo, shown)
+}
+
 /// Draw the title bar at the top of `ui` and return the ids of commands
 /// chosen from its menus this frame. `icon` is the app's mark; `stroke` its
 /// Lucide stroke width.
@@ -85,6 +146,22 @@ pub fn show<S>(
     registry: &Registry<S>,
     state: &S,
     strings: &Strings,
+) -> Vec<&'static str> {
+    show_with(ui, title, icon, stroke, registry, state, strings, &mut [])
+}
+
+/// [`show`] with a right-hand group of `controls` before the caption
+/// buttons. The ids of commands run from the controls join the menus'.
+#[expect(clippy::too_many_arguments, reason = "the title bar's inputs, as `show` takes them")]
+pub fn show_with<S>(
+    ui: &mut Ui,
+    title: &str,
+    icon: Option<Icon>,
+    stroke: f32,
+    registry: &Registry<S>,
+    state: &S,
+    strings: &Strings,
+    controls: &mut [Control<'_>],
 ) -> Vec<&'static str> {
     let chrome = Chrome::of(ui.ctx());
     let (p, m) = (chrome.palette, chrome.metrics);
@@ -112,15 +189,19 @@ pub fn show<S>(
         fired = registry.menus(&mut row, state, strings);
         let menus_right = row.min_rect().right().max(menus_left);
 
+        let group_right = captions - m.caption_gap;
+        let group_left = right_group(ui, controls, registry, state, strings, menus_right + m.title_gap, group_right, &mut fired);
+
         for (index, caption) in [Caption::Minimize, Caption::Maximize, Caption::Close].into_iter().enumerate() {
             let left = captions + index as f32 * m.caption_width;
             let rect = Rect::from_min_size(pos2(left, bar.top()), vec2(m.caption_width, bar.height()));
             caption_button(ui, rect, caption, &chrome);
         }
 
-        window_title(ui, &chrome, title, bar, menus_right + m.title_gap, captions - m.title_gap);
+        let title_right = if controls.is_empty() { captions } else { group_left };
+        window_title(ui, &chrome, title, bar, menus_right + m.title_gap, title_right - m.title_gap);
 
-        let free = Rect::from_min_max(pos2(menus_right, bar.top()), pos2(captions - m.caption_gap, bar.bottom()));
+        let free = Rect::from_min_max(pos2(menus_right, bar.top()), pos2(group_left, bar.bottom()));
         ui.data_mut(|d| d.insert_temp(gap_id, free));
         if drag.double_clicked() {
             ui.ctx().send_viewport_cmd(ViewportCommand::Maximized(!maximized(ui)));
@@ -129,6 +210,71 @@ pub fn show<S>(
         }
     });
     fired
+}
+
+/// Lay out and draw the right-hand group, right to left from `right`, in
+/// the room down to `left`; push the commands its controls ran. Returns
+/// the group's left edge (`right` when nothing shows).
+#[expect(clippy::too_many_arguments, reason = "the title bar's inputs, called from one place")]
+fn right_group<S>(
+    ui: &mut Ui,
+    controls: &mut [Control<'_>],
+    registry: &Registry<S>,
+    state: &S,
+    strings: &Strings,
+    left: f32,
+    right: f32,
+    fired: &mut Vec<&'static str>,
+) -> f32 {
+    if controls.is_empty() {
+        return right;
+    }
+    let slots: Vec<Slot> = controls
+        .iter()
+        .map(|c| match c {
+            Control::Combo { .. } => Slot::Combo,
+            Control::Icon { .. } => Slot::Fixed(ICON_BUTTON),
+            Control::Link { command, .. } => {
+                let label = registry.get(command).map(|c| strings.get(c.label)).unwrap_or_default();
+                Slot::Link(Link::width(ui, &label))
+            }
+        })
+        .collect();
+    let (combo_width, shown) = fit(right - left, &slots);
+    let bar = ui.max_rect();
+    let mut x = right;
+    for control in controls.iter_mut().take(shown) {
+        let width = match control {
+            Control::Combo { .. } => combo_width,
+            Control::Icon { .. } => ICON_BUTTON,
+            Control::Link { command, .. } => {
+                let label = registry.get(command).map(|c| strings.get(c.label)).unwrap_or_default();
+                Link::width(ui, &label)
+            }
+        };
+        let rect = Rect::from_min_max(pos2(x - width, bar.top()), pos2(x, bar.bottom()));
+        let mut cell = ui.new_child(UiBuilder::new().max_rect(rect).layout(Layout::left_to_right(Align::Center)));
+        let command = match control {
+            Control::Combo { id, selected, options } => {
+                crate::combo::show(&mut cell, *id, selected, options, Some(width));
+                None
+            }
+            Control::Icon { command, icon, selected } => registry.get(command).map(|c| {
+                let tooltip = crate::tooltip::for_command(ui.ctx(), c, strings);
+                let button = IconButton::new(*icon).selected(*selected).tooltip(tooltip);
+                (c, cell.add_enabled((c.enabled)(state), button).clicked())
+            }),
+            Control::Link { command, icon } => registry.get(command).map(|c| {
+                let link = Link::new(*icon, strings.get(c.label));
+                (c, cell.add_enabled((c.enabled)(state), link).clicked())
+            }),
+        };
+        if let Some((command, true)) = command {
+            fired.push(command.id);
+        }
+        x -= width + CONTROL_SPACING;
+    }
+    x + CONTROL_SPACING
 }
 
 /// The window title in Inter Medium, `text_dim`: centred on the bar, slid
