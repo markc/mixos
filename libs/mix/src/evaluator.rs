@@ -3006,6 +3006,7 @@ pub(crate) const INLINE_SPECIAL_FORMS: &[&str] = &[
     "publish",
     "serve_name",
     "script_version",
+    "script_path",
     "is_reload_candidate",
     "fs_watch",
     "fs_unwatch",
@@ -5163,6 +5164,11 @@ pub(crate) struct EvaluatorGlobals {
     /// while a `--serve` RELOAD's replacement evaluator carries its own:
     /// an old-generation handler still draining reads the old record.
     script_provenance: Option<std::sync::Arc<crate::script_version::ScriptProvenance>>,
+    /// The entry script's resolved absolute path — what `script_path()`
+    /// returns. Recorded once, by [`Evaluator::set_entry_script`], before
+    /// any script code runs, so a `chdir()` cannot move it and a
+    /// `require()`d module's scope swap cannot hide it.
+    entry_script: Option<String>,
     /// Per-evaluator capability gate for the builtin table. `None` =
     /// fully permissive (the default — every existing caller is
     /// unaffected). Set via [`Evaluator::set_capability_policy`];
@@ -5314,6 +5320,7 @@ impl EvaluatorGlobals {
             serve_runtime: None,
             native_events: crate::native_events::NativeEvents::default(),
             script_provenance: None,
+            entry_script: None,
             capability_policy: None,
             arity_strict: false,
             limits: EvalLimits::default(),
@@ -6099,6 +6106,22 @@ impl Evaluator {
         provenance: Option<std::sync::Arc<crate::script_version::ScriptProvenance>>,
     ) {
         self.globals.borrow_mut().script_provenance = provenance;
+    }
+
+    /// Record the entry script for `script_path()`. The CLI calls this once
+    /// per evaluator, with the path the script was run as (`$0`), BEFORE any
+    /// script code runs. The path is made absolute and canonical right here,
+    /// against the working directory as it is now, so a later `chdir()`
+    /// cannot change the answer; a symlink resolves to its target, as
+    /// `realpath($0)` does. `""` and `"-"` (stdin), and a path that cannot
+    /// be resolved, record nil. An embedder that never calls this gets nil.
+    pub fn set_entry_script(&mut self, zero: &str) {
+        let resolved = if zero.is_empty() || zero == "-" {
+            None
+        } else {
+            crate::builtins::canonicalize_path(zero)
+        };
+        self.globals.borrow_mut().entry_script = resolved;
     }
 
     /// Install a per-evaluator capability gate over the builtin table.
@@ -14625,6 +14648,18 @@ impl Evaluator {
                         return Ok(record.map(|p| p.to_value()).unwrap_or(Value::Nil));
                     }
 
+                    // script_path() — the entry script's absolute path, recorded
+                    // by set_entry_script before any code ran. Read from the
+                    // evaluator's globals, not the scope: a require()d module
+                    // (even one called during its own top-level init) gets the
+                    // ENTRY script, and a chdir() cannot move it. nil under -c,
+                    // in the REPL and for `mix -`.
+                    if name == "script_path" {
+                        self.check_capability(name)?; // Knob A
+                        let entry = self.globals.borrow().entry_script.clone();
+                        return Ok(entry.map(Value::String).unwrap_or(Value::Nil));
+                    }
+
                     // subscribe(name) / unsubscribe(name) — Ch03 topic
                     // (un)subscription (SPEC 18 WS2). One chokepoint for
                     // both init-body and handler-body callers: the
@@ -15477,6 +15512,7 @@ impl Evaluator {
                     | "quit"
                     | "serve_name"
                     | "script_version"
+                    | "script_path"
                     | "push"
                     | "pop"
                     | "shift"

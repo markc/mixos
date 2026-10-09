@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- `script_path()` returns the entry script's absolute, symlink-resolved path,
+  the same answer as `realpath($0)`, fixed when the script starts (a later
+  `chdir()` does not move it). It is nil under `mix -c`, in the REPL, for
+  `mix -` and when the path cannot be resolved at start. A `require`d module,
+  even during its top-level init, gets the entry script's path. `module_path()`
+  is not added.
+
 ### Fixed
 
 - `mix lint` MIX-W2307 (send result never checked) now counts a status read

@@ -270,6 +270,8 @@ fn sensitive_builtins_stay_categorized() {
         ("read_file_bytes", FsRead),
         ("read_lines", FsRead),
         ("load_data", FsRead),
+        // Resolves the entry script's path on disk (realpath semantics).
+        ("script_path", FsRead),
         ("read_json", FsRead),
         ("read_jsonl", FsRead),
         ("exists", FsRead),
