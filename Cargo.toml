@@ -1,0 +1,73 @@
+# MixOS workspace. Every package is a component or a component's private
+# crate (AGENTS.md §1–§2); vendor/ holds patched upstreams, several with their
+# own [workspace].
+
+[workspace]
+resolver = "3"
+members = ["libs/*"]
+exclude = ["vendor"]
+
+[workspace.package]
+version = "0.1.1"
+edition = "2024"
+rust-version = "1.96"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/markc/mixos"
+
+# The engine crates still carry warnings; a clippy-clean pass is its own change.
+[workspace.lints.rust]
+warnings = "allow"
+
+[workspace.dependencies]
+anyhow = "1"
+axum = { version = "0.8", features = ["ws"] }
+arc-swap = "1"
+base64 = "0.22"
+blake3 = "1"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+ed25519-dalek = { version = "2", features = ["std", "rand_core"] }
+futures-util = "=0.3.34"
+hex = "0.4"
+libc = { version = "=0.2.189" }
+mimalloc = { version = "0.1", default-features = false }
+metrics = "0.24"
+metrics-util = "0.18"
+metrics-exporter-prometheus = { version = "0.18", default-features = false, features = ["http-listener"] }
+notify = { version = "7", default-features = false, features = ["macos_fsevent"] }
+rand = "0.8"
+rusqlite = { version = "0.38", features = ["bundled"] }
+rustc-hash = "2"
+serde = { version = "=1.0.229", features = ["derive", "rc"] }
+# serde_json must never gain `preserve_order` (indexmap): frozen wire formats
+# rely on BTreeMap key order.
+serde_json = { version = "=1.0.151" }
+sha2 = { version = "=0.10.9" }
+tempfile = "=3.27.0"
+thiserror = { version = "=2.0.20" }
+tokio = { version = "=1.53.1", features = ["macros", "rt", "sync", "time"] }
+tokio-tungstenite = "=0.26.2"
+tracing = { version = "=0.1.44" }
+tracing-appender = "0.2"
+tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
+uuid = { version = "=1.24.1", features = ["fast-rng", "serde", "v7"] }
+
+# Shared libraries (libs/).
+assets = { path = "libs/assets" }
+buildinfo = { path = "libs/buildinfo" }
+config = { path = "libs/config" }
+design = { path = "libs/design" }
+expr = { path = "libs/expr" }
+strict = { path = "libs/strict" }
+
+[profile.release]
+codegen-units = 1
+debug = "line-tables-only"
+lto = "fat"
+split-debuginfo = "packed"
+strip = "symbols"
+
+[profile.release-fast]
+codegen-units = 16
+inherits = "release"
+lto = false

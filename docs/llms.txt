@@ -11,6 +11,7 @@ also published as Markdown (`/try.md`). The links below point at the Markdown.
 - [Try it beside your desktop](https://mixos.dev/try.md): How MixOS runs as a small signed systemd-nspawn image on its own virtual terminal, next to the Linux desktop you already use, with native GPU, input and audio.
 - [Decision — egui applications, engine first](https://mixos.dev/decisions/2026-10-09-egui-applications.md): MixOS applications and desktop furniture are built on egui and wgpu, with behaviour in engines and every action a named command reachable from the UI, the command line and the Bus.
 - [Decision — source layout and naming](https://mixos.dev/decisions/2026-10-04-source-layout.md): Why the MixOS repository is laid out by kind of artefact (apps, services, cli, libs) with plain, unique names and self-contained components, and what was rejected.
+- [Components](https://mixos.dev/dev/components.md): Component ownership and declared layers come from the workspace manifests. Private crates remain under their owning component. Dependency closure is checked…
 
 ## Optional
 
