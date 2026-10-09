@@ -1,0 +1,38 @@
+# busviewer: the egui shell around the inspector engine — browse ABP
+# services and verbs, call one with a JSON body (AGENTS.md §4.1).
+[package]
+name = "busviewer"
+description = "Native ABP service browser and verb caller"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "busviewer"
+kind = "app"
+layer = "desktop"
+contract = "public"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+bus = { workspace = true, features = ["native"] }
+buildinfo.workspace = true
+eframe.workspace = true
+egui.workspace = true
+futures.workspace = true
+inspector = { path = "crates/inspector" }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "sync", "time"] }
+toolkit.workspace = true
+
+[dev-dependencies]
+design.workspace = true
+egui_kittest.workspace = true
+
+[build-dependencies]
+buildinfo.workspace = true
