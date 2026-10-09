@@ -5452,6 +5452,12 @@ pub(crate) struct InvocationCtx {
     /// private state — the parent evaluator is never the one carrying
     /// the bumped counter.
     pub(crate) in_handler: usize,
+    /// Number of `on` handler frames active on this invocation, used only
+    /// to decide lambda capture-by-value (see the `FunctionLiteral` arm).
+    /// Kept separate from `in_handler` so that `require` can suspend it
+    /// without also lifting the `$event` read-only guard, which must hold
+    /// inside a module body required from a handler.
+    pub(crate) handler_frames: usize,
     /// Nesting depth of user-defined function calls on the current
     /// invocation. Zero at the top level / handler body entry. Used by
     /// the `Return` propagation guard (`Err(MixError::Return) if
@@ -5620,6 +5626,7 @@ impl InvocationCtx {
         InvocationCtx {
             current_file: None,
             in_handler: 0,
+            handler_frames: 0,
             function_depth: 0,
             address_stack: Vec::new(),
             current_line: 0,
@@ -7065,6 +7072,7 @@ impl Evaluator {
         // B2 retired the Class S CleanExitGuard / scheduler poison
         // belt-and-braces on the strength of that invariant.
         self.ctx.in_handler += 1;
+        self.ctx.handler_frames += 1;
 
         // Bind the reply handle onto this evaluator's `current_reply`
         // slot so the `reply()` builtin finds it. Both dispatch arms
@@ -7365,6 +7373,7 @@ impl Evaluator {
         // `CleanExitGuard` / `poison` belt-and-braces was retired in
         // C.7g B2.
         self.ctx.in_handler -= 1;
+        self.ctx.handler_frames -= 1;
         // Explicit normal-completion deregistration (Codex C.7c R1
         // BLOCKER fix). The `InvocationRegistration` guard's plain
         // `Drop` is a no-op — it leaves cancellation victims in the
@@ -14961,14 +14970,16 @@ impl Evaluator {
 
                 Expr::FunctionLiteral { params, body } => {
                     self.track_keyword_attempt("function");
-                    // Capture-by-value only inside function frames.
-                    // At function_depth == 0 the lambda will see globals
+                    // Capture-by-value inside function and handler frames.
+                    // Outside either frame the lambda will see globals
                     // live via the normal frame-isolation path; snapshotting
                     // there is redundant and would freeze subsequent global
                     // updates. At depth > 0 the inner function frame becomes
                     // unreachable after return, so capture is the only way
-                    // to preserve its locals.
-                    let captures = if self.ctx.function_depth > 0 {
+                    // to preserve its locals. `require` suspends both
+                    // counters for the module body, so a module's top level
+                    // is never treated as a frame.
+                    let captures = if self.ctx.function_depth > 0 || self.ctx.handler_frames > 0 {
                         // Free-variable capture: snapshot only the frame
                         // entries this lambda actually references, not the
                         // whole frame. A large in-scope value (e.g. a
@@ -14992,7 +15003,7 @@ impl Evaluator {
                             }
                         };
                         // Keep `Some(snap)` even when the snapshot is empty.
-                        // At function_depth > 0 the lambda MUST stay isolated
+                        // Inside a function or handler the lambda MUST stay isolated
                         // — it may see only its own params plus globals, never
                         // the caller's live locals. Collapsing an empty
                         // capture to `None` would re-enable the frameless sync
@@ -17616,6 +17627,11 @@ impl Evaluator {
         // standalone scope.)
         let saved_scope = std::mem::take(&mut self.scope);
         let saved_depth = std::mem::take(&mut self.ctx.function_depth);
+        // Suspend the handler-frame count too: a module body required
+        // from a handler is not a handler frame, so its top-level lambdas
+        // must read globals live rather than snapshot at definition time.
+        // `in_handler` (the `$event` guard) is deliberately left alone.
+        let saved_handler_frames = std::mem::take(&mut self.ctx.handler_frames);
         let saved_addr = std::mem::take(&mut self.ctx.address_stack);
         let saved_self = self.ctx.sync_self_func.take();
         // A module's top level runs ONCE per path (cache), so a
@@ -17681,6 +17697,7 @@ impl Evaluator {
         self.ctx.current_file = saved_file;
         self.ctx.current_line = saved_line;
         self.ctx.function_depth = saved_depth;
+        self.ctx.handler_frames = saved_handler_frames;
         self.ctx.address_stack = saved_addr;
         self.ctx.sync_self_func = saved_self;
         self.current_reply = saved_reply;

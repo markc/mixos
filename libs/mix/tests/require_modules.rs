@@ -643,6 +643,64 @@ async fn require_inside_handler_and_cache_across_invocations() {
     );
 }
 
+// A module's top-level lambda reads a module global that is reassigned
+// AFTER the lambda is defined. The module body is not a handler or
+// function frame, so the lambda must read the global live (2), whether
+// the module is first required from top-level code or from inside an
+// `on` handler. Capture-by-value is only for real frames; a handler
+// frame on the caller's stack must not leak into the module body.
+#[tokio::test]
+async fn module_lambda_reads_globals_live_when_required_inside_handler() {
+    use mix::evaluator::IncomingEvent;
+    let dir = test_dir("module_lambda_live");
+    write_module(&dir, "live.mix", "$g = 1\n$get = fn($u) = $g\n$g = 2\n");
+    let module_path = dir.join("live.mix").to_string_lossy().to_string();
+
+    // Outside any handler: the baseline the handler path must match.
+    let out = run_in_dir(
+        &dir,
+        &format!("$m = require(\"{module_path}\")\nprint($m.get(nil))\n"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(out, "2\n", "top-level require: lambda must see live global");
+
+    // Inside an `on` handler, first require (module not yet cached).
+    let source = format!(
+        "$seen = nil\n\
+         on read\n\
+           $m = require(\"{module_path}\")\n\
+           $seen = $m.get(nil)\n\
+         end\n"
+    );
+    let mut lexer = Lexer::new(&source);
+    let stmts = Parser::new(lexer.tokenize().unwrap(), &source)
+        .parse_program()
+        .unwrap();
+    let stdout = SharedBuf::new();
+    let stderr = SharedBuf::new();
+    let mut eval = Evaluator::with_output(Box::new(stdout.clone()), Box::new(stderr.clone()));
+    eval.execute(&stmts).await.unwrap();
+    eval.dispatch_event(IncomingEvent {
+        generation: 0,
+        command: "read".to_string(),
+        headers: std::collections::BTreeMap::new(),
+        body: String::new(),
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        eval.get_global("seen").unwrap().to_mix_string(),
+        "2",
+        "module required inside a handler: lambda must see live global, not a snapshot"
+    );
+    assert!(
+        stderr.to_string_lossy().is_empty(),
+        "{}",
+        stderr.to_string_lossy()
+    );
+}
+
 // Codex round-1 MAJOR — a module's top level must NOT see the
 // enclosing handler's reply handle: module bodies run once per path
 // (cache), so a top-level reply() would consume the handle on first
