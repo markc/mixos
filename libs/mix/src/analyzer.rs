@@ -34,10 +34,12 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::ast::{BinOp, ChainOp, Expr, FunctionBody, Param, PathSeg, Stmt, StmtKind, UnaryOp};
+use crate::ast::{
+    BinOp, ChainOp, Expr, FunctionBody, Param, ParsePart, PathSeg, Stmt, StmtKind, UnaryOp,
+};
 use crate::builtin_info::{FieldInfo, TypeShape};
 use crate::builtins::{self, CapabilityClass};
-use crate::evaluator::INLINE_SPECIAL_FORMS;
+use crate::evaluator::{INLINE_SPECIAL_FORMS, split_interp_coalesce};
 use crate::scope::param_arity;
 use crate::token::StringPart;
 
@@ -2218,7 +2220,8 @@ fn check_recurring_silent_bugs(stmts: &[Stmt], ctx: &FileContext, a: &mut Analys
     check_ssh_escaped_quotes(stmts, ctx, a);
     check_unguarded_edit_chain(stmts, ctx, a);
     check_shell_command_statements(stmts, ctx, a);
-    check_send_rc_reads(stmts, ctx, a);
+    let sets = StatusSets::of(stmts);
+    check_send_rc_reads(stmts, ctx, a, &sets);
     check_push_assign_back(stmts, ctx, a);
     check_collection_literal_traps(stmts, ctx, a);
     check_literal_type_contradictions(stmts, ctx, a);
@@ -2459,17 +2462,22 @@ fn on_path(head: &str) -> bool {
 /// `$rc` (or `$result`/`$reply`) is never READ before the next send or the
 /// end of the block warns. (The opt-in `--strict-send` / `MIX_STRICT_SEND`
 /// execution gate is the deferred half, tracked in the arc ledger.)
-fn check_send_rc_reads(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
+/// `send` overwrites `$rc` / `$result` / `$reply`, and so does every other
+/// construct that writes them (see `status_flow_stmt`). Each send must be read
+/// on every path before the next overwrite or the end of its block. An `on`
+/// handler body runs later, when a message arrives, so it is checked as a
+/// block of its own.
+fn check_send_rc_reads(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis, sets: &StatusSets) {
+    let cx = StatusCx { sets };
+    // rest[i] is the flow of stmts[i..], so the code after stmts[idx] is rest[idx + 1].
+    let mut rest = vec![StatusFlow::PASS; stmts.len() + 1];
+    for idx in (0..stmts.len()).rev() {
+        rest[idx] = status_flow_stmt(cx, &stmts[idx]).then(rest[idx + 1]);
+    }
     for (idx, stmt) in stmts.iter().enumerate() {
-        if !matches!(stmt.kind, StmtKind::Send { .. }) {
-            continue;
-        }
-        // Scan the statements AFTER this send, up to the next send or the
-        // end of the block, for a read of $rc / $result / $reply.
-        let read_before_next = stmts[idx + 1..].iter().take_while(|s| {
-            !matches!(s.kind, StmtKind::Send { .. })
-        }).any(stmt_reads_send_status);
-        if !read_before_next {
+        if let StmtKind::On { body, .. } = &stmt.kind {
+            check_send_rc_reads(body, ctx, a, sets);
+        } else if matches!(stmt.kind, StmtKind::Send { .. }) && rest[idx + 1].unchecked() {
             a.diagnostics.push(diag(
                 ctx,
                 "MIX-W2307",
@@ -2478,23 +2486,675 @@ fn check_send_rc_reads(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
                 "result of send is never checked — a failed send (rc -2, >=10) exits 0 and the \
                  script reads as success"
                     .to_string(),
-                Some("read $rc (or $result/$reply) after the send, or use a checked form".to_string()),
+                Some(
+                    "read $rc (or $result/$reply) after the send, or use a checked form"
+                        .to_string(),
+                ),
             ));
         }
     }
 }
 
-/// Whether a statement READS `$rc`, `$result` or `$reply` anywhere.
-fn stmt_reads_send_status(stmt: &Stmt) -> bool {
-    let mut reads = false;
-    walk_stmt_exprs(stmt, &mut |expr| {
-        if let Expr::Variable(name) = expr
-            && matches!(name.as_str(), "rc" | "result" | "reply")
-        {
-            reads = true;
+/// Program-wide facts the status flow needs about user functions.
+struct StatusSets {
+    /// Every function name defined anywhere in the program.
+    defined: HashSet<String>,
+    /// Functions whose summary may overwrite the status when called: the body
+    /// or a parameter default writes it. A call does not save or restore
+    /// `$rc`, so a send inside the callee overwrites the caller's status too.
+    overwriting: HashSet<String>,
+    /// Functions whose summary may end the program (`exit`, `panic`, `die`, or
+    /// an uncaught error) in the body or a parameter default. A caller's path
+    /// through such a call ends there, so reads after it cannot discharge a send.
+    halting: HashSet<String>,
+    /// Every name that may hold a callable binding: a variable anywhere, or a
+    /// parameter of any function. The evaluator resolves a call to one of these
+    /// names first, so a call through one is a barrier.
+    bound: HashSet<String>,
+}
+
+impl StatusSets {
+    fn of(stmts: &[Stmt]) -> Self {
+        let mut defs: Vec<(&str, &[Param], &FunctionBody)> = Vec::new();
+        collect_function_bodies(stmts, &mut defs);
+        let mut bound = HashSet::new();
+        collect_bound_names(stmts, true, &mut bound);
+        collect_param_names(stmts, &mut bound);
+        let mut sets = Self {
+            defined: defs.iter().map(|(name, _, _)| name.to_string()).collect(),
+            overwriting: HashSet::new(),
+            halting: HashSet::new(),
+            bound,
+        };
+        // A callee may call another overwriting or halting function, so iterate
+        // to a fixed point. Both sets only grow, so this terminates.
+        loop {
+            let mut grew = false;
+            for &(name, params, body) in &defs {
+                let flow = function_def_flow(StatusCx { sets: &sets }, params, body);
+                if flow.wrote && sets.overwriting.insert(name.to_string()) {
+                    grew = true;
+                }
+                if flow.halts && sets.halting.insert(name.to_string()) {
+                    grew = true;
+                }
+            }
+            if !grew {
+                return sets;
+            }
+        }
+    }
+}
+
+/// Every parameter name of every function, named or literal, at any depth.
+fn collect_param_names(stmts: &[Stmt], out: &mut HashSet<String>) {
+    walk_stmts(stmts, &mut |stmt| {
+        if let StmtKind::FunctionDef { params, .. } = &stmt.kind {
+            out.extend(params.iter().map(|param| param.name.clone()));
         }
     });
-    reads
+    walk_literal_sources(stmts, &mut |expr: &Expr| {
+        if let Expr::FunctionLiteral { params, .. } = expr {
+            out.extend(params.iter().map(|param| param.name.clone()));
+        }
+    });
+}
+
+/// Every function definition, with its parameters and body, nested ones included.
+fn collect_function_bodies<'a>(
+    stmts: &'a [Stmt],
+    out: &mut Vec<(&'a str, &'a [Param], &'a FunctionBody)>,
+) {
+    for stmt in stmts {
+        // `stmt_bodies` also returns a FunctionDef's own body, so a def is
+        // descended once here and never through `stmt_bodies`. Walking it twice
+        // doubled the work at every nesting level (2^N for N nested defs).
+        if let StmtKind::FunctionDef { name, params, body } = &stmt.kind {
+            out.push((name.as_str(), params.as_slice(), body));
+            if let FunctionBody::Block(inner) = body {
+                collect_function_bodies(inner, out);
+            }
+        } else {
+            for nested in stmt_bodies(&stmt.kind) {
+                collect_function_bodies(nested, out);
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct StatusCx<'a> {
+    sets: &'a StatusSets,
+}
+
+/// How the status (`$rc`, `$result`, `$reply`) fares along the paths through
+/// some code. A write to the status (a send, publish, shell command, ...)
+/// overwrites it, so an earlier send is checked only when EVERY path reads the
+/// status before the next write and before the code ends or exits.
+///
+/// The model is conservative by construction: a construct whose effect on the
+/// status the analyser cannot prove absent is a write (a barrier). Only the
+/// cases listed as non-writing below are proven absent.
+#[derive(Clone, Copy)]
+struct StatusFlow {
+    /// Some path writes before any read.
+    send_first: bool,
+    /// Some path reaches the end of the code with no read.
+    undecided: bool,
+    /// Some path leaves the code (return, die, exit, uncaught error) with no read.
+    exits: bool,
+    /// Some path writes the status at all, read or not.
+    wrote: bool,
+    /// Some path ends the whole program: `exit`, `panic`, `die`, or an uncaught
+    /// error. A `return` is not a halt, because it only leaves the function.
+    /// Summaries carry this to callers, so their unreachable reads cannot count.
+    halts: bool,
+}
+
+impl StatusFlow {
+    /// No status event: every path continues, still undecided.
+    const PASS: Self = Self {
+        send_first: false,
+        undecided: true,
+        exits: false,
+        wrote: false,
+        halts: false,
+    };
+    /// Reads the status, which decides every path that reaches it.
+    const READ: Self = Self {
+        send_first: false,
+        undecided: false,
+        exits: false,
+        wrote: false,
+        halts: false,
+    };
+    /// Writes the status: a path that reaches it overwrites it unread.
+    const SEND: Self = Self {
+        send_first: true,
+        undecided: false,
+        exits: false,
+        wrote: true,
+        halts: false,
+    };
+    /// Leaves the code (a `return`): a path that reaches it ends unread.
+    const EXIT: Self = Self {
+        send_first: false,
+        undecided: false,
+        exits: true,
+        wrote: false,
+        halts: false,
+    };
+    /// Ends the whole program: a path that reaches it ends unread, and the
+    /// caller of a function that reaches it also ends.
+    const HALT: Self = Self {
+        send_first: false,
+        undecided: false,
+        exits: true,
+        wrote: false,
+        halts: true,
+    };
+
+    /// `self`, then `next`. Only paths still undecided after `self` reach `next`.
+    fn then(self, next: Self) -> Self {
+        Self {
+            send_first: self.send_first || (self.undecided && next.send_first),
+            undecided: self.undecided && next.undecided,
+            exits: self.exits || (self.undecided && next.exits),
+            wrote: self.wrote || next.wrote,
+            halts: self.halts || next.halts,
+        }
+    }
+
+    /// `self` or `other`, as the two arms of a branch.
+    fn or(self, other: Self) -> Self {
+        Self {
+            send_first: self.send_first || other.send_first,
+            undecided: self.undecided || other.undecided,
+            exits: self.exits || other.exits,
+            wrote: self.wrote || other.wrote,
+            halts: self.halts || other.halts,
+        }
+    }
+
+    /// A body that may run zero times (a loop or the right side of `&&`):
+    /// zero runs leave the status as it was.
+    fn maybe(self) -> Self {
+        self.or(Self::PASS)
+    }
+
+    /// The status may go unread: a send comes first, a path ends undecided,
+    /// or a path exits.
+    fn unchecked(self) -> bool {
+        self.send_first || self.undecided || self.exits
+    }
+}
+
+fn is_send_status_name(name: &str) -> bool {
+    matches!(name, "rc" | "result" | "reply")
+}
+
+/// Writing a name overwrites the status only when the name is a status name.
+fn status_write(name: &str) -> StatusFlow {
+    if is_send_status_name(name) {
+        StatusFlow::SEND
+    } else {
+        StatusFlow::PASS
+    }
+}
+
+/// Builtins proven to neither write the status nor run code: no I/O, no
+/// process, no bus, no network, no clock, and no function-valued argument.
+/// Every other builtin is a barrier. A unit test checks that each name is a
+/// real builtin and is not an evaluator special form.
+const PURE_BUILTINS: &[&str] = &[
+    // strings
+    "length", "len", "upper", "lower", "left", "right", "substr", "pos", "lastpos",
+    "strip", "trim", "ltrim", "rtrim", "replace", "replace_first", "replace_must",
+    "split", "join", "starts_with", "ends_with", "contains", "repeat", "lpad", "rpad",
+    "lpad_w", "rpad_w", "reverse", "words", "word", "lines", "fields", "chars", "ord",
+    "chr", "normalize", "before", "after", "before_last", "after_last", "split_once",
+    "rsplit_once", "between", "strip_prefix", "strip_suffix", "count_of",
+    "last_index_of", "word_wrap", "word_wrap_w", "html_escape", "url_encode",
+    "url_decode", "re_match", "re_find", "re_replace", "re_replace_must", "re_split",
+    "byte_length", "byte_pos", "byte_lastpos", "byte_index_of", "grapheme_count",
+    "grapheme_substr", "grapheme_reverse", "display_width",
+    // types and values
+    "type", "to_number", "to_string", "is_number", "is_empty", "deep_eq", "has_builtin",
+    // math
+    "round", "floor", "ceil", "trunc", "abs", "sign", "band", "bor", "bxor", "bnot",
+    "bshl", "bshr", "sqrt", "cbrt", "pow", "exp", "ln", "log10", "log2", "log", "min",
+    "max", "clamp", "hypot", "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "pi",
+    "e",
+    // collections
+    "push", "pop", "shift", "index_of", "unique", "range", "flat", "concat", "slice",
+    "take", "drop", "zip", "keys", "values", "has_key", "merge", "delete",
+    // data formats
+    "json_parse", "json_encode", "yaml_parse", "yaml_encode", "toml_parse",
+    "toml_encode", "data_parse", "data_encode",
+    // formatting
+    "format_bytes", "format_number", "sprintf",
+    // encoding and hashing
+    "base64_encode", "base64_decode", "hash_blake3", "hash_sha256", "hash_md5",
+    "hash_sha1", "hmac_sha256",
+    // bytes
+    "bytes_len", "string_to_bytes", "bytes_to_string", "bytes_find", "bytes_starts_with",
+    "bytes_ends_with", "bytes_split", "bytes_concat", "bytes_from", "bytes_to_hex",
+    "bytes_from_hex",
+];
+
+fn is_pure_builtin(name: &str) -> bool {
+    PURE_BUILTINS.contains(&name)
+}
+
+/// A loop or catch variable binds on each pass, so a status name is written
+/// only when a pass happens.
+fn binder(name: &str) -> StatusFlow {
+    if is_send_status_name(name) {
+        StatusFlow::SEND.maybe()
+    } else {
+        StatusFlow::PASS
+    }
+}
+
+/// The value of a literal boolean condition, so an untaken branch can be pruned.
+fn literal_condition(expr: &Expr) -> Option<bool> {
+    match expr {
+        Expr::BoolLiteral(value) => Some(*value),
+        _ => None,
+    }
+}
+
+fn status_flow_stmts(cx: StatusCx, stmts: &[Stmt]) -> StatusFlow {
+    stmts.iter().fold(StatusFlow::PASS, |flow, stmt| {
+        flow.then(status_flow_stmt(cx, stmt))
+    })
+}
+
+fn status_flow_exprs<'a>(cx: StatusCx, exprs: impl IntoIterator<Item = &'a Expr>) -> StatusFlow {
+    exprs.into_iter().fold(StatusFlow::PASS, |flow, expr| {
+        flow.then(status_flow_expr(cx, expr))
+    })
+}
+
+/// The flow of a function body, as it runs when the function is called.
+fn function_body_flow(cx: StatusCx, body: &FunctionBody) -> StatusFlow {
+    match body {
+        FunctionBody::Block(stmts) => status_flow_stmts(cx, stmts),
+        FunctionBody::Expression(expr) => status_flow_expr(cx, expr),
+    }
+}
+
+/// A user function's summary: its parameter defaults, then its body. A default
+/// runs only when its argument is omitted, but it is counted as always running.
+fn function_def_flow(cx: StatusCx, params: &[Param], body: &FunctionBody) -> StatusFlow {
+    let defaults = params.iter().filter_map(|param| param.default.as_ref());
+    status_flow_exprs(cx, defaults).then(function_body_flow(cx, body))
+}
+
+/// A send evaluates its target, command and arguments, then overwrites the status.
+fn status_flow_send<'a>(
+    cx: StatusCx,
+    target: &'a Expr,
+    command: &'a Expr,
+    args: &'a [(String, Expr)],
+) -> StatusFlow {
+    status_flow_exprs(
+        cx,
+        [target, command]
+            .into_iter()
+            .chain(args.iter().map(|(_, value)| value)),
+    )
+    .then(StatusFlow::SEND)
+}
+
+/// A call to `name`, after its arguments. A call is proven not to write the
+/// status only when the name is a user function whose summary does not write,
+/// or a pure builtin. Every other call is a barrier.
+///
+/// A name that may also hold a callable binding is a barrier, because the
+/// evaluator resolves a callable parameter or variable before a named function
+/// (`fn wrapper($helper) helper() end` calls `$helper`, not `helper`). The
+/// analysis does not prove which target runs, so it does not try.
+///
+/// A user function's halt (`exit`, `panic`, `die`, uncaught error) on some path
+/// ends the caller's path there too, so the call carries an exit on that path.
+fn call_flow(cx: StatusCx, name: &str) -> StatusFlow {
+    if cx.sets.bound.contains(name) {
+        return StatusFlow::SEND;
+    }
+    let writes = if cx.sets.overwriting.contains(name) {
+        StatusFlow::SEND.maybe()
+    } else if cx.sets.defined.contains(name) || is_pure_builtin(name) {
+        StatusFlow::PASS
+    } else {
+        return StatusFlow::SEND;
+    };
+    if cx.sets.halting.contains(name) {
+        writes.or(StatusFlow::HALT.maybe())
+    } else {
+        writes
+    }
+}
+
+/// An `if` chain: each arm is a condition and its body, then the else body.
+/// A literal condition prunes the arms it makes untakeable.
+fn status_flow_if<'a>(
+    cx: StatusCx,
+    arms: impl IntoIterator<Item = (&'a Expr, &'a [Stmt])>,
+    else_body: Option<&'a [Stmt]>,
+) -> StatusFlow {
+    let arms: Vec<(&Expr, &[Stmt])> = arms.into_iter().collect();
+    let tail = else_body.map_or(StatusFlow::PASS, |body| status_flow_stmts(cx, body));
+    arms.into_iter()
+        .rev()
+        .fold(tail, |tail, (cond, body)| match literal_condition(cond) {
+            Some(true) => status_flow_stmts(cx, body),
+            Some(false) => tail,
+            None => status_flow_expr(cx, cond).then(status_flow_stmts(cx, body).or(tail)),
+        })
+}
+
+/// Parses interpolation source as the evaluator does: a full program. `None`
+/// when it does not parse, which the caller treats as a barrier.
+fn parse_interp_source(src: &str) -> Option<Vec<Stmt>> {
+    let mut lexer = crate::lexer::Lexer::new(src);
+    lexer
+        .tokenize()
+        .and_then(|tokens| crate::parser::Parser::new(tokens, src).parse_program())
+        .ok()
+}
+
+/// A `${...}` spec: the path, then an optional `??` / `?:` fallback. The path is
+/// evaluated first (a status name reads, a call or index runs its expression).
+/// The fallback runs only when the path comes out nil or falsy, so it is a
+/// maybe-path. Source that does not parse is a barrier.
+fn interp_spec_flow(cx: StatusCx, spec: &str) -> StatusFlow {
+    let (path, fallback) = split_interp_coalesce(spec);
+    let head = if is_plain_name(path) {
+        status_write_read(path)
+    } else {
+        match parse_interp_source(&format!("interp_head = {path}")) {
+            Some(stmts) => status_flow_stmts(cx, &stmts),
+            None => StatusFlow::SEND,
+        }
+    };
+    let default = match fallback {
+        None => StatusFlow::PASS,
+        Some((_, src)) => match parse_interp_source(src) {
+            Some(stmts) => status_flow_stmts(cx, &stmts).maybe(),
+            None => StatusFlow::SEND.maybe(),
+        },
+    };
+    head.then(default)
+}
+
+/// A plain variable name in an interpolation: a status name reads the status.
+fn status_write_read(name: &str) -> StatusFlow {
+    if is_send_status_name(name) {
+        StatusFlow::READ
+    } else {
+        StatusFlow::PASS
+    }
+}
+
+/// True for a bare identifier, which needs no parsing to resolve.
+fn is_plain_name(text: &str) -> bool {
+    let mut chars = text.chars();
+    matches!(chars.next(), Some(c) if c.is_alphabetic() || c == '_')
+        && chars.all(|c| c.is_alphanumeric() || c == '_')
+}
+
+/// Interpolated and heredoc parts, in evaluation order. A `$(...)` runs a
+/// command, which overwrites the status.
+fn status_flow_parts(cx: StatusCx, parts: &[StringPart]) -> StatusFlow {
+    parts.iter().fold(StatusFlow::PASS, |flow, part| {
+        flow.then(match part {
+            StringPart::Literal(_) | StringPart::EnvVar(_) => StatusFlow::PASS,
+            StringPart::Variable(spec) => interp_spec_flow(cx, spec),
+            StringPart::CommandSub(_) => StatusFlow::SEND,
+        })
+    })
+}
+
+fn status_flow_stmt(cx: StatusCx, stmt: &Stmt) -> StatusFlow {
+    match &stmt.kind {
+        // A bare word at statement level calls the function of that name with
+        // no arguments, when one exists (the statement evaluator's bareword
+        // dispatch). It takes that call's summary, like `name()` would. A bare
+        // word that names no function is a barrier, since the lint cannot see
+        // every function that may be loaded at run time.
+        StmtKind::Expression(Expr::StringLiteral(name)) if is_plain_name(name) => {
+            call_flow(cx, name)
+        }
+        StmtKind::Expression(expr) => status_flow_expr(cx, expr),
+        // Assigning a status name is an overwrite like any other write.
+        StmtKind::Assignment { name, value } => status_flow_expr(cx, value).then(status_write(name)),
+        // A write into a status variable, as a field, index or path, overwrites it.
+        StmtKind::FieldAssignment { object, value, .. } => {
+            status_flow_expr(cx, value).then(status_write(object))
+        }
+        StmtKind::IndexAssignment {
+            object,
+            index,
+            value,
+        } => status_flow_exprs(cx, [index, value])
+            .then(status_write(object)),
+        StmtKind::PathAssignment { root, path, value } => {
+            let indexes = path.iter().filter_map(|seg| match seg {
+                PathSeg::Index(index) => Some(index),
+                PathSeg::Field(_) => None,
+            });
+            status_flow_exprs(cx, indexes.chain(std::iter::once(value)))
+                .then(status_write(root))
+        }
+        StmtKind::If {
+            condition,
+            then_body,
+            else_ifs,
+            else_body,
+        } => {
+            let arms = std::iter::once((condition, then_body.as_slice()))
+                .chain(else_ifs.iter().map(|(cond, body)| (cond, body.as_slice())));
+            status_flow_if(cx, arms, else_body.as_deref())
+        }
+        StmtKind::For {
+            var,
+            start,
+            end,
+            step,
+            body,
+            ..
+        } => status_flow_exprs(cx, [start, end].into_iter().chain(step.as_ref()))
+            .then(binder(var))
+            .then(status_flow_stmts(cx, body).maybe()),
+        StmtKind::ForEach {
+            var,
+            index_var,
+            iterable,
+            body,
+            ..
+        } => status_flow_expr(cx, iterable)
+            .then(binder(var))
+            .then(index_var.as_deref().map_or(StatusFlow::PASS, binder))
+            .then(status_flow_stmts(cx, body).maybe()),
+        StmtKind::While {
+            condition, body, ..
+        } => status_flow_expr(cx, condition).then(status_flow_stmts(cx, body).maybe()),
+        StmtKind::Loop { body, .. } => status_flow_stmts(cx, body).maybe(),
+        // break and continue are not modelled. A skipped read cannot credit a
+        // send, because loop bodies never decide a path. A skipped send can
+        // still count, which only adds a warning.
+        StmtKind::Break(_) | StmtKind::Continue(_) => StatusFlow::PASS,
+        StmtKind::BreakIf(cond, _) | StmtKind::ContinueIf(cond, _) => status_flow_expr(cx, cond),
+        // Runs when called, not where it is written. A call summarises it.
+        StmtKind::FunctionDef { .. } => StatusFlow::PASS,
+        StmtKind::Return(value) => value
+            .as_ref()
+            .map_or(StatusFlow::PASS, |expr| status_flow_expr(cx, expr))
+            .then(StatusFlow::EXIT),
+        StmtKind::Select {
+            value,
+            cases,
+            otherwise,
+        } => {
+            let start = otherwise
+                .as_deref()
+                .map_or(StatusFlow::PASS, |body| status_flow_stmts(cx, body));
+            let arms = cases.iter().fold(start, |flow, (case, body)| {
+                flow.or(status_flow_expr(cx, case).then(status_flow_stmts(cx, body)))
+            });
+            status_flow_expr(cx, value).then(arms)
+        }
+        // Output only: it writes no status.
+        StmtKind::Print { args, .. } => status_flow_exprs(cx, args),
+        // A parse binds its named variables, so a status name is written.
+        StmtKind::Parse { source, parts } => {
+            let binds = parts.iter().fold(StatusFlow::PASS, |flow, part| {
+                flow.then(match part {
+                    ParsePart::Variable(name) => status_write(name),
+                    ParsePart::Delimiter(_) => StatusFlow::PASS,
+                })
+            });
+            status_flow_expr(cx, source).then(binds)
+        }
+        StmtKind::Die(value) => status_flow_expr(cx, value).then(StatusFlow::HALT),
+        StmtKind::TryCatch {
+            try_body,
+            catch,
+            finally_body,
+        } => {
+            // Any statement of the try body may throw into the catch, so the
+            // catch is a path of its own. With no catch the error leaves the code.
+            let caught = catch.as_ref().map_or(StatusFlow::HALT, |clause| {
+                binder(&clause.var)
+                    .then(clause.err_var.as_deref().map_or(StatusFlow::PASS, binder))
+                    .then(status_flow_stmts(cx, &clause.body))
+            });
+            let flow = status_flow_stmts(cx, try_body).or(caught);
+            match finally_body {
+                Some(finally) => flow.then(status_flow_stmts(cx, finally)),
+                None => flow,
+            }
+        }
+        // An export binds a name in the environment; a status name is written.
+        StmtKind::Export { name, value } => status_flow_expr(cx, value).then(status_write(name)),
+        // An alias evaluates its expressions only.
+        StmtKind::Alias { name, command } => {
+            status_flow_exprs(cx, name.iter().chain(command.iter()))
+        }
+        StmtKind::Send {
+            target,
+            command,
+            args,
+        } => status_flow_send(cx, target, command, args),
+        // The address body runs its statements in order. Unknown calls in it
+        // are barriers, like any other unknown call.
+        StmtKind::Address { target, body } => {
+            status_flow_expr(cx, target).then(status_flow_stmts(cx, body))
+        }
+        // Fire-and-forget bus delivery. It writes no `$rc` / `$result` (see
+        // exec_emit), so only its operands can write.
+        StmtKind::Emit {
+            target,
+            command,
+            args,
+        } => status_flow_exprs(
+            cx,
+            [target, command]
+                .into_iter()
+                .chain(args.iter().map(|(_, value)| value)),
+        ),
+        // Registers a handler. Its body runs when a message arrives, so it is
+        // checked on its own by check_send_rc_reads.
+        StmtKind::On { .. } => StatusFlow::PASS,
+        // Runs another file's code in this program, which may send.
+        StmtKind::Source { path } | StmtKind::Include { path } => {
+            status_flow_expr(cx, path).then(StatusFlow::SEND)
+        }
+        // `sh "command"` sets `$rc` when the shell exits.
+        StmtKind::Sh { command } => status_flow_expr(cx, command).then(StatusFlow::SEND),
+        // The command runs first, then its output goes to the external
+        // command, which sets `$rc` when it exits.
+        StmtKind::PipeToExternal { stmt: inner, .. } => {
+            status_flow_stmt(cx, inner).then(StatusFlow::SEND)
+        }
+        // The right side of `&&` / `||` runs only on one outcome of the left.
+        StmtKind::Chain { left, right, .. } => {
+            status_flow_stmt(cx, left).then(status_flow_stmt(cx, right).maybe())
+        }
+    }
+}
+
+fn status_flow_expr(cx: StatusCx, expr: &Expr) -> StatusFlow {
+    match expr {
+        Expr::NumberLiteral(_)
+        | Expr::StringLiteral(_)
+        | Expr::EscapedQuoteStringLiteral(_)
+        | Expr::BoolLiteral(_)
+        | Expr::NilLiteral => StatusFlow::PASS,
+        Expr::Variable(name) => status_write_read(name),
+        Expr::InterpolatedString(parts) | Expr::Heredoc(parts) => status_flow_parts(cx, parts),
+        // The right side of `and` / `or` / `??` may not run: `and` and `or`
+        // skip it on the left's truth value, `??` when the left is not nil.
+        Expr::BinaryOp {
+            left,
+            op: BinOp::And | BinOp::Or | BinOp::NilCoalesce,
+            right,
+        } => status_flow_expr(cx, left).then(status_flow_expr(cx, right).maybe()),
+        Expr::BinaryOp { left, right, .. } => {
+            status_flow_expr(cx, left).then(status_flow_expr(cx, right))
+        }
+        Expr::UnaryOp { operand, .. } => status_flow_expr(cx, operand),
+        Expr::Ternary {
+            cond,
+            then_branch,
+            else_branch,
+        } => status_flow_expr(cx, cond)
+            .then(status_flow_expr(cx, then_branch).or(status_flow_expr(cx, else_branch))),
+        Expr::If(ifexpr) => {
+            let arms = std::iter::once((&ifexpr.condition, ifexpr.then_body.as_slice())).chain(
+                ifexpr
+                    .else_ifs
+                    .iter()
+                    .map(|(cond, body)| (cond, body.as_slice())),
+            );
+            status_flow_if(cx, arms, ifexpr.else_body.as_deref())
+        }
+        Expr::FunctionCall { name, args } if name == "exit" || name == "panic" => {
+            status_flow_exprs(cx, args).then(StatusFlow::HALT)
+        }
+        // publish sets `$rc` / `$result` / `$reply` like send, after its arguments.
+        Expr::FunctionCall { name, args } if name == "publish" => {
+            status_flow_exprs(cx, args).then(StatusFlow::SEND)
+        }
+        Expr::FunctionCall { name, args } => status_flow_exprs(cx, args).then(call_flow(cx, name)),
+        // Creating a function value runs nothing. Calling it is a barrier.
+        Expr::FunctionLiteral { .. } => StatusFlow::PASS,
+        // A call through a function value is not resolved, so it is a barrier.
+        Expr::ValueCall { callee, args } => status_flow_expr(cx, callee)
+            .then(status_flow_exprs(cx, args))
+            .then(StatusFlow::SEND),
+        // A method is not resolved by name, so it is a barrier.
+        Expr::MethodCall { object, args, .. } => status_flow_expr(cx, object)
+            .then(status_flow_exprs(cx, args))
+            .then(StatusFlow::SEND),
+        // The index is evaluated before the object (the evaluator's Index arm),
+        // so a send in the index comes before a read of the object.
+        Expr::Index { object, index } => {
+            status_flow_expr(cx, index).then(status_flow_expr(cx, object))
+        }
+        Expr::FieldAccess { object, .. } => status_flow_expr(cx, object),
+        Expr::ListLiteral(items) => status_flow_exprs(cx, items),
+        Expr::MapLiteral(pairs) => status_flow_exprs(cx, pairs.iter().map(|(_, value)| value)),
+        Expr::Send {
+            target,
+            command,
+            args,
+        } => status_flow_send(cx, target, command, args),
+        // `sh "command"` as an expression sets `$rc` too.
+        Expr::Sh(command) => status_flow_expr(cx, command).then(StatusFlow::SEND),
+        Expr::CommandSub(_) => StatusFlow::SEND,
+    }
 }
 
 /// 09-24 entry: `$x = push($x, v)` sets `$x` to nil — push mutates in
@@ -5120,5 +5780,25 @@ mod instructional_error_tests {
             undefined_variable_hint("greetng", &["greeting".to_string()]),
             Some(" — did you mean '$greeting'?".to_string())
         );
+    }
+}
+
+#[cfg(test)]
+mod pure_builtin_allowlist_tests {
+    use super::*;
+
+    #[test]
+    fn every_pure_builtin_is_a_real_non_special_non_callback_builtin() {
+        for name in PURE_BUILTINS {
+            assert!(builtins::is_builtin(name), "{name} is not a builtin");
+            assert!(
+                !builtins::EVAL_SPECIAL_BUILTINS.contains(name),
+                "{name} is an evaluator special form"
+            );
+            assert!(
+                crate::builtins_hof::lookup(name).is_none(),
+                "{name} takes function values"
+            );
+        }
     }
 }

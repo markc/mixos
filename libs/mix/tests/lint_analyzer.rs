@@ -1093,6 +1093,369 @@ fn send_result_never_checked_warns() {
 }
 
 #[test]
+fn send_status_read_in_condition_map_or_nested_arg_counts() {
+    // Reproducer: `$rc` is read in an if-condition and inside a map value
+    // nested in a call argument. Both used to be invisible to the scan,
+    // so a correctly checked send warned.
+    let reproducer = "$target=\"svc\"\n$verb=\"ping\"\n$payload=\"{}\"\n\
+        send $target $verb body=$payload timeout=45\n\
+        if $rc != 0 then exit(1) end\n\
+        print(json_encode({rc:$rc,result:$result}))\n";
+    let out = codes(reproducer);
+    assert!(
+        !out.contains(&"MIX-W2307".to_string()),
+        "reproducer: got: {out:?}"
+    );
+
+    // Each read form on its own satisfies the check.
+    for read in [
+        "if $rc != 0 then print(1) end\n",
+        "print(json_encode({rc:$rc}))\n",
+        "print(json_encode({outer:{inner:[$result]}}))\n",
+        "print(\"status=${rc}\")\n",
+        "$ok = ($rc == 0)\n",
+    ] {
+        let src = format!("send svc ping\n{read}");
+        let out = codes(&src);
+        assert!(
+            !out.contains(&"MIX-W2307".to_string()),
+            "read `{read}` should count: got: {out:?}"
+        );
+    }
+}
+
+#[test]
+fn send_status_check_still_warns_when_unread_and_stops_at_next_send() {
+    // Truly unchecked: nothing reads the status at all.
+    let out = codes("send svc ping\nprint(json_encode({ok:true}))\n");
+    assert!(out.contains(&"MIX-W2307".to_string()), "got: {out:?}");
+
+    // A read BEFORE the next send does not cover the first send's status
+    // when the second send is the one that is never checked.
+    let out = codes("send svc ping\nsend svc ping\nprint($rc)\n");
+    let count = out.iter().filter(|c| *c == "MIX-W2307").count();
+    assert_eq!(count, 1, "first send unchecked: got: {out:?}");
+
+    // A read AFTER the next send does not count for the earlier send.
+    let out = codes("send svc ping\nsend svc ping\nif $rc != 0 then exit(1) end\n");
+    let count = out.iter().filter(|c| *c == "MIX-W2307").count();
+    assert_eq!(count, 1, "read after the next send: got: {out:?}");
+}
+
+#[test]
+fn send_status_overwritten_by_an_expression_send_still_warns_on_the_first() {
+    // An expression-position send overwrites $rc too, so it ends the scan
+    // for the first send. The read AFTER it checks the second send only:
+    // the first send's failure is still never checked, and must warn.
+    let out = codes("send svc first\n$x = send svc second\nif $rc != 0 then exit(1) end\n");
+    let count = out.iter().filter(|c| *c == "MIX-W2307").count();
+    assert_eq!(count, 1, "first send unchecked: got: {out:?}");
+
+    // The statement's own reads run before its send, so they check the
+    // first send's status.
+    let out = codes("send svc first\n$x = send svc second k=$rc\n");
+    assert!(!out.contains(&"MIX-W2307".to_string()), "got: {out:?}");
+}
+
+/// Lines of the MIX-W2307 diagnostics, in report order.
+fn w2307_lines(src: &str) -> Vec<Option<usize>> {
+    let tokens = Lexer::new(src).tokenize().expect("lexes");
+    let stmts = Parser::new(tokens, src).parse_program().expect("parses");
+    analyze(&stmts, Some("test.mix"), &AnalyzerConfig::default())
+        .diagnostics
+        .into_iter()
+        .filter(|d| d.code == "MIX-W2307")
+        .map(|d| d.line)
+        .collect()
+}
+
+#[test]
+fn send_status_send_inside_an_if_expression_overwrites_before_the_read() {
+    // The second send runs inside the if-expression body and overwrites
+    // $rc before the read after the if. The first send's status is never
+    // checked, so it must warn (line 1). The second send reads $rc in its
+    // own body, so only the first warns.
+    let src = "send svc first\n$x = if true then\nsend svc second\n$rc\nelse\n0\nend\n\
+               if $rc != 0 then exit(1) end\n";
+    assert_eq!(w2307_lines(src), vec![Some(1)], "src: {src}");
+}
+
+#[test]
+fn send_status_read_inside_an_if_expression_before_a_send_credits_the_first() {
+    // The read runs in the body before the second send, so the first send's
+    // status is checked. Only the second send, never read, warns (line 8).
+    let src = "send svc first\n$x = if true then\nprint($rc)\n0\nelse\n0\nend\nsend svc second\n";
+    assert_eq!(w2307_lines(src), vec![Some(8)], "src: {src}");
+}
+
+#[test]
+fn send_status_nested_send_in_an_argument_is_not_credited_by_a_later_read() {
+    // `b=$rc` runs after the nested send in `a=` has overwritten $rc, so it
+    // reads the nested send's status, not the first send's. The first send
+    // must warn (line 1).
+    let src = "send svc first\nsend svc third a=if true then send svc second end b=$rc\n";
+    assert!(
+        w2307_lines(src).contains(&Some(1)),
+        "got: {:?}",
+        w2307_lines(src)
+    );
+
+    // Control: with no nested send, `b=$rc` checks the first send.
+    let src = "send svc first\nsend svc third b=$rc\n";
+    assert!(
+        !w2307_lines(src).contains(&Some(1)),
+        "got: {:?}",
+        w2307_lines(src)
+    );
+}
+
+#[test]
+fn send_status_untaken_if_expression_branch_does_not_credit_the_first_send() {
+    // The else arm is the only one taken (the condition is literal false), and
+    // it sends again before any read, so the first send is never checked. The
+    // read after the if must not credit it.
+    let src = "send svc first\n$x = if false then $rc else send svc second end\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_read_in_only_one_if_branch_does_not_credit_the_first_send() {
+    // Only the then arm reads. A path through the else arm reaches the end
+    // unread, so the first send must warn.
+    let src = "send svc first\nif $flag then\nprint($rc)\nelse\nprint(1)\nend\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_read_in_both_if_branches_credits_the_first_send() {
+    // Control: every path reads the status before the code ends.
+    let src = "send svc first\nif $flag then\nprint($rc)\nelse\nprint($rc)\nend\n";
+    let got = w2307_lines(src);
+    assert!(!got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_read_in_a_handler_body_does_not_credit_the_outer_send() {
+    // The handler runs later, when a message arrives. Its read is not a read
+    // of the status left by the first send, which is then overwritten.
+    let src =
+        "send svc first\non tick\nprint($rc)\nend\nsend svc second\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_send_inside_a_handler_body_is_checked_on_its_own() {
+    // The send in the handler body has no read after it in that body.
+    let src = "on tick\nsend svc first\nprint(2)\nend\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(2)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_read_inside_a_loop_body_does_not_credit_the_first_send() {
+    // The loop may run zero times, so the read may never happen.
+    let src = "send svc first\nfor $x in [1, 2, 3]\nprint($rc)\nend\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_exit_without_a_read_leaves_the_send_unchecked() {
+    // The script ends with the status unread, so a failed send exits 0.
+    let src = "send svc first\nexit(1)\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_exit_after_a_read_is_checked() {
+    // Control: the read comes before the exit on every path.
+    let src = "send svc first\nprint($rc)\nexit(1)\n";
+    let got = w2307_lines(src);
+    assert!(!got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_nil_coalesce_right_side_does_not_credit_the_first_send() {
+    // `??` skips its right side when the left is not nil, so the read of
+    // $rc may never happen and the first send is unchecked.
+    let src = "send svc first\n$x = 42 ?? $rc\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_nil_coalesce_left_side_read_credits_the_first_send() {
+    // Control: the left side is always evaluated, so its read always happens.
+    let src = "send svc first\n$x = $rc ?? 0\n";
+    let got = w2307_lines(src);
+    assert!(!got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_ternary_branch_does_not_credit_the_first_send() {
+    // Only one branch of `c ? a : b` runs, so a read in one branch does not
+    // decide every path.
+    let src = "send svc first\n$x = $flag ? $rc : 0\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_publish_overwrites_before_the_read() {
+    // publish sets $rc / $result / $reply like send, so the read after it
+    // checks the publish, not the first send. The first send must warn.
+    let src = "send svc first\n$published = publish(\"events\", \"payload\")\n$ok = ($rc == 0)\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_publish_argument_read_credits_the_first_send() {
+    // The arguments run before publish overwrites the status, so a read in
+    // them checks the first send.
+    let src = "send svc first\n$published = publish(\"events\", $rc)\n";
+    let got = w2307_lines(src);
+    assert!(!got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_shell_statement_overwrites_before_the_read() {
+    // `sh "cmd"` sets $rc when the shell exits.
+    let src = "send svc first\nsh \"true\"\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_shell_expression_overwrites_before_the_read() {
+    // `$out = sh "cmd"` is the expression form, which also sets $rc.
+    let src = "send svc first\n$out = sh \"true\"\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_command_substitution_overwrites_before_the_read() {
+    // `$(cmd)` runs a shell and sets $rc.
+    let src = "send svc first\n$out = $(true)\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_command_substitution_in_a_heredoc_overwrites_in_order() {
+    // Heredoc parts run in order: a `$(...)` before a read of $rc overwrites
+    // the status, so the read checks that command and not the first send.
+    let src = "send svc first\n$s = <<EOF\n$(true)${rc}\nEOF\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+    // The other order: the read comes first and checks the first send.
+    let src = "send svc first\n$s = <<EOF\n${rc}$(true)\nEOF\n";
+    let got = w2307_lines(src);
+    assert!(!got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_dollar_paren_in_a_double_quoted_string_is_literal() {
+    // In a double-quoted string `$(` is literal text, not a command, so it
+    // does not overwrite $rc: the read after it checks the first send.
+    let src = "send svc first\n$s = \"$(true)${rc}\"\n";
+    let got = w2307_lines(src);
+    assert!(!got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_pipe_to_external_overwrites_before_the_read() {
+    // The piped statement runs, then the external command sets $rc.
+    let src = "send svc first\nprint(\"x\") | cat\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_assigning_a_status_name_overwrites_before_the_read() {
+    // A user assignment to $rc replaces the status the send left behind.
+    let src = "send svc first\n$rc = 0\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_for_each_binder_named_as_a_status_overwrites() {
+    // A loop variable named $rc is written on each pass.
+    let src = "send svc first\nfor $rc in [1, 2]\nprint(1)\nend\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_unknown_call_in_an_address_block_overwrites() {
+    // Inside an address block an unknown call is sent to the address, which
+    // sets $rc. The read after the block checks that call, not the first send.
+    let src = "send svc first\naddress \"other\"\nping(1)\nend\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_read_inside_an_address_block_credits_the_first_send() {
+    // An address body takes only calls. The read of $rc in the argument runs
+    // before the call is sent, so it checks the first send.
+    let src = "send svc first\naddress \"other\"\nping($rc)\nend\n";
+    let got = w2307_lines(src);
+    assert!(!got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_method_call_in_an_address_block_overwrites() {
+    // A method call in an address block is an address send too.
+    let src = "send svc first\naddress \"other\"\n$m.ping()\nend\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_call_to_a_function_that_sends_overwrites() {
+    // A call does not save $rc, so the send inside f() overwrites the status
+    // the first send left. The first send (line 4) must warn.
+    let src =
+        "function f()\n  send svc second\nend\nsend svc first\nf()\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(4)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_call_to_a_function_that_only_sends_through_another_overwrites() {
+    // outer() overwrites only through inner(), so the overwrite is transitive.
+    let src = "function inner()\n  send svc second\n  if $rc != 0 then exit(1) end\nend\n\
+               function outer()\n  inner()\nend\nsend svc first\nouter()\n\
+               if $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(8)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_call_to_a_function_that_does_not_send_credits_the_first_send() {
+    // g() never writes the status, so the read after the call checks the first send.
+    let src = "function g()\n  print(1)\nend\nsend svc first\ng()\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(!got.contains(&Some(4)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_emit_writes_no_status_and_credits_the_first_send() {
+    // emit is fire-and-forget and documented to write no $rc / $result, so the
+    // read after it still checks the first send.
+    let src = "send svc first\nemit \"svc\" ping\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(!got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
 fn push_assign_back_is_an_error() {
     let out = codes("$l = [1]\n$l = push($l, 2)\nprint($l)\n");
     assert!(out.contains(&"MIX-E1508".to_string()), "got: {out:?}");
@@ -1281,4 +1644,162 @@ fn fmt_surplus_message_carries_expected_and_provided_counts() {
             .is_some_and(|h| h.contains("remove") && h.contains("placeholders")),
         "hint names both fixes: {d:?}"
     );
+}
+
+#[test]
+fn send_status_parameter_default_that_sends_overwrites_the_status() {
+    // A default runs when the call omits its argument, so f() may send and
+    // overwrite $rc even though its body does not.
+    let src = "fn f($x = sh \"true\")\n  return 0\nend\nsend svc ping\nf()\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(4)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_interpolation_fallback_that_sends_overwrites_the_status() {
+    // The fallback of ${x ?? ...} runs when x is nil, so its sh overwrites $rc.
+    let src = "$x = nil\nsend svc ping\n$s = \"${x ?? sh \"true\"}\"\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(2)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_builtin_outside_the_pure_allowlist_overwrites_the_status() {
+    // read_file does IO, so it is not proven pure and is a barrier.
+    let src = "send svc ping\n$t = read_file(\"x.txt\")\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_pure_builtin_keeps_the_send_checked() {
+    let src = "send svc ping\n$n = len(\"abc\")\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(!got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_pure_parameter_default_keeps_the_call_pure() {
+    let src = "fn f($x = len(\"a\"))\n  return 0\nend\nsend svc ping\nf()\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(!got.contains(&Some(4)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_pure_interpolation_fallback_keeps_the_send_checked() {
+    let src = "$x = nil\nsend svc ping\n$s = \"${x ?? len(\"a\")}\"\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(!got.contains(&Some(2)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_value_call_overwrites_the_status() {
+    let src = "$f = fn() print(\"x\") end\nsend svc ping\n$f()\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(2)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_method_call_overwrites_the_status() {
+    let src = "send svc ping\n$m.ping()\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_include_overwrites_the_status() {
+    let src = "send svc ping\ninclude \"helpers.mix\"\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_call_to_an_unknown_function_overwrites_the_status() {
+    // A name defined nowhere in the file is not summarised, so it is a barrier.
+    let src = "send svc ping\nhelper_fn()\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_deeply_nested_functions_are_collected_once() {
+    // Each def used to be walked twice, so N nested defs took 2^N steps. At 40
+    // levels that never finishes, so completing is the check.
+    let mut src = String::new();
+    for depth in 0..40 {
+        src.push_str(&format!("fn f{depth}()\n"));
+    }
+    src.push_str("return 0\n");
+    for _ in 0..40 {
+        src.push_str("end\n");
+    }
+    src.push_str("send svc ping\nif $rc != 0 then exit(1) end\n");
+    let got = w2307_lines(&src);
+    assert!(got.is_empty(), "got: {got:?}");
+}
+
+#[test]
+fn send_status_call_through_a_callable_parameter_overwrites_the_status() {
+    // `helper()` inside `wrapper` runs the callable parameter `$helper`, not
+    // the named `helper`, so `wrapper` may write the status.
+    let src = "fn helper()\n  return 0\nend\nfn wrapper($helper)\n  helper()\nend\n\
+               $f = function() return 1 end\nsend svc ping\nwrapper($f)\nprint($rc)\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(8)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_call_through_a_plain_named_function_stays_neutral() {
+    // Control for the callable-parameter rule: nothing binds `helper`, so the
+    // read after the call still discharges the send.
+    let src = "fn helper()\n  return 0\nend\nfn wrapper()\n  helper()\nend\n\
+               send svc ping\nwrapper()\nprint($rc)\n";
+    let got = w2307_lines(src);
+    assert!(got.is_empty(), "got: {got:?}");
+}
+
+#[test]
+fn send_status_index_is_evaluated_before_the_object_read() {
+    // The evaluator runs the index first, so publish() overwrites $result
+    // before the object is read.
+    let src = "send svc first\n$x = $result[publish(\"events\", \"payload\")]\nprint($x)\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_read_after_a_halting_call_does_not_discharge_the_send() {
+    // `stop` ends the program, directly and through `outer`. The `print($rc)`
+    // after the call is unreachable on that path, so it cannot discharge the send.
+    let src = "fn stop()\n  exit(0)\nend\nfn outer()\n  stop()\nend\n\
+               send svc ping\nouter()\nprint($rc)\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(7)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_halting_parameter_default_counts_as_a_halt() {
+    // The default always runs in the summary, so `guard` may halt.
+    let src = "fn guard($ok = exit(0))\n  return 1\nend\nsend svc ping\nguard()\nprint($rc)\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(4)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_return_from_a_function_does_not_end_the_caller() {
+    // Control: `return` leaves only the function, so the read after the call
+    // still discharges the send.
+    let src = "fn early()\n  return 0\nend\nsend svc ping\nearly()\nprint($rc)\n";
+    let got = w2307_lines(src);
+    assert!(got.is_empty(), "got: {got:?}");
+}
+
+#[test]
+fn send_status_bare_function_call_statement_applies_its_summary() {
+    // `overwrite_status` as a bare statement calls the function, whose send
+    // overwrites $rc before the chain's print and the later read.
+    let src = "fn overwrite_status()\n  send svc other\nend\n\
+               send svc first\noverwrite_status && print(1)\nprint($rc)\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(4)), "got: {got:?}");
 }

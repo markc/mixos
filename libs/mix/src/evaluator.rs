@@ -31,7 +31,7 @@ use crate::value::Value;
 /// same-named expression operators, so a default inside a string behaves
 /// exactly as it would in Mix code.
 #[derive(Clone, Copy, PartialEq)]
-enum InterpCoalesce {
+pub(crate) enum InterpCoalesce {
     /// `??` — fall back only when the resolved value is nil.
     Nil,
     /// `?:` — fall back when the resolved value is falsy.
@@ -68,7 +68,7 @@ fn value_matches_shape(v: &Value, shape: &crate::builtin_info::TypeShape) -> boo
     }
 }
 
-fn split_interp_coalesce(spec: &str) -> (&str, Option<(InterpCoalesce, &str)>) {
+pub(crate) fn split_interp_coalesce(spec: &str) -> (&str, Option<(InterpCoalesce, &str)>) {
     let bytes = spec.as_bytes();
     let mut i = 0;
     while i + 1 < bytes.len() {
