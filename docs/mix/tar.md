@@ -51,6 +51,9 @@ For artifacts that people unpack with stock tools, use `codec:"gzip"`
   only (invalid bytes raise — the extractor never guesses what got
   extracted).
 - Device, fifo and unknown entry types are **refused**.
+- A corrupt or truncated stream (zstd frame checksum, gzip CRC or a cut-off
+  stream) raises the structured code `ARCHIVE_STREAM_CORRUPT`. Match the code
+  in the optional second `catch` binding, not the message text.
 - Symlink targets must be contained (no absolute, no `..`). Nothing is
   ever extracted *through* a symlink the archive created. Hardlinks may
   only target an earlier **regular file** (hardlink-to-hardlink is
@@ -61,7 +64,9 @@ For artifacts that people unpack with stock tools, use `codec:"gzip"`
 - `xattrs` (default true) restores `SCHILY.xattr.*` records by hand —
   EXCEPT `security.*`, which is skipped unless `keep_special_bits:true`.
   A capability xattr is a privilege grant exactly like a suid bit, and
-  suid/sgid are stripped from modes by the same rule.
+  suid/sgid are stripped from modes by the same rule. Restored xattrs are
+  applied last, after owner and mode, because chown and data writes clear
+  `security.capability`.
 - Directory and symlink metadata (mode, mtime, owner) is applied in a
   children-first post-pass, so directory mtimes stick.
 - Limits: `max_entries` (200k), `max_bytes` (64 GiB of file bytes),

@@ -207,6 +207,34 @@ enum VerifiedDecode {
     },
 }
 
+/// A failure raised by the zstd or gzip decoder itself (corrupt, truncated or
+/// checksum-failed stream). It is tagged by type, not by message, so the
+/// classification below never reads backend prose.
+#[derive(Debug)]
+struct CodecFailure(String);
+
+impl std::fmt::Display for CodecFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for CodecFailure {}
+
+/// Stable error code for a corrupt or truncated archive stream.
+const STREAM_CORRUPT: &str = "ARCHIVE_STREAM_CORRUPT";
+
+/// Build the error for a failed read or write: a decoder failure becomes the
+/// structured `ARCHIVE_STREAM_CORRUPT`, anything else stays a runtime error.
+/// The message text is the same either way.
+fn io_failure(msg: String, e: &std::io::Error) -> MixError {
+    if e.get_ref().is_some_and(|inner| inner.is::<CodecFailure>()) {
+        MixError::structured(STREAM_CORRUPT, msg)
+    } else {
+        runtime(msg)
+    }
+}
+
 impl VerifiedDecode {
     fn open(path: &Path, codec: Codec, caller: &str) -> Result<Self, MixError> {
         let file = File::open(path)
@@ -215,13 +243,9 @@ impl VerifiedDecode {
         Ok(match codec {
             Codec::Zstd => VerifiedDecode::Zstd {
                 dec: Box::new(
-                    structured_zstd::decoding::StreamingDecoder::new(br)
-                        .map_err(|e| {
-                            runtime(format!(
-                                "{caller}: zstd init '{}': {e}",
-                                path.display()
-                            ))
-                        })?,
+                    structured_zstd::decoding::StreamingDecoder::new(br).map_err(|e| {
+                        runtime(format!("{caller}: zstd init '{}': {e}", path.display()))
+                    })?,
                 ),
             },
             Codec::Gzip => VerifiedDecode::Gzip {
@@ -232,9 +256,12 @@ impl VerifiedDecode {
     }
 
     fn read_some(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        fn codec(e: std::io::Error) -> std::io::Error {
+            std::io::Error::new(e.kind(), CodecFailure(e.to_string()))
+        }
         match self {
-            VerifiedDecode::Zstd { dec } => dec.read(buf),
-            VerifiedDecode::Gzip { dec } => dec.read(buf),
+            VerifiedDecode::Zstd { dec } => dec.read(buf).map_err(codec),
+            VerifiedDecode::Gzip { dec } => dec.read(buf).map_err(codec),
             VerifiedDecode::None { src } => src.read(buf),
         }
     }
@@ -249,9 +276,9 @@ impl VerifiedDecode {
         let mut drained: u64 = 0;
         let mut buf = vec![0u8; 64 << 10];
         loop {
-            let n = self
-                .read_some(&mut buf)
-                .map_err(|e| runtime(format!("{caller}: stream verification failed: {e}")))?;
+            let n = self.read_some(&mut buf).map_err(|e| {
+                io_failure(format!("{caller}: stream verification failed: {e}"), &e)
+            })?;
             if n == 0 {
                 break;
             }
@@ -272,7 +299,7 @@ impl VerifiedDecode {
         };
         let leftover = reader
             .fill_buf()
-            .map_err(|e| runtime(format!("{caller}: tail read: {e}")))?;
+            .map_err(|e| io_failure(format!("{caller}: tail read: {e}"), &e))?;
         if !leftover.is_empty() {
             return Err(runtime(format!(
                 "{caller}: {} raw bytes remain after the decoded stream ended — \
@@ -370,8 +397,8 @@ pub fn builtin_tar_list(args: Vec<Value>) -> MixResult<Option<Value>> {
             opts.max_stream_bytes =
                 count_opt(caller, "max_stream_bytes", m.get("max_stream_bytes"))?
                     .unwrap_or(opts.max_stream_bytes);
-            opts.max_name =
-                count_opt(caller, "max_name", m.get("max_name"))?.unwrap_or(opts.max_name as u64) as usize;
+            opts.max_name = count_opt(caller, "max_name", m.get("max_name"))?
+                .unwrap_or(opts.max_name as u64) as usize;
             known_keys_check(caller, m, &["codec", "max_stream_bytes", "max_name"])?;
         }
         Some(other) => {
@@ -394,40 +421,52 @@ pub fn builtin_tar_list(args: Vec<Value>) -> MixResult<Option<Value>> {
         let mut archive = Archive::new(&mut limited);
         let iter = archive
             .entries()
-            .map_err(|e| runtime(format!("{caller}: {e}")))?;
+            .map_err(|e| io_failure(format!("{caller}: {e}"), &e))?;
         for entry in iter {
-            let entry = entry.map_err(|e| runtime(format!("{caller}: {e}")))?;
-        count += 1;
-        if count > opts.max_entries {
-            return Err(runtime(format!(
-                "{caller}: exceeded max_entries ({})",
-                opts.max_entries
-            )));
-        }
-        let header = entry.header();
-        let raw = entry
-            .path()
-            .map_err(|e| runtime(format!("{caller}: member name: {e}")))?
-            .to_path_buf();
-        let name = clean_member(caller, &raw, opts.max_name)?;
-        let mut map = IndexMap::new();
-        map.insert("name".to_string(), Value::String(name.to_string_lossy().to_string()));
-        map.insert(
-            "size".to_string(),
-            Value::Number(header.size().unwrap_or(0) as f64),
-        );
-        map.insert("mode".to_string(), Value::Number(header.mode().unwrap_or(0) as f64));
-        map.insert("uid".to_string(), Value::Number(header.uid().unwrap_or(0) as f64));
-        map.insert("gid".to_string(), Value::Number(header.gid().unwrap_or(0) as f64));
-        map.insert(
-            "mtime".to_string(),
-            Value::Number(header.mtime().unwrap_or(0) as f64),
-        );
-        map.insert(
-            "kind".to_string(),
-            Value::String(kind_str(header.entry_type()).to_string()),
-        );
-        out.push(Value::Map(std::rc::Rc::new(map)));
+            let entry = entry.map_err(|e| io_failure(format!("{caller}: {e}"), &e))?;
+            count += 1;
+            if count > opts.max_entries {
+                return Err(runtime(format!(
+                    "{caller}: exceeded max_entries ({})",
+                    opts.max_entries
+                )));
+            }
+            let header = entry.header();
+            let raw = entry
+                .path()
+                .map_err(|e| runtime(format!("{caller}: member name: {e}")))?
+                .to_path_buf();
+            let name = clean_member(caller, &raw, opts.max_name)?;
+            let mut map = IndexMap::new();
+            map.insert(
+                "name".to_string(),
+                Value::String(name.to_string_lossy().to_string()),
+            );
+            map.insert(
+                "size".to_string(),
+                Value::Number(header.size().unwrap_or(0) as f64),
+            );
+            map.insert(
+                "mode".to_string(),
+                Value::Number(header.mode().unwrap_or(0) as f64),
+            );
+            map.insert(
+                "uid".to_string(),
+                Value::Number(header.uid().unwrap_or(0) as f64),
+            );
+            map.insert(
+                "gid".to_string(),
+                Value::Number(header.gid().unwrap_or(0) as f64),
+            );
+            map.insert(
+                "mtime".to_string(),
+                Value::Number(header.mtime().unwrap_or(0) as f64),
+            );
+            map.insert(
+                "kind".to_string(),
+                Value::String(kind_str(header.entry_type()).to_string()),
+            );
+            out.push(Value::Map(std::rc::Rc::new(map)));
         }
     }
     dec.drain(caller)?;
@@ -478,8 +517,8 @@ pub fn builtin_tar_unpack(args: Vec<Value>) -> MixResult<Option<Value>> {
                 count_opt(caller, "max_entries", m.get("max_entries"))?.unwrap_or(opts.max_entries);
             opts.max_bytes =
                 count_opt(caller, "max_bytes", m.get("max_bytes"))?.unwrap_or(opts.max_bytes);
-            opts.max_name =
-                count_opt(caller, "max_name", m.get("max_name"))?.unwrap_or(opts.max_name as u64) as usize;
+            opts.max_name = count_opt(caller, "max_name", m.get("max_name"))?
+                .unwrap_or(opts.max_name as u64) as usize;
             opts.max_stream_bytes =
                 count_opt(caller, "max_stream_bytes", m.get("max_stream_bytes"))?
                     .unwrap_or(opts.max_stream_bytes);
@@ -558,6 +597,9 @@ struct DeferredMeta {
     gid: u32,
     mtime: i64,
     is_symlink: bool,
+    /// `SCHILY.xattr.*` pairs collected from the entry's PAX header before its
+    /// data stream was consumed. Applied last, after owner and mode.
+    xattrs: Vec<(Vec<u8>, Vec<u8>)>,
 }
 
 fn unpack_staged(
@@ -578,158 +620,179 @@ fn unpack_staged(
     let mut extracted_files: HashSet<PathBuf> = HashSet::new();
     let mut deferred: Vec<DeferredMeta> = Vec::new();
     {
-    let mut limited = LimitedRead {
-        inner: &mut dec,
-        remaining: opts.max_stream_bytes,
-        caller: caller.to_string(),
-    };
-    let mut archive = Archive::new(&mut limited);
-    let iter = archive
-        .entries()
-        .map_err(|e| runtime(format!("{caller}: {e}")))?;
+        let mut limited = LimitedRead {
+            inner: &mut dec,
+            remaining: opts.max_stream_bytes,
+            caller: caller.to_string(),
+        };
+        let mut archive = Archive::new(&mut limited);
+        let iter = archive
+            .entries()
+            .map_err(|e| io_failure(format!("{caller}: {e}"), &e))?;
 
-    for entry in iter {
-        let mut entry = entry.map_err(|e| runtime(format!("{caller}: {e}")))?;
-        entry_count += 1;
-        if entry_count > opts.max_entries {
-            return Err(runtime(format!(
-                "{caller}: exceeded max_entries ({})",
-                opts.max_entries
-            )));
-        }
-        let header = entry.header().clone();
-        let raw_path = entry
-            .path()
-            .map_err(|e| runtime(format!("{caller}: member name: {e}")))?
-            .to_path_buf();
-        let rel = clean_member(caller, &raw_path, opts.max_name)?;
-        let target_abs = staging.join(&rel);
-
-        // Never extract THROUGH a symlink this archive created.
-        for ancestor in rel.ancestors().skip(1) {
-            if !ancestor.as_os_str().is_empty() && symlinks_created.contains(ancestor) {
+        for entry in iter {
+            let mut entry = entry.map_err(|e| io_failure(format!("{caller}: {e}"), &e))?;
+            entry_count += 1;
+            if entry_count > opts.max_entries {
                 return Err(runtime(format!(
-                    "{caller}: refusing to extract '{}' through symlink '{}'",
-                    rel.display(),
-                    ancestor.display()
+                    "{caller}: exceeded max_entries ({})",
+                    opts.max_entries
                 )));
             }
-        }
+            let header = entry.header().clone();
+            let raw_path = entry
+                .path()
+                .map_err(|e| runtime(format!("{caller}: member name: {e}")))?
+                .to_path_buf();
+            let rel = clean_member(caller, &raw_path, opts.max_name)?;
+            let target_abs = staging.join(&rel);
 
-        let mode = header.mode().unwrap_or(0o644);
-        let masked = if opts.keep_special_bits {
-            mode & 0o7777
-        } else {
-            mode & !0o6000 & 0o7777
-        };
-        let meta = DeferredMeta {
-            rel: rel.clone(),
-            mode: masked,
-            uid: header.uid().unwrap_or(0) as u32,
-            gid: header.gid().unwrap_or(0) as u32,
-            mtime: header.mtime().unwrap_or(0) as i64,
-            is_symlink: false,
-        };
-
-        match header.entry_type() {
-            EntryType::Directory => {
-                // 0700 & umask during extraction; the post-pass applies the
-                // real (masked) mode so nothing is ever wider than asked.
-                fs::create_dir(&target_abs)
-                    .map_err(|e| runtime(format!("{caller}: mkdir '{}': {e}", rel.display())))?;
-                dirs += 1;
-                deferred.push(meta);
-            }
-            EntryType::Regular | EntryType::Continuous => {
-                if let Some(parent) = target_abs.parent() {
-                    fs::create_dir_all(parent)
-                        .map_err(|e| runtime(format!("{caller}: mkdir parent: {e}")))?;
-                }
-                if opts.xattrs {
-                    xattrs_restored +=
-                        apply_pax_xattrs(&mut entry, opts, &target_abs, &rel, caller)?;
-                }
-                entry.set_preserve_mtime(true);
-                let mut out = OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .mode(0o600)
-                    .open(&target_abs)
-                    .map_err(|e| runtime(format!("{caller}: create '{}': {e}", rel.display())))?;
-                let written = std::io::copy(&mut entry, &mut out)
-                    .map_err(|e| runtime(format!("{caller}: write '{}': {e}", rel.display())))?;
-                bytes += written;
-                if bytes > opts.max_bytes {
+            // Never extract THROUGH a symlink this archive created.
+            for ancestor in rel.ancestors().skip(1) {
+                if !ancestor.as_os_str().is_empty() && symlinks_created.contains(ancestor) {
                     return Err(runtime(format!(
-                        "{caller}: exceeded max_bytes ({})",
-                        opts.max_bytes
-                    )));
-                }
-                files += 1;
-                extracted_files.insert(rel.clone());
-                deferred.push(meta);
-            }
-            EntryType::Symlink => {
-                let target = entry
-                    .link_name()
-                    .map_err(|e| runtime(format!("{caller}: link name: {e}")))?
-                    .ok_or_else(|| {
-                        runtime(format!("{caller}: symlink '{}' has no target", rel.display()))
-                    })?
-                    .clone();
-                let clean = clean_link_target(caller, &rel.to_string_lossy(), target.as_os_str(), opts.max_name)?;
-                std::os::unix::fs::symlink(&clean, &target_abs)
-                    .map_err(|e| runtime(format!("{caller}: symlink '{}': {e}", rel.display())))?;
-                symlinks += 1;
-                symlinks_created.insert(rel.clone());
-                let mut m = meta;
-                m.is_symlink = true;
-                deferred.push(m);
-            }
-            EntryType::Link => {
-                let target = entry
-                    .link_name()
-                    .map_err(|e| runtime(format!("{caller}: link name: {e}")))?
-                    .ok_or_else(|| {
-                        runtime(format!("{caller}: hardlink '{}' has no target", rel.display()))
-                    })?
-                    .clone();
-                let clean_target = clean_member(caller, &target, opts.max_name)?;
-                if !extracted_files.contains(&clean_target) {
-                    return Err(runtime(format!(
-                        "{caller}: hardlink '{}' targets '{}' which is not an earlier \
-                         regular file in this archive",
+                        "{caller}: refusing to extract '{}' through symlink '{}'",
                         rel.display(),
-                        clean_target.display()
+                        ancestor.display()
                     )));
                 }
-                fs::hard_link(staging.join(&clean_target), &target_abs)
-                    .map_err(|e| runtime(format!("{caller}: hardlink '{}': {e}", rel.display())))?;
-                hardlinks += 1;
             }
-            other => {
-                return Err(runtime(format!(
-                    "{caller}: refusing member '{}' of type {other:?} \
+
+            let mode = header.mode().unwrap_or(0o644);
+            let masked = if opts.keep_special_bits {
+                mode & 0o7777
+            } else {
+                mode & !0o6000 & 0o7777
+            };
+            let mut meta = DeferredMeta {
+                rel: rel.clone(),
+                mode: masked,
+                uid: header.uid().unwrap_or(0) as u32,
+                gid: header.gid().unwrap_or(0) as u32,
+                mtime: header.mtime().unwrap_or(0) as i64,
+                is_symlink: false,
+                xattrs: Vec::new(),
+            };
+
+            match header.entry_type() {
+                EntryType::Directory => {
+                    // 0700 & umask during extraction; the post-pass applies the
+                    // real (masked) mode so nothing is ever wider than asked.
+                    fs::create_dir(&target_abs).map_err(|e| {
+                        runtime(format!("{caller}: mkdir '{}': {e}", rel.display()))
+                    })?;
+                    dirs += 1;
+                    deferred.push(meta);
+                }
+                EntryType::Regular | EntryType::Continuous => {
+                    if let Some(parent) = target_abs.parent() {
+                        fs::create_dir_all(parent)
+                            .map_err(|e| runtime(format!("{caller}: mkdir parent: {e}")))?;
+                    }
+                    if opts.xattrs {
+                        meta.xattrs = collect_pax_xattrs(&mut entry, opts);
+                    }
+                    entry.set_preserve_mtime(true);
+                    let mut out = OpenOptions::new()
+                        .write(true)
+                        .create_new(true)
+                        .mode(0o600)
+                        .open(&target_abs)
+                        .map_err(|e| {
+                            runtime(format!("{caller}: create '{}': {e}", rel.display()))
+                        })?;
+                    let written = std::io::copy(&mut entry, &mut out).map_err(|e| {
+                        io_failure(format!("{caller}: write '{}': {e}", rel.display()), &e)
+                    })?;
+                    bytes += written;
+                    if bytes > opts.max_bytes {
+                        return Err(runtime(format!(
+                            "{caller}: exceeded max_bytes ({})",
+                            opts.max_bytes
+                        )));
+                    }
+                    files += 1;
+                    extracted_files.insert(rel.clone());
+                    deferred.push(meta);
+                }
+                EntryType::Symlink => {
+                    let target = entry
+                        .link_name()
+                        .map_err(|e| runtime(format!("{caller}: link name: {e}")))?
+                        .ok_or_else(|| {
+                            runtime(format!(
+                                "{caller}: symlink '{}' has no target",
+                                rel.display()
+                            ))
+                        })?
+                        .clone();
+                    let clean = clean_link_target(
+                        caller,
+                        &rel.to_string_lossy(),
+                        target.as_os_str(),
+                        opts.max_name,
+                    )?;
+                    std::os::unix::fs::symlink(&clean, &target_abs).map_err(|e| {
+                        runtime(format!("{caller}: symlink '{}': {e}", rel.display()))
+                    })?;
+                    symlinks += 1;
+                    symlinks_created.insert(rel.clone());
+                    let mut m = meta;
+                    m.is_symlink = true;
+                    deferred.push(m);
+                }
+                EntryType::Link => {
+                    let target = entry
+                        .link_name()
+                        .map_err(|e| runtime(format!("{caller}: link name: {e}")))?
+                        .ok_or_else(|| {
+                            runtime(format!(
+                                "{caller}: hardlink '{}' has no target",
+                                rel.display()
+                            ))
+                        })?
+                        .clone();
+                    let clean_target = clean_member(caller, &target, opts.max_name)?;
+                    if !extracted_files.contains(&clean_target) {
+                        return Err(runtime(format!(
+                            "{caller}: hardlink '{}' targets '{}' which is not an earlier \
+                         regular file in this archive",
+                            rel.display(),
+                            clean_target.display()
+                        )));
+                    }
+                    fs::hard_link(staging.join(&clean_target), &target_abs).map_err(|e| {
+                        runtime(format!("{caller}: hardlink '{}': {e}", rel.display()))
+                    })?;
+                    hardlinks += 1;
+                }
+                other => {
+                    return Err(runtime(format!(
+                        "{caller}: refusing member '{}' of type {other:?} \
                      (device/fifo/special entries are not extracted)",
-                    rel.display()
-                )));
+                        rel.display()
+                    )));
+                }
             }
         }
-    }
     }
     let trailing = dec.drain(caller)?;
 
     // Deferred metadata, children-first so directory mtimes stick, never
-    // following symlinks (lchown / utimensat AT_SYMLINK_NOFOLLOW).
+    // following symlinks (lchown / utimensat AT_SYMLINK_NOFOLLOW). The order
+    // per file is owner, then mode, then xattrs: chown clears setuid/setgid
+    // and security.capability, so chmod must follow it for a kept special bit
+    // to survive, and xattrs must come last so nothing strips them again.
     for m in deferred.iter().rev() {
         let abs = staging.join(&m.rel);
-        if !m.is_symlink {
-            let _ = fs::set_permissions(&abs, fs::Permissions::from_mode(m.mode));
-        }
         if opts.numeric_owner {
             let _ = lchown(&abs, m.uid, m.gid);
         }
+        if !m.is_symlink {
+            let _ = fs::set_permissions(&abs, fs::Permissions::from_mode(m.mode));
+        }
         let _ = set_mtime_nofollow(&abs, m.mtime);
+        xattrs_restored += apply_xattrs(&abs, &m.rel, &m.xattrs, caller)?;
     }
 
     let mut map = IndexMap::new();
@@ -743,29 +806,32 @@ fn unpack_staged(
         Value::Number(xattrs_restored as f64),
     );
     map.insert("entries".to_string(), Value::Number(entry_count as f64));
-    map.insert("trailing_padding".to_string(), Value::Number(trailing as f64));
-    map.insert("codec".to_string(), Value::String(opts.codec.as_str().to_string()));
+    map.insert(
+        "trailing_padding".to_string(),
+        Value::Number(trailing as f64),
+    );
+    map.insert(
+        "codec".to_string(),
+        Value::String(opts.codec.as_str().to_string()),
+    );
     Ok(map)
 }
 
-/// Parse the entry's PAX records by hand and apply `SCHILY.xattr.*` keys.
-/// `security.*` is SKIPPED unless `keep_special_bits` — a capability xattr
-/// is a privilege grant exactly like a suid bit, and the tar crate's
-/// blanket `set_unpack_xattrs` would restore it regardless of the caller's
-/// choice. EPERM is tolerated (non-root extraction is a documented
-/// capability limit); every other failure raises.
-fn apply_pax_xattrs<E: Read>(
+/// Collect the entry's `SCHILY.xattr.*` PAX records before its data stream is
+/// consumed. `security.*` is dropped here unless `keep_special_bits`: a
+/// capability xattr is a privilege grant exactly like a suid bit, and the
+/// tar crate's blanket `set_unpack_xattrs` would restore it regardless of the
+/// caller's choice. The pairs are applied later by `apply_xattrs`, once the
+/// owner and mode are settled.
+fn collect_pax_xattrs<E: Read>(
     entry: &mut tar::Entry<E>,
     opts: &UnpackOpts,
-    target_abs: &Path,
-    rel: &Path,
-    caller: &str,
-) -> MixResult<u64> {
+) -> Vec<(Vec<u8>, Vec<u8>)> {
     let pax = match entry.pax_extensions() {
         Ok(Some(p)) => p,
-        _ => return Ok(0),
+        _ => return Vec::new(),
     };
-    let mut restored = 0u64;
+    let mut pairs = Vec::new();
     for kv in pax.flatten() {
         let key = kv.key_bytes();
         if !key.starts_with(b"SCHILY.xattr.") {
@@ -775,13 +841,30 @@ fn apply_pax_xattrs<E: Read>(
         if !opts.keep_special_bits && xname.starts_with(b"security.") {
             continue;
         }
-        let cname = match std::ffi::CString::new(xname.to_vec()) {
-            Ok(c) => c,
-            Err(_) => continue, // xattr names cannot contain NUL by definition
+        pairs.push((xname.to_vec(), kv.value_bytes().to_vec()));
+    }
+    pairs
+}
+
+/// Apply collected xattr pairs to `abs` with `lsetxattr`. EPERM is tolerated
+/// (non-root extraction is a documented capability limit); every other
+/// failure raises.
+fn apply_xattrs(
+    abs: &Path,
+    rel: &Path,
+    pairs: &[(Vec<u8>, Vec<u8>)],
+    caller: &str,
+) -> MixResult<u64> {
+    if pairs.is_empty() {
+        return Ok(0);
+    }
+    let cpath = std::ffi::CString::new(abs.as_os_str().as_bytes())
+        .map_err(|_| runtime(format!("{caller}: member path contains NUL")))?;
+    let mut restored = 0u64;
+    for (xname, value) in pairs {
+        let Ok(cname) = std::ffi::CString::new(xname.as_slice()) else {
+            continue; // xattr names cannot contain NUL by definition
         };
-        let cpath = std::ffi::CString::new(target_abs.as_os_str().as_bytes())
-            .map_err(|_| runtime(format!("{caller}: member path contains NUL")))?;
-        let value = kv.value_bytes();
         let rc = unsafe {
             libc::lsetxattr(
                 cpath.as_ptr(),
@@ -793,8 +876,8 @@ fn apply_pax_xattrs<E: Read>(
         };
         if rc != 0 {
             let err = std::io::Error::last_os_error();
-            if err.raw_os_error() == Some(1) {
-                continue; // EPERM: non-root; documented limit, not an error
+            if err.raw_os_error() == Some(libc::EPERM) {
+                continue; // non-root: documented limit, not an error
             }
             return Err(runtime(format!(
                 "{caller}: xattr '{}' on '{}': {err}",
@@ -974,10 +1057,8 @@ fn pack_stream(
 ) -> MixResult<IndexMap<String, Value>> {
     let sink = match opts.codec {
         Codec::Zstd => {
-            let level =
-                structured_zstd::encoding::CompressionLevel::Level(opts.level);
-            let enc =
-                structured_zstd::encoding::StreamingEncoder::new(buf, level);
+            let level = structured_zstd::encoding::CompressionLevel::Level(opts.level);
+            let enc = structured_zstd::encoding::StreamingEncoder::new(buf, level);
             PackSink::Zstd(Box::new(enc))
         }
         Codec::Gzip => PackSink::Gzip(Box::new(flate2::write::GzEncoder::new(
@@ -1046,7 +1127,10 @@ fn walk_and_append(
             } else if meta.is_file() {
                 if let Some(raw) = xattr_security_capability(&child) {
                     builder
-                        .append_pax_extensions([("SCHILY.xattr.security.capability", raw.as_slice())])
+                        .append_pax_extensions([(
+                            "SCHILY.xattr.security.capability",
+                            raw.as_slice(),
+                        )])
                         .map_err(|e| {
                             runtime(format!("{caller}: pax xattr '{}': {e}", rel.display()))
                         })?;
@@ -1083,7 +1167,10 @@ fn walk_and_append(
     map.insert("symlinks".to_string(), Value::Number(symlinks as f64));
     map.insert("bytes".to_string(), Value::Number(bytes as f64));
     map.insert("capabilities".to_string(), Value::Number(caps as f64));
-    map.insert("codec".to_string(), Value::String(opts.codec.as_str().to_string()));
+    map.insert(
+        "codec".to_string(),
+        Value::String(opts.codec.as_str().to_string()),
+    );
     map.insert("level".to_string(), Value::Number(opts.level as f64));
     Ok(map)
 }

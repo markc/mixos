@@ -31,6 +31,80 @@ async fn run_err(source: &str) -> String {
     }
 }
 
+/// Like `run_err`, but returns the structured error code (empty when the
+/// error carries none) so a test can assert the stable code, not the prose.
+async fn run_err_code(source: &str) -> (String, String) {
+    match mix::run(source).await {
+        Ok(v) => panic!("expected an error, got {v:?}\nsource: {source}"),
+        Err(e) => (
+            e.info().map(|i| i.code.clone()).unwrap_or_default(),
+            e.to_string(),
+        ),
+    }
+}
+
+/// `setxattr(name)` on `path` with `value`.
+fn set_xattr(path: &std::path::Path, name: &std::ffi::CStr, value: &[u8]) -> std::io::Result<()> {
+    let c = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+    let r = unsafe {
+        libc::setxattr(
+            c.as_ptr(),
+            name.as_ptr(),
+            value.as_ptr() as *const libc::c_void,
+            value.len(),
+            0,
+        )
+    };
+    if r == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+/// Probe whether this filesystem accepts `name` on a scratch file in `d`.
+/// Returns false after printing the skip line when it refuses the xattr with
+/// an errno meaning "not supported here"; any other failure panics.
+fn xattr_supported(d: &std::path::Path, name: &std::ffi::CStr, value: &[u8]) -> bool {
+    fs::create_dir_all(d).unwrap();
+    let label = name.to_string_lossy().into_owned();
+    let probe = d.join(format!("probe-{label}"));
+    fs::write(&probe, b"probe").unwrap();
+    match set_xattr(&probe, name, value) {
+        Ok(()) => true,
+        Err(e)
+            if matches!(
+                e.raw_os_error(),
+                Some(libc::EINVAL | libc::EPERM | libc::ENOTSUP | libc::EOPNOTSUPP)
+            ) =>
+        {
+            eprintln!("skipped: {label} xattrs unsupported here ({e})");
+            false
+        }
+        Err(e) => panic!("setxattr probe for {label} failed: {e}"),
+    }
+}
+
+/// A plain tar at `<d>/<tag>.tar` holding one `prog` (mode 0755, root-owned)
+/// that carries the given `SCHILY.xattr.*` PAX records. Written with the tar
+/// crate's PAX writer, the same call the packer uses for security.capability.
+fn xattr_archive(d: &std::path::Path, tag: &str, records: &[(&str, &[u8])]) -> PathBuf {
+    fs::create_dir_all(d).unwrap();
+    let arc = d.join(format!("{tag}.tar"));
+    let mut b = Builder::new(fs::File::create(&arc).unwrap());
+    b.append_pax_extensions(records.iter().copied()).unwrap();
+    let body = b"#!/bin/sh\n";
+    let mut h = Header::new_gnu();
+    h.set_size(body.len() as u64);
+    h.set_mode(0o755);
+    h.set_uid(0);
+    h.set_gid(0);
+    h.set_mtime(0);
+    b.append_data(&mut h, "prog", &body[..]).unwrap();
+    b.into_inner().unwrap().flush().unwrap();
+    arc
+}
+
 /// Unique temp dir per test.
 fn tmpdir(tag: &str) -> PathBuf {
     let d = std::env::temp_dir().join(format!(
@@ -130,8 +204,14 @@ async fn roundtrip_all_codecs() {
                 .collect::<Vec<_>>(),
             other => panic!("list not a list: {other:?}"),
         };
-        assert!(names.contains(&"hello.txt".to_string()), "{codec}: {names:?}");
-        assert!(names.contains(&"sub/deep.bin".to_string()), "{codec}: {names:?}");
+        assert!(
+            names.contains(&"hello.txt".to_string()),
+            "{codec}: {names:?}"
+        );
+        assert!(
+            names.contains(&"sub/deep.bin".to_string()),
+            "{codec}: {names:?}"
+        );
         assert!(names.contains(&"link".to_string()), "{codec}: {names:?}");
 
         let dest = d.join(format!("dest-{codec}"));
@@ -142,10 +222,17 @@ async fn roundtrip_all_codecs() {
             codec
         ))
         .await;
-        assert_eq!(fs::read(dest.join("hello.txt")).unwrap(), b"hello archive\n");
+        assert_eq!(
+            fs::read(dest.join("hello.txt")).unwrap(),
+            b"hello archive\n"
+        );
         assert_eq!(fs::read(dest.join("sub/deep.bin")).unwrap().len(), 100_000);
         assert_eq!(
-            fs::symlink_metadata(dest.join("hello.txt")).unwrap().permissions().mode() & 0o777,
+            fs::symlink_metadata(dest.join("hello.txt"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
             0o750
         );
         assert_eq!(
@@ -164,9 +251,19 @@ async fn pack_is_deterministic() {
     fs::write(src.join("b"), b"bytes").unwrap();
     let a = d.join("a.tar");
     let b = d.join("b.tar");
-    run_ok(&format!("tar_pack(\"{}\", \"{}\")", src.display(), a.display())).await;
+    run_ok(&format!(
+        "tar_pack(\"{}\", \"{}\")",
+        src.display(),
+        a.display()
+    ))
+    .await;
     std::thread::sleep(std::time::Duration::from_millis(1100)); // distinct mtime would break determinism if captured wrongly
-    run_ok(&format!("tar_pack(\"{}\", \"{}\")", src.display(), b.display())).await;
+    run_ok(&format!(
+        "tar_pack(\"{}\", \"{}\")",
+        src.display(),
+        b.display()
+    ))
+    .await;
     assert_eq!(fs::read(&a).unwrap(), fs::read(&b).unwrap());
 }
 
@@ -237,7 +334,10 @@ async fn refuse_symlink_then_write_through_it() {
     ))
     .await;
     // The escaping TARGET is refused before the traversal check can bite.
-    assert!(err.contains("symlink") && (err.contains("escaping") || err.contains("pivot")), "{err}");
+    assert!(
+        err.contains("symlink") && (err.contains("escaping") || err.contains("pivot")),
+        "{err}"
+    );
     assert!(!d.join("../../outside").exists() || fs::read_link(d.join("dest/pivot")).is_err());
 }
 
@@ -268,7 +368,10 @@ async fn refuse_hardlink_to_unextracted() {
 #[tokio::test]
 async fn refuse_device_and_fifo_entries() {
     let d = tmpdir("dev");
-    for (tag, et) in [("chardev", tar::EntryType::Char), ("fifo", tar::EntryType::Fifo)] {
+    for (tag, et) in [
+        ("chardev", tar::EntryType::Char),
+        ("fifo", tar::EntryType::Fifo),
+    ] {
         let arc = d.join(format!("{tag}.tar"));
         let file = fs::File::create(&arc).unwrap();
         let mut b = Builder::new(file);
@@ -331,15 +434,19 @@ async fn refuse_truncated_gzip() {
     ))
     .await;
     let full = fs::read(&arc).unwrap();
-    assert!(full.len() > 400, "gzip payload too small to truncate: {}", full.len());
+    assert!(
+        full.len() > 400,
+        "gzip payload too small to truncate: {}",
+        full.len()
+    );
     fs::write(&arc, &full[..full.len() - 200]).unwrap();
-    let err = run_err(&format!(
+    let (code, msg) = run_err_code(&format!(
         "tar_unpack(\"{}\", \"{}\", {{codec:\"gzip\"}})",
         arc.display(),
         d.join("dest").display()
     ))
     .await;
-    assert!(err.contains("verification failed") || err.contains("unexpected"), "{err}");
+    assert_eq!(code, "ARCHIVE_STREAM_CORRUPT", "{msg}");
 }
 
 #[tokio::test]
@@ -380,7 +487,10 @@ async fn refuse_corrupt_zstd_checksum() {
 async fn enforce_max_entries() {
     let d = tmpdir("max");
     let arc = d.join("three.tar");
-    build_plain(&arc, &[("a", b"1", 0o644), ("b", b"2", 0o644), ("c", b"3", 0o644)]);
+    build_plain(
+        &arc,
+        &[("a", b"1", 0o644), ("b", b"2", 0o644), ("c", b"3", 0o644)],
+    );
     let err = run_err(&format!(
         "tar_unpack(\"{}\", \"{}\", {{codec:\"none\", max_entries:2}})",
         arc.display(),
@@ -402,7 +512,10 @@ async fn suid_stripped_by_default_kept_opt_in() {
         dest.display()
     ))
     .await;
-    let mode = fs::metadata(dest.join("rootish")).unwrap().permissions().mode();
+    let mode = fs::metadata(dest.join("rootish"))
+        .unwrap()
+        .permissions()
+        .mode();
     assert_eq!(mode & 0o7777, 0o755, "suid must be stripped by default");
     let dest2 = d.join("dest2");
     run_ok(&format!(
@@ -411,7 +524,10 @@ async fn suid_stripped_by_default_kept_opt_in() {
         dest2.display()
     ))
     .await;
-    let mode2 = fs::metadata(dest2.join("rootish")).unwrap().permissions().mode();
+    let mode2 = fs::metadata(dest2.join("rootish"))
+        .unwrap()
+        .permissions()
+        .mode();
     assert_eq!(mode2 & 0o7777, 0o4755);
 }
 
@@ -441,7 +557,10 @@ async fn refuse_any_existing_dest() {
     ))
     .await;
     assert!(err2.contains("exists"), "{err2}");
-    assert!(empty.read_dir().unwrap().next().is_none(), "staging must not leak into a refused dest");
+    assert!(
+        empty.read_dir().unwrap().next().is_none(),
+        "staging must not leak into a refused dest"
+    );
 }
 
 #[tokio::test]
@@ -463,35 +582,32 @@ async fn unknown_option_refused() {
 // skipped in normal dev runs, exercised by the root canary flow instead.
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
-async fn capability_roundtrip_as_root() {
-    if unsafe { libc::geteuid() } != 0 {
-        return; // documented skip
-    }
-    let d = tmpdir("cap");
+/// A valid v2 `security.capability` blob (20 bytes): VFS_CAP_REVISION_2 =
+/// 0x02000000 in the first word, little-endian, so byte 3 carries the
+/// revision. A zero revision is unknown to the kernel and is refused with
+/// EINVAL on any filesystem.
+fn v2_capability_blob() -> Vec<u8> {
+    let mut cap = vec![0u8; 20];
+    cap[3] = 0x02;
+    cap
+}
+
+/// Pack a scratch `src/prog` that carries a `security.capability` xattr into
+/// `<d>/cap.tar`. Returns the archive and the blob it carries, or `None` after
+/// printing the skip line when this filesystem refuses the xattr. The probe
+/// runs on a scratch file in the same directory first.
+async fn capability_fixture(d: &std::path::Path) -> Option<(PathBuf, Vec<u8>)> {
     let src = d.join("src");
     fs::create_dir_all(&src).unwrap();
     let prog = src.join("prog");
     fs::write(&prog, b"#!/bin/sh\n").unwrap();
     fs::set_permissions(&prog, fs::Permissions::from_mode(0o755)).unwrap();
-    let st = fs::File::open(&prog).unwrap();
-    // set security.capability v3 (rootid 0)
-    let mut cap = vec![0u8; 20];
-    cap[0] = 0; // version 1 for simplicity
-    unsafe {
-        let c = std::ffi::CString::new(prog.as_os_str().as_bytes()).unwrap();
-        let r = libc::setxattr(
-            c.as_ptr(),
-            c"security.capability".as_ptr(),
-            cap.as_ptr() as *const libc::c_void,
-            cap.len(),
-            0,
-        );
-        if r != 0 {
-            panic!("setxaddr failed: {}", std::io::Error::last_os_error());
-        }
+    let cap = v2_capability_blob();
+    if !xattr_supported(d, c"security.capability", &cap) {
+        return None;
     }
-    drop(st);
+    set_xattr(&prog, c"security.capability", &cap)
+        .unwrap_or_else(|e| panic!("setxattr failed: {e}"));
     let arc = d.join("cap.tar");
     run_ok(&format!(
         "tar_pack(\"{}\", \"{}\")",
@@ -499,25 +615,87 @@ async fn capability_roundtrip_as_root() {
         arc.display()
     ))
     .await;
-    let dest = d.join("dest");
-    run_ok(&format!(
-        "tar_unpack(\"{}\", \"{}\")",
-        arc.display(),
-        dest.display()
-    ))
-    .await;
-    // The restored xattr must exist and round-trip byte-exact.
+    Some((arc, cap))
+}
+
+/// Read xattr `name` from `path`: the value, or the OS error.
+fn get_xattr(path: &std::path::Path, name: &std::ffi::CStr) -> std::io::Result<Vec<u8>> {
     let mut got = vec![0u8; 64];
+    let c = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
     let n = unsafe {
-        let c = std::ffi::CString::new(dest.join("prog").as_os_str().as_bytes()).unwrap();
         libc::getxattr(
             c.as_ptr(),
-            c"security.capability".as_ptr(),
+            name.as_ptr(),
             got.as_mut_ptr() as *mut libc::c_void,
             got.len(),
         )
     };
-    assert_eq!(n as usize, cap.len(), "capability xattr must round-trip");
+    if n < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
     got.truncate(n as usize);
-    assert_eq!(got, cap);
+    Ok(got)
+}
+
+#[tokio::test]
+async fn capability_roundtrip_as_root() {
+    if unsafe { libc::geteuid() } != 0 {
+        return; // documented skip
+    }
+    let d = tmpdir("cap");
+    let Some((arc, cap)) = capability_fixture(&d).await else {
+        return;
+    };
+    let dest = d.join("dest");
+    run_ok(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{keep_special_bits:true}})",
+        arc.display(),
+        dest.display()
+    ))
+    .await;
+    // Opted in: the restored xattr must exist and round-trip byte-exact.
+    let got = get_xattr(&dest.join("prog"), c"security.capability")
+        .expect("capability xattr must be restored");
+    assert_eq!(got, cap, "capability xattr must round-trip");
+}
+
+#[tokio::test]
+async fn capability_not_restored_by_default() {
+    if unsafe { libc::geteuid() } != 0 {
+        return; // documented skip
+    }
+    let d = tmpdir("capdef");
+    let cap = v2_capability_blob();
+    if !xattr_supported(&d, c"security.capability", &cap) {
+        return;
+    }
+    // The sibling: a non-security xattr in the same archive. Skipped alone
+    // when this filesystem refuses user.* xattrs.
+    let user_ok = xattr_supported(&d, c"user.mixtest", &b"mix"[..]);
+    let mut records: Vec<(&str, &[u8])> =
+        vec![("SCHILY.xattr.security.capability", cap.as_slice())];
+    if user_ok {
+        records.push(("SCHILY.xattr.user.mixtest", &b"mix"[..]));
+    }
+    let arc = xattr_archive(&d, "capdef", &records);
+    let dest = d.join("dest");
+    run_ok(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+        arc.display(),
+        dest.display()
+    ))
+    .await;
+    let prog = dest.join("prog");
+    assert!(prog.exists(), "the file itself must still unpack");
+    // Policy: security.* is stripped by default, so the capability never lands.
+    get_xattr(&prog, c"security.capability")
+        .expect_err("default unpack must not restore security.capability");
+    // Not "nothing is ever restored": a non-security xattr in the same archive
+    // IS restored by default, so the stripping above is the policy alone.
+    if user_ok {
+        assert_eq!(
+            get_xattr(&prog, c"user.mixtest").expect("user.* xattr must be restored by default"),
+            b"mix".to_vec()
+        );
+    }
 }
