@@ -773,6 +773,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "edit"
+version = "0.1.1"
+dependencies = [
+ "libc",
+ "proptest",
+ "regex",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "editd"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "buildinfo",
+ "bus",
+ "chrono",
+ "clap",
+ "config",
+ "edit",
+ "libc",
+ "notify",
+ "props",
+ "rand 0.8.8",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"

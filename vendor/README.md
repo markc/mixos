@@ -10,4 +10,5 @@ Each crate's local edits against its upstream base are listed in that crate's
 
 | Crate | Dir | Upstream version | Wired via | Local edits | Notes |
 |---|---|---|---|---|---|
+| msedit (Microsoft Edit buffer) | `msedit/` | revision `826b4c097b6f14ba0a846dc56f2f0223a3aaf73a` | `#[path]` include from `libs/edit` | see `msedit/PATCHES.md` | MIT; its `lsh` and `stdext` workspaces are excluded |
 | dirs-sys | `dirs-sys/` | crates.io 0.5.0, `8bcd4aa2c35990d57a2cff2953793525fc42709c` | `[patch.crates-io]` | replace one OptionExt comparison with standard Option equality; remove option-ext | MIT OR Apache-2.0; upstream XDG tests and licence gate |

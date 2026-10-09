@@ -13,6 +13,10 @@ MIT OR Apache-2.0; original LICENSE-MIT and LICENSE-APACHE retained.
 Base 8bcd4aa2c35990d57a2cff2953793525fc42709c; local dependency removal is
 recorded in vendor/dirs-sys/PATCHES.md.
 
+Microsoft Edit buffer and syntax sources: Microsoft Corporation, MIT,
+revision 826b4c097b6f14ba0a846dc56f2f0223a3aaf73a; see vendor/msedit.
+editd retains source from cosmix e0297242305f3a3c3de09f1ca01e8faa771768da (Mark Constable, MIT).
+
 Site assets (docs/web)
 ----------------------
 

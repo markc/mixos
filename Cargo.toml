@@ -4,8 +4,8 @@
 
 [workspace]
 resolver = "3"
-members = ["libs/*", "services/noded", "services/noded/crates/*", "cli/mix-shell"]
-exclude = ["vendor"]
+members = ["libs/*", "services/noded", "services/noded/crates/*", "cli/mix-shell", "services/editd"]
+exclude = ["vendor", "vendor/msedit/lsh", "vendor/msedit/stdext"]
 
 [workspace.package]
 version = "0.1.1"
@@ -58,6 +58,7 @@ buildinfo = { path = "libs/buildinfo" }
 bus = { path = "libs/bus", default-features = false }
 config = { path = "libs/config" }
 design = { path = "libs/design" }
+edit = { path = "libs/edit" }
 expr = { path = "libs/expr" }
 logging = { path = "libs/logging" }
 mix = { path = "libs/mix" }
