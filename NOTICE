@@ -1,0 +1,14 @@
+MixOS
+Copyright (c) 2026 Mark Constable <mc@mixos.dev>
+Licensed MIT OR Apache-2.0 (LICENSE-MIT, LICENSE-APACHE).
+
+Incorporated and third-party code and assets are listed here as each component
+enters the tree. Per-file licensing is recorded in REUSE.toml.
+
+Site assets (docs/web)
+----------------------
+
+The mixos.dev web fonts are subsets cut by docs/build/gen-site.mix from the
+pinned asset set; each keeps its upstream licence beside it in docs/web/fonts:
+Inter, JetBrains Mono and Quicksand (SIL OFL 1.1), Noto Color Emoji
+(SIL OFL 1.1) and Material Symbols (Google LLC, Apache-2.0).
