@@ -11,7 +11,7 @@ pub fn describe() -> Value {
         "revision_encoding": "canonical decimal u64 string", "max_receipts": MAX_RECEIPTS,
         "receipt_expiry": "missing receipts are unknown; no ordering of opaque operation IDs",
         "fields": {
-            "appearance.scheme": {"type":"string", "enum":["ocean","crimson","stone","forest","sunset","mono"]},
+            "appearance.scheme": {"type":"string", "enum":["ocean","crimson","stone","forest","sunset","mono","pro","studio","classic"]},
             "appearance.mode": {"type":"string", "enum":["light","dark"]},
             "appearance.contrast": {"type":"string", "enum":["normal","high"]},
             "appearance.source": {"type":"string|null", "max_bytes":MAX_SOURCE_BYTES},

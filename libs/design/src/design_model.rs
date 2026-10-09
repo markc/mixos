@@ -84,6 +84,8 @@ pub struct ResolvedDictionary {
     pub colours: ResolvedColours,
     pub metrics: BTreeMap<String, ResolvedMetric>,
     pub scales: BTreeMap<String, Vec<f64>>,
+    /// Exact chrome colours, when the design authors the chrome family.
+    pub chrome: Option<crate::family::chrome::ResolvedChrome>,
 }
 
 /// Metric kinds that survive compilation. An authored step is resolved to px,

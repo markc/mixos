@@ -1851,6 +1851,7 @@ mod tests {
             typography: Default::default(),
             families: FamilyMappingsSource {
                 button: Some(mapping),
+                chrome: None,
             },
             v0_crosswalk: Default::default(),
         }

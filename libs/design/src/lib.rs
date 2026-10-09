@@ -59,6 +59,7 @@ pub use colour_model::{
     ResolvedPair, TEXT_PAIR_NAMES, contrast_ratio,
 };
 pub use compiler::compile_design;
+pub use family::chrome::ResolvedChrome;
 pub use context::{Contrast, DesignContext, Mode, Scheme};
 pub use design_model::{
     AuthoredMetric, DesignApplyDecision, DesignApplyTransition, DesignCompileFailure,
@@ -84,7 +85,7 @@ pub use recipe::{
     RecipePairDomain, RecipeParam, RecipeSignature, RecipeSubstitutionDomainConstraint,
 };
 pub use source::{
-    AuthoredPairSource, ButtonInheritanceSource, ButtonMappingSource, ColourSpace, CoveragePolicy,
+    AuthoredPairSource, ButtonInheritanceSource, ButtonMappingSource, ChromeMappingSource, ColourSpace, CoveragePolicy,
     DerivationCallSource, DesignSourceDocument, DesignSourceError, DesignSourceErrorCode,
     DesignV1Source, FamilyMappingsSource, LegacyTypographySource, LegacyV0Source,
     MappingRuleSource, MappingSelectorSource, MappingValueSource, MetricSource, ModifierAxis,

@@ -2191,3 +2191,72 @@ fn linear_to_srgb(value: f64) -> f64 {
 fn quantise(value: f64) -> u8 {
     (value.clamp(0.0, 1.0) * 255.0).round() as u8
 }
+
+/// Exact authoring: a measured 8-bit sRGB colour, written into a design
+/// source as OKLCH at [`AUTHORED_PLACES`] decimals, compiles back to the same
+/// 8 bits. Six places are not enough: saturated blues at the gamut edge
+/// (#000099, #0000fe) round just outside sRGB and gamut mapping trims them.
+/// Primitives take no contrast or derivation step, so this round trip is the
+/// whole guarantee that a primitive renders exactly as measured.
+#[cfg(test)]
+mod exact_authoring_tests {
+    use super::derivation::{linear_srgb_to_oklch, oklch_to_linear_srgb};
+    use super::LinearRgba;
+
+    /// Decimal places an exactly authored OKLCH primitive is written with.
+    const AUTHORED_PLACES: i32 = 9;
+
+    fn decode(channel: u8) -> f64 {
+        let v = f64::from(channel) / 255.0;
+        if v <= 0.040_45 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+    }
+
+    fn round_to(value: f64, places: i32) -> f64 {
+        let scale = 10f64.powi(places);
+        (value * scale).round() / scale
+    }
+
+    fn round_trip(rgb: [u8; 3], places: i32) -> [u8; 4] {
+        let linear = LinearRgba { red: decode(rgb[0]), green: decode(rgb[1]), blue: decode(rgb[2]), alpha: 1.0 };
+        let (l, c, h) = linear_srgb_to_oklch(linear);
+        oklch_to_linear_srgb(round_to(l, places), round_to(c, places), round_to(h, places), 1.0).expect("in range").to_srgba8()
+    }
+
+    #[test]
+    fn every_sampled_srgb_colour_survives_authored_oklch() {
+        let mut samples: Vec<[u8; 3]> = (0..=255u8).map(|g| [g, g, g]).collect();
+        let steps: Vec<u8> = (0..=15u8).map(|i| i * 17).collect();
+        for &r in &steps {
+            for &g in &steps {
+                for &b in &steps {
+                    samples.push([r, g, b]);
+                }
+            }
+        }
+        for edge in [0u8, 1, 254, 255] {
+            for other in [0u8, 128, 255] {
+                samples.extend([[edge, other, other], [other, edge, other], [other, other, edge]]);
+            }
+        }
+        let moved = |places| samples.iter().filter(|rgb| round_trip(**rgb, places)[..3] != rgb[..]).count();
+        assert_eq!(moved(AUTHORED_PLACES), 0, "authored precision must be exact");
+        assert!(moved(6) > 0, "six places is known to be lossy at the blue gamut edge");
+    }
+
+    /// The whole 8-bit cube. Slow in debug: `cargo test --release -p design -- --ignored`.
+    #[test]
+    #[ignore = "16.7M colours; run in release"]
+    fn every_srgb_colour_survives_authored_oklch() {
+        let mut moved = 0u64;
+        for r in 0..=255u8 {
+            for g in 0..=255u8 {
+                for b in 0..=255u8 {
+                    if round_trip([r, g, b], AUTHORED_PLACES)[..3] != [r, g, b] {
+                        moved += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(moved, 0);
+    }
+}

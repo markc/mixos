@@ -325,6 +325,8 @@ fn embedded_authored_role_anchors_match_revision_one_in_all_twelve_contexts() {
         .colors
         .keys()
         .map(String::as_str)
+        // The chrome primitives are pinned by family::chrome's own tests.
+        .filter(|name| !name.starts_with("chrome."))
         .collect::<Vec<_>>();
     assert_eq!(
         primitive_names,
@@ -1533,13 +1535,18 @@ fn embedded_default_compiles_without_errors_in_all_twelve_contexts() {
     // The count is load-bearing: an empty set would also be produced by a loop that
     // stopped iterating, which would read as a pass.
     assert_eq!(
-        contexts_checked, 12,
+        contexts_checked,
+        Scheme::ALL.len() * Mode::ALL.len(),
         "every scheme/mode point must be checked"
     );
     assert_eq!(unsafe_web_accents, BTreeSet::new());
+    // Revision one: 156 and 192 over its twelve contexts. Each compile checks
+    // every context, so totals scale with contexts x compiles. The three chrome
+    // schemes take the mono palette for their pairs, so per compile they add
+    // mono's own warnings three times (+6 and +24), over eighteen compiles.
     assert_eq!(
         diagnostic_counts,
-        BTreeMap::from([("non-text-contrast", 156), ("ring-walk-distance", 192),])
+        BTreeMap::from([("non-text-contrast", 342), ("ring-walk-distance", 720),])
     );
 }
 
@@ -1721,7 +1728,7 @@ fn focus_ring_covers_every_reachable_cell_and_pins_revision_one_walks() {
     let mut routine = 0usize;
     let mut above = Vec::new();
     let mut measured = 0usize;
-    for scheme in Scheme::ALL {
+    for scheme in Scheme::REVISION_ONE {
         for mode in Mode::ALL {
             let context = DesignContext {
                 scheme,

@@ -1,6 +1,7 @@
 //! Closed family-schema registry.
 
 pub mod button;
+pub mod chrome;
 
 /// Stable identifier for a registered desktop family.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

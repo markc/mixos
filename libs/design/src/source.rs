@@ -392,6 +392,19 @@ pub struct TypeRecordSource {
 pub struct FamilyMappingsSource {
     #[serde(default)]
     pub button: Option<ButtonMappingSource>,
+    /// Exact chrome colours by role (`family::chrome`).
+    #[serde(default)]
+    pub chrome: Option<ChromeMappingSource>,
+}
+
+/// The chrome family: role name to colour primitive name, no derivation.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChromeMappingSource {
+    #[serde(default)]
+    pub coverage: CoveragePolicy,
+    #[serde(default)]
+    pub roles: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Deserialize)]

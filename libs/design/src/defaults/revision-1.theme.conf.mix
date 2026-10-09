@@ -53,7 +53,40 @@ design: {
         "status.success": { color_space: "oklch", l: 0.45, c: 0.15, h: 145.0 },
         "status.warning": { color_space: "oklch", l: 0.70, c: 0.15, h: 85.0 },
         "status.danger": { color_space: "oklch", l: 0.52, c: 0.20, h: 25.0 },
-        "transparent": { color_space: "oklch", l: 0.0, c: 0.0, h: 0.0, alpha: 0.0 }
+        "transparent": { color_space: "oklch", l: 0.0, c: 0.0, h: 0.0, alpha: 0.0 },
+        # Chrome (families.chrome): Pro Medium Gray in the base so every
+        # scheme compiles; the pro, studio and classic blocks re-author them.
+        "chrome.chrome": { color_space: "oklch", l: 0.442255056, c: 0.000000016, h: 89.875563495, alpha: 1.000000000 },
+        "chrome.canvas": { color_space: "oklch", l: 0.276848201, c: 0.000000010, h: 89.875563771, alpha: 1.000000000 },
+        "chrome.canvas_dot": { color_space: "oklch", l: 0.276848201, c: 0.000000010, h: 89.875563771, alpha: 1.000000000 },
+        "chrome.dock": { color_space: "oklch", l: 0.379093581, c: 0.000000014, h: 89.875562221, alpha: 1.000000000 },
+        "chrome.card": { color_space: "oklch", l: 0.442255056, c: 0.000000016, h: 89.875563495, alpha: 1.000000000 },
+        "chrome.card_border": { color_space: "oklch", l: 0.379093581, c: 0.000000014, h: 89.875562221, alpha: 1.000000000 },
+        "chrome.tab_strip": { color_space: "oklch", l: 0.409120001, c: 0.000000015, h: 89.875563025, alpha: 1.000000000 },
+        "chrome.field": { color_space: "oklch", l: 0.390420841, c: 0.000000015, h: 89.875563283, alpha: 1.000000000 },
+        "chrome.field_border": { color_space: "oklch", l: 0.517303114, c: 0.000000019, h: 89.875562672, alpha: 1.000000000 },
+        "chrome.hover": { color_space: "oklch", l: 0.496155543, c: 0.000000018, h: 89.875562591, alpha: 1.000000000 },
+        "chrome.pressed": { color_space: "oklch", l: 0.545169122, c: 0.000000020, h: 89.875563159, alpha: 1.000000000 },
+        "chrome.row_selected": { color_space: "oklch", l: 0.527795834, c: 0.000000020, h: 89.875563604, alpha: 1.000000000 },
+        "chrome.text": { color_space: "oklch", l: 0.949119254, c: 0.000000035, h: 89.875562714, alpha: 1.000000000 },
+        "chrome.text_dim": { color_space: "oklch", l: 0.869943540, c: 0.000000032, h: 89.875563239, alpha: 1.000000000 },
+        "chrome.text_faint": { color_space: "oklch", l: 0.705757008, c: 0.000000026, h: 89.875562545, alpha: 1.000000000 },
+        "chrome.icon": { color_space: "oklch", l: 0.912790408, c: 0.000000034, h: 89.875563449, alpha: 1.000000000 },
+        "chrome.accent": { color_space: "oklch", l: 0.643494390, c: 0.168268215, h: 254.060729774, alpha: 1.000000000 },
+        "chrome.accent_soft": { color_space: "oklch", l: 0.538236659, c: 0.000000020, h: 89.875563441, alpha: 1.000000000 },
+        "chrome.accent_border": { color_space: "oklch", l: 0.643494390, c: 0.168268215, h: 254.060729774, alpha: 1.000000000 },
+        "chrome.accent_text": { color_space: "oklch", l: 0.999999993, c: 0.000000037, h: 89.875563096, alpha: 1.000000000 },
+        "chrome.menu_highlight": { color_space: "oklch", l: 0.643494390, c: 0.168268215, h: 254.060729774, alpha: 1.000000000 },
+        "chrome.menu_highlight_text": { color_space: "oklch", l: 0.999999993, c: 0.000000037, h: 89.875563096, alpha: 1.000000000 },
+        "chrome.separator": { color_space: "oklch", l: 0.363857246, c: 0.000000014, h: 89.875563146, alpha: 1.000000000 },
+        "chrome.shadow": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.588235294 },
+        "chrome.scrim": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.431372549 },
+        "chrome.primary_bg": { color_space: "oklch", l: 0.643494390, c: 0.168268215, h: 254.060729774, alpha: 1.000000000 },
+        "chrome.primary_text": { color_space: "oklch", l: 0.999999993, c: 0.000000037, h: 89.875563096, alpha: 1.000000000 },
+        "chrome.danger": { color_space: "oklch", l: 0.661680892, c: 0.179222347, h: 20.627670484, alpha: 1.000000000 },
+        "chrome.warning": { color_space: "oklch", l: 0.790244473, c: 0.136395200, h: 80.169253871, alpha: 1.000000000 },
+        "chrome.caption_close": { color_space: "oklch", l: 0.536149835, c: 0.191185691, h: 30.071355694, alpha: 1.000000000 },
+        "chrome.caption_close_text": { color_space: "oklch", l: 0.999999993, c: 0.000000037, h: 89.875563096, alpha: 1.000000000 }
       },
       metrics: {
         "button.height.sm": { kind: "px", value: 24.0 },
@@ -364,6 +397,260 @@ design: {
             }
           }
         }
+      },
+      # Chrome schemes: dark/light step the brightness (pro: Pro and Pro
+      # Medium Gray; studio: Studio and Studio Light; classic: Classic).
+      {
+        when: { scheme: "pro", mode: "dark" },
+        primitives: {
+          colors: {
+            "chrome.chrome": { color_space: "oklch", l: 0.317136008, c: 0.000000012, h: 89.875563051, alpha: 1.000000000 },
+            "chrome.dock": { color_space: "oklch", l: 0.235031124, c: 0.000000009, h: 89.875563054, alpha: 1.000000000 },
+            "chrome.card": { color_space: "oklch", l: 0.317136008, c: 0.000000012, h: 89.875563051, alpha: 1.000000000 },
+            "chrome.card_border": { color_space: "oklch", l: 0.235031124, c: 0.000000009, h: 89.875563054, alpha: 1.000000000 },
+            "chrome.tab_strip": { color_space: "oklch", l: 0.268618275, c: 0.000000010, h: 89.875562889, alpha: 1.000000000 },
+            "chrome.field": { color_space: "oklch", l: 0.260324812, c: 0.000000010, h: 89.875562637, alpha: 1.000000000 },
+            "chrome.field_border": { color_space: "oklch", l: 0.409120001, c: 0.000000015, h: 89.875563025, alpha: 1.000000000 },
+            "chrome.hover": { color_space: "oklch", l: 0.379093581, c: 0.000000014, h: 89.875562221, alpha: 1.000000000 },
+            "chrome.pressed": { color_space: "oklch", l: 0.423926481, c: 0.000000016, h: 89.875563337, alpha: 1.000000000 },
+            "chrome.row_selected": { color_space: "oklch", l: 0.438604757, c: 0.000000016, h: 89.875563247, alpha: 1.000000000 },
+            "chrome.text": { color_space: "oklch", l: 0.900600721, c: 0.000000034, h: 89.875563034, alpha: 1.000000000 },
+            "chrome.text_dim": { color_space: "oklch", l: 0.763575709, c: 0.000000028, h: 89.875563146, alpha: 1.000000000 },
+            "chrome.text_faint": { color_space: "oklch", l: 0.599870802, c: 0.000000022, h: 89.875562924, alpha: 1.000000000 },
+            "chrome.icon": { color_space: "oklch", l: 0.832793812, c: 0.000000031, h: 89.875562725, alpha: 1.000000000 },
+            "chrome.accent_soft": { color_space: "oklch", l: 0.423926481, c: 0.000000016, h: 89.875563337, alpha: 1.000000000 },
+            "chrome.separator": { color_space: "oklch", l: 0.235031124, c: 0.000000009, h: 89.875563054, alpha: 1.000000000 },
+            "palette.accent.default": { color_space: "oklch", l: 0.85, c: 0, h: 0, alpha: 1 },
+            "palette.accent.hover": { color_space: "oklch", l: 0.92, c: 0, h: 0, alpha: 1 },
+            "palette.background.1": { color_space: "oklch", l: 0.1, c: 0, h: 0, alpha: 1 },
+            "palette.background.2": { color_space: "oklch", l: 0.15, c: 0, h: 0, alpha: 1 },
+            "palette.background.3": { color_space: "oklch", l: 0.22, c: 0, h: 0, alpha: 1 },
+            "palette.background.elevated": { color_space: "oklch", l: 0.34, c: 0, h: 0, alpha: 1 },
+            "palette.background.muted": { color_space: "oklch", l: 0.26, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.default": { color_space: "oklch", l: 0.95, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.muted": { color_space: "oklch", l: 0.61, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.quiet": { color_space: "oklch", l: 0.65, c: 0, h: 0, alpha: 1 },
+            "status.danger": { color_space: "oklch", l: 0.7, c: 0.18, h: 25, alpha: 1 },
+            "status.success": { color_space: "oklch", l: 0.7, c: 0.15, h: 145, alpha: 1 },
+            "status.warning": { color_space: "oklch", l: 0.8, c: 0.15, h: 85, alpha: 1 }
+          }
+        }
+      },
+      {
+        when: { scheme: "pro", mode: "light" },
+        primitives: {
+          colors: {
+            "palette.accent.default": { color_space: "oklch", l: 0.25, c: 0, h: 0, alpha: 1 },
+            "palette.accent.hover": { color_space: "oklch", l: 0.35, c: 0, h: 0, alpha: 1 },
+            "palette.background.1": { color_space: "oklch", l: 0.98, c: 0, h: 0, alpha: 1 },
+            "palette.background.2": { color_space: "oklch", l: 0.96, c: 0, h: 0, alpha: 1 },
+            "palette.background.3": { color_space: "oklch", l: 0.92, c: 0, h: 0, alpha: 1 },
+            "palette.background.elevated": { color_space: "oklch", l: 0.85, c: 0, h: 0, alpha: 1 },
+            "palette.background.muted": { color_space: "oklch", l: 0.89, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.default": { color_space: "oklch", l: 0.2, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.muted": { color_space: "oklch", l: 0.5, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.quiet": { color_space: "oklch", l: 0.45, c: 0, h: 0, alpha: 1 }
+          }
+        },
+        semantics: {
+          pairs: {
+            muted: { surface: "palette.background.muted", foreground: "palette.foreground.quiet" }
+          }
+        }
+      },
+      {
+        when: { scheme: "studio", mode: "dark" },
+        primitives: {
+          colors: {
+            "chrome.chrome": { color_space: "oklch", l: 0.191679506, c: 0.001991910, h: 286.210301840, alpha: 1.000000000 },
+            "chrome.canvas": { color_space: "oklch", l: 0.164204828, c: 0.002071553, h: 286.169383262, alpha: 1.000000000 },
+            "chrome.canvas_dot": { color_space: "oklch", l: 0.302748037, c: 0.007127837, h: 285.966325347, alpha: 1.000000000 },
+            "chrome.dock": { color_space: "oklch", l: 0.178074725, c: 0.002029398, h: 286.191835955, alpha: 1.000000000 },
+            "chrome.card": { color_space: "oklch", l: 0.218626101, c: 0.003861364, h: 286.076029352, alpha: 1.000000000 },
+            "chrome.card_border": { color_space: "oklch", l: 0.278452869, c: 0.007282183, h: 285.917361887, alpha: 1.000000000 },
+            "chrome.tab_strip": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.000000000 },
+            "chrome.field": { color_space: "oklch", l: 0.257370931, c: 0.005565201, h: 286.002252216, alpha: 1.000000000 },
+            "chrome.field_border": { color_space: "oklch", l: 0.326965775, c: 0.008745471, h: 285.906165197, alpha: 1.000000000 },
+            "chrome.hover": { color_space: "oklch", l: 0.294705524, c: 0.007177128, h: 285.951146083, alpha: 1.000000000 },
+            "chrome.pressed": { color_space: "oklch", l: 0.342998359, c: 0.010376436, h: 285.840014629, alpha: 1.000000000 },
+            "chrome.row_selected": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.000000000 },
+            "chrome.text": { color_space: "oklch", l: 0.944228789, c: 0.005341861, h: 286.296990905, alpha: 1.000000000 },
+            "chrome.text_dim": { color_space: "oklch", l: 0.675653256, c: 0.011648105, h: 286.083866494, alpha: 1.000000000 },
+            "chrome.text_faint": { color_space: "oklch", l: 0.491838006, c: 0.012632371, h: 285.926166229, alpha: 1.000000000 },
+            "chrome.icon": { color_space: "oklch", l: 0.822712045, c: 0.011079146, h: 286.153690067, alpha: 1.000000000 },
+            "chrome.accent": { color_space: "oklch", l: 0.656947716, c: 0.175817858, h: 286.112717081, alpha: 1.000000000 },
+            "chrome.accent_soft": { color_space: "oklch", l: 0.656947716, c: 0.175817858, h: 286.112717081, alpha: 0.180392157 },
+            "chrome.accent_border": { color_space: "oklch", l: 0.721925237, c: 0.152591871, h: 287.064410206, alpha: 0.431372549 },
+            "chrome.accent_text": { color_space: "oklch", l: 0.877613079, c: 0.064636129, h: 290.855635596, alpha: 1.000000000 },
+            "chrome.menu_highlight": { color_space: "oklch", l: 0.294705524, c: 0.007177128, h: 285.951146083, alpha: 1.000000000 },
+            "chrome.menu_highlight_text": { color_space: "oklch", l: 0.944228789, c: 0.005341861, h: 286.296990905, alpha: 1.000000000 },
+            "chrome.separator": { color_space: "oklch", l: 0.270237862, c: 0.007338304, h: 285.898489546, alpha: 1.000000000 },
+            "chrome.shadow": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.549019608 },
+            "chrome.primary_bg": { color_space: "oklch", l: 0.973708485, c: 0.002648430, h: 286.350552140, alpha: 1.000000000 },
+            "chrome.primary_text": { color_space: "oklch", l: 0.155270091, c: 0.004214337, h: 285.898734547, alpha: 1.000000000 },
+            "chrome.danger": { color_space: "oklch", l: 0.673508715, c: 0.178232107, h: 23.150913392, alpha: 1.000000000 },
+            "chrome.warning": { color_space: "oklch", l: 0.827438076, c: 0.130227388, h: 82.481494386, alpha: 1.000000000 },
+            "palette.accent.default": { color_space: "oklch", l: 0.85, c: 0, h: 0, alpha: 1 },
+            "palette.accent.hover": { color_space: "oklch", l: 0.92, c: 0, h: 0, alpha: 1 },
+            "palette.background.1": { color_space: "oklch", l: 0.1, c: 0, h: 0, alpha: 1 },
+            "palette.background.2": { color_space: "oklch", l: 0.15, c: 0, h: 0, alpha: 1 },
+            "palette.background.3": { color_space: "oklch", l: 0.22, c: 0, h: 0, alpha: 1 },
+            "palette.background.elevated": { color_space: "oklch", l: 0.34, c: 0, h: 0, alpha: 1 },
+            "palette.background.muted": { color_space: "oklch", l: 0.26, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.default": { color_space: "oklch", l: 0.95, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.muted": { color_space: "oklch", l: 0.61, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.quiet": { color_space: "oklch", l: 0.65, c: 0, h: 0, alpha: 1 },
+            "status.danger": { color_space: "oklch", l: 0.7, c: 0.18, h: 25, alpha: 1 },
+            "status.success": { color_space: "oklch", l: 0.7, c: 0.15, h: 145, alpha: 1 },
+            "status.warning": { color_space: "oklch", l: 0.8, c: 0.15, h: 85, alpha: 1 }
+          }
+        }
+      },
+      {
+        when: { scheme: "studio", mode: "light" },
+        primitives: {
+          colors: {
+            "chrome.chrome": { color_space: "oklch", l: 0.973708485, c: 0.002648430, h: 286.350552140, alpha: 1.000000000 },
+            "chrome.canvas": { color_space: "oklch", l: 0.913940118, c: 0.005385906, h: 286.292688258, alpha: 1.000000000 },
+            "chrome.canvas_dot": { color_space: "oklch", l: 0.834570895, c: 0.008272728, h: 286.219104275, alpha: 1.000000000 },
+            "chrome.dock": { color_space: "oklch", l: 0.955990022, c: 0.003992477, h: 286.324006456, alpha: 1.000000000 },
+            "chrome.card": { color_space: "oklch", l: 0.991348204, c: 0.001317774, h: 286.376006155, alpha: 1.000000000 },
+            "chrome.card_border": { color_space: "oklch", l: 0.902340545, c: 0.008110995, h: 286.236050560, alpha: 1.000000000 },
+            "chrome.tab_strip": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.000000000 },
+            "chrome.field": { color_space: "oklch", l: 0.961999957, c: 0.003986193, h: 286.324601141, alpha: 1.000000000 },
+            "chrome.field_border": { color_space: "oklch", l: 0.877849155, c: 0.008167616, h: 286.230268952, alpha: 1.000000000 },
+            "chrome.hover": { color_space: "oklch", l: 0.932432458, c: 0.006700953, h: 286.269052414, alpha: 1.000000000 },
+            "chrome.pressed": { color_space: "oklch", l: 0.896233432, c: 0.008124930, h: 286.234642438, alpha: 1.000000000 },
+            "chrome.row_selected": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.000000000 },
+            "chrome.text": { color_space: "oklch", l: 0.210789741, c: 0.007822112, h: 285.709585948, alpha: 1.000000000 },
+            "chrome.text_dim": { color_space: "oklch", l: 0.492571417, c: 0.015803144, h: 285.805319917, alpha: 1.000000000 },
+            "chrome.text_faint": { color_space: "oklch", l: 0.676309590, c: 0.014569879, h: 286.003747631, alpha: 1.000000000 },
+            "chrome.icon": { color_space: "oklch", l: 0.359254275, c: 0.013694170, h: 285.690263636, alpha: 1.000000000 },
+            "chrome.accent": { color_space: "oklch", l: 0.567601769, c: 0.202094221, h: 283.083781640, alpha: 1.000000000 },
+            "chrome.accent_soft": { color_space: "oklch", l: 0.567601769, c: 0.202094221, h: 283.083781640, alpha: 0.141176471 },
+            "chrome.accent_border": { color_space: "oklch", l: 0.567601769, c: 0.202094221, h: 283.083781640, alpha: 0.470588235 },
+            "chrome.accent_text": { color_space: "oklch", l: 0.476176795, c: 0.201009650, h: 280.872940340, alpha: 1.000000000 },
+            "chrome.menu_highlight": { color_space: "oklch", l: 0.932432458, c: 0.006700953, h: 286.269052414, alpha: 1.000000000 },
+            "chrome.menu_highlight_text": { color_space: "oklch", l: 0.210789741, c: 0.007822112, h: 285.709585948, alpha: 1.000000000 },
+            "chrome.separator": { color_space: "oklch", l: 0.914523939, c: 0.008083547, h: 286.238795996, alpha: 1.000000000 },
+            "chrome.shadow": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.196078431 },
+            "chrome.primary_bg": { color_space: "oklch", l: 0.193057436, c: 0.008001218, h: 285.626398602, alpha: 1.000000000 },
+            "chrome.primary_text": { color_space: "oklch", l: 0.985664448, c: 0.002640332, h: 286.351303655, alpha: 1.000000000 },
+            "chrome.danger": { color_space: "oklch", l: 0.579286827, c: 0.187156137, h: 25.202624027, alpha: 1.000000000 },
+            "chrome.warning": { color_space: "oklch", l: 0.651512105, c: 0.132496737, h: 75.063008969, alpha: 1.000000000 },
+            "palette.accent.default": { color_space: "oklch", l: 0.25, c: 0, h: 0, alpha: 1 },
+            "palette.accent.hover": { color_space: "oklch", l: 0.35, c: 0, h: 0, alpha: 1 },
+            "palette.background.1": { color_space: "oklch", l: 0.98, c: 0, h: 0, alpha: 1 },
+            "palette.background.2": { color_space: "oklch", l: 0.96, c: 0, h: 0, alpha: 1 },
+            "palette.background.3": { color_space: "oklch", l: 0.92, c: 0, h: 0, alpha: 1 },
+            "palette.background.elevated": { color_space: "oklch", l: 0.85, c: 0, h: 0, alpha: 1 },
+            "palette.background.muted": { color_space: "oklch", l: 0.89, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.default": { color_space: "oklch", l: 0.2, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.muted": { color_space: "oklch", l: 0.5, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.quiet": { color_space: "oklch", l: 0.45, c: 0, h: 0, alpha: 1 }
+          }
+        },
+        semantics: {
+          pairs: {
+            muted: { surface: "palette.background.muted", foreground: "palette.foreground.quiet" }
+          }
+        }
+      },
+      {
+        when: { scheme: "classic", mode: "dark" },
+        primitives: {
+          colors: {
+            "chrome.chrome": { color_space: "oklch", l: 0.858535460, c: 0.011780165, h: 84.581527074, alpha: 1.000000000 },
+            "chrome.canvas": { color_space: "oklch", l: 0.599870802, c: 0.000000022, h: 89.875562924, alpha: 1.000000000 },
+            "chrome.canvas_dot": { color_space: "oklch", l: 0.599870802, c: 0.000000022, h: 89.875562924, alpha: 1.000000000 },
+            "chrome.dock": { color_space: "oklch", l: 0.858535460, c: 0.011780165, h: 84.581527074, alpha: 1.000000000 },
+            "chrome.card": { color_space: "oklch", l: 0.858535460, c: 0.011780165, h: 84.581527074, alpha: 1.000000000 },
+            "chrome.card_border": { color_space: "oklch", l: 0.599870802, c: 0.000000022, h: 89.875562924, alpha: 1.000000000 },
+            "chrome.tab_strip": { color_space: "oklch", l: 0.858535460, c: 0.011780165, h: 84.581527074, alpha: 1.000000000 },
+            "chrome.field": { color_space: "oklch", l: 0.999999993, c: 0.000000037, h: 89.875563096, alpha: 1.000000000 },
+            "chrome.field_border": { color_space: "oklch", l: 0.599870802, c: 0.000000022, h: 89.875562924, alpha: 1.000000000 },
+            "chrome.hover": { color_space: "oklch", l: 0.901514162, c: 0.011640484, h: 84.580217361, alpha: 1.000000000 },
+            "chrome.pressed": { color_space: "oklch", l: 0.789881158, c: 0.012021790, h: 84.583778748, alpha: 1.000000000 },
+            "chrome.row_selected": { color_space: "oklch", l: 0.294784656, c: 0.126093634, h: 264.238677764, alpha: 1.000000000 },
+            "chrome.text": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 1.000000000 },
+            "chrome.text_dim": { color_space: "oklch", l: 0.371494944, c: 0.000000014, h: 89.875563417, alpha: 1.000000000 },
+            "chrome.text_faint": { color_space: "oklch", l: 0.599870802, c: 0.000000022, h: 89.875562924, alpha: 1.000000000 },
+            "chrome.icon": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 1.000000000 },
+            "chrome.accent": { color_space: "oklch", l: 0.294784656, c: 0.126093634, h: 264.238677764, alpha: 1.000000000 },
+            "chrome.accent_soft": { color_space: "oklch", l: 0.294784656, c: 0.126093634, h: 264.238677764, alpha: 1.000000000 },
+            "chrome.accent_border": { color_space: "oklch", l: 0.294784656, c: 0.126093634, h: 264.238677764, alpha: 1.000000000 },
+            "chrome.menu_highlight": { color_space: "oklch", l: 0.901514162, c: 0.011640484, h: 84.580217361, alpha: 1.000000000 },
+            "chrome.menu_highlight_text": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 1.000000000 },
+            "chrome.separator": { color_space: "oklch", l: 0.599870802, c: 0.000000022, h: 89.875562924, alpha: 1.000000000 },
+            "chrome.shadow": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.000000000 },
+            "chrome.primary_bg": { color_space: "oklch", l: 0.858535460, c: 0.011780165, h: 84.581527074, alpha: 1.000000000 },
+            "chrome.primary_text": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 1.000000000 },
+            "chrome.danger": { color_space: "oklch", l: 0.443183899, c: 0.181861801, h: 29.233885192, alpha: 1.000000000 },
+            "chrome.warning": { color_space: "oklch", l: 0.507918777, c: 0.103999700, h: 85.758361422, alpha: 1.000000000 },
+            "palette.accent.default": { color_space: "oklch", l: 0.85, c: 0, h: 0, alpha: 1 },
+            "palette.accent.hover": { color_space: "oklch", l: 0.92, c: 0, h: 0, alpha: 1 },
+            "palette.background.1": { color_space: "oklch", l: 0.1, c: 0, h: 0, alpha: 1 },
+            "palette.background.2": { color_space: "oklch", l: 0.15, c: 0, h: 0, alpha: 1 },
+            "palette.background.3": { color_space: "oklch", l: 0.22, c: 0, h: 0, alpha: 1 },
+            "palette.background.elevated": { color_space: "oklch", l: 0.34, c: 0, h: 0, alpha: 1 },
+            "palette.background.muted": { color_space: "oklch", l: 0.26, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.default": { color_space: "oklch", l: 0.95, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.muted": { color_space: "oklch", l: 0.61, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.quiet": { color_space: "oklch", l: 0.65, c: 0, h: 0, alpha: 1 },
+            "status.danger": { color_space: "oklch", l: 0.7, c: 0.18, h: 25, alpha: 1 },
+            "status.success": { color_space: "oklch", l: 0.7, c: 0.15, h: 145, alpha: 1 },
+            "status.warning": { color_space: "oklch", l: 0.8, c: 0.15, h: 85, alpha: 1 }
+          }
+        }
+      },
+      {
+        when: { scheme: "classic", mode: "light" },
+        primitives: {
+          colors: {
+            "chrome.chrome": { color_space: "oklch", l: 0.858535460, c: 0.011780165, h: 84.581527074, alpha: 1.000000000 },
+            "chrome.canvas": { color_space: "oklch", l: 0.599870802, c: 0.000000022, h: 89.875562924, alpha: 1.000000000 },
+            "chrome.canvas_dot": { color_space: "oklch", l: 0.599870802, c: 0.000000022, h: 89.875562924, alpha: 1.000000000 },
+            "chrome.dock": { color_space: "oklch", l: 0.858535460, c: 0.011780165, h: 84.581527074, alpha: 1.000000000 },
+            "chrome.card": { color_space: "oklch", l: 0.858535460, c: 0.011780165, h: 84.581527074, alpha: 1.000000000 },
+            "chrome.card_border": { color_space: "oklch", l: 0.599870802, c: 0.000000022, h: 89.875562924, alpha: 1.000000000 },
+            "chrome.tab_strip": { color_space: "oklch", l: 0.858535460, c: 0.011780165, h: 84.581527074, alpha: 1.000000000 },
+            "chrome.field": { color_space: "oklch", l: 0.999999993, c: 0.000000037, h: 89.875563096, alpha: 1.000000000 },
+            "chrome.field_border": { color_space: "oklch", l: 0.599870802, c: 0.000000022, h: 89.875562924, alpha: 1.000000000 },
+            "chrome.hover": { color_space: "oklch", l: 0.901514162, c: 0.011640484, h: 84.580217361, alpha: 1.000000000 },
+            "chrome.pressed": { color_space: "oklch", l: 0.789881158, c: 0.012021790, h: 84.583778748, alpha: 1.000000000 },
+            "chrome.row_selected": { color_space: "oklch", l: 0.294784656, c: 0.126093634, h: 264.238677764, alpha: 1.000000000 },
+            "chrome.text": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 1.000000000 },
+            "chrome.text_dim": { color_space: "oklch", l: 0.371494944, c: 0.000000014, h: 89.875563417, alpha: 1.000000000 },
+            "chrome.text_faint": { color_space: "oklch", l: 0.599870802, c: 0.000000022, h: 89.875562924, alpha: 1.000000000 },
+            "chrome.icon": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 1.000000000 },
+            "chrome.accent": { color_space: "oklch", l: 0.294784656, c: 0.126093634, h: 264.238677764, alpha: 1.000000000 },
+            "chrome.accent_soft": { color_space: "oklch", l: 0.294784656, c: 0.126093634, h: 264.238677764, alpha: 1.000000000 },
+            "chrome.accent_border": { color_space: "oklch", l: 0.294784656, c: 0.126093634, h: 264.238677764, alpha: 1.000000000 },
+            "chrome.menu_highlight": { color_space: "oklch", l: 0.901514162, c: 0.011640484, h: 84.580217361, alpha: 1.000000000 },
+            "chrome.menu_highlight_text": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 1.000000000 },
+            "chrome.separator": { color_space: "oklch", l: 0.599870802, c: 0.000000022, h: 89.875562924, alpha: 1.000000000 },
+            "chrome.shadow": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.000000000 },
+            "chrome.primary_bg": { color_space: "oklch", l: 0.858535460, c: 0.011780165, h: 84.581527074, alpha: 1.000000000 },
+            "chrome.primary_text": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 1.000000000 },
+            "chrome.danger": { color_space: "oklch", l: 0.443183899, c: 0.181861801, h: 29.233885192, alpha: 1.000000000 },
+            "chrome.warning": { color_space: "oklch", l: 0.507918777, c: 0.103999700, h: 85.758361422, alpha: 1.000000000 },
+            "palette.accent.default": { color_space: "oklch", l: 0.25, c: 0, h: 0, alpha: 1 },
+            "palette.accent.hover": { color_space: "oklch", l: 0.35, c: 0, h: 0, alpha: 1 },
+            "palette.background.1": { color_space: "oklch", l: 0.98, c: 0, h: 0, alpha: 1 },
+            "palette.background.2": { color_space: "oklch", l: 0.96, c: 0, h: 0, alpha: 1 },
+            "palette.background.3": { color_space: "oklch", l: 0.92, c: 0, h: 0, alpha: 1 },
+            "palette.background.elevated": { color_space: "oklch", l: 0.85, c: 0, h: 0, alpha: 1 },
+            "palette.background.muted": { color_space: "oklch", l: 0.89, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.default": { color_space: "oklch", l: 0.2, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.muted": { color_space: "oklch", l: 0.5, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.quiet": { color_space: "oklch", l: 0.45, c: 0, h: 0, alpha: 1 }
+          }
+        },
+        semantics: {
+          pairs: {
+            muted: { surface: "palette.background.muted", foreground: "palette.foreground.quiet" }
+          }
+        }
       }
     ],
     semantics: {
@@ -408,18 +695,59 @@ design: {
         ring: { value: "palette.accent.default", adjacent: ["accent", "muted", "secondary"] }
       }
     },
+    # Desktop type: Inter (UI) and JetBrains Mono (numbers, code) at compact
+    # desktop sizes. Weight is a token: each role names the weight it wants and
+    # the renderer selects the matching static face (300 Light, 400 Regular,
+    # 500 Medium, 600 SemiBold). The light profile is ui and small at 300 with
+    # ui_display at 500 (same sizes); switch by editing the weights only.
     typography: {
       records: {
-        ui: { family: "SF Pro Text", fallbacks: ["Inter", "Noto Sans", "DejaVu Sans"], generic: "sans_serif", logical_px: 14.666666666666666, weight: 300 },
-        ui_display: { family: "SF Pro Display", fallbacks: ["Inter", "Noto Sans", "DejaVu Sans"], generic: "sans_serif", logical_px: 14.666666666666666, weight: 300 },
-        small: { family: "SF Pro Text", fallbacks: ["Inter", "Noto Sans", "DejaVu Sans"], generic: "sans_serif", logical_px: 10.666666666666666, weight: 400 },
-        mono: { family: "SF Mono", fallbacks: ["DejaVu Sans Mono", "Noto Sans Mono"], generic: "monospace", logical_px: 16, weight: 300 },
+        ui: { family: "Inter", fallbacks: ["Noto Sans", "DejaVu Sans"], generic: "sans_serif", logical_px: 12.5, weight: 400 },
+        ui_display: { family: "Inter", fallbacks: ["Noto Sans", "DejaVu Sans"], generic: "sans_serif", logical_px: 15, weight: 600 },
+        small: { family: "Inter", fallbacks: ["Noto Sans", "DejaVu Sans"], generic: "sans_serif", logical_px: 10.5, weight: 400 },
+        mono: { family: "JetBrains Mono", fallbacks: ["DejaVu Sans Mono", "Noto Sans Mono"], generic: "monospace", logical_px: 12, weight: 400 },
         terminal: { family: "SF Mono", fallbacks: ["DejaVu Sans Mono", "Noto Sans Mono"], generic: "monospace", logical_px: 21.333333333333332, weight: 300 },
         "button.md": { family: "Noto Sans", type_step: "type.body", weight: 400 },
         "button.sm": { family: "Noto Sans", type_step: "type.compact", weight: 400 }
       }
     },
     families: {
+      chrome: {
+        coverage: "explicit",
+        roles: {
+          chrome: "chrome.chrome",
+          canvas: "chrome.canvas",
+          canvas_dot: "chrome.canvas_dot",
+          dock: "chrome.dock",
+          card: "chrome.card",
+          card_border: "chrome.card_border",
+          tab_strip: "chrome.tab_strip",
+          field: "chrome.field",
+          field_border: "chrome.field_border",
+          hover: "chrome.hover",
+          pressed: "chrome.pressed",
+          row_selected: "chrome.row_selected",
+          text: "chrome.text",
+          text_dim: "chrome.text_dim",
+          text_faint: "chrome.text_faint",
+          icon: "chrome.icon",
+          accent: "chrome.accent",
+          accent_soft: "chrome.accent_soft",
+          accent_border: "chrome.accent_border",
+          accent_text: "chrome.accent_text",
+          menu_highlight: "chrome.menu_highlight",
+          menu_highlight_text: "chrome.menu_highlight_text",
+          separator: "chrome.separator",
+          shadow: "chrome.shadow",
+          scrim: "chrome.scrim",
+          primary_bg: "chrome.primary_bg",
+          primary_text: "chrome.primary_text",
+          danger: "chrome.danger",
+          warning: "chrome.warning",
+          caption_close: "chrome.caption_close",
+          caption_close_text: "chrome.caption_close_text"
+        }
+      },
       button: {
         coverage: "explicit",
         base: {

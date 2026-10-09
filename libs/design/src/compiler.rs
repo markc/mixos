@@ -111,6 +111,15 @@ fn compile_flat_source(
         }
     };
 
+    let (chrome, chrome_warnings) = match crate::family::chrome::compile(source, &colours.value.primitives) {
+        Ok(compiled) => compiled,
+        Err(errors) => {
+            let mut diagnostics = colours.diagnostics;
+            diagnostics.extend(errors);
+            return DesignCompileResult::Fatal(DesignCompileFailure { attempted_source: identity.clone(), diagnostics });
+        }
+    };
+
     let mapping =
         match crate::mapping::compile_button_mapping_artifacts(source, &colours.value, context) {
             Ok(success) => success,
@@ -127,6 +136,7 @@ fn compile_flat_source(
     let mut provenance = dictionary_provenance(&colours.value, &mapping.value, origins);
     provenance.extend(mapping.value.provenance.clone());
     let mut diagnostics = colours.diagnostics;
+    diagnostics.extend(chrome_warnings);
     diagnostics.extend(mapping.diagnostics);
     DesignCompileResult::Success(DesignCompileSuccess {
         candidate: UnstampedResolvedDesign::new(
@@ -148,6 +158,7 @@ fn compile_flat_source(
                     .iter()
                     .map(|(name, scale)| (name.clone(), scale.values.clone()))
                     .collect(),
+                chrome,
             },
             mapping.value.typography,
             provenance,
@@ -1574,7 +1585,7 @@ mod tests {
                     "default".into(),
                     "hovered".into(),
                 ),
-                12,
+                Scheme::ALL.len() * Mode::ALL.len(),
             ),
             (
                 (
@@ -1582,7 +1593,7 @@ mod tests {
                     "primary".into(),
                     "hovered".into(),
                 ),
-                12,
+                Scheme::ALL.len() * Mode::ALL.len(),
             ),
             (
                 (
@@ -1590,7 +1601,7 @@ mod tests {
                     "destructive".into(),
                     "hovered".into(),
                 ),
-                12,
+                Scheme::ALL.len() * Mode::ALL.len(),
             ),
             (
                 (
@@ -1598,7 +1609,7 @@ mod tests {
                     "ghost".into(),
                     "hovered".into(),
                 ),
-                12,
+                Scheme::ALL.len() * Mode::ALL.len(),
             ),
             (
                 (
@@ -1606,7 +1617,7 @@ mod tests {
                     "default".into(),
                     "pressed".into(),
                 ),
-                12,
+                Scheme::ALL.len() * Mode::ALL.len(),
             ),
             (
                 (
@@ -1614,7 +1625,7 @@ mod tests {
                     "primary".into(),
                     "pressed".into(),
                 ),
-                12,
+                Scheme::ALL.len() * Mode::ALL.len(),
             ),
             (
                 (
@@ -1622,7 +1633,7 @@ mod tests {
                     "destructive".into(),
                     "pressed".into(),
                 ),
-                12,
+                Scheme::ALL.len() * Mode::ALL.len(),
             ),
             (
                 (
@@ -1630,15 +1641,15 @@ mod tests {
                     "ghost".into(),
                     "pressed".into(),
                 ),
-                12,
+                Scheme::ALL.len() * Mode::ALL.len(),
             ),
             (
                 ("disabled_pair".into(), "default".into(), "disabled".into()),
-                12,
+                Scheme::ALL.len() * Mode::ALL.len(),
             ),
             (
                 ("disabled_pair".into(), "primary".into(), "disabled".into()),
-                12,
+                Scheme::ALL.len() * Mode::ALL.len(),
             ),
             (
                 (
@@ -1646,15 +1657,15 @@ mod tests {
                     "destructive".into(),
                     "disabled".into(),
                 ),
-                12,
+                Scheme::ALL.len() * Mode::ALL.len(),
             ),
             (
                 ("disabled_pair".into(), "ghost".into(), "disabled".into()),
-                12,
+                Scheme::ALL.len() * Mode::ALL.len(),
             ),
         ]);
         assert_eq!(actual, expected);
-        assert_eq!(actual.values().sum::<usize>(), 144);
+        assert_eq!(actual.values().sum::<usize>(), 12 * Scheme::ALL.len() * Mode::ALL.len());
     }
 
     #[test]
@@ -1693,7 +1704,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             fallbacks.len(),
-            12,
+            Scheme::ALL.len() * Mode::ALL.len(),
             "one elevated-text-fallback per reachable context: {:?}",
             success.diagnostics
         );
@@ -2772,40 +2783,36 @@ mod tests {
     }
 
     #[test]
-    fn desktop_roles_match_the_lightweight_defaults() {
+    fn desktop_roles_match_the_shipped_defaults() {
         let result = compile_design(&document(), DesignContext::default());
         let DesignCompileResult::Success(success) = result else {
             panic!("default typography must compile: {result:?}");
         };
         for (role, family, weight, px) in [
-            (crate::TypographyRole::Ui, "SF Pro Text", 300, 44.0 / 3.0),
-            (
-                crate::TypographyRole::UiDisplay,
-                "SF Pro Display",
-                300,
-                44.0 / 3.0,
-            ),
-            (crate::TypographyRole::Small, "SF Pro Text", 400, 32.0 / 3.0),
-            (crate::TypographyRole::Mono, "SF Mono", 300, 16.0),
+            (crate::TypographyRole::Ui, "Inter", 400, 12.5),
+            (crate::TypographyRole::UiDisplay, "Inter", 600, 15.0),
+            (crate::TypographyRole::Small, "Inter", 400, 10.5),
+            (crate::TypographyRole::Mono, "JetBrains Mono", 400, 12.0),
             (crate::TypographyRole::Terminal, "SF Mono", 300, 64.0 / 3.0),
         ] {
             let record = crate::default_typography(role);
             assert_eq!(record.family, family);
             assert_eq!(record.weight, weight);
             assert_eq!(record.font_size, px);
+            let mono = matches!(role, crate::TypographyRole::Mono | crate::TypographyRole::Terminal);
             assert_eq!(
                 record.generic,
-                if family == "SF Mono" {
+                if mono {
                     crate::TypographyGeneric::Monospace
                 } else {
                     crate::TypographyGeneric::SansSerif
                 }
             );
             assert_eq!(success.candidate.typography().role(role), Some(record));
-            let expected: &[&str] = if family == "SF Mono" {
+            let expected: &[&str] = if mono {
                 &["DejaVu Sans Mono", "Noto Sans Mono"]
             } else {
-                &["Inter", "Noto Sans", "DejaVu Sans"]
+                &["Noto Sans", "DejaVu Sans"]
             };
             assert_eq!(record.fallbacks, expected);
         }
@@ -3491,7 +3498,7 @@ mod tests {
     fn total_composition_checks_all_twelve_scheme_mode_points() {
         let mut document = document();
         document.v1.resolution_order = vec![ModifierAxis::Scheme, ModifierAxis::Mode];
-        for (scheme, min_width) in Scheme::ALL.into_iter().skip(1).zip(73..=77) {
+        for (scheme, min_width) in Scheme::ALL.into_iter().skip(1).zip(73..) {
             let mut modifier = block(ModifierAxis::Scheme, scheme.name());
             modifier.primitives.metrics.insert(
                 "button.min_width.standard".into(),
