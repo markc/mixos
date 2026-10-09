@@ -464,6 +464,15 @@ family or evaluation mode requires an architectural decision. See the
 [decision](decisions/2026-10-08-mix-programs-and-documents.md) and
 [file-family contract](spec/mix/2026-10-08-programs-and-documents.md).
 
+Uncaught script errors print a diagnostic and exit 1, including messages with
+`interrupted:false` or the word `interrupted`. Signal outcomes come from actual
+SIGINT/SIGTERM delivery: non-interactive scripts and `-c` exit 130/143. SIGINT
+on an interactive terminal retains exit 0 unless `--result-fd` is used.
+A caught interrupt still takes precedence over the evaluation's result;
+`--result-fd` emits an error frame rather than a successful value.
+Script-defined error codes do not impersonate OS signals; `--serve` retains
+its graceful shutdown behaviour.
+
 ---
 
 <!-- page: https://mixos.dev/noded/ (source: https://mixos.dev/noded.md) -->

@@ -273,6 +273,14 @@ includes compatible binaries, scripts and documents.</p>
 family or evaluation mode requires an architectural decision. See the
 <a href="/decisions/2026-10-08-mix-programs-and-documents/">decision</a> and
 <a href="/spec/mix/2026-10-08-programs-and-documents/">file-family contract</a>.</p>
+<p>Uncaught script errors print a diagnostic and exit 1, including messages with
+<code>interrupted:false</code> or the word <code>interrupted</code>. Signal outcomes come from actual
+SIGINT/SIGTERM delivery: non-interactive scripts and <code>-c</code> exit 130/143. SIGINT
+on an interactive terminal retains exit 0 unless <code>--result-fd</code> is used.
+A caught interrupt still takes precedence over the evaluation's result;
+<code>--result-fd</code> emits an error frame rather than a successful value.
+Script-defined error codes do not impersonate OS signals; <code>--serve</code> retains
+its graceful shutdown behaviour.</p>
         </article>
         <p class="doc-source"><a href="/mix.md"><i data-lucide="file-text"></i> This page as Markdown</a></p>
     </div>

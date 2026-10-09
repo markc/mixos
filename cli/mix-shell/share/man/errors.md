@@ -452,8 +452,10 @@ Two things to know about the sentinels: the **negative** `rc` values (`-1`
 timeout, `-2` interrupt) can never collide with a real child exit (`0..255`,
 including `128+sig`); and an **interrupt is a stop request, not a recoverable
 error** — after Ctrl-C the interpreter winds the script down and the process
-exits cleanly (0), so don't build recovery logic on catching `run: interrupted`
-or branching on `.interrupted` (later statements may not run).
+exits with status `130` (`128 + SIGINT`) for non-interactive execution and
+`--result-fd`, even if a `catch` returns successfully. Plain execution on an
+interactive terminal retains status `0`. Don't build recovery logic on catching
+`run: interrupted` or branching on `.interrupted` (later statements may not run).
 
 The opts map is validated loudly (and catchably): an unknown key raises
 `run_rc: unknown opt "bogus" (supported: timeout)`, and a surplus argument raises

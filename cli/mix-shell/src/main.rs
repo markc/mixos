@@ -291,27 +291,47 @@ pub(crate) fn build_runtime() -> tokio::runtime::Runtime {
 /// `mixos-lib-daemon` crate; behaviour-parity with that crate's
 /// `shutdown_signal()`.
 async fn shutdown_signal() -> i32 {
-    let ctrl_c = tokio::signal::ctrl_c();
-
     #[cfg(unix)]
-    // Registration failure leaves Ctrl-C as the available graceful path;
-    // do not bypass the evaluator's final stats flush.
-    let signal = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
-        Ok(mut sigterm) => tokio::select! {
-            _ = ctrl_c => libc::SIGINT,
-            _ = sigterm.recv() => libc::SIGTERM,
-        },
-        Err(e) => {
-            eprintln!("mix: failed to register SIGTERM handler: {}", e);
-            let _ = ctrl_c.await;
-            libc::SIGINT
+    let signal = {
+        // Register both streams BEFORE reading the latches. A signal that
+        // arrived earlier is in a latch; one that arrives later wakes a
+        // stream. Reading the latch first would leave a window in which a
+        // signal is in neither place.
+        let sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt());
+        let sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate());
+        if let Some(latched) = latched_shutdown_signal() {
+            latched
+        } else {
+            // Registration failure leaves the other signal as the available
+            // graceful path; do not bypass the evaluator's final stats flush.
+            match (sigint, sigterm) {
+                (Ok(mut sigint), Ok(mut sigterm)) => tokio::select! {
+                    _ = sigint.recv() => libc::SIGINT,
+                    _ = sigterm.recv() => libc::SIGTERM,
+                },
+                (Ok(mut sigint), Err(e)) => {
+                    eprintln!("mix: failed to register SIGTERM handler: {}", e);
+                    let _ = sigint.recv().await;
+                    libc::SIGINT
+                }
+                (Err(e), _) => {
+                    eprintln!("mix: failed to register SIGINT handler: {}", e);
+                    libc::SIGINT
+                }
+            }
         }
     };
 
     #[cfg(not(unix))]
     let signal = {
-        ctrl_c.await.ok();
-        libc::SIGINT
+        let ctrl_c = tokio::signal::ctrl_c();
+        match latched_shutdown_signal() {
+            Some(latched) => latched,
+            None => {
+                ctrl_c.await.ok();
+                libc::SIGINT
+            }
+        }
     };
 
     tracing::info!(signal, "shutdown signal received");
@@ -323,6 +343,90 @@ async fn shutdown_signal() -> i32 {
 /// to `DEREGISTER_GRACE` (5 s) + `CLASSC_DRAIN_GRACE` (5 s) + the owned-spawn
 /// `SWEEP_GRACE` (2 s). `MIX_SIGTERM_BACKSTOP_SECS` overrides it.
 const SIGTERM_BACKSTOP_GRACE: std::time::Duration = std::time::Duration::from_secs(15);
+
+// The evaluator consumes its cooperative flag before returning an error.
+// Keep the actual CLI signal separate from both that flag and error prose.
+static SIGINT_RECEIVED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static SIGTERM_RECEIVED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn received_sigint() -> bool {
+    SIGINT_RECEIVED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn received_sigterm() -> bool {
+    SIGTERM_RECEIVED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// A shutdown signal that arrived before anyone was listening for it. The
+/// recorders in [`arm_sigterm_backstop`] latch both signals from arm time, so
+/// a signal delivered during a startup await is not lost.
+fn latched_shutdown_signal() -> Option<i32> {
+    if received_sigint() {
+        Some(libc::SIGINT)
+    } else if received_sigterm() {
+        Some(libc::SIGTERM)
+    } else {
+        None
+    }
+}
+
+/// Run a startup await (broker connect, prelude load) that happens before the
+/// steady-state shutdown wait. A SIGINT or SIGTERM that lands first wins, so a
+/// stalled startup still answers the signal instead of running to completion.
+async fn until_shutdown<T>(startup: impl std::future::Future<Output = T>) -> Result<T, i32> {
+    let outcome = tokio::select! {
+        biased;
+        signal = shutdown_signal() => Err(signal),
+        value = startup => Ok(value),
+    };
+    // A CPU-only prelude can consume the cooperative flag and finish this
+    // poll before the shutdown arm is polled again. The recorded signal
+    // still wins over its startup result, including PRELUDE_FAILED.
+    match latched_shutdown_signal() {
+        Some(signal) => Err(signal),
+        None => outcome,
+    }
+}
+
+fn signal_exit_code(signal: i32, framed: bool) -> i32 {
+    if !framed && signal == libc::SIGINT && std::io::stdin().is_terminal() {
+        0
+    } else {
+        128 + signal
+    }
+}
+
+/// Startup interruptions and execution outcomes share the result channel and
+/// exit contract. Framed SIGINT always exits 130, including on terminal stdin.
+fn finish_command_result(
+    res: Result<Result<Value, mix::error::MixError>, i32>,
+    result_fd: Option<crate::result_fd::ResultFd>,
+) -> i32 {
+    let framed = result_fd.is_some();
+    if let Some(result_fd) = result_fd {
+        let payload = match &res {
+            Err(signal) => crate::result_fd::Payload::Error(format!(
+                "interrupted by signal {signal} before the evaluation finished"
+            )),
+            Ok(Ok(value)) => crate::result_fd::Payload::Value(value.clone()),
+            Ok(Err(error)) => crate::result_fd::Payload::Error(format!("{error}")),
+        };
+        if let Err(error) = result_fd.write(&payload) {
+            // Loud, because a missing frame is reported by the supervisor as
+            // `result_missing` and otherwise gives the operator no explanation.
+            eprintln!("mix: --result-fd: could not write the result frame: {error}");
+        }
+    }
+    match res {
+        Err(signal) => signal_exit_code(signal, framed),
+        Ok(Ok(_)) => 0,
+        Ok(Err(mix::error::MixError::ExitRequest { code })) => code,
+        Ok(Err(e)) => {
+            print_uncaught(&e);
+            1
+        }
+    }
+}
 
 /// Make SIGTERM final in non-interactive modes (script, `-c`, `--serve`).
 ///
@@ -340,6 +444,26 @@ const SIGTERM_BACKSTOP_GRACE: std::time::Duration = std::time::Duration::from_se
 fn arm_sigterm_backstop() {
     static ARMED: std::sync::Once = std::sync::Once::new();
     ARMED.call_once(|| {
+        // SAFETY: the handler only stores into a static atomic. Record arrival
+        // before the evaluator's handler can consume its own interrupt flag.
+        if let Err(error) = unsafe {
+            signal_hook::low_level::register(libc::SIGINT, || {
+                SIGINT_RECEIVED.store(true, std::sync::atomic::Ordering::Relaxed);
+            })
+        } {
+            eprintln!("mix: failed to record SIGINT: {error}");
+        }
+        // Same latch for SIGTERM: the recorder replaces the default
+        // disposition from arm time, so a SIGTERM during a startup await
+        // must be remembered until `shutdown_signal()` can observe it.
+        // SAFETY: the handler only stores into a static atomic.
+        if let Err(error) = unsafe {
+            signal_hook::low_level::register(libc::SIGTERM, || {
+                SIGTERM_RECEIVED.store(true, std::sync::atomic::Ordering::Relaxed);
+            })
+        } {
+            eprintln!("mix: failed to record SIGTERM: {error}");
+        }
         let grace = env::var("MIX_SIGTERM_BACKSTOP_SECS")
             .ok()
             .and_then(|s| s.parse::<u64>().ok())
@@ -710,9 +834,15 @@ fn run_source(
         repl::register_ai_extensions(&mut eval);
 
         // Load prelude
-        if !no_prelude && let Err(e) = eval.load_prelude().await {
-            eprintln!("{e}");
-            return (ScriptOutcome::Ran(Err(e)), eval.take_stats());
+        if !no_prelude {
+            match until_shutdown(eval.load_prelude()).await {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    eprintln!("{e}");
+                    return (ScriptOutcome::Ran(Err(e)), eval.take_stats());
+                }
+                Err(sig) => return (ScriptOutcome::Signal(sig), eval.take_stats()),
+            }
         }
 
         if stats_io::stats_enabled() {
@@ -754,6 +884,12 @@ fn run_source(
                 Ok::<_, mix::error::MixError>(())
             } => ScriptOutcome::Ran(res),
         };
+        // A caught cooperative interrupt can finish evaluation in this poll.
+        // The recorded stop request still takes precedence over its result.
+        let outcome = match latched_shutdown_signal() {
+            Some(signal) => ScriptOutcome::Signal(signal),
+            None => outcome,
+        };
         (outcome, eval.take_stats())
     }));
     if let Some(stats) = stats {
@@ -765,24 +901,12 @@ fn run_source(
         // one historical carve-out: SIGINT on an interactive terminal
         // keeps the clean 0 (Ctrl-C at a TTY is the operator, not a
         // cancellation).
-        ScriptOutcome::Signal(sig) => {
-            if sig == libc::SIGINT && std::io::stdin().is_terminal() {
-                0
-            } else {
-                128 + sig
-            }
-        }
+        ScriptOutcome::Signal(sig) => signal_exit_code(sig, false),
         ScriptOutcome::Ran(Ok(_)) => 0,
         ScriptOutcome::Ran(Err(mix::error::MixError::ExitRequest { code })) => code,
         ScriptOutcome::Ran(Err(e)) => {
-            let msg = format!("{e}");
-            if msg.contains("interrupted") {
-                // Clean exit on interrupt
-                0
-            } else {
-                print_uncaught(&e);
-                1
-            }
+            print_uncaught(&e);
+            1
         }
     }
 }
@@ -826,17 +950,25 @@ fn run_command_line(
         eval.set_shell_handler(std::rc::Rc::new(shell_handler::ReplShellHandler::new()));
         mix::interrupt::init(eval.interrupt_flag());
         repl::register_ai_extensions(&mut eval);
-        if !no_prelude
-            && let Err(e) = eval.load_prelude().await
-        {
-            eprintln!("{e}");
-            return (1, eval.take_stats());
+        if !no_prelude {
+            match until_shutdown(eval.load_prelude()).await {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    eprintln!("{e}");
+                    return (1, eval.take_stats());
+                }
+                Err(sig) => return (finish_command_result(Err(sig), result_fd), eval.take_stats()),
+            }
         }
         for (idx, arg) in script_args.iter().enumerate() {
             eval.set_global(&(idx + 1).to_string(), Value::String(arg.clone()));
         }
-        if load_rc && let Some(code) = repl::load_mixrc_async(&mut eval).await {
-            return (code, eval.take_stats());
+        if load_rc {
+            match until_shutdown(repl::load_mixrc_async(&mut eval)).await {
+                Ok(Some(code)) => return (code, eval.take_stats()),
+                Ok(None) => {}
+                Err(sig) => return (finish_command_result(Err(sig), result_fd), eval.take_stats()),
+            }
         }
         if stats_io::stats_enabled() {
             eval.attach_stats(UsageStats::for_execution(StatsContext::new(
@@ -966,47 +1098,13 @@ fn run_command_line(
                         Ok(value)
                     } => Ok(r),
                 };
-                let framed = result_fd.is_some();
-                if let Some(result_fd) = result_fd {
-                    let payload = match &res {
-                        Err(signal) => crate::result_fd::Payload::Error(format!(
-                            "interrupted by signal {signal} before the evaluation finished"
-                        )),
-                        Ok(Ok(value)) => crate::result_fd::Payload::Value(value.clone()),
-                        Ok(Err(error)) => crate::result_fd::Payload::Error(format!("{error}")),
-                    };
-                    if let Err(error) = result_fd.write(&payload) {
-                        // Loud, because a missing frame is reported by the
-                        // supervisor as `result_missing` and the operator would
-                        // otherwise have no way to learn why.
-                        eprintln!("mix: --result-fd: could not write the result frame: {error}");
-                    }
-                }
-                match res {
-                    // B6/D8: a killed run must not read as success. Framed
-                    // callers always got 128+sig; the plain arm now does
-                    // too, with the one historical carve-out — SIGINT on an
-                    // interactive terminal (Ctrl-C at a TTY is the
-                    // operator, not a cancellation).
-                    Err(signal) => {
-                        if framed
-                            || signal != libc::SIGINT
-                            || !std::io::stdin().is_terminal()
-                        {
-                            128 + signal
-                        } else {
-                            0
-                        }
-                    }
-                    Ok(Ok(_)) => 0,
-                    Ok(Err(mix::error::MixError::ExitRequest { code })) => code,
-                    // Match run_source: a Ctrl-C interrupt is a clean exit.
-                    Ok(Err(e)) if format!("{e}").contains("interrupted") => 0,
-                    Ok(Err(e)) => {
-                        print_uncaught(&e);
-                        1
-                    }
-                }
+                // A catch can consume the cooperative flag and return Ok in
+                // the same poll. Honour the recorded signal before framing.
+                let res = match latched_shutdown_signal() {
+                    Some(signal) => Err(signal),
+                    None => res,
+                };
+                finish_command_result(res, result_fd)
             }
             shell::InputKind::FunctionCommand { name, args } => {
                 // Bareword call of a defined function under `-c` (`mix -i -c
@@ -1014,38 +1112,26 @@ fn run_command_line(
                 // Race against Ctrl-C like the MixCode arm; exit 0 on success,
                 // 1 on a Mix runtime error (the function's own `$rc`/side effects
                 // carry the real command status, exactly as a paren call would).
-                let res: Result<(), mix::error::MixError> = tokio::select! {
+                let res: Result<Result<(), mix::error::MixError>, i32> = tokio::select! {
                     biased;
-                    // B6: the signal number travels in a structured error so
-                    // the exit-code match below can apply the same TTY
-                    // carve-out as every other path.
-                    sig = shutdown_signal() => Err(mix::error::MixError::structured(
-                        "SIGNAL_INTERRUPT",
-                        sig.to_string(),
-                    )),
+                    sig = shutdown_signal() => Err(sig),
                     r = async {
                         eval.call_function_by_name_with_args(&name, &args).await?;
                         if eval.handler_count() > 0 {
                             eval.run_event_pump().await?;
                         }
                         Ok(())
-                    } => r,
+                    } => Ok(r),
+                };
+                let res = match latched_shutdown_signal() {
+                    Some(signal) => Err(signal),
+                    None => res,
                 };
                 match res {
-                    Ok(_) => 0,
-                    Err(mix::error::MixError::ExitRequest { code }) => code,
-                    Err(mix::error::MixError::Structured(info))
-                        if info.code == "SIGNAL_INTERRUPT" =>
-                    {
-                        let sig: i32 = info.message.parse().unwrap_or(libc::SIGTERM);
-                        if sig == libc::SIGINT && std::io::stdin().is_terminal() {
-                            0
-                        } else {
-                            128 + sig
-                        }
-                    }
-                    Err(e) if format!("{e}").contains("interrupted") => 0,
-                    Err(e) => {
+                    Err(signal) => signal_exit_code(signal, false),
+                    Ok(Ok(_)) => 0,
+                    Ok(Err(mix::error::MixError::ExitRequest { code })) => code,
+                    Ok(Err(e)) => {
                         print_uncaught(&e);
                         1
                     }
@@ -1238,8 +1324,10 @@ const DEREGISTER_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
 /// How `run_serve`'s pump/init future terminated, mapped to an exit
 /// code after the supervisor is stopped.
 enum ServeOutcome {
-    /// Ctrl-C, or a `MixError` whose message indicates interruption.
+    /// SIGINT/SIGTERM observed directly or through the recorded signal.
     Interrupted,
+    /// A signal during replacement evaluator startup retains 128+signal.
+    StartupSignal(i32),
     /// The pump returned `Ok` — a genuine shutdown, not a transient
     /// drop. Covers BOTH the Ch02 `QUIT` universal (WS4 pump break)
     /// and the supervised-receiver `None` fatal terminal. Transport
@@ -1458,15 +1546,25 @@ fn run_serve(script_path: &str, service_name: &str, no_prelude: bool) -> i32 {
             bi.build_time,
             buildinfo::now_rfc3339(),
         );
-        let supervised = match ::bus::native_client::SupervisedClient::connect_supervised_with_provenance(
+        // The initial connect can stall for the whole registration budget.
+        // A SIGINT/SIGTERM during it answers at once: nothing is registered
+        // yet and there is no evaluator to drain, so exit 128+signal.
+        let connect = ::bus::native_client::SupervisedClient::connect_supervised_with_provenance(
             service_name,
             &noded_url,
             Some(provenance),
-        )
-        .await
-        {
-            Ok(s) => std::sync::Arc::new(s),
-            Err(e) => {
+        );
+        let supervised = match until_shutdown(connect).await {
+            Err(signal) => {
+                tracing::info!(
+                    service = %service_name,
+                    signal,
+                    "serve: interrupted during initial broker connect; exiting"
+                );
+                return 128 + signal;
+            }
+            Ok(Ok(s)) => std::sync::Arc::new(s),
+            Ok(Err(e)) => {
                 // Typed fatal (SPEC 18 §3.1): the initial connect+register
                 // budget is exhausted. Fail fast, exit non-zero — do NOT
                 // spin against a broker that will never answer.
@@ -1499,14 +1597,20 @@ fn run_serve(script_path: &str, service_name: &str, no_prelude: bool) -> i32 {
         // Process identity, shared across every generation so uptime/started_at
         // survive a reload and lifecycle.generation confirms a swap took.
         let identity = std::rc::Rc::new(serve_runtime::ReloadIdentity::new());
+        // interrupt::init is once-only. Publish one canonical flag before
+        // any prelude runs and share it across every evaluator generation.
+        let interrupt_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        mix::interrupt::init(interrupt_flag.clone());
         async fn build_serve_eval(
             bus_handler: &std::rc::Rc<bus::MixServeHandler>,
             identity: &std::rc::Rc<serve_runtime::ReloadIdentity>,
             service_name: &str,
             script_path: &str,
             no_prelude: bool,
+            interrupt_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
         ) -> Evaluator {
             let mut eval = Evaluator::new();
+            eval.set_interrupt_flag(interrupt_flag.clone());
             eval.set_limits(script_limits());
             apply_arity_mode(&mut eval);
             eval.set_bus_handler(bus_handler.clone());
@@ -1543,13 +1647,35 @@ fn run_serve(script_path: &str, service_name: &str, no_prelude: bool) -> i32 {
             eval
         }
 
-        let mut eval = build_serve_eval(&bus_handler, &identity, service_name, script_path, no_prelude).await;
+        // The prelude load is a startup await too; interrupt it the same way.
+        // The registration is already live here. Exit without deregistering,
+        // as a crash would, and leave the name to the broker's connection-close
+        // teardown.
+        let mut eval = match until_shutdown(build_serve_eval(
+            &bus_handler,
+            &identity,
+            service_name,
+            script_path,
+            no_prelude,
+            &interrupt_flag,
+        ))
+        .await
+        {
+            Ok(eval) => eval,
+            Err(signal) => {
+                tracing::info!(
+                    service = %service_name,
+                    signal,
+                    "serve: interrupted during evaluator startup; exiting"
+                );
+                return 128 + signal;
+            }
+        };
         // Per evaluator, so each RELOAD generation answers
         // `script_version()` for its own file: an old-generation handler
         // still draining reads the old record, the replacement's init the
         // new one, and a reverted reload never touched the old one.
         eval.set_script_provenance(initial_provenance);
-        mix::interrupt::init(eval.interrupt_flag());
 
         // Serve mode ALWAYS enters the pump after the init body — it is
         // a resident daemon, not a script with an optional event tail.
@@ -1584,6 +1710,8 @@ fn run_serve(script_path: &str, service_name: &str, no_prelude: bool) -> i32 {
         // signal-delivery gap across a reload), and raced against BOTH the
         // pump AND the reload's init body so a hanging/sleeping new script
         // is still killable by SIGTERM/Ctrl-C (codex arm MAJOR-3).
+        // A signal latched during startup is returned on the first poll, so
+        // the loop never starts the init body after an interrupt.
         let shutdown = shutdown_signal();
         tokio::pin!(shutdown);
         // Grace for draining a generation's in-flight Class C work at a swap
@@ -1618,7 +1746,7 @@ fn run_serve(script_path: &str, service_name: &str, no_prelude: bool) -> i32 {
                     }
                     Err(e) => {
                         let msg = format!("{e}");
-                        if msg.contains("interrupted") {
+                        if received_sigint() {
                             ServeOutcome::Interrupted
                         } else {
                             tracing::error!(
@@ -1663,14 +1791,27 @@ fn run_serve(script_path: &str, service_name: &str, no_prelude: bool) -> i32 {
                     continue;
                 }
             };
-            let mut new_eval =
-                build_serve_eval(&bus_handler, &identity, service_name, script_path, no_prelude).await;
+            let mut new_eval = tokio::select! {
+                biased;
+                signal = &mut shutdown => break ServeOutcome::StartupSignal(signal),
+                new_eval = build_serve_eval(
+                    &bus_handler,
+                    &identity,
+                    service_name,
+                    script_path,
+                    no_prelude,
+                    &interrupt_flag,
+                ) => {
+                    // As at first boot, cooperative interruption can finish
+                    // the prelude before the shutdown arm is polled again.
+                    if let Some(signal) = latched_shutdown_signal() {
+                        break ServeOutcome::StartupSignal(signal);
+                    }
+                    new_eval
+                }
+            };
             // The replacement's own record; the old evaluator keeps its own.
             new_eval.set_script_provenance(new_provenance);
-            // interrupt::init is once-only, bound to the FIRST evaluator's
-            // flag — share that flag so the evaluator-internal interrupt path
-            // keeps working after any number of reloads.
-            new_eval.set_interrupt_flag(eval.interrupt_flag());
             // Mark the candidate so its init body can branch on
             // `is_reload_candidate()` (passive preparation: no starts, no
             // stopping old behaviour, no persisted writes). Cleared on
@@ -1910,6 +2051,7 @@ fn run_serve(script_path: &str, service_name: &str, no_prelude: bool) -> i32 {
 
         let exit_code = match outcome {
             ServeOutcome::Error => 1,
+            ServeOutcome::StartupSignal(signal) => 128 + signal,
             // The script's explicit status is exact even if best-effort serve
             // teardown logged a deregister/drain failure above.
             ServeOutcome::ExitRequested(code) => code,

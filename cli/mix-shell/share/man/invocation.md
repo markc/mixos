@@ -121,7 +121,9 @@ error diagnostics attribute to it). The every-time, CWD-relative loader is
 `source`. See [modules](functions.md).
 
 The script's exit code is `0` on success, `1` on an uncaught error (the error
-message goes to stderr); a `Ctrl-C` interrupt is a clean exit.
+message goes to stderr). A `Ctrl-C` interrupt exits `130` (`128 + SIGINT`) in
+non-interactive execution and with `--result-fd`, even if a `catch` returns
+successfully; plain execution on an interactive terminal retains status `0`.
 
 A command line ending in an odd run of backslashes may continue onto the next
 physical line. Mix splices it before classification, so the same command behaves

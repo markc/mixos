@@ -84,23 +84,32 @@ struct Citizen {
 
 impl Citizen {
     fn spawn(bin: &Path, dir: &Dir, node_conf: &Path, script: &Path) -> Citizen {
+        Self::spawn_with_prelude(bin, dir, node_conf, script, false)
+    }
+
+    fn spawn_with_prelude(
+        bin: &Path,
+        dir: &Dir,
+        node_conf: &Path,
+        script: &Path,
+        load_prelude: bool,
+    ) -> Citizen {
         let stderr = File::create(dir.0.join("citizen.stderr")).unwrap();
+        let stdout = File::create(dir.0.join("citizen.stdout")).unwrap();
         let mut cmd = Command::new(bin);
-        cmd.args([
-            "--no-prelude",
-            "--serve",
-            script.to_str().unwrap(),
-            "--name",
-            SVC,
-        ])
-        .env("MIXOS_NODE_CONFIG", node_conf)
-        .env("MIXOS_ETC", &dir.0)
-        .env("HONEST_TRACE", dir.0.join("trace"))
-        .env("MIX_STATS", "off")
-        .env_remove("COSMIX_SESSION_FD")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::from(stderr));
+        if !load_prelude {
+            cmd.arg("--no-prelude");
+        }
+        cmd.args(["--serve", script.to_str().unwrap(), "--name", SVC])
+            .env("HOME", &dir.0)
+            .env("MIXOS_NODE_CONFIG", node_conf)
+            .env("MIXOS_ETC", &dir.0)
+            .env("HONEST_TRACE", dir.0.join("trace"))
+            .env("MIX_STATS", "off")
+            .env_remove("COSMIX_SESSION_FD")
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(stdout))
+            .stderr(Stdio::from(stderr));
         unsafe {
             cmd.pre_exec(|| {
                 if libc::setpgid(0, 0) == -1 {
@@ -323,4 +332,135 @@ async fn lookup_reports_transport_failure_and_emit_remains_nonfatal() {
     .await;
     wait_trace_count(&dir, "emit|", emits + 2, HARD).await;
     wait_trace_count(&dir, "emitm|", emitms + 2, HARD).await;
+}
+
+#[tokio::test]
+async fn uncaught_interruption_text_is_a_reported_serve_error() {
+    let _g = lock().await;
+    let dir = Dir::new("interruption-error");
+    let broker = Broker::start();
+    let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
+    let script = dir.write("svc.mix", r#"raise("PROBE_REFUSAL", json_encode({interrupted:false,error:"not a signal"}))"#);
+    let mut citizen = Citizen::spawn(
+        Path::new(env!("CARGO_BIN_EXE_mix")),
+        &dir,
+        &node_conf,
+        &script,
+    );
+    let deadline = Instant::now() + HARD;
+    let status = loop {
+        if let Some(status) = citizen.child.try_wait().unwrap() { break status; }
+        assert!(Instant::now() < deadline, "serve error did not terminate");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    assert_eq!(status.code(), Some(1));
+    let stderr = dir.read("citizen.stderr");
+    assert!(stderr.contains("not a signal") && stderr.contains("script error"), "{stderr}");
+}
+
+// A SIGINT during the initial broker registration is answered at once. The
+// broker runtime is paused, so the citizen's connect+register cannot complete;
+// before the startup guard, the signal was only latched and the process sat
+// in the connect until its own budget ran out.
+#[tokio::test]
+async fn sigint_during_stalled_registration_exits_promptly_with_130() {
+    let _g = lock().await;
+    let dir = Dir::new("startup-sigint");
+    let broker = Broker::start();
+    let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
+    let script = dir.write("svc.mix", "-- version: 0.1.0\n");
+    let stall = broker.pause();
+    let mut citizen = Citizen::spawn(
+        Path::new(env!("CARGO_BIN_EXE_mix")),
+        &dir,
+        &node_conf,
+        &script,
+    );
+    // Give the citizen time to reach its registration await.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert!(
+        citizen.child.try_wait().unwrap().is_none(),
+        "citizen exited before the SIGINT was sent"
+    );
+    let sent = unsafe { libc::kill(citizen.pgid, libc::SIGINT) };
+    assert_eq!(sent, 0, "kill(SIGINT) failed");
+    let sent_at = Instant::now();
+    let status = loop {
+        if let Some(status) = citizen.child.try_wait().unwrap() {
+            break status;
+        }
+        assert!(
+            sent_at.elapsed() < Duration::from_secs(5),
+            "SIGINT during registration did not end the citizen promptly"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    assert_eq!(status.code(), Some(130), "citizen stderr: {}", dir.read("citizen.stderr"));
+    drop(stall);
+}
+
+#[tokio::test]
+async fn sigint_during_cpu_only_prelude_exits_promptly_with_130() {
+    let _g = lock().await;
+    for reload in [false, true] {
+        let dir = Dir::new(if reload {
+            "reload-prelude-sigint"
+        } else {
+            "prelude-sigint"
+        });
+        let broker = Broker::start();
+        let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
+        let script = dir.write("svc.mix", "on rel.state\nreply(0, \"{}\")\nend\n");
+        let prelude = "print(\"PRELUDE_READY\")\n$n=0\nwhile true\n$n=$n+1\nend\n";
+        dir.write("prelude.mix", if reload { "" } else { prelude });
+        let mut citizen = Citizen::spawn_with_prelude(
+            Path::new(env!("CARGO_BIN_EXE_mix")),
+            &dir,
+            &node_conf,
+            &script,
+            true,
+        );
+        if reload {
+            let c = connect(&broker).await;
+            wait_service(&c, HARD).await;
+            dir.write("prelude.mix", prelude);
+            call(&c, "RELOAD", json!({}))
+                .await
+                .expect("reload accepted");
+        }
+        let ready_deadline = Instant::now() + HARD;
+        while !dir.read("citizen.stdout").contains("PRELUDE_READY") {
+            assert!(
+                citizen.child.try_wait().unwrap().is_none(),
+                "reload={reload}: citizen exited before the prelude loop: {}",
+                dir.read("citizen.stderr")
+            );
+            assert!(
+                Instant::now() < ready_deadline,
+                "reload={reload}: prelude never ready: {}",
+                dir.read("citizen.stderr")
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(citizen.child.try_wait().unwrap().is_none());
+        assert_eq!(unsafe { libc::kill(citizen.pgid, libc::SIGINT) }, 0);
+        let sent_at = Instant::now();
+        let status = loop {
+            if let Some(status) = citizen.child.try_wait().unwrap() {
+                break status;
+            }
+            assert!(
+                sent_at.elapsed() < Duration::from_secs(5),
+                "reload={reload}: SIGINT during prelude did not end the citizen promptly: {}",
+                dir.read("citizen.stderr")
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        };
+        assert_eq!(
+            status.code(),
+            Some(130),
+            "reload={reload}: citizen stderr: {}",
+            dir.read("citizen.stderr")
+        );
+    }
 }
