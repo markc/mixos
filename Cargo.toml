@@ -4,7 +4,7 @@
 
 [workspace]
 resolver = "3"
-members = ["libs/*"]
+members = ["libs/*", "services/noded", "services/noded/crates/*"]
 exclude = ["vendor"]
 
 [workspace.package]
@@ -55,10 +55,17 @@ uuid = { version = "=1.24.1", features = ["fast-rng", "serde", "v7"] }
 # Shared libraries (libs/).
 assets = { path = "libs/assets" }
 buildinfo = { path = "libs/buildinfo" }
+bus = { path = "libs/bus", default-features = false }
 config = { path = "libs/config" }
 design = { path = "libs/design" }
 expr = { path = "libs/expr" }
+logging = { path = "libs/logging" }
+props = { path = "libs/props" }
 strict = { path = "libs/strict" }
+
+# noded private crates (services/noded/crates/).
+mesh = { path = "services/noded/crates/mesh" }
+mesh-trust = { path = "services/noded/crates/mesh-trust" }
 
 [profile.release]
 codegen-units = 1
