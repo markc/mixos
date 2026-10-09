@@ -81,6 +81,17 @@ yaml = ["dep:yaml-rust2"]
 # `{insecure: true}` arm's no-verify TLS config (self-signed device certs
 # — the case that motivated the builtin).
 ws = ["dep:tungstenite", "dep:rustls", "dep:webpki-roots", "tokio/net"]
+# `tar_list` / `tar_unpack` / `tar_pack` builtins — read and write archives
+# without an external tar or zstd binary, so a verified artifact can be
+# unpacked by the same language that checked its digest. tar >= 0.4.46 floor
+# per RUSTSEC-2026-0067 (0.4.45 fixed the symlink permission-change and
+# PAX-size interpretation issues); structured-zstd is the pure-Rust RFC 8878
+# implementation (both directions) — pinned exactly (0.0.x semver); flate2
+# provides gzip framing over its default Rust backend (miniz_oxide). No C
+# codec in the shipped binary; the zstd encoder-window profile contract
+# (<= decoder 128 MiB ceiling, no dictionaries, single frame) is documented
+# in `mix man tar`.
+archive = ["dep:tar", "dep:structured-zstd", "dep:flate2"]
 
 [dependencies]
 indexmap = "2"
@@ -158,6 +169,10 @@ ureq = { version = "2", optional = true }
 webpki-roots = { version = "0.26", optional = true }
 rustls-pemfile = { version = "2", optional = true }
 rusqlite = { workspace = true, optional = true }
+# `archive` feature only — see the feature comment above.
+tar = { version = "0.4.46", optional = true }
+structured-zstd = { version = "0.0.58", optional = true }
+flate2 = { version = "1.1", default-features = true, optional = true }
 url = { version = "2", optional = true }
 uuid = { version = "1", features = ["v4"], optional = true }
 # `dkim` feature only — keygen path. Pinned to the same 0.7 line as
@@ -173,7 +188,7 @@ quick-xml = { version = "0.41.0", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt", "macros", "sync", "time", "test-util", "net", "io-util"] }
-mix = { path = ".", features = ["json", "regex", "toml", "datetime", "url", "crypto", "http", "sqlite", "tokio-sleep", "datastar", "xml", "yaml", "ws"] }
+mix = { path = ".", features = ["json", "regex", "toml", "datetime", "url", "crypto", "http", "sqlite", "tokio-sleep", "datastar", "xml", "yaml", "ws", "archive"] }
 # Property-based testing for the lexer/parser (P1 of the mix tokenizer
 # fuzz/property corpus — _doc/planned/mix-tokenizer-fuzz-corpus.md in the cosmix
 # hub). Test-only; never linked into the shipped library.

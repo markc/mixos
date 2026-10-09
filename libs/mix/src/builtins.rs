@@ -295,6 +295,9 @@ builtin_table! {
     ("tty_mode", CapabilityClass::Env,          "io",      "Put the controlling terminal into raw or cooked mode: tty_mode(\"raw\") disables canonical buffering, echo and signal generation (a lone ESC arrives as one byte — the keystroke-recorder primitive), tty_mode(\"cooked\") restores the saved termios. The original termios is restored on process exit if the caller never returns to cooked (v0.103.9)", contract!((mode: string) -> nil; failure[raises])),
     ("stdin_copy", CapabilityClass::Env,        "io",      "Copy stdin to a file, flushing every chunk, until EOF — the incremental twin of read_stdin_bytes, so a recorder killed mid-stream keeps the bytes it already read. Pair with tty_mode(\"raw\") to capture keystrokes (v0.103.9)", contract!((path: string) -> nil; effects[blocking]; failure[raises])),
     ("sqlopen", CapabilityClass::FsWrite,         "io",      "Open a SQLite database and return a handle", contract!((path: string, mode?: string) -> number; failure[raises])),
+    ("tar_list", CapabilityClass::FsRead,         "io",      "List a tar archive (zstd default, gzip or none codec) WITHOUT extracting: streaming entries {name,size,mode,uid,gid,kind,mtime}; the compressed stream is drained to EOF so the frame checksum is verified", contract!((path: string, opts?: map("tar_list_options", {codec: string, max_stream_bytes: number, max_name: number})) -> list(map); failure[raises])),
+    ("tar_unpack", CapabilityClass::FsWrite,      "io",      "Safely unpack a tar archive into dest (which must not exist or be empty): every member is validated (no absolute/.. paths, no device/fifo, symlink targets contained, no extraction through a created symlink, hardlinks only to earlier files), entries land in a private staging dir renamed into place only after the stream verifies to EOF — non-zero data after the tar end is refused (single frame). opts: codec (zstd default), numeric_owner, xattrs (default true, restores security.capability), keep_special_bits (default false strips suid/sgid), max_entries, max_bytes, max_name, max_stream_bytes (bounds the decoded stream, longname/PAX buffers included)", contract!((path: string, dest: string, opts?: map("tar_unpack_options", {codec: string, numeric_owner: bool, xattrs: bool, keep_special_bits: bool, max_entries: number, max_bytes: number, max_name: number, max_stream_bytes: number})) -> map("tar_receipt"); failure[raises])),
+    ("tar_pack", CapabilityClass::FsWrite,        "io",      "Pack a source DIRECTORY into a new archive at path (deterministic sorted walk, numeric owner/mtime/mode, security.capability captured as a SCHILY.xattr PAX record; refuses device/fifo members). opts: codec (zstd default), level (zstd 1..=22 default 7, gzip clamps to 9), keep_special_bits (default false strips suid/sgid)", contract!((source: string, path: string, opts?: map("tar_pack_options", {codec: string, level: number, keep_special_bits: bool})) -> map("tar_receipt"); failure[raises])),
     ("sqlexec", CapabilityClass::FsWrite,         "io",      "Execute SQL on a SQLite handle, return result rows", contract!((handle: number, sql: string, params?: any) -> any_of(list, map); failure[raises])),
     ("sqlclose", CapabilityClass::FsWrite,        "io",      "Close a SQLite database handle", contract!((handle: number) -> nil; failure[raises])),
     ("db_query", CapabilityClass::Db,        "db",      "Query the host-injected scoped DB: db_query(sql, [params]) → rows", contract!((sql: string, params?: any_of(list, nil)) -> list; effects[blocking]; failure[raises])),
@@ -900,6 +903,17 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
             span: None,
             msg: format!("{name}() requires the `ws` feature (tungstenite/rustls)"),
         }),
+        #[cfg(not(feature = "archive"))]
+        name @ ("tar_list" | "tar_unpack" | "tar_pack") => Err(MixError::RuntimeError {
+            span: None,
+            msg: format!("{name}() requires the `archive` feature (tar/structured-zstd/flate2)"),
+        }),
+        #[cfg(feature = "archive")]
+        "tar_list" => crate::archive::builtin_tar_list(args),
+        #[cfg(feature = "archive")]
+        "tar_unpack" => crate::archive::builtin_tar_unpack(args),
+        #[cfg(feature = "archive")]
+        "tar_pack" => crate::archive::builtin_tar_pack(args),
         #[cfg(feature = "sqlite")]
         "sqlopen" => builtin_sqlopen(args),
         #[cfg(feature = "sqlite")]
@@ -998,6 +1012,7 @@ pub fn compiled_features() -> Vec<&'static str> {
     feat!("crypto");
     feat!("http");
     feat!("sqlite");
+    feat!("archive");
     feat!("dkim");
     feat!("datastar");
     feat!("xml");
@@ -1043,6 +1058,9 @@ pub fn man_topic_for_builtin(name: &str) -> Option<&'static str> {
         "duration_format",
         "relative_time",
     ];
+    if name.starts_with("tar_") {
+        return Some("tar");
+    }
     if name.starts_with("http_") {
         return Some("http");
     }
@@ -6134,7 +6152,7 @@ fn parse_run_argv_argv(caller: &str, v: &Value) -> MixResult<Vec<String>> {
     Ok(argv)
 }
 
-fn opt_invalid(caller: &str, msg: impl std::fmt::Display) -> MixError {
+pub(crate) fn opt_invalid(caller: &str, msg: impl std::fmt::Display) -> MixError {
     MixError::structured("OPTION_INVALID", format!("{caller}: {msg}"))
 }
 
@@ -35556,7 +35574,7 @@ mod man_topic_tests {
     fn every_emitted_topic_names_a_real_page() {
         const PAGES: &[&str] = &[
             "buffer", "bus", "collections", "data", "datastar", "datetime",
-            "http", "io", "math", "regex", "remote", "strings", "system",
+            "http", "io", "math", "regex", "remote", "strings", "system", "tar",
         ];
         let names = super::BUILTIN_NAMES
             .iter()
@@ -35583,7 +35601,7 @@ mod compiled_features_tests {
         // real optional feature name and each appears at most once.
         const KNOWN: &[&str] = &[
             "json", "regex", "markdown", "toml", "serde", "datetime", "url",
-            "crypto", "http", "sqlite", "dkim", "datastar", "xml", "yaml", "ws",
+            "crypto", "http", "sqlite", "dkim", "datastar", "xml", "yaml", "ws", "archive",
         ];
         let f = compiled_features();
         for name in &f {
@@ -35604,7 +35622,7 @@ mod compiled_features_tests {
     fn every_cargo_feature_is_reported_or_deliberately_skipped() {
         const KNOWN: &[&str] = &[
             "json", "regex", "markdown", "toml", "serde", "datetime", "url",
-            "crypto", "http", "sqlite", "dkim", "datastar", "xml", "yaml", "ws",
+            "crypto", "http", "sqlite", "dkim", "datastar", "xml", "yaml", "ws", "archive",
         ];
         const SKIP: &[&str] = &["default", "tokio-sleep"];
         let manifest = include_str!("../Cargo.toml");
