@@ -76,3 +76,45 @@ async fn chr_refuses_surrogates_and_out_of_range() {
         assert!(err.contains(needle), "{src} -> {err}");
     }
 }
+
+#[test]
+fn chr_and_ord_raise_structured_value_errors() {
+    // The codes are part of the contract: a script's try/catch matches on
+    // them, so a bare runtime error would be a silent change. Called
+    // directly, not through the evaluator, so the structured payload is
+    // visible rather than flattened into the message string.
+    use mix::builtins::call_builtin;
+    use mix::value::Value;
+    for n in [-1.0, 65.5, f64::NAN, f64::INFINITY, 0xD800 as f64, 0x110000 as f64] {
+        let Err(err) = call_builtin("chr", vec![Value::Number(n)]) else {
+            panic!("chr({n}) must raise");
+        };
+        let info = err
+            .info()
+            .unwrap_or_else(|| panic!("chr({n}) must be structured: {err}"));
+        assert_eq!(info.code, "VALUE_ERROR", "chr({n})");
+    }
+    let Err(err) = call_builtin("ord", vec![Value::String(String::new())]) else {
+        panic!("ord(\"\") must raise");
+    };
+    assert_eq!(err.info().map(|i| i.code.as_str()), Some("VALUE_ERROR"));
+}
+
+#[test]
+fn chr_accepts_the_whole_range_edges() {
+    // The inclusive edges of the valid range, and the private-use glyph
+    // the icon-font use case needs, all round-trip through ord.
+    use mix::builtins::call_builtin;
+    use mix::value::Value;
+    for n in [0.0, 0xD7FF as f64, 0xE000 as f64, 0xE872 as f64, 0x10FFFF as f64] {
+        // `ref`: Value implements Drop, so the String cannot be moved out.
+        let Ok(Some(Value::String(ref s))) = call_builtin("chr", vec![Value::Number(n)]) else {
+            panic!("chr({n}) must answer a string");
+        };
+        assert_eq!(s.chars().count(), 1, "chr({n})");
+        let Ok(Some(Value::Number(back))) = call_builtin("ord", vec![Value::String(s.clone())]) else {
+            panic!("ord(chr({n})) must answer a number");
+        };
+        assert_eq!(back, n);
+    }
+}
