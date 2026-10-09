@@ -1,0 +1,49 @@
+# Desktop settings have one native ABP authority
+
+Status: accepted architecture, implementation staged. Contract version 0.1.0.
+
+Desktop appearance and layout belong to a headless `settingsd` authority. Settings
+controls, Mix operators and agents submit validated batches through native ABP.
+Applications and compd/Quoin consume complete accepted snapshots through shared
+headless `settings` contracts and one theme adapter per UI layer. Closing a
+Settings page does not stop delivery. Other services retain their own hardware
+and operational settings; discovery does not create a distributed transaction.
+
+The shared library has multiple external owners from its first commit:
+settingsd, applications and compd. The plain component names `settings` and
+`settingsd` describe their public contracts. Config remains independent of Bus;
+the UI toolkit layer remains independent of settings transport. No COSMIC implementation
+or GPL/MPL code is incorporated.
+
+Settings behaviour has one shared implementation per concern: `settings`
+consumer ordering/recovery and render-domain comparison; one theme adapter
+projecting settings onto the UI toolkit; shared reusable controls and
+role/default builders; and one shared event-loop activation/invalidation path.
+Applications retain their service lifetime, content and deliberate overrides.
+Compd owns output geometry, work areas, Wayland configuration and presentation.
+Standard widgets inherit current defaults without copied app palettes, font
+captures or settings handlers. Extract repeated components during migrations;
+keep headless crates independent of renderers and the UI layer independent of Bus.
+
+Each profile has one exclusive writer. Authored settings, revision and bounded
+operation receipts share a durable strict-data replacement. A no-op persists a
+receipt without changing semantic revision. The durable store incarnation fences
+restores; broker sequence is delivery order, not settings revision. Caller access
+remains open across the trusted mesh. Correct target/revision binding and
+canonical publisher ownership do not require the operator to own the session.
+
+Native calls/events use existing ABP/noded, preserving frozen framing and
+identity constants. External toolkit D-Bus adapters are later compatibility
+boundaries inside the independent MixOS session. Retained broker snapshots are
+presentation/recovery aids, not a durable offline store. Recovery is driven by
+lifecycle/connection/loss events, without an idle settings polling loop.
+
+Consumer application and frame presentation are separate evidence. Compositor
+geometry/input updates remain coherent while Wayland configure/ack/buffer changes
+complete asynchronously. No global same-vblank guarantee is made.
+
+The authority/store and shared consumer primitives are implemented; consumers
+adopt them as they enter this tree. Full widget geometry/resources, panel reconfiguration, native
+frame/first-map acceptance, named profiles, previews, replication and compatibility
+remain in development. This decision establishes ownership; individual fixtures
+do not close full desktop acceptance. See the [initial contract](../spec/settings/README.md).

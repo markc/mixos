@@ -4,7 +4,7 @@
 
 [workspace]
 resolver = "3"
-members = ["libs/*", "services/noded", "services/noded/crates/*", "cli/mix-shell", "services/editd"]
+members = ["libs/*", "services/noded", "services/noded/crates/*", "cli/mix-shell", "services/editd", "services/settingsd"]
 exclude = ["vendor", "vendor/msedit/lsh", "vendor/msedit/stdext"]
 
 [workspace.package]
@@ -63,6 +63,7 @@ expr = { path = "libs/expr" }
 logging = { path = "libs/logging" }
 mix = { path = "libs/mix" }
 props = { path = "libs/props" }
+settings = { path = "libs/settings" }
 strict = { path = "libs/strict" }
 
 # noded private crates (services/noded/crates/).

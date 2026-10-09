@@ -3082,6 +3082,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "settings"
+version = "0.3.4"
+dependencies = [
+ "blake3",
+ "bus",
+ "config",
+ "design",
+ "libc",
+ "serde",
+ "serde_json",
+ "strict",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "settingsd"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "buildinfo",
+ "bus",
+ "clap",
+ "config",
+ "libc",
+ "serde",
+ "serde_json",
+ "settings",
+ "strict",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "sha-crypt"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
