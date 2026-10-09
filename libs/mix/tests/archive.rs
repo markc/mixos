@@ -75,7 +75,8 @@ fn xattr_supported(d: &std::path::Path, name: &std::ffi::CStr, value: &[u8]) -> 
         Err(e)
             if matches!(
                 e.raw_os_error(),
-                Some(libc::EINVAL | libc::EPERM | libc::ENOTSUP | libc::EOPNOTSUPP)
+                // ENOTSUP and EOPNOTSUPP are the same errno on Linux.
+                Some(libc::EINVAL | libc::EPERM | libc::EOPNOTSUPP)
             ) =>
         {
             eprintln!("skipped: {label} xattrs unsupported here ({e})");
@@ -610,7 +611,7 @@ async fn capability_fixture(d: &std::path::Path) -> Option<(PathBuf, Vec<u8>)> {
         .unwrap_or_else(|e| panic!("setxattr failed: {e}"));
     let arc = d.join("cap.tar");
     run_ok(&format!(
-        "tar_pack(\"{}\", \"{}\")",
+        "tar_pack(\"{}\", \"{}\", {{keep_special_bits:true}})",
         src.display(),
         arc.display()
     ))
@@ -697,5 +698,673 @@ async fn capability_not_restored_by_default() {
             get_xattr(&prog, c"user.mixtest").expect("user.* xattr must be restored by default"),
             b"mix".to_vec()
         );
+    }
+}
+
+fn assert_no_staging(d: &std::path::Path) {
+    for entry in fs::read_dir(d).unwrap() {
+        assert!(
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".mixtar-stage-"),
+            "rollback leaked a staging directory"
+        );
+    }
+}
+
+fn encode_tar(bytes: &[u8], codec: &str) -> Vec<u8> {
+    match codec {
+        "none" => bytes.to_vec(),
+        "gzip" => {
+            let mut encoder =
+                flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+            encoder.write_all(bytes).unwrap();
+            encoder.finish().unwrap()
+        }
+        "zstd" => {
+            let mut encoder = structured_zstd::encoding::StreamingEncoder::new(
+                Vec::new(),
+                structured_zstd::encoding::CompressionLevel::Level(1),
+            );
+            encoder.write_all(bytes).unwrap();
+            encoder.finish().unwrap()
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[tokio::test]
+async fn trailing_padding_uses_the_same_stream_budget() {
+    let d = tmpdir("padding-budget");
+    let mut plain = Vec::new();
+    append_raw_member(&mut plain, "a", b"x");
+    plain.extend_from_slice(&[0; 8192]);
+    for codec in ["none", "gzip", "zstd"] {
+        let arc = d.join(format!("{codec}.tar"));
+        fs::write(&arc, encode_tar(&plain, codec)).unwrap();
+        // Parsing consumes 1536 bytes, so this failure must come from draining.
+        for limit in [1536, plain.len() - 1] {
+            let opts = format!("{{codec:\"{codec}\", max_stream_bytes:{limit}}}");
+            let err = run_err(&format!("tar_list(\"{}\", {opts})", arc.display())).await;
+            assert!(err.contains("max_stream_bytes"), "{codec}: {err}");
+            let dest = d.join(format!("dest-{codec}-{limit}"));
+            let err = run_err(&format!(
+                "tar_unpack(\"{}\", \"{}\", {opts})",
+                arc.display(),
+                dest.display()
+            ))
+            .await;
+            assert!(err.contains("max_stream_bytes"), "{codec}: {err}");
+            assert!(!dest.exists());
+            assert_no_staging(&d);
+        }
+        let opts = format!("{{codec:\"{codec}\", max_stream_bytes:{}}}", plain.len());
+        run_ok(&format!("tar_list(\"{}\", {opts})", arc.display())).await;
+        run_ok(&format!(
+            "tar_unpack(\"{}\", \"{}\", {opts})",
+            arc.display(),
+            d.join(format!("exact-{codec}")).display()
+        ))
+        .await;
+    }
+}
+
+#[tokio::test]
+async fn declared_file_size_is_refused_before_reading_data() {
+    let d = tmpdir("file-budget");
+    for prefix in [false, true] {
+        let arc = d.join(format!("{prefix}.tar"));
+        let mut bytes = Vec::new();
+        if prefix {
+            append_raw_member(&mut bytes, "first", b"123");
+            bytes.truncate(1024); // omit end blocks, retain the first file and its padding
+        }
+        let mut header = Header::new_gnu();
+        header.set_path("oversized").unwrap();
+        header.set_mode(0o600);
+        header.set_size(if prefix { 2 } else { 1 << 30 });
+        header.set_cksum();
+        bytes.extend_from_slice(header.as_bytes());
+        // Deliberately no body: a late size check would report truncated data.
+        fs::write(&arc, bytes).unwrap();
+        let dest = d.join(format!("dest-{prefix}"));
+        let err = run_err(&format!(
+            "tar_unpack(\"{}\", \"{}\", {{codec:\"none\", max_bytes:4}})",
+            arc.display(),
+            dest.display()
+        ))
+        .await;
+        assert!(
+            err.contains("declared size") && err.contains("max_bytes"),
+            "{err}"
+        );
+        assert!(!dest.exists());
+        assert_no_staging(&d);
+    }
+    let arc = d.join("exact.tar");
+    build_plain(&arc, &[("first", b"123", 0o600), ("second", b"4", 0o600)]);
+    run_ok(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\", max_bytes:4}})",
+        arc.display(),
+        d.join("exact").display()
+    ))
+    .await;
+    assert_eq!(fs::read(d.join("exact/second")).unwrap(), b"4");
+}
+
+#[tokio::test]
+async fn extension_sizes_are_bounded_before_buffering() {
+    let d = tmpdir("metadata-budget");
+    for kind in [b'L', b'K', b'x', b'g'] {
+        for size in [65_537, 1 << 30] {
+            let arc = d.join(format!("{kind}-{size}.tar"));
+            let mut header = Header::new_gnu();
+            header.set_path("extension").unwrap();
+            header.set_entry_type(tar::EntryType::new(kind));
+            header.set_size(size);
+            header.set_cksum();
+            fs::write(&arc, header.as_bytes()).unwrap();
+            // A huge stream allowance must not permit a huge metadata buffer.
+            let opts = "{codec:\"none\", max_name:1000000, max_stream_bytes:4294967296}";
+            let err = run_err(&format!("tar_list(\"{}\", {opts})", arc.display())).await;
+            assert!(err.contains("metadata payload exceeds limit"), "{err}");
+            let dest = d.join(format!("dest-{kind}-{size}"));
+            let err = run_err(&format!(
+                "tar_unpack(\"{}\", \"{}\", {opts})",
+                arc.display(),
+                dest.display()
+            ))
+            .await;
+            assert!(err.contains("metadata payload exceeds limit"), "{err}");
+            assert!(!dest.exists());
+            assert_no_staging(&d);
+        }
+    }
+    // GNU extension bodies also respect max_name plus one terminating NUL.
+    for kind in [b'L', b'K'] {
+        let arc = d.join(format!("name-{kind}.tar"));
+        let mut header = Header::new_gnu();
+        header.set_entry_type(tar::EntryType::new(kind));
+        header.set_size(10);
+        header.set_cksum();
+        fs::write(&arc, header.as_bytes()).unwrap();
+        let err = run_err(&format!(
+            "tar_list(\"{}\", {{codec:\"none\", max_name:8}})",
+            arc.display()
+        ))
+        .await;
+        assert!(err.contains("metadata payload exceeds limit"), "{err}");
+    }
+}
+
+#[tokio::test]
+async fn entry_limit_precedes_the_next_extension_body() {
+    let d = tmpdir("metadata-entry-limit");
+    let arc = d.join("entries.tar");
+    let mut bytes = Vec::new();
+    append_raw_member(&mut bytes, "first", b"1");
+    bytes.truncate(1024);
+    let mut header = Header::new_gnu();
+    header.set_entry_type(tar::EntryType::XHeader);
+    header.set_size(64 << 10);
+    header.set_cksum();
+    bytes.extend_from_slice(header.as_bytes()); // no extension body
+    fs::write(&arc, bytes).unwrap();
+    let opts = "{codec:\"none\", max_entries:1}";
+    let err = run_err(&format!("tar_list(\"{}\", {opts})", arc.display())).await;
+    assert!(err.contains("max_entries"), "{err}");
+    let err = run_err(&format!(
+        "tar_unpack(\"{}\", \"{}\", {opts})",
+        arc.display(),
+        d.join("dest").display()
+    ))
+    .await;
+    assert!(err.contains("max_entries"), "{err}");
+    assert_no_staging(&d);
+}
+
+#[tokio::test]
+async fn bounded_extensions_still_resolve_names_links_and_pax() {
+    let d = tmpdir("metadata-boundary");
+    let arc = d.join("bounded.tar");
+    let long_name = "a".repeat(200);
+    let long_target = "b".repeat(200);
+    let mut builder = Builder::new(fs::File::create(&arc).unwrap());
+    for (kind, value, next_name) in [
+        (b'L', long_name.as_str(), "placeholder"),
+        (b'K', long_target.as_str(), "link"),
+    ] {
+        let mut payload = value.as_bytes().to_vec();
+        payload.push(0);
+        let mut header = Header::new_gnu();
+        header.set_entry_type(tar::EntryType::new(kind));
+        header.set_size(payload.len() as u64);
+        builder
+            .append_data(&mut header, "extension", payload.as_slice())
+            .unwrap();
+        let mut header = Header::new_gnu();
+        header.set_size(0);
+        header.set_mode(0o600);
+        if kind == b'K' {
+            header.set_entry_type(tar::EntryType::Symlink);
+            header.set_link_name("placeholder").unwrap();
+        }
+        builder
+            .append_data(&mut header, next_name, std::io::empty())
+            .unwrap();
+    }
+    // Five length digits plus record framing and key consume 15 bytes.
+    // This valid PAX payload lands exactly on the independent 64 KiB ceiling.
+    builder
+        .append_pax_extensions([("comment", vec![b'x'; 65_521].as_slice())])
+        .unwrap();
+    let mut header = Header::new_gnu();
+    header.set_size(0);
+    header.set_mode(0o600);
+    builder
+        .append_data(&mut header, "pax-file", std::io::empty())
+        .unwrap();
+    builder.into_inner().unwrap().flush().unwrap();
+    let list = run_ok(&format!(
+        "tar_list(\"{}\", {{codec:\"none\", max_name:200}})",
+        arc.display()
+    ))
+    .await;
+    let Value::List(list) = &list else {
+        panic!("expected archive list")
+    };
+    assert_eq!(list.len(), 3);
+    let Value::Map(first) = &list[0] else {
+        panic!("expected entry map")
+    };
+    assert_eq!(first["name"].to_mix_string(), long_name);
+    let dest = d.join("dest");
+    run_ok(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\", max_name:200}})",
+        arc.display(),
+        dest.display()
+    ))
+    .await;
+    assert!(dest.join(&long_name).is_file());
+    assert_eq!(
+        fs::read_link(dest.join("link")).unwrap(),
+        PathBuf::from(long_target)
+    );
+    assert!(dest.join("pax-file").is_file());
+}
+
+#[tokio::test]
+async fn pax_size_override_keeps_extension_checks_aligned() {
+    let d = tmpdir("pax-size");
+    let arc = d.join("size.tar");
+    let mut builder = Builder::new(Vec::new());
+    builder
+        .append_pax_extensions([("size", b"1024".as_slice())])
+        .unwrap();
+    let mut bytes = builder.into_inner().unwrap();
+    bytes.truncate(1024); // PAX header, payload and padding, without end blocks
+    let mut header = Header::new_gnu();
+    header.set_path("file").unwrap();
+    header.set_size(0); // overridden by PAX
+    header.set_cksum();
+    bytes.extend_from_slice(header.as_bytes());
+    bytes.extend_from_slice(&[7; 1024]);
+    header.set_entry_type(tar::EntryType::XHeader);
+    header.set_size(65_537);
+    header.set_cksum();
+    bytes.extend_from_slice(header.as_bytes());
+    fs::write(&arc, bytes).unwrap();
+    let err = run_err(&format!(
+        "tar_list(\"{}\", {{codec:\"none\"}})",
+        arc.display()
+    ))
+    .await;
+    assert!(err.contains("metadata payload exceeds limit"), "{err}");
+    let err = run_err(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\", max_bytes:1023}})",
+        arc.display(),
+        d.join("dest").display()
+    ))
+    .await;
+    assert!(
+        err.contains("declared size") && err.contains("max_bytes"),
+        "{err}"
+    );
+    assert_no_staging(&d);
+}
+
+#[tokio::test]
+async fn global_pax_ends_the_local_size_override_chain() {
+    let d = tmpdir("pax-global-size");
+    let arc = d.join("global.tar");
+    let mut builder = Builder::new(Vec::new());
+    builder
+        .append_pax_extensions([("size", b"1048576".as_slice())])
+        .unwrap();
+    let mut bytes = builder.into_inner().unwrap();
+    bytes.truncate(1024);
+    for (name, kind) in [("global", b'g'), ("file", b'0')] {
+        let mut header = Header::new_gnu();
+        header.set_path(name).unwrap();
+        header.set_entry_type(tar::EntryType::new(kind));
+        header.set_size(0);
+        header.set_cksum();
+        bytes.extend_from_slice(header.as_bytes());
+    }
+    let mut header = Header::new_gnu();
+    header.set_entry_type(tar::EntryType::XHeader);
+    header.set_size(65_537);
+    header.set_cksum();
+    bytes.extend_from_slice(header.as_bytes());
+    fs::write(&arc, bytes).unwrap();
+    let err = run_err(&format!(
+        "tar_list(\"{}\", {{codec:\"none\"}})",
+        arc.display()
+    ))
+    .await;
+    assert!(err.contains("metadata payload exceeds limit"), "{err}");
+}
+
+#[tokio::test]
+async fn gzip_rejects_unread_input_and_second_members() {
+    let d = tmpdir("gzip-tail");
+    let mut plain = Vec::new();
+    append_raw_member(&mut plain, "a", b"x");
+    let first = encode_tar(&plain, "gzip");
+    for (tag, tail) in [
+        ("garbage", vec![1, 2, 3]),
+        ("zeros", vec![0; 32]),
+        ("empty-member", encode_tar(&[], "gzip")),
+        ("archive-member", first.clone()),
+    ] {
+        let mut bytes = first.clone();
+        bytes.extend(tail);
+        // Everything fits within the input buffer: read::GzDecoder used to
+        // swallow these tails into its inaccessible internal buffer.
+        assert!(bytes.len() < 1 << 20);
+        let arc = d.join(format!("{tag}.gz"));
+        fs::write(&arc, bytes).unwrap();
+        let err = run_err(&format!(
+            "tar_list(\"{}\", {{codec:\"gzip\"}})",
+            arc.display()
+        ))
+        .await;
+        assert!(err.contains("raw bytes remain"), "{tag}: {err}");
+        let dest = d.join(format!("dest-{tag}"));
+        let err = run_err(&format!(
+            "tar_unpack(\"{}\", \"{}\", {{codec:\"gzip\"}})",
+            arc.display(),
+            dest.display()
+        ))
+        .await;
+        assert!(err.contains("raw bytes remain"), "{tag}: {err}");
+        assert!(!dest.exists());
+        assert_no_staging(&d);
+    }
+}
+
+#[tokio::test]
+async fn packing_capability_records_requires_opt_in() {
+    let d = tmpdir("pack-capability-policy");
+    let cap = v2_capability_blob();
+    if !xattr_supported(&d, c"security.capability", &cap) {
+        return;
+    }
+    let src = d.join("src");
+    fs::create_dir(&src).unwrap();
+    let prog = src.join("prog");
+    fs::write(&prog, b"program").unwrap();
+    set_xattr(&prog, c"security.capability", &cap).unwrap();
+    for keep in [false, true] {
+        let arc = d.join(format!("{keep}.tar"));
+        let opts = if keep {
+            "{codec:\"none\", keep_special_bits:true}"
+        } else {
+            "{codec:\"none\"}"
+        };
+        let receipt = run_ok(&format!(
+            "tar_pack(\"{}\", \"{}\", {opts})",
+            src.display(),
+            arc.display()
+        ))
+        .await;
+        let Value::Map(receipt) = &receipt else {
+            panic!("expected pack receipt")
+        };
+        assert_eq!(
+            receipt["capabilities"].to_mix_string(),
+            if keep { "1" } else { "0" }
+        );
+        let mut archive = tar::Archive::new(fs::File::open(&arc).unwrap());
+        let mut records = Vec::new();
+        for entry in archive.entries().unwrap() {
+            let mut entry = entry.unwrap();
+            if let Some(pax) = entry.pax_extensions().unwrap() {
+                for kv in pax {
+                    let kv = kv.unwrap();
+                    if kv.key_bytes() == b"SCHILY.xattr.security.capability" {
+                        records.push(kv.value_bytes().to_vec());
+                    }
+                }
+            }
+        }
+        assert_eq!(records, if keep { vec![cap.clone()] } else { Vec::new() });
+    }
+}
+
+#[tokio::test]
+async fn rollback_removes_directories_after_restrictive_metadata() {
+    let d = tmpdir("rollback-modes");
+    let arc = d.join("modes.tar");
+    let mut builder = Builder::new(fs::File::create(&arc).unwrap());
+    // An overlong xattr name reliably fails outside the tolerated EPERM case.
+    // This file is visited last by the metadata post-pass, after chmod on dirs.
+    let key = format!("SCHILY.xattr.user.{}", "x".repeat(300));
+    builder
+        .append_pax_extensions([(key.as_str(), b"value".as_slice())])
+        .unwrap();
+    let mut header = Header::new_gnu();
+    header.set_size(1);
+    header.set_mode(0o600);
+    builder
+        .append_data(&mut header, "bad-xattr", b"x".as_slice())
+        .unwrap();
+    for (name, mode) in [("locked", 0), ("locked/readonly", 0o500)] {
+        let mut header = Header::new_gnu();
+        header.set_entry_type(tar::EntryType::Directory);
+        header.set_size(0);
+        header.set_mode(mode);
+        builder
+            .append_data(&mut header, name, std::io::empty())
+            .unwrap();
+    }
+    let mut header = Header::new_gnu();
+    header.set_size(1);
+    header.set_mode(0o600);
+    builder
+        .append_data(&mut header, "locked/readonly/file", b"x".as_slice())
+        .unwrap();
+    builder.into_inner().unwrap().flush().unwrap();
+    let dest = d.join("dest");
+    let err = run_err(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\", numeric_owner:false}})",
+        arc.display(),
+        dest.display()
+    ))
+    .await;
+    assert!(err.contains("xattr") && err.contains("bad-xattr"), "{err}");
+    assert!(
+        !err.contains("rollback cleanup"),
+        "cleanup should succeed: {err}"
+    );
+    assert!(!dest.exists());
+    assert_no_staging(&d);
+}
+
+#[tokio::test]
+async fn zstd_initialisation_failures_have_the_stream_corrupt_code() {
+    let d = tmpdir("zstd-init");
+    let empty = d.join("empty.zst");
+    fs::write(&empty, []).unwrap();
+    let truncated = d.join("truncated.zst");
+    fs::write(&truncated, [0x28, 0xb5, 0x2f, 0xfd, 0x00]).unwrap();
+    for (i, path) in [std::path::Path::new("/dev/null"), &empty, &truncated]
+        .into_iter()
+        .enumerate()
+    {
+        let (code, msg) = run_err_code(&format!("tar_list(\"{}\")", path.display())).await;
+        assert_eq!(code, "ARCHIVE_STREAM_CORRUPT", "{msg}");
+        assert!(msg.contains("zstd init"), "{msg}");
+        let dest = d.join(format!("dest-{i}"));
+        let (code, msg) = run_err_code(&format!(
+            "tar_unpack(\"{}\", \"{}\")",
+            path.display(),
+            dest.display()
+        ))
+        .await;
+        assert_eq!(code, "ARCHIVE_STREAM_CORRUPT", "{msg}");
+        assert!(!dest.exists());
+        assert_no_staging(&d);
+    }
+}
+
+#[tokio::test]
+async fn pack_refuses_a_symlink_source_directory() {
+    let d = tmpdir("pack-root-link");
+    let actual = d.join("actual");
+    fs::create_dir(&actual).unwrap();
+    fs::write(actual.join("file"), b"outside").unwrap();
+    let source = d.join("source");
+    std::os::unix::fs::symlink(&actual, &source).unwrap();
+    for (i, suffix) in ["", "/", "/."].into_iter().enumerate() {
+        let arc = d.join(format!("out-{i}.tar"));
+        let err = run_err(&format!(
+            "tar_pack(\"{}{suffix}\", \"{}\", {{codec:\"none\"}})",
+            source.display(),
+            arc.display()
+        ))
+        .await;
+        assert!(err.contains("open source directory"), "{err}");
+        assert!(!arc.exists());
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn pack_uses_the_queued_directory_fd_after_path_replacement() {
+    use std::os::fd::{AsRawFd, FromRawFd};
+    let d = tmpdir("pack-directory-race");
+    let src = d.join("src");
+    let outside = d.join("outside");
+    fs::create_dir_all(src.join("a-queued")).unwrap();
+    fs::create_dir(&outside).unwrap();
+    fs::write(src.join("a-queued/file"), b"inside").unwrap();
+    fs::write(outside.join("file"), b"outside").unwrap();
+    // Sorted after the directory: compression gives the watcher time to swap
+    // its pathname before the queued directory is enumerated.
+    let sentinel = src.join("b-sentinel");
+    fs::File::create(&sentinel)
+        .unwrap()
+        .set_len(64 << 20)
+        .unwrap();
+    let fd = unsafe { libc::inotify_init1(libc::IN_CLOEXEC | libc::IN_NONBLOCK) };
+    assert!(fd >= 0, "{}", std::io::Error::last_os_error());
+    let events = unsafe { fs::File::from_raw_fd(fd) };
+    let path = std::ffi::CString::new(sentinel.as_os_str().as_bytes()).unwrap();
+    assert!(
+        unsafe { libc::inotify_add_watch(events.as_raw_fd(), path.as_ptr(), libc::IN_OPEN) } >= 0
+    );
+    let worker_src = src.clone();
+    let worker_d = d.clone();
+    let worker = std::thread::spawn(move || {
+        let mut poll = libc::pollfd {
+            fd: events.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        assert_eq!(
+            unsafe { libc::poll(&mut poll, 1, 10_000) },
+            1,
+            "sentinel was never opened"
+        );
+        fs::rename(worker_src.join("a-queued"), worker_d.join("parked")).unwrap();
+        std::os::unix::fs::symlink(&outside, worker_src.join("a-queued")).unwrap();
+    });
+    let arc = d.join("out.gz");
+    let result = mix::run(&format!(
+        "tar_pack(\"{}\", \"{}\", {{codec:\"gzip\", level:9}})",
+        src.display(),
+        arc.display()
+    ))
+    .await;
+    worker.join().unwrap();
+    result.expect("packing must keep using the original opened directory");
+    assert!(
+        fs::symlink_metadata(src.join("a-queued"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    let mut archive = tar::Archive::new(flate2::bufread::GzDecoder::new(std::io::BufReader::new(
+        fs::File::open(&arc).unwrap(),
+    )));
+    let mut found = false;
+    for entry in archive.entries().unwrap() {
+        let mut entry = entry.unwrap();
+        if entry.path().unwrap().as_ref() == std::path::Path::new("a-queued/file") {
+            let mut bytes = Vec::new();
+            std::io::Read::read_to_end(&mut entry, &mut bytes).unwrap();
+            assert_eq!(
+                bytes, b"inside",
+                "queued path followed its replacement symlink"
+            );
+            found = true;
+        }
+    }
+    assert!(found, "original queued directory content missing");
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn packing_file_replacements_never_reads_a_symlink_target() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    let d = tmpdir("pack-file-race");
+    let src = d.join("src");
+    fs::create_dir(&src).unwrap();
+    let outside = d.join("outside");
+    let inside = vec![b'I'; 4096];
+    fs::write(&outside, vec![b'O'; 4096]).unwrap();
+    let victim = src.join("victim");
+    let parked = d.join("parked");
+    fs::write(&victim, &inside).unwrap();
+    std::os::unix::fs::symlink(&outside, &parked).unwrap();
+    let victim_c = std::ffi::CString::new(victim.as_os_str().as_bytes()).unwrap();
+    let parked_c = std::ffi::CString::new(parked.as_os_str().as_bytes()).unwrap();
+    let exchange = move || unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            victim_c.as_ptr(),
+            libc::AT_FDCWD,
+            parked_c.as_ptr(),
+            libc::RENAME_EXCHANGE,
+        )
+    };
+    assert_eq!(
+        exchange(),
+        0,
+        "atomic exchange unavailable: {}",
+        std::io::Error::last_os_error()
+    );
+    assert_eq!(exchange(), 0);
+    let stop = Arc::new(AtomicBool::new(false));
+    let swaps = Arc::new(AtomicU64::new(0));
+    let worker_stop = stop.clone();
+    let worker_swaps = swaps.clone();
+    let worker = std::thread::spawn(move || {
+        while !worker_stop.load(Ordering::Acquire) {
+            assert_eq!(exchange(), 0);
+            worker_swaps.fetch_add(1, Ordering::Release);
+        }
+    });
+    while swaps.load(Ordering::Acquire) == 0 {
+        std::thread::yield_now();
+    }
+    let mut packed = Vec::new();
+    let mut leaked_outputs = Vec::new();
+    for i in 0..96 {
+        let arc = d.join(format!("{i}.tar"));
+        match mix::run(&format!(
+            "tar_pack(\"{}\", \"{}\", {{codec:\"none\"}})",
+            src.display(),
+            arc.display()
+        ))
+        .await
+        {
+            Ok(_) => packed.push(arc),
+            Err(_) if arc.exists() => leaked_outputs.push(arc),
+            Err(_) => {}
+        }
+    }
+    stop.store(true, Ordering::Release);
+    worker.join().unwrap();
+    assert!(swaps.load(Ordering::Acquire) > 0);
+    assert!(
+        leaked_outputs.is_empty(),
+        "failed packs leaked output: {leaked_outputs:?}"
+    );
+    // Successes may contain only the pinned regular inode. Refusals are also
+    // valid during mutation; a success must never contain outside bytes.
+    for arc in packed {
+        let mut archive = tar::Archive::new(fs::File::open(&arc).unwrap());
+        let mut entries = archive.entries().unwrap();
+        let mut entry = entries.next().expect("victim entry missing").unwrap();
+        assert!(entry.header().entry_type().is_file());
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut bytes).unwrap();
+        assert_eq!(bytes, inside, "packer followed a replacement symlink");
+        assert!(entries.next().is_none());
     }
 }

@@ -22,7 +22,8 @@
 //! entry metadata — including directories' — is applied in a children-first
 //! post-pass using lchown / utimensat(AT_SYMLINK_NOFOLLOW) so nothing
 //! follows a link out of the staging tree. `max_stream_bytes` bounds the
-//! DECODED stream (tar's internal longname/PAX buffers live inside it).
+//! DECODED stream including trailing padding. Metadata payloads have a
+//! separate small ceiling checked before tar can buffer them.
 //! Xattrs are parsed and applied BY HAND: the tar crate's blanket
 //! `set_unpack_xattrs` would restore `security.capability` even when the
 //! caller asked for suid/sgid stripping, so `keep_special_bits:false` (the
@@ -41,7 +42,8 @@ use indexmap::IndexMap;
 use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
-use std::os::unix::ffi::OsStrExt;
+use std::os::fd::{AsRawFd, FromRawFd};
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
 use tar::{Archive, Builder, EntryType, Header};
@@ -142,9 +144,7 @@ impl Default for UnpackOpts {
             max_entries: 200_000,
             max_bytes: 64 << 30,
             max_name: 4096,
-            // Bounds the DECODED stream — tar's internal GNU-longname/PAX
-            // buffers are allocated inside it, so this is the memory-bomb
-            // limit as much as the size limit.
+            // Includes headers, file data, metadata and trailing padding.
             max_stream_bytes: 16 << 30,
         }
     }
@@ -167,9 +167,7 @@ fn known_keys_check(
 // Verified decode layer
 // ---------------------------------------------------------------------------
 
-/// `Read` wrapper bounding the DECODED stream; aborting mid-read kills
-/// tar-rs's internal allocation loops (longname/PAX bombs) with an error
-/// instead of an OOM.
+/// One budget shared by tar parsing and final stream verification.
 struct LimitedRead<'a> {
     inner: &'a mut VerifiedDecode,
     remaining: u64,
@@ -178,15 +176,151 @@ struct LimitedRead<'a> {
 
 impl Read for LimitedRead<'_> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let n = self.inner.read_some(buf)?;
-        if n as u64 > self.remaining {
-            return Err(std::io::Error::other(format!(
-                "{}: exceeded max_stream_bytes ({})",
-                self.caller, self.remaining
-            )));
+        if buf.is_empty() {
+            return Ok(0);
         }
+        // At the boundary, probe EOF without returning any over-budget byte.
+        if self.remaining == 0 {
+            let mut probe = [0];
+            return match self.inner.read_some(&mut probe)? {
+                0 => Ok(0),
+                _ => Err(std::io::Error::other(format!(
+                    "{}: exceeded max_stream_bytes",
+                    self.caller
+                ))),
+            };
+        }
+        let len = self.remaining.min(buf.len() as u64) as usize;
+        let n = self.inner.read_some(&mut buf[..len])?;
         self.remaining -= n as u64;
         Ok(n)
+    }
+}
+
+/// Fixed ceiling independent of the decoded-stream allowance. GNU names also
+/// obey max_name (plus their terminating NUL). PAX may contain xattr values.
+const MAX_METADATA_BYTES: u64 = 64 << 10;
+
+/// Inspect physical tar headers before the tar crate can buffer extensions.
+/// Only bounded extension bodies are buffered here; ordinary data streams
+/// through. PAX size overrides must also govern physical record boundaries.
+struct TarRead<R> {
+    inner: R,
+    pending: std::io::Cursor<Vec<u8>>,
+    payload_remaining: u64,
+    pax_size: Option<u64>,
+    entries: u64,
+    max_entries: u64,
+    max_name: usize,
+    ended: bool,
+}
+
+impl<R: Read> TarRead<R> {
+    fn new(inner: R, opts: &UnpackOpts) -> Self {
+        Self {
+            inner,
+            pending: std::io::Cursor::new(Vec::new()),
+            payload_remaining: 0,
+            pax_size: None,
+            entries: 0,
+            max_entries: opts.max_entries,
+            max_name: opts.max_name,
+            ended: false,
+        }
+    }
+}
+
+impl<R: Read> Read for TarRead<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        let n = self.pending.read(buf)?;
+        if n != 0 {
+            return Ok(n);
+        }
+        if self.ended {
+            return self.inner.read(buf);
+        }
+        if self.payload_remaining != 0 {
+            let len = self.payload_remaining.min(buf.len() as u64) as usize;
+            let n = self.inner.read(&mut buf[..len])?;
+            self.payload_remaining -= n as u64;
+            return Ok(n);
+        }
+        let mut header = Header::new_old();
+        // A completely empty tar is accepted by tar-rs; partial headers fail.
+        if self.inner.read(&mut header.as_mut_bytes()[..1])? == 0 {
+            return Ok(0);
+        }
+        self.inner.read_exact(&mut header.as_mut_bytes()[1..])?;
+        if header.as_bytes().iter().all(|b| *b == 0) {
+            self.ended = true;
+            self.pending = std::io::Cursor::new(header.as_bytes().to_vec());
+            return self.pending.read(buf);
+        }
+        if self.entries >= self.max_entries {
+            return Err(std::io::Error::other("exceeded max_entries"));
+        }
+        let kind = header.entry_type();
+        let recognized = header.as_gnu().is_some() || header.as_ustar().is_some();
+        let local_pax = recognized && kind.is_pax_local_extensions();
+        let gnu_name_kind = kind.is_gnu_longname() || kind.is_gnu_longlink();
+        let gnu_name = recognized && gnu_name_kind;
+        let extension =
+            gnu_name_kind || kind.is_pax_local_extensions() || kind.is_pax_global_extensions();
+        if kind.is_gnu_sparse() {
+            return Err(std::io::Error::other("refusing GNU sparse entry"));
+        }
+        let mut size = header.entry_size()?;
+        if !extension {
+            size = self.pax_size.unwrap_or(size);
+        }
+        // tar-rs returns global PAX (and unrecognised extension headers) as
+        // entries, ending the current local-extension chain. They do not use
+        // its size override, and it must not leak into a later record.
+        if !gnu_name && !local_pax {
+            self.pax_size = None;
+        }
+        let padded = size
+            .checked_add(511)
+            .ok_or_else(|| std::io::Error::other("tar size overflow"))?
+            & !511;
+        let mut pending = header.as_bytes().to_vec();
+        if extension {
+            let ceiling = if gnu_name_kind {
+                MAX_METADATA_BYTES.min(self.max_name.saturating_add(1) as u64)
+            } else {
+                MAX_METADATA_BYTES
+            };
+            if size > ceiling {
+                return Err(std::io::Error::other(format!(
+                    "metadata payload exceeds limit ({size} > {ceiling}; GNU names obey max_name)"
+                )));
+            }
+            pending.resize(512 + size as usize, 0);
+            self.inner.read_exact(&mut pending[512..])?;
+            if local_pax {
+                // Match tar-rs: first size record wins, malformed records or
+                // values stop numeric lookup without overriding the header.
+                self.pax_size = None;
+                for record in tar::PaxExtensions::new(&pending[512..]) {
+                    let Ok(record) = record else { break };
+                    if record.key_bytes() == b"size" {
+                        self.pax_size = record.value().ok().and_then(|v| v.parse().ok());
+                        break;
+                    }
+                }
+            }
+            self.payload_remaining = padded - size;
+        } else {
+            self.payload_remaining = padded;
+        }
+        if !gnu_name && !local_pax {
+            self.entries += 1;
+        }
+        self.pending = std::io::Cursor::new(pending);
+        self.pending.read(buf)
     }
 }
 
@@ -200,7 +334,7 @@ enum VerifiedDecode {
         >,
     },
     Gzip {
-        dec: flate2::read::GzDecoder<BufReader<File>>,
+        dec: flate2::bufread::GzDecoder<BufReader<File>>,
     },
     None {
         src: BufReader<File>,
@@ -244,12 +378,15 @@ impl VerifiedDecode {
             Codec::Zstd => VerifiedDecode::Zstd {
                 dec: Box::new(
                     structured_zstd::decoding::StreamingDecoder::new(br).map_err(|e| {
-                        runtime(format!("{caller}: zstd init '{}': {e}", path.display()))
+                        MixError::structured(
+                            STREAM_CORRUPT,
+                            format!("{caller}: zstd init '{}': {e}", path.display()),
+                        )
                     })?,
                 ),
             },
             Codec::Gzip => VerifiedDecode::Gzip {
-                dec: flate2::read::GzDecoder::new(br),
+                dec: flate2::bufread::GzDecoder::new(br),
             },
             Codec::None => VerifiedDecode::None { src: br },
         })
@@ -266,32 +403,8 @@ impl VerifiedDecode {
         }
     }
 
-    /// After the tar reader finished: (a) drain the REMAINING decoded bytes
-    /// to true stream EOF — the zstd frame checksum / gzip CRC are verified
-    /// by the decoder there, and every trailing byte must be zero (GNU tar
-    /// padding; a decoded second archive is refused); (b) assert the RAW
-    /// input is fully consumed — a single-frame decoder never decodes a
-    /// second frame/member, so only the source position can catch it.
-    fn drain(&mut self, caller: &str) -> MixResult<u64> {
-        let mut drained: u64 = 0;
-        let mut buf = vec![0u8; 64 << 10];
-        loop {
-            let n = self.read_some(&mut buf).map_err(|e| {
-                io_failure(format!("{caller}: stream verification failed: {e}"), &e)
-            })?;
-            if n == 0 {
-                break;
-            }
-            drained += n as u64;
-            if buf[..n].iter().any(|&b| b != 0) {
-                return Err(runtime(format!(
-                    "{caller}: non-zero data after the tar end-of-archive (bytes {}..{}) — \
-                     single-frame artifacts only",
-                    drained - n as u64,
-                    drained
-                )));
-            }
-        }
+    /// After decoded EOF, ensure the single-member decoder left no raw input.
+    fn verify_raw_end(&mut self, caller: &str) -> MixResult<()> {
         let reader = match self {
             VerifiedDecode::Zstd { dec } => dec.get_mut(),
             VerifiedDecode::Gzip { dec } => dec.get_mut(),
@@ -307,6 +420,34 @@ impl VerifiedDecode {
                 leftover.len()
             )));
         }
+        Ok(())
+    }
+}
+
+impl LimitedRead<'_> {
+    /// Drain within the same budget as tar parsing, checking padding, codec
+    /// checksum/CRC and finally the raw input for additional frames/members.
+    fn drain(&mut self, caller: &str) -> MixResult<u64> {
+        let mut drained: u64 = 0;
+        let mut buf = vec![0u8; 64 << 10];
+        loop {
+            let n = self.read(&mut buf).map_err(|e| {
+                io_failure(format!("{caller}: stream verification failed: {e}"), &e)
+            })?;
+            if n == 0 {
+                break;
+            }
+            drained += n as u64;
+            if buf[..n].iter().any(|&b| b != 0) {
+                return Err(runtime(format!(
+                    "{caller}: non-zero data after the tar end-of-archive (bytes {}..{}) — \
+                     single-frame artifacts only",
+                    drained - n as u64,
+                    drained
+                )));
+            }
+        }
+        self.inner.verify_raw_end(caller)?;
         Ok(drained)
     }
 }
@@ -399,7 +540,13 @@ pub fn builtin_tar_list(args: Vec<Value>) -> MixResult<Option<Value>> {
                     .unwrap_or(opts.max_stream_bytes);
             opts.max_name = count_opt(caller, "max_name", m.get("max_name"))?
                 .unwrap_or(opts.max_name as u64) as usize;
-            known_keys_check(caller, m, &["codec", "max_stream_bytes", "max_name"])?;
+            opts.max_entries =
+                count_opt(caller, "max_entries", m.get("max_entries"))?.unwrap_or(opts.max_entries);
+            known_keys_check(
+                caller,
+                m,
+                &["codec", "max_stream_bytes", "max_name", "max_entries"],
+            )?;
         }
         Some(other) => {
             return Err(opt_invalid(
@@ -412,13 +559,13 @@ pub fn builtin_tar_list(args: Vec<Value>) -> MixResult<Option<Value>> {
     let mut dec = VerifiedDecode::open(Path::new(&path), opts.codec, caller)?;
     let mut out: Vec<Value> = Vec::new();
     let mut count: u64 = 0;
+    let mut limited = LimitedRead {
+        inner: &mut dec,
+        remaining: opts.max_stream_bytes,
+        caller: caller.to_string(),
+    };
     {
-        let mut limited = LimitedRead {
-            inner: &mut dec,
-            remaining: opts.max_stream_bytes,
-            caller: caller.to_string(),
-        };
-        let mut archive = Archive::new(&mut limited);
+        let mut archive = Archive::new(TarRead::new(&mut limited, &opts));
         let iter = archive
             .entries()
             .map_err(|e| io_failure(format!("{caller}: {e}"), &e))?;
@@ -442,10 +589,7 @@ pub fn builtin_tar_list(args: Vec<Value>) -> MixResult<Option<Value>> {
                 "name".to_string(),
                 Value::String(name.to_string_lossy().to_string()),
             );
-            map.insert(
-                "size".to_string(),
-                Value::Number(header.size().unwrap_or(0) as f64),
-            );
+            map.insert("size".to_string(), Value::Number(entry.size() as f64));
             map.insert(
                 "mode".to_string(),
                 Value::Number(header.mode().unwrap_or(0) as f64),
@@ -469,7 +613,7 @@ pub fn builtin_tar_list(args: Vec<Value>) -> MixResult<Option<Value>> {
             out.push(Value::Map(std::rc::Rc::new(map)));
         }
     }
-    dec.drain(caller)?;
+    limited.drain(caller)?;
     Ok(Some(Value::List(std::rc::Rc::new(out))))
 }
 
@@ -573,20 +717,72 @@ pub fn builtin_tar_unpack(args: Vec<Value>) -> MixResult<Option<Value>> {
 
     match unpack_staged(&path, &staging, &opts, caller) {
         Ok(receipt) => {
-            fs::rename(&staging, dest_path).map_err(|e| {
-                let _ = fs::remove_dir_all(&staging);
-                runtime(format!("{caller}: commit '{dest}': {e}"))
-            })?;
+            if let Err(e) = fs::rename(&staging, dest_path) {
+                return Err(rollback_staging(
+                    &staging,
+                    runtime(format!("{caller}: commit '{dest}': {e}")),
+                ));
+            }
             Ok(Some(Value::Map(std::rc::Rc::new(receipt))))
         }
-        Err(e) => {
-            let _ = fs::remove_dir_all(&staging);
-            Err(e)
-        }
+        Err(e) => Err(rollback_staging(&staging, e)),
     }
 }
 
 static STAGE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn rollback_staging(staging: &Path, original: MixError) -> MixError {
+    // Restore parents before inspecting children: the metadata post-pass may
+    // already have made a directory 0000 or read-only. Never chmod symlinks.
+    let restore = (|| -> std::io::Result<()> {
+        let mut queue = vec![staging.to_path_buf()];
+        while let Some(dir) = queue.pop() {
+            fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
+            for child in fs::read_dir(&dir)? {
+                let child = child?;
+                if child.file_type()?.is_dir() {
+                    queue.push(child.path());
+                }
+            }
+        }
+        Ok(())
+    })();
+    let remove = fs::remove_dir_all(staging);
+    match (restore, remove) {
+        (Ok(()), Ok(())) => original,
+        (restore, remove) => runtime(format!(
+            "{original}; rollback cleanup '{}': restore modes: {:?}; remove: {:?}",
+            staging.display(),
+            restore.err(),
+            remove.err()
+        )),
+    }
+}
+
+/// Never write a byte beyond the remaining file-data budget, even if a reader
+/// returns more data than its declared size. The final probe detects excess.
+fn copy_file_bounded(
+    reader: &mut impl Read,
+    writer: &mut impl Write,
+    mut remaining: u64,
+) -> std::io::Result<u64> {
+    let mut buf = [0u8; 64 << 10];
+    let mut written = 0;
+    while remaining != 0 {
+        let len = remaining.min(buf.len() as u64) as usize;
+        let n = reader.read(&mut buf[..len])?;
+        if n == 0 {
+            return Ok(written);
+        }
+        writer.write_all(&buf[..n])?;
+        remaining -= n as u64;
+        written += n as u64;
+    }
+    if reader.read(&mut buf[..1])? != 0 {
+        return Err(std::io::Error::other("exceeded max_bytes while copying"));
+    }
+    Ok(written)
+}
 
 /// Metadata deferred to a post-pass: directory mtime/owner must be applied
 /// children-first, and symlink metadata must never follow the link.
@@ -619,13 +815,13 @@ fn unpack_staged(
     let mut symlinks_created: HashSet<PathBuf> = HashSet::new();
     let mut extracted_files: HashSet<PathBuf> = HashSet::new();
     let mut deferred: Vec<DeferredMeta> = Vec::new();
+    let mut limited = LimitedRead {
+        inner: &mut dec,
+        remaining: opts.max_stream_bytes,
+        caller: caller.to_string(),
+    };
     {
-        let mut limited = LimitedRead {
-            inner: &mut dec,
-            remaining: opts.max_stream_bytes,
-            caller: caller.to_string(),
-        };
-        let mut archive = Archive::new(&mut limited);
+        let mut archive = Archive::new(TarRead::new(&mut limited, opts));
         let iter = archive
             .entries()
             .map_err(|e| io_failure(format!("{caller}: {e}"), &e))?;
@@ -685,6 +881,13 @@ fn unpack_staged(
                     deferred.push(meta);
                 }
                 EntryType::Regular | EntryType::Continuous => {
+                    let remaining = opts.max_bytes - bytes;
+                    if entry.size() > remaining {
+                        return Err(runtime(format!(
+                            "{caller}: declared size of '{}' exceeds remaining max_bytes ({remaining})",
+                            rel.display()
+                        )));
+                    }
                     if let Some(parent) = target_abs.parent() {
                         fs::create_dir_all(parent)
                             .map_err(|e| runtime(format!("{caller}: mkdir parent: {e}")))?;
@@ -701,16 +904,11 @@ fn unpack_staged(
                         .map_err(|e| {
                             runtime(format!("{caller}: create '{}': {e}", rel.display()))
                         })?;
-                    let written = std::io::copy(&mut entry, &mut out).map_err(|e| {
-                        io_failure(format!("{caller}: write '{}': {e}", rel.display()), &e)
-                    })?;
+                    let written =
+                        copy_file_bounded(&mut entry, &mut out, remaining).map_err(|e| {
+                            io_failure(format!("{caller}: write '{}': {e}", rel.display()), &e)
+                        })?;
                     bytes += written;
-                    if bytes > opts.max_bytes {
-                        return Err(runtime(format!(
-                            "{caller}: exceeded max_bytes ({})",
-                            opts.max_bytes
-                        )));
-                    }
                     files += 1;
                     extracted_files.insert(rel.clone());
                     deferred.push(meta);
@@ -776,7 +974,7 @@ fn unpack_staged(
             }
         }
     }
-    let trailing = dec.drain(caller)?;
+    let trailing = limited.drain(caller)?;
 
     // Deferred metadata, children-first so directory mtimes stick, never
     // following symlinks (lchown / utimensat AT_SYMLINK_NOFOLLOW). The order
@@ -980,12 +1178,14 @@ pub fn builtin_tar_pack(args: Vec<Value>) -> MixResult<Option<Value>> {
             ));
         }
     }
-    let source_path = Path::new(&source);
-    if !source_path.is_dir() {
-        return Err(runtime(format!(
-            "{caller}: source '{source}' is not a directory"
-        )));
-    }
+    // Remove trailing separators and '.' so O_NOFOLLOW still checks the
+    // source directory itself, even when the caller writes "link/".
+    let source_path: PathBuf = Path::new(&source).components().collect();
+    let source_dir = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(&source_path)
+        .map_err(|e| runtime(format!("{caller}: open source directory '{source}': {e}")))?;
     let out_path = Path::new(&path);
     if let Some(parent) = out_path.parent()
         && !parent.is_dir()
@@ -1003,7 +1203,7 @@ pub fn builtin_tar_pack(args: Vec<Value>) -> MixResult<Option<Value>> {
         .open(out_path)
         .map_err(|e| runtime(format!("{caller}: create '{path}': {e}")))?;
     let buf = BufWriter::with_capacity(1 << 20, file);
-    match pack_stream(source_path, buf, &opts, caller) {
+    match pack_stream(source_dir, buf, &opts, caller) {
         Ok(receipt) => Ok(Some(Value::Map(std::rc::Rc::new(receipt)))),
         Err(e) => {
             let _ = fs::remove_file(out_path);
@@ -1050,7 +1250,7 @@ impl PackSink {
 }
 
 fn pack_stream(
-    source: &Path,
+    source: File,
     buf: BufWriter<File>,
     opts: &PackOpts,
     caller: &str,
@@ -1071,7 +1271,7 @@ fn pack_stream(
 }
 
 fn walk_and_append(
-    source: &Path,
+    source: File,
     sink: PackSink,
     opts: &PackOpts,
     caller: &str,
@@ -1083,33 +1283,40 @@ fn walk_and_append(
     let mut bytes: u64 = 0;
     let mut caps: u64 = 0;
 
-    let mut queue: Vec<PathBuf> = vec![source.to_path_buf()];
-    while let Some(dir) = queue.pop() {
-        let mut children: Vec<PathBuf> = fs::read_dir(&dir)
-            .map_err(|e| runtime(format!("{caller}: read_dir '{}': {e}", dir.display())))?
-            .filter_map(|e| e.ok())
-            .map(|e| e.path())
-            .collect();
+    let mut queue = vec![(PathBuf::new(), source)];
+    while let Some((dir_rel, dir)) = queue.pop() {
+        let mut children = directory_names(&dir)
+            .map_err(|e| runtime(format!("{caller}: read_dir '{}': {e}", dir_rel.display())))?;
         children.sort();
-        for child in children {
-            let meta = fs::symlink_metadata(&child)
-                .map_err(|e| runtime(format!("{caller}: stat '{}': {e}", child.display())))?;
-            let rel = child
-                .strip_prefix(source)
-                .map_err(|e| runtime(format!("{caller}: internal path: {e}")))?;
+        for name in children {
+            let rel = dir_rel.join(&name);
+            // O_PATH pins even a symlink without following it. Classification,
+            // symlink target and subsequent identity checks use this fd.
+            let child = open_child(&dir, &name, libc::O_PATH)
+                .map_err(|e| runtime(format!("{caller}: open '{}': {e}", rel.display())))?;
+            let meta = child
+                .metadata()
+                .map_err(|e| runtime(format!("{caller}: fstat '{}': {e}", rel.display())))?;
             if meta.is_dir() {
+                let opened =
+                    open_child_checked(&dir, &name, &meta, libc::O_RDONLY | libc::O_DIRECTORY)
+                        .map_err(|e| {
+                            runtime(format!("{caller}: open directory '{}': {e}", rel.display()))
+                        })?;
+                let meta = opened
+                    .metadata()
+                    .map_err(|e| runtime(format!("{caller}: fstat '{}': {e}", rel.display())))?;
                 let mut header = Header::new_gnu();
                 header.set_size(0);
                 set_header_meta(&mut header, &meta, opts);
                 builder
-                    .append_data(&mut header, rel, std::io::empty())
+                    .append_data(&mut header, &rel, std::io::empty())
                     .map_err(|e| runtime(format!("{caller}: append '{}': {e}", rel.display())))?;
                 dirs += 1;
-                queue.push(child);
+                queue.push((rel, opened));
             } else if meta.file_type().is_symlink() {
-                let target = fs::read_link(&child).map_err(|e| {
-                    runtime(format!("{caller}: readlink '{}': {e}", child.display()))
-                })?;
+                let target = readlink_fd(&child)
+                    .map_err(|e| runtime(format!("{caller}: readlink '{}': {e}", rel.display())))?;
                 // Contained targets only, so packed archives always
                 // round-trip through the safe unpacker.
                 clean_link_target(caller, &rel.to_string_lossy(), target.as_os_str(), 4096)?;
@@ -1121,11 +1328,22 @@ fn walk_and_append(
                     .set_link_name(&target)
                     .map_err(|e| runtime(format!("{caller}: link name: {e}")))?;
                 builder
-                    .append_data(&mut header, rel, std::io::empty())
+                    .append_data(&mut header, &rel, std::io::empty())
                     .map_err(|e| runtime(format!("{caller}: append '{}': {e}", rel.display())))?;
                 symlinks += 1;
             } else if meta.is_file() {
-                if let Some(raw) = xattr_security_capability(&child) {
+                // O_NONBLOCK prevents a replacement fifo from blocking open;
+                // the inode check then refuses every changed file type.
+                let f = open_child_checked(&dir, &name, &meta, libc::O_RDONLY | libc::O_NONBLOCK)
+                    .map_err(|e| {
+                    runtime(format!("{caller}: open file '{}': {e}", rel.display()))
+                })?;
+                let meta = f
+                    .metadata()
+                    .map_err(|e| runtime(format!("{caller}: fstat '{}': {e}", rel.display())))?;
+                if opts.keep_special_bits
+                    && let Some(raw) = xattr_security_capability(&f)
+                {
                     builder
                         .append_pax_extensions([(
                             "SCHILY.xattr.security.capability",
@@ -1139,10 +1357,8 @@ fn walk_and_append(
                 let mut header = Header::new_gnu();
                 header.set_size(meta.len());
                 set_header_meta(&mut header, &meta, opts);
-                let f = File::open(&child)
-                    .map_err(|e| runtime(format!("{caller}: open '{}': {e}", child.display())))?;
                 builder
-                    .append_data(&mut header, rel, f)
+                    .append_data(&mut header, &rel, f)
                     .map_err(|e| runtime(format!("{caller}: append '{}': {e}", rel.display())))?;
                 files += 1;
                 bytes += meta.len();
@@ -1191,19 +1407,116 @@ fn set_header_meta(header: &mut Header, meta: &fs::Metadata, opts: &PackOpts) {
     }
 }
 
+fn open_child(dir: &File, name: &std::ffi::OsStr, flags: i32) -> std::io::Result<File> {
+    let name = std::ffi::CString::new(name.as_bytes())?;
+    let fd = unsafe {
+        libc::openat(
+            dir.as_raw_fd(),
+            name.as_ptr(),
+            flags | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if fd < 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        // Ownership of the newly opened fd transfers to File.
+        Ok(unsafe { File::from_raw_fd(fd) })
+    }
+}
+
+fn open_child_checked(
+    dir: &File,
+    name: &std::ffi::OsStr,
+    expected: &fs::Metadata,
+    flags: i32,
+) -> std::io::Result<File> {
+    let opened = open_child(dir, name, flags)?;
+    let actual = opened.metadata()?;
+    if actual.dev() != expected.dev()
+        || actual.ino() != expected.ino()
+        || actual.mode() & libc::S_IFMT != expected.mode() & libc::S_IFMT
+    {
+        return Err(std::io::Error::other("source entry changed while packing"));
+    }
+    Ok(opened)
+}
+
+/// Enumerate the directory already opened and queued, never its pathname.
+fn directory_names(dir: &File) -> std::io::Result<Vec<std::ffi::OsString>> {
+    struct DirStream(*mut libc::DIR);
+    impl Drop for DirStream {
+        fn drop(&mut self) {
+            unsafe {
+                libc::closedir(self.0);
+            }
+        }
+    }
+    let fd = unsafe { libc::fcntl(dir.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 0) };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let stream = unsafe { libc::fdopendir(fd) };
+    if stream.is_null() {
+        let err = std::io::Error::last_os_error();
+        unsafe {
+            libc::close(fd);
+        }
+        return Err(err);
+    }
+    let stream = DirStream(stream);
+    let mut names = Vec::new();
+    loop {
+        unsafe {
+            *libc::__errno_location() = 0;
+        }
+        let entry = unsafe { libc::readdir(stream.0) };
+        if entry.is_null() {
+            let err = std::io::Error::last_os_error();
+            if err.raw_os_error() != Some(0) {
+                return Err(err);
+            }
+            return Ok(names);
+        }
+        let bytes = unsafe { std::ffi::CStr::from_ptr((*entry).d_name.as_ptr()) }.to_bytes();
+        if bytes != b"." && bytes != b".." {
+            names.push(std::ffi::OsString::from_vec(bytes.to_vec()));
+        }
+    }
+}
+
+fn readlink_fd(file: &File) -> std::io::Result<PathBuf> {
+    let mut target = vec![0u8; 4097];
+    // Linux readlinkat with an empty name operates on the pinned O_PATH fd.
+    let n = unsafe {
+        libc::readlinkat(
+            file.as_raw_fd(),
+            c"".as_ptr(),
+            target.as_mut_ptr().cast(),
+            target.len(),
+        )
+    };
+    if n < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    if n as usize == target.len() {
+        return Err(std::io::Error::other("symlink target exceeds max_name"));
+    }
+    target.truncate(n as usize);
+    Ok(PathBuf::from(std::ffi::OsString::from_vec(target)))
+}
+
 /// Size-query first, then read: a fixed buffer would silently truncate
 /// VFS_CAP_REVISION_3 values (~1 KB) into corrupt capabilities.
-fn xattr_security_capability(path: &Path) -> Option<Vec<u8>> {
-    let c = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
+fn xattr_security_capability(file: &File) -> Option<Vec<u8>> {
     let name = c"security.capability".as_ptr();
-    let size = unsafe { libc::getxattr(c.as_ptr(), name, std::ptr::null_mut(), 0) };
+    let size = unsafe { libc::fgetxattr(file.as_raw_fd(), name, std::ptr::null_mut(), 0) };
     if size <= 0 {
         return None;
     }
     let mut buf = vec![0u8; size as usize];
     let n = unsafe {
-        libc::getxattr(
-            c.as_ptr(),
+        libc::fgetxattr(
+            file.as_raw_fd(),
             name,
             buf.as_mut_ptr() as *mut libc::c_void,
             buf.len(),

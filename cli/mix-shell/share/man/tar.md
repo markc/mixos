@@ -21,7 +21,8 @@ profile below is a contract that any encoder must satisfy:
 - **single frame** — `tar_unpack`/`tar_list` drain the stream to true EOF:
   the zstd frame checksum / gzip CRC are verified there, any non-zero decoded
   bytes after the tar end are refused, and raw input left unconsumed (a
-  concatenated second frame) is refused by source position;
+  concatenated second frame or gzip member, including an empty member) is
+  refused. Trailing compressed bytes, including zeros, are refused too;
 - **no dictionaries**;
 - zstd levels are `1..=22` (default 7). Level 22 is the largest the builtin
   packs, because its 2^27 (128 MiB) window is exactly the decoder's ceiling.
@@ -45,14 +46,18 @@ For artifacts that people unpack with stock tools, use `codec:"gzip"`
 
 - `dest` **must not exist**. Extraction happens in a private `0700`
   staging sibling, renamed into place only after the whole stream verifies;
-  any failure removes the staging tree and leaves nothing behind.
+  failures restore traversable/writable staging-directory modes before
+  removing the tree. A cleanup failure is reported alongside the original
+  error, with the staging path, rather than silently discarded.
 - Member names are validated on the *resolved* path (GNU longname and PAX
   smuggling land there): no absolute paths, no `.`/`..` components, UTF-8
   only (invalid bytes raise — the extractor never guesses what got
   extracted).
-- Device, fifo and unknown entry types are **refused**.
+- Device, fifo and unknown entry types are **refused**. GNU sparse entries
+  are refused by both the lister and extractor.
 - A corrupt or truncated stream (zstd frame checksum, gzip CRC or a cut-off
-  stream) raises the structured code `ARCHIVE_STREAM_CORRUPT`. Match the code
+  stream, including an empty input or truncated zstd header) raises the
+  structured code `ARCHIVE_STREAM_CORRUPT`. Match the code
   in the optional second `catch` binding, not the message text.
 - Symlink targets must be contained (no absolute, no `..`). Nothing is
   ever extracted *through* a symlink the archive created. Hardlinks may
@@ -71,19 +76,31 @@ For artifacts that people unpack with stock tools, use `codec:"gzip"`
   children-first post-pass, so directory mtimes stick.
 - Limits: `max_entries` (200k), `max_bytes` (64 GiB of file bytes),
   `max_name` (4096), and `max_stream_bytes` (16 GiB). The last bounds the
-  **decoded** stream, where tar's internal longname and PAX buffers live, so
-  it is the memory-bomb limit as much as a size limit. `tar_list` accepts
-  `max_name` and `max_stream_bytes` too.
+  **decoded** stream, including headers, metadata, file data and all trailing
+  zero padding, across parsing and final verification. An entry's declared
+  size must fit the remaining `max_bytes` before its file is created, and
+  copying also enforces that remaining budget.
+- Each GNU longname, GNU longlink or PAX extension payload is limited to
+  **64 KiB**, independently of `max_stream_bytes`, before buffering. GNU
+  name/link payloads additionally obey `max_name` plus one terminating NUL.
+  Once `max_entries` is reached, the next extension header is refused before
+  reading its body. `tar_list` accepts `max_entries`, `max_name` and
+  `max_stream_bytes` too.
 
 ## tar_pack
 
 Deterministic (sorted, parents-first) walk of a source **directory**:
 numeric owner, mtime and mode are preserved, and suid/sgid are stripped
-unless `keep_special_bits:true`. `security.capability` is captured into a
-`SCHILY.xattr` PAX record exactly as GNU `tar --xattrs` writes it, so
-capability round-trips work (root-only to apply on unpack). Device and fifo
-members are refused. The output file is created new (`0600`) and is never
-overwritten. Two packs of an unchanged tree are byte-identical.
+unless `keep_special_bits:true`. Only that same opt-in captures
+`security.capability` into a `SCHILY.xattr` PAX record, so capability
+round-trips require opting in at both ends (root-only to apply on unpack).
+The source directory must not be a symlink. Directory traversal retains
+opened directory descriptors; children are opened with `O_NOFOLLOW`, with
+metadata and capabilities read from the opened file. Queued directories
+remain pinned if their pathnames are replaced. A detected inode replacement
+between classification and opening raises. Device and fifo members are
+refused. The output file is created new (`0600`) and is never overwritten.
+Two packs of an unchanged tree are byte-identical.
 
 ## Round-trip
 
