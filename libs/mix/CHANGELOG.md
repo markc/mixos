@@ -6,6 +6,10 @@
   builtins. Archives use zstd (default), gzip or no codec. `tar_unpack`
   validates every member, extracts into a staging directory and renames it
   into place only after the stream verifies. See `mix man tar`.
+- Fix `password_hash` sha512-crypt output, which glibc and Dovecot could not
+  verify. The salt is now 16 chars, and default rounds use the implicit
+  `$6$salt$hash` form. `password_verify` raises on a `$6$` salt longer than 16
+  chars instead of answering true.
 
 ## 0.109.1
 
