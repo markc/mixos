@@ -4,6 +4,10 @@
 
 ### Added
 
+- Add the `archive` feature with the `tar_list`, `tar_unpack` and `tar_pack`
+  builtins. Archives use zstd (default), gzip or no codec. `tar_unpack`
+  validates every member, extracts into a staging directory and renames it
+  into place only after the stream verifies. See `mix man tar`.
 - `analyzer::Analysis` carries `handlers`: one `HandlerDeclaration` (`command`,
   `file`, `line`) per `on <command>` statement in the parsed AST, in source
   order, with duplicates kept. `analyze()` collects them with the existing
