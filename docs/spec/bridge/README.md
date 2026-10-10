@@ -48,11 +48,12 @@ the token.
 | 12 | A bad request from the caller (missing field, body not a JSON object) | text naming the field |
 
 Every call runs under one deadline, `timeout_s`, covering connect, the auth
-reply and the request's reply. **Writes are not yet under it:** a peer that
-stops reading can hold a request write for up to 30 seconds (Mix's socket
-default), so the worst case today is about `timeout_s` + 30 s. This closes
-when Mix's `tcp_send` takes a deadline. After a transport failure, or a reply
-without a boolean `ok`, the connection is dropped and no new one is tried for
+reply and the request's reply. **Writes are not bounded yet:** a peer that
+stops reading can hold a request write, and the serve pump with it, for an
+unbounded time until Mix 0.112.1's `tcp_send` timeout lands (pending); the
+bridge will then pass the remaining deadline to every write.
+
+After a transport failure, or a reply without a boolean `ok`, the connection is dropped and no new one is tried for
 `backoff_s`; calls in that window answer rc 11 at once.
 
 The token never appears in a reply: any occurrence of it, in any letter case,
@@ -122,9 +123,13 @@ later schemas with families both read.
 A refused start prints `bridged: refusing to start: CODE: message` and exits
 2. Codes: `NAME_INVALID`, `NAME_RESERVED`, `REGISTRY`, `CONFIG`, `TOKEN`.
 `mix bridged.mix --check <app>` runs the same checks without joining the Bus
-and exits 0 when the instance may start. The unit runs it as `ExecCondition=`,
-so a refused instance is not a failure: it stays inactive, shows as skipped
-(condition) with the reason in its journal, and is never restarted.
+and exits 0 when the instance may start; an unexpected error at start exits 3,
+never 2. The unit runs it through `bridged_condition.mix` as
+`ExecCondition=`, which maps the exit for systemd: 0 stays 0; 2 (a documented
+refusal) stays 2, so the unit is skipped, not failed: inactive, shown as
+skipped (condition) with the reason in its journal, never restarted; any
+other exit, a crash, a signal or a timeout becomes 255, which systemd counts
+as a failure.
 
 ## Changes
 

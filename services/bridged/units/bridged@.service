@@ -14,12 +14,13 @@ User=mixos
 # lives (MIXOS_ETC, or BRIDGED_CONFIG for one file).
 EnvironmentFile=-/etc/mixos/bridge/%i.env
 # The start checks (name, verb registry, config, token) before the name is
-# registered on the Bus: a refused name never appears there. A refusal exits
-# 2, which ExecCondition= treats as "skip": the unit stays inactive and shows
-# as skipped (condition) with the reason in the journal, and is not
-# restarted. (ExecStartPre would count as a failure and loop under
-# Restart=on-failure.)
-ExecCondition=/opt/mixos/bin/mix /opt/mixos/lib/bridged/bridged.mix --check %i
+# registered on the Bus: a refused name never appears there. ExecCondition=
+# skips the unit on exit 1-254 and fails it on 255, so bridged_condition.mix
+# runs the check and maps its exit: a documented refusal is 2 (skipped
+# (condition), reason in the journal, never restarted); anything unexpected,
+# a crash included, is 255 (failed). ExecStartPre would loop under
+# Restart=on-failure.
+ExecCondition=/opt/mixos/bin/mix /opt/mixos/lib/bridged/bridged_condition.mix %i
 ExecStart=/opt/mixos/bin/mix --serve /opt/mixos/lib/bridged/bridged.mix --name %i
 KillMode=control-group
 TimeoutStopSec=10

@@ -52,8 +52,9 @@ systemctl start bridged@fakeapp
 The unit runs `mix bridged.mix --check fakeapp` before it joins the Bus,
 then `mix --serve bridged.mix --name fakeapp`. A refused start is not a
 failure: `systemctl status` shows the unit inactive, skipped (condition),
-with the reason in its journal, and it is not restarted. A start is refused
-when:
+with the reason in its journal, and it is not restarted. An unexpected error
+in the check (anything but a refusal below) fails the unit instead, so it is
+never mistaken for one. A start is refused when:
 
 - the name is not a valid Bus service name, or starts with `mixos-`
   (`NAME_INVALID`);
@@ -83,10 +84,10 @@ send fakeapp fakeapp.call body='{"method":"echo","params":{"a":1}}'
 
 The bridge keeps one connection open. If the application goes away, calls
 answer rc 11, the bridge waits `backoff_s` (default 2 seconds), then
-reconnects and authenticates again on the next call. Each call is bounded by
-`timeout_s`, except that writing a request to an application that has
-stopped reading can take up to 30 seconds longer, until Mix's socket writes
-take a deadline.
+reconnects and authenticates again on the next call. Each call's connect and
+reads are bounded by `timeout_s`. Writing a request to an application that
+has stopped reading is not bounded yet: that waits for Mix 0.112.1's
+`tcp_send` timeout (pending).
 
 ## Security
 
