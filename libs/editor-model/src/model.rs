@@ -47,6 +47,9 @@ pub struct EditCfg {
 pub struct Scroll {
     /// 1-based first visible line.
     pub first_line: usize,
+    /// With soft wrap, the 0-based row of `first_line` at the top of the
+    /// view; 0 otherwise.
+    pub row: usize,
     /// Horizontal scroll in cells.
     pub x_cells: usize,
 }
@@ -78,6 +81,7 @@ impl Default for EditorModel {
             preferred_cells: None,
             scroll: Scroll {
                 first_line: 1,
+                row: 0,
                 x_cells: 0,
             },
             overwrite: false,
