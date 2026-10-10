@@ -33,10 +33,10 @@
   `SERVE_PREFIX_OUTSIDE_SERVE`. Each segment after `@.` must be a bare name,
   quoted or not. `on a.@.b`, `on @`, `on @x.y`, a quoted `on "@.x"`, a quoted
   segment that isn't a bare name (`on @."a.b"`) and `@` in an expression are
-  parse errors; they were lexer errors before. Positions that read raw source
-  text now accept `@` as an ordinary character where it used to fail lexing: a
-  bareword `source`/`include` path (`source ./foo@bar.mix`) and the command
-  after `|` (`print(1) | cat @foo`).
+  parse errors (an unquoted `@` was a lexer error before). Positions that read
+  raw source text now accept `@` as an ordinary character where it used to
+  fail lexing: a bareword `source`/`include` path (`source ./foo@bar.mix`) and
+  the command after `|` (`print(1) | cat @foo`).
 
 ## 0.111.0
 
