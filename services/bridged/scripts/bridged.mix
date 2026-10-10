@@ -1,0 +1,130 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- bridged: a Bus bridge to an external application's line-delimited JSON
+-- control channel, one instance per application. The protocol and logic are
+-- lib/bridge_core.mix; this file is only the Bus surface.
+--
+-- Run: mix --serve bridged.mix --name <app>      (Bus service "<app>")
+--      mix bridged.mix --check <app>             (the start checks only)
+--
+-- The serve name must be one Bus service-name segment ([a-z][a-z0-9-]{1,30})
+-- that no registered Bus verb already starts with (registry: $BRIDGED_VERBS,
+-- else /opt/mixos/share/bus/verbs.conf.mix; missing or unreadable refuses).
+-- mix --serve registers the name before this file runs, so a refusal here
+-- comes just after registration; the unit runs --check first (ExecStartPre)
+-- so a refused name never reaches the Bus.
+-- Config: $BRIDGED_CONFIG, else <etc>/bridge/<app>.conf.mix with <etc> =
+-- $MIXOS_ETC or /etc/mixos. Keys: host, port, auth, token_file, timeout_s,
+-- connect_timeout_s, backoff_s, max_line, instance (docs/spec/bridge/).
+-- A refusal at start prints "bridged: refusing to start: CODE: message" and
+-- exits 2 (CODE: NAME_INVALID, NAME_RESERVED, REGISTRY, CONFIG, TOKEN).
+--
+-- Verbs (body is a JSON object where one is listed):
+--   <app>.call        {method, params?}   pass-through, any method
+--   <app>.commands    engine.commands
+--   <app>.execute     {command, params?}  engine.execute
+--   <app>.inspect     ui.inspect
+--   <app>.screenshot  {path?, focus?}     ui.screenshot
+--   <app>.status      connection state; never shows the token
+-- Replies: rc 0 = JSON text of the app's result; rc 10 = app error text;
+-- rc 11 = transport/connect/auth/timeout (text says which); rc 12 = bad request.
+
+$core = require("lib/bridge_core.mix")
+
+fn refuse($code, $message)
+  eprint("bridged: refusing to start: " .. $code .. ": " .. $message)
+  exit(2)
+end
+
+-- Every start check: the name, the registry, the config and the token.
+-- Returns {cfg, token}.
+fn preflight($name)
+  $core.check_name($name, $core.registry_path())
+  $c = $core.load_config($core.config_path($name))
+  $t = nil
+  if $c.auth == "token" then $t = $core.load_token($c.token_file) end
+  return {cfg: $c, token: $t}
+end
+
+$svc = serve_name()
+if $svc == nil then
+  $a = args()
+  if len($a) != 2 or $a[0] != "--check" then
+    eprint("usage: mix --serve bridged.mix --name <app> | mix bridged.mix --check <app>")
+    exit(2)
+  end
+  try
+    $p = preflight($a[1])
+    print("bridged: " .. $a[1] .. " may start (" .. $core.config_path($a[1]) .. ", auth " .. $p.cfg.auth .. ")")
+  catch $m, $e
+    refuse($e.code ?? "FAILED", $m)
+  end
+  exit(0)
+end
+
+$cfg = nil
+$token = nil
+try
+  $p = preflight($svc)
+  $cfg = $p.cfg
+  $token = $p.token
+  $p = nil
+catch $m, $e
+  refuse($e.code ?? "FAILED", $m)
+end
+
+$S = $core.new_state($cfg, $token)
+$token = nil
+
+on @.call desc "Pass-through: body {method, params} is sent as one control request; the app's result comes back as JSON text."
+  $req = $core.parse_body($event.body)
+  $err = $core.need_string($req, "method")
+  if $err != nil then
+    reply(12, $svc .. ".call: " .. $err)
+  else
+    $r = $core.dispatch($S, $req.method, $req.params ?? {})
+    $S = $r.st
+    reply($r.rc, $r.body)
+  end
+end
+
+on @.commands desc "List the app's control commands (engine.commands)."
+  $r = $core.dispatch($S, "engine.commands", {})
+  $S = $r.st
+  reply($r.rc, $r.body)
+end
+
+on @.execute desc "Run one app command: body {command, params?} is sent as engine.execute."
+  $req = $core.parse_body($event.body)
+  $err = $core.need_string($req, "command")
+  if $err != nil then
+    reply(12, $svc .. ".execute: " .. $err)
+  else
+    $r = $core.dispatch($S, "engine.execute", {command: $req.command, params: $req.params ?? {}})
+    $S = $r.st
+    reply($r.rc, $r.body)
+  end
+end
+
+on @.inspect desc "Read the app's UI tree (ui.inspect)."
+  $r = $core.dispatch($S, "ui.inspect", {})
+  $S = $r.st
+  reply($r.rc, $r.body)
+end
+
+on @.screenshot desc "Capture the app (ui.screenshot). Optional body {path?, focus?}; an empty body is fine."
+  $raw = $event.body ?? ""
+  $req = {}
+  if $raw != "" then $req = $core.parse_body($raw) end
+  if $raw != "" and type($req) != "map" then
+    reply(12, $svc .. ".screenshot: body must be a JSON object")
+  else
+    $r = $core.dispatch($S, "ui.screenshot", $core.optional_params($req, ["path", "focus"]))
+    $S = $r.st
+    reply($r.rc, $r.body)
+  end
+end
+
+on @.status desc "Connection state, last error and last round-trip latency. Never includes the token."
+  reply(0, json_encode(merge({service: $svc}, $core.status($S))))
+end

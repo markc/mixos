@@ -5,6 +5,7 @@
   <url><loc>https://mixos.dev/drive/</loc></url>
   <url><loc>https://mixos.dev/decisions/2026-10-09-egui-applications/</loc></url>
   <url><loc>https://mixos.dev/decisions/2026-10-04-source-layout/</loc></url>
+  <url><loc>https://mixos.dev/bridge/</loc></url>
   <url><loc>https://mixos.dev/decisions/2026-10-07-settings-authority/</loc></url>
   <url><loc>https://mixos.dev/decisions/2026-10-08-mix-programs-and-documents/</loc></url>
   <url><loc>https://mixos.dev/decisions/2026-10-09-chrome-family-and-schemes/</loc></url>
@@ -19,6 +20,7 @@
   <url><loc>https://mixos.dev/portal/</loc></url>
   <url><loc>https://mixos.dev/prefs/</loc></url>
   <url><loc>https://mixos.dev/releases/</loc></url>
+  <url><loc>https://mixos.dev/spec/bridge/</loc></url>
   <url><loc>https://mixos.dev/spec/handler-closure-capture/</loc></url>
   <url><loc>https://mixos.dev/spec/mix/2026-10-08-programs-and-documents/</loc></url>
   <url><loc>https://mixos.dev/spec/portal/</loc></url>
