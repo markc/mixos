@@ -324,14 +324,29 @@ impl Theme {
     }
 }
 
-/// An app's own theme choice over the session's: `None` on an axis follows
-/// the session. On `style`, `Some(None)` is the scheme's own style.
+/// An app's own theme choice over the session's, as [`Theme::with_choice`]
+/// lays it on and the Theme menu ([`crate::theme_menu`]) edits it. `None` on
+/// an axis follows the session; [`Choice::default`] is no choice at all, and
+/// returns the session theme itself, a custom design included.
+///
+/// `style` has three states:
+///
+/// | value | meaning | Theme menu row |
+/// |---|---|---|
+/// | `None` | follow the session's style | Session style |
+/// | `Some(None)` | the scheme's own style, whatever the session's | Scheme's own style |
+/// | `Some(Some(style))` | that style | Plain, Pro, Studio or Classic style |
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Choice {
+    /// The palette; `None` follows the session.
     pub scheme: Option<Scheme>,
+    /// The chrome style: see the table above.
     pub style: Option<Option<design::Style>>,
+    /// Light or dark; `None` follows the session.
     pub mode: Option<Mode>,
+    /// Who draws the title bar; `None` follows the session.
     pub decorations: Option<Decorations>,
+    /// The caption side; `None` follows the session.
     pub captions: Option<CaptionSide>,
 }
 
