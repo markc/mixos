@@ -146,7 +146,10 @@ fn builtin_shadowing_covers_evaluator_special_forms() {
         let (code, out) = lint(&[path.to_str().unwrap()]);
         assert_ne!(code, 0, "`function {name}` fails a plain lint: {out}");
         assert!(out.contains("MIX-E1303"), "{name}: {out}");
-        assert!(out.contains(&format!("function '{name}' shadows")), "{name}: {out}");
+        assert!(
+            out.contains(&format!("function '{name}' shadows")),
+            "{name}: {out}"
+        );
     }
 }
 

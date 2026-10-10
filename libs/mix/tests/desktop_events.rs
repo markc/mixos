@@ -33,7 +33,6 @@ async fn exec(eval: &mut Evaluator, source: &str) -> MixResult<Value> {
     eval.execute(&stmts).await
 }
 
-
 const FAKE_PACTL: &str = r#"#!/bin/sh
 # Stand-in for `pactl subscribe`, checking what audio_watch hands it.
 [ "$1" = subscribe ] || exit 64
@@ -86,9 +85,15 @@ async fn audio_watch_owns_a_subscription_child_and_reports_its_exit() {
     .await
     .unwrap();
     let batch = next_batch(&mut e).await.to_mix_string();
-    assert!(!batch.contains("closed"), "stand-in refused its setup: {batch}");
+    assert!(
+        !batch.contains("closed"),
+        "stand-in refused its setup: {batch}"
+    );
     assert!(batch.contains("facility: sink"), "{batch}");
-    assert!(!batch.contains("client"), "client events are filtered: {batch}");
+    assert!(
+        !batch.contains("client"),
+        "client events are filtered: {batch}"
+    );
     exec(&mut e, "audio_unwatch($h)").await.unwrap();
 
     // A stream that ends by itself is reported once, as closed.

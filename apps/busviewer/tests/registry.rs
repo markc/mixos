@@ -12,7 +12,13 @@ fn registered(owner: &str) -> Vec<String> {
     REGISTRY
         .lines()
         .filter(|line| line.contains(&owned))
-        .filter_map(|line| line.split("name:\"").nth(1)?.split('"').next().map(str::to_owned))
+        .filter_map(|line| {
+            line.split("name:\"")
+                .nth(1)?
+                .split('"')
+                .next()
+                .map(str::to_owned)
+        })
         .collect()
 }
 

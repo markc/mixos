@@ -2200,15 +2200,19 @@ fn quantise(value: f64) -> u8 {
 /// whole guarantee that a primitive renders exactly as measured.
 #[cfg(test)]
 mod exact_authoring_tests {
-    use super::derivation::{linear_srgb_to_oklch, oklch_to_linear_srgb};
     use super::LinearRgba;
+    use super::derivation::{linear_srgb_to_oklch, oklch_to_linear_srgb};
 
     /// Decimal places an exactly authored OKLCH primitive is written with.
     const AUTHORED_PLACES: i32 = 9;
 
     fn decode(channel: u8) -> f64 {
         let v = f64::from(channel) / 255.0;
-        if v <= 0.040_45 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+        if v <= 0.040_45 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
     }
 
     fn round_to(value: f64, places: i32) -> f64 {
@@ -2217,9 +2221,21 @@ mod exact_authoring_tests {
     }
 
     fn round_trip(rgb: [u8; 3], places: i32) -> [u8; 4] {
-        let linear = LinearRgba { red: decode(rgb[0]), green: decode(rgb[1]), blue: decode(rgb[2]), alpha: 1.0 };
+        let linear = LinearRgba {
+            red: decode(rgb[0]),
+            green: decode(rgb[1]),
+            blue: decode(rgb[2]),
+            alpha: 1.0,
+        };
         let (l, c, h) = linear_srgb_to_oklch(linear);
-        oklch_to_linear_srgb(round_to(l, places), round_to(c, places), round_to(h, places), 1.0).expect("in range").to_srgba8()
+        oklch_to_linear_srgb(
+            round_to(l, places),
+            round_to(c, places),
+            round_to(h, places),
+            1.0,
+        )
+        .expect("in range")
+        .to_srgba8()
     }
 
     #[test]
@@ -2235,12 +2251,28 @@ mod exact_authoring_tests {
         }
         for edge in [0u8, 1, 254, 255] {
             for other in [0u8, 128, 255] {
-                samples.extend([[edge, other, other], [other, edge, other], [other, other, edge]]);
+                samples.extend([
+                    [edge, other, other],
+                    [other, edge, other],
+                    [other, other, edge],
+                ]);
             }
         }
-        let moved = |places| samples.iter().filter(|rgb| round_trip(**rgb, places)[..3] != rgb[..]).count();
-        assert_eq!(moved(AUTHORED_PLACES), 0, "authored precision must be exact");
-        assert!(moved(6) > 0, "six places is known to be lossy at the blue gamut edge");
+        let moved = |places| {
+            samples
+                .iter()
+                .filter(|rgb| round_trip(**rgb, places)[..3] != rgb[..])
+                .count()
+        };
+        assert_eq!(
+            moved(AUTHORED_PLACES),
+            0,
+            "authored precision must be exact"
+        );
+        assert!(
+            moved(6) > 0,
+            "six places is known to be lossy at the blue gamut edge"
+        );
     }
 
     /// The whole 8-bit cube. Slow in debug: `cargo test --release -p design -- --ignored`.

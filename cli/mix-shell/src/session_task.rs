@@ -59,8 +59,10 @@ struct SupervisorPermit;
 impl SupervisorPermit {
     fn reserve() -> Result<Self, SpawnFailed> {
         use std::sync::atomic::Ordering;
-        SUPERVISORS.fetch_update(Ordering::AcqRel, Ordering::Acquire,
-            |active| (active < TASKS).then_some(active + 1))
+        SUPERVISORS
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |active| {
+                (active < TASKS).then_some(active + 1)
+            })
             .map(|_| Self)
             .map_err(|_| SpawnFailed::resources("native task cleanup slots are occupied".into()))
     }
@@ -129,9 +131,9 @@ impl SpawnFailed {
     /// the child instead of replaying the refusal forever.
     fn of(error: &std::io::Error) -> Self {
         let code = match error.raw_os_error() {
-            Some(libc::ENOENT | libc::EACCES | libc::ENOTDIR | libc::ELOOP | libc::ENAMETOOLONG) => {
-                "NOT_FOUND"
-            }
+            Some(
+                libc::ENOENT | libc::EACCES | libc::ENOTDIR | libc::ELOOP | libc::ENAMETOOLONG,
+            ) => "NOT_FOUND",
             _ => "RESOURCE_LIMIT",
         };
         Self {
@@ -245,11 +247,7 @@ impl Spec {
             return Err("INVALID_ARGUMENT");
         }
         if env.len() > MAX_ENV_VARS
-            || env
-                .iter()
-                .map(|(k, v)| k.len() + v.len())
-                .sum::<usize>()
-                > MAX_ENV_BYTES
+            || env.iter().map(|(k, v)| k.len() + v.len()).sum::<usize>() > MAX_ENV_BYTES
         {
             return Err("RESOURCE_LIMIT");
         }
@@ -383,7 +381,9 @@ pub(crate) enum TaskResult {
     /// argv mode has no interpreter value by construction, and says so rather
     /// than presenting an absent one as a failure.
     NotApplicable,
-    Value { data: String },
+    Value {
+        data: String,
+    },
     /// Nothing was written to the result descriptor at all.
     ResultMissing,
     /// A length prefix the payload did not satisfy — the writer was killed
@@ -480,11 +480,9 @@ pub(crate) fn spawn(
             supervise_task(spec, started, tx, rx, supervised, ready_tx, settled)
         })
         .map_err(|error| SpawnFailed::resources(error.to_string()))?;
-    ready_rx
-        .recv()
-        .map_err(|_| {
-            SpawnFailed::resources("the supervisor thread ended before it spawned the task".into())
-        })??;
+    ready_rx.recv().map_err(|_| {
+        SpawnFailed::resources("the supervisor thread ended before it spawned the task".into())
+    })??;
     Ok(Handle {
         cancel,
         started,
@@ -735,12 +733,16 @@ fn reap_registered(pid: libc::pid_t) {
             // holding the registry lock prevents sweep seeing a recycled PID
             // between kernel reaping and registration removal.
             let result = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
-            if result < 0 && std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
+            if result < 0
+                && std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted
+            {
                 continue;
             }
             break result;
         };
-        if result == pid || (result < 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ECHILD)) {
+        if result == pid
+            || (result < 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ECHILD))
+        {
             live.retain(|tracked| *tracked != pid);
             mix::builtins::unregister_managed_pid(pid);
             return;
@@ -784,8 +786,7 @@ fn interpreter() -> std::path::PathBuf {
 /// image, and a fixture cannot ask `current_exe` for a different answer.
 fn interpreter_from(exe: std::io::Result<std::path::PathBuf>) -> std::path::PathBuf {
     use std::os::unix::ffi::OsStrExt;
-    let installed =
-        || crate::paths::mixos_path(crate::paths::Dir::Bin).join("mix");
+    let installed = || crate::paths::mixos_path(crate::paths::Dir::Bin).join("mix");
     let Ok(path) = exe else {
         eprintln!("mix: cannot read this process's own path; a source task will use the install");
         return installed();
@@ -1073,108 +1074,110 @@ fn drain_fd<S: AsRawFd + Send + 'static>(
     // Builder, not the bare spawn: thread exhaustion is a condition this
     // supervisor can report, and panicking the caller over it would take down a
     // healthy shell because one task could not get a thread.
-    std::thread::Builder::new().name("mix-task-drain".into()).spawn(move || {
-        let fd = source.as_raw_fd();
-        // Non-blocking, so a readiness that evaporates cannot park this thread
-        // inside read() past its own deadline.
-        // SAFETY: fd is owned by `source` for the life of this thread.
-        unsafe {
-            let flags = libc::fcntl(fd, libc::F_GETFL);
-            if flags >= 0 {
-                libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
+    std::thread::Builder::new()
+        .name("mix-task-drain".into())
+        .spawn(move || {
+            let fd = source.as_raw_fd();
+            // Non-blocking, so a readiness that evaporates cannot park this thread
+            // inside read() past its own deadline.
+            // SAFETY: fd is owned by `source` for the life of this thread.
+            unsafe {
+                let flags = libc::fcntl(fd, libc::F_GETFL);
+                if flags >= 0 {
+                    libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
+                }
             }
-        }
-        let mut capture = Capture::default();
-        let mut chunk = [0u8; 8192];
-        let mut deadline: Option<Instant> = None;
-        capture.writer_survived = loop {
-            let wait_ms = match deadline {
-                None => -1,
-                Some(at) => {
-                    let left = at.saturating_duration_since(Instant::now());
-                    if left.is_zero() {
-                        break true;
+            let mut capture = Capture::default();
+            let mut chunk = [0u8; 8192];
+            let mut deadline: Option<Instant> = None;
+            capture.writer_survived = loop {
+                let wait_ms = match deadline {
+                    None => -1,
+                    Some(at) => {
+                        let left = at.saturating_duration_since(Instant::now());
+                        if left.is_zero() {
+                            break true;
+                        }
+                        left.as_millis().min(i32::MAX as u128) as i32
                     }
-                    left.as_millis().min(i32::MAX as u128) as i32
-                }
-            };
-            let mut fds = [
-                libc::pollfd {
-                    fd,
-                    events: libc::POLLIN,
-                    revents: 0,
-                },
-                libc::pollfd {
-                    // Once the deadline is running the stop is permanently
-                    // readable, so watching it further would spin. poll(2)
-                    // ignores a negative descriptor.
-                    fd: if deadline.is_none() {
-                        stop.0.as_raw_fd()
-                    } else {
-                        -1
+                };
+                let mut fds = [
+                    libc::pollfd {
+                        fd,
+                        events: libc::POLLIN,
+                        revents: 0,
                     },
-                    events: libc::POLLIN,
-                    revents: 0,
-                },
-            ];
-            // SAFETY: a well-formed two-entry array of owned descriptors.
-            let ready = unsafe { libc::poll(fds.as_mut_ptr(), 2, wait_ms) };
-            if ready < 0 {
-                if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
-                    continue;
-                }
-                break false;
-            }
-            if ready == 0 {
-                break true;
-            }
-            if fds[1].revents != 0 && deadline.is_none() {
-                deadline = Some(Instant::now() + GRACE);
-            }
-            if fds[0].revents == 0 {
-                continue;
-            }
-            // Empty the pipe on one readiness rather than paying a poll per
-            // 8 KiB of a chatty task — but not past the deadline. A survivor
-            // writing continuously always leaves more to read, so without this
-            // check the inner loop never returns to the outer one and GRACE
-            // becomes unbounded for exactly the case it exists to bound.
-            let ended = loop {
-                if deadline.is_some_and(|at| at <= Instant::now()) {
+                    libc::pollfd {
+                        // Once the deadline is running the stop is permanently
+                        // readable, so watching it further would spin. poll(2)
+                        // ignores a negative descriptor.
+                        fd: if deadline.is_none() {
+                            stop.0.as_raw_fd()
+                        } else {
+                            -1
+                        },
+                        events: libc::POLLIN,
+                        revents: 0,
+                    },
+                ];
+                // SAFETY: a well-formed two-entry array of owned descriptors.
+                let ready = unsafe { libc::poll(fds.as_mut_ptr(), 2, wait_ms) };
+                if ready < 0 {
+                    if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
+                        continue;
+                    }
                     break false;
                 }
-                // SAFETY: reading into a local buffer from an owned descriptor.
-                let n = unsafe { libc::read(fd, chunk.as_mut_ptr().cast(), chunk.len()) };
-                if n == 0 {
+                if ready == 0 {
                     break true;
                 }
-                if n < 0 {
-                    match std::io::Error::last_os_error().kind() {
-                        std::io::ErrorKind::Interrupted => continue,
-                        std::io::ErrorKind::WouldBlock => break false,
-                        _ => break true,
-                    }
+                if fds[1].revents != 0 && deadline.is_none() {
+                    deadline = Some(Instant::now() + GRACE);
                 }
-                let n = n as usize;
-                capture.total += n;
-                // Read past the cap rather than stopping: leaving bytes in the
-                // pipe would block the writer, and a blocked writer never
-                // exits, which the supervisor would report as a timeout.
-                // Truncation is about what is KEPT.
-                if capture.kept.len() < cap {
-                    let room = cap - capture.kept.len();
-                    capture.kept.extend_from_slice(&chunk[..n.min(room)]);
+                if fds[0].revents == 0 {
+                    continue;
+                }
+                // Empty the pipe on one readiness rather than paying a poll per
+                // 8 KiB of a chatty task — but not past the deadline. A survivor
+                // writing continuously always leaves more to read, so without this
+                // check the inner loop never returns to the outer one and GRACE
+                // becomes unbounded for exactly the case it exists to bound.
+                let ended = loop {
+                    if deadline.is_some_and(|at| at <= Instant::now()) {
+                        break false;
+                    }
+                    // SAFETY: reading into a local buffer from an owned descriptor.
+                    let n = unsafe { libc::read(fd, chunk.as_mut_ptr().cast(), chunk.len()) };
+                    if n == 0 {
+                        break true;
+                    }
+                    if n < 0 {
+                        match std::io::Error::last_os_error().kind() {
+                            std::io::ErrorKind::Interrupted => continue,
+                            std::io::ErrorKind::WouldBlock => break false,
+                            _ => break true,
+                        }
+                    }
+                    let n = n as usize;
+                    capture.total += n;
+                    // Read past the cap rather than stopping: leaving bytes in the
+                    // pipe would block the writer, and a blocked writer never
+                    // exits, which the supervisor would report as a timeout.
+                    // Truncation is about what is KEPT.
+                    if capture.kept.len() < cap {
+                        let room = cap - capture.kept.len();
+                        capture.kept.extend_from_slice(&chunk[..n.min(room)]);
+                    }
+                };
+                if ended {
+                    break false;
                 }
             };
-            if ended {
-                break false;
-            }
-        };
-        // Closing the read end here SIGPIPEs a survivor still writing, rather
-        // than leaving it blocked forever on a pipe nobody is reading.
-        drop(source);
-        capture
-    })
+            // Closing the read end here SIGPIPEs a survivor still writing, rather
+            // than leaving it blocked forever on a pipe nobody is reading.
+            drop(source);
+            capture
+        })
 }
 
 fn join_stream(handle: Drain) -> Stream {
@@ -1288,7 +1291,6 @@ fn pipe() -> Result<(std::fs::File, std::fs::File), String> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1302,26 +1304,38 @@ mod tests {
         assert!(pid >= 0);
         if pid == 0 {
             unsafe {
-                if libc::setsid() < 0 { libc::_exit(125); }
+                if libc::setsid() < 0 {
+                    libc::_exit(125);
+                }
                 libc::_exit(7);
             }
         }
         register_group(pid);
         struct ReapOnDrop(libc::pid_t);
         impl Drop for ReapOnDrop {
-            fn drop(&mut self) { reap_registered(self.0); }
+            fn drop(&mut self) {
+                reap_registered(self.0);
+            }
         }
         let owned = ReapOnDrop(pid);
         assert!(matches!(observe(pid), Event::Exited(status) if status.code() == Some(7)));
         let alive = mix::builtins::call_builtin(
-            "process_alive", vec![mix::value::Value::Number(f64::from(pid))],
-        ).unwrap();
+            "process_alive",
+            vec![mix::value::Value::Number(f64::from(pid))],
+        )
+        .unwrap();
         let retained = observe(pid);
         // Cleanup precedes assertions so the fail-first run also retires its
         // test-owned registration even when the builtin stole the status.
         drop(owned);
-        assert!(matches!(alive, Some(mix::value::Value::Bool(true))), "liveness probe must leave the owned zombie for its supervisor");
-        assert!(matches!(retained, Event::Exited(status) if status.code() == Some(7)), "supervisor must retain the actual exit status");
+        assert!(
+            matches!(alive, Some(mix::value::Value::Bool(true))),
+            "liveness probe must leave the owned zombie for its supervisor"
+        );
+        assert!(
+            matches!(retained, Event::Exited(status) if status.code() == Some(7)),
+            "supervisor must retain the actual exit status"
+        );
     }
 
     #[test]
@@ -1332,19 +1346,26 @@ mod tests {
         let mut pipe = [0; 2];
         // SAFETY: live two-element descriptor output; only libc calls run in
         // the forked child, so no inherited Rust lock is acquired there.
-        assert_eq!(unsafe { libc::pipe2(pipe.as_mut_ptr(), libc::O_CLOEXEC) }, 0);
+        assert_eq!(
+            unsafe { libc::pipe2(pipe.as_mut_ptr(), libc::O_CLOEXEC) },
+            0
+        );
         let pid = unsafe { libc::fork() };
         assert!(pid >= 0);
         if pid == 0 {
             unsafe {
                 libc::close(pipe[1]);
-                if libc::setsid() < 0 { libc::_exit(125); }
+                if libc::setsid() < 0 {
+                    libc::_exit(125);
+                }
                 let mut byte = 0u8;
                 libc::read(pipe[0], (&mut byte as *mut u8).cast(), 1);
                 libc::_exit(7);
             }
         }
-        unsafe { libc::close(pipe[0]); }
+        unsafe {
+            libc::close(pipe[0]);
+        }
         // SAFETY: parent uniquely owns this fresh pipe descriptor.
         let release = unsafe { OwnedFd::from_raw_fd(pipe[1]) };
         register_group(pid);
@@ -1354,19 +1375,35 @@ mod tests {
             let _permit = permit;
             let report = TaskReport {
                 version: 1,
-                outcome: Outcome::Unknown { detail: "controlled pending cleanup".into() },
-                stdout: empty_stream(), stderr: empty_stream(),
+                outcome: Outcome::Unknown {
+                    detail: "controlled pending cleanup".into(),
+                },
+                stdout: empty_stream(),
+                stderr: empty_stream(),
                 result: TaskResult::NotApplicable,
                 duration_ms: ::bus::native_session::DecimalU64(0),
             };
-            publish_and_reap(report, |report| { published.send(report).unwrap(); }, || reap_registered(pid));
+            publish_and_reap(
+                report,
+                |report| {
+                    published.send(report).unwrap();
+                },
+                || reap_registered(pid),
+            );
         });
-        let report = report_rx.recv_timeout(Duration::from_secs(1)).expect("Unknown must be published before cleanup");
+        let report = report_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("Unknown must be published before cleanup");
         assert!(matches!(report.outcome, Outcome::Unknown { .. }));
         assert_eq!(unsafe { libc::kill(pid, 0) }, 0, "child is still live");
         assert!(groups().contains(&pid), "cleanup remains owned");
-        let other_slots: Vec<_> = (1..TASKS).map(|_| SupervisorPermit::reserve().unwrap_or_else(|_| panic!("remaining slot"))).collect();
-        assert_eq!(SupervisorPermit::reserve().err().unwrap().code, "RESOURCE_LIMIT");
+        let other_slots: Vec<_> = (1..TASKS)
+            .map(|_| SupervisorPermit::reserve().unwrap_or_else(|_| panic!("remaining slot")))
+            .collect();
+        assert_eq!(
+            SupervisorPermit::reserve().err().unwrap().code,
+            "RESOURCE_LIMIT"
+        );
         drop(other_slots);
         // Closing the held pipe releases the real child and permits reaping.
         drop(release);
@@ -1374,8 +1411,14 @@ mod tests {
         assert!(!groups().contains(&pid));
         assert_eq!(SUPERVISORS.load(std::sync::atomic::Ordering::Acquire), 0);
         let mut status = 0;
-        assert_eq!(unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) }, -1);
-        assert_eq!(std::io::Error::last_os_error().raw_os_error(), Some(libc::ECHILD));
+        assert_eq!(
+            unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) },
+            -1
+        );
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ECHILD)
+        );
     }
 
     #[test]
@@ -1465,7 +1508,10 @@ mod tests {
             Some("1".into()),
             None,
             std::env::temp_dir().display().to_string(),
-            vec![("PATH".into(), "/overridden".into()), ("NEW".into(), "1".into())],
+            vec![
+                ("PATH".into(), "/overridden".into()),
+                ("NEW".into(), "1".into()),
+            ],
             1000,
         )
         .unwrap();
@@ -1515,9 +1561,14 @@ mod tests {
         let (text, trimmed) = fit_encoded(&"\0".repeat(MAX_STREAM), MAX_STREAM_ENCODED);
         assert!(trimmed, "a NUL-filled capture must be trimmed");
         assert!(
-            serde_json::to_string(&text).expect("a string encodes").len() <= MAX_STREAM_ENCODED,
+            serde_json::to_string(&text)
+                .expect("a string encodes")
+                .len()
+                <= MAX_STREAM_ENCODED,
             "encoded {} exceeds the budget",
-            serde_json::to_string(&text).expect("a string encodes").len()
+            serde_json::to_string(&text)
+                .expect("a string encodes")
+                .len()
         );
         // Truncation is on a character boundary, not a byte one.
         let (text, trimmed) = fit_encoded(&"é".repeat(MAX_STREAM), 1024);
@@ -1541,10 +1592,11 @@ mod tests {
         // no checkout above the binary the resolver answers ~/.local/bin or
         // /usr/local/bin, so on a canonical fleet host it names a file that is
         // not there, and on a developer's host it names their dev build.
-        let derived =
-            crate::paths::mixos_path(crate::paths::Dir::Bin).join("mix");
+        let derived = crate::paths::mixos_path(crate::paths::Dir::Bin).join("mix");
         assert_ne!(
-            interpreter_from(Ok(std::path::PathBuf::from("/opt/example-toolkit/bin/mix (deleted)"))),
+            interpreter_from(Ok(std::path::PathBuf::from(
+                "/opt/example-toolkit/bin/mix (deleted)"
+            ))),
             derived,
             "a replaced binary must not fall back to a derived install path"
         );

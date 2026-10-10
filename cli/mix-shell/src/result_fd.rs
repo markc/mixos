@@ -163,10 +163,7 @@ impl Payload {
                     // value existed and why it is not here.
                     Ok(encoded) => {
                         map.insert("truncated".into(), Value::Bool(true));
-                        map.insert(
-                            "bytes".into(),
-                            Value::String(encoded.len().to_string()),
-                        );
+                        map.insert("bytes".into(), Value::String(encoded.len().to_string()));
                     }
                     Err(error) => {
                         map.insert("unrepresentable".into(), Value::String(error.to_string()));
@@ -241,7 +238,10 @@ mod tests {
         let encoded = Payload::Value(huge).encode();
         assert!(encoded.contains("truncated"), "{encoded}");
         assert!(encoded.contains("bytes"), "{encoded}");
-        assert!(encoded.len() < MAX_RESULT, "the report itself must stay small");
+        assert!(
+            encoded.len() < MAX_RESULT,
+            "the report itself must stay small"
+        );
     }
 
     #[test]

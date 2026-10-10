@@ -111,21 +111,28 @@ fn compile_flat_source(
         }
     };
 
-    let (chrome, chrome_warnings) = match crate::family::chrome::compile(source, &colours.value.primitives) {
-        Ok(compiled) => compiled,
-        Err(errors) => {
-            let mut diagnostics = colours.diagnostics;
-            diagnostics.extend(errors);
-            return DesignCompileResult::Fatal(DesignCompileFailure { attempted_source: identity.clone(), diagnostics });
-        }
-    };
+    let (chrome, chrome_warnings) =
+        match crate::family::chrome::compile(source, &colours.value.primitives) {
+            Ok(compiled) => compiled,
+            Err(errors) => {
+                let mut diagnostics = colours.diagnostics;
+                diagnostics.extend(errors);
+                return DesignCompileResult::Fatal(DesignCompileFailure {
+                    attempted_source: identity.clone(),
+                    diagnostics,
+                });
+            }
+        };
 
     let style = match crate::family::style::compile(source, context.scheme) {
         Ok(style) => style,
         Err(errors) => {
             let mut diagnostics = colours.diagnostics;
             diagnostics.extend(errors);
-            return DesignCompileResult::Fatal(DesignCompileFailure { attempted_source: identity.clone(), diagnostics });
+            return DesignCompileResult::Fatal(DesignCompileFailure {
+                attempted_source: identity.clone(),
+                diagnostics,
+            });
         }
     };
 
@@ -1083,9 +1090,10 @@ fn dictionary_provenance(
         let rule = origins.rule_path(&format!("design.v1.semantics.pairs.{name}"));
         let token_path = pair.recipe.as_ref().map_or_else(
             || {
-                let mut path = vec![
-                    format!("dictionary.colours.primitives.{}", pair.surface_name),
-                ];
+                let mut path = vec![format!(
+                    "dictionary.colours.primitives.{}",
+                    pair.surface_name
+                )];
                 // A `derive:` foreground names no dictionary primitive: the
                 // §3.6 elevated/popover knockout is derived from the pair's
                 // rendered surface, which the surface dependency above already
@@ -1675,7 +1683,10 @@ mod tests {
             ),
         ]);
         assert_eq!(actual, expected);
-        assert_eq!(actual.values().sum::<usize>(), 12 * Scheme::ALL.len() * Mode::ALL.len());
+        assert_eq!(
+            actual.values().sum::<usize>(),
+            12 * Scheme::ALL.len() * Mode::ALL.len()
+        );
     }
 
     #[test]
@@ -1718,8 +1729,16 @@ mod tests {
             "one elevated-text-fallback per reachable context: {:?}",
             success.diagnostics
         );
-        assert!(fallbacks.iter().all(|diagnostic| diagnostic.path.ends_with("pairs.elevated")));
-        assert!(fallbacks.iter().all(|diagnostic| !diagnostic.path.ends_with("pairs.popover")));
+        assert!(
+            fallbacks
+                .iter()
+                .all(|diagnostic| diagnostic.path.ends_with("pairs.elevated"))
+        );
+        assert!(
+            fallbacks
+                .iter()
+                .all(|diagnostic| !diagnostic.path.ends_with("pairs.popover"))
+        );
 
         let dictionary = success.candidate.dictionary();
         assert_eq!(
@@ -1765,14 +1784,17 @@ mod tests {
             .value(&crate::DesignValueId::ColourPair("elevated".into()))
             .expect("the elevated pair records provenance");
         assert!(
-            elevated.token_path.contains(
-                &"dictionary.colours.primitives.palette.background.elevated".to_owned()
-            ),
+            elevated
+                .token_path
+                .contains(&"dictionary.colours.primitives.palette.background.elevated".to_owned()),
             "{:?}",
             elevated.token_path
         );
         assert!(
-            elevated.token_path.iter().all(|token| !token.contains("derive:")),
+            elevated
+                .token_path
+                .iter()
+                .all(|token| !token.contains("derive:")),
             "the derived foreground must not be listed as a primitive: {:?}",
             elevated.token_path
         );
@@ -2809,7 +2831,10 @@ mod tests {
             assert_eq!(record.family, family);
             assert_eq!(record.weight, weight);
             assert_eq!(record.font_size, px);
-            let mono = matches!(role, crate::TypographyRole::Mono | crate::TypographyRole::Terminal);
+            let mono = matches!(
+                role,
+                crate::TypographyRole::Mono | crate::TypographyRole::Terminal
+            );
             assert_eq!(
                 record.generic,
                 if mono {

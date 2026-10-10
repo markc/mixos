@@ -21,10 +21,14 @@ async fn run(src: &str) -> Result<String, String> {
 
 #[tokio::test]
 async fn interpolation_takes_indexes_and_calls() {
-    let out = run("$a = [10, 20]\nprint(\"x${a[0]}y\")\n").await.expect("index");
+    let out = run("$a = [10, 20]\nprint(\"x${a[0]}y\")\n")
+        .await
+        .expect("index");
     assert!(out.contains("x10y"), "got: {out}");
 
-    let out = run("$m = {k: \"K\"}\nprint(\"v=${m.k}\")\n").await.expect("field");
+    let out = run("$m = {k: \"K\"}\nprint(\"v=${m.k}\")\n")
+        .await
+        .expect("field");
     assert!(out.contains("v=K"), "got: {out}");
 
     let out = run("fn f()\n  return \"F\"\nend\nprint(\"c=${f()}\")\n")
@@ -32,7 +36,9 @@ async fn interpolation_takes_indexes_and_calls() {
         .expect("call");
     assert!(out.contains("c=F"), "got: {out}");
 
-    let out = run("$m = {k: [7, 8]}\nprint(\"n=${m.k[1]}\")\n").await.expect("field+index");
+    let out = run("$m = {k: [7, 8]}\nprint(\"n=${m.k[1]}\")\n")
+        .await
+        .expect("field+index");
     assert!(out.contains("n=8"), "got: {out}");
 
     // Coalescing still works alongside the new shapes.

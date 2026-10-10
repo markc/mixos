@@ -8,9 +8,9 @@
 //! still needs to allow setup plus the real lease/retry fixture durations.
 #![cfg(target_os = "linux")]
 
-use ::bus::native_session::*;
 use ::bus::native_client::session::{ExpectedScope, GrantResult};
 use ::bus::native_client::{NodedClient, UnixConnectOutcome, VerifiedConnection};
+use ::bus::native_session::*;
 use ed25519_dalek::SigningKey;
 use session_fd::{LaunchFd, fresh_key};
 use sha2::{Digest, Sha256};
@@ -544,7 +544,9 @@ fn same_mix_child_scenarios(editor: &str) {
             .wait(initial.record.record_id, BindingState::Attached, 1)
             .await;
         // Populate the ordinary lazy Bus lane independently of attachment.
-        child.send("send \"noded\" noded.ping timeout=5; print(\"BUS_BEFORE=\" .. to_string($rc))\n");
+        child.send(
+            "send \"noded\" noded.ping timeout=5; print(\"BUS_BEFORE=\" .. to_string($rc))\n",
+        );
         child.until("BUS_BEFORE=0\r\n");
         let before = phase(&mut parent, &first, "prompt-ready").await;
         let pid = child.pid();
@@ -607,7 +609,8 @@ fn same_mix_child_scenarios(editor: &str) {
             .unwrap_err();
         assert!(stale.to_string().contains("STALE_GENERATION"));
         // Same PTY/process, no explicit bus_reconnect and no fallback lane.
-        child.send("send \"noded\" noded.ping timeout=5; print(\"BUS_AFTER=\" .. to_string($rc))\n");
+        child
+            .send("send \"noded\" noded.ping timeout=5; print(\"BUS_AFTER=\" .. to_string($rc))\n");
         child.until("BUS_AFTER=0\r\n");
         child.send("print(\"SAME_CHILD_ALIVE\")\n");
         child.until("SAME_CHILD_ALIVE\r\n");
@@ -751,7 +754,10 @@ fn bootstrap_source_boundary_and_builtin_inventory_exclude_seed_state() {
     }
     let source = include_str!("../src/main.rs");
     let main = source.split("fn main() {").nth(1).unwrap();
-    assert!(main.find("native_session::start()").unwrap() < main.find("spawn(eval_thread_main)").unwrap());
+    assert!(
+        main.find("native_session::start()").unwrap()
+            < main.find("spawn(eval_thread_main)").unwrap()
+    );
     let output = std::process::Command::new(current_mix())
         .args(["builtins", "--json"])
         .env_remove(session_fd::MARKER)
@@ -1352,14 +1358,9 @@ fn stage_d_admits_at_an_idle_prompt_echoes_and_reports_a_structured_result() {
         let mut f = stage_d_fixture("owned").await;
         let before = prompt_generation(&mut f.parent, &f.bound).await;
         let submission = execute_request(&f.bound, 1, before, "print(\"ADMITTED_OK\")");
-        let accepted = execute_call(
-            &mut f.parent,
-            &f.bound,
-            "shell.execute",
-            submission.clone(),
-        )
-        .await
-        .expect("an idle primary prompt admits");
+        let accepted = execute_call(&mut f.parent, &f.bound, "shell.execute", submission.clone())
+            .await
+            .expect("an idle primary prompt admits");
         assert_eq!(accepted["status"], "accepted");
         assert_eq!(accepted["state"], "running");
         let operation = counter(&accepted["operation_id"]);
@@ -1432,8 +1433,7 @@ fn stage_d_admits_at_an_idle_prompt_echoes_and_reports_a_structured_result() {
         .unwrap_err();
         assert!(conflict.contains("CONFLICT"), "{conflict}");
         // Exactly one execution reached the pane.
-        f.child
-            .send("print(\"SWEEP\")\nprint(\"SWEEP_DONE\")\n");
+        f.child.send("print(\"SWEEP\")\nprint(\"SWEEP_DONE\")\n");
         let sweep = f.child.until("SWEEP_DONE\r\n");
         assert_eq!(
             sweep.matches("ADMITTED_OK").count(),
@@ -1677,7 +1677,10 @@ fn stage_d_a_signal_during_an_admitted_execution_does_not_reach_the_next_one() {
             libc::kill(f.child.pid(), libc::SIGINT);
         }
         let result = result_of(&mut f.parent, &f.bound, operation).await;
-        assert_eq!(result["result"]["cancellation"]["source"], "signal", "{result}");
+        assert_eq!(
+            result["result"]["cancellation"]["source"], "signal",
+            "{result}"
+        );
         assert_eq!(result["result"]["outcome"], "cancelled", "{result}");
 
         // The very next line must run normally. Before the per-evaluation
@@ -1744,7 +1747,10 @@ fn stage_d_reports_its_own_capability_and_refuses_unauthorised_callers() {
             view["capabilities"]["evaluation_submit"],
             "idle-prompt-admission"
         );
-        assert_eq!(view["capabilities"]["evaluation_inspect"], "result-and-cancel");
+        assert_eq!(
+            view["capabilities"]["evaluation_inspect"],
+            "result-and-cancel"
+        );
         let generation = prompt_generation(&mut f.parent, &f.bound).await;
         // An unrelated Term instance holds every capability on its OWN records
         // and none on this one.
@@ -1802,7 +1808,10 @@ fn stage_d_reports_its_own_capability_and_refuses_unauthorised_callers() {
             .expect("a denial must reply, not time out")
             .unwrap_err()
             .to_string();
-            assert_eq!(error, r#"{"error_code":"REFUSED"}"#, "{verb} leaked: {error}");
+            assert_eq!(
+                error, r#"{"error_code":"REFUSED"}"#,
+                "{verb} leaked: {error}"
+            );
         }
 
         f.child.send("print(\"SWEEP_DONE\")\n");
@@ -1848,22 +1857,13 @@ fn stage_d_an_abandoned_admission_never_executes_and_its_retry_does_not_re_run()
         // Stall the editor past the admit budget, so the owner gives up while
         // the envelope is still queued — the one interleaving timing alone
         // cannot produce.
-        let mut f = stage_d_fixture_with(
-            "owned",
-            &[("MIX_ADMIT_DELAY_MS".into(), "2500".into())],
-        )
-        .await;
+        let mut f =
+            stage_d_fixture_with("owned", &[("MIX_ADMIT_DELAY_MS".into(), "2500".into())]).await;
         let generation = prompt_generation(&mut f.parent, &f.bound).await;
-        let submission =
-            execute_request(&f.bound, 1, generation, "print(\"MUST_NOT_RUN\")");
-        let error = execute_call(
-            &mut f.parent,
-            &f.bound,
-            "shell.execute",
-            submission.clone(),
-        )
-        .await
-        .unwrap_err();
+        let submission = execute_request(&f.bound, 1, generation, "print(\"MUST_NOT_RUN\")");
+        let error = execute_call(&mut f.parent, &f.bound, "shell.execute", submission.clone())
+            .await
+            .unwrap_err();
         // Never BUSY: a caller told BUSY retries, and a retry of something that
         // might have executed is how the line runs twice.
         assert!(error.contains("UNKNOWN_OUTCOME"), "{error}");
@@ -1908,11 +1908,8 @@ fn stage_d_a_keystroke_during_the_reservation_refuses_the_admission_intact() {
     let _fixture = fixture_guard();
     runtime().block_on(async {
         // Long enough that the human types while the reservation stands.
-        let mut f = stage_d_fixture_with(
-            "owned",
-            &[("MIX_RESERVE_HOLD_MS".into(), "1200".into())],
-        )
-        .await;
+        let mut f =
+            stage_d_fixture_with("owned", &[("MIX_RESERVE_HOLD_MS".into(), "1200".into())]).await;
         let generation = prompt_generation(&mut f.parent, &f.bound).await;
         let submitting = tokio::spawn({
             let name = f.bound.name.clone();
@@ -1976,8 +1973,7 @@ fn stage_d_a_keystroke_during_the_reservation_refuses_the_admission_intact() {
             .unwrap()
             .expect_err("a completed human line must refuse the admission");
         assert!(
-            error == r#"{"error_code":"BUSY"}"#
-                || error == r#"{"error_code":"STALE_GENERATION"}"#,
+            error == r#"{"error_code":"BUSY"}"# || error == r#"{"error_code":"STALE_GENERATION"}"#,
             "a completed line must refuse as BUSY (caught at the reservation) \
              or STALE_GENERATION (caught at the recheck), not {error}"
         );
@@ -2000,12 +1996,7 @@ fn stage_d_cancelling_a_managed_foreground_job_signals_its_process_group() {
             &mut f.parent,
             &f.bound,
             "shell.execute",
-            execute_request(
-                &f.bound,
-                1,
-                generation,
-                "sleep 30",
-            ),
+            execute_request(&f.bound, 1, generation, "sleep 30"),
         )
         .await
         .expect("admitted");
@@ -2050,7 +2041,10 @@ fn stage_d_a_cancelled_captured_runner_reports_cancelled_not_completed() {
     runtime().block_on(async {
         let mut f = stage_d_fixture("owned").await;
         for (id, source) in [
-            (1u64, "$r = run_argv([\"sleep\", \"20\"])\nprint(\"RAN_THROUGH\")"),
+            (
+                1u64,
+                "$r = run_argv([\"sleep\", \"20\"])\nprint(\"RAN_THROUGH\")",
+            ),
             (2, "$r = run(\"sleep 20\")\nprint(\"RAN_THROUGH\")"),
         ] {
             let generation = prompt_generation(&mut f.parent, &f.bound).await;
@@ -2077,7 +2071,10 @@ fn stage_d_a_cancelled_captured_runner_reports_cancelled_not_completed() {
                 result["result"]["cancellation"]["delivered"], "cooperative",
                 "{source}: {result}"
             );
-            assert_eq!(result["result"]["outcome"], "cancelled", "{source}: {result}");
+            assert_eq!(
+                result["result"]["outcome"], "cancelled",
+                "{source}: {result}"
+            );
         }
         teardown(f).await;
     });
@@ -2159,11 +2156,8 @@ fn stage_d_paste_and_search_drafts_are_preserved_with_exact_refusals() {
 fn stage_d_an_abandoned_reservation_returns_the_prompt_to_the_human() {
     let _fixture = fixture_guard();
     runtime().block_on(async {
-        let mut f = stage_d_fixture_with(
-            "owned",
-            &[("MIX_ADMIT_DELAY_MS".into(), "2500".into())],
-        )
-        .await;
+        let mut f =
+            stage_d_fixture_with("owned", &[("MIX_ADMIT_DELAY_MS".into(), "2500".into())]).await;
         let generation = prompt_generation(&mut f.parent, &f.bound).await;
         let _ = execute_call(
             &mut f.parent,
@@ -2192,11 +2186,8 @@ fn stage_d_an_abandoned_reservation_returns_the_prompt_to_the_human() {
 fn stage_d_a_refused_submission_may_be_retried_under_the_same_id() {
     let _fixture = fixture_guard();
     runtime().block_on(async {
-        let mut f = stage_d_fixture_with(
-            "owned",
-            &[("MIX_RESERVE_HOLD_MS".into(), "1200".into())],
-        )
-        .await;
+        let mut f =
+            stage_d_fixture_with("owned", &[("MIX_RESERVE_HOLD_MS".into(), "1200".into())]).await;
         let generation = prompt_generation(&mut f.parent, &f.bound).await;
         let body = execute_request(&f.bound, 1, generation, "print(\"RETRY_RAN\")");
         let submitting = tokio::spawn({
@@ -2227,9 +2218,7 @@ fn stage_d_a_refused_submission_may_be_retried_under_the_same_id() {
         let retry = execute_request(&f.bound, 1, generation, "print(\"RETRY_RAN\")");
         let accepted = execute_call(&mut f.parent, &f.bound, "shell.execute", retry)
             .await
-            .unwrap_or_else(|e| {
-                panic!("the refused id was burned; retry answered {e}")
-            });
+            .unwrap_or_else(|e| panic!("the refused id was burned; retry answered {e}"));
         assert_eq!(accepted["status"], "accepted", "{accepted}");
         let operation = counter(&accepted["operation_id"]);
         let result = result_of(&mut f.parent, &f.bound, operation).await;
@@ -2248,11 +2237,8 @@ fn stage_d_an_undetermined_admission_still_resolves_to_its_real_outcome() {
     let _fixture = fixture_guard();
     runtime().block_on(async {
         // Stall AFTER the claim, past budget + grace, so abandon loses.
-        let mut f = stage_d_fixture_with(
-            "owned",
-            &[("MIX_CLAIM_DELAY_MS".into(), "2200".into())],
-        )
-        .await;
+        let mut f =
+            stage_d_fixture_with("owned", &[("MIX_CLAIM_DELAY_MS".into(), "2200".into())]).await;
         let generation = prompt_generation(&mut f.parent, &f.bound).await;
         let error = execute_call(
             &mut f.parent,
@@ -2385,9 +2371,24 @@ fn p4_both_modes_report_accurately_and_the_surfaces_stay_separate() {
         assert_eq!(task["outcome"]["code"], 0, "{task}");
         // Attribution is exact BY CONSTRUCTION here — separate pipes, which is
         // the whole reason the manual points at this mode.
-        assert!(task["stdout"]["text"].as_str().unwrap().contains("ON_STDOUT"));
-        assert!(task["stderr"]["text"].as_str().unwrap().contains("ON_STDERR"));
-        assert!(!task["stdout"]["text"].as_str().unwrap().contains("ON_STDERR"));
+        assert!(
+            task["stdout"]["text"]
+                .as_str()
+                .unwrap()
+                .contains("ON_STDOUT")
+        );
+        assert!(
+            task["stderr"]["text"]
+                .as_str()
+                .unwrap()
+                .contains("ON_STDERR")
+        );
+        assert!(
+            !task["stdout"]["text"]
+                .as_str()
+                .unwrap()
+                .contains("ON_STDERR")
+        );
         assert_eq!(task["result"]["kind"], "value", "{task}");
         let data = task["result"]["data"].as_str().unwrap();
         assert!(data.contains("\"ok\"") && data.contains("42"), "{data}");
@@ -2505,15 +2506,27 @@ fn p4_a_task_inherits_only_what_it_was_given() {
             "a live shell variable reached a task: {names:?}"
         );
         let allowed: std::collections::BTreeSet<&str> = [
-            "HOME", "USER", "PATH", "LANG", "TERM", "MIXOS", "MIXOS_SRC",
-            "MIXOS_BIN", "MIXOS_ETC", "MIXOS_NODE_CONFIG",
-            "MIXOS_BROKER_ACCOUNT", "P4_OVERLAY",
+            "HOME",
+            "USER",
+            "PATH",
+            "LANG",
+            "TERM",
+            "MIXOS",
+            "MIXOS_SRC",
+            "MIXOS_BIN",
+            "MIXOS_ETC",
+            "MIXOS_NODE_CONFIG",
+            "MIXOS_BROKER_ACCOUNT",
+            "P4_OVERLAY",
         ]
         .into_iter()
         .collect();
         let extra: Vec<_> = names.difference(&allowed).collect();
         assert!(extra.is_empty(), "undeclared inheritance: {extra:?}");
-        assert!(names.contains("P4_OVERLAY") && names.contains("TERM"), "{names:?}");
+        assert!(
+            names.contains("P4_OVERLAY") && names.contains("TERM"),
+            "{names:?}"
+        );
         // PRESENCE, not just absence. A subset check passes happily when the
         // base set shrinks, so dropping PATH from BASE_NAMES would leave every
         // task unable to find a program and no fixture would notice. Only names
@@ -2557,7 +2570,10 @@ fn p4_a_task_inherits_only_what_it_was_given() {
         for expected in [0, 1, 2] {
             assert!(open.contains(&expected), "fd {expected} missing: {listed}");
         }
-        assert!(open.len() <= 4, "a descriptor leaked into the task: {listed}");
+        assert!(
+            open.len() <= 4,
+            "a descriptor leaked into the task: {listed}"
+        );
 
         // And in SOURCE mode the result channel must be PRESENT. Mix can list
         // its own descriptors, so the positive half of the contract — fd 3 is
@@ -3105,9 +3121,7 @@ fn p4_a_survivor_cannot_wedge_the_supervisor() {
         let _ = operation;
         tokio::time::sleep(Duration::from_millis(600)).await;
         let shell = f.child.pid();
-        let group_alive = |pid: i32| {
-            std::path::Path::new(&format!("/proc/{pid}")).exists()
-        };
+        let group_alive = |pid: i32| std::path::Path::new(&format!("/proc/{pid}")).exists();
         assert!(group_alive(shell), "the shell should still be up");
         f.child.exit();
         let gone = Instant::now() + Duration::from_secs(15);

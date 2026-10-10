@@ -27,7 +27,11 @@ pub enum Effect {
     /// Run discovery and report [`Engine::discovered`] with `ticket`.
     Discover { ticket: u64 },
     /// Send one call and report [`Engine::completed`] with `ticket`.
-    Call { ticket: u64, target: Selection, body: String },
+    Call {
+        ticket: u64,
+        target: Selection,
+        body: String,
+    },
     /// Restore and focus the window and report [`Engine::shown`].
     Show { ticket: u64, reply: Option<u64> },
     /// Answer the Bus command `id`.
@@ -124,19 +128,27 @@ mod by_name {
             pub mod $module {
                 use serde::{Deserialize, Deserializer, Serializer};
 
-                pub fn serialize<S: Serializer>(value: &Option<$ty>, s: S) -> Result<S::Ok, S::Error> {
+                pub fn serialize<S: Serializer>(
+                    value: &Option<$ty>,
+                    s: S,
+                ) -> Result<S::Ok, S::Error> {
                     match value {
                         Some(value) => s.serialize_some(value.name()),
                         None => s.serialize_none(),
                     }
                 }
 
-                pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<$ty>, D::Error> {
+                pub fn deserialize<'de, D: Deserializer<'de>>(
+                    d: D,
+                ) -> Result<Option<$ty>, D::Error> {
                     match Option::<String>::deserialize(d)? {
                         None => Ok(None),
-                        Some(name) => <$ty>::from_name(&name)
-                            .map(Some)
-                            .ok_or_else(|| serde::de::Error::custom(format!("unknown {} {name:?}", stringify!($module)))),
+                        Some(name) => <$ty>::from_name(&name).map(Some).ok_or_else(|| {
+                            serde::de::Error::custom(format!(
+                                "unknown {} {name:?}",
+                                stringify!($module)
+                            ))
+                        }),
                     }
                 }
             }
@@ -227,7 +239,11 @@ impl Engine {
         !self.busy()
             && self.connected
             && self.ui.dialog.is_none()
-            && self.ui.selected.as_ref().is_some_and(|t| self.snapshot.verb(t).is_some())
+            && self
+                .ui
+                .selected
+                .as_ref()
+                .is_some_and(|t| self.snapshot.verb(t).is_some())
     }
 
     fn next(&mut self) -> u64 {
@@ -258,9 +274,9 @@ impl Engine {
             match args.get(key) {
                 None => Ok(None),
                 Some(Value::Null) => Ok(Some(None)),
-                Some(Value::String(name)) => {
-                    from_name(name).map(|v| Some(Some(v))).ok_or_else(|| ("ARGUMENT", format!("unknown {key} {name:?}")))
-                }
+                Some(Value::String(name)) => from_name(name)
+                    .map(|v| Some(Some(v)))
+                    .ok_or_else(|| ("ARGUMENT", format!("unknown {key} {name:?}"))),
                 Some(_) => Err(("ARGUMENT", format!("{key} must be a name or null"))),
             }
         }
@@ -273,16 +289,26 @@ impl Engine {
             self.ui.theme_mode = mode;
         }
         let (scheme, mode) = self.effective_theme();
-        Ok(json!({"scheme":self.ui.theme_scheme.map(Scheme::name),"mode":self.ui.theme_mode.map(Mode::name),
-            "effective":{"scheme":scheme.name(),"mode":mode.name()}}))
+        Ok(
+            json!({"scheme":self.ui.theme_scheme.map(Scheme::name),"mode":self.ui.theme_mode.map(Mode::name),
+            "effective":{"scheme":scheme.name(),"mode":mode.name()}}),
+        )
     }
 
     fn error(&mut self, id: u64, code: &str, message: &str) {
-        self.effects.push(Effect::Reply { id, rc: 10, body: json!({"error_code":code,"message":message}) });
+        self.effects.push(Effect::Reply {
+            id,
+            rc: 10,
+            body: json!({"error_code":code,"message":message}),
+        });
     }
 
     fn refusal(&self) -> &'static str {
-        if self.connected { "BUSY" } else { "DISCONNECTED" }
+        if self.connected {
+            "BUSY"
+        } else {
+            "DISCONNECTED"
+        }
     }
 
     // ---- actions (commands dispatch here) --------------------------------
@@ -291,7 +317,11 @@ impl Engine {
     pub fn refresh(&mut self, reply: Option<u64>) {
         if self.busy() || !self.connected || self.quitting {
             if let Some(id) = reply {
-                let key = if self.connected { "busy" } else { "disconnected" };
+                let key = if self.connected {
+                    "busy"
+                } else {
+                    "disconnected"
+                };
                 let message = self.label(key);
                 self.error(id, self.refusal(), &message);
             } else if self.connected && !self.quitting {
@@ -323,7 +353,9 @@ impl Engine {
         } else if body.len() > model::BODY_LIMIT {
             Some(self.label("body-too-large"))
         } else {
-            model::validate_body(&body).err().map(|e| format!("{}: {e}", self.label("invalid-json")))
+            model::validate_body(&body)
+                .err()
+                .map(|e| format!("{}: {e}", self.label("invalid-json")))
         };
         if let Some(error) = error {
             match reply {
@@ -342,9 +374,18 @@ impl Engine {
             return;
         }
         let ticket = self.next();
-        self.call = Some(Call { ticket, target: target.clone(), body: body.clone(), reply });
+        self.call = Some(Call {
+            ticket,
+            target: target.clone(),
+            body: body.clone(),
+            reply,
+        });
         self.status = self.label("calling");
-        self.effects.push(Effect::Call { ticket, target, body });
+        self.effects.push(Effect::Call {
+            ticket,
+            target,
+            body,
+        });
     }
 
     /// Pretty-print the body when it is valid JSON that still fits.
@@ -412,7 +453,10 @@ impl Engine {
     /// The scheme and mode the window shows: the choice, each unchosen
     /// axis the session's.
     pub fn effective_theme(&self) -> (Scheme, Mode) {
-        (self.ui.theme_scheme.unwrap_or(self.session.0), self.ui.theme_mode.unwrap_or(self.session.1))
+        (
+            self.ui.theme_scheme.unwrap_or(self.session.0),
+            self.ui.theme_mode.unwrap_or(self.session.1),
+        )
     }
 
     /// Choose the window's scheme and mode (`None` follows the session).
@@ -425,7 +469,11 @@ impl Engine {
     /// keeping the scheme choice.
     pub fn toggle_mode(&mut self) {
         let shown = self.effective_theme().1;
-        self.set_mode(if shown == Mode::Dark { Mode::Light } else { Mode::Dark });
+        self.set_mode(if shown == Mode::Dark {
+            Mode::Light
+        } else {
+            Mode::Dark
+        });
     }
 
     /// Show `mode`: the window's own toggle sends where it is going, so a
@@ -500,7 +548,9 @@ impl Engine {
                         .iter()
                         .filter(|v| {
                             service_matches
-                                || format!("{} {} {}", v.name, v.args, v.description).to_lowercase().contains(&filter)
+                                || format!("{} {} {}", v.name, v.args, v.description)
+                                    .to_lowercase()
+                                    .contains(&filter)
                         })
                         .collect()
                 })
@@ -512,18 +562,40 @@ impl Engine {
                 .into_iter()
                 .map(|verb| Row {
                     key: format!("verb:{service}:{}", verb.name),
-                    kind: RowKind::Verb(Selection { service: service.clone(), verb: verb.name.clone() }),
+                    kind: RowKind::Verb(Selection {
+                        service: service.clone(),
+                        verb: verb.name.clone(),
+                    }),
                     expanded: false,
                     children: Vec::new(),
                 })
                 .collect();
             if let Err(error) = result {
-                children.push(Row { key: format!("error:{service}"), kind: RowKind::Error(error.clone()), expanded: false, children: Vec::new() });
+                children.push(Row {
+                    key: format!("error:{service}"),
+                    kind: RowKind::Error(error.clone()),
+                    expanded: false,
+                    children: Vec::new(),
+                });
             }
-            let holds_selection = self.ui.selected.as_ref().is_some_and(|s| &s.service == service);
-            rows.push(Row { expanded: open(&key) || holds_selection, key, kind: RowKind::Service(service.clone()), children });
+            let holds_selection = self
+                .ui
+                .selected
+                .as_ref()
+                .is_some_and(|s| &s.service == service);
+            rows.push(Row {
+                expanded: open(&key) || holds_selection,
+                key,
+                kind: RowKind::Service(service.clone()),
+                children,
+            });
         }
-        let leaf = |key: String, kind| Row { key, kind, expanded: false, children: Vec::new() };
+        let leaf = |key: String, kind| Row {
+            key,
+            kind,
+            expanded: false,
+            children: Vec::new(),
+        };
         let mesh = if let Some(error) = &self.snapshot.peer_error {
             vec![leaf("mesh:error".into(), RowKind::Error(error.clone()))]
         } else if self.snapshot.peers.is_empty() {
@@ -536,7 +608,12 @@ impl Engine {
                 .map(|peer| leaf(format!("peer:{peer}"), RowKind::Peer(peer.clone())))
                 .collect()
         };
-        rows.push(Row { key: "mesh".into(), kind: RowKind::Peers, expanded: open("mesh"), children: mesh });
+        rows.push(Row {
+            key: "mesh".into(),
+            kind: RowKind::Peers,
+            expanded: open("mesh"),
+            children: mesh,
+        });
         rows
     }
 
@@ -570,7 +647,11 @@ impl Engine {
     /// (the current selection). Never a silent fallback from one to the other.
     fn target(&self, args: &Value) -> Result<Selection, String> {
         match (args.get("service"), args.get("verb")) {
-            (None, None) => self.ui.selected.clone().ok_or_else(|| self.label("invalid-target")),
+            (None, None) => self
+                .ui
+                .selected
+                .clone()
+                .ok_or_else(|| self.label("invalid-target")),
             (Some(service), Some(verb)) => Ok(Selection {
                 service: service.as_str().ok_or("service must be a string")?.into(),
                 verb: verb.as_str().ok_or("verb must be a string")?.into(),
@@ -585,8 +666,15 @@ impl Engine {
             Ok(args) if args.is_object() => args,
             _ => return self.error(id, "ARGUMENT", "arguments must be a JSON object"),
         };
-        if let Some(window) = verb.strip_prefix("busviewer.").filter(|v| v.starts_with("ui.") || v.starts_with("window")) {
-            return self.effects.push(Effect::Drive { id, verb: window.to_owned(), args });
+        if let Some(window) = verb
+            .strip_prefix("busviewer.")
+            .filter(|v| v.starts_with("ui.") || v.starts_with("window"))
+        {
+            return self.effects.push(Effect::Drive {
+                id,
+                verb: window.to_owned(),
+                args,
+            });
         }
         if !model::VERBS.contains(&verb) {
             return self.error(id, "UNKNOWN_VERB", "unknown BusViewer verb");
@@ -598,7 +686,11 @@ impl Engine {
                 rc: 0,
                 body: json!({"schema":"busviewer.v1","version":env!("CARGO_PKG_VERSION")}),
             }),
-            "busviewer.info" => self.effects.push(Effect::Reply { id, rc: 0, body: self.info() }),
+            "busviewer.info" => self.effects.push(Effect::Reply {
+                id,
+                rc: 0,
+                body: self.info(),
+            }),
             "HELP" => self.effects.push(Effect::Describe { id, help: true }),
             "app.describe" => self.effects.push(Effect::Describe { id, help: false }),
             "busviewer.tree"
@@ -618,7 +710,10 @@ impl Engine {
             },
             "busviewer.commands" => self.effects.push(Effect::Commands { id }),
             "busviewer.execute" => match args.get("id").and_then(Value::as_str) {
-                Some(command) => self.effects.push(Effect::Execute { id, command: command.to_owned() }),
+                Some(command) => self.effects.push(Effect::Execute {
+                    id,
+                    command: command.to_owned(),
+                }),
                 None => self.error(id, "ARGUMENT", "id must be a command id string"),
             },
             "busviewer.show" if !self.quitting => self.show(Some(id)),
@@ -627,7 +722,11 @@ impl Engine {
                 Ok(target) if self.snapshot.verb(&target).is_some() => {
                     self.ui.row_key = Some(format!("verb:{}:{}", target.service, target.verb));
                     self.ui.selected = Some(target);
-                    self.effects.push(Effect::Reply { id, rc: 0, body: self.info() });
+                    self.effects.push(Effect::Reply {
+                        id,
+                        rc: 0,
+                        body: self.info(),
+                    });
                 }
                 _ => {
                     let message = self.label("invalid-target");
@@ -647,7 +746,11 @@ impl Engine {
                 self.start_call(target, body, Some(id));
             }
             "busviewer.quit" if !self.busy() && self.ui.dialog.is_none() => {
-                self.effects.push(Effect::Reply { id, rc: 0, body: json!({"quitting":true}) });
+                self.effects.push(Effect::Reply {
+                    id,
+                    rc: 0,
+                    body: json!({"quitting":true}),
+                });
                 self.quit();
             }
             "busviewer.show" | "busviewer.select" | "busviewer.refresh" | "busviewer.quit" => {
@@ -663,7 +766,10 @@ impl Engine {
     /// call holds it.
     fn edit(&mut self, verb: &str, args: &Value) -> Result<Value, (&'static str, String)> {
         let text = |key: &str| {
-            args.get(key).and_then(Value::as_str).map(str::to_owned).ok_or_else(|| ("ARGUMENT", format!("{key} must be a string")))
+            args.get(key)
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .ok_or_else(|| ("ARGUMENT", format!("{key} must be a string")))
         };
         match verb {
             "busviewer.tree" => return Ok(json!({"rows":self.rows()})),
@@ -673,11 +779,18 @@ impl Engine {
                     Some(Value::Null) => None,
                     Some(Value::String(name)) if name == "about" => Some(Dialog::About),
                     Some(Value::String(name)) if name == "shortcuts" => Some(Dialog::Shortcuts),
-                    _ => return Err(("ARGUMENT", "open must be \"about\", \"shortcuts\" or null".into())),
+                    _ => {
+                        return Err((
+                            "ARGUMENT",
+                            "open must be \"about\", \"shortcuts\" or null".into(),
+                        ));
+                    }
                 };
                 match dialog {
                     None => self.close_dialog(),
-                    Some(_) if self.ui.dialog.is_some() || self.quitting => return Err(("BUSY", self.label("busy"))),
+                    Some(_) if self.ui.dialog.is_some() || self.quitting => {
+                        return Err(("BUSY", self.label("busy")));
+                    }
                     Some(dialog) => self.open(dialog),
                 }
                 return Ok(json!({"dialog":dialog_name(self.ui.dialog)}));
@@ -715,7 +828,10 @@ impl Engine {
             }
             "busviewer.expand" => {
                 let key = text("key")?;
-                let open = args.get("open").and_then(Value::as_bool).ok_or(("ARGUMENT", "open must be a bool".to_owned()))?;
+                let open = args
+                    .get("open")
+                    .and_then(Value::as_bool)
+                    .ok_or(("ARGUMENT", "open must be a bool".to_owned()))?;
                 // Only rows the window draws a chevron on open and close.
                 if find(&self.tree(), &key).is_none_or(|row| row.children.is_empty()) {
                     return Err(("ARGUMENT", "no row with children has that key".into()));
@@ -728,7 +844,9 @@ impl Engine {
             }
             "busviewer.select_row" => {
                 let key = text("key")?;
-                let row = find(&self.tree(), &key).cloned().ok_or(("ARGUMENT", "no row has that key".to_owned()))?;
+                let row = find(&self.tree(), &key)
+                    .cloned()
+                    .ok_or(("ARGUMENT", "no row has that key".to_owned()))?;
                 self.select_row(&row);
                 Ok(json!({"row_key":self.ui.row_key,"selection":self.ui.selected}))
             }
@@ -777,7 +895,9 @@ impl Engine {
 
     /// Discovery `ticket` finished.
     pub fn discovered(&mut self, ticket: u64, snapshot: Snapshot) {
-        let Some((expected, reply)) = self.discovery else { return };
+        let Some((expected, reply)) = self.discovery else {
+            return;
+        };
         if expected != ticket {
             return;
         }
@@ -815,7 +935,11 @@ impl Engine {
         };
         if let Some(id) = reply {
             let rc = if self.snapshot.error.is_some() { 10 } else { 0 };
-            self.effects.push(Effect::Reply { id, rc, body: self.info() });
+            self.effects.push(Effect::Reply {
+                id,
+                rc,
+                body: self.info(),
+            });
         }
         self.followup();
     }
@@ -828,7 +952,9 @@ impl Engine {
         let call = self.call.take().expect("matching call");
         let (service, verb, request) = (&call.target.service, &call.target.verb, &call.body);
         self.last_reply = match result {
-            Ok(reply) => json!({"service":service,"verb":verb,"request_body":request,"rc":reply.rc,"body":reply.body}),
+            Ok(reply) => {
+                json!({"service":service,"verb":verb,"request_body":request,"rc":reply.rc,"body":reply.body})
+            }
             Err(error) => json!({"service":service,"verb":verb,"request_body":request,
                 "transport_error":error.message,"outcome_unknown":error.outcome_unknown,"retried":false}),
         };
@@ -836,14 +962,31 @@ impl Engine {
             let body = model::pretty(self.last_reply["body"].as_str().unwrap_or_default());
             format!("{service}  {verb}\n{} = {rc}\n\n{body}", self.label("rc"))
         } else {
-            let error = self.last_reply["transport_error"].as_str().unwrap_or_default();
-            format!("{service}  {verb}\n{}\n{error}", self.label("transport-error"))
+            let error = self.last_reply["transport_error"]
+                .as_str()
+                .unwrap_or_default();
+            format!(
+                "{service}  {verb}\n{}\n{error}",
+                self.label("transport-error")
+            )
         };
         self.reply = model::bounded(&rendered, &self.label("truncated"));
-        self.status = self.label(if self.connected { "connected" } else { "disconnected" });
+        self.status = self.label(if self.connected {
+            "connected"
+        } else {
+            "disconnected"
+        });
         if let Some(id) = call.reply {
-            let rc = if self.last_reply["transport_error"].is_null() { 0 } else { 10 };
-            self.effects.push(Effect::Reply { id, rc, body: self.last_reply.clone() });
+            let rc = if self.last_reply["transport_error"].is_null() {
+                0
+            } else {
+                10
+            };
+            self.effects.push(Effect::Reply {
+                id,
+                rc,
+                body: self.last_reply.clone(),
+            });
         }
         self.followup();
     }
@@ -855,7 +998,11 @@ impl Engine {
         }
         if let Some(id) = reply {
             match result {
-                Ok(value) => self.effects.push(Effect::Reply { id, rc: 0, body: value }),
+                Ok(value) => self.effects.push(Effect::Reply {
+                    id,
+                    rc: 0,
+                    body: value,
+                }),
                 Err(error) => self.error(id, "ACTIVATION", &error),
             }
         }
@@ -873,7 +1020,13 @@ impl Engine {
 
 /// The row `key` anywhere in `rows`.
 pub fn find<'a>(rows: &'a [Row], key: &str) -> Option<&'a Row> {
-    rows.iter().find_map(|r| if r.key == key { Some(r) } else { find(&r.children, key) })
+    rows.iter().find_map(|r| {
+        if r.key == key {
+            Some(r)
+        } else {
+            find(&r.children, key)
+        }
+    })
 }
 
 /// `split` to 4 places, as the Bus reports it (an f32 widened to f64
@@ -900,30 +1053,46 @@ mod tests {
     }
 
     fn target() -> Selection {
-        Selection { service: "example".into(), verb: "echo".into() }
+        Selection {
+            service: "example".into(),
+            verb: "echo".into(),
+        }
     }
 
     fn snapshot() -> Snapshot {
         let mut s = Snapshot::default();
         s.services.insert(
             "example".into(),
-            Ok(vec![Verb { name: "echo".into(), args: String::new(), description: "Echo".into(), read_only: Some(true) }]),
+            Ok(vec![Verb {
+                name: "echo".into(),
+                args: String::new(),
+                description: "Echo".into(),
+                read_only: Some(true),
+            }]),
         );
-        s.services.insert("broken".into(), Err("HELP and app.describe unavailable".into()));
+        s.services.insert(
+            "broken".into(),
+            Err("HELP and app.describe unavailable".into()),
+        );
         s
     }
 
     /// An engine past its first discovery, with `snapshot()` loaded.
     fn engine() -> Engine {
         let mut e = Engine::new(label);
-        let Some(Effect::Discover { ticket }) = e.take_effects().pop() else { panic!("initial discovery") };
+        let Some(Effect::Discover { ticket }) = e.take_effects().pop() else {
+            panic!("initial discovery")
+        };
         e.discovered(ticket, snapshot());
         e.take_effects();
         e
     }
 
     fn calls(effects: &[Effect]) -> usize {
-        effects.iter().filter(|e| matches!(e, Effect::Call { .. })).count()
+        effects
+            .iter()
+            .filter(|e| matches!(e, Effect::Call { .. }))
+            .count()
     }
 
     #[test]
@@ -938,10 +1107,18 @@ mod tests {
         e.call_selected();
         let effects = e.take_effects();
         assert_eq!(calls(&effects), 1);
-        let Effect::Call { ticket, .. } = effects[0] else { panic!() };
+        let Effect::Call { ticket, .. } = effects[0] else {
+            panic!()
+        };
         e.call_selected();
         assert_eq!(calls(&e.take_effects()), 0, "busy: no second call");
-        e.completed(ticket, Ok(Reply { rc: 0, body: "{\"ok\":true}".into() }));
+        e.completed(
+            ticket,
+            Ok(Reply {
+                rc: 0,
+                body: "{\"ok\":true}".into(),
+            }),
+        );
         assert!(e.reply.contains("rc = 0"));
         assert!(!e.busy());
     }
@@ -951,10 +1128,24 @@ mod tests {
         let mut e = engine();
         e.ui.selected = Some(target());
         e.call_selected();
-        let Some(Effect::Call { ticket, .. }) = e.take_effects().pop() else { panic!() };
-        e.completed(ticket + 99, Ok(Reply { rc: 0, body: "late".into() }));
+        let Some(Effect::Call { ticket, .. }) = e.take_effects().pop() else {
+            panic!()
+        };
+        e.completed(
+            ticket + 99,
+            Ok(Reply {
+                rc: 0,
+                body: "late".into(),
+            }),
+        );
         assert!(e.calling(), "a stale ticket is ignored");
-        e.completed(ticket, Ok(Reply { rc: 3, body: "mine".into() }));
+        e.completed(
+            ticket,
+            Ok(Reply {
+                rc: 3,
+                body: "mine".into(),
+            }),
+        );
         assert!(!e.calling());
         assert_eq!(e.last_reply["rc"], 3);
     }
@@ -964,7 +1155,9 @@ mod tests {
         let mut e = engine();
         e.ui.selected = Some(target());
         e.refresh(None);
-        let Some(Effect::Discover { ticket }) = e.take_effects().pop() else { panic!() };
+        let Some(Effect::Discover { ticket }) = e.take_effects().pop() else {
+            panic!()
+        };
         e.discovered(ticket, snapshot());
         assert_eq!(e.ui.selected, Some(target()));
         assert_eq!(e.snapshot.failures(), 1);
@@ -979,17 +1172,32 @@ mod tests {
     fn failed_discovery_keeps_the_last_snapshot_and_events_coalesce() {
         let mut e = engine();
         e.refresh(None);
-        let Some(Effect::Discover { ticket }) = e.take_effects().pop() else { panic!() };
+        let Some(Effect::Discover { ticket }) = e.take_effects().pop() else {
+            panic!()
+        };
         e.delivery(Delivery::Changed);
         e.delivery(Delivery::Changed);
         assert!(e.take_effects().is_empty(), "busy: refetch is deferred");
-        e.discovered(ticket, Snapshot { error: Some("noded down".into()), ..Snapshot::default() });
+        e.discovered(
+            ticket,
+            Snapshot {
+                error: Some("noded down".into()),
+                ..Snapshot::default()
+            },
+        );
         assert!(e.snapshot.services.contains_key("example"));
         // The coalesced refetch starts at once and owns the status line; the
         // failure stays on the snapshot for `busviewer.info`.
         assert_eq!(e.snapshot.error.as_deref(), Some("noded down"));
         let effects = e.take_effects();
-        assert_eq!(effects.iter().filter(|x| matches!(x, Effect::Discover { .. })).count(), 1, "one coalesced refetch");
+        assert_eq!(
+            effects
+                .iter()
+                .filter(|x| matches!(x, Effect::Discover { .. }))
+                .count(),
+            1,
+            "one coalesced refetch"
+        );
     }
 
     #[test]
@@ -998,10 +1206,19 @@ mod tests {
         e.ui.selected = Some(target());
         e.command(7, "busviewer.call", r#"{"service":"example"}"#);
         let effects = e.take_effects();
-        assert!(matches!(&effects[..], [Effect::Reply { id: 7, rc: 10, .. }]));
+        assert!(matches!(
+            &effects[..],
+            [Effect::Reply { id: 7, rc: 10, .. }]
+        ));
         assert_eq!(calls(&effects), 0);
-        e.command(8, "busviewer.call", r#"{"service":"example","verb":"nope"}"#);
-        assert!(matches!(&e.take_effects()[..], [Effect::Reply { id: 8, rc: 10, body }] if body["error_code"] == "ARGUMENT"));
+        e.command(
+            8,
+            "busviewer.call",
+            r#"{"service":"example","verb":"nope"}"#,
+        );
+        assert!(
+            matches!(&e.take_effects()[..], [Effect::Reply { id: 8, rc: 10, body }] if body["error_code"] == "ARGUMENT")
+        );
     }
 
     #[test]
@@ -1011,14 +1228,22 @@ mod tests {
         e.call_selected();
         e.take_effects();
         e.command(1, "busviewer.refresh", "{}");
-        assert!(matches!(&e.take_effects()[..], [Effect::Reply { body, .. }] if body["error_code"] == "BUSY"));
+        assert!(
+            matches!(&e.take_effects()[..], [Effect::Reply { body, .. }] if body["error_code"] == "BUSY")
+        );
         e.delivery(Delivery::Disconnected);
         e.command(2, "busviewer.call", "{}");
-        assert!(matches!(&e.take_effects()[..], [Effect::Reply { body, .. }] if body["error_code"] == "DISCONNECTED"));
+        assert!(
+            matches!(&e.take_effects()[..], [Effect::Reply { body, .. }] if body["error_code"] == "DISCONNECTED")
+        );
         e.command(3, "nope", "{}");
-        assert!(matches!(&e.take_effects()[..], [Effect::Reply { body, .. }] if body["error_code"] == "UNKNOWN_VERB"));
+        assert!(
+            matches!(&e.take_effects()[..], [Effect::Reply { body, .. }] if body["error_code"] == "UNKNOWN_VERB")
+        );
         e.command(4, "busviewer.info", "[]");
-        assert!(matches!(&e.take_effects()[..], [Effect::Reply { body, .. }] if body["error_code"] == "ARGUMENT"));
+        assert!(
+            matches!(&e.take_effects()[..], [Effect::Reply { body, .. }] if body["error_code"] == "ARGUMENT")
+        );
     }
 
     #[test]
@@ -1026,23 +1251,39 @@ mod tests {
         let mut e = engine();
         e.ui.selected = Some(target());
         e.call_selected();
-        let Some(Effect::Call { ticket, .. }) = e.take_effects().pop() else { panic!() };
+        let Some(Effect::Call { ticket, .. }) = e.take_effects().pop() else {
+            panic!()
+        };
         e.quit();
         assert!(!e.take_effects().contains(&Effect::Exit));
         assert_eq!(e.status, "quitting");
-        e.completed(ticket, Ok(Reply { rc: 0, body: "{}".into() }));
+        e.completed(
+            ticket,
+            Ok(Reply {
+                rc: 0,
+                body: "{}".into(),
+            }),
+        );
         assert!(e.take_effects().contains(&Effect::Exit));
     }
 
     #[test]
     fn a_lost_reply_is_uncertain_and_never_retried() {
         let mut e = engine();
-        e.command(5, "busviewer.call", r#"{"service":"example","verb":"echo","body":"{}"}"#);
-        let Some(Effect::Call { ticket, .. }) = e.take_effects().pop() else { panic!() };
+        e.command(
+            5,
+            "busviewer.call",
+            r#"{"service":"example","verb":"echo","body":"{}"}"#,
+        );
+        let Some(Effect::Call { ticket, .. }) = e.take_effects().pop() else {
+            panic!()
+        };
         e.completed(ticket, Err(CallError::from("lost response")));
         let effects = e.take_effects();
-        assert!(matches!(&effects[..], [Effect::Reply { id: 5, rc: 10, body }]
-            if body["outcome_unknown"] == true && body["retried"] == false));
+        assert!(
+            matches!(&effects[..], [Effect::Reply { id: 5, rc: 10, body }]
+            if body["outcome_unknown"] == true && body["retried"] == false)
+        );
         assert_eq!(calls(&effects), 0);
     }
 
@@ -1081,7 +1322,13 @@ mod tests {
         e.command(3, "busviewer.execute", "{}");
         let effects = e.take_effects();
         assert_eq!(effects[0], Effect::Commands { id: 1 });
-        assert_eq!(effects[1], Effect::Execute { id: 2, command: "file.refresh".into() });
+        assert_eq!(
+            effects[1],
+            Effect::Execute {
+                id: 2,
+                command: "file.refresh".into()
+            }
+        );
         assert!(matches!(&effects[2], Effect::Reply { id: 3, rc: 10, .. }));
     }
 
@@ -1090,7 +1337,10 @@ mod tests {
         let mut e = engine();
         e.set_filter("echo".into());
         let tree = e.tree();
-        assert!(tree.iter().any(|r| r.key == "service:example" && r.expanded));
+        assert!(
+            tree.iter()
+                .any(|r| r.key == "service:example" && r.expanded)
+        );
         assert!(!tree.iter().any(|r| r.key == "service:broken"));
     }
 
@@ -1105,7 +1355,10 @@ mod tests {
 
     fn code(reply: (u8, Value)) -> String {
         assert_eq!(reply.0, 10, "{}", reply.1);
-        reply.1["error_code"].as_str().unwrap_or_default().to_owned()
+        reply.1["error_code"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned()
     }
 
     #[test]
@@ -1120,10 +1373,19 @@ mod tests {
             );
         }
         let mut e = engine();
-        assert_eq!(code(ask(&mut e, "busviewer.nope", json!({}))), "UNKNOWN_VERB");
+        assert_eq!(
+            code(ask(&mut e, "busviewer.nope", json!({}))),
+            "UNKNOWN_VERB"
+        );
         e.command(2, "HELP", "{}");
         e.command(3, "app.describe", "{}");
-        assert_eq!(e.take_effects(), [Effect::Describe { id: 2, help: true }, Effect::Describe { id: 3, help: false }]);
+        assert_eq!(
+            e.take_effects(),
+            [
+                Effect::Describe { id: 2, help: true },
+                Effect::Describe { id: 3, help: false }
+            ]
+        );
     }
 
     #[test]
@@ -1133,7 +1395,14 @@ mod tests {
         e.command(2, "busviewer.window", r#"{"action":"maximize"}"#);
         e.command(3, "busviewer.window.state", "{}");
         let effects = e.take_effects();
-        assert_eq!(effects[0], Effect::Drive { id: 1, verb: "ui.click".into(), args: json!({"label":"File"}) });
+        assert_eq!(
+            effects[0],
+            Effect::Drive {
+                id: 1,
+                verb: "ui.click".into(),
+                args: json!({"label":"File"})
+            }
+        );
         assert!(matches!(&effects[1], Effect::Drive { id: 2, verb, .. } if verb == "window"));
         assert!(matches!(&effects[2], Effect::Drive { id: 3, verb, .. } if verb == "window.state"));
     }
@@ -1144,11 +1413,25 @@ mod tests {
         let (rc, body) = ask(&mut e, "busviewer.filter", json!({"text":"echo"}));
         assert_eq!(rc, 0);
         assert_eq!(e.ui.filter, "echo");
-        let keys: Vec<_> = body["rows"].as_array().unwrap().iter().map(|r| r["key"].as_str().unwrap().to_owned()).collect();
-        assert_eq!(keys, ["service:example", "verb:example:echo", "mesh", "mesh:empty"]);
-        assert_eq!(code(ask(&mut e, "busviewer.filter", json!({"text":5}))), "ARGUMENT");
+        let keys: Vec<_> = body["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["key"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(
+            keys,
+            ["service:example", "verb:example:echo", "mesh", "mesh:empty"]
+        );
+        assert_eq!(
+            code(ask(&mut e, "busviewer.filter", json!({"text":5}))),
+            "ARGUMENT"
+        );
         e.open(Dialog::About);
-        assert_eq!(code(ask(&mut e, "busviewer.filter", json!({"text":"x"}))), "BUSY");
+        assert_eq!(
+            code(ask(&mut e, "busviewer.filter", json!({"text":"x"}))),
+            "BUSY"
+        );
         assert_eq!(e.ui.filter, "echo");
     }
 
@@ -1157,12 +1440,22 @@ mod tests {
         let mut e = engine();
         let (rc, body) = ask(&mut e, "busviewer.body", json!({"text":"{\"a\":1}"}));
         assert_eq!((rc, body["body"].as_str()), (0, Some("{\"a\":1}")));
-        assert_eq!(code(ask(&mut e, "busviewer.body", json!({"text":"x".repeat(model::BODY_LIMIT + 1)}))), "ARGUMENT");
+        assert_eq!(
+            code(ask(
+                &mut e,
+                "busviewer.body",
+                json!({"text":"x".repeat(model::BODY_LIMIT + 1)})
+            )),
+            "ARGUMENT"
+        );
         assert_eq!(code(ask(&mut e, "busviewer.body", json!({}))), "ARGUMENT");
         e.ui.selected = Some(target());
         e.call_selected();
         e.take_effects();
-        assert_eq!(code(ask(&mut e, "busviewer.body", json!({"text":"{}"}))), "BUSY");
+        assert_eq!(
+            code(ask(&mut e, "busviewer.body", json!({"text":"{}"}))),
+            "BUSY"
+        );
         assert_eq!(e.ui.body, "{\"a\":1}", "frozen while calling");
     }
 
@@ -1171,19 +1464,41 @@ mod tests {
         let mut e = engine();
         let (rc, body) = ask(&mut e, "busviewer.split", json!({"value":0.5}));
         assert_eq!((rc, body["split"].as_f64()), (0, Some(0.5)));
-        assert_eq!(ask(&mut e, "busviewer.split", json!({"value":0.9})).1["split"].as_f64(), Some(0.65));
-        assert_eq!(ask(&mut e, "busviewer.split", json!({"value":0.4})).1["split"].as_f64(), Some(0.4), "rounded, not 0.4000000059604645");
+        assert_eq!(
+            ask(&mut e, "busviewer.split", json!({"value":0.9})).1["split"].as_f64(),
+            Some(0.65)
+        );
+        assert_eq!(
+            ask(&mut e, "busviewer.split", json!({"value":0.4})).1["split"].as_f64(),
+            Some(0.4),
+            "rounded, not 0.4000000059604645"
+        );
         assert!(e.split_requested, "the shell is told to resize the panel");
-        assert_eq!(code(ask(&mut e, "busviewer.split", json!({"value":1.5}))), "ARGUMENT");
-        assert_eq!(code(ask(&mut e, "busviewer.split", json!({"value":"half"}))), "ARGUMENT");
+        assert_eq!(
+            code(ask(&mut e, "busviewer.split", json!({"value":1.5}))),
+            "ARGUMENT"
+        );
+        assert_eq!(
+            code(ask(&mut e, "busviewer.split", json!({"value":"half"}))),
+            "ARGUMENT"
+        );
     }
 
     #[test]
     fn tree_lists_the_visible_rows() {
         let mut e = engine();
         let rows = ask(&mut e, "busviewer.tree", json!({})).1["rows"].clone();
-        let keys: Vec<_> = rows.as_array().unwrap().iter().map(|r| r["key"].as_str().unwrap()).collect();
-        assert_eq!(keys, ["service:broken", "service:example", "mesh"], "everything starts closed");
+        let keys: Vec<_> = rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["key"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            keys,
+            ["service:broken", "service:example", "mesh"],
+            "everything starts closed"
+        );
         assert_eq!(rows[1]["kind"], "service");
         assert_eq!(rows[1]["children"], 1);
         assert_eq!(rows[2]["label"], "peers");
@@ -1193,33 +1508,97 @@ mod tests {
     #[test]
     fn expand_opens_and_closes_rows_with_children() {
         let mut e = engine();
-        let (rc, body) = ask(&mut e, "busviewer.expand", json!({"key":"service:example","open":true}));
+        let (rc, body) = ask(
+            &mut e,
+            "busviewer.expand",
+            json!({"key":"service:example","open":true}),
+        );
         assert_eq!((rc, body["expanded"].as_bool()), (0, Some(true)));
-        let verb = body["rows"].as_array().unwrap().iter().find(|r| r["key"] == "verb:example:echo").cloned().unwrap();
-        assert_eq!((verb["kind"].as_str(), verb["depth"].as_u64()), (Some("verb"), Some(1)));
-        assert_eq!(verb["selection"], json!({"service":"example","verb":"echo"}));
-        ask(&mut e, "busviewer.expand", json!({"key":"service:example","open":true}));
-        assert!(e.ui.expanded.contains("service:example"), "opening twice leaves it open");
-        let (_, body) = ask(&mut e, "busviewer.expand", json!({"key":"service:example","open":false}));
+        let verb = body["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["key"] == "verb:example:echo")
+            .cloned()
+            .unwrap();
+        assert_eq!(
+            (verb["kind"].as_str(), verb["depth"].as_u64()),
+            (Some("verb"), Some(1))
+        );
+        assert_eq!(
+            verb["selection"],
+            json!({"service":"example","verb":"echo"})
+        );
+        ask(
+            &mut e,
+            "busviewer.expand",
+            json!({"key":"service:example","open":true}),
+        );
+        assert!(
+            e.ui.expanded.contains("service:example"),
+            "opening twice leaves it open"
+        );
+        let (_, body) = ask(
+            &mut e,
+            "busviewer.expand",
+            json!({"key":"service:example","open":false}),
+        );
         assert_eq!(body["expanded"], false);
-        assert_eq!(code(ask(&mut e, "busviewer.expand", json!({"key":"verb:example:echo","open":true}))), "ARGUMENT");
-        assert_eq!(code(ask(&mut e, "busviewer.expand", json!({"key":"nope","open":true}))), "ARGUMENT");
-        assert_eq!(code(ask(&mut e, "busviewer.expand", json!({"key":"mesh"}))), "ARGUMENT");
+        assert_eq!(
+            code(ask(
+                &mut e,
+                "busviewer.expand",
+                json!({"key":"verb:example:echo","open":true})
+            )),
+            "ARGUMENT"
+        );
+        assert_eq!(
+            code(ask(
+                &mut e,
+                "busviewer.expand",
+                json!({"key":"nope","open":true})
+            )),
+            "ARGUMENT"
+        );
+        assert_eq!(
+            code(ask(&mut e, "busviewer.expand", json!({"key":"mesh"}))),
+            "ARGUMENT"
+        );
     }
 
     #[test]
     fn select_row_takes_any_row_kind() {
         let mut e = engine();
-        let (rc, body) = ask(&mut e, "busviewer.select_row", json!({"key":"verb:example:echo"}));
+        let (rc, body) = ask(
+            &mut e,
+            "busviewer.select_row",
+            json!({"key":"verb:example:echo"}),
+        );
         assert_eq!(rc, 0);
-        assert_eq!(body["selection"], json!({"service":"example","verb":"echo"}));
+        assert_eq!(
+            body["selection"],
+            json!({"service":"example","verb":"echo"})
+        );
         assert_eq!(e.ui.selected, Some(target()));
-        let (_, body) = ask(&mut e, "busviewer.select_row", json!({"key":"error:broken"}));
-        assert_eq!((body["row_key"].as_str(), &body["selection"]), (Some("error:broken"), &Value::Null));
+        let (_, body) = ask(
+            &mut e,
+            "busviewer.select_row",
+            json!({"key":"error:broken"}),
+        );
+        assert_eq!(
+            (body["row_key"].as_str(), &body["selection"]),
+            (Some("error:broken"), &Value::Null)
+        );
         assert_eq!(e.ui.selected, None, "a non-verb row clears the verb");
-        assert_eq!(code(ask(&mut e, "busviewer.select_row", json!({"key":"nope"}))), "ARGUMENT");
+        assert_eq!(
+            code(ask(&mut e, "busviewer.select_row", json!({"key":"nope"}))),
+            "ARGUMENT"
+        );
         e.open(Dialog::Shortcuts);
-        assert_eq!(code(ask(&mut e, "busviewer.select_row", json!({"key":"mesh"}))), "BUSY");
+        assert_eq!(
+            code(ask(&mut e, "busviewer.select_row", json!({"key":"mesh"}))),
+            "BUSY"
+        );
     }
 
     #[test]
@@ -1228,27 +1607,55 @@ mod tests {
         let (rc, body) = ask(&mut e, "busviewer.dialog", json!({"open":"about"}));
         assert_eq!((rc, body["dialog"].as_str()), (0, Some("about")));
         assert_eq!(e.ui.dialog, Some(Dialog::About));
-        assert_eq!(code(ask(&mut e, "busviewer.dialog", json!({"open":"shortcuts"}))), "BUSY", "one dialog at a time");
+        assert_eq!(
+            code(ask(&mut e, "busviewer.dialog", json!({"open":"shortcuts"}))),
+            "BUSY",
+            "one dialog at a time"
+        );
         let (rc, body) = ask(&mut e, "busviewer.dialog", json!({"open":null}));
         assert_eq!((rc, &body["dialog"]), (0, &Value::Null));
-        assert_eq!(e.ui.dialog, None, "a close is never refused as an edit under the dialog");
+        assert_eq!(
+            e.ui.dialog, None,
+            "a close is never refused as an edit under the dialog"
+        );
         let (rc, body) = ask(&mut e, "busviewer.dialog", json!({"open":null}));
-        assert_eq!((rc, &body["dialog"], e.ui.dialog), (0, &Value::Null, None), "closing nothing is still closed");
-        assert_eq!(code(ask(&mut e, "busviewer.dialog", json!({"open":"settings"}))), "ARGUMENT");
+        assert_eq!(
+            (rc, &body["dialog"], e.ui.dialog),
+            (0, &Value::Null, None),
+            "closing nothing is still closed"
+        );
+        assert_eq!(
+            code(ask(&mut e, "busviewer.dialog", json!({"open":"settings"}))),
+            "ARGUMENT"
+        );
         assert_eq!(code(ask(&mut e, "busviewer.dialog", json!({}))), "ARGUMENT");
         e.quit();
         e.take_effects();
-        assert_eq!(code(ask(&mut e, "busviewer.dialog", json!({"open":"about"}))), "BUSY");
+        assert_eq!(
+            code(ask(&mut e, "busviewer.dialog", json!({"open":"about"}))),
+            "BUSY"
+        );
     }
 
     #[test]
     fn reply_reads_the_last_reply() {
         let mut e = engine();
-        assert_eq!(ask(&mut e, "busviewer.reply", json!({})).1, json!({"text":"","value":null}));
+        assert_eq!(
+            ask(&mut e, "busviewer.reply", json!({})).1,
+            json!({"text":"","value":null})
+        );
         e.ui.selected = Some(target());
         e.call_selected();
-        let Some(Effect::Call { ticket, .. }) = e.take_effects().pop() else { panic!() };
-        e.completed(ticket, Ok(Reply { rc: 0, body: "{\"ok\":true}".into() }));
+        let Some(Effect::Call { ticket, .. }) = e.take_effects().pop() else {
+            panic!()
+        };
+        e.completed(
+            ticket,
+            Ok(Reply {
+                rc: 0,
+                body: "{\"ok\":true}".into(),
+            }),
+        );
         let (rc, body) = ask(&mut e, "busviewer.reply", json!({}));
         assert_eq!(rc, 0);
         assert!(body["text"].as_str().unwrap().contains("rc = 0"));
@@ -1263,10 +1670,17 @@ mod tests {
         e.toggle("mesh");
         e.set_theme(Some(Scheme::Forest), Some(Mode::Dark));
         let saved = serde_json::to_string(&e.ui).unwrap();
-        assert!(saved.contains("\"theme_scheme\":\"forest\"") && saved.contains("\"theme_mode\":\"dark\""), "by name: {saved}");
+        assert!(
+            saved.contains("\"theme_scheme\":\"forest\"")
+                && saved.contains("\"theme_mode\":\"dark\""),
+            "by name: {saved}"
+        );
         let back: UiState = serde_json::from_str(&saved).unwrap();
         assert_eq!(back, e.ui);
-        assert_eq!((back.theme_scheme, back.theme_mode), (Some(Scheme::Forest), Some(Mode::Dark)));
+        assert_eq!(
+            (back.theme_scheme, back.theme_mode),
+            (Some(Scheme::Forest), Some(Mode::Dark))
+        );
     }
 
     #[test]
@@ -1275,16 +1689,40 @@ mod tests {
         e.session = (Scheme::Pro, Mode::Light);
         let (rc, body) = ask(&mut e, "busviewer.theme", json!({"scheme":"forest"}));
         assert_eq!(rc, 0);
-        assert_eq!(body, json!({"scheme":"forest","mode":null,"effective":{"scheme":"forest","mode":"light"}}));
+        assert_eq!(
+            body,
+            json!({"scheme":"forest","mode":null,"effective":{"scheme":"forest","mode":"light"}})
+        );
         let (_, body) = ask(&mut e, "busviewer.theme", json!({"mode":"dark"}));
         assert_eq!(body["scheme"], "forest", "an absent key leaves its axis");
         assert_eq!(body["effective"], json!({"scheme":"forest","mode":"dark"}));
         let (_, body) = ask(&mut e, "busviewer.theme", json!({"scheme":null}));
-        assert_eq!((&body["scheme"], &body["effective"]["scheme"]), (&Value::Null, &json!("pro")), "null follows the session");
-        assert_eq!(code(ask(&mut e, "busviewer.theme", json!({"scheme":"neon"}))), "ARGUMENT");
-        assert_eq!(code(ask(&mut e, "busviewer.theme", json!({"mode":"dark","scheme":"neon"}))), "ARGUMENT");
-        assert_eq!(e.ui.theme_mode, Some(Mode::Dark), "a refused call changes neither axis");
-        assert_eq!(code(ask(&mut e, "busviewer.theme", json!({"mode":3}))), "ARGUMENT");
+        assert_eq!(
+            (&body["scheme"], &body["effective"]["scheme"]),
+            (&Value::Null, &json!("pro")),
+            "null follows the session"
+        );
+        assert_eq!(
+            code(ask(&mut e, "busviewer.theme", json!({"scheme":"neon"}))),
+            "ARGUMENT"
+        );
+        assert_eq!(
+            code(ask(
+                &mut e,
+                "busviewer.theme",
+                json!({"mode":"dark","scheme":"neon"})
+            )),
+            "ARGUMENT"
+        );
+        assert_eq!(
+            e.ui.theme_mode,
+            Some(Mode::Dark),
+            "a refused call changes neither axis"
+        );
+        assert_eq!(
+            code(ask(&mut e, "busviewer.theme", json!({"mode":3}))),
+            "ARGUMENT"
+        );
         let (_, body) = ask(&mut e, "busviewer.theme", json!({}));
         assert_eq!(body["mode"], "dark", "nothing given: a read");
     }
@@ -1295,7 +1733,10 @@ mod tests {
         e.session = (Scheme::Pro, Mode::Light);
         e.set_theme(Some(Scheme::Studio), None);
         e.toggle_mode();
-        assert_eq!((e.ui.theme_scheme, e.ui.theme_mode), (Some(Scheme::Studio), Some(Mode::Dark)));
+        assert_eq!(
+            (e.ui.theme_scheme, e.ui.theme_mode),
+            (Some(Scheme::Studio), Some(Mode::Dark))
+        );
         e.toggle_mode();
         assert_eq!(e.effective_theme(), (Scheme::Studio, Mode::Light));
     }
@@ -1314,7 +1755,11 @@ mod tests {
         // State saved by the build before this one, with its old toggle.
         fields.insert("invert_mode".into(), json!(true));
         let loaded: UiState = serde_json::from_value(old).unwrap();
-        assert_eq!((loaded.theme_scheme, loaded.theme_mode), (None, None), "older saved state loads, following the session");
+        assert_eq!(
+            (loaded.theme_scheme, loaded.theme_mode),
+            (None, None),
+            "older saved state loads, following the session"
+        );
         e.open(Dialog::About);
         e.filter_focused();
         e.focus_filter();

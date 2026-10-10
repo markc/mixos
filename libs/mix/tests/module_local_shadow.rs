@@ -36,7 +36,9 @@ async fn module_fn_call_survives_a_same_named_local_variable() {
     writeln!(f, "end").unwrap();
     drop(f);
     let src = format!("$l = require(\"{}\")\nprint($l.g())\n", lib.display());
-    let out = run(&src).await.expect("module fn call must survive the local");
+    let out = run(&src)
+        .await
+        .expect("module fn call must survive the local");
     assert!(out.contains('1'), "got: {out}");
     std::fs::remove_dir_all(&dir).ok();
 }

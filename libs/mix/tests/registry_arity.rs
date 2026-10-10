@@ -46,9 +46,9 @@ async fn every_finite_contract_rejects_surplus_and_deficit() {
         }
         if let Some(set) = info.contract.exact_arities {
             let max = *set.iter().max().expect("non-empty exact set");
-            let code = arity_code(name, max + 1)
-                .await
-                .unwrap_or_else(|e| panic!("{name}({}) did not produce a catchable error: {e}", max + 1));
+            let code = arity_code(name, max + 1).await.unwrap_or_else(|e| {
+                panic!("{name}({}) did not produce a catchable error: {e}", max + 1)
+            });
             assert_eq!(
                 code.trim(),
                 "ARITY_MISMATCH",
@@ -61,18 +61,18 @@ async fn every_finite_contract_rejects_surplus_and_deficit() {
         let Some(max) = info.contract.arity_max() else {
             continue; // variadic — no upper bound to violate
         };
-        let code = arity_code(name, max + 1)
-            .await
-            .unwrap_or_else(|e| panic!("{name}({}) did not produce a catchable error: {e}", max + 1));
+        let code = arity_code(name, max + 1).await.unwrap_or_else(|e| {
+            panic!("{name}({}) did not produce a catchable error: {e}", max + 1)
+        });
         assert_eq!(
             code.trim(),
             "ARITY_MISMATCH",
             "{name}: {max}+1 args must be ARITY_MISMATCH, got: {code:?}"
         );
         if min >= 1 {
-            let code = arity_code(name, min - 1)
-                .await
-                .unwrap_or_else(|e| panic!("{name}({}) did not produce a catchable error: {e}", min - 1));
+            let code = arity_code(name, min - 1).await.unwrap_or_else(|e| {
+                panic!("{name}({}) did not produce a catchable error: {e}", min - 1)
+            });
             assert_eq!(
                 code.trim(),
                 "ARITY_MISMATCH",
@@ -84,7 +84,10 @@ async fn every_finite_contract_rejects_surplus_and_deficit() {
     }
     // The registry is large and only grows — pin the floor so a broken
     // iterator (empty table) can never make this test vacuously green.
-    assert!(checked > 200, "registry iteration produced only {checked} checks");
+    assert!(
+        checked > 200,
+        "registry iteration produced only {checked} checks"
+    );
 }
 
 #[tokio::test]

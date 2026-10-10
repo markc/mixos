@@ -50,13 +50,17 @@ async fn bare_form_parses_to_the_same_ast_as_for_each() {
 
     let bare2 = parse("for $i, $x in $xs\n  print($x)\nend\n").expect("bare indexed parses");
     let each2 = parse("for each $i, $x in $xs\n  print($x)\nend\n").expect("each indexed parses");
-    assert_eq!(format!("{:?}", bare2[0].kind), format!("{:?}", each2[0].kind));
+    assert_eq!(
+        format!("{:?}", bare2[0].kind),
+        format!("{:?}", each2[0].kind)
+    );
 }
 
 #[tokio::test]
 async fn bare_form_iterates_map_keys_like_each() {
     // One-variable map iteration yields keys (unchanged semantics).
-    let out = output("$m = {a: 1, b: 2}\nfor $k in $m\n  print($k .. \"=\" .. $m[$k])\nend\n").await;
+    let out =
+        output("$m = {a: 1, b: 2}\nfor $k in $m\n  print($k .. \"=\" .. $m[$k])\nend\n").await;
     assert_eq!(out, "a=1\nb=2\n");
 }
 
@@ -71,7 +75,8 @@ async fn break_and_continue_work_in_bare_form() {
 
 #[tokio::test]
 async fn nested_bare_loops() {
-    let out = output("for $a in [1, 2]\n  for $b in [\"x\"]\n    print($a .. $b)\n  end\nend\n").await;
+    let out =
+        output("for $a in [1, 2]\n  for $b in [\"x\"]\n    print($a .. $b)\n  end\nend\n").await;
     assert_eq!(out, "1x\n2x\n");
 }
 

@@ -67,11 +67,13 @@ async fn scalar_addition_and_the_string_fallback_are_unchanged() {
     // overrode the 0.90.0 carve-out deliberately.
     let out = run("print(1 + 2)\nprint(\"a\" + \"b\")\nprint(\"3\" + 4)\n\
                    print(true + 1)\n")
-        .await
-        .unwrap();
+    .await
+    .unwrap();
     assert_eq!(out, "3\nab\n7\n2\n");
 
-    let err = run("print(nil + 1)\n").await.expect_err("nil + 1 must raise (C1)");
+    let err = run("print(nil + 1)\n")
+        .await
+        .expect_err("nil + 1 must raise (C1)");
     assert!(err.contains("nil is not a number"), "{err}");
     // The ?? guard the error teaches (bound-nil, the absent-value shape).
     let out = run("$n = nil\nprint(($n ?? 0) + 1)\n").await.unwrap();
@@ -82,7 +84,9 @@ async fn scalar_addition_and_the_string_fallback_are_unchanged() {
 async fn literal_range_violations_are_lexer_errors() {
     // C5: a literal that silently rounds or overflows is refused at the
     // lexer — the fabricated number never flows anywhere.
-    let err = run("print(9007199254740993)\n").await.expect_err("2^53+1 must refuse");
+    let err = run("print(9007199254740993)\n")
+        .await
+        .expect_err("2^53+1 must refuse");
     assert!(err.contains("exceeds the exact range"), "{err}");
     let err = run("print(1e999)\n").await.expect_err("1e999 must refuse");
     assert!(err.contains("out of range"), "{err}");
@@ -95,10 +99,12 @@ async fn literal_range_violations_are_lexer_errors() {
 async fn indexing_a_collection_then_adding_still_works() {
     // The overwhelmingly common fleet shape (`$TALLY["pass"] + 1`) —
     // the operand is the ELEMENT, a scalar, not the container.
-    let out = run("$t = {pass: 1}\n$t[\"pass\"] = $t[\"pass\"] + 1\nprint($t[\"pass\"])\n\
-                   $l = [10, 20]\nprint($l[0] + $l[1])\n")
-        .await
-        .unwrap();
+    let out = run(
+        "$t = {pass: 1}\n$t[\"pass\"] = $t[\"pass\"] + 1\nprint($t[\"pass\"])\n\
+                   $l = [10, 20]\nprint($l[0] + $l[1])\n",
+    )
+    .await
+    .unwrap();
     assert_eq!(out, "2\n30\n");
 }
 
@@ -112,18 +118,20 @@ async fn a_top_level_for_in_loop_runs_its_body_at_all() {
     // accumulator untouched, nothing raised. Pre-existing (the sibling
     // take_mixed path always had the fall-through; this one never got
     // it), but it made both halves of this file's contract false.
-    let err = run("$l = [1]\n$sum = 0\nfor $i in [1, 2, 3]\n  $sum = $sum + $l\nend\nprint($sum)\n")
-        .await
-        .expect_err("a container operand must raise even inside the loop fast path");
+    let err =
+        run("$l = [1]\n$sum = 0\nfor $i in [1, 2, 3]\n  $sum = $sum + $l\nend\nprint($sum)\n")
+            .await
+            .expect_err("a container operand must raise even inside the loop fast path");
     assert!(err.contains("not defined for"), "{err}");
 
     // The LEGAL scalar fallback was skipped identically, which is how the
     // bug stayed invisible: the answer looked like "the loop did nothing"
     // rather than "the loop is broken". The same body in a `while` loop
     // was always correct, and now the two agree.
-    let out = run("$s = \"x\"\n$sum = 0\nfor $i in [1, 2, 3]\n  $sum = $sum + $s\nend\nprint($sum)\n")
-        .await
-        .unwrap();
+    let out =
+        run("$s = \"x\"\n$sum = 0\nfor $i in [1, 2, 3]\n  $sum = $sum + $s\nend\nprint($sum)\n")
+            .await
+            .unwrap();
     assert_eq!(out, "0xxx\n");
 
     // ...and the numeric fast path it protects is untouched.

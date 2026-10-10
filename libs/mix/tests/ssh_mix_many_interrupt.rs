@@ -71,7 +71,10 @@ fn a_set_interrupt_flag_spawns_no_ssh_and_marks_every_host_interrupted() {
             matches!(res.get("interrupted"), Some(Value::Bool(true))),
             "{host}: {res:?}"
         );
-        assert!(matches!(res.get("ok"), Some(Value::Bool(false))), "{host}: {res:?}");
+        assert!(
+            matches!(res.get("ok"), Some(Value::Bool(false))),
+            "{host}: {res:?}"
+        );
     }
     assert!(
         !calls.exists(),

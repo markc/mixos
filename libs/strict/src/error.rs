@@ -83,13 +83,20 @@ impl Error {
     }
 
     pub(crate) fn duplicate_key(line: usize, column: usize, key: &str) -> Self {
-        Self::new(ErrorKind::DuplicateKey, format!("duplicate map key `{key}`"))
-            .at(line, column)
-            .with_hint("data files have one source of truth per key; remove or rename one")
+        Self::new(
+            ErrorKind::DuplicateKey,
+            format!("duplicate map key `{key}`"),
+        )
+        .at(line, column)
+        .with_hint("data files have one source of truth per key; remove or rename one")
     }
 
     pub(crate) fn depth(line: usize, column: usize, limit: usize) -> Self {
-        Self::new(ErrorKind::Depth, format!("nesting too deep (limit {limit})")).at(line, column)
+        Self::new(
+            ErrorKind::Depth,
+            format!("nesting too deep (limit {limit})"),
+        )
+        .at(line, column)
     }
 
     pub(crate) fn io(message: impl Into<String>) -> Self {

@@ -599,9 +599,7 @@ impl Router {
             if let Err(error) = handle.await
                 && error.is_panic()
             {
-                tracing::error!(
-                    "editd: buffer {bid} actor panicked; its unsaved text is lost"
-                );
+                tracing::error!("editd: buffer {bid} actor panicked; its unsaved text is lost");
             }
             let _ = internal.send(ToRouter::Closed { bid });
         });

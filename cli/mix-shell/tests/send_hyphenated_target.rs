@@ -400,10 +400,7 @@ fn a_leading_digit_is_still_arithmetic() {
         String::from_utf8_lossy(&out.stderr)
     );
     // It resolved to the NUMBER -1, not the string "1-2".
-    let probe = mix(&[
-        "-c",
-        "send 1-2 ping timeout=1\nprint(to_string($result))",
-    ]);
+    let probe = mix(&["-c", "send 1-2 ping timeout=1\nprint(to_string($result))"]);
     let got = String::from_utf8_lossy(&probe.stdout).into_owned();
     assert!(
         !got.contains("1-2"),

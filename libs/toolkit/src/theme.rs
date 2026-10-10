@@ -41,7 +41,10 @@ pub enum Error {
     /// The design did not compile for the requested context.
     Compile(Vec<DesignDiagnostic>),
     /// The theme file could not be read.
-    Read { path: PathBuf, error: std::io::Error },
+    Read {
+        path: PathBuf,
+        error: std::io::Error,
+    },
 }
 
 impl fmt::Display for Error {
@@ -52,7 +55,11 @@ impl fmt::Display for Error {
             Self::Compile(diagnostics) => {
                 write!(f, "theme did not compile:")?;
                 for diagnostic in diagnostics {
-                    write!(f, " [{} {}: {}]", diagnostic.code, diagnostic.path, diagnostic.message)?;
+                    write!(
+                        f,
+                        " [{} {}: {}]",
+                        diagnostic.code, diagnostic.path, diagnostic.message
+                    )?;
                 }
                 Ok(())
             }
@@ -102,18 +109,19 @@ impl Theme {
     /// holding nothing but `scheme:` and `mode:`, resolved against the
     /// embedded design. `identity` names the source in diagnostics.
     pub fn from_source(identity: &str, source: &str) -> Result<Self, Error> {
-        let (document, selection) = match design::parse_design_source(SourceIdentity::new(identity), source) {
-            Ok(document) => {
-                let selection = document.legacy.clone();
-                (document, selection)
-            }
-            Err(error) => {
-                let Some(selection) = selection_only(source) else {
-                    return Err(Error::Source(error));
-                };
-                (embedded_document(), selection)
-            }
-        };
+        let (document, selection) =
+            match design::parse_design_source(SourceIdentity::new(identity), source) {
+                Ok(document) => {
+                    let selection = document.legacy.clone();
+                    (document, selection)
+                }
+                Err(error) => {
+                    let Some(selection) = selection_only(source) else {
+                        return Err(Error::Source(error));
+                    };
+                    (embedded_document(), selection)
+                }
+            };
         let context = DesignContext {
             scheme: axis(selection.scheme.as_deref(), "scheme", Scheme::from_name)?,
             mode: axis(selection.mode.as_deref(), "mode", Mode::from_name)?,
@@ -129,7 +137,12 @@ impl Theme {
         let source = match std::fs::read_to_string(path) {
             Ok(source) => source,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(Error::Read { path: path.to_path_buf(), error }),
+            Err(error) => {
+                return Err(Error::Read {
+                    path: path.to_path_buf(),
+                    error,
+                });
+            }
         };
         Self::from_source(&path.display().to_string(), &source).map(Some)
     }
@@ -153,7 +166,11 @@ impl Theme {
                     Some(style) => style,
                     None => Self::for_context(context.clone()).style,
                 };
-                Ok(Self { context, design: success.candidate, style })
+                Ok(Self {
+                    context,
+                    design: success.candidate,
+                    style,
+                })
             }
             DesignCompileResult::Fatal(failure) => Err(Error::Compile(failure.diagnostics)),
         }
@@ -207,8 +224,11 @@ impl Theme {
 }
 
 fn embedded_document() -> DesignSourceDocument {
-    design::parse_design_source(SourceIdentity::new("embedded"), design::EMBEDDED_DEFAULT_SOURCE)
-        .expect("the embedded default design parses")
+    design::parse_design_source(
+        SourceIdentity::new("embedded"),
+        design::EMBEDDED_DEFAULT_SOURCE,
+    )
+    .expect("the embedded default design parses")
 }
 
 /// The selection in a file that holds only `scheme:` and `mode:`.
@@ -224,10 +244,17 @@ fn selection_only(source: &str) -> Option<LegacyV0Source> {
     selection.is_selection_only().then_some(selection)
 }
 
-fn axis<T: Default>(name: Option<&str>, field: &'static str, from_name: fn(&str) -> Option<T>) -> Result<T, Error> {
+fn axis<T: Default>(
+    name: Option<&str>,
+    field: &'static str,
+    from_name: fn(&str) -> Option<T>,
+) -> Result<T, Error> {
     match name {
         None => Ok(T::default()),
-        Some(name) => from_name(name).ok_or_else(|| Error::Selection { field, value: name.to_owned() }),
+        Some(name) => from_name(name).ok_or_else(|| Error::Selection {
+            field,
+            value: name.to_owned(),
+        }),
     }
 }
 
@@ -249,7 +276,11 @@ mod tests {
     fn every_shipped_context_compiles() {
         for scheme in Scheme::ALL {
             for mode in Mode::ALL {
-                let theme = Theme::for_context(DesignContext { scheme, mode, ..DesignContext::default() });
+                let theme = Theme::for_context(DesignContext {
+                    scheme,
+                    mode,
+                    ..DesignContext::default()
+                });
                 assert_eq!((theme.scheme(), theme.mode()), (scheme, mode));
             }
         }
@@ -263,11 +294,21 @@ mod tests {
             contrast: Contrast::High,
             ..DesignContext::default()
         });
-        assert_eq!(session.with_choice(None, None), session, "no choice: the session theme itself, unchanged");
+        assert_eq!(
+            session.with_choice(None, None),
+            session,
+            "no choice: the session theme itself, unchanged"
+        );
         let forest = session.with_choice(Some(Scheme::Forest), None);
-        assert_eq!((forest.scheme(), forest.mode(), forest.contrast()), (Scheme::Forest, Mode::Dark, Contrast::High));
+        assert_eq!(
+            (forest.scheme(), forest.mode(), forest.contrast()),
+            (Scheme::Forest, Mode::Dark, Contrast::High)
+        );
         let light = session.with_choice(None, Some(Mode::Light));
-        assert_eq!((light.scheme(), light.mode(), light.contrast()), (Scheme::Pro, Mode::Light, Contrast::High));
+        assert_eq!(
+            (light.scheme(), light.mode(), light.contrast()),
+            (Scheme::Pro, Mode::Light, Contrast::High)
+        );
     }
 
     #[test]
@@ -275,14 +316,21 @@ mod tests {
         let theme = Theme::from_source("test", "scheme: \"forest\"\nmode: \"dark\"\n").unwrap();
         assert_eq!((theme.scheme(), theme.mode()), (Scheme::Forest, Mode::Dark));
         let partial = Theme::from_source("test", "mode: \"light\"\n").unwrap();
-        assert_eq!((partial.scheme(), partial.mode()), (Scheme::Studio, Mode::Light), "an absent axis takes the default");
+        assert_eq!(
+            (partial.scheme(), partial.mode()),
+            (Scheme::Studio, Mode::Light),
+            "an absent axis takes the default"
+        );
     }
 
     #[test]
     fn a_design_without_a_style_family_takes_the_embedded_style() {
         let mut document = embedded_document();
         document.v1.families.style = None;
-        let context = DesignContext { scheme: Scheme::Classic, ..DesignContext::default() };
+        let context = DesignContext {
+            scheme: Scheme::Classic,
+            ..DesignContext::default()
+        };
         let theme = Theme::compile(&document, context.clone()).unwrap();
         assert_eq!(theme.dictionary().style, None);
         assert_eq!(theme.style(), Theme::for_context(context).style());
@@ -295,28 +343,48 @@ mod tests {
     fn a_custom_design_without_a_style_family_derives_its_chrome_geometry() {
         let mut document = embedded_document();
         document.v1.families.style = None;
-        document.v1.primitives.scales.get_mut("spacing").unwrap()[9] = design::MetricSource::px(48.0);
-        document.v1.primitives.metrics.insert("radius".into(), design::MetricSource::px(10.0));
+        document.v1.primitives.scales.get_mut("spacing").unwrap()[9] =
+            design::MetricSource::px(48.0);
+        document
+            .v1
+            .primitives
+            .metrics
+            .insert("radius".into(), design::MetricSource::px(10.0));
         let theme = Theme::compile(&document, DesignContext::revision_one()).unwrap();
         let m = crate::chrome::Chrome::for_theme(&theme).metrics;
         // One 48 pt control, and a 3 pt item gap above and below it.
-        assert_eq!((m.menu_row_height, m.menu_title_height, m.title_bar_height), (48.0, 48.0, 54.0));
+        assert_eq!(
+            (m.menu_row_height, m.menu_title_height, m.title_bar_height),
+            (48.0, 48.0, 54.0)
+        );
         assert_eq!((m.menu_row_padding.x, m.menu_min_width), (32.0, 384.0));
-        assert_eq!((m.radius_sm, m.radius, m.radius_lg, m.menu_highlight_radius), (10, 7, 20, 10));
+        assert_eq!(
+            (m.radius_sm, m.radius, m.radius_lg, m.menu_highlight_radius),
+            (10, 7, 20, 10)
+        );
         // Explicit style tokens stay authoritative.
         let mut styled = embedded_document();
         styled.v1.primitives.scales.get_mut("spacing").unwrap()[9] = design::MetricSource::px(48.0);
         let theme = Theme::compile(&styled, DesignContext::revision_one()).unwrap();
-        assert_eq!(crate::chrome::Chrome::for_theme(&theme).metrics.title_bar_height, 30.0);
+        assert_eq!(
+            crate::chrome::Chrome::for_theme(&theme)
+                .metrics
+                .title_bar_height,
+            30.0
+        );
     }
 
     #[test]
     fn bad_sources_are_reported() {
         let unknown = Theme::from_source("test", "scheme: \"neon\"\n").unwrap_err();
         assert_eq!(unknown.to_string(), "unknown scheme \"neon\"");
-        let extra = Theme::from_source("test", "scheme: \"ocean\"\nsurface: \"#ffffff\"\n").unwrap_err();
+        let extra =
+            Theme::from_source("test", "scheme: \"ocean\"\nsurface: \"#ffffff\"\n").unwrap_err();
         assert!(matches!(extra, Error::Source(_)), "{extra}");
-        assert!(matches!(Theme::from_source("test", "{{{").unwrap_err(), Error::Source(_)));
+        assert!(matches!(
+            Theme::from_source("test", "{{{").unwrap_err(),
+            Error::Source(_)
+        ));
     }
 
     #[test]
@@ -327,6 +395,9 @@ mod tests {
         std::fs::write(&path, "scheme: \"stone\"\nmode: \"light\"\n").unwrap();
         assert_eq!(Theme::read(&path).unwrap().unwrap().scheme(), Scheme::Stone);
         std::fs::write(&path, "mode: \"dusk\"\n").unwrap();
-        assert!(matches!(Theme::read(&path).unwrap_err(), Error::Selection { field: "mode", .. }));
+        assert!(matches!(
+            Theme::read(&path).unwrap_err(),
+            Error::Selection { field: "mode", .. }
+        ));
     }
 }

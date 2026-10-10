@@ -23,13 +23,13 @@
 //! 74 pt value field at the right, the slider below, and 4 pt after.
 
 use crate::chrome::{self, Chrome};
-use design::family::style::{Knob, SliderFill};
 use crate::field::{self, ValueField};
-use egui::emath::GuiRounding;
+use design::family::style::{Knob, SliderFill};
 use egui::accesskit::{Action, ActionData};
+use egui::emath::GuiRounding;
 use egui::{
-    Color32, Event, EventFilter, Key, Mesh, Pos2, Rect, Response, Sense, Shape, Stroke, TextStyle, Ui, Vec2, Widget,
-    WidgetInfo, pos2, vec2,
+    Color32, Event, EventFilter, Key, Mesh, Pos2, Rect, Response, Sense, Shape, Stroke, TextStyle,
+    Ui, Vec2, Widget, WidgetInfo, pos2, vec2,
 };
 use std::ops::RangeInclusive;
 
@@ -85,7 +85,15 @@ pub struct Slider<'a> {
 
 impl<'a> Slider<'a> {
     pub fn new(value: &'a mut f64, range: RangeInclusive<f64>) -> Self {
-        Self { value, range, gradient: None, reset: None, wheel_step: None, step: None, label: String::new() }
+        Self {
+            value,
+            range,
+            gradient: None,
+            reset: None,
+            wheel_step: None,
+            step: None,
+            label: String::new(),
+        }
     }
 
     /// One arrow key or AccessKit Increment moves the value by `step`
@@ -129,7 +137,11 @@ pub fn value_at(track: Rect, x: f32, range: &RangeInclusive<f64>) -> f64 {
 /// The value's position along `track`.
 pub fn x_of(track: Rect, value: f64, range: &RangeInclusive<f64>) -> f32 {
     let span = range.end() - range.start();
-    let t = if span == 0.0 { 0.0 } else { ((value - range.start()) / span).clamp(0.0, 1.0) };
+    let t = if span == 0.0 {
+        0.0
+    } else {
+        ((value - range.start()) / span).clamp(0.0, 1.0)
+    };
     egui::lerp(track.x_range(), t as f32)
 }
 
@@ -180,7 +192,11 @@ impl Gesture {
     pub fn feed(&mut self, time: f64, input: Input, out: &mut Vec<Effect>) {
         match input {
             Input::Press(at) => {
-                self.pending = Some(Pending { at, time, moved: false });
+                self.pending = Some(Pending {
+                    at,
+                    time,
+                    moved: false,
+                });
                 out.push(Effect::Follow(at.x));
             }
             Input::Move(to) => {
@@ -193,16 +209,22 @@ impl Gesture {
                 }
             }
             Input::Release(at) => {
-                let Some(pending) = self.pending.take() else { return };
+                let Some(pending) = self.pending.take() else {
+                    return;
+                };
                 out.push(Effect::Follow(at.x));
-                let click =
-                    !pending.moved && pending.at.distance(at) <= DOUBLE_CLICK_DISTANCE && time - pending.time <= LONG_PRESS;
+                let click = !pending.moved
+                    && pending.at.distance(at) <= DOUBLE_CLICK_DISTANCE
+                    && time - pending.time <= LONG_PRESS;
                 if !click {
                     self.last_click = None;
                     return;
                 }
                 match self.last_click {
-                    Some((last, from)) if time - last <= DOUBLE_CLICK && from.distance(at) <= DOUBLE_CLICK_DISTANCE => {
+                    Some((last, from))
+                        if time - last <= DOUBLE_CLICK
+                            && from.distance(at) <= DOUBLE_CLICK_DISTANCE =>
+                    {
                         self.last_click = None;
                         out.push(Effect::Reset);
                     }
@@ -216,9 +238,18 @@ impl Gesture {
 
 impl Widget for Slider<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
-        let Self { value, range, gradient, reset, wheel_step, step, label } = self;
+        let Self {
+            value,
+            range,
+            gradient,
+            reset,
+            wheel_step,
+            step,
+            label,
+        } = self;
         let width = ui.available_width().max(MIN_WIDTH);
-        let (rect, mut response) = ui.allocate_exact_size(vec2(width, HEIGHT), Sense::click_and_drag());
+        let (rect, mut response) =
+            ui.allocate_exact_size(vec2(width, HEIGHT), Sense::click_and_drag());
         let track_x = rect.x_range().shrink(INSET);
         let before = *value;
         let clamp = |v: f64| v.clamp(*range.start(), *range.end());
@@ -229,7 +260,10 @@ impl Widget for Slider<'_> {
         let enabled = ui.is_enabled();
         let focused = enabled && response.has_focus();
         if focused {
-            let lock = EventFilter { horizontal_arrows: true, ..EventFilter::default() };
+            let lock = EventFilter {
+                horizontal_arrows: true,
+                ..EventFilter::default()
+            };
             ui.memory_mut(|m| m.set_focus_lock_filter(id, lock));
         }
         // Every input this frame, in the order it arrived, through one
@@ -250,11 +284,15 @@ impl Widget for Slider<'_> {
         // click target, not a control drawn over it: being the drag
         // candidate under a button is not enough.
         let visible = rect.intersect(ui.clip_rect());
-        let click_target = ui.ctx().viewport(|v| v.hits.click.is_some_and(|w| w.id == id));
+        let click_target = ui
+            .ctx()
+            .viewport(|v| v.hits.click.is_some_and(|w| w.id == id));
         let owned = click_target || response.clicked();
         let layer = ui.layer_id();
         let ctx = ui.ctx().clone();
-        let over_us = |pos: Pos2| owned && visible.contains(pos) && ctx.layer_id_at(pos).is_none_or(|l| l == layer);
+        let over_us = |pos: Pos2| {
+            owned && visible.contains(pos) && ctx.layer_id_at(pos).is_none_or(|l| l == layer)
+        };
         let mut stepped_wheel = false;
         let (time, events, shift) = ui.input(|i| (i.time, i.events.clone(), i.modifiers.shift));
         let mut effects = Vec::new();
@@ -262,41 +300,66 @@ impl Widget for Slider<'_> {
             if !enabled {
                 break;
             }
-            let adjust = |amount: f64, effects: &mut Vec<Effect>, gesture: &mut Gesture, value: &mut f64| {
-                gesture.feed(time, Input::Interrupt, effects);
-                *value = clamp(*value + amount);
-            };
+            let adjust =
+                |amount: f64, effects: &mut Vec<Effect>, gesture: &mut Gesture, value: &mut f64| {
+                    gesture.feed(time, Input::Interrupt, effects);
+                    *value = clamp(*value + amount);
+                };
             match event {
                 Event::PointerMoved(to) => gesture.feed(time, Input::Move(*to), &mut effects),
-                Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, .. } if over_us(*pos) => {
+                Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    ..
+                } if over_us(*pos) => {
                     gesture.feed(time, Input::Press(*pos), &mut effects);
                 }
-                Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: false, .. } => {
+                Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    ..
+                } => {
                     gesture.feed(time, Input::Release(*pos), &mut effects);
                 }
                 Event::MouseWheel { delta, .. } if hovered && delta.y != 0.0 => {
                     let notch = f64::from(delta.y.signum()) * if shift { 10.0 } else { 1.0 };
                     stepped_wheel |= wheel.is_some();
-                    adjust(wheel.map_or(0.0, |per| notch * per), &mut effects, &mut gesture, value);
+                    adjust(
+                        wheel.map_or(0.0, |per| notch * per),
+                        &mut effects,
+                        &mut gesture,
+                        value,
+                    );
                 }
-                Event::Key { key: key @ (Key::ArrowLeft | Key::ArrowRight), pressed: true, modifiers, .. } if focused => {
+                Event::Key {
+                    key: key @ (Key::ArrowLeft | Key::ArrowRight),
+                    pressed: true,
+                    modifiers,
+                    ..
+                } if focused => {
                     let size = if modifiers.shift { BIG_STEP } else { 1.0 };
                     let sign = if *key == Key::ArrowRight { 1.0 } else { -1.0 };
                     adjust(sign * size * step, &mut effects, &mut gesture, value);
                 }
-                Event::AccessKitActionRequest(request) if request.target_node == id.accesskit_id() => match request.action {
-                    Action::Increment => adjust(step, &mut effects, &mut gesture, value),
-                    Action::Decrement => adjust(-step, &mut effects, &mut gesture, value),
-                    Action::SetValue => {
-                        if let Some(ActionData::NumericValue(target)) = request.data
-                            && target.is_finite()
-                        {
-                            gesture.feed(time, Input::Interrupt, &mut effects);
-                            *value = clamp(target);
+                Event::AccessKitActionRequest(request)
+                    if request.target_node == id.accesskit_id() =>
+                {
+                    match request.action {
+                        Action::Increment => adjust(step, &mut effects, &mut gesture, value),
+                        Action::Decrement => adjust(-step, &mut effects, &mut gesture, value),
+                        Action::SetValue => {
+                            if let Some(ActionData::NumericValue(target)) = request.data
+                                && target.is_finite()
+                            {
+                                gesture.feed(time, Input::Interrupt, &mut effects);
+                                *value = clamp(target);
+                            }
                         }
+                        _ => {}
                     }
-                    _ => {}
-                },
+                }
                 _ => {}
             }
             // This event's effects, now, before the next event's.
@@ -349,11 +412,20 @@ impl Widget for Slider<'_> {
             let knob_x = x_of(span, *value, &range);
             match &gradient {
                 Some(stops) => {
-                    let track = Rect::from_x_y_ranges(track_x, cy - GRADIENT_TRACK / 2.0..=cy + GRADIENT_TRACK / 2.0);
-                    painter.add(Shape::mesh(gradient_mesh(track.round_to_pixels(ppp), stops)));
+                    let track = Rect::from_x_y_ranges(
+                        track_x,
+                        cy - GRADIENT_TRACK / 2.0..=cy + GRADIENT_TRACK / 2.0,
+                    );
+                    painter.add(Shape::mesh(gradient_mesh(
+                        track.round_to_pixels(ppp),
+                        stops,
+                    )));
                 }
                 None => {
-                    let track = Rect::from_x_y_ranges(track_x, cy - PLAIN_TRACK / 2.0..=cy + PLAIN_TRACK / 2.0);
+                    let track = Rect::from_x_y_ranges(
+                        track_x,
+                        cy - PLAIN_TRACK / 2.0..=cy + PLAIN_TRACK / 2.0,
+                    );
                     painter.rect_filled(track, TRACK_RADIUS, p.field_border);
                     let fill = match chrome.style.slider_fill {
                         SliderFill::Accent => p.accent,
@@ -375,7 +447,11 @@ impl Widget for Slider<'_> {
                     (KNOB_STUDIO, KNOB_STUDIO_FILL, None)
                 };
                 if response.hovered() || response.dragged() {
-                    painter.circle_stroke(centre, HALO_RADIUS, Stroke::new(HALO_WIDTH, p.accent_soft));
+                    painter.circle_stroke(
+                        centre,
+                        HALO_RADIUS,
+                        Stroke::new(HALO_WIDTH, p.accent_soft),
+                    );
                 }
                 painter.circle_filled(centre + vec2(0.0, 1.0), radius + 0.5, SHADOW);
                 painter.circle_filled(centre, radius, fill);
@@ -396,7 +472,11 @@ fn gradient_mesh(rect: Rect, stops: &[Color32]) -> Mesh {
         return mesh;
     }
     for (i, colour) in stops.iter().enumerate() {
-        let t = if n == 1 { 0.0 } else { i as f32 / (n - 1) as f32 };
+        let t = if n == 1 {
+            0.0
+        } else {
+            i as f32 / (n - 1) as f32
+        };
         let x = egui::lerp(rect.x_range(), t);
         mesh.colored_vertex(pos2(x, rect.top()), *colour);
         mesh.colored_vertex(pos2(x, rect.bottom()), *colour);
@@ -411,11 +491,21 @@ fn gradient_mesh(rect: Rect, stops: &[Color32]) -> Mesh {
 
 /// The slider row: `label` and a value field on one line, the slider below.
 /// Returns the slider's response, changed when either part changed the value.
-pub fn row(ui: &mut Ui, label: &str, value: &mut f64, range: RangeInclusive<f64>, unit: Option<&str>) -> Response {
+pub fn row(
+    ui: &mut Ui,
+    label: &str,
+    value: &mut f64,
+    range: RangeInclusive<f64>,
+    unit: Option<&str>,
+) -> Response {
     let dim = Chrome::of(ui.ctx()).palette.text_dim;
     let mut changed = false;
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(label).color(dim).text_style(TextStyle::Body));
+        ui.label(
+            egui::RichText::new(label)
+                .color(dim)
+                .text_style(TextStyle::Body),
+        );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let mut field = ValueField::new(&mut *value, range.clone()).width(field::VALUE_WIDTH);
             if let Some(unit) = unit {
@@ -479,7 +569,11 @@ mod tests {
     /// the second is a double click.
     #[test]
     fn a_click_spanning_frames_pairs_with_a_whole_click_after_it() {
-        let inputs = [vec![(0.0, Input::Press(A)), (0.1, Input::Release(A))], click(0.1, A).to_vec()].concat();
+        let inputs = [
+            vec![(0.0, Input::Press(A)), (0.1, Input::Release(A))],
+            click(0.1, A).to_vec(),
+        ]
+        .concat();
         let effects = run(&inputs);
         assert_eq!(effects.last(), Some(&Effect::Reset), "{effects:?}");
         assert_eq!(resets(&effects), 1);
@@ -490,12 +584,24 @@ mod tests {
     /// with it.
     #[test]
     fn coalesced_clicks_after_a_click_each_count_and_a_fourth_pairs() {
-        let three = [click(0.0, A).to_vec(), click(0.2, A).to_vec(), click(0.2, A).to_vec()].concat();
+        let three = [
+            click(0.0, A).to_vec(),
+            click(0.2, A).to_vec(),
+            click(0.2, A).to_vec(),
+        ]
+        .concat();
         let effects = run(&three);
         assert_eq!(resets(&effects), 1, "click 2 resets");
         let after_reset = effects.iter().position(|e| *e == Effect::Reset).unwrap();
-        assert!(effects[after_reset + 1..].contains(&Effect::Follow(A.x)), "click 3 still moves the knob after the reset");
-        assert_eq!(effects.last(), Some(&Effect::Follow(A.x)), "click 3 is not overwritten by a late reset");
+        assert!(
+            effects[after_reset + 1..].contains(&Effect::Follow(A.x)),
+            "click 3 still moves the knob after the reset"
+        );
+        assert_eq!(
+            effects.last(),
+            Some(&Effect::Follow(A.x)),
+            "click 3 is not overwritten by a late reset"
+        );
         let four = [three, click(0.4, A).to_vec()].concat();
         assert_eq!(resets(&run(&four)), 2, "the fourth pairs with the third");
     }
@@ -504,27 +610,53 @@ mod tests {
     fn distant_clicks_coalesced_in_one_frame_only_move_the_knob() {
         let effects = run(&[click(0.0, A), click(0.0, B)].concat());
         assert_eq!(resets(&effects), 0);
-        assert_eq!(effects.last(), Some(&Effect::Follow(B.x)), "the value is the second click's");
+        assert_eq!(
+            effects.last(),
+            Some(&Effect::Follow(B.x)),
+            "the value is the second click's"
+        );
     }
 
     #[test]
     fn a_wheel_turn_between_clicks_is_no_double_click() {
-        let effects = run(&[click(0.0, A).to_vec(), vec![(0.1, Input::Interrupt)], click(0.2, A).to_vec()].concat());
+        let effects = run(&[
+            click(0.0, A).to_vec(),
+            vec![(0.1, Input::Interrupt)],
+            click(0.2, A).to_vec(),
+        ]
+        .concat());
         assert_eq!(resets(&effects), 0);
     }
 
     #[test]
     fn a_third_click_starts_over_and_slow_or_dragged_clicks_never_pair() {
         let triple = [click(0.0, A), click(0.1, A), click(0.2, A)].concat();
-        assert_eq!(resets(&run(&triple)), 1, "the second resets; the third starts over");
-        assert_eq!(resets(&run(&[click(0.0, A), click(0.7, A)].concat())), 0, "over 0.5 s apart");
+        assert_eq!(
+            resets(&run(&triple)),
+            1,
+            "the second resets; the third starts over"
+        );
+        assert_eq!(
+            resets(&run(&[click(0.0, A), click(0.7, A)].concat())),
+            0,
+            "over 0.5 s apart"
+        );
         let dragged = [
-            vec![(0.0, Input::Press(A)), (0.0, Input::Move(B)), (0.1, Input::Move(A)), (0.1, Input::Release(A))],
+            vec![
+                (0.0, Input::Press(A)),
+                (0.0, Input::Move(B)),
+                (0.1, Input::Move(A)),
+                (0.1, Input::Release(A)),
+            ],
             click(0.2, A).to_vec(),
         ]
         .concat();
         assert_eq!(resets(&run(&dragged)), 0, "a drag is no click");
-        let long = [vec![(0.0, Input::Press(A)), (1.0, Input::Release(A))], click(1.1, A).to_vec()].concat();
+        let long = [
+            vec![(0.0, Input::Press(A)), (1.0, Input::Release(A))],
+            click(1.1, A).to_vec(),
+        ]
+        .concat();
         assert_eq!(resets(&run(&long)), 0, "a long press is no click");
     }
 }

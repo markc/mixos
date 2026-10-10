@@ -10,7 +10,9 @@ use std::time::Instant;
 use serde_json::Value;
 
 use crate::ast::{BinOp, Coalesce, InterpVar, Node, Part, Segment, UnaryOp};
-use crate::value::{equals, is_truthy, number, render, rendered, signed_index, to_number, type_name};
+use crate::value::{
+    equals, is_truthy, number, render, rendered, signed_index, to_number, type_name,
+};
 use crate::{Error, ErrorKind, Limits};
 
 type Out<'v> = Result<Cow<'v, Value>, Error>;
@@ -34,7 +36,9 @@ fn budget(message: impl Into<String>) -> Error {
 /// miss is nil.
 fn project<'v>(value: Cow<'v, Value>, select: impl Fn(&Value) -> Option<&Value>) -> Cow<'v, Value> {
     match value {
-        Cow::Borrowed(v) => select(v).map(Cow::Borrowed).unwrap_or(Cow::Owned(Value::Null)),
+        Cow::Borrowed(v) => select(v)
+            .map(Cow::Borrowed)
+            .unwrap_or(Cow::Owned(Value::Null)),
         Cow::Owned(v) => Cow::Owned(select(&v).cloned().unwrap_or(Value::Null)),
     }
 }
@@ -64,7 +68,10 @@ impl<'v> Evaluator<'v> {
         let value = evaluator.eval(node)?.into_owned();
         // A result computed past the deadline is refused too; the budget is
         // not satisfied by finishing without noticing the clock.
-        if evaluator.deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+        if evaluator
+            .deadline
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
             return Err(budget("time limit exceeded"));
         }
         Ok(value)
@@ -77,19 +84,28 @@ impl<'v> Evaluator<'v> {
         {
             return Err(budget(format!("evaluation step limit {max} exceeded")));
         }
-        if self.deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+        if self
+            .deadline
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
             return Err(budget("time limit exceeded"));
         }
         Ok(())
     }
 
     fn global(&self, name: &str) -> Option<&'v Value> {
-        self.globals.iter().find(|(n, _)| *n == name).map(|(_, v)| *v)
+        self.globals
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, v)| *v)
     }
 
     fn check_size(&self, value: &Value) -> Result<(), Error> {
         let limits = self.limits;
-        if limits.max_string_len.is_none() && limits.max_list_len.is_none() && limits.max_map_len.is_none() {
+        if limits.max_string_len.is_none()
+            && limits.max_list_len.is_none()
+            && limits.max_map_len.is_none()
+        {
             return Ok(());
         }
         let mut work = vec![value];
@@ -99,7 +115,10 @@ impl<'v> Evaluator<'v> {
                     if let Some(max) = limits.max_list_len
                         && items.len() > max
                     {
-                        return Err(budget(format!("list length {} exceeds limit {max}", items.len())));
+                        return Err(budget(format!(
+                            "list length {} exceeds limit {max}",
+                            items.len()
+                        )));
                     }
                     work.extend(items.iter());
                 }
@@ -107,7 +126,10 @@ impl<'v> Evaluator<'v> {
                     if let Some(max) = limits.max_map_len
                         && map.len() > max
                     {
-                        return Err(budget(format!("map size {} exceeds limit {max}", map.len())));
+                        return Err(budget(format!(
+                            "map size {} exceeds limit {max}",
+                            map.len()
+                        )));
                     }
                     work.extend(map.values());
                 }
@@ -115,7 +137,10 @@ impl<'v> Evaluator<'v> {
                     if let Some(max) = limits.max_string_len
                         && s.len() > max
                     {
-                        return Err(budget(format!("string length {} exceeds limit {max}", s.len())));
+                        return Err(budget(format!(
+                            "string length {} exceeds limit {max}",
+                            s.len()
+                        )));
                     }
                 }
                 _ => {}
@@ -148,14 +173,19 @@ impl<'v> Evaluator<'v> {
                 let value = self.eval(operand)?;
                 match op {
                     UnaryOp::Neg => {
-                        let n = to_number(&value)
-                            .ok_or_else(|| runtime(format!("cannot negate {}", type_name(&value))))?;
+                        let n = to_number(&value).ok_or_else(|| {
+                            runtime(format!("cannot negate {}", type_name(&value)))
+                        })?;
                         Ok(Cow::Owned(number(-n)?))
                     }
                     UnaryOp::Not => Ok(Cow::Owned(Value::Bool(!is_truthy(&value)))),
                 }
             }
-            Node::Ternary { cond, then, otherwise } => {
+            Node::Ternary {
+                cond,
+                then,
+                otherwise,
+            } => {
                 let cond = self.eval(cond)?;
                 if is_truthy(&cond) {
                     self.eval(then)
@@ -163,7 +193,10 @@ impl<'v> Evaluator<'v> {
                     self.eval(otherwise)
                 }
             }
-            Node::If { branches, otherwise } => {
+            Node::If {
+                branches,
+                otherwise,
+            } => {
                 for branch in branches {
                     let cond = self.eval(&branch.cond)?;
                     if is_truthy(&cond) {
@@ -186,7 +219,9 @@ impl<'v> Evaluator<'v> {
                         type_name(&object)
                     )));
                 }
-                Ok(project(object, |v| v.as_object().and_then(|m| map_get(m, field))))
+                Ok(project(object, |v| {
+                    v.as_object().and_then(|m| map_get(m, field))
+                }))
             }
             Node::Index { object, index } => {
                 let index = self.eval(index)?;
@@ -219,10 +254,12 @@ impl<'v> Evaluator<'v> {
             (Value::Object(_), other) => Access::MapKey(rendered(other)),
             (Value::String(s), Value::Number(n)) => {
                 let chars: Vec<char> = s.chars().collect();
-                return Ok(Cow::Owned(match signed_index(n.as_f64().unwrap_or(0.0), chars.len()) {
-                    Some(i) => Value::String(chars[i].to_string()),
-                    None => Value::Null,
-                }));
+                return Ok(Cow::Owned(
+                    match signed_index(n.as_f64().unwrap_or(0.0), chars.len()) {
+                        Some(i) => Value::String(chars[i].to_string()),
+                        None => Value::Null,
+                    },
+                ));
             }
             (object, index) => {
                 return Err(runtime(format!(
@@ -234,9 +271,12 @@ impl<'v> Evaluator<'v> {
         };
         Ok(match access {
             Access::ListAt(n) => project(object, |v| {
-                v.as_array().and_then(|items| signed_index(n, items.len()).and_then(|i| items.get(i)))
+                v.as_array()
+                    .and_then(|items| signed_index(n, items.len()).and_then(|i| items.get(i)))
             }),
-            Access::MapKey(key) => project(object, |v| v.as_object().and_then(|m| map_get(m, &key))),
+            Access::MapKey(key) => {
+                project(object, |v| v.as_object().and_then(|m| map_get(m, &key)))
+            }
         })
     }
 
@@ -323,7 +363,9 @@ impl<'v> Evaluator<'v> {
                 render(right, &mut text);
                 return self.sized(Value::String(text));
             }
-            BinOp::And | BinOp::Or | BinOp::NilCoalesce => unreachable!("short-circuit operators are handled by binary()"),
+            BinOp::And | BinOp::Or | BinOp::NilCoalesce => {
+                unreachable!("short-circuit operators are handled by binary()")
+            }
         };
         Ok(Cow::Owned(value))
     }
@@ -366,7 +408,9 @@ impl<'v> Evaluator<'v> {
                 Segment::Index(node) => {
                     let index = self.eval(node)?;
                     let access = match (&*current, &*index) {
-                        (Value::Array(_), Value::Number(n)) => Access::ListAt(n.as_f64().unwrap_or(0.0)),
+                        (Value::Array(_), Value::Number(n)) => {
+                            Access::ListAt(n.as_f64().unwrap_or(0.0))
+                        }
                         (Value::Object(_), Value::String(key)) => Access::MapKey(key.clone()),
                         (object, index) => {
                             return Err(runtime(format!(
@@ -378,11 +422,14 @@ impl<'v> Evaluator<'v> {
                     };
                     match access {
                         Access::ListAt(n) => project(current, |v| {
-                            v.as_array()
-                                .and_then(|items| signed_index(n, items.len()).and_then(|i| items.get(i)))
+                            v.as_array().and_then(|items| {
+                                signed_index(n, items.len()).and_then(|i| items.get(i))
+                            })
                         }),
                         // No `*` fallback here, as in Mix's interpolation.
-                        Access::MapKey(key) => project(current, |v| v.as_object().and_then(|m| m.get(&key))),
+                        Access::MapKey(key) => {
+                            project(current, |v| v.as_object().and_then(|m| m.get(&key)))
+                        }
                     }
                 }
             };
@@ -393,7 +440,10 @@ impl<'v> Evaluator<'v> {
             None => false,
         };
         if fire {
-            let payload = var.coalesce.as_ref().and_then(|(_, payload)| payload.as_deref());
+            let payload = var
+                .coalesce
+                .as_ref()
+                .and_then(|(_, payload)| payload.as_deref());
             return self.coalesce_default(payload);
         }
         Ok(current)
@@ -430,6 +480,13 @@ fn compare(
     if let (Value::String(a), Value::String(b)) = (left, right) {
         return Ok(textual(a.cmp(b)));
     }
-    let culprit = if to_number(left).is_none() { left } else { right };
-    Err(runtime(format!("cannot compare '{}' as number", rendered(culprit))))
+    let culprit = if to_number(left).is_none() {
+        left
+    } else {
+        right
+    };
+    Err(runtime(format!(
+        "cannot compare '{}' as number",
+        rendered(culprit)
+    )))
 }

@@ -24,12 +24,12 @@
 //! `disabled_alpha` (50%, §1.4).
 
 use crate::chrome::{self, Chrome};
-use design::family::style::{PushShape, SecondaryButton};
 use crate::icons::{self, Icon};
+use design::family::style::{PushShape, SecondaryButton};
 use egui::emath::GuiRounding;
 use egui::{
-    Color32, CornerRadius, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2, Widget, WidgetInfo, WidgetType, pos2,
-    vec2,
+    Color32, CornerRadius, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2, Widget, WidgetInfo,
+    WidgetType, pos2, vec2,
 };
 
 /// An icon button's side in the title bar (§3.1, §3.8).
@@ -81,7 +81,13 @@ pub struct IconButton {
 
 impl IconButton {
     pub fn new(icon: Icon) -> Self {
-        Self { icon, size: ICON_BUTTON, selected: false, kind: IconKind::Bar, tooltip: None }
+        Self {
+            icon,
+            size: ICON_BUTTON,
+            selected: false,
+            kind: IconKind::Bar,
+            tooltip: None,
+        }
     }
 
     /// The box's side; the icon is 52% of it.
@@ -111,10 +117,18 @@ impl IconButton {
 
 impl Widget for IconButton {
     fn ui(self, ui: &mut Ui) -> Response {
-        let Self { icon, size, selected, kind, tooltip } = self;
+        let Self {
+            icon,
+            size,
+            selected,
+            kind,
+            tooltip,
+        } = self;
         let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::click());
         let name = tooltip.clone().unwrap_or_else(|| icon.name().to_owned());
-        response.widget_info(|| WidgetInfo::selected(WidgetType::Button, ui.is_enabled(), selected, &name));
+        response.widget_info(|| {
+            WidgetInfo::selected(WidgetType::Button, ui.is_enabled(), selected, &name)
+        });
         if ui.is_rect_visible(rect) {
             let chrome = Chrome::of(ui.ctx());
             let p = &chrome.palette;
@@ -122,7 +136,9 @@ impl Widget for IconButton {
             // A pressed icon button is undetermined (§5.4): it keeps the
             // hover look, as caption buttons do before their press fill.
             let (fill, outline, tint) = match kind {
-                IconKind::Bar if selected => (Some(p.accent_soft), Some(p.accent_border), p.accent_text),
+                IconKind::Bar if selected => {
+                    (Some(p.accent_soft), Some(p.accent_border), p.accent_text)
+                }
                 IconKind::Bar if hot => (Some(p.hover), None, p.text),
                 IconKind::Bar => (None, None, p.icon),
                 IconKind::Rail if selected => (Some(p.card), Some(p.card_border), p.text),
@@ -149,7 +165,8 @@ impl Widget for IconButton {
 /// `icon`, `side` points square, centred on `centre` and tinted `tint`, in
 /// the context's icon stroke.
 pub fn paint_icon(ui: &Ui, icon: Icon, centre: egui::Pos2, side: f32, tint: Color32) {
-    let rect = Rect::from_center_size(centre, Vec2::splat(side)).round_to_pixels(ui.pixels_per_point());
+    let rect =
+        Rect::from_center_size(centre, Vec2::splat(side)).round_to_pixels(ui.pixels_per_point());
     icons::image(icon, icons::stroke_of(ui.ctx()), side, tint).paint_at(ui, rect);
 }
 
@@ -171,11 +188,19 @@ pub struct PushButton {
 
 impl PushButton {
     pub fn primary(label: impl Into<String>) -> Self {
-        Self { label: label.into(), kind: Kind::Primary, min_width: 0.0 }
+        Self {
+            label: label.into(),
+            kind: Kind::Primary,
+            min_width: 0.0,
+        }
     }
 
     pub fn secondary(label: impl Into<String>) -> Self {
-        Self { label: label.into(), kind: Kind::Secondary, min_width: 0.0 }
+        Self {
+            label: label.into(),
+            kind: Kind::Secondary,
+            min_width: 0.0,
+        }
     }
 
     /// At least `width` wide.
@@ -199,11 +224,14 @@ impl Widget for PushButton {
         let chrome = Chrome::of(ui.ctx());
         let (style, p) = (&chrome.style, &chrome.palette);
         let font = crate::fonts::bound(ui.ctx(), crate::fonts::medium(PUSH_SIZE));
-        let galley = ui.painter().layout_no_wrap(self.label.clone(), font, Color32::PLACEHOLDER);
+        let galley = ui
+            .painter()
+            .layout_no_wrap(self.label.clone(), font, Color32::PLACEHOLDER);
         let height = chrome.metrics.push_height;
         let size = vec2((galley.size().x + PUSH_PADDING).max(self.min_width), height);
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-        response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, ui.is_enabled(), &self.label));
+        response
+            .widget_info(|| WidgetInfo::labeled(WidgetType::Button, ui.is_enabled(), &self.label));
         if !ui.is_rect_visible(rect) {
             return response;
         }
@@ -216,7 +244,13 @@ impl Widget for PushButton {
             Kind::Primary => {
                 // Primary hover and pressed opacities (§1.4).
                 let [hover, press] = chrome.metrics.primary_alpha;
-                let alpha = if pressed { press } else if hovered { hover } else { 1.0 };
+                let alpha = if pressed {
+                    press
+                } else if hovered {
+                    hover
+                } else {
+                    1.0
+                };
                 painter.rect_filled(rect, corner, p.primary_bg.gamma_multiply(alpha));
                 p.primary_text
             }
@@ -224,8 +258,17 @@ impl Widget for PushButton {
                 if hovered || pressed {
                     painter.rect_filled(rect, corner, p.hover);
                 }
-                let outline = if hovered || pressed { p.text } else { p.text_dim };
-                painter.rect_stroke(rect, corner, Stroke::new(PRO_OUTLINE, outline), StrokeKind::Inside);
+                let outline = if hovered || pressed {
+                    p.text
+                } else {
+                    p.text_dim
+                };
+                painter.rect_stroke(
+                    rect,
+                    corner,
+                    Stroke::new(PRO_OUTLINE, outline),
+                    StrokeKind::Inside,
+                );
                 p.text
             }
             Kind::Secondary => {
@@ -240,7 +283,12 @@ impl Widget for PushButton {
                 };
                 painter.rect_filled(rect, corner, fill);
                 if !style.bevels {
-                    painter.rect_stroke(rect, corner, Stroke::new(1.0, p.field_border), StrokeKind::Inside);
+                    painter.rect_stroke(
+                        rect,
+                        corner,
+                        Stroke::new(1.0, p.field_border),
+                        StrokeKind::Inside,
+                    );
                 }
                 p.text
             }
@@ -262,7 +310,12 @@ impl Widget for PushButton {
 pub fn focus_ring(ui: &Ui, rect: Rect, radius: f32, chrome: &Chrome) {
     let ring = rect.expand(FOCUS_OFFSET);
     let corner = CornerRadius::same((radius + FOCUS_OFFSET).round() as u8);
-    ui.painter().rect_stroke(ring, corner, Stroke::new(FOCUS_RING, chrome.palette.accent), StrokeKind::Inside);
+    ui.painter().rect_stroke(
+        ring,
+        corner,
+        Stroke::new(FOCUS_RING, chrome.palette.accent),
+        StrokeKind::Inside,
+    );
 }
 
 /// A frameless link: a 14 pt icon and a 12 pt `text_dim` label, `text` on
@@ -275,29 +328,57 @@ pub struct Link {
 
 impl Link {
     pub fn new(icon: Icon, label: impl Into<String>) -> Self {
-        Self { icon, label: label.into() }
+        Self {
+            icon,
+            label: label.into(),
+        }
     }
 
     /// The width it takes in a row.
     pub fn width(ui: &Ui, label: &str) -> f32 {
         let font = egui::FontId::proportional(LINK_SIZE);
-        LINK_ICON + LINK_GAP + ui.painter().layout_no_wrap(label.to_owned(), font, Color32::PLACEHOLDER).size().x
+        LINK_ICON
+            + LINK_GAP
+            + ui.painter()
+                .layout_no_wrap(label.to_owned(), font, Color32::PLACEHOLDER)
+                .size()
+                .x
     }
 }
 
 impl Widget for Link {
     fn ui(self, ui: &mut Ui) -> Response {
         let font = egui::FontId::proportional(LINK_SIZE);
-        let galley = ui.painter().layout_no_wrap(self.label.clone(), font, Color32::PLACEHOLDER);
-        let size = vec2(LINK_ICON + LINK_GAP + galley.size().x, ui.spacing().interact_size.y);
+        let galley = ui
+            .painter()
+            .layout_no_wrap(self.label.clone(), font, Color32::PLACEHOLDER);
+        let size = vec2(
+            LINK_ICON + LINK_GAP + galley.size().x,
+            ui.spacing().interact_size.y,
+        );
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-        response.widget_info(|| WidgetInfo::labeled(WidgetType::Link, ui.is_enabled(), &self.label));
+        response
+            .widget_info(|| WidgetInfo::labeled(WidgetType::Link, ui.is_enabled(), &self.label));
         if ui.is_rect_visible(rect) {
             let p = Chrome::of(ui.ctx()).palette;
-            let ink = if response.hovered() { p.text } else { p.text_dim };
-            paint_icon(ui, self.icon, pos2(rect.left() + LINK_ICON / 2.0, rect.center().y), LINK_ICON, ink);
-            let at = pos2(rect.left() + LINK_ICON + LINK_GAP, rect.center().y - galley.size().y / 2.0);
-            ui.painter().galley(at.round_to_pixels(ui.pixels_per_point()), galley, ink);
+            let ink = if response.hovered() {
+                p.text
+            } else {
+                p.text_dim
+            };
+            paint_icon(
+                ui,
+                self.icon,
+                pos2(rect.left() + LINK_ICON / 2.0, rect.center().y),
+                LINK_ICON,
+                ink,
+            );
+            let at = pos2(
+                rect.left() + LINK_ICON + LINK_GAP,
+                rect.center().y - galley.size().y / 2.0,
+            );
+            ui.painter()
+                .galley(at.round_to_pixels(ui.pixels_per_point()), galley, ink);
         }
         response.on_hover_cursor(egui::CursorIcon::PointingHand)
     }
@@ -310,8 +391,22 @@ mod tests {
     #[test]
     fn push_buttons_follow_the_style() {
         use design::{DesignContext, Scheme};
-        let height = |scheme| Chrome::for_theme(&crate::Theme::for_context(DesignContext { scheme, ..DesignContext::default() })).metrics.push_height;
-        assert_eq!((height(Scheme::Pro), height(Scheme::Studio), height(Scheme::Classic)), (28.0, 30.0, 30.0));
+        let height = |scheme| {
+            Chrome::for_theme(&crate::Theme::for_context(DesignContext {
+                scheme,
+                ..DesignContext::default()
+            }))
+            .metrics
+            .push_height
+        };
+        assert_eq!(
+            (
+                height(Scheme::Pro),
+                height(Scheme::Studio),
+                height(Scheme::Classic)
+            ),
+            (28.0, 30.0, 30.0)
+        );
     }
 
     #[test]

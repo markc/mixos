@@ -350,7 +350,11 @@ fn version_header_diag(source: &str, file: &str, require: bool) -> Option<Diagno
     };
     Some(Diagnostic {
         code: "MIX-D3016",
-        severity: if require { Severity::Warning } else { Severity::Note },
+        severity: if require {
+            Severity::Warning
+        } else {
+            Severity::Note
+        },
         file: Some(file.to_string()),
         line,
         column: None,
@@ -368,9 +372,7 @@ fn version_header_diag(source: &str, file: &str, require: bool) -> Option<Diagno
 /// E1501, E1502, E1203) is a refusal — the source is not run. Returns
 /// `(hard, soft)` diagnostics so the caller prints the hard set before
 /// exit 2 and the soft set only under `--agent`/`MIX_LINT=warn`.
-pub(crate) fn lint_source_for_execution(
-    source: &str,
-) -> (Vec<Diagnostic>, Vec<Diagnostic>) {
+pub(crate) fn lint_source_for_execution(source: &str) -> (Vec<Diagnostic>, Vec<Diagnostic>) {
     let mut hard = Vec::new();
     let mut soft = Vec::new();
     let outcome = lint_one(source, None, &AnalyzerConfig::default());
@@ -457,8 +459,7 @@ fn lint_one(
     // parser deprecations (done/next) — the executed parse is the one
     // allowed to emit them, exactly once. The classifier's probe
     // invariant (semicolon_process.rs) depends on this.
-    let stmts =
-        match mix::parser::Parser::new_speculative(tokens, source).parse_program() {
+    let stmts = match mix::parser::Parser::new_speculative(tokens, source).parse_program() {
         Ok(s) => s,
         Err(MixError::ParseError { msg, span }) | Err(MixError::IncompleteInput { msg, span }) => {
             let diag = to_diag(

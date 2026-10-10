@@ -24,7 +24,10 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Settings, String> {
     let mut settings = Settings::default();
     let mut args = args;
     while let Some(arg) = args.next() {
-        let value = args.next().filter(|v| !v.is_empty()).ok_or_else(|| format!("{arg} needs a value"))?;
+        let value = args
+            .next()
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| format!("{arg} needs a value"))?;
         match arg.as_str() {
             "--noded-url" => settings.url = value,
             "--service" => settings.service = value,
@@ -33,7 +36,11 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Settings, String> {
         }
     }
     for name in [&settings.service, &settings.comp] {
-        if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c)) {
+        if name.is_empty()
+            || !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+        {
             return Err("invalid service name".into());
         }
     }
@@ -84,7 +91,9 @@ fn main() {
             }
         }
         match run(&settings) {
-            Err(_) if bus::probe(&settings.url, &settings.service) => bus::forward(&settings.url, &settings.service),
+            Err(_) if bus::probe(&settings.url, &settings.service) => {
+                bus::forward(&settings.url, &settings.service)
+            }
             result => result,
         }
     });
@@ -100,10 +109,19 @@ mod tests {
 
     #[test]
     fn rejects_unknown_missing_and_unsafe_options() {
-        for args in [vec!["--noded-url"], vec!["--bogus", "x"], vec!["--service", "bad name"]] {
+        for args in [
+            vec!["--noded-url"],
+            vec!["--bogus", "x"],
+            vec!["--service", "bad name"],
+        ] {
             assert!(parse(args.into_iter().map(str::to_owned)).is_err());
         }
-        let settings = parse(["--service", "busviewer.test"].into_iter().map(str::to_owned)).unwrap();
+        let settings = parse(
+            ["--service", "busviewer.test"]
+                .into_iter()
+                .map(str::to_owned),
+        )
+        .unwrap();
         assert_eq!(settings.service, "busviewer.test");
     }
 }

@@ -62,11 +62,8 @@ use std::sync::Arc;
 /// Prometheus recorder does not consume `Metadata` for storage, so
 /// supplying a fixed `Substrate / INFO` value is sufficient and
 /// consistent across periods.
-const SUBSTRATE_META: Metadata<'static> = Metadata::new(
-    "logging::stats",
-    Level::INFO,
-    Some("logging::stats"),
-);
+const SUBSTRATE_META: Metadata<'static> =
+    Metadata::new("logging::stats", Level::INFO, Some("logging::stats"));
 
 /// Redaction-first wrapper around a `PrometheusRecorder`. Held by the
 /// substrate `StatsRecorder` (one slot, set via

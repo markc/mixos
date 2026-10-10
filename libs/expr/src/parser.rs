@@ -24,7 +24,10 @@ fn syntax(message: impl Into<String>) -> Error {
 }
 
 fn not_allowed(what: &str) -> Error {
-    Error::new(ErrorKind::NotAllowed, format!("{what} is not allowed in an expression"))
+    Error::new(
+        ErrorKind::NotAllowed,
+        format!("{what} is not allowed in an expression"),
+    )
 }
 
 /// Mix's name for a statement keyword, for the refusal message.
@@ -59,7 +62,11 @@ pub(crate) fn parse(source: &str) -> Result<Node, Error> {
 
 fn parse_at_depth(source: &str, depth: usize) -> Result<Node, Error> {
     let tokens = Lexer::new(source).tokenize()?;
-    let mut parser = Parser { tokens, pos: 0, depth };
+    let mut parser = Parser {
+        tokens,
+        pos: 0,
+        depth,
+    };
     parser.program()
 }
 
@@ -130,7 +137,9 @@ impl Parser {
         let node = self.statement()?;
         self.skip_separators();
         if !matches!(self.peek(), Token::Eof) {
-            return Err(syntax("expected exactly one expression, found more than one statement"));
+            return Err(syntax(
+                "expected exactly one expression, found more than one statement",
+            ));
         }
         Ok(node)
     }
@@ -215,7 +224,11 @@ impl Parser {
             self.enter()?;
             let right = self.binary_rhs(right, prec + 1);
             self.leave();
-            left = Node::Binary { op, left: Box::new(left), right: Box::new(right?) };
+            left = Node::Binary {
+                op,
+                left: Box::new(left),
+                right: Box::new(right?),
+            };
         }
         Ok(left)
     }
@@ -230,7 +243,10 @@ impl Parser {
         self.enter()?;
         let operand = self.unary();
         self.leave();
-        Ok(Node::Unary { op, operand: Box::new(operand?) })
+        Ok(Node::Unary {
+            op,
+            operand: Box::new(operand?),
+        })
     }
 
     fn primary(&mut self) -> Result<Node, Error> {
@@ -283,13 +299,19 @@ impl Parser {
                     if matches!(self.peek(), Token::LParen) {
                         return Err(not_allowed(&format!("the method call .{field}()")));
                     }
-                    node = Node::Field { object: Box::new(node), field };
+                    node = Node::Field {
+                        object: Box::new(node),
+                        field,
+                    };
                 }
                 Token::LBracket => {
                     self.advance();
                     let index = self.expression()?;
                     self.expect(&Token::RBracket)?;
-                    node = Node::Index { object: Box::new(node), index: Box::new(index) };
+                    node = Node::Index {
+                        object: Box::new(node),
+                        index: Box::new(index),
+                    };
                 }
                 Token::LParen => return Err(not_allowed("a call on a function value")),
                 _ => return Ok(node),
@@ -303,10 +325,12 @@ impl Parser {
         match token {
             Token::Str(name) => Ok(name),
             Token::Function => Ok("function".into()),
-            other => other
-                .keyword_lexeme()
-                .map(str::to_owned)
-                .ok_or_else(|| syntax(format!("expected field name but found {}", other.describe()))),
+            other => other.keyword_lexeme().map(str::to_owned).ok_or_else(|| {
+                syntax(format!(
+                    "expected field name but found {}",
+                    other.describe()
+                ))
+            }),
         }
     }
 
@@ -385,7 +409,10 @@ impl Parser {
             }
         }
         self.expect(&Token::End)?;
-        Ok(Node::If { branches, otherwise })
+        Ok(Node::If {
+            branches,
+            otherwise,
+        })
     }
 
     /// A branch body: separators, at most one expression statement, then
@@ -402,9 +429,14 @@ impl Parser {
         }
         match self.peek() {
             Token::Eof => Err(syntax("expected `end` to close the if expression")),
-            token @ (Token::RParen | Token::RBracket | Token::RBrace | Token::Colon | Token::Comma) => {
-                Err(syntax(format!("unexpected {} in an if branch", token.describe())))
-            }
+            token @ (Token::RParen
+            | Token::RBracket
+            | Token::RBrace
+            | Token::Colon
+            | Token::Comma) => Err(syntax(format!(
+                "unexpected {} in an if branch",
+                token.describe()
+            ))),
             _ => Err(not_allowed("more than one statement in an if branch")),
         }
     }
@@ -416,7 +448,9 @@ impl Parser {
             parts.push(match part {
                 RawPart::Literal(s) => Part::Literal(s),
                 RawPart::EnvVar => {
-                    return Err(not_allowed("environment-variable interpolation in a string"));
+                    return Err(not_allowed(
+                        "environment-variable interpolation in a string",
+                    ));
                 }
                 RawPart::Var(spec) => Part::Var(self.interp_var(&spec)?),
             });
@@ -472,7 +506,11 @@ impl Parser {
                 }
             }
         };
-        Ok(InterpVar { head: head.unwrap_or_default(), segments, coalesce })
+        Ok(InterpVar {
+            head: head.unwrap_or_default(),
+            segments,
+            coalesce,
+        })
     }
 }
 
@@ -529,7 +567,11 @@ fn split_suffixes(segment: &str) -> Result<(&str, Vec<Suffix<'_>>), Error> {
         let (open, close) = match bytes[i] {
             b'[' => (b'[', b']'),
             b'(' => (b'(', b')'),
-            _ => return Err(syntax(format!("unexpected text in interpolation '{segment}'"))),
+            _ => {
+                return Err(syntax(format!(
+                    "unexpected text in interpolation '{segment}'"
+                )));
+            }
         };
         let mut depth = 0usize;
         let mut j = i;
@@ -547,7 +589,9 @@ fn split_suffixes(segment: &str) -> Result<(&str, Vec<Suffix<'_>>), Error> {
             j += 1;
         }
         let Some(end) = closed else {
-            return Err(syntax(format!("unbalanced brackets in interpolation '{segment}'")));
+            return Err(syntax(format!(
+                "unbalanced brackets in interpolation '{segment}'"
+            )));
         };
         suffixes.push(if open == b'[' {
             Suffix::Index(&segment[i + 1..end])

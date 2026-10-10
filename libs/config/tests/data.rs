@@ -10,7 +10,9 @@ use config::{ErrorKind, Value};
 #[test]
 fn parse_accepts_a_minimal_map() {
     let value = config::parse("name: \"alpha\"\npriority: 2\n").unwrap();
-    let Value::Map(map) = &value else { panic!("expected map") };
+    let Value::Map(map) = &value else {
+        panic!("expected map")
+    };
     assert_eq!(map.get("name"), Some(&Value::String("alpha".into())));
     assert_eq!(map.get("priority"), Some(&Value::Number(2.0)));
 }
@@ -19,7 +21,10 @@ fn parse_accepts_a_minimal_map() {
 fn parse_refuses_an_executable_construct() {
     let error = config::parse("name: \"hi ${user}\"\n").unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Violation);
-    assert!(error.to_string().contains("Strict-data violation"), "got: {error}");
+    assert!(
+        error.to_string().contains("Strict-data violation"),
+        "got: {error}"
+    );
 }
 
 #[test]
@@ -28,7 +33,10 @@ fn parse_file_reads_a_fixture() {
     assert_eq!(value.get("name").and_then(Value::as_str), Some("sample"));
     assert_eq!(value.get("priority").and_then(Value::as_f64), Some(3.0));
     assert_eq!(
-        value.get("tags").and_then(Value::as_list).map(<[Value]>::len),
+        value
+            .get("tags")
+            .and_then(Value::as_list)
+            .map(<[Value]>::len),
         Some(2)
     );
     assert_eq!(
@@ -44,7 +52,12 @@ fn parse_file_reads_a_fixture() {
 fn parse_file_missing_is_an_io_error_naming_the_path() {
     let error = config::parse_file(Path::new("/nonexistent/mixos/sample.conf.mix")).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Io);
-    assert!(error.to_string().contains("/nonexistent/mixos/sample.conf.mix"), "got: {error}");
+    assert!(
+        error
+            .to_string()
+            .contains("/nonexistent/mixos/sample.conf.mix"),
+        "got: {error}"
+    );
 }
 
 #[test]

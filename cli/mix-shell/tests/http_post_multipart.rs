@@ -40,10 +40,8 @@ fn multipart_body_reaches_the_server_well_formed() {
             }
         }
         *cap.lock().unwrap() = buf;
-        sock.write_all(
-            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
-        )
-        .expect("write response");
+        sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+            .expect("write response");
     });
 
     let src = format!(
@@ -64,10 +62,7 @@ fn multipart_body_reaches_the_server_well_formed() {
 
     let captured_bytes = captured.lock().unwrap();
     let req = String::from_utf8_lossy(&captured_bytes);
-    assert!(
-        req.starts_with("POST /up HTTP/1.1"),
-        "request line: {req}"
-    );
+    assert!(req.starts_with("POST /up HTTP/1.1"), "request line: {req}");
     assert!(
         req.contains("Content-Type: multipart/form-data; boundary="),
         "content-type header: {req}"

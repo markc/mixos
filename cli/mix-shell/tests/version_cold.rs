@@ -52,7 +52,11 @@ fn control_proves_the_probe_can_fail() {
 
 #[test]
 fn version_starts_no_session_lane() {
-    for args in [&["--version"][..], &["-V"][..], &["--version", "--json"][..]] {
+    for args in [
+        &["--version"][..],
+        &["-V"][..],
+        &["--version", "--json"][..],
+    ] {
         let out = run(args);
         assert!(out.status.success(), "mix {args:?} exited {:?}", out.status);
         assert_eq!(

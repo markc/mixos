@@ -15,13 +15,23 @@ use toolkit::Theme;
 
 fn engine(dialog: Option<Dialog>) -> Engine {
     let mut s = Snapshot::default();
-    let verb = Verb { name: "settings.get".into(), args: String::new(), description: "Read one setting".into(), read_only: Some(true) };
+    let verb = Verb {
+        name: "settings.get".into(),
+        args: String::new(),
+        description: "Read one setting".into(),
+        read_only: Some(true),
+    };
     s.services.insert("settingsd".into(), Ok(vec![verb]));
     let mut e = Engine::new(label);
-    let Some(Effect::Discover { ticket }) = e.take_effects().pop() else { panic!("initial discovery") };
+    let Some(Effect::Discover { ticket }) = e.take_effects().pop() else {
+        panic!("initial discovery")
+    };
     e.discovered(ticket, s);
     e.take_effects();
-    e.ui.selected = Some(Selection { service: "settingsd".into(), verb: "settings.get".into() });
+    e.ui.selected = Some(Selection {
+        service: "settingsd".into(),
+        verb: "settings.get".into(),
+    });
     e.ui.dialog = dialog;
     e
 }
@@ -30,10 +40,19 @@ fn engine(dialog: Option<Dialog>) -> Engine {
 fn harness(engine: Engine) -> Harness<'static, Vec<UiEvent>> {
     let registry = commands::registry();
     let strings = strings();
-    let theme = Theme::for_context(DesignContext { scheme: Scheme::Pro, mode: Mode::Light, ..DesignContext::default() });
+    let theme = Theme::for_context(DesignContext {
+        scheme: Scheme::Pro,
+        mode: Mode::Light,
+        ..DesignContext::default()
+    });
     let mut h = Harness::builder()
         .with_size(egui::vec2(980.0, 620.0))
-        .build_ui_state(move |ui, events: &mut Vec<UiEvent>| events.extend(view(ui, &engine, &registry, &strings, 2.0)), Vec::new());
+        .build_ui_state(
+            move |ui, events: &mut Vec<UiEvent>| {
+                events.extend(view(ui, &engine, &registry, &strings, 2.0))
+            },
+            Vec::new(),
+        );
     toolkit::install(&h.ctx, &theme);
     h.run();
     h
@@ -67,7 +86,14 @@ fn the_body_buttons_run_their_commands_and_name_their_shortcuts() {
     let at = h.get_by_label(&label("call")).rect().center();
     h.hover_at(at);
     h.run_steps(4);
-    let tooltip = format!("{} ({})", label("call"), h.ctx.format_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, Key::Enter)));
+    let tooltip = format!(
+        "{} ({})",
+        label("call"),
+        h.ctx.format_shortcut(&egui::KeyboardShortcut::new(
+            egui::Modifiers::COMMAND,
+            Key::Enter
+        ))
+    );
     let _ = h.get_by_label(&tooltip);
 }
 
@@ -77,7 +103,12 @@ fn the_search_field_reports_the_filter() {
     let field = h.get_by_role(egui::accesskit::Role::TextInput);
     field.click();
     h.run();
-    h.get_by_role(egui::accesskit::Role::TextInput).type_text("settings");
+    h.get_by_role(egui::accesskit::Role::TextInput)
+        .type_text("settings");
     h.run();
-    assert!(h.state().contains(&UiEvent::Filter("settings".into())), "{:?}", h.state());
+    assert!(
+        h.state().contains(&UiEvent::Filter("settings".into())),
+        "{:?}",
+        h.state()
+    );
 }

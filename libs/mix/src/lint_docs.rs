@@ -359,7 +359,15 @@ mod tests {
     fn looks_like_code_is_precise() {
         // Shape-valid (routes to the explainer), incl. an unknown-namespace
         // code like X1234/MIX-Z9999 so the explainer can say "unknown".
-        for yes in ["MIX-E1101", "W2305", "d3013", "mix-w2403", "Mix-W2305", "X1234", "MIX-Z9999"] {
+        for yes in [
+            "MIX-E1101",
+            "W2305",
+            "d3013",
+            "mix-w2403",
+            "Mix-W2305",
+            "X1234",
+            "MIX-Z9999",
+        ] {
             assert!(looks_like_code(yes), "{yes} should look like a code");
         }
         // Wrong shape → treated as a builtin name.

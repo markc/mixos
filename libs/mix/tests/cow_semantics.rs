@@ -130,10 +130,12 @@ async fn container_equality_raises_even_when_shared() {
     // bytes: CONTENT equality across distinct allocations stays true, and
     // is NOT swept up by the container raise — bytes have a real structural
     // arm in PartialEq, so `==` on them was never a constant.
-    let out = run("$b1 = string_to_bytes(\"abc\")\n$b2 = string_to_bytes(\"abc\")\n\
-                   print($b1 == $b2)\nprint($b1 != string_to_bytes(\"abd\"))\n")
-        .await
-        .unwrap();
+    let out = run(
+        "$b1 = string_to_bytes(\"abc\")\n$b2 = string_to_bytes(\"abc\")\n\
+                   print($b1 == $b2)\nprint($b1 != string_to_bytes(\"abd\"))\n",
+    )
+    .await
+    .unwrap();
     assert_eq!(out, "true\ntrue\n");
 }
 

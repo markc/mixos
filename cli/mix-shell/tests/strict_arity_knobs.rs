@@ -27,8 +27,14 @@ fn env_knob_turns_on_strict_arity() {
         .output()
         .expect("run mix");
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(!out.status.success(), "surplus-arity call must fail under the env knob");
-    assert!(stderr.contains("expected 1 argument(s), got 2"), "got: {stderr}");
+    assert!(
+        !out.status.success(),
+        "surplus-arity call must fail under the env knob"
+    );
+    assert!(
+        stderr.contains("expected 1 argument(s), got 2"),
+        "got: {stderr}"
+    );
     // Strict is the DEFAULT since 0.103.0 — no flag, no env, still raises.
     let def = mix_bin()
         .env_remove("MIX_STRICT_ARITY")
@@ -37,11 +43,19 @@ fn env_knob_turns_on_strict_arity() {
         .expect("run mix");
     let stderr = String::from_utf8_lossy(&def.stderr);
     assert!(!def.status.success(), "strict is the default: {stderr}");
-    assert!(stderr.contains("expected 1 argument(s), got 2"), "got: {stderr}");
+    assert!(
+        stderr.contains("expected 1 argument(s), got 2"),
+        "got: {stderr}"
+    );
     // The escape hatch restores the compatible extra-ignored binding.
     let ok = mix_bin()
         .env_remove("MIX_STRICT_ARITY")
-        .args(["--no-lint", "--compat-arity", "-c", "fn f($x) return 1 end\nprint(f(1, 2))"])
+        .args([
+            "--no-lint",
+            "--compat-arity",
+            "-c",
+            "fn f($x) return 1 end\nprint(f(1, 2))",
+        ])
         .output()
         .expect("run mix");
     assert!(
@@ -64,8 +78,14 @@ fn mixrc_strict_arity_variable_turns_on_strict_mode() {
         .output()
         .expect("run mix -ci");
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(!out.status.success(), "mixrc $strict_arity must apply: {stderr}");
-    assert!(stderr.contains("expected 1 argument(s), got 2"), "got: {stderr}");
+    assert!(
+        !out.status.success(),
+        "mixrc $strict_arity must apply: {stderr}"
+    );
+    assert!(
+        stderr.contains("expected 1 argument(s), got 2"),
+        "got: {stderr}"
+    );
     std::fs::remove_dir_all(&dir).ok();
 }
 
@@ -90,14 +110,25 @@ fn surplus_builtin_args_warn_once_in_compat_mode() {
     // surplus argument.
     let out = mix_bin()
         .env_remove("MIX_STRICT_ARITY")
-        .args(["--no-lint", "--compat-arity", "-c", "pop([1, 2], 0)\npop([1, 2], 0)"])
+        .args([
+            "--no-lint",
+            "--compat-arity",
+            "-c",
+            "pop([1, 2], 0)\npop([1, 2], 0)",
+        ])
         .output()
         .expect("run mix");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "compat mode keeps running: {stderr}");
     let count = stderr.matches("surplus is ignored").count();
-    assert_eq!(count, 1, "exactly one warning per (builtin, count): {stderr}");
-    assert!(stderr.contains("pop() called with 2 argument(s)"), "got: {stderr}");
+    assert_eq!(
+        count, 1,
+        "exactly one warning per (builtin, count): {stderr}"
+    );
+    assert!(
+        stderr.contains("pop() called with 2 argument(s)"),
+        "got: {stderr}"
+    );
 }
 
 #[test]
@@ -149,8 +180,14 @@ fn script_file_mode_flips_with_the_default_and_the_hatch() {
         .output()
         .expect("run script");
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(!out.status.success(), "strict default applies to files: {stderr}");
-    assert!(stderr.contains("expected 1 argument(s), got 2"), "got: {stderr}");
+    assert!(
+        !out.status.success(),
+        "strict default applies to files: {stderr}"
+    );
+    assert!(
+        stderr.contains("expected 1 argument(s), got 2"),
+        "got: {stderr}"
+    );
     let ok = mix_bin()
         .env_remove("MIX_STRICT_ARITY")
         .arg("--compat-arity")

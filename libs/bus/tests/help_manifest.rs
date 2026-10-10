@@ -3,7 +3,7 @@
 #![cfg(feature = "native")]
 
 use bus::native_client::NodedClient;
-use bus::{VerbDescriptor, BusMessage};
+use bus::{BusMessage, VerbDescriptor};
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
 use tokio::time::{Duration, timeout};

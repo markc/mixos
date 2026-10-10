@@ -35,12 +35,12 @@
 //! declared limitation, never BUSY.
 
 use crate::editor::Generation;
-use crate::editor::runtime::{AdmitRequest, Admission, Admitted, Control, OwnerToken};
+use crate::editor::runtime::{Admission, AdmitRequest, Admitted, Control, OwnerToken};
 use crate::editor::{self, Reply as EditorReply};
 use crate::session_state::{self, Phase, Source};
-use ::bus::native_session::*;
 use ::bus::native_client::session::Hello;
 use ::bus::native_client::{VerifiedCommand, VerifiedConnection};
+use ::bus::native_session::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::{Mutex, OnceLock};
@@ -214,9 +214,7 @@ impl Completion {
             outcome: "not_started",
             status: None,
             value: None,
-            error: Some(
-                "admission was abandoned before the editor acted; nothing executed".into(),
-            ),
+            error: Some("admission was abandoned before the editor acted; nothing executed".into()),
             duration_ms: DecimalU64(0),
             cancellation: CancellationReport {
                 requested: false,
@@ -290,10 +288,7 @@ struct Retrieved {
 }
 
 fn refusal(code: &'static str) -> (u8, String) {
-    (
-        10,
-        serde_json::json!({ "error_code": code }).to_string(),
-    )
+    (10, serde_json::json!({ "error_code": code }).to_string())
 }
 
 /// A refusal that names the operation it settled. Only ever attached to an
@@ -863,34 +858,33 @@ fn cancel(bound: &SessionRecord, actor: &BrokerPrincipal, body: &str) -> (u8, St
     // The cooperative flag only reaches code that polls it. A managed
     // foreground child does not poll anything, so while THIS operation is the
     // running one the job controller delivers to its process group as well.
-    let signalled = if outcome == mix::cancel::Outcome::Requested
-        && mix::cancel::active() == operation
-    {
-        let hook = surface()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .as_ref()
-            .map(|s| s.interrupt_foreground.clone());
-        // The hook re-validates the evaluation under the job lock: between
-        // resolving the cancellation and delivering it, this operation can
-        // finish and a successor's foreground job can take its place.
-        let signalled = hook.and_then(|hook| hook(operation));
-        if signalled.is_some() {
-            // A group signal IS a delivery, and the only one that does not
-            // depend on the target noticing a flag. Without recording it here
-            // an external command killed by this signal would be reported as
-            // having completed normally, because nothing in the evaluator ever
-            // consumed an interrupt on its behalf.
-            //
-            // Delivered is NOT died: a child that ignores SIGINT and exits 0 is
-            // reported by its own exit status, and the outcome below is built
-            // from the recorded facts rather than from having sent a signal.
-            mix::cancel::note_delivery();
-        }
-        signalled
-    } else {
-        None
-    };
+    let signalled =
+        if outcome == mix::cancel::Outcome::Requested && mix::cancel::active() == operation {
+            let hook = surface()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_ref()
+                .map(|s| s.interrupt_foreground.clone());
+            // The hook re-validates the evaluation under the job lock: between
+            // resolving the cancellation and delivering it, this operation can
+            // finish and a successor's foreground job can take its place.
+            let signalled = hook.and_then(|hook| hook(operation));
+            if signalled.is_some() {
+                // A group signal IS a delivery, and the only one that does not
+                // depend on the target noticing a flag. Without recording it here
+                // an external command killed by this signal would be reported as
+                // having completed normally, because nothing in the evaluator ever
+                // consumed an interrupt on its behalf.
+                //
+                // Delivered is NOT died: a child that ignores SIGINT and exits 0 is
+                // reported by its own exit status, and the outcome below is built
+                // from the recorded facts rather than from having sent a signal.
+                mix::cancel::note_delivery();
+            }
+            signalled
+        } else {
+            None
+        };
     (
         0,
         serde_json::json!({
@@ -1179,18 +1173,22 @@ fn task_retrieve(bound: &SessionRecord, actor: &BrokerPrincipal, body: &str) -> 
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .get(&request.operation_id.0)
-        .is_some_and(|handle| {
-            handle
-                .cancelling
-                .load(std::sync::atomic::Ordering::Acquire)
-        });
+        .is_some_and(|handle| handle.cancelling.load(std::sync::atomic::Ordering::Acquire));
     let elapsed = (!settled)
         .then(|| {
             handles()
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .get(&request.operation_id.0)
-                .map(|handle| DecimalU64(handle.started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64))
+                .map(|handle| {
+                    DecimalU64(
+                        handle
+                            .started
+                            .elapsed()
+                            .as_millis()
+                            .min(u128::from(u64::MAX)) as u64,
+                    )
+                })
         })
         .flatten();
     (
@@ -1297,7 +1295,10 @@ async fn submit(
     // released before the decision is acted on — nothing in this module may
     // hold a std mutex across an await.
     enum Known {
-        Replay { operation: u64, running: bool },
+        Replay {
+            operation: u64,
+            running: bool,
+        },
         /// A spent id whose recorded outcome is that nothing executed. Replayed
         /// as the refusal it originally produced, never as an acceptance.
         NotStarted(u64),
@@ -1469,11 +1470,7 @@ async fn submit(
     let principal = match request.on_behalf_of.as_deref() {
         // "via" is load-bearing: the shell authenticated the forwarder, not the
         // name it relayed, and the announcement must not imply otherwise.
-        Some(relayed) => format!(
-            "{} via {}",
-            sanitise_label(relayed),
-            principal_label(actor)
-        ),
+        Some(relayed) => format!("{} via {}", sanitise_label(relayed), principal_label(actor)),
         None => principal_label(actor),
     };
     let echo = format!(
@@ -1623,10 +1620,9 @@ async fn reserve(control: &Control, expected: u64) -> Reserved {
 /// human is never left without one.
 async fn release(control: &Control, (generation, revision): (Generation, u64)) {
     let control = control.clone();
-    let _ = tokio::task::spawn_blocking(move || {
-        control.release(generation, revision, EDITOR_BUDGET)
-    })
-    .await;
+    let _ =
+        tokio::task::spawn_blocking(move || control.release(generation, revision, EDITOR_BUDGET))
+            .await;
 }
 
 #[cfg(test)]
@@ -1738,7 +1734,10 @@ mod tests {
         // An escape that would straddle the cap is dropped whole, never split.
         let source = format!("{}\u{202e}", "a".repeat(MAX_ECHO_SOURCE - 2));
         let echoed = sanitise(&source);
-        assert!(!echoed.contains("\\u{20"), "a split escape leaked: {echoed}");
+        assert!(
+            !echoed.contains("\\u{20"),
+            "a split escape leaked: {echoed}"
+        );
     }
 
     #[test]
@@ -1812,7 +1811,10 @@ mod tests {
     fn a_full_store_evicts_instead_of_wedging_and_keeps_ids_spent() {
         let mut store = Store::default();
         for operation in 0..(RECORDS as u64 + 64) {
-            assert!(store.admit(record(operation, true)), "wedged at {operation}");
+            assert!(
+                store.admit(record(operation, true)),
+                "wedged at {operation}"
+            );
             // Settling is what spends the id. `admit` alone must not, or the
             // commonest refusal of all burns the caller's request id.
             store.settle(operation);

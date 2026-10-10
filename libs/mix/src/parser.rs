@@ -2438,7 +2438,9 @@ impl Parser {
                 // merge() where the last-wins order is deliberate.
                 if entries.iter().any(|(k, _)| k == &key) {
                     return Err(MixError::ParseError {
-                        msg: format!("duplicate map key '{key}' — the second literal overwrites the first; use merge(a, b) for deliberate last-wins"),
+                        msg: format!(
+                            "duplicate map key '{key}' — the second literal overwrites the first; use merge(a, b) for deliberate last-wins"
+                        ),
                         span: key_span,
                     });
                 }

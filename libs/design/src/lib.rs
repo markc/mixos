@@ -59,8 +59,6 @@ pub use colour_model::{
     ResolvedPair, TEXT_PAIR_NAMES, contrast_ratio,
 };
 pub use compiler::compile_design;
-pub use family::chrome::ResolvedChrome;
-pub use family::style::ResolvedStyle;
 pub use context::{Contrast, DesignContext, Mode, Scheme};
 pub use design_model::{
     AuthoredMetric, DesignApplyDecision, DesignApplyTransition, DesignCompileFailure,
@@ -73,6 +71,8 @@ pub use design_model::{
 pub use diagnostic::{CompileSuccess, DesignDiagnostic, DiagnosticSeverity};
 pub use equivalence::parse_legacy_v0_hex_colour;
 pub use family::button::{ButtonPart, ButtonSize, ButtonVariant};
+pub use family::chrome::ResolvedChrome;
+pub use family::style::ResolvedStyle;
 pub use family::{FAMILY_SCHEMAS, FamilyId, FamilyPart, FamilySchema};
 pub use mapping_model::{
     BUTTON_CELL_COUNT, BUTTON_TYPOGRAPHY_COUNT, ButtonCellKey, ButtonProperty, ButtonTypographyKey,
@@ -86,14 +86,15 @@ pub use recipe::{
     RecipePairDomain, RecipeParam, RecipeSignature, RecipeSubstitutionDomainConstraint,
 };
 pub use source::{
-    AuthoredPairSource, ButtonInheritanceSource, ButtonMappingSource, ChromeMappingSource, ColourSpace, CoveragePolicy,
-    DerivationCallSource, DesignSourceDocument, DesignSourceError, DesignSourceErrorCode,
-    DesignV1Source, FamilyMappingsSource, LegacyTypographySource, LegacyV0Source,
-    MappingRuleSource, MappingSelectorSource, MappingValueSource, MetricSource, ModifierAxis,
-    ModifierBlockSource, NonTextColourSource, OklchSource, PairSource, PrimitiveSource,
-    RecipeArgumentSource, SemanticSource, SourceKind, StyleFamilySource, StyleValueSource, TaggedMetricSource, TypeRecordSource,
-    TypographySource, V0CrosswalkExpressionSource, V0MappingProperty, V0PairMember,
-    parse_design_source, parse_legacy_v0_source,
+    AuthoredPairSource, ButtonInheritanceSource, ButtonMappingSource, ChromeMappingSource,
+    ColourSpace, CoveragePolicy, DerivationCallSource, DesignSourceDocument, DesignSourceError,
+    DesignSourceErrorCode, DesignV1Source, FamilyMappingsSource, LegacyTypographySource,
+    LegacyV0Source, MappingRuleSource, MappingSelectorSource, MappingValueSource, MetricSource,
+    ModifierAxis, ModifierBlockSource, NonTextColourSource, OklchSource, PairSource,
+    PrimitiveSource, RecipeArgumentSource, SemanticSource, SourceKind, StyleFamilySource,
+    StyleValueSource, TaggedMetricSource, TypeRecordSource, TypographySource,
+    V0CrosswalkExpressionSource, V0MappingProperty, V0PairMember, parse_design_source,
+    parse_legacy_v0_source,
 };
 pub use state::{InteractionState, StyleStateKey};
 pub use typography::{

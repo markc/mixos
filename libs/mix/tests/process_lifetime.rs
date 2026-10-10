@@ -88,7 +88,10 @@ async fn deadline_grace_escalates_to_sigkill_and_reaps_the_descendant() {
     if !gone {
         kill_leftover(descendant);
     }
-    assert!(gone, "descendant {descendant} outlived the escalated deadline");
+    assert!(
+        gone,
+        "descendant {descendant} outlived the escalated deadline"
+    );
 }
 
 /// The grace belongs to the whole GROUP, not the leader: the leader honours
@@ -137,7 +140,10 @@ async fn term_honouring_descendant_gets_the_grace_to_finish() {
     let finished = marker.exists();
     let _ = std::fs::remove_file(&marker);
     assert_eq!(output, "true 15 true true\n", "full output: {output:?}");
-    assert!(finished, "the TERM-honouring descendant was killed before its cleanup");
+    assert!(
+        finished,
+        "the TERM-honouring descendant was killed before its cleanup"
+    );
 }
 
 /// The capture-drain deadline uses the same escalation: the leader has
@@ -155,7 +161,10 @@ async fn drain_deadline_honours_grace_for_a_pipe_holding_descendant() {
     let finished = marker.exists();
     let _ = std::fs::remove_file(&marker);
     assert_eq!(output, "true 0 true\n", "full output: {output:?}");
-    assert!(finished, "the drain deadline SIGKILLed a TERM-honouring descendant");
+    assert!(
+        finished,
+        "the drain deadline SIGKILLed a TERM-honouring descendant"
+    );
 }
 
 /// The default is unchanged: no grace means SIGKILL at the deadline.
@@ -181,7 +190,10 @@ async fn grace_option_is_validated() {
          print(run_argv_must([\"printf\", \"x\"], {timeout: 5, grace: 1}))\n",
     )
     .await;
-    assert_eq!(output, "OPTION_INVALID\nOPTION_INVALID\nOPTION_INVALID\ntrue\nx\n");
+    assert_eq!(
+        output,
+        "OPTION_INVALID\nOPTION_INVALID\nOPTION_INVALID\ntrue\nx\n"
+    );
 }
 
 /// spawn's lifetime option: refused on a thread no host has enabled (the
@@ -193,10 +205,19 @@ async fn spawn_die_with_parent_needs_a_host_leads_its_group_and_refuses_detach()
         "try\n  spawn([\"true\"], {die_with_parent: true})\ncatch $m, $e\n  print($e.code .. \" \" .. contains($m, \"owns the evaluator thread\"))\nend\n",
     )
     .await;
-    assert_eq!(refused, "OPTION_INVALID true\n", "un-hosted spawn must be refused");
+    assert_eq!(
+        refused, "OPTION_INVALID true\n",
+        "un-hosted spawn must be refused"
+    );
 
-    assert!(mix::builtins::owned_spawns::enable(), "this thread becomes the host");
-    assert!(mix::builtins::owned_spawns::enable(), "idempotent on the host thread");
+    assert!(
+        mix::builtins::owned_spawns::enable(),
+        "this thread becomes the host"
+    );
+    assert!(
+        mix::builtins::owned_spawns::enable(),
+        "idempotent on the host thread"
+    );
     let other = std::thread::spawn(mix::builtins::owned_spawns::enable)
         .join()
         .unwrap();
@@ -212,7 +233,10 @@ async fn spawn_die_with_parent_needs_a_host_leads_its_group_and_refuses_detach()
     })
     .join()
     .unwrap();
-    assert_eq!(elsewhere, "OPTION_INVALID true\n", "the refusal names the other host thread");
+    assert_eq!(
+        elsewhere, "OPTION_INVALID true\n",
+        "the refusal names the other host thread"
+    );
     let output = run_ok(
         "try\n  spawn([\"true\"], {die_with_parent: true, detach: true})\ncatch $m, $e\n  print($e.code)\nend\n\
          try\n  spawn([\"true\"], {die_with_parent: 1})\ncatch $m, $e\n  print($e.code)\nend\n\
@@ -220,7 +244,11 @@ async fn spawn_die_with_parent_needs_a_host_leads_its_group_and_refuses_detach()
     )
     .await;
     let lines = parse_lines(&output);
-    assert_eq!(&lines[..2], ["OPTION_INVALID", "OPTION_INVALID"], "full output: {output:?}");
+    assert_eq!(
+        &lines[..2],
+        ["OPTION_INVALID", "OPTION_INVALID"],
+        "full output: {output:?}"
+    );
     let pid: i32 = lines[2].parse().expect("spawn returns the pid");
     // SAFETY: getpgid on a child of this process.
     let pgid = unsafe { libc::getpgid(pid) };
@@ -230,7 +258,10 @@ async fn spawn_die_with_parent_needs_a_host_leads_its_group_and_refuses_detach()
         let mut status = 0;
         libc::waitpid(pid, &mut status, 0);
     }
-    assert_eq!(pgid, pid, "die_with_parent child must lead its own process group");
+    assert_eq!(
+        pgid, pid,
+        "die_with_parent child must lead its own process group"
+    );
 }
 
 /// A top-level run_parallel timeout replaces each job's own, so a job's

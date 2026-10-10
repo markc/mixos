@@ -35,7 +35,10 @@ async fn missing_path_is_nil_but_a_symlink_loop_raises() {
     let out = run(&format!("print(realpath(\"{}\"))", file.display()))
         .await
         .expect("existing path");
-    assert_eq!(out.trim(), std::fs::canonicalize(&file).unwrap().to_string_lossy());
+    assert_eq!(
+        out.trim(),
+        std::fs::canonicalize(&file).unwrap().to_string_lossy()
+    );
     // A self-referential symlink loop -> raise (FilesystemLoop, not nil).
     #[cfg(unix)]
     {

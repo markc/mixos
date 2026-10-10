@@ -61,12 +61,20 @@ pub fn colour(value: LinearRgba) -> Color32 {
 /// `a` moved toward `b` by `t` (0..=1), in gamma space, as egui blends.
 fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
     let lerp = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t).round() as u8;
-    Color32::from_rgba_unmultiplied(lerp(a.r(), b.r()), lerp(a.g(), b.g()), lerp(a.b(), b.b()), lerp(a.a(), b.a()))
+    Color32::from_rgba_unmultiplied(
+        lerp(a.r(), b.r()),
+        lerp(a.g(), b.g()),
+        lerp(a.b(), b.b()),
+        lerp(a.a(), b.a()),
+    )
 }
 
 /// The rendered halves of a named pair.
 fn pair(colours: &ResolvedColours, name: &str) -> Option<(Color32, Color32)> {
-    colours.pairs.get(name).map(|p| (colour(p.rendered_surface), colour(p.rendered_foreground)))
+    colours
+        .pairs
+        .get(name)
+        .map(|p| (colour(p.rendered_surface), colour(p.rendered_foreground)))
 }
 
 /// The egui style for `theme`. A style with chrome widgets takes its whole
@@ -84,7 +92,10 @@ pub fn style(theme: &Theme) -> Style {
 /// palette of a hue scheme is read back from it, and a chrome scheme falls
 /// back on it for any role its design leaves out.
 pub fn pair_style(theme: &Theme) -> Style {
-    let mut style = Style { visuals: pair_visuals(theme), ..Style::default() };
+    let mut style = Style {
+        visuals: pair_visuals(theme),
+        ..Style::default()
+    };
     let dictionary = theme.dictionary();
     let px = |name: &str| {
         dictionary
@@ -93,7 +104,13 @@ pub fn pair_style(theme: &Theme) -> Style {
             .filter(|metric| metric.kind == ResolvedMetricKind::Px)
             .map(|metric| metric.value as f32)
     };
-    let step = |index: usize| dictionary.scales.get("spacing").and_then(|s| s.get(index)).map(|v| *v as f32);
+    let step = |index: usize| {
+        dictionary
+            .scales
+            .get("spacing")
+            .and_then(|s| s.get(index))
+            .map(|v| *v as f32)
+    };
     let [xs, sm, md, _lg, xl] = SPACING_STEPS.map(step);
     let spacing = &mut style.spacing;
     if let (Some(xs), Some(sm)) = (xs, sm) {
@@ -120,16 +137,30 @@ pub fn pair_style(theme: &Theme) -> Style {
     let text = |size: f32| FontId::new(size, FontFamily::Proportional);
     style.text_styles.insert(TextStyle::Body, text(body));
     style.text_styles.insert(TextStyle::Button, text(body));
-    style.text_styles.insert(TextStyle::Small, text(small.font_size as f32));
-    style.text_styles.insert(TextStyle::Heading, crate::fonts::heading(display.font_size as f32));
+    style
+        .text_styles
+        .insert(TextStyle::Small, text(small.font_size as f32));
+    style.text_styles.insert(
+        TextStyle::Heading,
+        crate::fonts::heading(display.font_size as f32),
+    );
     let mono = design::active_typography(Some(typography), TypographyRole::Mono);
-    style.text_styles.insert(TextStyle::Monospace, FontId::new(mono.font_size as f32, FontFamily::Monospace));
+    style.text_styles.insert(
+        TextStyle::Monospace,
+        FontId::new(mono.font_size as f32, FontFamily::Monospace),
+    );
 
     if let Some(radius) = px("radius") {
         let small = CornerRadius::same(radius.round() as u8);
         let large = CornerRadius::same((radius * 2.0).round() as u8);
         let widgets = &mut style.visuals.widgets;
-        for w in [&mut widgets.noninteractive, &mut widgets.inactive, &mut widgets.hovered, &mut widgets.active, &mut widgets.open] {
+        for w in [
+            &mut widgets.noninteractive,
+            &mut widgets.inactive,
+            &mut widgets.hovered,
+            &mut widgets.active,
+            &mut widgets.open,
+        ] {
             w.corner_radius = small;
         }
         // Menus are tight panels (about 4 px on the shipped design); only
@@ -140,10 +171,20 @@ pub fn pair_style(theme: &Theme) -> Style {
     // A soft, close shadow under menus and popups: egui's own shadow colour at
     // under half strength, barely offset (egui's default sits 6 x 10 away).
     let shadow = &mut style.visuals.popup_shadow;
-    *shadow = egui::Shadow { offset: [0, 2], blur: 10, spread: 0, color: shadow.color.gamma_multiply(MENU_SHADOW) };
+    *shadow = egui::Shadow {
+        offset: [0, 2],
+        blur: 10,
+        spread: 0,
+        color: shadow.color.gamma_multiply(MENU_SHADOW),
+    };
     if let Some(width) = px("button.border_width") {
         let widgets = &mut style.visuals.widgets;
-        for w in [&mut widgets.inactive, &mut widgets.hovered, &mut widgets.active, &mut widgets.open] {
+        for w in [
+            &mut widgets.inactive,
+            &mut widgets.hovered,
+            &mut widgets.active,
+            &mut widgets.open,
+        ] {
             w.bg_stroke.width = width;
         }
         style.visuals.window_stroke.width = width;
@@ -193,7 +234,11 @@ fn pair_visuals(theme: &Theme) -> Visuals {
         w.inactive.fg_stroke.color = text;
         let hovered = mix(surface, text, HOVER_MIX);
         let active = mix(surface, text, ACTIVE_MIX);
-        for (state, fill) in [(&mut w.hovered, hovered), (&mut w.open, hovered), (&mut w.active, active)] {
+        for (state, fill) in [
+            (&mut w.hovered, hovered),
+            (&mut w.open, hovered),
+            (&mut w.active, active),
+        ] {
             state.bg_fill = fill;
             state.weak_bg_fill = fill;
             state.fg_stroke.color = text;
@@ -215,7 +260,13 @@ fn pair_visuals(theme: &Theme) -> Visuals {
     }
     if let Some(border) = non_text("border") {
         let w = &mut v.widgets;
-        for state in [&mut w.noninteractive, &mut w.inactive, &mut w.hovered, &mut w.active, &mut w.open] {
+        for state in [
+            &mut w.noninteractive,
+            &mut w.inactive,
+            &mut w.hovered,
+            &mut w.active,
+            &mut w.open,
+        ] {
             state.bg_stroke.color = border;
         }
         v.window_stroke.color = border;
@@ -242,14 +293,21 @@ mod tests {
     fn every_hue_context_maps_without_falling_back_on_the_core_pairs() {
         for scheme in Scheme::ALL.into_iter().filter(|s| !s.is_chrome_scheme()) {
             for mode in Mode::ALL {
-                let theme = Theme::for_context(DesignContext { scheme, mode, ..DesignContext::default() });
+                let theme = Theme::for_context(DesignContext {
+                    scheme,
+                    mode,
+                    ..DesignContext::default()
+                });
                 let colours = &theme.dictionary().colours;
                 let v = visuals(&theme);
                 let (base, text) = pair(colours, "base").expect("base pair");
                 assert_eq!(v.panel_fill, base, "{scheme:?}/{mode:?}");
                 assert_eq!(v.override_text_color, Some(text));
                 assert_eq!(v.dark_mode, mode == Mode::Dark);
-                assert_ne!(v.widgets.hovered.bg_fill, v.widgets.inactive.bg_fill, "hover must be visible");
+                assert_ne!(
+                    v.widgets.hovered.bg_fill, v.widgets.inactive.bg_fill,
+                    "hover must be visible"
+                );
             }
         }
     }
@@ -259,7 +317,10 @@ mod tests {
         let theme = Theme::for_context(DesignContext::revision_one());
         let style = style(&theme);
         let ui = design::active_typography(Some(theme.typography()), TypographyRole::Ui);
-        assert_eq!(style.text_styles[&TextStyle::Body].size, ui.font_size as f32);
+        assert_eq!(
+            style.text_styles[&TextStyle::Body].size,
+            ui.font_size as f32
+        );
         assert!(style.spacing.item_spacing.x > 0.0);
     }
 

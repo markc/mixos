@@ -32,7 +32,14 @@ impl Scheme {
     /// The six hue schemes of design revision one. Tests that pin revision
     /// one's exact derivation walks iterate these; the chrome schemes carry
     /// their own parity tests.
-    pub const REVISION_ONE: [Self; 6] = [Self::Ocean, Self::Crimson, Self::Stone, Self::Forest, Self::Sunset, Self::Mono];
+    pub const REVISION_ONE: [Self; 6] = [
+        Self::Ocean,
+        Self::Crimson,
+        Self::Stone,
+        Self::Forest,
+        Self::Sunset,
+        Self::Mono,
+    ];
 
     /// The schemes drawn from the chrome family.
     pub const fn is_chrome_scheme(self) -> bool {
@@ -126,6 +133,11 @@ impl DesignContext {
     /// values, and the v0 equivalence gate's legacy fields, are written
     /// against it.
     pub const fn revision_one() -> Self {
-        Self { scheme: Scheme::Ocean, mode: Mode::Light, contrast: Contrast::Normal, app: None }
+        Self {
+            scheme: Scheme::Ocean,
+            mode: Mode::Light,
+            contrast: Contrast::Normal,
+            app: None,
+        }
     }
 }

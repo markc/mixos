@@ -34,17 +34,26 @@ async fn err(source: &str) -> String {
 #[tokio::test]
 async fn hex_escape_matches_only_that_character() {
     // \x41 is "A": replace it, leave the rest.
-    assert_eq!(out("print(re_replace(\"AB\", \"\\\\x41\", \"-\"))").await, "-B\n");
+    assert_eq!(
+        out("print(re_replace(\"AB\", \"\\\\x41\", \"-\"))").await,
+        "-B\n"
+    );
     assert_eq!(out("print(re_match(\"AB\", \"\\\\x41\"))").await, "true\n");
     assert_eq!(out("print(re_match(\"b\", \"\\\\x41\"))").await, "false\n");
-    assert_eq!(out("print(len(re_find(\"ABCA\", \"\\\\x41\")))").await, "2\n");
+    assert_eq!(
+        out("print(len(re_find(\"ABCA\", \"\\\\x41\")))").await,
+        "2\n"
+    );
 }
 
 #[tokio::test]
 async fn hex_escape_absent_character_leaves_subject_alone() {
     // THE assertion that would have caught the misdiagnosis: \x1b (ESC)
     // absent from the subject — the subject must come back untouched.
-    assert_eq!(out("print(re_replace(\"AB\", \"\\\\x1b\", \"-\"))").await, "AB\n");
+    assert_eq!(
+        out("print(re_replace(\"AB\", \"\\\\x1b\", \"-\"))").await,
+        "AB\n"
+    );
     assert_eq!(out("print(re_match(\"AB\", \"\\\\x1b\"))").await, "false\n");
     assert_eq!(out("print(len(re_find(\"AB\", \"\\\\x1b\")))").await, "0\n");
 }
@@ -62,7 +71,10 @@ async fn brace_and_unicode_hex_forms() {
     assert_eq!(out("print(re_match(\"A\", \"\\\\x{41}\"))").await, "true\n");
     assert_eq!(out("print(re_match(\"A\", \"\\\\u0041\"))").await, "true\n");
     assert_eq!(out("print(re_match(\"A\", \"\\\\u{41}\"))").await, "true\n");
-    assert_eq!(out("print(re_match(\"caf\\u{e9}\", \"\\\\u{e9}\"))").await, "true\n");
+    assert_eq!(
+        out("print(re_match(\"caf\\u{e9}\", \"\\\\u{e9}\"))").await,
+        "true\n"
+    );
 }
 
 // ---------- class escapes ----------
@@ -70,21 +82,42 @@ async fn brace_and_unicode_hex_forms() {
 #[tokio::test]
 async fn class_escapes_match_their_classes() {
     // \d digits only
-    assert_eq!(out("print(re_replace(\"a7b42c\", \"\\\\d+\", \"#\"))").await, "a#b#c\n");
+    assert_eq!(
+        out("print(re_replace(\"a7b42c\", \"\\\\d+\", \"#\"))").await,
+        "a#b#c\n"
+    );
     // \w word chars
-    assert_eq!(out("print(re_match(\"ab_1\", \"^\\\\w+$\"))").await, "true\n");
-    assert_eq!(out("print(re_match(\"a b\", \"^\\\\w+$\"))").await, "false\n");
+    assert_eq!(
+        out("print(re_match(\"ab_1\", \"^\\\\w+$\"))").await,
+        "true\n"
+    );
+    assert_eq!(
+        out("print(re_match(\"a b\", \"^\\\\w+$\"))").await,
+        "false\n"
+    );
     // \s whitespace runs
-    assert_eq!(out("print(re_replace(\"a  b\\tc\", \"\\\\s+\", \"_\"))").await, "a_b_c\n");
+    assert_eq!(
+        out("print(re_replace(\"a  b\\tc\", \"\\\\s+\", \"_\"))").await,
+        "a_b_c\n"
+    );
     // \b word boundary
-    assert_eq!(out("print(re_match(\"a word here\", \"\\\\bword\\\\b\"))").await, "true\n");
-    assert_eq!(out("print(re_match(\"swordfish\", \"\\\\bword\\\\b\"))").await, "false\n");
+    assert_eq!(
+        out("print(re_match(\"a word here\", \"\\\\bword\\\\b\"))").await,
+        "true\n"
+    );
+    assert_eq!(
+        out("print(re_match(\"swordfish\", \"\\\\bword\\\\b\"))").await,
+        "false\n"
+    );
 }
 
 #[tokio::test]
 async fn literal_backslash_escape() {
     // Pattern \\ (one escaped backslash) matches one literal backslash.
-    assert_eq!(out("print(re_replace(\"a\\\\b\", \"\\\\\\\\\", \"/\"))").await, "a/b\n");
+    assert_eq!(
+        out("print(re_replace(\"a\\\\b\", \"\\\\\\\\\", \"/\"))").await,
+        "a/b\n"
+    );
 }
 
 // ---------- unsupported escapes fail loudly, never silently ----------
@@ -100,7 +133,10 @@ async fn unsupported_escape_is_a_loud_error() {
 
 #[tokio::test]
 async fn split_and_grep_share_the_escape_handling() {
-    assert_eq!(out("print(len(re_split(\"a1b2c\", \"\\\\d\")))").await, "3\n");
+    assert_eq!(
+        out("print(len(re_split(\"a1b2c\", \"\\\\d\")))").await,
+        "3\n"
+    );
     assert_eq!(
         out("print(len(grep_lines(\"Alpha\\nbeta\\nApex\", \"\\\\x41\")))").await,
         "2\n"
@@ -147,15 +183,25 @@ async fn long_invalid_pattern_error_is_truncated_and_hints_arg_order() {
     // complaint, and name the usual cause.
     let src = "$doc = repeat(\"line of roster text \", 400) .. \"x{bad}\"\nre_match(\"y\", $doc)\n";
     let e = err(src).await;
-    assert!(e.len() < 600, "diagnostic not truncated ({} chars): {e}", &e[..200]);
+    assert!(
+        e.len() < 600,
+        "diagnostic not truncated ({} chars): {e}",
+        &e[..200]
+    );
     assert!(e.contains("truncated"), "got: {e}");
     assert!(e.contains("SUBJECT comes first"), "got: {e}");
-    assert!(e.contains("error:"), "the regex crate's own complaint must survive: {e}");
+    assert!(
+        e.contains("error:"),
+        "the regex crate's own complaint must survive: {e}"
+    );
 }
 
 #[tokio::test]
 async fn short_invalid_pattern_error_keeps_the_full_report() {
     let e = err("re_match(\"x\", \"[unterminated\")").await;
     assert!(e.contains("invalid regex '[unterminated'"), "got: {e}");
-    assert!(!e.contains("SUBJECT comes first"), "short patterns keep the old format: {e}");
+    assert!(
+        !e.contains("SUBJECT comes first"),
+        "short patterns keep the old format: {e}"
+    );
 }

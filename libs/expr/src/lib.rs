@@ -80,7 +80,10 @@ pub struct Error {
 
 impl Error {
     pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
-        Error { kind, message: message.into() }
+        Error {
+            kind,
+            message: message.into(),
+        }
     }
 }
 
@@ -133,7 +136,12 @@ pub fn compile(source: &str) -> Result<Expr, Error> {
         .iter()
         .map(|path| path.split('.').next().unwrap_or(path).to_owned())
         .collect();
-    Ok(Expr { source: source.to_owned(), root, reads, roots })
+    Ok(Expr {
+        source: source.to_owned(),
+        root,
+        reads,
+        roots,
+    })
 }
 
 /// Compile and evaluate in one step.

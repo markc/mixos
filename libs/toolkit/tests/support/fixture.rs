@@ -130,16 +130,34 @@ pub fn registry() -> Registry<Fixture> {
         ("view.theme", "theme", None),
         ("help.community", "community", None),
     ] {
-        r.add(Command { id, label, menu: None, submenu: None, group: 0, shortcut, icon: None, enabled: always, run: |_| {} });
+        r.add(Command {
+            id,
+            label,
+            menu: None,
+            submenu: None,
+            group: 0,
+            shortcut,
+            icon: None,
+            enabled: always,
+            run: |_| {},
+        });
     }
     r.search_menu("menu-help");
-    r.theme_menu("menu-view", |s: &Fixture| s.theme, |s, scheme, mode| s.theme = (scheme, mode));
+    r.theme_menu(
+        "menu-view",
+        |s: &Fixture| s.theme,
+        |s, scheme, mode| s.theme = (scheme, mode),
+    );
     r
 }
 
 /// The theme for one chrome scheme and mode.
 pub fn theme(scheme: Scheme, mode: Mode) -> Theme {
-    Theme::for_context(DesignContext { scheme, mode, ..DesignContext::default() })
+    Theme::for_context(DesignContext {
+        scheme,
+        mode,
+        ..DesignContext::default()
+    })
 }
 
 /// The five chrome themes of the chrome specification, by its theme id.
@@ -166,20 +184,49 @@ pub fn harness(builder: HarnessBuilder<Fixture>, theme: &Theme) -> Harness<'stat
             let mut fired = registry.shortcuts(ui.ctx(), state);
             let mut workspace = state.workspace;
             let mut controls = [
-                Control::Combo { id: "workspace", selected: &mut workspace, options: &workspaces },
-                Control::Icon { command: "help.search", icon: Icon::Search, selected: false },
-                Control::Icon { command: "view.theme", icon: titlebar::theme_icon(dark), selected: false },
-                Control::Link { command: "help.community", icon: Icon::MessageSquare },
+                Control::Combo {
+                    id: "workspace",
+                    selected: &mut workspace,
+                    options: &workspaces,
+                },
+                Control::Icon {
+                    command: "help.search",
+                    icon: Icon::Search,
+                    selected: false,
+                },
+                Control::Icon {
+                    command: "view.theme",
+                    icon: titlebar::theme_icon(dark),
+                    selected: false,
+                },
+                Control::Link {
+                    command: "help.community",
+                    icon: Icon::MessageSquare,
+                },
             ];
-            let title = titlebar::show_with(ui, TITLE, Some(Icon::Square), stroke, &registry, state, &strings, &mut controls);
+            let title = titlebar::show_with(
+                ui,
+                TITLE,
+                Some(Icon::Square),
+                stroke,
+                &registry,
+                state,
+                &strings,
+                &mut controls,
+            );
             fired.extend(title);
             state.workspace = workspace;
             egui::CentralPanel::default().show(ui, |_| {});
             if state.dialog {
-                let choices = vec![Choice::new("OK", Role::Default), Choice::new("Cancel", Role::Cancel)];
-                let shown = Dialog::new("image-size", "Image Size").buttons(choices).show(ui.ctx(), |ui| {
-                    ui.allocate_space(egui::vec2(ui.available_width(), DIALOG_BODY));
-                });
+                let choices = vec![
+                    Choice::new("OK", Role::Default),
+                    Choice::new("Cancel", Role::Cancel),
+                ];
+                let shown = Dialog::new("image-size", "Image Size")
+                    .buttons(choices)
+                    .show(ui.ctx(), |ui| {
+                        ui.allocate_space(egui::vec2(ui.available_width(), DIALOG_BODY));
+                    });
                 state.dialog = shown.chosen.is_none();
             }
             titlebar::edges(ui);

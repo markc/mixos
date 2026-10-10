@@ -15,7 +15,9 @@
 //! after the title bar and before the central panel.
 
 use crate::chrome::Chrome;
-use egui::{Align, Frame, InnerResponse, Layout, Margin, Panel, Rect, Sense, Stroke, Ui, pos2, vec2};
+use egui::{
+    Align, Frame, InnerResponse, Layout, Margin, Panel, Rect, Sense, Stroke, Ui, pos2, vec2,
+};
 
 /// A bar's size along its short side, from the style (§2.6:
 /// [`crate::chrome::Metrics::bars`]).
@@ -48,7 +50,9 @@ pub const DIVIDER_SLOT: f32 = 9.0;
 pub const DIVIDER_HEIGHT: f32 = 22.0;
 
 fn frame(ui: &Ui, margin: Margin) -> Frame {
-    Frame::new().fill(Chrome::of(ui.ctx()).palette.chrome).inner_margin(margin)
+    Frame::new()
+        .fill(Chrome::of(ui.ctx()).palette.chrome)
+        .inner_margin(margin)
 }
 
 fn rule(ui: &Ui, from: egui::Pos2, to: egui::Pos2) {
@@ -67,23 +71,45 @@ fn rule(ui: &Ui, from: egui::Pos2, to: egui::Pos2) {
 pub fn options<R>(ui: &mut Ui, contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
     let size = Chrome::of(ui.ctx()).metrics.bars.options;
     let frame = frame(ui, Margin::symmetric(BAR_INSET, 0));
-    Panel::top("toolkit-options-bar").exact_size(size).show_separator_line(false).frame(frame).show(ui, |ui| {
-        let r = ui.max_rect().expand2(vec2(f32::from(BAR_INSET), 0.0));
-        rule(ui, pos2(r.left(), r.top() + 0.5), pos2(r.right(), r.top() + 0.5));
-        rule(ui, pos2(r.left(), r.bottom() - 0.5), pos2(r.right(), r.bottom() - 0.5));
-        ui.with_layout(Layout::left_to_right(Align::Center), contents).inner
-    })
+    Panel::top("toolkit-options-bar")
+        .exact_size(size)
+        .show_separator_line(false)
+        .frame(frame)
+        .show(ui, |ui| {
+            let r = ui.max_rect().expand2(vec2(f32::from(BAR_INSET), 0.0));
+            rule(
+                ui,
+                pos2(r.left(), r.top() + 0.5),
+                pos2(r.right(), r.top() + 0.5),
+            );
+            rule(
+                ui,
+                pos2(r.left(), r.bottom() - 0.5),
+                pos2(r.right(), r.bottom() - 0.5),
+            );
+            ui.with_layout(Layout::left_to_right(Align::Center), contents)
+                .inner
+        })
 }
 
 /// The status bar: a row of controls, centred vertically.
 pub fn status<R>(ui: &mut Ui, contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
     let size = Chrome::of(ui.ctx()).metrics.bars.status;
     let frame = frame(ui, Margin::symmetric(BAR_INSET, 0));
-    Panel::bottom("toolkit-status-bar").exact_size(size).show_separator_line(false).frame(frame).show(ui, |ui| {
-        let r = ui.max_rect().expand2(vec2(f32::from(BAR_INSET), 0.0));
-        rule(ui, pos2(r.left(), r.top() + 0.5), pos2(r.right(), r.top() + 0.5));
-        ui.with_layout(Layout::left_to_right(Align::Center), contents).inner
-    })
+    Panel::bottom("toolkit-status-bar")
+        .exact_size(size)
+        .show_separator_line(false)
+        .frame(frame)
+        .show(ui, |ui| {
+            let r = ui.max_rect().expand2(vec2(f32::from(BAR_INSET), 0.0));
+            rule(
+                ui,
+                pos2(r.left(), r.top() + 0.5),
+                pos2(r.right(), r.top() + 0.5),
+            );
+            ui.with_layout(Layout::left_to_right(Align::Center), contents)
+                .inner
+        })
 }
 
 /// The tool bar at the window's left: a column of tool buttons.
@@ -92,13 +118,23 @@ pub fn tools<R>(ui: &mut Ui, contents: impl FnOnce(&mut Ui) -> R) -> InnerRespon
     let sizes = chrome.metrics.bars;
     let margin = Margin::symmetric(sizes.tool_margin as i8, sizes.tool_margin as i8);
     let frame = frame(ui, margin);
-    Panel::left("toolkit-tool-bar").exact_size(sizes.tool).resizable(false).show_separator_line(false).frame(frame).show(ui, |ui| {
-        if chrome.style.tool_bar_rule {
-            let r = ui.max_rect().expand(sizes.tool_margin);
-            rule(ui, pos2(r.right() - 0.5, r.top()), pos2(r.right() - 0.5, r.bottom()));
-        }
-        ui.with_layout(Layout::top_down(Align::Center), contents).inner
-    })
+    Panel::left("toolkit-tool-bar")
+        .exact_size(sizes.tool)
+        .resizable(false)
+        .show_separator_line(false)
+        .frame(frame)
+        .show(ui, |ui| {
+            if chrome.style.tool_bar_rule {
+                let r = ui.max_rect().expand(sizes.tool_margin);
+                rule(
+                    ui,
+                    pos2(r.right() - 0.5, r.top()),
+                    pos2(r.right() - 0.5, r.bottom()),
+                );
+            }
+            ui.with_layout(Layout::top_down(Align::Center), contents)
+                .inner
+        })
 }
 
 /// The icon rail at the window's right: a column of rail toggles.
@@ -106,11 +142,21 @@ pub fn rail<R>(ui: &mut Ui, contents: impl FnOnce(&mut Ui) -> R) -> InnerRespons
     let sizes = Chrome::of(ui.ctx()).metrics.bars;
     let inset = ((sizes.rail - sizes.rail_button) / 2.0) as i8;
     let frame = frame(ui, Margin::symmetric(inset, inset));
-    Panel::right("toolkit-rail").exact_size(sizes.rail).resizable(false).show_separator_line(false).frame(frame).show(ui, |ui| {
-        let r = ui.max_rect().expand(f32::from(inset));
-        rule(ui, pos2(r.left() - RAIL_RULE, r.top()), pos2(r.left() - RAIL_RULE, r.bottom()));
-        ui.with_layout(Layout::top_down(Align::Center), contents).inner
-    })
+    Panel::right("toolkit-rail")
+        .exact_size(sizes.rail)
+        .resizable(false)
+        .show_separator_line(false)
+        .frame(frame)
+        .show(ui, |ui| {
+            let r = ui.max_rect().expand(f32::from(inset));
+            rule(
+                ui,
+                pos2(r.left() - RAIL_RULE, r.top()),
+                pos2(r.left() - RAIL_RULE, r.bottom()),
+            );
+            ui.with_layout(Layout::top_down(Align::Center), contents)
+                .inner
+        })
 }
 
 /// The right dock behind the panel groups: `dock` fill, the style's width
@@ -135,7 +181,9 @@ pub fn dock<R>(ui: &mut Ui, contents: impl FnOnce(&mut Ui) -> R) -> InnerRespons
 /// style's margin (§2.6).
 pub fn dock_frame(ctx: &egui::Context) -> Frame {
     let chrome = Chrome::of(ctx);
-    Frame::new().fill(chrome.palette.dock).inner_margin(Margin::same(chrome.metrics.dock_margin as i8))
+    Frame::new()
+        .fill(chrome.palette.dock)
+        .inner_margin(Margin::same(chrome.metrics.dock_margin as i8))
 }
 
 /// A vertical divider in a bar: a 9 pt slot with a centred 1 pt
@@ -143,14 +191,22 @@ pub fn dock_frame(ctx: &egui::Context) -> Frame {
 pub fn divider(ui: &mut Ui, height: f32) {
     let (rect, _) = ui.allocate_exact_size(vec2(DIVIDER_SLOT, height), Sense::hover());
     let x = ui.painter().round_to_pixel_center(rect.center().x);
-    ui.painter().vline(x, rect.y_range(), Stroke::new(1.0, Chrome::of(ui.ctx()).palette.separator));
+    ui.painter().vline(
+        x,
+        rect.y_range(),
+        Stroke::new(1.0, Chrome::of(ui.ctx()).palette.separator),
+    );
 }
 
 /// A full-width 1 pt `separator` hairline.
 pub fn hairline(ui: &mut Ui) -> Rect {
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
     let y = ui.painter().round_to_pixel_center(rect.center().y);
-    ui.painter().hline(rect.x_range(), y, Stroke::new(1.0, Chrome::of(ui.ctx()).palette.separator));
+    ui.painter().hline(
+        rect.x_range(),
+        y,
+        Stroke::new(1.0, Chrome::of(ui.ctx()).palette.separator),
+    );
     rect
 }
 
@@ -162,10 +218,24 @@ mod tests {
 
     #[test]
     fn bars_take_the_style_sizes() {
-        let sizes = |scheme| Chrome::for_theme(&Theme::for_context(DesignContext { scheme, mode: Mode::Dark, ..DesignContext::default() })).metrics.bars;
+        let sizes = |scheme| {
+            Chrome::for_theme(&Theme::for_context(DesignContext {
+                scheme,
+                mode: Mode::Dark,
+                ..DesignContext::default()
+            }))
+            .metrics
+            .bars
+        };
         let (pro, studio) = (sizes(Scheme::Pro), sizes(Scheme::Studio));
-        assert_eq!((pro.options, pro.status, pro.tool, pro.rail), (36.0, 24.0, 40.0, 36.0));
-        assert_eq!((studio.options, studio.status, studio.tool, studio.rail), (42.0, 30.0, 50.0, 44.0));
+        assert_eq!(
+            (pro.options, pro.status, pro.tool, pro.rail),
+            (36.0, 24.0, 40.0, 36.0)
+        );
+        assert_eq!(
+            (studio.options, studio.status, studio.tool, studio.rail),
+            (42.0, 30.0, 50.0, 44.0)
+        );
         // A button plus its two side margins fills the tool bar.
         assert_eq!(pro.tool_button + 2.0 * pro.tool_margin, pro.tool);
         assert_eq!(studio.tool_button + 2.0 * studio.tool_margin, studio.tool);

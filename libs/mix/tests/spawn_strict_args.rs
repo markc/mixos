@@ -125,14 +125,14 @@ async fn argv_no_shell_means_no_word_splitting() {
     let dir = witness("nosplit");
     std::fs::create_dir(&dir).unwrap();
     let target = dir.join("a b");
-    let src = format!(
-        "spawn([\"touch\", \"{}\"])\n",
-        target.display()
-    );
+    let src = format!("spawn([\"touch\", \"{}\"])\n", target.display());
     run(&src).await.expect("argv spawn");
     assert!(wait_for(&target), "the single spaced-name file must exist");
     // Exactly one entry, and it is the spaced name — no "a" and "b" split.
-    let entries: Vec<_> = std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()).collect();
+    let entries: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .collect();
     assert_eq!(entries.len(), 1, "no word-splitting: exactly one file");
     assert_eq!(entries[0].file_name().to_string_lossy(), "a b");
     let _ = std::fs::remove_dir_all(&dir);
@@ -156,7 +156,9 @@ async fn argv_detach_puts_the_child_in_a_new_session() {
     // fields[0]=state, [1]=ppid, [2]=pgrp, [3]=session
     let sid: i32 = fields[3].parse().unwrap();
     assert_eq!(sid, pid, "detach:true must make the child a session leader");
-    unsafe { libc::kill(pid, libc::SIGKILL); }
+    unsafe {
+        libc::kill(pid, libc::SIGKILL);
+    }
 }
 
 /// `/proc/<pid>/stat` fields after the `(comm)` group: [0]=state, [1]=ppid.
@@ -170,9 +172,7 @@ fn proc_stat_fields(pid: i32) -> Option<Vec<String>> {
 /// the real child's, not a pre-exec fork of the test binary.
 fn wait_for_exec(pid: i32, comm: &str) -> bool {
     for _ in 0..250 {
-        if std::fs::read_to_string(format!("/proc/{pid}/comm"))
-            .is_ok_and(|c| c.trim() == comm)
-        {
+        if std::fs::read_to_string(format!("/proc/{pid}/comm")).is_ok_and(|c| c.trim() == comm) {
             return true;
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
@@ -193,13 +193,26 @@ async fn argv_detach_double_forks_so_the_caller_never_holds_a_zombie() {
         .await
         .expect("detached argv spawn");
     let pid: i32 = out.trim().parse().expect("a numeric pid");
-    assert!(wait_for_exec(pid, "sleep"), "the returned pid must be the exec'd child");
+    assert!(
+        wait_for_exec(pid, "sleep"),
+        "the returned pid must be the exec'd child"
+    );
     let fields = proc_stat_fields(pid).expect("child alive");
     let ppid: u32 = fields[1].parse().unwrap();
-    assert_ne!(ppid, std::process::id(), "detach:true must reparent the child away from the caller");
-    assert_eq!(fields[3], pid.to_string(), "the returned pid must still lead its own session");
+    assert_ne!(
+        ppid,
+        std::process::id(),
+        "detach:true must reparent the child away from the caller"
+    );
+    assert_eq!(
+        fields[3],
+        pid.to_string(),
+        "the returned pid must still lead its own session"
+    );
 
-    unsafe { libc::kill(pid, libc::SIGKILL); }
+    unsafe {
+        libc::kill(pid, libc::SIGKILL);
+    }
     let mut last_state = String::new();
     for _ in 0..250 {
         match proc_stat_fields(pid) {
@@ -208,7 +221,9 @@ async fn argv_detach_double_forks_so_the_caller_never_holds_a_zombie() {
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
-    panic!("killed detached child {pid} was never reaped (state {last_state}) — the caller still owns it");
+    panic!(
+        "killed detached child {pid} was never reaped (state {last_state}) — the caller still owns it"
+    );
 }
 
 #[tokio::test]
@@ -220,7 +235,11 @@ async fn argv_without_detach_stays_the_callers_child() {
     let pid: i32 = out.trim().parse().expect("a numeric pid");
     let fields = proc_stat_fields(pid).expect("child alive");
     let ppid: u32 = fields[1].parse().unwrap();
-    assert_eq!(ppid, std::process::id(), "a non-detached child is the caller's");
+    assert_eq!(
+        ppid,
+        std::process::id(),
+        "a non-detached child is the caller's"
+    );
     unsafe {
         libc::kill(pid, libc::SIGKILL);
         libc::waitpid(pid, std::ptr::null_mut(), 0);
@@ -298,7 +317,10 @@ async fn argv_stderr_stdout_merges_into_the_file() {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     assert!(got.contains("OUT"), "stdout must land in the file: {got:?}");
-    assert!(got.contains("ERR"), "merged stderr must land in the SAME file: {got:?}");
+    assert!(
+        got.contains("ERR"),
+        "merged stderr must land in the SAME file: {got:?}"
+    );
     let _ = std::fs::remove_file(&w);
 }
 
@@ -337,7 +359,10 @@ async fn argv_clear_env_starts_from_empty() {
         w.display()
     );
     run(&src).await.expect("argv spawn clear_env");
-    assert!(wait_for_contents_containing(&w, "m=only"), "layered var must be set");
+    assert!(
+        wait_for_contents_containing(&w, "m=only"),
+        "layered var must be set"
+    );
     let content = std::fs::read_to_string(&w).unwrap();
     // With HOME cleared, `h=$HOME` expands to `h=` at the end of the line.
     assert_eq!(
@@ -363,7 +388,10 @@ async fn argv_capture_is_refused() {
 #[tokio::test]
 async fn argv_unknown_option_and_empty_and_nonstring_element_are_refused() {
     let err = run_err("spawn([\"true\"], {bogus: 1})\n").await;
-    assert!(err.to_string().contains("unknown option 'bogus'"), "got: {err}");
+    assert!(
+        err.to_string().contains("unknown option 'bogus'"),
+        "got: {err}"
+    );
 
     let err = run_err("spawn([])\n").await;
     assert!(err.to_string().contains("must not be empty"), "got: {err}");
@@ -494,7 +522,8 @@ async fn unrecognised_signal_raises_rather_than_silently_sending_sigterm() {
     // that reliably does not exist keeps the revert harmless.
     let err = run_err("kill(999999, \"SIGKILL\")\n").await;
     assert!(
-        err.to_string().contains("argument 2 (signal) must be number"),
+        err.to_string()
+            .contains("argument 2 (signal) must be number"),
         "got: {err}"
     );
     assert!(

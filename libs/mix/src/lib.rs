@@ -5,16 +5,16 @@ pub mod builtin_info;
 pub mod builtins;
 pub mod builtins_hof;
 pub mod cancel;
+mod child_events;
 pub mod continuation;
+mod desktop_events;
 pub mod error;
 pub mod evaluator;
+mod fs_watch;
 pub mod interrupt;
 pub mod lexer;
 pub mod lint_docs;
-mod desktop_events;
-mod fs_watch;
 mod native_events;
-mod child_events;
 mod numeric;
 pub mod parser;
 pub mod scope;
@@ -56,9 +56,6 @@ use value::Value;
 
 pub use builtins::{CapabilityClass, CategoryAllowList, capability_category, set_script_argv};
 pub use error::{MixError, MixResult};
-pub use script_version::{
-    ScriptHeader, ScriptProvenance, VersionHeader, parse_script_header, parse_version_header,
-};
 pub use evaluator::{
     ArityMode, BusCallFuture, BusCallHandler, BusHandler, CapabilityPolicy,
     DEFAULT_RECURSION_LIMIT, DbFuture, DbHandler, EvalLimits, ExtFn, JmapCall, JmapFuture,
@@ -68,6 +65,9 @@ pub use evaluator::{
 /// `IndexMap<String, Value>`) without a version-coupled `indexmap`
 /// dependency of their own — use `mix::IndexMap`.
 pub use indexmap::IndexMap;
+pub use script_version::{
+    ScriptHeader, ScriptProvenance, VersionHeader, parse_script_header, parse_version_header,
+};
 
 /// Run Mix source code and return the result.
 pub async fn run(source: &str) -> MixResult<Value> {

@@ -185,7 +185,10 @@ impl GapBuffer {
         self.commit_calls += 1;
         #[cfg(test)]
         if FAIL_COMMIT.with(|f| f.get()) {
-            return Err(io::Error::new(io::ErrorKind::OutOfMemory, "injected commit failure"));
+            return Err(io::Error::new(
+                io::ErrorKind::OutOfMemory,
+                "injected commit failure",
+            ));
         }
         match &mut self.buffer {
             BackingBuffer::VirtualMemory(ptr, _) => unsafe {
@@ -242,7 +245,11 @@ impl GapBuffer {
         }
 
         self.generation = self.generation.wrapping_add(1);
-        Ok(unsafe { slice::from_raw_parts_mut(self.text.add(self.gap_off).as_ptr(), self.gap_len) })
+        Ok(
+            unsafe {
+                slice::from_raw_parts_mut(self.text.add(self.gap_off).as_ptr(), self.gap_len)
+            },
+        )
     }
 
     fn move_gap(&mut self, off: usize) {
@@ -261,11 +268,27 @@ impl GapBuffer {
             //        move: OPQRS
             //
             let left = off < self.gap_off;
-            let move_src = if left { off } else { self.gap_off + self.gap_len };
-            let move_dst = if left { off + self.gap_len } else { self.gap_off };
-            let move_len = if left { self.gap_off - off } else { off - self.gap_off };
+            let move_src = if left {
+                off
+            } else {
+                self.gap_off + self.gap_len
+            };
+            let move_dst = if left {
+                off + self.gap_len
+            } else {
+                self.gap_off
+            };
+            let move_len = if left {
+                self.gap_off - off
+            } else {
+                off - self.gap_off
+            };
 
-            unsafe { self.text.add(move_src).copy_to(self.text.add(move_dst), move_len) };
+            unsafe {
+                self.text
+                    .add(move_src)
+                    .copy_to(self.text.add(move_dst), move_len)
+            };
 
             if cfg!(debug_assertions) {
                 // Fill the moved-out bytes with 0xCD to make debugging easier.
@@ -279,7 +302,11 @@ impl GapBuffer {
     fn delete_text(&mut self, delete: usize) {
         if cfg!(debug_assertions) {
             // Fill the deleted bytes with 0xCD to make debugging easier.
-            unsafe { self.text.add(self.gap_off + self.gap_len).write_bytes(0xCD, delete) };
+            unsafe {
+                self.text
+                    .add(self.gap_off + self.gap_len)
+                    .write_bytes(0xCD, delete)
+            };
         }
 
         self.gap_len += delete;
@@ -293,7 +320,10 @@ impl GapBuffer {
 
         let gap_len_old = self.gap_len;
         let gap_len_new = (len + gap_chunk + gap_chunk - 1) & !(gap_chunk - 1);
-        debug_assert!(self.text_length + gap_len_new <= self.commit, "enlarge_gap without commit");
+        debug_assert!(
+            self.text_length + gap_len_new <= self.commit,
+            "enlarge_gap without commit"
+        );
 
         let gap_beg = unsafe { self.text.add(self.gap_off) };
         unsafe {
@@ -306,7 +336,11 @@ impl GapBuffer {
 
         if cfg!(debug_assertions) {
             // Fill the moved-out bytes with 0xCD to make debugging easier.
-            unsafe { gap_beg.add(gap_len_old).write_bytes(0xCD, gap_len_new - gap_len_old) };
+            unsafe {
+                gap_beg
+                    .add(gap_len_old)
+                    .write_bytes(0xCD, gap_len_new - gap_len_old)
+            };
         }
 
         self.gap_len = gap_len_new;
@@ -321,7 +355,11 @@ impl GapBuffer {
 
     /// All-or-nothing replace (cosmix patch: returns `Err` untouched on OOM).
     pub fn replace(&mut self, range: Range<usize>, src: &[u8]) -> io::Result<()> {
-        let gap = self.allocate_gap(range.start, src.len(), range.end.saturating_sub(range.start))?;
+        let gap = self.allocate_gap(
+            range.start,
+            src.len(),
+            range.end.saturating_sub(range.start),
+        )?;
         let len = slice_copy_safe(gap, src);
         self.commit_gap(len);
         Ok(())

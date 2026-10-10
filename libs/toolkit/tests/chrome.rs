@@ -14,7 +14,9 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 
 fn window(scheme: Scheme, mode: Mode) -> Harness<'static, fixture::Fixture> {
-    let builder = Harness::builder().with_size(egui::vec2(760.0, 340.0)).wgpu();
+    let builder = Harness::builder()
+        .with_size(egui::vec2(760.0, 340.0))
+        .wgpu();
     fixture::harness(builder, &fixture::theme(scheme, mode))
 }
 
@@ -22,7 +24,13 @@ fn submenu_open(scheme: Scheme, mode: Mode, name: &str) {
     let mut h = window(scheme, mode);
     h.get_by_label("File").click();
     h.run();
-    for key in [Key::ArrowDown, Key::ArrowDown, Key::ArrowDown, Key::ArrowDown, Key::ArrowRight] {
+    for key in [
+        Key::ArrowDown,
+        Key::ArrowDown,
+        Key::ArrowDown,
+        Key::ArrowDown,
+        Key::ArrowRight,
+    ] {
         h.key_press(key);
         h.run();
     }
@@ -66,7 +74,9 @@ fn chrome_classic() {
 /// gutter and tick.
 #[test]
 fn theme_submenu_pro_light() {
-    let builder = Harness::builder().with_size(egui::vec2(760.0, 520.0)).wgpu();
+    let builder = Harness::builder()
+        .with_size(egui::vec2(760.0, 520.0))
+        .wgpu();
     let mut h = fixture::harness(builder, &fixture::theme(Scheme::Pro, Mode::Light));
     h.state_mut().theme = (Some(Scheme::Forest), None);
     h.get_by_label("View").click();
@@ -80,10 +90,20 @@ fn theme_submenu_pro_light() {
 
 #[test]
 fn caption_close_hover_pro_light() {
-    caption_hover(Scheme::Pro, Mode::Light, "Close", "caption_close_hover_pro_light");
+    caption_hover(
+        Scheme::Pro,
+        Mode::Light,
+        "Close",
+        "caption_close_hover_pro_light",
+    );
 }
 
 #[test]
 fn caption_minimize_hover_studio_light() {
-    caption_hover(Scheme::Studio, Mode::Light, "Minimize", "caption_minimize_hover_studio_light");
+    caption_hover(
+        Scheme::Studio,
+        Mode::Light,
+        "Minimize",
+        "caption_minimize_hover_studio_light",
+    );
 }

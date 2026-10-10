@@ -60,8 +60,12 @@ fn index_topics(index: &str) -> BTreeSet<String> {
     for line in index.lines() {
         let mut rest = line;
         while let Some(open) = rest.find('[') {
-            let Some(close) = rest[open..].find(']') else { break };
-            let Some(paren) = rest[open + close..].find('(') else { break };
+            let Some(close) = rest[open..].find(']') else {
+                break;
+            };
+            let Some(paren) = rest[open + close..].find('(') else {
+                break;
+            };
             let target_start = open + close + paren + 1;
             let target_full = &rest[target_start..];
             if let Some(end) = target_full.find(')') {
@@ -140,7 +144,10 @@ fn binary_keywords() -> BTreeSet<String> {
 fn index_links_every_page_and_only_real_pages() {
     let index = read_page("README.md");
     let linked = index_topics(&index);
-    let on_disk: BTreeSet<String> = pages().into_iter().map(|p| p.trim_end_matches(".md").to_string()).collect();
+    let on_disk: BTreeSet<String> = pages()
+        .into_iter()
+        .map(|p| p.trim_end_matches(".md").to_string())
+        .collect();
 
     let mut missing = Vec::new();
     for topic in &linked {
@@ -204,8 +211,11 @@ fn no_stale_version_stamps_or_banned_citations() {
         for needle in banned {
             assert!(
                 !content.match_indices(needle).any(|(at, _)| {
-                    needle != "github.com/markc/mix" || !content[at + needle.len()..]
-                        .chars().next().is_some_and(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+                    needle != "github.com/markc/mix"
+                        || !content[at + needle.len()..]
+                            .chars()
+                            .next()
+                            .is_some_and(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
                 }),
                 "docs/mix/{page} cites banned/retired location '{needle}'"
             );

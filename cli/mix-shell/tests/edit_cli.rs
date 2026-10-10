@@ -55,8 +55,14 @@ fn unique_hit_edits_and_prints_the_diff() {
 
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     assert!(stdout.contains(":2"), "must name the line: {stdout:?}");
-    assert!(stdout.contains("- beta"), "must show the old line: {stdout:?}");
-    assert!(stdout.contains("+ BETA"), "must show the new line: {stdout:?}");
+    assert!(
+        stdout.contains("- beta"),
+        "must show the old line: {stdout:?}"
+    );
+    assert!(
+        stdout.contains("+ BETA"),
+        "must show the new line: {stdout:?}"
+    );
     let _ = fs::remove_dir_all(&dir);
 }
 

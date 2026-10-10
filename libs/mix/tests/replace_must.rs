@@ -28,8 +28,8 @@ async fn present_needle_behaves_exactly_like_replace() {
     let out = run("print(replace_must(\"a-b-a\", \"a\", \"X\"))\n\
                    print(replace(\"a-b-a\", \"a\", \"X\"))\n\
                    print(re_replace_must(\"a1b2\", \"[0-9]\", \"#\"))\n")
-        .await
-        .unwrap();
+    .await
+    .unwrap();
     assert_eq!(out, "X-b-X\nX-b-X\na#b#\n");
 }
 
@@ -49,8 +49,8 @@ async fn absent_needle_raises_needle_absent() {
     // of adding a twin rather than changing them.
     let out = run("print(replace(\"hello\", \"zz\", \"X\"))\n\
                    print(re_replace(\"hello\", \"[0-9]+\", \"X\"))\n")
-        .await
-        .unwrap();
+    .await
+    .unwrap();
     assert_eq!(out, "hello\nhello\n");
 }
 
@@ -61,7 +61,10 @@ async fn count_assertion_catches_both_too_many_and_too_few() {
     let err = run("print(replace_must(\"a-b-a\", \"a\", \"X\", {count: 1}))\n")
         .await
         .expect_err("count mismatch must raise");
-    assert!(err.contains("occurs 2 time(s)") && err.contains("not the 1"), "{err}");
+    assert!(
+        err.contains("occurs 2 time(s)") && err.contains("not the 1"),
+        "{err}"
+    );
 
     let err = run("print(replace_must(\"a-b-a\", \"a\", \"X\", {count: 3}))\n")
         .await
@@ -71,8 +74,8 @@ async fn count_assertion_catches_both_too_many_and_too_few() {
     // The matching count is silent.
     let out = run("print(replace_must(\"a-b-a\", \"a\", \"X\", {count: 2}))\n\
                    print(re_replace_must(\"a1b2\", \"[0-9]\", \"#\", {count: 2}))\n")
-        .await
-        .unwrap();
+    .await
+    .unwrap();
     assert_eq!(out, "X-b-X\na#b#\n");
 }
 

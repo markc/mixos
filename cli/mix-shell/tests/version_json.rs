@@ -68,8 +68,17 @@ fn embedded_marker_matches_version_json() {
         .collect();
     assert_eq!(markers.len(), 1, "exactly one mix-shell marker in {bin}");
     let marker = &markers[0];
-    for key in ["version", "git_sha", "git_sha_full", "git_dirty", "build_time"] {
-        assert_eq!(marker[key], answer[key], "marker {key} equals --version --json");
+    for key in [
+        "version",
+        "git_sha",
+        "git_sha_full",
+        "git_dirty",
+        "build_time",
+    ] {
+        assert_eq!(
+            marker[key], answer[key],
+            "marker {key} equals --version --json"
+        );
     }
 }
 

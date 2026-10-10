@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Read-state admission on the existing enrolled connection, never legacy Bus.
 use crate::session_state::{self, Source, View};
-use ::bus::native_session::*;
 use ::bus::native_client::session::Hello;
 use ::bus::native_client::session::boottime_ms;
 use ::bus::native_client::{VerifiedCommand, VerifiedConnection};
+use ::bus::native_session::*;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 

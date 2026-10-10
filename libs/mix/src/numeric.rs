@@ -162,7 +162,12 @@ impl NumericDomain {
                 Some(-MAX_SAFE_INTEGER),
                 Some(MAX_SAFE_INTEGER),
             ),
-            NumericDomain::LoopBound => (value.is_finite(), "a finite loop bound".to_string(), None, None),
+            NumericDomain::LoopBound => (
+                value.is_finite(),
+                "a finite loop bound".to_string(),
+                None,
+                None,
+            ),
             NumericDomain::LoopStep => (
                 value.is_finite() && value != 0.0,
                 "a finite non-zero loop step".to_string(),

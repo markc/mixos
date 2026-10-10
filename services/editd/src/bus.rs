@@ -258,9 +258,7 @@ pub async fn serve() -> anyhow::Result<()> {
         let kept = match editd.recovery_flush().await {
             Some(flushed) if flushed.synced => true,
             Some(_) => {
-                tracing::error!(
-                    "editd: recovery files could not be fully synced at shutdown"
-                );
+                tracing::error!("editd: recovery files could not be fully synced at shutdown");
                 false
             }
             None => false,

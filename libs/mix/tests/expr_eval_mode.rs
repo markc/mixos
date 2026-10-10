@@ -16,34 +16,67 @@ fn static_check_matches_expression_mode_without_evaluation() {
     for source in ["$model.x", "1 / 0", "true ? 1 : $missing"] {
         expr_mode_check(source).unwrap();
     }
-    for source in ["(function ($x) = 1)", "sleep(1)", "$(id)", "$x = 1", "1; 2",
-        "true ? 1 : sleep(1)"] {
+    for source in [
+        "(function ($x) = 1)",
+        "sleep(1)",
+        "$(id)",
+        "$x = 1",
+        "1; 2",
+        "true ? 1 : sleep(1)",
+    ] {
         assert!(expr_mode_check(source).is_err(), "{source}");
     }
-    let deep = std::iter::repeat_n("'a'", MAX_EXPR_DEPTH + 2).collect::<Vec<_>>().join(" .. ");
-    assert!(expr_mode_check(&deep).unwrap_err().to_string().contains("MAX_EXPR_DEPTH"));
+    let deep = std::iter::repeat_n("'a'", MAX_EXPR_DEPTH + 2)
+        .collect::<Vec<_>>()
+        .join(" .. ");
+    assert!(
+        expr_mode_check(&deep)
+            .unwrap_err()
+            .to_string()
+            .contains("MAX_EXPR_DEPTH")
+    );
 }
 
 use mix::evaluator::{BusFuture, BusHandler, Evaluator, IncomingEvent, SharedBuf};
 use mix::lexer::Lexer;
 use mix::parser::Parser;
 use mix::value::Value;
-use mix::{
-    CategoryAllowList, EvalLimits, IndexMap, MAX_EXPR_DEPTH, MixResult, eval_expr_string,
-};
+use mix::{CategoryAllowList, EvalLimits, IndexMap, MAX_EXPR_DEPTH, MixResult, eval_expr_string};
 
 #[test]
 fn reused_expression_runtime_keeps_globals_and_deadlines_per_call() {
     for value in 0..16 {
-        let result = eval_expr_string("$item", &[("item", Value::Number(value as f64))],
-            None, EvalLimits::default()).unwrap();
+        let result = eval_expr_string(
+            "$item",
+            &[("item", Value::Number(value as f64))],
+            None,
+            EvalLimits::default(),
+        )
+        .unwrap();
         assert_eq!(result.to_number(), Some(value as f64));
         let missing = eval_expr_string("$item", &[], None, EvalLimits::default()).unwrap_err();
-        assert!(missing.to_string().contains("undefined variable"), "globals leaked between expressions");
-        assert!(eval_expr_string("42", &[], None, EvalLimits {
-            time_limit: Some(std::time::Duration::ZERO), ..Default::default()
-        }).is_err());
-        assert_eq!(eval_expr_string("42", &[], None, EvalLimits::default()).unwrap().to_number(), Some(42.0));
+        assert!(
+            missing.to_string().contains("undefined variable"),
+            "globals leaked between expressions"
+        );
+        assert!(
+            eval_expr_string(
+                "42",
+                &[],
+                None,
+                EvalLimits {
+                    time_limit: Some(std::time::Duration::ZERO),
+                    ..Default::default()
+                }
+            )
+            .is_err()
+        );
+        assert_eq!(
+            eval_expr_string("42", &[], None, EvalLimits::default())
+                .unwrap()
+                .to_number(),
+            Some(42.0)
+        );
     }
 }
 
@@ -51,11 +84,7 @@ fn reused_expression_runtime_keeps_globals_and_deadlines_per_call() {
 fn expired_expression_budget_rejects_ready_futures() {
     // These complete without yielding. A Tokio timeout alone polls them to
     // Ready and accepts them even with an already-exhausted budget.
-    for source in [
-        "42",
-        "repeat('a', 200000)",
-        "(if true then 42 else 0 end)",
-    ] {
+    for source in ["42", "repeat('a', 200000)", "(if true then 42 else 0 end)"] {
         let error = eval_expr_string(
             source,
             &[],
@@ -66,7 +95,10 @@ fn expired_expression_budget_rejects_ready_futures() {
             },
         )
         .unwrap_err();
-        assert!(error.to_string().contains("time limit"), "{source}: {error}");
+        assert!(
+            error.to_string().contains("time limit"),
+            "{source}: {error}"
+        );
     }
     assert_eq!(
         eval_expr_string("42", &[], None, EvalLimits::default()).unwrap(),
@@ -104,7 +136,8 @@ fn slow_non_yielding_expression_rejects_result_after_time_limit() {
             time_limit: Some(Duration::from_millis(50)),
             ..Default::default()
         },
-    ).unwrap_err();
+    )
+    .unwrap_err();
     // Prove that the expression actually ran; an expired-at-entry test alone
     // would not exercise the check after a non-yielding future returns Ready.
     assert_eq!(policy.0.get(), 1);
@@ -230,7 +263,11 @@ async fn pure_policy_denies_address_block_sends() {
     })
     .await
     .expect("address-block send dispatches with no policy installed");
-    assert_eq!(bus.sent.borrow().len(), 1, "implicit send reached the handler");
+    assert_eq!(
+        bus.sent.borrow().len(),
+        1,
+        "implicit send reached the handler"
+    );
 }
 
 /// The deny-all policy denies the impure builtin classes — pins the
@@ -291,10 +328,22 @@ fn eval_expr_string_static_denies() {
     let cases: &[(&str, &str, &str)] = &[
         // (source, expected construct name, what shape puts it in the tree)
         ("sh \"id\"", "sh statement", "bare statement form"),
-        ("false ? 1 : sh \"id\"", "sh expression", "untaken ternary arm"),
+        (
+            "false ? 1 : sh \"id\"",
+            "sh expression",
+            "untaken ternary arm",
+        ),
         ("$(echo hi)", "command substitution", "bare $() expression"),
-        ("false ? 1 : function ($x) = $x", "function literal", "untaken ternary arm"),
-        ("$f(1)", "function-value call", "call on a function-valued expr"),
+        (
+            "false ? 1 : function ($x) = $x",
+            "function literal",
+            "untaken ternary arm",
+        ),
+        (
+            "$f(1)",
+            "function-value call",
+            "call on a function-valued expr",
+        ),
         (
             // Nested position: parse_postfix sees `.unknown(` on a
             // non-builtin name → a real MethodCall node.
@@ -310,7 +359,11 @@ fn eval_expr_string_static_denies() {
             "function-value call",
             "bare map-member call statement",
         ),
-        ("\"~/root\"", "environment-variable interpolation", "leading ~ expansion"),
+        (
+            "\"~/root\"",
+            "environment-variable interpolation",
+            "leading ~ expansion",
+        ),
         (
             "false ? 1 : (if false then 1 else sh \"id\" end)",
             "sh statement",
@@ -349,19 +402,16 @@ fn eval_expr_string_denies_loops_and_bus_constructs_in_if_bodies() {
             "(if $x then for $e in [1, 2]\n$e\nend else 0 end)",
             "for-each loop",
         ),
-        (
-            "(if $x then while false\n1\nend else 0 end)",
-            "while loop",
-        ),
-        (
-            "(if $x then loop\n1\nend else 0 end)",
-            "loop statement",
-        ),
+        ("(if $x then while false\n1\nend else 0 end)", "while loop"),
+        ("(if $x then loop\n1\nend else 0 end)", "loop statement"),
         (
             "(if $x then select 1\nwhen 1 then 1\notherwise 0\nend else 0 end)",
             "select statement",
         ),
-        ("(if $x then address \"sh\"\nend else 0 end)", "address block"),
+        (
+            "(if $x then address \"sh\"\nend else 0 end)",
+            "address block",
+        ),
     ];
     for (src, construct) in cases {
         // $x is false — every branch is untaken; denial is static, so the
@@ -457,12 +507,12 @@ fn eval_expr_string_denies_coalesce_payloads() {
         ("\"${q ?? $(echo hi)}\"", "command substitution"),
         // A STATEMENT payload: the single-expression rule itself rejects.
         ("\"${q ?? sh 'id'}\"", "single expression"),
-        ("\"${q ?? send 'comp' 'window.focus'}\"", "single expression"),
-        // A loop inside the payload: the single-expression rule rejects.
         (
-            "\"${q ?? for $i = 1 to 9\n$i\nend}\"",
+            "\"${q ?? send 'comp' 'window.focus'}\"",
             "single expression",
         ),
+        // A loop inside the payload: the single-expression rule rejects.
+        ("\"${q ?? for $i = 1 to 9\n$i\nend}\"", "single expression"),
         // Heredoc body carrying a coalesce default.
         ("<<EOF\n${q ?? sleep(1)}\nEOF\n", "sleep builtin"),
     ];
@@ -512,21 +562,39 @@ fn eval_expr_string_allows_pure_shapes() {
     let n = Value::Number(5.0);
 
     assert_eq!(eval_pure("1 + 2 * 3", &[]).unwrap(), Value::Number(7.0));
-    assert_eq!(eval_pure("'a' .. 1", &[]).unwrap(), Value::String("a1".into()));
+    assert_eq!(
+        eval_pure("'a' .. 1", &[]).unwrap(),
+        Value::String("a1".into())
+    );
     assert_eq!(
         eval_pure("$ok ? \"yes\" : \"no\"", &[("ok", ok.clone())]).unwrap(),
         Value::String("yes".into())
     );
     // if-as-expression (nested in parens — a bare `if` is a statement).
     assert_eq!(
-        eval_pure("(if $n > 2 then \"big\" else \"small\" end)", &[("n", n.clone())])
-            .unwrap(),
+        eval_pure(
+            "(if $n > 2 then \"big\" else \"small\" end)",
+            &[("n", n.clone())]
+        )
+        .unwrap(),
         Value::String("big".into())
     );
-    assert_eq!(eval_pure("[10, 20, 30][1]", &[]).unwrap(), Value::Number(20.0));
-    assert_eq!(eval_pure("length([1, 2, 3])", &[]).unwrap(), Value::Number(3.0));
-    assert_eq!(eval_pure("length({a: 1, b: 2})", &[]).unwrap(), Value::Number(2.0));
-    assert_eq!(eval_pure("upper(\"abc\")", &[]).unwrap(), Value::String("ABC".into()));
+    assert_eq!(
+        eval_pure("[10, 20, 30][1]", &[]).unwrap(),
+        Value::Number(20.0)
+    );
+    assert_eq!(
+        eval_pure("length([1, 2, 3])", &[]).unwrap(),
+        Value::Number(3.0)
+    );
+    assert_eq!(
+        eval_pure("length({a: 1, b: 2})", &[]).unwrap(),
+        Value::Number(2.0)
+    );
+    assert_eq!(
+        eval_pure("upper(\"abc\")", &[]).unwrap(),
+        Value::String("ABC".into())
+    );
     // Method syntax on a builtin desugars to a bareword FunctionCall at
     // parse time (Parser::parse_postfix), so it stays allowed — in a
     // NESTED position. (Bare `$s.upper()` as the whole statement is the

@@ -36,11 +36,19 @@ pub struct Selection {
 
 impl Snapshot {
     pub fn verb(&self, selection: &Selection) -> Option<&Verb> {
-        self.services.get(&selection.service)?.as_ref().ok()?.iter().find(|v| v.name == selection.verb)
+        self.services
+            .get(&selection.service)?
+            .as_ref()
+            .ok()?
+            .iter()
+            .find(|v| v.name == selection.verb)
     }
 
     pub fn failures(&self) -> usize {
-        self.services.values().filter(|value| value.is_err()).count()
+        self.services
+            .values()
+            .filter(|value| value.is_err())
+            .count()
     }
 }
 
@@ -58,8 +66,19 @@ pub fn parse_verbs(value: &Value) -> Result<Vec<Verb>, String> {
             .ok_or("Verb has no name")?;
         verbs.push(Verb {
             name: name.into(),
-            args: entry.get("args").map(|v| v.as_str().map(str::to_owned).unwrap_or_else(|| v.to_string())).unwrap_or_default(),
-            description: entry.get("description").and_then(Value::as_str).unwrap_or_default().into(),
+            args: entry
+                .get("args")
+                .map(|v| {
+                    v.as_str()
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| v.to_string())
+                })
+                .unwrap_or_default(),
+            description: entry
+                .get("description")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .into(),
             read_only: entry.get("read_only").and_then(Value::as_bool),
         });
     }
@@ -191,13 +210,19 @@ mod tests {
 
     #[test]
     fn every_engine_verb_is_described_once() {
-        let described: Vec<_> = describe()["verbs"].as_array().unwrap().iter().map(|v| v["name"].as_str().unwrap().to_owned()).collect();
+        let described: Vec<_> = describe()["verbs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v["name"].as_str().unwrap().to_owned())
+            .collect();
         assert_eq!(described, VERBS);
     }
 
     #[test]
     fn descriptions_preserve_legacy_unknown_safety_and_sort() {
-        let verbs = parse_verbs(&json!({"verbs":["quit",{"name":"ping","read_only":true},"ping"]})).unwrap();
+        let verbs = parse_verbs(&json!({"verbs":["quit",{"name":"ping","read_only":true},"ping"]}))
+            .unwrap();
         assert_eq!(verbs.len(), 2);
         assert_eq!(verbs[0].name, "ping");
         assert_eq!(verbs[0].read_only, Some(true));
@@ -208,10 +233,15 @@ mod tests {
     #[test]
     fn authority_peers_override_stale_roster_and_exclude_self() {
         assert_eq!(
-            peers(&json!({"node":"alpha","authority":{"routing_view":[{"name":"alpha"},{"name":"beta"}]},"peers":[{"name":"stale"}]})),
+            peers(
+                &json!({"node":"alpha","authority":{"routing_view":[{"name":"alpha"},{"name":"beta"}]},"peers":[{"name":"stale"}]})
+            ),
             vec!["beta"]
         );
-        assert_eq!(peers(&json!({"peers":[{"name":"beta"},{"name":"beta"}]})), vec!["beta"]);
+        assert_eq!(
+            peers(&json!({"peers":[{"name":"beta"},{"name":"beta"}]})),
+            vec!["beta"]
+        );
     }
 
     #[test]

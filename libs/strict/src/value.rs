@@ -202,7 +202,10 @@ impl<'de> Visitor<'de> for ValueVisitor {
         Ok(Value::Nil)
     }
 
-    fn visit_some<D: Deserializer<'de>>(self, deserializer: D) -> std::result::Result<Value, D::Error> {
+    fn visit_some<D: Deserializer<'de>>(
+        self,
+        deserializer: D,
+    ) -> std::result::Result<Value, D::Error> {
         Deserialize::deserialize(deserializer)
     }
 

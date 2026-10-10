@@ -40,12 +40,22 @@ const WORD_CLASSIFIER: [CharClass; 256] =
 /// Finds the next word boundary given a document cursor offset.
 /// Returns the offset of the next word boundary.
 pub fn word_forward(doc: &dyn ReadableDocument, offset: usize) -> usize {
-    word_navigation(WordForward { doc, offset, chunk: &[], chunk_off: 0 })
+    word_navigation(WordForward {
+        doc,
+        offset,
+        chunk: &[],
+        chunk_off: 0,
+    })
 }
 
 /// The backward version of `word_forward`.
 pub fn word_backward(doc: &dyn ReadableDocument, offset: usize) -> usize {
-    word_navigation(WordBackward { doc, offset, chunk: &[], chunk_off: 0 })
+    word_navigation(WordBackward {
+        doc,
+        offset,
+        chunk: &[],
+        chunk_off: 0,
+    })
 }
 
 /// Word navigation implementation. Matches the behavior of VS Code.

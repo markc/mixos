@@ -32,7 +32,10 @@ fn registry() -> Registry<Demo> {
         menu: Some("menu-file"),
         submenu: None,
         group: 0,
-        shortcut: Some(egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Q)),
+        shortcut: Some(egui::KeyboardShortcut::new(
+            egui::Modifiers::COMMAND,
+            egui::Key::Q,
+        )),
         icon: None,
         enabled: always,
         run: |_| {},
@@ -43,7 +46,10 @@ fn registry() -> Registry<Demo> {
         menu: Some("menu-bus"),
         submenu: None,
         group: 0,
-        shortcut: Some(egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::R)),
+        shortcut: Some(egui::KeyboardShortcut::new(
+            egui::Modifiers::COMMAND,
+            egui::Key::R,
+        )),
         icon: Some(Icon::RefreshCw),
         enabled: always,
         run: |s: &mut Demo| s.refreshed += 1,
@@ -61,10 +67,21 @@ fn panel_with(theme: &Theme, name: &str, open: Option<&str>) {
     let commands = registry();
     let state = Demo::default();
     let stroke = icons::stroke_width(theme);
-    let mut harness = Harness::builder().with_size(egui::vec2(420.0, 260.0)).wgpu().build_ui(move |ui| {
-        let _ = toolkit::titlebar::show(ui, "Demo", Some(Icon::Server), stroke, &commands, &state, &strings);
-        egui::CentralPanel::default().show(ui, |ui| contents(ui, &strings, stroke));
-    });
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(420.0, 260.0))
+        .wgpu()
+        .build_ui(move |ui| {
+            let _ = toolkit::titlebar::show(
+                ui,
+                "Demo",
+                Some(Icon::Server),
+                stroke,
+                &commands,
+                &state,
+                &strings,
+            );
+            egui::CentralPanel::default().show(ui, |ui| contents(ui, &strings, stroke));
+        });
     toolkit::install(&harness.ctx, theme);
     harness.run();
     if let Some(menu) = open {
@@ -81,7 +98,13 @@ fn contents(ui: &mut egui::Ui, strings: &Strings, stroke: f32) {
         ui.weak(strings.get("body"));
         ui.horizontal(|ui| {
             let colour = ui.visuals().text_color();
-            for icon in [Icon::Server, Icon::Plug, Icon::Search, Icon::Play, Icon::CircleCheck] {
+            for icon in [
+                Icon::Server,
+                Icon::Plug,
+                Icon::Search,
+                Icon::Play,
+                Icon::CircleCheck,
+            ] {
                 ui.add(icons::image(icon, stroke, 16.0, colour));
             }
         });
@@ -97,15 +120,31 @@ fn contents(ui: &mut egui::Ui, strings: &Strings, stroke: f32) {
 
 #[test]
 fn panel_light() {
-    panel(&Theme::for_context(DesignContext::revision_one()), "panel_light");
+    panel(
+        &Theme::for_context(DesignContext::revision_one()),
+        "panel_light",
+    );
 }
 
 #[test]
 fn menu_open_dark() {
-    panel_with(&Theme::for_context(DesignContext { mode: Mode::Dark, ..DesignContext::revision_one() }), "menu_open_dark", Some("File"));
+    panel_with(
+        &Theme::for_context(DesignContext {
+            mode: Mode::Dark,
+            ..DesignContext::revision_one()
+        }),
+        "menu_open_dark",
+        Some("File"),
+    );
 }
 
 #[test]
 fn panel_dark() {
-    panel(&Theme::for_context(DesignContext { mode: Mode::Dark, ..DesignContext::revision_one() }), "panel_dark");
+    panel(
+        &Theme::for_context(DesignContext {
+            mode: Mode::Dark,
+            ..DesignContext::revision_one()
+        }),
+        "panel_dark",
+    );
 }

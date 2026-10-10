@@ -97,10 +97,8 @@ impl Drop for Sandbox {
         // Restore search/read on any locked-down directory so cleanup works.
         if let Ok(entries) = std::fs::read_dir(self.work()) {
             for entry in entries.flatten() {
-                let _ = std::fs::set_permissions(
-                    entry.path(),
-                    std::fs::Permissions::from_mode(0o755),
-                );
+                let _ =
+                    std::fs::set_permissions(entry.path(), std::fs::Permissions::from_mode(0o755));
             }
         }
         let _ = std::fs::remove_dir_all(&self.root);
@@ -127,7 +125,10 @@ fn a_write_search_only_directory_works_and_full_durability_says_it_cannot() {
          catch $m, $e\n  print($e.code .. \" \" .. $e.details.replaced)\nend\n",
     );
     assert!(ok, "script failed: {err}");
-    assert_eq!(out, "true\nplain ok\nWRITE_NOT_DURABLE true\n", "stderr: {err}");
+    assert_eq!(
+        out, "true\nplain ok\nWRITE_NOT_DURABLE true\n",
+        "stderr: {err}"
+    );
     std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
     assert_eq!(
         std::fs::read_to_string(locked.join("f")).unwrap(),

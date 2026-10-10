@@ -85,7 +85,6 @@ pub struct Lexer {
     data_mode: bool,
 }
 
-
 /// The complete reserved-word set, one name per lexer keyword token.
 ///
 /// `mix keywords` and `mix what` read this through the lib, so it must
@@ -302,7 +301,10 @@ impl Lexer {
     /// without any text guessing.
     pub(crate) fn lex_with_literal_maps(
         source: &str,
-    ) -> Option<(Vec<SpannedToken>, std::collections::HashMap<usize, LiteralLineMap>)> {
+    ) -> Option<(
+        Vec<SpannedToken>,
+        std::collections::HashMap<usize, LiteralLineMap>,
+    )> {
         let mut lexer = Lexer::new(source);
         lexer.record_literal_maps = true;
         let tokens = lexer.tokenize().ok()?;
@@ -619,7 +621,8 @@ impl Lexer {
         if i == 0 || src[i - 1] != '-' {
             return false;
         }
-        while i > 0 && (src[i - 1].is_ascii_alphanumeric() || matches!(src[i - 1], '_' | '-' | '.')) {
+        while i > 0 && (src[i - 1].is_ascii_alphanumeric() || matches!(src[i - 1], '_' | '-' | '.'))
+        {
             i -= 1;
         }
         if !(src[i].is_ascii_alphabetic() || src[i] == '_') {
@@ -633,7 +636,8 @@ impl Lexer {
             return false;
         }
         let kw_end = j;
-        while j > 0 && (src[j - 1].is_ascii_alphanumeric() || matches!(src[j - 1], '_' | '$' | '.')) {
+        while j > 0 && (src[j - 1].is_ascii_alphanumeric() || matches!(src[j - 1], '_' | '$' | '.'))
+        {
             j -= 1;
         }
         let keyword: String = src[j..kw_end].iter().collect();
@@ -677,8 +681,8 @@ impl Lexer {
         // fraction like `0.5` / `0.0`, have a single-char integer part and
         // are unaffected.)
         let int_part = s.split('.').next().unwrap_or(s.as_str());
-        let malformed = (int_part.len() > 1 && int_part.starts_with('0'))
-            || s.parse::<f64>().is_err();
+        let malformed =
+            (int_part.len() > 1 && int_part.starts_with('0')) || s.parse::<f64>().is_err();
         if malformed && self.in_bare_send_target() {
             // `send node-007 …` / `send a-1.2.3 …`: a segment of a bare
             // hyphenated service name, not a number. The parser's hyphen
@@ -757,11 +761,7 @@ impl Lexer {
                 },
             });
         }
-        if !self.data_mode
-            && !s.contains('.')
-            && !s.contains('e')
-            && !s.contains('E')
-        {
+        if !self.data_mode && !s.contains('.') && !s.contains('e') && !s.contains('E') {
             // An integral literal must round-trip exactly: parse the SOURCE
             // digits as u128 and compare against their f64 rendering. The
             // f64 `n` above is already rounded, so comparing against it
@@ -872,7 +872,11 @@ impl Lexer {
         let mut s = String::new();
         // Single-quoted strings decode NO `\n` escape — every decoded
         // newline is a physical one, so the map is strictly increasing.
-        let mut lines: Vec<usize> = if self.record_literal_maps { vec![line] } else { Vec::new() };
+        let mut lines: Vec<usize> = if self.record_literal_maps {
+            vec![line]
+        } else {
+            Vec::new()
+        };
         loop {
             match self.advance() {
                 None => {
@@ -933,7 +937,11 @@ impl Lexer {
         // opener's line; a DECODED '\n' extends it with the physical line
         // the NEXT decoded line begins on (unchanged for an escape, the
         // next line for a physical newline).
-        let mut lines: Vec<usize> = if self.record_literal_maps { vec![line] } else { Vec::new() };
+        let mut lines: Vec<usize> = if self.record_literal_maps {
+            vec![line]
+        } else {
+            Vec::new()
+        };
         // MIX-W2404 candidates for THIS string, and whether the string
         // spans lines. A multi-line double-quoted string is, overwhelmingly,
         // NESTED PROGRAM TEXT — an `ssh_mix` body or a `mix -c` program —
@@ -1207,7 +1215,8 @@ impl Lexer {
             '\t' => "\\<tab>".to_string(),
             c => format!("\\{c}"),
         };
-        self.string_notes.push(StringNote::UnknownEscape { line, text });
+        self.string_notes
+            .push(StringNote::UnknownEscape { line, text });
     }
 
     /// Record a bare `$name` in a double-quoted literal, for MIX-W2404.
@@ -1400,7 +1409,11 @@ impl Lexer {
         // remove physical ones, so `phys` tracks the physical line each
         // decoded line begins on.
         let mut phys = line + 1;
-        let mut lines: Vec<usize> = if self.record_literal_maps { vec![phys] } else { Vec::new() };
+        let mut lines: Vec<usize> = if self.record_literal_maps {
+            vec![phys]
+        } else {
+            Vec::new()
+        };
         loop {
             // Read a line
             let mut line_content = String::new();
@@ -1742,7 +1755,11 @@ pub fn highlight(source: &str, flavor: MixFlavor) -> Vec<(std::ops::Range<usize>
         let opener = opener_key(&lx, ch);
         let known_bad = opener.as_ref().is_some_and(|k| unterminated.contains(k));
         lx.token_start = start;
-        let lexed = if known_bad { None } else { Some(lx.next_token_at(ch, line, column)) };
+        let lexed = if known_bad {
+            None
+        } else {
+            Some(lx.next_token_at(ch, line, column))
+        };
         let class = match lexed {
             Some(Ok(tok)) => classify(&tok.token, ch),
             failed => {
@@ -1789,7 +1806,10 @@ fn opener_key(lx: &Lexer, ch: char) -> Option<String> {
         ('<', Some('<')) => {
             let mut key = "<<".to_string();
             let mut i = 2;
-            while let Some(c) = lx.peek_ahead(i).filter(|c| c.is_ascii_alphanumeric() || *c == '_') {
+            while let Some(c) = lx
+                .peek_ahead(i)
+                .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+            {
                 key.push(c);
                 i += 1;
             }
@@ -1898,14 +1918,7 @@ mod literal_line_map_tests {
     fn sources(src: &str) -> Vec<(String, bool, usize, Vec<usize>)> {
         Lexer::string_literal_sources(src)
             .into_iter()
-            .map(|s| {
-                (
-                    s.text,
-                    s.map.heredoc,
-                    s.map.opener_line,
-                    s.map.lines,
-                )
-            })
+            .map(|s| (s.text, s.map.heredoc, s.map.opener_line, s.map.lines))
             .collect()
     }
 
@@ -1925,9 +1938,14 @@ mod literal_line_map_tests {
     fn a_physical_multiline_string_maps_lines_one_to_one() {
         let src = "$r = ssh_mix($h, \"print(1)\nprint(2)\")\n";
         let got = sources(src);
-        let (text, heredoc, opener, lines) =
-            got.iter().find(|(t, ..)| t.contains("print")).expect("found");
-        assert_eq!((text.as_str(), *heredoc, *opener), ("print(1)\nprint(2)", false, 1));
+        let (text, heredoc, opener, lines) = got
+            .iter()
+            .find(|(t, ..)| t.contains("print"))
+            .expect("found");
+        assert_eq!(
+            (text.as_str(), *heredoc, *opener),
+            ("print(1)\nprint(2)", false, 1)
+        );
         assert_eq!(lines, &vec![1, 2], "{got:?}");
     }
 
@@ -1935,8 +1953,10 @@ mod literal_line_map_tests {
     fn a_single_quoted_multiline_string_maps_one_to_one() {
         let src = "$r = ssh_mix($h, 'print(1)\nprint(2)')\n";
         let got = sources(src);
-        let (_, heredoc, opener, lines) =
-            got.iter().find(|(t, ..)| t.contains("print")).expect("found");
+        let (_, heredoc, opener, lines) = got
+            .iter()
+            .find(|(t, ..)| t.contains("print"))
+            .expect("found");
         assert!(!heredoc);
         assert_eq!(*opener, 1);
         assert_eq!(lines, &vec![1, 2], "{got:?}");
@@ -1969,8 +1989,10 @@ mod literal_line_map_tests {
         for (esc, text) in [("\\u{000A}", "\n"), ("\\x0A", "\n")] {
             let src = format!("$r = ssh_mix($h, \"print(1){esc}print(2)\")\n");
             let got = sources(&src);
-            let (decoded, _, opener, lines) =
-                got.iter().find(|(t, ..)| t.contains("print")).expect("found");
+            let (decoded, _, opener, lines) = got
+                .iter()
+                .find(|(t, ..)| t.contains("print"))
+                .expect("found");
             assert_eq!(decoded, &format!("print(1){text}print(2)"));
             assert_eq!(*opener, 1);
             assert_eq!(lines, &vec![1, 1], "{esc}: {got:?}");
@@ -2064,7 +2086,10 @@ mod highlight_tests {
     }
 
     fn classes(src: &str, flavor: MixFlavor) -> Vec<(&str, TokenClass)> {
-        highlight(src, flavor).into_iter().map(|(r, c)| (&src[r], c)).collect()
+        highlight(src, flavor)
+            .into_iter()
+            .map(|(r, c)| (&src[r], c))
+            .collect()
     }
 
     #[test]
@@ -2118,7 +2143,18 @@ mod highlight_tests {
         ];
         let got = classes(src, MixFlavor::Script);
         assert_eq!(got, want);
-        for class in [Keyword, Identifier, Variable, String, Number, Constant, Comment, Operator, Punctuation, Error] {
+        for class in [
+            Keyword,
+            Identifier,
+            Variable,
+            String,
+            Number,
+            Constant,
+            Comment,
+            Operator,
+            Punctuation,
+            Error,
+        ] {
             assert!(got.iter().any(|(_, c)| *c == class), "{class:?} is covered");
         }
     }
@@ -2130,13 +2166,28 @@ mod highlight_tests {
             let open = format!("{q}open");
             assert_eq!(
                 classes(&src, MixFlavor::Script),
-                vec![("$a", Variable), ("=", Operator), (open.as_str(), Error), ("$b", Variable), ("=", Operator), ("1", Number)],
+                vec![
+                    ("$a", Variable),
+                    ("=", Operator),
+                    (open.as_str(), Error),
+                    ("$b", Variable),
+                    ("=", Operator),
+                    ("1", Number)
+                ],
             );
         }
         let src = "$h = <<EOF\nbody\n$c = 2";
         assert_eq!(
             classes(src, MixFlavor::Script),
-            vec![("$h", Variable), ("=", Operator), ("<<EOF", Error), ("body", Identifier), ("$c", Variable), ("=", Operator), ("2", Number)],
+            vec![
+                ("$h", Variable),
+                ("=", Operator),
+                ("<<EOF", Error),
+                ("body", Identifier),
+                ("$c", Variable),
+                ("=", Operator),
+                ("2", Number)
+            ],
         );
     }
 
@@ -2167,7 +2218,15 @@ mod highlight_tests {
         let script = classes(src, MixFlavor::Script);
         assert!(script.iter().all(|(_, c)| *c != Error), "{script:?}");
         let data = classes(src, MixFlavor::Data);
-        assert_eq!(data[..4], [("{", Punctuation), ("a", Identifier), (":", Punctuation), ("\"\\ud83d\\ude00\"", String)]);
+        assert_eq!(
+            data[..4],
+            [
+                ("{", Punctuation),
+                ("a", Identifier),
+                (":", Punctuation),
+                ("\"\\ud83d\\ude00\"", String)
+            ]
+        );
         assert_eq!(data.last(), Some(&("\"\\ud800\"}", Error)));
     }
 
@@ -2206,7 +2265,10 @@ mod highlight_tests {
         let spans = highlight(src, flavor);
         let mut prev = 0;
         for (r, _) in &spans {
-            prop_assert!(r.start >= prev && r.start < r.end && r.end <= src.len(), "{r:?} after {prev} in {src:?}");
+            prop_assert!(
+                r.start >= prev && r.start < r.end && r.end <= src.len(),
+                "{r:?} after {prev} in {src:?}"
+            );
             prop_assert!(src.is_char_boundary(r.start) && src.is_char_boundary(r.end));
             prev = r.end;
         }
@@ -2214,8 +2276,43 @@ mod highlight_tests {
     }
 
     const PIECES: &[&str] = &[
-        "\"", "'", "${", "}", "$(", ")", "<<EOF", "EOF", "\n", "\r\n", "\\", "\\u{", "\\ud800", "--", "#", "$x", " ", "0x",
-        "0o9", "07", "1e", ".5", "&", "|", "~", "é", "🎉", "if", "end", "send a-1.2", "{", "[", "]", ":", ",", ";", "\t",
+        "\"",
+        "'",
+        "${",
+        "}",
+        "$(",
+        ")",
+        "<<EOF",
+        "EOF",
+        "\n",
+        "\r\n",
+        "\\",
+        "\\u{",
+        "\\ud800",
+        "--",
+        "#",
+        "$x",
+        " ",
+        "0x",
+        "0o9",
+        "07",
+        "1e",
+        ".5",
+        "&",
+        "|",
+        "~",
+        "é",
+        "🎉",
+        "if",
+        "end",
+        "send a-1.2",
+        "{",
+        "[",
+        "]",
+        ":",
+        ",",
+        ";",
+        "\t",
     ];
 
     proptest! {

@@ -71,33 +71,67 @@ fn gallery(ui: &mut Ui, s: &mut Gallery) {
         ui.add(IconButton::new(Icon::Settings).tooltip("Brush settings (Ctrl+B)"));
         bars::divider(ui, bars::DIVIDER_HEIGHT);
         ui.label("Opacity:");
-        ui.add(ValueField::new(&mut s.opacity, 0.0..=100.0).unit("%").width(64.0));
+        ui.add(
+            ValueField::new(&mut s.opacity, 0.0..=100.0)
+                .unit("%")
+                .width(64.0),
+        );
         ui.label("Flow:");
-        ui.add(ValueField::new(&mut s.flow, 0.0..=100.0).unit("%").width(64.0));
+        ui.add(
+            ValueField::new(&mut s.flow, 0.0..=100.0)
+                .unit("%")
+                .width(64.0),
+        );
         bars::divider(ui, bars::DIVIDER_HEIGHT);
         ui.add(Toggle::new(&mut s.pressure, "Pressure for Size"));
     });
     bars::status(ui, |ui| {
-        ui.add(ValueField::new(&mut s.zoom, 1.0..=3200.0).unit("%").width(64.0));
+        ui.add(
+            ValueField::new(&mut s.zoom, 1.0..=3200.0)
+                .unit("%")
+                .width(64.0),
+        );
         ui.label("640 × 480 px (72 ppi)");
     });
     bars::tools(ui, |ui| {
-        for (index, icon) in [Icon::Square, Icon::Search, Icon::Copy, Icon::Play, Icon::X].into_iter().enumerate() {
-            ui.add(IconButton::new(icon).size(sizes.tool_button).selected(index == 3));
+        for (index, icon) in [Icon::Square, Icon::Search, Icon::Copy, Icon::Play, Icon::X]
+            .into_iter()
+            .enumerate()
+        {
+            ui.add(
+                IconButton::new(icon)
+                    .size(sizes.tool_button)
+                    .selected(index == 3),
+            );
         }
     });
     bars::rail(ui, |ui| {
-        for (index, icon) in [Icon::Settings, Icon::Server, Icon::Info].into_iter().enumerate() {
-            ui.add(IconButton::new(icon).size(sizes.rail_button).rail().selected(index == 1));
+        for (index, icon) in [Icon::Settings, Icon::Server, Icon::Info]
+            .into_iter()
+            .enumerate()
+        {
+            ui.add(
+                IconButton::new(icon)
+                    .size(sizes.rail_button)
+                    .rail()
+                    .selected(index == 1),
+            );
         }
     });
     bars::dock(ui, |ui| {
-        panel::group(ui, "colour", &["Color", "Swatches", "Gradients", "Patterns", "Brushes"], |ui, _| {
-            slider::row(ui, "Size", &mut s.size, 1.0..=500.0, Some("px"));
-            panel::section_label(ui, "Hue");
-            let hues = (0..=6).map(|k| egui::ecolor::Hsva::new(k as f32 / 6.0, 1.0, 1.0, 1.0).into()).collect();
-            ui.add(Slider::new(&mut s.hue, 0.0..=360.0).gradient(hues));
-        });
+        panel::group(
+            ui,
+            "colour",
+            &["Color", "Swatches", "Gradients", "Patterns", "Brushes"],
+            |ui, _| {
+                slider::row(ui, "Size", &mut s.size, 1.0..=500.0, Some("px"));
+                panel::section_label(ui, "Hue");
+                let hues = (0..=6)
+                    .map(|k| egui::ecolor::Hsva::new(k as f32 / 6.0, 1.0, 1.0, 1.0).into())
+                    .collect();
+                ui.add(Slider::new(&mut s.hue, 0.0..=360.0).gradient(hues));
+            },
+        );
         panel::group(ui, "properties", &["Properties", "Adjustments"], |ui, _| {
             ui.add(Checkbox::new(&mut s.resample, "Resample"));
             ui.add(Switch::new(&mut s.snap, "Snap to pixels"));
@@ -115,7 +149,12 @@ fn gallery(ui: &mut Ui, s: &mut Gallery) {
     });
     CentralPanel::default().frame(Frame::NONE).show(ui, |ui| {
         let docs = [
-            DocTab { title: "Untitled @ 100% (RGB/8)".into(), name: "Untitled".into(), meta: "RGB/8".into(), ..DocTab::default() },
+            DocTab {
+                title: "Untitled @ 100% (RGB/8)".into(),
+                name: "Untitled".into(),
+                meta: "RGB/8".into(),
+                ..DocTab::default()
+            },
             DocTab {
                 title: "Photo @ 50% (RGB/16)".into(),
                 name: "Photo".into(),
@@ -127,17 +166,30 @@ fn gallery(ui: &mut Ui, s: &mut Gallery) {
         tabs::documents(ui, Id::new("docs"), &docs, 0, None);
         let rect = ui.available_rect_before_wrap();
         canvas::surround(ui, rect);
-        let view = canvas::scrollbars(ui, Id::new("canvas"), rect, vec2(1600.0, 1200.0), &mut s.offset);
+        let view = canvas::scrollbars(
+            ui,
+            Id::new("canvas"),
+            rect,
+            vec2(1600.0, 1200.0),
+            &mut s.offset,
+        );
         let page = egui::Rect::from_center_size(view.center(), vec2(240.0, 160.0));
         ui.painter().rect_filled(page, 0.0, egui::Color32::WHITE);
     });
     if s.dialog {
         let response = Dialog::new("image-size", "Image Size")
-            .buttons(vec![Choice::new("OK", DialogRole::Default), Choice::new("Cancel", DialogRole::Cancel)])
+            .buttons(vec![
+                Choice::new("OK", DialogRole::Default),
+                Choice::new("Cancel", DialogRole::Cancel),
+            ])
             .show(ui.ctx(), |ui| {
                 ui.horizontal(|ui| {
                     ui.label("Width:");
-                    ui.add(ValueField::new(&mut s.size, 1.0..=30_000.0).unit("px").width(96.0));
+                    ui.add(
+                        ValueField::new(&mut s.size, 1.0..=30_000.0)
+                            .unit("px")
+                            .width(96.0),
+                    );
                 });
                 ui.add(Checkbox::new(&mut s.resample, "Resample"));
             });
@@ -146,8 +198,14 @@ fn gallery(ui: &mut Ui, s: &mut Gallery) {
 }
 
 fn window(scheme: Scheme, mode: Mode, dialog: bool) -> Harness<'static, Gallery> {
-    let state = Gallery { dialog, ..Gallery::default() };
-    let mut h = Harness::builder().with_size(vec2(960.0, 600.0)).wgpu().build_ui_state(gallery, state);
+    let state = Gallery {
+        dialog,
+        ..Gallery::default()
+    };
+    let mut h = Harness::builder()
+        .with_size(vec2(960.0, 600.0))
+        .wgpu()
+        .build_ui_state(gallery, state);
     toolkit::install(&h.ctx, &fixture::theme(scheme, mode));
     h.run();
     h
@@ -165,7 +223,11 @@ fn components_in_every_chrome_theme() {
 #[test]
 fn dialogs_in_pro_medium_studio_and_classic() {
     let mut results = egui_kittest::SnapshotResults::new();
-    for (id, scheme, mode) in [("proMedium", Scheme::Pro, Mode::Light), ("studio", Scheme::Studio, Mode::Dark), ("classic", Scheme::Classic, Mode::Light)] {
+    for (id, scheme, mode) in [
+        ("proMedium", Scheme::Pro, Mode::Light),
+        ("studio", Scheme::Studio, Mode::Dark),
+        ("classic", Scheme::Classic, Mode::Light),
+    ] {
         let mut h = window(scheme, mode, true);
         // Keyboard focus on the default button: its focus ring shows.
         h.get_by_label("OK").focus();
@@ -177,7 +239,10 @@ fn dialogs_in_pro_medium_studio_and_classic() {
 #[test]
 fn an_open_combo_list_in_pro_medium_and_studio_light() {
     let mut results = egui_kittest::SnapshotResults::new();
-    for (id, scheme, mode) in [("proMedium", Scheme::Pro, Mode::Light), ("studioLight", Scheme::Studio, Mode::Light)] {
+    for (id, scheme, mode) in [
+        ("proMedium", Scheme::Pro, Mode::Light),
+        ("studioLight", Scheme::Studio, Mode::Light),
+    ] {
         let mut h = window(scheme, mode, false);
         h.get_by_role(Role::ComboBox).click();
         h.run();

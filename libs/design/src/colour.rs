@@ -623,7 +623,10 @@ mod tests {
                     "elevated" | "popover" => "elevbg",
                     _ => "dark",
                 };
-                (name.to_owned(), PairSource::authored(surface, "light", None))
+                (
+                    name.to_owned(),
+                    PairSource::authored(surface, "light", None),
+                )
             })
             .collect();
         let non_text = NON_TEXT_NAMES
@@ -861,10 +864,10 @@ mod tests {
     #[test]
     fn muted_elevated_or_popover_collapsing_onto_base_is_refused_by_name() {
         let mut source = fixture_source();
-        source.semantics.pairs.insert(
-            "muted".into(),
-            PairSource::authored("dark", "light", None),
-        );
+        source
+            .semantics
+            .pairs
+            .insert("muted".into(), PairSource::authored("dark", "light", None));
         let failure = compile(&source).unwrap_err();
         let diagnostic = failure
             .diagnostics
@@ -872,7 +875,11 @@ mod tests {
             .find(|diagnostic| diagnostic.code == "surface-not-distinct-from-base")
             .unwrap();
         assert!(diagnostic.path.ends_with("pairs.muted"));
-        assert!(diagnostic.message.contains("`muted`"), "{}", diagnostic.message);
+        assert!(
+            diagnostic.message.contains("`muted`"),
+            "{}",
+            diagnostic.message
+        );
 
         let mut source = fixture_source();
         source.semantics.pairs.insert(
@@ -886,7 +893,11 @@ mod tests {
             .find(|diagnostic| diagnostic.code == "surface-not-distinct-from-base")
             .unwrap();
         assert!(diagnostic.path.ends_with("pairs.elevated"));
-        assert!(diagnostic.message.contains("`elevated`"), "{}", diagnostic.message);
+        assert!(
+            diagnostic.message.contains("`elevated`"),
+            "{}",
+            diagnostic.message
+        );
 
         // An explicitly authored popover equal to base is the same fault even
         // with a distinct elevated pair: the alias only fills the unauthored
@@ -903,7 +914,11 @@ mod tests {
             .find(|diagnostic| diagnostic.code == "surface-not-distinct-from-base")
             .unwrap();
         assert!(diagnostic.path.ends_with("pairs.popover"));
-        assert!(diagnostic.message.contains("`popover`"), "{}", diagnostic.message);
+        assert!(
+            diagnostic.message.contains("`popover`"),
+            "{}",
+            diagnostic.message
+        );
 
         // A popover-only source is refused once, on the authored path: the
         // alias-filled `elevated` copy renders the same surface bytes and must
@@ -922,7 +937,11 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(refusals.len(), 1, "{:?}", failure.diagnostics);
         assert!(refusals[0].path.ends_with("pairs.popover"));
-        assert!(refusals[0].message.contains("`popover`"), "{}", refusals[0].message);
+        assert!(
+            refusals[0].message.contains("`popover`"),
+            "{}",
+            refusals[0].message
+        );
     }
 
     #[test]
@@ -937,12 +956,16 @@ mod tests {
             .filter(|diagnostic| diagnostic.code == "elevated-text-fallback")
             .collect::<Vec<_>>();
         assert_eq!(warnings.len(), 2, "{:?}", resolved.diagnostics);
-        assert!(warnings
-            .iter()
-            .any(|diagnostic| diagnostic.path.ends_with("pairs.elevated")));
-        assert!(warnings
-            .iter()
-            .any(|diagnostic| diagnostic.path.ends_with("pairs.popover")));
+        assert!(
+            warnings
+                .iter()
+                .any(|diagnostic| diagnostic.path.ends_with("pairs.elevated"))
+        );
+        assert!(
+            warnings
+                .iter()
+                .any(|diagnostic| diagnostic.path.ends_with("pairs.popover"))
+        );
 
         // A popover-only source is warned once, on the authored path; the
         // alias-filled `elevated` copy still delivers the same derived pair.
@@ -955,7 +978,11 @@ mod tests {
             .filter(|diagnostic| diagnostic.code == "elevated-text-fallback")
             .collect::<Vec<_>>();
         assert_eq!(warnings.len(), 1, "{:?}", resolved.diagnostics);
-        assert!(warnings[0].path.ends_with("pairs.popover"), "{:?}", warnings[0]);
+        assert!(
+            warnings[0].path.ends_with("pairs.popover"),
+            "{:?}",
+            warnings[0]
+        );
         let elevated = &resolved.value.pairs["elevated"];
         let popover = &resolved.value.pairs["popover"];
         assert_eq!(elevated.rendered_foreground, popover.rendered_foreground);

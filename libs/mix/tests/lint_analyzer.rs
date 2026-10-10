@@ -27,15 +27,19 @@ fn codes(src: &str) -> Vec<String> {
 
 #[test]
 fn streaming_http_contracts_include_filesystem_capabilities() {
-    for (name,cap) in [("http_put_file","fs-read"),("http_get_file","fs-write")] {
-        let src = format!("$r = {name}(\"https://example.invalid/file\", \"file\")\nprint($r.status)\n");
+    for (name, cap) in [("http_put_file", "fs-read"), ("http_get_file", "fs-write")] {
+        let src =
+            format!("$r = {name}(\"https://example.invalid/file\", \"file\")\nprint($r.status)\n");
         let tokens = Lexer::new(&src).tokenize().unwrap();
-        let stmts = Parser::new(tokens,&src).parse_program().unwrap();
-        let a = analyze(&stmts,Some("test.mix"),&AnalyzerConfig::default());
+        let stmts = Parser::new(tokens, &src).parse_program().unwrap();
+        let a = analyze(&stmts, Some("test.mix"), &AnalyzerConfig::default());
         assert!(a.capabilities.contains(&"network"));
         assert!(a.capabilities.contains(&cap));
         let info = mix::builtins::builtin_info_of(name).unwrap();
-        assert_eq!(info.signature(),format!("{name}(url, path[, opts]) -> map<http_file_response>"));
+        assert_eq!(
+            info.signature(),
+            format!("{name}(url, path[, opts]) -> map<http_file_response>")
+        );
     }
 }
 
@@ -71,7 +75,13 @@ fn undefined_function_and_arities() {
     // (D3's must_use half, 2026-09-29).
     assert_eq!(
         out,
-        vec!["MIX-E1202", "MIX-W2201", "MIX-E1201", "MIX-E1102", "MIX-E1201"]
+        vec![
+            "MIX-E1202",
+            "MIX-W2201",
+            "MIX-E1201",
+            "MIX-E1102",
+            "MIX-E1201"
+        ]
     );
 }
 
@@ -122,7 +132,9 @@ fn map_addition_warns_and_names_merge() {
         .next()
         .expect("one diagnostic");
     assert!(
-        hint.as_deref().unwrap_or("").contains("merge(map_a, map_b)"),
+        hint.as_deref()
+            .unwrap_or("")
+            .contains("merge(map_a, map_b)"),
         "map+map must point at merge: {hint:?}"
     );
     // A map on ONE side is not a merge — the hint must not say it is.
@@ -839,8 +851,7 @@ fn a_guarded_or_must_edit_chain_stays_quiet() {
     );
     // A write_file of something unrelated is not an edit chain.
     assert!(
-        !codes("$s = \"hello\"\nwrite_file(\"/tmp/f\", $s)\n")
-            .contains(&"MIX-D3014".to_string())
+        !codes("$s = \"hello\"\nwrite_file(\"/tmp/f\", $s)\n").contains(&"MIX-D3014".to_string())
     );
     // Reassignment from a non-replace clears the fact.
     assert!(
@@ -853,9 +864,10 @@ fn a_guarded_or_must_edit_chain_stays_quiet() {
 fn d3014_is_a_note_so_it_never_gates_deny_warnings() {
     let out = lint("write_file(\"/tmp/f\", replace(read_file(\"/tmp/f\"), \"a\", \"b\"))\n");
     assert!(out.iter().any(|(c, _)| c == "MIX-D3014"));
-    let tokens = Lexer::new("write_file(\"/tmp/f\", replace(read_file(\"/tmp/f\"), \"a\", \"b\"))\n")
-        .tokenize()
-        .unwrap();
+    let tokens =
+        Lexer::new("write_file(\"/tmp/f\", replace(read_file(\"/tmp/f\"), \"a\", \"b\"))\n")
+            .tokenize()
+            .unwrap();
     let stmts = Parser::new(
         tokens,
         "write_file(\"/tmp/f\", replace(read_file(\"/tmp/f\"), \"a\", \"b\"))\n",
@@ -1027,7 +1039,11 @@ fn an_escaped_physical_newline_is_located_and_named_safely() {
         },
     );
     let codes: Vec<&str> = out.iter().map(|(c, _)| c.as_str()).collect();
-    assert_eq!(codes, vec!["MIX-W2405"], "no D3015: the string is multi-line");
+    assert_eq!(
+        codes,
+        vec!["MIX-W2405"],
+        "no D3015: the string is multi-line"
+    );
     assert_eq!(out[0].1, Some(2), "the backslash is on line 2, not line 3");
 
     let tokens = Lexer::new(src).tokenize().unwrap();
@@ -1063,8 +1079,10 @@ fn d3015_parameter_visibility_is_scoped_to_the_function() {
     // ...while the in-scope case it was added for still fires, including
     // across a multi-line body and inside a lambda.
     assert!(
-        codes_with_source("fn helper($dir)\n  $a = 1\n  print(\"$dir/sub\")\n  return $a\nend\nhelper(\"x\")\n")
-            .contains(&"MIX-D3015".to_string())
+        codes_with_source(
+            "fn helper($dir)\n  $a = 1\n  print(\"$dir/sub\")\n  return $a\nend\nhelper(\"x\")\n"
+        )
+        .contains(&"MIX-D3015".to_string())
     );
     assert!(
         codes_with_source("$f = fn($q) print(\"$q/file\") end\n$f(\"x\")\n")
@@ -1110,7 +1128,10 @@ fn reflex_surplus_arity_gets_the_mix_form_hint() {
         .find(|(c, _)| c == "MIX-E1201")
         .expect("E1201 fires");
     assert!(
-        e1201.1.as_deref().is_some_and(|h| h.contains("delete(map, key)")),
+        e1201
+            .1
+            .as_deref()
+            .is_some_and(|h| h.contains("delete(map, key)")),
         "reflex hint missing: {diags:?}"
     );
 }
@@ -1118,7 +1139,12 @@ fn reflex_surplus_arity_gets_the_mix_form_hint() {
 #[test]
 fn literal_type_contradictions_are_errors() {
     // A2 lint half: a literal whose type cannot satisfy the contract.
-    for src in ["mkdir({a: 1})\n", "exists([1, 2])\n", "len(3)\n", "write_file(99, \"x\")\n"] {
+    for src in [
+        "mkdir({a: 1})\n",
+        "exists([1, 2])\n",
+        "len(3)\n",
+        "write_file(99, \"x\")\n",
+    ] {
         let out = codes(src);
         assert!(out.contains(&"MIX-E1203".to_string()), "{src}: got {out:?}");
     }
@@ -1135,7 +1161,9 @@ fn chain_operand_blocks_and_send_commands_are_walked() {
     // are no longer invisible.
     let out = codes("if true then\n  print($nope)\nend && print(2)\n");
     assert!(out.contains(&"MIX-E1101".to_string()), "got: {out:?}");
-    let out = codes("ssh_mix(\"h\", \"print(1)\")\nif true then\n  ssh_mix(\"h\", \"print(undefinedfn(1))\")\nend && print(2)\n");
+    let out = codes(
+        "ssh_mix(\"h\", \"print(1)\")\nif true then\n  ssh_mix(\"h\", \"print(undefinedfn(1))\")\nend && print(2)\n",
+    );
     assert!(out.contains(&"MIX-E1102".to_string()), "got: {out:?}");
     // `$f(1)` in the command position: $f is an undefined VARIABLE, so
     // the walk produces E1101 — the point is that the command expr is

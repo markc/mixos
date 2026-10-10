@@ -46,7 +46,9 @@ async fn run_err(source: &str) -> String {
 /// past usize::MAX into a start>end slice panic.
 #[tokio::test]
 async fn substr_huge_len_no_panic() {
-    let out = run_ok(r#"print(substr("hello world abc foo", 10, to_number("100000000000000000000")))"#).await;
+    let out =
+        run_ok(r#"print(substr("hello world abc foo", 10, to_number("100000000000000000000")))"#)
+            .await;
     assert_eq!(out, "d abc foo");
 }
 
@@ -136,7 +138,8 @@ async fn repeat_over_cap_errors() {
 /// the cap error too (checked_mul, no wrap).
 #[tokio::test]
 async fn repeat_astronomical_count_errors() {
-    let err = run_err(r#"$x = repeat("ab", to_number("999999999999999999999999999999999999"))"#).await;
+    let err =
+        run_err(r#"$x = repeat("ab", to_number("999999999999999999999999999999999999"))"#).await;
     assert!(err.contains("256 MiB cap"), "got: {err}");
 }
 
@@ -148,8 +151,10 @@ async fn repeat_normal_and_edge_ok() {
     let out = run_ok(r#"print("[" .. repeat("ab", -4) .. "]")"#).await;
     assert_eq!(out, "[]");
     // Empty string repeated a huge number of times is still empty (0 bytes).
-    let out =
-        run_ok(r#"print("[" .. repeat("", to_number("999999999999999999999999999999999999")) .. "]")"#).await;
+    let out = run_ok(
+        r#"print("[" .. repeat("", to_number("999999999999999999999999999999999999")) .. "]")"#,
+    )
+    .await;
     assert_eq!(out, "[]");
 }
 
@@ -174,9 +179,11 @@ async fn lpad_rpad_over_cap_error() {
 /// while panicking on this one line (0.59.0 review round 2).
 #[tokio::test]
 async fn saturating_negative_bounds_clamp_without_panic() {
-    let out = run_ok(r#"print(length(take([1,2,3], -to_number("10000000000000000000000000"))))"#).await;
+    let out =
+        run_ok(r#"print(length(take([1,2,3], -to_number("10000000000000000000000000"))))"#).await;
     assert_eq!(out, "3");
-    let out = run_ok(r#"print(length(drop([1,2,3], -to_number("10000000000000000000000000"))))"#).await;
+    let out =
+        run_ok(r#"print(length(drop([1,2,3], -to_number("10000000000000000000000000"))))"#).await;
     assert_eq!(out, "0");
     let out = run_ok(
         r#"print(length(slice([1,2,3], -to_number("10000000000000000000000000"), to_number("10000000000000000000000000"))))"#,
@@ -184,9 +191,13 @@ async fn saturating_negative_bounds_clamp_without_panic() {
     .await;
     assert_eq!(out, "3");
     // String arms share the same negation sites.
-    let out = run_ok(r#"print("[" .. take("abc", -to_number("10000000000000000000000000")) .. "]")"#).await;
+    let out =
+        run_ok(r#"print("[" .. take("abc", -to_number("10000000000000000000000000")) .. "]")"#)
+            .await;
     assert_eq!(out, "[abc]");
-    let out = run_ok(r#"print("[" .. drop("abc", -to_number("10000000000000000000000000")) .. "]")"#).await;
+    let out =
+        run_ok(r#"print("[" .. drop("abc", -to_number("10000000000000000000000000")) .. "]")"#)
+            .await;
     assert_eq!(out, "[]");
 }
 

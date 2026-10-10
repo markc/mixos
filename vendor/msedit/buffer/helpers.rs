@@ -23,8 +23,14 @@ pub struct Point {
 }
 
 impl Point {
-    pub const MIN: Self = Self { x: CoordType::MIN, y: CoordType::MIN };
-    pub const MAX: Self = Self { x: CoordType::MAX, y: CoordType::MAX };
+    pub const MIN: Self = Self {
+        x: CoordType::MIN,
+        y: CoordType::MIN,
+    };
+    pub const MAX: Self = Self {
+        x: CoordType::MAX,
+        y: CoordType::MAX,
+    };
 }
 
 impl PartialOrd<Self> for Point {

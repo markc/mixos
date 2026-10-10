@@ -184,7 +184,8 @@ async fn publish_clears_a_stale_reply() {
     let stdout = SharedBuf::new();
     let mut eval = Evaluator::with_output(Box::new(stdout.clone()), Box::new(SharedBuf::new()));
     eval.set_bus_handler(Rc::new(NumberBus));
-    let src = "send svc ping\nprint(to_string($reply))\npublish(\"t\", \"x\")\nprint(type($reply))\n";
+    let src =
+        "send svc ping\nprint(to_string($reply))\npublish(\"t\", \"x\")\nprint(type($reply))\n";
     let mut lexer = Lexer::new(src);
     let stmts = Parser::new(lexer.tokenize().unwrap(), src)
         .parse_program()

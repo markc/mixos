@@ -483,9 +483,7 @@ impl Publisher {
                 match buffer {
                     // A lost edit.changed event (failed OR dropped): resync owed.
                     Some(buffer) => {
-                        tracing::warn!(
-                            "editd: edit.changed publish lost ({error}); resync owed"
-                        );
+                        tracing::warn!("editd: edit.changed publish lost ({error}); resync owed");
                         let mut state = self.state.lock().expect("publisher state");
                         Self::mark_lost(&mut state, buffer.as_ref());
                     }

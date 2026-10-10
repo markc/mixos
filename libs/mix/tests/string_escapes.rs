@@ -40,9 +40,10 @@ async fn hex_escape_above_7f_is_the_codepoint_not_a_raw_byte() {
     // A Mix String is UTF-8, so `\xff` MUST be U+00FF (two bytes on the
     // wire), never the single byte 0xFF — which would not be valid UTF-8.
     // `bytes_from_hex` is the byte route and keeps its own spelling.
-    let out = run("print(\"\\xff\" == chr(255))\nprint(len(\"\\xff\"))\nprint(byte_length(\"\\xff\"))\n")
-        .await
-        .unwrap();
+    let out =
+        run("print(\"\\xff\" == chr(255))\nprint(len(\"\\xff\"))\nprint(byte_length(\"\\xff\"))\n")
+            .await
+            .unwrap();
     assert_eq!(out, "true\n1\n2\n");
 }
 
@@ -62,8 +63,8 @@ async fn nul_and_the_control_escapes() {
     let out = run("print(len(\"a\\0b\"))\nprint(len(\"\\012\"))\n\
                    print(\"\\a\" == chr(7))\nprint(\"\\b\" == chr(8))\n\
                    print(\"\\f\" == chr(12))\nprint(\"\\v\" == chr(11))\n")
-        .await
-        .unwrap();
+    .await
+    .unwrap();
     assert_eq!(out, "3\n3\ntrue\ntrue\ntrue\ntrue\n");
 }
 
@@ -72,14 +73,13 @@ async fn the_deliberate_literals_are_untouched() {
     // Unbraced `\u` stays literal BY DESIGN (it protects embedded JSON and
     // `C:\users`); a doubled backslash is a literal backslash; single
     // quotes take only `\'` and `\\`; heredocs keep their own rules.
-    let out = run("print(\"json \\uABCD\")\nprint(\"C:\\users\")\nprint(\"re \\\\d+\")\n\
-                   print('raw \\x27 here')\nprint(\"\\u{27}\")\n")
-        .await
-        .unwrap();
-    assert_eq!(
-        out,
-        "json \\uABCD\nC:\\users\nre \\d+\nraw \\x27 here\n'\n"
-    );
+    let out = run(
+        "print(\"json \\uABCD\")\nprint(\"C:\\users\")\nprint(\"re \\\\d+\")\n\
+                   print('raw \\x27 here')\nprint(\"\\u{27}\")\n",
+    )
+    .await
+    .unwrap();
+    assert_eq!(out, "json \\uABCD\nC:\\users\nre \\d+\nraw \\x27 here\n'\n");
 
     let out = run("$h = <<END\nheredoc \\x27 and \\0 stay literal\nEND\nprint($h)\n")
         .await

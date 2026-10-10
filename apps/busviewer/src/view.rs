@@ -36,17 +36,43 @@ pub enum UiEvent {
 const ICON: f32 = 14.0;
 
 /// Draw the whole window into `ui`.
-pub fn view(ui: &mut Ui, engine: &Engine, commands: &Registry<Engine>, strings: &Strings, stroke: f32) -> Vec<UiEvent> {
+pub fn view(
+    ui: &mut Ui,
+    engine: &Engine,
+    commands: &Registry<Engine>,
+    strings: &Strings,
+    stroke: f32,
+) -> Vec<UiEvent> {
     let mut events = Vec::new();
     // The right-hand group (§3.1): search the services, flip light and
     // dark, and the keyboard shortcuts as the link.
     let dark = ui.visuals().dark_mode;
     let mut controls = [
-        Control::Icon { command: "view.search", icon: Icon::Search, selected: false },
-        Control::Icon { command: "view.mode", icon: titlebar::theme_icon(dark), selected: false },
-        Control::Link { command: "help.shortcuts", icon: Icon::Keyboard },
+        Control::Icon {
+            command: "view.search",
+            icon: Icon::Search,
+            selected: false,
+        },
+        Control::Icon {
+            command: "view.mode",
+            icon: titlebar::theme_icon(dark),
+            selected: false,
+        },
+        Control::Link {
+            command: "help.shortcuts",
+            icon: Icon::Keyboard,
+        },
     ];
-    let fired = titlebar::show_with(ui, &label("title"), Some(Icon::Server), stroke, commands, engine, strings, &mut controls);
+    let fired = titlebar::show_with(
+        ui,
+        &label("title"),
+        Some(Icon::Server),
+        stroke,
+        commands,
+        engine,
+        strings,
+        &mut controls,
+    );
     // The toggle goes to the mode opposite the one this frame drew, so a
     // click reported twice cannot flip it back.
     let mut mode_set = false;
@@ -54,7 +80,11 @@ pub fn view(ui: &mut Ui, engine: &Engine, commands: &Registry<Engine>, strings: 
         if id == "view.mode" {
             if !mode_set {
                 let shown = engine.effective_theme().1;
-                let target = if shown == design::Mode::Dark { design::Mode::Light } else { design::Mode::Dark };
+                let target = if shown == design::Mode::Dark {
+                    design::Mode::Light
+                } else {
+                    design::Mode::Dark
+                };
                 events.push(UiEvent::SetMode(target));
                 mode_set = true;
             }
@@ -140,12 +170,22 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, stroke: f32, events: &mut V
         if row.children.is_empty() {
             ui.add_space(ICON + ui.spacing().item_spacing.x);
         } else {
-            let chevron = if row.expanded { Icon::ChevronDown } else { Icon::ChevronRight };
-            let toggle = ui.add(egui::Button::image(icons::image(chevron, stroke, ICON, colour)).frame(false));
+            let chevron = if row.expanded {
+                Icon::ChevronDown
+            } else {
+                Icon::ChevronRight
+            };
+            let toggle = ui
+                .add(egui::Button::image(icons::image(chevron, stroke, ICON, colour)).frame(false));
             // An image button has no text: name it, with its row's name, for
             // screen readers and click-by-label.
-            let name = label_with(if row.expanded { "collapse" } else { "expand" }, &[("name", &row_name(row))]);
-            toggle.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &name));
+            let name = label_with(
+                if row.expanded { "collapse" } else { "expand" },
+                &[("name", &row_name(row))],
+            );
+            toggle.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &name)
+            });
             if toggle.clicked() {
                 events.push(UiEvent::Toggle(row.key.clone()));
             }
@@ -153,12 +193,19 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, stroke: f32, events: &mut V
         let text = match &row.kind {
             RowKind::Service(name) | RowKind::Peer(name) => RichText::new(name),
             RowKind::Verb(target) => RichText::new(&target.verb).monospace(),
-            RowKind::Error(_) => RichText::new(label("descriptions-failed")).color(ui.visuals().error_fg_color),
+            RowKind::Error(_) => {
+                RichText::new(label("descriptions-failed")).color(ui.visuals().error_fg_color)
+            }
             RowKind::Peers => RichText::new(label("peers")),
             RowKind::NoPeers => RichText::new(label("no-peers")).weak(),
         };
         if let RowKind::Service(_) = row.kind {
-            ui.add(icons::image(Icon::Server, stroke, ICON, ui.visuals().weak_text_color()));
+            ui.add(icons::image(
+                Icon::Server,
+                stroke,
+                ICON,
+                ui.visuals().weak_text_color(),
+            ));
         }
         let selected = engine.ui.row_key.as_deref() == Some(row.key.as_str());
         if ui.selectable_label(selected, text).clicked() {
@@ -176,16 +223,27 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, stroke: f32, events: &mut V
 
 /// The selected verb's description, or what the selected row is.
 fn description(engine: &Engine) -> String {
-    let verb = engine.ui.selected.as_ref().and_then(|s| engine.snapshot.verb(s).map(|v| (s, v)));
+    let verb = engine
+        .ui
+        .selected
+        .as_ref()
+        .and_then(|s| engine.snapshot.verb(s).map(|v| (s, v)));
     if let Some((selection, verb)) = verb {
-        let args = if verb.args.is_empty() { label("unspecified") } else { verb.args.clone() };
+        let args = if verb.args.is_empty() {
+            label("unspecified")
+        } else {
+            verb.args.clone()
+        };
         let read_only = label(match verb.read_only {
             Some(true) => "yes",
             Some(false) => "no",
             None => "unknown",
         });
-        let description =
-            if verb.description.is_empty() { label("description-unavailable") } else { verb.description.clone() };
+        let description = if verb.description.is_empty() {
+            label("description-unavailable")
+        } else {
+            verb.description.clone()
+        };
         return format!(
             "{}  {}\n{}: {args}\n{}: {read_only}\n\n{description}",
             selection.service,
@@ -194,7 +252,11 @@ fn description(engine: &Engine) -> String {
             label("read-only")
         );
     }
-    let row = engine.ui.row_key.as_ref().and_then(|key| find(&engine.tree(), key));
+    let row = engine
+        .ui
+        .row_key
+        .as_ref()
+        .and_then(|key| find(&engine.tree(), key));
     match row.map(|r| r.kind) {
         Some(RowKind::Error(error)) => error,
         Some(RowKind::Service(name)) => name,
@@ -204,28 +266,52 @@ fn description(engine: &Engine) -> String {
 }
 
 fn find(rows: &[Row], key: &str) -> Option<Row> {
-    rows.iter().find_map(|r| if r.key == key { Some(r.clone()) } else { find(&r.children, key) })
+    rows.iter().find_map(|r| {
+        if r.key == key {
+            Some(r.clone())
+        } else {
+            find(&r.children, key)
+        }
+    })
 }
 
-fn details(ui: &mut Ui, engine: &Engine, commands: &Registry<Engine>, strings: &Strings, events: &mut Vec<UiEvent>) {
+fn details(
+    ui: &mut Ui,
+    engine: &Engine,
+    commands: &Registry<Engine>,
+    strings: &Strings,
+    events: &mut Vec<UiEvent>,
+) {
     let title = label("details");
     panel::group(ui, "details", &[title.as_str()], |ui, _| {
         let rows = ui.text_style_height(&egui::TextStyle::Body) * 6.0;
-        ScrollArea::vertical().id_salt("description").max_height(rows).show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.label(description(engine));
-        });
+        ScrollArea::vertical()
+            .id_salt("description")
+            .max_height(rows)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(description(engine));
+            });
         bars::hairline(ui);
         ui.horizontal(|ui| {
             panel::section_label(ui, &label("body"));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 // Call is the default action; Clear the secondary one.
                 for id in ["bus.call", "edit.clear"] {
-                    let Some(command) = commands.get(id) else { continue };
+                    let Some(command) = commands.get(id) else {
+                        continue;
+                    };
                     let text = strings.get(command.label);
-                    let button = if id == "bus.call" { PushButton::primary(text) } else { PushButton::secondary(text) };
+                    let button = if id == "bus.call" {
+                        PushButton::primary(text)
+                    } else {
+                        PushButton::secondary(text)
+                    };
                     let response = ui.add_enabled((command.enabled)(engine), button);
-                    if response.on_hover_text(tooltip::for_command(ui.ctx(), command, strings)).clicked() {
+                    if response
+                        .on_hover_text(tooltip::for_command(ui.ctx(), command, strings))
+                        .clicked()
+                    {
                         events.push(UiEvent::Command(command.id));
                     }
                 }
@@ -242,9 +328,16 @@ fn details(ui: &mut Ui, engine: &Engine, commands: &Registry<Engine>, strings: &
             events.push(UiEvent::Body(body));
         }
         panel::section_label(ui, &label("reply"));
-        ScrollArea::vertical().id_salt("reply").auto_shrink(false).show(ui, |ui| {
-            let mut reply = engine.reply.as_str();
-            ui.add(TextEdit::multiline(&mut reply).code_editor().desired_width(f32::INFINITY));
-        });
+        ScrollArea::vertical()
+            .id_salt("reply")
+            .auto_shrink(false)
+            .show(ui, |ui| {
+                let mut reply = engine.reply.as_str();
+                ui.add(
+                    TextEdit::multiline(&mut reply)
+                        .code_editor()
+                        .desired_width(f32::INFINITY),
+                );
+            });
     });
 }

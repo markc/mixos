@@ -69,7 +69,15 @@ pub unsafe fn virtual_release(base: NonNull<u8>, size: usize) {
 /// and to pass a size less than or equal to the size passed to `virtual_reserve`.
 pub unsafe fn virtual_commit(base: NonNull<u8>, size: usize) -> io::Result<()> {
     unsafe {
-        let status = libc::mprotect(base.cast().as_ptr(), size, libc::PROT_READ | libc::PROT_WRITE);
-        if status != 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
+        let status = libc::mprotect(
+            base.cast().as_ptr(),
+            size,
+            libc::PROT_READ | libc::PROT_WRITE,
+        );
+        if status != 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
     }
 }

@@ -115,12 +115,7 @@ pub fn run_edit(args: &[String]) -> i32 {
         );
         for offset in &hits {
             let (line, text) = span_lines(&content, *offset, opts.old.len());
-            eprintln!(
-                "  {}:{}: {}",
-                opts.file.display(),
-                line,
-                text.join(" ⏎ ")
-            );
+            eprintln!("  {}:{}: {}", opts.file.display(), line, text.join(" ⏎ "));
         }
         eprintln!("Pass --all to edit every occurrence, or give a longer OLD.");
         return 2;
@@ -282,7 +277,12 @@ struct ReportGroup {
 /// the `after` range is expressed in the fully-edited text, shifted by
 /// the cumulative length delta of every preceding replacement, so the
 /// `+` side is read out of the real result rather than reconstructed.
-fn report_groups(content: &str, hits: &[usize], old_len: usize, new_len: usize) -> Vec<ReportGroup> {
+fn report_groups(
+    content: &str,
+    hits: &[usize],
+    old_len: usize,
+    new_len: usize,
+) -> Vec<ReportGroup> {
     let delta = new_len as isize - old_len as isize;
     let post = |i: usize, at: usize| -> usize {
         let shifted = at as isize + delta * i as isize;
@@ -333,7 +333,10 @@ fn span_lines(content: &str, offset: usize, len: usize) -> (usize, Vec<String>) 
         .map_or(content.len(), |i| last + i);
     (
         line_no,
-        content[start..end].split('\n').map(str::to_string).collect(),
+        content[start..end]
+            .split('\n')
+            .map(str::to_string)
+            .collect(),
     )
 }
 
@@ -558,9 +561,7 @@ mod tests {
 
     #[test]
     fn double_dash_lets_old_and_new_start_with_a_dash() {
-        let o = parse_args(&s(&["--", "f", "--a", "--b"]))
-            .unwrap()
-            .unwrap();
+        let o = parse_args(&s(&["--", "f", "--a", "--b"])).unwrap().unwrap();
         assert_eq!(o.old, "--a");
         assert_eq!(o.new, "--b");
         assert!(!o.all);

@@ -675,10 +675,12 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         // MAJOR 1). The legacy regex_* names this arm once covered were
         // deleted outright in release B (0.73.0).
         #[cfg(not(feature = "regex"))]
-        "re_match" | "re_find" | "re_replace" | "re_replace_must" | "re_split" => Err(MixError::RuntimeError {
-            span: None,
-            msg: format!("{name}() requires the `regex` feature"),
-        }),
+        "re_match" | "re_find" | "re_replace" | "re_replace_must" | "re_split" => {
+            Err(MixError::RuntimeError {
+                span: None,
+                msg: format!("{name}() requires the `regex` feature"),
+            })
+        }
         #[cfg(feature = "toml")]
         "toml_parse" => builtin_toml_parse(args),
         #[cfg(feature = "toml")]
@@ -896,8 +898,8 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         // (tcp_* share the ws feature's tungstenite/rustls stack.)
         #[cfg(not(feature = "ws"))]
         name @ ("ws_connect" | "ws_send" | "ws_recv" | "ws_close" | "tcp_connect" | "tcp_send"
-            | "tcp_recv" | "tcp_recv_line" | "tcp_close" | "ws_on" | "tcp_on"
-            | "ws_unwatch" | "tcp_unwatch") => Err(MixError::RuntimeError {
+        | "tcp_recv" | "tcp_recv_line" | "tcp_close" | "ws_on" | "tcp_on"
+        | "ws_unwatch" | "tcp_unwatch") => Err(MixError::RuntimeError {
             span: None,
             msg: format!("{name}() requires the `ws` feature (tungstenite/rustls)"),
         }),
@@ -1537,7 +1539,12 @@ fn builtin_strip(args: Vec<Value>) -> MixResult<Option<Value>> {
     // ends. Before this the second argument was accepted and silently
     // IGNORED — the exact no-op a PHP-style trim(s, chars) caller hits.
     let cs = args.get(1).map(|v| v.to_mix_string());
-    Ok(Some(Value::String(charset_trim(&s, cs.as_deref(), true, true))))
+    Ok(Some(Value::String(charset_trim(
+        &s,
+        cs.as_deref(),
+        true,
+        true,
+    ))))
 }
 
 // Exact-match string ops boundary (char-aware strings P2): `replace`, `contains`,
@@ -1580,7 +1587,10 @@ const MAX_MUST_COUNT: f64 = 9_007_199_254_740_992.0; // 2^53
 /// Unknown keys RAISE — a silently ignored `{counts: 2}` would turn the
 /// count assertion off at exactly the moment the caller was being careful
 /// (the `mkdir({parents})` rule).
-fn must_replace_opts(name: &str, opts: Option<&Value>) -> MixResult<(Option<usize>, Option<String>)> {
+fn must_replace_opts(
+    name: &str,
+    opts: Option<&Value>,
+) -> MixResult<(Option<usize>, Option<String>)> {
     let Some(opts) = opts else {
         return Ok((None, None));
     };
@@ -1660,7 +1670,9 @@ fn must_replace_check(
     if found == 0 {
         return Err(MixError::structured(
             "NEEDLE_ABSENT",
-            format!("{name}(): {needle_label} {needle:?} does not occur{at} — nothing was replaced"),
+            format!(
+                "{name}(): {needle_label} {needle:?} does not occur{at} — nothing was replaced"
+            ),
         ));
     }
     if let Some(want) = want
@@ -1722,7 +1734,9 @@ fn nonempty_delim(name: &str, d: &str) -> MixResult<()> {
     if d.is_empty() {
         return Err(MixError::RuntimeError {
             span: None,
-            msg: format!("{name}: empty delimiter (matching \"\" everywhere answers nothing — pass a real delimiter)"),
+            msg: format!(
+                "{name}: empty delimiter (matching \"\" everywhere answers nothing — pass a real delimiter)"
+            ),
         });
     }
     Ok(())
@@ -1891,14 +1905,24 @@ fn builtin_ltrim(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args("ltrim", &args, 1)?;
     let s = args[0].to_mix_string();
     let cs = args.get(1).map(|v| v.to_mix_string());
-    Ok(Some(Value::String(charset_trim(&s, cs.as_deref(), true, false))))
+    Ok(Some(Value::String(charset_trim(
+        &s,
+        cs.as_deref(),
+        true,
+        false,
+    ))))
 }
 
 fn builtin_rtrim(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args("rtrim", &args, 1)?;
     let s = args[0].to_mix_string();
     let cs = args.get(1).map(|v| v.to_mix_string());
-    Ok(Some(Value::String(charset_trim(&s, cs.as_deref(), false, true))))
+    Ok(Some(Value::String(charset_trim(
+        &s,
+        cs.as_deref(),
+        false,
+        true,
+    ))))
 }
 
 fn builtin_lines(args: Vec<Value>) -> MixResult<Option<Value>> {
@@ -2363,7 +2387,10 @@ fn builtin_normalize(args: Vec<Value>) -> MixResult<Option<Value>> {
         Some(other) => {
             return Err(MixError::structured(
                 "TYPE_MISMATCH",
-                format!("normalize(): form must be a string, got {}", other.type_name()),
+                format!(
+                    "normalize(): form must be a string, got {}",
+                    other.type_name()
+                ),
             ));
         }
     };
@@ -3415,7 +3442,10 @@ fn builtin_monotonic(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args("monotonic", &args, 0)?;
     // SAFETY: `ts` is a fully-initialised `timespec` passed by exclusive
     // reference; `clock_gettime` only writes it and returns 0 on success.
-    let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    let mut ts = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
     if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) } != 0 {
         // Effectively impossible on Linux for this clock id, but a clock
         // builtin must not fabricate a value — a silent 0 would corrupt
@@ -3425,7 +3455,9 @@ fn builtin_monotonic(args: Vec<Value>) -> MixResult<Option<Value>> {
             span: None,
         });
     }
-    Ok(Some(Value::Number(ts.tv_sec as f64 + ts.tv_nsec as f64 / 1e9)))
+    Ok(Some(Value::Number(
+        ts.tv_sec as f64 + ts.tv_nsec as f64 / 1e9,
+    )))
 }
 
 fn builtin_pid(_args: Vec<Value>) -> MixResult<Option<Value>> {
@@ -4089,12 +4121,18 @@ fn builtin_spawn_argv(args: Vec<Value>) -> MixResult<Option<Value>> {
     spawn_argv_native(args, None)
 }
 
-pub(crate) fn spawn_argv_native(args: Vec<Value>, mut native: Option<&mut crate::native_events::NativeEvents>) -> MixResult<Option<Value>> {
+pub(crate) fn spawn_argv_native(
+    args: Vec<Value>,
+    mut native: Option<&mut crate::native_events::NativeEvents>,
+) -> MixResult<Option<Value>> {
     let caller = "spawn";
     if args.len() > 2 {
         return Err(MixError::RuntimeError {
             span: None,
-            msg: format!("spawn(argv[, opts]) takes at most 2 arguments, got {}", args.len()),
+            msg: format!(
+                "spawn(argv[, opts]) takes at most 2 arguments, got {}",
+                args.len()
+            ),
         });
     }
     // argv: a non-empty list of strings, none coerced (same discipline as
@@ -4150,18 +4188,27 @@ pub(crate) fn spawn_argv_native(args: Vec<Value>, mut native: Option<&mut crate:
         let Value::Map(map) = opts else {
             return Err(opt_invalid(
                 caller,
-                format!("second argument must be an options map, got {}", opts.type_name()),
+                format!(
+                    "second argument must be an options map, got {}",
+                    opts.type_name()
+                ),
             ));
         };
         for (key, val) in map.iter() {
             match key.as_str() {
                 "exit_event" => {
-                    let Value::Bool(v) = val else { return Err(opt_invalid(caller, "exit_event must be a bool")); };
+                    let Value::Bool(v) = val else {
+                        return Err(opt_invalid(caller, "exit_event must be a bool"));
+                    };
                     exit_event = *v;
                 }
                 "tag" => {
-                    let Value::String(v) = val else { return Err(opt_invalid(caller, "tag must be a string")); };
-                    if v.len() > 4096 { return Err(opt_invalid(caller, "tag exceeds 4096 bytes")); }
+                    let Value::String(v) = val else {
+                        return Err(opt_invalid(caller, "tag must be a string"));
+                    };
+                    if v.len() > 4096 {
+                        return Err(opt_invalid(caller, "tag exceeds 4096 bytes"));
+                    }
                     tag = v.clone();
                 }
                 "detach" => {
@@ -4181,7 +4228,10 @@ pub(crate) fn spawn_argv_native(args: Vec<Value>, mut native: Option<&mut crate:
                         other => {
                             return Err(opt_invalid(
                                 caller,
-                                format!("die_with_parent must be a bool, got {}", other.type_name()),
+                                format!(
+                                    "die_with_parent must be a bool, got {}",
+                                    other.type_name()
+                                ),
                             ));
                         }
                     };
@@ -4194,10 +4244,7 @@ pub(crate) fn spawn_argv_native(args: Vec<Value>, mut native: Option<&mut crate:
                             // truncates a good stdout log on its way to a late
                             // Command::spawn failure (codex arm MAJOR-7).
                             if s.contains('\0') {
-                                return Err(opt_invalid(
-                                    caller,
-                                    "cwd contains a NUL byte",
-                                ));
+                                return Err(opt_invalid(caller, "cwd contains a NUL byte"));
                             }
                             Some(s.clone())
                         }
@@ -4305,11 +4352,27 @@ pub(crate) fn spawn_argv_native(args: Vec<Value>, mut native: Option<&mut crate:
     }
 
     if exit_event {
-        if detach { return Err(opt_invalid(caller, "exit_event cannot be combined with detach")); }
-        if !cfg!(target_os = "linux") {
-            return Err(MixError::structured("PROC_UNSUPPORTED", "managed spawn requires Linux pidfd"));
+        if detach {
+            return Err(opt_invalid(
+                caller,
+                "exit_event cannot be combined with detach",
+            ));
         }
-        native.as_deref_mut().ok_or_else(|| opt_invalid(caller, "exit_event requires an evaluator-owned native registry"))?.admit_child()?;
+        if !cfg!(target_os = "linux") {
+            return Err(MixError::structured(
+                "PROC_UNSUPPORTED",
+                "managed spawn requires Linux pidfd",
+            ));
+        }
+        native
+            .as_deref_mut()
+            .ok_or_else(|| {
+                opt_invalid(
+                    caller,
+                    "exit_event requires an evaluator-owned native registry",
+                )
+            })?
+            .admit_child()?;
     } else if !tag.is_empty() {
         return Err(opt_invalid(caller, "tag requires exit_event:true"));
     }
@@ -4358,7 +4421,11 @@ pub(crate) fn spawn_argv_native(args: Vec<Value>, mut native: Option<&mut crate:
         use std::os::unix::process::CommandExt;
         unsafe {
             command.pre_exec(|| {
-                if libc::setpgid(0, 0) == -1 { Err(std::io::Error::last_os_error()) } else { Ok(()) }
+                if libc::setpgid(0, 0) == -1 {
+                    Err(std::io::Error::last_os_error())
+                } else {
+                    Ok(())
+                }
             });
         }
     }
@@ -4387,7 +4454,10 @@ pub(crate) fn spawn_argv_native(args: Vec<Value>, mut native: Option<&mut crate:
         RunArgvOutput::Inherit => {}
         RunArgvOutput::File(_) => {
             command.stdout(stdout_file.as_ref().unwrap().try_clone().map_err(|e| {
-                MixError::RuntimeError { span: None, msg: format!("spawn: cloning stdout fd: {e}") }
+                MixError::RuntimeError {
+                    span: None,
+                    msg: format!("spawn: cloning stdout fd: {e}"),
+                }
             })?);
         }
         RunArgvOutput::Capture => unreachable!("rejected above"),
@@ -4400,7 +4470,10 @@ pub(crate) fn spawn_argv_native(args: Vec<Value>, mut native: Option<&mut crate:
         RunArgvStderr::Stdout => match &stdout {
             RunArgvOutput::File(_) => {
                 command.stderr(stdout_file.as_ref().unwrap().try_clone().map_err(|e| {
-                    MixError::RuntimeError { span: None, msg: format!("spawn: cloning fd for stderr:stdout: {e}") }
+                    MixError::RuntimeError {
+                        span: None,
+                        msg: format!("spawn: cloning fd for stderr:stdout: {e}"),
+                    }
                 })?);
             }
             RunArgvOutput::Null => {
@@ -4562,7 +4635,8 @@ pub mod owned_spawns {
 
     /// Is some OTHER thread the host?
     pub(crate) fn hosted_elsewhere() -> bool {
-        HOST.get().is_some_and(|host| *host != std::thread::current().id())
+        HOST.get()
+            .is_some_and(|host| *host != std::thread::current().id())
     }
 
     /// May the current thread create an owned child?
@@ -4744,7 +4818,11 @@ pub mod owned_spawns {
 /// Call only in a post-fork child (the pre_exec window).
 #[cfg(all(
     target_os = "linux",
-    any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "riscv64")
+    any(
+        target_arch = "x86_64",
+        target_arch = "aarch64",
+        target_arch = "riscv64"
+    )
 ))]
 unsafe fn raw_fork() -> libc::pid_t {
     // On these three arches clone(2) takes (flags, newsp, parent_tid,
@@ -4752,7 +4830,9 @@ unsafe fn raw_fork() -> libc::pid_t {
     // (copy-on-write, as fork), no tid pointers, no TLS. Not every arch
     // agrees — s390x swaps the first two (CLONE_BACKWARDS2) — so the raw
     // path is limited to arches whose order is known.
-    unsafe { libc::syscall(libc::SYS_clone, libc::SIGCHLD as libc::c_long, 0, 0, 0, 0) as libc::pid_t }
+    unsafe {
+        libc::syscall(libc::SYS_clone, libc::SIGCHLD as libc::c_long, 0, 0, 0, 0) as libc::pid_t
+    }
 }
 
 /// Elsewhere (other unix, other Linux arches): fall back to `libc::fork`.
@@ -4762,7 +4842,11 @@ unsafe fn raw_fork() -> libc::pid_t {
 /// arches above; this arm is documented exposure, not a fix.
 #[cfg(not(all(
     target_os = "linux",
-    any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "riscv64")
+    any(
+        target_arch = "x86_64",
+        target_arch = "aarch64",
+        target_arch = "riscv64"
+    )
 )))]
 unsafe fn raw_fork() -> libc::pid_t {
     unsafe { libc::fork() }
@@ -4853,10 +4937,11 @@ fn spawn_detached(mut command: std::process::Command) -> MixResult<Option<Value>
 
     let mut buf = [0u8; std::mem::size_of::<libc::pid_t>()];
     let mut pipe = std::fs::File::from(read_end);
-    pipe.read_exact(&mut buf).map_err(|e| MixError::RuntimeError {
-        span: None,
-        msg: format!("spawn: detached child's pid was not reported: {e}"),
-    })?;
+    pipe.read_exact(&mut buf)
+        .map_err(|e| MixError::RuntimeError {
+            span: None,
+            msg: format!("spawn: detached child's pid was not reported: {e}"),
+        })?;
     Ok(Some(Value::Number(libc::pid_t::from_ne_bytes(buf) as f64)))
 }
 
@@ -6863,7 +6948,10 @@ fn parse_run_parallel_opts(caller: &str, value: Option<&Value>) -> MixResult<Run
         match k.as_str() {
             "max" => {
                 let n = extract_number(val, InputPolicy::NumberOnly).ok_or_else(|| {
-                    opt_invalid(caller, format!("max must be a number, got {}", val.type_name()))
+                    opt_invalid(
+                        caller,
+                        format!("max must be a number, got {}", val.type_name()),
+                    )
                 })?;
                 if !(n.is_finite() && n >= 1.0 && n.fract() == 0.0) {
                     return Err(opt_invalid(
@@ -6877,7 +6965,10 @@ fn parse_run_parallel_opts(caller: &str, value: Option<&Value>) -> MixResult<Run
                 let t = extract_number(val, InputPolicy::NumberOnly).ok_or_else(|| {
                     opt_invalid(
                         caller,
-                        format!("timeout must be a number of seconds, got {}", val.type_name()),
+                        format!(
+                            "timeout must be a number of seconds, got {}",
+                            val.type_name()
+                        ),
                     )
                 })?;
                 // > 0 and not absurd: 0 disables the deadline (refused — a
@@ -6895,7 +6986,10 @@ fn parse_run_parallel_opts(caller: &str, value: Option<&Value>) -> MixResult<Run
             other => {
                 return Err(opt_invalid(
                     caller,
-                    format!("unknown option '{}' (supported: max, timeout)", sanitize_for_diag(other)),
+                    format!(
+                        "unknown option '{}' (supported: max, timeout)",
+                        sanitize_for_diag(other)
+                    ),
                 ));
             }
         }
@@ -6967,7 +7061,10 @@ fn builtin_run_parallel(args: Vec<Value>) -> MixResult<Option<Value>> {
     if args.is_empty() || args.len() > 2 {
         return Err(MixError::structured(
             "TYPE_MISMATCH",
-            format!("{caller}: expected 1 or 2 args (jobs, [opts]), got {}", args.len()),
+            format!(
+                "{caller}: expected 1 or 2 args (jobs, [opts]), got {}",
+                args.len()
+            ),
         ));
     }
     let jobs = match &args[0] {
@@ -7048,48 +7145,50 @@ fn builtin_run_parallel(args: Vec<Value>) -> MixResult<Option<Value>> {
     let workers = popts.max.min(n).min(MAX_WORKERS);
     std::thread::scope(|s| {
         for _ in 0..workers {
-            s.spawn(|| loop {
-                // 09-25 entry: Ctrl-C must stop the fan-out — the pool
-                // kept spawning jobs after the interrupt flag was set,
-                // so a cancelled batch still launched every remaining
-                // child. A worker seeing the flag marks its SLOT as an
-                // interrupted outcome and stops pulling indices; the
-                // marshal below encodes the flag like run_argv does.
-                if crate::interrupt::is_interrupted() {
-                    // Claim remaining indices as interrupted so every
-                    // slot is assigned exactly once (the marshal
-                    // expects that invariant).
-                    let mut i = next.fetch_add(1, Ordering::Relaxed);
-                    while i < n {
-                        *slots[i].lock().expect("run_parallel slot poisoned") =
-                            Some(Ok(ProcOutcome {
-                                stdout: Vec::new(),
-                                stderr: Vec::new(),
-                                exit_code: 0,
-                                timed_out: false,
-                                interrupted: true,
-                                signal: None,
-                                natural_code: None,
-                                stdout_truncated: false,
-                                stderr_truncated: false,
-                                duration_ms: 0,
-                            }));
-                        i = next.fetch_add(1, Ordering::Relaxed);
+            s.spawn(|| {
+                loop {
+                    // 09-25 entry: Ctrl-C must stop the fan-out — the pool
+                    // kept spawning jobs after the interrupt flag was set,
+                    // so a cancelled batch still launched every remaining
+                    // child. A worker seeing the flag marks its SLOT as an
+                    // interrupted outcome and stops pulling indices; the
+                    // marshal below encodes the flag like run_argv does.
+                    if crate::interrupt::is_interrupted() {
+                        // Claim remaining indices as interrupted so every
+                        // slot is assigned exactly once (the marshal
+                        // expects that invariant).
+                        let mut i = next.fetch_add(1, Ordering::Relaxed);
+                        while i < n {
+                            *slots[i].lock().expect("run_parallel slot poisoned") =
+                                Some(Ok(ProcOutcome {
+                                    stdout: Vec::new(),
+                                    stderr: Vec::new(),
+                                    exit_code: 0,
+                                    timed_out: false,
+                                    interrupted: true,
+                                    signal: None,
+                                    natural_code: None,
+                                    stdout_truncated: false,
+                                    stderr_truncated: false,
+                                    duration_ms: 0,
+                                }));
+                            i = next.fetch_add(1, Ordering::Relaxed);
+                        }
+                        break;
                     }
-                    break;
-                }
-                let i = next.fetch_add(1, Ordering::Relaxed);
-                if i >= n {
-                    break;
-                }
-                let p = &parsed[i];
-                let outcome = run_process(&proc_spec_from(&p.argv, &p.opts, caller)).map_err(|e| {
-                    match e {
-                        MixError::Structured(info) => (info.code.clone(), info.message.clone()),
-                        other => ("RUNTIME_ERROR".to_string(), other.to_string()),
+                    let i = next.fetch_add(1, Ordering::Relaxed);
+                    if i >= n {
+                        break;
                     }
-                });
-                *slots[i].lock().expect("run_parallel slot poisoned") = Some(outcome);
+                    let p = &parsed[i];
+                    let outcome = run_process(&proc_spec_from(&p.argv, &p.opts, caller)).map_err(
+                        |e| match e {
+                            MixError::Structured(info) => (info.code.clone(), info.message.clone()),
+                            other => ("RUNTIME_ERROR".to_string(), other.to_string()),
+                        },
+                    );
+                    *slots[i].lock().expect("run_parallel slot poisoned") = Some(outcome);
+                }
             });
         }
     });
@@ -7438,7 +7537,11 @@ fn builtin_run_pipeline_must(args: Vec<Value>) -> MixResult<Option<Value>> {
                 format!(
                     "run_pipeline_must: stage[{index}] killed by signal {}{}",
                     number("signal").unwrap_or_default(),
-                    if status == "broken_pipe" { " (broken pipe: its reader closed)" } else { "" }
+                    if status == "broken_pipe" {
+                        " (broken pipe: its reader closed)"
+                    } else {
+                        ""
+                    }
                 ),
             ),
             (_, Some(index)) => (
@@ -9903,7 +10006,11 @@ fn pipeline_stage_status(raw: &PipelineRawStageOutcome, interrupted: bool) -> &'
     if raw.natural_code == Some(0) {
         "ok"
     } else if raw.runtime_signalled {
-        if interrupted { "interrupted" } else { "timeout" }
+        if interrupted {
+            "interrupted"
+        } else {
+            "timeout"
+        }
     } else if raw.signal == Some(PIPELINE_SIGPIPE) {
         "broken_pipe"
     } else if raw.signal.is_some() {
@@ -9942,7 +10049,11 @@ fn pipeline_summary(
                 .map(|(index, _)| format!("{} broken pipe accepted", name(index)))
                 .collect();
             if accepted.is_empty() {
-                format!("ok ({} stage{})", stages.len(), if stages.len() == 1 { "" } else { "s" })
+                format!(
+                    "ok ({} stage{})",
+                    stages.len(),
+                    if stages.len() == 1 { "" } else { "s" }
+                )
             } else {
                 format!("ok ({} stages; {})", stages.len(), accepted.join(", "))
             }
@@ -10254,7 +10365,10 @@ fn parse_proc_stat_state_pgrp(stat: &[u8]) -> Option<(u8, i32)> {
         .filter(|f| !f.is_empty());
     let state = *fields.next()?.first()?;
     let _ppid = fields.next()?;
-    let pgrp = std::str::from_utf8(fields.next()?).ok()?.parse::<i32>().ok()?;
+    let pgrp = std::str::from_utf8(fields.next()?)
+        .ok()?
+        .parse::<i32>()
+        .ok()?;
     Some((state, pgrp))
 }
 
@@ -10317,8 +10431,15 @@ fn run_process(spec: &ProcSpec<'_>) -> MixResult<ProcOutcome> {
         max_output,
         stream,
     } = spec;
-    let (stdin, stdout, stderr, timeout_ms, grace_ms, caller, stream) =
-        (*stdin, *stdout, *stderr, *timeout_ms, *grace_ms, *caller, *stream);
+    let (stdin, stdout, stderr, timeout_ms, grace_ms, caller, stream) = (
+        *stdin,
+        *stdout,
+        *stderr,
+        *timeout_ms,
+        *grace_ms,
+        *caller,
+        *stream,
+    );
     let start = Instant::now();
     let timeout = (timeout_ms != 0).then(|| Duration::from_millis(timeout_ms));
     let deadline = timeout.map(|timeout| start + timeout);
@@ -11250,7 +11371,10 @@ fn plan_ssh_mix(args: Vec<Value>) -> MixResult<(SshCall, Option<String>)> {
         Some(other) => {
             return Err(MixError::RuntimeError {
                 span: None,
-                msg: format!("ssh_mix: strict_arity must be a bool, got {}", other.type_name()),
+                msg: format!(
+                    "ssh_mix: strict_arity must be a bool, got {}",
+                    other.type_name()
+                ),
             });
         }
     }
@@ -11264,11 +11388,7 @@ fn plan_ssh_mix(args: Vec<Value>) -> MixResult<(SshCall, Option<String>)> {
         Value::String(format!("{env_prefix}{bindings_prefix}{source}")),
     );
 
-    let call = plan_ssh_run(vec![
-        host,
-        Value::String(remote_cmd),
-        Value::map(opts_map),
-    ])?;
+    let call = plan_ssh_run(vec![host, Value::String(remote_cmd), Value::map(opts_map)])?;
     Ok((call, decode_mode))
 }
 
@@ -11353,7 +11473,9 @@ fn send_mail_envelope(from: &str) -> MixResult<String> {
         return Err(bad("the null sender <> is refused"));
     }
     if addr.contains(|c: char| c.is_whitespace() || "<>()\",;:[]\\".contains(c)) {
-        return Err(bad("the address holds a space, a comment or a second mailbox"));
+        return Err(bad(
+            "the address holds a space, a comment or a second mailbox",
+        ));
     }
     if addr.starts_with('-') {
         return Err(bad("an address may not begin with '-'"));
@@ -11471,7 +11593,8 @@ fn send_mail_qp(text: &str) -> String {
         let mut cur = String::new();
         for (j, &b) in bytes.iter().enumerate() {
             let last = j + 1 == bytes.len();
-            let literal = ((33..=126).contains(&b) && b != b'=') || ((b == b' ' || b == b'\t') && !last);
+            let literal =
+                ((33..=126).contains(&b) && b != b'=') || ((b == b' ' || b == b'\t') && !last);
             let tok = if literal {
                 (b as char).to_string()
             } else {
@@ -11550,7 +11673,9 @@ fn send_mail_render(msg: &Value) -> MixResult<RenderedMail> {
         other => vec![send_mail_header_value("msg.to", other)?],
     };
     if to.iter().any(|t| t.trim().is_empty()) {
-        return Err(send_mail_invalid("msg.to must not contain an empty recipient"));
+        return Err(send_mail_invalid(
+            "msg.to must not contain an empty recipient",
+        ));
     }
     let from = send_mail_header_value("msg.from", required("from")?)?;
     let envelope_from = send_mail_envelope(&from)?;
@@ -11603,17 +11728,14 @@ fn send_mail_render(msg: &Value) -> MixResult<RenderedMail> {
         ),
         ("MIME-Version".into(), "1.0".into()),
         ("Content-Type".into(), "text/plain; charset=utf-8".into()),
-        (
-            "Content-Transfer-Encoding".into(),
-            body_encoding.into(),
-        ),
+        ("Content-Transfer-Encoding".into(), body_encoding.into()),
     ];
     match m.get("headers") {
         None | Some(Value::Nil) => {}
         Some(Value::Map(extra)) => {
             for (name, v) in extra.iter() {
-                let valid_name = !name.is_empty()
-                    && name.bytes().all(|b| (33..=126).contains(&b) && b != b':');
+                let valid_name =
+                    !name.is_empty() && name.bytes().all(|b| (33..=126).contains(&b) && b != b':');
                 if !valid_name {
                     return Err(send_mail_invalid(format!(
                         "invalid header name {:?} (printable ASCII, no ':')",
@@ -11701,7 +11823,10 @@ fn builtin_send_mail(args: Vec<Value>) -> MixResult<Option<Value>> {
     if args.is_empty() || args.len() > 2 {
         return Err(MixError::structured(
             "TYPE_MISMATCH",
-            format!("send_mail: expected 1 or 2 args (msg, [opts]), got {}", args.len()),
+            format!(
+                "send_mail: expected 1 or 2 args (msg, [opts]), got {}",
+                args.len()
+            ),
         ));
     }
     let mut host: Option<String> = None;
@@ -11851,9 +11976,7 @@ fn ssh_mix_many_slot_value(host: &str, slot: ManySlot, decode: Option<&str>) -> 
     match slot {
         // -2 / -3 are the ssh family's legacy sentinels for "interrupted"
         // and "no natural exit".
-        ManySlot::NotStarted => {
-            ssh_result_map(host, blank(-2, true), std::time::Duration::ZERO)
-        }
+        ManySlot::NotStarted => ssh_result_map(host, blank(-2, true), std::time::Duration::ZERO),
         ManySlot::Failed(code, message) => {
             let mut v = ssh_result_map(host, blank(-3, false), std::time::Duration::ZERO);
             if let Value::Map(m) = &mut v {
@@ -11975,9 +12098,11 @@ fn builtin_ssh_mix_many(args: Vec<Value>) -> MixResult<Option<Value>> {
     ])
     .map_err(ssh_mix_many_rename)?;
     // build_ssh_argv always ends `…, "--", host, remote`.
-    let host_at = template.argv.len().checked_sub(2).filter(|i| {
-        *i >= 1 && template.argv[*i - 1] == "--"
-    });
+    let host_at = template
+        .argv
+        .len()
+        .checked_sub(2)
+        .filter(|i| *i >= 1 && template.argv[*i - 1] == "--");
     let Some(host_at) = host_at else {
         return Err(MixError::RuntimeError {
             span: None,
@@ -12053,10 +12178,7 @@ fn builtin_ssh_mix_many(args: Vec<Value>) -> MixResult<Option<Value>> {
 /// decoding partial data would hand back corrupt results with `ok: true`.
 /// Callers that want partial output inspect `stdout`/`stdout_truncated`
 /// without `decode`.
-fn decode_ssh_stdout(
-    m: &mut indexmap::IndexMap<String, Value>,
-    mode: &str,
-) -> MixResult<()> {
+fn decode_ssh_stdout(m: &mut indexmap::IndexMap<String, Value>, mode: &str) -> MixResult<()> {
     if !matches!(m.get("ok"), Some(Value::Bool(true))) {
         return Ok(());
     }
@@ -12884,7 +13006,10 @@ fn builtin_tty_mode(args: Vec<Value>) -> MixResult<Option<Value>> {
         other => {
             return Err(MixError::RuntimeError {
                 span: None,
-                msg: format!("tty_mode(): mode must be a string, got {}", other.type_name()),
+                msg: format!(
+                    "tty_mode(): mode must be a string, got {}",
+                    other.type_name()
+                ),
             });
         }
     };
@@ -12970,7 +13095,10 @@ fn builtin_stdin_copy(args: Vec<Value>) -> MixResult<Option<Value>> {
         other => {
             return Err(MixError::RuntimeError {
                 span: None,
-                msg: format!("stdin_copy(): path must be a string, got {}", other.type_name()),
+                msg: format!(
+                    "stdin_copy(): path must be a string, got {}",
+                    other.type_name()
+                ),
             });
         }
     };
@@ -12982,12 +13110,10 @@ fn builtin_stdin_copy(args: Vec<Value>) -> MixResult<Option<Value>> {
     })?;
     let mut buf = [0u8; 4096];
     loop {
-        let n = input
-            .read(&mut buf)
-            .map_err(|e| MixError::RuntimeError {
-                span: None,
-                msg: format!("stdin_copy(): read failed: {e}"),
-            })?;
+        let n = input.read(&mut buf).map_err(|e| MixError::RuntimeError {
+            span: None,
+            msg: format!("stdin_copy(): read failed: {e}"),
+        })?;
         if n == 0 {
             break;
         }
@@ -13162,7 +13288,8 @@ fn builtin_exists(args: Vec<Value>) -> MixResult<Option<Value>> {
         match opts {
             Value::Nil => {}
             Value::Map(m) => {
-                if let Some(b) = bool_option("exists()", "follow_symlinks", m.get("follow_symlinks"))?
+                if let Some(b) =
+                    bool_option("exists()", "follow_symlinks", m.get("follow_symlinks"))?
                 {
                     follow_symlinks = b;
                 }
@@ -13956,10 +14083,7 @@ fn try_fcntl_fd(
             return Ok(true);
         }
         let err = std::io::Error::last_os_error();
-        let conflict = matches!(
-            err.raw_os_error(),
-            Some(libc::EAGAIN) | Some(libc::EACCES)
-        );
+        let conflict = matches!(err.raw_os_error(), Some(libc::EAGAIN) | Some(libc::EACCES));
         if !conflict {
             return Err(err);
         }
@@ -14198,10 +14322,12 @@ fn builtin_remove(args: Vec<Value>) -> MixResult<Option<Value>> {
     let path = match &args[0] {
         Value::String(s) => s.clone(),
         other => {
-            return Err(MixError::Structured(Box::new(crate::error::ErrorInfo::new(
-                "TYPE_MISMATCH",
-                format!("remove(): path must be a string, got {}", other.type_name()),
-            ))));
+            return Err(MixError::Structured(Box::new(
+                crate::error::ErrorInfo::new(
+                    "TYPE_MISMATCH",
+                    format!("remove(): path must be a string, got {}", other.type_name()),
+                ),
+            )));
         }
     };
     match std::fs::remove_file(&path) {
@@ -14222,10 +14348,15 @@ fn builtin_remove_dir(args: Vec<Value>) -> MixResult<Option<Value>> {
     let path = match &args[0] {
         Value::String(s) => s.clone(),
         other => {
-            return Err(MixError::Structured(Box::new(crate::error::ErrorInfo::new(
-                "TYPE_MISMATCH",
-                format!("remove_dir(): path must be a string, got {}", other.type_name()),
-            ))));
+            return Err(MixError::Structured(Box::new(
+                crate::error::ErrorInfo::new(
+                    "TYPE_MISMATCH",
+                    format!(
+                        "remove_dir(): path must be a string, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )));
         }
     };
     match std::fs::remove_dir_all(&path) {
@@ -14682,7 +14813,10 @@ fn builtin_write_atomic(args: Vec<Value>) -> MixResult<Option<Value>> {
         other => {
             return Err(MixError::structured(
                 "TYPE_MISMATCH",
-                format!("write_atomic: path must be a string, got {}", other.type_name()),
+                format!(
+                    "write_atomic: path must be a string, got {}",
+                    other.type_name()
+                ),
             ));
         }
     };
@@ -14725,9 +14859,19 @@ fn read_access_acl(path: &std::path::Path, follow: bool) -> std::io::Result<Opti
         // SAFETY: size query — a null buffer of length 0.
         let size = unsafe {
             if follow {
-                libc::getxattr(c_path.as_ptr(), ACL_ACCESS_XATTR.as_ptr(), std::ptr::null_mut(), 0)
+                libc::getxattr(
+                    c_path.as_ptr(),
+                    ACL_ACCESS_XATTR.as_ptr(),
+                    std::ptr::null_mut(),
+                    0,
+                )
             } else {
-                libc::lgetxattr(c_path.as_ptr(), ACL_ACCESS_XATTR.as_ptr(), std::ptr::null_mut(), 0)
+                libc::lgetxattr(
+                    c_path.as_ptr(),
+                    ACL_ACCESS_XATTR.as_ptr(),
+                    std::ptr::null_mut(),
+                    0,
+                )
             }
         };
         if size < 0 {
@@ -14777,15 +14921,24 @@ fn set_access_acl(file: &std::fs::File, acl: Option<&[u8]>) -> std::io::Result<(
     // SAFETY: fd is open for the call; `acl` is a valid byte slice.
     let rc = unsafe {
         match acl {
-            Some(acl) => {
-                libc::fsetxattr(fd, ACL_ACCESS_XATTR.as_ptr(), acl.as_ptr().cast(), acl.len(), 0)
-            }
+            Some(acl) => libc::fsetxattr(
+                fd,
+                ACL_ACCESS_XATTR.as_ptr(),
+                acl.as_ptr().cast(),
+                acl.len(),
+                0,
+            ),
             None => libc::fremovexattr(fd, ACL_ACCESS_XATTR.as_ptr()),
         }
     };
     if rc == -1 {
         let e = std::io::Error::last_os_error();
-        if acl.is_none() && matches!(e.raw_os_error(), Some(libc::ENODATA) | Some(libc::EOPNOTSUPP)) {
+        if acl.is_none()
+            && matches!(
+                e.raw_os_error(),
+                Some(libc::ENODATA) | Some(libc::EOPNOTSUPP)
+            )
+        {
             return Ok(());
         }
         return Err(e);
@@ -14798,11 +14951,7 @@ fn set_access_acl(file: &std::fs::File, acl: Option<&[u8]>) -> std::io::Result<(
 /// `details.replaced: true` lets a gate tell it from every other failure —
 /// which all leave the target untouched — so it never "rolls back" a file
 /// that was in fact replaced.
-fn write_atomic_not_durable(
-    path: &str,
-    dir: &std::path::Path,
-    error: &std::io::Error,
-) -> MixError {
+fn write_atomic_not_durable(path: &str, dir: &std::path::Path, error: &std::io::Error) -> MixError {
     let mut details = indexmap::IndexMap::new();
     details.insert("replaced".to_string(), Value::Bool(true));
     details.insert("path".to_string(), Value::String(path.to_string()));
@@ -14986,8 +15135,7 @@ fn write_atomic_impl(
             let use_proc = !matches!(
                 fault,
                 AtomicFault::ForceAclPathFallback | AtomicFault::SwapTargetBetweenLookups
-            )
-                && std::path::Path::new("/proc/self/fd").is_dir();
+            ) && std::path::Path::new("/proc/self/fd").is_dir();
             if use_proc {
                 read_access_acl(&proc_fd, true)
                     .map_err(|e| write_atomic_error(path, "reading the target's access ACL", &e))?
@@ -15165,7 +15313,11 @@ fn write_atomic_impl(
         // WRITE_NOT_DURABLE, never a silent claim of durability.
         // SAFETY: openat with a valid dirfd and a static NUL-terminated name.
         let fd = unsafe {
-            libc::openat(dirfd, c".".as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC)
+            libc::openat(
+                dirfd,
+                c".".as_ptr(),
+                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC,
+            )
         };
         let synced = if fd == -1 {
             Err(std::io::Error::last_os_error())
@@ -15674,7 +15826,9 @@ fn yaml_to_mix_at(doc: &yaml_rust2::Yaml, depth: usize) -> MixResult<Value> {
                 // catches CROSS-TYPE collisions the stringification
                 // introduces (`1:` and `"1":` both become "1") — silent
                 // last-wins would hide one of two live config entries.
-                if m.insert(key.clone(), yaml_to_mix_at(v, depth + 1)?).is_some() {
+                if m.insert(key.clone(), yaml_to_mix_at(v, depth + 1)?)
+                    .is_some()
+                {
                     return Err(MixError::RuntimeError {
                         span: None,
                         msg: format!(
@@ -15753,10 +15907,7 @@ fn mix_to_yaml_at(v: &Value, path: &str, depth: usize) -> MixResult<yaml_rust2::
         other => {
             return Err(MixError::RuntimeError {
                 span: None,
-                msg: format!(
-                    "yaml_encode: cannot encode {} at {path}",
-                    other.type_name()
-                ),
+                msg: format!("yaml_encode: cannot encode {} at {path}", other.type_name()),
             });
         }
     })
@@ -15907,12 +16058,11 @@ fn builtin_project_info(args: Vec<Value>) -> MixResult<Option<Value>> {
         .unwrap_or_else(|| ".".to_string());
     let src = std::path::Path::new(&root).join("src");
 
-    let ws_text = std::fs::read_to_string(src.join("Cargo.toml")).map_err(|e| {
-        MixError::RuntimeError {
+    let ws_text =
+        std::fs::read_to_string(src.join("Cargo.toml")).map_err(|e| MixError::RuntimeError {
             span: None,
             msg: format!("project_info(): cannot read src/Cargo.toml: {e}"),
-        }
-    })?;
+        })?;
     let ws: toml::Value = ws_text.parse().map_err(|e| MixError::RuntimeError {
         span: None,
         msg: format!("project_info(): bad src/Cargo.toml: {e}"),
@@ -16478,17 +16628,32 @@ fn builtin_mix_version(_args: Vec<Value>) -> MixResult<Option<Value>> {
     // Cargo supplies these split at compile time; parse-free and exact.
     map.insert(
         "major".into(),
-        Value::Number(env!("CARGO_PKG_VERSION_MAJOR").parse::<f64>().unwrap_or(0.0)),
+        Value::Number(
+            env!("CARGO_PKG_VERSION_MAJOR")
+                .parse::<f64>()
+                .unwrap_or(0.0),
+        ),
     );
     map.insert(
         "minor".into(),
-        Value::Number(env!("CARGO_PKG_VERSION_MINOR").parse::<f64>().unwrap_or(0.0)),
+        Value::Number(
+            env!("CARGO_PKG_VERSION_MINOR")
+                .parse::<f64>()
+                .unwrap_or(0.0),
+        ),
     );
     map.insert(
         "patch".into(),
-        Value::Number(env!("CARGO_PKG_VERSION_PATCH").parse::<f64>().unwrap_or(0.0)),
+        Value::Number(
+            env!("CARGO_PKG_VERSION_PATCH")
+                .parse::<f64>()
+                .unwrap_or(0.0),
+        ),
     );
-    map.insert("string".into(), Value::String(env!("CARGO_PKG_VERSION").into()));
+    map.insert(
+        "string".into(),
+        Value::String(env!("CARGO_PKG_VERSION").into()),
+    );
     Ok(Some(Value::map(map)))
 }
 
@@ -16935,11 +17100,7 @@ fn sprintf_error(msg: impl Into<String>) -> MixError {
 }
 
 /// Pull the next argument or raise the uniform too-few-arguments error.
-fn sprintf_next<'a>(
-    args: &'a [Value],
-    idx: &mut usize,
-    conv: char,
-) -> MixResult<&'a Value> {
+fn sprintf_next<'a>(args: &'a [Value], idx: &mut usize, conv: char) -> MixResult<&'a Value> {
     let v = args.get(*idx).ok_or_else(|| {
         sprintf_error(format!(
             "sprintf: too few arguments (format needs another for %{conv})"
@@ -17008,7 +17169,10 @@ fn sprintf_nonfinite(spec: &SprintfSpec, n: f64, upper: bool) -> String {
         (false, true) => "INF",
     };
     let sign = sprintf_sign(spec, n.is_sign_negative() && !n.is_nan());
-    let no_zero = SprintfSpec { zero: false, ..*spec };
+    let no_zero = SprintfSpec {
+        zero: false,
+        ..*spec
+    };
     sprintf_pad(&no_zero, sign, "", body.to_string())
 }
 
@@ -17022,7 +17186,11 @@ fn sprintf_exp_body(abs: f64, prec: usize, alt: bool, upper: bool) -> String {
         mant.push('.');
     }
     let e = if upper { 'E' } else { 'e' };
-    format!("{mant}{e}{}{:02}", if exp < 0 { '-' } else { '+' }, exp.abs())
+    format!(
+        "{mant}{e}{}{:02}",
+        if exp < 0 { '-' } else { '+' },
+        exp.abs()
+    )
 }
 
 fn sprintf_convert(
@@ -17196,9 +17364,7 @@ fn sprintf_convert(
                 .ok()
                 .and_then(char::from_u32)
                 .ok_or_else(|| {
-                    sprintf_error(format!(
-                        "sprintf: %c needs a Unicode scalar value, got {n}"
-                    ))
+                    sprintf_error(format!("sprintf: %c needs a Unicode scalar value, got {n}"))
                 })?;
             let spec = SprintfSpec {
                 zero: false,
@@ -17681,10 +17847,12 @@ fn builtin_ds_patch_signals(args: Vec<Value>) -> MixResult<Option<Value>> {
 
     let only_if_missing = match args.get(1) {
         None | Some(Value::Nil) => false,
-        Some(Value::Map(m)) => {
-            bool_option("ds_patch_signals", "only_if_missing", m.get("only_if_missing"))?
-                .unwrap_or(false)
-        }
+        Some(Value::Map(m)) => bool_option(
+            "ds_patch_signals",
+            "only_if_missing",
+            m.get("only_if_missing"),
+        )?
+        .unwrap_or(false),
         Some(other) => {
             return Err(MixError::RuntimeError {
                 span: None,
@@ -17776,7 +17944,10 @@ fn builtin_csv_parse(args: Vec<Value>) -> MixResult<Option<Value>> {
         None => b',',
         Some(Value::String(s)) => {
             let bytes = s.as_bytes();
-            if bytes.len() != 1 || !bytes[0].is_ascii() || matches!(bytes[0], 0 | b'\r' | b'\n' | b'"') {
+            if bytes.len() != 1
+                || !bytes[0].is_ascii()
+                || matches!(bytes[0], 0 | b'\r' | b'\n' | b'"')
+            {
                 return Err(MixError::structured(
                     "TYPE_MISMATCH",
                     format!(
@@ -17798,7 +17969,10 @@ fn builtin_csv_parse(args: Vec<Value>) -> MixResult<Option<Value>> {
     };
     let mut lines = text.lines();
     let headers: Vec<String> = match lines.next() {
-        Some(h) => h.split(delim as char).map(|s| s.trim().to_string()).collect(),
+        Some(h) => h
+            .split(delim as char)
+            .map(|s| s.trim().to_string())
+            .collect(),
         None => return Ok(Some(Value::list(Vec::new()))),
     };
     let mut rows = Vec::new();
@@ -18342,7 +18516,11 @@ impl HeaderCharset {
     fn from_token(token: &str) -> Self {
         // RFC 2231 §5 allows `charset*language`; the language tag is not part
         // of the charset name and must not defeat the match.
-        let base = token.split('*').next().unwrap_or(token).to_ascii_lowercase();
+        let base = token
+            .split('*')
+            .next()
+            .unwrap_or(token)
+            .to_ascii_lowercase();
         match base.as_str() {
             "utf-8" | "utf8" | "us-ascii" | "ascii" | "iso-8859-1" | "iso8859-1" | "latin1"
             | "latin-1" | "l1" => {
@@ -18961,12 +19139,9 @@ fn operand_bytes(name: &str, what: &str, v: &Value) -> MixResult<Vec<u8>> {
         Value::Bytes(b) => Ok(b.to_vec()),
         Value::Buffer(b) => Ok(b.borrow().clone()),
         Value::String(s) => Ok(s.as_bytes().to_vec()),
-        Value::Number(n) => Ok(vec![as_exact_integer(
-            &format!("{name}(): {what}"),
-            *n,
-            0,
-            255,
-        )? as u8]),
+        Value::Number(n) => Ok(vec![
+            as_exact_integer(&format!("{name}(): {what}"), *n, 0, 255)? as u8,
+        ]),
         other => Err(MixError::RuntimeError {
             span: None,
             msg: format!(
@@ -19153,7 +19328,10 @@ fn builtin_bytes_from_hex(args: Vec<Value>) -> MixResult<Option<Value>> {
         other => {
             return Err(MixError::RuntimeError {
                 span: None,
-                msg: format!("bytes_from_hex(): expected string, got {}", other.type_name()),
+                msg: format!(
+                    "bytes_from_hex(): expected string, got {}",
+                    other.type_name()
+                ),
             });
         }
     };
@@ -19482,7 +19660,10 @@ impl DigestAlgo {
     /// `"md5", "sha1", "sha256" or "blake3"` — the accepted-values half of
     /// an error message, built from `ALL`.
     pub(crate) fn accepted_list() -> String {
-        let names: Vec<String> = Self::ALL.iter().map(|a| format!("\"{}\"", a.name())).collect();
+        let names: Vec<String> = Self::ALL
+            .iter()
+            .map(|a| format!("\"{}\"", a.name()))
+            .collect();
         match names.split_last() {
             Some((last, rest)) if !rest.is_empty() => format!("{} or {last}", rest.join(", ")),
             _ => names.join(""),
@@ -19862,7 +20043,11 @@ fn builtin_password_verify(args: Vec<Value>) -> MixResult<Option<Value>> {
 /// error is a mismatch (bool false); anything else is a malformed hash and
 /// raises, same policy as the bcrypt arm.
 #[cfg(feature = "crypto")]
-fn verify_sha_crypt(plaintext: &str, hash: &str, algorithm: sha_crypt::Algorithm) -> MixResult<Option<Value>> {
+fn verify_sha_crypt(
+    plaintext: &str,
+    hash: &str,
+    algorithm: sha_crypt::Algorithm,
+) -> MixResult<Option<Value>> {
     use sha_crypt::{PasswordVerifier, ShaCrypt};
     // A salt field longer than 16 chars is a hash that glibc and Dovecot can
     // never verify: they hash the first 16 and emit those 16, so the string
@@ -19929,25 +20114,44 @@ fn builtin_hmac_sha256(args: Vec<Value>) -> MixResult<Option<Value>> {
 /// Generic compact JWT signing; the feature-disabled entry stays callable.
 fn builtin_jwt_rs256_sign(args: Vec<Value>) -> MixResult<Option<Value>> {
     if !(2..=3).contains(&args.len()) {
-        return Err(MixError::structured("ARITY_MISMATCH", "jwt_rs256_sign expects 2 or 3 arguments"));
+        return Err(MixError::structured(
+            "ARITY_MISMATCH",
+            "jwt_rs256_sign expects 2 or 3 arguments",
+        ));
     }
     #[cfg(feature = "crypto")]
     {
         let Value::String(claims) = &args[0] else {
-            return Err(MixError::structured("TYPE_MISMATCH", "jwt_rs256_sign: claims_json must be a string; use json_encode first"));
+            return Err(MixError::structured(
+                "TYPE_MISMATCH",
+                "jwt_rs256_sign: claims_json must be a string; use json_encode first",
+            ));
         };
         let Value::String(pem) = &args[1] else {
-            return Err(MixError::structured("TYPE_MISMATCH", "jwt_rs256_sign: private_pem must be a string"));
+            return Err(MixError::structured(
+                "TYPE_MISMATCH",
+                "jwt_rs256_sign: private_pem must be a string",
+            ));
         };
         let header = match args.get(2) {
             None | Some(Value::Nil) => None,
             Some(Value::String(s)) => Some(s.as_str()),
-            Some(_) => return Err(MixError::structured("TYPE_MISMATCH", "jwt_rs256_sign: header_json must be a string or nil")),
+            Some(_) => {
+                return Err(MixError::structured(
+                    "TYPE_MISMATCH",
+                    "jwt_rs256_sign: header_json must be a string or nil",
+                ));
+            }
         };
-        Ok(Some(Value::String(crate::jwt::sign_rs256(claims, pem, header)?)))
+        Ok(Some(Value::String(crate::jwt::sign_rs256(
+            claims, pem, header,
+        )?)))
     }
     #[cfg(not(feature = "crypto"))]
-    Err(MixError::structured("FEATURE_DISABLED", "jwt_rs256_sign requires the crypto feature"))
+    Err(MixError::structured(
+        "FEATURE_DISABLED",
+        "jwt_rs256_sign requires the crypto feature",
+    ))
 }
 
 /// `constant_time_eq(a, b)` — length-checked, full-scan equality with no
@@ -20431,7 +20635,10 @@ fn ca_http_agent(name: &str, pem: &[u8]) -> MixResult<std::sync::Arc<ureq::rustl
 /// Shared TLS selection; callers configure socket timeouts and redirects
 /// on this builder before constructing an agent.
 #[cfg(feature = "http")]
-fn http_agent_builder(insecure: bool, ca: Option<&std::sync::Arc<ureq::rustls::ClientConfig>>) -> ureq::AgentBuilder {
+fn http_agent_builder(
+    insecure: bool,
+    ca: Option<&std::sync::Arc<ureq::rustls::ClientConfig>>,
+) -> ureq::AgentBuilder {
     let builder = ureq::builder();
     if insecure {
         builder.tls_config(insecure_http_config())
@@ -20467,7 +20674,9 @@ fn http_dispatch(
         map.insert("duration_ms".into(), Value::Number(0.0));
         return Value::map(map);
     }
-    let mut req = http_agent_builder(insecure, ca_agent).build().request(method, url);
+    let mut req = http_agent_builder(insecure, ca_agent)
+        .build()
+        .request(method, url);
     if timeout_s > 0 {
         // Total-request deadline (connect + transfer), like ssh_run's
         // wall-clock bound.
@@ -20555,7 +20764,10 @@ fn http_transport_error_code(e: &ureq::Error) -> &'static str {
     }
     if source_has_io_kind(
         e,
-        &[std::io::ErrorKind::BrokenPipe, std::io::ErrorKind::ConnectionReset],
+        &[
+            std::io::ErrorKind::BrokenPipe,
+            std::io::ErrorKind::ConnectionReset,
+        ],
     ) {
         return "HTTP_TRANSPORT";
     }
@@ -21066,7 +21278,12 @@ fn builtin_dns_lookup(args: Vec<Value>) -> MixResult<Option<Value>> {
 fn builtin_udp_send(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args("udp_send", &args, 3)?;
     let host = args[0].to_mix_string();
-    let port = as_exact_integer("udp_send(): port", number_arg("udp_send", &args, 1)?, 1, 65535)?;
+    let port = as_exact_integer(
+        "udp_send(): port",
+        number_arg("udp_send", &args, 1)?,
+        1,
+        65535,
+    )?;
     let payload: std::borrow::Cow<[u8]> = match &args[2] {
         Value::Bytes(b) => std::borrow::Cow::Borrowed(b.as_slice()),
         Value::Buffer(b) => std::borrow::Cow::Owned(b.borrow().clone()),
@@ -21081,11 +21298,10 @@ fn builtin_udp_send(args: Vec<Value>) -> MixResult<Option<Value>> {
             });
         }
     };
-    let sock = std::net::UdpSocket::bind("0.0.0.0:0")
-        .map_err(|e| MixError::RuntimeError {
-            span: None,
-            msg: format!("udp_send: bind: {e}"),
-        })?;
+    let sock = std::net::UdpSocket::bind("0.0.0.0:0").map_err(|e| MixError::RuntimeError {
+        span: None,
+        msg: format!("udp_send: bind: {e}"),
+    })?;
     let sent = sock
         .send_to(&payload, format!("{host}:{port}"))
         .map_err(|e| MixError::RuntimeError {
@@ -21108,7 +21324,12 @@ fn builtin_udp_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args_between("udp_recv", &args, 1, 2)?;
     // Port 0 would bind an ephemeral port the caller can never learn from
     // the result map — a guaranteed silent timeout, so it is refused.
-    let port = as_exact_integer("udp_recv(): port", number_arg("udp_recv", &args, 0)?, 1, 65535)?;
+    let port = as_exact_integer(
+        "udp_recv(): port",
+        number_arg("udp_recv", &args, 0)?,
+        1,
+        65535,
+    )?;
     let mut timeout_seconds = 30.0;
     let mut bind_host = "0.0.0.0".to_string();
     let mut max: usize = 65535;
@@ -21127,15 +21348,16 @@ fn builtin_udp_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
                     }
                 }
                 if let Some(v) = m.get("timeout") {
-                    timeout_seconds = extract_number(v, InputPolicy::NumberOnly).ok_or_else(|| {
-                        MixError::RuntimeError {
-                            span: None,
-                            msg: format!(
-                                "udp_recv(): option 'timeout' must be a number, got {}",
-                                v.type_name()
-                            ),
-                        }
-                    })?;
+                    timeout_seconds =
+                        extract_number(v, InputPolicy::NumberOnly).ok_or_else(|| {
+                            MixError::RuntimeError {
+                                span: None,
+                                msg: format!(
+                                    "udp_recv(): option 'timeout' must be a number, got {}",
+                                    v.type_name()
+                                ),
+                            }
+                        })?;
                     as_duration("udp_recv(): option 'timeout'", timeout_seconds)?;
                 }
                 if let Some(v) = m.get("host") {
@@ -21201,7 +21423,10 @@ fn builtin_udp_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
             let mut m = indexmap::IndexMap::new();
             m.insert("bytes".to_string(), Value::bytes(buf));
             m.insert("text".to_string(), text);
-            m.insert("from_host".to_string(), Value::String(from.ip().to_string()));
+            m.insert(
+                "from_host".to_string(),
+                Value::String(from.ip().to_string()),
+            );
             m.insert("from_port".to_string(), Value::Number(from.port() as f64));
             Ok(Some(Value::map(m)))
         }
@@ -21295,9 +21520,7 @@ mod ws_client {
             Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
         }
         fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-            self.0
-                .signature_verification_algorithms
-                .supported_schemes()
+            self.0.signature_verification_algorithms.supported_schemes()
         }
     }
 }
@@ -21324,9 +21547,9 @@ fn ws_handle_arg(name: &str, args: &[Value]) -> MixResult<u64> {
     // A subscribed handle's connection is owned by its reader thread:
     // recv/close refuse loudly rather than race the reader for &mut conn
     // (ws_send routes through the owner's command endpoint instead).
-    if crate::builtins::socket_sources::is_subscribed(crate::builtins::socket_sources::ClientKey::ws(
-        id,
-    )) {
+    if crate::builtins::socket_sources::is_subscribed(
+        crate::builtins::socket_sources::ClientKey::ws(id),
+    ) {
         return Err(ws_err(
             name,
             format!(
@@ -21365,7 +21588,10 @@ fn builtin_ws_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
                         other => {
                             return Err(ws_err(
                                 "ws_connect()",
-                                format!("option 'insecure' must be a boolean, got {}", other.type_name()),
+                                format!(
+                                    "option 'insecure' must be a boolean, got {}",
+                                    other.type_name()
+                                ),
                             ));
                         }
                     }
@@ -21380,18 +21606,28 @@ fn builtin_ws_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
                         other => {
                             return Err(ws_err(
                                 "ws_connect()",
-                                format!("option 'headers' must be a map, got {}", other.type_name()),
+                                format!(
+                                    "option 'headers' must be a map, got {}",
+                                    other.type_name()
+                                ),
                             ));
                         }
                     }
                 }
                 if let Some(v) = m.get("timeout") {
-                    timeout_seconds = extract_number(v, InputPolicy::NumberOnly).ok_or_else(|| {
-                        ws_err("ws_connect()", format!("option 'timeout' must be a number, got {}", v.type_name()))
-                    })?;
+                    timeout_seconds =
+                        extract_number(v, InputPolicy::NumberOnly).ok_or_else(|| {
+                            ws_err(
+                                "ws_connect()",
+                                format!("option 'timeout' must be a number, got {}", v.type_name()),
+                            )
+                        })?;
                     as_duration("ws_connect(): option 'timeout'", timeout_seconds)?;
                     if timeout_seconds == 0.0 {
-                        return Err(ws_err("ws_connect()", "option 'timeout' must be positive — an unbounded connect can hang forever"));
+                        return Err(ws_err(
+                            "ws_connect()",
+                            "option 'timeout' must be positive — an unbounded connect can hang forever",
+                        ));
                     }
                 }
             }
@@ -21410,8 +21646,9 @@ fn builtin_ws_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
         .into_client_request()
         .map_err(|e| ws_err("ws_connect", e))?;
     for (k, v) in &headers {
-        let name: tungstenite::http::header::HeaderName =
-            k.parse().map_err(|_| ws_err("ws_connect", format!("invalid header name '{k}'")))?;
+        let name: tungstenite::http::header::HeaderName = k
+            .parse()
+            .map_err(|_| ws_err("ws_connect", format!("invalid header name '{k}'")))?;
         let value = tungstenite::http::header::HeaderValue::from_str(v)
             .map_err(|_| ws_err("ws_connect", format!("invalid header value for '{k}'")))?;
         request.headers_mut().insert(name, value);
@@ -21546,13 +21783,16 @@ fn builtin_ws_send(args: Vec<Value>) -> MixResult<Option<Value>> {
         other => {
             return Err(ws_err(
                 "ws_send()",
-                format!("payload must be a string, bytes or buffer, got {}", other.type_name()),
+                format!(
+                    "payload must be a string, bytes or buffer, got {}",
+                    other.type_name()
+                ),
             ));
         }
     };
-    if crate::builtins::socket_sources::is_subscribed(crate::builtins::socket_sources::ClientKey::ws(
-        id,
-    )) {
+    if crate::builtins::socket_sources::is_subscribed(
+        crate::builtins::socket_sources::ClientKey::ws(id),
+    ) {
         let (text, payload) = match &msg {
             tungstenite::Message::Text(s) => (true, s.as_bytes().to_vec()),
             tungstenite::Message::Binary(b) => (false, b.to_vec()),
@@ -21605,7 +21845,10 @@ fn builtin_ws_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
         && !matches!(v, Value::Nil)
     {
         timeout_seconds = extract_number(v, InputPolicy::NumberOnly).ok_or_else(|| {
-            ws_err("ws_recv()", format!("timeout must be a number, got {}", v.type_name()))
+            ws_err(
+                "ws_recv()",
+                format!("timeout must be a number, got {}", v.type_name()),
+            )
         })?;
         as_duration("ws_recv(): timeout", timeout_seconds)?;
     }
@@ -21646,7 +21889,10 @@ fn builtin_ws_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
             }
             None => {
                 put_back(conn);
-                return Err(ws_err("ws_recv", "unsupported stream type for timeout control"));
+                return Err(ws_err(
+                    "ws_recv",
+                    "unsupported stream type for timeout control",
+                ));
             }
         }
         match conn.read() {
@@ -21794,9 +22040,9 @@ fn tcp_handle(name: &str, args: &[Value]) -> MixResult<u64> {
     // A subscribed handle's connection is owned by its reader thread:
     // recv refuses loudly rather than race the reader for &mut conn
     // (tcp_send routes through the owner's command endpoint instead).
-    if crate::builtins::socket_sources::is_subscribed(crate::builtins::socket_sources::ClientKey::tcp(
-        id,
-    )) {
+    if crate::builtins::socket_sources::is_subscribed(
+        crate::builtins::socket_sources::ClientKey::tcp(id),
+    ) {
         return Err(tcp_err(
             name,
             format!(
@@ -21812,7 +22058,12 @@ fn tcp_handle(name: &str, args: &[Value]) -> MixResult<u64> {
 fn builtin_tcp_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args_between("tcp_connect", &args, 2, 3)?;
     let host = args[0].to_mix_string();
-    let port = as_exact_integer("tcp_connect(): port", number_arg("tcp_connect", &args, 1)?, 1, 65535)? as u16;
+    let port = as_exact_integer(
+        "tcp_connect(): port",
+        number_arg("tcp_connect", &args, 1)?,
+        1,
+        65535,
+    )? as u16;
     let mut timeout_seconds = 30.0;
     let mut tls = false;
     let mut insecure = false;
@@ -21822,15 +22073,26 @@ fn builtin_tcp_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
             Value::Map(m) => {
                 for k in m.keys() {
                     if !matches!(k.as_str(), "timeout" | "tls" | "insecure") {
-                        return Err(tcp_err("tcp_connect()", format!("unknown option '{k}' (supported: timeout, tls, insecure)")));
+                        return Err(tcp_err(
+                            "tcp_connect()",
+                            format!("unknown option '{k}' (supported: timeout, tls, insecure)"),
+                        ));
                     }
                 }
                 if let Some(v) = m.get("timeout") {
-                    timeout_seconds = extract_number(v, InputPolicy::NumberOnly)
-                        .ok_or_else(|| tcp_err("tcp_connect()", format!("option 'timeout' must be a number, got {}", v.type_name())))?;
+                    timeout_seconds =
+                        extract_number(v, InputPolicy::NumberOnly).ok_or_else(|| {
+                            tcp_err(
+                                "tcp_connect()",
+                                format!("option 'timeout' must be a number, got {}", v.type_name()),
+                            )
+                        })?;
                     as_duration("tcp_connect(): option 'timeout'", timeout_seconds)?;
                     if timeout_seconds == 0.0 {
-                        return Err(tcp_err("tcp_connect()", "option 'timeout' must be positive"));
+                        return Err(tcp_err(
+                            "tcp_connect()",
+                            "option 'timeout' must be positive",
+                        ));
                     }
                 }
                 // Strict booleans (like ws_connect): a typo'd `{tls: "no"}`
@@ -21840,21 +22102,45 @@ fn builtin_tcp_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
                 if let Some(v) = m.get("tls") {
                     match v {
                         Value::Bool(b) => tls = *b,
-                        other => return Err(tcp_err("tcp_connect()", format!("option 'tls' must be a boolean, got {}", other.type_name()))),
+                        other => {
+                            return Err(tcp_err(
+                                "tcp_connect()",
+                                format!(
+                                    "option 'tls' must be a boolean, got {}",
+                                    other.type_name()
+                                ),
+                            ));
+                        }
                     }
                 }
                 if let Some(v) = m.get("insecure") {
                     match v {
                         Value::Bool(b) => insecure = *b,
-                        other => return Err(tcp_err("tcp_connect()", format!("option 'insecure' must be a boolean, got {}", other.type_name()))),
+                        other => {
+                            return Err(tcp_err(
+                                "tcp_connect()",
+                                format!(
+                                    "option 'insecure' must be a boolean, got {}",
+                                    other.type_name()
+                                ),
+                            ));
+                        }
                     }
                 }
             }
-            other => return Err(tcp_err("tcp_connect()", format!("options must be a map or nil, got {}", other.type_name()))),
+            other => {
+                return Err(tcp_err(
+                    "tcp_connect()",
+                    format!("options must be a map or nil, got {}", other.type_name()),
+                ));
+            }
         }
     }
     if insecure && !tls {
-        return Err(tcp_err("tcp_connect()", "option 'insecure' has no meaning without tls: true"));
+        return Err(tcp_err(
+            "tcp_connect()",
+            "option 'insecure' has no meaning without tls: true",
+        ));
     }
     let timeout = std::time::Duration::from_secs_f64(timeout_seconds);
 
@@ -21903,7 +22189,12 @@ fn builtin_tcp_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
                 .with_no_client_auth()
         };
         let server_name = rustls::pki_types::ServerName::try_from(resolve_host.to_string())
-            .map_err(|_| tcp_err("tcp_connect", format!("invalid TLS server name '{resolve_host}'")))?;
+            .map_err(|_| {
+                tcp_err(
+                    "tcp_connect",
+                    format!("invalid TLS server name '{resolve_host}'"),
+                )
+            })?;
         let conn = rustls::ClientConnection::new(std::sync::Arc::new(cfg), server_name)
             .map_err(|e| tcp_err("tcp_connect", e))?;
         let mut tls_stream = rustls::StreamOwned::new(conn, sock);
@@ -21921,18 +22212,32 @@ fn builtin_tcp_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
         // still finishing lazily, the first tcp_send that drives it reads
         // under a bound, not indefinitely. Each tcp_recv sets its own read
         // timeout anyway, so this never shortens a later recv.
-        tls_stream.get_ref().set_read_timeout(Some(std::time::Duration::from_secs(30))).ok();
-        tls_stream.get_ref().set_write_timeout(Some(std::time::Duration::from_secs(30))).ok();
+        tls_stream
+            .get_ref()
+            .set_read_timeout(Some(std::time::Duration::from_secs(30)))
+            .ok();
+        tls_stream
+            .get_ref()
+            .set_write_timeout(Some(std::time::Duration::from_secs(30)))
+            .ok();
         tcp_client::Stream::Tls(Box::new(tls_stream))
     } else {
         // Plain socket: benign 30s defaults (each recv overrides read).
-        sock.set_read_timeout(Some(std::time::Duration::from_secs(30))).ok();
-        sock.set_write_timeout(Some(std::time::Duration::from_secs(30))).ok();
+        sock.set_read_timeout(Some(std::time::Duration::from_secs(30)))
+            .ok();
+        sock.set_write_timeout(Some(std::time::Duration::from_secs(30)))
+            .ok();
         tcp_client::Stream::Plain(sock)
     };
 
     let id = tcp_client::NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    tcp_client::MAP.lock().unwrap().insert(id, tcp_client::Conn { stream, buf: Vec::new() });
+    tcp_client::MAP.lock().unwrap().insert(
+        id,
+        tcp_client::Conn {
+            stream,
+            buf: Vec::new(),
+        },
+    );
     Ok(Some(Value::Number(id as f64)))
 }
 
@@ -21948,11 +22253,19 @@ fn builtin_tcp_send(args: Vec<Value>) -> MixResult<Option<Value>> {
         Value::String(s) => s.as_bytes().to_vec(),
         Value::Bytes(b) => b.to_vec(),
         Value::Buffer(b) => b.borrow().clone(),
-        other => return Err(tcp_err("tcp_send()", format!("payload must be a string, bytes or buffer, got {}", other.type_name()))),
+        other => {
+            return Err(tcp_err(
+                "tcp_send()",
+                format!(
+                    "payload must be a string, bytes or buffer, got {}",
+                    other.type_name()
+                ),
+            ));
+        }
     };
-    if crate::builtins::socket_sources::is_subscribed(crate::builtins::socket_sources::ClientKey::tcp(
-        id,
-    )) {
+    if crate::builtins::socket_sources::is_subscribed(
+        crate::builtins::socket_sources::ClientKey::tcp(id),
+    ) {
         let rx = crate::builtins::socket_sources::send_tcp(id, payload)?;
         return match rx.blocking_recv() {
             Ok(Ok(n)) => Ok(Some(Value::Number(n as f64))),
@@ -21982,13 +22295,20 @@ fn builtin_tcp_send(args: Vec<Value>) -> MixResult<Option<Value>> {
 /// Returns Ok(true) if bytes were read into conn.buf, Ok(false) on
 /// timeout, Err on a real error or peer close.
 #[cfg(feature = "ws")]
-fn tcp_fill(name: &str, conn: &mut tcp_client::Conn, timeout_seconds: f64, max: usize) -> MixResult<bool> {
+fn tcp_fill(
+    name: &str,
+    conn: &mut tcp_client::Conn,
+    timeout_seconds: f64,
+    max: usize,
+) -> MixResult<bool> {
     let dur = if timeout_seconds == 0.0 {
         None
     } else {
         Some(std::time::Duration::from_secs_f64(timeout_seconds))
     };
-    conn.tcp().set_read_timeout(dur).map_err(|e| tcp_err(name, e))?;
+    conn.tcp()
+        .set_read_timeout(dur)
+        .map_err(|e| tcp_err(name, e))?;
     // Read buffer sized to `max` but capped at 256 KiB per syscall — a
     // single read returns at most this many bytes regardless, which is
     // fine: tcp_recv serves buffered bytes first and the caller polls
@@ -22008,7 +22328,10 @@ fn tcp_fill(name: &str, conn: &mut tcp_client::Conn, timeout_seconds: f64, max: 
                 return Ok(true);
             }
             Err(e)
-                if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) =>
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
             {
                 return Ok(false);
             }
@@ -22023,7 +22346,10 @@ fn tcp_fill(name: &str, conn: &mut tcp_client::Conn, timeout_seconds: f64, max: 
                 }
                 eintr += 1;
                 if eintr > 10_000 {
-                    return Err(tcp_err(name, "read interrupted repeatedly (a signal storm?)"));
+                    return Err(tcp_err(
+                        name,
+                        "read interrupted repeatedly (a signal storm?)",
+                    ));
                 }
                 continue;
             }
@@ -22092,12 +22418,17 @@ fn builtin_tcp_recv_line(args: Vec<Value>) -> MixResult<Option<Value>> {
             return Ok(Some(Value::String(s)));
         }
         if conn.buf.len() > max {
-            return Err(tcp_err("tcp_recv_line", format!("line exceeds max ({max} bytes) with no newline")));
+            return Err(tcp_err(
+                "tcp_recv_line",
+                format!("line exceeds max ({max} bytes) with no newline"),
+            ));
         }
         let left = match deadline {
             None => 0.0, // forever
             Some(d) => {
-                let l = d.saturating_duration_since(std::time::Instant::now()).as_secs_f64();
+                let l = d
+                    .saturating_duration_since(std::time::Instant::now())
+                    .as_secs_f64();
                 if l <= 0.0 {
                     tcp_client::MAP.lock().unwrap().insert(id, conn);
                     return Ok(Some(Value::Nil));
@@ -22126,21 +22457,43 @@ fn tcp_recv_opts(name: &str, opts: Option<&Value>, default_max: usize) -> MixRes
             Value::Map(m) => {
                 for k in m.keys() {
                     if !matches!(k.as_str(), "timeout" | "max") {
-                        return Err(tcp_err(name, format!("unknown option '{k}' (supported: timeout, max)")));
+                        return Err(tcp_err(
+                            name,
+                            format!("unknown option '{k}' (supported: timeout, max)"),
+                        ));
                     }
                 }
                 if let Some(t) = m.get("timeout") {
-                    timeout_seconds = extract_number(t, InputPolicy::NumberOnly)
-                        .ok_or_else(|| tcp_err(name, format!("option 'timeout' must be a number, got {}", t.type_name())))?;
+                    timeout_seconds =
+                        extract_number(t, InputPolicy::NumberOnly).ok_or_else(|| {
+                            tcp_err(
+                                name,
+                                format!("option 'timeout' must be a number, got {}", t.type_name()),
+                            )
+                        })?;
                     as_duration(&format!("{name}(): option 'timeout'"), timeout_seconds)?;
                 }
                 if let Some(x) = m.get("max") {
-                    let n = extract_number(x, InputPolicy::NumberOnly)
-                        .ok_or_else(|| tcp_err(name, format!("option 'max' must be a number, got {}", x.type_name())))?;
-                    max = as_exact_integer(&format!("{name}(): option 'max'"), n, 1, 64 * 1024 * 1024)? as usize;
+                    let n = extract_number(x, InputPolicy::NumberOnly).ok_or_else(|| {
+                        tcp_err(
+                            name,
+                            format!("option 'max' must be a number, got {}", x.type_name()),
+                        )
+                    })?;
+                    max = as_exact_integer(
+                        &format!("{name}(): option 'max'"),
+                        n,
+                        1,
+                        64 * 1024 * 1024,
+                    )? as usize;
                 }
             }
-            other => return Err(tcp_err(name, format!("options must be a map or nil, got {}", other.type_name()))),
+            other => {
+                return Err(tcp_err(
+                    name,
+                    format!("options must be a map or nil, got {}", other.type_name()),
+                ));
+            }
         }
     }
     Ok((timeout_seconds, max))
@@ -22212,6 +22565,8 @@ pub(crate) mod socket_sources {
         native_events::{Queue, refusal},
         value::Value,
     };
+    #[cfg(target_os = "linux")]
+    use std::sync::atomic::AtomicU64;
     use std::{
         collections::HashSet,
         sync::{
@@ -22219,8 +22574,6 @@ pub(crate) mod socket_sources {
             atomic::{AtomicBool, Ordering},
         },
     };
-    #[cfg(target_os = "linux")]
-    use std::sync::atomic::AtomicU64;
 
     /// Which process-global client registry a numeric handle names.
     /// ws_connect and tcp_connect run INDEPENDENT id counters, so the same
@@ -22339,7 +22692,10 @@ pub(crate) mod socket_sources {
         let v = v.ok_or_else(|| refusal("SOCKET_ARGUMENT", format!("{name}(): missing handle")))?;
         let n = number_of(v, &format!("{name}(): handle"))?;
         if n.fract() != 0.0 || n < 1.0 || n > i64::MAX as f64 {
-            return Err(refusal("SOCKET_ARGUMENT", format!("{name}(): invalid handle")));
+            return Err(refusal(
+                "SOCKET_ARGUMENT",
+                format!("{name}(): invalid handle"),
+            ));
         }
         Ok(n as u64)
     }
@@ -22347,9 +22703,13 @@ pub(crate) mod socket_sources {
     /// The event command frames are delivered under. Handlers are keyed by
     /// it, so it must be a name a Mix event command can carry.
     pub(crate) fn event_command_of(v: Option<&Value>, name: &str) -> MixResult<String> {
-        let v = v.ok_or_else(|| refusal("SOCKET_ARGUMENT", format!("{name}(): missing command")))?;
+        let v =
+            v.ok_or_else(|| refusal("SOCKET_ARGUMENT", format!("{name}(): missing command")))?;
         let Value::String(s) = v else {
-            return Err(refusal("SOCKET_ARGUMENT", format!("{name}(): command must be a string")));
+            return Err(refusal(
+                "SOCKET_ARGUMENT",
+                format!("{name}(): command must be a string"),
+            ));
         };
         if s.is_empty()
             || s.len() > 64
@@ -22449,7 +22809,10 @@ pub(crate) mod socket_sources {
                 other => {
                     return Err(refusal(
                         "SOCKET_ARGUMENT",
-                        format!("{name}(): options must be a map or nil, got {}", other.type_name()),
+                        format!(
+                            "{name}(): options must be a map or nil, got {}",
+                            other.type_name()
+                        ),
                     ));
                 }
             }
@@ -22500,7 +22863,9 @@ pub(crate) mod socket_sources {
     impl SocketCommand {
         pub(crate) fn receipt(self) -> Option<tokio::sync::oneshot::Sender<SendReceipt>> {
             match self {
-                SocketCommand::Tcp { receipt, .. } | SocketCommand::Ws { receipt, .. } => Some(receipt),
+                SocketCommand::Tcp { receipt, .. } | SocketCommand::Ws { receipt, .. } => {
+                    Some(receipt)
+                }
             }
         }
     }
@@ -22531,7 +22896,12 @@ pub(crate) mod socket_sources {
         /// lifetime. A full queue refuses SOCKET_SEND_BUSY; a reservation
         /// that cannot complete releases what it took (RAII on the `?`).
         pub(crate) fn admit(&self, payload_len: usize) -> MixResult<SendPermits> {
-            let full = || refusal("SOCKET_SEND_BUSY", "the socket source's outgoing send queue is full");
+            let full = || {
+                refusal(
+                    "SOCKET_SEND_BUSY",
+                    "the socket source's outgoing send queue is full",
+                )
+            };
             if payload_len > MAX_SEND_BYTES {
                 return Err(full());
             }
@@ -22827,7 +23197,10 @@ pub(crate) mod socket_sources {
         command: String,
         client_id: u64,
     ) -> MixResult<SocketSource> {
-        let conn = ws_client::MAP.lock().unwrap().remove(&client_id)
+        let conn = ws_client::MAP
+            .lock()
+            .unwrap()
+            .remove(&client_id)
             .ok_or_else(|| refusal("WS_ON_HANDLE", format!("unknown ws handle {client_id}")))?;
         spawn_ws(queue, id, command, client_id, conn)
     }
@@ -22839,7 +23212,10 @@ pub(crate) mod socket_sources {
         client_id: u64,
         mode: TcpMode,
     ) -> MixResult<SocketSource> {
-        let conn = tcp_client::MAP.lock().unwrap().remove(&client_id)
+        let conn = tcp_client::MAP
+            .lock()
+            .unwrap()
+            .remove(&client_id)
             .ok_or_else(|| refusal("TCP_ON_HANDLE", format!("unknown tcp handle {client_id}")))?;
         spawn_tcp(queue, id, command, client_id, conn, mode)
     }
@@ -22869,39 +23245,23 @@ pub(crate) mod socket_sources {
             pulled.insert(key);
         }
         let (wire, read_timeout, write_timeout) = if name == "ws_recv" {
-            let conn = ws_client::MAP
-                .lock()
-                .unwrap()
-                .remove(&id)
-                .ok_or_else(|| {
-                    PULLED.lock().unwrap().remove(&key);
-                    ws_err(name, format!("unknown ws handle {id}"))
-                })?;
+            let conn = ws_client::MAP.lock().unwrap().remove(&id).ok_or_else(|| {
+                PULLED.lock().unwrap().remove(&key);
+                ws_err(name, format!("unknown ws handle {id}"))
+            })?;
             let tcp = ws_client::tcp_of(&conn).expect("ws conn has a tcp stream");
             let read_timeout = tcp.read_timeout().ok().flatten();
             let write_timeout = tcp.write_timeout().ok().flatten();
-            (
-                PullWire::Ws(Box::new(conn)),
-                read_timeout,
-                write_timeout,
-            )
+            (PullWire::Ws(Box::new(conn)), read_timeout, write_timeout)
         } else {
-            let conn = tcp_client::MAP
-                .lock()
-                .unwrap()
-                .remove(&id)
-                .ok_or_else(|| {
-                    PULLED.lock().unwrap().remove(&key);
-                    tcp_err(name, format!("unknown tcp handle {id}"))
-                })?;
+            let conn = tcp_client::MAP.lock().unwrap().remove(&id).ok_or_else(|| {
+                PULLED.lock().unwrap().remove(&key);
+                tcp_err(name, format!("unknown tcp handle {id}"))
+            })?;
             let tcp = conn.tcp();
             let read_timeout = tcp.read_timeout().ok().flatten();
             let write_timeout = tcp.write_timeout().ok().flatten();
-            (
-                PullWire::Tcp(conn),
-                read_timeout,
-                write_timeout,
-            )
+            (PullWire::Tcp(conn), read_timeout, write_timeout)
         };
         let guard = PullGuard {
             key,
@@ -22926,16 +23286,17 @@ pub(crate) mod socket_sources {
         timeout_seconds: f64,
         max: usize,
     ) -> MixResult<Value> {
-        use tokio::io::unix::AsyncFd;
         use tokio::io::Interest;
+        use tokio::io::unix::AsyncFd;
         let dup = guard
             .tcp()
             .try_clone()
             .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
         let ready = AsyncFd::with_interest(dup, Interest::READABLE)
             .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
-        let deadline = (timeout_seconds > 0.0)
-            .then(|| std::time::Instant::now() + std::time::Duration::from_secs_f64(timeout_seconds));
+        let deadline = (timeout_seconds > 0.0).then(|| {
+            std::time::Instant::now() + std::time::Duration::from_secs_f64(timeout_seconds)
+        });
         loop {
             let left = deadline.map(|d| d.saturating_duration_since(std::time::Instant::now()));
             if left.is_some_and(|l| l.is_zero()) {
@@ -22967,8 +23328,9 @@ pub(crate) mod socket_sources {
                         let _ = conn.flush();
                         true
                     }
-                    Err(tungstenite::Error::ConnectionClosed
-                    | tungstenite::Error::AlreadyClosed) => {
+                    Err(
+                        tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed,
+                    ) => {
                         guard.retire();
                         return Err(refusal(
                             "SOCKET_CLOSED",
@@ -23058,28 +23420,30 @@ pub(crate) mod socket_sources {
             };
             if would_block {
                 match left {
-                    None => {
-                        match ready.readable().await {
-                            Ok(mut readiness) => readiness.clear_ready(),
-                            Err(e) => {
-                                guard.retire();
-                                return Err(refusal("SOCKET_CLOSED", format!("{name}: readiness failed: {e}")));
-                            }
+                    None => match ready.readable().await {
+                        Ok(mut readiness) => readiness.clear_ready(),
+                        Err(e) => {
+                            guard.retire();
+                            return Err(refusal(
+                                "SOCKET_CLOSED",
+                                format!("{name}: readiness failed: {e}"),
+                            ));
                         }
-                    }
-                    Some(l) => {
-                        match tokio::time::timeout(l, ready.readable()).await {
-                            Ok(Ok(mut readiness)) => readiness.clear_ready(),
-                            Ok(Err(e)) => {
-                                guard.retire();
-                                return Err(refusal("SOCKET_CLOSED", format!("{name}: readiness failed: {e}")));
-                            }
-                            Err(_) => {
-                                guard.finish();
-                                return Ok(Value::Nil);
-                            }
+                    },
+                    Some(l) => match tokio::time::timeout(l, ready.readable()).await {
+                        Ok(Ok(mut readiness)) => readiness.clear_ready(),
+                        Ok(Err(e)) => {
+                            guard.retire();
+                            return Err(refusal(
+                                "SOCKET_CLOSED",
+                                format!("{name}: readiness failed: {e}"),
+                            ));
                         }
-                    }
+                        Err(_) => {
+                            guard.finish();
+                            return Ok(Value::Nil);
+                        }
+                    },
                 }
             }
         }
@@ -23268,10 +23632,22 @@ pub(crate) mod socket_sources {
                 return None; // The owner answers expiry before its next poll.
             }
             match (wire, o) {
-                (Wire::Tcp(conn), Outgoing::Tcp { payload, off, deadline, .. }) => {
+                (
+                    Wire::Tcp(conn),
+                    Outgoing::Tcp {
+                        payload,
+                        off,
+                        deadline,
+                        ..
+                    },
+                ) => {
                     for _ in 0..4 {
-                        if *off == payload.len() { break; }
-                        if *deadline <= std::time::Instant::now() { return None; }
+                        if *off == payload.len() {
+                            break;
+                        }
+                        if *deadline <= std::time::Instant::now() {
+                            return None;
+                        }
                         let end = (*off + CHUNK).min(payload.len());
                         match conn.write(&payload[*off..end]) {
                             Ok(0) => {
@@ -23283,10 +23659,14 @@ pub(crate) mod socket_sources {
                             Ok(n) => *off += n,
                             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => return None,
                             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-                            Err(e) => return Some(Err(("SOCKET_SEND_ERROR".into(), e.to_string()))),
+                            Err(e) => {
+                                return Some(Err(("SOCKET_SEND_ERROR".into(), e.to_string())));
+                            }
                         }
                     }
-                    if *off < payload.len() { return None; }
+                    if *off < payload.len() {
+                        return None;
+                    }
                     match conn.flush() {
                         Ok(()) => Some(Ok(payload.len())),
                         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => None,
@@ -23294,7 +23674,15 @@ pub(crate) mod socket_sources {
                         Err(e) => Some(Err(("SOCKET_SEND_ERROR".into(), e.to_string()))),
                     }
                 }
-                (Wire::Ws(conn), Outgoing::Ws { text, payload, sent, .. }) => {
+                (
+                    Wire::Ws(conn),
+                    Outgoing::Ws {
+                        text,
+                        payload,
+                        sent,
+                        ..
+                    },
+                ) => {
                     if !*sent {
                         let msg = if *text {
                             tungstenite::Message::text(
@@ -23313,8 +23701,10 @@ pub(crate) mod socket_sources {
                             {
                                 *sent = true
                             }
-                            Err(tungstenite::Error::ConnectionClosed
-                            | tungstenite::Error::AlreadyClosed) => {
+                            Err(
+                                tungstenite::Error::ConnectionClosed
+                                | tungstenite::Error::AlreadyClosed,
+                            ) => {
                                 return Some(Err((
                                     "SOCKET_SEND_CLOSED".into(),
                                     "connection closed".into(),
@@ -23332,8 +23722,10 @@ pub(crate) mod socket_sources {
                         {
                             None
                         }
-                        Err(tungstenite::Error::ConnectionClosed
-                        | tungstenite::Error::AlreadyClosed) => Some(Err((
+                        Err(
+                            tungstenite::Error::ConnectionClosed
+                            | tungstenite::Error::AlreadyClosed,
+                        ) => Some(Err((
                             "SOCKET_SEND_CLOSED".into(),
                             "connection closed".into(),
                         ))),
@@ -23352,8 +23744,9 @@ pub(crate) mod socket_sources {
             client_id: u64,
             conn: ws_client::WsConn,
         ) -> MixResult<SocketSource> {
-            let tcp = ws_client::tcp_of(&conn)
-                .ok_or_else(|| refusal("WS_ON_STREAM", "unsupported stream type for subscription"))?;
+            let tcp = ws_client::tcp_of(&conn).ok_or_else(|| {
+                refusal("WS_ON_STREAM", "unsupported stream type for subscription")
+            })?;
             let fd = tcp.as_raw_fd();
             tcp.set_nonblocking(true)
                 .map_err(|e| refusal("WS_ON_STREAM", e.to_string()))?;
@@ -23365,7 +23758,10 @@ pub(crate) mod socket_sources {
                 Wire::Ws(Box::new(conn)),
                 fd,
                 None,
-                TcpMode { line: false, max: 0 },
+                TcpMode {
+                    line: false,
+                    max: 0,
+                },
             )
         }
 
@@ -23383,7 +23779,16 @@ pub(crate) mod socket_sources {
                 .map_err(|e| refusal("TCP_ON_STREAM", e.to_string()))?;
             // tcp_recv_line's read-ahead belongs to the stream, not lost.
             let seed = std::mem::take(&mut conn.buf);
-            spawn(queue, id, command, ClientKey::tcp(client_id), Wire::Tcp(conn), fd, Some(seed), mode)
+            spawn(
+                queue,
+                id,
+                command,
+                ClientKey::tcp(client_id),
+                Wire::Tcp(conn),
+                fd,
+                Some(seed),
+                mode,
+            )
         }
 
         #[allow(clippy::too_many_arguments)]
@@ -23404,8 +23809,11 @@ pub(crate) mod socket_sources {
             // a send is a control wakeup, never a cancel.
             let (wake, mut cmd_wake) =
                 UnixStream::pair().map_err(|e| refusal("SOCKET_PAIR", e.to_string()))?;
-            wake.set_nonblocking(true).map_err(|e| refusal("SOCKET_PAIR", e.to_string()))?;
-            cmd_wake.set_nonblocking(true).map_err(|e| refusal("SOCKET_PAIR", e.to_string()))?;
+            wake.set_nonblocking(true)
+                .map_err(|e| refusal("SOCKET_PAIR", e.to_string()))?;
+            cmd_wake
+                .set_nonblocking(true)
+                .map_err(|e| refusal("SOCKET_PAIR", e.to_string()))?;
             let (cmd_tx, cmd_rx) = std::sync::mpsc::sync_channel(MAX_SEND_OPS);
             let endpoint = std::sync::Arc::new(SendEndpoint {
                 tx: cmd_tx,
@@ -23688,10 +24096,14 @@ pub(crate) mod socket_sources {
                         DrainOutcome::More => {}
                         other => return other,
                     }
-                } else if !push(queue, id, SocketRecord {
-                    kind: "bytes",
-                    data: buf,
-                }) {
+                } else if !push(
+                    queue,
+                    id,
+                    SocketRecord {
+                        kind: "bytes",
+                        data: buf,
+                    },
+                ) {
                     return DrainOutcome::Overflow;
                 }
             }
@@ -23704,7 +24116,10 @@ pub(crate) mod socket_sources {
                                 if !push(
                                     queue,
                                     id,
-                                    SocketRecord { kind: "text", data: t.as_bytes().to_vec() },
+                                    SocketRecord {
+                                        kind: "text",
+                                        data: t.as_bytes().to_vec(),
+                                    },
                                 ) {
                                     return DrainOutcome::Overflow;
                                 }
@@ -23713,7 +24128,10 @@ pub(crate) mod socket_sources {
                                 if !push(
                                     queue,
                                     id,
-                                    SocketRecord { kind: "binary", data: b.to_vec() },
+                                    SocketRecord {
+                                        kind: "binary",
+                                        data: b.to_vec(),
+                                    },
                                 ) {
                                     return DrainOutcome::Overflow;
                                 }
@@ -23731,16 +24149,20 @@ pub(crate) mod socket_sources {
                                 // non-blocking socket cannot stall this.
                                 match conn.flush() {
                                     Ok(()) => *control_pending = false,
-                                    Err(tungstenite::Error::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => *control_pending = true,
+                                    Err(tungstenite::Error::Io(e))
+                                        if e.kind() == std::io::ErrorKind::WouldBlock =>
+                                    {
+                                        *control_pending = true
+                                    }
                                     Err(e) => return DrainOutcome::Terminal(e.to_string()),
                                 }
                                 return DrainOutcome::More;
                             }
-                            Err(tungstenite::Error::ConnectionClosed
-                            | tungstenite::Error::AlreadyClosed) => {
-                                return DrainOutcome::Terminal(
-                                    "connection closed by peer".into(),
-                                );
+                            Err(
+                                tungstenite::Error::ConnectionClosed
+                                | tungstenite::Error::AlreadyClosed,
+                            ) => {
+                                return DrainOutcome::Terminal("connection closed by peer".into());
                             }
                             Err(e) => return DrainOutcome::Terminal(e.to_string()),
                         }
@@ -23753,9 +24175,7 @@ pub(crate) mod socket_sources {
                         let mut tmp = vec![0u8; CHUNK];
                         match conn.read(&mut tmp) {
                             Ok(0) => {
-                                return DrainOutcome::Terminal(
-                                    "connection closed by peer".into(),
-                                );
+                                return DrainOutcome::Terminal("connection closed by peer".into());
                             }
                             Ok(n) => {
                                 if mode.line {
@@ -23764,10 +24184,14 @@ pub(crate) mod socket_sources {
                                         DrainOutcome::More => continue,
                                         other => return other,
                                     }
-                                } else if !push(queue, id, SocketRecord {
-                                    kind: "bytes",
-                                    data: tmp[..n].to_vec(),
-                                }) {
+                                } else if !push(
+                                    queue,
+                                    id,
+                                    SocketRecord {
+                                        kind: "bytes",
+                                        data: tmp[..n].to_vec(),
+                                    },
+                                ) {
                                     return DrainOutcome::Overflow;
                                 }
                             }
@@ -23803,7 +24227,14 @@ pub(crate) mod socket_sources {
                 if line.last() == Some(&b'\r') {
                     line.pop();
                 }
-                if !push(queue, id, SocketRecord { kind: "line", data: line }) {
+                if !push(
+                    queue,
+                    id,
+                    SocketRecord {
+                        kind: "line",
+                        data: line,
+                    },
+                ) {
                     return DrainOutcome::Overflow;
                 }
             }
@@ -23854,7 +24285,10 @@ pub(crate) mod socket_sources {
         _client_id: u64,
         _conn: ws_client::WsConn,
     ) -> MixResult<SocketSource> {
-        Err(refusal("SOCKET_UNSUPPORTED", "ws_on requires Linux poll(2)"))
+        Err(refusal(
+            "SOCKET_UNSUPPORTED",
+            "ws_on requires Linux poll(2)",
+        ))
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -23866,7 +24300,10 @@ pub(crate) mod socket_sources {
         _conn: tcp_client::Conn,
         _mode: TcpMode,
     ) -> MixResult<SocketSource> {
-        Err(refusal("SOCKET_UNSUPPORTED", "tcp_on requires Linux poll(2)"))
+        Err(refusal(
+            "SOCKET_UNSUPPORTED",
+            "tcp_on requires Linux poll(2)",
+        ))
     }
 
     #[cfg(all(test, target_os = "linux"))]
@@ -23928,7 +24365,10 @@ pub(crate) mod socket_sources {
             let mut ne = NativeEvents::default();
             let h = ne.ws_on(id, "test.ws".to_string()).unwrap();
             assert!(h.starts_with("ws:"));
-            assert!(is_subscribed(ClientKey::ws(id)), "the moved numeric handle is marked subscribed");
+            assert!(
+                is_subscribed(ClientKey::ws(id)),
+                "the moved numeric handle is marked subscribed"
+            );
             let q = ne.queue.clone();
             for n in 0..5 {
                 let rec = match q.next_socket(&h, KIND_WS, usize::MAX).await.unwrap() {
@@ -23952,7 +24392,9 @@ pub(crate) mod socket_sources {
             // Retired: exactly one terminal, then the source is gone and
             // the numeric handle is unmarked.
             let err = q.next_socket(&h, KIND_WS, usize::MAX).await.unwrap_err();
-            assert!(matches!(err, MixError::Structured(info) if info.code == "SOCKET_WATCH_HANDLE"));
+            assert!(
+                matches!(err, MixError::Structured(info) if info.code == "SOCKET_WATCH_HANDLE")
+            );
             assert!(!is_subscribed(ClientKey::ws(id)));
             server.join().unwrap();
             ne.close();
@@ -23971,7 +24413,14 @@ pub(crate) mod socket_sources {
             let id = tcp_client_handle(port);
             let mut ne = NativeEvents::default();
             let h = ne
-                .tcp_on(id, "test.tcp".to_string(), TcpMode { line: true, max: 32 })
+                .tcp_on(
+                    id,
+                    "test.tcp".to_string(),
+                    TcpMode {
+                        line: true,
+                        max: 32,
+                    },
+                )
                 .unwrap();
             let q = ne.queue.clone();
             let mut lines = Vec::new();
@@ -24007,7 +24456,14 @@ pub(crate) mod socket_sources {
             let id = tcp_client_handle(port);
             let mut ne = NativeEvents::default();
             let h = ne
-                .tcp_on(id, "test.tcp".to_string(), TcpMode { line: true, max: 32 })
+                .tcp_on(
+                    id,
+                    "test.tcp".to_string(),
+                    TcpMode {
+                        line: true,
+                        max: 32,
+                    },
+                )
                 .unwrap();
             let q = ne.queue.clone();
             match q.next_socket(&h, KIND_TCP_LINE, usize::MAX).await.unwrap() {
@@ -24042,7 +24498,14 @@ pub(crate) mod socket_sources {
             let id = tcp_client_handle(port);
             let mut ne = NativeEvents::default();
             let h = ne
-                .tcp_on(id, "test.bytes".to_string(), TcpMode { line: false, max: 0 })
+                .tcp_on(
+                    id,
+                    "test.bytes".to_string(),
+                    TcpMode {
+                        line: false,
+                        max: 0,
+                    },
+                )
                 .unwrap();
             let q = ne.queue.clone();
             let mut got = Vec::new();
@@ -24077,7 +24540,14 @@ pub(crate) mod socket_sources {
             let id = tcp_client_handle(port);
             let mut ne = NativeEvents::default();
             let h = ne
-                .tcp_on(id, "test.line".to_string(), TcpMode { line: true, max: 64 })
+                .tcp_on(
+                    id,
+                    "test.line".to_string(),
+                    TcpMode {
+                        line: true,
+                        max: 64,
+                    },
+                )
                 .unwrap();
             let q = ne.queue.clone();
             match q.next_socket(&h, KIND_TCP_LINE, usize::MAX).await.unwrap() {
@@ -24088,12 +24558,22 @@ pub(crate) mod socket_sources {
             // Explicit close: no terminal marker, the slot is gone, the
             // reader joined and the socket closed (server read EOF).
             assert_eq!(q.socket_snapshot().0, 0);
-            let err = q.next_socket(&h, KIND_TCP_LINE, usize::MAX).await.unwrap_err();
-            assert!(matches!(err, MixError::Structured(info) if info.code == "SOCKET_WATCH_HANDLE"));
-            assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap(), 0);
+            let err = q
+                .next_socket(&h, KIND_TCP_LINE, usize::MAX)
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(err, MixError::Structured(info) if info.code == "SOCKET_WATCH_HANDLE")
+            );
+            assert_eq!(
+                rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap(),
+                0
+            );
             assert!(!is_subscribed(ClientKey::tcp(id)));
             let err = ne.socket_unwatch("tcp", &h).unwrap_err();
-            assert!(matches!(err, MixError::Structured(info) if info.code == "SOCKET_WATCH_HANDLE"));
+            assert!(
+                matches!(err, MixError::Structured(info) if info.code == "SOCKET_WATCH_HANDLE")
+            );
             server.join().unwrap();
         }
 
@@ -24111,23 +24591,35 @@ pub(crate) mod socket_sources {
             let id = tcp_client_handle(port);
             let mut ne = NativeEvents::default();
             let h = ne
-                .tcp_on(id, "test.close".to_string(), TcpMode { line: false, max: 0 })
+                .tcp_on(
+                    id,
+                    "test.close".to_string(),
+                    TcpMode {
+                        line: false,
+                        max: 0,
+                    },
+                )
                 .unwrap();
             let q = ne.queue.clone();
             let parked_queue = q.clone();
-            let wait =
-                tokio::spawn(async move {
-                    parked_queue.next_socket(&h, KIND_TCP_BYTES, usize::MAX).await.map_err(|e| match e {
+            let wait = tokio::spawn(async move {
+                parked_queue
+                    .next_socket(&h, KIND_TCP_BYTES, usize::MAX)
+                    .await
+                    .map_err(|e| match e {
                         MixError::Structured(info) => info.code.to_string(),
                         other => panic!("expected structured cancellation, got {other}"),
                     })
-                });
+            });
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             ne.close();
             let err = wait.await.unwrap().unwrap_err();
             assert_eq!(err, "NATIVE_CLOSED");
             assert_eq!(q.socket_snapshot().0, 0);
-            assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap(), 0);
+            assert_eq!(
+                rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap(),
+                0
+            );
             assert!(!is_subscribed(ClientKey::tcp(id)));
             server.join().unwrap();
         }
@@ -24140,7 +24632,10 @@ pub(crate) mod socket_sources {
             loop {
                 if q.socket_push(
                     "tcp:1",
-                    SocketRecord { kind: "bytes", data: vec![0u8; 1] },
+                    SocketRecord {
+                        kind: "bytes",
+                        data: vec![0u8; 1],
+                    },
                 ) {
                     pushed += 1;
                     assert!(pushed <= MAX_SOCKET_FRAMES + 1);
@@ -24153,16 +24648,25 @@ pub(crate) mod socket_sources {
             // All queued frames drain in order, then exactly one terminal.
             for _ in 0..pushed {
                 assert!(matches!(
-                    q.next_socket("tcp:1", KIND_TCP_BYTES, usize::MAX).await.unwrap(),
+                    q.next_socket("tcp:1", KIND_TCP_BYTES, usize::MAX)
+                        .await
+                        .unwrap(),
                     SocketNext::Frame(_)
                 ));
             }
             assert!(matches!(
-                q.next_socket("tcp:1", KIND_TCP_BYTES, usize::MAX).await.unwrap(),
+                q.next_socket("tcp:1", KIND_TCP_BYTES, usize::MAX)
+                    .await
+                    .unwrap(),
                 SocketNext::Closed(_)
             ));
-            let err = q.next_socket("tcp:1", KIND_TCP_BYTES, usize::MAX).await.unwrap_err();
-            assert!(matches!(err, MixError::Structured(info) if info.code == "SOCKET_WATCH_HANDLE"));
+            let err = q
+                .next_socket("tcp:1", KIND_TCP_BYTES, usize::MAX)
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(err, MixError::Structured(info) if info.code == "SOCKET_WATCH_HANDLE")
+            );
         }
 
         #[tokio::test]
@@ -24172,7 +24676,10 @@ pub(crate) mod socket_sources {
             let mut ne = NativeEvents::default();
             ne.queue = q.clone();
             let first = ne.park_socket("ws:1").unwrap();
-            let err = ne.park_socket("ws:1").err().expect("second waiter must refuse");
+            let err = ne
+                .park_socket("ws:1")
+                .err()
+                .expect("second waiter must refuse");
             assert!(matches!(err, MixError::Structured(info) if info.code == "SOCKET_BUSY"));
             drop(first);
             let _again = ne.park_socket("ws:1").unwrap();
@@ -24183,7 +24690,13 @@ pub(crate) mod socket_sources {
             )
             .await;
             assert!(timed.is_err());
-            q.socket_push("ws:1", SocketRecord { kind: "text", data: b"kept".to_vec() });
+            q.socket_push(
+                "ws:1",
+                SocketRecord {
+                    kind: "text",
+                    data: b"kept".to_vec(),
+                },
+            );
             match q.next_socket("ws:1", KIND_WS, usize::MAX).await.unwrap() {
                 SocketNext::Frame(rec) => assert_eq!(rec.data, b"kept"),
                 other => panic!("expected the kept frame, got {other:?}"),
@@ -24194,7 +24707,10 @@ pub(crate) mod socket_sources {
         async fn mismatched_recv_verb_refuses_by_kind() {
             let q = Queue::default();
             q.register_socket_for_test("tcp:1", "test.tcp", KIND_TCP_BYTES);
-            let err = q.next_socket("tcp:1", KIND_TCP_LINE, usize::MAX).await.unwrap_err();
+            let err = q
+                .next_socket("tcp:1", KIND_TCP_LINE, usize::MAX)
+                .await
+                .unwrap_err();
             assert!(matches!(err, MixError::Structured(info) if info.code == "SOCKET_KIND"));
         }
 
@@ -24211,7 +24727,14 @@ pub(crate) mod socket_sources {
             let id = tcp_client_handle(port);
             let mut ne = NativeEvents::default();
             let h = ne
-                .tcp_on(id, "test.idle".to_string(), TcpMode { line: false, max: 0 })
+                .tcp_on(
+                    id,
+                    "test.idle".to_string(),
+                    TcpMode {
+                        line: false,
+                        max: 0,
+                    },
+                )
                 .unwrap();
             let q = ne.queue.clone();
             tokio::time::sleep(std::time::Duration::from_millis(150)).await;
@@ -24246,7 +24769,14 @@ pub(crate) mod socket_sources {
             let id = tcp_client_handle(port);
             let mut ne = NativeEvents::default();
             let h = ne
-                .tcp_on(id, "test.send".to_string(), TcpMode { line: false, max: 0 })
+                .tcp_on(
+                    id,
+                    "test.send".to_string(),
+                    TcpMode {
+                        line: false,
+                        max: 0,
+                    },
+                )
                 .unwrap();
             let q = ne.queue.clone();
             match q.next_socket(&h, KIND_TCP_BYTES, usize::MAX).await.unwrap() {
@@ -24319,20 +24849,33 @@ pub(crate) mod socket_sources {
             let expected = payload.clone();
             let server = std::thread::spawn(move || {
                 let (stream, _) = listener.accept().unwrap();
-                stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
-                stream.set_write_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+                stream
+                    .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                    .unwrap();
+                stream
+                    .set_write_timeout(Some(std::time::Duration::from_secs(5)))
+                    .unwrap();
                 let mut conn = tungstenite::accept(stream).unwrap();
                 let mut peek = [0u8; 1];
                 assert_eq!(conn.get_ref().peek(&mut peek).unwrap(), 1);
                 started_tx.send(()).unwrap();
-                release_rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
-                conn.send(tungstenite::Message::Ping(b"control".to_vec().into())).unwrap();
+                release_rx
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap();
+                conn.send(tungstenite::Message::Ping(b"control".to_vec().into()))
+                    .unwrap();
                 let mut data = false;
                 let mut pong = false;
                 while !data || !pong {
                     match conn.read().unwrap() {
-                        tungstenite::Message::Binary(bytes) => { assert_eq!(bytes.as_ref(), expected); data = true; }
-                        tungstenite::Message::Pong(bytes) => { assert_eq!(bytes.as_ref(), b"control"); pong = true; }
+                        tungstenite::Message::Binary(bytes) => {
+                            assert_eq!(bytes.as_ref(), expected);
+                            data = true;
+                        }
+                        tungstenite::Message::Pong(bytes) => {
+                            assert_eq!(bytes.as_ref(), b"control");
+                            pong = true;
+                        }
                         other => panic!("unexpected frame {other:?}"),
                     }
                 }
@@ -24344,16 +24887,42 @@ pub(crate) mod socket_sources {
             };
             let size = 4096i32;
             // SAFETY: live socket fd and correctly sized integer option.
-            assert_eq!(unsafe { libc::setsockopt(stream.as_raw_fd(), libc::SOL_SOCKET, libc::SO_SNDBUF, (&size as *const i32).cast(), std::mem::size_of_val(&size) as libc::socklen_t) }, 0);
+            assert_eq!(
+                unsafe {
+                    libc::setsockopt(
+                        stream.as_raw_fd(),
+                        libc::SOL_SOCKET,
+                        libc::SO_SNDBUF,
+                        (&size as *const i32).cast(),
+                        std::mem::size_of_val(&size) as libc::socklen_t,
+                    )
+                },
+                0
+            );
             let id = ws_client::NEXT_ID.fetch_add(1, Ordering::Relaxed);
             ws_client::MAP.lock().unwrap().insert(id, conn);
             let mut ne = NativeEvents::default();
             ne.ws_on(id, "test.partial".into()).unwrap();
             let mut receipt = send_ws(id, false, payload).unwrap();
-            started_rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
-            assert!(matches!(receipt.try_recv(), Err(tokio::sync::oneshot::error::TryRecvError::Empty)), "large write must actually be blocked before peer reads");
+            started_rx
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
+            assert!(
+                matches!(
+                    receipt.try_recv(),
+                    Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+                ),
+                "large write must actually be blocked before peer reads"
+            );
             release_tx.send(()).unwrap();
-            assert_eq!(tokio::time::timeout(std::time::Duration::from_secs(5), receipt).await.unwrap().unwrap().unwrap(), 8 * 1024 * 1024);
+            assert_eq!(
+                tokio::time::timeout(std::time::Duration::from_secs(5), receipt)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .unwrap(),
+                8 * 1024 * 1024
+            );
             server.join().unwrap();
             ne.close();
         }
@@ -24369,15 +24938,34 @@ pub(crate) mod socket_sources {
                 let (stream, _) = listener.accept().unwrap();
                 let size = 1024i32;
                 // SAFETY: live fd, integer option and its exact size.
-                assert_eq!(unsafe { libc::setsockopt(stream.as_raw_fd(), libc::SOL_SOCKET, libc::SO_RCVBUF, (&size as *const i32).cast(), std::mem::size_of_val(&size) as libc::socklen_t) }, 0);
-                stream.set_write_timeout(Some(std::time::Duration::from_secs(3))).unwrap();
+                assert_eq!(
+                    unsafe {
+                        libc::setsockopt(
+                            stream.as_raw_fd(),
+                            libc::SOL_SOCKET,
+                            libc::SO_RCVBUF,
+                            (&size as *const i32).cast(),
+                            std::mem::size_of_val(&size) as libc::socklen_t,
+                        )
+                    },
+                    0
+                );
+                stream
+                    .set_write_timeout(Some(std::time::Duration::from_secs(3)))
+                    .unwrap();
                 let mut conn = tungstenite::accept(stream).unwrap();
-                go_rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+                go_rx
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap();
                 // Real legal server Ping frames, with no reads of client Pongs.
                 // The small receive window makes automatic control writes stall.
-                let mut ping = [0x42u8; 127]; ping[0] = 0x89; ping[1] = 125;
+                let mut ping = [0x42u8; 127];
+                ping[0] = 0x89;
+                ping[1] = 125;
                 for _ in 0..25_000 {
-                    if conn.get_mut().write_all(&ping).is_err() { break; }
+                    if conn.get_mut().write_all(&ping).is_err() {
+                        break;
+                    }
                 }
                 // Keep the peer alive and its receive window blocked until
                 // the client reports expiry. A peer reset cannot prove it.
@@ -24390,16 +24978,38 @@ pub(crate) mod socket_sources {
             };
             let size = 1024i32;
             // SAFETY: live fd, integer option and its exact size.
-            assert_eq!(unsafe { libc::setsockopt(stream.as_raw_fd(), libc::SOL_SOCKET, libc::SO_SNDBUF, (&size as *const i32).cast(), std::mem::size_of_val(&size) as libc::socklen_t) }, 0);
+            assert_eq!(
+                unsafe {
+                    libc::setsockopt(
+                        stream.as_raw_fd(),
+                        libc::SOL_SOCKET,
+                        libc::SO_SNDBUF,
+                        (&size as *const i32).cast(),
+                        std::mem::size_of_val(&size) as libc::socklen_t,
+                    )
+                },
+                0
+            );
             let id = ws_client::NEXT_ID.fetch_add(1, Ordering::Relaxed);
             ws_client::MAP.lock().unwrap().insert(id, conn);
             let mut ne = NativeEvents::default();
             let source = ne.ws_on(id, "test.control".into()).unwrap();
-            send_endpoint(ClientKey::ws(id)).unwrap().deadline.store(80, Ordering::Relaxed);
+            send_endpoint(ClientKey::ws(id))
+                .unwrap()
+                .deadline
+                .store(80, Ordering::Relaxed);
             go_tx.send(()).unwrap();
-            let terminal = tokio::time::timeout(std::time::Duration::from_secs(3), ne.queue.next_socket(&source, KIND_WS, usize::MAX)).await.unwrap().unwrap();
+            let terminal = tokio::time::timeout(
+                std::time::Duration::from_secs(3),
+                ne.queue.next_socket(&source, KIND_WS, usize::MAX),
+            )
+            .await
+            .unwrap()
+            .unwrap();
             match terminal {
-                SocketNext::Closed(closed) => assert_eq!(closed["reason"], "control write timed out"),
+                SocketNext::Closed(closed) => {
+                    assert_eq!(closed["reason"], "control write timed out")
+                }
                 other => panic!("expected control-write expiry, got {other:?}"),
             }
             stop_tx.send(()).unwrap();
@@ -24411,11 +25021,22 @@ pub(crate) mod socket_sources {
         async fn wss_partial_frame_survives_pull_timeout_and_subscription() {
             use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
             // Disposable self-signed loopback fixtures; no production identity.
-            let cert = CertificateDer::from_pem_slice(include_bytes!("../tests/fixtures/socket-test-cert.pem")).unwrap();
-            let key = PrivateKeyDer::from_pem_slice(include_bytes!("../tests/fixtures/socket-test-key.pem")).unwrap();
-            let config = rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-                .with_safe_default_protocol_versions().unwrap().with_no_client_auth()
-                .with_single_cert(vec![cert], key).unwrap();
+            let cert = CertificateDer::from_pem_slice(include_bytes!(
+                "../tests/fixtures/socket-test-cert.pem"
+            ))
+            .unwrap();
+            let key = PrivateKeyDer::from_pem_slice(include_bytes!(
+                "../tests/fixtures/socket-test-key.pem"
+            ))
+            .unwrap();
+            let config = rustls::ServerConfig::builder_with_provider(Arc::new(
+                rustls::crypto::ring::default_provider(),
+            ))
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(vec![cert], key)
+            .unwrap();
             let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             let port = listener.local_addr().unwrap().port();
             let (started_tx, started_rx) = std::sync::mpsc::channel();
@@ -24424,9 +25045,16 @@ pub(crate) mod socket_sources {
             let payload = expected.clone();
             let server = std::thread::spawn(move || {
                 let (stream, _) = listener.accept().unwrap();
-                stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
-                stream.set_write_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
-                let tls = rustls::StreamOwned::new(rustls::ServerConnection::new(Arc::new(config)).unwrap(), stream);
+                stream
+                    .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                    .unwrap();
+                stream
+                    .set_write_timeout(Some(std::time::Duration::from_secs(5)))
+                    .unwrap();
+                let tls = rustls::StreamOwned::new(
+                    rustls::ServerConnection::new(Arc::new(config)).unwrap(),
+                    stream,
+                );
                 let mut conn = tungstenite::accept(tls).unwrap();
                 let mut header = vec![0x82, 127];
                 header.extend_from_slice(&(payload.len() as u64).to_be_bytes());
@@ -24434,27 +25062,60 @@ pub(crate) mod socket_sources {
                 conn.get_mut().write_all(&payload[..2048]).unwrap();
                 conn.get_mut().flush().unwrap();
                 started_tx.send(()).unwrap();
-                release_rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+                release_rx
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap();
                 conn.get_mut().write_all(&payload[2048..]).unwrap();
                 conn.get_mut().flush().unwrap();
                 assert_eq!(conn.read().unwrap().into_text().unwrap(), "after-timeout");
-                conn.send(tungstenite::Message::text("subscription-after-tls-pull")).unwrap();
+                conn.send(tungstenite::Message::text("subscription-after-tls-pull"))
+                    .unwrap();
             });
             let mut opts = indexmap::IndexMap::new();
             opts.insert("insecure".into(), Value::Bool(true)); // explicit test-only self-signed choice
-            let handle = super::super::builtin_ws_connect(vec![Value::String(format!("wss://127.0.0.1:{port}/")), Value::map(opts)]).unwrap().unwrap();
-            let id = match handle { Value::Number(n) => n as u64, _ => panic!("numeric WS handle expected") };
-            started_rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+            let handle = super::super::builtin_ws_connect(vec![
+                Value::String(format!("wss://127.0.0.1:{port}/")),
+                Value::map(opts),
+            ])
+            .unwrap()
+            .unwrap();
+            let id = match handle {
+                Value::Number(n) => n as u64,
+                _ => panic!("numeric WS handle expected"),
+            };
+            started_rx
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
             let guard = pull_conn("ws_recv", id).unwrap();
-            assert!(matches!(pull_recv("ws_recv", guard, 0.04, usize::MAX).await.unwrap(), Value::Nil));
+            assert!(matches!(
+                pull_recv("ws_recv", guard, 0.04, usize::MAX).await.unwrap(),
+                Value::Nil
+            ));
             let guard = pull_conn("ws_recv", id).unwrap();
             release_tx.send(()).unwrap();
             let bytes = pull_recv("ws_recv", guard, 5.0, usize::MAX).await.unwrap();
-            match &bytes { Value::Bytes(bytes) => assert_eq!(bytes.as_ref(), expected.as_slice()), other => panic!("expected TLS binary, got {}", other.type_name()) }
+            match &bytes {
+                Value::Bytes(bytes) => assert_eq!(bytes.as_ref(), expected.as_slice()),
+                other => panic!("expected TLS binary, got {}", other.type_name()),
+            }
             let mut ne = NativeEvents::default();
             let source = ne.ws_on(id, "test.tls".into()).unwrap();
-            assert_eq!(send_ws(id, true, b"after-timeout".to_vec()).unwrap().await.unwrap().unwrap(), 13);
-            match tokio::time::timeout(std::time::Duration::from_secs(5), ne.queue.next_socket(&source, KIND_WS, usize::MAX)).await.unwrap().unwrap() {
+            assert_eq!(
+                send_ws(id, true, b"after-timeout".to_vec())
+                    .unwrap()
+                    .await
+                    .unwrap()
+                    .unwrap(),
+                13
+            );
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                ne.queue.next_socket(&source, KIND_WS, usize::MAX),
+            )
+            .await
+            .unwrap()
+            .unwrap()
+            {
                 SocketNext::Frame(frame) => assert_eq!(frame.data, b"subscription-after-tls-pull"),
                 other => panic!("expected subscription frame, got {other:?}"),
             }
@@ -24477,30 +25138,45 @@ pub(crate) mod socket_sources {
                 let _ = stop_rx.recv_timeout(std::time::Duration::from_secs(5));
             });
             let id = tcp_client_handle(port);
-            started_rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+            started_rx
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
             let guard = pull_conn("tcp_recv_line", id).unwrap();
             let tick = std::cell::Cell::new(false);
             let cpu_start = thread_cpu();
             tokio::join!(
                 async {
-                    let result = pull_recv("tcp_recv_line", guard, 0.25, 65536).await.unwrap();
+                    let result = pull_recv("tcp_recv_line", guard, 0.25, 65536)
+                        .await
+                        .unwrap();
                     assert!(matches!(result, Value::Nil));
-                    assert!(tick.get(), "stale readiness must not spin until the receive deadline and starve the reactor");
+                    assert!(
+                        tick.get(),
+                        "stale readiness must not spin until the receive deadline and starve the reactor"
+                    );
                 },
                 async {
                     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                     tick.set(true);
                 }
             );
-            assert!(thread_cpu() - cpu_start < std::time::Duration::from_millis(80),
-                "idle partial recv consumed CPU while waiting for its deadline");
+            assert!(
+                thread_cpu() - cpu_start < std::time::Duration::from_millis(80),
+                "idle partial recv consumed CPU while waiting for its deadline"
+            );
             stop_tx.send(()).unwrap();
             server.join().unwrap();
             tcp_client::MAP.lock().unwrap().remove(&id);
             fn thread_cpu() -> std::time::Duration {
-                let mut stamp = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+                let mut stamp = libc::timespec {
+                    tv_sec: 0,
+                    tv_nsec: 0,
+                };
                 // SAFETY: the writable timespec lives through the call.
-                assert_eq!(unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut stamp) }, 0);
+                assert_eq!(
+                    unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut stamp) },
+                    0
+                );
                 std::time::Duration::new(stamp.tv_sec as u64, stamp.tv_nsec as u32)
             }
         }
@@ -24521,7 +25197,9 @@ pub(crate) mod socket_sources {
             let id = tcp_client_handle(port);
             let guard = pull_conn("tcp_recv", id).unwrap();
             // Second waiter on the same handle: deterministic refusal.
-            let err = pull_conn("tcp_recv", id).err().expect("second pull must refuse");
+            let err = pull_conn("tcp_recv", id)
+                .err()
+                .expect("second pull must refuse");
             assert!(matches!(err, MixError::Structured(info) if info.code == "SOCKET_BUSY"));
             // Timeout → nil; the conn returns to the registry, usable.
             let out = pull_recv("tcp_recv", guard, 0.05, 65536).await.unwrap();
@@ -24534,8 +25212,8 @@ pub(crate) mod socket_sources {
             assert!(tcp_client::MAP.lock().unwrap().contains_key(&id));
             // The server has gone: the plain sync recv now raises the
             // peer-close error and retires, same as pre-subscription use.
-            let err = crate::builtins::builtin_tcp_recv(vec![Value::Number(id as f64)])
-                .unwrap_err();
+            let err =
+                crate::builtins::builtin_tcp_recv(vec![Value::Number(id as f64)]).unwrap_err();
             assert!(err.to_string().contains("closed by peer"));
             assert!(!tcp_client::MAP.lock().unwrap().contains_key(&id));
             server.join().unwrap();
@@ -24557,7 +25235,10 @@ pub(crate) mod socket_sources {
             let guard = pull_conn("tcp_recv", id).unwrap();
             let err = pull_recv("tcp_recv", guard, 5.0, 65536).await.unwrap_err();
             assert!(matches!(err, MixError::Structured(info) if info.code == "SOCKET_CLOSED"));
-            assert!(!tcp_client::MAP.lock().unwrap().contains_key(&id), "close retires the handle");
+            assert!(
+                !tcp_client::MAP.lock().unwrap().contains_key(&id),
+                "close retires the handle"
+            );
             server.join().unwrap();
 
             // (b) cancelled pull: the conn returns to the registry
@@ -24575,10 +25256,11 @@ pub(crate) mod socket_sources {
                 // then drop: cancellation mid-wait.
                 {
                     use std::task::{Context, Waker};
-                    assert!(fut
-                        .as_mut()
-                        .poll(&mut Context::from_waker(Waker::noop()))
-                        .is_pending());
+                    assert!(
+                        fut.as_mut()
+                            .poll(&mut Context::from_waker(Waker::noop()))
+                            .is_pending()
+                    );
                 }
                 drop(fut);
             }
@@ -24662,12 +25344,21 @@ pub(crate) mod socket_sources {
             let id = tcp_client_handle(port);
             let mut ne = NativeEvents::default();
             let _h = ne
-                .tcp_on(id, "test.refuse".to_string(), TcpMode { line: false, max: 0 })
+                .tcp_on(
+                    id,
+                    "test.refuse".to_string(),
+                    TcpMode {
+                        line: false,
+                        max: 0,
+                    },
+                )
                 .unwrap();
-            let err = crate::builtins::builtin_tcp_recv(vec![Value::Number(id as f64)])
-                .unwrap_err();
+            let err =
+                crate::builtins::builtin_tcp_recv(vec![Value::Number(id as f64)]).unwrap_err();
             assert!(err.to_string().contains("tcp_on subscription"));
-            let err = pull_conn("tcp_recv", id).err().expect("subscribed receive must refuse");
+            let err = pull_conn("tcp_recv", id)
+                .err()
+                .expect("subscribed receive must refuse");
             assert!(matches!(err, MixError::Structured(info) if info.code == "SOCKET_SUBSCRIBED"));
             ne.close();
             server.join().unwrap();
@@ -24708,7 +25399,9 @@ pub(crate) mod socket_sources {
                 ws_tx.send(t.as_bytes().to_vec()).unwrap();
                 // Keep the peer live until the subscription refusal is
                 // asserted; peer-close retirement is a different contract.
-                ws_hold.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
+                ws_hold
+                    .recv_timeout(std::time::Duration::from_secs(10))
+                    .unwrap();
             });
             let tcp_server = std::thread::spawn(move || {
                 let (mut stream, _) = tcp_l.accept().unwrap();
@@ -24743,7 +25436,14 @@ pub(crate) mod socket_sources {
             let mut ne = NativeEvents::default();
             let h_ws = ne.ws_on(SHARED, "test.samews".to_string()).unwrap();
             let h_tcp = ne
-                .tcp_on(SHARED, "test.sametcp".to_string(), TcpMode { line: false, max: 0 })
+                .tcp_on(
+                    SHARED,
+                    "test.sametcp".to_string(),
+                    TcpMode {
+                        line: false,
+                        max: 0,
+                    },
+                )
                 .unwrap();
             assert!(is_subscribed(ClientKey::ws(SHARED)));
             assert!(is_subscribed(ClientKey::tcp(SHARED)));
@@ -24754,11 +25454,15 @@ pub(crate) mod socket_sources {
             assert_eq!(send_w.await.unwrap().unwrap(), 5);
             assert_eq!(send_t.await.unwrap().unwrap(), 5);
             assert_eq!(
-                ws_rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap(),
+                ws_rx
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap(),
                 b"w-out"
             );
             assert_eq!(
-                tcp_rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap(),
+                tcp_rx
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap(),
                 b"t-out"
             );
             // Both sources keep delivering around the sends.
@@ -24766,7 +25470,11 @@ pub(crate) mod socket_sources {
                 SocketNext::Frame(rec) => assert_eq!(rec.data, b"w-reply"),
                 other => panic!("expected w-reply, got {other:?}"),
             }
-            match q.next_socket(&h_tcp, KIND_TCP_BYTES, usize::MAX).await.unwrap() {
+            match q
+                .next_socket(&h_tcp, KIND_TCP_BYTES, usize::MAX)
+                .await
+                .unwrap()
+            {
                 SocketNext::Frame(rec) => assert_eq!(rec.data, b"t-reply"),
                 other => panic!("expected t-reply, got {other:?}"),
             }
@@ -24778,12 +25486,16 @@ pub(crate) mod socket_sources {
             let send_w2 = send_ws(SHARED, true, b"w-out2".to_vec()).unwrap();
             assert_eq!(send_w2.await.unwrap().unwrap(), 6);
             assert_eq!(
-                ws_rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap(),
+                ws_rx
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap(),
                 b"w-out2"
             );
             let err = send_tcp(SHARED, b"x".to_vec()).unwrap_err();
             assert!(matches!(err, MixError::Structured(info) if info.code == "SOCKET_SEND_CLOSED"));
-            let err = pull_conn("ws_recv", SHARED).err().expect("subscribed pull refused");
+            let err = pull_conn("ws_recv", SHARED)
+                .err()
+                .expect("subscribed pull refused");
             assert!(matches!(err, MixError::Structured(info) if info.code == "SOCKET_SUBSCRIBED"));
             ne.close();
             ws_release.send(()).unwrap();
@@ -24807,14 +25519,24 @@ pub(crate) mod socket_sources {
             let id = tcp_client_handle(port);
             let mut ne = NativeEvents::default();
             let h = ne
-                .tcp_on(id, "test.admit".to_string(), TcpMode { line: false, max: 0 })
+                .tcp_on(
+                    id,
+                    "test.admit".to_string(),
+                    TcpMode {
+                        line: false,
+                        max: 0,
+                    },
+                )
                 .unwrap();
             let endpoint = send_endpoint(ClientKey::tcp(id)).unwrap();
             // Empty payloads consume one op and zero byte permits; Tokio
             // permits zero acquisitions. Pin this against a review claim
             // that zero permits panic, and verify the actual empty send.
             let empty = endpoint.admit(0).expect("zero-byte admission");
-            assert_eq!(endpoint.available_permits(), (MAX_SEND_OPS - 1, MAX_SEND_BYTES));
+            assert_eq!(
+                endpoint.available_permits(),
+                (MAX_SEND_OPS - 1, MAX_SEND_BYTES)
+            );
             drop(empty);
             assert_eq!(send_tcp(id, Vec::new()).unwrap().await.unwrap().unwrap(), 0);
             // Ops bound: 64 reservations, the 65th refuses.
@@ -24874,7 +25596,14 @@ pub(crate) mod socket_sources {
             let id = tcp_client_handle(port);
             let mut ne = NativeEvents::default();
             let h = ne
-                .tcp_on(id, "test.expire".to_string(), TcpMode { line: false, max: 0 })
+                .tcp_on(
+                    id,
+                    "test.expire".to_string(),
+                    TcpMode {
+                        line: false,
+                        max: 0,
+                    },
+                )
                 .unwrap();
             let endpoint = send_endpoint(ClientKey::tcp(id)).unwrap();
             endpoint.set_deadline_for_test(std::time::Duration::from_millis(300));
@@ -24899,7 +25628,12 @@ pub(crate) mod socket_sources {
             // One terminal, reason truthful; the handle unmarks.
             match q.next_socket(&h, KIND_TCP_BYTES, usize::MAX).await.unwrap() {
                 SocketNext::Closed(closed) => {
-                    assert!(closed["reason"].as_str().unwrap().contains("send timed out"));
+                    assert!(
+                        closed["reason"]
+                            .as_str()
+                            .unwrap()
+                            .contains("send timed out")
+                    );
                 }
                 other => panic!("expected terminal, got {other:?}"),
             }
@@ -24919,7 +25653,14 @@ pub(crate) mod socket_sources {
             let id = tcp_client_handle(port);
             let mut ne = NativeEvents::default();
             let _h = ne
-                .tcp_on(id, "test.cancel".to_string(), TcpMode { line: false, max: 0 })
+                .tcp_on(
+                    id,
+                    "test.cancel".to_string(),
+                    TcpMode {
+                        line: false,
+                        max: 0,
+                    },
+                )
                 .unwrap();
             let endpoint = send_endpoint(ClientKey::tcp(id)).unwrap();
             endpoint.set_deadline_for_test(std::time::Duration::from_millis(300));
@@ -24968,7 +25709,14 @@ pub(crate) mod socket_sources {
             let id = tcp_client_handle(port);
             let mut ne = NativeEvents::default();
             let _h = ne
-                .tcp_on(id, "test.burst".to_string(), TcpMode { line: false, max: 0 })
+                .tcp_on(
+                    id,
+                    "test.burst".to_string(),
+                    TcpMode {
+                        line: false,
+                        max: 0,
+                    },
+                )
                 .unwrap();
             // Admit and enqueue the full 64-op bound back-to-back, then
             // await every receipt: a wedged wake drain would hang here.
@@ -25012,7 +25760,14 @@ pub(crate) mod socket_sources {
             let id = tcp_client_handle(port);
             let mut ne = NativeEvents::default();
             let h = ne
-                .tcp_on(id, "test.flood".to_string(), TcpMode { line: false, max: 0 })
+                .tcp_on(
+                    id,
+                    "test.flood".to_string(),
+                    TcpMode {
+                        line: false,
+                        max: 0,
+                    },
+                )
                 .unwrap();
             let endpoint = send_endpoint(ClientKey::tcp(id)).unwrap();
             endpoint.set_deadline_for_test(std::time::Duration::from_millis(300));
@@ -25036,7 +25791,12 @@ pub(crate) mod socket_sources {
                         assert!(frames < MAX_SOCKET_FRAMES, "the flood overran the FIFO");
                     }
                     SocketNext::Closed(closed) => {
-                        assert!(closed["reason"].as_str().unwrap().contains("send timed out"));
+                        assert!(
+                            closed["reason"]
+                                .as_str()
+                                .unwrap()
+                                .contains("send timed out")
+                        );
                         break;
                     }
                     SocketNext::Idle => unreachable!(),
@@ -25259,8 +26019,19 @@ mod http_srv {
         let mut out = String::with_capacity(s.len());
         for b in s.bytes() {
             match b {
-                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'+'
-                | b'@' | b',' | b'=' | b'(' | b')' => out.push(b as char),
+                b'A'..=b'Z'
+                | b'a'..=b'z'
+                | b'0'..=b'9'
+                | b'-'
+                | b'_'
+                | b'.'
+                | b'~'
+                | b'+'
+                | b'@'
+                | b','
+                | b'='
+                | b'('
+                | b')' => out.push(b as char),
                 _ => out.push_str(&format!("%{b:02X}")),
             }
         }
@@ -25456,8 +26227,15 @@ fn builtin_http_serve(args: Vec<Value>) -> MixResult<Option<Value>> {
                 for k in m.keys() {
                     if !matches!(
                         k.as_str(),
-                        "port" | "host" | "duration" | "index" | "listing" | "render_md"
-                            | "requests" | "spa" | "clean_urls"
+                        "port"
+                            | "host"
+                            | "duration"
+                            | "index"
+                            | "listing"
+                            | "render_md"
+                            | "requests"
+                            | "spa"
+                            | "clean_urls"
                     ) {
                         return Err(MixError::RuntimeError {
                             span: None,
@@ -25479,8 +26257,7 @@ fn builtin_http_serve(args: Vec<Value>) -> MixResult<Option<Value>> {
                     host = v.to_mix_string();
                 }
                 if let Some(v) = m.get("duration") {
-                    duration =
-                        required_number_value("http_serve(): option 'duration'", v)?;
+                    duration = required_number_value("http_serve(): option 'duration'", v)?;
                     as_duration("http_serve(): option 'duration'", duration)?;
                 }
                 if let Some(v) = m.get("index") {
@@ -25517,7 +26294,8 @@ fn builtin_http_serve(args: Vec<Value>) -> MixResult<Option<Value>> {
                         Value::Number(_) => {
                             return Err(MixError::RuntimeError {
                                 span: None,
-                                msg: "http_serve(): option 'spa' must be true or a shell filename".to_string(),
+                                msg: "http_serve(): option 'spa' must be true or a shell filename"
+                                    .to_string(),
                             });
                         }
                         other => other.to_mix_string(),
@@ -25644,23 +26422,22 @@ fn http_serve_one(
     // it served. Shared by the not-found arm AND the directory branch (a
     // `bus.html` section page sits beside a `bus/` children dir — Pages
     // resolves `/bus` to that page when there is no `bus/index.html`).
-    let try_clean_url =
-        |stream: &mut std::net::TcpStream, rel: &str, head_only: bool| -> bool {
-            if !clean_urls || rel.is_empty() {
-                return false;
-            }
-            if rel.rsplit('/').next().unwrap_or("").contains('.') {
-                return false;
-            }
-            if let Ok(html) = std::fs::canonicalize(root.join(format!("{rel}.html")))
-                && html.starts_with(root)
-                && html.is_file()
-            {
-                http_send_file(stream, &html, render_md, head_only);
-                return true;
-            }
-            false
-        };
+    let try_clean_url = |stream: &mut std::net::TcpStream, rel: &str, head_only: bool| -> bool {
+        if !clean_urls || rel.is_empty() {
+            return false;
+        }
+        if rel.rsplit('/').next().unwrap_or("").contains('.') {
+            return false;
+        }
+        if let Ok(html) = std::fs::canonicalize(root.join(format!("{rel}.html")))
+            && html.starts_with(root)
+            && html.is_file()
+        {
+            http_send_file(stream, &html, render_md, head_only);
+            return true;
+        }
+        false
+    };
     // The SPA fallback: a would-be 404 on a path with NO extension serves
     // the shell (200) so a client-side router boots. Only extensionless
     // paths fall back — a missing /app.js or /style.css must stay a real
@@ -25854,14 +26631,7 @@ fn http_send_file(
         Ok(b) => b,
         Err(_) => return http_srv::write_error(stream, 500, "unreadable file"),
     };
-    let _ = http_srv::write_response(
-        stream,
-        200,
-        http_srv::mime_for(path),
-        &[],
-        &body,
-        head_only,
-    );
+    let _ = http_srv::write_response(stream, 200, http_srv::mime_for(path), &[], &body, head_only);
 }
 
 /// `http_recv(port[, opts])` — accept ONE request, answer it, return it
@@ -25896,8 +26666,7 @@ fn builtin_http_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
                     }
                 }
                 if let Some(v) = m.get("timeout") {
-                    timeout_seconds =
-                        required_number_value("http_recv(): option 'timeout'", v)?;
+                    timeout_seconds = required_number_value("http_recv(): option 'timeout'", v)?;
                     as_duration("http_recv(): option 'timeout'", timeout_seconds)?;
                 }
                 if let Some(v) = m.get("host") {
@@ -26070,7 +26839,10 @@ fn builtin_http_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
     out.insert("headers".to_string(), Value::map(headers));
     out.insert("body".to_string(), text);
     out.insert("bytes".to_string(), Value::bytes(body_bytes));
-    out.insert("from_host".to_string(), Value::String(peer.ip().to_string()));
+    out.insert(
+        "from_host".to_string(),
+        Value::String(peer.ip().to_string()),
+    );
     out.insert("from_port".to_string(), Value::Number(peer.port() as f64));
     Ok(Some(Value::map(out)))
 }
@@ -26116,9 +26888,13 @@ fn builtin_help(_args: Vec<Value>) -> MixResult<Option<Value>> {
     println!("           udp_send udp_recv (one datagram each way — v0.71.0)");
     println!("           ws_connect ws_send ws_recv ws_close (websocket client — v0.74.0)");
     println!("           http_serve http_recv (static server + one-shot catch — v0.75.0)");
-    println!("           tcp_connect tcp_send tcp_recv tcp_recv_line tcp_close (raw TCP client — v0.78.0)");
+    println!(
+        "           tcp_connect tcp_send tcp_recv tcp_recv_line tcp_close (raw TCP client — v0.78.0)"
+    );
     println!("Bytes:     bytes_len string_to_bytes bytes_to_string bytes_find bytes_starts_with");
-    println!("           bytes_ends_with bytes_split bytes_concat bytes_from bytes_to_hex bytes_from_hex");
+    println!(
+        "           bytes_ends_with bytes_split bytes_concat bytes_from bytes_to_hex bytes_from_hex"
+    );
     println!("           (also $b[i], length, slice, `for each` — v0.64.0 — and take, drop,");
     println!("           reverse, index_of, contains — v0.70.0)");
     println!("SQL:       sqlopen sqlexec sqlclose");
@@ -27221,10 +27997,10 @@ mod ssh_helpers_tests {
 
     // ---- ssh_run helpers --------------------------------------------------
     use super::{
-        ManySlot, SshOpts, SshOutcome, send_mail_envelope, ssh_mix_many_slot_value,
-        build_remote_command, build_ssh_argv, builtin_send_mail, builtin_ssh_mix,
-        builtin_ssh_mix_many, builtin_ssh_run, conditional_cap_engaged, is_valid_env_key,
-        parse_env_opt, parse_ssh_opts, send_mail_date, send_mail_render,
+        ManySlot, SshOpts, SshOutcome, build_remote_command, build_ssh_argv, builtin_send_mail,
+        builtin_ssh_mix, builtin_ssh_mix_many, builtin_ssh_run, conditional_cap_engaged,
+        is_valid_env_key, parse_env_opt, parse_ssh_opts, send_mail_date, send_mail_envelope,
+        send_mail_render, ssh_mix_many_slot_value,
     };
     use crate::error::MixError;
     use indexmap::IndexMap;
@@ -27510,9 +28286,15 @@ mod ssh_helpers_tests {
     fn mail_msg(extra: &[(&str, Value)]) -> Value {
         let mut m = IndexMap::new();
         m.insert("to".to_string(), Value::String("ops@example.com".into()));
-        m.insert("from".to_string(), Value::String("Reports <reports@example.com>".into()));
+        m.insert(
+            "from".to_string(),
+            Value::String("Reports <reports@example.com>".into()),
+        );
         m.insert("subject".to_string(), Value::String("weekly".into()));
-        m.insert("body".to_string(), Value::String("line one\r\nline two".into()));
+        m.insert(
+            "body".to_string(),
+            Value::String("line one\r\nline two".into()),
+        );
         for (k, v) in extra {
             if matches!(v, Value::Nil) {
                 m.shift_remove(*k);
@@ -27531,8 +28313,14 @@ mod ssh_helpers_tests {
     #[test]
     fn send_mail_date_is_rfc5322_utc() {
         assert_eq!(send_mail_date(0), "Thu, 01 Jan 1970 00:00:00 +0000");
-        assert_eq!(send_mail_date(951_868_799), "Tue, 29 Feb 2000 23:59:59 +0000");
-        assert_eq!(send_mail_date(1_790_253_296), "Thu, 24 Sep 2026 12:34:56 +0000");
+        assert_eq!(
+            send_mail_date(951_868_799),
+            "Tue, 29 Feb 2000 23:59:59 +0000"
+        );
+        assert_eq!(
+            send_mail_date(1_790_253_296),
+            "Thu, 24 Sep 2026 12:34:56 +0000"
+        );
     }
 
     #[test]
@@ -27546,19 +28334,28 @@ mod ssh_helpers_tests {
         )]))
         .expect("render");
         assert_eq!(r.envelope_from, "reports@example.com");
-        let (head, body) = r.text.split_once("\n\n").expect("blank line ends the headers");
+        let (head, body) = r
+            .text
+            .split_once("\n\n")
+            .expect("blank line ends the headers");
         let lines: Vec<&str> = head.lines().collect();
         assert_eq!(lines[0], "From: Reports <reports@example.com>");
         assert_eq!(lines[1], "To: a@example.com, B <b@example.com>");
         assert_eq!(lines[2], "Subject: weekly");
-        assert!(lines[3].starts_with("Date: ") && lines[3].ends_with(" +0000"), "{head}");
+        assert!(
+            lines[3].starts_with("Date: ") && lines[3].ends_with(" +0000"),
+            "{head}"
+        );
         assert_eq!(lines[4], format!("Message-ID: {}", r.message_id));
         assert!(
             r.message_id.starts_with('<') && r.message_id.ends_with("@example.com>"),
             "{}",
             r.message_id
         );
-        assert!(head.contains("Content-Type: text/plain; charset=utf-8"), "{head}");
+        assert!(
+            head.contains("Content-Type: text/plain; charset=utf-8"),
+            "{head}"
+        );
         assert!(head.contains("Content-Transfer-Encoding: 7bit"), "{head}");
         // CRLF normalised, trailing newline added.
         assert_eq!(body, "line one\nline two\n");
@@ -27568,7 +28365,10 @@ mod ssh_helpers_tests {
     #[test]
     fn send_mail_encodes_a_non_ascii_subject_and_marks_8bit_bodies() {
         let r = send_mail_render(&mail_msg(&[
-            ("subject", Value::String("Wöchentlicher Bericht über alle Benutzer auf dem Cluster".into())),
+            (
+                "subject",
+                Value::String("Wöchentlicher Bericht über alle Benutzer auf dem Cluster".into()),
+            ),
             ("body", Value::String("grüße\n".into())),
         ]))
         .expect("render");
@@ -27580,11 +28380,15 @@ mod ssh_helpers_tests {
             .collect::<Vec<_>>()
             .join("\n");
         // The first word may fold onto its own line (X2); compare unfolded.
-        assert!(unfold(&subject).starts_with("Subject: =?UTF-8?B?"), "{subject}");
+        assert!(
+            unfold(&subject).starts_with("Subject: =?UTF-8?B?"),
+            "{subject}"
+        );
         assert!(subject.lines().all(|l| l.len() <= 78), "{subject}");
         assert!(subject.is_ascii(), "{subject}");
         assert!(
-            r.text.contains("Content-Transfer-Encoding: quoted-printable"),
+            r.text
+                .contains("Content-Transfer-Encoding: quoted-printable"),
             "{}",
             r.text
         );
@@ -27596,7 +28400,10 @@ mod ssh_helpers_tests {
         let r = send_mail_render(&mail_msg(&[(
             "headers",
             map_of(&[
-                ("Date", Value::String("Thu, 01 Jan 2026 00:00:00 +0000".into())),
+                (
+                    "Date",
+                    Value::String("Thu, 01 Jan 2026 00:00:00 +0000".into()),
+                ),
                 ("Message-ID", Value::String("<fixed@example.com>".into())),
                 ("X-Report", Value::String("weekly".into())),
             ]),
@@ -27637,9 +28444,15 @@ mod ssh_helpers_tests {
         let cases: Vec<(Value, &str)> = vec![
             (mail_msg(&[("to", Value::Nil)]), "msg.to is required"),
             (mail_msg(&[("from", Value::Nil)]), "msg.from is required"),
-            (mail_msg(&[("to", Value::list(vec![]))]), "at least one recipient"),
             (
-                mail_msg(&[("to", Value::String("a@example.com\nBcc: x@example.com".into()))]),
+                mail_msg(&[("to", Value::list(vec![]))]),
+                "at least one recipient",
+            ),
+            (
+                mail_msg(&[(
+                    "to",
+                    Value::String("a@example.com\nBcc: x@example.com".into()),
+                )]),
                 "header injection",
             ),
             (
@@ -27654,9 +28467,15 @@ mod ssh_helpers_tests {
                 mail_msg(&[("from", Value::String("-x@example.com".into()))]),
                 "may not begin with '-'",
             ),
-            (mail_msg(&[("cc", Value::String("x@example.com".into()))]), "unknown msg key"),
             (
-                mail_msg(&[("headers", map_of(&[("Bad Name", Value::String("v".into()))]))]),
+                mail_msg(&[("cc", Value::String("x@example.com".into()))]),
+                "unknown msg key",
+            ),
+            (
+                mail_msg(&[(
+                    "headers",
+                    map_of(&[("Bad Name", Value::String("v".into()))]),
+                )]),
                 "invalid header name",
             ),
             (
@@ -27704,7 +28523,10 @@ mod ssh_helpers_tests {
 
     #[test]
     fn send_mail_folds_long_headers_within_the_line_limits() {
-        let subject: String = (0..250).map(|i| format!("w{i:03}")).collect::<Vec<_>>().join(" ");
+        let subject: String = (0..250)
+            .map(|i| format!("w{i:03}"))
+            .collect::<Vec<_>>()
+            .join(" ");
         assert!(subject.len() > 1200);
         let to: Vec<Value> = (0..40)
             .map(|i| Value::String(format!("Recipient {i} <r{i}@example.com>")))
@@ -27719,12 +28541,18 @@ mod ssh_helpers_tests {
             assert!(line.len() <= 78, "line over 78: {line:?}");
         }
         let unfolded = unfold(head);
-        assert!(unfolded.contains(&format!("Subject: {subject}\n")), "{head}");
+        assert!(
+            unfolded.contains(&format!("Subject: {subject}\n")),
+            "{head}"
+        );
         assert!(
             unfolded.contains("To: Recipient 0 <r0@example.com>, Recipient 1 <r1@example.com>, "),
             "{head}"
         );
-        assert!(unfolded.contains("Recipient 39 <r39@example.com>\n"), "{head}");
+        assert!(
+            unfolded.contains("Recipient 39 <r39@example.com>\n"),
+            "{head}"
+        );
 
         // An unbreakable run past 998 cannot be folded: refused, not sent.
         let e = send_mail_render(&mail_msg(&[(
@@ -27752,18 +28580,29 @@ mod ssh_helpers_tests {
 
     #[test]
     fn send_mail_sends_a_long_line_body_as_quoted_printable_that_round_trips() {
-        let long = format!("{{\"data\": \"{}\", \"end\": \"a = b \"}}", "x".repeat(1500));
+        let long = format!(
+            "{{\"data\": \"{}\", \"end\": \"a = b \"}}",
+            "x".repeat(1500)
+        );
         let body = format!("head\n{long}\ntrailing space \n");
-        let r = send_mail_render(&mail_msg(&[("body", Value::String(body.clone()))])).expect("render");
+        let r =
+            send_mail_render(&mail_msg(&[("body", Value::String(body.clone()))])).expect("render");
         let (head, encoded) = r.text.split_once("\n\n").unwrap();
-        assert!(head.contains("Content-Transfer-Encoding: quoted-printable"), "{head}");
+        assert!(
+            head.contains("Content-Transfer-Encoding: quoted-printable"),
+            "{head}"
+        );
         for line in encoded.lines() {
             assert!(line.len() <= 76, "QP line over 76: {line:?}");
         }
         assert_eq!(String::from_utf8(qp_decode(encoded)).unwrap(), body);
         // A short ASCII body stays 7bit and untouched.
         let r = send_mail_render(&mail_msg(&[])).expect("render");
-        assert!(r.text.contains("Content-Transfer-Encoding: 7bit"), "{}", r.text);
+        assert!(
+            r.text.contains("Content-Transfer-Encoding: 7bit"),
+            "{}",
+            r.text
+        );
     }
 
     #[test]
@@ -27779,7 +28618,10 @@ mod ssh_helpers_tests {
             assert_eq!(send_mail_envelope(from).expect(from), want, "{from}");
         }
         for (from, why) in [
-            ("Alice <a@example.com> (billing <b@example.net>)", "follow the closing"),
+            (
+                "Alice <a@example.com> (billing <b@example.net>)",
+                "follow the closing",
+            ),
             ("a@example.com (billing)", "comment"),
             ("A <a@example.com>, B <b@example.com>", "second mailbox"),
             ("a@example.com, b@example.com", "second mailbox"),
@@ -27789,16 +28631,26 @@ mod ssh_helpers_tests {
             ("Name <>", "null sender"),
             ("-f@example.com", "may not begin"),
         ] {
-            let e = send_mail_envelope(from).err().unwrap_or_else(|| panic!("{from} accepted"));
+            let e = send_mail_envelope(from)
+                .err()
+                .unwrap_or_else(|| panic!("{from} accepted"));
             assert!(e.to_string().contains(why), "{from}: {e}");
-            assert_eq!(e.info().map(|i| i.code.as_str()), Some("OPTION_INVALID"), "{from}");
+            assert_eq!(
+                e.info().map(|i| i.code.as_str()),
+                Some("OPTION_INVALID"),
+                "{from}"
+            );
         }
     }
 
     #[test]
     fn send_mail_host_engages_the_network_capability_only_from_opts() {
         let msg = mail_msg(&[]);
-        assert!(!conditional_cap_engaged("send_mail", std::slice::from_ref(&msg), "host"));
+        assert!(!conditional_cap_engaged(
+            "send_mail",
+            std::slice::from_ref(&msg),
+            "host"
+        ));
         assert!(!conditional_cap_engaged(
             "send_mail",
             &[msg.clone(), map_of(&[("timeout", Value::Number(5.0))])],
@@ -27818,7 +28670,8 @@ mod ssh_helpers_tests {
     #[test]
     fn ssh_mix_many_validates_every_host_before_spawning() {
         let src = Value::String("print(1)".into());
-        let hosts = |hs: &[&str]| Value::list(hs.iter().map(|h| Value::String((*h).into())).collect());
+        let hosts =
+            |hs: &[&str]| Value::list(hs.iter().map(|h| Value::String((*h).into())).collect());
         // Shape errors.
         let e = ssh_mix_many_err(vec![Value::String("alpha".into()), src.clone()]);
         assert!(e.to_string().contains("hosts must be a list"), "{e}");
@@ -27849,16 +28702,28 @@ mod ssh_helpers_tests {
             src.clone(),
             map_of(&[("bindings", Value::list(vec![]))]),
         ]);
-        assert_eq!(e.info().map(|i| i.code.as_str()), Some("OPTION_INVALID"), "{e}");
+        assert_eq!(
+            e.info().map(|i| i.code.as_str()),
+            Some("OPTION_INVALID"),
+            "{e}"
+        );
     }
 
     #[test]
     fn ssh_mix_many_refuses_bad_max_and_a_disabled_deadline() {
         let hosts = Value::list(vec![Value::String("alpha".into())]);
         let src = Value::String("print(1)".into());
-        for bad in [Value::Number(0.0), Value::Number(1.5), Value::String("4".into())] {
+        for bad in [
+            Value::Number(0.0),
+            Value::Number(1.5),
+            Value::String("4".into()),
+        ] {
             let e = ssh_mix_many_err(vec![hosts.clone(), src.clone(), map_of(&[("max", bad)])]);
-            assert_eq!(e.info().map(|i| i.code.as_str()), Some("OPTION_INVALID"), "{e}");
+            assert_eq!(
+                e.info().map(|i| i.code.as_str()),
+                Some("OPTION_INVALID"),
+                "{e}"
+            );
         }
         let e = ssh_mix_many_err(vec![
             hosts.clone(),
@@ -27895,7 +28760,11 @@ mod ssh_helpers_tests {
             vec![Value::list(vec![])],
         ] {
             let e = ssh_mix_many_err(args);
-            assert_eq!(e.info().map(|i| i.code.as_str()), Some("TYPE_MISMATCH"), "{e}");
+            assert_eq!(
+                e.info().map(|i| i.code.as_str()),
+                Some("TYPE_MISMATCH"),
+                "{e}"
+            );
         }
     }
 
@@ -27917,7 +28786,10 @@ mod ssh_helpers_tests {
         );
         let bad = ssh_mix_many_slot_value(
             "beta",
-            ManySlot::Failed("PROCESS_SPAWN".into(), "ssh_run: failed to spawn `ssh`: EMFILE".into()),
+            ManySlot::Failed(
+                "PROCESS_SPAWN".into(),
+                "ssh_run: failed to spawn `ssh`: EMFILE".into(),
+            ),
             Some("data"),
         );
         let idle = ssh_mix_many_slot_value("gamma", ManySlot::NotStarted, Some("data"));
@@ -27933,7 +28805,10 @@ mod ssh_helpers_tests {
         );
         assert!(matches!(b.get("host"), Some(Value::String(h)) if h == "beta"));
         assert!(!b.contains_key("value"), "{bad:?}");
-        assert!(matches!(i.get("interrupted"), Some(Value::Bool(true))), "{idle:?}");
+        assert!(
+            matches!(i.get("interrupted"), Some(Value::Bool(true))),
+            "{idle:?}"
+        );
         assert!(matches!(i.get("ok"), Some(Value::Bool(false))), "{idle:?}");
     }
 
@@ -28708,7 +29583,9 @@ mod ssh_helpers_tests {
         m.insert("ok".to_string(), Value::Bool(true));
         m.insert("stdout".to_string(), Value::String("count: 12".into()));
         m.insert("stdout_truncated".to_string(), Value::Bool(true));
-        let err = super::decode_ssh_stdout(&mut m, "data").unwrap_err().to_string();
+        let err = super::decode_ssh_stdout(&mut m, "data")
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("refusing to decode"), "{err}");
         assert!(!m.contains_key("value"), "no value on refusal");
 
@@ -28996,7 +29873,10 @@ mod ssh_helpers_tests {
         let gone = loop {
             let state = std::fs::read_to_string(format!("/proc/{descendant}/stat"))
                 .ok()
-                .and_then(|s| s.rsplit_once(')').map(|(_, r)| r.trim_start().starts_with('Z')));
+                .and_then(|s| {
+                    s.rsplit_once(')')
+                        .map(|(_, r)| r.trim_start().starts_with('Z'))
+                });
             if state.unwrap_or(true) {
                 break true;
             }
@@ -29011,9 +29891,11 @@ mod ssh_helpers_tests {
                 libc::kill(descendant, libc::SIGKILL);
             }
         }
-        assert!(gone, "Ctrl-C left the TERM-ignoring descendant {descendant} running");
+        assert!(
+            gone,
+            "Ctrl-C left the TERM-ignoring descendant {descendant} running"
+        );
     }
-
 
     #[test]
     fn run_with_timeout_signal_killed_exit_code() {
@@ -29538,11 +30420,7 @@ mod chmod_tests {
 
     fn tmpfile(suffix: &str) -> std::path::PathBuf {
         let mut p = std::env::temp_dir();
-        p.push(format!(
-            "mix-shell-chmod-{}-{}",
-            std::process::id(),
-            suffix
-        ));
+        p.push(format!("mix-shell-chmod-{}-{}", std::process::id(), suffix));
         std::fs::write(&p, b"x").unwrap();
         p
     }
@@ -29679,8 +30557,16 @@ mod proc_scan_tests {
             parse_proc_stat_state_pgrp(b"7 (a b) \xff) Z 1 99 99 0"),
             Some((b'Z', 99))
         );
-        assert_eq!(parse_proc_stat_state_pgrp(b"7 (x) R 1"), None, "no pgrp field");
-        assert_eq!(parse_proc_stat_state_pgrp(b"7 x R 1 2 3"), None, "no parenthesis");
+        assert_eq!(
+            parse_proc_stat_state_pgrp(b"7 (x) R 1"),
+            None,
+            "no pgrp field"
+        );
+        assert_eq!(
+            parse_proc_stat_state_pgrp(b"7 x R 1 2 3"),
+            None,
+            "no parenthesis"
+        );
         assert_eq!(parse_proc_stat_state_pgrp(b"7 (x) R 1 notanumber"), None);
     }
 
@@ -29750,8 +30636,16 @@ mod owned_spawns_tests {
             .unwrap()
             .unwrap();
         assert!(matches!(alive, Value::Bool(false)), "{alive:?}");
-        assert_eq!(state(pid), None, "the registry reaps its own finished child");
-        assert_eq!(owned_spawns::sweep(), 0, "a retired pid must never be signalled");
+        assert_eq!(
+            state(pid),
+            None,
+            "the registry reaps its own finished child"
+        );
+        assert_eq!(
+            owned_spawns::sweep(),
+            0,
+            "a retired pid must never be signalled"
+        );
     }
 
     #[test]
@@ -29779,8 +30673,15 @@ mod owned_spawns_tests {
         let alive = builtin_process_alive(vec![Value::Number(pid as f64)])
             .unwrap()
             .unwrap();
-        assert!(matches!(alive, Value::Bool(false)), "the leader itself is dead: {alive:?}");
-        assert_eq!(state(pid), Some('Z'), "kept unreaped: it pins the live group");
+        assert!(
+            matches!(alive, Value::Bool(false)),
+            "the leader itself is dead: {alive:?}"
+        );
+        assert_eq!(
+            state(pid),
+            Some('Z'),
+            "kept unreaped: it pins the live group"
+        );
         assert_eq!(owned_spawns::sweep(), 1);
         let swept = gone(descendant, Duration::from_secs(5));
         if !swept {
@@ -29821,7 +30722,10 @@ mod owned_spawns_tests {
             state(old_pid).is_some(),
             "the old generation's child survives a failed candidate"
         );
-        assert!(gone(cand_pid, Duration::from_secs(5)), "the candidate's child is retired");
+        assert!(
+            gone(cand_pid, Duration::from_secs(5)),
+            "the candidate's child is retired"
+        );
         assert_eq!(owned_spawns::sweep_owned_by(8), 0, "the entry was consumed");
 
         // The committed-swap retire: everything except the replacement's
@@ -29829,7 +30733,10 @@ mod owned_spawns_tests {
         let fresh_pid = spawn();
         owned_spawns::register_owned(fresh_pid, Some(9));
         assert_eq!(owned_spawns::sweep_owned_except(9), 1);
-        assert!(gone(old_pid, Duration::from_secs(5)), "the old generation retires at commit");
+        assert!(
+            gone(old_pid, Duration::from_secs(5)),
+            "the old generation retires at commit"
+        );
         assert!(
             state(fresh_pid).is_some(),
             "the replacement's own start survives the commit sweep"
@@ -29891,7 +30798,11 @@ mod write_atomic_tests {
         let d = tmpdir("short");
         let target = d.join("config");
         std::fs::write(&target, "OLD-COMPLETE").unwrap();
-        for durability in [WriteDurability::None, WriteDurability::File, WriteDurability::Full] {
+        for durability in [
+            WriteDurability::None,
+            WriteDurability::File,
+            WriteDurability::Full,
+        ] {
             let err = write_atomic_impl(
                 &s(&target),
                 b"NEW-CONTENT-THAT-IS-LONGER",
@@ -29943,7 +30854,10 @@ mod write_atomic_tests {
         .expect("the rename lands in the pinned directory");
         let moved = d.join("conf.moved").join("app.conf");
         assert_eq!(std::fs::read_to_string(&moved).unwrap(), "NEW");
-        assert!(!target.exists(), "nothing may be written into the impostor directory");
+        assert!(
+            !target.exists(),
+            "nothing may be written into the impostor directory"
+        );
         assert_eq!(leftovers(&d.join("conf.moved")), Vec::<String>::new());
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -30011,7 +30925,10 @@ mod write_atomic_tests {
             AtomicFault::AfterPartialWrite,
         )
         .expect_err("injected");
-        assert!(!target.exists(), "a failed create must not leave a partial file");
+        assert!(
+            !target.exists(),
+            "a failed create must not leave a partial file"
+        );
         assert_eq!(leftovers(&d), Vec::<String>::new());
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -30024,16 +30941,25 @@ mod write_atomic_tests {
         std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o640)).unwrap();
         for durability in ["none", "file", "full"] {
             let mut o = indexmap::IndexMap::new();
-            o.insert("durability".to_string(), Value::String(durability.to_string()));
+            o.insert(
+                "durability".to_string(),
+                Value::String(durability.to_string()),
+            );
             builtin_write_atomic(vec![
                 Value::String(s(&target)),
                 Value::String(format!("NEW-{durability}")),
                 Value::map(o),
             ])
             .expect("write_atomic succeeds");
-            assert_eq!(std::fs::read_to_string(&target).unwrap(), format!("NEW-{durability}"));
+            assert_eq!(
+                std::fs::read_to_string(&target).unwrap(),
+                format!("NEW-{durability}")
+            );
             let mode = std::fs::metadata(&target).unwrap().permissions().mode() & 0o7777;
-            assert_eq!(mode, 0o640, "the existing mode must carry over ({durability})");
+            assert_eq!(
+                mode, 0o640,
+                "the existing mode must carry over ({durability})"
+            );
         }
         assert_eq!(leftovers(&d), Vec::<String>::new());
         let _ = std::fs::remove_dir_all(&d);
@@ -30067,7 +30993,10 @@ mod write_atomic_tests {
         builtin_write_atomic(vec![Value::String(s(&link)), Value::String("NEW".into())])
             .expect("write through a symlink");
         assert!(
-            std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink(),
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
             "the link itself must survive"
         );
         assert_eq!(std::fs::read_to_string(&real).unwrap(), "NEW");
@@ -30118,16 +31047,26 @@ mod write_atomic_tests {
             let _ = std::fs::remove_dir_all(&d);
             return;
         }
-        let before = super::read_access_acl(&target, false).unwrap().expect("ACL was set");
+        let before = super::read_access_acl(&target, false)
+            .unwrap()
+            .expect("ACL was set");
         let mode_before = std::fs::metadata(&target).unwrap().permissions().mode() & 0o7777;
         builtin_write_atomic(vec![Value::String(s(&target)), Value::String("NEW".into())])
             .expect("write_atomic over an ACL'd file");
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "NEW");
         let after = super::read_access_acl(&target, false).unwrap();
-        assert_eq!(after.as_deref(), Some(before.as_slice()), "the access ACL must carry over");
+        assert_eq!(
+            after.as_deref(),
+            Some(before.as_slice()),
+            "the access ACL must carry over"
+        );
         let mode_after = std::fs::metadata(&target).unwrap().permissions().mode() & 0o7777;
         assert_eq!(mode_after, mode_before);
-        assert_eq!(mode_after & 0o070, 0o040, "group bits show the r-- mask, not wider");
+        assert_eq!(
+            mode_after & 0o070,
+            0o040,
+            "group bits show the r-- mask, not wider"
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -30152,8 +31091,11 @@ mod write_atomic_tests {
         let mode = std::fs::metadata(&target).unwrap().permissions().mode() & 0o7777;
         assert_eq!(mode, 0o4755);
         // A later replace keeps it too (carried from the existing target).
-        builtin_write_atomic(vec![Value::String(s(&target)), Value::String("#!/bin/sh\n# v2\n".into())])
-            .expect("second write");
+        builtin_write_atomic(vec![
+            Value::String(s(&target)),
+            Value::String("#!/bin/sh\n# v2\n".into()),
+        ])
+        .expect("second write");
         let mode = std::fs::metadata(&target).unwrap().permissions().mode() & 0o7777;
         assert_eq!(mode, 0o4755);
         let _ = std::fs::remove_dir_all(&d);
@@ -30204,7 +31146,11 @@ mod write_atomic_tests {
         builtin_write_atomic(vec![Value::String(s(&target)), Value::String("NEW".into())])
             .expect("root keeps the owner");
         let meta = std::fs::metadata(&target).unwrap();
-        assert_eq!((meta.uid(), meta.gid()), (65534, 65534), "owner must carry over");
+        assert_eq!(
+            (meta.uid(), meta.gid()),
+            (65534, 65534),
+            "owner must carry over"
+        );
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "NEW");
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -30220,7 +31166,12 @@ mod write_atomic_tests {
         let e = builtin_write_atomic(vec![Value::String(s(&dangling)), Value::String("X".into())])
             .unwrap_err();
         assert!(format!("{e}").contains("resolving symlink"), "{e}");
-        assert!(std::fs::symlink_metadata(&dangling).unwrap().file_type().is_symlink());
+        assert!(
+            std::fs::symlink_metadata(&dangling)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
         assert!(!d.join("absent").exists());
 
         let sub = d.join("sub");
@@ -30230,7 +31181,12 @@ mod write_atomic_tests {
         let e = builtin_write_atomic(vec![Value::String(s(&to_dir)), Value::String("X".into())])
             .unwrap_err();
         assert!(format!("{e}").contains("not a regular file"), "{e}");
-        assert!(std::fs::symlink_metadata(&to_dir).unwrap().file_type().is_symlink());
+        assert!(
+            std::fs::symlink_metadata(&to_dir)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
         assert_eq!(leftovers(&d), Vec::<String>::new());
 
         let e = builtin_write_atomic(vec![
@@ -30239,7 +31195,10 @@ mod write_atomic_tests {
         ])
         .unwrap_err();
         assert!(format!("{e}").contains("names a directory"), "{e}");
-        assert!(!d.join("file").exists(), "a trailing slash must not create a file");
+        assert!(
+            !d.join("file").exists(),
+            "a trailing slash must not create a file"
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -30273,8 +31232,8 @@ mod write_atomic_tests {
         .unwrap_err();
         assert_eq!(code(e), "OPTION_INVALID");
 
-        let e = builtin_write_atomic(vec![Value::String(s(&target)), Value::Number(1.0)])
-            .unwrap_err();
+        let e =
+            builtin_write_atomic(vec![Value::String(s(&target)), Value::Number(1.0)]).unwrap_err();
         assert_eq!(code(e), "TYPE_MISMATCH");
 
         let e = builtin_write_atomic(vec![Value::String(s(&d)), Value::String("X".into())])
@@ -31564,11 +32523,7 @@ mod bytes_tests {
 
     fn tmpfile(suffix: &str) -> std::path::PathBuf {
         let mut p = std::env::temp_dir();
-        p.push(format!(
-            "mix-shell-bytes-{}-{}",
-            std::process::id(),
-            suffix
-        ));
+        p.push(format!("mix-shell-bytes-{}-{}", std::process::id(), suffix));
         p
     }
 
@@ -31619,7 +32574,9 @@ mod bytes_tests {
     fn slice_on_bytes_clamps_and_reverses_empty() {
         let v = b(&[1, 2, 3, 4, 5]);
         assert_eq!(
-            as_bytes(builtin_slice(vec![v.clone(), Value::Number(1.0), Value::Number(3.0)]).unwrap()),
+            as_bytes(
+                builtin_slice(vec![v.clone(), Value::Number(1.0), Value::Number(3.0)]).unwrap()
+            ),
             vec![2, 3]
         );
         // Omitted end runs to the end; negative indices count back.
@@ -31630,7 +32587,8 @@ mod bytes_tests {
         // Out of range clamps rather than raising...
         assert_eq!(
             as_bytes(
-                builtin_slice(vec![v.clone(), Value::Number(-100.0), Value::Number(100.0)]).unwrap()
+                builtin_slice(vec![v.clone(), Value::Number(-100.0), Value::Number(100.0)])
+                    .unwrap()
             ),
             vec![1, 2, 3, 4, 5]
         );
@@ -31666,8 +32624,12 @@ mod bytes_tests {
             Some(Value::Number(3.0))
         );
         assert_eq!(
-            builtin_bytes_find(vec![v.clone(), Value::String("l".into()), Value::Number(4.0)])
-                .unwrap(),
+            builtin_bytes_find(vec![
+                v.clone(),
+                Value::String("l".into()),
+                Value::Number(4.0)
+            ])
+            .unwrap(),
             Some(Value::Number(10.0))
         );
         // A single byte number is a legal needle (0x2C = ',').
@@ -31681,9 +32643,11 @@ mod bytes_tests {
     fn bytes_find_rejects_string_subject() {
         // The whole point of the strict subject: a string would otherwise
         // be answered about as text, or worse, its `<bytes:N>` placeholder.
-        let err =
-            builtin_bytes_find(vec![Value::String("hello".into()), Value::String("l".into())])
-                .unwrap_err();
+        let err = builtin_bytes_find(vec![
+            Value::String("hello".into()),
+            Value::String("l".into()),
+        ])
+        .unwrap_err();
         assert!(
             format!("{err}").contains("expected bytes or buffer"),
             "{err}"
@@ -31705,7 +32669,10 @@ mod bytes_tests {
             }
         };
         // Same shapes `split()` produces for the same inputs.
-        assert_eq!(pieces("a,b,,c", ","), vec![b"a".to_vec(), b"b".to_vec(), vec![], b"c".to_vec()]);
+        assert_eq!(
+            pieces("a,b,,c", ","),
+            vec![b"a".to_vec(), b"b".to_vec(), vec![], b"c".to_vec()]
+        );
         assert_eq!(pieces(",a,", ","), vec![vec![], b"a".to_vec(), vec![]]);
         assert_eq!(pieces("abc", "x"), vec![b"abc".to_vec()]);
         assert_eq!(pieces("", ","), vec![Vec::<u8>::new()]);
@@ -31811,7 +32778,10 @@ mod bytes_tests {
         }
         // A wrong-typed subject raises like the rest of the family.
         let err = builtin_bytes_ends_with(vec![Value::String("x".into()), b(b"x")]).unwrap_err();
-        assert!(format!("{err}").contains("expected bytes or buffer"), "{err}");
+        assert!(
+            format!("{err}").contains("expected bytes or buffer"),
+            "{err}"
+        );
     }
 
     // --- generic ops on bytes/buffer (v0.70.0) ---
@@ -31856,7 +32826,11 @@ mod bytes_tests {
     /// would break this test rather than pass silently.
     #[test]
     fn take_drop_pathological_n_parity_bytes_vs_list() {
-        let l = Value::list(vec![Value::Number(1.0), Value::Number(2.0), Value::Number(3.0)]);
+        let l = Value::list(vec![
+            Value::Number(1.0),
+            Value::Number(2.0),
+            Value::Number(3.0),
+        ]);
         let bs = b(b"abc");
         fn list_len(v: &Option<Value>) -> usize {
             match v {
@@ -31998,27 +32972,15 @@ mod bytes_tests {
         );
         // * width and .* precision; a negative * width left-justifies.
         assert_eq!(
-            sprintf_format(
-                "%*lld|",
-                &[Value::Number(6.0), Value::Number(42.0)]
-            )
-            .unwrap(),
+            sprintf_format("%*lld|", &[Value::Number(6.0), Value::Number(42.0)]).unwrap(),
             "    42|"
         );
         assert_eq!(
-            sprintf_format(
-                "%*lld|",
-                &[Value::Number(-6.0), Value::Number(42.0)]
-            )
-            .unwrap(),
+            sprintf_format("%*lld|", &[Value::Number(-6.0), Value::Number(42.0)]).unwrap(),
             "42    |"
         );
         assert_eq!(
-            sprintf_format(
-                "%.*f",
-                &[Value::Number(2.0), Value::Number(2.5)]
-            )
-            .unwrap(),
+            sprintf_format("%.*f", &[Value::Number(2.0), Value::Number(2.5)]).unwrap(),
             "2.50"
         );
         // %c takes a Unicode scalar; %% is literal.
@@ -32046,14 +33008,18 @@ mod bytes_tests {
         let v = builtin_yaml_parse(vec![Value::String(src.into())])
             .unwrap()
             .unwrap();
-        let Value::Map(top) = &v else { panic!("expected map, got {v:?}") };
+        let Value::Map(top) = &v else {
+            panic!("expected map, got {v:?}")
+        };
         let Some(Value::List(groups)) = top.get("groups") else {
             panic!("groups missing")
         };
         let Value::Map(g) = &groups[0] else { panic!() };
         assert_eq!(g.get("name"), Some(&Value::String("memory".into())));
         assert_eq!(g.get("interval"), Some(&Value::String("5m".into())));
-        let Some(Value::List(rules)) = g.get("rules") else { panic!() };
+        let Some(Value::List(rules)) = g.get("rules") else {
+            panic!()
+        };
         let Value::Map(r) = &rules[0] else { panic!() };
         assert_eq!(r.get("enabled"), Some(&Value::Bool(true)));
         assert_eq!(r.get("threshold"), Some(&Value::Number(0.85)));
@@ -32084,7 +33050,9 @@ mod bytes_tests {
         // round trip is proven by re-encoding: same value ⇒ same YAML.
         let reencoded = builtin_yaml_encode(vec![back.clone()]).unwrap().unwrap();
         assert_eq!(encoded, reencoded);
-        let (Value::Map(a), Value::Map(b)) = (&orig, &back) else { panic!() };
+        let (Value::Map(a), Value::Map(b)) = (&orig, &back) else {
+            panic!()
+        };
         assert_eq!(a.len(), b.len());
         assert_eq!(b.get("name"), Some(&Value::String("x".into())));
         assert_eq!(b.get("count"), Some(&Value::Number(3.0)));
@@ -32099,7 +33067,9 @@ mod bytes_tests {
         let v = builtin_yaml_parse(vec![Value::String(multi.into()), Value::map(opts)])
             .unwrap()
             .unwrap();
-        let Value::List(docs) = &v else { panic!("{v:?}") };
+        let Value::List(docs) = &v else {
+            panic!("{v:?}")
+        };
         assert_eq!(docs.len(), 2);
         // Empty input is nil; bytes value in encode raises.
         assert_eq!(
@@ -32114,8 +33084,7 @@ mod bytes_tests {
         assert!(format!("{err}").contains("non-finite"), "{err}");
         // Cross-type key collision (`1:` vs `"1":`) raises rather than
         // silently last-wins after stringification.
-        let err =
-            builtin_yaml_parse(vec![Value::String("1: a\n\"1\": b\n".into())]).unwrap_err();
+        let err = builtin_yaml_parse(vec![Value::String("1: a\n\"1\": b\n".into())]).unwrap_err();
         assert!(format!("{err}").contains("collide"), "{err}");
     }
 
@@ -32174,25 +33143,25 @@ mod bytes_tests {
     fn password_hash_and_verify_round_trip() {
         // Cost 4 (the bcrypt minimum) keeps the test fast; the default 12
         // is a release-binary concern, not a unit-test one.
-        let hashed = builtin_password_hash(vec![
-            Value::String("s3cret".into()),
-            Value::Number(4.0),
-        ])
-        .unwrap()
-        .unwrap();
+        let hashed =
+            builtin_password_hash(vec![Value::String("s3cret".into()), Value::Number(4.0)])
+                .unwrap()
+                .unwrap();
         let h = match &hashed {
             Value::String(h) => h.clone(),
             other => panic!("{other:?}"),
         };
         assert!(h.starts_with("$2"), "bcrypt marker: {h}");
         assert_eq!(
-            builtin_password_verify(vec![Value::String("s3cret".into()), Value::String(h.clone())])
-                .unwrap(),
+            builtin_password_verify(vec![
+                Value::String("s3cret".into()),
+                Value::String(h.clone())
+            ])
+            .unwrap(),
             Some(Value::Bool(true))
         );
         assert_eq!(
-            builtin_password_verify(vec![Value::String("wrong".into()), Value::String(h)])
-                .unwrap(),
+            builtin_password_verify(vec![Value::String("wrong".into()), Value::String(h)]).unwrap(),
             Some(Value::Bool(false))
         );
         // A malformed hash raises — never "wrong password".
@@ -32203,8 +33172,8 @@ mod bytes_tests {
         .unwrap_err();
         assert!(format!("{err}").contains("invalid bcrypt hash"), "{err}");
         // Cost bounds are named; >72-byte input is refused, not truncated.
-        let err = builtin_password_hash(vec![Value::String("x".into()), Value::Number(3.0)])
-            .unwrap_err();
+        let err =
+            builtin_password_hash(vec![Value::String("x".into()), Value::Number(3.0)]).unwrap_err();
         assert!(format!("{err}").contains("4..=31"), "{err}");
         let err = builtin_password_hash(vec![Value::String("x".repeat(73))]).unwrap_err();
         assert!(format!("{err}").contains("72 bytes"), "{err}");
@@ -32220,9 +33189,15 @@ mod bytes_tests {
         let path = dir.join("lock");
         let p = || Value::String(path.to_string_lossy().to_string());
 
-        assert_eq!(builtin_fcntl_lock(vec![p()]).unwrap(), Some(Value::Bool(true)));
+        assert_eq!(
+            builtin_fcntl_lock(vec![p()]).unwrap(),
+            Some(Value::Bool(true))
+        );
         // Idempotent within the process.
-        assert_eq!(builtin_fcntl_lock(vec![p()]).unwrap(), Some(Value::Bool(true)));
+        assert_eq!(
+            builtin_fcntl_lock(vec![p()]).unwrap(),
+            Some(Value::Bool(true))
+        );
 
         // The lock must be visible in the fcntl record-lock namespace: a
         // traditional F_GETLK probe from a separate open sees a write lock.
@@ -32259,7 +33234,11 @@ mod bytes_tests {
             unsafe { libc::fcntl(probe.as_raw_fd(), libc::F_GETLK, &mut fl2) },
             0
         );
-        assert_ne!(fl2.l_type as i32, libc::F_UNLCK, "lock lost after open/close");
+        assert_ne!(
+            fl2.l_type as i32,
+            libc::F_UNLCK,
+            "lock lost after open/close"
+        );
 
         assert_eq!(
             builtin_fcntl_unlock(vec![p()]).unwrap(),
@@ -32319,7 +33298,9 @@ mod bytes_tests {
         stop.store(true, std::sync::atomic::Ordering::Relaxed);
         let sent = sender.join().unwrap().unwrap();
         assert_eq!(sent, "ping-π".len());
-        let Value::Map(m) = &got else { panic!("{got:?}") };
+        let Value::Map(m) = &got else {
+            panic!("{got:?}")
+        };
         assert_eq!(m.get("text"), Some(&Value::String("ping-π".into())));
         assert_eq!(m.get("from_host"), Some(&Value::String("127.0.0.1".into())));
         match m.get("bytes") {
@@ -32370,7 +33351,9 @@ mod bytes_tests {
         let h = builtin_ws_connect(vec![Value::String(format!("ws://127.0.0.1:{port}/echo"))])
             .unwrap()
             .unwrap();
-        let Value::Number(id) = h else { panic!("{h:?}") };
+        let Value::Number(id) = h else {
+            panic!("{h:?}")
+        };
 
         // Text frame echoes as a string.
         builtin_ws_send(vec![Value::Number(id), Value::String("ping-π".into())]).unwrap();
@@ -32380,7 +33363,11 @@ mod bytes_tests {
         assert_eq!(got, Value::String("ping-π".into()));
 
         // Binary frame echoes as bytes.
-        builtin_ws_send(vec![Value::Number(id), Value::bytes(vec![0, 159, 146, 150])]).unwrap();
+        builtin_ws_send(vec![
+            Value::Number(id),
+            Value::bytes(vec![0, 159, 146, 150]),
+        ])
+        .unwrap();
         let got = builtin_ws_recv(vec![Value::Number(id), Value::Number(5.0)])
             .unwrap()
             .unwrap();
@@ -32396,8 +33383,14 @@ mod bytes_tests {
         );
 
         // Close: true once, false after; further sends raise unknown-handle.
-        assert_eq!(builtin_ws_close(vec![Value::Number(id)]).unwrap(), Some(Value::Bool(true)));
-        assert_eq!(builtin_ws_close(vec![Value::Number(id)]).unwrap(), Some(Value::Bool(false)));
+        assert_eq!(
+            builtin_ws_close(vec![Value::Number(id)]).unwrap(),
+            Some(Value::Bool(true))
+        );
+        assert_eq!(
+            builtin_ws_close(vec![Value::Number(id)]).unwrap(),
+            Some(Value::Bool(false))
+        );
         let err = builtin_ws_send(vec![Value::Number(id), Value::String("x".into())]).unwrap_err();
         assert!(format!("{err}").contains("unknown ws handle"), "{err}");
 
@@ -32421,7 +33414,9 @@ mod bytes_tests {
         let h = builtin_ws_connect(vec![Value::String(format!("ws://127.0.0.1:{port}/"))])
             .unwrap()
             .unwrap();
-        let Value::Number(id) = h else { panic!("{h:?}") };
+        let Value::Number(id) = h else {
+            panic!("{h:?}")
+        };
         let err = builtin_ws_recv(vec![Value::Number(id), Value::Number(5.0)]).unwrap_err();
         assert!(format!("{err}").contains("closed"), "{err}");
         // Retired: a second recv is unknown-handle, not another close error.
@@ -32488,14 +33483,20 @@ mod bytes_tests {
         assert!(r.ends_with("hi there\n"), "{r}");
         // 2. Nested file.
         let r = http_raw(port, "GET /sub/page.html HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(r.starts_with("HTTP/1.1 200") && r.contains("text/html"), "{r}");
+        assert!(
+            r.starts_with("HTTP/1.1 200") && r.contains("text/html"),
+            "{r}"
+        );
         // 3. TRAVERSAL, plain: verbatim ../ on the wire never reaches the
         // secret (404: the canonicalised path resolves outside → prefix
         // check, but the join may also simply not exist — either way the
         // body must not leak).
         let r = http_raw(port, "GET /../mix-http-secret HTTP/1.1\r\nHost: x\r\n\r\n");
         assert!(!r.contains("SECRET"), "{r}");
-        assert!(r.starts_with("HTTP/1.1 403") || r.starts_with("HTTP/1.1 404"), "{r}");
+        assert!(
+            r.starts_with("HTTP/1.1 403") || r.starts_with("HTTP/1.1 404"),
+            "{r}"
+        );
         // 4. TRAVERSAL, percent-encoded: %2e%2e%2f decodes to ../ BEFORE
         // the check — the gate must fail this too, provably.
         let r = http_raw(
@@ -32505,11 +33506,20 @@ mod bytes_tests {
         assert!(!r.contains("SECRET"), "{r}");
         // 5. Symlink escape: exists, resolves outside root → 403 exactly.
         let r = http_raw(port, "GET /leak HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(r.starts_with("HTTP/1.1 403"), "symlink escape must 403: {r}");
+        assert!(
+            r.starts_with("HTTP/1.1 403"),
+            "symlink escape must 403: {r}"
+        );
         assert!(!r.contains("SECRET"), "{r}");
         // 6. Non-GET is 405 with Allow.
-        let r = http_raw(port, "POST /hello.txt HTTP/1.1\r\nHost: x\r\nContent-Length: 0\r\n\r\n");
-        assert!(r.starts_with("HTTP/1.1 405") && r.contains("Allow: GET, HEAD"), "{r}");
+        let r = http_raw(
+            port,
+            "POST /hello.txt HTTP/1.1\r\nHost: x\r\nContent-Length: 0\r\n\r\n",
+        );
+        assert!(
+            r.starts_with("HTTP/1.1 405") && r.contains("Allow: GET, HEAD"),
+            "{r}"
+        );
         // 7. Directory listing (opted in) links both entries.
         let r = http_raw(port, "GET / HTTP/1.1\r\nHost: x\r\n\r\n");
         assert!(r.contains("hello.txt") && r.contains("sub/"), "{r}");
@@ -32542,12 +33552,18 @@ mod bytes_tests {
         assert!(r.starts_with("HTTP/1.1 200") && r.contains("router"), "{r}");
         // 2. A deep extensionless route the router owns → the shell, 200.
         let r = http_raw(port, "GET /bus/props-core HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(r.starts_with("HTTP/1.1 200") && r.contains("id=app"), "deep route → shell: {r}");
+        assert!(
+            r.starts_with("HTTP/1.1 200") && r.contains("id=app"),
+            "deep route → shell: {r}"
+        );
         // 3. A MISSING ASSET must stay a real 404, never the shell (else a
         //    broken /main.css silently becomes HTML and the app breaks
         //    confusingly).
         let r = http_raw(port, "GET /missing.css HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(r.starts_with("HTTP/1.1 404"), "missing asset stays 404: {r}");
+        assert!(
+            r.starts_with("HTTP/1.1 404"),
+            "missing asset stays 404: {r}"
+        );
         assert!(!r.contains("id=app"), "{r}");
         // 4. A traversal attempt decodes to an extensionless path
         //    (`../etc`), so it DOES receive the shell (200) — but the shell
@@ -32590,7 +33606,9 @@ mod bytes_tests {
         // Clean URL → the .html page, styled/served as HTML.
         let r = http_raw(port, "GET /bus/props-core HTTP/1.1\r\nHost: x\r\n\r\n");
         assert!(
-            r.starts_with("HTTP/1.1 200") && r.contains("props-core page") && r.contains("text/html"),
+            r.starts_with("HTTP/1.1 200")
+                && r.contains("props-core page")
+                && r.contains("text/html"),
             "{r}"
         );
         // The explicit .html still works.
@@ -32598,7 +33616,10 @@ mod bytes_tests {
         assert!(r.starts_with("HTTP/1.1 200"), "{r}");
         // A path WITH an extension is never .html-appended (no /plain.txt.html).
         let r = http_raw(port, "GET /plain.txt HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(r.starts_with("HTTP/1.1 200") && r.contains("text/plain"), "{r}");
+        assert!(
+            r.starts_with("HTTP/1.1 200") && r.contains("text/plain"),
+            "{r}"
+        );
         // A genuinely missing clean URL is still a 404 (no shell configured).
         let r = http_raw(port, "GET /bus/nope HTTP/1.1\r\nHost: x\r\n\r\n");
         assert!(r.starts_with("HTTP/1.1 404"), "{r}");
@@ -32640,7 +33661,10 @@ mod bytes_tests {
         // /bus/ (trailing slash) is a directory request → 403 (no index,
         // no listing), NOT the sibling page.
         let r = http_raw(port, "GET /bus/ HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(r.starts_with("HTTP/1.1 403"), "trailing slash is a dir request: {r}");
+        assert!(
+            r.starts_with("HTTP/1.1 403"),
+            "trailing slash is a dir request: {r}"
+        );
         server.join().unwrap().unwrap();
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -32652,9 +33676,11 @@ mod bytes_tests {
         let mut opts = indexmap::IndexMap::new();
         opts.insert("port".to_string(), Value::Number(free_port() as f64));
         opts.insert("spa".to_string(), Value::String("nope.html".into()));
-        let err =
-            builtin_http_serve(vec![Value::String(dir.to_string_lossy().into_owned()), Value::map(opts)])
-                .unwrap_err();
+        let err = builtin_http_serve(vec![
+            Value::String(dir.to_string_lossy().into_owned()),
+            Value::map(opts),
+        ])
+        .unwrap_err();
         assert!(format!("{err}").contains("spa shell"), "{err}");
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -32691,14 +33717,18 @@ mod bytes_tests {
         ])
         .unwrap()
         .unwrap();
-        let Value::Number(id) = h else { panic!("{h:?}") };
+        let Value::Number(id) = h else {
+            panic!("{h:?}")
+        };
         let opts = || {
             let mut o = indexmap::IndexMap::new();
             o.insert("timeout".to_string(), Value::Number(5.0));
             Value::map(o)
         };
         builtin_tcp_send(vec![Value::Number(id), Value::String("ping".into())]).unwrap();
-        let got = builtin_tcp_recv(vec![Value::Number(id), opts()]).unwrap().unwrap();
+        let got = builtin_tcp_recv(vec![Value::Number(id), opts()])
+            .unwrap()
+            .unwrap();
         match &got {
             Value::Bytes(b) => assert_eq!(b.as_slice(), b"ping"),
             other => panic!("expected bytes, got {other:?}"),
@@ -32720,7 +33750,10 @@ mod bytes_tests {
         };
         assert!(format!("{err}").contains("closed"), "{err}");
         let err = builtin_tcp_recv(vec![Value::Number(id), opts()]).unwrap_err();
-        assert!(format!("{err}").contains("unknown tcp handle"), "retired: {err}");
+        assert!(
+            format!("{err}").contains("unknown tcp handle"),
+            "retired: {err}"
+        );
         server.join().unwrap();
     }
 
@@ -32862,12 +33895,16 @@ mod bytes_tests {
         let got = builtin_http_recv(vec![Value::Number(port as f64), Value::map(opts)])
             .unwrap()
             .unwrap();
-        let Value::Map(m) = &got else { panic!("{got:?}") };
+        let Value::Map(m) = &got else {
+            panic!("{got:?}")
+        };
         assert_eq!(m.get("method"), Some(&Value::String("POST".into())));
         assert_eq!(m.get("path"), Some(&Value::String("/hook".into())));
         assert_eq!(m.get("query"), Some(&Value::String("run=42".into())));
         assert_eq!(m.get("body"), Some(&Value::String("payload=1".into())));
-        let Some(Value::Map(h)) = m.get("headers") else { panic!() };
+        let Some(Value::Map(h)) = m.get("headers") else {
+            panic!()
+        };
         assert_eq!(h.get("x-token"), Some(&Value::String("abc".into())));
         // The client saw the configured response.
         let resp = client.join().unwrap();
@@ -32900,7 +33937,8 @@ mod bytes_tests {
             Some(Value::Bool(true))
         );
         assert_eq!(
-            builtin_has_builtin(vec![Value::String("definitely_not_a_builtin_xyz".into())]).unwrap(),
+            builtin_has_builtin(vec![Value::String("definitely_not_a_builtin_xyz".into())])
+                .unwrap(),
             Some(Value::Bool(false))
         );
         // The m1 fix: eval-special names (printf, read_stdin, …) are
@@ -32921,7 +33959,9 @@ mod bytes_tests {
         // parts and string, consistent with each other.
         let v = builtin_mix_version(vec![]).unwrap().unwrap();
         let Value::Map(m) = &v else { panic!("{v:?}") };
-        let Some(Value::String(s)) = m.get("string") else { panic!() };
+        let Some(Value::String(s)) = m.get("string") else {
+            panic!()
+        };
         assert_eq!(s, env!("CARGO_PKG_VERSION"));
         let parts: Vec<String> = ["major", "minor", "patch"]
             .iter()
@@ -32943,9 +33983,8 @@ mod bytes_tests {
     fn take_on_buffer_is_a_snapshot() {
         // Mutating the buffer afterwards must not change the taken bytes.
         let rc = std::rc::Rc::new(std::cell::RefCell::new(b"abc".to_vec()));
-        let taken = as_bytes(
-            builtin_take(vec![Value::Buffer(rc.clone()), Value::Number(3.0)]).unwrap(),
-        );
+        let taken =
+            as_bytes(builtin_take(vec![Value::Buffer(rc.clone()), Value::Number(3.0)]).unwrap());
         rc.borrow_mut()[0] = b'X';
         assert_eq!(taken, b"abc");
     }
@@ -34594,7 +35633,11 @@ mod getopt_tests {
         // A genuinely unknown algo and a missing path both error, not silently
         // return a bogus digest.
         assert!(
-            call_builtin("hash_file", vec![ps.clone(), Value::String("sha512".into())]).is_err()
+            call_builtin(
+                "hash_file",
+                vec![ps.clone(), Value::String("sha512".into())]
+            )
+            .is_err()
         );
         assert!(
             call_builtin(
@@ -35188,9 +36231,22 @@ mod loud_numeric_argument_tests {
         let pid = child.id() as i32;
         super::register_managed_pid(pid);
         super::register_managed_pid(pid);
-        let mut owned = Owned { child, registrations: 2 };
+        let mut owned = Owned {
+            child,
+            registrations: 2,
+        };
         let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
-        assert_eq!(unsafe { libc::waitid(libc::P_PID, pid as u32, &mut info, libc::WEXITED | libc::WNOWAIT) }, 0);
+        assert_eq!(
+            unsafe {
+                libc::waitid(
+                    libc::P_PID,
+                    pid as u32,
+                    &mut info,
+                    libc::WEXITED | libc::WNOWAIT,
+                )
+            },
+            0
+        );
         // One owner retiring must not release another owner's protection.
         // This models the registry interleaving around a recycled numeric PID;
         // the real zombie proves the resulting probe retains kernel status.
@@ -35597,8 +36653,19 @@ mod man_topic_tests {
     #[test]
     fn every_emitted_topic_names_a_real_page() {
         const PAGES: &[&str] = &[
-            "buffer", "bus", "collections", "data", "datastar", "datetime",
-            "http", "io", "math", "regex", "remote", "strings", "system",
+            "buffer",
+            "bus",
+            "collections",
+            "data",
+            "datastar",
+            "datetime",
+            "http",
+            "io",
+            "math",
+            "regex",
+            "remote",
+            "strings",
+            "system",
         ];
         let names = super::BUILTIN_NAMES
             .iter()
@@ -35624,8 +36691,8 @@ mod compiled_features_tests {
         // this list may be empty — the invariant is that whatever appears is a
         // real optional feature name and each appears at most once.
         const KNOWN: &[&str] = &[
-            "json", "regex", "markdown", "toml", "serde", "datetime", "url",
-            "crypto", "http", "sqlite", "dkim", "datastar", "xml", "yaml", "ws",
+            "json", "regex", "markdown", "toml", "serde", "datetime", "url", "crypto", "http",
+            "sqlite", "dkim", "datastar", "xml", "yaml", "ws",
         ];
         let f = compiled_features();
         for name in &f {
@@ -35645,8 +36712,8 @@ mod compiled_features_tests {
     #[test]
     fn every_cargo_feature_is_reported_or_deliberately_skipped() {
         const KNOWN: &[&str] = &[
-            "json", "regex", "markdown", "toml", "serde", "datetime", "url",
-            "crypto", "http", "sqlite", "dkim", "datastar", "xml", "yaml", "ws",
+            "json", "regex", "markdown", "toml", "serde", "datetime", "url", "crypto", "http",
+            "sqlite", "dkim", "datastar", "xml", "yaml", "ws",
         ];
         const SKIP: &[&str] = &["default", "tokio-sleep"];
         let manifest = include_str!("../Cargo.toml");
@@ -35697,7 +36764,12 @@ mod run_parallel_tests {
     use crate::value::Value;
 
     fn argv(words: &[&str]) -> Value {
-        Value::list(words.iter().map(|w| Value::String((*w).to_string())).collect())
+        Value::list(
+            words
+                .iter()
+                .map(|w| Value::String((*w).to_string()))
+                .collect(),
+        )
     }
 
     fn run(jobs: Vec<Value>, opts: Option<Value>) -> Vec<Value> {
@@ -35720,7 +36792,14 @@ mod run_parallel_tests {
 
     #[test]
     fn results_are_in_input_order() {
-        let r = run(vec![argv(&["echo", "a"]), argv(&["echo", "b"]), argv(&["echo", "c"])], None);
+        let r = run(
+            vec![
+                argv(&["echo", "a"]),
+                argv(&["echo", "b"]),
+                argv(&["echo", "c"]),
+            ],
+            None,
+        );
         assert_eq!(r.len(), 3);
         for (i, want) in ["a", "b", "c"].iter().enumerate() {
             match field(&r[i], "stdout") {
@@ -35735,14 +36814,21 @@ mod run_parallel_tests {
         // `false` exits 1; a bogus command is a PROCESS_SPAWN encoded in the
         // map. Neither aborts the batch; the good job still succeeds.
         let r = run(
-            vec![argv(&["false"]), argv(&["echo", "ok"]), argv(&["definitely_no_such_cmd_zzz"])],
+            vec![
+                argv(&["false"]),
+                argv(&["echo", "ok"]),
+                argv(&["definitely_no_such_cmd_zzz"]),
+            ],
             None,
         );
         assert_eq!(r.len(), 3);
         assert_eq!(field(&r[0], "ok"), &Value::Bool(false));
         assert_eq!(field(&r[1], "ok"), &Value::Bool(true));
         assert_eq!(field(&r[2], "ok"), &Value::Bool(false));
-        assert_eq!(field(&r[2], "error_code"), &Value::String("PROCESS_SPAWN".to_string()));
+        assert_eq!(
+            field(&r[2], "error_code"),
+            &Value::String("PROCESS_SPAWN".to_string())
+        );
     }
 
     #[test]
@@ -35914,7 +37000,10 @@ mod strict_write_and_bool_option_tests {
         for call in [
             builtin_csv_parse(vec![text()]),
             builtin_csv_parse(vec![text(), Value::String(",".into())]),
-            builtin_csv_parse(vec![Value::String("a|b\n1|2".into()), Value::String("|".into())]),
+            builtin_csv_parse(vec![
+                Value::String("a|b\n1|2".into()),
+                Value::String("|".into()),
+            ]),
         ] {
             let rows = call.unwrap().unwrap();
             match &rows {
@@ -36010,7 +37099,11 @@ mod strict_write_and_bool_option_tests {
             ("db_exec", "params"),
         ];
         // A truncated list must fail loudly, never shrink silently.
-        assert!(cases.len() > 60, "only {} declared-nil cases — list truncated?", cases.len());
+        assert!(
+            cases.len() > 60,
+            "only {} declared-nil cases — list truncated?",
+            cases.len()
+        );
         for (builtin, arg) in cases {
             let info = super::builtin_info_of(builtin)
                 .unwrap_or_else(|| panic!("'{builtin}' is not in the registry"));
@@ -36022,9 +37115,7 @@ mod strict_write_and_bool_option_tests {
                 .unwrap_or_else(|| panic!("{builtin} has no '{arg}' argument"));
             let accepts_nil = match arg_info.kind {
                 TypeShape::Nil => true,
-                TypeShape::AnyOf(shapes) => {
-                    shapes.iter().any(|s| matches!(s, TypeShape::Nil))
-                }
+                TypeShape::AnyOf(shapes) => shapes.iter().any(|s| matches!(s, TypeShape::Nil)),
                 _ => false,
             };
             assert!(
@@ -36089,7 +37180,11 @@ mod strict_write_and_bool_option_tests {
             ("audio_state", "opts"),
         ];
         // A truncated list must fail loudly, never shrink silently.
-        assert!(refusals.len() > 25, "only {} refusal cases — list truncated?", refusals.len());
+        assert!(
+            refusals.len() > 25,
+            "only {} refusal cases — list truncated?",
+            refusals.len()
+        );
         for (builtin, arg) in refusals {
             let info = super::builtin_info_of(builtin)
                 .unwrap_or_else(|| panic!("'{builtin}' is not in the registry"));
@@ -36101,9 +37196,7 @@ mod strict_write_and_bool_option_tests {
                 .unwrap_or_else(|| panic!("{builtin} has no '{arg}' argument"));
             let accepts_nil = match arg_info.kind {
                 TypeShape::Nil => true,
-                TypeShape::AnyOf(shapes) => {
-                    shapes.iter().any(|s| matches!(s, TypeShape::Nil))
-                }
+                TypeShape::AnyOf(shapes) => shapes.iter().any(|s| matches!(s, TypeShape::Nil)),
                 _ => false,
             };
             assert!(
@@ -36131,7 +37224,11 @@ mod strict_write_and_bool_option_tests {
                             _ => None,
                         })
                         .collect();
-                    assert_eq!(maps.len(), 1, "expected exactly one named map, got {kind:?}");
+                    assert_eq!(
+                        maps.len(),
+                        1,
+                        "expected exactly one named map, got {kind:?}"
+                    );
                     maps[0]
                 }
                 other => panic!("expected any_of(map(…), nil), got {other:?}"),
@@ -36142,15 +37239,27 @@ mod strict_write_and_bool_option_tests {
             ("write_atomic", "opts", &["durability", "mode", "max_bytes"]),
             ("run_argv", "opts", &["timeout", "stream"]),
             ("stat", "opts", &["follow_symlinks"]),
-            ("walk", "opts", &["max_depth", "follow_symlinks", "include_dirs"]),
+            (
+                "walk",
+                "opts",
+                &["max_depth", "follow_symlinks", "include_dirs"],
+            ),
             ("read_jsonl", "opts", &["skip_errors"]),
             ("bytes_to_string", "opts", &["lossy"]),
             ("run_stream", "opts", &["env", "clear_env", "cwd"]),
             ("run_parallel", "opts", &["max", "timeout"]),
-            ("run_pipeline", "opts", &["timeout", "max_output", "allow_signal"]),
+            (
+                "run_pipeline",
+                "opts",
+                &["timeout", "max_output", "allow_signal"],
+            ),
             ("http_serve", "opts", &["port", "host", "duration"]),
             ("send_mail", "opts", &["host", "sendmail", "timeout"]),
-            ("ds_patch_elements", "opts", &["selector", "mode", "view_transition"]),
+            (
+                "ds_patch_elements",
+                "opts",
+                &["selector", "mode", "view_transition"],
+            ),
             ("ds_patch_signals", "opts", &["only_if_missing"]),
         ];
         for (builtin, arg, want) in cases {
@@ -36253,16 +37362,28 @@ mod strict_write_and_bool_option_tests {
         let d = tmpdir("exists");
         // Omitted (default true) and explicit true/false all work on a dir.
         assert!(builtin_exists(vec![s(&d)]).unwrap().unwrap().is_truthy());
-        assert!(builtin_exists(vec![s(&d), opts(&[("follow_symlinks", Value::Bool(true))])])
+        assert!(
+            builtin_exists(vec![s(&d), opts(&[("follow_symlinks", Value::Bool(true))])])
+                .unwrap()
+                .unwrap()
+                .is_truthy()
+        );
+        assert!(
+            builtin_exists(vec![
+                s(&d),
+                opts(&[("follow_symlinks", Value::Bool(false))])
+            ])
             .unwrap()
             .unwrap()
-            .is_truthy());
-        assert!(builtin_exists(vec![s(&d), opts(&[("follow_symlinks", Value::Bool(false))])])
-            .unwrap()
-            .unwrap()
-            .is_truthy());
+            .is_truthy()
+        );
         // A nil ARGUMENT stays the omitted-options sentinel.
-        assert!(builtin_exists(vec![s(&d), Value::Nil]).unwrap().unwrap().is_truthy());
+        assert!(
+            builtin_exists(vec![s(&d), Value::Nil])
+                .unwrap()
+                .unwrap()
+                .is_truthy()
+        );
         // A nil or string FIELD is a wrong value, not a truthiness.
         for bad in [
             Value::String("false".into()),
@@ -36270,8 +37391,7 @@ mod strict_write_and_bool_option_tests {
             Value::Number(0.0),
             Value::list(vec![]),
         ] {
-            let err =
-                builtin_exists(vec![s(&d), opts(&[("follow_symlinks", bad)])]).unwrap_err();
+            let err = builtin_exists(vec![s(&d), opts(&[("follow_symlinks", bad)])]).unwrap_err();
             assert!(is_type_mismatch(&err), "{err:?}");
             assert!(format!("{err}").contains("follow_symlinks"), "{err}");
         }
@@ -36282,10 +37402,18 @@ mod strict_write_and_bool_option_tests {
     fn stat_follow_symlinks_is_a_strict_bool() {
         let d = tmpdir("stat");
         assert!(builtin_stat(vec![s(&d)]).is_ok());
-        assert!(builtin_stat(vec![s(&d), opts(&[("follow_symlinks", Value::Bool(false))])])
-            .is_ok());
-        let err = builtin_stat(vec![s(&d), opts(&[("follow_symlinks", Value::String("false".into()))])])
-            .unwrap_err();
+        assert!(
+            builtin_stat(vec![
+                s(&d),
+                opts(&[("follow_symlinks", Value::Bool(false))])
+            ])
+            .is_ok()
+        );
+        let err = builtin_stat(vec![
+            s(&d),
+            opts(&[("follow_symlinks", Value::String("false".into()))]),
+        ])
+        .unwrap_err();
         assert!(is_type_mismatch(&err), "{err:?}");
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -36315,14 +37443,22 @@ mod strict_write_and_bool_option_tests {
         assert!(builtin_bytes_to_string(vec![raw.clone(), Value::Nil]).is_err());
         // Omitted/true/false are the only accepted spellings; lossy:true decodes.
         assert!(builtin_bytes_to_string(vec![raw.clone()]).is_err());
-        assert!(builtin_bytes_to_string(vec![raw.clone(), opts(&[("lossy", Value::Bool(true))])])
-            .is_ok());
-        assert!(builtin_bytes_to_string(vec![raw.clone(), opts(&[("lossy", Value::Bool(false))])])
-            .is_err());
+        assert!(
+            builtin_bytes_to_string(vec![raw.clone(), opts(&[("lossy", Value::Bool(true))])])
+                .is_ok()
+        );
+        assert!(
+            builtin_bytes_to_string(vec![raw.clone(), opts(&[("lossy", Value::Bool(false))])])
+                .is_err()
+        );
         // A string "false" (or a nil field) refuses rather than picking falsy.
-        for bad in [Value::String("false".into()), Value::Nil, Value::Number(0.0)] {
-            let err = builtin_bytes_to_string(vec![raw.clone(), opts(&[("lossy", bad)])])
-                .unwrap_err();
+        for bad in [
+            Value::String("false".into()),
+            Value::Nil,
+            Value::Number(0.0),
+        ] {
+            let err =
+                builtin_bytes_to_string(vec![raw.clone(), opts(&[("lossy", bad)])]).unwrap_err();
             assert!(is_type_mismatch(&err), "{err:?}");
         }
     }
@@ -36334,9 +37470,14 @@ mod strict_write_and_bool_option_tests {
         let p = d.join("dirty.jsonl");
         std::fs::write(&p, "{\"a\":1}\n").unwrap();
         assert!(builtin_read_jsonl(vec![s(&p)]).is_ok());
-        assert!(builtin_read_jsonl(vec![s(&p), opts(&[("skip_errors", Value::Bool(true))])])
-            .is_ok());
-        for bad in [Value::String("false".into()), Value::Nil, Value::Number(1.0)] {
+        assert!(
+            builtin_read_jsonl(vec![s(&p), opts(&[("skip_errors", Value::Bool(true))])]).is_ok()
+        );
+        for bad in [
+            Value::String("false".into()),
+            Value::Nil,
+            Value::Number(1.0),
+        ] {
             let err = builtin_read_jsonl(vec![s(&p), opts(&[("skip_errors", bad)])]).unwrap_err();
             assert!(is_type_mismatch(&err), "{err:?}");
         }
@@ -36348,17 +37489,21 @@ mod strict_write_and_bool_option_tests {
     fn ds_patch_elements_view_transition_is_a_strict_bool() {
         let html = Value::String("<p>x</p>".into());
         assert!(builtin_ds_patch_elements(vec![html.clone()]).is_ok());
-        assert!(builtin_ds_patch_elements(vec![
-            html.clone(),
-            opts(&[("view_transition", Value::Bool(true))])
-        ])
-        .is_ok());
-        for bad in [Value::String("false".into()), Value::Nil, Value::Number(1.0)] {
-            let err = builtin_ds_patch_elements(vec![
+        assert!(
+            builtin_ds_patch_elements(vec![
                 html.clone(),
-                opts(&[("view_transition", bad)]),
+                opts(&[("view_transition", Value::Bool(true))])
             ])
-            .unwrap_err();
+            .is_ok()
+        );
+        for bad in [
+            Value::String("false".into()),
+            Value::Nil,
+            Value::Number(1.0),
+        ] {
+            let err =
+                builtin_ds_patch_elements(vec![html.clone(), opts(&[("view_transition", bad)])])
+                    .unwrap_err();
             assert!(is_type_mismatch(&err), "{err:?}");
         }
     }
@@ -36368,17 +37513,21 @@ mod strict_write_and_bool_option_tests {
     fn ds_patch_signals_only_if_missing_is_a_strict_bool() {
         let signals = Value::map(indexmap::IndexMap::new());
         assert!(builtin_ds_patch_signals(vec![signals.clone()]).is_ok());
-        assert!(builtin_ds_patch_signals(vec![
-            signals.clone(),
-            opts(&[("only_if_missing", Value::Bool(true))])
-        ])
-        .is_ok());
-        for bad in [Value::String("false".into()), Value::Nil, Value::Number(1.0)] {
-            let err = builtin_ds_patch_signals(vec![
+        assert!(
+            builtin_ds_patch_signals(vec![
                 signals.clone(),
-                opts(&[("only_if_missing", bad)]),
+                opts(&[("only_if_missing", Value::Bool(true))])
             ])
-            .unwrap_err();
+            .is_ok()
+        );
+        for bad in [
+            Value::String("false".into()),
+            Value::Nil,
+            Value::Number(1.0),
+        ] {
+            let err =
+                builtin_ds_patch_signals(vec![signals.clone(), opts(&[("only_if_missing", bad)])])
+                    .unwrap_err();
             assert!(is_type_mismatch(&err), "{err:?}");
         }
     }

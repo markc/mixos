@@ -560,7 +560,9 @@ fn check_agent_rules(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
                         walk(els, ctx, a, known, outer_vars);
                     }
                 }
-                StmtKind::While { condition, body, .. } => {
+                StmtKind::While {
+                    condition, body, ..
+                } => {
                     // `while true` is the canonical event-pump idiom (review
                     // F3.3) — exempt it; a `while false` is still flagged.
                     if !matches!(condition, Expr::BoolLiteral(true)) {
@@ -595,7 +597,9 @@ fn check_agent_rules(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
                     }
                     walk(body, ctx, a, known, outer_vars);
                 }
-                StmtKind::FunctionDef { name, params, body, .. } => {
+                StmtKind::FunctionDef {
+                    name, params, body, ..
+                } => {
                     // R4: an assignment to a name that exists as an OUTER
                     // VARIABLE (and is not one of this fn's params) creates
                     // a new local — the outer variable is unchanged.
@@ -814,9 +818,9 @@ fn check_string_literal_spelling(
         match note {
             crate::lexer::StringNote::BareDollar { line, name } => {
                 let bound = ctx.top_level_names.contains(&name)
-                    || scopes.iter().any(|s| {
-                        (s.start..=s.end).contains(&line) && s.params.contains(&name)
-                    });
+                    || scopes
+                        .iter()
+                        .any(|s| (s.start..=s.end).contains(&line) && s.params.contains(&name));
                 if !bound {
                     continue;
                 }
@@ -1223,7 +1227,10 @@ fn check_unreachable(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
 /// `$v` is flagged.
 fn check_pad_loop_idiom(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
     walk_stmts(stmts, &mut |stmt| {
-        let StmtKind::While { condition, body, .. } = &stmt.kind else {
+        let StmtKind::While {
+            condition, body, ..
+        } = &stmt.kind
+        else {
             return;
         };
         // Condition: len($v) < … or len($v) <= …
@@ -1247,7 +1254,11 @@ fn check_pad_loop_idiom(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
         walk_stmts(body, &mut |inner| {
             if let StmtKind::Assignment { name, value } = &inner.kind
                 && name == v
-                && let Expr::BinaryOp { left, op: BinOp::Concat, right } = value
+                && let Expr::BinaryOp {
+                    left,
+                    op: BinOp::Concat,
+                    right,
+                } = value
                 && matches!(left.as_ref(), Expr::Variable(lv) if lv == v)
                 && matches!(right.as_ref(), Expr::StringLiteral(_))
             {
@@ -1309,8 +1320,7 @@ fn check_pad_loop_idiom(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
 fn check_builtin_shadowing(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
     walk_stmts(stmts, &mut |stmt| {
         if let StmtKind::FunctionDef { name, .. } = &stmt.kind
-            && (crate::builtins::is_builtin(name)
-                || INLINE_SPECIAL_FORMS.contains(&name.as_str()))
+            && (crate::builtins::is_builtin(name) || INLINE_SPECIAL_FORMS.contains(&name.as_str()))
         {
             a.diagnostics.push(diag(
                 ctx,
@@ -1448,9 +1458,7 @@ fn check_scope(
                 && !info.contract.effects.mutates_args
                 && !matches!(info.contract.returns, TypeShape::Nil | TypeShape::Any);
             if info.contract.effects.must_use || pure_transform_discarded {
-                let (msg, hint) = if pure_transform_discarded
-                    && !info.contract.effects.must_use
-                {
+                let (msg, hint) = if pure_transform_discarded && !info.contract.effects.must_use {
                     (
                         format!(
                             "result of {name}() is discarded — it is a pure transform: it returns a new value and mutates nothing, so this statement does nothing"
@@ -1663,10 +1671,7 @@ fn format_operand_count(dialect: FormatDialect, tmpl: &str) -> Option<usize> {
             i += 1;
             count += 1;
             // "%*5s" — fmt names the mistake at runtime.
-            if matches!(dialect, FormatDialect::Fmt)
-                && i < b.len()
-                && b[i].is_ascii_digit()
-            {
+            if matches!(dialect, FormatDialect::Fmt) && i < b.len() && b[i].is_ascii_digit() {
                 return None;
             }
         } else {
@@ -1676,9 +1681,7 @@ fn format_operand_count(dialect: FormatDialect, tmpl: &str) -> Option<usize> {
             let mut width: usize = 0;
             while i < b.len() && b[i].is_ascii_digit() {
                 if matches!(dialect, FormatDialect::Sprintf) {
-                    width = width
-                        .checked_mul(10)?
-                        .checked_add((b[i] - b'0') as usize)?;
+                    width = width.checked_mul(10)?.checked_add((b[i] - b'0') as usize)?;
                 }
                 i += 1;
             }
@@ -1714,9 +1717,7 @@ fn format_operand_count(dialect: FormatDialect, tmpl: &str) -> Option<usize> {
         }
         // sprintf length modifiers: parsed and ignored, consume nothing.
         if matches!(dialect, FormatDialect::Sprintf) {
-            while i < b.len()
-                && matches!(b[i], b'h' | b'l' | b'L' | b'q' | b'j' | b'z' | b't')
-            {
+            while i < b.len() && matches!(b[i], b'h' | b'l' | b'L' | b'q' | b'j' | b'z' | b't') {
                 i += 1;
             }
         }
@@ -1869,8 +1870,9 @@ fn check_expr(
                 // The runtime's own suggester, so lint — where an agent
                 // looks first — gives the answer the failing run would.
                 let user_fns = ctx.known_callables.iter().map(String::as_str);
-                let fallback =
-                    format!("define it, or pass --allow-function {name} if an embedder provides it");
+                let fallback = format!(
+                    "define it, or pass --allow-function {name} if an embedder provides it"
+                );
                 let hint = match function_suggestion(name, user_fns) {
                     Some(s) => format!("{s} (otherwise {fallback})"),
                     None => fallback,
@@ -1899,9 +1901,9 @@ fn check_expr(
                 // a known reflex shape gets the Mix form named — the
                 // reflex-call table, so a Python/JS/bash hand learns the
                 // Mix spelling at the exact site it guessed wrong.
-                let reflex = REFLEX_SURPLUS_HINTS.iter().find(|(n, count, _)| {
-                    *n == name.as_str() && args.len() == *count
-                });
+                let reflex = REFLEX_SURPLUS_HINTS
+                    .iter()
+                    .find(|(n, count, _)| *n == name.as_str() && args.len() == *count);
                 a.diagnostics.push(diag(
                     ctx,
                     "MIX-E1201",
@@ -2171,8 +2173,18 @@ fn walk_stmt_exprs(stmt: &Stmt, visit: &mut dyn FnMut(&Expr)) {
             }
         }
         StmtKind::Parse { source, .. } => go(source),
-        StmtKind::Send { target, command, args, .. }
-        | StmtKind::Emit { target, command, args, .. } => {
+        StmtKind::Send {
+            target,
+            command,
+            args,
+            ..
+        }
+        | StmtKind::Emit {
+            target,
+            command,
+            args,
+            ..
+        } => {
             go(target);
             // Lint-walker gap (TODO-mix 2026-09-24): the COMMAND expression
             // was never visited — a call or binder inside it was invisible
@@ -2299,7 +2311,10 @@ fn literal_matches_shape(expr: &Expr, shape: &crate::builtin_info::TypeShape) ->
     match shape {
         TypeShape::Any => true,
         TypeShape::AnyOf(shapes) => shapes.iter().any(|s| literal_matches_shape(expr, s)),
-        TypeShape::String => matches!(expr, Expr::StringLiteral(_) | Expr::EscapedQuoteStringLiteral(_)),
+        TypeShape::String => matches!(
+            expr,
+            Expr::StringLiteral(_) | Expr::EscapedQuoteStringLiteral(_)
+        ),
         TypeShape::Number => matches!(expr, Expr::NumberLiteral(_)),
         TypeShape::Bool => matches!(expr, Expr::BoolLiteral(_)),
         TypeShape::Nil => matches!(expr, Expr::NilLiteral),
@@ -2322,7 +2337,8 @@ fn check_collection_literal_traps(stmts: &[Stmt], ctx: &FileContext, a: &mut Ana
     for stmt in stmts {
         walk_stmt_exprs(stmt, &mut |expr| match expr {
             Expr::FunctionCall { name, args } => {
-                if (crate::builtins::is_builtin(name) || crate::builtins_hof::lookup(name).is_some())
+                if (crate::builtins::is_builtin(name)
+                    || crate::builtins_hof::lookup(name).is_some())
                     && let Some(Expr::MapLiteral(entries)) = args.first()
                     && entries
                         .iter()
@@ -2430,15 +2446,43 @@ const REFLEX_SURPLUS_HINTS: &[(&str, usize, &str)] = &[
         2,
         "remove(path) deletes a FILE — delete(map, key) removes a map key; filter(list, pred) drops list items",
     ),
-    ("replace", 4, "replace() replaces ALL — replace_first() is the count-1 form"),
-    ("split", 3, "split() takes no limit — split_once() splits at the first occurrence"),
-    ("push", 3, "push() takes one value — call it twice, or concat(list, [a, b])"),
-    ("pop", 2, "pop() takes no index — shift() removes the FIRST element"),
-    ("sort", 2, "sort() takes no comparator — sort_by(fn) compares; sort + reverse for descending"),
+    (
+        "replace",
+        4,
+        "replace() replaces ALL — replace_first() is the count-1 form",
+    ),
+    (
+        "split",
+        3,
+        "split() takes no limit — split_once() splits at the first occurrence",
+    ),
+    (
+        "push",
+        3,
+        "push() takes one value — call it twice, or concat(list, [a, b])",
+    ),
+    (
+        "pop",
+        2,
+        "pop() takes no index — shift() removes the FIRST element",
+    ),
+    (
+        "sort",
+        2,
+        "sort() takes no comparator — sort_by(fn) compares; sort + reverse for descending",
+    ),
     ("zip", 3, "zip() takes two lists — chain zip() calls"),
     ("merge", 3, "merge() takes two maps — chain merge() calls"),
-    ("path_join", 3, "path_join() takes two parts — nest it, or join(parts, \"/\")"),
-    ("basename", 2, "basename() takes one arg — strip_suffix(name, suffix)"),
+    (
+        "path_join",
+        3,
+        "path_join() takes two parts — nest it, or join(parts, \"/\")",
+    ),
+    (
+        "basename",
+        2,
+        "basename() takes one arg — strip_suffix(name, suffix)",
+    ),
     ("dkim_keygen", 2, "dkim_keygen() takes no bit length"),
 ];
 
@@ -2466,9 +2510,10 @@ fn check_send_rc_reads(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
         }
         // Scan the statements AFTER this send, up to the next send or the
         // end of the block, for a read of $rc / $result / $reply.
-        let read_before_next = stmts[idx + 1..].iter().take_while(|s| {
-            !matches!(s.kind, StmtKind::Send { .. })
-        }).any(stmt_reads_send_status);
+        let read_before_next = stmts[idx + 1..]
+            .iter()
+            .take_while(|s| !matches!(s.kind, StmtKind::Send { .. }))
+            .any(stmt_reads_send_status);
         if !read_before_next {
             a.diagnostics.push(diag(
                 ctx,
@@ -2478,7 +2523,10 @@ fn check_send_rc_reads(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
                 "result of send is never checked — a failed send (rc -2, >=10) exits 0 and the \
                  script reads as success"
                     .to_string(),
-                Some("read $rc (or $result/$reply) after the send, or use a checked form".to_string()),
+                Some(
+                    "read $rc (or $result/$reply) after the send, or use a checked form"
+                        .to_string(),
+                ),
             ));
         }
     }
@@ -2505,10 +2553,7 @@ fn stmt_reads_send_status(stmt: &Stmt) -> bool {
 fn check_push_assign_back(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
     for stmt in stmts {
         if let StmtKind::Assignment { name, value } = &stmt.kind
-            && let Expr::FunctionCall {
-                name: call,
-                args,
-            } = value
+            && let Expr::FunctionCall { name: call, args } = value
             && matches!(call.as_str(), "push" | "pop" | "shift")
             && let Some(Expr::Variable(target)) = args.first()
             && target == name
@@ -2693,7 +2738,8 @@ fn scan_edit_chain_block(
             }
         }
 
-        if let StmtKind::Assignment { name, value } | StmtKind::Export { name, value } = &stmt.kind {
+        if let StmtKind::Assignment { name, value } | StmtKind::Export { name, value } = &stmt.kind
+        {
             if is_tolerant_replace(value) {
                 edited.insert(name.clone(), stmt.line);
             } else {
@@ -2769,7 +2815,11 @@ pub(crate) const DEPRECATED_REGEX_CALLS: &[(&str, &str, &str)] = &[
         "MIX-D3002",
         "re_find(s, pattern) — NOTE: re_find returns CODEPOINT offsets where regex_find returns byte offsets; adjust offset arithmetic when migrating",
     ),
-    ("regex_replace", "MIX-D3003", "re_replace(s, pattern, replacement)"),
+    (
+        "regex_replace",
+        "MIX-D3003",
+        "re_replace(s, pattern, replacement)",
+    ),
     ("regex_split", "MIX-D3004", "re_split(s, pattern)"),
     ("grep", "MIX-D3005", "grep_lines(text, pattern)"),
 ];
@@ -2809,8 +2859,7 @@ fn check_release_transition_advisories(stmts: &[Stmt], ctx: &FileContext, a: &mu
         composed: &mut HashSet<*const Expr>,
     ) {
         if let Expr::FunctionCall { name, args } = expr {
-            if let Some((_, code, repl)) =
-                DEPRECATED_REGEX_CALLS.iter().find(|(n, _, _)| n == name)
+            if let Some((_, code, repl)) = DEPRECATED_REGEX_CALLS.iter().find(|(n, _, _)| n == name)
             {
                 a.diagnostics.push(diag(
                     ctx,
@@ -3027,12 +3076,7 @@ fn check_release_transition_advisories(stmts: &[Stmt], ctx: &FileContext, a: &mu
 /// Every `ssh_mix` call is found, at any depth — the loop-over-hosts shape
 /// puts the call inside a `for`, and the 0.69.0 pass searched only
 /// top-level statements, so exactly that shape went unlinted.
-fn check_ssh_mix_bodies(
-    stmts: &[Stmt],
-    ctx: &FileContext,
-    a: &mut Analysis,
-    cfg: &AnalyzerConfig,
-) {
+fn check_ssh_mix_bodies(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis, cfg: &AnalyzerConfig) {
     // One heredoc bound once and shipped by several calls would otherwise
     // report every finding once per call. Identical calls are skipped
     // outright; calls with DIFFERENT bindings are each analysed (they can
@@ -3058,10 +3102,8 @@ fn check_ssh_mix_bodies(
                 // A once-bound body shipped several times reuses its one
                 // AST node's map. Without source text, keep the documented
                 // statement-line estimate.
-                let (first_line, lines) = mapped
-                    .get(&origin)
-                    .cloned()
-                    .unwrap_or((first_line, None));
+                let (first_line, lines) =
+                    mapped.get(&origin).cloned().unwrap_or((first_line, None));
                 let key = site.injected.as_ref().map(|names| {
                     let mut v: Vec<String> = names.iter().cloned().collect();
                     v.sort_unstable();
@@ -3258,8 +3300,8 @@ struct RecordedOrigin {
 /// [`source_literal_maps`]; the pairing half is the walk there.
 fn recorded_literal_origins(source: &str, stmts: &[Stmt]) -> Option<Vec<RecordedOrigin>> {
     let (tokens, by_offset) = crate::lexer::Lexer::lex_with_literal_maps(source)?;
-    let mut parser = crate::parser::Parser::new_speculative(tokens, source)
-        .with_literal_origin_recording();
+    let mut parser =
+        crate::parser::Parser::new_speculative(tokens, source).with_literal_origin_recording();
     let parsed = parser.parse_program().ok()?;
     // Literal text alone cannot prove correspondence: two different trees
     // can contain the same sequence of strings. Require the whole source
@@ -3299,7 +3341,10 @@ fn recorded_literal_origins(source: &str, stmts: &[Stmt]) -> Option<Vec<Recorded
 /// then stands, exactly as if no source had been supplied — because a
 /// partial mapping could silently attach one body's lines to another.
 /// A mapping can be missing, but never misattached.
-fn source_literal_maps(source: &str, stmts: &[Stmt]) -> HashMap<usize, (usize, Option<Vec<usize>>)> {
+fn source_literal_maps(
+    source: &str,
+    stmts: &[Stmt],
+) -> HashMap<usize, (usize, Option<Vec<usize>>)> {
     let mut paired: HashMap<usize, (usize, Option<Vec<usize>>)> = HashMap::new();
     let Some(origins) = recorded_literal_origins(source, stmts) else {
         return paired;
@@ -3374,32 +3419,49 @@ type LiteralVisitor<'a> = dyn FnMut(&Expr) + 'a;
 fn walk_literal_sources(stmts: &[Stmt], visit: &mut LiteralVisitor<'_>) {
     for stmt in stmts {
         match &stmt.kind {
-            StmtKind::If { condition, then_body, else_ifs, else_body } => {
+            StmtKind::If {
+                condition,
+                then_body,
+                else_ifs,
+                else_body,
+            } => {
                 walk_literal_expr(condition, visit);
                 walk_literal_sources(then_body, visit);
                 for (condition, body) in else_ifs {
                     walk_literal_expr(condition, visit);
                     walk_literal_sources(body, visit);
                 }
-                if let Some(body) = else_body { walk_literal_sources(body, visit); }
+                if let Some(body) = else_body {
+                    walk_literal_sources(body, visit);
+                }
             }
-            StmtKind::Select { value, cases, otherwise } => {
+            StmtKind::Select {
+                value,
+                cases,
+                otherwise,
+            } => {
                 walk_literal_expr(value, visit);
                 for (value, body) in cases {
                     walk_literal_expr(value, visit);
                     walk_literal_sources(body, visit);
                 }
-                if let Some(body) = otherwise { walk_literal_sources(body, visit); }
+                if let Some(body) = otherwise {
+                    walk_literal_sources(body, visit);
+                }
             }
             StmtKind::FunctionDef { params, body, .. } => {
                 for param in params {
-                    if let Some(value) = &param.default { walk_literal_expr(value, visit); }
+                    if let Some(value) = &param.default {
+                        walk_literal_expr(value, visit);
+                    }
                 }
                 walk_literal_function(body, visit);
             }
             _ => {
                 walk_stmt_exprs(stmt, &mut |e| walk_literal_expr(e, visit));
-                for body in stmt_bodies(&stmt.kind) { walk_literal_sources(body, visit); }
+                for body in stmt_bodies(&stmt.kind) {
+                    walk_literal_sources(body, visit);
+                }
             }
         }
     }
@@ -3427,11 +3489,15 @@ fn walk_literal_expr(expr: &Expr, visit: &mut LiteralVisitor<'_>) {
                 walk_literal_expr(condition, visit);
                 walk_literal_sources(body, visit);
             }
-            if let Some(body) = &e.else_body { walk_literal_sources(body, visit); }
+            if let Some(body) = &e.else_body {
+                walk_literal_sources(body, visit);
+            }
         }
         Expr::FunctionLiteral { params, body } => {
             for param in params {
-                if let Some(value) = &param.default { walk_literal_expr(value, visit); }
+                if let Some(value) = &param.default {
+                    walk_literal_expr(value, visit);
+                }
             }
             walk_literal_function(body, visit);
         }
@@ -3439,7 +3505,12 @@ fn walk_literal_expr(expr: &Expr, visit: &mut LiteralVisitor<'_>) {
         // COMMAND expression (lint gap, TODO-mix 2026-09-24); this walk
         // must not, or its visit order would drift from the parser's
         // construction order (target, command, args).
-        Expr::Send { target, command, args, .. } => {
+        Expr::Send {
+            target,
+            command,
+            args,
+            ..
+        } => {
             walk_literal_expr(target, visit);
             walk_literal_expr(command, visit);
             for (_, value) in args {
@@ -3720,9 +3791,7 @@ fn collect_remote_sites(stmts: &[Stmt]) -> Vec<RemoteSite> {
 /// file resolves nothing. `None` per name means "bound to a map literal
 /// whose `bindings`/`env` value is not a map literal" — the keys are
 /// still unknowable, exactly like an unreadable opts argument.
-fn sole_map_definitions(
-    stmts: &[Stmt],
-) -> HashMap<String, (usize, Option<HashSet<String>>)> {
+fn sole_map_definitions(stmts: &[Stmt]) -> HashMap<String, (usize, Option<HashSet<String>>)> {
     let mut out = HashMap::new();
     if has_dynamic_include(stmts).0 {
         return out;
@@ -3911,10 +3980,9 @@ fn error_line(e: &crate::error::MixError) -> usize {
 /// extends from the map's last line by the same linear rule.
 fn map_inner_line(lines: Option<&[usize]>, first_line: usize, inner: usize) -> usize {
     match lines {
-        Some(ls) => ls
-            .get(inner.saturating_sub(1))
-            .copied()
-            .unwrap_or_else(|| ls.last().copied().unwrap_or(first_line) + inner.saturating_sub(ls.len())),
+        Some(ls) => ls.get(inner.saturating_sub(1)).copied().unwrap_or_else(|| {
+            ls.last().copied().unwrap_or(first_line) + inner.saturating_sub(ls.len())
+        }),
         None => first_line + inner.saturating_sub(1),
     }
 }
@@ -4413,7 +4481,11 @@ pub(crate) const FOREIGN_FUNCTION_SYNONYMS: &[(&str, &str, &str)] = &[
     ("trim_start", "ltrim", ""),
     ("lstrip", "ltrim", ""),
     // C/PHP strlen counts BYTES; Mix length() counts codepoints.
-    ("strlen", "byte_length", " (bytes; length() counts characters)"),
+    (
+        "strlen",
+        "byte_length",
+        " (bytes; length() counts characters)",
+    ),
     ("len_bytes", "byte_length", ""),
     ("byte_len", "byte_length", ""),
     ("tolower", "lower", ""),
@@ -4425,7 +4497,11 @@ pub(crate) const FOREIGN_FUNCTION_SYNONYMS: &[(&str, &str, &str)] = &[
     // Host-injected scoped DB is db_query only (db_open/db_close are NOT
     // builtins); db_open/db_close point at the SQLite-file API — the
     // 09-25 SHA512-CRYPT session called db_open for a secrets.db file.
-    ("db_open", "sqlopen", " (the SQLite-file API — db_open is the host-injected scoped DB)"),
+    (
+        "db_open",
+        "sqlopen",
+        " (the SQLite-file API — db_open is the host-injected scoped DB)",
+    ),
     ("db_close", "sqlclose", " (the SQLite-file API)"),
 ];
 
@@ -4481,15 +4557,15 @@ pub(crate) fn function_suggestion<'a>(
     name: &str,
     user_fns: impl IntoIterator<Item = &'a str>,
 ) -> Option<String> {
-    if let Some((_, _, replacement)) =
-        DEPRECATED_REGEX_CALLS.iter().find(|(n, _, _)| *n == name)
-    {
+    if let Some((_, _, replacement)) = DEPRECATED_REGEX_CALLS.iter().find(|(n, _, _)| *n == name) {
         return Some(format!("deleted in mix 0.73.0; use {replacement}"));
     }
     if let Some((_, suggestion)) = COLLECTION_FORM_SUGGESTIONS.iter().find(|(n, _)| *n == name) {
         return Some((*suggestion).to_string());
     }
-    if let Some((_, target, caveat)) = FOREIGN_FUNCTION_SYNONYMS.iter().find(|(n, _, _)| *n == name)
+    if let Some((_, target, caveat)) = FOREIGN_FUNCTION_SYNONYMS
+        .iter()
+        .find(|(n, _, _)| *n == name)
     {
         return Some(format!("did you mean '{target}'?{caveat}"));
     }
@@ -4942,7 +5018,9 @@ mod instructional_error_tests {
         // shared runtime/lint seam.
         let get = function_suggestion("get", std::iter::empty()).expect("get suggests");
         assert!(
-            get.starts_with("Mix has no get()") && get.contains("$m[key]") && get.contains("get_or"),
+            get.starts_with("Mix has no get()")
+                && get.contains("$m[key]")
+                && get.contains("get_or"),
             "{get}"
         );
         let set = function_suggestion("set", std::iter::empty()).expect("set suggests");
@@ -4974,7 +5052,10 @@ mod instructional_error_tests {
         }
         // The builtins the forms name must stay live.
         for live in ["get_or", "require_key", "index_of", "merge", "contains"] {
-            assert!(builtins::builtin_info_of(live).is_some(), "{live} is not a builtin");
+            assert!(
+                builtins::builtin_info_of(live).is_some(),
+                "{live} is not a builtin"
+            );
         }
         assert!(
             crate::builtins_hof::HOF_NAMES.contains(&"filter"),
@@ -4994,8 +5075,14 @@ mod instructional_error_tests {
             let runtime = undefined_function_hint(name, &fns(&[])).expect("runtime suggests");
             let hint = e1102_hint(src).expect("E1102 fires with a hint");
             let answer = runtime.trim_start_matches(" — ");
-            assert!(hint.starts_with(answer), "{name}: lint {hint:?} vs runtime {runtime:?}");
-            assert!(hint.contains("--allow-function"), "fallback advice kept: {hint}");
+            assert!(
+                hint.starts_with(answer),
+                "{name}: lint {hint:?} vs runtime {runtime:?}"
+            );
+            assert!(
+                hint.contains("--allow-function"),
+                "fallback advice kept: {hint}"
+            );
         }
     }
 
@@ -5009,10 +5096,7 @@ mod instructional_error_tests {
             .parse_program()
             .unwrap();
         let diags = analyze(&stmts, None, &AnalyzerConfig::default()).diagnostics;
-        assert!(
-            !diags.iter().any(|d| d.code == "MIX-E1102"),
-            "{diags:?}"
-        );
+        assert!(!diags.iter().any(|d| d.code == "MIX-E1102"), "{diags:?}");
     }
 
     #[test]
@@ -5038,9 +5122,15 @@ mod instructional_error_tests {
         }
         // Not drop-ins: the suggestion says what differs.
         let int = function_suggestion("int", std::iter::empty()).unwrap();
-        assert!(int.starts_with("did you mean 'to_number'?") && int.contains("trunc()"), "{int}");
+        assert!(
+            int.starts_with("did you mean 'to_number'?") && int.contains("trunc()"),
+            "{int}"
+        );
         let strlen = function_suggestion("strlen", std::iter::empty()).unwrap();
-        assert!(strlen.starts_with("did you mean 'byte_length'?"), "{strlen}");
+        assert!(
+            strlen.starts_with("did you mean 'byte_length'?"),
+            "{strlen}"
+        );
     }
 
     #[test]
@@ -5071,7 +5161,11 @@ mod instructional_error_tests {
             );
         }
         let src = "fn greet()\n  return 1\nend\nfn greed()\n  return 2\nend\nprint(greex())\n";
-        assert!(e1102_hint(src).unwrap().starts_with("did you mean 'greed'?"));
+        assert!(
+            e1102_hint(src)
+                .unwrap()
+                .starts_with("did you mean 'greed'?")
+        );
     }
 
     fn e1102_hint(src: &str) -> Option<String> {
@@ -5094,7 +5188,11 @@ mod instructional_error_tests {
         for (src, name, user) in [
             ("json_decode(\"{}\")\n", "json_decode", vec![]),
             ("print(lenght(\"ab\"))\n", "lenght", vec![]),
-            ("print(regex_match(\"^a\", \"abc\"))\n", "regex_match", vec![]),
+            (
+                "print(regex_match(\"^a\", \"abc\"))\n",
+                "regex_match",
+                vec![],
+            ),
             (
                 "fn greet($n)\n  return $n\nend\nprint(greeet(1))\n",
                 "greeet",
@@ -5104,8 +5202,14 @@ mod instructional_error_tests {
             let runtime = undefined_function_hint(name, &fns(&user)).expect("runtime suggests");
             let hint = e1102_hint(src).expect("E1102 fires with a hint");
             let answer = runtime.trim_start_matches(" — ");
-            assert!(hint.starts_with(answer), "{name}: lint {hint:?} vs runtime {runtime:?}");
-            assert!(hint.contains("--allow-function"), "fallback advice kept: {hint}");
+            assert!(
+                hint.starts_with(answer),
+                "{name}: lint {hint:?} vs runtime {runtime:?}"
+            );
+            assert!(
+                hint.contains("--allow-function"),
+                "fallback advice kept: {hint}"
+            );
         }
         // Nothing close: the plain advice, no invented guess.
         assert_eq!(

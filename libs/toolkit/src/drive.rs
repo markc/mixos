@@ -19,8 +19,8 @@
 use crate::menu;
 use egui::accesskit::{Node, NodeId, Role, Toggled, TreeUpdate};
 use egui::{
-    ColorImage, Context, Event, FullOutput, Key, Modifiers, MouseWheelUnit, PointerButton, Pos2, RawInput, TouchPhase,
-    Ui, UserData, Vec2, ViewportCommand, pos2, vec2,
+    ColorImage, Context, Event, FullOutput, Key, Modifiers, MouseWheelUnit, PointerButton, Pos2,
+    RawInput, TouchPhase, Ui, UserData, Vec2, ViewportCommand, pos2, vec2,
 };
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
@@ -58,30 +58,76 @@ fn ok(id: u64, body: Value) -> Answer {
 }
 
 fn refusal(id: u64, code: &str, message: &str) -> Answer {
-    Answer { id, rc: 10, body: json!({"error_code":code,"message":message}) }
+    Answer {
+        id,
+        rc: 10,
+        body: json!({"error_code":code,"message":message}),
+    }
 }
 
 /// Every drive verb under `app`, as `HELP` / `app.describe` list them.
 pub fn describe(app: &str) -> Vec<Value> {
     let verbs = [
-        ("ui.tree", json!({"label":"optional substring","exact":"optional bool: the label must equal it","role":"optional role name"}),
-            "The widget tree from AccessKit, depth first: id (decimal text), role, label, value, placeholder, rect (points), enabled, focused, selected, checked, children", true),
-        ("ui.click", json!({"label":"string (or id)","id":"node id as decimal text (or label)","button":"optional primary|secondary|middle","double":"optional bool","trace":"optional bool: also answer passes, each pass's input events and hit test"}),
-            "Move to a node's centre, then press and release there in one pass; a label names a control before a tooltip or label that repeats it; answers with the resulting menu and focus", false),
-        ("ui.pointer", json!({"x":"number","y":"number","action":"move|press|release","button":"optional primary|secondary|middle"}),
-            "One pointer event at a point in window coordinates (points)", false),
-        ("ui.scroll", json!({"x":"number","y":"number","dx":"number","dy":"number"}),
-            "Move to a point and scroll by dx, dy points", false),
-        ("ui.key", json!({"key":"egui key name (Enter, Escape, ArrowDown, F1, A, …)","modifiers":"optional [ctrl|shift|alt|command]"}),
-            "Press and release one key with modifiers, one pass each", false),
-        ("ui.type", json!({"text":"string"}),
-            "Type text into the focused widget; a newline presses Enter", false),
-        ("ui.menu", Value::Null, "The open menu and its highlighted path", true),
-        ("ui.capture", json!({"name":"optional plain file name ending .png"}),
-            "Screenshot the window to a new PNG in $XDG_RUNTIME_DIR/<app>/captures and answer with its path", false),
-        ("window", json!({"action":"minimize|maximize|restore|close|focus"}),
-            "Send a window command, as the caption buttons do", false),
-        ("window.state", Value::Null, "Window size, maximized, minimized, focused and pixels per point", true),
+        (
+            "ui.tree",
+            json!({"label":"optional substring","exact":"optional bool: the label must equal it","role":"optional role name"}),
+            "The widget tree from AccessKit, depth first: id (decimal text), role, label, value, placeholder, rect (points), enabled, focused, selected, checked, children",
+            true,
+        ),
+        (
+            "ui.click",
+            json!({"label":"string (or id)","id":"node id as decimal text (or label)","button":"optional primary|secondary|middle","double":"optional bool","trace":"optional bool: also answer passes, each pass's input events and hit test"}),
+            "Move to a node's centre, then press and release there in one pass; a label names a control before a tooltip or label that repeats it; answers with the resulting menu and focus",
+            false,
+        ),
+        (
+            "ui.pointer",
+            json!({"x":"number","y":"number","action":"move|press|release","button":"optional primary|secondary|middle"}),
+            "One pointer event at a point in window coordinates (points)",
+            false,
+        ),
+        (
+            "ui.scroll",
+            json!({"x":"number","y":"number","dx":"number","dy":"number"}),
+            "Move to a point and scroll by dx, dy points",
+            false,
+        ),
+        (
+            "ui.key",
+            json!({"key":"egui key name (Enter, Escape, ArrowDown, F1, A, …)","modifiers":"optional [ctrl|shift|alt|command]"}),
+            "Press and release one key with modifiers, one pass each",
+            false,
+        ),
+        (
+            "ui.type",
+            json!({"text":"string"}),
+            "Type text into the focused widget; a newline presses Enter",
+            false,
+        ),
+        (
+            "ui.menu",
+            Value::Null,
+            "The open menu and its highlighted path",
+            true,
+        ),
+        (
+            "ui.capture",
+            json!({"name":"optional plain file name ending .png"}),
+            "Screenshot the window to a new PNG in $XDG_RUNTIME_DIR/<app>/captures and answer with its path",
+            false,
+        ),
+        (
+            "window",
+            json!({"action":"minimize|maximize|restore|close|focus"}),
+            "Send a window command, as the caption buttons do",
+            false,
+        ),
+        (
+            "window.state",
+            Value::Null,
+            "Window size, maximized, minimized, focused and pixels per point",
+            true,
+        ),
     ];
     verbs
         .into_iter()
@@ -106,7 +152,10 @@ pub struct Options {
 
 impl Default for Options {
     fn default() -> Self {
-        Self { runtime_dir: std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from), capture_timeout: Duration::from_secs(10) }
+        Self {
+            runtime_dir: std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from),
+            capture_timeout: Duration::from_secs(10),
+        }
     }
 }
 
@@ -117,22 +166,31 @@ pub fn install(ctx: &Context, app: &str) {
 
 /// [`install`] with explicit [`Options`].
 pub fn install_with(ctx: &Context, app: &str, options: Options) {
-    ctx.add_plugin(Drive { app: app.to_owned(), options, ..Drive::default() });
+    ctx.add_plugin(Drive {
+        app: app.to_owned(),
+        options,
+        ..Drive::default()
+    });
 }
 
 /// `verb` only queues input behind the input before it, so an app may hand
 /// it over while earlier input is still running; every other verb reads or
 /// changes state now and must wait until [`pending`] is false.
 pub fn queues(verb: &str) -> bool {
-    matches!(verb, "ui.click" | "ui.pointer" | "ui.scroll" | "ui.key" | "ui.type" | "ui.capture")
+    matches!(
+        verb,
+        "ui.click" | "ui.pointer" | "ui.scroll" | "ui.key" | "ui.type" | "ui.capture"
+    )
 }
 
 /// Accepted drive work is still unanswered (queued, running, or answered
 /// but not yet taken). An app holds later Bus commands back while it is, so
 /// they act on what the input changed.
 pub fn pending(ctx: &Context) -> bool {
-    ctx.with_plugin(|drive: &mut Drive| drive.running.is_some() || !drive.queue.is_empty() || !drive.answers.is_empty())
-        .unwrap_or(false)
+    ctx.with_plugin(|drive: &mut Drive| {
+        drive.running.is_some() || !drive.queue.is_empty() || !drive.answers.is_empty()
+    })
+    .unwrap_or(false)
 }
 
 /// The per-frame step an app runs from its logic, which runs even while
@@ -160,9 +218,11 @@ pub fn finish(ctx: &Context) -> Vec<Answer> {
             let interrupted = running.steps.iter().any(|s| !matches!(s, Step::Idle));
             let answer = match running.answer {
                 Some(answer) => answer,
-                None if matches!(running.steps.front(), Some(Step::Await { .. })) => {
-                    refusal(running.id, "CANCELLED", "the app closed before the screenshot arrived")
-                }
+                None if matches!(running.steps.front(), Some(Step::Await { .. })) => refusal(
+                    running.id,
+                    "CANCELLED",
+                    "the app closed before the screenshot arrived",
+                ),
                 None => {
                     let mut answer = drive.report(ctx, running.id, &running.report, running.extra);
                     answer.body["closing"] = json!(true);
@@ -184,7 +244,13 @@ pub fn finish(ctx: &Context) -> Vec<Answer> {
 pub fn request(ctx: &Context, id: u64, verb: &str, args: &Value) -> Option<Answer> {
     let answer = ctx
         .with_plugin(|drive: &mut Drive| drive.request(ctx, id, verb, args))
-        .unwrap_or_else(|| Some(refusal(id, "UNAVAILABLE", "the drive layer is not installed")));
+        .unwrap_or_else(|| {
+            Some(refusal(
+                id,
+                "UNAVAILABLE",
+                "the drive layer is not installed",
+            ))
+        });
     if answer.is_none() {
         ctx.request_repaint();
     }
@@ -199,21 +265,45 @@ enum Target {
 
 #[derive(Clone, Debug, PartialEq)]
 enum Job {
-    Click { target: Target, button: PointerButton, double: bool },
-    Pointer { at: Pos2, action: Event },
-    Scroll { at: Pos2, delta: Vec2 },
-    Key { key: Key, modifiers: Modifiers },
-    Type { text: String },
+    Click {
+        target: Target,
+        button: PointerButton,
+        double: bool,
+    },
+    Pointer {
+        at: Pos2,
+        action: Event,
+    },
+    Scroll {
+        at: Pos2,
+        delta: Vec2,
+    },
+    Key {
+        key: Key,
+        modifiers: Modifiers,
+    },
+    Type {
+        text: String,
+    },
     /// Report the window state once the window has had two passes.
-    Window { action: String },
-    Capture { path: PathBuf, tag: u64 },
+    Window {
+        action: String,
+    },
+    Capture {
+        path: PathBuf,
+        tag: u64,
+    },
 }
 
 enum Step {
     Input(Vec<Event>),
     Viewport(ViewportCommand),
     Idle,
-    Await { tag: u64, path: PathBuf, deadline: Instant },
+    Await {
+        tag: u64,
+        path: PathBuf,
+        deadline: Instant,
+    },
 }
 
 enum Report {
@@ -273,7 +363,12 @@ impl egui::Plugin for Drive {
         if let Some(running) = &mut self.running
             && running.trace.is_some()
         {
-            running.pass_events = input.events.iter().filter(|e| !matches!(e, Event::Screenshot { .. })).map(|e| format!("{e:?}")).collect();
+            running.pass_events = input
+                .events
+                .iter()
+                .filter(|e| !matches!(e, Event::Screenshot { .. }))
+                .map(|e| format!("{e:?}"))
+                .collect();
         }
     }
 
@@ -306,7 +401,11 @@ impl egui::Plugin for Drive {
             };
             self.answers.push(answer);
         }
-        if self.running.is_some() || !self.queue.is_empty() || !self.answers.is_empty() || !self.cleanup.is_empty() {
+        if self.running.is_some()
+            || !self.queue.is_empty()
+            || !self.answers.is_empty()
+            || !self.cleanup.is_empty()
+        {
             ctx.request_repaint();
         }
     }
@@ -327,7 +426,9 @@ impl Drive {
             "ui.scroll" => scroll(args),
             "ui.key" => key(args),
             "ui.type" => match args.get("text").and_then(Value::as_str) {
-                Some(text) => Ok(Job::Type { text: text.to_owned() }),
+                Some(text) => Ok(Job::Type {
+                    text: text.to_owned(),
+                }),
                 None => Err("text must be a string".to_owned()),
             },
             "ui.capture" => self.capture(args),
@@ -339,7 +440,11 @@ impl Drive {
         };
         // A hidden window runs no passes, so its input would never be read.
         if ctx.input(|i| i.viewport().visible() == Some(false)) {
-            return Some(refusal(id, "BUSY", "the window is hidden: restore it first"));
+            return Some(refusal(
+                id,
+                "BUSY",
+                "the window is hidden: restore it first",
+            ));
         }
         if self.queue.len() >= QUEUE_LIMIT {
             return Some(refusal(id, "BUSY", "too many queued inputs"));
@@ -356,14 +461,26 @@ impl Drive {
     /// Window commands go out at once, from inside the frame: a minimized
     /// window runs no passes, so a queued restore would never be sent.
     fn window(&mut self, ctx: &Context, id: u64, args: &Value) -> Option<Answer> {
-        let action = args.get("action").and_then(Value::as_str).unwrap_or_default();
+        let action = args
+            .get("action")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         let commands = match action {
             "minimize" => vec![ViewportCommand::Minimized(true)],
             "maximize" => vec![ViewportCommand::Maximized(true)],
-            "restore" => vec![ViewportCommand::Minimized(false), ViewportCommand::Maximized(false)],
+            "restore" => vec![
+                ViewportCommand::Minimized(false),
+                ViewportCommand::Maximized(false),
+            ],
             "close" => vec![ViewportCommand::Close],
             "focus" => vec![ViewportCommand::Focus],
-            _ => return Some(refusal(id, "ARGUMENT", "action must be minimize, maximize, restore, close or focus")),
+            _ => {
+                return Some(refusal(
+                    id,
+                    "ARGUMENT",
+                    "action must be minimize, maximize, restore, close or focus",
+                ));
+            }
         };
         // A minimized window runs no passes: settle what is accepted first.
         if action == "minimize" {
@@ -380,7 +497,12 @@ impl Drive {
             self.answers.push(ok(id, body));
             return None;
         }
-        self.queue.push_back((id, Job::Window { action: action.to_owned() }));
+        self.queue.push_back((
+            id,
+            Job::Window {
+                action: action.to_owned(),
+            },
+        ));
         None
     }
 
@@ -390,10 +512,14 @@ impl Drive {
     fn capture(&mut self, args: &Value) -> Result<Job, String> {
         self.shots += 1;
         if args.get("path").is_some() {
-            return Err("captures go to the app capture directory: give a file name, not a path".into());
+            return Err(
+                "captures go to the app capture directory: give a file name, not a path".into(),
+            );
         }
         let name = match args.get("name") {
-            None | Some(Value::Null) => format!("capture-{}-{}.png", std::process::id(), self.shots),
+            None | Some(Value::Null) => {
+                format!("capture-{}-{}.png", std::process::id(), self.shots)
+            }
             Some(Value::String(name)) => {
                 let plain = !name.is_empty()
                     && name.len() <= 128
@@ -401,7 +527,9 @@ impl Drive {
                     && !name.contains(['/', '\\', '\0'])
                     && !name.contains("..");
                 if !plain || !name.ends_with(".png") {
-                    return Err("name must be a plain file name ending .png (no directories, no ..)".into());
+                    return Err(
+                        "name must be a plain file name ending .png (no directories, no ..)".into(),
+                    );
                 }
                 name.clone()
             }
@@ -412,24 +540,39 @@ impl Drive {
         if std::fs::symlink_metadata(&path).is_ok() {
             return Err(format!("{} already exists", path.display()));
         }
-        Ok(Job::Capture { path, tag: self.shots })
+        Ok(Job::Capture {
+            path,
+            tag: self.shots,
+        })
     }
 
     /// `<runtime>/<app>/captures`, created 0700, refusing a link anywhere
     /// in the part the app owns.
     fn capture_dir(&self) -> Result<PathBuf, String> {
         use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-        let runtime = self.options.runtime_dir.clone().ok_or("XDG_RUNTIME_DIR is not set: no capture directory")?;
-        let app = if self.app.is_empty() { "app" } else { &self.app };
+        let runtime = self
+            .options
+            .runtime_dir
+            .clone()
+            .ok_or("XDG_RUNTIME_DIR is not set: no capture directory")?;
+        let app = if self.app.is_empty() {
+            "app"
+        } else {
+            &self.app
+        };
         let mut dir = runtime;
         for part in [app, "captures"] {
             dir.push(part);
             match std::fs::symlink_metadata(&dir) {
                 Ok(meta) if meta.is_dir() => {}
                 Ok(_) => return Err(format!("{} is not a directory", dir.display())),
-                Err(_) => std::fs::DirBuilder::new().mode(0o700).create(&dir).map_err(|e| format!("{}: {e}", dir.display()))?,
+                Err(_) => std::fs::DirBuilder::new()
+                    .mode(0o700)
+                    .create(&dir)
+                    .map_err(|e| format!("{}: {e}", dir.display()))?,
             }
-            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).map_err(|e| format!("{}: {e}", dir.display()))?;
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
+                .map_err(|e| format!("{}: {e}", dir.display()))?;
         }
         Ok(dir)
     }
@@ -481,7 +624,12 @@ impl Drive {
         let away = pos2(-100_000.0, -100_000.0);
         self.cleanup.push(Event::PointerMoved(away));
         for button in buttons {
-            self.cleanup.push(Event::PointerButton { pos: away, button: *button, pressed: false, modifiers: Modifiers::NONE });
+            self.cleanup.push(Event::PointerButton {
+                pos: away,
+                button: *button,
+                pressed: false,
+                modifiers: Modifiers::NONE,
+            });
         }
         self.cleanup.push(Event::PointerGone);
     }
@@ -497,7 +645,11 @@ impl Drive {
         let late = |r: &Running| matches!(r.steps.front(), Some(Step::Await { deadline, .. }) if Instant::now() >= *deadline);
         if self.running.as_ref().is_some_and(late) {
             let running = self.running.take().expect("a late capture");
-            self.answers.push(refusal(running.id, "CAPTURE", "no screenshot arrived in time"));
+            self.answers.push(refusal(
+                running.id,
+                "CAPTURE",
+                "no screenshot arrived in time",
+            ));
         }
     }
 
@@ -529,12 +681,24 @@ impl Drive {
     /// what the input changed.
     fn plan(&self, job: Job) -> Result<(Vec<Step>, Report, Value), String> {
         let input = Step::Input;
-        let press = |pos, button, pressed| Event::PointerButton { pos, button, pressed, modifiers: Modifiers::NONE };
+        let press = |pos, button, pressed| Event::PointerButton {
+            pos,
+            button,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
         Ok(match job {
-            Job::Click { target, button: which, double } => {
+            Job::Click {
+                target,
+                button: which,
+                double,
+            } => {
                 let (id, node) = self.find(&target)?;
                 let rect = node.bounds().ok_or("that node has no bounds")?;
-                let at = pos2(((rect.x0 + rect.x1) / 2.0) as f32, ((rect.y0 + rect.y1) / 2.0) as f32);
+                let at = pos2(
+                    ((rect.x0 + rect.x1) / 2.0) as f32,
+                    ((rect.y0 + rect.y1) / 2.0) as f32,
+                );
                 let target = self.node_json(id, node, None);
                 // The press and its release share one pass, as a quick
                 // hand's do within one frame. Passes can be far apart (a
@@ -546,30 +710,67 @@ impl Drive {
                     clicks.push(press(at, which, true));
                     clicks.push(press(at, which, false));
                 }
-                let steps = vec![input(vec![Event::PointerMoved(at)]), input(clicks), Step::Idle];
+                let steps = vec![
+                    input(vec![Event::PointerMoved(at)]),
+                    input(clicks),
+                    Step::Idle,
+                ];
                 (steps, Report::Ui, json!({"target":target,"at":[at.x,at.y]}))
             }
-            Job::Pointer { at, action } => {
-                (vec![input(vec![Event::PointerMoved(at), action]), Step::Idle], Report::Ui, json!({}))
-            }
+            Job::Pointer { at, action } => (
+                vec![input(vec![Event::PointerMoved(at), action]), Step::Idle],
+                Report::Ui,
+                json!({}),
+            ),
             Job::Scroll { at, delta } => {
-                let wheel =
-                    Event::MouseWheel { unit: MouseWheelUnit::Point, delta, phase: TouchPhase::Move, modifiers: Modifiers::NONE };
-                (vec![input(vec![Event::PointerMoved(at)]), input(vec![wheel]), Step::Idle], Report::Ui, json!({}))
+                let wheel = Event::MouseWheel {
+                    unit: MouseWheelUnit::Point,
+                    delta,
+                    phase: TouchPhase::Move,
+                    modifiers: Modifiers::NONE,
+                };
+                (
+                    vec![
+                        input(vec![Event::PointerMoved(at)]),
+                        input(vec![wheel]),
+                        Step::Idle,
+                    ],
+                    Report::Ui,
+                    json!({}),
+                )
             }
             Job::Key { key, modifiers } => {
                 // The modifiers go down before the key and up after it, as a
                 // keyboard reports them.
-                let event = |pressed| Event::Key { key, physical_key: None, pressed, repeat: false, modifiers };
+                let event = |pressed| Event::Key {
+                    key,
+                    physical_key: None,
+                    pressed,
+                    repeat: false,
+                    modifiers,
+                };
                 let (down, up) = if modifiers.any() {
-                    (vec![Event::ModifiersChanged(modifiers), event(true)], vec![event(false), Event::ModifiersChanged(Modifiers::NONE)])
+                    (
+                        vec![Event::ModifiersChanged(modifiers), event(true)],
+                        vec![event(false), Event::ModifiersChanged(Modifiers::NONE)],
+                    )
                 } else {
                     (vec![event(true)], vec![event(false)])
                 };
-                (vec![input(down), input(up), Step::Idle], Report::Ui, json!({}))
+                (
+                    vec![input(down), input(up), Step::Idle],
+                    Report::Ui,
+                    json!({}),
+                )
             }
             Job::Type { text } => {
-                let enter = |pressed| Event::Key { key: Key::Enter, physical_key: None, pressed, repeat: false, modifiers: Modifiers::NONE };
+                let enter = |pressed| Event::Key {
+                    key: Key::Enter,
+                    physical_key: None,
+                    pressed,
+                    repeat: false,
+                    modifiers: Modifiers::NONE,
+                };
                 let mut steps = Vec::new();
                 for (index, line) in text.split('\n').enumerate() {
                     if index > 0 {
@@ -582,11 +783,26 @@ impl Drive {
                 steps.push(Step::Idle);
                 (steps, Report::Ui, json!({}))
             }
-            Job::Window { action } => (vec![Step::Idle, Step::Idle], Report::Window, json!({"requested":action})),
+            Job::Window { action } => (
+                vec![Step::Idle, Step::Idle],
+                Report::Window,
+                json!({"requested":action}),
+            ),
             Job::Capture { path, tag } => {
                 let shot = ViewportCommand::Screenshot(UserData::new(Shot(tag)));
                 let deadline = Instant::now() + self.options.capture_timeout;
-                (vec![Step::Viewport(shot), Step::Await { tag, path, deadline }], Report::Ui, json!({}))
+                (
+                    vec![
+                        Step::Viewport(shot),
+                        Step::Await {
+                            tag,
+                            path,
+                            deadline,
+                        },
+                    ],
+                    Report::Ui,
+                    json!({}),
+                )
             }
         })
     }
@@ -601,11 +817,23 @@ impl Drive {
         if self.running.is_none() {
             self.start();
         }
-        let Some(running) = &mut self.running else { return };
-        if let Some(Step::Await { tag, path, deadline }) = running.steps.front_mut() {
+        let Some(running) = &mut self.running else {
+            return;
+        };
+        if let Some(Step::Await {
+            tag,
+            path,
+            deadline,
+        }) = running.steps.front_mut()
+        {
             let image = input.events.iter().find_map(|event| match event {
-                Event::Screenshot { user_data, image, .. }
-                    if user_data.data.as_ref().and_then(|d| (**d).downcast_ref::<Shot>()) == Some(&Shot(*tag)) =>
+                Event::Screenshot {
+                    user_data, image, ..
+                } if user_data
+                    .data
+                    .as_ref()
+                    .and_then(|d| (**d).downcast_ref::<Shot>())
+                    == Some(&Shot(*tag)) =>
                 {
                     Some(image.clone())
                 }
@@ -613,10 +841,17 @@ impl Drive {
             });
             let answer = match image {
                 Some(image) => match write_png(path, &image) {
-                    Ok(()) => Some(ok(running.id, json!({"path":path,"width":image.size[0],"height":image.size[1]}))),
+                    Ok(()) => Some(ok(
+                        running.id,
+                        json!({"path":path,"width":image.size[0],"height":image.size[1]}),
+                    )),
                     Err(error) => Some(refusal(running.id, "CAPTURE", &error)),
                 },
-                None if Instant::now() >= *deadline => Some(refusal(running.id, "CAPTURE", "no screenshot arrived in time")),
+                None if Instant::now() >= *deadline => Some(refusal(
+                    running.id,
+                    "CAPTURE",
+                    "no screenshot arrived in time",
+                )),
                 None => None,
             };
             if answer.is_some() {
@@ -628,7 +863,10 @@ impl Drive {
         match running.steps.pop_front() {
             Some(Step::Input(events)) => {
                 for event in &events {
-                    if let Event::PointerButton { button, pressed, .. } = event {
+                    if let Event::PointerButton {
+                        button, pressed, ..
+                    } = event
+                    {
                         running.down.retain(|b| b != button);
                         if *pressed {
                             running.down.push(*button);
@@ -643,7 +881,10 @@ impl Drive {
     }
 
     fn nodes(&self) -> HashMap<NodeId, &Node> {
-        self.tree.iter().flat_map(|t| t.nodes.iter().map(|(id, node)| (*id, node))).collect()
+        self.tree
+            .iter()
+            .flat_map(|t| t.nodes.iter().map(|(id, node)| (*id, node)))
+            .collect()
     }
 
     fn focus(&self) -> Option<NodeId> {
@@ -661,15 +902,27 @@ impl Drive {
             Target::Id(id) => nodes.get(id).map(|n| (*id, *n)).into_iter().collect(),
             Target::Label(text) => {
                 let by = |f: fn(&Node) -> Option<&str>| -> Vec<(NodeId, &Node)> {
-                    let mut hits: Vec<_> = nodes.iter().filter(|(_, n)| f(n) == Some(text.as_str())).map(|(id, n)| (*id, *n)).collect();
+                    let mut hits: Vec<_> = nodes
+                        .iter()
+                        .filter(|(_, n)| f(n) == Some(text.as_str()))
+                        .map(|(id, n)| (*id, *n))
+                        .collect();
                     hits.sort_by_key(|(id, _)| id.0);
                     hits
                 };
                 let labelled = by(label);
-                let hits = if labelled.is_empty() { by(Node::placeholder) } else { labelled };
+                let hits = if labelled.is_empty() {
+                    by(Node::placeholder)
+                } else {
+                    labelled
+                };
                 // A tooltip or a plain label repeats a control's name: when
                 // any match is a control, only the controls count.
-                let controls: Vec<_> = hits.iter().copied().filter(|(_, n)| actionable(n.role())).collect();
+                let controls: Vec<_> = hits
+                    .iter()
+                    .copied()
+                    .filter(|(_, n)| actionable(n.role()))
+                    .collect();
                 if controls.is_empty() { hits } else { controls }
             }
         };
@@ -678,7 +931,11 @@ impl Drive {
             [] => Err(format!("no node matches {target:?}")),
             many => {
                 let ids: Vec<String> = many.iter().map(|(id, _)| node_id(*id)).collect();
-                Err(format!("{} nodes match {target:?}; click one by id: {}", many.len(), ids.join(", ")))
+                Err(format!(
+                    "{} nodes match {target:?}; click one by id: {}",
+                    many.len(),
+                    ids.join(", ")
+                ))
             }
         }
     }
@@ -703,10 +960,16 @@ impl Drive {
     /// `ui.tree`: every node depth first from the root, optionally only
     /// those whose label contains `label` or whose role is `role`.
     fn tree_answer(&self, id: u64, args: &Value) -> Answer {
-        let Some(tree) = &self.tree else { return refusal(id, "BUSY", "no frame has been drawn yet") };
+        let Some(tree) = &self.tree else {
+            return refusal(id, "BUSY", "no frame has been drawn yet");
+        };
         let (filter, role) = match (args.get("label"), args.get("role")) {
-            (Some(l), _) if !l.is_string() => return refusal(id, "ARGUMENT", "label must be a string"),
-            (_, Some(r)) if !r.is_string() => return refusal(id, "ARGUMENT", "role must be a string"),
+            (Some(l), _) if !l.is_string() => {
+                return refusal(id, "ARGUMENT", "label must be a string");
+            }
+            (_, Some(r)) if !r.is_string() => {
+                return refusal(id, "ARGUMENT", "role must be a string");
+            }
             (l, r) => (l.and_then(Value::as_str), r.and_then(Value::as_str)),
         };
         let exact = match args.get("exact") {
@@ -722,11 +985,17 @@ impl Drive {
             _ => true,
         };
         let nodes = self.nodes();
-        let root = tree.tree.as_ref().map(|t| t.root).or_else(|| tree.nodes.first().map(|(id, _)| *id));
+        let root = tree
+            .tree
+            .as_ref()
+            .map(|t| t.root)
+            .or_else(|| tree.nodes.first().map(|(id, _)| *id));
         let mut out = Vec::new();
         let mut stack: Vec<(NodeId, usize)> = root.into_iter().map(|r| (r, 0)).collect();
         while let Some((node_id, depth)) = stack.pop() {
-            let Some(node) = nodes.get(&node_id) else { continue };
+            let Some(node) = nodes.get(&node_id) else {
+                continue;
+            };
             let label_matches = filter.is_none() || label(node).is_some_and(matches_label);
             let role_matches = role.is_none_or(|r| format!("{:?}", node.role()) == r);
             if label_matches && role_matches {
@@ -734,13 +1003,18 @@ impl Drive {
             }
             stack.extend(node.children().iter().rev().map(|c| (*c, depth + 1)));
         }
-        ok(id, json!({"root":root.map(node_id),"focus":self.focus().map(node_id),"nodes":out}))
+        ok(
+            id,
+            json!({"root":root.map(node_id),"focus":self.focus().map(node_id),"nodes":out}),
+        )
     }
 
     /// What an input left: the open menu, the focused node and the pointer.
     fn ui_state(&self, ctx: &Context) -> Value {
         let nodes = self.nodes();
-        let focused = self.focus().and_then(|f| nodes.get(&f).map(|n| self.node_json(f, n, None)));
+        let focused = self
+            .focus()
+            .and_then(|f| nodes.get(&f).map(|n| self.node_json(f, n, None)));
         let pointer = ctx.input(|i| i.pointer.latest_pos()).map(|p| [p.x, p.y]);
         json!({"menu":menu_state(ctx),"focused":focused,"pointer":pointer})
     }
@@ -750,12 +1024,25 @@ impl Drive {
 /// pointer state made of them (widget ids as decimal text, as node ids).
 fn pass_trace(ctx: &Context, events: Vec<String>) -> Value {
     let text = |id: egui::Id| id.value().to_string();
-    let (clicked, drag_started, dragged, drag_stopped, hovered, contains) = ctx.interaction_snapshot(|s| {
-        let set = |ids: &egui::IdSet| ids.iter().map(|id| text(*id)).collect::<Vec<_>>();
-        (s.clicked.map(text), s.drag_started.map(text), s.dragged.map(text), s.drag_stopped.map(text), set(&s.hovered), set(&s.contains_pointer))
-    });
+    let (clicked, drag_started, dragged, drag_stopped, hovered, contains) = ctx
+        .interaction_snapshot(|s| {
+            let set = |ids: &egui::IdSet| ids.iter().map(|id| text(*id)).collect::<Vec<_>>();
+            (
+                s.clicked.map(text),
+                s.drag_started.map(text),
+                s.dragged.map(text),
+                s.drag_stopped.map(text),
+                set(&s.hovered),
+                set(&s.contains_pointer),
+            )
+        });
     let (latest, down, moved_too_much, time) = ctx.input(|i| {
-        (i.pointer.latest_pos().map(|p| [p.x, p.y]), i.pointer.any_down(), !i.pointer.could_any_button_be_click(), i.time)
+        (
+            i.pointer.latest_pos().map(|p| [p.x, p.y]),
+            i.pointer.any_down(),
+            !i.pointer.could_any_button_be_click(),
+            i.time,
+        )
     });
     json!({"time":time,"events":events,"clicked":clicked,"drag_started":drag_started,"dragged":dragged,"drag_stopped":drag_stopped,
         "hovered":hovered,"contains_pointer":contains,"pointer":latest,"down":down,"no_longer_a_click":moved_too_much})
@@ -789,7 +1076,13 @@ fn actionable(role: Role) -> bool {
 /// The text a person reads on `node`: egui puts a plain label's text in its
 /// value.
 fn label(node: &Node) -> Option<&str> {
-    node.label().or_else(|| if node.role() == Role::Label { node.value() } else { None })
+    node.label().or_else(|| {
+        if node.role() == Role::Label {
+            node.value()
+        } else {
+            None
+        }
+    })
 }
 
 fn menu_state(ctx: &Context) -> Value {
@@ -841,40 +1134,57 @@ fn parse_id(id: &Value) -> Result<NodeId, String> {
         Value::Number(number) => number.as_u64(),
         _ => None,
     };
-    parsed.map(NodeId).ok_or_else(|| "id must be a node id (decimal text)".to_owned())
+    parsed
+        .map(NodeId)
+        .ok_or_else(|| "id must be a node id (decimal text)".to_owned())
 }
 
 fn click(args: &Value) -> Result<Job, String> {
     let target = match (args.get("id"), args.get("label")) {
         (Some(id), None) => Target::Id(parse_id(id)?),
-        (None, Some(label)) => Target::Label(label.as_str().ok_or("label must be a string")?.to_owned()),
+        (None, Some(label)) => {
+            Target::Label(label.as_str().ok_or("label must be a string")?.to_owned())
+        }
         _ => return Err("give exactly one of label and id".into()),
     };
     let double = match args.get("double") {
         None => false,
         Some(double) => double.as_bool().ok_or("double must be a bool")?,
     };
-    Ok(Job::Click { target, button: button(args)?, double })
+    Ok(Job::Click {
+        target,
+        button: button(args)?,
+        double,
+    })
 }
 
 fn pointer(args: &Value) -> Result<Job, String> {
     let at = pos2(number(args, "x")?, number(args, "y")?);
     let action = match args.get("action").and_then(Value::as_str) {
         Some("move") => Event::PointerMoved(at),
-        Some(action @ ("press" | "release")) => {
-            Event::PointerButton { pos: at, button: button(args)?, pressed: action == "press", modifiers: Modifiers::NONE }
-        }
+        Some(action @ ("press" | "release")) => Event::PointerButton {
+            pos: at,
+            button: button(args)?,
+            pressed: action == "press",
+            modifiers: Modifiers::NONE,
+        },
         _ => return Err("action must be move, press or release".into()),
     };
     Ok(Job::Pointer { at, action })
 }
 
 fn scroll(args: &Value) -> Result<Job, String> {
-    Ok(Job::Scroll { at: pos2(number(args, "x")?, number(args, "y")?), delta: vec2(number(args, "dx")?, number(args, "dy")?) })
+    Ok(Job::Scroll {
+        at: pos2(number(args, "x")?, number(args, "y")?),
+        delta: vec2(number(args, "dx")?, number(args, "dy")?),
+    })
 }
 
 fn key(args: &Value) -> Result<Job, String> {
-    let name = args.get("key").and_then(Value::as_str).ok_or("key must be a key name")?;
+    let name = args
+        .get("key")
+        .and_then(Value::as_str)
+        .ok_or("key must be a key name")?;
     let key = Key::from_name(name).ok_or_else(|| format!("unknown key {name:?}"))?;
     let mut modifiers = Modifiers::NONE;
     let names = match args.get("modifiers") {
@@ -885,7 +1195,9 @@ fn key(args: &Value) -> Result<Job, String> {
     for name in names {
         match name.as_str() {
             // Ctrl is the command key off macOS, as egui-winit reports it.
-            Some("ctrl" | "command") => modifiers = modifiers.plus(Modifiers::CTRL).plus(Modifiers::COMMAND),
+            Some("ctrl" | "command") => {
+                modifiers = modifiers.plus(Modifiers::CTRL).plus(Modifiers::COMMAND)
+            }
             Some("shift") => modifiers = modifiers.plus(Modifiers::SHIFT),
             Some("alt") => modifiers = modifiers.plus(Modifiers::ALT),
             _ => return Err("modifiers are ctrl, shift, alt or command".into()),
@@ -908,7 +1220,11 @@ fn write_png(path: &Path, image: &ColorImage) -> Result<(), String> {
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
     let mut writer = encoder.write_header().map_err(|e| e.to_string())?;
-    let data: Vec<u8> = image.pixels.iter().flat_map(|p| p.to_srgba_unmultiplied()).collect();
+    let data: Vec<u8> = image
+        .pixels
+        .iter()
+        .flat_map(|p| p.to_srgba_unmultiplied())
+        .collect();
     writer.write_image_data(&data).map_err(|e| e.to_string())?;
     writer.finish().map_err(|e| e.to_string())
 }
@@ -919,7 +1235,10 @@ mod tests {
 
     #[test]
     fn every_verb_is_described_once() {
-        let names: Vec<String> = describe("demo").iter().filter_map(|v| v["name"].as_str().map(str::to_owned)).collect();
+        let names: Vec<String> = describe("demo")
+            .iter()
+            .filter_map(|v| v["name"].as_str().map(str::to_owned))
+            .collect();
         let expected: Vec<String> = VERBS.iter().map(|v| format!("demo.{v}")).collect();
         assert_eq!(names, expected);
     }
@@ -929,23 +1248,63 @@ mod tests {
         let ctx = Context::default();
         install(&ctx, "demo");
         let code = |verb: &str, args: Value| {
-            request(&ctx, 1, verb, &args).map(|a| a.body["error_code"].as_str().unwrap_or("").to_owned())
+            request(&ctx, 1, verb, &args)
+                .map(|a| a.body["error_code"].as_str().unwrap_or("").to_owned())
         };
         assert_eq!(code("ui.nope", json!({})).as_deref(), Some("UNKNOWN_VERB"));
         assert_eq!(code("ui.tree", json!([])).as_deref(), Some("ARGUMENT"));
         assert_eq!(code("ui.click", json!({})).as_deref(), Some("ARGUMENT"));
-        assert_eq!(code("ui.click", json!({"label":"a","id":1})).as_deref(), Some("ARGUMENT"));
-        assert_eq!(code("ui.click", json!({"label":"a","button":"thumb"})).as_deref(), Some("ARGUMENT"));
-        assert_eq!(code("ui.pointer", json!({"x":1,"y":2,"action":"wave"})).as_deref(), Some("ARGUMENT"));
-        assert_eq!(code("ui.scroll", json!({"x":1,"y":2,"dx":"far"})).as_deref(), Some("ARGUMENT"));
-        assert_eq!(code("ui.key", json!({"key":"NoSuchKey"})).as_deref(), Some("ARGUMENT"));
-        assert_eq!(code("ui.key", json!({"key":"A","modifiers":["hyper"]})).as_deref(), Some("ARGUMENT"));
-        assert_eq!(code("ui.type", json!({"text":5})).as_deref(), Some("ARGUMENT"));
-        assert_eq!(code("ui.capture", json!({"path":"/tmp/x.png"})).as_deref(), Some("ARGUMENT"), "no caller paths");
-        assert_eq!(code("ui.click", json!({"id":"12x"})).as_deref(), Some("ARGUMENT"));
-        assert_eq!(code("window", json!({"action":"spin"})).as_deref(), Some("ARGUMENT"));
-        assert_eq!(code("ui.tree", json!({})).as_deref(), Some("BUSY"), "no frame yet");
-        assert_eq!(code("ui.click", json!({"label":"a"})), None, "valid input is queued");
+        assert_eq!(
+            code("ui.click", json!({"label":"a","id":1})).as_deref(),
+            Some("ARGUMENT")
+        );
+        assert_eq!(
+            code("ui.click", json!({"label":"a","button":"thumb"})).as_deref(),
+            Some("ARGUMENT")
+        );
+        assert_eq!(
+            code("ui.pointer", json!({"x":1,"y":2,"action":"wave"})).as_deref(),
+            Some("ARGUMENT")
+        );
+        assert_eq!(
+            code("ui.scroll", json!({"x":1,"y":2,"dx":"far"})).as_deref(),
+            Some("ARGUMENT")
+        );
+        assert_eq!(
+            code("ui.key", json!({"key":"NoSuchKey"})).as_deref(),
+            Some("ARGUMENT")
+        );
+        assert_eq!(
+            code("ui.key", json!({"key":"A","modifiers":["hyper"]})).as_deref(),
+            Some("ARGUMENT")
+        );
+        assert_eq!(
+            code("ui.type", json!({"text":5})).as_deref(),
+            Some("ARGUMENT")
+        );
+        assert_eq!(
+            code("ui.capture", json!({"path":"/tmp/x.png"})).as_deref(),
+            Some("ARGUMENT"),
+            "no caller paths"
+        );
+        assert_eq!(
+            code("ui.click", json!({"id":"12x"})).as_deref(),
+            Some("ARGUMENT")
+        );
+        assert_eq!(
+            code("window", json!({"action":"spin"})).as_deref(),
+            Some("ARGUMENT")
+        );
+        assert_eq!(
+            code("ui.tree", json!({})).as_deref(),
+            Some("BUSY"),
+            "no frame yet"
+        );
+        assert_eq!(
+            code("ui.click", json!({"label":"a"})),
+            None,
+            "valid input is queued"
+        );
     }
 
     #[test]

@@ -131,7 +131,9 @@ async fn script_path_is_nil_without_a_script_file() {
     // `mix -c`, the REPL: $0 is never set.
     let dir = test_dir("unset");
     let main = dir.join("main.mix");
-    let out = run_entry(&main, "print(script_path())\n", None).await.unwrap();
+    let out = run_entry(&main, "print(script_path())\n", None)
+        .await
+        .unwrap();
     assert_eq!(out, "nil\n");
 }
 

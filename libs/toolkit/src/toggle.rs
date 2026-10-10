@@ -18,8 +18,8 @@ use crate::chrome::{self, Chrome};
 use design::family::style::{Switch as SwitchStyle, Toggle as ToggleStyle};
 use egui::emath::GuiRounding;
 use egui::{
-    Color32, Rect, Response, Sense, Stroke, StrokeKind, TextStyle, Ui, Vec2, Widget, WidgetInfo, WidgetType, pos2,
-    vec2,
+    Color32, Rect, Response, Sense, Stroke, StrokeKind, TextStyle, Ui, Vec2, Widget, WidgetInfo,
+    WidgetType, pos2, vec2,
 };
 
 /// The checkbox's box, its radius and the gap before any label (§3.16).
@@ -48,16 +48,25 @@ pub struct Checkbox<'a> {
 
 impl<'a> Checkbox<'a> {
     pub fn new(checked: &'a mut bool, label: impl Into<String>) -> Self {
-        Self { checked, label: label.into() }
+        Self {
+            checked,
+            label: label.into(),
+        }
     }
 }
 
 /// The control's rect and its label galley, laid out in one row of the
 /// interact height with the label `LABEL_GAP` after `control`.
-fn row(ui: &mut Ui, control: Vec2, label: &str, checked: bool) -> (Rect, Response, Option<std::sync::Arc<egui::Galley>>) {
+fn row(
+    ui: &mut Ui,
+    control: Vec2,
+    label: &str,
+    checked: bool,
+) -> (Rect, Response, Option<std::sync::Arc<egui::Galley>>) {
     let galley = (!label.is_empty()).then(|| {
         let font = TextStyle::Body.resolve(ui.style());
-        ui.painter().layout_no_wrap(label.to_owned(), font, Color32::PLACEHOLDER)
+        ui.painter()
+            .layout_no_wrap(label.to_owned(), font, Color32::PLACEHOLDER)
     });
     let width = control.x + galley.as_ref().map_or(0.0, |g| LABEL_GAP + g.size().x);
     let height = ui.spacing().interact_size.y.max(control.y);
@@ -65,15 +74,28 @@ fn row(ui: &mut Ui, control: Vec2, label: &str, checked: bool) -> (Rect, Respons
     if response.clicked() {
         response.mark_changed();
     }
-    response.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, ui.is_enabled(), checked, label));
-    let control = Rect::from_min_size(pos2(rect.left(), rect.center().y - control.y / 2.0), control);
-    (control.round_to_pixels(ui.pixels_per_point()), response, galley)
+    response.widget_info(|| {
+        WidgetInfo::selected(WidgetType::Checkbox, ui.is_enabled(), checked, label)
+    });
+    let control = Rect::from_min_size(
+        pos2(rect.left(), rect.center().y - control.y / 2.0),
+        control,
+    );
+    (
+        control.round_to_pixels(ui.pixels_per_point()),
+        response,
+        galley,
+    )
 }
 
 fn paint_label(ui: &Ui, control: Rect, galley: Option<std::sync::Arc<egui::Galley>>, ink: Color32) {
     if let Some(galley) = galley {
-        let at = pos2(control.right() + LABEL_GAP, control.center().y - galley.size().y / 2.0);
-        ui.painter().galley(at.round_to_pixels(ui.pixels_per_point()), galley, ink);
+        let at = pos2(
+            control.right() + LABEL_GAP,
+            control.center().y - galley.size().y / 2.0,
+        );
+        ui.painter()
+            .galley(at.round_to_pixels(ui.pixels_per_point()), galley, ink);
     }
 }
 
@@ -101,9 +123,18 @@ impl Widget for Checkbox<'_> {
                 painter.rect_filled(b, BOX_RADIUS, p.accent);
                 painter.add(egui::Shape::line(tick(b).to_vec(), Stroke::new(TICK, MARK)));
             } else {
-                let outline = if response.hovered() { p.text_dim } else { p.text_faint };
+                let outline = if response.hovered() {
+                    p.text_dim
+                } else {
+                    p.text_faint
+                };
                 painter.rect_filled(b, BOX_RADIUS, p.field);
-                painter.rect_stroke(b, BOX_RADIUS, Stroke::new(OUTLINE, outline), StrokeKind::Inside);
+                painter.rect_stroke(
+                    b,
+                    BOX_RADIUS,
+                    Stroke::new(OUTLINE, outline),
+                    StrokeKind::Inside,
+                );
             }
             paint_label(ui, b, galley, p.text_dim);
         }
@@ -120,7 +151,10 @@ pub struct Switch<'a> {
 
 impl<'a> Switch<'a> {
     pub fn new(on: &'a mut bool, label: impl Into<String>) -> Self {
-        Self { on, label: label.into() }
+        Self {
+            on,
+            label: label.into(),
+        }
     }
 }
 
@@ -146,14 +180,24 @@ impl Widget for Switch<'_> {
                 // block the knob's diameter square, as its slider knob is.
                 painter.rect_filled(track, 0.0, if *self.on { p.accent } else { p.field });
                 chrome::bevel(painter, track, false, p);
-                let knob = Rect::from_center_size(centre, Vec2::splat(2.0 * KNOB)).round_to_pixels(ui.pixels_per_point());
+                let knob = Rect::from_center_size(centre, Vec2::splat(2.0 * KNOB))
+                    .round_to_pixels(ui.pixels_per_point());
                 painter.rect_filled(knob, 0.0, p.card);
                 chrome::bevel(painter, knob, true, p);
             } else {
-                painter.rect_filled(track, TRACK.y / 2.0, if *self.on { p.accent } else { p.field_border });
+                painter.rect_filled(
+                    track,
+                    TRACK.y / 2.0,
+                    if *self.on { p.accent } else { p.field_border },
+                );
                 painter.circle_filled(centre, KNOB, MARK);
             }
-            paint_label(ui, track, galley, if *self.on { p.text } else { p.text_dim });
+            paint_label(
+                ui,
+                track,
+                galley,
+                if *self.on { p.text } else { p.text_dim },
+            );
         }
         response
     }
@@ -168,7 +212,10 @@ pub struct Toggle<'a> {
 
 impl<'a> Toggle<'a> {
     pub fn new(on: &'a mut bool, label: impl Into<String>) -> Self {
-        Self { on, label: label.into() }
+        Self {
+            on,
+            label: label.into(),
+        }
     }
 }
 

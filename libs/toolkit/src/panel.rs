@@ -30,13 +30,13 @@
 
 use crate::button::IconButton;
 use crate::chrome::{self, Chrome};
-use design::family::style::PanelGroups;
 use crate::icons::Icon;
 use crate::tabs;
+use design::family::style::PanelGroups;
 use egui::emath::GuiRounding;
 use egui::{
-    Color32, CornerRadius, FontFamily, FontId, Frame, Id, Margin, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui,
-    WidgetInfo, WidgetType, pos2, vec2,
+    Color32, CornerRadius, FontFamily, FontId, Frame, Id, Margin, Pos2, Rect, Response, Sense,
+    Stroke, StrokeKind, Ui, WidgetInfo, WidgetType, pos2, vec2,
 };
 
 /// Pro strip height, tab text, padding and minimum (§3.10).
@@ -57,7 +57,12 @@ const MENU_LINE: f32 = 10.0;
 const MENU_PITCH: f32 = 3.5;
 
 /// Studio card (§3.11).
-const CARD_MARGIN: Margin = Margin { left: 8, right: 8, top: 6, bottom: 10 };
+const CARD_MARGIN: Margin = Margin {
+    left: 8,
+    right: 8,
+    top: 6,
+    bottom: 10,
+};
 const CARD_MARGIN_COLLAPSED: i8 = 6;
 const CARD_AFTER: f32 = 6.0;
 pub const HEADER: f32 = 24.0;
@@ -98,7 +103,12 @@ pub struct GroupResponse<R> {
 }
 
 /// A dock group of `tabs` around `body`, which is given the selected tab.
-pub fn group<R>(ui: &mut Ui, id_salt: impl egui::AsIdSalt, tabs: &[&str], body: impl FnOnce(&mut Ui, usize) -> R) -> GroupResponse<R> {
+pub fn group<R>(
+    ui: &mut Ui,
+    id_salt: impl egui::AsIdSalt,
+    tabs: &[&str],
+    body: impl FnOnce(&mut Ui, usize) -> R,
+) -> GroupResponse<R> {
     let id = ui.make_persistent_id(id_salt);
     let mut state: GroupState = ui.data(|d| d.get_temp(id)).unwrap_or_default();
     state.selected = state.selected.min(tabs.len().saturating_sub(1));
@@ -122,10 +132,24 @@ fn tab_input(response: &Response, index: usize, state: &mut GroupState) {
 }
 
 /// Lay out `tabs` (natural widths from `font` and `pad`) in `room`.
-fn widths(ui: &Ui, tabs: &[&str], font: &FontId, pad: f32, minimum: f32, room: f32, selected: usize) -> tabs::Fit {
+fn widths(
+    ui: &Ui,
+    tabs: &[&str],
+    font: &FontId,
+    pad: f32,
+    minimum: f32,
+    room: f32,
+    selected: usize,
+) -> tabs::Fit {
     let naturals: Vec<f32> = tabs
         .iter()
-        .map(|t| ui.painter().layout_no_wrap((*t).to_owned(), font.clone(), Color32::PLACEHOLDER).size().x + pad)
+        .map(|t| {
+            ui.painter()
+                .layout_no_wrap((*t).to_owned(), font.clone(), Color32::PLACEHOLDER)
+                .size()
+                .x
+                + pad
+        })
         .collect();
     tabs::fit(&naturals, minimum, room, Some(selected))
 }
@@ -145,12 +169,32 @@ fn pro_group<R>(
         state.collapsed = !state.collapsed;
     }
     let r = PRO_RADIUS;
-    let strip_corners = if state.collapsed { CornerRadius::same(r) } else { CornerRadius { nw: r, ne: r, sw: 0, se: 0 } };
+    let strip_corners = if state.collapsed {
+        CornerRadius::same(r)
+    } else {
+        CornerRadius {
+            nw: r,
+            ne: r,
+            sw: 0,
+            se: 0,
+        }
+    };
     ui.painter().rect_filled(strip, strip_corners, p.tab_strip);
 
-    let menu_rect = Rect::from_center_size(pos2(strip.right() - MENU_FROM_RIGHT, strip.center().y), MENU_BOX);
+    let menu_rect = Rect::from_center_size(
+        pos2(strip.right() - MENU_FROM_RIGHT, strip.center().y),
+        MENU_BOX,
+    );
     let font = FontId::new(PRO_SIZE, FontFamily::Proportional);
-    let fit = widths(ui, tabs, &font, PRO_PAD, PRO_MIN, menu_rect.left() - strip.left(), state.selected);
+    let fit = widths(
+        ui,
+        tabs,
+        &font,
+        PRO_PAD,
+        PRO_MIN,
+        menu_rect.left() - strip.left(),
+        state.selected,
+    );
     let mut x = strip.left();
     let mut hidden = Vec::new();
     for (index, (name, width)) in tabs.iter().zip(&fit.widths).enumerate() {
@@ -162,7 +206,9 @@ fn pro_group<R>(
         x += width;
         let response = ui.interact(rect, id.with(("tab", index)), Sense::click());
         let active = index == state.selected && !state.collapsed;
-        response.widget_info(|| WidgetInfo::selected(WidgetType::Button, ui.is_enabled(), active, name));
+        response.widget_info(|| {
+            WidgetInfo::selected(WidgetType::Button, ui.is_enabled(), active, name)
+        });
         let (fill, ink) = if active {
             (Some(p.card), p.text)
         } else if response.hovered() {
@@ -171,13 +217,24 @@ fn pro_group<R>(
             (None, p.text_faint)
         };
         if let Some(fill) = fill {
-            let corners = if index == 0 { CornerRadius { nw: r, ..CornerRadius::ZERO } } else { CornerRadius::ZERO };
+            let corners = if index == 0 {
+                CornerRadius {
+                    nw: r,
+                    ..CornerRadius::ZERO
+                }
+            } else {
+                CornerRadius::ZERO
+            };
             ui.painter().rect_filled(rect, corners, fill);
         }
         let (galley, cut) = tabs::label(ui, name, font.clone(), width, PRO_PAD);
         let at = (rect.center() - galley.size() / 2.0).round_to_pixels(ui.pixels_per_point());
         ui.painter().galley(at, galley, ink);
-        let response = if cut { response.on_hover_text(*name) } else { response };
+        let response = if cut {
+            response.on_hover_text(*name)
+        } else {
+            response
+        };
         tab_input(&response, index, state);
     }
     if fit.overflows() {
@@ -187,18 +244,35 @@ fn pro_group<R>(
         }
     }
     let menu = ui.interact(menu_rect, id.with("menu"), Sense::click());
-    menu.widget_info(|| WidgetInfo::labeled(WidgetType::Button, ui.is_enabled(), crate::strings::own("panel-menu")));
+    menu.widget_info(|| {
+        WidgetInfo::labeled(
+            WidgetType::Button,
+            ui.is_enabled(),
+            crate::strings::own("panel-menu"),
+        )
+    });
     let ink = if menu.hovered() { p.text } else { p.text_faint };
     for k in [-1.0, 0.0, 1.0] {
-        let y = ui.painter().round_to_pixel_center(menu_rect.center().y + k * MENU_PITCH);
+        let y = ui
+            .painter()
+            .round_to_pixel_center(menu_rect.center().y + k * MENU_PITCH);
         let half = MENU_LINE / 2.0;
-        ui.painter().hline(menu_rect.center().x - half..=menu_rect.center().x + half, y, Stroke::new(1.0, ink));
+        ui.painter().hline(
+            menu_rect.center().x - half..=menu_rect.center().x + half,
+            y,
+            Stroke::new(1.0, ink),
+        );
     }
 
     let inner = (!state.collapsed).then(|| {
         Frame::new()
             .fill(p.card)
-            .corner_radius(CornerRadius { nw: 0, ne: 0, sw: r, se: r })
+            .corner_radius(CornerRadius {
+                nw: 0,
+                ne: 0,
+                sw: r,
+                se: r,
+            })
             .inner_margin(Margin::same(PRO_MARGIN))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
@@ -207,7 +281,12 @@ fn pro_group<R>(
             .inner
     });
     ui.add_space(PRO_AFTER);
-    GroupResponse { inner, state: *state, menu, handle }
+    GroupResponse {
+        inner,
+        state: *state,
+        menu,
+        handle,
+    }
 }
 
 fn card_group<R>(
@@ -219,10 +298,21 @@ fn card_group<R>(
     body: impl FnOnce(&mut Ui, usize) -> R,
 ) -> GroupResponse<R> {
     let p = chrome.palette;
-    let margin = if state.collapsed { Margin { bottom: CARD_MARGIN_COLLAPSED, ..CARD_MARGIN } } else { CARD_MARGIN };
+    let margin = if state.collapsed {
+        Margin {
+            bottom: CARD_MARGIN_COLLAPSED,
+            ..CARD_MARGIN
+        }
+    } else {
+        CARD_MARGIN
+    };
     let frame = Frame::new()
         .fill(p.card)
-        .stroke(if chrome.style.bevels { Stroke::NONE } else { Stroke::new(1.0, p.card_border) })
+        .stroke(if chrome.style.bevels {
+            Stroke::NONE
+        } else {
+            Stroke::new(1.0, p.card_border)
+        })
         .corner_radius(chrome.metrics.radius)
         .inner_margin(margin);
     let shown = frame.show(ui, |ui| {
@@ -237,7 +327,15 @@ fn card_group<R>(
         }
         let font = crate::fonts::bound(ui.ctx(), crate::fonts::medium(PILL_SIZE));
         let room = width - ELLIPSIS - ELLIPSIS_GAP;
-        let fit = widths(ui, tabs, &font, PILL_PAD + PILL_GAP, PILL_MIN + PILL_GAP, room, state.selected);
+        let fit = widths(
+            ui,
+            tabs,
+            &font,
+            PILL_PAD + PILL_GAP,
+            PILL_MIN + PILL_GAP,
+            room,
+            state.selected,
+        );
         let mut x = header.left();
         let mut hidden = Vec::new();
         for (index, (name, width)) in tabs.iter().zip(&fit.widths).enumerate() {
@@ -249,13 +347,19 @@ fn card_group<R>(
             x += width;
             let response = ui.interact(rect, id.with(("pill", index)), Sense::click());
             let selected = index == state.selected;
-            response.widget_info(|| WidgetInfo::selected(WidgetType::Button, ui.is_enabled(), selected, name));
+            response.widget_info(|| {
+                WidgetInfo::selected(WidgetType::Button, ui.is_enabled(), selected, name)
+            });
             pill(ui, chrome, rect, selected, response.hovered());
             let (galley, cut) = tabs::label(ui, name, font.clone(), rect.width(), PILL_PAD);
             let ink = if selected { p.text } else { p.text_dim };
             let at = (rect.center() - galley.size() / 2.0).round_to_pixels(ui.pixels_per_point());
             ui.painter().galley(at, galley, ink);
-            let response = if cut { response.on_hover_text(*name) } else { response };
+            let response = if cut {
+                response.on_hover_text(*name)
+            } else {
+                response
+            };
             tab_input(&response, index, state);
         }
         if fit.overflows() {
@@ -264,8 +368,19 @@ fn card_group<R>(
                 state.selected = index;
             }
         }
-        let ellipsis = Rect::from_min_size(pos2(header.right() - ELLIPSIS, header.center().y - ELLIPSIS / 2.0), vec2(ELLIPSIS, ELLIPSIS));
-        let menu = ui.put(ellipsis, IconButton::new(Icon::Ellipsis).size(ELLIPSIS).tooltip(crate::strings::own("panel-menu")));
+        let ellipsis = Rect::from_min_size(
+            pos2(
+                header.right() - ELLIPSIS,
+                header.center().y - ELLIPSIS / 2.0,
+            ),
+            vec2(ELLIPSIS, ELLIPSIS),
+        );
+        let menu = ui.put(
+            ellipsis,
+            IconButton::new(Icon::Ellipsis)
+                .size(ELLIPSIS)
+                .tooltip(crate::strings::own("panel-menu")),
+        );
         let inner = (!state.collapsed).then(|| {
             ui.add_space(HEADER_AFTER);
             body(ui, state.selected)
@@ -277,7 +392,12 @@ fn card_group<R>(
     }
     ui.add_space(CARD_AFTER);
     let (inner, menu, handle) = shown.inner;
-    GroupResponse { inner, state: *state, menu, handle }
+    GroupResponse {
+        inner,
+        state: *state,
+        menu,
+        handle,
+    }
 }
 
 /// `order` with the entry at `from` moved to sit before the entry that was
@@ -297,7 +417,10 @@ pub fn moved(order: &[usize], from: usize, before: usize) -> Vec<usize> {
 /// extent in stacking order: before the first group whose middle is below
 /// the pointer, else at the end.
 pub fn insertion(extents: &[egui::Rangef], y: f32) -> usize {
-    extents.iter().position(|r| y < r.center()).unwrap_or(extents.len())
+    extents
+        .iter()
+        .position(|r| y < r.center())
+        .unwrap_or(extents.len())
 }
 
 /// A column of panel groups the person can reorder: `order` lists the
@@ -319,7 +442,9 @@ pub fn stack(
     let mut extents = Vec::with_capacity(order.len());
     let mut dragging: Option<(usize, Response)> = None;
     for (position, &group) in order.iter().enumerate() {
-        let shown = ui.scope_builder(egui::UiBuilder::new().id(id.with(group)), |ui| show(ui, group));
+        let shown = ui.scope_builder(egui::UiBuilder::new().id(id.with(group)), |ui| {
+            show(ui, group)
+        });
         extents.push(shown.response.rect.y_range());
         let handle = shown.inner;
         if handle.dragged() || handle.drag_stopped() {
@@ -343,7 +468,8 @@ pub fn stack(
     if handle.dragged() && before != from && before != from + 1 {
         drop_line(ui, pos2(x.min, line_y), pos2(x.max, line_y));
     }
-    (handle.drag_stopped() && before != from && before != from + 1).then(|| moved(order, from, before))
+    (handle.drag_stopped() && before != from && before != from + 1)
+        .then(|| moved(order, from, before))
 }
 
 /// A Studio pill's fill and outline (§3.11).
@@ -355,7 +481,12 @@ fn pill(ui: &Ui, chrome: &Chrome, rect: Rect, selected: bool, hovered: bool) {
         if chrome.style.bevels {
             chrome::bevel(painter, rect, true, p);
         } else {
-            painter.rect_stroke(rect, radius, Stroke::new(1.0, p.field_border), StrokeKind::Inside);
+            painter.rect_stroke(
+                rect,
+                radius,
+                Stroke::new(1.0, p.field_border),
+                StrokeKind::Inside,
+            );
         }
     } else if hovered {
         painter.rect_filled(rect, radius, p.hover.gamma_multiply(PILL_HOVER_ALPHA));
@@ -373,10 +504,15 @@ pub fn section_label(ui: &mut Ui, text: &str) -> Response {
 /// inset 2 pt at the ends of a vertical line and 4 pt of a horizontal one.
 pub fn drop_line(ui: &Ui, a: Pos2, b: Pos2) {
     let vertical = (b.x - a.x).abs() < (b.y - a.y).abs();
-    let inset = if vertical { DROP_INSET_VERTICAL } else { DROP_INSET_HORIZONTAL };
+    let inset = if vertical {
+        DROP_INSET_VERTICAL
+    } else {
+        DROP_INSET_HORIZONTAL
+    };
     let along = (b - a).normalized() * inset;
     let accent = Chrome::of(ui.ctx()).palette.accent;
-    ui.painter().line_segment([a + along, b - along], Stroke::new(DROP_LINE, accent));
+    ui.painter()
+        .line_segment([a + along, b - along], Stroke::new(DROP_LINE, accent));
 }
 
 #[cfg(test)]

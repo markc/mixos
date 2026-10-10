@@ -200,7 +200,8 @@ impl Lexer {
     }
 
     fn lex_token(&mut self, ch: char, line: usize, column: usize) -> Result<Spanned> {
-        if ch.is_ascii_digit() || (ch == '.' && self.peek_at(1).is_some_and(|c| c.is_ascii_digit())) {
+        if ch.is_ascii_digit() || (ch == '.' && self.peek_at(1).is_some_and(|c| c.is_ascii_digit()))
+        {
             return self.lex_number(line, column);
         }
         if ch == '"' {
@@ -251,7 +252,11 @@ impl Lexer {
             ';' => Token::Semicolon,
             c if c.is_ascii_punctuation() => Token::Other(c),
             c => {
-                return Err(Error::lex(line, column, format!("unexpected character {c:?}")));
+                return Err(Error::lex(
+                    line,
+                    column,
+                    format!("unexpected character {c:?}"),
+                ));
             }
         };
         Ok(self.spanned(token, line, column))
@@ -364,7 +369,11 @@ impl Lexer {
             ));
         }
         if digits.is_empty() {
-            return Err(Error::lex(line, column, format!("{prefix} literal has no digits")));
+            return Err(Error::lex(
+                line,
+                column,
+                format!("{prefix} literal has no digits"),
+            ));
         }
         let value = u64::from_str_radix(&digits, radix).map_err(|_| {
             Error::lex(
@@ -455,7 +464,8 @@ impl Lexer {
                             {
                                 self.advance();
                                 self.advance();
-                                let code = h1.to_digit(16).expect("hex") * 16 + h2.to_digit(16).expect("hex");
+                                let code = h1.to_digit(16).expect("hex") * 16
+                                    + h2.to_digit(16).expect("hex");
                                 text.push(char::from_u32(code).expect("0x00..=0xFF is a char"));
                             } else {
                                 text.push_str("\\x");
@@ -518,8 +528,10 @@ impl Lexer {
         if hex.is_empty() {
             return Err(err("empty \\u{} escape: write \\u{FEFF}".into()));
         }
-        let code = u32::from_str_radix(&hex, 16).map_err(|_| err(format!("invalid \\u{{{hex}}} hex")))?;
-        char::from_u32(code).ok_or_else(|| err(format!("\\u{{{hex}}} is not a valid unicode codepoint")))
+        let code =
+            u32::from_str_radix(&hex, 16).map_err(|_| err(format!("invalid \\u{{{hex}}} hex")))?;
+        char::from_u32(code)
+            .ok_or_else(|| err(format!("\\u{{{hex}}} is not a valid unicode codepoint")))
     }
 
     /// The value of the four hex digits starting `offset` characters ahead.
@@ -703,7 +715,13 @@ impl Lexer {
                         }
                     }
                     Some(_) => {}
-                    None => return Err(Error::lex(line, column, "unterminated command substitution")),
+                    None => {
+                        return Err(Error::lex(
+                            line,
+                            column,
+                            "unterminated command substitution",
+                        ));
+                    }
                 }
             }
             return Ok(self.spanned(Token::CommandSub, line, column));
@@ -721,7 +739,11 @@ mod tests {
     use super::*;
 
     fn tokens(source: &str) -> Vec<Token> {
-        tokenize(source).expect("lexes").into_iter().map(|t| t.token).collect()
+        tokenize(source)
+            .expect("lexes")
+            .into_iter()
+            .map(|t| t.token)
+            .collect()
     }
 
     #[test]
@@ -759,16 +781,19 @@ mod tests {
 
     #[test]
     fn numbers() {
-        assert_eq!(tokens("1_000 .5 2.5e3 0x1F 0o755 0b101 1e999"), vec![
-            Token::Number(1000.0),
-            Token::Number(0.5),
-            Token::Number(2500.0),
-            Token::Number(31.0),
-            Token::Number(493.0),
-            Token::Number(5.0),
-            Token::Number(f64::INFINITY),
-            Token::Eof,
-        ]);
+        assert_eq!(
+            tokens("1_000 .5 2.5e3 0x1F 0o755 0b101 1e999"),
+            vec![
+                Token::Number(1000.0),
+                Token::Number(0.5),
+                Token::Number(2500.0),
+                Token::Number(31.0),
+                Token::Number(493.0),
+                Token::Number(5.0),
+                Token::Number(f64::INFINITY),
+                Token::Eof,
+            ]
+        );
         assert!(tokenize("0755").is_err());
         assert!(tokenize("0x").is_err());
         assert!(tokenize("0o78").is_err());
@@ -785,14 +810,23 @@ mod tests {
                 Token::Eof
             ]
         );
-        assert_eq!(tokens(r#""${x}""#), vec![Token::Interpolated(Refused::Variable), Token::Eof]);
-        assert_eq!(tokens(r#""~/x""#), vec![Token::Interpolated(Refused::Home), Token::Eof]);
-        assert_eq!(tokens(r#""~x" "a~/b" "$x""#), vec![
-            Token::Str("~x".into()),
-            Token::Str("a~/b".into()),
-            Token::Str("$x".into()),
-            Token::Eof
-        ]);
+        assert_eq!(
+            tokens(r#""${x}""#),
+            vec![Token::Interpolated(Refused::Variable), Token::Eof]
+        );
+        assert_eq!(
+            tokens(r#""~/x""#),
+            vec![Token::Interpolated(Refused::Home), Token::Eof]
+        );
+        assert_eq!(
+            tokens(r#""~x" "a~/b" "$x""#),
+            vec![
+                Token::Str("~x".into()),
+                Token::Str("a~/b".into()),
+                Token::Str("$x".into()),
+                Token::Eof
+            ]
+        );
         assert!(tokenize("\"open").is_err());
         assert!(tokenize("'open").is_err());
     }
@@ -803,7 +837,10 @@ mod tests {
             tokens("<<E\nline\\n1\n  E\n"),
             vec![Token::Str("line\n1".into()), Token::Newline, Token::Eof]
         );
-        assert_eq!(tokens("<<E\n$(ls)\nE"), vec![Token::Interpolated(Refused::Command), Token::Eof]);
+        assert_eq!(
+            tokens("<<E\n$(ls)\nE"),
+            vec![Token::Interpolated(Refused::Command), Token::Eof]
+        );
         assert!(tokenize("<<E\nbody\n").is_err());
         assert!(tokenize("<<E extra\nbody\nE\n").is_err());
         assert!(tokenize("<<\nbody\n").is_err());
@@ -811,33 +848,38 @@ mod tests {
 
     #[test]
     fn dollar_forms() {
-        assert_eq!(tokens("$x $(ls -l)"), vec![
-            Token::Variable("x".into()),
-            Token::CommandSub,
-            Token::Eof
-        ]);
+        assert_eq!(
+            tokens("$x $(ls -l)"),
+            vec![Token::Variable("x".into()), Token::CommandSub, Token::Eof]
+        );
         assert!(tokenize("$").is_err());
         assert!(tokenize("$(ls").is_err());
     }
 
     #[test]
     fn line_continuation_and_crlf() {
-        assert_eq!(tokens("a: \\\n 1\r\nb: 2\r\n"), vec![
-            Token::Word("a".into()),
-            Token::Colon,
-            Token::Number(1.0),
-            Token::Newline,
-            Token::Word("b".into()),
-            Token::Colon,
-            Token::Number(2.0),
-            Token::Newline,
-            Token::Eof
-        ]);
+        assert_eq!(
+            tokens("a: \\\n 1\r\nb: 2\r\n"),
+            vec![
+                Token::Word("a".into()),
+                Token::Colon,
+                Token::Number(1.0),
+                Token::Newline,
+                Token::Word("b".into()),
+                Token::Colon,
+                Token::Number(2.0),
+                Token::Newline,
+                Token::Eof
+            ]
+        );
     }
 
     #[test]
     fn stray_characters() {
-        assert_eq!(tokens("+ ."), vec![Token::Other('+'), Token::Other('.'), Token::Eof]);
+        assert_eq!(
+            tokens("+ ."),
+            vec![Token::Other('+'), Token::Other('.'), Token::Eof]
+        );
         let err = tokenize("é").unwrap_err();
         assert_eq!(err.kind(), crate::ErrorKind::Lex);
         assert_eq!((err.line(), err.column()), (Some(1), Some(1)));

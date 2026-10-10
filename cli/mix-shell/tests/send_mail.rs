@@ -135,8 +135,14 @@ fn local_sendmail_gets_the_envelope_and_the_rendered_message() {
 
     let eml = bed.eml();
     let (head, body) = eml.split_once("\n\n").expect("header/body separator");
-    assert!(head.contains("From: Reports <reports@example.com>\n"), "{eml}");
-    assert!(head.contains("To: ops@example.com, Audit <audit@example.com>\n"), "{eml}");
+    assert!(
+        head.contains("From: Reports <reports@example.com>\n"),
+        "{eml}"
+    );
+    assert!(
+        head.contains("To: ops@example.com, Audit <audit@example.com>\n"),
+        "{eml}"
+    );
     assert!(head.contains("Subject: Weekly spam report\n"), "{eml}");
     assert!(head.contains(&format!("Message-ID: {message_id}")), "{eml}");
     assert!(head.contains("\nDate: "), "{eml}");
@@ -221,7 +227,8 @@ fn host_without_the_sendmail_option_runs_usr_sbin_sendmail_remotely() {
     );
     assert!(ok, "stdout={out} stderr={err}");
     assert_eq!(out.trim(), "true 0 beta", "stdout={out} stderr={err}");
-    let driver = fs::read_to_string(bed.capture().with_extension("driver")).expect("driver captured");
+    let driver =
+        fs::read_to_string(bed.capture().with_extension("driver")).expect("driver captured");
     assert!(
         driver.contains("/usr/sbin/sendmail"),
         "the remote argv[0] must default to /usr/sbin/sendmail: {driver}"
@@ -241,7 +248,10 @@ fn a_long_line_body_arrives_quoted_printable_and_decodes_exactly() {
     assert_eq!(out.trim(), "true 1500", "{out}");
     let eml = bed.eml();
     let (head, encoded) = eml.split_once("\n\n").unwrap();
-    assert!(head.contains("Content-Transfer-Encoding: quoted-printable"), "{head}");
+    assert!(
+        head.contains("Content-Transfer-Encoding: quoted-printable"),
+        "{head}"
+    );
     assert!(encoded.lines().all(|l| l.len() <= 76), "{encoded}");
     let joined = encoded.replace("=\n", "");
     let mut decoded = Vec::new();
@@ -249,7 +259,9 @@ fn a_long_line_body_arrives_quoted_printable_and_decodes_exactly() {
     let mut i = 0;
     while i < b.len() {
         if b[i] == b'=' {
-            decoded.push(u8::from_str_radix(std::str::from_utf8(&b[i + 1..i + 3]).unwrap(), 16).unwrap());
+            decoded.push(
+                u8::from_str_radix(std::str::from_utf8(&b[i + 1..i + 3]).unwrap(), 16).unwrap(),
+            );
             i += 3;
         } else {
             decoded.push(b[i]);
@@ -271,8 +283,15 @@ impl Bed {
             .collect();
         assert!(argv[0].ends_with("/ssh"), "{argv:?}");
         assert!(argv.iter().any(|a| a == "BatchMode=yes"), "{argv:?}");
-        assert!(argv.iter().any(|a| a.starts_with("ConnectTimeout=")), "{argv:?}");
+        assert!(
+            argv.iter().any(|a| a.starts_with("ConnectTimeout=")),
+            "{argv:?}"
+        );
         let n = argv.len();
-        assert_eq!(&argv[n - 3..], ["--", host, "/opt/cosmix/bin/mix -"], "{argv:?}");
+        assert_eq!(
+            &argv[n - 3..],
+            ["--", host, "/opt/cosmix/bin/mix -"],
+            "{argv:?}"
+        );
     }
 }

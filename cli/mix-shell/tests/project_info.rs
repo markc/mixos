@@ -35,14 +35,21 @@ fn project_info_reports_members_excludes_and_toolchain() {
         .output()
         .expect("run mix");
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let json: serde_json::Value = serde_json::from_str(stdout.trim()).expect("valid JSON");
     let members = json["main"]["members"].as_array().expect("members array");
     let names: Vec<&str> = members.iter().map(|v| v.as_str().unwrap()).collect();
     assert_eq!(names, vec!["alpha", "beta"], "got: {stdout}");
     assert_eq!(json["main"]["toolchain"].as_str().unwrap(), "1.85.0");
-    assert_eq!(json["main"]["exclude"][0].as_str().unwrap(), "crates/foreman");
+    assert_eq!(
+        json["main"]["exclude"][0].as_str().unwrap(),
+        "crates/foreman"
+    );
     assert!(!json["desktop"].as_bool().unwrap());
 
     std::fs::remove_dir_all(&root).ok();

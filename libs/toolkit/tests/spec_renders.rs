@@ -28,7 +28,18 @@ use std::path::PathBuf;
 /// The harness's own margin round the window, in points.
 const MARGIN: f32 = 8.0;
 
-const SCENES: [&str; 10] = ["idle", "menu", "sub", "titlehover", "closehover", "minhover", "tooltip", "combo", "dialog", "help"];
+const SCENES: [&str; 10] = [
+    "idle",
+    "menu",
+    "sub",
+    "titlehover",
+    "closehover",
+    "minhover",
+    "tooltip",
+    "combo",
+    "dialog",
+    "help",
+];
 
 fn keys(h: &mut Harness<'_, fixture::Fixture>, keys: &[Key]) {
     for key in keys {
@@ -45,11 +56,16 @@ fn hover(h: &mut Harness<'_, fixture::Fixture>, label: &str) {
 
 #[test]
 fn render_chrome_scenes_for_comparison() {
-    let Some(dir) = std::env::var_os("CHROME_RENDER_DIR").map(PathBuf::from) else { return };
+    let Some(dir) = std::env::var_os("CHROME_RENDER_DIR").map(PathBuf::from) else {
+        return;
+    };
     std::fs::create_dir_all(&dir).expect("render directory");
     for (id, scheme, mode) in fixture::CHROME_THEMES {
         for scene in SCENES {
-            let builder = Harness::builder().with_size(egui::vec2(1280.0 + 2.0 * MARGIN, 800.0 + 2.0 * MARGIN)).with_pixels_per_point(2.0).wgpu();
+            let builder = Harness::builder()
+                .with_size(egui::vec2(1280.0 + 2.0 * MARGIN, 800.0 + 2.0 * MARGIN))
+                .with_pixels_per_point(2.0)
+                .wgpu();
             let mut h = fixture::harness(builder, &fixture::theme(scheme, mode));
             match scene {
                 "menu" | "sub" => {
@@ -84,7 +100,9 @@ fn render_chrome_scenes_for_comparison() {
                 _ => {}
             }
             let image = h.render().expect("wgpu render");
-            image.save(dir.join(format!("{id}-{scene}.png"))).expect("write render");
+            image
+                .save(dir.join(format!("{id}-{scene}.png")))
+                .expect("write render");
         }
     }
 }

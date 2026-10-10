@@ -125,9 +125,9 @@ pub(crate) fn equals(left: &Value, right: &Value, op: &str) -> Result<bool, Erro
         (Value::Bool(a), Value::Bool(b)) => a == b,
         (Value::Number(a), Value::Number(b)) => a.as_f64() == b.as_f64(),
         (Value::String(a), Value::String(b)) => a == b,
-        (Value::Number(n), Value::String(s)) | (Value::String(s), Value::Number(n)) => {
-            s.parse::<f64>().is_ok_and(|parsed| Some(parsed) == n.as_f64())
-        }
+        (Value::Number(n), Value::String(s)) | (Value::String(s), Value::Number(n)) => s
+            .parse::<f64>()
+            .is_ok_and(|parsed| Some(parsed) == n.as_f64()),
         _ => false,
     })
 }

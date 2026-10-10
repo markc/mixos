@@ -22,30 +22,56 @@ fn fixture() -> Snapshot {
     s.services.insert(
         "noded".into(),
         Ok(vec![
-            verb("noded.list", "", "Registered services on this node", Some(true)),
+            verb(
+                "noded.list",
+                "",
+                "Registered services on this node",
+                Some(true),
+            ),
             verb("noded.peers", "", "Mesh peers and routing view", Some(true)),
         ]),
     );
     s.services.insert(
         "settingsd".into(),
-        Ok(vec![verb("settings.get", "{\"key\":\"string\"}", "Read one setting", Some(true))]),
+        Ok(vec![verb(
+            "settings.get",
+            "{\"key\":\"string\"}",
+            "Read one setting",
+            Some(true),
+        )]),
     );
-    s.services.insert("legacy".into(), Err("HELP and app.describe unavailable".into()));
+    s.services.insert(
+        "legacy".into(),
+        Err("HELP and app.describe unavailable".into()),
+    );
     s.peers = vec!["alpha".into(), "beta".into()];
     s
 }
 
 fn engine() -> Engine {
     let mut e = Engine::new(label);
-    let Some(Effect::Discover { ticket }) = e.take_effects().pop() else { panic!("initial discovery") };
+    let Some(Effect::Discover { ticket }) = e.take_effects().pop() else {
+        panic!("initial discovery")
+    };
     e.discovered(ticket, fixture());
-    e.ui.selected = Some(Selection { service: "settingsd".into(), verb: "settings.get".into() });
+    e.ui.selected = Some(Selection {
+        service: "settingsd".into(),
+        verb: "settings.get".into(),
+    });
     e.ui.row_key = Some("verb:settingsd:settings.get".into());
     e.toggle("mesh");
     e.set_body("{\"key\": \"appearance.scheme\"}".into());
     e.call_selected();
-    let Some(Effect::Call { ticket, .. }) = e.take_effects().pop() else { panic!("call") };
-    e.completed(ticket, Ok(Reply { rc: 0, body: "{\"key\":\"appearance.scheme\",\"value\":\"ocean\"}".into() }));
+    let Some(Effect::Call { ticket, .. }) = e.take_effects().pop() else {
+        panic!("call")
+    };
+    e.completed(
+        ticket,
+        Ok(Reply {
+            rc: 0,
+            body: "{\"key\":\"appearance.scheme\",\"value\":\"ocean\"}".into(),
+        }),
+    );
     e.take_effects();
     e
 }
@@ -61,9 +87,12 @@ fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
     let registry = commands::registry();
     let strings = strings();
     let stroke = icons::stroke_width(&theme);
-    let mut harness = Harness::builder().with_size(egui::vec2(980.0, 620.0)).wgpu().build_ui(move |ui| {
-        let _ = view(ui, &engine, &registry, &strings, stroke);
-    });
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(980.0, 620.0))
+        .wgpu()
+        .build_ui(move |ui| {
+            let _ = view(ui, &engine, &registry, &strings, stroke);
+        });
     toolkit::install(&harness.ctx, &theme);
     harness.run();
     harness.snapshot(name);
@@ -72,7 +101,10 @@ fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
 /// The hue scheme ocean, light.
 #[test]
 fn window_light() {
-    window(Theme::for_context(DesignContext::revision_one()), "window_light");
+    window(
+        Theme::for_context(DesignContext::revision_one()),
+        "window_light",
+    );
 }
 
 /// With no theme chosen BusViewer starts in Studio Dark, the look
@@ -86,11 +118,22 @@ fn the_default_theme_is_studio_dark() {
 /// menus from the chrome family.
 #[test]
 fn window_pro_light() {
-    window(Theme::for_context(DesignContext { scheme: Scheme::Pro, mode: Mode::Light, ..DesignContext::default() }), "window_pro_light");
+    window(
+        Theme::for_context(DesignContext {
+            scheme: Scheme::Pro,
+            mode: Mode::Light,
+            ..DesignContext::default()
+        }),
+        "window_pro_light",
+    );
 }
 
 fn chrome(scheme: Scheme, mode: Mode) -> Theme {
-    Theme::for_context(DesignContext { scheme, mode, ..DesignContext::default() })
+    Theme::for_context(DesignContext {
+        scheme,
+        mode,
+        ..DesignContext::default()
+    })
 }
 
 /// The chrome scheme studio, dark: cards and pills.
@@ -108,16 +151,30 @@ fn window_classic() {
 /// About as a modal dialog over the undimmed window.
 #[test]
 fn about_pro_light() {
-    window_with(chrome(Scheme::Pro, Mode::Light), "about_pro_light", Some(Dialog::About));
+    window_with(
+        chrome(Scheme::Pro, Mode::Light),
+        "about_pro_light",
+        Some(Dialog::About),
+    );
 }
 
 /// Keyboard shortcuts as a modal dialog.
 #[test]
 fn shortcuts_studio_light() {
-    window_with(chrome(Scheme::Studio, Mode::Light), "shortcuts_studio_light", Some(Dialog::Shortcuts));
+    window_with(
+        chrome(Scheme::Studio, Mode::Light),
+        "shortcuts_studio_light",
+        Some(Dialog::Shortcuts),
+    );
 }
 
 #[test]
 fn window_dark() {
-    window(Theme::for_context(DesignContext { mode: Mode::Dark, ..DesignContext::revision_one() }), "window_dark");
+    window(
+        Theme::for_context(DesignContext {
+            mode: Mode::Dark,
+            ..DesignContext::revision_one()
+        }),
+        "window_dark",
+    );
 }

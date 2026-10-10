@@ -27,8 +27,9 @@
 use crate::chrome::{Chrome, DISABLED_ALPHA, WEAK_ALPHA};
 use egui::emath::GuiRounding;
 use egui::{
-    Area, Color32, Context, Frame, Id, Key, Modifiers, Order, PointerButton, Pos2, Rect, ScrollArea, Sense, Stroke,
-    TextEdit, Ui, UiKind, Vec2, WidgetInfo, WidgetType, pos2, text::Galley, vec2,
+    Area, Color32, Context, Frame, Id, Key, Modifiers, Order, PointerButton, Pos2, Rect,
+    ScrollArea, Sense, Stroke, TextEdit, Ui, UiKind, Vec2, WidgetInfo, WidgetType, pos2,
+    text::Galley, vec2,
 };
 use std::sync::Arc;
 
@@ -74,19 +75,47 @@ pub struct Row {
 }
 
 impl Row {
-    pub fn command(id: &'static str, label: impl Into<String>, shortcut: Option<String>, enabled: bool) -> Self {
-        Self { id: Some(id), label: label.into(), shortcut, enabled, checked: None, children: Vec::new() }
+    pub fn command(
+        id: &'static str,
+        label: impl Into<String>,
+        shortcut: Option<String>,
+        enabled: bool,
+    ) -> Self {
+        Self {
+            id: Some(id),
+            label: label.into(),
+            shortcut,
+            enabled,
+            checked: None,
+            children: Vec::new(),
+        }
     }
 
     /// A choice row, ticked when `checked`.
-    pub fn choice(id: &'static str, label: impl Into<String>, shortcut: Option<String>, enabled: bool, checked: bool) -> Self {
-        Self { checked: Some(checked), ..Self::command(id, label, shortcut, enabled) }
+    pub fn choice(
+        id: &'static str,
+        label: impl Into<String>,
+        shortcut: Option<String>,
+        enabled: bool,
+        checked: bool,
+    ) -> Self {
+        Self {
+            checked: Some(checked),
+            ..Self::command(id, label, shortcut, enabled)
+        }
     }
 
     /// A submenu row: enabled when any of its children is (§3.5).
     pub fn submenu(label: impl Into<String>, children: Vec<Entry>) -> Self {
         let enabled = children.iter().filter_map(Entry::row).any(|r| r.enabled);
-        Self { id: None, label: label.into(), shortcut: None, enabled, checked: None, children: tidy(children) }
+        Self {
+            id: None,
+            label: label.into(),
+            shortcut: None,
+            enabled,
+            checked: None,
+            children: tidy(children),
+        }
     }
 
     pub fn is_submenu(&self) -> bool {
@@ -145,7 +174,11 @@ pub fn matching(menus: &[Menu], query: &str) -> Vec<Row> {
     if query.is_empty() {
         return Vec::new();
     }
-    fn walk<'a>(entries: &'a [Entry], path: &mut Vec<&'a str>, out: &mut Vec<(Vec<&'a str>, &'a Row)>) {
+    fn walk<'a>(
+        entries: &'a [Entry],
+        path: &mut Vec<&'a str>,
+        out: &mut Vec<(Vec<&'a str>, &'a Row)>,
+    ) {
         for row in entries.iter().filter_map(Entry::row) {
             if row.is_submenu() {
                 path.push(&row.label);
@@ -164,7 +197,10 @@ pub fn matching(menus: &[Menu], query: &str) -> Vec<Row> {
         let label = row.label.to_lowercase();
         if label.starts_with(&query) {
             Some(0)
-        } else if label.split_whitespace().any(|word| word.starts_with(&query)) {
+        } else if label
+            .split_whitespace()
+            .any(|word| word.starts_with(&query))
+        {
             Some(1)
         } else if label.contains(&query) {
             Some(2)
@@ -189,7 +225,10 @@ pub fn matching(menus: &[Menu], query: &str) -> Vec<Row> {
     ranked
         .into_iter()
         .take(SEARCH_RESULTS)
-        .map(|(_, shown, row)| Row { label: shown, ..row.clone() })
+        .map(|(_, shown, row)| Row {
+            label: shown,
+            ..row.clone()
+        })
         .collect()
 }
 
@@ -245,7 +284,11 @@ impl Nav {
     /// Open top-level menu `menu` with nothing highlighted. The highlight is
     /// per top-level menu: opening any menu starts it afresh.
     pub fn open(&mut self, menu: usize) {
-        *self = Self { open: Some(menu), highlight: vec![None], depth: 0 };
+        *self = Self {
+            open: Some(menu),
+            highlight: vec![None],
+            depth: 0,
+        };
     }
 
     pub fn close(&mut self) {
@@ -285,7 +328,11 @@ impl Nav {
 
     /// How many levels are showing.
     pub fn levels(&self) -> usize {
-        if self.open.is_some() { self.highlight.len() } else { 0 }
+        if self.open.is_some() {
+            self.highlight.len()
+        } else {
+            0
+        }
     }
 
     /// The entries of open level `level`.
@@ -313,18 +360,25 @@ impl Nav {
 
     /// Apply `key` (§3.6).
     pub fn key(&mut self, key: NavKey, menus: &[Menu]) -> Outcome {
-        let Some(open) = self.open else { return Outcome::Stay };
+        let Some(open) = self.open else {
+            return Outcome::Stay;
+        };
         let count = menus.len().max(1);
         match key {
             NavKey::Down | NavKey::Up => {
-                let Some(entries) = self.level(menus, self.depth) else { return Outcome::Stay };
+                let Some(entries) = self.level(menus, self.depth) else {
+                    return Outcome::Stay;
+                };
                 let from = self.highlight.get(self.depth).copied().flatten();
                 let next = step(entries, from, key == NavKey::Down);
                 self.highlight.truncate(self.depth + 1);
                 self.highlight[self.depth] = next;
             }
             NavKey::Right => {
-                if self.current(menus).is_some_and(|row| row.enabled && row.is_submenu()) {
+                if self
+                    .current(menus)
+                    .is_some_and(|row| row.enabled && row.is_submenu())
+                {
                     self.enter(menus);
                 } else {
                     self.open((open + 1) % count);
@@ -340,7 +394,11 @@ impl Nav {
             }
             NavKey::Enter => match self.current(menus) {
                 Some(row) if row.enabled && row.is_submenu() => self.enter(menus),
-                Some(Row { id: Some(id), enabled: true, .. }) => {
+                Some(Row {
+                    id: Some(id),
+                    enabled: true,
+                    ..
+                }) => {
                     let id = *id;
                     self.close();
                     return Outcome::Run(id);
@@ -361,7 +419,9 @@ impl Nav {
         self.highlight.truncate(self.depth + 1);
         self.depth += 1;
         self.highlight.push(None);
-        let first = self.level(menus, self.depth).and_then(|entries| step(entries, None, true));
+        let first = self
+            .level(menus, self.depth)
+            .and_then(|entries| step(entries, None, true));
         self.highlight[self.depth] = first;
     }
 
@@ -376,7 +436,10 @@ impl Nav {
             self.depth = level;
             return;
         }
-        let row = self.level(menus, level).and_then(|entries| entries.get(index)).and_then(Entry::row);
+        let row = self
+            .level(menus, level)
+            .and_then(|entries| entries.get(index))
+            .and_then(Entry::row);
         self.highlight.truncate(level + 1);
         self.depth = level;
         match row {
@@ -400,7 +463,13 @@ fn step(entries: &[Entry], from: Option<usize>, forward: bool) -> Option<usize> 
     }
     let start = from.unwrap_or(if forward { n - 1 } else { 0 });
     (1..=n)
-        .map(|k| if forward { (start + k) % n } else { (start + n - k) % n })
+        .map(|k| {
+            if forward {
+                (start + k) % n
+            } else {
+                (start + n - k) % n
+            }
+        })
         .find(|&i| entries[i].row().is_some_and(|row| row.enabled))
 }
 
@@ -447,12 +516,14 @@ fn state_id() -> Id {
 
 /// Whether a menu is open (and so has the keyboard) on `ctx`.
 pub fn is_open(ctx: &Context) -> bool {
-    ctx.data(|d| d.get_temp::<State>(state_id())).is_some_and(|s| s.nav.open.is_some())
+    ctx.data(|d| d.get_temp::<State>(state_id()))
+        .is_some_and(|s| s.nav.open.is_some())
 }
 
 /// The open menu and its highlight, as of the last frame.
 pub fn current(ctx: &Context) -> Option<Current> {
-    ctx.data(|d| d.get_temp::<State>(state_id())).and_then(|s| s.current)
+    ctx.data(|d| d.get_temp::<State>(state_id()))
+        .and_then(|s| s.current)
 }
 
 const KEYS: [(Key, NavKey); 7] = [
@@ -475,8 +546,12 @@ pub fn bar(ui: &mut Ui, menus: &[Menu]) -> Option<&'static str> {
 /// Whether `event` edits the search field's text.
 fn edits_text(event: &egui::Event) -> bool {
     match event {
-        egui::Event::Text(_) | egui::Event::Paste(_) | egui::Event::Cut | egui::Event::Ime(_) => true,
-        egui::Event::Key { key, pressed: true, .. } => matches!(key, Key::Backspace | Key::Delete),
+        egui::Event::Text(_) | egui::Event::Paste(_) | egui::Event::Cut | egui::Event::Ime(_) => {
+            true
+        }
+        egui::Event::Key {
+            key, pressed: true, ..
+        } => matches!(key, Key::Backspace | Key::Delete),
         _ => false,
     }
 }
@@ -492,7 +567,11 @@ fn defer_after_typing(ui: &mut Ui) -> Vec<egui::Event> {
         let cut = i.events.iter().position(|event| {
             let navigation = matches!(
                 event,
-                egui::Event::Key { key: Key::Enter | Key::ArrowUp | Key::ArrowDown, pressed: true, .. }
+                egui::Event::Key {
+                    key: Key::Enter | Key::ArrowUp | Key::ArrowDown,
+                    pressed: true,
+                    ..
+                }
             );
             if navigation && typed {
                 return true;
@@ -502,7 +581,15 @@ fn defer_after_typing(ui: &mut Ui) -> Vec<egui::Event> {
         });
         let Some(at) = cut else { return Vec::new() };
         let keyboard = |event: &egui::Event| {
-            matches!(event, egui::Event::Key { .. } | egui::Event::Text(_) | egui::Event::Paste(_) | egui::Event::Cut | egui::Event::Copy | egui::Event::Ime(_))
+            matches!(
+                event,
+                egui::Event::Key { .. }
+                    | egui::Event::Text(_)
+                    | egui::Event::Paste(_)
+                    | egui::Event::Cut
+                    | egui::Event::Copy
+                    | egui::Event::Ime(_)
+            )
         };
         let tail = i.events.split_off(at);
         let (deferred, kept): (Vec<_>, Vec<_>) = tail.into_iter().partition(keyboard);
@@ -534,7 +621,11 @@ pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<
     // they are dropped, never replayed into the application.
     let field_focused = ctx.memory(|m| m.has_focus(search_field_id()));
     let deferred = std::mem::take(&mut st.deferred);
-    if !deferred.is_empty() && st.nav.open == st.deferred_menu && searching(&st).is_some() && field_focused {
+    if !deferred.is_empty()
+        && st.nav.open == st.deferred_menu
+        && searching(&st).is_some()
+        && field_focused
+    {
         ui.input_mut(|i| {
             i.events.splice(0..0, deferred);
         });
@@ -551,7 +642,10 @@ pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<
     let menus = match searching(&st) {
         Some(s) if !st.query.trim().is_empty() => {
             let mut changed = menus.to_vec();
-            changed[s.menu].entries = matching(menus, &st.query).into_iter().map(Entry::Row).collect();
+            changed[s.menu].entries = matching(menus, &st.query)
+                .into_iter()
+                .map(Entry::Row)
+                .collect();
             view = changed;
             view.as_slice()
         }
@@ -571,21 +665,42 @@ pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<
     if st.nav.open.is_some() {
         ui.input_mut(|i| {
             i.events.retain(|event| {
-                let egui::Event::Key { key, pressed: true, modifiers, .. } = event else { return true };
+                let egui::Event::Key {
+                    key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } = event
+                else {
+                    return true;
+                };
                 if typing && matches!(key, Key::Space | Key::ArrowLeft | Key::ArrowRight) {
                     return true;
                 }
                 let nav = KEYS.iter().find(|(k, _)| k == key).map(|&(_, nav)| nav);
-                let Some(nav) = nav.filter(|_| st.nav.open.is_some() && modifiers.matches_logically(Modifiers::NONE)) else {
+                let Some(nav) = nav.filter(|_| {
+                    st.nav.open.is_some() && modifiers.matches_logically(Modifiers::NONE)
+                }) else {
                     return true;
                 };
                 keyed = true;
-                if typing && nav == NavKey::Enter && st.nav.highlight().first().copied().flatten().is_none() {
+                if typing
+                    && nav == NavKey::Enter
+                    && st.nav.highlight().first().copied().flatten().is_none()
+                {
                     // Enter with nothing highlighted runs the first enabled
                     // result (none while the query is empty).
-                    let open = if st.query.trim().is_empty() { usize::MAX } else { st.nav.open.unwrap_or_default() };
+                    let open = if st.query.trim().is_empty() {
+                        usize::MAX
+                    } else {
+                        st.nav.open.unwrap_or_default()
+                    };
                     let first = menus.get(open).and_then(|m| {
-                        m.entries.iter().filter_map(Entry::row).find(|r| r.enabled && r.id.is_some()).and_then(|r| r.id)
+                        m.entries
+                            .iter()
+                            .filter_map(Entry::row)
+                            .find(|r| r.enabled && r.id.is_some())
+                            .and_then(|r| r.id)
                     });
                     if let Some(id) = first {
                         fired = Some(id);
@@ -600,7 +715,12 @@ pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<
     }
 
     let (pressed, released, moved, pointer) = ui.input(|i| {
-        (i.pointer.primary_pressed(), i.pointer.primary_released(), i.pointer.delta() != Vec2::ZERO, i.pointer.interact_pos())
+        (
+            i.pointer.primary_pressed(),
+            i.pointer.primary_released(),
+            i.pointer.delta() != Vec2::ZERO,
+            i.pointer.interact_pos(),
+        )
     });
 
     // Titles: open on press, hover-switch while open.
@@ -609,8 +729,13 @@ pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<
     let mut titles: Vec<(Rect, Arc<Galley>, bool)> = Vec::with_capacity(menus.len());
     let mut on_title = false;
     for (index, menu) in menus.iter().enumerate() {
-        let galley = ui.painter().layout_no_wrap(menu.title.clone(), font.clone(), Color32::PLACEHOLDER);
-        let size = vec2(galley.size().x + 2.0 * metrics.menu_title_padding.x, metrics.menu_title_height);
+        let galley =
+            ui.painter()
+                .layout_no_wrap(menu.title.clone(), font.clone(), Color32::PLACEHOLDER);
+        let size = vec2(
+            galley.size().x + 2.0 * metrics.menu_title_padding.x,
+            metrics.menu_title_height,
+        );
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
         response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &menu.title));
         let open = st.nav.open == Some(index);
@@ -624,7 +749,11 @@ pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<
             }
         } else if response.clicked() && !response.clicked_by(PointerButton::Primary) {
             // Keyboard or accessibility activation toggles.
-            if open { st.nav.close() } else { st.nav.open(index) }
+            if open {
+                st.nav.close()
+            } else {
+                st.nav.open(index)
+            }
         } else if !open && st.nav.open.is_some() && moved && response.contains_pointer() {
             // Only while moving, and only when the title is top-most, so a
             // resting pointer or an overlapping submenu never switches.
@@ -644,7 +773,10 @@ pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<
     // Focus waits for the pointer to settle: egui hands focus back from a
     // field on the frame of any press or click that lands elsewhere, which
     // the press on the title would be.
-    if st.focus_search && !ui.input(|i| i.pointer.any_pressed() || i.pointer.any_released() || i.pointer.any_down()) {
+    if st.focus_search
+        && !ui
+            .input(|i| i.pointer.any_pressed() || i.pointer.any_released() || i.pointer.any_down())
+    {
         st.focus_search = false;
         if searching(&st).is_some() {
             ctx.memory_mut(|m| m.request_focus(search_field_id()));
@@ -653,7 +785,8 @@ pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<
     let ppp = ctx.pixels_per_point();
     for (index, (rect, galley, hovered)) in titles.iter().enumerate() {
         if *hovered || st.nav.open == Some(index) {
-            ui.painter().rect_filled(*rect, metrics.radius_sm, palette.hover);
+            ui.painter()
+                .rect_filled(*rect, metrics.radius_sm, palette.hover);
         }
         let at = (rect.center() - galley.size() / 2.0).round_to_pixels(ppp);
         ui.painter().galley(at, galley.clone(), palette.text_dim);
@@ -679,12 +812,21 @@ pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<
         let tallest = (bottom - bar_bottom).max(metrics.menu_row_height + margin.sum().y);
         let mut level = 0;
         while level < st.nav.levels() {
-            let Some(entries) = st.nav.level(menus, level) else { break };
-            let min_width = if level == 0 { metrics.menu_min_width } else { 0.0 };
+            let Some(entries) = st.nav.level(menus, level) else {
+                break;
+            };
+            let min_width = if level == 0 {
+                metrics.menu_min_width
+            } else {
+                0.0
+            };
             let layout = Layout::new(ui, &chrome, entries, min_width);
             let outer = layout.size + margin.sum();
             if level == 0 {
-                origin.x = origin.x.min(screen.right() - metrics.edge_gap - outer.x).max(screen.left());
+                origin.x = origin
+                    .x
+                    .min(screen.right() - metrics.edge_gap - outer.x)
+                    .max(screen.left());
             }
             let rect = Rect::from_min_size(origin, outer);
             // The search menu's field and its separator band sit above the rows.
@@ -693,23 +835,50 @@ pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<
             // one row and a separator band; the no-matches line is a row.
             let header_height = header.map_or(0.0, |_| {
                 let empty = entries.is_empty() && !st.query.trim().is_empty();
-                metrics.menu_row_height * if empty { 2.0 } else { 1.0 } + metrics.menu_separator_height + 6.0
+                metrics.menu_row_height * if empty { 2.0 } else { 1.0 }
+                    + metrics.menu_separator_height
+                    + 6.0
             });
-            let max_height =
-                (bottom - origin.y).max(metrics.menu_row_height + margin.sum().y) - margin.sum().y - header_height;
-            let deeper = st.frames.get(level + 1).copied().filter(|_| st.nav.submenu_open(level));
+            let max_height = (bottom - origin.y).max(metrics.menu_row_height + margin.sum().y)
+                - margin.sum().y
+                - header_height;
+            let deeper = st
+                .frames
+                .get(level + 1)
+                .copied()
+                .filter(|_| st.nav.submenu_open(level));
             // A key reveals the highlight of every level it acts through, so
             // a submenu entered by keyboard brings its parent row into view.
-            let view = View { max_height, moved, keyed: keyed && level <= st.nav.depth(), deeper };
+            let view = View {
+                max_height,
+                moved,
+                keyed: keyed && level <= st.nav.depth(),
+                deeper,
+            };
             let header = header.map(|s| (s, &mut st.query));
-            let shown = show_level(&ctx, &chrome, level, entries, &layout, rect, &mut st.nav, menus, view, header);
+            let shown = show_level(
+                &ctx,
+                &chrome,
+                level,
+                entries,
+                &layout,
+                rect,
+                &mut st.nav,
+                menus,
+                view,
+                header,
+            );
             frames.push(shown.frame);
             bars.extend(shown.bar);
             if let Some(index) = shown.under {
                 under = Some((level, index));
             }
             if let Some(index) = shown.activated
-                && let Some(Row { id: Some(id), enabled: true, .. }) = entries[index].row()
+                && let Some(Row {
+                    id: Some(id),
+                    enabled: true,
+                    ..
+                }) = entries[index].row()
             {
                 fired = Some(*id);
                 st.nav.close();
@@ -718,7 +887,13 @@ pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<
             // Place the next level beside this level's highlighted row: its
             // first row level with that row, else opening upward, else
             // pressed against the window bottom, never over the bar.
-            let Some(row) = st.nav.highlight().get(level).copied().flatten().and_then(|i| shown.rows.get(i).copied())
+            let Some(row) = st
+                .nav
+                .highlight()
+                .get(level)
+                .copied()
+                .flatten()
+                .and_then(|i| shown.rows.get(i).copied())
             else {
                 break;
             };
@@ -731,7 +906,10 @@ pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<
                 st.nav.close_below(level);
                 break;
             }
-            let child = st.nav.level(menus, level + 1).map(|e| Layout::new(ui, &chrome, e, 0.0).size + margin.sum());
+            let child = st
+                .nav
+                .level(menus, level + 1)
+                .map(|e| Layout::new(ui, &chrome, e, 0.0).size + margin.sum());
             let mut child = child.unwrap_or(Vec2::ZERO);
             child.y = child.y.min(tallest);
             let mut x = shown.frame.right() + metrics.submenu_gap;
@@ -741,7 +919,11 @@ pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<
             let mut y = row.top() - margin.top;
             if y + child.y > bottom {
                 let upward = row.bottom() + margin.bottom - child.y;
-                y = if upward >= bar_bottom { upward } else { (bottom - child.y).max(bar_bottom) };
+                y = if upward >= bar_bottom {
+                    upward
+                } else {
+                    (bottom - child.y).max(bar_bottom)
+                };
             }
             origin = pos2(x, y.max(bar_bottom));
             level += 1;
@@ -757,13 +939,27 @@ pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<
         }
     }
     if released {
-        let row = under.filter(|_| !st.scroll_press).and_then(|(level, index)| {
-            st.nav.level(menus, level).and_then(|e| e.get(index)).and_then(Entry::row).map(|r| (level, index, r))
-        });
+        let row = under
+            .filter(|_| !st.scroll_press)
+            .and_then(|(level, index)| {
+                st.nav
+                    .level(menus, level)
+                    .and_then(|e| e.get(index))
+                    .and_then(Entry::row)
+                    .map(|r| (level, index, r))
+            });
         match row {
             // A scroll bar gesture only scrolls.
             _ if st.scroll_press => {}
-            Some((_, _, Row { id: Some(id), enabled: true, .. })) if st.nav.open.is_some() => {
+            Some((
+                _,
+                _,
+                Row {
+                    id: Some(id),
+                    enabled: true,
+                    ..
+                },
+            )) if st.nav.open.is_some() => {
                 fired = Some(*id);
                 st.nav.close();
             }
@@ -776,7 +972,9 @@ pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<
             }
             // A click inside the search menu (on its field, say) keeps it
             // open: only a click outside closes it (§3.5).
-            _ if st.inside_press && pointer.is_some_and(inside) && searching(&st).is_none() => st.nav.close(),
+            _ if st.inside_press && pointer.is_some_and(inside) && searching(&st).is_none() => {
+                st.nav.close()
+            }
             _ => {}
         }
         st.title_press = false;
@@ -789,7 +987,11 @@ pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<
         path: (0..st.nav.levels())
             .map(|level| {
                 let index = st.nav.highlight().get(level).copied().flatten()?;
-                st.nav.level(menus, level)?.get(index)?.row().map(|r| r.label.clone())
+                st.nav
+                    .level(menus, level)?
+                    .get(index)?
+                    .row()
+                    .map(|r| r.label.clone())
             })
             .collect(),
         depth: st.nav.depth,
@@ -827,11 +1029,20 @@ impl Layout {
         let m = &chrome.metrics;
         let font = Chrome::menu_font(ui.style());
         let painter = ui.painter();
-        let galley = |text: &str| painter.layout_no_wrap(text.to_owned(), font.clone(), Color32::PLACEHOLDER);
+        let galley = |text: &str| {
+            painter.layout_no_wrap(text.to_owned(), font.clone(), Color32::PLACEHOLDER)
+        };
         // A level with any choice gives every label the tick's gutter, so
         // ticked and unticked labels line up (§3.5).
-        let choices = entries.iter().filter_map(Entry::row).any(|r| r.checked.is_some());
-        let (gutter, tick) = if choices { (galley(TICK_GUTTER).size().x, Some(galley(TICK))) } else { (0.0, None) };
+        let choices = entries
+            .iter()
+            .filter_map(Entry::row)
+            .any(|r| r.checked.is_some());
+        let (gutter, tick) = if choices {
+            (galley(TICK_GUTTER).size().x, Some(galley(TICK)))
+        } else {
+            (0.0, None)
+        };
         let mut width: f32 = min_width;
         let mut lines = Vec::with_capacity(entries.len());
         let mut heights = Vec::with_capacity(entries.len());
@@ -843,17 +1054,28 @@ impl Layout {
                 }
                 Entry::Row(row) => {
                     let label = galley(&row.label);
-                    let right = if row.is_submenu() { Some(galley(SUBMENU_ARROW)) } else { row.shortcut.as_deref().map(galley) };
+                    let right = if row.is_submenu() {
+                        Some(galley(SUBMENU_ARROW))
+                    } else {
+                        row.shortcut.as_deref().map(galley)
+                    };
                     // Labels never wrap: the menu widens instead (§3.4).
                     let right_width = right.as_ref().map_or(0.0, |g| m.shortcut_gap + g.size().x);
-                    width = width.max(2.0 * m.menu_row_padding.x + gutter + label.size().x + right_width);
+                    width = width
+                        .max(2.0 * m.menu_row_padding.x + gutter + label.size().x + right_width);
                     lines.push(Some((label, right)));
                     heights.push(m.menu_row_height);
                 }
             }
         }
         let size = vec2(width, heights.iter().sum());
-        Self { lines, heights, size, gutter, tick }
+        Self {
+            lines,
+            heights,
+            size,
+            gutter,
+            tick,
+        }
     }
 }
 
@@ -883,7 +1105,10 @@ struct View {
     deeper: Option<Rect>,
 }
 
-#[expect(clippy::too_many_arguments, reason = "one level's inputs, called from one place")]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one level's inputs, called from one place"
+)]
 fn show_level(
     ctx: &Context,
     chrome: &Chrome,
@@ -896,7 +1121,12 @@ fn show_level(
     view: View,
     header: Option<(&Search, &mut String)>,
 ) -> Shown {
-    let View { max_height, moved, keyed, deeper } = view;
+    let View {
+        max_height,
+        moved,
+        keyed,
+        deeper,
+    } = view;
     let id = state_id().with(level);
     let area = Area::new(id)
         .kind(UiKind::Menu)
@@ -914,7 +1144,12 @@ fn show_level(
                         .id_salt(id.with("scroll"))
                         .max_height(max_height)
                         .auto_shrink([true, true])
-                        .show(ui, |ui| level_rows(ui, chrome, level, entries, layout, nav, menus, moved, keyed, deeper, id));
+                        .show(ui, |ui| {
+                            level_rows(
+                                ui, chrome, level, entries, layout, nav, menus, moved, keyed,
+                                deeper, id,
+                            )
+                        });
                     let view = out.inner_rect;
                     let bar = (out.content_size.y > view.height() + 0.5).then(|| {
                         // egui's bar ends at the allocated strip's outer
@@ -935,14 +1170,28 @@ fn show_level(
                 .inner
         });
     let ((rows, under, activated), view, bar) = area.inner;
-    Shown { frame: area.response.rect, rows, under, activated, view, bar }
+    Shown {
+        frame: area.response.rect,
+        rows,
+        under,
+        activated,
+        view,
+        bar,
+    }
 }
 
 /// The search menu's field (§3.5): egui's single-line field, 220 wide, in
 /// egui's menu style (so no resting border), then egui's separator, then
 /// the weak "no matches" line when a query found nothing. Measured: the
 /// field spans 35 to 52.5 pt under a 32 pt bar and the rule sits at 62.
-fn search_header(ui: &mut Ui, chrome: &Chrome, search: &Search, query: &mut String, width: f32, empty: bool) {
+fn search_header(
+    ui: &mut Ui,
+    chrome: &Chrome,
+    search: &Search,
+    query: &mut String,
+    width: f32,
+    empty: bool,
+) {
     let m = &chrome.metrics;
     ui.scope(|ui| {
         egui::containers::menu::menu_style(ui.style_mut());
@@ -956,17 +1205,26 @@ fn search_header(ui: &mut Ui, chrome: &Chrome, search: &Search, query: &mut Stri
     });
     ui.separator();
     if empty && !query.trim().is_empty() {
-        let (row, response) = ui.allocate_exact_size(vec2(width, m.menu_row_height), Sense::hover());
+        let (row, response) =
+            ui.allocate_exact_size(vec2(width, m.menu_row_height), Sense::hover());
         response.widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, &search.empty));
         let ink = chrome.palette.text.gamma_multiply(WEAK_ALPHA);
-        let galley = ui.painter().layout_no_wrap(search.empty.clone(), Chrome::menu_font(ui.style()), ink);
-        let at = pos2(row.left() + m.menu_row_padding.x, row.center().y - galley.size().y / 2.0);
+        let galley =
+            ui.painter()
+                .layout_no_wrap(search.empty.clone(), Chrome::menu_font(ui.style()), ink);
+        let at = pos2(
+            row.left() + m.menu_row_padding.x,
+            row.center().y - galley.size().y / 2.0,
+        );
         ui.painter().galley(at, galley, ink);
     }
 }
 
 /// The rows of one level, inside its scroll area.
-#[expect(clippy::too_many_arguments, reason = "one level's inputs, called from one place")]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one level's inputs, called from one place"
+)]
 fn level_rows(
     ui: &mut Ui,
     chrome: &Chrome,
@@ -992,13 +1250,18 @@ fn level_rows(
     for (index, (entry, row_rect)) in entries.iter().zip(&rows).enumerate() {
         let response = ui.interact(*row_rect, id.with(index), Sense::click());
         if let Entry::Row(row) = entry {
-            response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, row.enabled, &row.label));
+            response
+                .widget_info(|| WidgetInfo::labeled(WidgetType::Button, row.enabled, &row.label));
             if let Some(checked) = row.checked {
                 // A choice is one of a group, ticked or not: a radio menu
                 // item to assistive technology and the drive layer.
                 ui.ctx().accesskit_node_builder(response.id, |node| {
                     node.set_role(egui::accesskit::Role::MenuItemRadio);
-                    node.set_toggled(if checked { egui::accesskit::Toggled::True } else { egui::accesskit::Toggled::False });
+                    node.set_toggled(if checked {
+                        egui::accesskit::Toggled::True
+                    } else {
+                        egui::accesskit::Toggled::False
+                    });
                 });
             }
             if row.enabled && response.clicked() && !response.clicked_by(PointerButton::Primary) {
@@ -1018,7 +1281,14 @@ fn level_rows(
     {
         nav.hover(level, index, menus);
     }
-    if keyed && let Some(row) = nav.highlight().get(level).copied().flatten().and_then(|i| rows.get(i)) {
+    if keyed
+        && let Some(row) = nav
+            .highlight()
+            .get(level)
+            .copied()
+            .flatten()
+            .and_then(|i| rows.get(i))
+    {
         // At once, as a native menu does: an animated scroll would leave a
         // keyboard-opened submenu's row out of view for several frames.
         ui.scroll_to_rect_animation(*row, None, egui::style::ScrollAnimation::none());
@@ -1027,7 +1297,15 @@ fn level_rows(
     (rows, under, activated)
 }
 
-fn paint(ui: &Ui, chrome: &Chrome, level: usize, entries: &[Entry], layout: &Layout, rows: &[Rect], nav: &Nav) {
+fn paint(
+    ui: &Ui,
+    chrome: &Chrome,
+    level: usize,
+    entries: &[Entry],
+    layout: &Layout,
+    rows: &[Rect],
+    nav: &Nav,
+) {
     let (p, m) = (&chrome.palette, &chrome.metrics);
     let painter = ui.painter();
     let ppp = ui.ctx().pixels_per_point();
@@ -1053,7 +1331,11 @@ fn paint(ui: &Ui, chrome: &Chrome, level: usize, entries: &[Entry], layout: &Lay
                 if let Some(fill) = fill {
                     painter.rect_filled(*rect, m.menu_highlight_radius, fill);
                 }
-                let ink = if row.enabled { ink } else { ink.gamma_multiply(DISABLED_ALPHA) };
+                let ink = if row.enabled {
+                    ink
+                } else {
+                    ink.gamma_multiply(DISABLED_ALPHA)
+                };
                 let x = rect.left() + m.menu_row_padding.x;
                 if row.checked == Some(true)
                     && let Some(tick) = &layout.tick
@@ -1066,7 +1348,11 @@ fn paint(ui: &Ui, chrome: &Chrome, level: usize, entries: &[Entry], layout: &Lay
                 painter.galley(at, label.clone(), ink);
                 if let Some(right) = right {
                     // The submenu arrow keeps the label's ink; a shortcut is weak.
-                    let tint = if row.is_submenu() { ink } else { ink.gamma_multiply(WEAK_ALPHA) };
+                    let tint = if row.is_submenu() {
+                        ink
+                    } else {
+                        ink.gamma_multiply(WEAK_ALPHA)
+                    };
                     let x = rect.right() - m.menu_row_padding.x - right.size().x;
                     let at = pos2(x, rect.center().y - right.size().y / 2.0).round_to_pixels(ppp);
                     painter.galley(at, right.clone(), tint);
@@ -1095,13 +1381,22 @@ mod tests {
                     cmd("new", true),
                     cmd("paste", false),
                     cmd("open", true),
-                    Entry::Row(Row::submenu("recent", vec![cmd("clear", true), cmd("none", false)])),
+                    Entry::Row(Row::submenu(
+                        "recent",
+                        vec![cmd("clear", true), cmd("none", false)],
+                    )),
                     Entry::Separator,
                     cmd("close", true),
                 ],
             },
-            Menu { title: "Edit".into(), entries: vec![cmd("undo", true)] },
-            Menu { title: "Help".into(), entries: vec![cmd("about", true)] },
+            Menu {
+                title: "Edit".into(),
+                entries: vec![cmd("undo", true)],
+            },
+            Menu {
+                title: "Help".into(),
+                entries: vec![cmd("about", true)],
+            },
         ]
     }
 
@@ -1124,7 +1419,11 @@ mod tests {
         assert_eq!(downs, [Some(0), Some(2), Some(3), Some(5), Some(0)]);
         let mut nav = opened();
         nav.key(NavKey::Up, &m);
-        assert_eq!(nav.highlight()[0], Some(5), "Up from nothing goes to the last enabled row");
+        assert_eq!(
+            nav.highlight()[0],
+            Some(5),
+            "Up from nothing goes to the last enabled row"
+        );
         nav.key(NavKey::Up, &m);
         assert_eq!(nav.highlight()[0], Some(3));
     }
@@ -1139,13 +1438,21 @@ mod tests {
         nav.key(NavKey::Right, &m);
         assert_eq!(nav.open_menu(), Some(2), "command row: next menu");
         nav.key(NavKey::Right, &m);
-        assert_eq!(nav.open_menu(), Some(0), "wraps from the last menu to the first");
+        assert_eq!(
+            nav.open_menu(),
+            Some(0),
+            "wraps from the last menu to the first"
+        );
         assert_eq!(nav.highlight(), [None], "the highlight resets per menu");
         for _ in 0..3 {
             nav.key(NavKey::Down, &m);
         }
         nav.key(NavKey::Right, &m);
-        assert_eq!((nav.highlight(), nav.depth()), (&[Some(3), Some(0)][..], 1), "into the submenu, first enabled row");
+        assert_eq!(
+            (nav.highlight(), nav.depth()),
+            (&[Some(3), Some(0)][..], 1),
+            "into the submenu, first enabled row"
+        );
         nav.key(NavKey::Down, &m);
         assert_eq!(nav.highlight()[1], Some(0), "the only enabled row stays");
     }
@@ -1159,7 +1466,11 @@ mod tests {
         }
         nav.key(NavKey::Right, &m);
         nav.key(NavKey::Left, &m);
-        assert_eq!((nav.highlight(), nav.depth()), (&[Some(3)][..], 0), "parent row stays highlighted");
+        assert_eq!(
+            (nav.highlight(), nav.depth()),
+            (&[Some(3)][..], 0),
+            "parent row stays highlighted"
+        );
         nav.key(NavKey::Left, &m);
         assert_eq!(nav.open_menu(), Some(2), "wraps to the last menu");
     }
@@ -1168,20 +1479,35 @@ mod tests {
     fn enter_runs_enabled_commands_only_and_escape_closes() {
         let m = menus();
         let mut nav = opened();
-        assert_eq!(nav.key(NavKey::Enter, &m), Outcome::Stay, "nothing highlighted");
+        assert_eq!(
+            nav.key(NavKey::Enter, &m),
+            Outcome::Stay,
+            "nothing highlighted"
+        );
         nav.key(NavKey::Down, &m);
         nav.key(NavKey::Down, &m);
         assert_eq!(nav.key(NavKey::Enter, &m), Outcome::Run("open"));
         assert_eq!(nav.open_menu(), None, "running closes every menu");
         let mut nav = opened();
         nav.hover(0, 1, &m);
-        assert_eq!(nav.highlight()[0], None, "a disabled row is never highlighted");
+        assert_eq!(
+            nav.highlight()[0],
+            None,
+            "a disabled row is never highlighted"
+        );
         assert_eq!(nav.key(NavKey::Enter, &m), Outcome::Stay);
         nav.hover(0, 3, &m);
-        assert!(nav.submenu_open(0), "hovering a submenu row shows its submenu");
+        assert!(
+            nav.submenu_open(0),
+            "hovering a submenu row shows its submenu"
+        );
         assert_eq!(nav.depth(), 0, "the keyboard stays on the parent level");
         nav.key(NavKey::Enter, &m);
-        assert_eq!((nav.depth(), nav.highlight()[1]), (1, Some(0)), "Enter moves into it like Right");
+        assert_eq!(
+            (nav.depth(), nav.highlight()[1]),
+            (1, Some(0)),
+            "Enter moves into it like Right"
+        );
         assert_eq!(nav.key(NavKey::Escape, &m), Outcome::Closed);
         assert_eq!(nav, Nav::default());
     }
@@ -1192,7 +1518,11 @@ mod tests {
         let mut nav = opened();
         nav.hover(0, 2, &m);
         nav.key(NavKey::Down, &m);
-        assert_eq!(nav.highlight()[0], Some(3), "keys move on from the hovered row");
+        assert_eq!(
+            nav.highlight()[0],
+            Some(3),
+            "keys move on from the hovered row"
+        );
     }
 
     #[test]
@@ -1204,7 +1534,11 @@ mod tests {
         assert_eq!((nav.highlight(), nav.depth()), (&[Some(3), Some(0)][..], 1));
         m[0].entries[3] = cmd("recent", true);
         nav.validate(&m);
-        assert_eq!((nav.highlight(), nav.depth()), (&[Some(3)][..], 0), "no longer a submenu: its level closes");
+        assert_eq!(
+            (nav.highlight(), nav.depth()),
+            (&[Some(3)][..], 0),
+            "no longer a submenu: its level closes"
+        );
         m[0].entries.truncate(2);
         nav.validate(&m);
         assert_eq!(nav.highlight(), [None], "the row is gone");
@@ -1219,13 +1553,32 @@ mod tests {
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
             let chrome = Chrome::of(ui.ctx());
             let plain = Layout::new(ui, &chrome, &[cmd("alpha", true), cmd("beta", true)], 0.0);
-            assert_eq!((plain.gutter, plain.tick.is_some()), (0.0, false), "no choices, no gutter");
-            let mixed = [Entry::Row(Row::choice("alpha", "alpha", None, true, false)), cmd("beta", true)];
+            assert_eq!(
+                (plain.gutter, plain.tick.is_some()),
+                (0.0, false),
+                "no choices, no gutter"
+            );
+            let mixed = [
+                Entry::Row(Row::choice("alpha", "alpha", None, true, false)),
+                cmd("beta", true),
+            ];
             let choices = Layout::new(ui, &chrome, &mixed, 0.0);
-            let tick = ui.painter().layout_no_wrap(TICK_GUTTER.to_owned(), Chrome::menu_font(ui.style()), Color32::PLACEHOLDER);
-            assert_eq!(choices.gutter, tick.size().x, "\"✔ \" wide, for every row of the level");
+            let tick = ui.painter().layout_no_wrap(
+                TICK_GUTTER.to_owned(),
+                Chrome::menu_font(ui.style()),
+                Color32::PLACEHOLDER,
+            );
+            assert_eq!(
+                choices.gutter,
+                tick.size().x,
+                "\"✔ \" wide, for every row of the level"
+            );
             assert!(choices.tick.is_some());
-            assert_eq!(choices.size.x, plain.size.x + choices.gutter, "the level widens by the gutter");
+            assert_eq!(
+                choices.size.x,
+                plain.size.x + choices.gutter,
+                "the level widens by the gutter"
+            );
         });
         output.textures_delta.clear();
         assert_eq!(Row::choice("a", "A", None, true, true).checked, Some(true));
@@ -1237,6 +1590,9 @@ mod tests {
         let s = || Entry::Separator;
         let tidied = tidy(vec![s(), cmd("a", true), s(), s(), cmd("b", true), s()]);
         assert_eq!(tidied, vec![cmd("a", true), s(), cmd("b", true)]);
-        assert!(!Row::submenu("x", vec![cmd("a", false)]).enabled, "no enabled child, no enabled submenu");
+        assert!(
+            !Row::submenu("x", vec![cmd("a", false)]).enabled,
+            "no enabled child, no enabled submenu"
+        );
     }
 }

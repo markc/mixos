@@ -6458,9 +6458,12 @@ impl Evaluator {
                 outcome.synth_skipped_no_socket += 1;
                 continue;
             }
-            match tokio::time::timeout_at(reply_deadline,
+            match tokio::time::timeout_at(
+                reply_deadline,
                 handle.synthesize_unanswered(SHUTDOWN_SYNTH_RC, SHUTDOWN_SYNTH_BODY),
-            ).await {
+            )
+            .await
+            {
                 Ok(Ok(())) => outcome.synth_sent += 1,
                 Ok(Err(_)) | Err(_) => outcome.synth_failed += 1,
             }
@@ -18840,20 +18843,33 @@ mod invocation_reply_tests {
     #[test]
     #[cfg(feature = "tokio-sleep")]
     fn shutdown_reply_backlog_has_one_total_deadline() {
-        let runtime = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap();
         runtime.block_on(async {
             let eval = super::Evaluator::new();
             let handler = RecordingReplyHandler::new();
             handler.stall.set(true);
             let registry = Rc::clone(&eval.globals.borrow().reply_registry);
             for id in 0..10 {
-                let (_, registration) = registry.register(1, "caller".into(),
-                    "stalled".into(), Some(id.to_string()), true, Some(handler.clone()));
+                let (_, registration) = registry.register(
+                    1,
+                    "caller".into(),
+                    "stalled".into(),
+                    Some(id.to_string()),
+                    true,
+                    Some(handler.clone()),
+                );
                 drop(registration);
             }
             let started = tokio::time::Instant::now();
-            let result = tokio::time::timeout(std::time::Duration::from_secs(1),
-                eval.drain_class_c_for_shutdown(std::time::Duration::ZERO, true)).await.unwrap();
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                eval.drain_class_c_for_shutdown(std::time::Duration::ZERO, true),
+            )
+            .await
+            .unwrap();
             assert!(started.elapsed() >= super::SHUTDOWN_REPLY_GRACE);
             assert_eq!(result.initial_pending, 10);
             assert_eq!(result.synth_failed, 10);

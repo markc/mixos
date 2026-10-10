@@ -9,12 +9,12 @@
 //! A separate exec-restart signal can only stop the owner; it exposes no state.
 //! Ordinary shells without the marker return before config, allocation or I/O.
 
-use ::bus::native_session::*;
 use ::bus::native_client::session::{ChallengeResult, ExpectedScope, Hello, SessionFailure};
 use ::bus::native_client::{
     BrokerAccount, ConnectError, Delivery, NodedClient, UnixConnectOptions, UnixConnectOutcome,
     VerifiedConnection,
 };
+use ::bus::native_session::*;
 use ed25519_dalek::SigningKey;
 use sha2::{Digest, Sha256};
 use std::fs::File;

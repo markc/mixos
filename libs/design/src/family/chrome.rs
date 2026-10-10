@@ -29,17 +29,42 @@ const PATH: &str = "design.v1.families.chrome";
 /// change here. A role is added here first, then authored in each design.
 pub const ROLES: &[&str] = &[
     // Surfaces.
-    "chrome", "canvas", "canvas_dot", "dock", "card", "card_border", "tab_strip",
+    "chrome",
+    "canvas",
+    "canvas_dot",
+    "dock",
+    "card",
+    "card_border",
+    "tab_strip",
     // Controls and their states.
-    "field", "field_border", "hover", "pressed", "row_selected",
+    "field",
+    "field_border",
+    "hover",
+    "pressed",
+    "row_selected",
     // Text and icons.
-    "text", "text_dim", "text_faint", "icon",
+    "text",
+    "text_dim",
+    "text_faint",
+    "icon",
     // Accent and selection.
-    "accent", "accent_soft", "accent_border", "accent_text", "menu_highlight", "menu_highlight_text",
+    "accent",
+    "accent_soft",
+    "accent_border",
+    "accent_text",
+    "menu_highlight",
+    "menu_highlight_text",
     // Lines, depth and overlays.
-    "separator", "shadow", "scrim",
+    "separator",
+    "shadow",
+    "scrim",
     // Actions and status.
-    "primary_bg", "primary_text", "danger", "warning", "caption_close", "caption_close_text",
+    "primary_bg",
+    "primary_text",
+    "danger",
+    "warning",
+    "caption_close",
+    "caption_close_text",
 ];
 
 /// The resolved chrome colours: role name to its exact colour.
@@ -56,7 +81,9 @@ impl ResolvedChrome {
 
     /// The authored roles and their colours, in role order.
     pub fn iter(&self) -> impl Iterator<Item = (&str, LinearRgba)> {
-        self.colours.iter().map(|(role, colour)| (role.as_str(), *colour))
+        self.colours
+            .iter()
+            .map(|(role, colour)| (role.as_str(), *colour))
     }
 }
 
@@ -83,7 +110,11 @@ fn compile_roles(
     for (role, primitive) in &family.roles {
         let path = format!("{PATH}.roles.{role}");
         if !roles.contains(&role.as_str()) {
-            errors.push(DesignDiagnostic::error("unknown-chrome-role", path, format!("`{role}` is not a chrome role")));
+            errors.push(DesignDiagnostic::error(
+                "unknown-chrome-role",
+                path,
+                format!("`{role}` is not a chrome role"),
+            ));
             continue;
         }
         match primitives.get(primitive) {
@@ -97,15 +128,30 @@ fn compile_roles(
             )),
         }
     }
-    for role in roles.iter().filter(|role| !family.roles.contains_key(**role)) {
+    for role in roles
+        .iter()
+        .filter(|role| !family.roles.contains_key(**role))
+    {
         let path = format!("{PATH}.roles.{role}");
         let message = format!("chrome role `{role}` is not authored");
         match family.coverage {
-            CoveragePolicy::Explicit => errors.push(DesignDiagnostic::error("missing-chrome-role", path, message)),
-            CoveragePolicy::Warn => warnings.push(DesignDiagnostic::warning("missing-chrome-role", path, message)),
+            CoveragePolicy::Explicit => errors.push(DesignDiagnostic::error(
+                "missing-chrome-role",
+                path,
+                message,
+            )),
+            CoveragePolicy::Warn => warnings.push(DesignDiagnostic::warning(
+                "missing-chrome-role",
+                path,
+                message,
+            )),
         }
     }
-    if errors.is_empty() { Ok((Some(ResolvedChrome { colours }), warnings)) } else { Err(errors) }
+    if errors.is_empty() {
+        Ok((Some(ResolvedChrome { colours }), warnings))
+    } else {
+        Err(errors)
+    }
 }
 
 #[cfg(test)]
@@ -115,16 +161,28 @@ mod tests {
     const ROLES: &[&str] = &["panel", "text"];
 
     fn source(coverage: CoveragePolicy, roles: &[(&str, &str)]) -> ChromeMappingSource {
-        ChromeMappingSource { coverage, roles: roles.iter().map(|(r, p)| ((*r).to_owned(), (*p).to_owned())).collect() }
+        ChromeMappingSource {
+            coverage,
+            roles: roles
+                .iter()
+                .map(|(r, p)| ((*r).to_owned(), (*p).to_owned()))
+                .collect(),
+        }
     }
 
     fn primitives() -> BTreeMap<String, LinearRgba> {
-        BTreeMap::from([("p.panel".into(), LinearRgba::BLACK), ("p.text".into(), LinearRgba::WHITE)])
+        BTreeMap::from([
+            ("p.panel".into(), LinearRgba::BLACK),
+            ("p.text".into(), LinearRgba::WHITE),
+        ])
     }
 
     #[test]
     fn roles_resolve_to_their_primitives_exactly() {
-        let s = source(CoveragePolicy::Explicit, &[("panel", "p.panel"), ("text", "p.text")]);
+        let s = source(
+            CoveragePolicy::Explicit,
+            &[("panel", "p.panel"), ("text", "p.text")],
+        );
         let (chrome, warnings) = compile_roles(Some(&s), &primitives(), ROLES).unwrap();
         let chrome = chrome.unwrap();
         assert_eq!(chrome.get("panel"), Some(LinearRgba::BLACK));
@@ -145,9 +203,19 @@ mod tests {
 
     #[test]
     fn unknown_roles_and_primitives_are_errors() {
-        let s = source(CoveragePolicy::Warn, &[("panel", "nope"), ("bogus", "p.text"), ("text", "p.text")]);
-        let codes: Vec<_> = compile_roles(Some(&s), &primitives(), ROLES).unwrap_err().iter().map(|d| d.code).collect();
-        assert!(codes.contains(&"unknown-primitive") && codes.contains(&"unknown-chrome-role"), "{codes:?}");
+        let s = source(
+            CoveragePolicy::Warn,
+            &[("panel", "nope"), ("bogus", "p.text"), ("text", "p.text")],
+        );
+        let codes: Vec<_> = compile_roles(Some(&s), &primitives(), ROLES)
+            .unwrap_err()
+            .iter()
+            .map(|d| d.code)
+            .collect();
+        assert!(
+            codes.contains(&"unknown-primitive") && codes.contains(&"unknown-chrome-role"),
+            "{codes:?}"
+        );
     }
 
     #[test]
@@ -160,32 +228,112 @@ mod tests {
     #[test]
     fn the_embedded_chrome_schemes_render_the_measured_values() {
         use crate::{DesignCompileResult, DesignContext, Mode, Scheme, SourceIdentity};
-        let document = crate::parse_design_source(SourceIdentity::new("embedded"), crate::EMBEDDED_DEFAULT_SOURCE)
-            .expect("embedded design parses");
+        let document = crate::parse_design_source(
+            SourceIdentity::new("embedded"),
+            crate::EMBEDDED_DEFAULT_SOURCE,
+        )
+        .expect("embedded design parses");
         let hex = |c: LinearRgba| {
             let [r, g, b, a] = c.to_srgba8();
             format!("#{r:02X}{g:02X}{b:02X}{a:02X}")
         };
         // (scheme, mode) -> [chrome, card, text, accent, shadow] as #RRGGBBAA.
         let expected = [
-            (Scheme::Pro, Mode::Dark, ["#323232FF", "#323232FF", "#DEDEDEFF", "#378EF0FF", "#00000096"]),
-            (Scheme::Pro, Mode::Light, ["#535353FF", "#535353FF", "#EEEEEEFF", "#378EF0FF", "#00000096"]),
-            (Scheme::Studio, Mode::Dark, ["#141415FF", "#1A1A1CFF", "#ECECF0FF", "#8B7CF6FF", "#0000008C"]),
-            (Scheme::Studio, Mode::Light, ["#F6F6F8FF", "#FCFCFDFF", "#18181CFF", "#6C5CE7FF", "#00000032"]),
-            (Scheme::Classic, Mode::Dark, ["#D4D0C8FF", "#D4D0C8FF", "#000000FF", "#0A246AFF", "#00000000"]),
-            (Scheme::Classic, Mode::Light, ["#D4D0C8FF", "#D4D0C8FF", "#000000FF", "#0A246AFF", "#00000000"]),
+            (
+                Scheme::Pro,
+                Mode::Dark,
+                [
+                    "#323232FF",
+                    "#323232FF",
+                    "#DEDEDEFF",
+                    "#378EF0FF",
+                    "#00000096",
+                ],
+            ),
+            (
+                Scheme::Pro,
+                Mode::Light,
+                [
+                    "#535353FF",
+                    "#535353FF",
+                    "#EEEEEEFF",
+                    "#378EF0FF",
+                    "#00000096",
+                ],
+            ),
+            (
+                Scheme::Studio,
+                Mode::Dark,
+                [
+                    "#141415FF",
+                    "#1A1A1CFF",
+                    "#ECECF0FF",
+                    "#8B7CF6FF",
+                    "#0000008C",
+                ],
+            ),
+            (
+                Scheme::Studio,
+                Mode::Light,
+                [
+                    "#F6F6F8FF",
+                    "#FCFCFDFF",
+                    "#18181CFF",
+                    "#6C5CE7FF",
+                    "#00000032",
+                ],
+            ),
+            (
+                Scheme::Classic,
+                Mode::Dark,
+                [
+                    "#D4D0C8FF",
+                    "#D4D0C8FF",
+                    "#000000FF",
+                    "#0A246AFF",
+                    "#00000000",
+                ],
+            ),
+            (
+                Scheme::Classic,
+                Mode::Light,
+                [
+                    "#D4D0C8FF",
+                    "#D4D0C8FF",
+                    "#000000FF",
+                    "#0A246AFF",
+                    "#00000000",
+                ],
+            ),
         ];
         for (scheme, mode, values) in expected {
-            let context = DesignContext { scheme, mode, ..DesignContext::default() };
-            let DesignCompileResult::Success(success) = crate::compile_design(&document, context) else {
+            let context = DesignContext {
+                scheme,
+                mode,
+                ..DesignContext::default()
+            };
+            let DesignCompileResult::Success(success) = crate::compile_design(&document, context)
+            else {
                 panic!("{scheme:?}/{mode:?} must compile");
             };
-            let chrome = success.candidate.dictionary().chrome.clone().expect("chrome family");
-            for (role, want) in ["chrome", "card", "text", "accent", "shadow"].into_iter().zip(values) {
+            let chrome = success
+                .candidate
+                .dictionary()
+                .chrome
+                .clone()
+                .expect("chrome family");
+            for (role, want) in ["chrome", "card", "text", "accent", "shadow"]
+                .into_iter()
+                .zip(values)
+            {
                 let got = chrome.get(role).map(hex);
                 assert_eq!(got.as_deref(), Some(want), "{scheme:?}/{mode:?} {role}");
             }
-            assert_eq!(chrome.iter().count(), super::ROLES.len(), "{scheme:?}/{mode:?}: every role authored");
+            assert_eq!(
+                chrome.iter().count(),
+                super::ROLES.len(),
+                "{scheme:?}/{mode:?}: every role authored"
+            );
         }
     }
 }

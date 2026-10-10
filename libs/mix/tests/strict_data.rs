@@ -592,9 +592,18 @@ fn json_unicode_escapes_decode() {
 
 #[test]
 fn lone_surrogates_are_refused() {
-    assert!(parse_data(r#"{t: "\ud83d"}"#).is_err(), "high surrogate alone");
-    assert!(parse_data(r#"{t: "\ud83dx"}"#).is_err(), "high surrogate + non-escape");
-    assert!(parse_data(r#"{t: "\ude00"}"#).is_err(), "lone low surrogate");
+    assert!(
+        parse_data(r#"{t: "\ud83d"}"#).is_err(),
+        "high surrogate alone"
+    );
+    assert!(
+        parse_data(r#"{t: "\ud83dx"}"#).is_err(),
+        "high surrogate + non-escape"
+    );
+    assert!(
+        parse_data(r#"{t: "\ude00"}"#).is_err(),
+        "lone low surrogate"
+    );
 }
 
 /// The bare `\uXXXX` form stays strict-data only: program source keeps it

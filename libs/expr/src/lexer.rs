@@ -157,10 +157,38 @@ impl Token {
 /// Reserved words that are not expression tokens. Each is refused by the
 /// parser under the name Mix gives the construct.
 const STATEMENT_KEYWORDS: &[&str] = &[
-    "for", "each", "in", "to", "step", "next", "while", "done", "loop", "break", "continue",
-    "return", "select", "when", "otherwise", "parse", "with", "address", "emit", "on", "try",
-    "catch", "finally", "die", "export", "alias", "print", "eprint", "source", "include",
-    "label", "do",
+    "for",
+    "each",
+    "in",
+    "to",
+    "step",
+    "next",
+    "while",
+    "done",
+    "loop",
+    "break",
+    "continue",
+    "return",
+    "select",
+    "when",
+    "otherwise",
+    "parse",
+    "with",
+    "address",
+    "emit",
+    "on",
+    "try",
+    "catch",
+    "finally",
+    "die",
+    "export",
+    "alias",
+    "print",
+    "eprint",
+    "source",
+    "include",
+    "label",
+    "do",
 ];
 
 fn keyword(name: &str) -> Option<Token> {
@@ -201,7 +229,11 @@ fn syntax(message: impl Into<String>) -> Error {
 
 impl Lexer {
     pub(crate) fn new(source: &str) -> Self {
-        Lexer { chars: source.chars().collect(), pos: 0, group_depth: 0 }
+        Lexer {
+            chars: source.chars().collect(),
+            pos: 0,
+            group_depth: 0,
+        }
     }
 
     pub(crate) fn tokenize(mut self) -> Result<Vec<Token>, Error> {
@@ -259,7 +291,8 @@ impl Lexer {
     }
 
     fn token_at(&mut self, ch: char) -> Result<Token, Error> {
-        if ch.is_ascii_digit() || (ch == '.' && self.peek_at(1).is_some_and(|c| c.is_ascii_digit())) {
+        if ch.is_ascii_digit() || (ch == '.' && self.peek_at(1).is_some_and(|c| c.is_ascii_digit()))
+        {
             return self.number();
         }
         if ch == '"' {
@@ -434,10 +467,15 @@ impl Lexer {
             .parse()
             .map_err(|_| syntax(format!("invalid number '{text}'")))?;
         if !value.is_finite() {
-            return Err(syntax(format!("number '{text}' is out of range (infinity)")));
+            return Err(syntax(format!(
+                "number '{text}' is out of range (infinity)"
+            )));
         }
         if !text.contains(['.', 'e', 'E']) {
-            let exact = text.parse::<u128>().ok().filter(|v| (*v as f64) as u128 == *v);
+            let exact = text
+                .parse::<u128>()
+                .ok()
+                .filter(|v| (*v as f64) as u128 == *v);
             if exact.is_none() {
                 return Err(syntax(format!(
                     "integer literal '{text}' exceeds the exact range (2^53); a number would silently round; use a string for ids and digests"
@@ -470,13 +508,18 @@ impl Lexer {
         if let Some(c) = self.peek()
             && c.is_alphanumeric()
         {
-            return Err(syntax(format!("'{c}' is not a valid {name} digit in a {prefix} literal")));
+            return Err(syntax(format!(
+                "'{c}' is not a valid {name} digit in a {prefix} literal"
+            )));
         }
         if digits.is_empty() {
             return Err(syntax(format!("{prefix} literal has no digits")));
         }
-        let value = u64::from_str_radix(&digits, radix)
-            .map_err(|_| syntax(format!("{prefix}{digits} is out of range for a 64-bit integer")))?;
+        let value = u64::from_str_radix(&digits, radix).map_err(|_| {
+            syntax(format!(
+                "{prefix}{digits} is out of range for a 64-bit integer"
+            ))
+        })?;
         if value > (1u64 << 53) {
             return Err(syntax(format!(
                 "{prefix}{digits} exceeds the exact range (2^53); a number would silently round"
@@ -594,7 +637,9 @@ impl Lexer {
                 Some('}') => break,
                 Some(c) if c.is_ascii_hexdigit() && hex.len() < 6 => hex.push(c),
                 Some(c) => {
-                    return Err(syntax(format!("invalid character '{c}' in \\u{{...}} escape")));
+                    return Err(syntax(format!(
+                        "invalid character '{c}' in \\u{{...}} escape"
+                    )));
                 }
                 None => return Err(syntax("unterminated \\u{...} escape")),
             }

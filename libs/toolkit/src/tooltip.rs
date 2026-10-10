@@ -21,7 +21,10 @@ pub fn text(label: &str, shortcut: Option<&str>) -> String {
 /// form.
 pub fn for_command<S>(ctx: &egui::Context, command: &Command<S>, strings: &Strings) -> String {
     let shortcut = command.shortcut.map(|s| ctx.format_shortcut(&s));
-    text(&crate::command::label_text(strings, command.label), shortcut.as_deref())
+    text(
+        &crate::command::label_text(strings, command.label),
+        shortcut.as_deref(),
+    )
 }
 
 #[cfg(test)]
@@ -30,7 +33,10 @@ mod tests {
 
     #[test]
     fn a_shortcut_follows_in_parentheses() {
-        assert_eq!(text("Search commands", Some("Ctrl+K")), "Search commands (Ctrl+K)");
+        assert_eq!(
+            text("Search commands", Some("Ctrl+K")),
+            "Search commands (Ctrl+K)"
+        );
         assert_eq!(text("Close", None), "Close");
         assert_eq!(text("Close", Some("")), "Close");
     }

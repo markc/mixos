@@ -43,7 +43,8 @@ pub fn chevron(ui: &Ui, rect: Rect, visuals: &WidgetVisuals, _open: bool) {
         pos2(c.x, c.y + CHEVRON_HEIGHT / 2.0),
         pos2(c.x + CHEVRON_HALF, c.y - CHEVRON_HEIGHT / 2.0),
     ];
-    ui.painter().add(egui::Shape::line(points, Stroke::new(CHEVRON_STROKE, ink)));
+    ui.painter()
+        .add(egui::Shape::line(points, Stroke::new(CHEVRON_STROKE, ink)));
 }
 
 /// `selected` in `options`, as a combo `width` wide (egui's `combo_width`,
@@ -63,12 +64,22 @@ pub fn show<T: AsRef<str>>(
         let last = options.len() - 1;
         ui.input_mut(|i| {
             i.events.retain(|event| match event {
-                egui::Event::Key { key: Key::ArrowDown, pressed: true, modifiers, .. } if modifiers.is_none() => {
+                egui::Event::Key {
+                    key: Key::ArrowDown,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } if modifiers.is_none() => {
                     changed |= *selected < last;
                     *selected = (*selected + 1).min(last);
                     false
                 }
-                egui::Event::Key { key: Key::ArrowUp, pressed: true, modifiers, .. } if modifiers.is_none() => {
+                egui::Event::Key {
+                    key: Key::ArrowUp,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } if modifiers.is_none() => {
                     changed |= *selected > 0;
                     *selected = selected.saturating_sub(1);
                     false
@@ -78,14 +89,20 @@ pub fn show<T: AsRef<str>>(
         });
     }
     let text = options.get(*selected).map_or("", AsRef::as_ref);
-    let mut combo = ComboBox::from_id_salt(id_salt).selected_text(WidgetText::from(text)).height(LIST_HEIGHT).icon(chevron);
+    let mut combo = ComboBox::from_id_salt(id_salt)
+        .selected_text(WidgetText::from(text))
+        .height(LIST_HEIGHT)
+        .icon(chevron);
     if let Some(width) = width {
         combo = combo.width(width);
     }
     let mut response = combo
         .show_ui(ui, |ui| {
             for (index, option) in options.iter().enumerate() {
-                if ui.selectable_label(index == *selected, option.as_ref()).clicked() {
+                if ui
+                    .selectable_label(index == *selected, option.as_ref())
+                    .clicked()
+                {
                     changed |= index != *selected;
                     *selected = index;
                 }
@@ -107,5 +124,13 @@ pub fn show<T: AsRef<str>>(
 
 /// Keep Up and Down from moving keyboard focus off `id`.
 fn lock_arrows(ui: &Ui, id: Id) {
-    ui.memory_mut(|m| m.set_focus_lock_filter(id, EventFilter { vertical_arrows: true, ..EventFilter::default() }));
+    ui.memory_mut(|m| {
+        m.set_focus_lock_filter(
+            id,
+            EventFilter {
+                vertical_arrows: true,
+                ..EventFilter::default()
+            },
+        )
+    });
 }

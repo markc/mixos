@@ -58,31 +58,57 @@ fn mix_part() -> String {
 
 /// One line, exit 0, script not run, shape `name version (sha12, modified …; mix …)`.
 fn assert_version_line(o: &Output, name: &str, version: &str, body: &str) -> String {
-    assert!(o.status.success(), "exit {:?}, stderr {:?}", o.status, stderr(o));
+    assert!(
+        o.status.success(),
+        "exit {:?}, stderr {:?}",
+        o.status,
+        stderr(o)
+    );
     let out = stdout(o);
-    assert!(!out.contains(RAN), "the script body ran on a version query: {out:?}");
+    assert!(
+        !out.contains(RAN),
+        "the script body ran on a version query: {out:?}"
+    );
     let lines: Vec<&str> = out.lines().collect();
     assert_eq!(lines.len(), 1, "exactly one line: {out:?}");
     let line = lines[0];
     let prefix = format!("{name} {version} ({}, modified ", sha12(body));
-    assert!(line.starts_with(&prefix), "{line:?} should start {prefix:?}");
+    assert!(
+        line.starts_with(&prefix),
+        "{line:?} should start {prefix:?}"
+    );
     assert!(line.contains(&mix_part()), "{line:?} names the interpreter");
     assert!(line.ends_with("))"), "{line:?}");
     line.to_string()
 }
 
-const VERSIONED: &str = "#!/opt/mixos/bin/mix\n-- deploy something\n-- version: 1.2.3\nprint(\"SCRIPT-BODY-RAN\")\n";
+const VERSIONED: &str =
+    "#!/opt/mixos/bin/mix\n-- deploy something\n-- version: 1.2.3\nprint(\"SCRIPT-BODY-RAN\")\n";
 const UNVERSIONED: &str = "print(\"SCRIPT-BODY-RAN\")\n";
 
 #[test]
 fn versioned_script_answers_without_running() {
     let d = tempfile::tempdir().unwrap();
     let p = write(d.path(), "deploy.mix", VERSIONED);
-    let line = assert_version_line(&run(&[p.to_str().unwrap(), "--version"]), "deploy.mix", "1.2.3", VERSIONED);
+    let line = assert_version_line(
+        &run(&[p.to_str().unwrap(), "--version"]),
+        "deploy.mix",
+        "1.2.3",
+        VERSIONED,
+    );
     // RFC 3339 UTC, seconds precision.
-    let modified = line.split("modified ").nth(1).unwrap().split(';').next().unwrap();
+    let modified = line
+        .split("modified ")
+        .nth(1)
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap();
     assert_eq!(modified.len(), 20, "{modified:?}");
-    assert!(modified.ends_with('Z') && modified.as_bytes()[10] == b'T', "{modified:?}");
+    assert!(
+        modified.ends_with('Z') && modified.as_bytes()[10] == b'T',
+        "{modified:?}"
+    );
 }
 
 #[test]
@@ -91,14 +117,24 @@ fn short_flag_and_leading_interpreter_flags() {
     let p = write(d.path(), "deploy.mix", VERSIONED);
     let p = p.to_str().unwrap();
     assert_version_line(&run(&[p, "-V"]), "deploy.mix", "1.2.3", VERSIONED);
-    assert_version_line(&run(&["--no-prelude", "--strict-arity", p, "--version"]), "deploy.mix", "1.2.3", VERSIONED);
+    assert_version_line(
+        &run(&["--no-prelude", "--strict-arity", p, "--version"]),
+        "deploy.mix",
+        "1.2.3",
+        VERSIONED,
+    );
 }
 
 #[test]
 fn unversioned_script_says_so() {
     let d = tempfile::tempdir().unwrap();
     let p = write(d.path(), "plain.mix", UNVERSIONED);
-    assert_version_line(&run(&[p.to_str().unwrap(), "--version"]), "plain.mix", "unversioned", UNVERSIONED);
+    assert_version_line(
+        &run(&[p.to_str().unwrap(), "--version"]),
+        "plain.mix",
+        "unversioned",
+        UNVERSIONED,
+    );
 }
 
 #[test]
@@ -106,7 +142,12 @@ fn malformed_header_reads_as_unversioned() {
     let d = tempfile::tempdir().unwrap();
     let body = "-- version: 1.2\nprint(\"SCRIPT-BODY-RAN\")\n";
     let p = write(d.path(), "typo.mix", body);
-    assert_version_line(&run(&[p.to_str().unwrap(), "--version"]), "typo.mix", "unversioned", body);
+    assert_version_line(
+        &run(&[p.to_str().unwrap(), "--version"]),
+        "typo.mix",
+        "unversioned",
+        body,
+    );
 }
 
 #[test]
@@ -117,14 +158,18 @@ fn syntax_error_script_still_answers() {
     let p = p.to_str().unwrap();
     // Control: the file really does not parse.
     let control = run(&["--check", p]);
-    assert!(!control.status.success(), "control: the fixture must be a syntax error");
+    assert!(
+        !control.status.success(),
+        "control: the fixture must be a syntax error"
+    );
     assert_version_line(&run(&[p, "--version"]), "broken.mix", "0.4.0", body);
 }
 
 #[test]
 fn version_in_position_two_belongs_to_the_script() {
     let d = tempfile::tempdir().unwrap();
-    let body = "-- version: 1.0.0\nprint(\"SCRIPT-BODY-RAN\")\nprint(\"argv:\" .. join(args(), \",\"))\n";
+    let body =
+        "-- version: 1.0.0\nprint(\"SCRIPT-BODY-RAN\")\nprint(\"argv:\" .. join(args(), \",\"))\n";
     let p = write(d.path(), "own.mix", body);
     let o = run(&[p.to_str().unwrap(), "x", "--version"]);
     assert!(o.status.success(), "{:?}", stderr(&o));
@@ -158,14 +203,22 @@ fn stdin_script_is_named_dash_with_no_mtime() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child.stdin.take().unwrap().write_all(body.as_bytes()).unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(body.as_bytes())
+        .unwrap();
     let o = child.wait_with_output().unwrap();
     assert!(o.status.success(), "{:?}", stderr(&o));
     let out = stdout(&o);
     assert!(!out.contains(RAN), "{out:?}");
     assert_eq!(out.lines().count(), 1, "{out:?}");
     let expected = format!("- 2.0.0 ({}{}", sha12(body), mix_part());
-    assert!(out.starts_with(&expected), "{out:?} should start {expected:?}");
+    assert!(
+        out.starts_with(&expected),
+        "{out:?} should start {expected:?}"
+    );
     assert!(!out.contains("modified"), "{out:?}");
 }
 
@@ -173,7 +226,11 @@ fn stdin_script_is_named_dash_with_no_mtime() {
 fn unreadable_script_fails_like_running_it() {
     let o = run(&["/nonexistent/definitely-not-here.mix", "--version"]);
     assert_eq!(o.status.code(), Some(1));
-    assert!(stderr(&o).contains("definitely-not-here.mix"), "{:?}", stderr(&o));
+    assert!(
+        stderr(&o).contains("definitely-not-here.mix"),
+        "{:?}",
+        stderr(&o)
+    );
     assert_eq!(stdout(&o), "");
 }
 
@@ -189,13 +246,20 @@ fn script_version_query_is_cold() {
         .env("COSMIX_SESSION_FD", "99999")
         .output()
         .unwrap();
-    assert!(stderr(&control).contains("mix native-session FAILED at"), "probe is dead");
+    assert!(
+        stderr(&control).contains("mix native-session FAILED at"),
+        "probe is dead"
+    );
     let o = mix()
         .args([p.to_str().unwrap(), "--version"])
         .env("COSMIX_SESSION_FD", "99999")
         .output()
         .unwrap();
-    assert_eq!(stderr(&o), "", "a script version query started the session lane");
+    assert_eq!(
+        stderr(&o),
+        "",
+        "a script version query started the session lane"
+    );
 }
 
 #[test]
@@ -207,12 +271,19 @@ fn builtin_matches_the_version_line() {
     assert!(o.status.success(), "{:?}", stderr(&o));
     assert_eq!(
         stdout(&o).trim_end(),
-        format!("self.mix|3.1.4|{}|64|{}|string", sha12(body), env!("CARGO_PKG_VERSION"))
+        format!(
+            "self.mix|3.1.4|{}|64|{}|string",
+            sha12(body),
+            env!("CARGO_PKG_VERSION")
+        )
     );
 
     let body = "print(type(script_version().version) .. \"|\" .. script_version().name)\n";
     let p = write(d.path(), "bare.mix", body);
-    assert_eq!(stdout(&run(&[p.to_str().unwrap()])).trim_end(), "nil|bare.mix");
+    assert_eq!(
+        stdout(&run(&[p.to_str().unwrap()])).trim_end(),
+        "nil|bare.mix"
+    );
 }
 
 #[test]
@@ -230,7 +301,12 @@ fn builtin_from_stdin_has_no_mtime() {
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
-    child.stdin.take().unwrap().write_all(body.as_bytes()).unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(body.as_bytes())
+        .unwrap();
     let o = child.wait_with_output().unwrap();
     assert_eq!(stdout(&o).trim_end(), "-|nil");
 }
@@ -280,7 +356,11 @@ fn require_version_promotes_to_a_warning() {
 #[test]
 fn lint_names_a_malformed_header_line() {
     let d = tempfile::tempdir().unwrap();
-    let p = write(d.path(), "bin/typo.mix", "-- a tool\n-- version: 1.2\nprint(1)\n");
+    let p = write(
+        d.path(),
+        "bin/typo.mix",
+        "-- a tool\n-- version: 1.2\nprint(1)\n",
+    );
     let (_, out) = lint(&[p.to_str().unwrap()]);
     assert!(out.contains("typo.mix:2: MIX-D3016 note:"), "{out}");
     assert!(out.contains("1.2"), "{out}");
@@ -303,7 +383,12 @@ fn opt_out_script_receives_its_own_version_flag() {
     // Control: the same file minus the opt-out line is answered for.
     let plain = body.replace("-- version-flag: script\n", "");
     let p2 = write(d.path(), "plain.mix", &plain);
-    assert_version_line(&run(&[p2.to_str().unwrap(), "--version"]), "plain.mix", "1.0.0", &plain);
+    assert_version_line(
+        &run(&[p2.to_str().unwrap(), "--version"]),
+        "plain.mix",
+        "1.0.0",
+        &plain,
+    );
     // Serve has no argv to hand the flag to, so Mix still answers there.
     let o = run(&["--serve", p.to_str().unwrap(), "--version"]);
     assert_version_line(&o, "wrapper.mix", "1.0.0", body);
@@ -319,7 +404,12 @@ fn opt_out_from_stdin_still_runs_the_bytes() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child.stdin.take().unwrap().write_all(body.as_bytes()).unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(body.as_bytes())
+        .unwrap();
     let o = child.wait_with_output().unwrap();
     assert!(o.status.success(), "{:?}", stderr(&o));
     assert_eq!(stdout(&o).trim_end(), "stdin-argv:--version");
@@ -368,7 +458,10 @@ fn json_form_is_the_builtin_map() {
     assert_eq!(v["version"], "1.2.3");
     assert_eq!(v["sha"], sha12(VERSIONED));
     assert_eq!(v["sha256"], full);
-    assert!(v["modified"].as_str().is_some_and(|m| m.ends_with('Z')), "{v}");
+    assert!(
+        v["modified"].as_str().is_some_and(|m| m.ends_with('Z')),
+        "{v}"
+    );
     assert_eq!(v["mix"]["version"], env!("CARGO_PKG_VERSION"));
     assert!(v["mix"]["dirty"].is_boolean(), "{v}");
     // Unversioned and stdin: nulls, not strings.
@@ -384,7 +477,12 @@ fn symlink_reports_the_link_name_and_the_target_bytes() {
     let target = write(d.path(), "real-tool.mix", VERSIONED);
     let link = d.path().join("tool");
     std::os::unix::fs::symlink(&target, &link).unwrap();
-    assert_version_line(&run(&[link.to_str().unwrap(), "--version"]), "tool", "1.2.3", VERSIONED);
+    assert_version_line(
+        &run(&[link.to_str().unwrap(), "--version"]),
+        "tool",
+        "1.2.3",
+        VERSIONED,
+    );
 }
 
 #[test]
@@ -393,7 +491,11 @@ fn lint_gates_serve_citizens_and_script_directories() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     // A versioned serve citizen and the real shipped site builder carry
     // headers: silent even under --require-version.
-    let versioned = write(d.path(), "real/desktop-session.mix", "-- version: 0.1.0\non ping\n  reply(0, \"pong\")\nend\n");
+    let versioned = write(
+        d.path(),
+        "real/desktop-session.mix",
+        "-- version: 0.1.0\non ping\n  reply(0, \"pong\")\nend\n",
+    );
     let site = root.join("docs/build/gen-site.mix");
     for p in [&versioned, &site] {
         let (code, out) = lint(&["--require-version", "--deny-warnings", p.to_str().unwrap()]);
@@ -410,7 +512,11 @@ fn lint_gates_serve_citizens_and_script_directories() {
             .map(|l| format!("{l}\n"))
             .collect::<String>()
     };
-    let session = write(d.path(), "flat/desktop-session.mix", &strip(versioned.as_path()));
+    let session = write(
+        d.path(),
+        "flat/desktop-session.mix",
+        &strip(versioned.as_path()),
+    );
     let pages = write(d.path(), "build/gen-doc-pages.mix", &strip(site.as_path()));
     for p in [&session, &pages] {
         let (code, out) = lint(&["--require-version", "--deny-warnings", p.to_str().unwrap()]);
@@ -419,13 +525,21 @@ fn lint_gates_serve_citizens_and_script_directories() {
     }
     // A top-level `on` handler marks a citizen; `scripts/` counts as a
     // script directory; `scripts/lib/` is still a library.
-    let citizen = write(d.path(), "flat/citizen.mix", "on ping\n  reply(0, \"pong\")\nend\n");
+    let citizen = write(
+        d.path(),
+        "flat/citizen.mix",
+        "on ping\n  reply(0, \"pong\")\nend\n",
+    );
     let in_scripts = write(d.path(), "scripts/tool.mix", "print(1)\n");
     for p in [&citizen, &in_scripts] {
         let (_, out) = lint(&[p.to_str().unwrap()]);
         assert!(out.contains("MIX-D3016 note:"), "{}: {out}", p.display());
     }
-    let library = write(d.path(), "scripts/lib/util.mix", "fn f()\n  return 1\nend\n");
+    let library = write(
+        d.path(),
+        "scripts/lib/util.mix",
+        "fn f()\n  return 1\nend\n",
+    );
     let plain = write(d.path(), "flat/util.mix", "fn f()\n  return 1\nend\n");
     // Z2: a test script under scripts/tests/ (or test/) must stay header-less
     // (a header would make it the entry script whose record the code under

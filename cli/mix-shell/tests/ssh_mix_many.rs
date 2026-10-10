@@ -44,7 +44,10 @@ impl Bed {
     /// Run `program` under the mix being tested with the fake ssh first on
     /// PATH; returns (stdout, stderr, exit status success).
     fn run(&self, program: &str) -> (String, String, bool) {
-        self.run_with_path(program, &format!("{}:/usr/bin:/bin", self.dir.path().display()))
+        self.run_with_path(
+            program,
+            &format!("{}:/usr/bin:/bin", self.dir.path().display()),
+        )
     }
 
     fn run_with_path(&self, program: &str, path: &str) -> (String, String, bool) {
@@ -79,9 +82,18 @@ print("down ok=" .. $d.ok .. " exit=" .. $d.exit_code .. " has_value=" .. has_ke
     );
     assert!(ok, "the call must not raise: stdout={out} stderr={err}");
     let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines[0], "alpha,down,gamma", "results keyed by host in INPUT order: {out}");
-    assert_eq!(lines[1], "alpha ok=true host=alpha vhost=alpha n=42", "{out}");
-    assert_eq!(lines[2], "gamma ok=true host=gamma vhost=gamma n=42", "{out}");
+    assert_eq!(
+        lines[0], "alpha,down,gamma",
+        "results keyed by host in INPUT order: {out}"
+    );
+    assert_eq!(
+        lines[1], "alpha ok=true host=alpha vhost=alpha n=42",
+        "{out}"
+    );
+    assert_eq!(
+        lines[2], "gamma ok=true host=gamma vhost=gamma n=42",
+        "{out}"
+    );
     assert_eq!(
         lines[3], "down ok=false exit=255 has_value=false refused=true",
         "{out}"
@@ -126,7 +138,11 @@ print("ok=" .. $a.ok .. " exit=" .. $a.exit_code .. " has_value=" .. has_key($a,
 "#,
     );
     assert!(ok, "the call must not raise: stdout={out} stderr={err}");
-    assert_eq!(out.trim(), "ok=false exit=0 has_value=false has_err=true", "{out}");
+    assert_eq!(
+        out.trim(),
+        "ok=false exit=0 has_value=false has_err=true",
+        "{out}"
+    );
 }
 
 #[test]
@@ -164,8 +180,14 @@ end
     );
     assert!(ok, "the call must not raise: stdout={out} stderr={err}");
     let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines[0], "alpha ok=false code=PROCESS_SPAWN has_error=true", "{out}");
-    assert_eq!(lines[1], "beta ok=false code=PROCESS_SPAWN has_error=true", "{out}");
+    assert_eq!(
+        lines[0], "alpha ok=false code=PROCESS_SPAWN has_error=true",
+        "{out}"
+    );
+    assert_eq!(
+        lines[1], "beta ok=false code=PROCESS_SPAWN has_error=true",
+        "{out}"
+    );
 }
 
 #[test]

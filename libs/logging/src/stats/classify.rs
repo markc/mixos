@@ -137,7 +137,7 @@ pub fn with_classifications<R>(f: impl FnOnce(&HashMap<&'static str, LabelSensit
 pub(crate) fn classify_built_in_metrics() {
     let safe = &[
         // Plan §3 "built-in counters":
-        "logging_events_total",          // labels: level, target_root
+        "logging_events_total",            // labels: level, target_root
         "mixos_process_uptime_seconds",    // no labels
         "mixos_process_memory_kb",         // no labels
         "mixos_process_open_fds",          // no labels

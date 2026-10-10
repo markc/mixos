@@ -154,7 +154,10 @@ fn amp_scene_envelope_lints_as_strict_data() {
         stdout.contains("validated as strict data (not as a script)"),
         "stdout:\n{stdout}"
     );
-    assert!(stdout.contains("0 error(s), 0 warning(s)"), "stdout:\n{stdout}");
+    assert!(
+        stdout.contains("0 error(s), 0 warning(s)"),
+        "stdout:\n{stdout}"
+    );
     assert!(!stdout.contains("MIX-E1003"), "stdout:\n{stdout}");
     assert!(out.stderr.is_empty());
 }

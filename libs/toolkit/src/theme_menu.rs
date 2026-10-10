@@ -74,8 +74,19 @@ pub type Choice = (Option<Scheme>, Option<Mode>);
 impl<S: 'static> Registry<S> {
     /// Add the Theme submenu to `menu` (a Fluent menu key, usually View):
     /// `get` reads the app's choice, `set` stores one.
-    pub fn theme_menu(&mut self, menu: &'static str, get: fn(&S) -> Choice, set: fn(&mut S, Option<Scheme>, Option<Mode>)) -> &mut Self {
-        let place = |id, label, group| Place { id, label, menu: Some(menu), submenu: Some(SUBMENU), group };
+    pub fn theme_menu(
+        &mut self,
+        menu: &'static str,
+        get: fn(&S) -> Choice,
+        set: fn(&mut S, Option<Scheme>, Option<Mode>),
+    ) -> &mut Self {
+        let place = |id, label, group| Place {
+            id,
+            label,
+            menu: Some(menu),
+            submenu: Some(SUBMENU),
+            group,
+        };
         for scheme in Scheme::ALL {
             let group = if scheme.is_chrome_scheme() { 1 } else { 0 };
             self.add_choice(
@@ -129,7 +140,11 @@ mod tests {
 
     fn registry() -> Registry<App> {
         let mut r = Registry::new();
-        r.theme_menu("menu-view", |a: &App| a.choice, |a, scheme, mode| a.choice = (scheme, mode));
+        r.theme_menu(
+            "menu-view",
+            |a: &App| a.choice,
+            |a, scheme, mode| a.choice = (scheme, mode),
+        );
         r
     }
 
@@ -139,28 +154,54 @@ mod tests {
         let model = r.model(&egui::Context::default(), app, &strings);
         let theme = model[0].entries[0].row().expect("the Theme row");
         assert_eq!(theme.label, "Theme");
-        theme.children.iter().map(|e| e.row().map(|r| (r.label.clone(), r.checked))).collect()
+        theme
+            .children
+            .iter()
+            .map(|e| e.row().map(|r| (r.label.clone(), r.checked)))
+            .collect()
     }
 
     fn ticked(rows: &[Option<(String, Option<bool>)>]) -> Vec<String> {
-        rows.iter().flatten().filter(|(_, c)| *c == Some(true)).map(|(l, _)| l.clone()).collect()
+        rows.iter()
+            .flatten()
+            .filter(|(_, c)| *c == Some(true))
+            .map(|(l, _)| l.clone())
+            .collect()
     }
 
     #[test]
     fn the_submenu_groups_schemes_session_and_modes_and_ticks_the_session_by_default() {
         let r = registry();
         let rows = rows(&r, &App::default());
-        let labels: Vec<_> = rows.iter().map(|r| r.as_ref().map(|(l, _)| l.as_str())).collect();
+        let labels: Vec<_> = rows
+            .iter()
+            .map(|r| r.as_ref().map(|(l, _)| l.as_str()))
+            .collect();
         assert_eq!(
             labels,
             [
-                Some("Ocean"), Some("Crimson"), Some("Stone"), Some("Forest"), Some("Sunset"), Some("Mono"), None,
-                Some("Pro"), Some("Studio"), Some("Classic"), None,
-                Some("Session theme"), None,
-                Some("Light"), Some("Dark"), Some("Session mode"),
+                Some("Ocean"),
+                Some("Crimson"),
+                Some("Stone"),
+                Some("Forest"),
+                Some("Sunset"),
+                Some("Mono"),
+                None,
+                Some("Pro"),
+                Some("Studio"),
+                Some("Classic"),
+                None,
+                Some("Session theme"),
+                None,
+                Some("Light"),
+                Some("Dark"),
+                Some("Session mode"),
             ]
         );
-        assert!(rows.iter().flatten().all(|(_, c)| c.is_some()), "every row is a choice");
+        assert!(
+            rows.iter().flatten().all(|(_, c)| c.is_some()),
+            "every row is a choice"
+        );
         assert_eq!(ticked(&rows), ["Session theme", "Session mode"]);
     }
 
@@ -171,7 +212,11 @@ mod tests {
         r.execute("view.theme.forest", &mut app).unwrap();
         assert_eq!(app.choice, (Some(Scheme::Forest), None));
         r.execute("view.mode.dark", &mut app).unwrap();
-        assert_eq!(app.choice, (Some(Scheme::Forest), Some(Mode::Dark)), "the scheme stays");
+        assert_eq!(
+            app.choice,
+            (Some(Scheme::Forest), Some(Mode::Dark)),
+            "the scheme stays"
+        );
         assert_eq!(ticked(&rows(&r, &app)), ["Forest", "Dark"]);
         r.execute(SESSION_SCHEME, &mut app).unwrap();
         assert_eq!(app.choice, (None, Some(Mode::Dark)), "the mode stays");
@@ -183,12 +228,28 @@ mod tests {
     fn choices_describe_with_ticks_and_are_found_by_search() {
         let r = registry();
         let strings = Strings::new("menu-view = View\n");
-        let app = App { choice: (Some(Scheme::Pro), Some(Mode::Light)) };
+        let app = App {
+            choice: (Some(Scheme::Pro), Some(Mode::Light)),
+        };
         let described = r.describe(&app, &strings);
         let pro = described.iter().find(|d| d.id == "view.theme.pro").unwrap();
-        assert_eq!((pro.label.as_str(), pro.checked, pro.menu.as_deref()), ("Pro", Some(true), Some("View")));
-        assert_eq!(described.iter().find(|d| d.id == "view.theme.ocean").unwrap().checked, Some(false));
-        let found: Vec<_> = r.search("stud", &app, &strings).iter().map(|c| c.id).collect();
+        assert_eq!(
+            (pro.label.as_str(), pro.checked, pro.menu.as_deref()),
+            ("Pro", Some(true), Some("View"))
+        );
+        assert_eq!(
+            described
+                .iter()
+                .find(|d| d.id == "view.theme.ocean")
+                .unwrap()
+                .checked,
+            Some(false)
+        );
+        let found: Vec<_> = r
+            .search("stud", &app, &strings)
+            .iter()
+            .map(|c| c.id)
+            .collect();
         assert_eq!(found, ["view.theme.studio"]);
         let model = r.model(&egui::Context::default(), &app, &strings);
         let results = crate::menu::matching(&model, "forest");

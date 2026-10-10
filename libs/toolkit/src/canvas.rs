@@ -45,7 +45,11 @@ pub fn surround(ui: &Ui, rect: Rect) {
     while y < rect.bottom() {
         let mut x = first.x;
         while x < rect.right() {
-            painter.rect_filled(Rect::from_min_size(pos2(x, y), Vec2::splat(DOT)), 0.0, p.canvas_dot);
+            painter.rect_filled(
+                Rect::from_min_size(pos2(x, y), Vec2::splat(DOT)),
+                0.0,
+                p.canvas_dot,
+            );
             x += DOT_PITCH;
         }
         y += DOT_PITCH;
@@ -66,7 +70,11 @@ pub fn thumb(track: f32, view: f32, content: f32, offset: f32) -> Thumb {
     let content = content.max(view).max(1.0);
     let length = (track * view / content).clamp(MIN_THUMB.min(track), track);
     let travel = content - view;
-    let start = if travel <= 0.0 { 0.0 } else { (offset / travel).clamp(0.0, 1.0) * (track - length) };
+    let start = if travel <= 0.0 {
+        0.0
+    } else {
+        (offset / travel).clamp(0.0, 1.0) * (track - length)
+    };
     Thumb { start, length }
 }
 
@@ -91,14 +99,30 @@ pub fn scrollbars(ui: &mut Ui, id: Id, viewport: Rect, content: Vec2, offset: &m
     ui.painter().rect_filled(corner, 0.0, p.chrome);
     for axis in [0, 1] {
         let track = if axis == 0 {
-            Rect::from_min_max(pos2(inner.left(), inner.bottom()), pos2(inner.right(), viewport.bottom()))
+            Rect::from_min_max(
+                pos2(inner.left(), inner.bottom()),
+                pos2(inner.right(), viewport.bottom()),
+            )
         } else {
-            Rect::from_min_max(pos2(inner.right(), inner.top()), pos2(viewport.right(), inner.bottom()))
+            Rect::from_min_max(
+                pos2(inner.right(), inner.top()),
+                pos2(viewport.right(), inner.bottom()),
+            )
         };
         let view = inner.size()[axis];
-        bar(ui, id.with(axis), axis, track, view, content[axis], &mut offset[axis]);
+        bar(
+            ui,
+            id.with(axis),
+            axis,
+            track,
+            view,
+            content[axis],
+            &mut offset[axis],
+        );
     }
-    *offset = offset.max(Vec2::ZERO).min((content - inner.size()).max(Vec2::ZERO));
+    *offset = offset
+        .max(Vec2::ZERO)
+        .min((content - inner.size()).max(Vec2::ZERO));
     inner
 }
 
@@ -108,12 +132,26 @@ fn bar(ui: &mut Ui, id: Id, axis: usize, track: Rect, view: f32, content: f32, o
     painter.rect_filled(track, 0.0, p.chrome);
     let rule = Stroke::new(1.0, p.separator);
     if axis == 0 {
-        painter.hline(track.x_range(), painter.round_to_pixel_center(track.top() + 0.5), rule);
+        painter.hline(
+            track.x_range(),
+            painter.round_to_pixel_center(track.top() + 0.5),
+            rule,
+        );
     } else {
-        painter.vline(painter.round_to_pixel_center(track.left() + 0.5), track.y_range(), rule);
+        painter.vline(
+            painter.round_to_pixel_center(track.left() + 0.5),
+            track.y_range(),
+            rule,
+        );
     }
     let lane = track.shrink(THUMB_INSET);
-    let along = |r: Rect| if axis == 0 { (r.left(), r.width()) } else { (r.top(), r.height()) };
+    let along = |r: Rect| {
+        if axis == 0 {
+            (r.left(), r.width())
+        } else {
+            (r.top(), r.height())
+        }
+    };
     let (lane_start, lane_len) = along(lane);
 
     let response = ui.interact(track, id, Sense::click_and_drag());
@@ -121,9 +159,15 @@ fn bar(ui: &mut Ui, id: Id, axis: usize, track: Rect, view: f32, content: f32, o
     let t = thumb(lane_len, view, content, *offset);
     let thumb_rect = |t: Thumb| {
         if axis == 0 {
-            Rect::from_min_size(pos2(lane_start + t.start, lane.top()), vec2(t.length, lane.height()))
+            Rect::from_min_size(
+                pos2(lane_start + t.start, lane.top()),
+                vec2(t.length, lane.height()),
+            )
         } else {
-            Rect::from_min_size(pos2(lane.left(), lane_start + t.start), vec2(lane.width(), t.length))
+            Rect::from_min_size(
+                pos2(lane.left(), lane_start + t.start),
+                vec2(lane.width(), t.length),
+            )
         }
     };
     let rect = thumb_rect(t);
@@ -137,12 +181,23 @@ fn bar(ui: &mut Ui, id: Id, axis: usize, track: Rect, view: f32, content: f32, o
     // on the bare track pages.
     let press = ui.input(|i| {
         i.events.iter().find_map(|event| match event {
-            Event::PointerButton { pos, button: PointerButton::Primary, pressed: true, .. } if track.contains(*pos) => Some(*pos),
+            Event::PointerButton {
+                pos,
+                button: PointerButton::Primary,
+                pressed: true,
+                ..
+            } if track.contains(*pos) => Some(*pos),
             _ => None,
         })
     });
     if let Some(pos) = press {
-        gesture = Some(Gesture { on_thumb: rect.expand(HOT_DISTANCE).contains(pos), origin: coord(pos), from: *offset, view, content });
+        gesture = Some(Gesture {
+            on_thumb: rect.expand(HOT_DISTANCE).contains(pos),
+            origin: coord(pos),
+            from: *offset,
+            view,
+            content,
+        });
     }
     if let Some(g) = gesture {
         if g.on_thumb
@@ -167,7 +222,8 @@ fn bar(ui: &mut Ui, id: Id, axis: usize, track: Rect, view: f32, content: f32, o
     let hot = dragging || pointer.is_some_and(|pos| rect.expand(HOT_DISTANCE).contains(pos));
     let shown = thumb_rect(thumb(lane_len, view, content, *offset));
     let radius = shown.width().min(shown.height()) / 2.0;
-    ui.painter().rect_filled(shown, radius, if hot { p.text_dim } else { p.text_faint });
+    ui.painter()
+        .rect_filled(shown, radius, if hot { p.text_dim } else { p.text_faint });
     ui.data_mut(|d| match gesture {
         Some(gesture) => {
             d.insert_temp(id, gesture);
@@ -182,9 +238,28 @@ mod tests {
 
     #[test]
     fn the_thumb_is_proportional_and_never_shorter_than_24() {
-        assert_eq!(thumb(200.0, 100.0, 400.0, 0.0), Thumb { start: 0.0, length: 50.0 });
-        assert_eq!(thumb(200.0, 100.0, 400.0, 300.0), Thumb { start: 150.0, length: 50.0 });
+        assert_eq!(
+            thumb(200.0, 100.0, 400.0, 0.0),
+            Thumb {
+                start: 0.0,
+                length: 50.0
+            }
+        );
+        assert_eq!(
+            thumb(200.0, 100.0, 400.0, 300.0),
+            Thumb {
+                start: 150.0,
+                length: 50.0
+            }
+        );
         assert_eq!(thumb(200.0, 10.0, 10_000.0, 0.0).length, 24.0);
-        assert_eq!(thumb(200.0, 500.0, 400.0, 0.0), Thumb { start: 0.0, length: 200.0 }, "content smaller than the view");
+        assert_eq!(
+            thumb(200.0, 500.0, 400.0, 0.0),
+            Thumb {
+                start: 0.0,
+                length: 200.0
+            },
+            "content smaller than the view"
+        );
     }
 }

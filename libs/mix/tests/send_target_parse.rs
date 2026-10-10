@@ -50,7 +50,12 @@ fn as_binary_sub(expr: &Expr) -> (&Expr, &Expr) {
 #[test]
 fn a_bare_hyphenated_target_parses_as_one_name() {
     let stmt = parse_first_statement("send comp-vt2 comp.input.pointer.move x=50 y=50");
-    let StmtKind::Send { target, command, args } = &stmt.kind else {
+    let StmtKind::Send {
+        target,
+        command,
+        args,
+    } = &stmt.kind
+    else {
         panic!("expected a Send statement, got {:?}", stmt.kind);
     };
     assert_eq!(as_string_literal(target), "comp-vt2");
@@ -135,7 +140,10 @@ fn malformed_number_segments_in_the_bare_target_parse_whole() {
         ("send a-1.2.3 ping", "a-1.2.3"),
     ] {
         let stmt = parse_first_statement(src);
-        let StmtKind::Send { target, command, .. } = &stmt.kind else {
+        let StmtKind::Send {
+            target, command, ..
+        } = &stmt.kind
+        else {
             panic!("expected a Send statement for {src:?}, got {:?}", stmt.kind);
         };
         assert_eq!(as_string_literal(target), want);
@@ -153,6 +161,11 @@ fn malformed_number_segments_in_the_bare_target_parse_whole() {
     assert_eq!(as_string_literal(target), "node-007");
 
     // Outside the bare target the refusal is unchanged.
-    let err = Lexer::new("$x = 007").tokenize().expect_err("007 is still refused");
-    assert!(format!("{err}").contains("ambiguous leading-zero number '007'"), "{err}");
+    let err = Lexer::new("$x = 007")
+        .tokenize()
+        .expect_err("007 is still refused");
+    assert!(
+        format!("{err}").contains("ambiguous leading-zero number '007'"),
+        "{err}"
+    );
 }

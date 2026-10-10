@@ -197,8 +197,14 @@ mod tests {
         let mut m = Map::new();
         m.insert("rx".into(), Value::String("ends-with$".into()));
         m.insert("win".into(), Value::String("a\\b".into()));
-        assert_eq!(encode(&Value::Map(m)).unwrap(), r#"{"rx": "ends-with\$", "win": "a\\b"}"#);
-        assert_eq!(encode(&Value::String("~/x\u{1}".into())).unwrap(), r#""\~/x\u{1}""#);
+        assert_eq!(
+            encode(&Value::Map(m)).unwrap(),
+            r#"{"rx": "ends-with\$", "win": "a\\b"}"#
+        );
+        assert_eq!(
+            encode(&Value::String("~/x\u{1}".into())).unwrap(),
+            r#""\~/x\u{1}""#
+        );
         assert_eq!(encode(&Value::String("~x".into())).unwrap(), r#""~x""#);
     }
 

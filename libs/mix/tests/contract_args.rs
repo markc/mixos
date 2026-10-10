@@ -48,7 +48,10 @@ async fn pure_builtin_types_gate_only_under_strict_mode() {
     let err = run("print(len(3))", true)
         .await
         .expect_err("strict mode gates pure types");
-    assert!(err.contains("must be string | list | map | bytes | buffer"), "got: {err}");
+    assert!(
+        err.contains("must be string | list | map | bytes | buffer"),
+        "got: {err}"
+    );
     let err = run("print(len(3))", false)
         .await
         .expect_err("len(3) still fails — but on len's own terms");
@@ -72,8 +75,12 @@ async fn well_typed_calls_pass_in_both_modes() {
 
 #[tokio::test]
 async fn borrowed_write_payloads_propagate_filesystem_errors() {
-    let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-    let scratch = std::env::temp_dir().join(format!("mix-payload-errors-{}-{nonce}", std::process::id()));
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let scratch =
+        std::env::temp_dir().join(format!("mix-payload-errors-{}-{nonce}", std::process::id()));
     std::fs::create_dir(&scratch).expect("unique scratch directory");
     let directory = scratch.join("directory");
     std::fs::create_dir(&directory).unwrap();
@@ -81,12 +88,22 @@ async fn borrowed_write_payloads_propagate_filesystem_errors() {
     std::fs::write(&existing, b"preserved").unwrap();
     for strict in [false, true] {
         for builtin in ["write_file", "append_file"] {
-            let src = format!("{builtin}({}, \"payload\")", serde_json::to_string(&directory.to_string_lossy()).unwrap());
-            let err = run(&src, strict).await.expect_err("directory cannot accept file payload");
+            let src = format!(
+                "{builtin}({}, \"payload\")",
+                serde_json::to_string(&directory.to_string_lossy()).unwrap()
+            );
+            let err = run(&src, strict)
+                .await
+                .expect_err("directory cannot accept file payload");
             assert!(err.contains(builtin), "filesystem error lost: {err}");
         }
-        let src = format!("write_new({}, \"payload\", 0o600)", serde_json::to_string(&existing.to_string_lossy()).unwrap());
-        let err = run(&src, strict).await.expect_err("existing file cannot be claimed");
+        let src = format!(
+            "write_new({}, \"payload\", 0o600)",
+            serde_json::to_string(&existing.to_string_lossy()).unwrap()
+        );
+        let err = run(&src, strict)
+            .await
+            .expect_err("existing file cannot be claimed");
         assert!(err.contains("write_new"), "filesystem error lost: {err}");
         assert_eq!(std::fs::read(&existing).unwrap(), b"preserved");
     }
@@ -127,8 +144,18 @@ async fn write_payload_types_refuse_with_encode_hint_in_every_mode() {
                 ),
             ] {
                 std::fs::remove_file(path).ok();
-                let err = run(&format!("try\n {call}\ncatch $m, $e\n print($e.code .. \" | \" .. $e.message)\nend"), strict).await.expect("catchable payload refusal");
-                assert!(err.contains("TYPE_MISMATCH"), "mode {strict}, {call}: {err}");
+                let err = run(
+                    &format!(
+                        "try\n {call}\ncatch $m, $e\n print($e.code .. \" | \" .. $e.message)\nend"
+                    ),
+                    strict,
+                )
+                .await
+                .expect("catchable payload refusal");
+                assert!(
+                    err.contains("TYPE_MISMATCH"),
+                    "mode {strict}, {call}: {err}"
+                );
                 assert!(
                     err.contains("encode it first"),
                     "encode-first hint missing (mode {strict}, {call}, {what}): {err}"
@@ -148,8 +175,18 @@ async fn write_payload_types_refuse_with_encode_hint_in_every_mode() {
                 format!("append_file({live:?}, {expr})"),
                 format!("write_new({live:?}, {expr}, 0o600)"),
             ] {
-                let err = run(&format!("try\n {call}\ncatch $m, $e\n print($e.code .. \" | \" .. $e.message)\nend"), strict).await.expect("catchable payload refusal");
-                assert!(err.contains("TYPE_MISMATCH"), "mode {strict}, {call}: {err}");
+                let err = run(
+                    &format!(
+                        "try\n {call}\ncatch $m, $e\n print($e.code .. \" | \" .. $e.message)\nend"
+                    ),
+                    strict,
+                )
+                .await
+                .expect("catchable payload refusal");
+                assert!(
+                    err.contains("TYPE_MISMATCH"),
+                    "mode {strict}, {call}: {err}"
+                );
                 assert!(
                     err.contains("encode it first"),
                     "encode-first hint missing (mode {strict}, {call}, {what}): {err}"
@@ -170,7 +207,9 @@ async fn gate_errors_carry_argument_specific_guidance() {
     // A2 residual: the narrowed gate used to swallow the instructional
     // clauses that lived in the builtins behind a generic message. The
     // contract `hints[...]` seam restores them on the gate's own error.
-    let err = run("kill(true)", false).await.expect_err("bool pid must raise");
+    let err = run("kill(true)", false)
+        .await
+        .expect_err("bool pid must raise");
     assert!(err.contains("entire group"), "kill pid hint: {err}");
     let err = run("kill(1234, \"SIGKILL\")", false)
         .await
@@ -223,12 +262,18 @@ async fn explicit_nil_sentinels_keep_working_in_every_mode() {
         run("print(length(walk(\".\", nil)) > 0)", strict)
             .await
             .expect("walk nil opts accepted");
-        run("print(hash_sha256(\"abc\", nil) == hash_sha256(\"abc\"))", strict)
-            .await
-            .expect("nil digest opts = hex, not a different encoding");
-        run("print(bytes_to_string(string_to_bytes(\"ok\"), nil))", strict)
-            .await
-            .expect("nil opts = strict decode, ASCII passes");
+        run(
+            "print(hash_sha256(\"abc\", nil) == hash_sha256(\"abc\"))",
+            strict,
+        )
+        .await
+        .expect("nil digest opts = hex, not a different encoding");
+        run(
+            "print(bytes_to_string(string_to_bytes(\"ok\"), nil))",
+            strict,
+        )
+        .await
+        .expect("nil opts = strict decode, ASCII passes");
         // Process opts nil must not start a service or hang: `true` exits
         // immediately and the result map is discarded with must_use intact
         // only because print() consumes it.
@@ -245,10 +290,7 @@ async fn explicit_nil_sentinels_keep_working_in_every_mode() {
                 .as_nanos()
         ));
         std::fs::write(&tmp, "{\"a\": 1}\n").expect("temp jsonl");
-        let src = format!(
-            "print(read_jsonl({:?}, nil)[0].a)",
-            tmp.to_string_lossy()
-        );
+        let src = format!("print(read_jsonl({:?}, nil)[0].a)", tmp.to_string_lossy());
         let out = run(&src, strict)
             .await
             .unwrap_or_else(|e| panic!("mode {strict}: read_jsonl nil opts must work: {e}"));
@@ -284,9 +326,12 @@ async fn required_nil_filesystem_targets_refuse_in_every_mode() {
             "remove(nil)",
             "remove_dir(nil)",
         ] {
-            let out = run(&format!(
-                "try\n  {call}\ncatch $m, $e\n  print($e.code .. \" | \" .. $e.message)\nend\n"
-            ), strict)
+            let out = run(
+                &format!(
+                    "try\n  {call}\ncatch $m, $e\n  print($e.code .. \" | \" .. $e.message)\nend\n"
+                ),
+                strict,
+            )
             .await
             .unwrap_or_else(|e| panic!("mode {strict}, {call}: must be catchable, got {e}"));
             assert!(

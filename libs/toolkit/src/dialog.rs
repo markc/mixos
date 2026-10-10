@@ -26,8 +26,8 @@ use crate::bars;
 use crate::button::PushButton;
 use crate::chrome::Chrome;
 use egui::{
-    Align2, Area, Color32, Context, Id, Key, Label, Modal, Modifiers, Order, Pos2, Rangef, RichText, Sense, Ui, UiKind,
-    Vec2, os::OperatingSystem,
+    Align2, Area, Color32, Context, Id, Key, Label, Modal, Modifiers, Order, Pos2, Rangef,
+    RichText, Sense, Ui, UiKind, Vec2, os::OperatingSystem,
 };
 
 /// Title size, SemiBold (§2.1), and the gaps round the hairline (§3.21).
@@ -43,7 +43,10 @@ const BELOW_RULE: f32 = 8.0;
 const CENTRE_DROP: f32 = 1.75;
 
 /// The default width range (§3.21).
-pub const WIDTH: Rangef = Rangef { min: 380.0, max: 440.0 };
+pub const WIDTH: Rangef = Rangef {
+    min: 380.0,
+    max: 440.0,
+};
 
 /// The gap above the button row, between its buttons, and each button's
 /// least width. Undetermined by the specification (§5.4); the evidence's
@@ -73,7 +76,11 @@ pub struct Choice {
 
 impl Choice {
     pub fn new(label: impl Into<String>, role: Role) -> Self {
-        Self { label: label.into(), role, enabled: true }
+        Self {
+            label: label.into(),
+            role,
+            enabled: true,
+        }
     }
 
     pub fn enabled(mut self, enabled: bool) -> Self {
@@ -90,7 +97,10 @@ pub fn order(choices: &[Choice], os: OperatingSystem) -> Vec<usize> {
         return all.collect();
     }
     let of = |role: Role| all.clone().filter(move |&i| choices[i].role == role);
-    of(Role::Other).chain(of(Role::Cancel)).chain(of(Role::Default)).collect()
+    of(Role::Other)
+        .chain(of(Role::Cancel))
+        .chain(of(Role::Default))
+        .collect()
 }
 
 /// What happened in a dialog this frame.
@@ -122,7 +132,12 @@ pub struct Dialog {
 
 impl Dialog {
     pub fn new(id: impl Into<Id>, title: impl Into<String>) -> Self {
-        Self { id: id.into(), title: title.into(), width: WIDTH, choices: Vec::new() }
+        Self {
+            id: id.into(),
+            title: title.into(),
+            width: WIDTH,
+            choices: Vec::new(),
+        }
     }
 
     /// A wider range, for complex dialogs (600) or a new-document one (800).
@@ -143,9 +158,18 @@ impl Dialog {
     }
 
     pub fn show<R>(self, ctx: &Context, body: impl FnOnce(&mut Ui) -> R) -> DialogResponse<R> {
-        let Self { id, title, width, choices } = self;
+        let Self {
+            id,
+            title,
+            width,
+            choices,
+        } = self;
         let mut place: Placement = ctx.data(|d| d.get_temp(id)).unwrap_or_default();
-        let mut area = Area::new(id).kind(UiKind::Modal).sense(Sense::hover()).order(Order::Foreground).interactable(true);
+        let mut area = Area::new(id)
+            .kind(UiKind::Modal)
+            .sense(Sense::hover())
+            .order(Order::Foreground)
+            .interactable(true);
         area = match place.at {
             Some(at) => area.fixed_pos(at),
             None => area.anchor(Align2::CENTER_CENTER, Vec2::new(0.0, CENTRE_DROP)),
@@ -157,34 +181,41 @@ impl Dialog {
         let focused_before = ctx.memory(|m| m.focused()).is_some();
         let mut chosen = None;
         let mut title_drag = Vec2::ZERO;
-        let modal = Modal::new(id).area(area).backdrop_color(Color32::TRANSPARENT).show(ctx, |ui| {
-            // To assistive technology (and the drive layer) the frame is a
-            // modal dialog named by its title, its controls its children.
-            let name = title.clone();
-            ui.ctx().accesskit_node_builder(ui.unique_id(), |node| {
-                node.set_role(egui::accesskit::Role::Dialog);
-                node.set_modal();
-                node.set_label(name);
+        let modal = Modal::new(id)
+            .area(area)
+            .backdrop_color(Color32::TRANSPARENT)
+            .show(ctx, |ui| {
+                // To assistive technology (and the drive layer) the frame is a
+                // modal dialog named by its title, its controls its children.
+                let name = title.clone();
+                ui.ctx().accesskit_node_builder(ui.unique_id(), |node| {
+                    node.set_role(egui::accesskit::Role::Dialog);
+                    node.set_modal();
+                    node.set_label(name);
+                });
+                ui.set_min_width(width.min);
+                ui.set_max_width(width.max);
+                let font = crate::fonts::bound(ui.ctx(), crate::fonts::heading(TITLE_SIZE));
+                let ink = Chrome::of(ui.ctx()).palette.text;
+                let title = ui
+                    .add(Label::new(RichText::new(&title).font(font).color(ink)).selectable(false));
+                let row =
+                    egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), title.rect.y_range());
+                title_drag = ui
+                    .interact(row, id.with("title"), Sense::drag())
+                    .drag_delta();
+                // 4 pt beyond the item spacing (measured: the rule sits 11.5 pt
+                // under the title's glyphs); 8 pt exactly below it.
+                ui.add_space(ABOVE_RULE);
+                bars::hairline(ui);
+                ui.add_space(BELOW_RULE - ui.spacing().item_spacing.y);
+                let inner = body(ui);
+                if !choices.is_empty() {
+                    ui.add_space(ABOVE_BUTTONS);
+                    chosen = button_row(ui, &choices, os);
+                }
+                inner
             });
-            ui.set_min_width(width.min);
-            ui.set_max_width(width.max);
-            let font = crate::fonts::bound(ui.ctx(), crate::fonts::heading(TITLE_SIZE));
-            let ink = Chrome::of(ui.ctx()).palette.text;
-            let title = ui.add(Label::new(RichText::new(&title).font(font).color(ink)).selectable(false));
-            let row = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), title.rect.y_range());
-            title_drag = ui.interact(row, id.with("title"), Sense::drag()).drag_delta();
-            // 4 pt beyond the item spacing (measured: the rule sits 11.5 pt
-            // under the title's glyphs); 8 pt exactly below it.
-            ui.add_space(ABOVE_RULE);
-            bars::hairline(ui);
-            ui.add_space(BELOW_RULE - ui.spacing().item_spacing.y);
-            let inner = body(ui);
-            if !choices.is_empty() {
-                ui.add_space(ABOVE_BUTTONS);
-                chosen = button_row(ui, &choices, os);
-            }
-            inner
-        });
         let rect = modal.response.rect;
         if place.shown || place.at.is_some() {
             let screen = ctx.content_rect();
@@ -208,7 +239,12 @@ impl Dialog {
                 chosen = find(Role::Default);
             }
         }
-        DialogResponse { inner: modal.inner, chosen, dismissed, rect }
+        DialogResponse {
+            inner: modal.inner,
+            chosen,
+            dismissed,
+            rect,
+        }
     }
 }
 
@@ -219,7 +255,11 @@ fn button_row(ui: &mut Ui, choices: &[Choice], os: OperatingSystem) -> Option<us
     let widths: Vec<f32> = ordered
         .iter()
         .map(|&i| {
-            let galley = ui.painter().layout_no_wrap(choices[i].label.clone(), font.clone(), Color32::PLACEHOLDER);
+            let galley = ui.painter().layout_no_wrap(
+                choices[i].label.clone(),
+                font.clone(),
+                Color32::PLACEHOLDER,
+            );
             (galley.size().x + 28.0).max(BUTTON_MIN)
         })
         .collect();
@@ -253,13 +293,21 @@ mod tests {
     use super::*;
 
     fn choices() -> Vec<Choice> {
-        vec![Choice::new("OK", Role::Default), Choice::new("Cancel", Role::Cancel), Choice::new("Apply", Role::Other)]
+        vec![
+            Choice::new("OK", Role::Default),
+            Choice::new("Cancel", Role::Cancel),
+            Choice::new("Apply", Role::Other),
+        ]
     }
 
     #[test]
     fn the_default_comes_first_except_on_macos() {
         assert_eq!(order(&choices(), OperatingSystem::Nix), [0, 1, 2]);
         assert_eq!(order(&choices(), OperatingSystem::Windows), [0, 1, 2]);
-        assert_eq!(order(&choices(), OperatingSystem::Mac), [2, 1, 0], "alternates, Cancel, then the default");
+        assert_eq!(
+            order(&choices(), OperatingSystem::Mac),
+            [2, 1, 0],
+            "alternates, Cancel, then the default"
+        );
     }
 }

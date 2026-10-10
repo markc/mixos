@@ -113,7 +113,10 @@ async fn raw_spellings_are_aliases_not_variants() {
     let (_, err_alias) = run_bytes(&format!("eprint_raw({args})\n")).await.unwrap();
     assert_eq!(err_write, err_alias);
     // ...and the two streams carry the same bytes as each other.
-    assert_eq!(out_bytes(&format!("write_stdout({args})\n")).await, err_write);
+    assert_eq!(
+        out_bytes(&format!("write_stdout({args})\n")).await,
+        err_write
+    );
 }
 
 #[tokio::test]
@@ -158,10 +161,7 @@ async fn run_failing(source: &str, kind: std::io::ErrorKind) -> String {
     let tokens = lexer.tokenize().expect("lex");
     let mut parser = Parser::new(tokens, source);
     let stmts = parser.parse_program().expect("parse");
-    let mut eval = Evaluator::with_output(
-        Box::new(FailingSink(kind)),
-        Box::new(FailingSink(kind)),
-    );
+    let mut eval = Evaluator::with_output(Box::new(FailingSink(kind)), Box::new(FailingSink(kind)));
     eval.execute(&stmts)
         .await
         .err()
@@ -179,9 +179,8 @@ async fn a_failed_write_raises_under_every_name() {
             (std::io::ErrorKind::BrokenPipe, "IO_BROKEN_PIPE"),
             (std::io::ErrorKind::PermissionDenied, "IO_WRITE_FAILED"),
         ] {
-            let src = format!(
-                "try\n  {name}(\"x\")\ncatch $m, $e\n  die(\"CODE=\" .. $e.code)\nend\n"
-            );
+            let src =
+                format!("try\n  {name}(\"x\")\ncatch $m, $e\n  die(\"CODE=\" .. $e.code)\nend\n");
             let err = run_failing(&src, kind).await;
             assert!(
                 err.contains(&format!("CODE={code}")),

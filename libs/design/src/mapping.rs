@@ -215,12 +215,12 @@ pub(crate) fn compile_button_mapping(
     source: &DesignV1Source,
     colours: &ResolvedColours,
 ) -> Result<CompileSuccess<ResolvedButtonTable>, MappingCompileFailure> {
-    compile_button_mapping_artifacts(source, colours, DesignContext::revision_one()).map(|success| {
-        CompileSuccess {
+    compile_button_mapping_artifacts(source, colours, DesignContext::revision_one()).map(
+        |success| CompileSuccess {
             value: success.value.table,
             diagnostics: success.diagnostics,
-        }
-    })
+        },
+    )
 }
 
 pub(crate) fn compile_button_mapping_artifacts(

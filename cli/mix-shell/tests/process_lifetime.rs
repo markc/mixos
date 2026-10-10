@@ -133,7 +133,10 @@ fn owned_spawn_group_is_terminated_when_mix_exits_normally() {
     let _ = std::fs::remove_dir_all(&dir);
     assert!(leader_gone, "owned leader {leader} outlived mix");
     assert!(desc_gone, "owned descendant {desc} outlived mix");
-    assert!(termed, "the leader got no SIGTERM: the graceful sweep did not run first");
+    assert!(
+        termed,
+        "the leader got no SIGTERM: the graceful sweep did not run first"
+    );
 }
 
 /// Crash: mix is SIGKILLed, so no sweep can run. PR_SET_PDEATHSIG must still
@@ -171,8 +174,14 @@ fn owned_spawn_leader_dies_when_mix_is_killed() {
     kill_leftover(desc);
     let termed = dir.join("term").exists();
     let _ = std::fs::remove_dir_all(&dir);
-    assert!(leader_gone, "PDEATHSIG did not end owned leader {leader} after mix was killed");
-    assert!(!termed, "a SIGKILLed mix cannot have run the graceful sweep");
+    assert!(
+        leader_gone,
+        "PDEATHSIG did not end owned leader {leader} after mix was killed"
+    );
+    assert!(
+        !termed,
+        "a SIGKILLed mix cannot have run the graceful sweep"
+    );
 }
 
 /// Without the option a spawned child is untouched by mix's exit — the

@@ -44,7 +44,9 @@ pub fn apply_event(engine: &mut Engine, event: Event) {
 /// Apply one frame's interactions: edits first, then commands, so a command
 /// sees every edit made in the same frame.
 pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<UiEvent>) {
-    let (fired, edits): (Vec<_>, Vec<_>) = events.into_iter().partition(|e| matches!(e, UiEvent::Command(_)));
+    let (fired, edits): (Vec<_>, Vec<_>) = events
+        .into_iter()
+        .partition(|e| matches!(e, UiEvent::Command(_)));
     for event in edits.into_iter().chain(fired) {
         match event {
             UiEvent::Command(id) => {
@@ -95,18 +97,24 @@ pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &String
                 Effect::Execute { id, command } => {
                     let (rc, body) = match commands.execute(&command, engine) {
                         Ok(()) => (0, json!({ "executed": command })),
-                        Err(CommandError::Unknown(_)) => {
-                            (10, json!({"error_code":"UNKNOWN_COMMAND","message":label("unknown-command")}))
-                        }
-                        Err(CommandError::Disabled(_)) => {
-                            (10, json!({"error_code":"DISABLED","message":label("command-disabled")}))
-                        }
+                        Err(CommandError::Unknown(_)) => (
+                            10,
+                            json!({"error_code":"UNKNOWN_COMMAND","message":label("unknown-command")}),
+                        ),
+                        Err(CommandError::Disabled(_)) => (
+                            10,
+                            json!({"error_code":"DISABLED","message":label("command-disabled")}),
+                        ),
                     };
                     out.push(Effect::Reply { id, rc, body });
                 }
                 Effect::Describe { id, help } => {
                     let surface = describe();
-                    let body = if help { surface["verbs"].clone() } else { surface };
+                    let body = if help {
+                        surface["verbs"].clone()
+                    } else {
+                        surface
+                    };
                     out.push(Effect::Reply { id, rc: 0, body });
                 }
                 other => out.push(other),
@@ -140,7 +148,9 @@ pub struct Shell {
 type Deliveries = futures::channel::mpsc::Receiver<Delivery>;
 
 fn locked(inbox: &Mutex<Deliveries>) -> std::sync::MutexGuard<'_, Deliveries> {
-    inbox.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    inbox
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// The egui id of the services panel in [`view`]: an agent-set split
@@ -171,12 +181,15 @@ impl Shell {
         runtime.spawn(async move {
             loop {
                 // Take one delivery and hand it on under the inbox lock.
-                let next = futures::future::poll_fn(|cx| match locked(&source).poll_next_unpin(cx) {
-                    Poll::Ready(Some(delivery)) => Poll::Ready(Some(forward.send(Event::Delivery(delivery)).is_ok())),
-                    Poll::Ready(None) => Poll::Ready(None),
-                    Poll::Pending => Poll::Pending,
-                })
-                .await;
+                let next =
+                    futures::future::poll_fn(|cx| match locked(&source).poll_next_unpin(cx) {
+                        Poll::Ready(Some(delivery)) => {
+                            Poll::Ready(Some(forward.send(Event::Delivery(delivery)).is_ok()))
+                        }
+                        Poll::Ready(None) => Poll::Ready(None),
+                        Poll::Pending => Poll::Pending,
+                    })
+                    .await;
                 match next {
                     Some(true) => wake.request_repaint(),
                     Some(false) => return,
@@ -255,7 +268,11 @@ impl Shell {
     }
 
     fn refuse_closing(&self, id: u64) {
-        self.bus.reply(id, 10, json!({"error_code":"BUSY","message":label("quitting")}));
+        self.bus.reply(
+            id,
+            10,
+            json!({"error_code":"BUSY","message":label("quitting")}),
+        );
     }
 
     /// Run held Bus commands in order. Input that only joins the drive
@@ -285,9 +302,15 @@ impl Shell {
                 let bus = self.bus.clone();
                 self.spawn(async move { Event::Discovered(ticket, bus::discover(bus).await) });
             }
-            Effect::Call { ticket, target, body } => {
+            Effect::Call {
+                ticket,
+                target,
+                body,
+            } => {
                 let bus = self.bus.clone();
-                self.spawn(async move { Event::Completed(ticket, bus.raw(&target.service, &target.verb, body).await) });
+                self.spawn(async move {
+                    Event::Completed(ticket, bus.raw(&target.service, &target.verb, body).await)
+                });
             }
             Effect::Show { ticket, reply } => {
                 let (bus, comp) = (self.bus.clone(), self.comp.clone());
@@ -314,7 +337,11 @@ impl Shell {
                     Event::Delivery(Delivery::Command { id, .. }) => Some(id),
                     _ => None,
                 };
-                refused.extend(std::mem::take(&mut self.held).into_iter().filter_map(command));
+                refused.extend(
+                    std::mem::take(&mut self.held)
+                        .into_iter()
+                        .filter_map(command),
+                );
                 {
                     let mut inbox = locked(&self.inbox);
                     inbox.close();
@@ -382,7 +409,8 @@ impl Shell {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         if std::mem::take(&mut self.engine.split_requested) {
             let panel = egui::Id::new(SERVICES_PANEL);
-            ui.ctx().data_mut(|d| d.remove::<egui::containers::panel::PanelState>(panel));
+            ui.ctx()
+                .data_mut(|d| d.remove::<egui::containers::panel::PanelState>(panel));
         }
         let fired = self.commands.shortcuts(ui.ctx(), &self.engine);
         let stroke = icons::stroke_width(&self.theme);
@@ -417,15 +445,26 @@ mod tests {
     use inspector::{Selection, Snapshot};
 
     fn target(verb: &str) -> Selection {
-        Selection { service: "example".into(), verb: verb.into() }
+        Selection {
+            service: "example".into(),
+            verb: verb.into(),
+        }
     }
 
     fn engine() -> Engine {
         let mut s = Snapshot::default();
-        let verb = |name: &str| Verb { name: name.into(), args: String::new(), description: String::new(), read_only: Some(false) };
-        s.services.insert("example".into(), Ok(vec![verb("a"), verb("b")]));
+        let verb = |name: &str| Verb {
+            name: name.into(),
+            args: String::new(),
+            description: String::new(),
+            read_only: Some(false),
+        };
+        s.services
+            .insert("example".into(), Ok(vec![verb("a"), verb("b")]));
         let mut e = Engine::new(label);
-        let Some(Effect::Discover { ticket }) = e.take_effects().pop() else { panic!("initial discovery") };
+        let Some(Effect::Discover { ticket }) = e.take_effects().pop() else {
+            panic!("initial discovery")
+        };
         e.discovered(ticket, s);
         e.take_effects();
         e
@@ -449,13 +488,25 @@ mod tests {
         let mut e = engine();
         e.ui.selected = Some(target("a"));
         let mut performed = Vec::new();
-        for (id, verb, body) in [(1, "busviewer.execute", r#"{"id":"bus.call"}"#), (2, "busviewer.select", r#"{"service":"example","verb":"b"}"#)] {
-            apply_event(&mut e, Event::Delivery(Delivery::Command { id, verb: verb.into(), body: body.into() }));
+        for (id, verb, body) in [
+            (1, "busviewer.execute", r#"{"id":"bus.call"}"#),
+            (2, "busviewer.select", r#"{"service":"example","verb":"b"}"#),
+        ] {
+            apply_event(
+                &mut e,
+                Event::Delivery(Delivery::Command {
+                    id,
+                    verb: verb.into(),
+                    body: body.into(),
+                }),
+            );
             performed.extend(settle(&mut e, &commands, &strings));
         }
         assert_eq!(call_targets(&performed), ["a"]);
         assert_eq!(e.ui.selected, Some(target("a")));
-        assert!(performed.iter().any(|x| matches!(x, Effect::Reply { id: 2, rc: 10, body } if body["error_code"] == "BUSY")));
+        assert!(performed.iter().any(
+            |x| matches!(x, Effect::Reply { id: 2, rc: 10, body } if body["error_code"] == "BUSY")
+        ));
     }
 
     /// sol finding 2: an edit and Ctrl+Enter in one frame call with the edit.
@@ -465,10 +516,16 @@ mod tests {
         let mut e = engine();
         e.ui.selected = Some(target("a"));
         e.set_body("{\"old\":1}".into());
-        let frame = vec![UiEvent::Command("bus.call"), UiEvent::Body("{\"new\":2}".into())];
+        let frame = vec![
+            UiEvent::Command("bus.call"),
+            UiEvent::Body("{\"new\":2}".into()),
+        ];
         apply_ui(&mut e, &commands, frame);
         let effects = settle(&mut e, &commands, &strings);
-        assert!(matches!(&effects[..], [Effect::Call { body, .. }] if body == "{\"new\":2}"), "{effects:?}");
+        assert!(
+            matches!(&effects[..], [Effect::Call { body, .. }] if body == "{\"new\":2}"),
+            "{effects:?}"
+        );
         assert_eq!(e.ui.body, "{\"new\":2}");
     }
 
@@ -488,26 +545,46 @@ mod tests {
             ("busviewer.execute", json!({"id":"bus.call"})),
         ];
         for (id, (verb, body)) in (1..).zip(steps) {
-            apply_event(&mut bus, Event::Delivery(Delivery::Command { id, verb: verb.into(), body: body.to_string() }));
+            apply_event(
+                &mut bus,
+                Event::Delivery(Delivery::Command {
+                    id,
+                    verb: verb.into(),
+                    body: body.to_string(),
+                }),
+            );
             performed.extend(settle(&mut bus, &commands, &strings));
         }
-        assert!(performed.iter().all(|x| !matches!(x, Effect::Reply { rc: 10, .. })), "{performed:?}");
+        assert!(
+            performed
+                .iter()
+                .all(|x| !matches!(x, Effect::Reply { rc: 10, .. })),
+            "{performed:?}"
+        );
 
         let mut ui = engine();
-        let row = inspector::engine::find(&ui.tree(), "verb:example:b").cloned().unwrap();
+        let row = inspector::engine::find(&ui.tree(), "verb:example:b")
+            .cloned()
+            .unwrap();
         let frame = vec![UiEvent::Filter("b".into()), UiEvent::Toggle("mesh".into())];
         apply_ui(&mut ui, &commands, frame);
-        let frame = vec![UiEvent::Select(row), UiEvent::Body("{\"n\":1}".into()), UiEvent::Command("bus.call")];
+        let frame = vec![
+            UiEvent::Select(row),
+            UiEvent::Body("{\"n\":1}".into()),
+            UiEvent::Command("bus.call"),
+        ];
         apply_ui(&mut ui, &commands, frame);
         let by_hand = settle(&mut ui, &commands, &strings);
 
         assert_eq!(bus.ui, ui.ui);
         assert_eq!(call_targets(&performed), ["b"]);
         assert_eq!(call_targets(&performed), call_targets(&by_hand));
-        let body = |effects: &[Effect]| effects.iter().find_map(|e| match e {
-            Effect::Call { body, .. } => Some(body.clone()),
-            _ => None,
-        });
+        let body = |effects: &[Effect]| {
+            effects.iter().find_map(|e| match e {
+                Effect::Call { body, .. } => Some(body.clone()),
+                _ => None,
+            })
+        };
         assert_eq!(body(&performed), body(&by_hand));
         assert_eq!(body(&performed).as_deref(), Some("{\"n\":1}"));
     }
@@ -515,7 +592,12 @@ mod tests {
     #[test]
     fn every_verb_is_described_and_every_described_verb_is_handled() {
         let surface = describe();
-        let names: Vec<String> = surface["verbs"].as_array().unwrap().iter().map(|v| v["name"].as_str().unwrap().into()).collect();
+        let names: Vec<String> = surface["verbs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v["name"].as_str().unwrap().into())
+            .collect();
         let mut expected: Vec<String> = model::VERBS.iter().map(|v| (*v).to_owned()).collect();
         expected.extend(drive::VERBS.iter().map(|v| format!("{APP}.{v}")));
         assert_eq!(names, expected);
@@ -527,8 +609,14 @@ mod tests {
                 !effects.iter().any(|x| matches!(x, Effect::Reply { body, .. } if body["error_code"] == "UNKNOWN_VERB")),
                 "{name}: {effects:?}"
             );
-            if let Some(verb) = name.strip_prefix("busviewer.").filter(|v| drive::VERBS.contains(v)) {
-                assert!(matches!(&effects[..], [Effect::Drive { verb: v, .. }] if v == verb), "{name}: {effects:?}");
+            if let Some(verb) = name
+                .strip_prefix("busviewer.")
+                .filter(|v| drive::VERBS.contains(v))
+            {
+                assert!(
+                    matches!(&effects[..], [Effect::Drive { verb: v, .. }] if v == verb),
+                    "{name}: {effects:?}"
+                );
             }
         }
         let help = {
@@ -536,7 +624,9 @@ mod tests {
             e.command(1, "HELP", "{}");
             settle(&mut e, &crate::commands::registry(), &crate::strings())
         };
-        assert!(matches!(&help[..], [Effect::Reply { rc: 0, body, .. }] if body == &surface["verbs"]));
+        assert!(
+            matches!(&help[..], [Effect::Reply { rc: 0, body, .. }] if body == &surface["verbs"])
+        );
     }
 
     #[test]
@@ -545,10 +635,16 @@ mod tests {
         for command in commands.iter() {
             let mut e = engine();
             e.ui.selected = Some(target("a"));
-            e.command(1, "busviewer.execute", &json!({"id":command.id}).to_string());
+            e.command(
+                1,
+                "busviewer.execute",
+                &json!({"id":command.id}).to_string(),
+            );
             let effects = settle(&mut e, &commands, &strings);
             assert!(
-                effects.iter().any(|x| matches!(x, Effect::Reply { id: 1, rc: 0, .. })),
+                effects
+                    .iter()
+                    .any(|x| matches!(x, Effect::Reply { id: 1, rc: 0, .. })),
                 "{}: {effects:?}",
                 command.id
             );
@@ -564,15 +660,25 @@ mod tests {
         e.command(3, "busviewer.execute", r#"{"id":"help.about"}"#);
         e.command(4, "busviewer.execute", r#"{"id":"help.about"}"#);
         let effects = settle(&mut e, &commands, &strings);
-        let reply = |id: u64| effects.iter().find_map(|x| match x {
-            Effect::Reply { id: i, rc, body } if *i == id => Some((*rc, body.clone())),
-            _ => None,
-        });
+        let reply = |id: u64| {
+            effects.iter().find_map(|x| match x {
+                Effect::Reply { id: i, rc, body } if *i == id => Some((*rc, body.clone())),
+                _ => None,
+            })
+        };
         let (rc, body) = reply(1).unwrap();
         assert_eq!(rc, 0);
-        assert!(body["commands"].as_array().is_some_and(|c| c.iter().any(|c| c["id"] == "bus.call")));
+        assert!(
+            body["commands"]
+                .as_array()
+                .is_some_and(|c| c.iter().any(|c| c["id"] == "bus.call"))
+        );
         assert_eq!(reply(2).unwrap().1["error_code"], "UNKNOWN_COMMAND");
         assert_eq!(reply(3).unwrap().0, 0);
-        assert_eq!(reply(4).unwrap().1["error_code"], "DISABLED", "the dialog from 3 disables 4");
+        assert_eq!(
+            reply(4).unwrap().1["error_code"],
+            "DISABLED",
+            "the dialog from 3 disables 4"
+        );
     }
 }

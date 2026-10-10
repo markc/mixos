@@ -13,9 +13,9 @@ use crate::jobs::JobTable;
 use crate::meta;
 use crate::repl_editor::{ReplEditor as Editor, ReplInput};
 use crate::session_execute::{CancellationReport, Completion, Structured};
-use ::bus::native_session::DecimalU64;
 use crate::shell::{self, InputKind};
 use crate::stats_io;
+use ::bus::native_session::DecimalU64;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const RESUME_FLAG: &str = ".claude-resume";
@@ -455,9 +455,9 @@ pub fn run_repl() -> i32 {
                             command_id: DecimalU64(command_id),
                         },
                     ),
-                    None => crate::session_state::commit(
-                        crate::session_state::Transition::LineAccepted,
-                    ),
+                    None => {
+                        crate::session_state::commit(crate::session_state::Transition::LineAccepted)
+                    }
                 }
                 let mut report = admitted.map(Report::new);
                 // One evaluation, one cancellation identity. A cancel request
@@ -611,10 +611,8 @@ pub fn run_repl() -> i32 {
                                 // the evaluator owner. No Value, Scope or Rc
                                 // ever crosses to the Bus thread.
                                 if let Some(report) = report.as_mut() {
-                                    report.value = Some(Structured::new(
-                                        val.type_name(),
-                                        val.to_mix_string(),
-                                    ));
+                                    report.value =
+                                        Some(Structured::new(val.type_name(), val.to_mix_string()));
                                 }
                                 let trimmed = input.trim();
                                 if !trimmed.starts_with("print") && !trimmed.starts_with("eprint") {
@@ -684,10 +682,8 @@ pub fn run_repl() -> i32 {
                                     s.increment_commands();
                                 }
                                 if let Some(report) = report.as_mut() {
-                                    report.value = Some(Structured::new(
-                                        val.type_name(),
-                                        val.to_mix_string(),
-                                    ));
+                                    report.value =
+                                        Some(Structured::new(val.type_name(), val.to_mix_string()));
                                 }
                                 println!("{}", val.to_mix_string());
                             }

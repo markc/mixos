@@ -44,24 +44,96 @@ const FAMILIES: &[(&str, &str)] = &[
 /// Every locked path with its upstream project and licence: the fonts,
 /// their web forms, the icon catalogue and the licence texts.
 const FILES: &[(&str, &str, &str)] = &[
-    ("fonts/InterVariable.ttf", "https://github.com/rsms/inter", "OFL-1.1"),
-    ("web/InterVariable.woff2", "https://github.com/rsms/inter", "OFL-1.1"),
-    ("licences/Inter-OFL.txt", "https://github.com/rsms/inter", "OFL-1.1"),
-    ("fonts/JetBrainsMono.ttf", "https://github.com/JetBrains/JetBrainsMono", "OFL-1.1"),
-    ("fonts/JetBrainsMono-Italic.ttf", "https://github.com/JetBrains/JetBrainsMono", "OFL-1.1"),
-    ("licences/JetBrainsMono-OFL.txt", "https://github.com/JetBrains/JetBrainsMono", "OFL-1.1"),
-    ("fonts/NotoSerif.ttf", "https://github.com/google/fonts", "OFL-1.1"),
-    ("fonts/NotoSerif-Italic.ttf", "https://github.com/google/fonts", "OFL-1.1"),
-    ("licences/NotoSerif-OFL.txt", "https://github.com/google/fonts", "OFL-1.1"),
-    ("icons/MaterialSymbolsRounded.ttf", "https://github.com/google/material-design-icons", "Apache-2.0"),
-    ("web/MaterialSymbolsRounded.woff2", "https://github.com/google/material-design-icons", "Apache-2.0"),
-    ("icons/MaterialSymbolsRounded.codepoints", "https://github.com/google/material-design-icons", "Apache-2.0"),
-    ("licences/MaterialSymbols-Apache.txt", "https://github.com/google/material-design-icons", "Apache-2.0"),
-    ("emoji/NotoColorEmoji.ttf", "https://github.com/googlefonts/noto-emoji", "OFL-1.1"),
-    ("licences/NotoColorEmoji-OFL.txt", "https://github.com/googlefonts/noto-emoji", "OFL-1.1"),
-    ("fonts/Quicksand.ttf", "https://github.com/google/fonts", "OFL-1.1"),
-    ("licences/Quicksand-OFL.txt", "https://github.com/google/fonts", "OFL-1.1"),
-    ("web/NotoColorEmoji-COLRv1.ttf", "https://github.com/googlefonts/noto-emoji", "OFL-1.1"),
+    (
+        "fonts/InterVariable.ttf",
+        "https://github.com/rsms/inter",
+        "OFL-1.1",
+    ),
+    (
+        "web/InterVariable.woff2",
+        "https://github.com/rsms/inter",
+        "OFL-1.1",
+    ),
+    (
+        "licences/Inter-OFL.txt",
+        "https://github.com/rsms/inter",
+        "OFL-1.1",
+    ),
+    (
+        "fonts/JetBrainsMono.ttf",
+        "https://github.com/JetBrains/JetBrainsMono",
+        "OFL-1.1",
+    ),
+    (
+        "fonts/JetBrainsMono-Italic.ttf",
+        "https://github.com/JetBrains/JetBrainsMono",
+        "OFL-1.1",
+    ),
+    (
+        "licences/JetBrainsMono-OFL.txt",
+        "https://github.com/JetBrains/JetBrainsMono",
+        "OFL-1.1",
+    ),
+    (
+        "fonts/NotoSerif.ttf",
+        "https://github.com/google/fonts",
+        "OFL-1.1",
+    ),
+    (
+        "fonts/NotoSerif-Italic.ttf",
+        "https://github.com/google/fonts",
+        "OFL-1.1",
+    ),
+    (
+        "licences/NotoSerif-OFL.txt",
+        "https://github.com/google/fonts",
+        "OFL-1.1",
+    ),
+    (
+        "icons/MaterialSymbolsRounded.ttf",
+        "https://github.com/google/material-design-icons",
+        "Apache-2.0",
+    ),
+    (
+        "web/MaterialSymbolsRounded.woff2",
+        "https://github.com/google/material-design-icons",
+        "Apache-2.0",
+    ),
+    (
+        "icons/MaterialSymbolsRounded.codepoints",
+        "https://github.com/google/material-design-icons",
+        "Apache-2.0",
+    ),
+    (
+        "licences/MaterialSymbols-Apache.txt",
+        "https://github.com/google/material-design-icons",
+        "Apache-2.0",
+    ),
+    (
+        "emoji/NotoColorEmoji.ttf",
+        "https://github.com/googlefonts/noto-emoji",
+        "OFL-1.1",
+    ),
+    (
+        "licences/NotoColorEmoji-OFL.txt",
+        "https://github.com/googlefonts/noto-emoji",
+        "OFL-1.1",
+    ),
+    (
+        "fonts/Quicksand.ttf",
+        "https://github.com/google/fonts",
+        "OFL-1.1",
+    ),
+    (
+        "licences/Quicksand-OFL.txt",
+        "https://github.com/google/fonts",
+        "OFL-1.1",
+    ),
+    (
+        "web/NotoColorEmoji-COLRv1.ttf",
+        "https://github.com/googlefonts/noto-emoji",
+        "OFL-1.1",
+    ),
 ];
 
 const WEB_CSS: &str = "/* Relative URLs keep this stylesheet bound to its immutable asset set. */\n\
@@ -167,7 +239,11 @@ fn an_unprivileged_reader_resolves_the_installed_layout() {
             .unwrap()
             .is_file()
     );
-    assert!(set.file_path("licences/Quicksand-OFL.txt").unwrap().is_some());
+    assert!(
+        set.file_path("licences/Quicksand-OFL.txt")
+            .unwrap()
+            .is_some()
+    );
     assert_eq!(set.manifest().web_css, WEB_CSS);
     set.verify().unwrap();
 

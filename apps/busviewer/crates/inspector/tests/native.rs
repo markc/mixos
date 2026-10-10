@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Run against an isolated real broker on a native-session capable kernel.
 //! Transplanted from `apps/busviewer/tests/native.rs` (markc/mixos-iced).
-use futures::StreamExt;
 use bus::native_client::NodedClient;
+use futures::StreamExt;
 use inspector::bus::{self as viewer, Delivery};
 use std::{
     sync::{

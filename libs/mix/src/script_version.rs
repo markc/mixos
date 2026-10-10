@@ -161,8 +161,7 @@ fn is_semver(v: &str) -> bool {
     // Each of `-pre` / `+build` needs a non-empty body.
     let body_ok = |s: &str| {
         !s.is_empty()
-            && s
-                .bytes()
+            && s.bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
     };
     let (pre, build) = match suffix.strip_prefix('-') {
@@ -231,7 +230,10 @@ impl ScriptProvenance {
             None => Value::Nil,
         };
         let mut mix = IndexMap::new();
-        mix.insert("version".to_string(), Value::String(self.mix_version.clone()));
+        mix.insert(
+            "version".to_string(),
+            Value::String(self.mix_version.clone()),
+        );
         mix.insert("sha".to_string(), Value::String(self.mix_sha.clone()));
         mix.insert("dirty".to_string(), Value::Bool(self.mix_dirty));
         let mut map = IndexMap::new();
@@ -258,13 +260,22 @@ mod tests {
 
     #[test]
     fn header_forms() {
-        assert_eq!(parse_version_header("-- version: 1.2.3\n"), declared("1.2.3", 1));
+        assert_eq!(
+            parse_version_header("-- version: 1.2.3\n"),
+            declared("1.2.3", 1)
+        );
         assert_eq!(
             parse_version_header("#!/opt/cosmix/bin/mix\n  --version:0.3.6  \n"),
             declared("0.3.6", 2)
         );
-        assert_eq!(parse_version_header("--  version  :  2.0.0-rc.1+b7\n"), declared("2.0.0-rc.1+b7", 1));
-        assert_eq!(parse_version_header("-- version: 1.0.0+build.5\n"), declared("1.0.0+build.5", 1));
+        assert_eq!(
+            parse_version_header("--  version  :  2.0.0-rc.1+b7\n"),
+            declared("2.0.0-rc.1+b7", 1)
+        );
+        assert_eq!(
+            parse_version_header("-- version: 1.0.0+build.5\n"),
+            declared("1.0.0+build.5", 1)
+        );
         assert_eq!(
             parse_version_header("-- a tool\n\n--\n-- version: 4.0.0\n"),
             declared("4.0.0", 4)
@@ -328,7 +339,10 @@ mod tests {
         );
         let mut late = "--\n".repeat(HEADER_SCAN_LINES - 1);
         late.push_str("-- version: 3.0.0\n");
-        assert_eq!(parse_version_header(&late), declared("3.0.0", HEADER_SCAN_LINES));
+        assert_eq!(
+            parse_version_header(&late),
+            declared("3.0.0", HEADER_SCAN_LINES)
+        );
         let mut too_late = "--\n".repeat(HEADER_SCAN_LINES);
         too_late.push_str("-- version: 3.0.0\n");
         assert_eq!(parse_version_header(&too_late), VersionHeader::Absent);
@@ -336,7 +350,8 @@ mod tests {
 
     #[test]
     fn version_flag_opt_out() {
-        let h = parse_script_header("#!/usr/bin/env mix\n-- version: 1.0.0\n-- version-flag: script\n");
+        let h =
+            parse_script_header("#!/usr/bin/env mix\n-- version: 1.0.0\n-- version-flag: script\n");
         assert_eq!(h.version, declared("1.0.0", 2));
         assert!(h.version_flag_script);
         // Whitespace-tolerant, exact value, and it does not shadow version.

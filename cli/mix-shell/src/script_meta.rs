@@ -27,7 +27,8 @@ use sha2::{Digest, Sha256};
 /// `--no-prelude`, `--no-traceback`, `--strict-arity`. (`--result-fd` also
 /// continues, but it refuses any mode except `-c`, so it never precedes a
 /// script run.) A new `continue` arm there must be added here too.
-pub(crate) const NEUTRAL_FLAGS: &[&str] = &["-i", "--no-prelude", "--no-traceback", "--strict-arity"];
+pub(crate) const NEUTRAL_FLAGS: &[&str] =
+    &["-i", "--no-prelude", "--no-traceback", "--strict-arity"];
 
 fn is_version_flag(arg: Option<&String>) -> bool {
     matches!(arg.map(String::as_str), Some("--version" | "-V"))
@@ -55,7 +56,10 @@ struct Query<'a> {
 /// subcommands rather than script paths.
 fn classify<'a>(args: &'a [String], reserved: &dyn Fn(&str) -> bool) -> Option<Query<'a>> {
     let mut i = 1;
-    while args.get(i).is_some_and(|a| NEUTRAL_FLAGS.contains(&a.as_str())) {
+    while args
+        .get(i)
+        .is_some_and(|a| NEUTRAL_FLAGS.contains(&a.as_str()))
+    {
         i += 1;
     }
     let first = args.get(i)?.as_str();
@@ -229,22 +233,48 @@ mod tests {
     fn cls(v: &[&str]) -> Option<String> {
         let a = argv(v);
         let reserved = |s: &str| s == "lint" || s == "help";
-        classify(&a, &reserved).map(|q| format!("{:?}{}", q.target, if q.json { "+json" } else { "" }))
+        classify(&a, &reserved)
+            .map(|q| format!("{:?}{}", q.target, if q.json { "+json" } else { "" }))
     }
 
     #[test]
     fn query_shapes() {
-        assert_eq!(cls(&["mix", "a.mix", "--version"]).as_deref(), Some("File(\"a.mix\")"));
-        assert_eq!(cls(&["mix", "a.mix", "-V"]).as_deref(), Some("File(\"a.mix\")"));
         assert_eq!(
-            cls(&["mix", "--no-prelude", "--strict-arity", "a.mix", "--version"]).as_deref(),
+            cls(&["mix", "a.mix", "--version"]).as_deref(),
             Some("File(\"a.mix\")")
         );
-        assert_eq!(cls(&["mix", "-i", "a.mix", "--version"]).as_deref(), Some("File(\"a.mix\")"));
-        assert_eq!(cls(&["mix", "--serve", "c.mix", "--version"]).as_deref(), Some("Serve(\"c.mix\")"));
+        assert_eq!(
+            cls(&["mix", "a.mix", "-V"]).as_deref(),
+            Some("File(\"a.mix\")")
+        );
+        assert_eq!(
+            cls(&[
+                "mix",
+                "--no-prelude",
+                "--strict-arity",
+                "a.mix",
+                "--version"
+            ])
+            .as_deref(),
+            Some("File(\"a.mix\")")
+        );
+        assert_eq!(
+            cls(&["mix", "-i", "a.mix", "--version"]).as_deref(),
+            Some("File(\"a.mix\")")
+        );
+        assert_eq!(
+            cls(&["mix", "--serve", "c.mix", "--version"]).as_deref(),
+            Some("Serve(\"c.mix\")")
+        );
         assert_eq!(cls(&["mix", "-", "--version"]).as_deref(), Some("Stdin"));
-        assert_eq!(cls(&["mix", "a.mix", "--version", "--json"]).as_deref(), Some("File(\"a.mix\")+json"));
-        assert_eq!(cls(&["mix", "-", "-V", "--json"]).as_deref(), Some("Stdin+json"));
+        assert_eq!(
+            cls(&["mix", "a.mix", "--version", "--json"]).as_deref(),
+            Some("File(\"a.mix\")+json")
+        );
+        assert_eq!(
+            cls(&["mix", "-", "-V", "--json"]).as_deref(),
+            Some("Stdin+json")
+        );
     }
 
     /// Z1: `--serve` reads the canonicalised target but names the record
@@ -258,7 +288,8 @@ mod tests {
         let link = d.path().join("alias.mix");
         std::os::unix::fs::symlink(&target, &link).unwrap();
         let canonical = std::fs::canonicalize(&link).unwrap();
-        let (_, p) = read_script_text_as(canonical.to_str().unwrap(), link.to_str().unwrap()).unwrap();
+        let (_, p) =
+            read_script_text_as(canonical.to_str().unwrap(), link.to_str().unwrap()).unwrap();
         assert_eq!(p.name, "alias.mix");
         assert_eq!(p.version.as_deref(), Some("1.0.0"));
         // Control: naming by the canonical path would have said citizen.mix.

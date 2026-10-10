@@ -21,11 +21,7 @@
 //!   is otherwise blocked. Lines become `audio.changed` records; the volume
 //!   itself is read by `audio_state()` (one `wpctl get-volume` call), which a
 //!   behaviour runs once per delivered batch, so a burst costs one read.
-use crate::{
-    error::MixResult,
-    native_events::refusal,
-    value::Value,
-};
+use crate::{error::MixResult, native_events::refusal, value::Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
@@ -499,10 +495,7 @@ impl AudioOptions {
                             ));
                         };
                         if !FACILITIES.contains(&s.as_str()) {
-                            return Err(refusal(
-                                "AUDIO_OPTIONS",
-                                format!("unknown facility: {s}"),
-                            ));
+                            return Err(refusal("AUDIO_OPTIONS", format!("unknown facility: {s}")));
                         }
                         if !opts.facilities.contains(s) {
                             opts.facilities.push(s.clone());
@@ -746,7 +739,10 @@ mod linux {
     impl NetSource {
         pub fn new(queue: Arc<Queue>, handle: String, groups: u32) -> MixResult<Self> {
             let fd = route_socket(groups).map_err(|e| {
-                refusal("NET_WATCH_IO", format!("rtnetlink subscription failed: {e}"))
+                refusal(
+                    "NET_WATCH_IO",
+                    format!("rtnetlink subscription failed: {e}"),
+                )
             })?;
             // Headroom for a burst (a VPN coming up announces many
             // addresses) before the kernel reports ENOBUFS.
@@ -1030,7 +1026,9 @@ mod linux {
         if e.kind() == std::io::ErrorKind::NotFound {
             refusal(
                 "AUDIO_UNAVAILABLE",
-                format!("{program} not found on PATH (PipeWire's pulse tools provide pactl; WirePlumber provides wpctl)"),
+                format!(
+                    "{program} not found on PATH (PipeWire's pulse tools provide pactl; WirePlumber provides wpctl)"
+                ),
             )
         } else {
             refusal("AUDIO_WATCH_IO", format!("{program}: {e}"))
@@ -1075,7 +1073,14 @@ mod linux {
             let worker = thread::Builder::new()
                 .name("mix-audio-events".into())
                 .spawn(move || {
-                    audio_worker(stdout, worker_child, worker_cancelled, queue, handle, facilities)
+                    audio_worker(
+                        stdout,
+                        worker_child,
+                        worker_cancelled,
+                        queue,
+                        handle,
+                        facilities,
+                    )
                 });
             match worker {
                 Ok(worker) => Ok(Self {
@@ -1456,8 +1461,7 @@ mod linux {
                 "controlled worker must reap the real child"
             );
             assert_eq!(
-                remaining,
-                1,
+                remaining, 1,
                 "exactly the overlapping reference marker may survive drop"
             );
             assert_eq!(crate::builtins::managed_pid_count(pid), 0);
@@ -1541,20 +1545,32 @@ mod other {
     pub(crate) struct NetSource;
     impl NetSource {
         pub fn new(_: Arc<Queue>, _: String, _: u32) -> MixResult<Self> {
-            Err(refusal("NET_WATCH_UNSUPPORTED", "net_watch requires Linux rtnetlink"))
+            Err(refusal(
+                "NET_WATCH_UNSUPPORTED",
+                "net_watch requires Linux rtnetlink",
+            ))
         }
     }
     pub(crate) struct AudioSource;
     impl AudioSource {
         pub fn new(_: Arc<Queue>, _: String, _: AudioOptions) -> MixResult<Self> {
-            Err(refusal("AUDIO_WATCH_UNSUPPORTED", "audio_watch requires Linux"))
+            Err(refusal(
+                "AUDIO_WATCH_UNSUPPORTED",
+                "audio_watch requires Linux",
+            ))
         }
     }
     pub(crate) fn net_state() -> MixResult<serde_json::Value> {
-        Err(refusal("NET_STATE_UNSUPPORTED", "net_state requires Linux rtnetlink"))
+        Err(refusal(
+            "NET_STATE_UNSUPPORTED",
+            "net_state requires Linux rtnetlink",
+        ))
     }
     pub(crate) fn audio_state(_: &AudioOptions) -> MixResult<serde_json::Value> {
-        Err(refusal("AUDIO_STATE_UNSUPPORTED", "audio_state requires Linux"))
+        Err(refusal(
+            "AUDIO_STATE_UNSUPPORTED",
+            "audio_state requires Linux",
+        ))
     }
 }
 
@@ -1615,7 +1631,13 @@ mod tests {
         message(kind, 0, &body)
     }
 
-    fn addr_msg(kind: u16, family: u8, prefix: u8, index: u32, attrs: &[(u16, Vec<u8>)]) -> Vec<u8> {
+    fn addr_msg(
+        kind: u16,
+        family: u8,
+        prefix: u8,
+        index: u32,
+        attrs: &[(u16, Vec<u8>)],
+    ) -> Vec<u8> {
         let mut body = vec![family, prefix, 0, 0];
         body.extend_from_slice(&index.to_ne_bytes());
         for (k, v) in attrs {
@@ -1636,7 +1658,10 @@ mod tests {
             AF_INET,
             24,
             3,
-            &[(IFA_ADDRESS, vec![192, 0, 2, 7]), (IFA_LABEL, b"eth0\0".to_vec())],
+            &[
+                (IFA_ADDRESS, vec![192, 0, 2, 7]),
+                (IFA_LABEL, b"eth0\0".to_vec()),
+            ],
         ));
         let mut v6 = [0u8; 16];
         v6[0] = 0x20;
@@ -1644,7 +1669,13 @@ mod tests {
         v6[2] = 0x0d;
         v6[3] = 0xb8;
         v6[15] = 1;
-        dgram.extend(addr_msg(RTM_DELADDR, AF_INET6, 64, 3, &[(IFA_ADDRESS, v6.to_vec())]));
+        dgram.extend(addr_msg(
+            RTM_DELADDR,
+            AF_INET6,
+            64,
+            3,
+            &[(IFA_ADDRESS, v6.to_vec())],
+        ));
         let parsed = parse(&dgram);
         assert!(!parsed.overflow && !parsed.done && parsed.error.is_none());
         assert_eq!(parsed.records.len(), 3);
@@ -1681,10 +1712,15 @@ mod tests {
             AF_INET,
             32,
             9,
-            &[(IFA_ADDRESS, vec![198, 51, 100, 1]), (IFA_LOCAL, vec![198, 51, 100, 2])],
+            &[
+                (IFA_ADDRESS, vec![198, 51, 100, 1]),
+                (IFA_LOCAL, vec![198, 51, 100, 2]),
+            ],
         );
         let parsed = parse(&dgram);
-        let (_, v) = change(&parsed.records[0], &mut BTreeMap::new(), &|_| Some("wg0".into()));
+        let (_, v) = change(&parsed.records[0], &mut BTreeMap::new(), &|_| {
+            Some("wg0".into())
+        });
         assert_eq!(v["address"], "198.51.100.2");
         assert_eq!(v["ifname"], "wg0");
 
@@ -1726,7 +1762,10 @@ mod tests {
         assert!(!replies_to(&good, 8));
         let mut foreign = two.clone();
         foreign[good.len() + 8..good.len() + 12].copy_from_slice(&9u32.to_ne_bytes());
-        assert!(!replies_to(&foreign, 7), "one foreign message taints the datagram");
+        assert!(
+            !replies_to(&foreign, 7),
+            "one foreign message taints the datagram"
+        );
         // No errno negates to i32::MIN's magnitude: untrusted, not a panic.
         let parsed = parse(&message(NLMSG_ERROR, 0, &i32::MIN.to_ne_bytes()));
         assert!(parsed.overflow && parsed.error.is_none());
@@ -1761,7 +1800,14 @@ mod tests {
     #[test]
     fn snapshot_names_addresses_from_links_and_strips_event_fields() {
         let links = parse(&link_msg(RTM_NEWLINK, 2, IFF_UP | IFF_RUNNING, "wlan0", 6)).records;
-        let addrs = parse(&addr_msg(RTM_NEWADDR, AF_INET, 24, 2, &[(IFA_ADDRESS, vec![192, 0, 2, 5])])).records;
+        let addrs = parse(&addr_msg(
+            RTM_NEWADDR,
+            AF_INET,
+            24,
+            2,
+            &[(IFA_ADDRESS, vec![192, 0, 2, 5])],
+        ))
+        .records;
         let v = snapshot(&links, &addrs, &no_lookup, &|name| name == "wlan0");
         assert_eq!(v["links"][0]["ifname"], "wlan0");
         assert_eq!(v["links"][0]["wireless"], true);
@@ -1777,12 +1823,19 @@ mod tests {
             RTMGRP_LINK | RTMGRP_IPV4_IFADDR | RTMGRP_IPV6_IFADDR
         );
         let only_links = Value::map(
-            [("events".to_string(), Value::list(vec![Value::String("link".into())]))]
+            [(
+                "events".to_string(),
+                Value::list(vec![Value::String("link".into())]),
+            )]
+            .into_iter()
+            .collect(),
+        );
+        assert_eq!(net_groups(Some(&only_links)).unwrap(), RTMGRP_LINK);
+        let bad = Value::map(
+            [("recursive".to_string(), Value::Bool(true))]
                 .into_iter()
                 .collect(),
         );
-        assert_eq!(net_groups(Some(&only_links)).unwrap(), RTMGRP_LINK);
-        let bad = Value::map([("recursive".to_string(), Value::Bool(true))].into_iter().collect());
         assert!(matches!(net_groups(Some(&bad)),
             Err(crate::MixError::Structured(info)) if info.code == "NET_WATCH_OPTIONS"));
     }
@@ -1819,11 +1872,18 @@ mod tests {
         let (lines, overflow) = b.push(b"Event 'change' on si");
         assert!(lines.is_empty() && !overflow);
         let (lines, _) = b.push(b"nk #1\nEvent 'change' on card #43\n");
-        assert_eq!(lines, vec!["Event 'change' on sink #1", "Event 'change' on card #43"]);
+        assert_eq!(
+            lines,
+            vec!["Event 'change' on sink #1", "Event 'change' on card #43"]
+        );
         let (lines, overflow) = b.push(&vec![b'x'; MAX_LINE + 10]);
         assert!(lines.is_empty() && overflow);
         let (lines, _) = b.push(b"tail\nEvent 'change' on server\n");
-        assert_eq!(lines, vec!["Event 'change' on server"], "the runaway line is dropped whole");
+        assert_eq!(
+            lines,
+            vec!["Event 'change' on server"],
+            "the runaway line is dropped whole"
+        );
     }
 
     #[test]
@@ -1835,7 +1895,11 @@ mod tests {
         let v = parse_wpctl(true, "Volume: 1.00\n", "");
         assert_eq!(v["muted"], false);
         assert_eq!(v["level"], 100.0);
-        let v = parse_wpctl(false, "", "Translate ID error: '@DEFAULT_AUDIO_SINK@' is not a valid ID\n");
+        let v = parse_wpctl(
+            false,
+            "",
+            "Translate ID error: '@DEFAULT_AUDIO_SINK@' is not a valid ID\n",
+        );
         assert_eq!(v["ok"], false);
         assert!(v["reason"].as_str().unwrap().contains("not a valid ID"));
         assert_eq!(parse_wpctl(true, "garbage", "")["ok"], false);
@@ -1930,7 +1994,10 @@ mod tests {
         assert!(saw_server);
         assert_eq!(closed["error_code"], "AUDIO_SOURCE_EXITED");
         assert_eq!(closed["exit_code"], 3);
-        assert!(reaped(source.pid), "the stream's own exit is reaped by its reader");
+        assert!(
+            reaped(source.pid),
+            "the stream's own exit is reaped by its reader"
+        );
         drop(source);
         assert!(!q.source_ready_for_test("audio:1"));
     }
@@ -1943,11 +2010,21 @@ mod tests {
         let missing = wpctl_unavailable(&Error::from(ErrorKind::NotFound));
         assert_eq!(missing["ok"], false);
         assert_eq!(missing["reason"], "wpctl not found on PATH");
-        for kind in [ErrorKind::PermissionDenied, ErrorKind::WouldBlock, ErrorKind::Other] {
+        for kind in [
+            ErrorKind::PermissionDenied,
+            ErrorKind::WouldBlock,
+            ErrorKind::Other,
+        ] {
             let v = wpctl_unavailable(&Error::from(kind));
             assert_eq!(v["ok"], false, "{kind:?}");
             assert_eq!(v["level"], 0.0);
-            assert!(v["reason"].as_str().unwrap().starts_with("wpctl could not start: "), "{v}");
+            assert!(
+                v["reason"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("wpctl could not start: "),
+                "{v}"
+            );
         }
     }
 
@@ -1956,7 +2033,10 @@ mod tests {
         use std::time::Duration;
         assert_eq!(receive_timeout(Duration::ZERO), None);
         assert_eq!(receive_timeout(Duration::from_nanos(1)), Some((0, 1)));
-        assert_eq!(receive_timeout(Duration::from_millis(1500)), Some((1, 500_000)));
+        assert_eq!(
+            receive_timeout(Duration::from_millis(1500)),
+            Some((1, 500_000))
+        );
         assert_eq!(receive_timeout(Duration::from_secs(2)), Some((2, 0)));
     }
 
@@ -1980,7 +2060,10 @@ mod tests {
             let v = linux::bounded_output(spawn("sleep 30"), limit, use_pidfd);
             assert_eq!(v["ok"], false, "pidfd={use_pidfd}");
             assert!(
-                v["reason"].as_str().unwrap().contains("timed out after 0.2 s"),
+                v["reason"]
+                    .as_str()
+                    .unwrap()
+                    .contains("timed out after 0.2 s"),
                 "pidfd={use_pidfd}: {v}"
             );
             assert!(
@@ -2011,7 +2094,9 @@ mod tests {
             )
         };
         assert_eq!(
-            AudioOptions::parse(Some(&facilities(&["sink", "sink"])), true).unwrap().facilities,
+            AudioOptions::parse(Some(&facilities(&["sink", "sink"])), true)
+                .unwrap()
+                .facilities,
             vec!["sink".to_string()]
         );
         for bad in [facilities(&["speaker"]), facilities(&[])] {

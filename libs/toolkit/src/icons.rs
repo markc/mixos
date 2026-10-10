@@ -101,7 +101,8 @@ pub fn install(ctx: &egui::Context, stroke: f32) {
 /// The icon stroke width installed on `ctx`, else [`DEFAULT_STROKE`]: the
 /// toolkit's own widgets draw their icons with it.
 pub fn stroke_of(ctx: &egui::Context) -> f32 {
-    ctx.data(|d| d.get_temp(stroke_key())).unwrap_or(DEFAULT_STROKE)
+    ctx.data(|d| d.get_temp(stroke_key()))
+        .unwrap_or(DEFAULT_STROKE)
 }
 
 /// `icon`'s SVG source with its stroke at `stroke` and coloured [`MASK`].
@@ -116,9 +117,12 @@ pub fn source(icon: Icon, stroke: f32) -> String {
 pub fn image(icon: Icon, stroke: f32, size: f32, colour: Color32) -> Image<'static> {
     let uri = format!("bytes://lucide/{}@{stroke}.svg", icon.name());
     let bytes = source(icon, stroke).into_bytes();
-    Image::new(ImageSource::Bytes { uri: Cow::Owned(uri), bytes: bytes.into() })
-        .fit_to_exact_size(Vec2::splat(size))
-        .tint(colour)
+    Image::new(ImageSource::Bytes {
+        uri: Cow::Owned(uri),
+        bytes: bytes.into(),
+    })
+    .fit_to_exact_size(Vec2::splat(size))
+    .tint(colour)
 }
 
 #[cfg(test)]

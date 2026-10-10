@@ -32,8 +32,8 @@ async fn canonical_equivalents_compare_equal_after_normalize() {
                    print(normalize($d, \"NFC\") == $c)\n\
                    print(normalize($c, \"NFD\") == $d)\n\
                    print(length(normalize($c, \"nfd\")))\n")
-        .await
-        .unwrap();
+    .await
+    .unwrap();
     assert_eq!(out, "false\ntrue\ntrue\ntrue\n2\n");
 }
 
@@ -45,32 +45,40 @@ async fn nfkc_folds_compatibility_forms_and_nfc_does_not() {
                    print(normalize($wide, \"NFKC\"))\n\
                    print(normalize($wide, \"NFKD\"))\n\
                    print(normalize($lig) == $lig)\n")
-        .await
-        .unwrap();
+    .await
+    .unwrap();
     assert_eq!(out, "fi\nfi\nfi\ntrue\n");
 }
 
 #[tokio::test]
 async fn emoji_and_zwj_sequences_pass_through_every_form() {
     // A ZWJ family, a skin-tone modifier, and a flag.
-    let out = run("$fam = chr(128104) .. chr(8205) .. chr(128105) .. chr(8205) .. chr(128103)\n\
+    let out = run(
+        "$fam = chr(128104) .. chr(8205) .. chr(128105) .. chr(8205) .. chr(128103)\n\
                    $thumb = chr(128077) .. chr(127997)\n\
                    $flag = chr(127462) .. chr(127482)\n\
                    $all = $fam .. $thumb .. $flag\n\
                    for each $f in [\"NFC\", \"NFD\", \"NFKC\", \"NFKD\"]\n\
                      print(normalize($all, $f) == $all)\n\
-                   end\n")
-        .await
-        .unwrap();
+                   end\n",
+    )
+    .await
+    .unwrap();
     assert_eq!(out, "true\ntrue\ntrue\ntrue\n");
 }
 
 #[tokio::test]
 async fn unknown_or_non_string_form_raises() {
     let e = run("normalize(\"x\", \"NFX\")\n").await.unwrap_err();
-    assert!(e.contains("VALUE_ERROR") || e.contains("unknown form"), "{e}");
+    assert!(
+        e.contains("VALUE_ERROR") || e.contains("unknown form"),
+        "{e}"
+    );
     let e = run("normalize(\"x\", 1)\n").await.unwrap_err();
-    assert!(e.contains("TYPE_MISMATCH") || e.contains("must be a string"), "{e}");
+    assert!(
+        e.contains("TYPE_MISMATCH") || e.contains("must be a string"),
+        "{e}"
+    );
     let e = run("normalize()\n").await.unwrap_err();
     assert!(e.contains("normalize"), "{e}");
 }

@@ -30,7 +30,7 @@
 //! syscall is not interrupted by any of this, and the guarantee table in
 //! `docs/mix/` says so.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// How many finished evaluations stay resolvable. A cancel that loses the race
@@ -401,7 +401,9 @@ mod tests {
 
     #[test]
     fn cancellation_never_reaches_a_successor_evaluation() {
-        let _lock = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let flag = flag();
         reset_for_test();
         let first = begin(1);
@@ -421,7 +423,9 @@ mod tests {
 
     #[test]
     fn a_caught_interruption_does_not_clear_intent() {
-        let _lock = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let flag = flag();
         reset_for_test();
         let guard = begin(7);
@@ -437,7 +441,9 @@ mod tests {
 
     #[test]
     fn a_signal_binds_to_the_evaluation_that_was_running() {
-        let _lock = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let flag = flag();
         reset_for_test();
         // Idle at the prompt: the signal has no target.
@@ -467,7 +473,9 @@ mod tests {
 
     #[test]
     fn a_signal_delivered_before_the_first_checkpoint_is_still_this_evaluations() {
-        let _lock = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let flag = flag();
         reset_for_test();
         ACTIVE.store(11, Ordering::Relaxed);
@@ -485,7 +493,9 @@ mod tests {
     /// surface, already reporting the same operation as running.
     #[test]
     fn a_cancel_during_admission_is_adopted_when_the_evaluation_begins() {
-        let _lock = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let flag = flag();
         reset_for_test();
         publish(21);
@@ -509,7 +519,9 @@ mod tests {
     /// it ran to completion.
     #[test]
     fn delivery_is_recorded_at_the_consumption_point_not_inferred() {
-        let _lock = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let flag = flag();
         reset_for_test();
         let guard = begin(31);
@@ -536,7 +548,9 @@ mod tests {
     /// Delivery is only ever attributed to an evaluation that ASKED for it.
     #[test]
     fn an_ordinary_interrupt_is_not_recorded_as_a_delivered_cancellation() {
-        let _lock = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         reset_for_test();
         let guard = begin(41);
         note_delivery();
@@ -546,7 +560,9 @@ mod tests {
 
     #[test]
     fn the_retained_window_is_bounded_and_keeps_the_running_evaluation() {
-        let _lock = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         reset_for_test();
         let live = begin(1);
         for id in 2..(RETAINED as u64 + 40) {

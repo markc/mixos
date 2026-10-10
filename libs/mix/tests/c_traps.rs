@@ -35,7 +35,9 @@ async fn parse_with_reports_a_match_status() {
 #[tokio::test]
 async fn dot_fn_reads_the_fn_key_not_function() {
     // C8: .fn must read the "fn" key; .function the "function" key.
-    let out = run("print({\"fn\":1,\"function\":2}.fn)\n").await.expect(".fn");
+    let out = run("print({\"fn\":1,\"function\":2}.fn)\n")
+        .await
+        .expect(".fn");
     assert!(out.contains('1'), "got: {out}");
     let out = run("print({\"fn\":1,\"function\":2}.function)\n")
         .await

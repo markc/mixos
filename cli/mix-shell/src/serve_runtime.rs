@@ -350,10 +350,12 @@ impl MixServeRuntime {
     /// deliberately NOT reserved: an author may implement them, so they
     /// must remain advertisable in HELP and must fall through here.
     fn is_reserved(&self, command: &str) -> bool {
-        matches!(command, "HELP" | "INFO" | "QUIT" | "RELOAD" | "lifecycle.commit")
-            || command
-                .strip_prefix(&self.props_prefix)
-                .is_some_and(|s| matches!(s, "get" | "list" | "describe"))
+        matches!(
+            command,
+            "HELP" | "INFO" | "QUIT" | "RELOAD" | "lifecycle.commit"
+        ) || command
+            .strip_prefix(&self.props_prefix)
+            .is_some_and(|s| matches!(s, "get" | "list" | "describe"))
     }
 }
 
@@ -674,7 +676,9 @@ mod tests {
     #[test]
     fn reload_without_script_path_answers_rc10() {
         let r = rt(); // MixServeRuntime::new — no script path
-        let out = r.handle_reserved("RELOAD", None, "", &[], true).expect("reserved");
+        let out = r
+            .handle_reserved("RELOAD", None, "", &[], true)
+            .expect("reserved");
         assert_eq!(out.rc, 10);
         assert!(!out.reload, "no path → the pump must NOT break");
         assert!(!out.quit);
@@ -704,7 +708,10 @@ mod tests {
         let out = r
             .handle_reserved("RELOAD", None, "", &[], true)
             .expect("reserved");
-        assert_eq!(out.rc, 10, "correlated RELOAD reads the path and reports the miss");
+        assert_eq!(
+            out.rc, 10,
+            "correlated RELOAD reads the path and reports the miss"
+        );
     }
 
     #[test]
@@ -719,7 +726,9 @@ mod tests {
             &path,
             std::rc::Rc::new(ReloadIdentity::new()),
         );
-        let out = r.handle_reserved("RELOAD", None, "", &[], true).expect("reserved");
+        let out = r
+            .handle_reserved("RELOAD", None, "", &[], true)
+            .expect("reserved");
         assert_eq!(out.rc, 0, "valid source must be accepted: {}", out.body);
         assert!(out.reload, "valid source must ask the pump to break");
         assert!(!out.quit);
@@ -727,7 +736,9 @@ mod tests {
         // Broken source → rc:10, NO reload flag: the running citizen is
         // untouched — the whole point of pre-validation.
         std::fs::write(&path, "on demo.ping\n  reply(\n").unwrap();
-        let out = r.handle_reserved("RELOAD", None, "", &[], true).expect("reserved");
+        let out = r
+            .handle_reserved("RELOAD", None, "", &[], true)
+            .expect("reserved");
         assert_eq!(out.rc, 10);
         assert!(!out.reload, "a parse failure must NOT break the pump");
         assert!(
@@ -738,7 +749,9 @@ mod tests {
 
         // Missing file → rc:10, no flag.
         std::fs::remove_file(&path).unwrap();
-        let out = r.handle_reserved("RELOAD", None, "", &[], true).expect("reserved");
+        let out = r
+            .handle_reserved("RELOAD", None, "", &[], true)
+            .expect("reserved");
         assert_eq!(out.rc, 10);
         assert!(!out.reload);
     }
@@ -969,7 +982,11 @@ mod tests {
         // the driver bumps.
         let gen1 = MixServeRuntime::with_script_path("demo", "/x.mix", identity.clone());
         identity.committed_reload();
-        assert_eq!(gen1.snapshot_generation_for_test(), 1, "generation advances on commit");
+        assert_eq!(
+            gen1.snapshot_generation_for_test(),
+            1,
+            "generation advances on commit"
+        );
         assert_eq!(
             gen1.snapshot_started_at_for_test(),
             started,
@@ -987,7 +1004,10 @@ mod tests {
         let snap = serde_json::to_string(&gen1.snapshot()).unwrap();
         let v: Json = serde_json::from_str(&snap).unwrap();
         let lc = &v["lifecycle"];
-        assert_eq!(lc["generation"], 1, "props snapshot reports the bumped generation");
+        assert_eq!(
+            lc["generation"], 1,
+            "props snapshot reports the bumped generation"
+        );
         assert_eq!(
             lc["started_at"].as_str().unwrap(),
             started,
@@ -1016,7 +1036,10 @@ mod tests {
     fn non_reserved_command_falls_through_to_author() {
         let r = rt();
         // A domain command is the author's — not reserved.
-        assert!(r.handle_reserved("statecache.get", None, "", &[], true).is_none());
+        assert!(
+            r.handle_reserved("statecache.get", None, "", &[], true)
+                .is_none()
+        );
         // props.watch (L2) / props.set (SPEC 12) are out of WS4 scope:
         // not reserved, so the author may (not) implement them.
         assert!(
@@ -1047,7 +1070,10 @@ mod tests {
             )
             .expect("reserved and refused, never author-dispatched");
         assert_eq!(out.rc, 10);
-        assert!(!out.quit && !out.reload, "a refusal must not quit or reload");
+        assert!(
+            !out.quit && !out.reload,
+            "a refusal must not quit or reload"
+        );
         assert!(
             r.handle_reserved("lifecycle.commit", None, "", &[], false)
                 .is_some(),

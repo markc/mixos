@@ -322,7 +322,11 @@ fn fixture_editor() {
         assert!(
             editor
                 .control
-                .release(Generation { prompt: 2, ..g }, 0, std::time::Duration::from_secs(2))
+                .release(
+                    Generation { prompt: 2, ..g },
+                    0,
+                    std::time::Duration::from_secs(2)
+                )
                 .is_err()
         );
         editor

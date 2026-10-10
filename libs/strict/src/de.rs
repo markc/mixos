@@ -58,7 +58,10 @@ impl<'de> ValueDeserializer<'de> {
     }
 
     fn type_error(&self, expected: &str) -> Error {
-        de_error(format!("expected {expected}, found {}", self.value.type_name()))
+        de_error(format!(
+            "expected {expected}, found {}",
+            self.value.type_name()
+        ))
     }
 
     fn number(&self) -> Result<f64> {
@@ -225,7 +228,11 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
-    fn deserialize_unit_struct<V: Visitor<'de>>(self, _name: &'static str, visitor: V) -> Result<V::Value> {
+    fn deserialize_unit_struct<V: Visitor<'de>>(
+        self,
+        _name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value> {
         self.deserialize_unit(visitor)
     }
 

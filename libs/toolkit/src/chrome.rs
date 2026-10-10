@@ -38,8 +38,8 @@ use crate::theme::Theme;
 use design::family::style::{Base, ScrollBars, Selection, WidgetStroke, Widgets};
 use design::{Mode, ResolvedChrome, ResolvedStyle};
 use egui::{
-    Color32, Context, CornerRadius, FontFamily, FontId, Id, Margin, Rect, Shadow, Stroke, Style, TextStyle, Vec2,
-    Visuals, style::ScrollStyle, vec2,
+    Color32, Context, CornerRadius, FontFamily, FontId, Id, Margin, Rect, Shadow, Stroke, Style,
+    TextStyle, Vec2, Visuals, style::ScrollStyle, vec2,
 };
 
 /// Whether egui's dark base palette underlies `theme` (§1.5): its style's
@@ -84,12 +84,37 @@ macro_rules! palette {
 }
 
 palette!(
-    chrome, canvas, canvas_dot, dock, card, card_border, tab_strip,
-    field, field_border, hover, pressed, row_selected,
-    text, text_dim, text_faint, icon,
-    accent, accent_soft, accent_border, accent_text, menu_highlight, menu_highlight_text,
-    separator, shadow, scrim,
-    primary_bg, primary_text, danger, warning, caption_close, caption_close_text,
+    chrome,
+    canvas,
+    canvas_dot,
+    dock,
+    card,
+    card_border,
+    tab_strip,
+    field,
+    field_border,
+    hover,
+    pressed,
+    row_selected,
+    text,
+    text_dim,
+    text_faint,
+    icon,
+    accent,
+    accent_soft,
+    accent_border,
+    accent_text,
+    menu_highlight,
+    menu_highlight_text,
+    separator,
+    shadow,
+    scrim,
+    primary_bg,
+    primary_text,
+    danger,
+    warning,
+    caption_close,
+    caption_close_text,
 );
 
 impl Palette {
@@ -367,7 +392,11 @@ impl Chrome {
         } else {
             Metrics::of(&style)
         };
-        Self { style, palette, metrics }
+        Self {
+            style,
+            palette,
+            metrics,
+        }
     }
 
     /// The chrome installed on `ctx` ([`install`]), else one read back from
@@ -375,9 +404,14 @@ impl Chrome {
     pub fn of(ctx: &Context) -> Self {
         ctx.data(|d| d.get_temp(key())).unwrap_or_else(|| {
             static PLAIN: std::sync::OnceLock<ResolvedStyle> = std::sync::OnceLock::new();
-            let tokens = *PLAIN.get_or_init(|| Theme::for_context(design::DesignContext::revision_one()).style());
+            let tokens = *PLAIN
+                .get_or_init(|| Theme::for_context(design::DesignContext::revision_one()).style());
             let style = ctx.global_style();
-            Self { style: tokens, palette: Palette::from_visuals(&style.visuals), metrics: Metrics::from_egui(&style, &tokens) }
+            Self {
+                style: tokens,
+                palette: Palette::from_visuals(&style.visuals),
+                metrics: Metrics::from_egui(&style, &tokens),
+            }
         })
     }
 
@@ -401,7 +435,10 @@ pub const MONO_SIZE: f32 = 12.0;
 pub fn style(theme: &Theme) -> Style {
     let chrome = Chrome::for_theme(theme);
     let m = chrome.metrics;
-    let mut style = Style { visuals: visuals(theme, &chrome), ..Style::default() };
+    let mut style = Style {
+        visuals: visuals(theme, &chrome),
+        ..Style::default()
+    };
 
     let spacing = &mut style.spacing;
     spacing.item_spacing = ITEM_SPACING;
@@ -429,18 +466,33 @@ pub fn style(theme: &Theme) -> Style {
 
     let body = m.body_size;
     let proportional = |size: f32| FontId::new(size, FontFamily::Proportional);
-    style.text_styles.insert(TextStyle::Small, proportional(SMALL_SIZE));
-    style.text_styles.insert(TextStyle::Body, proportional(body));
-    style.text_styles.insert(TextStyle::Button, proportional(body));
-    style.text_styles.insert(TextStyle::Heading, crate::fonts::heading(HEADING_SIZE));
-    style.text_styles.insert(TextStyle::Monospace, FontId::new(MONO_SIZE, FontFamily::Monospace));
+    style
+        .text_styles
+        .insert(TextStyle::Small, proportional(SMALL_SIZE));
+    style
+        .text_styles
+        .insert(TextStyle::Body, proportional(body));
+    style
+        .text_styles
+        .insert(TextStyle::Button, proportional(body));
+    style
+        .text_styles
+        .insert(TextStyle::Heading, crate::fonts::heading(HEADING_SIZE));
+    style.text_styles.insert(
+        TextStyle::Monospace,
+        FontId::new(MONO_SIZE, FontFamily::Monospace),
+    );
     style
 }
 
 /// The colours of chrome widgets (§1.5).
 fn visuals(theme: &Theme, chrome: &Chrome) -> Visuals {
     let (style, p, m) = (&chrome.style, &chrome.palette, &chrome.metrics);
-    let mut v = if dark_base(theme) { Visuals::dark() } else { Visuals::light() };
+    let mut v = if dark_base(theme) {
+        Visuals::dark()
+    } else {
+        Visuals::light()
+    };
     v.panel_fill = p.chrome;
     v.window_fill = p.card;
     v.window_stroke = Stroke::new(1.0, p.card_border);
@@ -461,7 +513,12 @@ fn visuals(theme: &Theme, chrome: &Chrome) -> Visuals {
     let stroke = |role| Stroke::new(1.0, p.widget_stroke(style, role));
     let w = &mut v.widgets;
     let states = [
-        (&mut w.noninteractive, p.card, Stroke::new(1.0, p.separator), p.text_dim),
+        (
+            &mut w.noninteractive,
+            p.card,
+            Stroke::new(1.0, p.separator),
+            p.text_dim,
+        ),
         (&mut w.inactive, p.field, stroke(p.field_border), p.text),
         (&mut w.hovered, p.hover, stroke(p.field_border), p.text),
         (&mut w.active, p.pressed, stroke(p.accent_border), p.text),
@@ -478,8 +535,18 @@ fn visuals(theme: &Theme, chrome: &Chrome) -> Visuals {
     v.window_corner_radius = CornerRadius::same(m.radius_lg);
     v.menu_corner_radius = CornerRadius::same(m.radius);
     // §2.5. A transparent shadow role (Classic) draws nothing.
-    v.window_shadow = Shadow { offset: [0, 10], blur: 32, spread: 0, color: p.shadow };
-    v.popup_shadow = Shadow { offset: [0, 6], blur: 20, spread: 0, color: p.shadow };
+    v.window_shadow = Shadow {
+        offset: [0, 10],
+        blur: 32,
+        spread: 0,
+        color: p.shadow,
+    };
+    v.popup_shadow = Shadow {
+        offset: [0, 6],
+        blur: 20,
+        spread: 0,
+        color: p.shadow,
+    };
     v.slider_trailing_fill = true;
     v.handle_shape = egui::style::HandleShape::Circle;
     v.striped = false;
@@ -493,7 +560,11 @@ mod tests {
     use design::{DesignContext, Scheme};
 
     fn theme(scheme: Scheme, mode: Mode) -> Theme {
-        Theme::for_context(DesignContext { scheme, mode, ..DesignContext::default() })
+        Theme::for_context(DesignContext {
+            scheme,
+            mode,
+            ..DesignContext::default()
+        })
     }
 
     fn hex(c: Color32) -> String {
@@ -526,7 +597,11 @@ mod tests {
             let roles = t.dictionary().chrome.clone().expect("chrome family");
             let palette = Chrome::for_theme(&t).palette;
             for (role, value) in roles.iter() {
-                assert_eq!(palette.get(role), Some(colour(value)), "{scheme:?}/{mode:?} {role}");
+                assert_eq!(
+                    palette.get(role),
+                    Some(colour(value)),
+                    "{scheme:?}/{mode:?} {role}"
+                );
             }
         }
     }
@@ -537,13 +612,75 @@ mod tests {
     fn roles_map_onto_egui_visuals() {
         // (scheme, mode, dark base, panel, window, field, hover, pressed, text, selection, widget stroke)
         let expected = [
-            (Scheme::Pro, Mode::Dark, true, "#323232", "#323232", "#242424", "#424242", "#4E4E4E", "#DEDEDE", "#378EF0", "#4A4A4A"),
-            (Scheme::Pro, Mode::Light, true, "#535353", "#535353", "#454545", "#626262", "#707070", "#EEEEEE", "#378EF0", "#686868"),
-            (Scheme::Studio, Mode::Dark, true, "#141415", "#1A1A1C", "#232326", "#2C2C30", "#38383E", "#ECECF0", "#8B7CF62E", "#343439"),
-            (Scheme::Studio, Mode::Light, false, "#F6F6F8", "#FCFCFD", "#F2F2F5", "#E8E8ED", "#DCDCE2", "#18181C", "#6C5CE724", "#D6D6DC"),
-            (Scheme::Classic, Mode::Light, false, "#D4D0C8", "#D4D0C8", "#FFFFFF", "#E2DED6", "#BEBAB2", "#000000", "#0A246A", "#404040"),
+            (
+                Scheme::Pro,
+                Mode::Dark,
+                true,
+                "#323232",
+                "#323232",
+                "#242424",
+                "#424242",
+                "#4E4E4E",
+                "#DEDEDE",
+                "#378EF0",
+                "#4A4A4A",
+            ),
+            (
+                Scheme::Pro,
+                Mode::Light,
+                true,
+                "#535353",
+                "#535353",
+                "#454545",
+                "#626262",
+                "#707070",
+                "#EEEEEE",
+                "#378EF0",
+                "#686868",
+            ),
+            (
+                Scheme::Studio,
+                Mode::Dark,
+                true,
+                "#141415",
+                "#1A1A1C",
+                "#232326",
+                "#2C2C30",
+                "#38383E",
+                "#ECECF0",
+                "#8B7CF62E",
+                "#343439",
+            ),
+            (
+                Scheme::Studio,
+                Mode::Light,
+                false,
+                "#F6F6F8",
+                "#FCFCFD",
+                "#F2F2F5",
+                "#E8E8ED",
+                "#DCDCE2",
+                "#18181C",
+                "#6C5CE724",
+                "#D6D6DC",
+            ),
+            (
+                Scheme::Classic,
+                Mode::Light,
+                false,
+                "#D4D0C8",
+                "#D4D0C8",
+                "#FFFFFF",
+                "#E2DED6",
+                "#BEBAB2",
+                "#000000",
+                "#0A246A",
+                "#404040",
+            ),
         ];
-        for (scheme, mode, dark, panel, window, field, hover, pressed, text, selection, stroke) in expected {
+        for (scheme, mode, dark, panel, window, field, hover, pressed, text, selection, stroke) in
+            expected
+        {
             let t = theme(scheme, mode);
             let radius_sm = t.style().radius_sm;
             let v = style(&t).visuals;
@@ -557,13 +694,27 @@ mod tests {
             assert_eq!(rgb(v.widgets.hovered.bg_fill), hover, "{at}");
             assert_eq!(rgb(v.widgets.open.bg_fill), hover, "{at}");
             assert_eq!(rgb(v.widgets.active.bg_fill), pressed, "{at}");
-            assert_eq!(v.override_text_color.map(rgb).as_deref(), Some(text), "{at}");
+            assert_eq!(
+                v.override_text_color.map(rgb).as_deref(),
+                Some(text),
+                "{at}"
+            );
             assert_eq!(rgb(v.widgets.inactive.bg_stroke.color), stroke, "{at}");
             assert_eq!(rgb(v.widgets.hovered.bg_stroke.color), stroke, "{at}");
             // Studio selects with accent_soft, the accent at low alpha. egui
             // stores colours premultiplied, so compare as egui will paint.
-            assert_eq!(v.selection.bg_fill, Color32::from_hex(selection).unwrap(), "{at}");
-            for w in [v.widgets.noninteractive, v.widgets.inactive, v.widgets.hovered, v.widgets.active, v.widgets.open] {
+            assert_eq!(
+                v.selection.bg_fill,
+                Color32::from_hex(selection).unwrap(),
+                "{at}"
+            );
+            for w in [
+                v.widgets.noninteractive,
+                v.widgets.inactive,
+                v.widgets.hovered,
+                v.widgets.active,
+                v.widgets.open,
+            ] {
                 assert_eq!(w.expansion, 0.0, "{at}: widgets never grow on hover");
                 assert_eq!(w.corner_radius, CornerRadius::same(radius_sm), "{at}");
             }
@@ -584,14 +735,41 @@ mod tests {
     #[test]
     fn style_metrics_follow_the_specification() {
         let metrics = |scheme| Chrome::for_theme(&theme(scheme, Mode::Dark)).metrics;
-        let (pro, studio, classic) = (metrics(Scheme::Pro), metrics(Scheme::Studio), metrics(Scheme::Classic));
-        assert_eq!((pro.title_bar_height, studio.title_bar_height, classic.title_bar_height), (32.0, 38.0, 38.0));
+        let (pro, studio, classic) = (
+            metrics(Scheme::Pro),
+            metrics(Scheme::Studio),
+            metrics(Scheme::Classic),
+        );
+        assert_eq!(
+            (
+                pro.title_bar_height,
+                studio.title_bar_height,
+                classic.title_bar_height
+            ),
+            (32.0, 38.0, 38.0)
+        );
         // Menus start 42 pt in (Pro) and 44 pt (Studio).
         assert_eq!(pro.title_bar_margin + pro.mark + pro.mark_gap, 42.0);
-        assert_eq!(studio.title_bar_margin + studio.mark + studio.mark_gap, 44.0);
-        assert_eq!((pro.menu_row_padding, studio.menu_row_padding), (vec2(10.0, 4.0), vec2(2.0, 0.0)));
-        assert_eq!((pro.menu_highlight_radius, studio.menu_highlight_radius, classic.menu_highlight_radius), (3, 6, 0));
-        assert_eq!((classic.radius_sm, classic.radius, classic.radius_lg), (0, 0, 0));
+        assert_eq!(
+            studio.title_bar_margin + studio.mark + studio.mark_gap,
+            44.0
+        );
+        assert_eq!(
+            (pro.menu_row_padding, studio.menu_row_padding),
+            (vec2(10.0, 4.0), vec2(2.0, 0.0))
+        );
+        assert_eq!(
+            (
+                pro.menu_highlight_radius,
+                studio.menu_highlight_radius,
+                classic.menu_highlight_radius
+            ),
+            (3, 6, 0)
+        );
+        assert_eq!(
+            (classic.radius_sm, classic.radius, classic.radius_lg),
+            (0, 0, 0)
+        );
     }
 
     #[test]
@@ -619,7 +797,10 @@ mod tests {
         let t = Theme::for_context(DesignContext::revision_one());
         let chrome = Chrome::for_theme(&t);
         assert_eq!(chrome.style.widgets, Widgets::Pairs);
-        assert_eq!(chrome.palette.chrome, crate::style::style(&t).visuals.panel_fill);
+        assert_eq!(
+            chrome.palette.chrome,
+            crate::style::style(&t).visuals.panel_fill
+        );
     }
 
     /// The `plain` style authors, as data, exactly the geometry the hue
@@ -631,7 +812,11 @@ mod tests {
             for mode in Mode::ALL {
                 let t = theme(scheme, mode);
                 let derived = Metrics::from_egui(&crate::style::pair_style(&t), &t.style());
-                assert_eq!(Chrome::for_theme(&t).metrics, derived, "{scheme:?}/{mode:?}");
+                assert_eq!(
+                    Chrome::for_theme(&t).metrics,
+                    derived,
+                    "{scheme:?}/{mode:?}"
+                );
             }
         }
     }

@@ -1,7 +1,6 @@
 //! Desktop typography roles. Font discovery belongs to each rendering adapter.
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-#[derive(serde::Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TypographyGeneric {
     #[default]

@@ -3,7 +3,9 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use strict::{ErrorKind, IndexMap, Value, from_str, from_value, to_string, to_string_pretty, to_value};
+use strict::{
+    ErrorKind, IndexMap, Value, from_str, from_value, to_string, to_string_pretty, to_value,
+};
 
 fn map(pairs: &[(&str, Value)]) -> Value {
     let mut m = IndexMap::new();
@@ -26,7 +28,10 @@ enum ListenSpec {
 fn untagged_arms() {
     let got: ListenSpec = from_value(&Value::String("127.0.0.1:53".into())).unwrap();
     assert_eq!(got, ListenSpec::One("127.0.0.1:53".into()));
-    let v = Value::List(vec![Value::String("a:1".into()), Value::String("b:2".into())]);
+    let v = Value::List(vec![
+        Value::String("a:1".into()),
+        Value::String("b:2".into()),
+    ]);
     let got: ListenSpec = from_value(&v).unwrap();
     assert_eq!(got, ListenSpec::Many(vec!["a:1".into(), "b:2".into()]));
 }
@@ -84,7 +89,9 @@ fn payload_variants_round_trip_as_single_key_maps() {
         Shape::Struct { x: 1.5 },
     ] {
         let text = to_string(&shape).unwrap();
-        let back: Shape = from_str(&format!("[{text}]")).map(|mut v: Vec<Shape>| v.remove(0)).unwrap();
+        let back: Shape = from_str(&format!("[{text}]"))
+            .map(|mut v: Vec<Shape>| v.remove(0))
+            .unwrap();
         assert_eq!(back, shape, "{text}");
     }
 }
@@ -100,9 +107,18 @@ struct PeerConfig {
 
 #[test]
 fn deny_unknown_fields_sees_every_key() {
-    let v = map(&[("name", Value::String("alpha".into())), ("port", Value::Number(8080.0))]);
+    let v = map(&[
+        ("name", Value::String("alpha".into())),
+        ("port", Value::Number(8080.0)),
+    ]);
     let got: PeerConfig = from_value(&v).unwrap();
-    assert_eq!(got, PeerConfig { name: "alpha".into(), port: 8080 });
+    assert_eq!(
+        got,
+        PeerConfig {
+            name: "alpha".into(),
+            port: 8080
+        }
+    );
     let v = map(&[
         ("name", Value::String("alpha".into())),
         ("port", Value::Number(8080.0)),
@@ -121,7 +137,10 @@ fn deny_unknown_fields_sees_every_key() {
 fn integers_in_range() {
     assert_eq!(from_value::<u16>(&Value::Number(8080.0)).unwrap(), 8080);
     assert_eq!(from_value::<i64>(&Value::Number(-42.0)).unwrap(), -42);
-    assert_eq!(from_value::<u64>(&Value::Number(9_007_199_254_740_992.0)).unwrap(), 1 << 53);
+    assert_eq!(
+        from_value::<u64>(&Value::Number(9_007_199_254_740_992.0)).unwrap(),
+        1 << 53
+    );
 }
 
 #[test]
@@ -143,7 +162,10 @@ fn serialize_rejects_integers_beyond_exact_range() {
     let err = to_value(&9_007_199_254_740_994_u64).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::Serialize);
     assert!(err.message().contains("exceeds the range"), "{err}");
-    assert_eq!(to_value(&(1u64 << 53)).unwrap(), Value::Number(9_007_199_254_740_992.0));
+    assert_eq!(
+        to_value(&(1u64 << 53)).unwrap(),
+        Value::Number(9_007_199_254_740_992.0)
+    );
 }
 
 // --- options and defaults ----------------------------------------------------------
@@ -159,10 +181,26 @@ struct OptHolder {
 #[test]
 fn nil_is_none_and_missing_is_default() {
     assert_eq!(from_value::<Option<u32>>(&Value::Nil).unwrap(), None);
-    let got: OptHolder = from_value(&map(&[("maybe", Value::Nil), ("name", Value::String("x".into()))])).unwrap();
-    assert_eq!(got, OptHolder { maybe: None, name: "x".into() });
+    let got: OptHolder = from_value(&map(&[
+        ("maybe", Value::Nil),
+        ("name", Value::String("x".into())),
+    ]))
+    .unwrap();
+    assert_eq!(
+        got,
+        OptHolder {
+            maybe: None,
+            name: "x".into()
+        }
+    );
     let got: OptHolder = from_value(&map(&[])).unwrap();
-    assert_eq!(got, OptHolder { maybe: None, name: String::new() });
+    assert_eq!(
+        got,
+        OptHolder {
+            maybe: None,
+            name: String::new()
+        }
+    );
     let got: OptHolder = from_value(&map(&[("maybe", Value::Number(7.0))])).unwrap();
     assert_eq!(got.maybe, Some(7));
     assert_eq!(to_value(&Option::<u32>::None).unwrap(), Value::Nil);
@@ -173,9 +211,21 @@ fn nil_is_none_and_missing_is_default() {
 #[test]
 fn from_str_top_level_body() {
     let got: PeerConfig = from_str("name: \"alpha\"\nport: 8080\n").unwrap();
-    assert_eq!(got, PeerConfig { name: "alpha".into(), port: 8080 });
+    assert_eq!(
+        got,
+        PeerConfig {
+            name: "alpha".into(),
+            port: 8080
+        }
+    );
     let got: OptHolder = from_str("{}").unwrap();
-    assert_eq!(got, OptHolder { maybe: None, name: String::new() });
+    assert_eq!(
+        got,
+        OptHolder {
+            maybe: None,
+            name: String::new()
+        }
+    );
 }
 
 #[test]
@@ -245,12 +295,18 @@ fn value_itself_round_trips_through_the_bridge() {
     let original = strict::parse("a: [1, nil, \"x\", {b: false}]\n").unwrap();
     assert_eq!(to_value(&original).unwrap(), original);
     assert_eq!(from_value::<Value>(&original).unwrap(), original);
-    assert_eq!(strict::parse(&to_string(&original).unwrap()).unwrap(), original);
+    assert_eq!(
+        strict::parse(&to_string(&original).unwrap()).unwrap(),
+        original
+    );
 }
 
 #[test]
 fn bytes_have_no_representation() {
-    assert_eq!(to_value(&serde_bytes_like(&[1, 2])).unwrap_err().kind(), ErrorKind::Serialize);
+    assert_eq!(
+        to_value(&serde_bytes_like(&[1, 2])).unwrap_err().kind(),
+        ErrorKind::Serialize
+    );
 }
 
 /// A type that serializes through `serialize_bytes`.

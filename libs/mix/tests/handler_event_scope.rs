@@ -194,7 +194,10 @@ end
         .dispatch_event(mk_event("closure.msg", "", &[]))
         .await
         .unwrap();
-    assert_eq!(s.eval.get_global("recorded").unwrap().to_mix_string(), "true");
+    assert_eq!(
+        s.eval.get_global("recorded").unwrap().to_mix_string(),
+        "true"
+    );
     let source = r#"
 $global_value = "after"
 print($escaped(nil))
@@ -205,7 +208,11 @@ print($escaped(nil))
         .unwrap();
     s.eval.execute(&stmts).await.unwrap();
     assert_eq!(s.stdout.to_string_lossy(), "[alphaafter, betaafter]\n");
-    assert!(s.stderr.to_string_lossy().is_empty(), "{}", s.stderr.to_string_lossy());
+    assert!(
+        s.stderr.to_string_lossy().is_empty(),
+        "{}",
+        s.stderr.to_string_lossy()
+    );
 }
 
 /// Test double capturing the health hook.

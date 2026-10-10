@@ -30,8 +30,15 @@ fn children<'a>(node: &'a Node, out: &mut Vec<&'a Node>) {
         }
         Node::Binary { left, right, .. } => out.extend([&**left, &**right]),
         Node::Unary { operand, .. } => out.push(operand),
-        Node::Ternary { cond, then, otherwise } => out.extend([&**cond, &**then, &**otherwise]),
-        Node::If { branches, otherwise } => {
+        Node::Ternary {
+            cond,
+            then,
+            otherwise,
+        } => out.extend([&**cond, &**then, &**otherwise]),
+        Node::If {
+            branches,
+            otherwise,
+        } => {
             for branch in branches {
                 out.push(&branch.cond);
                 out.extend(branch.body.as_ref());

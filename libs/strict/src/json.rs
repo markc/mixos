@@ -51,7 +51,9 @@ mod tests {
 
     #[test]
     fn round_trip_through_json() {
-        let value = crate::parse("name: \"alpha\"\nport: 25\nhalf: 0.5\ntags: [\"a\", nil, true]\n").unwrap();
+        let value =
+            crate::parse("name: \"alpha\"\nport: 25\nhalf: 0.5\ntags: [\"a\", nil, true]\n")
+                .unwrap();
         let json = to_json(&value);
         assert_eq!(
             json,

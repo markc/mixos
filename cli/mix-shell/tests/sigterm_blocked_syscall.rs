@@ -22,7 +22,10 @@ fn sigterm_ends_a_script_blocked_opening_a_fifo() {
     let script = dir.join("t.mix");
     std::fs::write(
         &script,
-        format!("append_file(\"{}\", \"hi\\n\")\nprint(\"unreachable\")\n", fifo.display()),
+        format!(
+            "append_file(\"{}\", \"hi\\n\")\nprint(\"unreachable\")\n",
+            fifo.display()
+        ),
     )
     .unwrap();
 
@@ -36,7 +39,10 @@ fn sigterm_ends_a_script_blocked_opening_a_fifo() {
 
     // Let it reach the blocking open.
     std::thread::sleep(Duration::from_millis(800));
-    assert!(child.try_wait().unwrap().is_none(), "script should be blocked on the FIFO");
+    assert!(
+        child.try_wait().unwrap().is_none(),
+        "script should be blocked on the FIFO"
+    );
     unsafe { libc::kill(child.id() as i32, libc::SIGTERM) };
 
     let started = Instant::now();
@@ -54,7 +60,12 @@ fn sigterm_ends_a_script_blocked_opening_a_fifo() {
     let out = child.wait_with_output().unwrap();
     let _ = std::fs::remove_dir_all(&dir);
 
-    assert_eq!(status.code(), Some(128 + libc::SIGTERM), "status {status:?} signal {:?}", status.signal());
+    assert_eq!(
+        status.code(),
+        Some(128 + libc::SIGTERM),
+        "status {status:?} signal {:?}",
+        status.signal()
+    );
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("SIGTERM not honoured"), "stderr: {err:?}");
     assert!(!String::from_utf8_lossy(&out.stdout).contains("unreachable"));

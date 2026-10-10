@@ -86,7 +86,10 @@ impl Lookup {
     /// [`xdg`](Self::xdg) with explicit inputs.
     pub fn xdg_in(mut self, subdir: impl AsRef<Path>, xdg: &XdgData) -> Self {
         let subdir = subdir.as_ref();
-        debug_assert!(subdir.is_relative(), "the XDG subdirectory must be relative");
+        debug_assert!(
+            subdir.is_relative(),
+            "the XDG subdirectory must be relative"
+        );
         for dir in xdg.data_directories() {
             self.push(dir.join(subdir));
         }
@@ -200,7 +203,10 @@ mod tests {
         );
         assert_eq!(
             XdgData::default().data_directories(),
-            vec![PathBuf::from("/usr/local/share"), PathBuf::from("/usr/share")]
+            vec![
+                PathBuf::from("/usr/local/share"),
+                PathBuf::from("/usr/share")
+            ]
         );
     }
 

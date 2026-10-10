@@ -96,7 +96,11 @@ pub struct Environment {
 impl Environment {
     /// The process environment and real uid. An empty variable is unset.
     pub fn current() -> Self {
-        let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty()).map(PathBuf::from);
+        let var = |name: &str| {
+            std::env::var_os(name)
+                .filter(|v| !v.is_empty())
+                .map(PathBuf::from)
+        };
         Self {
             root: var(ROOT_VAR),
             etc: var(Dir::Etc.env_var()),
@@ -161,7 +165,12 @@ impl Dirs {
             .filter(|p| p.is_absolute())
             .unwrap_or_else(|| PathBuf::from(DEFAULT_SHARE));
 
-        Self { etc, var, run, share }
+        Self {
+            etc,
+            var,
+            run,
+            share,
+        }
     }
 
     /// The resolved directory for `dir`.
@@ -236,7 +245,10 @@ mod tests {
     fn a_user_without_a_root_gets_the_xdg_defaults_under_home() {
         let dirs = Dirs::resolve(&user());
         assert_eq!(dirs.get(Dir::Etc), Path::new("/home/user/.config/mixos"));
-        assert_eq!(dirs.get(Dir::Var), Path::new("/home/user/.local/share/mixos"));
+        assert_eq!(
+            dirs.get(Dir::Var),
+            Path::new("/home/user/.local/share/mixos")
+        );
         assert_eq!(dirs.get(Dir::Run), Path::new("/tmp/mixos-run"));
         assert_eq!(dirs.get(Dir::Share), Path::new(DEFAULT_SHARE));
     }
@@ -265,7 +277,10 @@ mod tests {
         };
         let dirs = Dirs::resolve(&env);
         assert_eq!(dirs.get(Dir::Etc), Path::new("/home/user/.config/mixos"));
-        assert_eq!(dirs.get(Dir::Var), Path::new("/home/user/.local/share/mixos"));
+        assert_eq!(
+            dirs.get(Dir::Var),
+            Path::new("/home/user/.local/share/mixos")
+        );
         assert_eq!(dirs.get(Dir::Run), Path::new("/tmp/mixos-run"));
     }
 
@@ -286,8 +301,14 @@ mod tests {
 
     #[test]
     fn no_home_falls_back_to_root_home() {
-        let env = Environment { home: None, ..user() };
-        assert_eq!(Dirs::resolve(&env).get(Dir::Etc), Path::new("/root/.config/mixos"));
+        let env = Environment {
+            home: None,
+            ..user()
+        };
+        assert_eq!(
+            Dirs::resolve(&env).get(Dir::Etc),
+            Path::new("/root/.config/mixos")
+        );
     }
 
     #[test]
@@ -296,12 +317,18 @@ mod tests {
             share: Some(PathBuf::from("/srv/resources")),
             ..user()
         };
-        assert_eq!(Dirs::resolve(&absolute).get(Dir::Share), Path::new("/srv/resources"));
+        assert_eq!(
+            Dirs::resolve(&absolute).get(Dir::Share),
+            Path::new("/srv/resources")
+        );
         let relative = Environment {
             share: Some(PathBuf::from("relative")),
             ..user()
         };
-        assert_eq!(Dirs::resolve(&relative).get(Dir::Share), Path::new(DEFAULT_SHARE));
+        assert_eq!(
+            Dirs::resolve(&relative).get(Dir::Share),
+            Path::new(DEFAULT_SHARE)
+        );
     }
 
     #[test]

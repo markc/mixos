@@ -42,10 +42,7 @@ impl JmapHandler for StubJmap {
         Box::pin(async move { Ok(Value::String("Gblob-1".to_string())) })
     }
 
-    fn request<'a>(
-        &'a self,
-        calls: &'a [JmapCall],
-    ) -> JmapFuture<'a, mix::MixResult<Value>> {
+    fn request<'a>(&'a self, calls: &'a [JmapCall]) -> JmapFuture<'a, mix::MixResult<Value>> {
         self.batches.borrow_mut().push(
             calls
                 .iter()

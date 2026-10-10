@@ -173,8 +173,5 @@ async fn strict_rejects_bytes_arity_surplus_and_shortfall() {
         "try\n  bytes_to_hex()\ncatch $m, $e\n  print($e.code)\nend\n",
         "try\n  bytes_from_hex()\ncatch $m, $e\n  print($e.code)\nend\n",
     );
-    assert_eq!(
-        strict_ok(src).await,
-        "ARITY_MISMATCH\n".repeat(14).as_str()
-    );
+    assert_eq!(strict_ok(src).await, "ARITY_MISMATCH\n".repeat(14).as_str());
 }

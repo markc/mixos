@@ -63,7 +63,9 @@ pub fn definitions(theme: &Theme) -> FontDefinitions {
 
     let mut fonts = FontDefinitions::default();
     let mut add = |(name, bytes): (&'static str, &'static [u8])| {
-        fonts.font_data.insert(name.to_owned(), Arc::new(FontData::from_static(bytes)));
+        fonts
+            .font_data
+            .insert(name.to_owned(), Arc::new(FontData::from_static(bytes)));
         name.to_owned()
     };
     let body = add(inter_face(ui));
@@ -71,13 +73,23 @@ pub fn definitions(theme: &Theme) -> FontDefinitions {
     let heading = add(inter_face(display));
     let mono = add(("JetBrainsMono-Regular", JETBRAINS_MONO));
 
-    fonts.families.entry(FontFamily::Proportional).or_default().insert(0, body);
-    fonts.families.entry(FontFamily::Monospace).or_default().insert(0, mono);
+    fonts
+        .families
+        .entry(FontFamily::Proportional)
+        .or_default()
+        .insert(0, body);
+    fonts
+        .families
+        .entry(FontFamily::Monospace)
+        .or_default()
+        .insert(0, mono);
     let fallback = fonts.families[&FontFamily::Proportional].clone();
     for (family, primary) in [(MEDIUM, medium), (HEADING, heading)] {
         let mut stack = vec![primary];
         stack.extend(fallback.iter().cloned());
-        fonts.families.insert(FontFamily::Name(family.into()), stack);
+        fonts
+            .families
+            .insert(FontFamily::Name(family.into()), stack);
     }
     fonts
 }
@@ -125,9 +137,21 @@ mod tests {
     #[test]
     fn the_shipped_design_installs_regular_body_and_semibold_headings() {
         let fonts = definitions(&Theme::embedded());
-        assert_eq!(fonts.families[&FontFamily::Proportional][0], "Inter-Regular");
-        assert_eq!(fonts.families[&FontFamily::Name(MEDIUM.into())][0], "Inter-Medium");
-        assert_eq!(fonts.families[&FontFamily::Name(HEADING.into())][0], "Inter-SemiBold");
-        assert_eq!(fonts.families[&FontFamily::Monospace][0], "JetBrainsMono-Regular");
+        assert_eq!(
+            fonts.families[&FontFamily::Proportional][0],
+            "Inter-Regular"
+        );
+        assert_eq!(
+            fonts.families[&FontFamily::Name(MEDIUM.into())][0],
+            "Inter-Medium"
+        );
+        assert_eq!(
+            fonts.families[&FontFamily::Name(HEADING.into())][0],
+            "Inter-SemiBold"
+        );
+        assert_eq!(
+            fonts.families[&FontFamily::Monospace][0],
+            "JetBrainsMono-Regular"
+        );
     }
 }

@@ -12,25 +12,50 @@ const FTL: &str = "menu-file = File\ncmd-quit = Quit\n";
 
 fn registry() -> Registry<()> {
     let mut r = Registry::new();
-    r.add(Command { id: "file.quit", label: "cmd-quit", menu: Some("menu-file"), submenu: None, group: 0, shortcut: None, icon: None, enabled: always, run: |_| {} });
+    r.add(Command {
+        id: "file.quit",
+        label: "cmd-quit",
+        menu: Some("menu-file"),
+        submenu: None,
+        group: 0,
+        shortcut: None,
+        icon: None,
+        enabled: always,
+        run: |_| {},
+    });
     r
 }
 
 fn harness() -> Harness<'static> {
     let registry = registry();
     let strings = Strings::new(FTL);
-    let mut harness = Harness::builder().with_size(egui::vec2(640.0, 200.0)).build_ui(move |ui| {
-        let _ = titlebar::show(ui, "Demo", Some(Icon::Server), 2.0, &registry, &(), &strings);
-        egui::CentralPanel::default().show(ui, |_| {});
-        titlebar::edges(ui);
-    });
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(640.0, 200.0))
+        .build_ui(move |ui| {
+            let _ = titlebar::show(
+                ui,
+                "Demo",
+                Some(Icon::Server),
+                2.0,
+                &registry,
+                &(),
+                &strings,
+            );
+            egui::CentralPanel::default().show(ui, |_| {});
+            titlebar::edges(ui);
+        });
     toolkit::install(&harness.ctx, &Theme::embedded());
     harness.run();
     harness
 }
 
 fn commands(harness: &Harness<'_>) -> Vec<ViewportCommand> {
-    harness.output().viewport_output.get(&ViewportId::ROOT).map(|v| v.commands.clone()).unwrap_or_default()
+    harness
+        .output()
+        .viewport_output
+        .get(&ViewportId::ROOT)
+        .map(|v| v.commands.clone())
+        .unwrap_or_default()
 }
 
 #[test]
@@ -43,7 +68,11 @@ fn caption_buttons_send_their_window_commands() {
         let mut h = harness();
         h.get_by_label(label).click();
         h.step();
-        assert!(commands(&h).contains(&expected), "{label}: {:?}", commands(&h));
+        assert!(
+            commands(&h).contains(&expected),
+            "{label}: {:?}",
+            commands(&h)
+        );
     }
 }
 
@@ -74,5 +103,9 @@ fn double_clicking_the_free_bar_maximizes() {
         });
         h.step();
     }
-    assert!(commands(&h).contains(&ViewportCommand::Maximized(true)), "{:?}", commands(&h));
+    assert!(
+        commands(&h).contains(&ViewportCommand::Maximized(true)),
+        "{:?}",
+        commands(&h)
+    );
 }

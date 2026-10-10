@@ -55,7 +55,10 @@ fn unpublished_temp_present(dir: &Path) -> bool {
         return false;
     };
     entries.flatten().any(|entry| {
-        entry.file_name().to_string_lossy().starts_with(".state.mixtmp-")
+        entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".state.mixtmp-")
             && entry
                 .metadata()
                 .map(|m| m.is_file() && m.len() <= SIZE as u64)
@@ -98,19 +101,25 @@ fn sigkill_mid_rewrite_leaves_a_complete_old_or_new_file() {
         // SIGKILLed writer cannot clean up). Clear them, or the next round's
         // "unpublished temp present" would be satisfied by a stale one.
         for entry in std::fs::read_dir(&dir).expect("scratch dir").flatten() {
-            if entry.file_name().to_string_lossy().starts_with(".state.mixtmp-") {
+            if entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".state.mixtmp-")
+            {
                 let _ = std::fs::remove_file(entry.path());
             }
         }
         let before = inode(&target);
-        let mut child = Writer(Command::new(env!("CARGO_BIN_EXE_mix"))
-            .arg(&script)
-            .env("MIX_STATS", "off")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .expect("mix binary must run"));
+        let mut child = Writer(
+            Command::new(env!("CARGO_BIN_EXE_mix"))
+                .arg(&script)
+                .env("MIX_STATS", "off")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::inherit())
+                .spawn()
+                .expect("mix binary must run"),
+        );
 
         // Progress: a new write must land this round.
         let deadline = Instant::now() + Duration::from_secs(30);
@@ -139,7 +148,8 @@ fn sigkill_mid_rewrite_leaves_a_complete_old_or_new_file() {
                 let mut stopped = false;
                 while Instant::now() < stop_deadline {
                     let mut status = 0;
-                    let got = unsafe { libc::waitpid(pid, &mut status, libc::WUNTRACED | libc::WNOHANG) };
+                    let got =
+                        unsafe { libc::waitpid(pid, &mut status, libc::WUNTRACED | libc::WNOHANG) };
                     if got == pid {
                         assert!(libc::WIFSTOPPED(status), "writer exited while stopping");
                         stopped = true;
@@ -157,7 +167,11 @@ fn sigkill_mid_rewrite_leaves_a_complete_old_or_new_file() {
                     caught = true;
                     break;
                 }
-                assert_eq!(unsafe { libc::kill(pid, libc::SIGCONT) }, 0, "resume writer");
+                assert_eq!(
+                    unsafe { libc::kill(pid, libc::SIGCONT) },
+                    0,
+                    "resume writer"
+                );
             }
         }
         child.kill().expect("SIGKILL mix");

@@ -68,7 +68,8 @@ impl Dir {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let d = std::env::temp_dir().join(format!("mix-reload-{tag}-{}-{nanos:x}", std::process::id()));
+        let d =
+            std::env::temp_dir().join(format!("mix-reload-{tag}-{}-{nanos:x}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         Dir(d)
     }
@@ -100,16 +101,22 @@ impl Citizen {
     fn spawn(bin: &Path, dir: &Dir, node_conf: &Path, script: &Path) -> Citizen {
         let stderr = File::create(dir.0.join("citizen.stderr")).unwrap();
         let mut cmd = Command::new(bin);
-        cmd.args(["--no-prelude", "--serve", script.to_str().unwrap(), "--name", SVC])
-            .env("MIXOS_NODE_CONFIG", node_conf)
-            .env("MIXOS_ETC", &dir.0)
-            .env("REL_TRACE", dir.0.join("trace"))
-            .env("REL_STATE", dir.0.join("state"))
-            .env("MIX_STATS", "off")
-            .env_remove("COSMIX_SESSION_FD")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::from(stderr));
+        cmd.args([
+            "--no-prelude",
+            "--serve",
+            script.to_str().unwrap(),
+            "--name",
+            SVC,
+        ])
+        .env("MIXOS_NODE_CONFIG", node_conf)
+        .env("MIXOS_ETC", &dir.0)
+        .env("REL_TRACE", dir.0.join("trace"))
+        .env("REL_STATE", dir.0.join("state"))
+        .env("MIX_STATS", "off")
+        .env_remove("COSMIX_SESSION_FD")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::from(stderr));
         // Own process group: the test (and the guard) signals the citizen's
         // whole tree, mirroring a supervisor stop.
         unsafe {
@@ -121,7 +128,11 @@ impl Citizen {
             });
         }
         let child = cmd.spawn().unwrap();
-        Citizen { pgid: child.id() as libc::pid_t, child, exited: false }
+        Citizen {
+            pgid: child.id() as libc::pid_t,
+            child,
+            exited: false,
+        }
     }
 
     fn sigterm(&self) {
@@ -205,7 +216,10 @@ fn wait_trace(dir: &Dir, needle: &str, timeout: Duration) {
         }
         std::thread::sleep(Duration::from_millis(20));
     }
-    panic!("trace marker {needle:?} not seen within {timeout:?}; trace:\n{}", trace(dir));
+    panic!(
+        "trace marker {needle:?} not seen within {timeout:?}; trace:\n{}",
+        trace(dir)
+    );
 }
 
 fn wait_lines(dir: &Dir, event: &str, count: usize, timeout: Duration) -> Vec<TraceLine> {
@@ -307,11 +321,17 @@ const TERM_IGNORING_LEGACY: &str = "rust-term-ignoring-fixture";
 #[ignore = "subprocess helper, launched explicitly by the grace test"]
 fn term_ignoring_child_fixture() {
     use std::io::Write;
-    unsafe { libc::signal(libc::SIGTERM, libc::SIG_IGN); }
-    let mut trace = std::fs::OpenOptions::new().append(true)
-        .open(std::env::var_os("REL_TRACE").expect("fixture trace")).unwrap();
+    unsafe {
+        libc::signal(libc::SIGTERM, libc::SIG_IGN);
+    }
+    let mut trace = std::fs::OpenOptions::new()
+        .append(true)
+        .open(std::env::var_os("REL_TRACE").expect("fixture trace"))
+        .unwrap();
     writeln!(trace, "legacy-ready|{{\"pid\":{}}}|t=0", std::process::id()).unwrap();
-    loop { std::thread::park(); }
+    loop {
+        std::thread::park();
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -333,10 +353,17 @@ struct Variant {
 fn script(v: &Variant) -> String {
     let legacy = if v.legacy_cmd == TERM_IGNORING_LEGACY {
         serde_json::to_string(&vec![
-            std::env::current_exe().unwrap().to_str().unwrap().to_string(),
-            "--exact".to_string(), "term_ignoring_child_fixture".to_string(),
-            "--ignored".to_string(), "--nocapture".to_string(),
-        ]).unwrap()
+            std::env::current_exe()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string(),
+            "--exact".to_string(),
+            "term_ignoring_child_fixture".to_string(),
+            "--ignored".to_string(),
+            "--nocapture".to_string(),
+        ])
+        .unwrap()
     } else {
         v.legacy_cmd.to_string()
     };
@@ -408,7 +435,12 @@ end
 fn boot(citizen_script: &Variant, dir: &Dir, broker: &Broker) -> (PathBuf, Citizen) {
     let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(broker)));
     let script = dir.write("svc.mix", &script(citizen_script));
-    let citizen = Citizen::spawn(Path::new(env!("CARGO_BIN_EXE_mix")), dir, &node_conf, &script);
+    let citizen = Citizen::spawn(
+        Path::new(env!("CARGO_BIN_EXE_mix")),
+        dir,
+        &node_conf,
+        &script,
+    );
     (node_conf, citizen)
 }
 
@@ -435,7 +467,10 @@ async fn invalid_parse_and_raising_candidate_leave_the_boot_generation_running()
     assert_eq!(boot.len(), 1, "boot generation launches exactly once");
     let legacy = boot[0].fields["legacy"].as_i64().unwrap();
     let managed = boot[0].fields["managed"].as_i64().unwrap();
-    assert!(alive(legacy) && alive(managed), "boot children must be running");
+    assert!(
+        alive(legacy) && alive(managed),
+        "boot children must be running"
+    );
     assert_eq!(props_generation(&c).await, 0);
 
     // Phase A — invalid parse: rc:10, the pump never breaks, nothing changes.
@@ -446,7 +481,11 @@ async fn invalid_parse_and_raising_candidate_leave_the_boot_generation_running()
     assert!(err.contains("does not parse"), "{err}");
     let st = state(&c).await;
     assert_eq!(st["generation"].as_i64().unwrap(), 0, "generation stable");
-    assert_eq!(st["successor"].as_i64().unwrap(), 0, "no successor launched");
+    assert_eq!(
+        st["successor"].as_i64().unwrap(),
+        0,
+        "no successor launched"
+    );
     assert!(alive(legacy) && alive(managed), "old children untouched");
     assert!(parse_trace(&dir, "commit").is_empty());
 
@@ -458,8 +497,15 @@ async fn invalid_parse_and_raising_candidate_leave_the_boot_generation_running()
         .expect("valid source must be accepted with rc:0");
     assert_eq!(ok["reloading"], true);
     let deadline = Instant::now() + HARD;
-    while !parse_trace(&dir, "cand").iter().any(|l| l.fields["step"] == "spawned") {
-        assert!(Instant::now() < deadline, "candidate did not spawn: {}", trace(&dir));
+    while !parse_trace(&dir, "cand")
+        .iter()
+        .any(|l| l.fields["step"] == "spawned")
+    {
+        assert!(
+            Instant::now() < deadline,
+            "candidate did not spawn: {}",
+            trace(&dir)
+        );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     wait_stderr(&dir, "reload reverted", HARD);
@@ -472,9 +518,16 @@ async fn invalid_parse_and_raising_candidate_leave_the_boot_generation_running()
         .unwrap();
     wait_dead(cand_legacy, HARD);
     let st = state(&c).await; // serviced AFTER the revert (pump break serialises)
-    assert_eq!(st["generation"].as_i64().unwrap(), 0, "revert never advances");
+    assert_eq!(
+        st["generation"].as_i64().unwrap(),
+        0,
+        "revert never advances"
+    );
     assert_eq!(st["successor"].as_i64().unwrap(), 0);
-    assert!(alive(legacy) && alive(managed), "old generation resumes with children intact");
+    assert!(
+        alive(legacy) && alive(managed),
+        "old generation resumes with children intact"
+    );
     assert!(parse_trace(&dir, "commit").is_empty());
     broker.stop();
 }
@@ -518,7 +571,10 @@ async fn committed_reload_retires_old_children_then_launches_one_successor() {
         c0.fields["old_legacy"], false,
         "the old legacy child must be retired BEFORE the hook runs"
     );
-    assert_eq!(c0.fields["cand_legacy_alive"], true, "candidate-owned legacy survives");
+    assert_eq!(
+        c0.fields["cand_legacy_alive"], true,
+        "candidate-owned legacy survives"
+    );
     let successor1 = c0.fields["successor"].as_i64().unwrap();
     assert_ne!(successor1, 0);
     assert!(alive(successor1));
@@ -579,7 +635,11 @@ async fn wire_spoofed_lifecycle_commit_is_refused_without_side_effects() {
     let st = state(&c).await;
     assert_eq!(st["generation"].as_i64().unwrap(), 0);
     assert_eq!(st["successor"].as_i64().unwrap(), 0);
-    assert_eq!(trace(&dir).lines().count(), 1, "no side-effect extra spawn: only boot logged");
+    assert_eq!(
+        trace(&dir).lines().count(),
+        1,
+        "no side-effect extra spawn: only boot logged"
+    );
     let help = call(&c, "HELP", json!({})).await.expect("HELP");
     let names: Vec<&str> = help
         .as_array()
@@ -644,7 +704,11 @@ async fn broker_cut_during_candidate_prep_commit_dispatches_and_reconciles() {
     let c2 = connect(&broker).await;
     wait_service(&c2, RECONCILE).await;
     let st = state(&c2).await;
-    assert_eq!(st["generation"].as_i64().unwrap(), 1, "durable commit survived the cut");
+    assert_eq!(
+        st["generation"].as_i64().unwrap(),
+        1,
+        "durable commit survived the cut"
+    );
     assert_eq!(st["successor"].as_i64().unwrap(), successor);
     assert!(alive(successor));
     let cand_legacy = parse_trace(&dir, "cand")
@@ -654,7 +718,10 @@ async fn broker_cut_during_candidate_prep_commit_dispatches_and_reconciles() {
         .fields["pid"]
         .as_i64()
         .unwrap();
-    assert!(alive(cand_legacy), "candidate-owned child survives the commit");
+    assert!(
+        alive(cand_legacy),
+        "candidate-owned child survives the commit"
+    );
     broker.stop();
 }
 
@@ -686,8 +753,15 @@ async fn sigterm_shuts_down_the_child_group_from_prep_and_from_the_dispatching_h
     wait_trace(&dir, "cand|{\"step\":\"start\"}", HARD);
     citizen_a.sigterm();
     let status = citizen_a.wait_exit(HARD);
-    assert_eq!(status.code(), Some(0), "clean deregister-before-exit shutdown");
-    assert!(parse_trace(&dir, "commit").is_empty(), "no commit, no successor");
+    assert_eq!(
+        status.code(),
+        Some(0),
+        "clean deregister-before-exit shutdown"
+    );
+    assert!(
+        parse_trace(&dir, "commit").is_empty(),
+        "no commit, no successor"
+    );
     wait_dead(legacy_a, HARD);
     wait_dead(managed_a, HARD);
 
@@ -704,26 +778,42 @@ async fn sigterm_shuts_down_the_child_group_from_prep_and_from_the_dispatching_h
     dir.write("svc-b.mix", &script(&slow));
     let node_conf_b = dir.write("node-b.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
     let script_b = dir.0.join("svc-b.mix");
-    let mut citizen_b =
-        Citizen::spawn(Path::new(env!("CARGO_BIN_EXE_mix")), &dir, &node_conf_b, &script_b);
+    let mut citizen_b = Citizen::spawn(
+        Path::new(env!("CARGO_BIN_EXE_mix")),
+        &dir,
+        &node_conf_b,
+        &script_b,
+    );
     let cb = connect(&broker).await;
     wait_service(&cb, HARD).await;
     let boot_b = parse_trace(&dir, "boot");
-    assert_eq!(boot_b.len(), 2, "the second citizen appends to the same trace");
+    assert_eq!(
+        boot_b.len(),
+        2,
+        "the second citizen appends to the same trace"
+    );
     let legacy_b = boot_b[1].fields["legacy"].as_i64().unwrap();
     let managed_b = boot_b[1].fields["managed"].as_i64().unwrap();
     assert!(call(&cb, "RELOAD", json!({})).await.is_ok());
     wait_trace(&dir, "commit|", HARD);
     wait_trace(&dir, "hookstep|{\"step\":\"start\"}", HARD);
-    let successor_b = parse_trace(&dir, "commit")[0].fields["successor"].as_i64().unwrap();
-    assert!(alive(successor_b), "hook spawned its successor before the signal");
+    let successor_b = parse_trace(&dir, "commit")[0].fields["successor"]
+        .as_i64()
+        .unwrap();
+    assert!(
+        alive(successor_b),
+        "hook spawned its successor before the signal"
+    );
     citizen_b.sigterm();
     let status_b = citizen_b.wait_exit(HARD);
     assert_eq!(status_b.code(), Some(0));
     wait_dead(successor_b, HARD);
     wait_dead(legacy_b, HARD);
     wait_dead(managed_b, HARD);
-    assert!(parse_trace(&dir, "hookstep").len() <= 2, "hook did not continue past shutdown");
+    assert!(
+        parse_trace(&dir, "hookstep").len() <= 2,
+        "hook did not continue past shutdown"
+    );
     broker.stop();
 }
 
@@ -755,7 +845,10 @@ async fn offloaded_grace_keeps_reactor_responsive_while_sweeping_a_term_ignoring
     let commits = wait_lines(&dir, "commit", 1, HARD);
     let c0 = &commits[0];
     assert_eq!(c0.fields["gen"].as_i64().unwrap(), 1);
-    assert_eq!(c0.fields["old_legacy"], false, "TERM-ignoring child was SIGKILLed after grace");
+    assert_eq!(
+        c0.fields["old_legacy"], false,
+        "TERM-ignoring child was SIGKILLed after grace"
+    );
     let successor = c0.fields["successor"].as_i64().unwrap();
     assert!(alive(successor));
     wait_dead(legacy, HARD);

@@ -21,7 +21,18 @@ fn mix(args: &[&str]) -> (String, String) {
 
 #[test]
 fn bus_statements_resolve_in_the_discovery_surface() {
-    for name in ["send", "emit", "address", "on", "reply", "subscribe", "unsubscribe", "port_exists", "bus_reconnect", "noded_register"] {
+    for name in [
+        "send",
+        "emit",
+        "address",
+        "on",
+        "reply",
+        "subscribe",
+        "unsubscribe",
+        "port_exists",
+        "bus_reconnect",
+        "noded_register",
+    ] {
         let (out, err) = mix(&["builtins", name]);
         assert!(
             !out.contains("unknown builtin") && !err.contains("unknown builtin"),
@@ -31,14 +42,23 @@ fn bus_statements_resolve_in_the_discovery_surface() {
     // send carries the rc bands, so an agent reading one line learns the
     // whole reply contract.
     let (out, _) = mix(&["builtins", "send"]);
-    assert!(out.contains("$rc"), "send's description must name the rc bands: {out}");
+    assert!(
+        out.contains("$rc"),
+        "send's description must name the rc bands: {out}"
+    );
 }
 
 #[test]
 fn config_reports_the_agent_modes() {
     let (out, _) = mix(&["config"]);
-    assert!(out.contains("arity:"), "config must report the arity mode: {out}");
-    assert!(out.contains("login shell:"), "config must report login-shell mode: {out}");
+    assert!(
+        out.contains("arity:"),
+        "config must report the arity mode: {out}"
+    );
+    assert!(
+        out.contains("login shell:"),
+        "config must report login-shell mode: {out}"
+    );
     assert!(
         out.contains("(exists)") || out.contains("(missing)"),
         "config must say whether the rc file exists: {out}"
@@ -100,7 +120,10 @@ fn agent_profile_adds_rules_and_promotes() {
     // Ordinary profile: no agent-only rules; D3015 stays a note.
     let (out, _) = mix(&["lint", path]);
     for code in ["MIX-E1503", "MIX-E1504", "MIX-E1505", "MIX-E1506"] {
-        assert!(!out.contains(code), "ordinary profile must not emit {code}: {out}");
+        assert!(
+            !out.contains(code),
+            "ordinary profile must not emit {code}: {out}"
+        );
     }
 
     // Agent profile: all four rules fire as errors, `while true` stays

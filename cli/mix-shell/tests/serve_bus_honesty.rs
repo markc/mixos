@@ -267,7 +267,9 @@ async fn served_handler_callbacks_capture_invocation_locals() {
     let dir = Dir::new("closure");
     let broker = Broker::start();
     let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
-    let script = dir.write("svc.mix", r#"-- version: 0.1.0
+    let script = dir.write(
+        "svc.mix",
+        r#"-- version: 0.1.0
 on rel.state
   reply(0, "{}")
 end
@@ -277,7 +279,8 @@ on capture
   $nested = map($event.args.required, fn($s) = map($names, fn($name) = $s .. ":" .. $name))
   reply(0, json_encode({ready: $ready, nested: $nested}))
 end
-"#);
+"#,
+    );
     let _citizen = Citizen::spawn(
         Path::new(env!("CARGO_BIN_EXE_mix")),
         &dir,
@@ -287,9 +290,15 @@ end
     let c = connect(&broker).await;
     wait_service(&c, HARD).await;
     for (name, required, ready) in [("alpha", "alpha", true), ("beta", "alpha", false)] {
-        let result = call(&c, "capture", json!({
-            "services": [{"name": name}], "required": [required]
-        })).await.expect("handler must reply without HANDLER_FAULT");
+        let result = call(
+            &c,
+            "capture",
+            json!({
+                "services": [{"name": name}], "required": [required]
+            }),
+        )
+        .await
+        .expect("handler must reply without HANDLER_FAULT");
         assert_eq!(result["ready"], ready);
         assert_eq!(result["nested"], json!([[format!("{required}:{name}")]]));
     }
@@ -340,7 +349,10 @@ async fn uncaught_interruption_text_is_a_reported_serve_error() {
     let dir = Dir::new("interruption-error");
     let broker = Broker::start();
     let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
-    let script = dir.write("svc.mix", r#"raise("PROBE_REFUSAL", json_encode({interrupted:false,error:"not a signal"}))"#);
+    let script = dir.write(
+        "svc.mix",
+        r#"raise("PROBE_REFUSAL", json_encode({interrupted:false,error:"not a signal"}))"#,
+    );
     let mut citizen = Citizen::spawn(
         Path::new(env!("CARGO_BIN_EXE_mix")),
         &dir,
@@ -349,13 +361,18 @@ async fn uncaught_interruption_text_is_a_reported_serve_error() {
     );
     let deadline = Instant::now() + HARD;
     let status = loop {
-        if let Some(status) = citizen.child.try_wait().unwrap() { break status; }
+        if let Some(status) = citizen.child.try_wait().unwrap() {
+            break status;
+        }
         assert!(Instant::now() < deadline, "serve error did not terminate");
         tokio::time::sleep(Duration::from_millis(20)).await;
     };
     assert_eq!(status.code(), Some(1));
     let stderr = dir.read("citizen.stderr");
-    assert!(stderr.contains("not a signal") && stderr.contains("script error"), "{stderr}");
+    assert!(
+        stderr.contains("not a signal") && stderr.contains("script error"),
+        "{stderr}"
+    );
 }
 
 // A SIGINT during the initial broker registration is answered at once. The
@@ -395,7 +412,12 @@ async fn sigint_during_stalled_registration_exits_promptly_with_130() {
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     };
-    assert_eq!(status.code(), Some(130), "citizen stderr: {}", dir.read("citizen.stderr"));
+    assert_eq!(
+        status.code(),
+        Some(130),
+        "citizen stderr: {}",
+        dir.read("citizen.stderr")
+    );
     drop(stall);
 }
 

@@ -105,7 +105,12 @@ pub struct Registry<S> {
 
 impl<S> Default for Registry<S> {
     fn default() -> Self {
-        Self { commands: Vec::new(), search_menu: None, choice_runs: HashMap::new(), choice_checks: HashMap::new() }
+        Self {
+            commands: Vec::new(),
+            search_menu: None,
+            choice_runs: HashMap::new(),
+            choice_checks: HashMap::new(),
+        }
     }
 }
 
@@ -134,7 +139,11 @@ impl<S> Registry<S> {
     /// On a duplicate id or shortcut: both are programming errors that would
     /// otherwise make dispatch ambiguous.
     pub fn add(&mut self, command: Command<S>) -> &mut Self {
-        assert!(self.get(command.id).is_none(), "duplicate command id {:?}", command.id);
+        assert!(
+            self.get(command.id).is_none(),
+            "duplicate command id {:?}",
+            command.id
+        );
         if let Some(shortcut) = command.shortcut {
             assert!(
                 !self.commands.iter().any(|c| c.shortcut == Some(shortcut)),
@@ -153,9 +162,30 @@ impl<S> Registry<S> {
     ///
     /// # Panics
     /// On a duplicate id, as [`Registry::add`].
-    pub fn add_choice(&mut self, place: Place, run: impl Fn(&mut S) + 'static, checked: impl Fn(&S) -> bool + 'static) -> &mut Self {
-        let Place { id, label, menu, submenu, group } = place;
-        self.add(Command { id, label, menu, submenu, group, shortcut: None, icon: None, enabled: always, run: choose });
+    pub fn add_choice(
+        &mut self,
+        place: Place,
+        run: impl Fn(&mut S) + 'static,
+        checked: impl Fn(&S) -> bool + 'static,
+    ) -> &mut Self {
+        let Place {
+            id,
+            label,
+            menu,
+            submenu,
+            group,
+        } = place;
+        self.add(Command {
+            id,
+            label,
+            menu,
+            submenu,
+            group,
+            shortcut: None,
+            icon: None,
+            enabled: always,
+            run: choose,
+        });
         self.choice_runs.insert(id, Box::new(run));
         self.choice_checks.insert(id, Box::new(checked));
         self
@@ -184,7 +214,9 @@ impl<S> Registry<S> {
     /// Run the command `id` against `state`: the one dispatch path for the
     /// UI, the command line and the Bus.
     pub fn execute(&self, id: &str, state: &mut S) -> Result<(), CommandError> {
-        let command = self.get(id).ok_or_else(|| CommandError::Unknown(id.to_owned()))?;
+        let command = self
+            .get(id)
+            .ok_or_else(|| CommandError::Unknown(id.to_owned()))?;
         if !(command.enabled)(state) {
             return Err(CommandError::Disabled(command.id));
         }
@@ -224,9 +256,19 @@ impl<S> Registry<S> {
         }
         ctx.input_mut(|i| {
             i.events.retain(|event| {
-                let egui::Event::Key { key, pressed: true, modifiers, .. } = event else { return true };
+                let egui::Event::Key {
+                    key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } = event
+                else {
+                    return true;
+                };
                 let hit = self.commands.iter().find(|c| {
-                    c.shortcut.is_some_and(|s| s.logical_key == *key && modifiers.matches_exact(s.modifiers))
+                    c.shortcut.is_some_and(|s| {
+                        s.logical_key == *key && modifiers.matches_exact(s.modifiers)
+                    })
                 });
                 match hit {
                     Some(command) if (command.enabled)(state) => {
@@ -257,9 +299,15 @@ impl<S> Registry<S> {
         let search = self.search_menu.and_then(|key| {
             let title = label_text(strings, key);
             let menu = model.iter().position(|m| m.title == title)?;
-            Some(menu::Search { menu, hint: crate::strings::own("search-menus"), empty: crate::strings::own("no-matching-commands") })
+            Some(menu::Search {
+                menu,
+                hint: crate::strings::own("search-menus"),
+                empty: crate::strings::own("no-matching-commands"),
+            })
         });
-        menu::bar_with(ui, &model, search.as_ref()).into_iter().collect()
+        menu::bar_with(ui, &model, search.as_ref())
+            .into_iter()
+            .collect()
     }
 
     /// The menu model: one menu per distinct `menu` key in first-use order,
@@ -298,18 +346,34 @@ impl<S> Registry<S> {
         };
         keys.into_iter()
             .map(|key| {
-                let in_menu: Vec<&Command<S>> = self.commands.iter().filter(|c| c.menu == Some(key)).collect();
+                let in_menu: Vec<&Command<S>> = self
+                    .commands
+                    .iter()
+                    .filter(|c| c.menu == Some(key))
+                    .collect();
                 let mut placed: Vec<&'static str> = Vec::new();
                 let mut top = in_menu.iter().filter_map(|c| match c.submenu {
                     None => Some((c.group, row(c))),
                     Some(sub) if !placed.contains(&sub) => {
                         placed.push(sub);
-                        let mut children = in_menu.iter().filter(|d| d.submenu == Some(sub)).map(|d| (d.group, row(d)));
-                        Some((c.group, Entry::Row(Row::submenu(label_text(strings, sub), grouped(&mut children)))))
+                        let mut children = in_menu
+                            .iter()
+                            .filter(|d| d.submenu == Some(sub))
+                            .map(|d| (d.group, row(d)));
+                        Some((
+                            c.group,
+                            Entry::Row(Row::submenu(
+                                label_text(strings, sub),
+                                grouped(&mut children),
+                            )),
+                        ))
                     }
                     Some(_) => None,
                 });
-                Menu { title: label_text(strings, key), entries: menu::tidy(grouped(&mut top)) }
+                Menu {
+                    title: label_text(strings, key),
+                    entries: menu::tidy(grouped(&mut top)),
+                }
             })
             .collect()
     }
@@ -320,7 +384,9 @@ impl<S> Registry<S> {
         let query = query.to_lowercase();
         self.commands
             .iter()
-            .filter(|c| (c.enabled)(state) && label_text(strings, c.label).to_lowercase().contains(&query))
+            .filter(|c| {
+                (c.enabled)(state) && label_text(strings, c.label).to_lowercase().contains(&query)
+            })
             .collect()
     }
 }
@@ -372,8 +438,14 @@ mod tests {
         r.execute("count.bump", &mut s).unwrap();
         assert_eq!(s.n, 1);
         s.locked = true;
-        assert_eq!(r.execute("count.bump", &mut s), Err(CommandError::Disabled("count.bump")));
-        assert_eq!(r.execute("nope", &mut s), Err(CommandError::Unknown("nope".into())));
+        assert_eq!(
+            r.execute("count.bump", &mut s),
+            Err(CommandError::Disabled("count.bump"))
+        );
+        assert_eq!(
+            r.execute("nope", &mut s),
+            Err(CommandError::Unknown("nope".into()))
+        );
         r.execute("count.reset", &mut s).unwrap();
         assert_eq!(s.n, 0);
     }
@@ -381,7 +453,13 @@ mod tests {
     #[test]
     fn describe_is_localised_and_reports_enablement() {
         let strings = Strings::new(FTL);
-        let d = registry().describe(&Counter { locked: true, ..Counter::default() }, &strings);
+        let d = registry().describe(
+            &Counter {
+                locked: true,
+                ..Counter::default()
+            },
+            &strings,
+        );
         assert_eq!(d[0].label, "Bump");
         assert_eq!(d[0].menu.as_deref(), Some("Edit"));
         assert!(!d[0].enabled);
@@ -393,7 +471,11 @@ mod tests {
     fn search_finds_enabled_commands_by_label() {
         let strings = Strings::new(FTL);
         let r = registry();
-        let ids: Vec<_> = r.search("re", &Counter::default(), &strings).iter().map(|c| c.id).collect();
+        let ids: Vec<_> = r
+            .search("re", &Counter::default(), &strings)
+            .iter()
+            .map(|c| c.id)
+            .collect();
         assert_eq!(ids, ["count.reset"]);
     }
 
@@ -402,22 +484,60 @@ mod tests {
         let strings = Strings::new("menu-edit = Edit\nsub = More\n");
         let mut r = registry();
         let add = |r: &mut Registry<Counter>, id, submenu, group| {
-            r.add(Command { id, label: id, menu: Some("menu-edit"), submenu, group, shortcut: None, icon: None, enabled: always, run: |_| {} });
+            r.add(Command {
+                id,
+                label: id,
+                menu: Some("menu-edit"),
+                submenu,
+                group,
+                shortcut: None,
+                icon: None,
+                enabled: always,
+                run: |_| {},
+            });
         };
         add(&mut r, "a", Some("sub"), 1);
         add(&mut r, "b", None, 1);
         add(&mut r, "c", Some("sub"), 2);
-        let model = r.model(&egui::Context::default(), &Counter { locked: true, ..Counter::default() }, &strings);
+        let model = r.model(
+            &egui::Context::default(),
+            &Counter {
+                locked: true,
+                ..Counter::default()
+            },
+            &strings,
+        );
         let edit = &model[0];
         assert_eq!(edit.title, "Edit");
-        let labels: Vec<_> = edit.entries.iter().map(|e| e.row().map(|r| r.label.as_str())).collect();
-        assert_eq!(labels, [Some("cmd-bump"), Some("cmd-reset"), None, Some("More"), Some("b")]);
+        let labels: Vec<_> = edit
+            .entries
+            .iter()
+            .map(|e| e.row().map(|r| r.label.as_str()))
+            .collect();
+        assert_eq!(
+            labels,
+            [
+                Some("cmd-bump"),
+                Some("cmd-reset"),
+                None,
+                Some("More"),
+                Some("b")
+            ]
+        );
         let bump = edit.entries[0].row().unwrap();
         assert!(!bump.enabled && bump.shortcut.as_deref().is_some_and(|s| s.contains('B')));
         let more = edit.entries[3].row().unwrap();
         assert!(more.is_submenu() && more.enabled);
-        let children: Vec<_> = more.children.iter().map(|e| e.row().map(|r| r.label.as_str())).collect();
-        assert_eq!(children, [Some("a"), None, Some("c")], "a group change inside the submenu");
+        let children: Vec<_> = more
+            .children
+            .iter()
+            .map(|e| e.row().map(|r| r.label.as_str()))
+            .collect();
+        assert_eq!(
+            children,
+            [Some("a"), None, Some("c")],
+            "a group change inside the submenu"
+        );
     }
 
     /// Ctrl+S and Ctrl+Shift+S, Ctrl+Shift+S registered last and disabled
@@ -426,18 +546,28 @@ mod tests {
         let mut r = Registry::new();
         let save = KeyboardShortcut::new(Modifiers::COMMAND, Key::S);
         let save_as = KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, Key::S);
-        r.add(Command { id: "file.save", label: "x", menu: None, submenu: None, group: 0, shortcut: Some(save), icon: None, enabled: always, run: |_| {} })
-            .add(Command {
-                id: "file.save_as",
-                label: "y",
-                menu: None,
-                submenu: None,
-                group: 0,
-                shortcut: Some(save_as),
-                icon: None,
-                enabled: |s: &Counter| !s.locked,
-                run: |_| {},
-            });
+        r.add(Command {
+            id: "file.save",
+            label: "x",
+            menu: None,
+            submenu: None,
+            group: 0,
+            shortcut: Some(save),
+            icon: None,
+            enabled: always,
+            run: |_| {},
+        })
+        .add(Command {
+            id: "file.save_as",
+            label: "y",
+            menu: None,
+            submenu: None,
+            group: 0,
+            shortcut: Some(save_as),
+            icon: None,
+            enabled: |s: &Counter| !s.locked,
+            run: |_| {},
+        });
         r
     }
 
@@ -446,9 +576,21 @@ mod tests {
         let mut out = Vec::new();
         let events = presses
             .iter()
-            .map(|&modifiers| egui::Event::Key { key: Key::S, physical_key: None, pressed: true, repeat: false, modifiers })
+            .map(|&modifiers| egui::Event::Key {
+                key: Key::S,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers,
+            })
             .collect();
-        let mut output = ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| out = r.shortcuts(ui.ctx(), s));
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                events,
+                ..Default::default()
+            },
+            |ui| out = r.shortcuts(ui.ctx(), s),
+        );
         output.textures_delta.clear();
         out
     }
@@ -458,16 +600,46 @@ mod tests {
         let r = overlapping();
         let shift = Modifiers::COMMAND | Modifiers::SHIFT;
         assert_eq!(fired(&r, &Counter::default(), &[shift]), ["file.save_as"]);
-        assert_eq!(fired(&r, &Counter::default(), &[Modifiers::COMMAND, shift, Modifiers::COMMAND]), ["file.save", "file.save_as", "file.save"]);
-        let locked = Counter { locked: true, ..Counter::default() };
-        assert!(fired(&r, &locked, &[shift]).is_empty(), "a disabled specific shortcut never falls back to the simpler one");
-        assert!(fired(&r, &Counter::default(), &[Modifiers::COMMAND | Modifiers::ALT]).is_empty());
+        assert_eq!(
+            fired(
+                &r,
+                &Counter::default(),
+                &[Modifiers::COMMAND, shift, Modifiers::COMMAND]
+            ),
+            ["file.save", "file.save_as", "file.save"]
+        );
+        let locked = Counter {
+            locked: true,
+            ..Counter::default()
+        };
+        assert!(
+            fired(&r, &locked, &[shift]).is_empty(),
+            "a disabled specific shortcut never falls back to the simpler one"
+        );
+        assert!(
+            fired(
+                &r,
+                &Counter::default(),
+                &[Modifiers::COMMAND | Modifiers::ALT]
+            )
+            .is_empty()
+        );
     }
 
     #[test]
     #[should_panic(expected = "duplicate command id")]
     fn duplicate_ids_are_refused() {
         let mut r = registry();
-        r.add(Command { id: "count.bump", label: "x", menu: None, submenu: None, group: 0, shortcut: None, icon: None, enabled: always, run: |_| {} });
+        r.add(Command {
+            id: "count.bump",
+            label: "x",
+            menu: None,
+            submenu: None,
+            group: 0,
+            shortcut: None,
+            icon: None,
+            enabled: always,
+            run: |_| {},
+        });
     }
 }

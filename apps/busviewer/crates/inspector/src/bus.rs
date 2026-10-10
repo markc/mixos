@@ -7,8 +7,8 @@ use ::bus::native_client::{
     BoundedIncomingEvent, ConnState, IncomingCommand, NodedClient, SupervisedClient,
     SupervisedError,
 };
-use futures::{FutureExt, SinkExt};
 use futures::channel::{mpsc, oneshot};
+use futures::{FutureExt, SinkExt};
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, HashMap},
@@ -97,15 +97,27 @@ pub struct Handle {
 #[cfg(any(test, feature = "testing"))]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Logged {
-    Call { service: String, verb: String, body: String },
-    Reply { id: u64, rc: u8, body: Value },
+    Call {
+        service: String,
+        verb: String,
+        body: String,
+    },
+    Reply {
+        id: u64,
+        rc: u8,
+        body: Value,
+    },
     Quit,
 }
 
 impl Handle {
     pub async fn raw(&self, service: &str, verb: &str, body: String) -> Result<Reply, CallError> {
         #[cfg(any(test, feature = "testing"))]
-        self.log.lock().unwrap().push(Logged::Call { service: service.into(), verb: verb.into(), body: body.clone() });
+        self.log.lock().unwrap().push(Logged::Call {
+            service: service.into(),
+            verb: verb.into(),
+            body: body.clone(),
+        });
         let (tx, rx) = oneshot::channel();
         self.tx
             .send(Effect::Call(service.into(), verb.into(), body, tx))
@@ -121,7 +133,11 @@ impl Handle {
     }
     pub fn reply(&self, id: u64, rc: u8, body: Value) {
         #[cfg(any(test, feature = "testing"))]
-        self.log.lock().unwrap().push(Logged::Reply { id, rc, body: body.clone() });
+        self.log.lock().unwrap().push(Logged::Reply {
+            id,
+            rc,
+            body: body.clone(),
+        });
         // Only the GUI sends replies, once per accepted command (at most 32).
         // This separate queue cannot lose a reply to outgoing call backpressure.
         // A closed receiver means the native connection has already ended.
@@ -484,7 +500,11 @@ pub async fn discover(handle: Handle) -> crate::model::Snapshot {
 pub async fn show(handle: Handle, comp: String) -> Result<Value, String> {
     use crate::model::APP_ID;
     let mapped = handle
-        .call(&comp, "comp.window.wait", json!({"match":{"app_id":APP_ID},"until":"mapped","timeout_ms":10000}))
+        .call(
+            &comp,
+            "comp.window.wait",
+            json!({"match":{"app_id":APP_ID},"until":"mapped","timeout_ms":10000}),
+        )
         .await?;
     if mapped.rc != 0 {
         return Err(mapped.body);
@@ -497,11 +517,15 @@ pub async fn show(handle: Handle, comp: String) -> Result<Value, String> {
     let window = value["windows"]
         .as_array()
         .and_then(|rows| {
-            rows.iter().find(|w| w["app_id"] == APP_ID && w["pid"].as_u64() == Some(u64::from(std::process::id())))
+            rows.iter().find(|w| {
+                w["app_id"] == APP_ID && w["pid"].as_u64() == Some(u64::from(std::process::id()))
+            })
         })
         .ok_or("window not known to compd")?;
     let mut target = json!({"id":window["id"],"generation":window["generation"]});
-    let restored = handle.call(&comp, "comp.window.restore", target.clone()).await?;
+    let restored = handle
+        .call(&comp, "comp.window.restore", target.clone())
+        .await?;
     let state: Value = serde_json::from_str(&restored.body).map_err(|e| e.to_string())?;
     if restored.rc != 0 || state["minimized"] != false {
         return Err(restored.body);
@@ -570,7 +594,10 @@ mod tests {
             id: Some(verb.into()),
             args: Value::Null,
             body: "{}".into(),
-            headers: topic.map(|t| ("topic".to_owned(), t.to_owned())).into_iter().collect(),
+            headers: topic
+                .map(|t| ("topic".to_owned(), t.to_owned()))
+                .into_iter()
+                .collect(),
         }
     }
 
@@ -578,7 +605,11 @@ mod tests {
     /// still owes each of them an answer, after the pending ones.
     #[test]
     fn a_closing_worker_owes_pending_and_buffered_requests() {
-        let pending: HashMap<u64, IncomingCommand> = [(2, request("b.second", None)), (1, request("a.first", None))].into();
+        let pending: HashMap<u64, IncomingCommand> = [
+            (2, request("b.second", None)),
+            (1, request("a.first", None)),
+        ]
+        .into();
         let mut buffered = vec![
             BoundedIncomingEvent::Command(request("c.buffered", None)),
             BoundedIncomingEvent::Overflow { dropped: 3 },

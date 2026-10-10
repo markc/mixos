@@ -248,7 +248,10 @@ impl Parser {
                         return Err(Error::violation(
                             line,
                             column,
-                            format!("missing `,` after this list item (next token: {})", self.peek()),
+                            format!(
+                                "missing `,` after this list item (next token: {})",
+                                self.peek()
+                            ),
                             "separate `[ ]` list items with commas; a trailing comma before `]` is fine",
                         ));
                     }
@@ -288,7 +291,10 @@ impl Parser {
                         return Err(Error::violation(
                             line,
                             column,
-                            format!("missing `,` after this map entry (next token: {})", self.peek()),
+                            format!(
+                                "missing `,` after this map entry (next token: {})",
+                                self.peek()
+                            ),
                             "separate `{ }` map entries with commas; a trailing comma before `}` is fine",
                         ));
                     }

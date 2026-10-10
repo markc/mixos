@@ -23,8 +23,8 @@ use crate::chrome::{self, Chrome};
 use crate::icons::Icon;
 use egui::emath::GuiRounding;
 use egui::{
-    Align, EventFilter, FontFamily, FontId, Key, Margin, Rect, Response, Sense, Stroke, StrokeKind, TextEdit, Ui,
-    UiBuilder, Widget, WidgetInfo, pos2, vec2,
+    Align, EventFilter, FontFamily, FontId, Key, Margin, Rect, Response, Sense, Stroke, StrokeKind,
+    TextEdit, Ui, UiBuilder, Widget, WidgetInfo, pos2, vec2,
 };
 use std::ops::RangeInclusive;
 
@@ -104,7 +104,10 @@ pub fn evaluate(text: &str) -> Option<f64> {
             other => other,
         })
         .collect();
-    let mut parser = Parser { tokens: &tokens, at: 0 };
+    let mut parser = Parser {
+        tokens: &tokens,
+        at: 0,
+    };
     let value = parser.sum()?;
     (parser.at == tokens.len() && value.is_finite()).then_some(value)
 }
@@ -166,7 +169,11 @@ impl Parser<'_> {
                 while self.peek().is_some_and(|c| c.is_ascii_digit() || c == '.') {
                     self.at += 1;
                 }
-                self.tokens[start..self.at].iter().collect::<String>().parse().ok()
+                self.tokens[start..self.at]
+                    .iter()
+                    .collect::<String>()
+                    .parse()
+                    .ok()
             }
         }
     }
@@ -192,7 +199,12 @@ pub struct ValueField<'a> {
 
 impl<'a> ValueField<'a> {
     pub fn new(value: &'a mut f64, range: RangeInclusive<f64>) -> Self {
-        Self { value, range, unit: None, width: VALUE_WIDTH }
+        Self {
+            value,
+            range,
+            unit: None,
+            width: VALUE_WIDTH,
+        }
     }
 
     /// A unit suffix such as "%" or "px".
@@ -209,7 +221,12 @@ impl<'a> ValueField<'a> {
 
 impl Widget for ValueField<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
-        let Self { value, range, unit, width } = self;
+        let Self {
+            value,
+            range,
+            unit,
+            width,
+        } = self;
         let chrome = Chrome::of(ui.ctx());
         let p = chrome.palette;
         let fine = is_fine(&range);
@@ -224,16 +241,30 @@ impl Widget for ValueField<'_> {
 
         // Up and Down step while editing.
         if editing {
-            let lock = EventFilter { vertical_arrows: true, ..EventFilter::default() };
+            let lock = EventFilter {
+                vertical_arrows: true,
+                ..EventFilter::default()
+            };
             ui.memory_mut(|m| m.set_focus_lock_filter(id, lock));
             let steps = ui.input_mut(|i| {
                 let mut steps = Vec::new();
                 i.events.retain(|event| {
-                    let egui::Event::Key { key: key @ (Key::ArrowUp | Key::ArrowDown), pressed: true, modifiers, .. } = event
+                    let egui::Event::Key {
+                        key: key @ (Key::ArrowUp | Key::ArrowDown),
+                        pressed: true,
+                        modifiers,
+                        ..
+                    } = event
                     else {
                         return true;
                     };
-                    let size = if modifiers.shift { 10.0 } else if modifiers.command { 0.1 } else { 1.0 };
+                    let size = if modifiers.shift {
+                        10.0
+                    } else if modifiers.command {
+                        0.1
+                    } else {
+                        1.0
+                    };
                     steps.push((size, if *key == Key::ArrowUp { 1.0 } else { -1.0 }));
                     false
                 });
@@ -247,10 +278,15 @@ impl Widget for ValueField<'_> {
 
         let number_font = FontId::new(NUMBER_SIZE, FontFamily::Monospace);
         let unit_font = FontId::new(UNIT_SIZE, FontFamily::Monospace);
-        let unit_galley = unit.map(|u| ui.painter().layout_no_wrap(u.to_owned(), unit_font, p.text_faint));
+        let unit_galley = unit.map(|u| {
+            ui.painter()
+                .layout_no_wrap(u.to_owned(), unit_font, p.text_faint)
+        });
         // The 16 pt reserve holds a one-character unit; a longer one ("px")
         // widens it to keep UNIT_GAP before the unit (undetermined, §5.4).
-        let reserve = unit_galley.as_ref().map_or(0.0, |g| UNIT_RESERVE.max(UNIT_INSET + g.size().x + UNIT_GAP));
+        let reserve = unit_galley.as_ref().map_or(0.0, |g| {
+            UNIT_RESERVE.max(UNIT_INSET + g.size().x + UNIT_GAP)
+        });
         let inner = Rect::from_min_max(rect.min, pos2(rect.right() - reserve, rect.bottom()));
         let painter = ui.painter_at(rect.expand(1.0));
         painter.rect_filled(rect, chrome.metrics.radius_sm, p.field);
@@ -258,7 +294,12 @@ impl Widget for ValueField<'_> {
         // one child cell), so opening the editor never renumbers the widgets
         // drawn after the field.
         let layout = egui::Layout::centered_and_justified(egui::Direction::TopDown);
-        let mut cell = ui.new_child(UiBuilder::new().id(id.with("cell")).max_rect(inner).layout(layout));
+        let mut cell = ui.new_child(
+            UiBuilder::new()
+                .id(id.with("cell"))
+                .max_rect(inner)
+                .layout(layout),
+        );
         let escaped = ui.input(|i| i.key_pressed(Key::Escape));
         let mut response;
         if editing {
@@ -300,30 +341,49 @@ impl Widget for ValueField<'_> {
                 edit.drag_from = *value;
             }
             if response.dragged() {
-                let travel = ui.input(|i| i.pointer.press_origin().zip(i.pointer.interact_pos()).map(|(a, b)| b.x - a.x));
+                let travel = ui.input(|i| {
+                    i.pointer
+                        .press_origin()
+                        .zip(i.pointer.interact_pos())
+                        .map(|(a, b)| b.x - a.x)
+                });
                 let rate = if fine { FINE_SCRUB } else { SCRUB };
-                *value = clamp(((edit.drag_from + f64::from(travel.unwrap_or(0.0)) * rate) / rate).round() * rate);
+                *value = clamp(
+                    ((edit.drag_from + f64::from(travel.unwrap_or(0.0)) * rate) / rate).round()
+                        * rate,
+                );
             }
             if response.clicked() {
                 ui.memory_mut(|m| m.request_focus(id));
             }
             let galley = painter.layout_no_wrap(format(*value, fine), number_font, p.text);
             let x = inner.right() - f32::from(INSET.right) - galley.size().x;
-            let at = pos2(x, rect.center().y - galley.size().y / 2.0).round_to_pixels(ui.pixels_per_point());
+            let at = pos2(x, rect.center().y - galley.size().y / 2.0)
+                .round_to_pixels(ui.pixels_per_point());
             painter.galley(at, galley, p.text);
             response = response.on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
         }
         if let Some(galley) = unit_galley {
             let x = rect.right() - UNIT_INSET - galley.size().x;
-            let at = pos2(x, rect.center().y - galley.size().y / 2.0).round_to_pixels(ui.pixels_per_point());
+            let at = pos2(x, rect.center().y - galley.size().y / 2.0)
+                .round_to_pixels(ui.pixels_per_point());
             painter.galley(at, galley, p.text_faint);
         }
         if chrome.style.bevels {
             chrome::bevel(&painter, rect, false, &p);
         } else {
             // An open editor shows focus as a text field does (§3.15).
-            let border = if editing { p.accent_text } else { p.field_border };
-            painter.rect_stroke(rect, chrome.metrics.radius_sm, Stroke::new(1.0, border), StrokeKind::Inside);
+            let border = if editing {
+                p.accent_text
+            } else {
+                p.field_border
+            };
+            painter.rect_stroke(
+                rect,
+                chrome.metrics.radius_sm,
+                Stroke::new(1.0, border),
+                StrokeKind::Inside,
+            );
         }
         ui.data_mut(|d| d.insert_temp(id, edit));
         if *value != before {
@@ -338,12 +398,23 @@ impl Widget for ValueField<'_> {
 
 /// A single-line text field (§3.15), `width` wide and one control high.
 pub fn text(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> Response {
-    ui.add(TextEdit::singleline(text).hint_text(hint).desired_width(width).min_size(vec2(0.0, HEIGHT)).vertical_align(Align::Center))
+    ui.add(
+        TextEdit::singleline(text)
+            .hint_text(hint)
+            .desired_width(width)
+            .min_size(vec2(0.0, HEIGHT))
+            .vertical_align(Align::Center),
+    )
 }
 
 /// A search field: a text field led by the search icon in `text_faint`.
 pub fn search(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> Response {
-    let margin = Margin { left: SEARCH_LEAD, right: INSET.right, top: INSET.top, bottom: INSET.bottom };
+    let margin = Margin {
+        left: SEARCH_LEAD,
+        right: INSET.right,
+        top: INSET.top,
+        bottom: INSET.bottom,
+    };
     let edit = TextEdit::singleline(text)
         .hint_text(hint)
         // egui's desired width is the whole field, margins included.
@@ -353,7 +424,10 @@ pub fn search(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> Respons
         .vertical_align(Align::Center);
     let response = ui.add(edit);
     let tint = Chrome::of(ui.ctx()).palette.text_faint;
-    let centre = pos2(response.rect.left() + f32::from(INSET.left) + SEARCH_ICON / 2.0, response.rect.center().y);
+    let centre = pos2(
+        response.rect.left() + f32::from(INSET.left) + SEARCH_ICON / 2.0,
+        response.rect.center().y,
+    );
     paint_icon(ui, Icon::Search, centre, SEARCH_ICON, tint);
     response
 }

@@ -45,8 +45,7 @@ async fn forward_call_on_a_rare_branch() {
 #[tokio::test]
 async fn forward_call_through_another_hoisted_fn() {
     // `a` calls `b`; both sit below the call. Both are hoisted.
-    let out =
-        output("print(a())\nfn a()\n  return b() + 1\nend\nfn b()\n  return 10\nend\n").await;
+    let out = output("print(a())\nfn a()\n  return b() + 1\nend\nfn b()\n  return 10\nend\n").await;
     assert_eq!(out, "11\n");
 }
 
@@ -64,7 +63,8 @@ async fn mutual_recursion_with_call_between_the_defs() {
 async fn fn_inside_an_if_branch_is_not_hoisted() {
     // Hoisting a conditionally-defined fn would make the definition
     // unconditional — meaning change. It still binds when the branch runs.
-    let err = error_of("print(h(1))\nif 1 == 1 then\n  fn h($x)\n    return $x\n  end\nend\n").await;
+    let err =
+        error_of("print(h(1))\nif 1 == 1 then\n  fn h($x)\n    return $x\n  end\nend\n").await;
     assert!(
         err.contains("undefined function"),
         "expected undefined function, got: {err}"
@@ -105,10 +105,7 @@ async fn duplicate_defs_between_defs_still_sees_the_earlier_one() {
 #[tokio::test]
 async fn genuinely_undefined_function_still_errors() {
     let err = error_of("print(nosuchfn())\n").await;
-    assert!(
-        err.contains("undefined function 'nosuchfn'"),
-        "got: {err}"
-    );
+    assert!(err.contains("undefined function 'nosuchfn'"), "got: {err}");
 }
 
 #[tokio::test]

@@ -24,7 +24,8 @@ fn assert_violation(err: &Error, construct: &str) {
 }
 
 fn map(v: &Value) -> &IndexMap<String, Value> {
-    v.as_map().unwrap_or_else(|| panic!("expected a map, got {v:?}"))
+    v.as_map()
+        .unwrap_or_else(|| panic!("expected a map, got {v:?}"))
 }
 
 // --- Accept -----------------------------------------------------------------
@@ -46,7 +47,11 @@ fn accepts_explicit_brace_map_at_top_level() {
 fn accepts_top_level_list() {
     assert_eq!(
         p("[1, 2, 3]"),
-        Value::List(vec![Value::Number(1.0), Value::Number(2.0), Value::Number(3.0)])
+        Value::List(vec![
+            Value::Number(1.0),
+            Value::Number(2.0),
+            Value::Number(3.0)
+        ])
     );
 }
 
@@ -85,7 +90,10 @@ fn accepts_nested_lists_and_maps() {
     let v = p("outer: { inner: [1, [2, 3], { deep: \"value\" }] }\nflat: [{ a: 1 }, { b: 2 }]\n");
     let m = map(&v);
     assert!(matches!(m.get("outer"), Some(Value::Map(_))));
-    assert_eq!(m.get("flat").and_then(Value::as_list).map(<[Value]>::len), Some(2));
+    assert_eq!(
+        m.get("flat").and_then(Value::as_list).map(<[Value]>::len),
+        Some(2)
+    );
 }
 
 #[test]
@@ -118,7 +126,8 @@ fn accepts_value_on_the_line_after_a_top_level_key() {
 
 #[test]
 fn accepts_comments_everywhere() {
-    let v = p("# head\na: 1 # trailing hash\nb: [ # inside\n  2, -- dash comment\n  3\n]\n-- tail\n");
+    let v =
+        p("# head\na: 1 # trailing hash\nb: [ # inside\n  2, -- dash comment\n  3\n]\n-- tail\n");
     assert_eq!(map(&v).get("a"), Some(&Value::Number(1.0)));
     assert_eq!(
         map(&v).get("b"),
@@ -154,10 +163,24 @@ fn accepts_full_spec_fixture() {
     assert_eq!(m.get("draft"), Some(&Value::Bool(false)));
     assert_eq!(m.get("deadline"), Some(&Value::Nil));
     assert_eq!(m.get("mode"), Some(&Value::String("staging".into())));
-    assert_eq!(m.get("allow_list").and_then(Value::as_list).map(<[Value]>::len), Some(1));
+    assert_eq!(
+        m.get("allow_list")
+            .and_then(Value::as_list)
+            .map(<[Value]>::len),
+        Some(1)
+    );
     let review = m.get("review").and_then(Value::as_map).expect("review map");
-    assert_eq!(review.get("reviewer"), Some(&Value::String("second-pair".into())));
-    assert_eq!(review.get("rounds").and_then(Value::as_list).map(<[Value]>::len), Some(2));
+    assert_eq!(
+        review.get("reviewer"),
+        Some(&Value::String("second-pair".into()))
+    );
+    assert_eq!(
+        review
+            .get("rounds")
+            .and_then(Value::as_list)
+            .map(<[Value]>::len),
+        Some(2)
+    );
 }
 
 // --- Refuse -----------------------------------------------------------------
@@ -173,16 +196,28 @@ fn rejects_string_interpolation() {
 fn rejects_home_expansion_but_keeps_escaped_and_mid_string_tildes() {
     assert_violation(&rejects("dir: \"~/x\"\n"), "`~`");
     assert_violation(&rejects("dir: \"~\"\n"), "`~`");
-    assert_eq!(map(&p("t: \"\\~/x\"\n")).get("t"), Some(&Value::String("~/x".into())));
-    assert_eq!(map(&p("t: \"~x\"\n")).get("t"), Some(&Value::String("~x".into())));
-    assert_eq!(map(&p("t: \"a~/b\"\n")).get("t"), Some(&Value::String("a~/b".into())));
+    assert_eq!(
+        map(&p("t: \"\\~/x\"\n")).get("t"),
+        Some(&Value::String("~/x".into()))
+    );
+    assert_eq!(
+        map(&p("t: \"~x\"\n")).get("t"),
+        Some(&Value::String("~x".into()))
+    );
+    assert_eq!(
+        map(&p("t: \"a~/b\"\n")).get("t"),
+        Some(&Value::String("a~/b".into()))
+    );
 }
 
 #[test]
 fn rejects_variable_reference() {
     let e = rejects("x: $foo\n");
     assert_violation(&e, "variable reference");
-    assert_eq!(e.to_string(), "Strict-data violation at line 1: variable reference `$foo` not allowed in data files. data files have no variable scope; inline the value");
+    assert_eq!(
+        e.to_string(),
+        "Strict-data violation at line 1: variable reference `$foo` not allowed in data files. data files have no variable scope; inline the value"
+    );
 }
 
 #[test]
@@ -255,7 +290,11 @@ fn rejects_semicolons_everywhere() {
 fn rejects_braced_map_entries_without_comma() {
     let err = rejects("top: {\n  a: 1\n  b: 2\n}\n");
     assert_violation(&err, "missing `,` after this map entry");
-    assert_eq!(err.line(), Some(2), "anchored at the entry missing its comma");
+    assert_eq!(
+        err.line(),
+        Some(2),
+        "anchored at the entry missing its comma"
+    );
     assert_violation(&rejects("xs: [1\n2]\n"), "missing `,` after this list item");
 }
 
@@ -319,7 +358,10 @@ fn unicode_escapes_decode() {
 #[test]
 fn lone_surrogates_are_refused() {
     assert!(parse(r#"{t: "\ud83d"}"#).is_err(), "high surrogate alone");
-    assert!(parse(r#"{t: "\ud83dx"}"#).is_err(), "high surrogate + non-escape");
+    assert!(
+        parse(r#"{t: "\ud83dx"}"#).is_err(),
+        "high surrogate + non-escape"
+    );
     assert!(parse(r#"{t: "\ude00"}"#).is_err(), "lone low surrogate");
 }
 
@@ -337,7 +379,10 @@ fn round_trips_through_encode() {
     inner.insert("tls".to_string(), Value::Bool(true));
     inner.insert("note".to_string(), Value::String("hello world".to_string()));
     inner.insert("empty".to_string(), Value::String(String::new()));
-    inner.insert("keyword_lookalike".to_string(), Value::String("true".to_string()));
+    inner.insert(
+        "keyword_lookalike".to_string(),
+        Value::String("true".to_string()),
+    );
     inner.insert(
         "with_specials".to_string(),
         Value::String("quote\"backslash\\newline\nand-$dollar".to_string()),
@@ -354,13 +399,20 @@ fn round_trips_through_encode() {
     outer.insert("with-dash".to_string(), Value::Number(1.0));
     let original = Value::Map(outer);
 
-    for formatted in [original.encode().unwrap(), original.encode_pretty().unwrap()] {
+    for formatted in [
+        original.encode().unwrap(),
+        original.encode_pretty().unwrap(),
+    ] {
         let reparsed = parse(&formatted)
             .unwrap_or_else(|e| panic!("re-parse failed: {e}\nformatted: {formatted}"));
         assert_eq!(original, reparsed);
     }
     let compact = original.encode().unwrap();
-    assert_eq!(parse(&compact).unwrap().encode().unwrap(), compact, "encode is idempotent");
+    assert_eq!(
+        parse(&compact).unwrap().encode().unwrap(),
+        compact,
+        "encode is idempotent"
+    );
     let pretty = original.encode_pretty().unwrap();
     assert_eq!(parse(&pretty).unwrap().encode_pretty().unwrap(), pretty);
 }
@@ -379,13 +431,22 @@ fn encode_escapes_leading_tilde_only_where_it_would_expand() {
         let v = Value::String(s.to_string());
         let emitted = v.encode().unwrap();
         assert!(emitted.starts_with("\"\\~"), "{s:?} -> {emitted}");
-        assert_eq!(parse(&format!("[{emitted}]")).unwrap(), Value::List(vec![v]));
+        assert_eq!(
+            parse(&format!("[{emitted}]")).unwrap(),
+            Value::List(vec![v])
+        );
     }
     for s in ["~example.net", "~bus", "~.", "a~b", "a~/b"] {
         let v = Value::String(s.to_string());
         let emitted = v.encode().unwrap();
-        assert!(!emitted.starts_with("\"\\~"), "{s:?} escaped needlessly: {emitted}");
-        assert_eq!(parse(&format!("[{emitted}]")).unwrap(), Value::List(vec![v]));
+        assert!(
+            !emitted.starts_with("\"\\~"),
+            "{s:?} escaped needlessly: {emitted}"
+        );
+        assert_eq!(
+            parse(&format!("[{emitted}]")).unwrap(),
+            Value::List(vec![v])
+        );
     }
 }
 
@@ -415,8 +476,12 @@ fn round_trips_numbers_bit_exactly() {
     for &n in cases {
         let s = Value::Number(n).encode().unwrap();
         let parsed = parse(&format!("[{s}]")).unwrap();
-        let Value::List(items) = &parsed else { panic!() };
-        let Value::Number(back) = items[0] else { panic!("{:?}", items[0]) };
+        let Value::List(items) = &parsed else {
+            panic!()
+        };
+        let Value::Number(back) = items[0] else {
+            panic!("{:?}", items[0])
+        };
         assert_eq!(n.to_bits(), back.to_bits(), "{n} -> {s:?} -> {back}");
     }
 }
@@ -432,14 +497,21 @@ fn encode_refuses_non_finite_numbers_anywhere() {
     m.insert("ok".to_string(), Value::Number(1.0));
     m.insert("bad".to_string(), Value::Number(f64::NAN));
     assert_eq!(
-        Value::List(vec![Value::Map(m)]).encode().unwrap_err().kind(),
+        Value::List(vec![Value::Map(m)])
+            .encode()
+            .unwrap_err()
+            .kind(),
         ErrorKind::Encode
     );
 }
 
 #[test]
 fn parse_file_reports_a_missing_file() {
-    let err = strict::parse_file(std::path::Path::new("/nonexistent/example.conf.mix")).unwrap_err();
+    let err =
+        strict::parse_file(std::path::Path::new("/nonexistent/example.conf.mix")).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::Io);
-    assert!(err.to_string().contains("/nonexistent/example.conf.mix"), "{err}");
+    assert!(
+        err.to_string().contains("/nonexistent/example.conf.mix"),
+        "{err}"
+    );
 }

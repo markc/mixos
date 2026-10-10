@@ -426,7 +426,10 @@ const BASH_KEYWORDS: &[(&str, &str)] = &[
     ("do", "drop it — blocks close with `end`"),
     ("done", "drop it — blocks close with `end`"),
     ("if", "write `if EXPR then … end`"),
-    ("then", "keep it — the condition terminator IS `then` in Mix"),
+    (
+        "then",
+        "keep it — the condition terminator IS `then` in Mix",
+    ),
     ("elif", "write `elif EXPR then`"),
     ("fi", "drop it — blocks close with `end`"),
     ("case", "write `select EXPR when … otherwise … end`"),
@@ -470,11 +473,7 @@ pub fn has_unquoted_control_op(line: &str) -> bool {
             '\'' if !in_double => in_single = !in_single,
             '"' if !in_single => in_double = !in_double,
             ';' if !in_single && !in_double => return true,
-            '&' | '|'
-                if !in_single
-                    && !in_double
-                    && bytes.get(i + 1) == Some(&bytes[i]) =>
-            {
+            '&' | '|' if !in_single && !in_double && bytes.get(i + 1) == Some(&bytes[i]) => {
                 return true;
             }
             _ => {}
@@ -485,7 +484,8 @@ pub fn has_unquoted_control_op(line: &str) -> bool {
 }
 
 /// Byte offset of a bare (quote-aware: NOT inside single quotes) `$?`.
-fn bare_dollar_question(piece: &str) -> Option<usize> {    let mut in_single = false;
+fn bare_dollar_question(piece: &str) -> Option<usize> {
+    let mut in_single = false;
     let mut in_double = false;
     let mut escaped = false;
     for (i, ch) in piece.char_indices() {
@@ -497,9 +497,7 @@ fn bare_dollar_question(piece: &str) -> Option<usize> {    let mut in_single = f
             '\\' => escaped = true,
             '\'' if !in_double => in_single = !in_single,
             '"' if !in_single => in_double = !in_double,
-            '$' if !in_single
-                && piece[i + 1..].starts_with('?') =>
-            {
+            '$' if !in_single && piece[i + 1..].starts_with('?') => {
                 return Some(i);
             }
             _ => {}

@@ -30,8 +30,8 @@ use crate::strings::Strings;
 use egui::emath::GuiRounding;
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
-    Align, CursorIcon, Frame, Layout, Pos2, Rect, ResizeDirection, Sense, Stroke, StrokeKind, Ui, UiBuilder,
-    ViewportBuilder, ViewportCommand, WidgetInfo, WidgetType, pos2, vec2,
+    Align, CursorIcon, Frame, Layout, Pos2, Rect, ResizeDirection, Sense, Stroke, StrokeKind, Ui,
+    UiBuilder, ViewportBuilder, ViewportCommand, WidgetInfo, WidgetType, pos2, vec2,
 };
 
 /// One caption button's width (§3.2).
@@ -51,7 +51,10 @@ fn label(key: &str) -> String {
 
 /// An undecorated window for a MixOS app: the title bar is drawn by [`show`].
 pub fn viewport(app_id: &str, title: &str) -> ViewportBuilder {
-    ViewportBuilder::default().with_app_id(app_id).with_title(title).with_decorations(false)
+    ViewportBuilder::default()
+        .with_app_id(app_id)
+        .with_title(title)
+        .with_decorations(false)
 }
 
 fn maximized(ui: &Ui) -> bool {
@@ -79,15 +82,26 @@ enum Caption {
 pub enum Control<'a> {
     /// A dropdown, [`COMBO_WIDTH`] wide, shrinking to its minimum before
     /// anything else gives way (a workspace switcher).
-    Combo { id: &'a str, selected: &'a mut usize, options: &'a [String] },
+    Combo {
+        id: &'a str,
+        selected: &'a mut usize,
+        options: &'a [String],
+    },
     /// A 28 pt icon button; `selected` shows it toggled on.
-    Icon { command: &'static str, icon: Icon, selected: bool },
+    Icon {
+        command: &'static str,
+        icon: Icon,
+        selected: bool,
+    },
     /// A frameless text link with a 14 pt icon.
     Link { command: &'static str, icon: Icon },
 }
 
 /// The right-hand group's combo width range (§3.1).
-pub const COMBO_WIDTH: egui::Rangef = egui::Rangef { min: 90.0, max: 130.0 };
+pub const COMBO_WIDTH: egui::Rangef = egui::Rangef {
+    min: 90.0,
+    max: 130.0,
+};
 
 /// Spacing within the right-hand group (§3.1): an icon's slot is its 28 pt
 /// plus this, the specified 34.
@@ -119,9 +133,12 @@ pub fn fit(free: f32, slots: &[Slot]) -> (f32, usize) {
     let need = |n: usize, combo: f32| {
         let width: f32 = slots[..n]
             .iter()
-            .map(|s| CONTROL_SPACING + match s {
-                Slot::Combo => combo,
-                Slot::Fixed(w) | Slot::Link(w) => *w,
+            .map(|s| {
+                CONTROL_SPACING
+                    + match s {
+                        Slot::Combo => combo,
+                        Slot::Fixed(w) | Slot::Link(w) => *w,
+                    }
             })
             .sum();
         let link = slots[..n].iter().any(|s| matches!(s, Slot::Link(_)));
@@ -152,7 +169,10 @@ pub fn show<S>(
 
 /// [`show`] with a right-hand group of `controls` before the caption
 /// buttons. The ids of commands run from the controls join the menus'.
-#[expect(clippy::too_many_arguments, reason = "the title bar's inputs, as `show` takes them")]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the title bar's inputs, as `show` takes them"
+)]
 pub fn show_with<S>(
     ui: &mut Ui,
     title: &str,
@@ -166,7 +186,9 @@ pub fn show_with<S>(
     let chrome = Chrome::of(ui.ctx());
     let (p, m) = (chrome.palette, chrome.metrics);
     let mut fired = Vec::new();
-    let panel = egui::Panel::top("toolkit-titlebar").exact_size(m.title_bar_height).frame(Frame::new().fill(p.chrome));
+    let panel = egui::Panel::top("toolkit-titlebar")
+        .exact_size(m.title_bar_height)
+        .frame(Frame::new().fill(p.chrome));
     panel.show(ui, |ui| {
         let bar = ui.max_rect();
         let gap_id = ui.id().with("titlebar-gap");
@@ -176,35 +198,68 @@ pub fn show_with<S>(
         let drag = ui.interact(gap, ui.id().with("titlebar-drag"), Sense::click_and_drag());
 
         if let Some(icon) = icon {
-            let at = pos2(bar.left() + m.title_bar_margin, bar.center().y - m.mark / 2.0);
-            let mark = Rect::from_min_size(at, vec2(m.mark, m.mark)).round_to_pixels(ui.pixels_per_point());
+            let at = pos2(
+                bar.left() + m.title_bar_margin,
+                bar.center().y - m.mark / 2.0,
+            );
+            let mark = Rect::from_min_size(at, vec2(m.mark, m.mark))
+                .round_to_pixels(ui.pixels_per_point());
             icons::image(icon, stroke, m.mark, p.icon).paint_at(ui, mark);
         }
 
         let captions = bar.right() - 3.0 * m.caption_width;
         let menus_left = bar.left() + m.title_bar_margin + m.mark + m.mark_gap;
         let room = Rect::from_min_max(pos2(menus_left, bar.top()), pos2(captions, bar.bottom()));
-        let mut row = ui.new_child(UiBuilder::new().max_rect(room).layout(Layout::left_to_right(Align::Center)));
+        let mut row = ui.new_child(
+            UiBuilder::new()
+                .max_rect(room)
+                .layout(Layout::left_to_right(Align::Center)),
+        );
         row.spacing_mut().item_spacing.x = 0.0;
         fired = registry.menus(&mut row, state, strings);
         let menus_right = row.min_rect().right().max(menus_left);
 
         let group_right = captions - m.caption_gap;
-        let group_left = right_group(ui, controls, registry, state, strings, menus_right + m.title_gap, group_right, &mut fired);
+        let group_left = right_group(
+            ui,
+            controls,
+            registry,
+            state,
+            strings,
+            menus_right + m.title_gap,
+            group_right,
+            &mut fired,
+        );
 
-        for (index, caption) in [Caption::Minimize, Caption::Maximize, Caption::Close].into_iter().enumerate() {
+        for (index, caption) in [Caption::Minimize, Caption::Maximize, Caption::Close]
+            .into_iter()
+            .enumerate()
+        {
             let left = captions + index as f32 * m.caption_width;
-            let rect = Rect::from_min_size(pos2(left, bar.top()), vec2(m.caption_width, bar.height()));
+            let rect =
+                Rect::from_min_size(pos2(left, bar.top()), vec2(m.caption_width, bar.height()));
             caption_button(ui, rect, caption, &chrome);
         }
 
-        let title_right = if controls.is_empty() { captions } else { group_left };
-        window_title(ui, &chrome, title, bar, menus_right + m.title_gap, title_right - m.title_gap);
+        let title_right = if controls.is_empty() {
+            captions
+        } else {
+            group_left
+        };
+        window_title(
+            ui,
+            &chrome,
+            title,
+            bar,
+            menus_right + m.title_gap,
+            title_right - m.title_gap,
+        );
 
         let free = Rect::from_min_max(pos2(menus_right, bar.top()), pos2(group_left, bar.bottom()));
         ui.data_mut(|d| d.insert_temp(gap_id, free));
         if drag.double_clicked() {
-            ui.ctx().send_viewport_cmd(ViewportCommand::Maximized(!maximized(ui)));
+            ui.ctx()
+                .send_viewport_cmd(ViewportCommand::Maximized(!maximized(ui)));
         } else if drag.drag_started_by(egui::PointerButton::Primary) {
             ui.ctx().send_viewport_cmd(ViewportCommand::StartDrag);
         }
@@ -215,7 +270,10 @@ pub fn show_with<S>(
 /// Lay out and draw the right-hand group, right to left from `right`, in
 /// the room down to `left`; push the commands its controls ran. Returns
 /// the group's left edge (`right` when nothing shows).
-#[expect(clippy::too_many_arguments, reason = "the title bar's inputs, called from one place")]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the title bar's inputs, called from one place"
+)]
 fn right_group<S>(
     ui: &mut Ui,
     controls: &mut [Control<'_>],
@@ -235,7 +293,10 @@ fn right_group<S>(
             Control::Combo { .. } => Slot::Combo,
             Control::Icon { .. } => Slot::Fixed(ICON_BUTTON),
             Control::Link { command, .. } => {
-                let label = registry.get(command).map(|c| crate::command::label_text(strings, c.label)).unwrap_or_default();
+                let label = registry
+                    .get(command)
+                    .map(|c| crate::command::label_text(strings, c.label))
+                    .unwrap_or_default();
                 Slot::Link(Link::width(ui, &label))
             }
         })
@@ -248,18 +309,33 @@ fn right_group<S>(
             Control::Combo { .. } => combo_width,
             Control::Icon { .. } => ICON_BUTTON,
             Control::Link { command, .. } => {
-                let label = registry.get(command).map(|c| crate::command::label_text(strings, c.label)).unwrap_or_default();
+                let label = registry
+                    .get(command)
+                    .map(|c| crate::command::label_text(strings, c.label))
+                    .unwrap_or_default();
                 Link::width(ui, &label)
             }
         };
         let rect = Rect::from_min_max(pos2(x - width, bar.top()), pos2(x, bar.bottom()));
-        let mut cell = ui.new_child(UiBuilder::new().max_rect(rect).layout(Layout::left_to_right(Align::Center)));
+        let mut cell = ui.new_child(
+            UiBuilder::new()
+                .max_rect(rect)
+                .layout(Layout::left_to_right(Align::Center)),
+        );
         let command = match control {
-            Control::Combo { id, selected, options } => {
+            Control::Combo {
+                id,
+                selected,
+                options,
+            } => {
                 crate::combo::show(&mut cell, *id, selected, options, Some(width));
                 None
             }
-            Control::Icon { command, icon, selected } => registry.get(command).map(|c| {
+            Control::Icon {
+                command,
+                icon,
+                selected,
+            } => registry.get(command).map(|c| {
                 let tooltip = crate::tooltip::for_command(ui.ctx(), c, strings);
                 let button = IconButton::new(*icon).selected(*selected).tooltip(tooltip);
                 (c, cell.add_enabled((c.enabled)(state), button).clicked())
@@ -287,7 +363,8 @@ fn window_title(ui: &Ui, chrome: &Chrome, title: &str, bar: Rect, left: f32, rig
     }
     let font = crate::fonts::bound(ui.ctx(), crate::fonts::medium(chrome.metrics.title_size));
     let painter = ui.painter();
-    let mut galley = painter.layout_no_wrap(title.to_owned(), font.clone(), chrome.palette.text_dim);
+    let mut galley =
+        painter.layout_no_wrap(title.to_owned(), font.clone(), chrome.palette.text_dim);
     let width = galley.size().x;
     let x = if width <= room {
         // Centred on the bar inside its inner margin (measured: 645 on a
@@ -302,7 +379,8 @@ fn window_title(ui: &Ui, chrome: &Chrome, title: &str, bar: Rect, left: f32, rig
     } else {
         return;
     };
-    let at = Pos2::new(x, bar.center().y - galley.size().y / 2.0).round_to_pixels(ui.pixels_per_point());
+    let at =
+        Pos2::new(x, bar.center().y - galley.size().y / 2.0).round_to_pixels(ui.pixels_per_point());
     painter.galley(at, galley, chrome.palette.text_dim);
 }
 
@@ -322,7 +400,10 @@ fn caption_button(ui: &mut Ui, rect: Rect, caption: Caption, chrome: &Chrome) {
     let hovered = response.hovered() || pressed;
     // Flat fills, no animation (§3.2, §4).
     let (fill, glyph) = match caption {
-        Caption::Close if pressed => (Some(p.caption_close.gamma_multiply(CLOSE_PRESSED_ALPHA)), p.caption_close_text),
+        Caption::Close if pressed => (
+            Some(p.caption_close.gamma_multiply(CLOSE_PRESSED_ALPHA)),
+            p.caption_close_text,
+        ),
         Caption::Close if hovered => (Some(p.caption_close), p.caption_close_text),
         _ if pressed => (Some(p.pressed), p.icon),
         _ if hovered => (Some(p.hover), p.icon),
@@ -343,7 +424,10 @@ fn caption_button(ui: &mut Ui, rect: Rect, caption: Caption, chrome: &Chrome) {
             // The front square (the box less 2 pt at the top and right) and
             // the visible corner of the square behind it.
             let inset = 2.0;
-            let front = Rect::from_min_max(pos2(b.left(), b.top() + inset), pos2(b.right() - inset, b.bottom()));
+            let front = Rect::from_min_max(
+                pos2(b.left(), b.top() + inset),
+                pos2(b.right() - inset, b.bottom()),
+            );
             painter.rect_stroke(front, 0.0, line, StrokeKind::Middle);
             let back = [
                 pos2(front.left() + inset, front.top()),
@@ -386,19 +470,74 @@ pub fn edges(ui: &mut Ui) {
     let r = ui.ctx().content_rect();
     use ResizeDirection as D;
     let zones = [
-        (D::NorthWest, Rect::from_min_size(r.left_top(), vec2(corner, corner)), CursorIcon::ResizeNorthWest),
-        (D::NorthEast, Rect::from_min_size(r.right_top() - vec2(corner, 0.0), vec2(corner, corner)), CursorIcon::ResizeNorthEast),
-        (D::SouthWest, Rect::from_min_size(r.left_bottom() - vec2(0.0, corner), vec2(corner, corner)), CursorIcon::ResizeSouthWest),
-        (D::SouthEast, Rect::from_min_size(r.right_bottom() - vec2(corner, corner), vec2(corner, corner)), CursorIcon::ResizeSouthEast),
-        (D::North, Rect::from_min_max(r.left_top() + vec2(corner, 0.0), r.right_top() + vec2(-corner, edge)), CursorIcon::ResizeNorth),
-        (D::South, Rect::from_min_max(r.left_bottom() + vec2(corner, -edge), r.right_bottom() - vec2(corner, 0.0)), CursorIcon::ResizeSouth),
-        (D::West, Rect::from_min_max(r.left_top() + vec2(0.0, corner), r.left_bottom() + vec2(edge, -corner)), CursorIcon::ResizeWest),
-        (D::East, Rect::from_min_max(r.right_top() + vec2(-edge, corner), r.right_bottom() - vec2(0.0, corner)), CursorIcon::ResizeEast),
+        (
+            D::NorthWest,
+            Rect::from_min_size(r.left_top(), vec2(corner, corner)),
+            CursorIcon::ResizeNorthWest,
+        ),
+        (
+            D::NorthEast,
+            Rect::from_min_size(r.right_top() - vec2(corner, 0.0), vec2(corner, corner)),
+            CursorIcon::ResizeNorthEast,
+        ),
+        (
+            D::SouthWest,
+            Rect::from_min_size(r.left_bottom() - vec2(0.0, corner), vec2(corner, corner)),
+            CursorIcon::ResizeSouthWest,
+        ),
+        (
+            D::SouthEast,
+            Rect::from_min_size(
+                r.right_bottom() - vec2(corner, corner),
+                vec2(corner, corner),
+            ),
+            CursorIcon::ResizeSouthEast,
+        ),
+        (
+            D::North,
+            Rect::from_min_max(
+                r.left_top() + vec2(corner, 0.0),
+                r.right_top() + vec2(-corner, edge),
+            ),
+            CursorIcon::ResizeNorth,
+        ),
+        (
+            D::South,
+            Rect::from_min_max(
+                r.left_bottom() + vec2(corner, -edge),
+                r.right_bottom() - vec2(corner, 0.0),
+            ),
+            CursorIcon::ResizeSouth,
+        ),
+        (
+            D::West,
+            Rect::from_min_max(
+                r.left_top() + vec2(0.0, corner),
+                r.left_bottom() + vec2(edge, -corner),
+            ),
+            CursorIcon::ResizeWest,
+        ),
+        (
+            D::East,
+            Rect::from_min_max(
+                r.right_top() + vec2(-edge, corner),
+                r.right_bottom() - vec2(0.0, corner),
+            ),
+            CursorIcon::ResizeEast,
+        ),
     ];
     for (direction, zone, cursor) in zones {
-        let response = ui.interact(zone, ui.id().with(("toolkit-resize", format!("{direction:?}"))), Sense::drag());
-        if response.on_hover_cursor(cursor).drag_started_by(egui::PointerButton::Primary) {
-            ui.ctx().send_viewport_cmd(ViewportCommand::BeginResize(direction));
+        let response = ui.interact(
+            zone,
+            ui.id().with(("toolkit-resize", format!("{direction:?}"))),
+            Sense::drag(),
+        );
+        if response
+            .on_hover_cursor(cursor)
+            .drag_started_by(egui::PointerButton::Primary)
+        {
+            ui.ctx()
+                .send_viewport_cmd(ViewportCommand::BeginResize(direction));
         }
     }
 }

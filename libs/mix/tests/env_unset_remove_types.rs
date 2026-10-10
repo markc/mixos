@@ -33,7 +33,10 @@ async fn nil_env_value_removes_the_variable() {
     )
     .await
     .expect("unset runs");
-    assert!(out.contains("false"), "nil env value must remove DISPLAY: {out}");
+    assert!(
+        out.contains("false"),
+        "nil env value must remove DISPLAY: {out}"
+    );
 }
 
 #[tokio::test]
@@ -42,7 +45,13 @@ async fn remove_refuses_a_non_string_path() {
     // check, naming the argument and its declared shape; the structured
     // CODE is TYPE_MISMATCH (catchable via $e.code).
     let err = run("remove({a: 1})\n").await.expect_err("must raise");
-    assert!(err.contains("argument 1 (path) must be string"), "got: {err}");
+    assert!(
+        err.contains("argument 1 (path) must be string"),
+        "got: {err}"
+    );
     let err = run("remove_dir([1, 2])\n").await.expect_err("must raise");
-    assert!(err.contains("argument 1 (path) must be string"), "got: {err}");
+    assert!(
+        err.contains("argument 1 (path) must be string"),
+        "got: {err}"
+    );
 }

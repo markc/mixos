@@ -123,10 +123,16 @@ pub(crate) fn validate(manifest: &Manifest, id: &str) -> Result<()> {
             || file.path == MANIFEST_FILE
             || file.path == STYLESHEET_FILE
         {
-            return Err(invalid(format!("invalid locked asset path {:?}", file.path)));
+            return Err(invalid(format!(
+                "invalid locked asset path {:?}",
+                file.path
+            )));
         }
         if !paths.insert(file.path.as_str()) {
-            return Err(invalid(format!("duplicate locked asset path {:?}", file.path)));
+            return Err(invalid(format!(
+                "duplicate locked asset path {:?}",
+                file.path
+            )));
         }
         if file.bytes == 0 || file.bytes > MAX_FILE_BYTES {
             return Err(invalid(format!("invalid asset size for {:?}", file.path)));
@@ -141,7 +147,10 @@ pub(crate) fn validate(manifest: &Manifest, id: &str) -> Result<()> {
             )));
         }
         if file.revision.is_empty() || file.licence.is_empty() {
-            return Err(invalid(format!("missing asset provenance for {:?}", file.path)));
+            return Err(invalid(format!(
+                "missing asset provenance for {:?}",
+                file.path
+            )));
         }
     }
     for (role, path) in &manifest.fonts {
@@ -151,7 +160,9 @@ pub(crate) fn validate(manifest: &Manifest, id: &str) -> Result<()> {
             )));
         }
         if !path.ends_with(".ttf") && !path.ends_with(".otf") {
-            return Err(invalid(format!("font role {role:?} must name a font: {path:?}")));
+            return Err(invalid(format!(
+                "font role {role:?} must name a font: {path:?}"
+            )));
         }
     }
     for (role, family) in &manifest.font_families {
@@ -160,7 +171,9 @@ pub(crate) fn validate(manifest: &Manifest, id: &str) -> Result<()> {
             || family.len() > 128
             || family.chars().any(char::is_control)
         {
-            return Err(invalid(format!("invalid font family metadata for role {role:?}")));
+            return Err(invalid(format!(
+                "invalid font family metadata for role {role:?}"
+            )));
         }
     }
     Ok(())
@@ -190,7 +203,9 @@ pub(crate) fn parse_codepoints(text: &str) -> Result<BTreeMap<String, char>> {
         let scalar = u32::from_str_radix(hex, 16)
             .map_err(|_| invalid(format!("invalid icon codepoint {hex:?} for {name:?}")))?;
         let character = char::from_u32(scalar).ok_or_else(|| {
-            invalid(format!("icon codepoint {hex:?} for {name:?} is not a Unicode scalar"))
+            invalid(format!(
+                "icon codepoint {hex:?} for {name:?} is not a Unicode scalar"
+            ))
         })?;
         if icons.insert(name.to_owned(), character).is_some() {
             return Err(invalid(format!("duplicate icon catalogue name {name:?}")));

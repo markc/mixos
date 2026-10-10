@@ -239,7 +239,11 @@ impl Token for f64 {
 impl Token for u8 {
     fn read(value: &StyleValueSource, range: Range) -> Result<Self, String> {
         let n = f64::read(value, range)?;
-        if n.fract() == 0.0 { Ok(n as u8) } else { Err(format!("{n} is not a whole number")) }
+        if n.fract() == 0.0 {
+            Ok(n as u8)
+        } else {
+            Err(format!("{n} is not a whole number"))
+        }
     }
 }
 
@@ -254,11 +258,19 @@ impl Reader<'_> {
     fn get<T: Token>(&mut self, name: &str, range: Range) -> T {
         let path = format!("{}.{name}", self.path);
         let Some(value) = self.tokens.get(name) else {
-            self.errors.push(DesignDiagnostic::error("missing-style-token", path, format!("style token `{name}` is not authored")));
+            self.errors.push(DesignDiagnostic::error(
+                "missing-style-token",
+                path,
+                format!("style token `{name}` is not authored"),
+            ));
             return T::default();
         };
         T::read(value, range).unwrap_or_else(|message| {
-            self.errors.push(DesignDiagnostic::error("invalid-style-token", path, format!("style token `{name}`: {message}")));
+            self.errors.push(DesignDiagnostic::error(
+                "invalid-style-token",
+                path,
+                format!("style token `{name}`: {message}"),
+            ));
             T::default()
         })
     }
@@ -340,35 +352,71 @@ style! {
 /// Compile the style family for `scheme`. `None` when the design authors no
 /// style family. Every style and binding is checked, not only the one
 /// selected, so a design that compiles for one scheme compiles for all.
-pub(crate) fn compile(source: &DesignV1Source, scheme: Scheme) -> Result<Option<ResolvedStyle>, Vec<DesignDiagnostic>> {
-    source.families.style.as_ref().map_or(Ok(None), |family| compile_family(family, scheme).map(Some))
+pub(crate) fn compile(
+    source: &DesignV1Source,
+    scheme: Scheme,
+) -> Result<Option<ResolvedStyle>, Vec<DesignDiagnostic>> {
+    source
+        .families
+        .style
+        .as_ref()
+        .map_or(Ok(None), |family| compile_family(family, scheme).map(Some))
 }
 
-fn compile_family(family: &StyleFamilySource, scheme: Scheme) -> Result<ResolvedStyle, Vec<DesignDiagnostic>> {
+fn compile_family(
+    family: &StyleFamilySource,
+    scheme: Scheme,
+) -> Result<ResolvedStyle, Vec<DesignDiagnostic>> {
     let mut errors = Vec::new();
     let mut styles = BTreeMap::new();
     for (name, tokens) in &family.styles {
         let path = format!("{PATH}.styles.{name}");
-        let mut reader = Reader { tokens, path: path.clone(), errors: Vec::new() };
+        let mut reader = Reader {
+            tokens,
+            path: path.clone(),
+            errors: Vec::new(),
+        };
         let style = read(&mut reader);
         errors.append(&mut reader.errors);
         let known: BTreeSet<&str> = TOKENS.iter().copied().collect();
-        for token in tokens.keys().filter(|token| !known.contains(token.as_str())) {
-            errors.push(DesignDiagnostic::error("unknown-style-token", format!("{path}.{token}"), format!("`{token}` is not a style token")));
+        for token in tokens
+            .keys()
+            .filter(|token| !known.contains(token.as_str()))
+        {
+            errors.push(DesignDiagnostic::error(
+                "unknown-style-token",
+                format!("{path}.{token}"),
+                format!("`{token}` is not a style token"),
+            ));
         }
         styles.insert(name.as_str(), style);
     }
     for (name, style) in &family.schemes {
         let path = format!("{PATH}.schemes.{name}");
         if Scheme::from_name(name).is_none() {
-            errors.push(DesignDiagnostic::error("unknown-style-scheme", path, format!("`{name}` is not a scheme")));
+            errors.push(DesignDiagnostic::error(
+                "unknown-style-scheme",
+                path,
+                format!("`{name}` is not a scheme"),
+            ));
         } else if !styles.contains_key(style.as_str()) {
-            errors.push(DesignDiagnostic::error("unknown-style", path, format!("`{style}` is not a style in `styles`")));
+            errors.push(DesignDiagnostic::error(
+                "unknown-style",
+                path,
+                format!("`{style}` is not a style in `styles`"),
+            ));
         }
     }
-    for unbound in Scheme::ALL.into_iter().filter(|s| !family.schemes.contains_key(s.name())) {
+    for unbound in Scheme::ALL
+        .into_iter()
+        .filter(|s| !family.schemes.contains_key(s.name()))
+    {
         let name = unbound.name();
-        errors.push(DesignDiagnostic::error("missing-style-binding", format!("{PATH}.schemes.{name}"), format!("scheme `{name}` has no style")));
+        errors.push(DesignDiagnostic::error(
+            "missing-style-binding",
+            format!("{PATH}.schemes.{name}"),
+            format!("scheme `{name}` has no style"),
+        ));
     }
     if !errors.is_empty() {
         return Err(errors);
@@ -382,15 +430,27 @@ mod tests {
     use crate::{DesignCompileResult, DesignContext, Mode, SourceIdentity};
 
     fn embedded() -> crate::DesignSourceDocument {
-        crate::parse_design_source(SourceIdentity::new("embedded"), crate::EMBEDDED_DEFAULT_SOURCE).expect("embedded design parses")
+        crate::parse_design_source(
+            SourceIdentity::new("embedded"),
+            crate::EMBEDDED_DEFAULT_SOURCE,
+        )
+        .expect("embedded design parses")
     }
 
     fn family() -> StyleFamilySource {
-        embedded().v1.families.style.expect("the embedded design authors the style family")
+        embedded()
+            .v1
+            .families
+            .style
+            .expect("the embedded design authors the style family")
     }
 
     fn codes(result: Result<ResolvedStyle, Vec<DesignDiagnostic>>) -> Vec<&'static str> {
-        result.expect_err("must refuse").iter().map(|d| d.code).collect()
+        result
+            .expect_err("must refuse")
+            .iter()
+            .map(|d| d.code)
+            .collect()
     }
 
     /// The studio style as the embedded design authors it.
@@ -523,11 +583,21 @@ mod tests {
                 _ => plain(),
             };
             for mode in Mode::ALL {
-                let context = DesignContext { scheme, mode, ..DesignContext::default() };
-                let DesignCompileResult::Success(success) = crate::compile_design(&document, context) else {
+                let context = DesignContext {
+                    scheme,
+                    mode,
+                    ..DesignContext::default()
+                };
+                let DesignCompileResult::Success(success) =
+                    crate::compile_design(&document, context)
+                else {
                     panic!("{scheme:?}/{mode:?} must compile");
                 };
-                assert_eq!(success.candidate.dictionary().style, Some(want), "{scheme:?}/{mode:?}");
+                assert_eq!(
+                    success.candidate.dictionary().style,
+                    Some(want),
+                    "{scheme:?}/{mode:?}"
+                );
             }
         }
     }
@@ -536,19 +606,49 @@ mod tests {
     fn a_missing_or_unknown_token_is_a_compile_error() {
         let mut missing = family();
         missing.styles.get_mut("pro").unwrap().remove("knob");
-        assert_eq!(codes(compile_family(&missing, Scheme::Ocean)), ["missing-style-token"], "every style is checked, not only the selected one");
+        assert_eq!(
+            codes(compile_family(&missing, Scheme::Ocean)),
+            ["missing-style-token"],
+            "every style is checked, not only the selected one"
+        );
 
         let mut unknown = family();
-        unknown.styles.get_mut("studio").unwrap().insert("glow".into(), StyleValueSource::Flag(true));
-        assert_eq!(codes(compile_family(&unknown, Scheme::Studio)), ["unknown-style-token"]);
+        unknown
+            .styles
+            .get_mut("studio")
+            .unwrap()
+            .insert("glow".into(), StyleValueSource::Flag(true));
+        assert_eq!(
+            codes(compile_family(&unknown, Scheme::Studio)),
+            ["unknown-style-token"]
+        );
 
         // The whole document refuses to compile with the stable code.
         let mut document = embedded();
-        document.v1.families.style.as_mut().unwrap().styles.get_mut("studio").unwrap().remove("toggle");
-        let DesignCompileResult::Fatal(failure) = crate::compile_design(&document, DesignContext::default()) else {
+        document
+            .v1
+            .families
+            .style
+            .as_mut()
+            .unwrap()
+            .styles
+            .get_mut("studio")
+            .unwrap()
+            .remove("toggle");
+        let DesignCompileResult::Fatal(failure) =
+            crate::compile_design(&document, DesignContext::default())
+        else {
             panic!("a missing style token must not compile");
         };
-        assert!(failure.diagnostics.iter().any(|d| d.code == "missing-style-token" && d.path == "design.v1.families.style.styles.studio.toggle"), "{:?}", failure.diagnostics);
+        assert!(
+            failure
+                .diagnostics
+                .iter()
+                .any(|d| d.code == "missing-style-token"
+                    && d.path == "design.v1.families.style.styles.studio.toggle"),
+            "{:?}",
+            failure.diagnostics
+        );
     }
 
     #[test]
@@ -560,20 +660,32 @@ mod tests {
         studio.insert("radius".into(), StyleValueSource::Number(2.5));
         studio.insert("primary_hover_alpha".into(), StyleValueSource::Number(1.5));
         studio.insert("mark".into(), StyleValueSource::Flag(false));
-        assert_eq!(codes(compile_family(&bad, Scheme::Studio)), ["invalid-style-token"; 5]);
+        assert_eq!(
+            codes(compile_family(&bad, Scheme::Studio)),
+            ["invalid-style-token"; 5]
+        );
     }
 
     #[test]
     fn every_scheme_must_be_bound_to_a_known_style() {
         let mut unbound = family();
         unbound.schemes.remove("forest");
-        assert_eq!(codes(compile_family(&unbound, Scheme::Ocean)), ["missing-style-binding"]);
+        assert_eq!(
+            codes(compile_family(&unbound, Scheme::Ocean)),
+            ["missing-style-binding"]
+        );
         let mut dangling = family();
         dangling.schemes.insert("forest".into(), "neon".into());
-        assert_eq!(codes(compile_family(&dangling, Scheme::Ocean)), ["unknown-style"]);
+        assert_eq!(
+            codes(compile_family(&dangling, Scheme::Ocean)),
+            ["unknown-style"]
+        );
         let mut stray = family();
         stray.schemes.insert("teal".into(), "plain".into());
-        assert_eq!(codes(compile_family(&stray, Scheme::Ocean)), ["unknown-style-scheme"]);
+        assert_eq!(
+            codes(compile_family(&stray, Scheme::Ocean)),
+            ["unknown-style-scheme"]
+        );
     }
 
     #[test]

@@ -22,7 +22,9 @@ impl Strings {
         let mut bundle = FluentBundle::new(vec!["en".parse().expect("locale")]);
         // Isolation marks would leak into egui labels as visible glyphs.
         bundle.set_use_isolating(false);
-        bundle.add_resource(resource).expect("unique catalogue keys");
+        bundle
+            .add_resource(resource)
+            .expect("unique catalogue keys");
         Self { bundle }
     }
 
@@ -45,7 +47,9 @@ impl Strings {
             return key.to_owned();
         };
         let mut errors = Vec::new();
-        self.bundle.format_pattern(pattern, args, &mut errors).into_owned()
+        self.bundle
+            .format_pattern(pattern, args, &mut errors)
+            .into_owned()
     }
 
     /// Whether the catalogue defines `key`.

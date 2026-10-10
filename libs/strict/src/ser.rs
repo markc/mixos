@@ -304,8 +304,13 @@ impl ser::SerializeMap for MapSerializer {
 impl ser::SerializeStruct for MapSerializer {
     type Ok = Value;
     type Error = Error;
-    fn serialize_field<T: Serialize + ?Sized>(&mut self, key: &'static str, value: &T) -> Result<()> {
-        self.entries.insert(key.to_owned(), value.serialize(ValueSerializer)?);
+    fn serialize_field<T: Serialize + ?Sized>(
+        &mut self,
+        key: &'static str,
+        value: &T,
+    ) -> Result<()> {
+        self.entries
+            .insert(key.to_owned(), value.serialize(ValueSerializer)?);
         Ok(())
     }
     fn end(self) -> Result<Value> {
@@ -321,8 +326,13 @@ pub struct StructVariantSerializer {
 impl ser::SerializeStructVariant for StructVariantSerializer {
     type Ok = Value;
     type Error = Error;
-    fn serialize_field<T: Serialize + ?Sized>(&mut self, key: &'static str, value: &T) -> Result<()> {
-        self.entries.insert(key.to_owned(), value.serialize(ValueSerializer)?);
+    fn serialize_field<T: Serialize + ?Sized>(
+        &mut self,
+        key: &'static str,
+        value: &T,
+    ) -> Result<()> {
+        self.entries
+            .insert(key.to_owned(), value.serialize(ValueSerializer)?);
         Ok(())
     }
     fn end(self) -> Result<Value> {
@@ -337,7 +347,9 @@ impl ser::SerializeStructVariant for StructVariantSerializer {
 struct MapKeySerializer;
 
 fn key_error(kind: &str) -> Error {
-    ser_error(format!("map key must be a string (or integer); found {kind}"))
+    ser_error(format!(
+        "map key must be a string (or integer); found {kind}"
+    ))
 }
 
 impl ser::Serializer for MapKeySerializer {
@@ -443,7 +455,11 @@ impl ser::Serializer for MapKeySerializer {
     fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple> {
         Err(key_error("tuple"))
     }
-    fn serialize_tuple_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeTupleStruct> {
+    fn serialize_tuple_struct(
+        self,
+        _name: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeTupleStruct> {
         Err(key_error("tuple struct"))
     }
     fn serialize_tuple_variant(

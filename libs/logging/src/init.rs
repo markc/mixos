@@ -468,11 +468,7 @@ fn synthesise_directive(default_target: &str, level: LogLevel) -> String {
     if default_target.is_empty() {
         level.as_directive().to_string()
     } else {
-        format!(
-            "{}={},bus=info",
-            default_target,
-            level.as_directive()
-        )
+        format!("{}={},bus=info", default_target, level.as_directive())
     }
 }
 
