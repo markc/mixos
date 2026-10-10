@@ -51,7 +51,7 @@ end
 -- Every start check: the name, the registry, the config and the token.
 -- Returns {cfg, token}.
 fn preflight($name)
-  $core.check_runtime()
+  $core.check_runtime(nil)
   $core.check_name($name, $core.registry_path())
   $c = $core.load_config($core.config_path($name))
   $t = nil

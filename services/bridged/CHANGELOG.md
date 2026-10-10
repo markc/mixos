@@ -30,9 +30,11 @@ auth, transport or timeout) or 12 (a bad request).
   143 (`SuccessExitStatus=143`). Run `--start` under the unit: outside
   systemd it has no parent-death protection. `BRIDGED_MIX` and the `.env`
   file must be administrator-controlled.
-- Writes are bounded by `timeout_s` too: every `tcp_send` gets the time left
-  as `{timeout}`, and a send that runs out is rc 11 with the connection
-  dropped. Requires Mix >= 0.112.1; an older Mix is refused at start
+- Writes draw on the same transport budget as connect and reads
+  (`timeout_s`): every `tcp_send` gets the time left as `{timeout}`, and a
+  send that runs out is rc 11 with the connection dropped. Local encoding
+  and scheduling cannot be interrupted and can run past it. Requires Mix >=
+  0.112.1; an older Mix is refused at start
   (`RUNTIME`).
 - Verb registration in `docs/spec/bus/verbs.conf.mix` is pending the registry
   gate's instance-family mapping.

@@ -133,9 +133,23 @@ try
   check("spec: same defaults (" .. json_encode(map($drift, fn($k) = $k.key)) .. ")", len($drift) == 0)
 
   -- The runtime: this Mix bounds writes; the comparison itself.
-  check("runtime: this Mix has tcp_send {timeout} (" .. to_string(mix_version().string) .. ")", code_of(fn() = $core.check_runtime()) == "OK")
-  check("runtime: version comparison", $core.version_at_least("0.112.1", "0.112.1") and $core.version_at_least("0.113.0", "0.112.1") and $core.version_at_least("1.0.0", "0.112.1") and not $core.version_at_least("0.112.0", "0.112.1") and not $core.version_at_least("0.111.99", "0.112.1") and not $core.version_at_least("junk", "0.112.1"))
-  check("runtime: reads mix_version()'s map", $core.version_at_least({string: "0.112.1"}, "0.112.1") and not $core.version_at_least({string: "0.112.0"}, "0.112.1"))
+  check("runtime: this Mix has tcp_send {timeout} (" .. to_string(mix_version().string) .. ")", code_of(fn() = $core.check_runtime(nil)) == "OK")
+  -- [version, accepted as >= 0.112.1?]
+  $table = [
+    ["0.112.1", true], ["0.112.1+build.7", true], ["v0.112.1", true],
+    ["0.112.1-rc.1", false], ["0.112.1-rc.1+build.7", false], ["0.112.1-alpha", false],
+    ["0.112.0", false], ["0.111.99", false], ["0.112.0-rc.9", false],
+    ["0.112.2", true], ["0.112.2-rc.1", true], ["0.113.0", true], ["0.113.0-beta.2", true],
+    ["1.0.0", true], ["1.0.0-rc.1", true],
+    ["junk", false], ["", false], ["0.112", false], ["0.112.1.4", false], ["mix 0.112.1", false]
+  ]
+  $wrong = filter($table, fn($row) = $core.version_at_least($row[0], "0.112.1") != $row[1])
+  check("runtime: version table, " .. to_string(len($table)) .. " rows (wrong: " .. json_encode(map($wrong, fn($row) = $row[0])) .. ")", len($wrong) == 0)
+  check("runtime: reads mix_version()'s map", $core.version_at_least({string: "0.112.1"}, "0.112.1") and not $core.version_at_least({string: "0.112.1-rc.1"}, "0.112.1"))
+  check("runtime: an old Mix is refused as RUNTIME", code_of(fn() = $core.check_runtime(fn() = {string: "0.112.0"})) == "RUNTIME")
+  check("runtime: a prerelease of the minimum is refused as RUNTIME", code_of(fn() = $core.check_runtime(fn() = {string: "0.112.1-rc.1"})) == "RUNTIME")
+  check("runtime: a Mix that cannot report its version is refused as RUNTIME", code_of(fn() = $core.check_runtime(fn() = raise("FUNCTION_UNDEFINED", "undefined function mix_version"))) == "RUNTIME")
+  check("runtime: a version that is not one is refused as RUNTIME", code_of(fn() = $core.check_runtime(fn() = nil)) == "RUNTIME" and contains(message_of(fn() = $core.check_runtime(fn() = nil)), "does not report"))
 
   -- Instance config and registry paths.
   $saved = {c: env("BRIDGED_CONFIG"), e: env("MIXOS_ETC"), v: env("BRIDGED_VERBS")}
@@ -297,6 +311,11 @@ try
     $S = $r.st
     check($reader .. ": a normal call works after the backoff, on a new connection", $r.rc == 0 and $S.connects == $connects + 1)
   end
+  -- A budget spent on local work (encoding 32 MiB) before the write: refused
+  -- without writing, the connection dropped.
+  $tiny = merge($S, {cfg: merge($S.cfg, {timeout_s: 0.001})})
+  $r = $core.call($tiny, "echo", $big)
+  check("budget: spent before the write, rc 11 without writing (" .. to_string($r.latency_ms) .. " ms)", $r.rc == 11 and contains($r.error, "deadline passed before the write") and not $r.st.connected)
 
   -- A wrong token.
   $S2 = $core.new_state(merge($cfg, {port: $p_bad}), $good)

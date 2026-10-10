@@ -14,11 +14,12 @@
 --   {"id":N,"ok":true,"result":R} or {"id":N,"ok":false,"error":"..."}.
 --
 -- Rules: the token is never returned, stored outside the state map, or put
--- in an error text; an app that echoes it has the echo redacted. Every call
--- runs under one deadline (timeout_s) that covers connect, the auth line and
--- its reply, and the request and its reply: every write passes the time left
--- as tcp_send's {timeout} (Mix >= 0.112.1), so no call blocks a serve pump
--- longer than timeout_s, even against a peer that stops reading.
+-- in an error text; an app that echoes it has the echo redacted. Each call
+-- has one transport budget (timeout_s): connect, the auth line and its reply,
+-- and the request and its reply all get the time left, writes through
+-- tcp_send's {timeout} (Mix >= 0.112.1), so a peer that stops reading cannot
+-- hold a serve pump. Local work (encoding the request) is not interruptible
+-- and can run past the budget; the next transport step then fails at once.
 --
 -- Also here: the serve-name guard (reserved_names, check_name), which keeps
 -- an instance from taking the first segment of a registered Bus verb.
@@ -195,23 +196,48 @@ end
 -- outlive timeout_s, so the bridge refuses to start.
 $_MIN_MIX = "0.112.1"
 
--- True when version $v (mix_version()'s map, or text holding "0.112.1") is at least $min.
-fn version_at_least($v, $min)
+-- A version as {major, minor, patch, pre}: "X.Y.Z", an optional "-<prerelease>"
+-- and an optional "+<build>" (ignored), or mix_version()'s map (its .string).
+-- nil when it is not a version.
+fn parse_version($v)
   if type($v) == "map" then $v = $v.string end
-  $m = re_find(to_string($v ?? ""), "(\\d+)\\.(\\d+)\\.(\\d+)")
-  if len($m) == 0 then return false end
-  $have = map($m[0].groups, fn($x) = to_number($x))
-  $want = map(split($min, "."), fn($x) = to_number($x))
-  for $i = 0 to 2
-    if $have[$i] != $want[$i] then return $have[$i] > $want[$i] end
-  end
-  return true
+  if type($v) != "string" then return nil end
+  $m = re_find(trim($v), "^v?(\\d+)\\.(\\d+)\\.(\\d+)(?:-([0-9A-Za-z.-]+))?(?:\\+[0-9A-Za-z.-]+)?$")
+  if len($m) == 0 then return nil end
+  $g = $m[0].groups
+  return {major: to_number($g[0]), minor: to_number($g[1]), patch: to_number($g[2]), pre: $g[3]}
 end
 
--- Raise RUNTIME unless this Mix bounds writes (tcp_send {timeout}).
-fn check_runtime()
-  if not version_at_least(mix_version(), $_MIN_MIX) then
-    raise("RUNTIME", "bridged needs Mix >= " .. $_MIN_MIX .. " (tcp_send {timeout}); this is " .. to_string(mix_version().string ?? "unknown"))
+-- True when $v is at least the release $min. A later X.Y.Z passes, with or
+-- without a prerelease; a prerelease OF the minimum (0.112.1-rc.1) comes
+-- before 0.112.1 and fails; build metadata does not count; junk fails.
+fn version_at_least($v, $min)
+  $have = parse_version($v)
+  $want = parse_version($min)
+  if $have == nil or $want == nil then return false end
+  for each $k in ["major", "minor", "patch"]
+    if $have[$k] != $want[$k] then return $have[$k] > $want[$k] end
+  end
+  return $have.pre == nil or $want.pre != nil
+end
+
+-- Raise RUNTIME unless this Mix bounds writes (tcp_send {timeout}). $probe,
+-- for tests, stands in for mix_version(). A Mix that cannot report its
+-- version is refused the same way: fail closed, never an unexpected error.
+fn check_runtime($probe)
+  $found = nil
+  try
+    if $probe != nil then
+      $found = $probe()
+    elif has_builtin("mix_version") then
+      $found = mix_version()
+    end
+  catch $m
+    $found = nil
+  end
+  $text = if type($found) == "map" then $found.string else $found end
+  if not version_at_least($found, $_MIN_MIX) then
+    raise("RUNTIME", "bridged needs Mix >= " .. $_MIN_MIX .. " (tcp_send {timeout}); this is " .. to_string($text ?? "a Mix that does not report its version"))
   end
   return true
 end
