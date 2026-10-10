@@ -25,7 +25,10 @@ auth, transport or timeout) or 12 (a bad request).
   then `mix --serve` as a child (Mix has no exec), exiting with the child's
   code. A documented refusal exits 2 and is never restarted
   (`RestartPreventExitStatus=2`); an unexpected start error exits 3, and it,
-  a crash or a broken install is a rate-limited failure.
+  a crash or a broken install is a rate-limited failure. A clean stop exits
+  143 (`SuccessExitStatus=143`). Run `--start` under the unit: outside
+  systemd it has no parent-death protection. `BRIDGED_MIX` and the `.env`
+  file must be administrator-controlled.
 - Known gap: request writes are not bounded until Mix 0.112.1's `tcp_send`
   timeout lands (pending).
 - Verb registration in `docs/spec/bus/verbs.conf.mix` is pending the registry

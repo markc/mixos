@@ -77,8 +77,11 @@ if $svc == nil then
   -- --start: Mix has no process-replacing exec, so the serve citizen is a
   -- child of this process (deliberately: the checks above ran first, in
   -- process). This process waits for it and exits with its code; the unit's
-  -- control-group kill reaches both. BRIDGED_MIX names the mix binary for the
-  -- child (default /opt/mixos/bin/mix); it exists for tests.
+  -- control-group kill reaches both; Mix then records the SIGTERM this process
+  -- got and exits 143 whatever the child returned (the unit's clean-stop
+  -- status). There is no parent-death protection outside the unit. BRIDGED_MIX
+  -- names the mix binary for the child (default /opt/mixos/bin/mix); it exists
+  -- for tests and must come from administrator-controlled environment only.
   $mix = env("BRIDGED_MIX") ?? ""
   if $mix == "" then $mix = "/opt/mixos/bin/mix" end
   $code = 3

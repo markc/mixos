@@ -135,9 +135,17 @@ child pair is deliberate; the unit's control-group kill stops both. The unit
 never restarts on exit 2 (`RestartPreventExitStatus=2`); every other non-zero
 exit, including a missing or unreadable script (exit 1), is a failure,
 restarted under `Restart=on-failure` and rate-limited by
-`StartLimitBurst=5` in `StartLimitIntervalSec=60`. `$BRIDGED_MIX` overrides
-the mix binary the child runs under (default `/opt/mixos/bin/mix`); it exists
-for tests.
+`StartLimitBurst=5` in `StartLimitIntervalSec=60`. A clean stop exits 143:
+systemd signals both processes, and Mix records the SIGTERM the parent gets
+and exits 143 whatever the child returned, so the unit lists
+`SuccessExitStatus=143`. `$BRIDGED_MIX` overrides the mix binary the child
+runs under (default `/opt/mixos/bin/mix`); it exists for tests.
+
+`--start` outside systemd has no parent-death protection: killing the
+`--start` process alone can orphan the serve child. Run it under the unit,
+whose control group holds both. `BRIDGED_MIX` and the instance's `.env` file
+must be administrator-controlled: anyone who can change them picks the code
+that runs as `mixos`.
 
 ## Changes
 

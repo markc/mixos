@@ -130,9 +130,22 @@ try
   check("start: a valid setup starts the child as mix --serve <bridged.mix> --name fakeapp", is_file($marker) and contains(read_file($marker), "\"--serve\"") and contains(read_file($marker), "\"fakeapp\""))
   check("start: exits with the child's code (stand-in exits 3)", $r.exit_code == 3)
 
-  -- The instance, as the unit starts it.
-  $starter = spawn(["/opt/mixos/bin/mix", $citizen, "--start", "fakeapp"],
-    {die_with_parent: true, env: $env, stdout: {file: $tmp .. "/bridged.log"}, stderr: "stdout"})
+  -- The instance, as the unit starts it. A small recorder runs --start and
+  -- writes its exit status when it ends, as systemd would see it.
+  $exit_file = $tmp .. "/start.exit"
+  write_file($tmp .. "/record_exit.mix", "$a = args()\nwrite_file($a[0], to_string(run_stream(slice($a, 1, len($a)))))\n")
+  push($pids, spawn(["/opt/mixos/bin/mix", $tmp .. "/record_exit.mix", $exit_file, "/opt/mixos/bin/mix", $citizen, "--start", "fakeapp"],
+    {die_with_parent: true, env: $env, stdout: {file: $tmp .. "/bridged.log"}, stderr: "stdout"}))
+  $starter = nil
+  for $i = 1 to 100
+    $found = pids_matching("^/opt/mixos/bin/mix " .. $citizen .. " --start fakeapp$")
+    if len($found) == 1 then
+      $starter = $found[0]
+      break
+    end
+    sleep(0.05)
+  end
+  if $starter == nil then raise("SETUP", "no --start process; see " .. $tmp .. "/bridged.log") end
   push($pids, $starter)
   $up = false
   for $i = 1 to 80
@@ -204,19 +217,19 @@ try
   $s = call("fakeapp.status", nil, 5).v
   check("app back: a second authenticated connection", $s.connection == "up" and $s.connects == 2)
 
-  -- The serve citizen is the --start process's child; stopping it ends both.
+  -- The serve citizen is the --start process's child. A stop signals both, as
+  -- systemd's control-group kill does; the clean-stop status is 143.
   $children = pids_matching("--serve " .. $citizen .. " --name fakeapp")
   check("start: the serve citizen runs as a separate child process", len($children) == 1 and $children[0] != $starter)
+  $k = kill($starter, 15)
   if len($children) == 1 then $k = kill($children[0], 15) end
-  $ended = false
   for $i = 1 to 200
-    if not process_alive($starter) then
-      $ended = true
-      break
-    end
+    if is_file($exit_file) then break end
     sleep(0.05)
   end
-  check("start: the --start process ends when its child ends", $ended and len(pids_matching("--serve " .. $citizen .. " --name fakeapp")) == 0)
+  $status = if is_file($exit_file) then trim(read_file($exit_file)) else "none" end
+  check("stop: SIGTERM to parent and child ends --start with 143 (got " .. $status .. ")", $status == "143")
+  check("stop: no serve child is left", len(pids_matching("--serve " .. $citizen .. " --name fakeapp")) == 0 and not process_alive($starter))
   check("start: fakeapp is gone from the Bus", not port_exists("fakeapp"))
 catch $m
   check("harness: " .. $m, false)
