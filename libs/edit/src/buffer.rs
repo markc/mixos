@@ -1741,9 +1741,8 @@ impl Buffer {
         self.saved_rev != Some(self.rev)
     }
 
-    /// Test access to the text.
-    #[cfg(test)]
-    pub(crate) fn text(&self) -> &Text {
+    /// The current text.
+    pub fn text(&self) -> &Text {
         &self.text
     }
 
