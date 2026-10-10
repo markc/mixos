@@ -211,7 +211,7 @@ impl Widget for ValueField<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
         let Self { value, range, unit, width } = self;
         let chrome = Chrome::of(ui.ctx());
-        let (grammar, p) = (chrome.grammar, chrome.palette);
+        let p = chrome.palette;
         let fine = is_fine(&range);
         // One id for the resting box and its editor, as egui's DragValue
         // has: the field edits while it has keyboard focus.
@@ -318,7 +318,7 @@ impl Widget for ValueField<'_> {
             let at = pos2(x, rect.center().y - galley.size().y / 2.0).round_to_pixels(ui.pixels_per_point());
             painter.galley(at, galley, p.text_faint);
         }
-        if grammar.has_bevel() {
+        if chrome.style.bevels {
             chrome::bevel(&painter, rect, false, &p);
         } else {
             // An open editor shows focus as a text field does (§3.15).

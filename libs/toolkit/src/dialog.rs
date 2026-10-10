@@ -224,7 +224,7 @@ fn button_row(ui: &mut Ui, choices: &[Choice], os: OperatingSystem) -> Option<us
         })
         .collect();
     let total = widths.iter().sum::<f32>() + BUTTON_GAP * (widths.len().saturating_sub(1)) as f32;
-    let height = crate::button::push_height(Chrome::of(ui.ctx()).grammar);
+    let height = Chrome::of(ui.ctx()).metrics.push_height;
     let (_, row) = ui.allocate_space(egui::vec2(ui.available_width(), height));
     // Placed left to right, so focus order is reading order, flush right.
     let mut x = row.right() - total;

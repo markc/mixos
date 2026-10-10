@@ -1,22 +1,20 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Window chrome: the colours and geometry of the title bar, the menu bar and
-//! its menus, and, for the chrome schemes, the whole egui style.
+//! its menus, and, for the chrome styles, the whole egui style.
 //!
-//! **Chrome schemes** (`pro`, `studio`, `classic`; [`Scheme::is_chrome_scheme`])
-//! take every colour from the design's chrome family (`dictionary().chrome`,
-//! one exact colour per role) and their geometry from the chrome
-//! specification. Each scheme and mode selects one specification theme:
+//! Every form and length the chrome takes comes from the theme's style
+//! ([`Theme::style`], the design's style family): tab strip or cards,
+//! checkbox or switch, bevels or outlines, title-bar height, bar sizes,
+//! radii. Components read [`Chrome::style`] and [`Chrome::metrics`] and never
+//! ask which scheme they draw, so a new style is design data alone.
 //!
-//! | scheme / mode | grammar | egui base |
-//! |---|---|---|
-//! | pro / dark, pro / light (medium grey) | [`Grammar::Pro`] | dark |
-//! | studio / dark | [`Grammar::Studio`] | dark |
-//! | studio / light | [`Grammar::Studio`] | light |
-//! | classic / either | [`Grammar::Classic`] | light |
-//!
-//! **Every other scheme** keeps the pair-based style of [`crate::style`]; its
-//! [`Palette`] is read back from that style ([`Palette::from_visuals`]), so the
-//! title bar and menus have one code path for every scheme.
+//! **Chrome widgets** ([`Widgets::Chrome`]; the shipped `pro`, `studio` and
+//! `classic` styles) take every colour from the design's chrome family
+//! (`dictionary().chrome`, one exact colour per role), on egui's light or
+//! dark base as the style's [`Base`] says. **Pair widgets** (the `plain`
+//! style of the hue schemes) keep the pair-based style of [`crate::style`];
+//! their [`Palette`] is read back from that style ([`Palette::from_visuals`]),
+//! so the title bar and menus have one code path for every scheme.
 //!
 //! The egui state table (specification §1.5), for the chrome schemes:
 //!
@@ -28,71 +26,31 @@
 //! | active | `pressed` | `accent_border` | `text` |
 //! | open | `hover` | `field_border` | `text` |
 //!
-//! Classic replaces every widget stroke with its dark bevel edge, which the
-//! Classic theme authors as `text_dim` (the rule [`Palette::widget_stroke`]).
-//! Colours never appear as literals here: each is a role, or a rule over
-//! roles (an opacity). Lengths the design does not carry are the named
-//! constants below, each with its specification section.
+//! A style with [`WidgetStroke::Bevel`] (Classic) replaces every widget
+//! stroke with its dark bevel edge, which the Classic theme authors as
+//! `text_dim` (the rule [`Palette::widget_stroke`]). Colours never appear as
+//! literals here: each is a role, or a rule over roles (an opacity). Lengths
+//! the style does not carry are the named constants below, each with its
+//! specification section.
 
 use crate::style::colour;
 use crate::theme::Theme;
-use design::{Mode, ResolvedChrome, Scheme};
+use design::family::style::{Base, ScrollBars, Selection, WidgetStroke, Widgets};
+use design::{Mode, ResolvedChrome, ResolvedStyle};
 use egui::{
     Color32, Context, CornerRadius, FontFamily, FontId, Id, Margin, Rect, Shadow, Stroke, Style, TextStyle, Vec2,
     Visuals, style::ScrollStyle, vec2,
 };
 
-/// The layout grammar a scheme follows (specification §1.1).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Grammar {
-    /// Flat and compact: 32 pt title bar, accent menu highlight.
-    Pro,
-    /// Cards: 38 pt title bar, neutral menu highlight.
-    Studio,
-    /// Studio shapes with square corners and bevels.
-    Classic,
-    /// A hue scheme: geometry from the design's own metrics.
-    Plain,
-}
-
-impl Grammar {
-    pub fn of(scheme: Scheme) -> Self {
-        match scheme {
-            Scheme::Pro => Self::Pro,
-            Scheme::Studio => Self::Studio,
-            Scheme::Classic => Self::Classic,
-            _ => Self::Plain,
-        }
-    }
-
-    /// The flat Pro grammar: tab strips, checkboxes, pill push buttons.
-    pub fn is_pro(self) -> bool {
-        self == Self::Pro
-    }
-
-    /// Classic: bevels replace outlines on surfaces (§1.4).
-    pub fn has_bevel(self) -> bool {
-        self == Self::Classic
-    }
-
-    /// The corner radii (small, default, large) of a chrome grammar (§1.3).
-    pub const fn radii(self) -> [u8; 3] {
-        match self {
-            Self::Pro => [3, 4, 6],
-            Self::Studio | Self::Plain => [6, 8, 12],
-            Self::Classic => [0, 0, 0],
-        }
-    }
-}
-
-/// Whether egui's dark base palette underlies a chrome scheme (§1.5): Pro
-/// in both modes (its light mode is medium grey) and Studio dark.
-pub fn dark_base(scheme: Scheme, mode: Mode) -> bool {
-    match scheme {
-        Scheme::Pro => true,
-        Scheme::Studio => mode == Mode::Dark,
-        Scheme::Classic => false,
-        _ => mode == Mode::Dark,
+/// Whether egui's dark base palette underlies `theme` (§1.5): its style's
+/// [`Base`], or the theme's own mode. The shipped Pro is dark in both modes
+/// (its light mode is medium grey), Studio follows the mode, Classic is
+/// light.
+pub fn dark_base(theme: &Theme) -> bool {
+    match theme.style().base {
+        Base::Dark => true,
+        Base::Light => false,
+        Base::Mode => theme.mode() == Mode::Dark,
     }
 }
 
@@ -176,16 +134,23 @@ impl Palette {
         }
     }
 
-    /// The 1 pt stroke of every widget state (§1.4): Classic draws its dark
-    /// bevel edge (authored as `text_dim`) where the others draw the role.
-    pub fn widget_stroke(&self, grammar: Grammar, role: Color32) -> Color32 {
-        if grammar == Grammar::Classic { self.text_dim } else { role }
+    /// The 1 pt stroke of every widget state (§1.4): a bevelled style draws
+    /// its dark bevel edge (authored as `text_dim`) where the others draw
+    /// the role.
+    pub fn widget_stroke(&self, style: &ResolvedStyle, role: Color32) -> Color32 {
+        match style.widget_stroke {
+            WidgetStroke::Bevel => self.text_dim,
+            WidgetStroke::Role => role,
+        }
     }
 
-    /// The selection fill (§1.4): `accent` in Pro and Classic, the quieter
-    /// `accent_soft` in Studio.
-    pub fn selection(&self, grammar: Grammar) -> Color32 {
-        if grammar == Grammar::Studio { self.accent_soft } else { self.accent }
+    /// The selection fill (§1.4): `accent` (Pro, Classic) or the quieter
+    /// `accent_soft` (Studio), as the style says.
+    pub fn selection(&self, style: &ResolvedStyle) -> Color32 {
+        match style.selection {
+            Selection::Accent => self.accent,
+            Selection::AccentSoft => self.accent_soft,
+        }
     }
 
     /// A bevel's lit edge (§1.4: white), which the Classic theme authors as
@@ -225,10 +190,21 @@ pub const DISABLED_ALPHA: f32 = 0.5;
 /// A pressed Close caption is `caption_close` at this opacity (§1.4).
 pub const CLOSE_PRESSED_ALPHA: f32 = 0.8;
 
-/// Chrome geometry, in points. Chrome schemes take the specification's
-/// values (§2, §3.1–3.5); hue schemes derive theirs from the egui style.
+/// Chrome geometry, in points: the style's lengths ([`Metrics::of`]) and
+/// the specification's fixed ones (§2, §3.1–3.5).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Metrics {
+    /// Body and Button text size (§2.1: 12 Pro, 12.5 otherwise).
+    pub body_size: f32,
+    /// A push button's height (§3.13: 28 Pro, 30 otherwise).
+    pub push_height: f32,
+    /// A primary push button's opacity hovered, then pressed (§1.4).
+    pub primary_alpha: [f32; 2],
+    /// The options, status, tool and rail bars (§2.6).
+    pub bars: crate::bars::Sizes,
+    /// The right dock's default width and its inner margin (§2.6).
+    pub dock_width: f32,
+    pub dock_margin: f32,
     /// Title-bar height (§2.6: 32 Pro, 38 Studio and Classic).
     pub title_bar_height: f32,
     /// Inner margin before the mark (§3.1).
@@ -276,7 +252,7 @@ pub struct Metrics {
     pub radius_lg: u8,
 }
 
-/// Lengths shared by every grammar (§2.2, §3.1–3.5).
+/// Lengths shared by every style (§2.2, §3.1–3.5).
 const ITEM_SPACING: Vec2 = vec2(8.0, 6.0);
 const BUTTON_PADDING: Vec2 = vec2(10.0, 4.0);
 const INTERACT: f32 = 24.0;
@@ -284,14 +260,28 @@ const MENU_MARGIN: i8 = 6;
 const WINDOW_MARGIN: i8 = 16;
 
 impl Metrics {
-    /// The specification's geometry for a chrome grammar.
-    pub fn chrome(grammar: Grammar) -> Self {
-        let [radius_sm, radius, radius_lg] = grammar.radii();
-        let pro = grammar == Grammar::Pro;
+    /// The geometry of `style`: its own lengths, and the specification's
+    /// fixed ones.
+    pub fn of(style: &ResolvedStyle) -> Self {
+        let pt = |value: f64| value as f32;
         Self {
-            title_bar_height: if pro { 32.0 } else { 38.0 },
+            body_size: pt(style.body_size),
+            push_height: pt(style.push_height),
+            primary_alpha: [pt(style.primary_hover_alpha), pt(style.primary_press_alpha)],
+            bars: crate::bars::Sizes {
+                options: pt(style.options_bar),
+                status: pt(style.status_bar),
+                tool: pt(style.tool_bar),
+                tool_button: pt(style.tool_button),
+                tool_margin: pt(style.tool_margin),
+                rail: pt(style.rail),
+                rail_button: pt(style.rail_button),
+            },
+            dock_width: pt(style.dock_width),
+            dock_margin: pt(style.dock_margin),
+            title_bar_height: pt(style.title_bar_height),
             title_bar_margin: 10.0,
-            mark: if pro { 18.0 } else { 20.0 },
+            mark: pt(style.mark),
             mark_gap: 14.0,
             title_gap: 16.0,
             title_size: 13.0,
@@ -301,27 +291,29 @@ impl Metrics {
             resize_edge: 5.0,
             resize_corner: 12.0,
             menu_title_padding: vec2(6.0, 3.0),
-            menu_title_height: INTERACT,
-            menu_min_width: 220.0,
-            menu_row_height: INTERACT,
-            menu_row_padding: if pro { vec2(10.0, 4.0) } else { vec2(2.0, 0.0) },
-            menu_highlight_radius: if pro { 3 } else { radius_sm },
+            menu_title_height: pt(style.menu_title_height),
+            menu_min_width: pt(style.menu_min_width),
+            menu_row_height: pt(style.menu_row_height),
+            menu_row_padding: vec2(pt(style.menu_row_padding_x), pt(style.menu_row_padding_y)),
+            menu_highlight_radius: style.menu_highlight_radius,
             menu_separator_height: 9.0,
             // §3.5 gives 3.5 from the parent frame's inner edge; outer edge to
             // outer edge the evidence measures 2.5.
             submenu_gap: 2.5,
             shortcut_gap: 2.0 * ITEM_SPACING.x,
             edge_gap: 6.0,
-            radius_sm,
-            radius,
-            radius_lg,
+            radius_sm: style.radius_sm,
+            radius: style.radius,
+            radius_lg: style.radius_lg,
         }
     }
 
-    /// Geometry for a hue scheme, from its egui style: the title bar is one
-    /// control plus an item gap above and below, and menu rows are one
-    /// control tall, inset by two thirds of that, at least eight wide.
-    pub fn plain(style: &Style) -> Self {
+    /// Geometry read back from an egui style, over `tokens`' (for a context
+    /// no theme was installed on): the title bar is one control plus an item
+    /// gap above and below, and menu rows are one control tall, inset by two
+    /// thirds of that, at least eight wide. The shipped `plain` style
+    /// authors exactly this for the hue schemes' pair style.
+    pub fn from_egui(style: &Style, tokens: &ResolvedStyle) -> Self {
         let spacing = &style.spacing;
         let row = spacing.interact_size.y;
         let v = &style.visuals;
@@ -336,7 +328,7 @@ impl Metrics {
             radius_sm: v.widgets.inactive.corner_radius.nw,
             radius: v.menu_corner_radius.nw,
             radius_lg: v.window_corner_radius.nw,
-            ..Self::chrome(Grammar::Studio)
+            ..Self::of(tokens)
         }
     }
 }
@@ -344,7 +336,8 @@ impl Metrics {
 /// Everything the title bar and menus draw with.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Chrome {
-    pub grammar: Grammar,
+    /// The forms the chrome takes (the theme's style).
+    pub style: ResolvedStyle,
     pub palette: Palette,
     pub metrics: Metrics,
 }
@@ -355,26 +348,36 @@ fn key() -> Id {
 
 impl Chrome {
     /// The chrome of `theme`: chrome-family roles over the pair-based
-    /// palette for a chrome scheme, the pair-based palette otherwise.
+    /// palette for chrome widgets, the pair-based palette for pair widgets,
+    /// and the style's geometry. A design that authors no style family and
+    /// takes pair widgets keeps the geometry its own pair style derives
+    /// ([`Metrics::from_egui`]), so its spacing and radii still size the
+    /// title bar and menus.
     pub fn for_theme(theme: &Theme) -> Self {
-        let grammar = Grammar::of(theme.scheme());
-        let plain = crate::style::pair_style(theme);
-        let mut palette = Palette::from_visuals(&plain.visuals);
-        if grammar == Grammar::Plain {
-            return Self { grammar, palette, metrics: Metrics::plain(&plain) };
-        }
-        if let Some(roles) = &theme.dictionary().chrome {
+        let style = theme.style();
+        let pairs = crate::style::pair_style(theme);
+        let mut palette = Palette::from_visuals(&pairs.visuals);
+        if style.widgets == Widgets::Chrome
+            && let Some(roles) = &theme.dictionary().chrome
+        {
             palette = palette.overlay(roles);
         }
-        Self { grammar, palette, metrics: Metrics::chrome(grammar) }
+        let metrics = if theme.dictionary().style.is_none() && style.widgets == Widgets::Pairs {
+            Metrics::from_egui(&pairs, &style)
+        } else {
+            Metrics::of(&style)
+        };
+        Self { style, palette, metrics }
     }
 
     /// The chrome installed on `ctx` ([`install`]), else one read back from
-    /// the context's current style.
+    /// the context's current style in the hue schemes' style.
     pub fn of(ctx: &Context) -> Self {
         ctx.data(|d| d.get_temp(key())).unwrap_or_else(|| {
+            static PLAIN: std::sync::OnceLock<ResolvedStyle> = std::sync::OnceLock::new();
+            let tokens = *PLAIN.get_or_init(|| Theme::for_context(design::DesignContext::revision_one()).style());
             let style = ctx.global_style();
-            Self { grammar: Grammar::Plain, palette: Palette::from_visuals(&style.visuals), metrics: Metrics::plain(&style) }
+            Self { style: tokens, palette: Palette::from_visuals(&style.visuals), metrics: Metrics::from_egui(&style, &tokens) }
         })
     }
 
@@ -389,20 +392,15 @@ pub fn install(ctx: &Context, chrome: &Chrome) {
     ctx.data_mut(|d| d.insert_temp(key(), *chrome));
 }
 
-/// Body and Button text size (§2.1: 12 Pro, 12.5 otherwise).
-pub fn body_size(grammar: Grammar) -> f32 {
-    if grammar == Grammar::Pro { 12.0 } else { 12.5 }
-}
-
 /// Small, Heading and Monospace sizes (§2.1).
 pub const SMALL_SIZE: f32 = 10.5;
 pub const HEADING_SIZE: f32 = 15.0;
 pub const MONO_SIZE: f32 = 12.0;
 
-/// The complete egui style of a chrome scheme (§1.5, §2).
+/// The complete egui style of chrome widgets (§1.5, §2).
 pub fn style(theme: &Theme) -> Style {
     let chrome = Chrome::for_theme(theme);
-    let (grammar, m) = (chrome.grammar, chrome.metrics);
+    let m = chrome.metrics;
     let mut style = Style { visuals: visuals(theme, &chrome), ..Style::default() };
 
     let spacing = &mut style.spacing;
@@ -416,9 +414,12 @@ pub fn style(theme: &Theme) -> Style {
     spacing.icon_width = 14.0;
     spacing.tooltip_width = 280.0;
     spacing.menu_width = m.menu_min_width;
-    // Thin floating bars; Classic keeps solid ones (§3.19). egui's presets
+    // Thin floating bars, or solid ones (Classic, §3.19). egui's presets
     // carry exactly the specified widths, margins and opacities.
-    spacing.scroll = if grammar == Grammar::Classic { ScrollStyle::solid() } else { ScrollStyle::thin() };
+    spacing.scroll = match chrome.style.scroll_bars {
+        ScrollBars::Thin => ScrollStyle::thin(),
+        ScrollBars::Solid => ScrollStyle::solid(),
+    };
 
     let interaction = &mut style.interaction;
     interaction.tooltip_delay = 0.35;
@@ -426,7 +427,7 @@ pub fn style(theme: &Theme) -> Style {
     interaction.show_tooltips_only_when_still = true;
     style.animation_time = 0.2;
 
-    let body = body_size(grammar);
+    let body = m.body_size;
     let proportional = |size: f32| FontId::new(size, FontFamily::Proportional);
     style.text_styles.insert(TextStyle::Small, proportional(SMALL_SIZE));
     style.text_styles.insert(TextStyle::Body, proportional(body));
@@ -436,10 +437,10 @@ pub fn style(theme: &Theme) -> Style {
     style
 }
 
-/// The colours of a chrome scheme (§1.5).
+/// The colours of chrome widgets (§1.5).
 fn visuals(theme: &Theme, chrome: &Chrome) -> Visuals {
-    let (grammar, p, m) = (chrome.grammar, &chrome.palette, &chrome.metrics);
-    let mut v = if dark_base(theme.scheme(), theme.mode()) { Visuals::dark() } else { Visuals::light() };
+    let (style, p, m) = (&chrome.style, &chrome.palette, &chrome.metrics);
+    let mut v = if dark_base(theme) { Visuals::dark() } else { Visuals::light() };
     v.panel_fill = p.chrome;
     v.window_fill = p.card;
     v.window_stroke = Stroke::new(1.0, p.card_border);
@@ -453,11 +454,11 @@ fn visuals(theme: &Theme, chrome: &Chrome) -> Visuals {
     v.override_text_color = Some(p.text);
     v.weak_text_alpha = WEAK_ALPHA;
     v.disabled_alpha = DISABLED_ALPHA;
-    v.selection.bg_fill = p.selection(grammar);
+    v.selection.bg_fill = p.selection(style);
     v.selection.stroke = Stroke::new(1.0, p.accent_text);
 
     let radius = CornerRadius::same(m.radius_sm);
-    let stroke = |role| Stroke::new(1.0, p.widget_stroke(grammar, role));
+    let stroke = |role| Stroke::new(1.0, p.widget_stroke(style, role));
     let w = &mut v.widgets;
     let states = [
         (&mut w.noninteractive, p.card, Stroke::new(1.0, p.separator), p.text_dim),
@@ -489,7 +490,7 @@ fn visuals(theme: &Theme, chrome: &Chrome) -> Visuals {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use design::DesignContext;
+    use design::{DesignContext, Scheme};
 
     fn theme(scheme: Scheme, mode: Mode) -> Theme {
         Theme::for_context(DesignContext { scheme, mode, ..DesignContext::default() })
@@ -544,6 +545,7 @@ mod tests {
         ];
         for (scheme, mode, dark, panel, window, field, hover, pressed, text, selection, stroke) in expected {
             let t = theme(scheme, mode);
+            let radius_sm = t.style().radius_sm;
             let v = style(&t).visuals;
             let rgb = |c: Color32| hex(c)[..7].to_owned();
             let at = format!("{scheme:?}/{mode:?}");
@@ -563,7 +565,7 @@ mod tests {
             assert_eq!(v.selection.bg_fill, Color32::from_hex(selection).unwrap(), "{at}");
             for w in [v.widgets.noninteractive, v.widgets.inactive, v.widgets.hovered, v.widgets.active, v.widgets.open] {
                 assert_eq!(w.expansion, 0.0, "{at}: widgets never grow on hover");
-                assert_eq!(w.corner_radius, CornerRadius::same(Grammar::of(scheme).radii()[0]), "{at}");
+                assert_eq!(w.corner_radius, CornerRadius::same(radius_sm), "{at}");
             }
         }
     }
@@ -580,10 +582,9 @@ mod tests {
     }
 
     #[test]
-    fn grammar_metrics_follow_the_specification() {
-        let pro = Metrics::chrome(Grammar::Pro);
-        let studio = Metrics::chrome(Grammar::Studio);
-        let classic = Metrics::chrome(Grammar::Classic);
+    fn style_metrics_follow_the_specification() {
+        let metrics = |scheme| Chrome::for_theme(&theme(scheme, Mode::Dark)).metrics;
+        let (pro, studio, classic) = (metrics(Scheme::Pro), metrics(Scheme::Studio), metrics(Scheme::Classic));
         assert_eq!((pro.title_bar_height, studio.title_bar_height, classic.title_bar_height), (32.0, 38.0, 38.0));
         // Menus start 42 pt in (Pro) and 44 pt (Studio).
         assert_eq!(pro.title_bar_margin + pro.mark + pro.mark_gap, 42.0);
@@ -602,7 +603,7 @@ mod tests {
     }
 
     #[test]
-    fn sizes_follow_the_grammar() {
+    fn sizes_follow_the_style() {
         let pro = style(&theme(Scheme::Pro, Mode::Light));
         let studio = style(&theme(Scheme::Studio, Mode::Dark));
         assert_eq!(pro.text_styles[&TextStyle::Button].size, 12.0);
@@ -617,7 +618,21 @@ mod tests {
     fn hue_schemes_read_their_palette_back_from_the_pair_style() {
         let t = Theme::for_context(DesignContext::revision_one());
         let chrome = Chrome::for_theme(&t);
-        assert_eq!(chrome.grammar, Grammar::Plain);
+        assert_eq!(chrome.style.widgets, Widgets::Pairs);
         assert_eq!(chrome.palette.chrome, crate::style::style(&t).visuals.panel_fill);
+    }
+
+    /// The `plain` style authors, as data, exactly the geometry the hue
+    /// schemes used to derive from their pair style, in every hue scheme and
+    /// mode: a drift between the two is caught here.
+    #[test]
+    fn the_plain_style_is_the_pair_style_geometry() {
+        for scheme in Scheme::REVISION_ONE {
+            for mode in Mode::ALL {
+                let t = theme(scheme, mode);
+                let derived = Metrics::from_egui(&crate::style::pair_style(&t), &t.style());
+                assert_eq!(Chrome::for_theme(&t).metrics, derived, "{scheme:?}/{mode:?}");
+            }
+        }
     }
 }

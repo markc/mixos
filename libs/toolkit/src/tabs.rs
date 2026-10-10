@@ -28,6 +28,7 @@
 
 use crate::button::paint_icon;
 use crate::chrome::Chrome;
+use design::family::style::DocumentTabs;
 use crate::icons::Icon;
 use egui::emath::GuiRounding;
 use egui::text::{LayoutJob, TextWrapping};
@@ -197,7 +198,7 @@ pub struct DocEvents {
 /// selected one, `drop_target` outlined for a drag in progress.
 pub fn documents(ui: &mut Ui, id: Id, tabs: &[DocTab], selected: usize, drop_target: Option<usize>) -> DocEvents {
     let chrome = Chrome::of(ui.ctx());
-    let pro = chrome.grammar.is_pro();
+    let pro = is_strip(&chrome);
     let frame = if pro {
         Frame::new().fill(chrome.palette.tab_strip)
     } else {
@@ -220,7 +221,7 @@ fn strip_tabs(
     selected: usize,
     drop_target: Option<usize>,
 ) -> DocEvents {
-    let pro = chrome.grammar.is_pro();
+    let pro = is_strip(chrome);
     let (pad, minimum, gap) = if pro { (PRO_PAD, PRO_MIN, 0.0) } else { (STUDIO_PAD, PRO_MIN, STUDIO_GAP) };
     let name_font = if pro {
         FontId::new(PRO_SIZE, FontFamily::Proportional)
@@ -277,6 +278,12 @@ fn strip_tabs(
     events
 }
 
+/// Whether the style draws document tabs as a flush strip (Pro) rather than
+/// as cards.
+fn is_strip(chrome: &Chrome) -> bool {
+    chrome.style.document_tabs == DocumentTabs::Strip
+}
+
 /// One document tab in `rect`: (clicked, close clicked).
 #[expect(clippy::too_many_arguments, reason = "one tab's inputs, called from one place")]
 fn doc_tab(
@@ -289,7 +296,7 @@ fn doc_tab(
     (name_font, meta_font): (&FontId, &FontId),
     selected: bool,
 ) -> (bool, bool) {
-    let (p, pro) = (&chrome.palette, chrome.grammar.is_pro());
+    let (p, pro) = (&chrome.palette, is_strip(chrome));
     let response = ui.interact(rect, id, Sense::click());
     response.widget_info(|| WidgetInfo::selected(WidgetType::Button, ui.is_enabled(), selected, name));
     let (close_size, close_from_right, close_icon) =

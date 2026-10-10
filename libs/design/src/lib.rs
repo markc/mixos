@@ -60,6 +60,7 @@ pub use colour_model::{
 };
 pub use compiler::compile_design;
 pub use family::chrome::ResolvedChrome;
+pub use family::style::ResolvedStyle;
 pub use context::{Contrast, DesignContext, Mode, Scheme};
 pub use design_model::{
     AuthoredMetric, DesignApplyDecision, DesignApplyTransition, DesignCompileFailure,
@@ -90,7 +91,7 @@ pub use source::{
     DesignV1Source, FamilyMappingsSource, LegacyTypographySource, LegacyV0Source,
     MappingRuleSource, MappingSelectorSource, MappingValueSource, MetricSource, ModifierAxis,
     ModifierBlockSource, NonTextColourSource, OklchSource, PairSource, PrimitiveSource,
-    RecipeArgumentSource, SemanticSource, SourceKind, TaggedMetricSource, TypeRecordSource,
+    RecipeArgumentSource, SemanticSource, SourceKind, StyleFamilySource, StyleValueSource, TaggedMetricSource, TypeRecordSource,
     TypographySource, V0CrosswalkExpressionSource, V0MappingProperty, V0PairMember,
     parse_design_source, parse_legacy_v0_source,
 };

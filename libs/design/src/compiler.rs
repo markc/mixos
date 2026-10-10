@@ -120,6 +120,15 @@ fn compile_flat_source(
         }
     };
 
+    let style = match crate::family::style::compile(source, context.scheme) {
+        Ok(style) => style,
+        Err(errors) => {
+            let mut diagnostics = colours.diagnostics;
+            diagnostics.extend(errors);
+            return DesignCompileResult::Fatal(DesignCompileFailure { attempted_source: identity.clone(), diagnostics });
+        }
+    };
+
     let mapping =
         match crate::mapping::compile_button_mapping_artifacts(source, &colours.value, context) {
             Ok(success) => success,
@@ -159,6 +168,7 @@ fn compile_flat_source(
                     .map(|(name, scale)| (name.clone(), scale.values.clone()))
                     .collect(),
                 chrome,
+                style,
             },
             mapping.value.typography,
             provenance,

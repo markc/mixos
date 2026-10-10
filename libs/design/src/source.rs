@@ -395,6 +395,29 @@ pub struct FamilyMappingsSource {
     /// Exact chrome colours by role (`family::chrome`).
     #[serde(default)]
     pub chrome: Option<ChromeMappingSource>,
+    /// Chrome forms and lengths by style, bound per scheme (`family::style`).
+    #[serde(default)]
+    pub style: Option<StyleFamilySource>,
+}
+
+/// The style family: named token sets and the style each scheme takes.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StyleFamilySource {
+    #[serde(default)]
+    pub schemes: BTreeMap<String, String>,
+    #[serde(default)]
+    pub styles: BTreeMap<String, BTreeMap<String, StyleValueSource>>,
+}
+
+/// One authored style token: a flag, a number or a name. The compiler types
+/// it against the token's declaration.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub enum StyleValueSource {
+    Flag(bool),
+    Number(f64),
+    Name(String),
 }
 
 /// The chrome family: role name to colour primitive name, no derivation.

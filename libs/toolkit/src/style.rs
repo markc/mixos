@@ -69,11 +69,12 @@ fn pair(colours: &ResolvedColours, name: &str) -> Option<(Color32, Color32)> {
     colours.pairs.get(name).map(|p| (colour(p.rendered_surface), colour(p.rendered_foreground)))
 }
 
-/// The egui style for `theme`. A chrome scheme takes its whole style from
-/// the chrome family ([`crate::chrome::style`]); every other scheme is built
-/// on egui's default for the theme's mode by [`pair_style`].
+/// The egui style for `theme`. A style with chrome widgets takes its whole
+/// egui style from the chrome family ([`crate::chrome::style`]); one with
+/// pair widgets is built on egui's default for the theme's mode by
+/// [`pair_style`].
 pub fn style(theme: &Theme) -> Style {
-    if theme.scheme().is_chrome_scheme() {
+    if theme.style().widgets == design::family::style::Widgets::Chrome {
         return crate::chrome::style(theme);
     }
     pair_style(theme)

@@ -2,6 +2,7 @@
 
 pub mod button;
 pub mod chrome;
+pub mod style;
 
 /// Stable identifier for a registered desktop family.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

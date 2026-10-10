@@ -17,7 +17,7 @@
 //! Panel, menu and list scroll areas are egui's own ("thin", Classic
 //! "solid"), set in the chrome style ([`crate::chrome::style`]).
 
-use crate::chrome::{Chrome, Grammar};
+use crate::chrome::Chrome;
 use egui::{Event, Id, PointerButton, Pos2, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
 
 /// Bar thickness, thumb inset, least thumb length and hot distance (§3.19).
@@ -37,7 +37,7 @@ pub fn surround(ui: &Ui, rect: Rect) {
     let p = &chrome.palette;
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 0.0, p.canvas);
-    if chrome.grammar == Grammar::Classic || p.canvas_dot == p.canvas {
+    if !chrome.style.canvas_dots || p.canvas_dot == p.canvas {
         return;
     }
     let first = (rect.min.to_vec2() / DOT_PITCH).ceil() * DOT_PITCH;

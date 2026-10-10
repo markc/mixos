@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! On/off controls (chrome specification §3.16): the checkbox, the Studio
-//! switch, and [`Toggle`], which is the checkbox in the Pro grammar (every
-//! Pro on/off toggle is one) and the switch otherwise.
+//! switch, and [`Toggle`], the style's on/off control: the checkbox in Pro
+//! (every Pro on/off toggle is one) and the switch otherwise.
 //!
 //! **Checkbox.** A 14 pt box at radius 2 and its label 6 pt after in
 //! `text_dim`; the label is part of the click target. Off: `field` with a
@@ -15,6 +15,7 @@
 //! `text` on and `text_dim` off.
 
 use crate::chrome::{self, Chrome};
+use design::family::style::{Switch as SwitchStyle, Toggle as ToggleStyle};
 use egui::emath::GuiRounding;
 use egui::{
     Color32, Rect, Response, Sense, Stroke, StrokeKind, TextStyle, Ui, Vec2, Widget, WidgetInfo, WidgetType, pos2,
@@ -140,7 +141,7 @@ impl Widget for Switch<'_> {
             let t = ui.ctx().animate_bool_responsive(response.id, *self.on);
             let painter = ui.painter();
             let centre = pos2(knob_x(track, t), track.center().y);
-            if chrome.grammar.has_bevel() {
+            if chrome.style.switch == SwitchStyle::Block {
                 // Classic's knob is undetermined (§5.4): a raised `card`
                 // block the knob's diameter square, as its slider knob is.
                 painter.rect_filled(track, 0.0, if *self.on { p.accent } else { p.field });
@@ -158,7 +159,7 @@ impl Widget for Switch<'_> {
     }
 }
 
-/// The grammar's on/off toggle: a [`Checkbox`] in Pro, a [`Switch`] otherwise.
+/// The style's on/off toggle: a [`Checkbox`] (Pro) or a [`Switch`].
 #[must_use = "add it with `ui.add`"]
 pub struct Toggle<'a> {
     on: &'a mut bool,
@@ -173,10 +174,9 @@ impl<'a> Toggle<'a> {
 
 impl Widget for Toggle<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
-        if Chrome::of(ui.ctx()).grammar.is_pro() {
-            ui.add(Checkbox::new(self.on, self.label))
-        } else {
-            ui.add(Switch::new(self.on, self.label))
+        match Chrome::of(ui.ctx()).style.toggle {
+            ToggleStyle::Checkbox => ui.add(Checkbox::new(self.on, self.label)),
+            ToggleStyle::Switch => ui.add(Switch::new(self.on, self.label)),
         }
     }
 }

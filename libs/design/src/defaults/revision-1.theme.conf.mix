@@ -748,6 +748,65 @@ design: {
           caption_close_text: "chrome.caption_close_text"
         }
       },
+      # Chrome forms and lengths (families.style): each scheme takes one
+      # named style. The hue schemes share `plain`, their pair-derived look
+      # as data; the chrome schemes take the specification's grammars.
+      style: {
+        schemes: {
+          ocean: "plain", crimson: "plain", stone: "plain", forest: "plain", sunset: "plain", mono: "plain",
+          pro: "pro", studio: "studio", classic: "classic"
+        },
+        styles: {
+          plain: {
+            widgets: "pairs", base: "mode", faces: "typography", body_size: 12.5,
+            bevels: false, widget_stroke: "role", selection: "accent", scroll_bars: "thin", canvas_dots: true,
+            toggle: "switch", switch: "round", knob: "plain", slider_fill: "text_dim",
+            push_shape: "rounded", secondary_button: "filled", push_height: 30.0,
+            primary_hover_alpha: 0.93, primary_press_alpha: 0.85,
+            panel_groups: "cards", document_tabs: "cards", tool_bar_rule: false, dock_width: 300.0, dock_margin: 8.0,
+            options_bar: 42.0, status_bar: 30.0, tool_bar: 50.0, tool_button: 36.0, tool_margin: 7.0, rail: 44.0, rail_button: 32.0,
+            title_bar_height: 30.0, mark: 17.5, menu_title_height: 24.0, menu_row_height: 24.0,
+            menu_row_padding_x: 16.0, menu_row_padding_y: 0.0, menu_min_width: 192.0, menu_highlight_radius: 6,
+            radius_sm: 6, radius: 4, radius_lg: 12
+          },
+          pro: {
+            widgets: "chrome", base: "dark", faces: "fixed", body_size: 12.0,
+            bevels: false, widget_stroke: "role", selection: "accent", scroll_bars: "thin", canvas_dots: true,
+            toggle: "checkbox", switch: "round", knob: "ringed", slider_fill: "text_dim",
+            push_shape: "pill", secondary_button: "outline", push_height: 28.0,
+            primary_hover_alpha: 0.9, primary_press_alpha: 0.8,
+            panel_groups: "tab_strip", document_tabs: "strip", tool_bar_rule: true, dock_width: 290.0, dock_margin: 2.0,
+            options_bar: 36.0, status_bar: 24.0, tool_bar: 40.0, tool_button: 30.0, tool_margin: 5.0, rail: 36.0, rail_button: 28.0,
+            title_bar_height: 32.0, mark: 18.0, menu_title_height: 24.0, menu_row_height: 24.0,
+            menu_row_padding_x: 10.0, menu_row_padding_y: 4.0, menu_min_width: 220.0, menu_highlight_radius: 3,
+            radius_sm: 3, radius: 4, radius_lg: 6
+          },
+          studio: {
+            widgets: "chrome", base: "mode", faces: "fixed", body_size: 12.5,
+            bevels: false, widget_stroke: "role", selection: "accent_soft", scroll_bars: "thin", canvas_dots: true,
+            toggle: "switch", switch: "round", knob: "plain", slider_fill: "text_dim",
+            push_shape: "rounded", secondary_button: "filled", push_height: 30.0,
+            primary_hover_alpha: 0.93, primary_press_alpha: 0.85,
+            panel_groups: "cards", document_tabs: "cards", tool_bar_rule: false, dock_width: 300.0, dock_margin: 8.0,
+            options_bar: 42.0, status_bar: 30.0, tool_bar: 50.0, tool_button: 36.0, tool_margin: 7.0, rail: 44.0, rail_button: 32.0,
+            title_bar_height: 38.0, mark: 20.0, menu_title_height: 24.0, menu_row_height: 24.0,
+            menu_row_padding_x: 2.0, menu_row_padding_y: 0.0, menu_min_width: 220.0, menu_highlight_radius: 6,
+            radius_sm: 6, radius: 8, radius_lg: 12
+          },
+          classic: {
+            widgets: "chrome", base: "light", faces: "fixed", body_size: 12.5,
+            bevels: true, widget_stroke: "bevel", selection: "accent", scroll_bars: "solid", canvas_dots: false,
+            toggle: "switch", switch: "block", knob: "block", slider_fill: "accent",
+            push_shape: "rounded", secondary_button: "filled", push_height: 30.0,
+            primary_hover_alpha: 0.93, primary_press_alpha: 0.85,
+            panel_groups: "cards", document_tabs: "cards", tool_bar_rule: false, dock_width: 300.0, dock_margin: 8.0,
+            options_bar: 42.0, status_bar: 30.0, tool_bar: 50.0, tool_button: 36.0, tool_margin: 7.0, rail: 44.0, rail_button: 32.0,
+            title_bar_height: 38.0, mark: 20.0, menu_title_height: 24.0, menu_row_height: 24.0,
+            menu_row_padding_x: 2.0, menu_row_padding_y: 0.0, menu_min_width: 220.0, menu_highlight_radius: 0,
+            radius_sm: 0, radius: 0, radius_lg: 0
+          }
+        }
+      },
       button: {
         coverage: "explicit",
         base: {

@@ -159,7 +159,7 @@ pub fn harness(builder: HarnessBuilder<Fixture>, theme: &Theme) -> Harness<'stat
     let registry = registry();
     let strings = Strings::new(FTL);
     let stroke = toolkit::icons::stroke_width(theme);
-    let dark = toolkit::chrome::dark_base(theme.scheme(), theme.mode());
+    let dark = toolkit::chrome::dark_base(theme);
     let workspaces: Vec<String> = WORKSPACES.iter().map(|w| (*w).to_owned()).collect();
     let mut harness = builder.build_ui_state(
         move |ui, state: &mut Fixture| {

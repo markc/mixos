@@ -23,7 +23,8 @@
 //! Disabled buttons need nothing here: a disabled `Ui` paints at
 //! `disabled_alpha` (50%, §1.4).
 
-use crate::chrome::{self, Chrome, Grammar};
+use crate::chrome::{self, Chrome};
+use design::family::style::{PushShape, SecondaryButton};
 use crate::icons::{self, Icon};
 use egui::emath::GuiRounding;
 use egui::{
@@ -42,10 +43,6 @@ pub const PUSH_SIZE: f32 = 13.0;
 
 /// Push-button width beyond its label (§3.13: 14 pt each side).
 const PUSH_PADDING: f32 = 28.0;
-
-/// Primary hover and pressed opacities (§1.4): Pro, then Studio and Classic.
-const PRIMARY_ALPHA_PRO: [f32; 2] = [0.9, 0.8];
-const PRIMARY_ALPHA: [f32; 2] = [0.93, 0.85];
 
 /// Width of the Pro secondary outline (§2.3).
 const PRO_OUTLINE: f32 = 1.5;
@@ -188,23 +185,22 @@ impl PushButton {
     }
 }
 
-/// A push button's height in `grammar` (§3.13: 28 Pro, 30 otherwise).
-pub fn push_height(grammar: Grammar) -> f32 {
-    if grammar.is_pro() { 28.0 } else { 30.0 }
-}
-
-/// A push button's corner radius: fully round in Pro, else `radius_sm`.
+/// A push button's corner radius: fully round for a pill (Pro), else
+/// `radius_sm`.
 fn push_radius(chrome: &Chrome, height: f32) -> f32 {
-    if chrome.grammar.is_pro() { height / 2.0 } else { f32::from(chrome.metrics.radius_sm) }
+    match chrome.style.push_shape {
+        PushShape::Pill => height / 2.0,
+        PushShape::Rounded => f32::from(chrome.metrics.radius_sm),
+    }
 }
 
 impl Widget for PushButton {
     fn ui(self, ui: &mut Ui) -> Response {
         let chrome = Chrome::of(ui.ctx());
-        let (grammar, p) = (chrome.grammar, &chrome.palette);
+        let (style, p) = (&chrome.style, &chrome.palette);
         let font = crate::fonts::bound(ui.ctx(), crate::fonts::medium(PUSH_SIZE));
         let galley = ui.painter().layout_no_wrap(self.label.clone(), font, Color32::PLACEHOLDER);
-        let height = push_height(grammar);
+        let height = chrome.metrics.push_height;
         let size = vec2((galley.size().x + PUSH_PADDING).max(self.min_width), height);
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
         response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, ui.is_enabled(), &self.label));
@@ -218,12 +214,13 @@ impl Widget for PushButton {
         let painter = ui.painter();
         let ink = match self.kind {
             Kind::Primary => {
-                let [hover, press] = if grammar.is_pro() { PRIMARY_ALPHA_PRO } else { PRIMARY_ALPHA };
+                // Primary hover and pressed opacities (§1.4).
+                let [hover, press] = chrome.metrics.primary_alpha;
                 let alpha = if pressed { press } else if hovered { hover } else { 1.0 };
                 painter.rect_filled(rect, corner, p.primary_bg.gamma_multiply(alpha));
                 p.primary_text
             }
-            Kind::Secondary if grammar.is_pro() => {
+            Kind::Secondary if style.secondary_button == SecondaryButton::Outline => {
                 if hovered || pressed {
                     painter.rect_filled(rect, corner, p.hover);
                 }
@@ -235,20 +232,20 @@ impl Widget for PushButton {
                 // "85% when pressed" is read as the hover fill at 85%, the
                 // primary's pressed rule (§3.13; undetermined, §5.4).
                 let fill = if pressed {
-                    p.hover.gamma_multiply(PRIMARY_ALPHA[1])
+                    p.hover.gamma_multiply(chrome.metrics.primary_alpha[1])
                 } else if hovered {
                     p.hover
                 } else {
                     p.field
                 };
                 painter.rect_filled(rect, corner, fill);
-                if !grammar.has_bevel() {
+                if !style.bevels {
                     painter.rect_stroke(rect, corner, Stroke::new(1.0, p.field_border), StrokeKind::Inside);
                 }
                 p.text
             }
         };
-        if grammar.has_bevel() {
+        if style.bevels {
             chrome::bevel(painter, rect, !pressed, p);
         }
         let at = (rect.center() - galley.size() / 2.0).round_to_pixels(ui.pixels_per_point());
@@ -311,10 +308,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn push_buttons_follow_the_grammar() {
-        assert_eq!(push_height(Grammar::Pro), 28.0);
-        assert_eq!(push_height(Grammar::Studio), 30.0);
-        assert_eq!(push_height(Grammar::Classic), 30.0);
+    fn push_buttons_follow_the_style() {
+        use design::{DesignContext, Scheme};
+        let height = |scheme| Chrome::for_theme(&crate::Theme::for_context(DesignContext { scheme, ..DesignContext::default() })).metrics.push_height;
+        assert_eq!((height(Scheme::Pro), height(Scheme::Studio), height(Scheme::Classic)), (28.0, 30.0, 30.0));
     }
 
     #[test]

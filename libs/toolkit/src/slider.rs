@@ -23,6 +23,7 @@
 //! 74 pt value field at the right, the slider below, and 4 pt after.
 
 use crate::chrome::{self, Chrome};
+use design::family::style::{Knob, SliderFill};
 use crate::field::{self, ValueField};
 use egui::emath::GuiRounding;
 use egui::accesskit::{Action, ActionData};
@@ -354,18 +355,21 @@ impl Widget for Slider<'_> {
                 None => {
                     let track = Rect::from_x_y_ranges(track_x, cy - PLAIN_TRACK / 2.0..=cy + PLAIN_TRACK / 2.0);
                     painter.rect_filled(track, TRACK_RADIUS, p.field_border);
-                    let fill = if chrome.grammar.has_bevel() { p.accent } else { p.text_dim };
+                    let fill = match chrome.style.slider_fill {
+                        SliderFill::Accent => p.accent,
+                        SliderFill::TextDim => p.text_dim,
+                    };
                     let filled = Rect::from_min_max(track.min, pos2(knob_x, track.max.y));
                     painter.rect_filled(filled, TRACK_RADIUS, fill);
                 }
             }
             let centre = pos2(knob_x, cy);
-            if chrome.grammar.has_bevel() {
+            if chrome.style.knob == Knob::Block {
                 let knob = Rect::from_center_size(centre, KNOB_CLASSIC).round_to_pixels(ppp);
                 painter.rect_filled(knob, 0.0, p.card);
                 chrome::bevel(painter, knob, true, p);
             } else {
-                let (radius, fill, ring) = if chrome.grammar.is_pro() {
+                let (radius, fill, ring) = if chrome.style.knob == Knob::Ringed {
                     (KNOB_PRO, KNOB_PRO_FILL, Some(KNOB_PRO_RING))
                 } else {
                     (KNOB_STUDIO, KNOB_STUDIO_FILL, None)

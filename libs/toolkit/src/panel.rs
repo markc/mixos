@@ -3,7 +3,7 @@
 //! strip and body, the Studio card with pill tabs (Classic follows Studio,
 //! square and bevelled), section labels and the drag-drop insertion line.
 //!
-//! [`group`] draws whichever the grammar asks for around the caller's body
+//! [`group`] draws whichever the style asks for around the caller's body
 //! and keeps the group's view state (the selected tab, whether it is
 //! collapsed) in the context under its id.
 //!
@@ -29,7 +29,8 @@
 //! shows where a group would land, and the drop hands back the new order.
 
 use crate::button::IconButton;
-use crate::chrome::{self, Chrome, Grammar};
+use crate::chrome::{self, Chrome};
+use design::family::style::PanelGroups;
 use crate::icons::Icon;
 use crate::tabs;
 use egui::emath::GuiRounding;
@@ -102,10 +103,9 @@ pub fn group<R>(ui: &mut Ui, id_salt: impl egui::AsIdSalt, tabs: &[&str], body: 
     let mut state: GroupState = ui.data(|d| d.get_temp(id)).unwrap_or_default();
     state.selected = state.selected.min(tabs.len().saturating_sub(1));
     let chrome = Chrome::of(ui.ctx());
-    let out = if chrome.grammar.is_pro() {
-        pro_group(ui, id, &chrome, tabs, &mut state, body)
-    } else {
-        card_group(ui, id, &chrome, tabs, &mut state, body)
+    let out = match chrome.style.panel_groups {
+        PanelGroups::TabStrip => pro_group(ui, id, &chrome, tabs, &mut state, body),
+        PanelGroups::Cards => card_group(ui, id, &chrome, tabs, &mut state, body),
     };
     ui.data_mut(|d| d.insert_temp(id, state));
     GroupResponse { state, ..out }
@@ -222,7 +222,7 @@ fn card_group<R>(
     let margin = if state.collapsed { Margin { bottom: CARD_MARGIN_COLLAPSED, ..CARD_MARGIN } } else { CARD_MARGIN };
     let frame = Frame::new()
         .fill(p.card)
-        .stroke(if chrome.grammar.has_bevel() { Stroke::NONE } else { Stroke::new(1.0, p.card_border) })
+        .stroke(if chrome.style.bevels { Stroke::NONE } else { Stroke::new(1.0, p.card_border) })
         .corner_radius(chrome.metrics.radius)
         .inner_margin(margin);
     let shown = frame.show(ui, |ui| {
@@ -272,7 +272,7 @@ fn card_group<R>(
         });
         (inner, menu, handle)
     });
-    if chrome.grammar.has_bevel() {
+    if chrome.style.bevels {
         chrome::bevel(ui.painter(), shown.response.rect, true, &p);
     }
     ui.add_space(CARD_AFTER);
@@ -352,7 +352,7 @@ fn pill(ui: &Ui, chrome: &Chrome, rect: Rect, selected: bool, hovered: bool) {
     let radius = chrome.metrics.radius_sm;
     if selected {
         painter.rect_filled(rect, radius, p.hover);
-        if chrome.grammar == Grammar::Classic {
+        if chrome.style.bevels {
             chrome::bevel(painter, rect, true, p);
         } else {
             painter.rect_stroke(rect, radius, Stroke::new(1.0, p.field_border), StrokeKind::Inside);

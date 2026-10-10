@@ -17,8 +17,8 @@ use std::path::{Path, PathBuf};
 
 use design::{
     Contrast, DesignCompileResult, DesignContext, DesignDiagnostic, DesignSourceDocument,
-    DesignSourceError, LegacyV0Source, Mode, ResolvedDictionary, ResolvedTypography, Scheme,
-    SourceIdentity, UnstampedResolvedDesign,
+    DesignSourceError, LegacyV0Source, Mode, ResolvedDictionary, ResolvedStyle, ResolvedTypography,
+    Scheme, SourceIdentity, UnstampedResolvedDesign,
 };
 
 /// The shared theme file, `theme.conf.mix`, in the MixOS etc directory.
@@ -76,6 +76,7 @@ impl std::error::Error for Error {
 pub struct Theme {
     context: DesignContext,
     design: UnstampedResolvedDesign,
+    style: ResolvedStyle,
 }
 
 impl Theme {
@@ -145,7 +146,15 @@ impl Theme {
 
     fn compile(document: &DesignSourceDocument, context: DesignContext) -> Result<Self, Error> {
         match design::compile_design(document, context.clone()) {
-            DesignCompileResult::Success(success) => Ok(Self { context, design: success.candidate }),
+            DesignCompileResult::Success(success) => {
+                // A design that authors no style family takes the embedded
+                // design's style for its scheme.
+                let style = match success.candidate.dictionary().style {
+                    Some(style) => style,
+                    None => Self::for_context(context.clone()).style,
+                };
+                Ok(Self { context, design: success.candidate, style })
+            }
             DesignCompileResult::Fatal(failure) => Err(Error::Compile(failure.diagnostics)),
         }
     }
@@ -189,6 +198,11 @@ impl Theme {
 
     pub fn typography(&self) -> &ResolvedTypography {
         self.design.typography()
+    }
+
+    /// The chrome's forms and lengths (the design's style family).
+    pub fn style(&self) -> ResolvedStyle {
+        self.style
     }
 }
 
@@ -262,6 +276,38 @@ mod tests {
         assert_eq!((theme.scheme(), theme.mode()), (Scheme::Forest, Mode::Dark));
         let partial = Theme::from_source("test", "mode: \"light\"\n").unwrap();
         assert_eq!((partial.scheme(), partial.mode()), (Scheme::Studio, Mode::Light), "an absent axis takes the default");
+    }
+
+    #[test]
+    fn a_design_without_a_style_family_takes_the_embedded_style() {
+        let mut document = embedded_document();
+        document.v1.families.style = None;
+        let context = DesignContext { scheme: Scheme::Classic, ..DesignContext::default() };
+        let theme = Theme::compile(&document, context.clone()).unwrap();
+        assert_eq!(theme.dictionary().style, None);
+        assert_eq!(theme.style(), Theme::for_context(context).style());
+    }
+
+    /// A custom design with no style family keeps deriving the hue
+    /// schemes' title bar and menus from its own spacing and radius: the
+    /// embedded style's fixed lengths would shrink its hit targets.
+    #[test]
+    fn a_custom_design_without_a_style_family_derives_its_chrome_geometry() {
+        let mut document = embedded_document();
+        document.v1.families.style = None;
+        document.v1.primitives.scales.get_mut("spacing").unwrap()[9] = design::MetricSource::px(48.0);
+        document.v1.primitives.metrics.insert("radius".into(), design::MetricSource::px(10.0));
+        let theme = Theme::compile(&document, DesignContext::revision_one()).unwrap();
+        let m = crate::chrome::Chrome::for_theme(&theme).metrics;
+        // One 48 pt control, and a 3 pt item gap above and below it.
+        assert_eq!((m.menu_row_height, m.menu_title_height, m.title_bar_height), (48.0, 48.0, 54.0));
+        assert_eq!((m.menu_row_padding.x, m.menu_min_width), (32.0, 384.0));
+        assert_eq!((m.radius_sm, m.radius, m.radius_lg, m.menu_highlight_radius), (10, 7, 20, 10));
+        // Explicit style tokens stay authoritative.
+        let mut styled = embedded_document();
+        styled.v1.primitives.scales.get_mut("spacing").unwrap()[9] = design::MetricSource::px(48.0);
+        let theme = Theme::compile(&styled, DesignContext::revision_one()).unwrap();
+        assert_eq!(crate::chrome::Chrome::for_theme(&theme).metrics.title_bar_height, 30.0);
     }
 
     #[test]

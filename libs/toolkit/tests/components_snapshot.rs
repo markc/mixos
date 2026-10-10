@@ -15,7 +15,7 @@ use egui::accesskit::Role;
 use egui::{CentralPanel, Frame, Id, Key, Ui, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use toolkit::bars::{self, Sizes};
+use toolkit::bars;
 use toolkit::button::{IconButton, PushButton};
 use toolkit::chrome::Chrome;
 use toolkit::dialog::{Choice, Dialog, Role as DialogRole};
@@ -65,7 +65,7 @@ impl Default for Gallery {
 const BLENDS: [&str; 4] = ["Normal", "Multiply", "Screen", "Overlay"];
 
 fn gallery(ui: &mut Ui, s: &mut Gallery) {
-    let sizes = Sizes::of(Chrome::of(ui.ctx()).grammar);
+    let sizes = Chrome::of(ui.ctx()).metrics.bars;
     bars::options(ui, |ui| {
         ui.add(IconButton::new(Icon::Play).selected(true).tooltip("Brush"));
         ui.add(IconButton::new(Icon::Settings).tooltip("Brush settings (Ctrl+B)"));

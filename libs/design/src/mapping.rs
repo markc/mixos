@@ -1852,6 +1852,7 @@ mod tests {
             families: FamilyMappingsSource {
                 button: Some(mapping),
                 chrome: None,
+                style: None,
             },
             v0_crosswalk: Default::default(),
         }

@@ -57,7 +57,7 @@ pub fn definitions(theme: &Theme) -> FontDefinitions {
     let mut display = design::active_typography(Some(typography), TypographyRole::UiDisplay).weight;
     // The chrome specification fixes its faces (§2.1): Inter Regular, with
     // Medium (window title, push buttons) and SemiBold (headings).
-    if theme.scheme().is_chrome_scheme() {
+    if theme.style().faces == design::family::style::Faces::Fixed {
         (ui, display) = (CHROME_WEIGHT, CHROME_WEIGHT + 200);
     }
 

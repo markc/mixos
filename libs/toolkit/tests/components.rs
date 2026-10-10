@@ -358,7 +358,7 @@ struct Dock {
 }
 
 #[test]
-fn panel_groups_select_and_collapse_from_their_tabs_in_both_grammars() {
+fn panel_groups_select_and_collapse_from_their_tabs_in_both_styles() {
     for (scheme, mode) in [(Scheme::Pro, Mode::Light), (Scheme::Studio, Mode::Dark)] {
         let mut h = harness(scheme, mode, Dock::default(), |ui, s| {
             let r = panel::group(ui, "dock", &["Layers", "Channels", "Paths"], |ui, tab| {
