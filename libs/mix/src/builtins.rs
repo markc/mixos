@@ -22977,7 +22977,7 @@ fn builtin_tcp_local_addr(args: Vec<Value>) -> MixResult<Option<Value>> {
 // evaluation keep the synchronous semantics.
 #[cfg(feature = "ws")]
 pub(crate) mod socket_sources {
-    use super::{tcp_client, tcp_err, tcp_server, ws_client, ws_err};
+    use super::{tcp_client, tcp_server, tcp_unknown, ws_client, ws_err};
     use crate::{
         error::MixResult,
         native_events::{Queue, refusal},
@@ -23967,7 +23967,7 @@ pub(crate) mod socket_sources {
         } else {
             let conn = tcp_client::MAP.lock().unwrap().remove(&id).ok_or_else(|| {
                 PULLED.lock().unwrap().remove(&key);
-                super::tcp_unknown(name, id)
+                tcp_unknown(name, id)
             })?;
             let tcp = conn.tcp();
             let read_timeout = tcp.read_timeout().ok().flatten();
