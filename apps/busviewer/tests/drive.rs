@@ -125,7 +125,7 @@ fn the_title_bar_controls_are_in_the_tree_and_work_by_click() {
     h.run_steps(2);
     assert!(!h.state().engine.ui.focus_filter, "the view took the focus request");
     ok(&mut h, 4, "busviewer.ui.click", json!({"label":label("toggle-mode")}));
-    assert_eq!(h.state().engine.ui.theme_mode, Some(design::Mode::Dark), "the toggle shows the mode opposite the session's");
+    assert_eq!(h.state().engine.ui.theme_mode, Some(design::Mode::Light), "the toggle shows the mode opposite the session's");
     ok(&mut h, 5, "busviewer.ui.click", json!({"label":label("shortcuts")}));
     assert_eq!(h.state().engine.ui.dialog, Some(inspector::Dialog::Shortcuts), "the link opens the shortcuts");
 }

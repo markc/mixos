@@ -6,9 +6,9 @@
   limits:{receipts:128,source_bytes:262144,request_bytes:393216,snapshot_bytes:983040},
   binding:{instance:"example",profile:"default"},
   batches:[
-    {name:"appearance_layout",changes:{"appearance.mode":"dark","ui.text_scale":1.1,"shell.panels.bottom.thickness":48},reset:[]},
+    {name:"appearance_layout",changes:{"appearance.mode":"light","ui.text_scale":1.1,"shell.panels.bottom.thickness":48},reset:[]},
     {name:"unknown_field",changes:{"appearance.typo":"dark"},expected:"validation_failed"},
-    {name:"invalid_layout",changes:{"appearance.mode":"dark","shell.panels.bottom.thickness":999},expected:"validation_failed"},
+    {name:"invalid_layout",changes:{"appearance.mode":"light","shell.panels.bottom.thickness":999},expected:"validation_failed"},
     {name:"reset_app",changes:{},reset:["apps.term"]}
   ],
   deferred:["gui_delivery","candidate_import","artifacts","preview","replication"]

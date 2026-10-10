@@ -1,9 +1,9 @@
 /// The MixOS colour schemes: six hues, and three chrome schemes whose
 /// light and dark modes step the brightness (`pro`: Pro and Pro Medium Gray;
-/// `studio`: Studio and Studio Light; `classic`: Classic in both).
+/// `studio`: Studio and Studio Light; `classic`: Classic in both). The
+/// default is `studio`.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Scheme {
-    #[default]
     Ocean,
     Crimson,
     Stone,
@@ -11,6 +11,7 @@ pub enum Scheme {
     Sunset,
     Mono,
     Pro,
+    #[default]
     Studio,
     Classic,
 }
@@ -57,11 +58,11 @@ impl Scheme {
     }
 }
 
-/// Light or dark presentation mode.
+/// Light or dark presentation mode. The default is dark.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Mode {
-    #[default]
     Light,
+    #[default]
     Dark,
 }
 
@@ -108,6 +109,7 @@ impl Contrast {
 /// The compile-time selection used to flatten a design source.
 ///
 /// Per-app overlays are compile-time selections, never runtime fallbacks.
+/// The default is studio, dark, normal contrast, no app.
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DesignContext {
     pub scheme: Scheme,
@@ -116,4 +118,14 @@ pub struct DesignContext {
     /// Stable application identity selecting a compile-time per-app overlay.
     /// `None` is the unoverlaid context used by the v0 equivalence gate.
     pub app: Option<String>,
+}
+
+impl DesignContext {
+    /// Revision one's selection, the default before Studio Dark: ocean,
+    /// light, normal contrast, no app. Tests that pin revision one's exact
+    /// values, and the v0 equivalence gate's legacy fields, are written
+    /// against it.
+    pub const fn revision_one() -> Self {
+        Self { scheme: Scheme::Ocean, mode: Mode::Light, contrast: Contrast::Normal, app: None }
+    }
 }

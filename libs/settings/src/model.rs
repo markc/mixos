@@ -65,8 +65,8 @@ pub struct Appearance {
 impl Default for Appearance {
     fn default() -> Self {
         Self {
-            scheme: "ocean".into(),
-            mode: "light".into(),
+            scheme: "studio".into(),
+            mode: "dark".into(),
             contrast: "normal".into(),
             source: None,
         }

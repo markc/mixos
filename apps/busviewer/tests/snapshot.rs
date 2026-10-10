@@ -69,9 +69,17 @@ fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
     harness.snapshot(name);
 }
 
+/// The hue scheme ocean, light.
 #[test]
 fn window_light() {
-    window(Theme::embedded(), "window_light");
+    window(Theme::for_context(DesignContext::revision_one()), "window_light");
+}
+
+/// With no theme chosen BusViewer starts in Studio Dark, the look
+/// [`window_studio_dark`] pins.
+#[test]
+fn the_default_theme_is_studio_dark() {
+    assert_eq!(Theme::embedded(), chrome(Scheme::Studio, Mode::Dark));
 }
 
 /// The chrome scheme pro in its light (medium grey) mode: title bar and
@@ -111,5 +119,5 @@ fn shortcuts_studio_light() {
 
 #[test]
 fn window_dark() {
-    window(Theme::for_context(DesignContext { mode: Mode::Dark, ..DesignContext::default() }), "window_dark");
+    window(Theme::for_context(DesignContext { mode: Mode::Dark, ..DesignContext::revision_one() }), "window_dark");
 }

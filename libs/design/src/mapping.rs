@@ -215,7 +215,7 @@ pub(crate) fn compile_button_mapping(
     source: &DesignV1Source,
     colours: &ResolvedColours,
 ) -> Result<CompileSuccess<ResolvedButtonTable>, MappingCompileFailure> {
-    compile_button_mapping_artifacts(source, colours, DesignContext::default()).map(|success| {
+    compile_button_mapping_artifacts(source, colours, DesignContext::revision_one()).map(|success| {
         CompileSuccess {
             value: success.value.table,
             diagnostics: success.diagnostics,
@@ -2061,7 +2061,7 @@ mod tests {
             &colours,
             &ratio_metrics(0.0),
             &BTreeMap::new(),
-            DesignContext::default(),
+            DesignContext::revision_one(),
             &registry,
             &mut errors,
         );
@@ -2105,7 +2105,7 @@ mod tests {
             &colours,
             &ratio_metrics(0.0),
             &BTreeMap::new(),
-            DesignContext::default(),
+            DesignContext::revision_one(),
             &registry,
             &mut errors,
         )
@@ -2153,7 +2153,7 @@ mod tests {
             &colours,
             &ratio_metrics(0.0),
             &BTreeMap::new(),
-            DesignContext::default(),
+            DesignContext::revision_one(),
             &registry,
             &mut errors,
         )
@@ -2197,7 +2197,7 @@ mod tests {
             &colours,
             &ratio_metrics(0.0),
             &BTreeMap::new(),
-            DesignContext::default(),
+            DesignContext::revision_one(),
             &registry,
             &mut errors,
         )
@@ -2250,7 +2250,7 @@ mod tests {
             &colours,
             &metrics,
             &BTreeMap::new(),
-            DesignContext::default(),
+            DesignContext::revision_one(),
             &registry,
             &mut errors,
         );
@@ -2279,7 +2279,7 @@ mod tests {
             &colours,
             &ratio_metrics(0.0),
             &BTreeMap::new(),
-            DesignContext::default(),
+            DesignContext::revision_one(),
             REGISTRY,
             &mut errors,
         );
@@ -2356,7 +2356,7 @@ mod tests {
                 &colours,
                 &ratio_metrics(0.0),
                 &BTreeMap::new(),
-                DesignContext::default(),
+                DesignContext::revision_one(),
                 &registry,
                 &mut errors,
             );
@@ -2404,7 +2404,7 @@ mod tests {
             &colours,
             &ratio_metrics(0.0),
             &BTreeMap::new(),
-            DesignContext::default(),
+            DesignContext::revision_one(),
             &registry,
             &mut errors,
         );
@@ -2454,7 +2454,7 @@ mod tests {
             &colours,
             &metrics,
             &BTreeMap::new(),
-            DesignContext::default(),
+            DesignContext::revision_one(),
             REGISTRY,
             &mut errors,
         )
@@ -3108,7 +3108,7 @@ mod tests {
         });
         let (source, colours) = compile_fixture(mapping);
         let compiled =
-            compile_button_mapping_artifacts(&source, &colours, DesignContext::default())
+            compile_button_mapping_artifacts(&source, &colours, DesignContext::revision_one())
                 .expect("valid mapping")
                 .value;
         let value = compiled

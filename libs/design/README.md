@@ -19,5 +19,8 @@ dependencies are `strict` (the source format) and `serde`.
   stamps a revision onto an accepted candidate.
 - `Scheme`, `Mode`, `Contrast` are the closed selection axes;
   `active_typography` reads a typography role with embedded defaults.
+- The default selection, used when nothing chooses a theme, is studio,
+  dark. `DesignContext::revision_one()` is revision one's ocean, light, which
+  the v0 equivalence gate and the revision-one parity tests pin.
 
 Build and test with `cargo test -p design`.

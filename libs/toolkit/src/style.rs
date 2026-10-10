@@ -255,7 +255,7 @@ mod tests {
 
     #[test]
     fn sizes_come_from_the_design() {
-        let theme = Theme::embedded();
+        let theme = Theme::for_context(DesignContext::revision_one());
         let style = style(&theme);
         let ui = design::active_typography(Some(theme.typography()), TypographyRole::Ui);
         assert_eq!(style.text_styles[&TextStyle::Body].size, ui.font_size as f32);

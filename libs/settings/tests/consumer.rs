@@ -188,11 +188,11 @@ fn provenance_source_revision_and_other_app_changes_do_not_invalidate_ced() {
     next.desktop.apps.insert(
         "term".into(),
         AppOverride {
-            mode: Some("dark".into()),
+            mode: Some("light".into()),
             ..Default::default()
         },
     );
-    next.effective.get_mut("app:term").unwrap().mode = "dark".into();
+    next.effective.get_mut("app:term").unwrap().mode = "light".into();
     assert!(ChangePlan::between(Some(&initial), &next, "app:ced", false).is_empty());
     let mut state = consumer();
     activate(&mut state, initial);

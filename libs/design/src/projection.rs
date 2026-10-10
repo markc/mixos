@@ -216,7 +216,7 @@ mod tests {
     fn projection_round_trips_without_changing_lineage_or_cell_data() {
         let doc =
             parse_design_source(SourceIdentity::new("embedded"), EMBEDDED_DEFAULT_SOURCE).unwrap();
-        let result = compile_design(&doc, DesignContext::default());
+        let result = compile_design(&doc, DesignContext::revision_one());
         let transition = apply_compiled_design(None, result, std::time::SystemTime::UNIX_EPOCH);
         let live = transition.design.unwrap();
         let view = live.read_projection();

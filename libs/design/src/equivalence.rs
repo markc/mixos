@@ -481,7 +481,7 @@ mod tests {
     }
 
     fn assert_fatal_code(document: &DesignSourceDocument, code: &str) {
-        let result = compile_design(document, DesignContext::default());
+        let result = compile_design(document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
         assert!(
             diagnostics(&result)
@@ -572,7 +572,7 @@ mod tests {
                 .collect::<BTreeSet<_>>(),
             COMPARED_FIELDS.into_iter().collect()
         );
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         assert!(
             matches!(result, DesignCompileResult::Success(_)),
             "{:#?}",
@@ -771,7 +771,7 @@ mod tests {
                 .v1
                 .v0_crosswalk
                 .insert("surface".to_owned(), expression);
-            let result = compile_design(&document, DesignContext::default());
+            let result = compile_design(&document, DesignContext::revision_one());
             assert!(
                 diagnostics(&result)
                     .iter()
@@ -786,7 +786,7 @@ mod tests {
     fn invalid_legacy_selection_cannot_choose_the_compared_context() {
         let mut document = document("equivalence:invalid-legacy-selection");
         document.legacy.scheme = Some("chartreuse".to_owned());
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         assert!(diagnostics(&result).iter().any(|diagnostic| {
             diagnostic.code == "v0-equivalence-drift"
                 && diagnostic
@@ -817,7 +817,7 @@ mod tests {
                 .colors
                 .insert("status.success".to_owned(), neutral(lightness));
             document.legacy.meter_green = Some(expected.to_owned());
-            let result = compile_design(&document, DesignContext::default());
+            let result = compile_design(&document, DesignContext::revision_one());
             let DesignCompileResult::Success(success) = result else {
                 panic!("{lightness}: {:#?}", diagnostics(&result));
             };
@@ -840,7 +840,7 @@ mod tests {
             &document,
             DesignContext {
                 contrast: Contrast::High,
-                ..DesignContext::default()
+                ..DesignContext::revision_one()
             },
         );
         let DesignCompileResult::Success(success) = result else {
@@ -866,7 +866,7 @@ mod tests {
             &document,
             DesignContext {
                 app: Some(FIXTURE_APP.to_owned()),
-                ..DesignContext::default()
+                ..DesignContext::revision_one()
             },
         );
         let DesignCompileResult::Success(success) = result else {
@@ -898,7 +898,7 @@ mod tests {
         );
         document.v1.modifiers.push(app);
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
         assert!(diagnostics(&result).iter().any(|diagnostic| {
             diagnostic.code == "text-contrast"
@@ -921,7 +921,7 @@ mod tests {
             &document,
             DesignContext {
                 app: Some("dev.mixos.requested-app".to_owned()),
-                ..DesignContext::default()
+                ..DesignContext::revision_one()
             },
         );
         let DesignCompileResult::Success(success) = result else {
@@ -949,7 +949,7 @@ mod tests {
             crate::PairSource::authored("missing.surface", "palette.foreground.default", None),
         );
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
         let diagnostic = diagnostics(&result)
             .iter()
@@ -985,7 +985,7 @@ mod tests {
             .v0_crosswalk
             .insert("panel".to_owned(), ghost_resting_surface.clone());
         rendered.legacy.panel = Some("#f3fafc".to_owned());
-        let result = compile_design(&rendered, DesignContext::default());
+        let result = compile_design(&rendered, DesignContext::revision_one());
         assert!(
             matches!(result, DesignCompileResult::Success(_)),
             "the composited colour is the one v0 painted: {:#?}",
@@ -1021,7 +1021,7 @@ mod tests {
             .v0_crosswalk
             .insert("track".to_owned(), card_surface.clone());
         rendered.legacy.track = Some("#f3fafc".to_owned());
-        let result = compile_design(&rendered, DesignContext::default());
+        let result = compile_design(&rendered, DesignContext::revision_one());
         assert!(
             matches!(result, DesignCompileResult::Success(_)),
             "the composited colour is the one v0 painted: {:#?}",

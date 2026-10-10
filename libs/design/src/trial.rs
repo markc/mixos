@@ -20,7 +20,7 @@ fn compile_trial() -> ResolvedDesign {
         None,
         compile_design(
             &parsed_trial("embedded:revision-1"),
-            DesignContext::default(),
+            DesignContext::revision_one(),
         ),
         SystemTime::UNIX_EPOCH,
     );
@@ -1202,7 +1202,7 @@ fn shipped_override_walker_and_artifact_query_agree_over_the_full_product() {
 fn artifact_query_distinguishes_unknown_direct_reexecution_and_unavailable_pairs() {
     let DesignCompileResult::Success(success) = compile_design(
         &parsed_trial("embedded:override-query-dispositions"),
-        DesignContext::default(),
+        DesignContext::revision_one(),
     ) else {
         panic!("embedded override query fixture must compile")
     };
@@ -1266,7 +1266,7 @@ fn artifact_query_distinguishes_unknown_direct_reexecution_and_unavailable_pairs
 fn artifact_query_obeys_the_compiled_decision_after_dictionary_values_change() {
     let DesignCompileResult::Success(success) = compile_design(
         &parsed_trial("embedded:query-policy-authority"),
-        DesignContext::default(),
+        DesignContext::revision_one(),
     ) else {
         panic!("embedded default must compile")
     };
@@ -1878,7 +1878,7 @@ fn focus_ring_covers_every_reachable_cell_and_pins_revision_one_walks() {
 fn apply_revisions_skip_failures_and_keep_the_last_known_good() {
     let first_transition = apply_compiled_design(
         None,
-        compile_design(&parsed_trial("good:first"), DesignContext::default()),
+        compile_design(&parsed_trial("good:first"), DesignContext::revision_one()),
         SystemTime::UNIX_EPOCH,
     );
     assert_eq!(first_transition.decision, DesignApplyDecision::Replaced);
@@ -1889,7 +1889,7 @@ fn apply_revisions_skip_failures_and_keep_the_last_known_good() {
     failed_document.v1.families.button = None;
     let failed_transition = apply_compiled_design(
         Some(first),
-        compile_design(&failed_document, DesignContext::default()),
+        compile_design(&failed_document, DesignContext::revision_one()),
         SystemTime::UNIX_EPOCH + Duration::from_secs(1),
     );
     assert_eq!(failed_transition.decision, DesignApplyDecision::KeptCurrent);
@@ -1913,7 +1913,7 @@ fn apply_revisions_skip_failures_and_keep_the_last_known_good() {
 
     let second_transition = apply_compiled_design(
         Some(survived),
-        compile_design(&parsed_trial("good:second"), DesignContext::default()),
+        compile_design(&parsed_trial("good:second"), DesignContext::revision_one()),
         SystemTime::UNIX_EPOCH + Duration::from_secs(2),
     );
     let second = second_transition.design.expect("second compile failed");
@@ -1929,7 +1929,7 @@ fn a_success_carrying_an_error_diagnostic_is_refused_and_keeps_the_current_artif
     let live = compile_trial();
     let mut result = compile_design(
         &parsed_trial("contradictory:success"),
-        DesignContext::default(),
+        DesignContext::revision_one(),
     );
     let crate::DesignCompileResult::Success(success) = &mut result else {
         panic!("embedded default did not compile");
@@ -1959,7 +1959,7 @@ fn a_boot_failure_leaves_no_live_artifact() {
     failed_document.v1.families.button = None;
     let transition = apply_compiled_design(
         None,
-        compile_design(&failed_document, DesignContext::default()),
+        compile_design(&failed_document, DesignContext::revision_one()),
         SystemTime::UNIX_EPOCH,
     );
     assert_eq!(transition.decision, DesignApplyDecision::KeptCurrent);

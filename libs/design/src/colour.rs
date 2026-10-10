@@ -667,7 +667,7 @@ mod tests {
     fn compile(
         source: &DesignV1Source,
     ) -> Result<CompileSuccess<ResolvedColours>, ColourCompileFailure> {
-        compile_colour_tokens(source, DesignContext::default())
+        compile_colour_tokens(source, DesignContext::revision_one())
     }
 
     fn colour_arg(value: &str) -> RecipeArgumentSource {
@@ -712,7 +712,7 @@ mod tests {
         let invalid_registry = [REGISTRY[0], REGISTRY[0]];
         let failure = compile_colour_tokens_with_registry(
             &source,
-            DesignContext::default(),
+            DesignContext::revision_one(),
             &invalid_registry,
         )
         .expect_err("an invalid registry must fail colour compilation");

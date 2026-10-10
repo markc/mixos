@@ -1686,7 +1686,7 @@ mod tests {
         };
         elevated.foreground = "palette.foreground.muted".into();
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         let DesignCompileResult::Success(success) = &result else {
             panic!("the fallback repairs rather than refuses: {result:#?}")
         };
@@ -1799,7 +1799,7 @@ mod tests {
     }
 
     fn assert_fatal_code(document: &DesignSourceDocument, code: &str) {
-        let result = compile_design(document, DesignContext::default());
+        let result = compile_design(document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
         assert!(
             diagnostics(&result)
@@ -1851,7 +1851,7 @@ mod tests {
     }
 
     fn assert_masked_padding_step_is_fatal(document: &DesignSourceDocument) {
-        let result = compile_design(document, DesignContext::default());
+        let result = compile_design(document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
         let failures = diagnostics(&result)
             .iter()
@@ -1925,7 +1925,7 @@ mod tests {
         );
         document.v1.modifiers = vec![light, dark];
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
         let failures = diagnostics(&result)
             .iter()
@@ -1940,7 +1940,7 @@ mod tests {
 
     #[test]
     fn fixture_exposes_shipped_radius_and_authored_spacing_without_value_drift() {
-        let result = compile_design(&document(), DesignContext::default());
+        let result = compile_design(&document(), DesignContext::revision_one());
         let DesignCompileResult::Success(success) = result else {
             panic!("embedded metric bases failed: {:?}", diagnostics(&result));
         };
@@ -1995,7 +1995,7 @@ mod tests {
             .metrics
             .insert("radius".into(), MetricSource::px(1.0));
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         let DesignCompileResult::Success(success) = result else {
             panic!("low radius base failed: {:?}", diagnostics(&result));
         };
@@ -2010,7 +2010,7 @@ mod tests {
         let path = "design.v1.primitives.metrics.radius";
         let mut missing = document();
         missing.v1.primitives.metrics.remove("radius");
-        let missing_result = compile_design(&missing, DesignContext::default());
+        let missing_result = compile_design(&missing, DesignContext::revision_one());
         let missing_diagnostic = diagnostics(&missing_result)
             .iter()
             .find(|diagnostic| diagnostic.code == "radius-base-missing")
@@ -2025,7 +2025,7 @@ mod tests {
                 .primitives
                 .metrics
                 .insert("radius".into(), source);
-            let result = compile_design(&wrong_kind, DesignContext::default());
+            let result = compile_design(&wrong_kind, DesignContext::revision_one());
             let diagnostic = diagnostics(&result)
                 .iter()
                 .find(|diagnostic| diagnostic.code == "radius-base-not-px")
@@ -2140,7 +2140,7 @@ mod tests {
         ];
 
         for (document, code, path) in cases {
-            let result = compile_design(&document, DesignContext::default());
+            let result = compile_design(&document, DesignContext::revision_one());
             assert!(matches!(result, DesignCompileResult::Fatal(_)));
             let authored_faults = diagnostics(&result)
                 .iter()
@@ -2162,7 +2162,7 @@ mod tests {
             .primitives
             .scales
             .insert("radius".into(), vec![MetricSource::Untagged(99.0)]);
-        let base_result = compile_design(&base, DesignContext::default());
+        let base_result = compile_design(&base, DesignContext::revision_one());
         let base_diagnostics = diagnostics(&base_result);
         let base_derived = base_diagnostics
             .iter()
@@ -2186,7 +2186,7 @@ mod tests {
             .scales
             .insert("radius".into(), vec![MetricSource::Untagged(99.0)]);
         modified.v1.modifiers.push(unreachable);
-        let modified_result = compile_design(&modified, DesignContext::default());
+        let modified_result = compile_design(&modified, DesignContext::revision_one());
         let modified_diagnostics = diagnostics(&modified_result);
         let derived = modified_diagnostics
             .iter()
@@ -2234,7 +2234,7 @@ mod tests {
             &document,
             DesignContext {
                 scheme: Scheme::Crimson,
-                ..DesignContext::default()
+                ..DesignContext::revision_one()
             },
         );
         let DesignCompileResult::Success(success) = result else {
@@ -2315,7 +2315,7 @@ mod tests {
         let document = padding_step_from_decimal("parsed-double-step-alias", "5.0000000000000001");
         assert_eq!(parsed_padding_step_value(&document), 5.0);
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         let DesignCompileResult::Success(success) = result else {
             panic!("parsed step alias was rejected: {:?}", diagnostics(&result));
         };
@@ -2352,7 +2352,7 @@ mod tests {
         assert_eq!(authored.value, 0.0);
         assert!(authored.value.is_sign_negative());
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         let DesignCompileResult::Success(success) = result else {
             panic!(
                 "parsed negative zero was rejected: {:?}",
@@ -2382,7 +2382,7 @@ mod tests {
         dark.primitives.scales.insert("type".into(), valid_type());
         document.v1.modifiers = vec![light, dark];
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
         let mismatch = diagnostics(&result)
             .iter()
@@ -2408,7 +2408,7 @@ mod tests {
                 }),
             );
 
-            let result = compile_design(&document, DesignContext::default());
+            let result = compile_design(&document, DesignContext::revision_one());
             assert!(matches!(result, DesignCompileResult::Fatal(_)));
             let invalid = diagnostics(&result)
                 .iter()
@@ -2436,7 +2436,7 @@ mod tests {
             .insert("type".into(), vec![MetricSource::px(11.333)]);
         document.v1.modifiers.push(crimson);
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
         let failures = diagnostics(&result)
             .iter()
@@ -2464,7 +2464,7 @@ mod tests {
             crimson.primitives.metrics.insert(name.into(), replacement);
             document.v1.modifiers.push(crimson);
 
-            let result = compile_design(&document, DesignContext::default());
+            let result = compile_design(&document, DesignContext::revision_one());
             assert!(matches!(result, DesignCompileResult::Fatal(_)));
             let failures = diagnostics(&result)
                 .iter()
@@ -2518,7 +2518,7 @@ mod tests {
             },
         );
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         let DesignCompileResult::Success(success) = result else {
             panic!(
                 "rule-selected step metric should compile: {:?}",
@@ -2549,7 +2549,7 @@ mod tests {
             &document,
             DesignContext {
                 scheme: Scheme::Crimson,
-                ..DesignContext::default()
+                ..DesignContext::revision_one()
             },
         );
         let DesignCompileResult::Success(success) = result else {
@@ -2596,7 +2596,7 @@ mod tests {
             .get_mut("type")
             .expect("type scale")[0] = MetricSource::px(-1.0);
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
         assert!(diagnostics(&result).iter().any(|diagnostic| {
             diagnostic.code == "invalid-metric"
@@ -2622,7 +2622,7 @@ mod tests {
             MetricSource::step("type", 9_007_199_254_740_991.0),
         );
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
         assert!(
             diagnostics(&result).iter().any(|diagnostic| {
@@ -2649,7 +2649,7 @@ mod tests {
             .remove("button.height.md")
             .expect("fixture declares button.height.md");
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
         assert!(
             diagnostics(&result).iter().any(|diagnostic| {
@@ -2685,7 +2685,7 @@ mod tests {
             &document,
             DesignContext {
                 scheme: Scheme::Crimson,
-                ..DesignContext::default()
+                ..DesignContext::revision_one()
             },
         );
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
@@ -2708,7 +2708,7 @@ mod tests {
             .insert("type[0]".into(), vec![MetricSource::px(11.333)]);
         document.v1.modifiers.push(crimson);
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
         assert!(
             diagnostics(&result).iter().any(|diagnostic| {
@@ -2737,7 +2737,7 @@ mod tests {
                 },
             );
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
         let mismatch = diagnostics(&result)
             .iter()
@@ -2784,7 +2784,7 @@ mod tests {
 
     #[test]
     fn desktop_roles_match_the_shipped_defaults() {
-        let result = compile_design(&document(), DesignContext::default());
+        let result = compile_design(&document(), DesignContext::revision_one());
         let DesignCompileResult::Success(success) = result else {
             panic!("default typography must compile: {result:?}");
         };
@@ -2864,7 +2864,7 @@ mod tests {
         let mut document = document();
         document.v1.modifiers.push(compound_block(&[]));
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
         let empty = diagnostics(&result)
             .iter()
@@ -2886,7 +2886,7 @@ mod tests {
             block(ModifierAxis::Mode, "dark"),
         ];
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
         let duplicate = diagnostics(&result)
             .iter()
@@ -2902,7 +2902,7 @@ mod tests {
             .v1
             .modifiers
             .push(block(ModifierAxis::Scheme, "ocean"));
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         let diagnostic = diagnostics(&result)
             .iter()
             .find(|diagnostic| diagnostic.code == "modifier-axis-not-in-resolution-order")
@@ -2919,7 +2919,7 @@ mod tests {
             .v1
             .modifiers
             .push(block(ModifierAxis::Scheme, "teal"));
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         let diagnostic = diagnostics(&result)
             .iter()
             .find(|diagnostic| diagnostic.code == "modifier-axis-value-unknown")
@@ -2938,7 +2938,7 @@ mod tests {
             &document,
             DesignContext {
                 app: Some("mail".to_owned()),
-                ..DesignContext::default()
+                ..DesignContext::revision_one()
             },
         );
         assert!(matches!(result, DesignCompileResult::Success(_)));
@@ -2989,7 +2989,7 @@ mod tests {
             .insert("button.padding_x".into(), MetricSource::px(12.0));
         document.v1.modifiers = vec![scheme_contrast, mode_contrast];
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
         let conflicts = diagnostics(&result)
             .iter()
@@ -3071,7 +3071,7 @@ mod tests {
             .insert("button.padding_x".into(), MetricSource::px(12.0));
         document.v1.modifiers = vec![unselectable, reachable];
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
         let codes = diagnostics(&result)
             .iter()
@@ -3119,7 +3119,7 @@ mod tests {
             .insert("type".into(), vec![MetricSource::px(13.0)]);
         document.v1.modifiers = vec![scheme_contrast, mode_contrast];
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
         let conflicts = diagnostics(&result)
             .iter()
@@ -3293,7 +3293,7 @@ mod tests {
             .metrics
             .insert("new.metric".into(), MetricSource::px(8.0));
         document.v1.modifiers.push(modifier);
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
         let diagnostic = diagnostics(&result)
             .iter()
@@ -3317,7 +3317,7 @@ mod tests {
         );
         document.v1.modifiers.push(modifier);
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Success(_)));
         let diagnostic = diagnostics(&result)
             .iter()
@@ -3345,7 +3345,7 @@ mod tests {
             &document,
             DesignContext {
                 scheme: Scheme::Crimson,
-                ..DesignContext::default()
+                ..DesignContext::revision_one()
             },
         );
         let DesignCompileResult::Success(crimson) = crimson else {
@@ -3385,7 +3385,7 @@ mod tests {
             "design.v1.primitives.metrics.button.border_width"
         );
 
-        let ocean = compile_design(&document, DesignContext::default());
+        let ocean = compile_design(&document, DesignContext::revision_one());
         let DesignCompileResult::Success(ocean) = ocean else {
             panic!("ocean context failed")
         };
@@ -3406,7 +3406,7 @@ mod tests {
         );
         document.v1.modifiers.push(crimson);
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
         let failures = diagnostics(&result)
             .iter()
@@ -3449,7 +3449,7 @@ mod tests {
             .compound_variants
             .retain(|rule| rule.when.interaction != Some(InteractionState::Pressed));
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         let DesignCompileResult::Success(success) = result else {
             panic!("coverage warning source should compile")
         };
@@ -3466,7 +3466,7 @@ mod tests {
 
     #[test]
     fn app_axis_expansion_is_the_identity() {
-        let context = DesignContext::default();
+        let context = DesignContext::revision_one();
         assert_eq!(
             axis_contexts(context.clone(), ModifierAxis::App),
             vec![context]
@@ -3567,7 +3567,7 @@ mod tests {
             .colors
             .insert("product.foreground".into(), colour(0.65));
 
-        let result = compile_design(&document, DesignContext::default());
+        let result = compile_design(&document, DesignContext::revision_one());
         assert!(matches!(result, DesignCompileResult::Fatal(_)));
         let failures = diagnostics(&result)
             .iter()

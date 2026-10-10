@@ -371,14 +371,14 @@ mod tests {
             patch(
                 &current,
                 &BTreeMap::from([
-                    ("appearance.mode".into(), json!("dark")),
+                    ("appearance.mode".into(), json!("light")),
                     ("bad.field".into(), json!(2))
                 ]),
                 &[]
             )
             .is_err()
         );
-        assert_eq!(current.appearance.mode, "light");
+        assert_eq!(current.appearance.mode, "dark");
         assert!(serde_json::from_value::<Desktop>(json!({"typo":1})).is_err());
     }
     #[test]
@@ -386,13 +386,13 @@ mod tests {
         let current = Desktop::default();
         let next = patch(
             &current,
-            &BTreeMap::from([("apps.term".into(), json!({"mode":"dark"}))]),
+            &BTreeMap::from([("apps.term".into(), json!({"mode":"light"}))]),
             &[],
         )
         .unwrap();
         let effective = resolve(&next).unwrap();
-        assert_eq!(effective["app:term"].mode, "dark");
-        assert_eq!(effective["app:ced"].mode, "light");
+        assert_eq!(effective["app:term"].mode, "light");
+        assert_eq!(effective["app:ced"].mode, "dark");
         assert_eq!(
             patch(&next, &BTreeMap::new(), &["apps.term".into()]).unwrap(),
             current

@@ -615,7 +615,7 @@ mod tests {
 
     #[test]
     fn hue_schemes_read_their_palette_back_from_the_pair_style() {
-        let t = Theme::embedded();
+        let t = Theme::for_context(DesignContext::revision_one());
         let chrome = Chrome::for_theme(&t);
         assert_eq!(chrome.grammar, Grammar::Plain);
         assert_eq!(chrome.palette.chrome, crate::style::style(&t).visuals.panel_fill);

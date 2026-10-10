@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Offscreen snapshots of the toolkit's look: a representative panel in the
-//! shipped light and dark themes, rendered through wgpu and compared as
+//! ocean scheme's light and dark modes, rendered through wgpu and compared as
 //! images (`tests/snapshots/*.png`). Regenerate with `UPDATE_SNAPSHOTS=1`
 //! and look at the images before committing them.
 
@@ -97,15 +97,15 @@ fn contents(ui: &mut egui::Ui, strings: &Strings, stroke: f32) {
 
 #[test]
 fn panel_light() {
-    panel(&Theme::embedded(), "panel_light");
+    panel(&Theme::for_context(DesignContext::revision_one()), "panel_light");
 }
 
 #[test]
 fn menu_open_dark() {
-    panel_with(&Theme::for_context(DesignContext { mode: Mode::Dark, ..DesignContext::default() }), "menu_open_dark", Some("File"));
+    panel_with(&Theme::for_context(DesignContext { mode: Mode::Dark, ..DesignContext::revision_one() }), "menu_open_dark", Some("File"));
 }
 
 #[test]
 fn panel_dark() {
-    panel(&Theme::for_context(DesignContext { mode: Mode::Dark, ..DesignContext::default() }), "panel_dark");
+    panel(&Theme::for_context(DesignContext { mode: Mode::Dark, ..DesignContext::revision_one() }), "panel_dark");
 }

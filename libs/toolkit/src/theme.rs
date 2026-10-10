@@ -79,7 +79,7 @@ pub struct Theme {
 }
 
 impl Theme {
-    /// The embedded default design in its own selection: ocean, light,
+    /// The embedded default design in the default selection: studio, dark,
     /// normal contrast.
     pub fn embedded() -> Self {
         Self::for_context(DesignContext::default())
@@ -222,10 +222,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn embedded_theme_is_ocean_light() {
+    fn embedded_theme_is_studio_dark() {
         let theme = Theme::embedded();
-        assert_eq!(theme.scheme(), Scheme::Ocean);
-        assert_eq!(theme.mode(), Mode::Light);
+        assert_eq!(theme.scheme(), Scheme::Studio);
+        assert_eq!(theme.mode(), Mode::Dark);
         assert_eq!(theme.contrast(), Contrast::Normal);
         assert_eq!(theme.context().app, None);
         assert!(theme.dictionary().colours.pairs.contains_key("base"));
@@ -260,8 +260,8 @@ mod tests {
     fn selection_only_file_selects_against_the_embedded_design() {
         let theme = Theme::from_source("test", "scheme: \"forest\"\nmode: \"dark\"\n").unwrap();
         assert_eq!((theme.scheme(), theme.mode()), (Scheme::Forest, Mode::Dark));
-        let partial = Theme::from_source("test", "mode: \"dark\"\n").unwrap();
-        assert_eq!((partial.scheme(), partial.mode()), (Scheme::Ocean, Mode::Dark));
+        let partial = Theme::from_source("test", "mode: \"light\"\n").unwrap();
+        assert_eq!((partial.scheme(), partial.mode()), (Scheme::Studio, Mode::Light), "an absent axis takes the default");
     }
 
     #[test]
