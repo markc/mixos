@@ -269,11 +269,20 @@ impl Reader<'_> {
             T::default()
         })
     }
+
+    /// A defaulted token: `default` when the style does not author it.
+    fn get_or<T: Token>(&mut self, name: &str, range: Range, default: T) -> T {
+        if self.tokens.contains_key(name) {
+            self.get(name, range)
+        } else {
+            default
+        }
+    }
 }
 
 /// The resolved style's fields, each one token: its type and its span.
 macro_rules! style {
-    ($($(#[doc = $doc:literal])* $field:ident: $ty:ty = $range:expr),+ $(,)?) => {
+    ($($(#[doc = $doc:literal])* $field:ident: $ty:ty = $range:expr $(=> $default:expr)?),+ $(,)?) => {
         /// One style, every token resolved.
         #[derive(Clone, Copy, Debug, PartialEq)]
         pub struct ResolvedStyle { $($(#[doc = $doc])* pub $field: $ty),+ }
@@ -282,8 +291,18 @@ macro_rules! style {
         pub const TOKENS: &[&str] = &[$(stringify!($field)),+];
 
         fn read(reader: &mut Reader<'_>) -> ResolvedStyle {
-            ResolvedStyle { $($field: reader.get(stringify!($field), $range)),+ }
+            ResolvedStyle { $($field: token!(reader, stringify!($field), $range $(, $default)?)),+ }
         }
+    };
+}
+
+/// One token's read: required, or defaulted.
+macro_rules! token {
+    ($reader:ident, $name:expr, $range:expr) => {
+        $reader.get($name, $range)
+    };
+    ($reader:ident, $name:expr, $range:expr, $default:expr) => {
+        $reader.get_or($name, $range, $default)
     };
 }
 
@@ -341,7 +360,28 @@ style! {
     radius_sm: u8 = RADIUS,
     radius: u8 = RADIUS,
     radius_lg: u8 = RADIUS,
+    // Spacing and outlines (chrome widgets). Defaulted: a style that does not
+    // author them keeps the specification's fixed values, so every earlier
+    // style and design is unchanged.
+    /// The gap between items, across and down.
+    item_spacing_x: f64 = LENGTH => 8.0,
+    item_spacing_y: f64 = LENGTH => 6.0,
+    /// The height (and least width) of an interactive control.
+    control_height: f64 = LENGTH => 24.0,
+    /// A button's padding inside its frame, across and down.
+    button_padding_x: f64 = LENGTH => 10.0,
+    button_padding_y: f64 = LENGTH => 4.0,
+    /// A push button's width beyond its label.
+    push_padding: f64 = LENGTH => 28.0,
+    /// Fields, buttons and cards draw a 1 pt outline; without, surfaces part
+    /// by tone alone.
+    outlines: bool = NONE => true,
+    /// The options, status, tool and rail bars draw their rule lines.
+    bar_rules: bool = NONE => true,
 }
+
+/// The style a scheme the binding leaves out takes.
+pub const UNBOUND: &str = "plain";
 
 /// Tokens earlier designs authored that no longer select anything. They are
 /// accepted and ignored, so a design saved before they were retired still
@@ -371,7 +411,13 @@ fn select(
 ) -> Result<ResolvedStyle, Vec<DesignDiagnostic>> {
     let styles = compile_styles(family)?;
     let name = style.map_or_else(
-        || family.schemes[scheme.name()].clone(),
+        || {
+            family
+                .schemes
+                .get(scheme.name())
+                .cloned()
+                .unwrap_or_else(|| UNBOUND.to_owned())
+        },
         |s| s.name().to_owned(),
     );
     styles.get(&name).copied().ok_or_else(|| {
@@ -436,16 +482,20 @@ fn compile_styles(
             ));
         }
     }
-    for unbound in Scheme::ALL
-        .into_iter()
-        .filter(|s| !family.schemes.contains_key(s.name()))
-    {
-        let name = unbound.name();
-        errors.push(DesignDiagnostic::error(
-            "missing-style-binding",
-            format!("{PATH}.schemes.{name}"),
-            format!("scheme `{name}` has no style"),
-        ));
+    // A scheme the binding leaves out (one added after the design was
+    // written) takes `plain`; a design without `plain` must bind every scheme.
+    if !styles.contains_key(UNBOUND) {
+        for unbound in Scheme::ALL
+            .into_iter()
+            .filter(|s| !family.schemes.contains_key(s.name()))
+        {
+            let name = unbound.name();
+            errors.push(DesignDiagnostic::error(
+                "missing-style-binding",
+                format!("{PATH}.schemes.{name}"),
+                format!("scheme `{name}` has no style, and there is no `{UNBOUND}` style"),
+            ));
+        }
     }
     if !errors.is_empty() {
         return Err(errors);
@@ -525,6 +575,57 @@ mod tests {
             radius_sm: 6,
             radius: 8,
             radius_lg: 12,
+            item_spacing_x: 8.0,
+            item_spacing_y: 6.0,
+            control_height: 24.0,
+            button_padding_x: 10.0,
+            button_padding_y: 4.0,
+            push_padding: 28.0,
+            outlines: true,
+            bar_rules: true,
+        }
+    }
+
+    /// Adwaita's own style: Studio with 9 pt cards and popups.
+    fn adwaita() -> ResolvedStyle {
+        ResolvedStyle {
+            radius: 9,
+            ..studio()
+        }
+    }
+
+    /// The modern desktop style.
+    fn gnome() -> ResolvedStyle {
+        ResolvedStyle {
+            body_size: 13.0,
+            canvas_dots: false,
+            slider_fill: SliderFill::Accent,
+            push_shape: PushShape::Pill,
+            push_height: 34.0,
+            dock_width: 320.0,
+            dock_margin: 12.0,
+            options_bar: 46.0,
+            status_bar: 34.0,
+            tool_bar: 52.0,
+            tool_button: 38.0,
+            rail: 48.0,
+            rail_button: 36.0,
+            title_bar_height: 47.0,
+            menu_title_height: 34.0,
+            menu_row_height: 34.0,
+            menu_row_padding_x: 12.0,
+            menu_min_width: 240.0,
+            radius_sm: 8,
+            radius: 12,
+            item_spacing_x: 10.0,
+            item_spacing_y: 8.0,
+            control_height: 34.0,
+            button_padding_x: 16.0,
+            button_padding_y: 6.0,
+            push_padding: 40.0,
+            outlines: false,
+            bar_rules: false,
+            ..studio()
         }
     }
 
@@ -606,6 +707,8 @@ mod tests {
                 Scheme::Pro => pro(),
                 Scheme::Studio => studio(),
                 Scheme::Classic => classic(),
+                Scheme::Adwaita => adwaita(),
+                Scheme::Solarized => studio(),
                 _ => plain(),
             };
             for mode in Mode::ALL {
@@ -695,10 +798,20 @@ mod tests {
     #[test]
     fn every_scheme_must_be_bound_to_a_known_style() {
         let mut unbound = family();
-        unbound.schemes.remove("forest");
+        unbound.schemes.remove("pro");
+        assert_eq!(
+            compile_family(&unbound, Scheme::Pro).unwrap(),
+            plain(),
+            "an unbound scheme takes plain"
+        );
+        unbound.styles.remove("plain");
+        for scheme in ["ocean", "crimson", "stone", "forest", "sunset", "mono"] {
+            unbound.schemes.insert(scheme.into(), "studio".into());
+        }
         assert_eq!(
             codes(compile_family(&unbound, Scheme::Ocean)),
-            ["missing-style-binding"]
+            ["missing-style-binding"],
+            "without plain, every scheme must be bound"
         );
         let mut dangling = family();
         dangling.schemes.insert("forest".into(), "neon".into());
@@ -750,6 +863,12 @@ mod tests {
                     else {
                         panic!("today's design compiles");
                     };
+                    // Schemes added since take `plain` in the old design (it
+                    // never bound them); the rest keep today's styles.
+                    if matches!(scheme, Scheme::Adwaita | Scheme::Solarized) && style.is_none() {
+                        assert_eq!(old.candidate.dictionary().style, Some(plain()));
+                        continue;
+                    }
                     assert_eq!(
                         old.candidate.dictionary().style,
                         new.candidate.dictionary().style,
@@ -770,6 +889,7 @@ mod tests {
             (Style::Pro, pro()),
             (Style::Studio, studio()),
             (Style::Classic, classic()),
+            (Style::Gnome, gnome()),
         ] {
             for scheme in Scheme::ALL {
                 let context = DesignContext {

@@ -6,10 +6,10 @@
 //! | group | rows | ids |
 //! |---|---|---|
 //! | hue schemes | Ocean, Crimson, Stone, Forest, Sunset, Mono | `view.theme.<scheme>` |
-//! | chrome schemes | Pro, Studio, Classic | `view.theme.<scheme>` |
+//! | chrome schemes | Pro, Studio, Classic, Adwaita, Solarized | `view.theme.<scheme>` |
 //! | | Session theme (the scheme follows the session) | `view.theme.session` |
 //! | modes | Light, Dark, Session mode (follows the session) | `view.mode.light`, `view.mode.dark`, `view.mode.session` |
-//! | styles | Scheme's own style, Plain, Pro, Studio and Classic style, Session style (follows the session) | `view.style.own`, `view.style.<style>`, `view.style.session` |
+//! | styles | Scheme's own style, Plain, Pro, Studio, Classic and GNOME style, Session style (follows the session) | `view.style.own`, `view.style.<style>`, `view.style.session` |
 //! | framing | App title bar (CSD), System title bar (SSD), Captions left, Captions right | `view.decorations.csd`, `view.decorations.ssd`, `view.captions.left`, `view.captions.right` |
 //!
 //! The app keeps the [`Choice`], `None` on an axis following the session,
@@ -37,6 +37,8 @@ pub const fn scheme_id(scheme: Scheme) -> &'static str {
         Scheme::Pro => "view.theme.pro",
         Scheme::Studio => "view.theme.studio",
         Scheme::Classic => "view.theme.classic",
+        Scheme::Adwaita => "view.theme.adwaita",
+        Scheme::Solarized => "view.theme.solarized",
     }
 }
 
@@ -51,6 +53,8 @@ const fn scheme_label(scheme: Scheme) -> &'static str {
         Scheme::Pro => "toolkit-theme-pro",
         Scheme::Studio => "toolkit-theme-studio",
         Scheme::Classic => "toolkit-theme-classic",
+        Scheme::Adwaita => "toolkit-theme-adwaita",
+        Scheme::Solarized => "toolkit-theme-solarized",
     }
 }
 
@@ -86,6 +90,7 @@ pub const fn style_id(style: Style) -> &'static str {
         Style::Pro => "view.style.pro",
         Style::Studio => "view.style.studio",
         Style::Classic => "view.style.classic",
+        Style::Gnome => "view.style.gnome",
     }
 }
 
@@ -95,6 +100,7 @@ const fn style_label(style: Style) -> &'static str {
         Style::Pro => "toolkit-style-pro",
         Style::Studio => "toolkit-style-studio",
         Style::Classic => "toolkit-style-classic",
+        Style::Gnome => "toolkit-style-gnome",
     }
 }
 
@@ -295,6 +301,8 @@ mod tests {
                 Some("Pro"),
                 Some("Studio"),
                 Some("Classic"),
+                Some("Adwaita"),
+                Some("Solarized"),
                 None,
                 Some("Session theme"),
                 None,
@@ -307,6 +315,7 @@ mod tests {
                 Some("Pro style"),
                 Some("Studio style"),
                 Some("Classic style"),
+                Some("GNOME style"),
                 Some("Session style"),
                 None,
                 Some("App title bar (CSD)"),

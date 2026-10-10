@@ -3,7 +3,7 @@
 //! semantic pairs and non-text colours, sizes from the metrics, scales and
 //! typography roles.
 //!
-//! The chrome schemes (`pro`, `studio`, `classic`) are the exception: their
+//! The chrome schemes (`pro`, `studio`, `classic`, `adwaita`, `solarized`) are the exception: their
 //! whole style comes from the chrome family and the chrome specification,
 //! in [`crate::chrome`]. The table below is the hue schemes' mapping.
 //!

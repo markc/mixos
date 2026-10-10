@@ -371,7 +371,7 @@ impl Widget for ValueField<'_> {
         }
         if chrome.style.bevels {
             chrome::bevel(&painter, rect, false, &p);
-        } else {
+        } else if editing || chrome.style.outlines {
             // An open editor shows focus as a text field does (§3.15).
             let border = if editing {
                 p.accent_text

@@ -41,9 +41,6 @@ const ICON_SHARE: f32 = 0.52;
 /// Push-button text size, Inter Medium (§2.1).
 pub const PUSH_SIZE: f32 = 13.0;
 
-/// Push-button width beyond its label (§3.13: 14 pt each side).
-const PUSH_PADDING: f32 = 28.0;
-
 /// Width of the Pro secondary outline (§2.3).
 const PRO_OUTLINE: f32 = 1.5;
 
@@ -228,7 +225,10 @@ impl Widget for PushButton {
             .painter()
             .layout_no_wrap(self.label.clone(), font, Color32::PLACEHOLDER);
         let height = chrome.metrics.push_height;
-        let size = vec2((galley.size().x + PUSH_PADDING).max(self.min_width), height);
+        let size = vec2(
+            (galley.size().x + chrome.metrics.push_padding).max(self.min_width),
+            height,
+        );
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
         response
             .widget_info(|| WidgetInfo::labeled(WidgetType::Button, ui.is_enabled(), &self.label));
@@ -282,7 +282,7 @@ impl Widget for PushButton {
                     p.field
                 };
                 painter.rect_filled(rect, corner, fill);
-                if !style.bevels {
+                if style.outlines && !style.bevels {
                     painter.rect_stroke(
                         rect,
                         corner,

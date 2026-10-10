@@ -277,12 +277,16 @@ pub struct Metrics {
     pub radius_sm: u8,
     pub radius: u8,
     pub radius_lg: u8,
+    /// The gap between items, and a button's inner padding (§2.2).
+    pub item_spacing: Vec2,
+    pub button_padding: Vec2,
+    /// An interactive control's height and least width (§2.2: 24).
+    pub control_height: f32,
+    /// A push button's width beyond its label (§3.13: 14 pt each side).
+    pub push_padding: f32,
 }
 
 /// Lengths shared by every style (§2.2, §3.1–3.5).
-const ITEM_SPACING: Vec2 = vec2(8.0, 6.0);
-const BUTTON_PADDING: Vec2 = vec2(10.0, 4.0);
-const INTERACT: f32 = 24.0;
 const MENU_MARGIN: i8 = 6;
 const WINDOW_MARGIN: i8 = 16;
 
@@ -327,11 +331,15 @@ impl Metrics {
             // §3.5 gives 3.5 from the parent frame's inner edge; outer edge to
             // outer edge the evidence measures 2.5.
             submenu_gap: 2.5,
-            shortcut_gap: 2.0 * ITEM_SPACING.x,
+            shortcut_gap: 2.0 * pt(style.item_spacing_x),
             edge_gap: 6.0,
             radius_sm: style.radius_sm,
             radius: style.radius,
             radius_lg: style.radius_lg,
+            item_spacing: vec2(pt(style.item_spacing_x), pt(style.item_spacing_y)),
+            button_padding: vec2(pt(style.button_padding_x), pt(style.button_padding_y)),
+            control_height: pt(style.control_height),
+            push_padding: pt(style.push_padding),
         }
     }
 
@@ -465,9 +473,9 @@ pub fn style(theme: &Theme) -> Style {
     };
 
     let spacing = &mut style.spacing;
-    spacing.item_spacing = ITEM_SPACING;
-    spacing.button_padding = BUTTON_PADDING;
-    spacing.interact_size = vec2(INTERACT, INTERACT);
+    spacing.item_spacing = m.item_spacing;
+    spacing.button_padding = m.button_padding;
+    spacing.interact_size = vec2(m.control_height, m.control_height);
     spacing.slider_width = 150.0;
     spacing.combo_width = 120.0;
     spacing.menu_margin = Margin::same(MENU_MARGIN);
@@ -519,7 +527,11 @@ fn visuals(theme: &Theme, chrome: &Chrome) -> Visuals {
     };
     v.panel_fill = p.chrome;
     v.window_fill = p.card;
-    v.window_stroke = Stroke::new(1.0, p.card_border);
+    v.window_stroke = if style.outlines {
+        Stroke::new(1.0, p.card_border)
+    } else {
+        Stroke::NONE
+    };
     v.extreme_bg_color = p.field;
     v.code_bg_color = p.field;
     v.text_edit_bg_color = Some(p.field);
@@ -534,7 +546,16 @@ fn visuals(theme: &Theme, chrome: &Chrome) -> Visuals {
     v.selection.stroke = Stroke::new(1.0, p.accent_text);
 
     let radius = CornerRadius::same(m.radius_sm);
-    let stroke = |role| Stroke::new(1.0, p.widget_stroke(style, role));
+    // A style without outlines parts its widgets by tone; the pressed
+    // state keeps its accent edge.
+    let stroke = |role| {
+        if style.outlines {
+            Stroke::new(1.0, p.widget_stroke(style, role))
+        } else {
+            Stroke::NONE
+        }
+    };
+    let pressed = Stroke::new(1.0, p.widget_stroke(style, p.accent_border));
     let w = &mut v.widgets;
     let states = [
         (
@@ -545,7 +566,7 @@ fn visuals(theme: &Theme, chrome: &Chrome) -> Visuals {
         ),
         (&mut w.inactive, p.field, stroke(p.field_border), p.text),
         (&mut w.hovered, p.hover, stroke(p.field_border), p.text),
-        (&mut w.active, p.pressed, stroke(p.accent_border), p.text),
+        (&mut w.active, p.pressed, pressed, p.text),
         (&mut w.open, p.hover, stroke(p.field_border), p.text),
     ];
     for (state, fill, bg_stroke, text) in states {

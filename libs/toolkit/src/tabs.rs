@@ -408,7 +408,7 @@ fn doc_tab(
     let radius = if pro { 0 } else { chrome.metrics.radius_sm };
     if selected {
         painter.rect_filled(rect, radius, if pro { p.chrome } else { p.card });
-        if !pro {
+        if !pro && chrome.style.outlines {
             painter.rect_stroke(
                 rect,
                 radius,

@@ -407,6 +407,209 @@ design: {
       },
       # Chrome schemes: dark/light step the brightness (pro: Pro and Pro
       # Medium Gray; studio: Studio and Studio Light; classic: Classic).
+      # Adwaita (Light): the v0.6.0 delta's exact values.
+      {
+        when: { scheme: "adwaita", mode: "light" },
+        primitives: {
+          colors: {
+            "palette.accent.default": { color_space: "oklch", l: 0.25, c: 0, h: 0, alpha: 1 },
+            "palette.accent.hover": { color_space: "oklch", l: 0.35, c: 0, h: 0, alpha: 1 },
+            "palette.background.1": { color_space: "oklch", l: 0.98, c: 0, h: 0, alpha: 1 },
+            "palette.background.2": { color_space: "oklch", l: 0.96, c: 0, h: 0, alpha: 1 },
+            "palette.background.3": { color_space: "oklch", l: 0.92, c: 0, h: 0, alpha: 1 },
+            "palette.background.elevated": { color_space: "oklch", l: 0.85, c: 0, h: 0, alpha: 1 },
+            "palette.background.muted": { color_space: "oklch", l: 0.89, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.default": { color_space: "oklch", l: 0.2, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.muted": { color_space: "oklch", l: 0.5, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.quiet": { color_space: "oklch", l: 0.45, c: 0, h: 0, alpha: 1 },
+            "chrome.chrome": { color_space: "oklch", l: 0.999999993, c: 0.000000037, h: 89.875563096, alpha: 1.000000000 },
+            "chrome.canvas": { color_space: "oklch", l: 0.900886879, c: 0.001349743, h: 286.372893200, alpha: 1.000000000 },
+            "chrome.canvas_dot": { color_space: "oklch", l: 0.900886879, c: 0.001349743, h: 286.372893200, alpha: 1.000000000 },
+            "chrome.dock": { color_space: "oklch", l: 0.940637673, c: 0.002671494, h: 286.348361293, alpha: 1.000000000 },
+            "chrome.card": { color_space: "oklch", l: 0.999999993, c: 0.000000037, h: 89.875563096, alpha: 1.000000000 },
+            "chrome.card_border": { color_space: "oklch", l: 0.889235769, c: 0.004065806, h: 286.316787323, alpha: 1.000000000 },
+            "chrome.tab_strip": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.000000000 },
+            "chrome.field": { color_space: "oklch", l: 0.940637673, c: 0.002671494, h: 286.348361293, alpha: 1.000000000 },
+            "chrome.field_border": { color_space: "oklch", l: 0.889235769, c: 0.004065806, h: 286.316787323, alpha: 1.000000000 },
+            "chrome.hover": { color_space: "oklch", l: 0.913650449, c: 0.004038207, h: 286.319565808, alpha: 1.000000000 },
+            "chrome.pressed": { color_space: "oklch", l: 0.871107902, c: 0.005451434, h: 286.286022680, alpha: 1.000000000 },
+            "chrome.row_selected": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.000000000 },
+            "chrome.text": { color_space: "oklch", l: 0.318676299, c: 0.007034969, h: 285.993799995, alpha: 1.000000000 },
+            "chrome.text_dim": { color_space: "oklch", l: 0.504578921, c: 0.006258188, h: 286.173305932, alpha: 1.000000000 },
+            "chrome.text_faint": { color_space: "oklch", l: 0.691041866, c: 0.007227941, h: 286.209059815, alpha: 1.000000000 },
+            "chrome.icon": { color_space: "oklch", l: 0.342205089, c: 0.006908099, h: 286.029052266, alpha: 1.000000000 },
+            "chrome.accent": { color_space: "oklch", l: 0.613674788, c: 0.164340699, h: 255.343172787, alpha: 1.000000000 },
+            "chrome.accent_soft": { color_space: "oklch", l: 0.613674788, c: 0.164340699, h: 255.343172787, alpha: 0.156862745 },
+            "chrome.accent_border": { color_space: "oklch", l: 0.613674788, c: 0.164340699, h: 255.343172787, alpha: 0.509803922 },
+            "chrome.accent_text": { color_space: "oklch", l: 0.558191703, c: 0.176161098, h: 256.434086969, alpha: 1.000000000 },
+            "chrome.menu_highlight": { color_space: "oklch", l: 0.913650449, c: 0.004038207, h: 286.319565808, alpha: 1.000000000 },
+            "chrome.menu_highlight_text": { color_space: "oklch", l: 0.318676299, c: 0.007034969, h: 285.993799995, alpha: 1.000000000 },
+            "chrome.separator": { color_space: "oklch", l: 0.901463771, c: 0.004051866, h: 286.318200148, alpha: 1.000000000 },
+            "chrome.shadow": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.176470588 },
+            "chrome.scrim": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.431372549 },
+            "chrome.primary_bg": { color_space: "oklch", l: 0.613674788, c: 0.164340699, h: 255.343172787, alpha: 1.000000000 },
+            "chrome.primary_text": { color_space: "oklch", l: 0.999999993, c: 0.000000037, h: 89.875563096, alpha: 1.000000000 },
+            "chrome.danger": { color_space: "oklch", l: 0.519786745, c: 0.195621804, h: 24.704765865, alpha: 1.000000000 },
+            "chrome.warning": { color_space: "oklch", l: 0.570802497, c: 0.117616342, h: 79.383980238, alpha: 1.000000000 },
+            "chrome.caption_close": { color_space: "oklch", l: 0.871107902, c: 0.005451434, h: 286.286022680, alpha: 1.000000000 },
+            "chrome.caption_close_text": { color_space: "oklch", l: 0.318676299, c: 0.007034969, h: 285.993799995, alpha: 1.000000000 }
+          }
+        }
+      },
+      # Adwaita (Dark): the v0.6.0 delta's exact values.
+      {
+        when: { scheme: "adwaita", mode: "dark" },
+        primitives: {
+          colors: {
+            "palette.accent.default": { color_space: "oklch", l: 0.85, c: 0, h: 0, alpha: 1 },
+            "palette.accent.hover": { color_space: "oklch", l: 0.92, c: 0, h: 0, alpha: 1 },
+            "palette.background.1": { color_space: "oklch", l: 0.1, c: 0, h: 0, alpha: 1 },
+            "palette.background.2": { color_space: "oklch", l: 0.15, c: 0, h: 0, alpha: 1 },
+            "palette.background.3": { color_space: "oklch", l: 0.22, c: 0, h: 0, alpha: 1 },
+            "palette.background.elevated": { color_space: "oklch", l: 0.34, c: 0, h: 0, alpha: 1 },
+            "palette.background.muted": { color_space: "oklch", l: 0.26, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.default": { color_space: "oklch", l: 0.95, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.muted": { color_space: "oklch", l: 0.61, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.quiet": { color_space: "oklch", l: 0.65, c: 0, h: 0, alpha: 1 },
+            "status.danger": { color_space: "oklch", l: 0.7, c: 0.18, h: 25, alpha: 1 },
+            "status.success": { color_space: "oklch", l: 0.7, c: 0.15, h: 145, alpha: 1 },
+            "status.warning": { color_space: "oklch", l: 0.8, c: 0.15, h: 85, alpha: 1 },
+            "chrome.chrome": { color_space: "oklch", l: 0.302748037, c: 0.007127837, h: 285.966325347, alpha: 1.000000000 },
+            "chrome.canvas": { color_space: "oklch", l: 0.232006767, c: 0.005714887, h: 285.945914531, alpha: 1.000000000 },
+            "chrome.canvas_dot": { color_space: "oklch", l: 0.232006767, c: 0.005714887, h: 285.945914531, alpha: 1.000000000 },
+            "chrome.dock": { color_space: "oklch", l: 0.253616782, c: 0.007458806, h: 285.855946301, alpha: 1.000000000 },
+            "chrome.card": { color_space: "oklch", l: 0.334408330, c: 0.006948876, h: 286.018001543, alpha: 1.000000000 },
+            "chrome.card_border": { color_space: "oklch", l: 0.372965447, c: 0.006758061, h: 286.067524487, alpha: 1.000000000 },
+            "chrome.tab_strip": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.000000000 },
+            "chrome.field": { color_space: "oklch", l: 0.372965447, c: 0.006758061, h: 286.067524487, alpha: 1.000000000 },
+            "chrome.field_border": { color_space: "oklch", l: 0.417962756, c: 0.006564848, h: 286.112282320, alpha: 1.000000000 },
+            "chrome.hover": { color_space: "oklch", l: 0.403104396, c: 0.006625599, h: 286.098765354, alpha: 1.000000000 },
+            "chrome.pressed": { color_space: "oklch", l: 0.454550822, c: 0.006426278, h: 286.141301009, alpha: 1.000000000 },
+            "chrome.row_selected": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.000000000 },
+            "chrome.text": { color_space: "oklch", l: 0.999999993, c: 0.000000037, h: 89.875563096, alpha: 1.000000000 },
+            "chrome.text_dim": { color_space: "oklch", l: 0.808386346, c: 0.002775072, h: 286.337556337, alpha: 1.000000000 },
+            "chrome.text_faint": { color_space: "oklch", l: 0.657594011, c: 0.004386783, h: 286.278478192, alpha: 1.000000000 },
+            "chrome.icon": { color_space: "oklch", l: 0.940637673, c: 0.002671494, h: 286.348361293, alpha: 1.000000000 },
+            "chrome.accent": { color_space: "oklch", l: 0.613674788, c: 0.164340699, h: 255.343172787, alpha: 1.000000000 },
+            "chrome.accent_soft": { color_space: "oklch", l: 0.613674788, c: 0.164340699, h: 255.343172787, alpha: 0.235294118 },
+            "chrome.accent_border": { color_space: "oklch", l: 0.738265500, c: 0.108217015, h: 252.992402599, alpha: 0.549019608 },
+            "chrome.accent_text": { color_space: "oklch", l: 0.738265500, c: 0.108217015, h: 252.992402599, alpha: 1.000000000 },
+            "chrome.menu_highlight": { color_space: "oklch", l: 0.403104396, c: 0.006625599, h: 286.098765354, alpha: 1.000000000 },
+            "chrome.menu_highlight_text": { color_space: "oklch", l: 0.999999993, c: 0.000000037, h: 89.875563096, alpha: 1.000000000 },
+            "chrome.separator": { color_space: "oklch", l: 0.210330930, c: 0.005860375, h: 285.885152940, alpha: 1.000000000 },
+            "chrome.shadow": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.549019608 },
+            "chrome.scrim": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.431372549 },
+            "chrome.primary_bg": { color_space: "oklch", l: 0.613674788, c: 0.164340699, h: 255.343172787, alpha: 1.000000000 },
+            "chrome.primary_text": { color_space: "oklch", l: 0.999999993, c: 0.000000037, h: 89.875563096, alpha: 1.000000000 },
+            "chrome.danger": { color_space: "oklch", l: 0.731924698, c: 0.165860842, h: 31.894480825, alpha: 1.000000000 },
+            "chrome.warning": { color_space: "oklch", l: 0.910489041, c: 0.154517763, h: 100.933578580, alpha: 1.000000000 },
+            "chrome.caption_close": { color_space: "oklch", l: 0.403104396, c: 0.006625599, h: 286.098765354, alpha: 1.000000000 },
+            "chrome.caption_close_text": { color_space: "oklch", l: 0.999999993, c: 0.000000037, h: 89.875563096, alpha: 1.000000000 }
+          }
+        }
+      },
+      # Solarized Dark: the v0.6.0 delta's exact values.
+      {
+        when: { scheme: "solarized", mode: "dark" },
+        primitives: {
+          colors: {
+            "palette.accent.default": { color_space: "oklch", l: 0.85, c: 0, h: 0, alpha: 1 },
+            "palette.accent.hover": { color_space: "oklch", l: 0.92, c: 0, h: 0, alpha: 1 },
+            "palette.background.1": { color_space: "oklch", l: 0.1, c: 0, h: 0, alpha: 1 },
+            "palette.background.2": { color_space: "oklch", l: 0.15, c: 0, h: 0, alpha: 1 },
+            "palette.background.3": { color_space: "oklch", l: 0.22, c: 0, h: 0, alpha: 1 },
+            "palette.background.elevated": { color_space: "oklch", l: 0.34, c: 0, h: 0, alpha: 1 },
+            "palette.background.muted": { color_space: "oklch", l: 0.26, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.default": { color_space: "oklch", l: 0.95, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.muted": { color_space: "oklch", l: 0.61, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.quiet": { color_space: "oklch", l: 0.65, c: 0, h: 0, alpha: 1 },
+            "status.danger": { color_space: "oklch", l: 0.7, c: 0.18, h: 25, alpha: 1 },
+            "status.success": { color_space: "oklch", l: 0.7, c: 0.15, h: 145, alpha: 1 },
+            "status.warning": { color_space: "oklch", l: 0.8, c: 0.15, h: 85, alpha: 1 },
+            "chrome.chrome": { color_space: "oklch", l: 0.309207380, c: 0.051759542, h: 219.651624847, alpha: 1.000000000 },
+            "chrome.canvas": { color_space: "oklch", l: 0.267336615, c: 0.048612103, h: 219.816883738, alpha: 1.000000000 },
+            "chrome.canvas_dot": { color_space: "oklch", l: 0.334560991, c: 0.055343357, h: 219.497932605, alpha: 1.000000000 },
+            "chrome.dock": { color_space: "oklch", l: 0.244677051, c: 0.044599995, h: 220.165615396, alpha: 1.000000000 },
+            "chrome.card": { color_space: "oklch", l: 0.309207380, c: 0.051759542, h: 219.651624847, alpha: 1.000000000 },
+            "chrome.card_border": { color_space: "oklch", l: 0.244677051, c: 0.044599995, h: 220.165615396, alpha: 1.000000000 },
+            "chrome.tab_strip": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.000000000 },
+            "chrome.field": { color_space: "oklch", l: 0.244677051, c: 0.044599995, h: 220.165615396, alpha: 1.000000000 },
+            "chrome.field_border": { color_space: "oklch", l: 0.401388657, c: 0.063307870, h: 218.628757722, alpha: 1.000000000 },
+            "chrome.hover": { color_space: "oklch", l: 0.380521529, c: 0.063486889, h: 220.515719293, alpha: 1.000000000 },
+            "chrome.pressed": { color_space: "oklch", l: 0.431046402, c: 0.071789277, h: 219.535713109, alpha: 1.000000000 },
+            "chrome.row_selected": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.000000000 },
+            "chrome.text": { color_space: "oklch", l: 0.653680447, c: 0.019724296, h: 205.261795933, alpha: 1.000000000 },
+            "chrome.text_dim": { color_space: "oklch", l: 0.568165466, c: 0.028507693, h: 221.898753285, alpha: 1.000000000 },
+            "chrome.text_faint": { color_space: "oklch", l: 0.523012832, c: 0.028303411, h: 219.136485045, alpha: 1.000000000 },
+            "chrome.icon": { color_space: "oklch", l: 0.697898824, c: 0.015901642, h: 196.793976168, alpha: 1.000000000 },
+            "chrome.accent": { color_space: "oklch", l: 0.614878865, c: 0.139389275, h: 244.927338506, alpha: 1.000000000 },
+            "chrome.accent_soft": { color_space: "oklch", l: 0.614878865, c: 0.139389275, h: 244.927338506, alpha: 0.180392157 },
+            "chrome.accent_border": { color_space: "oklch", l: 0.614878865, c: 0.139389275, h: 244.927338506, alpha: 0.470588235 },
+            "chrome.accent_text": { color_space: "oklch", l: 0.973528331, c: 0.026052663, h: 90.095278004, alpha: 1.000000000 },
+            "chrome.menu_highlight": { color_space: "oklch", l: 0.380521529, c: 0.063486889, h: 220.515719293, alpha: 1.000000000 },
+            "chrome.menu_highlight_text": { color_space: "oklch", l: 0.653680447, c: 0.019724296, h: 205.261795933, alpha: 1.000000000 },
+            "chrome.separator": { color_space: "oklch", l: 0.244677051, c: 0.044599995, h: 220.165615396, alpha: 1.000000000 },
+            "chrome.shadow": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.588235294 },
+            "chrome.scrim": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.431372549 },
+            "chrome.primary_bg": { color_space: "oklch", l: 0.614878865, c: 0.139389275, h: 244.927338506, alpha: 1.000000000 },
+            "chrome.primary_text": { color_space: "oklch", l: 0.973528331, c: 0.026052663, h: 90.095278004, alpha: 1.000000000 },
+            "chrome.danger": { color_space: "oklch", l: 0.586261308, c: 0.206442315, h: 27.117154009, alpha: 1.000000000 },
+            "chrome.warning": { color_space: "oklch", l: 0.654479254, c: 0.134014852, h: 85.718589889, alpha: 1.000000000 },
+            "chrome.caption_close": { color_space: "oklch", l: 0.586261308, c: 0.206442315, h: 27.117154009, alpha: 1.000000000 },
+            "chrome.caption_close_text": { color_space: "oklch", l: 0.973528331, c: 0.026052663, h: 90.095278004, alpha: 1.000000000 }
+          }
+        }
+      },
+      # Solarized has no light theme: light mode pairs it with Studio Light, as the
+      # desktop editor's launcher pair table does (solarizedDark / studioLight).
+      {
+        when: { scheme: "solarized", mode: "light" },
+        primitives: {
+          colors: {
+            "palette.accent.default": { color_space: "oklch", l: 0.25, c: 0, h: 0, alpha: 1 },
+            "palette.accent.hover": { color_space: "oklch", l: 0.35, c: 0, h: 0, alpha: 1 },
+            "palette.background.1": { color_space: "oklch", l: 0.98, c: 0, h: 0, alpha: 1 },
+            "palette.background.2": { color_space: "oklch", l: 0.96, c: 0, h: 0, alpha: 1 },
+            "palette.background.3": { color_space: "oklch", l: 0.92, c: 0, h: 0, alpha: 1 },
+            "palette.background.elevated": { color_space: "oklch", l: 0.85, c: 0, h: 0, alpha: 1 },
+            "palette.background.muted": { color_space: "oklch", l: 0.89, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.default": { color_space: "oklch", l: 0.2, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.muted": { color_space: "oklch", l: 0.5, c: 0, h: 0, alpha: 1 },
+            "palette.foreground.quiet": { color_space: "oklch", l: 0.45, c: 0, h: 0, alpha: 1 },
+            "chrome.chrome": { color_space: "oklch", l: 0.973708485, c: 0.002648430, h: 286.350552140, alpha: 1.000000000 },
+            "chrome.canvas": { color_space: "oklch", l: 0.913940118, c: 0.005385906, h: 286.292688258, alpha: 1.000000000 },
+            "chrome.canvas_dot": { color_space: "oklch", l: 0.834570895, c: 0.008272728, h: 286.219104275, alpha: 1.000000000 },
+            "chrome.dock": { color_space: "oklch", l: 0.955990022, c: 0.003992477, h: 286.324006456, alpha: 1.000000000 },
+            "chrome.card": { color_space: "oklch", l: 0.991348204, c: 0.001317774, h: 286.376006155, alpha: 1.000000000 },
+            "chrome.card_border": { color_space: "oklch", l: 0.902340545, c: 0.008110995, h: 286.236050560, alpha: 1.000000000 },
+            "chrome.tab_strip": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.000000000 },
+            "chrome.field": { color_space: "oklch", l: 0.961999957, c: 0.003986193, h: 286.324601141, alpha: 1.000000000 },
+            "chrome.field_border": { color_space: "oklch", l: 0.877849155, c: 0.008167616, h: 286.230268952, alpha: 1.000000000 },
+            "chrome.hover": { color_space: "oklch", l: 0.932432458, c: 0.006700953, h: 286.269052414, alpha: 1.000000000 },
+            "chrome.pressed": { color_space: "oklch", l: 0.896233432, c: 0.008124930, h: 286.234642438, alpha: 1.000000000 },
+            "chrome.row_selected": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.000000000 },
+            "chrome.text": { color_space: "oklch", l: 0.210789741, c: 0.007822112, h: 285.709585948, alpha: 1.000000000 },
+            "chrome.text_dim": { color_space: "oklch", l: 0.492571417, c: 0.015803144, h: 285.805319917, alpha: 1.000000000 },
+            "chrome.text_faint": { color_space: "oklch", l: 0.676309590, c: 0.014569879, h: 286.003747631, alpha: 1.000000000 },
+            "chrome.icon": { color_space: "oklch", l: 0.359254275, c: 0.013694170, h: 285.690263636, alpha: 1.000000000 },
+            "chrome.accent": { color_space: "oklch", l: 0.567601769, c: 0.202094221, h: 283.083781640, alpha: 1.000000000 },
+            "chrome.accent_soft": { color_space: "oklch", l: 0.567601769, c: 0.202094221, h: 283.083781640, alpha: 0.141176471 },
+            "chrome.accent_border": { color_space: "oklch", l: 0.567601769, c: 0.202094221, h: 283.083781640, alpha: 0.470588235 },
+            "chrome.accent_text": { color_space: "oklch", l: 0.476176795, c: 0.201009650, h: 280.872940340, alpha: 1.000000000 },
+            "chrome.menu_highlight": { color_space: "oklch", l: 0.932432458, c: 0.006700953, h: 286.269052414, alpha: 1.000000000 },
+            "chrome.menu_highlight_text": { color_space: "oklch", l: 0.210789741, c: 0.007822112, h: 285.709585948, alpha: 1.000000000 },
+            "chrome.separator": { color_space: "oklch", l: 0.914523939, c: 0.008083547, h: 286.238795996, alpha: 1.000000000 },
+            "chrome.shadow": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.196078431 },
+            "chrome.scrim": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.431372549 },
+            "chrome.primary_bg": { color_space: "oklch", l: 0.193057436, c: 0.008001218, h: 285.626398602, alpha: 1.000000000 },
+            "chrome.primary_text": { color_space: "oklch", l: 0.985664448, c: 0.002640332, h: 286.351303655, alpha: 1.000000000 },
+            "chrome.danger": { color_space: "oklch", l: 0.579286827, c: 0.187156137, h: 25.202624027, alpha: 1.000000000 },
+            "chrome.warning": { color_space: "oklch", l: 0.651512105, c: 0.132496737, h: 75.063008969, alpha: 1.000000000 },
+            "chrome.caption_close": { color_space: "oklch", l: 0.536149835, c: 0.191185691, h: 30.071355694, alpha: 1.000000000 },
+            "chrome.caption_close_text": { color_space: "oklch", l: 0.999999993, c: 0.000000037, h: 89.875563096, alpha: 1.000000000 }
+          }
+        }
+      },
       # Pro authors its whole chrome palette, Pro Medium Gray; the pro dark
       # block steps it darker.
       {
@@ -854,7 +1057,7 @@ design: {
       style: {
         schemes: {
           ocean: "plain", crimson: "plain", stone: "plain", forest: "plain", sunset: "plain", mono: "plain",
-          pro: "pro", studio: "studio", classic: "classic"
+          pro: "pro", studio: "studio", classic: "classic", adwaita: "adwaita", solarized: "studio"
         },
         styles: {
           plain: {
@@ -892,6 +1095,38 @@ design: {
             title_bar_height: 38.0, mark: 20.0, menu_title_height: 24.0, menu_row_height: 24.0,
             menu_row_padding_x: 2.0, menu_row_padding_y: 0.0, menu_min_width: 220.0, menu_highlight_radius: 6,
             radius_sm: 6, radius: 8, radius_lg: 12
+          },
+          # Adwaita: Studio's grammar with 9 pt cards, menus and popups.
+          adwaita: {
+            widgets: "chrome", faces: "fixed", body_size: 12.5,
+            bevels: false, widget_stroke: "role", selection: "accent_soft", scroll_bars: "thin", canvas_dots: true,
+            toggle: "switch", switch: "round", knob: "plain", slider_fill: "text_dim",
+            push_shape: "rounded", secondary_button: "filled", push_height: 30.0,
+            primary_hover_alpha: 0.93, primary_press_alpha: 0.85,
+            panel_groups: "cards", document_tabs: "cards", tool_bar_rule: false, dock_width: 300.0, dock_margin: 8.0,
+            options_bar: 42.0, status_bar: 30.0, tool_bar: 50.0, tool_button: 36.0, tool_margin: 7.0, rail: 44.0, rail_button: 32.0,
+            title_bar_height: 38.0, mark: 20.0, menu_title_height: 24.0, menu_row_height: 24.0,
+            menu_row_padding_x: 2.0, menu_row_padding_y: 0.0, menu_min_width: 220.0, menu_highlight_radius: 6,
+            radius_sm: 6, radius: 9, radius_lg: 12
+          },
+          # A modern desktop look on any palette: a 47 pt header bar, roomy
+          # 34 pt rows and controls, pill buttons with generous padding, flat
+          # surfaces parted by tone (no outlines or bar rules), selection by
+          # accent tint, 12 pt cards and windows.
+          gnome: {
+            widgets: "chrome", faces: "fixed", body_size: 13.0,
+            bevels: false, widget_stroke: "role", selection: "accent_soft", scroll_bars: "thin", canvas_dots: false,
+            toggle: "switch", switch: "round", knob: "plain", slider_fill: "accent",
+            push_shape: "pill", secondary_button: "filled", push_height: 34.0,
+            primary_hover_alpha: 0.93, primary_press_alpha: 0.85,
+            panel_groups: "cards", document_tabs: "cards", tool_bar_rule: false, dock_width: 320.0, dock_margin: 12.0,
+            options_bar: 46.0, status_bar: 34.0, tool_bar: 52.0, tool_button: 38.0, tool_margin: 7.0, rail: 48.0, rail_button: 36.0,
+            title_bar_height: 47.0, mark: 20.0, menu_title_height: 34.0, menu_row_height: 34.0,
+            menu_row_padding_x: 12.0, menu_row_padding_y: 0.0, menu_min_width: 240.0, menu_highlight_radius: 6,
+            radius_sm: 8, radius: 12, radius_lg: 12,
+            item_spacing_x: 10.0, item_spacing_y: 8.0, control_height: 34.0,
+            button_padding_x: 16.0, button_padding_y: 6.0, push_padding: 40.0,
+            outlines: false, bar_rules: false
           },
           classic: {
             widgets: "chrome", faces: "fixed", body_size: 12.5,

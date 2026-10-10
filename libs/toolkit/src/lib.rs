@@ -5,7 +5,7 @@
 //! - [`theme_menu`]: the View › Theme submenu that picks it, in every app;
 //! - [`style`]: that design as an egui style (colours, spacing, radii, type);
 //! - [`chrome`]: title-bar and menu colours and geometry, and the whole
-//!   style of the chrome schemes (`pro`, `studio`, `classic`);
+//!   style of the chrome schemes (`pro`, `studio`, `classic`, `adwaita`, `solarized`);
 //! - [`menu`]: menu bars and menus with shared pointer/keyboard navigation;
 //! - [`fonts`]: the embedded Inter and JetBrains Mono faces, chosen by weight;
 //! - [`icons`]: Lucide icons, stroke weight and colour from the theme;

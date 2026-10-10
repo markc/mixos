@@ -169,6 +169,13 @@ pub const CHROME_THEMES: [(&str, Scheme, Mode); 5] = [
     ("classic", Scheme::Classic, Mode::Light),
 ];
 
+/// The themes the specification's v0.6.0 delta adds, by its theme id.
+pub const DELTA_THEMES: [(&str, Scheme, Mode); 3] = [
+    ("adwaita", Scheme::Adwaita, Mode::Light),
+    ("adwaitaDark", Scheme::Adwaita, Mode::Dark),
+    ("solarizedDark", Scheme::Solarized, Mode::Dark),
+];
+
 /// A window of the fixture: global shortcuts, then the title bar with its
 /// right-hand controls (workspace dropdown, search, theme toggle and a
 /// link), then an empty body and the resize edges, every chosen command

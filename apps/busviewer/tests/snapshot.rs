@@ -231,3 +231,36 @@ fn window_captions_left() {
     let theme = Theme::embedded().framed(design::Decorations::Client, design::CaptionSide::Left);
     window(theme, "window_captions_left");
 }
+
+/// The v0.6.0 chrome palettes in their own style (Studio, 9 pt cards for
+/// Adwaita).
+#[test]
+fn window_adwaita_light() {
+    window(chrome(Scheme::Adwaita, Mode::Light), "window_adwaita_light");
+}
+
+#[test]
+fn window_adwaita_dark() {
+    window(chrome(Scheme::Adwaita, Mode::Dark), "window_adwaita_dark");
+}
+
+#[test]
+fn window_solarized_dark() {
+    window(chrome(Scheme::Solarized, Mode::Dark), "window_solarized_dark");
+}
+
+/// The modern style on its natural palette, and on a hue palette.
+#[test]
+fn window_gnome_adwaita_light() {
+    window(crossed(Scheme::Adwaita, design::Style::Gnome, Mode::Light), "window_gnome_adwaita_light");
+}
+
+#[test]
+fn window_gnome_adwaita_dark() {
+    window(crossed(Scheme::Adwaita, design::Style::Gnome, Mode::Dark), "window_gnome_adwaita_dark");
+}
+
+#[test]
+fn window_gnome_ocean_light() {
+    window(crossed(Scheme::Ocean, design::Style::Gnome, Mode::Light), "window_gnome_ocean_light");
+}

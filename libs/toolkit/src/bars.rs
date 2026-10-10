@@ -55,8 +55,13 @@ fn frame(ui: &Ui, margin: Margin) -> Frame {
         .inner_margin(margin)
 }
 
+/// A bar's rule line, when the style draws them.
 fn rule(ui: &Ui, from: egui::Pos2, to: egui::Pos2) {
-    let colour = Chrome::of(ui.ctx()).palette.separator;
+    let chrome = Chrome::of(ui.ctx());
+    if !chrome.style.bar_rules {
+        return;
+    }
+    let colour = chrome.palette.separator;
     // A layer painter: the rail's rule lies outside the rail.
     let painter = ui.ctx().layer_painter(ui.layer_id());
     let stroke = Stroke::new(1.0, colour);

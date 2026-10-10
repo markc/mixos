@@ -1,7 +1,8 @@
-/// The MixOS colour schemes: six hues, and three chrome schemes whose
+/// The MixOS colour schemes: six hues, and five chrome schemes whose
 /// light and dark modes step the brightness (`pro`: Pro and Pro Medium Gray;
-/// `studio`: Studio and Studio Light; `classic`: Classic in both). The
-/// default is `studio`.
+/// `studio`: Studio and Studio Light; `classic`: Classic in both;
+/// `adwaita`: Adwaita Light and Dark; `solarized`: Studio Light and
+/// Solarized Dark). The default is `studio`.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Scheme {
     Ocean,
@@ -14,10 +15,12 @@ pub enum Scheme {
     #[default]
     Studio,
     Classic,
+    Adwaita,
+    Solarized,
 }
 
 impl Scheme {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 11] = [
         Self::Ocean,
         Self::Crimson,
         Self::Stone,
@@ -27,6 +30,8 @@ impl Scheme {
         Self::Pro,
         Self::Studio,
         Self::Classic,
+        Self::Adwaita,
+        Self::Solarized,
     ];
 
     /// The six hue schemes of design revision one. Tests that pin revision
@@ -43,7 +48,10 @@ impl Scheme {
 
     /// The schemes drawn from the chrome family.
     pub const fn is_chrome_scheme(self) -> bool {
-        matches!(self, Self::Pro | Self::Studio | Self::Classic)
+        matches!(
+            self,
+            Self::Pro | Self::Studio | Self::Classic | Self::Adwaita | Self::Solarized
+        )
     }
 
     pub const fn name(self) -> &'static str {
@@ -57,6 +65,8 @@ impl Scheme {
             Self::Pro => "pro",
             Self::Studio => "studio",
             Self::Classic => "classic",
+            Self::Adwaita => "adwaita",
+            Self::Solarized => "solarized",
         }
     }
 
@@ -123,10 +133,13 @@ pub enum Style {
     Pro,
     Studio,
     Classic,
+    /// A modern desktop style: a tall header bar, roomy rows, pill buttons,
+    /// flat surfaces separated by tone.
+    Gnome,
 }
 
 impl Style {
-    pub const ALL: [Self; 4] = [Self::Plain, Self::Pro, Self::Studio, Self::Classic];
+    pub const ALL: [Self; 5] = [Self::Plain, Self::Pro, Self::Studio, Self::Classic, Self::Gnome];
 
     pub const fn name(self) -> &'static str {
         match self {
@@ -134,6 +147,7 @@ impl Style {
             Self::Pro => "pro",
             Self::Studio => "studio",
             Self::Classic => "classic",
+            Self::Gnome => "gnome",
         }
     }
 

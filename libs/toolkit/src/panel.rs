@@ -308,7 +308,7 @@ fn card_group<R>(
     };
     let frame = Frame::new()
         .fill(p.card)
-        .stroke(if chrome.style.bevels {
+        .stroke(if chrome.style.bevels || !chrome.style.outlines {
             Stroke::NONE
         } else {
             Stroke::new(1.0, p.card_border)
@@ -480,7 +480,7 @@ fn pill(ui: &Ui, chrome: &Chrome, rect: Rect, selected: bool, hovered: bool) {
         painter.rect_filled(rect, radius, p.hover);
         if chrome.style.bevels {
             chrome::bevel(painter, rect, true, p);
-        } else {
+        } else if chrome.style.outlines {
             painter.rect_stroke(
                 rect,
                 radius,
