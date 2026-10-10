@@ -22674,8 +22674,8 @@ mod tcp_server {
 
     /// A listening socket with its permit and (once recorded) its
     /// generation ownership, both released when the last clone drops.
-    pub(super) struct Listener {
-        pub sock: std::net::TcpListener,
+    pub(crate) struct Listener {
+        pub(super) sock: std::net::TcpListener,
         _permit: TcpPermit,
         pub ownership: Mutex<Option<Ownership>>,
     }
