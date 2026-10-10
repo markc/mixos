@@ -4,12 +4,16 @@ MixOS's preferences: one window with a sidebar of editors, in the spirit of
 the AmigaOS Prefs drawer. The first editor is **Applications**, over the
 `releases` service (`services/releasesd`): the followed apps, installed
 against latest, release notes, and Install or update, Roll back, Remove
-(after a confirmation), Check for updates and Update all. The manual is
+(after a confirmation), Check for updates and Update all. The second is
+**Appearance**, over settingsd: the session's scheme, style, mode, contrast
+and window frame, previewed in the window and applied in one fenced
+`settings.apply`. The manual is
 [docs/prefs.md](../../docs/prefs.md).
 
 | Path | What |
 |---|---|
 | `crates/preferences` | the headless engine: panels, rows, notes, one operation at a time, the `prefs.*` verbs |
+| `crates/preferences/src/appearance.rs` | the Appearance panel: the look, its draft, fenced applies, receipts for lost replies |
 | `src/commands.rs` | every action as a registered command (menus, buttons, shortcuts, `prefs.execute`) |
 | `src/view.rs` | the egui rendering; returns what the person did |
 | `src/shell.rs` | events in, effects out, in order; drained shutdown |

@@ -66,6 +66,8 @@
     {name:"prefs.panel", owner:"prefs", version:"0.1.0", status:"accepted"},
     {name:"prefs.select", owner:"prefs", version:"0.1.0", status:"accepted"},
     {name:"prefs.apps", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.appearance", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.appearance.set", owner:"prefs", version:"0.1.0", status:"accepted"},
     {name:"prefs.dialog", owner:"prefs", version:"0.1.0", status:"accepted"},
     {name:"prefs.theme", owner:"prefs", version:"0.1.0", status:"accepted"},
     {name:"prefs.ui.tree", owner:"prefs", version:"0.1.0", status:"accepted"},

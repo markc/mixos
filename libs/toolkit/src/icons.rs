@@ -52,6 +52,7 @@ macro_rules! icons {
 }
 
 icons! {
+    Check => "check",
     ChevronDown => "chevron-down",
     ChevronRight => "chevron-right",
     ChevronsRight => "chevrons-right",
@@ -67,6 +68,7 @@ icons! {
     Minus => "minus",
     Moon => "moon",
     Package => "package",
+    Palette => "palette",
     Play => "play",
     Plug => "plug",
     RefreshCw => "refresh-cw",

@@ -15,8 +15,9 @@ use crate::view::{UiEvent, view};
 use crate::{label, strings};
 use citizen::{CallError, Delivery, Handle, Reply};
 use futures::StreamExt;
+use preferences::appearance::SETTINGS;
 use preferences::model::{self, RELEASES};
-use preferences::{Effect, Engine};
+use preferences::{Effect, Engine, Look};
 use serde_json::{Value, json};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, mpsc};
@@ -29,6 +30,7 @@ use toolkit::{Registry, Strings, Theme, drive, icons};
 pub enum Event {
     Delivery(Delivery),
     Released(u64, Result<Reply, CallError>),
+    Settled(u64, Result<Reply, CallError>),
     Shown(u64, Option<u64>, Result<Value, String>),
 }
 
@@ -37,6 +39,7 @@ pub fn apply_event(engine: &mut Engine, event: Event) {
     match event {
         Event::Delivery(delivery) => engine.delivery(delivery),
         Event::Released(ticket, result) => engine.released(ticket, result),
+        Event::Settled(ticket, result) => engine.settled(ticket, result),
         Event::Shown(ticket, reply, result) => engine.shown(ticket, reply, result),
     }
 }
@@ -56,6 +59,7 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
             UiEvent::CloseDialog => engine.close_dialog(),
             UiEvent::ConfirmRemove => engine.confirm_remove(),
             UiEvent::SetMode(mode) => engine.set_mode(mode),
+            UiEvent::Look(look) => engine.edit_look(look),
         }
     }
 }
@@ -72,6 +76,20 @@ pub fn budget(verb: &str) -> Duration {
         "releases.check" => 600,
         _ => 4 * 3600,
     })
+}
+
+/// How long a settingsd call may take: every verb answers from memory or
+/// one durable write.
+pub const SETTINGS_BUDGET: Duration = Duration::from_secs(30);
+
+/// This host's name: the settingsd instance to try first (settingsd runs
+/// as `--instance %H`; the panel adopts the right one from its answer).
+fn hostname() -> String {
+    std::fs::read_to_string("/proc/sys/kernel/hostname")
+        .map(|name| name.trim().to_owned())
+        .ok()
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "host".into())
 }
 
 /// The whole Bus surface: the engine's verbs and the window's drive verbs.
@@ -128,6 +146,17 @@ pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &String
     }
 }
 
+/// The look the window previews: the Appearance draft, else settingsd's
+/// look, unless the profile uses a design package of its own (then the
+/// session theme, which carries it).
+pub fn base_look(engine: &Engine) -> Option<Look> {
+    if engine.look.custom_source {
+        None
+    } else {
+        engine.look.shown()
+    }
+}
+
 pub struct Shell {
     engine: Engine,
     commands: Registry<Engine>,
@@ -145,11 +174,14 @@ pub struct Shell {
     /// The Bus deliveries not yet forwarded (see BusViewer's shell: shutdown
     /// closes and drains it under its lock).
     inbox: Arc<Mutex<Deliveries>>,
-    /// The theme choice installed last.
-    installed: toolkit::theme_menu::Choice,
+    /// The window choice and base look installed last.
+    installed: Installed,
 }
 
 type Deliveries = futures::channel::mpsc::Receiver<Delivery>;
+
+/// The window's own theme choice and the look under it.
+type Installed = (toolkit::theme_menu::Choice, Option<Look>);
 
 fn locked(inbox: &Mutex<Deliveries>) -> std::sync::MutexGuard<'_, Deliveries> {
     inbox
@@ -213,9 +245,10 @@ impl Shell {
             exiting: false,
             held: VecDeque::new(),
             inbox,
-            installed: toolkit::theme_menu::Choice::default(),
+            installed: (toolkit::theme_menu::Choice::default(), None),
         };
         shell.engine.session = (shell.theme.scheme(), shell.theme.mode());
+        shell.engine.start_appearance(&hostname());
         shell.settle();
         Ok(shell)
     }
@@ -307,6 +340,15 @@ impl Shell {
                     Event::Released(ticket, result)
                 });
             }
+            Effect::Settings { ticket, verb, body } => {
+                let bus = self.bus.clone();
+                self.spawn(async move {
+                    let result = bus
+                        .raw_within(SETTINGS, verb, body.to_string(), SETTINGS_BUDGET)
+                        .await;
+                    Event::Settled(ticket, result)
+                });
+            }
             Effect::Show { ticket, reply } => {
                 let (bus, comp) = (self.bus.clone(), self.comp.clone());
                 self.spawn(async move {
@@ -361,17 +403,29 @@ impl Shell {
         crate::commands::choice(&self.engine)
     }
 
-    /// Install the session theme with the window's choice over it. The
-    /// session's theme file is never written.
+    /// What the window is drawn in, under its own choice: the Appearance
+    /// draft or settingsd's look (embedded design), else the session theme.
+    fn wanted(&self) -> Installed {
+        (self.choice(), base_look(&self.engine))
+    }
+
+    /// Install the base theme with the window's choice over it. Neither the
+    /// session's theme file nor settingsd is written.
     fn install_theme(&mut self) {
-        let choice = self.choice();
-        toolkit::install(&self.ctx, &self.theme.with_choice(&choice));
-        self.engine.session = (self.theme.scheme(), self.theme.mode());
-        self.installed = choice;
+        let (choice, look) = self.wanted();
+        let base = match look {
+            Some(look) => {
+                Theme::for_context(look.context()).framed(look.decorations, look.captions)
+            }
+            None => self.theme.clone(),
+        };
+        toolkit::install(&self.ctx, &base.with_choice(&choice));
+        self.engine.session = (base.scheme(), base.mode());
+        self.installed = (choice, look);
     }
 
     fn follow_theme(&mut self) {
-        if self.choice() != self.installed {
+        if self.wanted() != self.installed {
             self.install_theme();
             self.ctx.request_repaint();
         }
@@ -402,7 +456,7 @@ impl Shell {
         apply_ui(&mut self.engine, &self.commands, events);
         self.settle();
         self.release();
-        if self.choice() != self.installed {
+        if self.wanted() != self.installed {
             ui.ctx().request_repaint();
         }
     }

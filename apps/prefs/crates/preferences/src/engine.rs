@@ -8,6 +8,7 @@
 //! edits) and runs the [`Effect`]s it returns. Every call carries a ticket,
 //! and a completion whose ticket is not the one in flight is ignored, so a
 //! late reply can never land on a newer operation.
+use crate::appearance::Appearance;
 use crate::model::{self, APP_ID, AppRow, Notes, Panel};
 use citizen::{CallError, Delivery, Reply};
 use design::{CaptionSide, Decorations, Mode, Scheme, Style};
@@ -25,6 +26,13 @@ pub enum Effect {
     /// Call `verb` on the releases service and report
     /// [`Engine::released`] with `ticket`.
     Releases {
+        ticket: u64,
+        verb: &'static str,
+        body: Value,
+    },
+    /// Call `verb` on settingsd and report [`Engine::settled`] with
+    /// `ticket` (the Appearance panel).
+    Settings {
         ticket: u64,
         verb: &'static str,
         body: Value,
@@ -266,12 +274,14 @@ pub struct Engine {
     pub quitting: bool,
     /// The session theme's scheme and mode, as the shell loaded it.
     pub session: (Scheme, Mode),
+    /// The Appearance panel over settingsd.
+    pub look: Appearance,
     next_ticket: u64,
     job: Option<Job>,
     notes_job: Option<(u64, String)>,
     activations: BTreeSet<u64>,
     relist: bool,
-    effects: Vec<Effect>,
+    pub(crate) effects: Vec<Effect>,
 }
 
 impl Engine {
@@ -291,6 +301,7 @@ impl Engine {
             quit_settled: false,
             quitting: false,
             session: (Scheme::default(), Mode::default()),
+            look: Appearance::default(),
             next_ticket: 0,
             job: None,
             notes_job: None,
@@ -307,18 +318,22 @@ impl Engine {
         std::mem::take(&mut self.effects)
     }
 
-    fn label(&self, key: &str, args: &[(&str, &str)]) -> String {
+    pub(crate) fn label(&self, key: &str, args: &[(&str, &str)]) -> String {
         (self.label)(key, args)
     }
 
-    fn next(&mut self) -> u64 {
+    pub(crate) fn next(&mut self) -> u64 {
         self.next_ticket += 1;
         self.next_ticket
     }
 
-    /// An operation, a notes load or a window activation is in flight.
+    /// An operation, a notes load, a settings call or a window activation
+    /// is in flight.
     pub fn busy(&self) -> bool {
-        self.job.is_some() || self.notes_job.is_some() || !self.activations.is_empty()
+        self.job.is_some()
+            || self.notes_job.is_some()
+            || self.look.job.is_some()
+            || !self.activations.is_empty()
     }
 
     /// The operation in flight, if any.
@@ -341,7 +356,12 @@ impl Engine {
     // ---- enablement (the command registry asks these) ---------------------
 
     pub fn can_refresh(&self) -> bool {
-        self.idle() && self.ui.panel == Panel::Applications
+        match self.ui.panel {
+            Panel::Applications => self.idle(),
+            Panel::Appearance => {
+                !self.look.working() && self.connected && self.ui.dialog.is_none() && !self.quitting
+            }
+        }
     }
 
     pub fn can_check(&self) -> bool {
@@ -405,8 +425,12 @@ impl Engine {
         self.effects.push(Effect::Releases { ticket, verb, body });
     }
 
+    /// Read the shown panel's service again.
     pub fn refresh(&mut self) {
-        self.start(Op::List);
+        match self.ui.panel {
+            Panel::Applications => self.start(Op::List),
+            Panel::Appearance => self.read_look(),
+        }
     }
 
     pub fn check(&mut self) {
@@ -525,6 +549,11 @@ impl Engine {
     /// Close now, or as soon as the work in flight finishes.
     pub fn quit(&mut self) {
         self.quitting = true;
+        // A lost apply is settled by its receipt first (a bounded number of
+        // lookups); the fence keeps any later apply from landing over it.
+        if self.look.uncertain.is_some() && self.look.job.is_none() {
+            self.read_look();
+        }
         // An uncertain change is settled first: one listing, then close.
         if self.uncertain.is_some() && self.job.is_none() {
             self.start_with(Op::List, true);
@@ -573,11 +602,21 @@ impl Engine {
     pub fn delivery(&mut self, delivery: Delivery) {
         match delivery {
             Delivery::Command { id, verb, body } => self.command(id, &verb, &body),
-            // A service came or went: the releases service may be one.
-            Delivery::Changed => self.refresh(),
+            // A service came or went: releases or settingsd may be one.
+            Delivery::Changed => {
+                self.start(Op::List);
+                self.read_look();
+            }
             Delivery::Connected => {
                 self.connected = true;
-                self.refresh();
+                self.start(Op::List);
+                self.read_look();
+            }
+            // settingsd announced a change: a hint, re-read over the call.
+            Delivery::Topic(topic) => {
+                if topic == crate::appearance::topic() {
+                    self.read_look();
+                }
             }
             Delivery::Disconnected => {
                 self.connected = false;
@@ -717,7 +756,7 @@ impl Engine {
         json!({"schema":"prefs.v1","app_id":APP_ID,"version":env!("CARGO_PKG_VERSION"),"pid":std::process::id(),
             "connected":self.connected,"releases":self.releases,"busy":self.busy(),"working":self.working(),"uncertain":self.uncertain,
             "status":self.status,"failed":self.failed,"apps":self.apps,"notes":self.notes,"notes_error":self.notes_error,
-            "ui":self.ui})
+            "appearance":self.appearance_view(),"ui":self.ui})
     }
 
     fn apps_view(&self) -> Value {
@@ -815,6 +854,11 @@ impl Engine {
             ),
             "prefs.info" => self.ok(id, self.info()),
             "prefs.apps" => self.ok(id, self.apps_view()),
+            "prefs.appearance" => self.ok(id, self.appearance_view()),
+            "prefs.appearance.set" => match self.set_look(&args) {
+                Ok(body) => self.ok(id, body),
+                Err((code, message)) => self.error(id, code, &message),
+            },
             "HELP" => self.effects.push(Effect::Describe { id, help: true }),
             "app.describe" => self.effects.push(Effect::Describe { id, help: false }),
             "prefs.commands" => self.effects.push(Effect::Commands { id }),

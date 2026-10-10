@@ -8,20 +8,21 @@ pub const APP_ID: &str = "dev.mixos.prefs";
 /// The Bus service behind the Applications panel.
 pub const RELEASES: &str = "releases";
 
-/// The editors Prefs holds, in sidebar order. Appearance and the rest join
-/// here as they are written.
+/// The editors Prefs holds, in sidebar order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Panel {
     Applications,
+    Appearance,
 }
 
 impl Panel {
-    pub const ALL: [Panel; 1] = [Panel::Applications];
+    pub const ALL: [Panel; 2] = [Panel::Applications, Panel::Appearance];
 
     pub fn name(self) -> &'static str {
         match self {
             Panel::Applications => "applications",
+            Panel::Appearance => "appearance",
         }
     }
 
@@ -99,7 +100,7 @@ pub struct Notes {
 
 /// Every verb the engine answers itself. The window-level verbs
 /// (`prefs.ui.*`, `prefs.window*`) belong to the toolkit drive layer.
-pub const VERBS: [&str; 13] = [
+pub const VERBS: [&str; 15] = [
     "HELP",
     "app.describe",
     "prefs.ping",
@@ -111,6 +112,8 @@ pub const VERBS: [&str; 13] = [
     "prefs.panel",
     "prefs.select",
     "prefs.apps",
+    "prefs.appearance",
+    "prefs.appearance.set",
     "prefs.dialog",
     "prefs.theme",
 ];
@@ -124,11 +127,13 @@ pub fn describe() -> Value {
         {"name":"prefs.info","description":"The whole state: panel, rows, selection, notes, operation in progress, status and UI","read_only":true},
         {"name":"prefs.show","description":"Restore and focus the existing window","read_only":false},
         {"name":"prefs.commands","description":"List the app's commands with labels, shortcuts and enablement","read_only":true},
-        {"name":"prefs.execute","args":{"id":"string"},"description":"Run one app command by id, as its menu item, button or shortcut would (file.quit, view.refresh, view.panel.applications, apps.check, apps.update_all, apps.install, apps.rollback, apps.remove, help.shortcuts, help.about); the operation it starts is visible in prefs.info","read_only":false},
+        {"name":"prefs.execute","args":{"id":"string"},"description":"Run one app command by id, as its menu item, button or shortcut would (file.quit, view.refresh, view.panel.applications, view.panel.appearance, appearance.apply, appearance.revert, appearance.keep, appearance.recheck, apps.check, apps.update_all, apps.install, apps.rollback, apps.remove, help.shortcuts, help.about); the operation it starts is visible in prefs.info","read_only":false},
         {"name":"prefs.quit","description":"Close once the operation in progress finishes","read_only":false},
-        {"name":"prefs.panel","args":{"name":"\"applications\""},"description":"Show a panel","read_only":false},
+        {"name":"prefs.panel","args":{"name":"\"applications\" or \"appearance\""},"description":"Show a panel","read_only":false},
         {"name":"prefs.select","args":{"app":"an app name from prefs.apps"},"description":"Select an app in the Applications panel and load its release notes","read_only":false},
         {"name":"prefs.apps","description":"The Applications panel's rows, selection and notes","read_only":true},
+        {"name":"prefs.appearance","description":"The Appearance panel: the session look settingsd holds (current), the unapplied edits (draft, and the axes edited), axes another writer changed under them (conflicts: nothing applies until appearance.keep or appearance.revert), what the window shows, the revision read, and whether an apply is in flight or uncertain","read_only":true},
+        {"name":"prefs.appearance.set","args":{"scheme":"optional scheme name","style":"optional style (plain, pro, studio, classic) or own for the scheme's own","mode":"optional light or dark","contrast":"optional normal or high","decorations":"optional csd or ssd","caption_side":"optional right or left"},"description":"Edit the Appearance draft: a present key sets that axis, an absent one leaves it; every axis is checked first. The window previews the draft; nothing is written until appearance.apply (prefs.execute)","read_only":false},
         {"name":"prefs.dialog","args":{"open":"\"about\", \"shortcuts\" or null"},"description":"Open a dialog, or close the open one (a remove confirmation is closed, never confirmed, here)","read_only":false},
         {"name":"prefs.theme","args":{"scheme":"optional scheme name or null to follow the session","style":"optional style (plain, pro, studio, classic), own for the scheme's own, or null to follow the session","mode":"optional light, dark or null to follow the session","decorations":"optional csd, ssd or null to follow the session","caption_side":"optional right, left or null to follow the session"},"description":"Choose the window's theme: a present key sets that axis, an absent one leaves it; answers the choice and the effective scheme and mode","read_only":false}
     ]})

@@ -39,6 +39,17 @@ pub fn registry() -> Registry<Engine> {
         run: |e| e.set_panel(Panel::Applications),
     })
     .add(Command {
+        id: "view.panel.appearance",
+        submenu: None,
+        group: 0,
+        label: "panel-appearance",
+        menu: Some("view"),
+        shortcut: key(Modifiers::COMMAND, Key::Num2),
+        icon: Some(Icon::Palette),
+        enabled: undialogued,
+        run: |e| e.set_panel(Panel::Appearance),
+    })
+    .add(Command {
         id: "view.refresh",
         submenu: None,
         group: 1,
@@ -105,6 +116,50 @@ pub fn registry() -> Registry<Engine> {
         icon: Some(Icon::Trash),
         enabled: Engine::can_remove,
         run: Engine::remove_selected,
+    })
+    .add(Command {
+        id: "appearance.apply",
+        submenu: None,
+        group: 0,
+        label: "apply-look",
+        menu: Some("appearance"),
+        shortcut: key(Modifiers::COMMAND, Key::S),
+        icon: Some(Icon::Check),
+        enabled: Engine::can_apply_look,
+        run: Engine::apply_look,
+    })
+    .add(Command {
+        id: "appearance.revert",
+        submenu: None,
+        group: 0,
+        label: "revert-look",
+        menu: Some("appearance"),
+        shortcut: None,
+        icon: Some(Icon::Undo2),
+        enabled: Engine::can_revert_look,
+        run: Engine::revert_look,
+    })
+    .add(Command {
+        id: "appearance.keep",
+        submenu: None,
+        group: 1,
+        label: "keep-look",
+        menu: Some("appearance"),
+        shortcut: None,
+        icon: None,
+        enabled: Engine::can_keep_look,
+        run: Engine::keep_look,
+    })
+    .add(Command {
+        id: "appearance.recheck",
+        submenu: None,
+        group: 1,
+        label: "recheck-look",
+        menu: Some("appearance"),
+        shortcut: None,
+        icon: Some(Icon::RefreshCw),
+        enabled: Engine::can_recheck_look,
+        run: Engine::recheck_look,
     })
     .add(Command {
         id: "help.shortcuts",

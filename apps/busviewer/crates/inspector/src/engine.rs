@@ -744,6 +744,8 @@ impl Engine {
             }
             // The shell reloads the theme; the engine has nothing to do.
             Delivery::Theme => {}
+            // BusViewer subscribes to no topics of its own.
+            Delivery::Topic(_) => {}
         }
     }
 

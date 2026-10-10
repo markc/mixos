@@ -3,8 +3,8 @@
 //! under its service name, receives its commands as [`Delivery`]s, answers
 //! each through its [`Handle`], calls other services, and on quit answers
 //! every accepted command before the connection closes. Topics
-//! (`theme.changed`, and service registration on `noded.props.changed`)
-//! wake the app; nothing polls.
+//! (`theme.changed`, service registration on `noded.props.changed`, and any
+//! the app names in [`start_with_topics`]) wake the app; nothing polls.
 //!
 //! Promoted from BusViewer's engine (`apps/busviewer/crates/inspector/src/bus.rs`)
 //! when Prefs became its second owner (AGENTS.md §2.2). The only change is
@@ -37,6 +37,10 @@ pub enum Delivery {
     Changed,
     /// The session theme changed.
     Theme,
+    /// A delivery on one of the app's own topics ([`start_with_topics`]):
+    /// a hint that something changed, never trusted for its content. After
+    /// an overflow every such topic is hinted, since some may have been lost.
+    Topic(String),
     Connected,
     Disconnected,
 }
@@ -246,6 +250,18 @@ pub fn start(
     service: &str,
     url: &str,
 ) -> Result<(Handle, mpsc::Receiver<Delivery>), String> {
+    start_with_topics(app, service, url, &[])
+}
+
+/// [`start`], also subscribed to `topics` (each delivered as
+/// [`Delivery::Topic`]).
+pub fn start_with_topics(
+    app: &str,
+    service: &str,
+    url: &str,
+    topics: &[String],
+) -> Result<(Handle, mpsc::Receiver<Delivery>), String> {
+    let topics = topics.to_vec();
     let (send, receive) = mpsc::channel(64);
     let (tx, rx) = tokio::sync::mpsc::channel(64);
     let (control, controls) = tokio::sync::mpsc::unbounded_channel();
@@ -264,7 +280,7 @@ pub fn start(
                 .build();
             match runtime {
                 Ok(runtime) => runtime.block_on(worker(
-                    service, url, closing, send, rx, controls, ready_send,
+                    service, url, topics, closing, send, rx, controls, ready_send,
                 )),
                 Err(error) => {
                     let _ = ready_send.send(Err(format!("Bus runtime: {error}")));
@@ -292,9 +308,11 @@ fn closing(app: &str) -> String {
     json!({"error_code":"BUSY","message":format!("{app} is closing")}).to_string()
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn worker(
     service: String,
     url: String,
+    topics: Vec<String>,
     closing: String,
     mut send: mpsc::Sender<Delivery>,
     mut effects: tokio::sync::mpsc::Receiver<Effect>,
@@ -321,9 +339,10 @@ async fn worker(
         return;
     };
     let mut connection = client.subscribe_state();
-    for topic in ["theme.changed".to_owned(), "noded.props.changed".to_owned()] {
+    let fixed = ["theme.changed".to_owned(), "noded.props.changed".to_owned()];
+    for topic in fixed.iter().chain(&topics) {
         if !matches!(
-            tokio::time::timeout(Duration::from_secs(2), client.subscribe_topic(&topic)).await,
+            tokio::time::timeout(Duration::from_secs(2), client.subscribe_topic(topic)).await,
             Ok(Ok(()))
         ) {
             let _ = ready.send(Err(format!("cannot subscribe to {topic}")));
@@ -369,6 +388,9 @@ async fn worker(
                     Some(BoundedIncomingEvent::Overflow{..}) => {
                         let _ = send.send(Delivery::Changed).await;
                         let _ = send.send(Delivery::Theme).await;
+                        for topic in &topics {
+                            let _ = send.send(Delivery::Topic(topic.clone())).await;
+                        }
                         continue;
                     },
                     None => break,
@@ -378,7 +400,14 @@ async fn worker(
                         && serde_json::from_str::<Value>(&command.body).ok().is_some_and(|body|body["path"] != "services.registered") {
                         continue;
                     }
-                    let _ = send.send(if topic == "theme.changed" { Delivery::Theme } else { Delivery::Changed }).await;
+                    let delivery = if topic == "theme.changed" {
+                        Delivery::Theme
+                    } else if topics.iter().any(|t| t == topic) {
+                        Delivery::Topic(topic.to_owned())
+                    } else {
+                        Delivery::Changed
+                    };
+                    let _ = send.send(delivery).await;
                     continue;
                 }
                 if command.command.is_empty() {

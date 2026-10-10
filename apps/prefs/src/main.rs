@@ -50,7 +50,10 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Settings, String> {
 }
 
 fn run(settings: &Settings) -> Result<(), String> {
-    let (handle, deliveries) = citizen::start(APP, &settings.service, &settings.url)?;
+    // The desktop profile's change hints wake the Appearance panel.
+    let topics = [preferences::appearance::topic()];
+    let (handle, deliveries) =
+        citizen::start_with_topics(APP, &settings.service, &settings.url, &topics)?;
     let theme = toolkit::Theme::load();
     let options = eframe::NativeOptions {
         // Client-side decorations: the toolkit title bar is the window frame.
