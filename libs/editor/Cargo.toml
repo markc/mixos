@@ -1,0 +1,38 @@
+# editor: the shared egui text editor (AGENTS.md §4.1) — a monospace,
+# virtualised view over the headless editing model, for ced and for any
+# application that needs a plain-text editor.
+[package]
+name = "editor"
+description = "Shared egui plain-text editor: virtualised view, soft wrap, IME, and a local document"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "editor"
+kind = "lib"
+layer = "desktop"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[features]
+default = []
+# Mix-family buffers highlighted by the Mix lexer in `local::Document`.
+mix = ["editor-model/mix"]
+
+[dependencies]
+design.workspace = true
+edit.workspace = true
+editor-model.workspace = true
+egui.workspace = true
+serde.workspace = true
+toolkit.workspace = true
+
+[dev-dependencies]
+egui_kittest.workspace = true
+tempfile.workspace = true

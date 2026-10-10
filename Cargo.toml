@@ -72,7 +72,9 @@ bus = { path = "libs/bus", default-features = false }
 config = { path = "libs/config" }
 design = { path = "libs/design" }
 edit = { path = "libs/edit" }
-editor-model = { path = "libs/editor-model" }
+editor = { path = "libs/editor" }
+# The Mix lexer is opt-in (ced enables it); a plain-text editor does not need Mix.
+editor-model = { path = "libs/editor-model", default-features = false }
 expr = { path = "libs/expr" }
 logging = { path = "libs/logging" }
 mix = { path = "libs/mix" }
