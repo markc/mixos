@@ -22629,17 +22629,25 @@ fn tcp_send_deadline(
 
 /// A subscribed handle's send receipt as the caller sees it. With an
 /// explicit `{timeout}`, expiry raises TCP_SEND_TIMEOUT like the direct
-/// path; without one, the source's SOCKET_SEND_TIMEOUT stays as it was.
+/// path, with `details.total` (the owner thread does not report how much
+/// it wrote, so `written` is absent); without one, the source's
+/// SOCKET_SEND_TIMEOUT stays as it was.
 #[cfg(feature = "ws")]
 pub(crate) fn tcp_send_receipt(
     receipt: Result<socket_sources::SendReceipt, tokio::sync::oneshot::error::RecvError>,
     timed: bool,
+    total: usize,
 ) -> MixResult<Value> {
     match receipt {
         Ok(Ok(n)) => Ok(Value::Number(n as f64)),
-        Ok(Err((code, message))) if timed && code == "SOCKET_SEND_TIMEOUT" => Err(
-            crate::native_events::refusal("TCP_SEND_TIMEOUT", format!("tcp_send: {message}")),
-        ),
+        Ok(Err((code, message))) if timed && code == "SOCKET_SEND_TIMEOUT" => {
+            let mut details = indexmap::IndexMap::new();
+            details.insert("total".to_string(), Value::Number(total as f64));
+            Err(MixError::Structured(Box::new(
+                crate::error::ErrorInfo::new("TCP_SEND_TIMEOUT", format!("tcp_send: {message}"))
+                    .with_details(Value::map(details)),
+            )))
+        }
         Ok(Err((code, message))) => Err(crate::native_events::refusal(&code, message)),
         Err(_) => Err(crate::native_events::refusal(
             "SOCKET_SEND_CLOSED",
@@ -22665,8 +22673,9 @@ fn builtin_tcp_send(args: Vec<Value>) -> MixResult<Option<Value>> {
     if crate::builtins::socket_sources::is_subscribed(
         crate::builtins::socket_sources::ClientKey::tcp(id),
     ) {
+        let total = payload.len();
         let rx = crate::builtins::socket_sources::send_tcp(id, payload, timeout)?;
-        return tcp_send_receipt(rx.blocking_recv(), timeout.is_some()).map(Some);
+        return tcp_send_receipt(rx.blocking_recv(), timeout.is_some(), total).map(Some);
     }
     let mut conn = tcp_client::MAP
         .lock()

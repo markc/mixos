@@ -13126,6 +13126,7 @@ impl Evaluator {
                     };
                     if let Some(payload) = payload {
                         let ws = name == "ws_send";
+                        let total = payload.len();
                         // tcp_send's {timeout} becomes the receipt deadline.
                         let timeout = if ws {
                             None
@@ -13155,7 +13156,7 @@ impl Evaluator {
                                     )),
                                 }
                             } else {
-                                crate::builtins::tcp_send_receipt(receipt, timeout.is_some())
+                                crate::builtins::tcp_send_receipt(receipt, timeout.is_some(), total)
                             }
                         };
                         return self.await_with_class_c_yield(fut).await?.map(Some);

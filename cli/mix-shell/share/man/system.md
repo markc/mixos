@@ -1869,7 +1869,8 @@ Bytes already written stay written; the peer may have received part of
 the payload. Ctrl-C in a plain script raises `TCP_SEND_INTERRUPTED` the
 same way. On a `tcp_on` handle the timeout becomes the send's receipt
 deadline (`0` keeps the source's 30 s bound), and expiry raises
-`TCP_SEND_TIMEOUT`.
+`TCP_SEND_TIMEOUT` with `details: {total}` (the reader thread does not
+report how much it wrote).
 
 ```mix
 try

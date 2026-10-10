@@ -58,6 +58,7 @@ try
 catch $msg, $err
   $code = $err.code
   $written = $err.details.written
+  $total = $err.details.total
 end
 $elapsed = monotonic() - $t0
 "#,
@@ -65,6 +66,7 @@ $elapsed = monotonic() - $t0
     .await
     .unwrap();
     assert_eq!(global(&e, "code"), "TCP_SEND_TIMEOUT");
+    assert_eq!(e.get_global("total").and_then(|v| v.to_number()), Some(big));
     let elapsed = e.get_global("elapsed").and_then(|v| v.to_number()).unwrap();
     assert!(
         (0.4..2.0).contains(&elapsed),
