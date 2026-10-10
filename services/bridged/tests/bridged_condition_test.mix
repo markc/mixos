@@ -1,0 +1,78 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- bridged_condition_test: the unit's ExecCondition launcher maps exits so
+-- that only a documented refusal reads as a skip. Against the real
+-- bridged.mix: a start that may go is 0, a documented refusal is 2. Against
+-- stand-in bridged.mix files beside a copy of the launcher: exit 1, exit 3,
+-- an uncaught error, a parse error and a signal are all 255; 0 and 2 pass
+-- through. Also: bridged.mix --check exits 3, not 2, on bad usage.
+-- Run from the checkout root: mix services/bridged/tests/bridged_condition_test.mix
+-- Offline, no Bus. Writes only under /var/tmp/bridged-condition-test.<uuid>.
+
+$here = dirname(realpath($0))
+$launcher = realpath($here .. "/../scripts/bridged_condition.mix")
+$citizen = realpath($here .. "/../scripts/bridged.mix")
+$registry = realpath($here .. "/../../../docs/spec/bus/verbs.conf.mix")
+$tmp = "/var/tmp/bridged-condition-test." .. uuid()
+$results = []
+
+fn check($name, $ok)
+  push($results, {name: $name, ok: $ok})
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+
+fn run_launcher($path, $name, $env)
+  $r = run_argv(["/opt/mixos/bin/mix", $path, $name], {env: $env, timeout: 90})
+  return {exit: $r.exit_code, err: $r.stderr ?? "", out: $r.stdout ?? ""}
+end
+
+-- A copy of the launcher in its own dir, beside a stand-in bridged.mix.
+fn stand_in($tag, $source)
+  $d = $tmp .. "/" .. $tag
+  mkdir($d, {parents: true})
+  write_file($d .. "/bridged_condition.mix", read_file($launcher))
+  write_file($d .. "/bridged.mix", $source)
+  return $d .. "/bridged_condition.mix"
+end
+
+mkdir($tmp, {parents: true})
+try
+  -- The real check.
+  write_new($tmp .. "/app.tok", hash_sha256("bridged-condition-test " .. uuid()) .. "\n", 0o600)
+  write_file($tmp .. "/fakeapp.conf.mix", "token_file: \"" .. $tmp .. "/app.tok\",\nport: 47999\n")
+  $env = {BRIDGED_VERBS: $registry, BRIDGED_CONFIG: $tmp .. "/fakeapp.conf.mix"}
+  $r = run_launcher($launcher, "fakeapp", $env)
+  check("real: an instance that may start is 0", $r.exit == 0 and contains($r.out, "fakeapp may start"))
+  $r = run_launcher($launcher, "settings", $env)
+  check("real: a reserved name is a refusal, 2", $r.exit == 2 and contains($r.err, "NAME_RESERVED"))
+  $r = run_launcher($launcher, "fakeapp", merge($env, {BRIDGED_VERBS: $tmp .. "/no-registry.conf.mix"}))
+  check("real: a missing registry is a refusal, 2", $r.exit == 2 and contains($r.err, "REGISTRY"))
+  $r = run_launcher($launcher, "fakeapp", merge($env, {BRIDGED_CONFIG: $tmp .. "/absent.conf.mix"}))
+  check("real: a missing config is a refusal, 2", $r.exit == 2 and contains($r.err, "CONFIG"))
+  $r = run_argv(["/opt/mixos/bin/mix", $launcher], {timeout: 30})
+  check("launcher: bad usage is 255", $r.exit_code == 255)
+  $r = run_argv(["/opt/mixos/bin/mix", $citizen, "--bogus"], {timeout: 30})
+  check("check: bad usage exits 3, not a refusal", $r.exit_code == 3)
+
+  -- Stand-ins: only 0 and 2 pass through.
+  $cases = [
+    ["exit-0", "exit(0)\n", 0],
+    ["exit-2", "eprint(\"refused\")\nexit(2)\n", 2],
+    ["exit-1", "exit(1)\n", 255],
+    ["exit-3", "exit(3)\n", 255],
+    ["raise", "raise(\"BOOM\", \"unexpected\")\n", 255],
+    ["parse", "fn (\n", 255],
+    ["signal", "$k = kill(pid(), 9)\nsleep(5)\n", 255]
+  ]
+  for each $c in $cases
+    $r = run_launcher(stand_in($c[0], $c[1]), "fakeapp", {})
+    check("map: " .. $c[0] .. " -> " .. to_string($c[2]) .. " (got " .. to_string($r.exit) .. ")", $r.exit == $c[2])
+  end
+catch $m
+  check("harness: " .. $m, false)
+finally
+  if len(filter($results, fn($x) = not $x.ok)) == 0 then remove_dir($tmp) else print("kept for inspection: " .. $tmp) end
+end
+
+$failed = filter($results, fn($x) = not $x.ok)
+print(to_string(len($results) - len($failed)) .. "/" .. to_string(len($results)) .. " passed")
+if len($failed) > 0 then exit(1) end

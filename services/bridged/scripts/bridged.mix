@@ -12,12 +12,14 @@
 -- else /opt/mixos/share/bus/verbs.conf.mix; missing or unreadable refuses).
 -- mix --serve registers the name before this file runs, so a refusal here
 -- comes just after registration; the unit runs --check first (ExecCondition,
--- where exit 2 skips the unit) so a refused name never reaches the Bus.
+-- through bridged_condition.mix) so a refused name never reaches the Bus.
 -- Config: $BRIDGED_CONFIG, else <etc>/bridge/<app>.conf.mix with <etc> =
 -- $MIXOS_ETC or /etc/mixos. Keys: host, port, auth, token_file, timeout_s,
 -- connect_timeout_s, backoff_s, max_line, instance (docs/spec/bridge/).
 -- A refusal at start prints "bridged: refusing to start: CODE: message" and
--- exits 2 (CODE: NAME_INVALID, NAME_RESERVED, REGISTRY, CONFIG, TOKEN).
+-- exits 2 (CODE: NAME_INVALID, NAME_RESERVED, REGISTRY, CONFIG, TOKEN); an
+-- unexpected error at start exits 3. The unit maps these through
+-- bridged_condition.mix.
 --
 -- Verbs (body is a JSON object where one is listed):
 --   <app>.call        {method, params?}   pass-through, any method
@@ -31,9 +33,17 @@
 
 $core = require("lib/bridge_core.mix")
 
+-- A documented refusal exits 2 (the unit skips, never restarts). Anything
+-- else is unexpected and exits 3, so the unit fails visibly instead.
+$REFUSALS = ["NAME_INVALID", "NAME_RESERVED", "REGISTRY", "CONFIG", "TOKEN"]
+
 fn refuse($code, $message)
-  eprint("bridged: refusing to start: " .. $code .. ": " .. $message)
-  exit(2)
+  if contains($REFUSALS, $code) then
+    eprint("bridged: refusing to start: " .. $code .. ": " .. $message)
+    exit(2)
+  end
+  eprint("bridged: unexpected error at start: " .. $code .. ": " .. $message)
+  exit(3)
 end
 
 -- Every start check: the name, the registry, the config and the token.
@@ -51,7 +61,7 @@ if $svc == nil then
   $a = args()
   if len($a) != 2 or $a[0] != "--check" then
     eprint("usage: mix --serve bridged.mix --name <app> | mix bridged.mix --check <app>")
-    exit(2)
+    exit(3)
   end
   try
     $p = preflight($a[1])

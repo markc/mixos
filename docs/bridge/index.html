@@ -281,8 +281,9 @@ token_file: "/home/user/.config/fakeapp/control.token"
 <p>The unit runs <code>mix bridged.mix --check fakeapp</code> before it joins the Bus,
 then <code>mix --serve bridged.mix --name fakeapp</code>. A refused start is not a
 failure: <code>systemctl status</code> shows the unit inactive, skipped (condition),
-with the reason in its journal, and it is not restarted. A start is refused
-when:</p>
+with the reason in its journal, and it is not restarted. An unexpected error
+in the check (anything but a refusal below) fails the unit instead, so it is
+never mistaken for one. A start is refused when:</p>
 <ul>
 <li>the name is not a valid Bus service name, or starts with <code>mixos-</code>
 (<code>NAME_INVALID</code>);</li>
@@ -308,10 +309,10 @@ send fakeapp fakeapp.call body='{"method":"echo","params":{"a":1}}'
 </tbody></table>
 <p>The bridge keeps one connection open. If the application goes away, calls
 answer rc 11, the bridge waits <code>backoff_s</code> (default 2 seconds), then
-reconnects and authenticates again on the next call. Each call is bounded by
-<code>timeout_s</code>, except that writing a request to an application that has
-stopped reading can take up to 30 seconds longer, until Mix's socket writes
-take a deadline.</p>
+reconnects and authenticates again on the next call. Each call's connect and
+reads are bounded by <code>timeout_s</code>. Writing a request to an application that
+has stopped reading is not bounded yet: that waits for Mix 0.112.1's
+<code>tcp_send</code> timeout (pending).</p>
 <h2 id="security">Security</h2>
 <p>Read this before bridging an application.</p>
 <ul>
