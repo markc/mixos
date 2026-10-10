@@ -80,7 +80,8 @@ yaml = ["dep:yaml-rust2"]
 # tokio-tungstenite); rustls is pulled directly only for the
 # `{insecure: true}` arm's no-verify TLS config (self-signed device certs
 # — the case that motivated the builtin).
-ws = ["dep:tungstenite", "dep:rustls", "dep:webpki-roots", "tokio/net"]
+# socket2 (already in the workspace lock) gives tcp_listen its `{backlog}`.
+ws = ["dep:tungstenite", "dep:rustls", "dep:webpki-roots", "dep:socket2", "tokio/net"]
 
 [dependencies]
 indexmap = "2"
@@ -105,6 +106,7 @@ bcrypt = { version = "0.16", optional = true }
 sha-crypt = { version = "0.6", optional = true, features = ["password-hash", "getrandom"] }
 tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"], optional = true }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }
+socket2 = { version = "0.6", optional = true }
 blake3 = { version = "1", optional = true }
 yaml-rust2 = { version = "0.12", optional = true }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"], optional = true }

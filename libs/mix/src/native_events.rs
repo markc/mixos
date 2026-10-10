@@ -258,7 +258,10 @@ impl Queue {
     ) -> bool {
         let mut p = self.pending.lock().unwrap();
         if !p.sockets.contains_key(handle) {
-            // Unsubscribed mid-push: the record dies with the subscription.
+            // Unsubscribed mid-push: the record dies with the subscription
+            // (and closes the connection an `accepted` record carries).
+            drop(p);
+            crate::builtins::socket_sources::discard_record(&record);
             return true;
         }
         let len = record.data.len();
@@ -366,6 +369,15 @@ impl Queue {
             s.bytes -= rec.data.len();
             p.socket_bytes -= rec.data.len();
             p.socket_frames -= 1;
+            if rec.kind == "accepted" {
+                let command = s.command.clone();
+                let accepted =
+                    crate::builtins::socket_sources::accepted_body(&rec).unwrap_or_default();
+                return Some(event(
+                    &command,
+                    serde_json::json!({"watch": handle, "accepted": accepted}),
+                ));
+            }
             let data = match rec.kind {
                 "text" | "line" => {
                     serde_json::Value::String(String::from_utf8_lossy(&rec.data).into_owned())
@@ -614,6 +626,10 @@ pub(crate) struct NativeEvents {
     /// Subscribed sockets (ws_on/tcp_on), owned by this generation.
     #[cfg(feature = "ws")]
     pub(crate) sockets: BTreeMap<String, crate::builtins::socket_sources::SocketSource>,
+    /// tcp_listen listeners and the connections they accepted, closed when
+    /// this generation retires. Shared with listener reader threads.
+    #[cfg(feature = "ws")]
+    tcp_owned: Arc<Mutex<std::collections::HashSet<u64>>>,
     owner_id: u64,
 }
 
@@ -628,6 +644,8 @@ impl Default for NativeEvents {
             desktop: BTreeMap::new(),
             #[cfg(feature = "ws")]
             sockets: BTreeMap::new(),
+            #[cfg(feature = "ws")]
+            tcp_owned: Arc::default(),
             owner_id: NEXT_OWNER_ID.fetch_add(1, Ordering::Relaxed),
         }
     }
@@ -897,6 +915,30 @@ impl NativeEvents {
         })
     }
 
+    /// `tcp_on` on a tcp_listen listener: move it into an accept reader.
+    /// Each accepted connection becomes a plain handle owned by this
+    /// generation and arrives as one `accepted` record.
+    #[cfg(feature = "ws")]
+    pub fn tcp_on_listener(&mut self, listener_id: u64, command: String) -> MixResult<String> {
+        self.ensure_open()?;
+        self.check_socket_limit()?;
+        let owned = self.tcp_owned.clone();
+        self.socket_sub(
+            "tcp",
+            crate::builtins::socket_sources::KIND_TCP_ACCEPT,
+            command,
+            |queue, id, _command| {
+                crate::builtins::socket_sources::subscribe_listener(queue, id, listener_id, owned)
+            },
+        )
+    }
+
+    /// Record a tcp_listen/tcp_accept result as owned by this generation.
+    #[cfg(feature = "ws")]
+    pub fn own_tcp(&self, id: u64) {
+        crate::builtins::socket_sources::own(&self.tcp_owned, id);
+    }
+
     #[cfg(feature = "ws")]
     fn check_socket_limit(&self) -> MixResult<()> {
         if self.sockets.len() >= crate::builtins::socket_sources::MAX_SOURCES {
@@ -997,15 +1039,22 @@ impl NativeEvents {
     #[cfg(feature = "ws")]
     fn remove_socket_pending(&self, h: &str) {
         let mut p = self.queue.pending.lock().unwrap();
-        if let Some(s) = p.sockets.remove(h) {
+        let dropped = p.sockets.remove(h);
+        if let Some(s) = &dropped {
             p.socket_frames -= s.frames.len();
             p.socket_bytes -= s.bytes;
         }
         drop(p);
+        // Undelivered `accepted` records close their connections.
+        for rec in dropped.iter().flat_map(|s| s.frames.iter()) {
+            crate::builtins::socket_sources::discard_record(rec);
+        }
         self.queue.ready.notify_waiters();
     }
 
     pub fn close(&mut self) {
+        #[cfg(feature = "ws")]
+        let dropped_sockets;
         {
             let mut p = self.queue.pending.lock().unwrap();
             p.closed = true;
@@ -1015,10 +1064,14 @@ impl NativeEvents {
             p.count = 0;
             #[cfg(feature = "ws")]
             {
-                p.sockets.clear();
+                dropped_sockets = std::mem::take(&mut p.sockets);
                 p.socket_frames = 0;
                 p.socket_bytes = 0;
             }
+        }
+        #[cfg(feature = "ws")]
+        for rec in dropped_sockets.values().flat_map(|s| s.frames.iter()) {
+            crate::builtins::socket_sources::discard_record(rec);
         }
         self.queue.ready.notify_waiters();
         self.watches.clear();
@@ -1026,7 +1079,10 @@ impl NativeEvents {
         self.children.clear();
         self.desktop.clear();
         #[cfg(feature = "ws")]
-        self.sockets.clear(); // each Drop cancels + joins its reader
+        {
+            self.sockets.clear(); // each Drop cancels + joins its reader
+            crate::builtins::socket_sources::close_owned(&self.tcp_owned);
+        }
     }
 }
 
@@ -1154,6 +1210,8 @@ mod tests {
             desktop: BTreeMap::new(),
             #[cfg(feature = "ws")]
             sockets: BTreeMap::new(),
+            #[cfg(feature = "ws")]
+            tcp_owned: Arc::default(),
             owner_id: 0,
         };
         registry.remove_pending("test");

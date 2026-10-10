@@ -3585,6 +3585,7 @@ dependencies = [
  "sha1",
  "sha2 0.10.9",
  "signal-hook",
+ "socket2",
  "tokio",
  "toml 0.8.23",
  "tracing",

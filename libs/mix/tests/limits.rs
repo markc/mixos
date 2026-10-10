@@ -357,6 +357,9 @@ fn sensitive_builtins_stay_categorized() {
         ("tcp_recv", Network),
         ("tcp_recv_line", Network),
         ("tcp_close", Network),
+        ("tcp_listen", Network),
+        ("tcp_accept", Network),
+        ("tcp_local_addr", Network),
         ("http_serve", Network),
         ("http_recv", Network),
         // Process

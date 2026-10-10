@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Server-side TCP. `tcp_listen(host, port[, {backlog}])` binds and listens
+  and returns a listener handle; `host` is required (`"127.0.0.1"` is the
+  normal choice) and port 0 takes an ephemeral port. `tcp_local_addr(handle)`
+  returns `{host, port}` for a listener or connection.
+  `tcp_accept(listener[, {timeout}])` returns an ordinary connected handle,
+  or nil on timeout; in a Class C body it waits on native readiness.
+  `tcp_on` on a listener delivers one `accepted: {handle, peer}` event per
+  connection, and `tcp_accept(source)` reads that source outside serve mode.
+  `tcp_close` closes a listener. Listeners and the connections they accept
+  belong to the evaluator generation and close when it retires. Errors
+  carry stable codes (`TCP_LISTEN_ADDR_IN_USE`, `TCP_LISTEN_PERMISSION`,
+  `TCP_LISTEN_ADDR_UNAVAILABLE`, `TCP_LISTEN_ADDRESS`, `TCP_LISTEN_ARGUMENT`,
+  `TCP_ACCEPT_HANDLE`, `TCP_HANDLE_LIMIT`, `TCP_LISTENER`); new listeners
+  and accepts refuse past 1024 live TCP handles.
+
 ## 0.111.0
 
 ### Added

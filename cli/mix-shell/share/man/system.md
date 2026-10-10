@@ -1860,7 +1860,92 @@ Same inline-blocking caveat as the others (below): a pending `tcp_recv`
 holds the evaluator's thread, so `{timeout: 0}` in a `--serve` citizen
 can wedge the pump.
 
-Both UDP builtins above, all four `ws_*`, and the five `tcp_*` are **Network**-class (below), like `http_*` and `dns_lookup` —
+## Raw TCP server — `tcp_listen`, `tcp_accept`, `tcp_local_addr` (unreleased)
+
+```
+tcp_listen(host, port[, {backlog}])     -> listener handle
+tcp_accept(listener[, {timeout}])       -> connected handle | nil on timeout
+tcp_local_addr(handle)                  -> {host, port}
+tcp_close(listener)                     -> bool
+```
+
+The listening half of the client above, so a script can be a small TCP
+service (a fake line-JSON app for a test, a local control port) without
+`socat`. `tcp_listen` binds and listens. `host` is required and there is
+no default: `"127.0.0.1"` is the normal choice, and a non-loopback
+address (`"0.0.0.0"`, `"::"`, a LAN IP) works only when you name it.
+Port `0` takes an ephemeral port, and `tcp_local_addr` says which one.
+`backlog` (default 128, 1 to 4096) bounds the connections the kernel
+queues before `tcp_accept` takes them.
+
+`tcp_accept` waits for one connection and returns an ordinary connected
+handle: `tcp_send`, `tcp_recv`, `tcp_recv_line`, `tcp_on` and `tcp_close`
+all work on it. `nil` on timeout (default 30 s, `0` waits forever) is an
+ordinary answer and the listener stays usable. Listeners take their
+numbers from `tcp_connect`'s counter, so a number is never both: a
+connection verb given a listener raises `TCP_LISTENER`, and `tcp_accept`
+given a connection raises `TCP_ACCEPT_HANDLE`. `tcp_close` on a listener
+stops listening at once and returns `true`; `false` means it was already
+closed.
+
+```mix
+-- A line-JSON echo server: one client at a time, plain blocking style.
+$l = tcp_listen("127.0.0.1", 0)
+$addr = tcp_local_addr($l)
+print("listening on " .. $addr.host .. ":" .. $addr.port)
+loop
+  $c = tcp_accept($l, {timeout: 0})
+  loop
+    try
+      $line = tcp_recv_line($c, {timeout: 30})
+    catch $msg, $err
+      break                                     -- the client hung up
+    end
+    if $line == nil then break end              -- idle client: drop it
+    $req = json_parse($line)
+    tcp_send($c, json_encode({ok: true, echo: $req}) .. "\n")
+  end
+  tcp_close($c)
+end
+```
+
+Errors are structured; read `$err.code` from `catch $msg, $err`:
+
+| Code | Raised when |
+|---|---|
+| `TCP_LISTEN_ADDR_IN_USE` | another socket already listens on the address |
+| `TCP_LISTEN_PERMISSION` | the bind needs privilege (a port below 1024) |
+| `TCP_LISTEN_ADDR_UNAVAILABLE` | `host` is not an address of this machine |
+| `TCP_LISTEN_ADDRESS` | `host` does not resolve |
+| `TCP_LISTEN_ARGUMENT` | a bad host, port or option |
+| `TCP_LISTEN_FAILED` | any other bind or listen failure |
+| `TCP_ACCEPT_HANDLE` | an unknown listener, or a connection handle |
+| `TCP_ACCEPT_ARGUMENT` | a bad option |
+| `TCP_ACCEPT_FAILED` | accept(2) failed on the listener |
+| `TCP_HANDLE_LIMIT` | 1024 live TCP handles (connections and listeners, `tcp_connect`'s included) |
+| `TCP_LISTENER` | a connection verb was given a listener |
+
+**Serve mode and Class C.** A plain `tcp_accept` waits on the evaluator's
+thread, like `tcp_recv` (the caveat below applies). In a Class C async
+body the numeric form waits on native readiness with the read permit
+released, so other handlers keep running. For a `--serve` citizen the
+event form is usually the better fit: `tcp_on($listener, "app.conn")`
+moves the listener into a reader thread and delivers one event per
+accepted connection (see Socket subscriptions below). A subscribed
+listener refuses numeric `tcp_accept` (`SOCKET_SUBSCRIBED`) and
+`tcp_close`; end it with `tcp_unwatch`.
+
+**Ownership.** A listener, and every connection `tcp_accept` or a
+subscribed listener hands out, belongs to the evaluator generation that
+made it: retiring the generation (a `--serve` reload or shutdown, or the
+evaluator going away) closes them. `tcp_connect` handles keep their
+process-wide lifetime. A reload's candidate runs while the old
+generation still holds its listeners, so it cannot bind the same fixed
+port (`TCP_LISTEN_ADDR_IN_USE`): a served listener should bind port `0`
+and publish its port. Handing a fixed port across a reload is not
+supported yet.
+
+Both UDP builtins above, all four `ws_*`, and the `tcp_*` family are **Network**-class (below), like `http_*` and `dns_lookup` —
 and like those, the wait happens inline on the evaluator's thread. In a
 `--serve` citizen that means a pending `udp_recv` blocks the whole event pump
 for its duration; **never** pass `{timeout: 0}` there — unlike an HTTP call,
@@ -1876,6 +1961,8 @@ tcp_on(handle, command[, opts])             -> source id ("tcp:N")
 ws_recv(source[, timeout])                  -> string | bytes | nil (Class C)
 tcp_recv(source[, {timeout, max}])          -> bytes | nil (Class C)
 tcp_recv_line(source[, {timeout}])          -> string | nil (Class C)
+tcp_on(listener, command)                   -> source id ("tcp:N") (unreleased)
+tcp_accept(source[, {timeout}])             -> handle | nil (Class C)
 ws_unwatch(source) / tcp_unwatch(source)    -> nil
 ```
 
@@ -1917,11 +2004,41 @@ silently dropped, duplicated or re-sent.
 {"watch": "tcp:2", "frame": {"kind": "bytes", "data": {"hex": "…"}}}
 {"watch": "tcp:2", "frame": {"kind": "line", "data": "…"}}
 {"watch": "ws:1", "closed": {"reason": "connection closed by peer"}}
+{"watch": "tcp:3", "accepted": {"handle": 7, "peer": {"host": "127.0.0.1", "port": 50122}}}
 ```
 
 WS message boundaries and text/binary kinds survive. `tcp_on` defaults to
 `frame: "bytes"` — ordered raw chunks of at most 64 KiB; `frame: "line"`
 splits on LF (one trailing CR stripped) with `max` bounding a line.
+
+**Listeners (unreleased).** `tcp_on` on a `tcp_listen` listener takes no
+options. The reader parks in `poll(2)` on the listener and accepts each
+connection as it arrives: the connection becomes a plain connected
+handle, owned by the generation, and arrives as one `accepted` event in
+order. The handler then reads it, or subscribes it with its own `tcp_on`:
+
+```mix
+$l = tcp_listen("127.0.0.1", 0)
+tcp_on($l, "app.conn")
+on app.conn
+  if $event.args.accepted != nil then
+    tcp_on($event.args.accepted.handle, "app.line", {frame: "line"})
+  end
+end
+on app.line
+  if $event.args.frame != nil then
+    print($event.args.frame.data)
+  end
+end
+```
+
+Outside serve mode, `tcp_accept("tcp:3")` takes the next accepted handle
+from the source (Class C, like the recv forms). Accepted connections that
+are never delivered, because the source was unwatched or retired with
+records still queued, are closed rather than left open with no name. At
+1024 live TCP handles the reader stops accepting and closes the listener
+with one terminal event (`closed: {"reason": "handle_limit"}`); a queue
+overflow closes it with `reason: "overflow"`, as for a connection.
 
 **Ordering and overflow.** Records are an ordered, per-source FIFO bounded
 by 4096 frames and 64 MiB of payload per evaluator (across all its

@@ -3021,8 +3021,8 @@ pub(crate) const INLINE_SPECIAL_FORMS: &[&str] = &[
     "audio_unwatch",
     "audio_state",
     // Socket subscriptions (ws_on/tcp_on/ws_unwatch/tcp_unwatch) are
-    // evaluator-special; ws_recv/tcp_recv/tcp_recv_line/ws_send/tcp_send
-    // are hybrids: the string-source Class C recv form is intercepted by
+    // evaluator-special; ws_recv/tcp_recv/tcp_recv_line/tcp_accept/ws_send/
+    // tcp_send are hybrids: the string-source Class C recv form is intercepted by
     // the inline arm, and in a Class C async body (read permit held) the
     // NUMERIC forms pull non-blocking (recv) or await the owner thread's
     // completion receipt (send on a subscribed handle) instead of running
@@ -3035,6 +3035,7 @@ pub(crate) const INLINE_SPECIAL_FORMS: &[&str] = &[
     "ws_recv",
     "tcp_recv",
     "tcp_recv_line",
+    "tcp_accept",
 ];
 
 /// Per-evaluator capability gate for the builtin table (the capability
@@ -12964,6 +12965,27 @@ impl Evaluator {
         eval_args: &'a [Value],
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = MixResult<Option<Value>>> + 'a>> {
         Box::pin(async move {
+            // Class C numeric accept: wait on native readiness with the
+            // read permit released. A subscribed or unknown listener is
+            // refused by prepare_accept, exactly as the sync builtin
+            // would. The accepted handle belongs to this generation.
+            if name == "tcp_accept"
+                && self.ctx.class_c_read_permit.is_some()
+                && matches!(eval_args.first(), Some(Value::Number(_)))
+            {
+                self.check_capability(name)?;
+                self.check_builtin_arity(name, eval_args.len())?;
+                let (listener, deadline) =
+                    crate::builtins::socket_sources::prepare_accept(eval_args)?;
+                let fut = Box::pin(crate::builtins::socket_sources::pull_accept(
+                    listener, deadline,
+                ));
+                let accepted = self.await_with_class_c_yield(fut).await??;
+                if let Value::Number(n) = &accepted {
+                    self.globals.borrow().native_events.own_tcp(*n as u64);
+                }
+                return Ok(Some(accepted));
+            }
             if matches!(
                 name,
                 "ws_recv" | "tcp_recv" | "tcp_recv_line" | "ws_send" | "tcp_send"
@@ -13078,6 +13100,19 @@ impl Evaluator {
                             )?;
                             let h = if name == "ws_on" {
                                 ne.ws_on(id, command)?
+                            } else if crate::builtins::socket_sources::is_listener(id) {
+                                // A listener has no framing to choose.
+                                match eval_args.get(2) {
+                                    None | Some(Value::Nil) => {}
+                                    Some(Value::Map(m)) if m.is_empty() => {}
+                                    Some(_) => {
+                                        return Err(crate::native_events::refusal(
+                                            "TCP_ON_ARGUMENT",
+                                            "tcp_on(): a listener takes no options (frame and max apply to connections)",
+                                        ));
+                                    }
+                                }
+                                ne.tcp_on_listener(id, command)?
                             } else {
                                 let mode = crate::builtins::socket_sources::parse_tcp_on_opts(
                                     eval_args.get(2),
@@ -13102,7 +13137,7 @@ impl Evaluator {
                     .map(Some);
                 }
             }
-            if matches!(name, "ws_recv" | "tcp_recv" | "tcp_recv_line")
+            if matches!(name, "ws_recv" | "tcp_recv" | "tcp_recv_line" | "tcp_accept")
                 && matches!(eval_args.first(), Some(Value::String(_)))
             {
                 self.check_capability(name)?;
@@ -13129,15 +13164,23 @@ impl Evaluator {
                         crate::builtins::socket_sources::KIND_WS
                     } else if name == "tcp_recv" {
                         crate::builtins::socket_sources::KIND_TCP_BYTES
+                    } else if name == "tcp_accept" {
+                        crate::builtins::socket_sources::KIND_TCP_ACCEPT
                     } else {
                         crate::builtins::socket_sources::KIND_TCP_LINE
                     };
-                    let (timeout_seconds, max) =
+                    let (timeout_seconds, max) = if name == "tcp_accept" {
+                        (
+                            crate::builtins::socket_sources::accept_timeout(eval_args.get(1))?,
+                            usize::MAX,
+                        )
+                    } else {
                         crate::builtins::socket_sources::parse_source_recv_opts(
                             name,
                             eval_args.get(1),
                             65536,
-                        )?;
+                        )?
+                    };
                     // Frame boundaries survive: only tcp_recv (a raw
                     // byte stream) may slice a queued chunk; ws
                     // messages and tcp lines are delivered whole.
@@ -13171,6 +13214,18 @@ impl Evaluator {
                     return match out {
                         crate::native_events::SocketNext::Idle => Ok(Value::Nil),
                         crate::native_events::SocketNext::Frame(rec) => match rec.kind {
+                            // The connection is already a live handle
+                            // owned by this generation.
+                            "accepted" => {
+                                crate::builtins::socket_sources::accepted_handle(&rec)
+                                    .map(|h| Value::Number(h as f64))
+                                    .ok_or_else(|| {
+                                        crate::native_events::refusal(
+                                            "TCP_ACCEPT_FAILED",
+                                            "tcp_accept(): malformed accept record",
+                                        )
+                                    })
+                            }
                             "text" | "line" => Ok(Value::String(
                                 String::from_utf8_lossy(&rec.data).into_owned(),
                             )),
@@ -13599,6 +13654,7 @@ impl Evaluator {
                             | "ws_recv"
                             | "tcp_recv"
                             | "tcp_recv_line"
+                            | "tcp_accept"
                             | "ws_send"
                             | "tcp_send"
                     ) && let Some(result) = self.eval_native_source(name, &eval_args).await?
@@ -14494,6 +14550,14 @@ impl Evaluator {
                                         )),
                                     ));
                                 }
+                            }
+                            // Listeners and accepted connections belong
+                            // to this generation: closed when it retires.
+                            #[cfg(feature = "ws")]
+                            if matches!(name.as_str(), "tcp_listen" | "tcp_accept")
+                                && let Value::Number(n) = &result
+                            {
+                                self.globals.borrow().native_events.own_tcp(*n as u64);
                             }
                             return Ok(result);
                         }
