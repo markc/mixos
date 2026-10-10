@@ -14,7 +14,9 @@ pub mod resolve;
 pub mod session;
 pub use design::EMBEDDED_DEFAULT_SOURCE;
 pub use model::*;
-pub use resolve::{describe, resolve, resolve_with_embedded};
+pub use resolve::{
+    Accents, describe, resolve, resolve_with_embedded, resolve_with_embedded_and_accents,
+};
 
 pub const CONTRACT_VERSION: &str = "0.1.0";
 pub const SCHEMA: u32 = 1;

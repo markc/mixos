@@ -84,6 +84,7 @@ must be served during the deprecation period.
 ## Deferred
 
 - The FileChooser interface.
-- Accent as a design-exported field. The current projection carries it through
-  a private settingsd stub.
+- Accent as a settings field. The current projection carries the design's
+  resolved accent through settingsd's in-memory sidecar, outside the sealed
+  snapshot.
 - Caller identity and sandboxed app IDs.

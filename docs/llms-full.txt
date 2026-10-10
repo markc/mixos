@@ -1250,8 +1250,9 @@ while disconnected. It is registered in
 ## Not yet
 
 - The FileChooser portal and its chooser application.
-- A first-class accent field. Accent currently comes from a private settingsd
-  projection stub and will move when the design exports it.
+- A first-class accent field. Accent currently comes from the design's resolved
+  accent, held in settingsd outside the sealed snapshot, and will move into the
+  settings contract when that is decided.
 - Sandboxed callers and D-Bus activation.
 
 The contract, with its status, is in [docs/spec/portal](spec/portal/README.md).
@@ -1700,8 +1701,9 @@ must be served during the deprecation period.
 ## Deferred
 
 - The FileChooser interface.
-- Accent as a design-exported field. The current projection carries it through
-  a private settingsd stub.
+- Accent as a settings field. The current projection carries the design's
+  resolved accent through settingsd's in-memory sidecar, outside the sealed
+  snapshot.
 - Caller identity and sandboxed app IDs.
 
 ---

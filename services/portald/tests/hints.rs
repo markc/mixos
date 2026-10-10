@@ -23,6 +23,10 @@ use portald::service::{self, CommandSource};
 use portald::status::{self, Shared};
 use serde_json::json;
 use settings::appearance::AppearanceProjection;
+
+/// The Studio dark accent the design resolves to (pinned in settingsd's `appearance`
+/// tests); the feed under test carries it through unchanged.
+const STUDIO_DARK_ACCENT: [f64; 3] = [0.5450980392156862, 0.48627450980392156, 0.9647058823529412];
 use settings::{Binding, Desktop, Revision, Snapshot};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -125,7 +129,8 @@ async fn serve(
             break;
         };
         permit.forget();
-        let appearance = AppearanceProjection::from_snapshot(&snapshot, [0.1, 0.2, 0.3]).unwrap();
+        let appearance =
+            AppearanceProjection::from_snapshot(&snapshot, STUDIO_DARK_ACCENT).unwrap();
         let body = json!({
             "status": "current",
             "appearance": appearance,

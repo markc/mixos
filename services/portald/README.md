@@ -66,6 +66,7 @@ needs `dbus-daemon` and the pinned Rust dependencies.
 ## Deferred
 
 - FileChooser (`org.freedesktop.portal.FileChooser`) and its chooser app.
-- The accent is the private settingsd stub. The design does not yet export a
-  first-class accent field.
+- The accent is the design's resolved accent for the desktop context, carried
+  beside the sealed snapshot by settingsd, not stored in it. It is not yet a
+  settings field.
 - Sandboxed callers and the session D-Bus activation file are not wired here.

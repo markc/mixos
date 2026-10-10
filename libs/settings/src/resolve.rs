@@ -58,12 +58,29 @@ pub fn resolve(desktop: &Desktop) -> Result<BTreeMap<String, Effective>, Vec<Dia
     resolve_with_embedded(desktop, design::EMBEDDED_DEFAULT_SOURCE)
 }
 
+/// The accent each context draws, as [`design::resolved_accent`] gives it for
+/// that context's design. A context whose design has no accent is absent.
+///
+/// Kept beside the effective map, never inside [`Effective`]: effective values
+/// are sealed into saved profiles (`effective_digest`), so the accent must not
+/// change their shape.
+pub type Accents = BTreeMap<String, design::SrgbColour>;
+
 /// Authorities pin the package source at profile creation. A binary upgrade
 /// cannot silently alter effective values within an accepted revision.
 pub fn resolve_with_embedded(
     desktop: &Desktop,
     embedded_source: &str,
 ) -> Result<BTreeMap<String, Effective>, Vec<Diagnostic>> {
+    resolve_with_embedded_and_accents(desktop, embedded_source).map(|(effective, _)| effective)
+}
+
+/// [`resolve_with_embedded`] plus the accent of each context, from the same
+/// compiled design, so the two cannot disagree.
+pub fn resolve_with_embedded_and_accents(
+    desktop: &Desktop,
+    embedded_source: &str,
+) -> Result<(BTreeMap<String, Effective>, Accents), Vec<Diagnostic>> {
     let validate = || -> Result<(), Diagnostic> {
         bounded(desktop.ui.density, 0.5, 2.0, "ui.density")?;
         bounded(desktop.ui.text_scale, 0.5, 3.0, "ui.text_scale")?;
@@ -148,6 +165,7 @@ pub fn resolve_with_embedded(
     contexts.extend(APPS.iter().map(|a| format!("app:{a}")));
     contexts.extend(desktop.apps.keys().map(|a| format!("app:{a}")));
     let mut result = BTreeMap::new();
+    let mut accents = Accents::new();
     for context in contexts {
         let app = context.strip_prefix("app:");
         let overlay = app.and_then(|id| desktop.apps.get(id));
@@ -207,7 +225,12 @@ pub fn resolve_with_embedded(
         };
         let compiled = design::compile_design(&doc, selection().map_err(|e| vec![e])?);
         let projection = match compiled {
-            design::DesignCompileResult::Success(success) => success.candidate.read_projection(),
+            design::DesignCompileResult::Success(success) => {
+                if let Some(accent) = design::resolved_accent(&success.candidate) {
+                    accents.insert(context.clone(), accent);
+                }
+                success.candidate.read_projection()
+            }
             design::DesignCompileResult::Fatal(failure) => {
                 return Err(failure
                     .diagnostics
@@ -233,7 +256,7 @@ pub fn resolve_with_embedded(
             },
         );
     }
-    Ok(result)
+    Ok((result, accents))
 }
 
 /// The patch vocabulary is explicit. No recursive JSON merge and no executing

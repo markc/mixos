@@ -106,13 +106,22 @@ impl Accepted {
         Ok(())
     }
     pub fn effective(&self) -> anyhow::Result<std::collections::BTreeMap<String, Effective>> {
-        let effective = settings::resolve_with_embedded(&self.desktop, &self.embedded_source)
-            .map_err(|e| anyhow::anyhow!("accepted interpretation unsupported: {e:?}"))?;
+        self.interpretation().map(|(effective, _)| effective)
+    }
+    /// The sealed effective values and, beside them, the in-memory accent per
+    /// context. The accents are not sealed: they are re-derived here from the
+    /// same compiled design the seal checks.
+    pub fn interpretation(
+        &self,
+    ) -> anyhow::Result<(std::collections::BTreeMap<String, Effective>, Accents)> {
+        let (effective, accents) =
+            settings::resolve_with_embedded_and_accents(&self.desktop, &self.embedded_source)
+                .map_err(|e| anyhow::anyhow!("accepted interpretation unsupported: {e:?}"))?;
         anyhow::ensure!(
             self.effective_digest == settings::digest(&effective)?,
             "accepted interpretation changed; explicit migration required"
         );
-        Ok(effective)
+        Ok((effective, accents))
     }
     pub fn check(&self, binding: &Binding) -> anyhow::Result<()> {
         anyhow::ensure!(self.schema == SCHEMA, "unsupported accepted schema");

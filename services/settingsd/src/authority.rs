@@ -8,17 +8,22 @@ pub struct Authority {
     pub accepted: Accepted,
     pub snapshot: Snapshot,
     pub published: Option<Revision>,
+    /// In-memory sidecar: the accent per context, derived from the same design
+    /// as `snapshot.effective`. Never serialised; it is not part of the sealed
+    /// `Snapshot` or `Effective`. Rebuilt wherever `snapshot` is rebuilt.
+    accents: Accents,
 }
 impl Authority {
     pub fn new(store: Store, accepted: Accepted) -> anyhow::Result<Self> {
         accepted.check(&accepted.binding)?;
-        let effective = accepted.effective()?;
+        let (effective, accents) = accepted.interpretation()?;
         let snapshot = snapshot(&accepted, effective)?;
         Ok(Self {
             store,
             accepted,
             snapshot,
             published: None,
+            accents,
         })
     }
     fn target(&self, binding: &Binding) -> Result<(), Value> {
@@ -35,15 +40,13 @@ impl Authority {
         )
     }
     /// Headless appearance for portal consumers: the desktop context's mode,
-    /// contrast and the private accent stub, tagged with the snapshot identity.
+    /// contrast and accent, tagged with the snapshot identity.
     pub fn appearance(&self, request: ReadRequest) -> Result<Value, Value> {
         self.target(&request.binding)?;
-        let effective = self
-            .snapshot
-            .effective
-            .get(settings::appearance::APPEARANCE_CONTEXT);
-        let accent = effective
-            .and_then(crate::accent_stub::accent_srgb)
+        let accent = self
+            .accents
+            .get(settings::appearance::APPEARANCE_CONTEXT)
+            .map(|colour| [colour.red, colour.green, colour.blue])
             .ok_or_else(|| {
                 diagnostic(Diagnostic::new(
                     "missing_accent",
@@ -161,10 +164,10 @@ impl Authority {
             }
         }
         next.desktop = desktop;
-        let effective = if unchanged {
-            self.snapshot.effective.clone()
+        let (effective, accents) = if unchanged {
+            (self.snapshot.effective.clone(), self.accents.clone())
         } else {
-            settings::resolve_with_embedded(&next.desktop, &next.embedded_source)
+            settings::resolve_with_embedded_and_accents(&next.desktop, &next.embedded_source)
                 .map_err(diagnostics)?
         };
         let next_snapshot = snapshot(&next, effective).map_err(snapshot_error)?;
@@ -194,6 +197,7 @@ impl Authority {
         }
         self.accepted = next;
         self.snapshot = next_snapshot;
+        self.accents = accents;
         Ok(
             json!({"status":receipt.outcome,"receipt":receipt,"publication_pending":self.published != Some(self.accepted.revision),"replayed":false}),
         )

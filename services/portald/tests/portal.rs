@@ -19,7 +19,9 @@ use tokio::task::JoinHandle;
 use zbus::Message;
 use zbus::zvariant::{OwnedValue, Value};
 
-const ACCENT: [f64; 3] = [0.1, 0.2, 0.3];
+/// The Studio dark accent the design resolves to (`resolve_with_embedded_and_accents`
+/// on the embedded default, pinned in settingsd's `appearance` tests).
+const ACCENT: [f64; 3] = [0.5450980392156862, 0.48627450980392156, 0.9647058823529412];
 const NOT_FOUND: &str = "org.freedesktop.portal.Error.NotFound";
 
 /// A dbus-daemon owned by the test; killed and reaped on drop.
