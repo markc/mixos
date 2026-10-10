@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.112.0
+
+### Added
+
+- Built on mix 0.112.0: server-side TCP (`tcp_listen`, `tcp_accept`,
+  `tcp_local_addr`, `tcp_on` on a listener) and `on @.verb`, which registers
+  a handler under the `--serve` name so one generic script serves any
+  instance. `mix man serve` and `mix man system` document both.
+
+### Fixed
+
+- The serve reload lifecycle test's TERM-ignoring fixture creates the trace
+  file itself. The citizen spawned it before the first trace line existed,
+  so a fast start panicked on open and the grace test timed out.
+
 ## 0.111.0
 
 ### Fixed

@@ -1860,7 +1860,7 @@ Same inline-blocking caveat as the others (below): a pending `tcp_recv`
 holds the evaluator's thread, so `{timeout: 0}` in a `--serve` citizen
 can wedge the pump.
 
-## Raw TCP server — `tcp_listen`, `tcp_accept`, `tcp_local_addr` (unreleased)
+## Raw TCP server — `tcp_listen`, `tcp_accept`, `tcp_local_addr` (v0.112.0)
 
 ```
 tcp_listen(host, port[, {backlog}])     -> listener handle
@@ -1962,7 +1962,7 @@ tcp_on(handle, command[, opts])             -> source id ("tcp:N")
 ws_recv(source[, timeout])                  -> string | bytes | nil (Class C)
 tcp_recv(source[, {timeout, max}])          -> bytes | nil (Class C)
 tcp_recv_line(source[, {timeout}])          -> string | nil (Class C)
-tcp_on(listener, command)                   -> source id ("tcp:N") (unreleased)
+tcp_on(listener, command)                   -> source id ("tcp:N") (v0.112.0)
 tcp_accept(source[, {timeout}])             -> handle | nil (Class C)
 ws_unwatch(source) / tcp_unwatch(source)    -> nil
 ```
@@ -2012,7 +2012,7 @@ WS message boundaries and text/binary kinds survive. `tcp_on` defaults to
 `frame: "bytes"` — ordered raw chunks of at most 64 KiB; `frame: "line"`
 splits on LF (one trailing CR stripped) with `max` bounding a line.
 
-**Listeners (unreleased).** `tcp_on` on a `tcp_listen` listener takes no
+**Listeners (v0.112.0).** `tcp_on` on a `tcp_listen` listener takes no
 options. The reader parks in `poll(2)` on the listener and accepts each
 connection as it arrives: the connection becomes a plain connected
 handle, owned by the generation, and arrives as one `accepted` event in

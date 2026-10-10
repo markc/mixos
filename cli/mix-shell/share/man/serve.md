@@ -241,7 +241,7 @@ mix --serve quoin-panel.mix                        # serve_name() = "quoin-panel
 mix --serve quoin-panel.mix --name quoin-panel-n   # serve_name() = "quoin-panel-n"
 ```
 
-**`on @.verb` registers a verb under that name** (unreleased). The unquoted `@`
+**`on @.verb` registers a verb under that name** (0.112.0). The unquoted `@`
 is the whole first segment of the handler name; when the `on` statement runs,
 `@` is replaced by the serve name. One generic script then serves any
 instance:

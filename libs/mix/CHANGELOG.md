@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.112.0
 
 ### Added
 
@@ -37,6 +37,12 @@
   raw source text now accept `@` as an ordinary character where it used to
   fail lexing: a bareword `source`/`include` path (`source ./foo@bar.mix`) and
   the command after `|` (`print(1) | cat @foo`).
+
+### Fixed
+
+- HTTP 1xx, 204 and 304 responses are bodyless on every method, not only
+  HEAD. A conditional GET answered 304 with `Content-Encoding: gzip` no longer
+  fails with `HTTP_BODY`, so ETag polling works.
 
 ## 0.111.0
 
