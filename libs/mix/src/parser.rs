@@ -1821,12 +1821,40 @@ impl Parser {
         // Dotted command name, same shape as send/emit command parsing:
         // any segment may be a keyword lexeme (`on ced.select`); a keyword
         // may lead only when dotted (`on select.all`), never bare.
-        let command =
-            if matches!(self.peek(), Token::String(_)) || self.at_keyword_led_dotted_name() {
-                self.parse_bus_dotted_name()?
-            } else {
-                self.expect_identifier()?
-            };
+        //
+        // `on @.verb` is the serve-name placeholder: `@` (unquoted) is the
+        // whole first segment and the evaluator replaces it with the
+        // `--serve` name when the handler registers. The AST keeps the
+        // static `@.verb` form so lint and listings still see a name.
+        let command = if self.peek() == &Token::At {
+            self.parse_serve_prefixed_name()?
+        } else if matches!(self.peek(), Token::String(_)) || self.at_keyword_led_dotted_name() {
+            let span = self.peek_span();
+            let name = self.parse_bus_dotted_name()?;
+            // A bareword never contains `@` (the lexer splits it off), so
+            // a name starting with one was quoted: refuse it rather than
+            // register a literal that reads like the placeholder.
+            if name.starts_with('@') {
+                return Err(MixError::ParseError {
+                    msg: format!(
+                        "on: a quoted name cannot start with `@` (got \"{name}\"); write the \
+                         serve-name placeholder unquoted: `on @.<verb>`"
+                    ),
+                    span,
+                });
+            }
+            name
+        } else {
+            self.expect_identifier()?
+        };
+        if self.peek() == &Token::Dot && self.peek_ahead(1) == &Token::At {
+            return Err(MixError::ParseError {
+                msg: "on: `@` is only valid as the whole first segment of a handler name \
+                      (`on @.<verb>`)"
+                    .to_string(),
+                span: self.peek_span(),
+            });
+        }
 
         // Optional trailer, in either order: a `desc "…"` doc-string and/or
         // the `async` modifier (SPEC 18 §10.3 Class C). Both are contextual
@@ -1881,6 +1909,31 @@ impl Parser {
             is_async,
             body,
         })
+    }
+
+    /// `@.seg[.seg…]` after `on`: the serve-name placeholder followed by an
+    /// ordinary dotted name. Returns the static `@.seg…` form; the evaluator
+    /// resolves `@` at registration.
+    fn parse_serve_prefixed_name(&mut self) -> MixResult<String> {
+        let span = self.peek_span();
+        if self.peek_ahead(1) != &Token::Dot {
+            return Err(MixError::ParseError {
+                msg: "on: the serve-name placeholder `@` must be followed by `.<verb>` and is \
+                      the whole first segment: write `on @.<verb>`"
+                    .to_string(),
+                span,
+            });
+        }
+        if self.bus_segment_at(self.pos + 2).is_none() {
+            return Err(MixError::ParseError {
+                msg: "on: expected a verb name after `@.` (`on @.<verb>`)".to_string(),
+                span,
+            });
+        }
+        self.advance(); // @
+        self.advance(); // .
+        let rest = self.parse_bus_dotted_name()?;
+        Ok(format!("@.{rest}"))
     }
 
     /// The token after the current one, as a STATIC string literal — a plain
@@ -2284,6 +2337,14 @@ impl Parser {
             Token::Semicolon => {
                 return Err(MixError::ParseError {
                     msg: "unexpected ';' inside expression; ';' separates Mix statements only"
+                        .to_string(),
+                    span: self.peek_span(),
+                });
+            }
+            Token::At => {
+                return Err(MixError::ParseError {
+                    msg: "unexpected `@`: it is only the serve-name placeholder at the start of \
+                          an `on` handler name (`on @.<verb>`); quote it in a string"
                         .to_string(),
                     span: self.peek_span(),
                 });

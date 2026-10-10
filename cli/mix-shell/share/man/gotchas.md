@@ -51,6 +51,7 @@ must appear in the error.
 | `mix -c 'print(x)'` needs escaping gymnastics | it does not; a probe is one call and the binary is the oracle | `print(mix_version() != "")` | `true` |
 | a provable `-c` arity/dead-mutation snippet runs | the D1 lint gate REFUSES it with exit 2 before any line runs — `--no-lint` overrides (0.103.4) | `mix -c '$m = {}; remove($m, "k")'` | `!refusing to run` |
 | `is_reload_candidate()` is true while a `--serve` RELOAD is pending | it is true **only while the replacement's init body executes** — false in a plain script, at initial boot, and in every committed generation; the candidate must stay passive (no starts, no persisted writes) and commit-time work belongs in `on lifecycle.commit` | `print(is_reload_candidate())` | `false` |
+| `on $svc .. ".call"` registers a verb under the `--serve` name | `on` takes a static name (that is a parse error); write `on @.call` — the unquoted `@` becomes the serve name when the handler registers, and outside `--serve` it raises `SERVE_PREFIX_OUTSIDE_SERVE` | `try; on @.call; end; catch $m, $e; print($e.code); end` | `SERVE_PREFIX_OUTSIDE_SERVE` |
 
 ## Three rules that are not a syntax trap
 

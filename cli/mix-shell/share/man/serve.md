@@ -241,6 +241,30 @@ mix --serve quoin-panel.mix                        # serve_name() = "quoin-panel
 mix --serve quoin-panel.mix --name quoin-panel-n   # serve_name() = "quoin-panel-n"
 ```
 
+**`on @.verb` registers a verb under that name** (unreleased). The unquoted `@`
+is the whole first segment of the handler name; when the `on` statement runs,
+`@` is replaced by the serve name. One generic script then serves any
+instance:
+
+```mix
+on @.call desc "Forward a call to the bridged program"
+  reply(json_encode({served_by: serve_name()}))
+end
+```
+
+```text
+mix --serve bridge.mix --name photo   # answers photo.call, HELP lists photo.call
+mix --serve bridge.mix --name other   # answers other.call
+```
+
+Dispatch, `HELP` and every handler listing see the resolved name. Two `on`
+statements that resolve to the same name append handlers, exactly like two
+literal ones. Outside `mix --serve` (a plain script, `-c`, the REPL) there is
+no name to substitute, and the statement raises the catchable
+`SERVE_PREFIX_OUTSIDE_SERVE`. `@` anywhere else is a parse error: `on a.@.b`,
+`on @`, `on @x.y`, a quoted `on "@.call"` (a literal can't look like the
+placeholder) and `@` in an expression.
+
 ---
 
 ## The handler model
@@ -788,6 +812,7 @@ resident `--serve` daemon is what requires the broker to be up.
 |---|---|
 | Start a citizen | `mix --serve <script> [--name <svc>] [--no-prelude]` |
 | Service name | `--name`, else the script file stem; leading `mixos-` stripped; the script reads it with `serve_name()` |
+| Verb under the serve name | `on @.verb` registers `<svc>.verb`; outside `--serve` it raises `SERVE_PREFIX_OUTSIDE_SERVE` |
 | Anonymous serve | a launch error — no nameless citizen |
 | Init | top-level body runs **once**, then the pump runs forever |
 | Reserved (injected) | `HELP`, `INFO`, `QUIT`, `<svc>.props.{get,list,describe}` |

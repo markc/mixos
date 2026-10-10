@@ -24,6 +24,15 @@
 - A blocking `tcp_accept` wakes promptly on Ctrl-C through a SIGINT wake
   socket that `interrupt::init` installs, and rechecks the interrupt flag at
   least every 250 ms, so no waiter misses it.
+- `on @.verb` registers a handler under the serve name: the unquoted `@` is
+  replaced by the `--serve` name (the value `serve_name()` returns) when the
+  handler registers, so one generic script run as `--name photo` answers
+  `photo.verb` and a second instance as `--name other` answers `other.verb`.
+  Dispatch, HELP and handler listings show the resolved name; the AST keeps
+  `@.verb`. Outside `mix --serve` the statement raises
+  `SERVE_PREFIX_OUTSIDE_SERVE`. `@` anywhere else (`on a.@.b`, `on @`,
+  `on @x.y`, a quoted `on "@.x"`, or in an expression) is a parse error; it
+  was a lexer error before.
 
 ## 0.111.0
 

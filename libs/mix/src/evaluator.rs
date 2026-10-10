@@ -6198,6 +6198,28 @@ impl Evaluator {
         self.globals.borrow().handlers.len()
     }
 
+    /// The name an `on` statement registers under. A leading `@.` (the
+    /// parser's serve-name placeholder) becomes the serve name, the value
+    /// `serve_name()` returns; any other name is unchanged. Outside serve
+    /// mode there is no name to substitute, so the placeholder raises
+    /// `SERVE_PREFIX_OUTSIDE_SERVE` (catchable).
+    fn resolve_handler_command(&self, command: &str) -> MixResult<String> {
+        let Some(rest) = command.strip_prefix("@.") else {
+            return Ok(command.to_string());
+        };
+        let runtime = self.globals.borrow().serve_runtime.clone();
+        match runtime.as_deref().and_then(|rt| rt.service_name()) {
+            Some(name) => Ok(format!("{name}.{rest}")),
+            None => Err(MixError::structured(
+                "SERVE_PREFIX_OUTSIDE_SERVE",
+                format!(
+                    "on {command}: the `@` serve-name placeholder needs `mix --serve` \
+                     (no serve name in a plain script, `-c` or the REPL)"
+                ),
+            )),
+        }
+    }
+
     /// SPEC 18 Phase 2 WS2 — registry inspector. Returns the `is_async`
     /// class flag of the registered handler at `idx` for `command`, or
     /// `None` if the command/index is unregistered.
@@ -10519,6 +10541,12 @@ impl Evaluator {
                     // every chain still runs Class S inline regardless of the
                     // stored flag — the field is consumed at registration but
                     // not yet at dispatch.
+                    //
+                    // `on @.verb` registers under the serve name: `@` is
+                    // replaced here, so dispatch, HELP and every listing
+                    // read the resolved key from `handlers`.
+                    let command = self.resolve_handler_command(command)?;
+                    let command = &command;
                     let existing = self
                         .globals
                         .borrow()

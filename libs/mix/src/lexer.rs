@@ -598,6 +598,10 @@ impl Lexer {
             // in bareword-path contexts; reaching it elsewhere falls
             // through to the usual "unexpected token" error.
             '~' => Ok(self.spanned(Token::Tilde, line, col)),
+            // Bare `@`: the serve-name placeholder in `on @.verb`. The
+            // parser accepts it only there; anywhere else it is a parse
+            // error naming that one use (it was a lexer error before).
+            '@' => Ok(self.spanned(Token::At, line, col)),
             _ => Err(MixError::LexerError {
                 msg: format!("unexpected character '{}'", ch),
                 span: Span {
@@ -1905,6 +1909,7 @@ fn classify(token: &Token, first: char) -> TokenClass {
         | Token::Comma
         | Token::Dot
         | Token::Tilde
+        | Token::At
         | Token::Semicolon
         | Token::Newline
         | Token::Eof => TokenClass::Punctuation,
