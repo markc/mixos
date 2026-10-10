@@ -172,3 +172,38 @@ tcp_send($c, $payload, {timeout: 0})
         &[("PEER_PORT", port.to_string())],
     );
 }
+
+/// A ws_recv with no timeout while the peer floods Pong frames (control
+/// frames ws_recv never returns): the receive loop yields regularly, so
+/// SIGTERM still ends the script promptly.
+#[test]
+fn sigterm_ends_a_ws_recv_during_a_pong_flood() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        let Ok((stream, _)) = listener.accept() else {
+            return;
+        };
+        let Ok(mut ws) = tungstenite::accept(stream) else {
+            return;
+        };
+        let until = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < until {
+            if ws
+                .send(tungstenite::Message::Pong(b"flood".to_vec().into()))
+                .is_err()
+            {
+                break;
+            }
+        }
+    });
+    sigterm_ends_with(
+        "ws-pong-flood",
+        r#"$h = ws_connect("ws://127.0.0.1:" .. env("PEER_PORT") .. "/", {timeout: 5})
+print("ready")
+ws_recv($h, 0)
+"#,
+        WITHIN,
+        &[("PEER_PORT", port.to_string())],
+    );
+}

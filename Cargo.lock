@@ -3654,6 +3654,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "tungstenite 0.26.2",
  "unicode-segmentation",
  "unicode-width",
  "ureq",

@@ -1887,7 +1887,11 @@ end
 On unix a numeric `tcp_recv`/`tcp_recv_line` (and `ws_recv`) waits on the
 async runtime rather than in a blocking read, the way `sleep()` does, so
 SIGTERM and Ctrl-C end the wait at once (unreleased; before, a SIGTERM
-waited for the read's timeout). Options, results and errors are those of
+waited for the read's timeout). Data already buffered is returned first,
+however short the timeout, while traffic that delivers nothing (WebSocket
+control frames, part of a line) still counts against it: a timed-out
+`tcp_recv_line` returns nil and keeps the partial line for the next call.
+Options, results and errors are those of
 the blocking form. A pending read in a Class S handler still holds the
 handler's turn for its duration, so `{timeout: 0}` in a `--serve`
 citizen can still stall other handlers.

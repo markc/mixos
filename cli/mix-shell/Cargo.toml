@@ -76,6 +76,8 @@ sha2 = "0.10"
 proptest = "1"
 tempfile = "3"
 test-broker = { path = "../../libs/test-broker" }
+# A WebSocket peer for the ws_recv SIGTERM test; already in the lock (mix's ws).
+tungstenite = "0.26"
 # The S3 fixture uses Term's actual sealed-fd implementation and pinned PTY hook.
 
 [build-dependencies]

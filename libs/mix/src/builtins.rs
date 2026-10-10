@@ -22609,6 +22609,14 @@ fn tcp_send_deadline(
             SendStep::Done if expired() => {
                 return Err(tcp_send_timeout_error(off, payload.len()));
             }
+            SendStep::Done if crate::interrupt::is_interrupted() => {
+                return Err(tcp_send_stopped(
+                    "TCP_SEND_INTERRUPTED",
+                    "was interrupted",
+                    off,
+                    payload.len(),
+                ));
+            }
             SendStep::Done => break,
             SendStep::Failed(e) => return Err(tcp_err("tcp_send", e)),
             SendStep::WouldBlock => {}
@@ -24632,6 +24640,15 @@ pub(crate) mod socket_sources {
                         guard.retire();
                         return Err(super::tcp_send_timeout_error(off, payload.len()));
                     }
+                    if interruptible && crate::interrupt::is_interrupted() {
+                        guard.retire();
+                        return Err(super::tcp_send_stopped(
+                            "TCP_SEND_INTERRUPTED",
+                            "was interrupted",
+                            off,
+                            payload.len(),
+                        ));
+                    }
                     guard.retire_on_drop = false;
                     guard.finish();
                     return Ok(Value::Number(payload.len() as f64));
@@ -24761,9 +24778,14 @@ pub(crate) mod socket_sources {
             .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
         // checked_add: a huge timeout waits forever instead of panicking.
         let deadline = deadline_after(timeout_seconds);
-        // Expiry is decided only when nothing is ready (wait_ready returns
-        // Done): a frame, line or bytes already buffered are served first,
-        // however short the timeout, as the blocking builtins do.
+        // Deliverable data already buffered (a frame, a complete line,
+        // bytes) is served before expiry, however short the timeout, as the
+        // blocking builtins do. Progress that delivers nothing (a control
+        // frame, part of a line) is bounded: the deadline and the interrupt
+        // flag are checked after it, and the loop yields every 16 such
+        // rounds, so a peer flooding pongs or trickling a line cannot hold
+        // the call past its timeout or starve the runtime.
+        let mut idle_rounds = 0u32;
         loop {
             let would_block = match guard.wire.as_mut().expect("wire present") {
                 PullWire::Ws(conn) => match conn.read() {
@@ -24894,6 +24916,26 @@ pub(crate) mod socket_sources {
                             format!("{name}: readiness failed: {e}"),
                         ));
                     }
+                }
+                continue;
+            }
+            let deliverable = match guard.wire.as_ref() {
+                Some(PullWire::Tcp(c)) => match name {
+                    "tcp_recv" => !c.buf.is_empty(),
+                    "tcp_recv_line" => c.buf.contains(&b'\n') || c.buf.len() > max,
+                    _ => false,
+                },
+                _ => false,
+            };
+            if !deliverable {
+                let expired = deadline.is_some_and(|d| d <= std::time::Instant::now());
+                if expired || (interruptible && crate::interrupt::is_interrupted()) {
+                    guard.finish();
+                    return Ok(Value::Nil);
+                }
+                idle_rounds += 1;
+                if idle_rounds.is_multiple_of(16) {
+                    tokio::task::yield_now().await;
                 }
             }
         }
