@@ -22677,7 +22677,7 @@ mod tcp_server {
     pub(crate) struct Listener {
         pub(super) sock: std::net::TcpListener,
         _permit: TcpPermit,
-        pub ownership: Mutex<Option<Ownership>>,
+        pub(super) ownership: Mutex<Option<Ownership>>,
     }
 
     impl Listener {
