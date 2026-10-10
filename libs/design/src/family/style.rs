@@ -17,10 +17,17 @@
 //! `styles` names token sets; `schemes` binds every scheme to one of them,
 //! its own style. A context's style axis ([`crate::DesignContext::style`])
 //! selects any authored style instead, so any scheme can take any style.
-//! Every style authors every token: a missing, unknown or ill-typed token is
-//! an error, as is a scheme left unbound or bound to a style that does not
-//! exist, or a selected style the design does not author. A style is
-//! independent of mode and contrast, and modifier blocks cannot alter it.
+//! Every style authors every required token: a missing, unknown or
+//! ill-typed token is an error, as is a binding to a style that does not
+//! exist, or a selected style the design does not author. Tokens added after
+//! the first set are defaulted (the `=>` value below): a style that leaves
+//! one out keeps the look it had before the token existed, so earlier
+//! designs compile unchanged. A scheme the binding leaves out (one added
+//! after the design was written) takes [`UNBOUND`]. A style is independent
+//! of mode and contrast, and modifier blocks cannot alter it.
+//!
+//! To add a token: give it a type and span, and a default that reproduces
+//! every existing style's pixels; author it only in the styles that differ.
 //!
 //! Whether the chrome sits on a light or dark base is the palette's, not the
 //! style's: a renderer reads it from the chrome colours.
@@ -854,10 +861,11 @@ mod tests {
                         style,
                         ..DesignContext::default()
                     };
-                    let DesignCompileResult::Success(old) =
-                        crate::compile_design(&before, context.clone())
-                    else {
-                        panic!("{scheme:?}/{mode:?}/{style:?} must compile");
+                    let old = match crate::compile_design(&before, context.clone()) {
+                        DesignCompileResult::Success(old) => old,
+                        DesignCompileResult::Fatal(failure) => {
+                            panic!("{scheme:?}/{mode:?}/{style:?} must compile: {:?}", failure.diagnostics)
+                        }
                     };
                     let DesignCompileResult::Success(new) = crate::compile_design(&today, context)
                     else {

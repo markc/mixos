@@ -454,6 +454,11 @@ design: {
             "chrome.caption_close": { color_space: "oklch", l: 0.871107902, c: 0.005451434, h: 286.286022680, alpha: 1.000000000 },
             "chrome.caption_close_text": { color_space: "oklch", l: 0.318676299, c: 0.007034969, h: 285.993799995, alpha: 1.000000000 }
           }
+        },
+        semantics: {
+          pairs: {
+            muted: { surface: "palette.background.muted", foreground: "palette.foreground.quiet" }
+          }
         }
       },
       # Adwaita (Dark): the v0.6.0 delta's exact values.
@@ -607,6 +612,11 @@ design: {
             "chrome.warning": { color_space: "oklch", l: 0.651512105, c: 0.132496737, h: 75.063008969, alpha: 1.000000000 },
             "chrome.caption_close": { color_space: "oklch", l: 0.536149835, c: 0.191185691, h: 30.071355694, alpha: 1.000000000 },
             "chrome.caption_close_text": { color_space: "oklch", l: 0.999999993, c: 0.000000037, h: 89.875563096, alpha: 1.000000000 }
+          }
+        },
+        semantics: {
+          pairs: {
+            muted: { surface: "palette.background.muted", foreground: "palette.foreground.quiet" }
           }
         }
       },

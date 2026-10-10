@@ -703,16 +703,32 @@ fn reachable_contexts(
         } else {
             contexts = contexts
                 .into_iter()
-                .flat_map(|context| axis_contexts(context, *axis))
+                .flat_map(|context| axis_contexts(context, *axis, source))
                 .collect();
         }
     }
     contexts
 }
 
-fn axis_contexts(context: DesignContext, axis: ModifierAxis) -> Vec<DesignContext> {
+/// The schemes a source claims: those its modifier blocks name, or every
+/// scheme when it names none. A design written before a scheme existed
+/// names it nowhere, so it is not compiled in it; asked for that scheme
+/// directly, it is compiled as asked.
+fn claimed_schemes(source: &DesignV1Source, requested: Scheme) -> Vec<Scheme> {
+    let named: BTreeSet<&str> = source
+        .modifiers
+        .iter()
+        .filter_map(|block| block.when.get(&ModifierAxis::Scheme).map(String::as_str))
+        .collect();
+    Scheme::ALL
+        .into_iter()
+        .filter(|scheme| named.is_empty() || *scheme == requested || named.contains(scheme.name()))
+        .collect()
+}
+
+fn axis_contexts(context: DesignContext, axis: ModifierAxis, source: &DesignV1Source) -> Vec<DesignContext> {
     match axis {
-        ModifierAxis::Scheme => Scheme::ALL
+        ModifierAxis::Scheme => claimed_schemes(source, context.scheme)
             .into_iter()
             .map(|scheme| DesignContext {
                 scheme,
@@ -3527,7 +3543,7 @@ mod tests {
     fn app_axis_expansion_is_the_identity() {
         let context = DesignContext::revision_one();
         assert_eq!(
-            axis_contexts(context.clone(), ModifierAxis::App),
+            axis_contexts(context.clone(), ModifierAxis::App, &document().v1),
             vec![context]
         );
     }

@@ -1543,10 +1543,11 @@ fn embedded_default_compiles_without_errors_in_all_twelve_contexts() {
     // Revision one: 156 and 192 over its twelve contexts. Each compile checks
     // every context, so totals scale with contexts x compiles. The three chrome
     // schemes take the mono palette for their pairs, so per compile they add
-    // mono's own warnings three times (+6 and +24), over eighteen compiles.
+    // mono's own warnings for each (five since adwaita and solarized joined:
+    // twenty-two compiles of twenty-two contexts).
     assert_eq!(
         diagnostic_counts,
-        BTreeMap::from([("non-text-contrast", 342), ("ring-walk-distance", 720),])
+        BTreeMap::from([("non-text-contrast", 506), ("ring-walk-distance", 1232),])
     );
 }
 
