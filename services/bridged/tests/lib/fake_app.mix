@@ -21,6 +21,9 @@
 --   fail             ok:false "fake failure text"
 --   slow             replies after 3 s (other connections keep being served)
 --   drop             closes the connection without a reply
+--   leak             ok:false with the token in the error text (lower and upper case)
+--   leak_result      ok:true with the token in the result
+--   nook             a reply with the right id and no ok field
 -- Single-threaded: one loop polls the listener and every connection.
 
 fn opt($name, $default)
@@ -65,6 +68,12 @@ fn answer($c, $msg)
     return merge($c, {slow_id: $id, due: monotonic() + 3})
   elif $m == "drop" then
     return nil
+  elif $m == "leak" then
+    send_line($c, {id: $id, ok: false, error: "bad request from " .. to_string($token) .. " / " .. upper(to_string($token))})
+  elif $m == "leak_result" then
+    send_line($c, {id: $id, ok: true, result: {seen: $token}})
+  elif $m == "nook" then
+    send_line($c, {id: $id, result: "no ok here"})
   else
     send_line($c, {id: $id, ok: false, error: "unknown method"})
   end

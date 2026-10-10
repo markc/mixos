@@ -103,6 +103,10 @@ try
   write_file($tmp .. "/notoken.conf.mix", "token_file: \"" .. $tmp .. "/absent.tok\",\nport: 1\n")
   $r = preflight("fakeapp", merge($env, {BRIDGED_CONFIG: $tmp .. "/notoken.conf.mix"}))
   check("check: a missing token file, exit 2 TOKEN", $r.exit == 2 and contains($r.err, "TOKEN"))
+  $r = preflight("mixos-fakeapp", $env)
+  check("check: a mixos- name (mix --serve would strip it), exit 2 NAME_INVALID", $r.exit == 2 and contains($r.err, "NAME_INVALID"))
+  $r = preflight("noded-x", $env)
+  check("check: a broker-reserved name, exit 2 NAME_RESERVED", $r.exit == 2 and contains($r.err, "NAME_RESERVED"))
   $r = preflight("fakeapp", $env)
   check("check: fakeapp may start, exit 0", $r.exit == 0 and contains($r.out, "fakeapp may start"))
 
@@ -152,6 +156,12 @@ try
   $s = call("fakeapp.status", nil, 5)
   check("status: one persistent authenticated connection", $s.v.connection == "up" and $s.v.connects == 1 and is_number($s.v.last_latency_ms))
   check("status: never shows the token", not contains($s.text, $token))
+  $r = call("fakeapp.call", {method: "leak"}, 10)
+  check("redact: an app error echoing the token reaches the Bus redacted", $r.rc == 10 and not contains(lower($r.text), $token) and contains($r.text, "[redacted]"))
+  $r = call("fakeapp.call", {method: "leak_result"}, 10)
+  check("redact: a result carrying the token reaches the Bus redacted", $r.rc == 0 and not contains(lower($r.text), $token))
+  $s = call("fakeapp.status", nil, 5)
+  check("redact: status after the echo still has no token", not contains(lower($s.text), $token) and $s.v.connection == "up")
 
   -- The app goes away mid-session, then comes back on the same port.
   -- SIGKILL, as a crash would: a Mix script blocked in a tcp_accept loop does

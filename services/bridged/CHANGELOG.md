@@ -16,6 +16,15 @@ auth, transport or timeout) or 12 (a bad request).
   rule, and no name that a registered verb already starts with (read from the
   installed verb registry, failing closed). A refusal exits 2 with
   `NAME_INVALID`, `NAME_RESERVED`, `REGISTRY`, `CONFIG` or `TOKEN`.
+- The name may not start with `mixos-` (mix --serve strips it) or be one of
+  the broker's (`noded`, `noded-*`, the session-name shape).
+- The token is redacted from every error, result and `last_error`; the token
+  file must be `0600`. `localhost` connects as `127.0.0.1`.
+- A reply without a boolean `ok` drops the connection (rc 11, then backoff).
+- The unit runs `--check` as `ExecCondition=`: a refused instance is skipped,
+  not failed, and never restarted.
+- Known bound: request writes are not under `timeout_s` until Mix's
+  `tcp_send` takes a deadline (up to 30 s more today).
 - Verb registration in `docs/spec/bus/verbs.conf.mix` is pending the registry
   gate's instance-family mapping.
 

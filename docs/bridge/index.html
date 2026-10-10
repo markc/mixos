@@ -279,15 +279,20 @@ token_file: "/home/user/.config/fakeapp/control.token"
 <pre><code class="language-sh">systemctl start bridged@fakeapp
 </code></pre>
 <p>The unit runs <code>mix bridged.mix --check fakeapp</code> before it joins the Bus,
-then <code>mix --serve bridged.mix --name fakeapp</code>. A start is refused, with exit
-2 and a reason, when:</p>
+then <code>mix --serve bridged.mix --name fakeapp</code>. A refused start is not a
+failure: <code>systemctl status</code> shows the unit inactive, skipped (condition),
+with the reason in its journal, and it is not restarted. A start is refused
+when:</p>
 <ul>
-<li>the name is not a valid Bus service name (<code>NAME_INVALID</code>);</li>
+<li>the name is not a valid Bus service name, or starts with <code>mixos-</code>
+(<code>NAME_INVALID</code>);</li>
+<li>the name belongs to the Bus broker (<code>noded</code>, <code>noded-*</code>) (<code>NAME_RESERVED</code>);</li>
 <li>the name is the first segment of a verb already registered to another
 component, such as <code>settings</code> (<code>NAME_RESERVED</code>);</li>
 <li>the installed verb registry, <code>/opt/mixos/share/bus/verbs.conf.mix</code>, is
 missing or unreadable (<code>REGISTRY</code>: the check fails closed);</li>
-<li>the config or the token file is missing or wrong (<code>CONFIG</code>, <code>TOKEN</code>).</li>
+<li>the config or the token file is missing or wrong, or the token file is
+readable by group or other (<code>CONFIG</code>, <code>TOKEN</code>).</li>
 </ul>
 <h2 id="using-it">Using it</h2>
 <pre><code class="language-sh">send fakeapp fakeapp.status
@@ -303,7 +308,10 @@ send fakeapp fakeapp.call body='{"method":"echo","params":{"a":1}}'
 </tbody></table>
 <p>The bridge keeps one connection open. If the application goes away, calls
 answer rc 11, the bridge waits <code>backoff_s</code> (default 2 seconds), then
-reconnects and authenticates again on the next call.</p>
+reconnects and authenticates again on the next call. Each call is bounded by
+<code>timeout_s</code>, except that writing a request to an application that has
+stopped reading can take up to 30 seconds longer, until Mix's socket writes
+take a deadline.</p>
 <h2 id="security">Security</h2>
 <p>Read this before bridging an application.</p>
 <ul>
@@ -317,11 +325,14 @@ Bridge only applications you would let every mesh member drive.</li>
 file I/O over its control channel should confine it to automation roots it
 is started with (read and write directories). The bridge passes paths
 through unchanged and cannot confine them.</li>
-<li><strong>The token stays on this node.</strong> It is read from <code>token_file</code> at start,
-sent only on the loopback connection, and never appears in <code>status</code>, in an
-error or in a log line. Keep the token file <code>0600</code> and readable by the
+<li><strong>The token stays on this node.</strong> It is read from <code>token_file</code> at start
+and sent only on the loopback connection. It never appears in <code>status</code>, in
+an error or in a log line; if the application echoes it in an error or a
+result, the bridge replaces it with <code>[redacted]</code>. The token file must be
+<code>0600</code> (a file group or other can read is refused) and readable by the
 unit's user (<code>mixos</code>).</li>
-<li><strong>Loopback only.</strong> The config refuses any host but <code>127.0.0.1</code> or <code>localhost</code>.
+<li><strong>Loopback only.</strong> The config refuses any host but <code>127.0.0.1</code> or
+<code>localhost</code>, and connects to <code>127.0.0.1</code> for either.
 An <code>auth: "none"</code> port is open to every local process while the
 application runs, Bus or no Bus; open it only for applications you bridge.</li>
 <li><strong>The name cannot shadow a system service.</strong> The start checks refuse a
