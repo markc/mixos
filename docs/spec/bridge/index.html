@@ -344,12 +344,19 @@ later schemas with families both read.</p>
 2. Codes: <code>NAME_INVALID</code>, <code>NAME_RESERVED</code>, <code>REGISTRY</code>, <code>CONFIG</code>, <code>TOKEN</code>.
 <code>mix bridged.mix --check &lt;app&gt;</code> runs the same checks without joining the Bus
 and exits 0 when the instance may start; an unexpected error at start exits 3,
-never 2. The unit runs it through <code>bridged_condition.mix</code> as
-<code>ExecCondition=</code>, which maps the exit for systemd: 0 stays 0; 2 (a documented
-refusal) stays 2, so the unit is skipped, not failed: inactive, shown as
-skipped (condition) with the reason in its journal, never restarted; any
-other exit, a crash, a signal or a timeout becomes 255, which systemd counts
-as a failure.</p>
+never 2.</p>
+<p>The unit runs <code>mix bridged.mix --start &lt;app&gt;</code>. That process runs the same
+checks in process, before the name reaches the Bus, and exits 2 on a
+documented refusal without starting anything. Otherwise it runs
+<code>mix --serve bridged.mix --name &lt;app&gt;</code> as its child (no shell) and exits with
+the child's exit code. Mix has no process-replacing exec, so the parent and
+child pair is deliberate; the unit's control-group kill stops both. The unit
+never restarts on exit 2 (<code>RestartPreventExitStatus=2</code>); every other non-zero
+exit, including a missing or unreadable script (exit 1), is a failure,
+restarted under <code>Restart=on-failure</code> and rate-limited by
+<code>StartLimitBurst=5</code> in <code>StartLimitIntervalSec=60</code>. <code>$BRIDGED_MIX</code> overrides
+the mix binary the child runs under (default <code>/opt/mixos/bin/mix</code>); it exists
+for tests.</p>
 <h2 id="changes">Changes</h2>
 <ul>
 <li>0.1.0 (2026-10-10): first version.</li>

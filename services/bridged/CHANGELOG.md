@@ -21,10 +21,11 @@ auth, transport or timeout) or 12 (a bad request).
 - The token is redacted from every error, result and `last_error`; the token
   file must be `0600`. `localhost` connects as `127.0.0.1`.
 - A reply without a boolean `ok` drops the connection (rc 11, then backoff).
-- The unit runs `--check` through `scripts/bridged_condition.mix` as
-  `ExecCondition=`: a documented refusal (exit 2) is skipped, not failed, and
-  never restarted; anything else (exit 3 from an unexpected error, a crash, a
-  signal) becomes 255, a failure.
+- The unit runs `bridged.mix --start <app>`: the start checks in process,
+  then `mix --serve` as a child (Mix has no exec), exiting with the child's
+  code. A documented refusal exits 2 and is never restarted
+  (`RestartPreventExitStatus=2`); an unexpected start error exits 3, and it,
+  a crash or a broken install is a rate-limited failure.
 - Known gap: request writes are not bounded until Mix 0.112.1's `tcp_send`
   timeout lands (pending).
 - Verb registration in `docs/spec/bus/verbs.conf.mix` is pending the registry

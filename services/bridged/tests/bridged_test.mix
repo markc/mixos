@@ -3,11 +3,14 @@
 -- (tests/lib/private_bus.mix), a stand-in app (tests/lib/fake_app.mix, token
 -- auth) and bridged itself as a serve citizen named fakeapp, configured by
 -- the instance-config path rule (<MIXOS_ETC>/bridge/fakeapp.conf.mix) and
--- guarded by this checkout's verb registry. Every verb is driven with `send`,
--- including the refusals; then the app dies (rc 11) and comes back (the
--- bridge reconnects after its backoff). The start refusals run as their own
--- serve processes: a reserved name, an invalid name, a missing registry and
--- a missing config each exit 2 with a stable code.
+-- guarded by this checkout's verb registry, started the way the unit starts
+-- it (bridged.mix --start fakeapp: checks, then the serve citizen as a child).
+-- Every verb is driven with `send`, including the refusals; then the app dies
+-- (rc 11) and comes back (the bridge reconnects after its backoff); then the
+-- serve child is stopped and the --start parent ends with it. The start
+-- refusals run as their own processes and exit 2 with a stable code; --start
+-- with a refusal never starts a child, and passes a stand-in child's exit
+-- code through.
 -- Run from the checkout root: mix services/bridged/tests/bridged_test.mix [--noded PATH]
 -- Needs a noded binary (default /opt/mixos/bin/noded).
 
@@ -67,7 +70,13 @@ fn refused($name, $env)
   return {exit: $r.exit_code, err: $r.stderr ?? ""}
 end
 
--- The start checks alone (the unit's ExecStartPre): {exit, out, err}.
+-- Processes whose command line contains $pattern.
+fn pids_matching($pattern)
+  $out = run_argv(["pgrep", "-f", "--", $pattern]).stdout ?? ""
+  return map(filter(split(trim($out), "\n"), fn($l) = $l != ""), fn($l) = to_number($l))
+end
+
+-- The start checks alone: {exit, out, err}.
 fn preflight($name, $env)
   $r = run_argv(["/opt/mixos/bin/mix", $citizen, "--check", $name], {env: $env, timeout: 20})
   return {exit: $r.exit_code, out: $r.stdout ?? "", err: $r.stderr ?? ""}
@@ -110,9 +119,21 @@ try
   $r = preflight("fakeapp", $env)
   check("check: fakeapp may start, exit 0", $r.exit == 0 and contains($r.out, "fakeapp may start"))
 
-  -- The instance.
-  push($pids, spawn(["/opt/mixos/bin/mix", "--serve", $citizen, "--name", "fakeapp"],
-    {die_with_parent: true, env: $env, stdout: {file: $tmp .. "/bridged.log"}, stderr: "stdout"}))
+  -- --start against a stand-in mix for the child: it records that it ran.
+  $marker = $tmp .. "/child-ran"
+  write_file($tmp .. "/stand-in-mix", "#!/opt/mixos/bin/mix\nwrite_file(\"" .. $marker .. "\", json_encode(args()))\nexit(3)\n")
+  chmod($tmp .. "/stand-in-mix", 0o755)
+  $sx = merge($env, {BRIDGED_MIX: $tmp .. "/stand-in-mix"})
+  $r = run_argv(["/opt/mixos/bin/mix", $citizen, "--start", "settings"], {env: $sx, timeout: 30})
+  check("start: a reserved name exits 2 and starts no child", $r.exit_code == 2 and contains($r.stderr ?? "", "NAME_RESERVED") and not is_file($marker))
+  $r = run_argv(["/opt/mixos/bin/mix", $citizen, "--start", "fakeapp"], {env: $sx, timeout: 30})
+  check("start: a valid setup starts the child as mix --serve <bridged.mix> --name fakeapp", is_file($marker) and contains(read_file($marker), "\"--serve\"") and contains(read_file($marker), "\"fakeapp\""))
+  check("start: exits with the child's code (stand-in exits 3)", $r.exit_code == 3)
+
+  -- The instance, as the unit starts it.
+  $starter = spawn(["/opt/mixos/bin/mix", $citizen, "--start", "fakeapp"],
+    {die_with_parent: true, env: $env, stdout: {file: $tmp .. "/bridged.log"}, stderr: "stdout"})
+  push($pids, $starter)
   $up = false
   for $i = 1 to 80
     if call("fakeapp.status", nil, 2).rc == 0 then
@@ -182,12 +203,31 @@ try
   check("app back: the bridge reconnects after its backoff", $r.rc == 0)
   $s = call("fakeapp.status", nil, 5).v
   check("app back: a second authenticated connection", $s.connection == "up" and $s.connects == 2)
+
+  -- The serve citizen is the --start process's child; stopping it ends both.
+  $children = pids_matching("--serve " .. $citizen .. " --name fakeapp")
+  check("start: the serve citizen runs as a separate child process", len($children) == 1 and $children[0] != $starter)
+  if len($children) == 1 then $k = kill($children[0], 15) end
+  $ended = false
+  for $i = 1 to 200
+    if not process_alive($starter) then
+      $ended = true
+      break
+    end
+    sleep(0.05)
+  end
+  check("start: the --start process ends when its child ends", $ended and len(pids_matching("--serve " .. $citizen .. " --name fakeapp")) == 0)
+  check("start: fakeapp is gone from the Bus", not port_exists("fakeapp"))
 catch $m
   check("harness: " .. $m, false)
 finally
   for each $p in $pids
     -- 9, not 15: see the crash above.
     if process_alive($p) then $k = kill($p, 9) end
+  end
+  -- A serve child left by a failed run (its --start parent was killed above).
+  for each $p in pids_matching("--serve " .. $citizen .. " --name fakeapp")
+    $k = kill($p, 9)
   end
   if $bus != nil then $pb.stop($bus) end
   if len(filter($results, fn($x) = not $x.ok)) == 0 then remove_dir($tmp) else print("kept for inspection: " .. $tmp) end

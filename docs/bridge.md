@@ -49,12 +49,12 @@ For an application whose port has no auth step, write `auth: "none"` and no
 systemctl start bridged@fakeapp
 ```
 
-The unit runs `mix bridged.mix --check fakeapp` before it joins the Bus,
-then `mix --serve bridged.mix --name fakeapp`. A refused start is not a
-failure: `systemctl status` shows the unit inactive, skipped (condition),
-with the reason in its journal, and it is not restarted. An unexpected error
-in the check (anything but a refusal below) fails the unit instead, so it is
-never mistaken for one. A start is refused when:
+The unit runs `mix bridged.mix --start fakeapp`. It checks the instance first,
+before the name joins the Bus, then runs `mix --serve bridged.mix --name
+fakeapp` as its child. A refused start exits 2, with the reason in the
+journal, and is never restarted. Any other failure (a crash, a broken
+install) is restarted a few times and then left failed. A start is refused
+when:
 
 - the name is not a valid Bus service name, or starts with `mixos-`
   (`NAME_INVALID`);
