@@ -4,10 +4,17 @@
 -- line-JSON client against stand-in apps (tests/lib/fake_app.mix on
 -- tcp_listen): auth, pass-through, app errors, timeout, backoff, reconnect,
 -- a mid-request drop, and both auth modes against the wrong kind of app.
--- Run from the checkout root: mix services/bridged/tests/bridge_core_test.mix
+-- Run from the checkout root with Mix >= 0.112.1:
+--   mix services/bridged/tests/bridge_core_test.mix
+-- $BRIDGED_MIX names the mix binary for the stand-in apps (default /opt/mixos/bin/mix).
 -- Writes only under /var/tmp/bridge-core-test.<uuid>; the fakes die with it.
 
 $here = dirname(realpath($0))
+
+-- The mix binary the tests run their processes under: $BRIDGED_MIX when set
+-- (also inherited by bridged --start for its child), else the installed one.
+$MIX = env("BRIDGED_MIX") ?? ""
+if $MIX == "" then $MIX = "/opt/mixos/bin/mix" end
 $core = require("../scripts/lib/bridge_core.mix")
 $fake = realpath($here .. "/lib/fake_app.mix")
 $checkout = realpath($here .. "/../../..")
@@ -48,7 +55,7 @@ end
 -- Start a fake app; returns its port once it listens.
 fn start_fake($tag, $auth, $token_file)
   $pf = $tmp .. "/" .. $tag .. ".port"
-  $argv = ["/opt/mixos/bin/mix", $fake, "--auth", $auth, "--port-file", $pf, "--parent", to_string(pid())]
+  $argv = [$MIX, $fake, "--auth", $auth, "--port-file", $pf, "--parent", to_string(pid())]
   if $token_file != nil then $argv = concat($argv, ["--token-file", $token_file]) end
   push($pids, spawn($argv, {die_with_parent: true, stdout: {file: $tmp .. "/" .. $tag .. ".log"}, stderr: "stdout"}))
   for $i = 1 to 200
@@ -124,6 +131,11 @@ try
   check("spec: same serve-name rule", $spec.name.pattern == $sch.name)
   $drift = filter($spec.config.keys, fn($k) = has_key($k, "default") and not deep_eq($k.default, $sch.defaults[$k.key]))
   check("spec: same defaults (" .. json_encode(map($drift, fn($k) = $k.key)) .. ")", len($drift) == 0)
+
+  -- The runtime: this Mix bounds writes; the comparison itself.
+  check("runtime: this Mix has tcp_send {timeout} (" .. to_string(mix_version().string) .. ")", code_of(fn() = $core.check_runtime()) == "OK")
+  check("runtime: version comparison", $core.version_at_least("0.112.1", "0.112.1") and $core.version_at_least("0.113.0", "0.112.1") and $core.version_at_least("1.0.0", "0.112.1") and not $core.version_at_least("0.112.0", "0.112.1") and not $core.version_at_least("0.111.99", "0.112.1") and not $core.version_at_least("junk", "0.112.1"))
+  check("runtime: reads mix_version()'s map", $core.version_at_least({string: "0.112.1"}, "0.112.1") and not $core.version_at_least({string: "0.112.0"}, "0.112.1"))
 
   -- Instance config and registry paths.
   $saved = {c: env("BRIDGED_CONFIG"), e: env("MIXOS_ETC"), v: env("BRIDGED_VERBS")}
@@ -263,6 +275,28 @@ try
   $r = $core.call($S, "engine.commands", {})
   $S = $r.st
   check("no ok: a fresh connection after backoff", $r.rc == 0 and $S.connects == 4)
+
+  -- Writes are bounded by timeout_s (1 s here): tcp_send gets the time left.
+  -- The request is far bigger than the loopback socket buffers, so it can only
+  -- finish if the app reads it.
+  $big = {blob: repeat("x", 32 * 1048576)}
+  for each $reader in ["stall", "trickle"]
+    $r = $core.call($S, $reader, {})
+    $S = $r.st
+    check($reader .. ": the app answers, then " .. (if $reader == "stall" then "stops reading" else "reads 1 KiB at a time" end), $r.rc == 0 and $r.result == $reader)
+    $connects = $S.connects
+    $r = $core.call($S, "echo", $big)
+    $S = $r.st
+    check($reader .. ": a big write times out (TCP_SEND_TIMEOUT), rc 11 at about timeout_s (" .. to_string($r.latency_ms) .. " ms)", $r.rc == 11 and $r.latency_ms >= 800 and $r.latency_ms < 2500 and starts_with($r.error, "transport: write timed out"))
+    check($reader .. ": the connection is dropped", not $S.connected and $core.status($S).connection == "down")
+    $r = $core.call($S, "engine.commands", {})
+    $S = $r.st
+    check($reader .. ": backing off right after", $r.rc == 11 and contains($r.error, "backing off"))
+    sleep(0.4)
+    $r = $core.call($S, "engine.commands", {})
+    $S = $r.st
+    check($reader .. ": a normal call works after the backoff, on a new connection", $r.rc == 0 and $S.connects == $connects + 1)
+  end
 
   -- A wrong token.
   $S2 = $core.new_state(merge($cfg, {port: $p_bad}), $good)

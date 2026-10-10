@@ -21,9 +21,9 @@
   name:{pattern:"^[a-z][a-z0-9-]{1,30}$", registry:"/opt/mixos/share/bus/verbs.conf.mix", registry_env:"BRIDGED_VERBS"},
   verbs:["call", "commands", "execute", "inspect", "screenshot", "status"],
   rc:{ok:0, app_error:10, transport:11, bad_request:12},
-  deadline:{covers:["connect", "auth reply", "request reply"], writes:"unbounded until Mix 0.112.1 tcp_send timeout (pending)"},
+  deadline:{covers:["connect", "auth write", "auth reply", "request write", "request reply"], min_mix:"0.112.1"},
   start:{argv:"mix bridged.mix --start <app>", refusal_exit:2, unexpected_exit:3, otherwise:"the serve child's exit code", clean_stop_exit:143},
   host_connect:"127.0.0.1", token_mode_mask:63, redaction:"[redacted]",
   name_refused:{prefix:"mixos-", broker:["noded", "noded-*", "^[tc][a-z0-9]{1,7}-[a-z2-7]{22}$"]},
-  start_refusals:{exit:2, codes:["NAME_INVALID", "NAME_RESERVED", "REGISTRY", "CONFIG", "TOKEN"]}
+  start_refusals:{exit:2, codes:["RUNTIME", "NAME_INVALID", "NAME_RESERVED", "REGISTRY", "CONFIG", "TOKEN"]}
 }

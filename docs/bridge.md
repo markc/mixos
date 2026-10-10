@@ -59,6 +59,7 @@ clean. Run the bridge under the unit, not `--start` by hand: outside systemd,
 killing the `--start` process alone can leave the serve child running. A
 start is refused when:
 
+- the Mix binary is older than 0.112.1, which cannot bound writes (`RUNTIME`);
 - the name is not a valid Bus service name, or starts with `mixos-`
   (`NAME_INVALID`);
 - the name belongs to the Bus broker (`noded`, `noded-*`) (`NAME_RESERVED`);
@@ -87,10 +88,10 @@ send fakeapp fakeapp.call body='{"method":"echo","params":{"a":1}}'
 
 The bridge keeps one connection open. If the application goes away, calls
 answer rc 11, the bridge waits `backoff_s` (default 2 seconds), then
-reconnects and authenticates again on the next call. Each call's connect and
-reads are bounded by `timeout_s`. Writing a request to an application that
-has stopped reading is not bounded yet: that waits for Mix 0.112.1's
-`tcp_send` timeout (pending).
+reconnects and authenticates again on the next call. Every call is bounded
+by `timeout_s`, writes included: an application that stops reading, or reads
+too slowly, gets rc 11 at `timeout_s` and a fresh connection after the
+backoff. This needs Mix 0.112.1 or later.
 
 ## Security
 

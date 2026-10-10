@@ -11,11 +11,19 @@
 -- refusals run as their own processes and exit 2 with a stable code; --start
 -- with a refusal never starts a child, and passes a stand-in child's exit
 -- code through.
--- Run from the checkout root: mix services/bridged/tests/bridged_test.mix [--noded PATH]
+-- Run from the checkout root with Mix >= 0.112.1:
+--   mix services/bridged/tests/bridged_test.mix [--noded PATH]
+-- $BRIDGED_MIX names the mix binary for every process the test starts,
+-- including the serve child of bridged --start (default /opt/mixos/bin/mix).
 -- Needs a noded binary (default /opt/mixos/bin/noded).
 
 $pb = require("../../../tests/lib/private_bus.mix")
 $here = dirname(realpath($0))
+
+-- The mix binary the tests run their processes under: $BRIDGED_MIX when set
+-- (also inherited by bridged --start for its child), else the installed one.
+$MIX = env("BRIDGED_MIX") ?? ""
+if $MIX == "" then $MIX = "/opt/mixos/bin/mix" end
 $citizen = realpath($here .. "/../scripts/bridged.mix")
 $fake = realpath($here .. "/lib/fake_app.mix")
 $registry = realpath($here .. "/../../../docs/spec/bus/verbs.conf.mix")
@@ -54,7 +62,7 @@ end
 -- Start the fake app; returns {pid, port} once it listens.
 fn start_fake($tag, $port)
   $pf = $tmp .. "/" .. $tag .. ".port"
-  $p = spawn(["/opt/mixos/bin/mix", $fake, "--auth", "token", "--token-file", $tmp .. "/app.tok", "--port-file", $pf,
+  $p = spawn([$MIX, $fake, "--auth", "token", "--token-file", $tmp .. "/app.tok", "--port-file", $pf,
     "--parent", to_string(pid()), "--port", to_string($port)], {die_with_parent: true, stdout: {file: $tmp .. "/" .. $tag .. ".log"}, stderr: "stdout"})
   push($pids, $p)
   for $i = 1 to 200
@@ -66,7 +74,7 @@ end
 
 -- A bridged start that must be refused: {exit, err}.
 fn refused($name, $env)
-  $r = run_argv(["/opt/mixos/bin/mix", "--serve", $citizen, "--name", $name], {env: $env, timeout: 20, stdout: "null"})
+  $r = run_argv([$MIX, "--serve", $citizen, "--name", $name], {env: $env, timeout: 20, stdout: "null"})
   return {exit: $r.exit_code, err: $r.stderr ?? ""}
 end
 
@@ -78,7 +86,7 @@ end
 
 -- The start checks alone: {exit, out, err}.
 fn preflight($name, $env)
-  $r = run_argv(["/opt/mixos/bin/mix", $citizen, "--check", $name], {env: $env, timeout: 20})
+  $r = run_argv([$MIX, $citizen, "--check", $name], {env: $env, timeout: 20})
   return {exit: $r.exit_code, out: $r.stdout ?? "", err: $r.stderr ?? ""}
 end
 
@@ -124,9 +132,9 @@ try
   write_file($tmp .. "/stand-in-mix", "#!/opt/mixos/bin/mix\nwrite_file(\"" .. $marker .. "\", json_encode(args()))\nexit(3)\n")
   chmod($tmp .. "/stand-in-mix", 0o755)
   $sx = merge($env, {BRIDGED_MIX: $tmp .. "/stand-in-mix"})
-  $r = run_argv(["/opt/mixos/bin/mix", $citizen, "--start", "settings"], {env: $sx, timeout: 30})
+  $r = run_argv([$MIX, $citizen, "--start", "settings"], {env: $sx, timeout: 30})
   check("start: a reserved name exits 2 and starts no child", $r.exit_code == 2 and contains($r.stderr ?? "", "NAME_RESERVED") and not is_file($marker))
-  $r = run_argv(["/opt/mixos/bin/mix", $citizen, "--start", "fakeapp"], {env: $sx, timeout: 30})
+  $r = run_argv([$MIX, $citizen, "--start", "fakeapp"], {env: $sx, timeout: 30})
   check("start: a valid setup starts the child as mix --serve <bridged.mix> --name fakeapp", is_file($marker) and contains(read_file($marker), "\"--serve\"") and contains(read_file($marker), "\"fakeapp\""))
   check("start: exits with the child's code (stand-in exits 3)", $r.exit_code == 3)
 
@@ -134,11 +142,11 @@ try
   -- writes its exit status when it ends, as systemd would see it.
   $exit_file = $tmp .. "/start.exit"
   write_file($tmp .. "/record_exit.mix", "$a = args()\nwrite_file($a[0], to_string(run_stream(slice($a, 1, len($a)))))\n")
-  push($pids, spawn(["/opt/mixos/bin/mix", $tmp .. "/record_exit.mix", $exit_file, "/opt/mixos/bin/mix", $citizen, "--start", "fakeapp"],
+  push($pids, spawn([$MIX, $tmp .. "/record_exit.mix", $exit_file, $MIX, $citizen, "--start", "fakeapp"],
     {die_with_parent: true, env: $env, stdout: {file: $tmp .. "/bridged.log"}, stderr: "stdout"}))
   $starter = nil
   for $i = 1 to 100
-    $found = pids_matching("^/opt/mixos/bin/mix " .. $citizen .. " --start fakeapp$")
+    $found = pids_matching("^" .. $MIX .. " " .. $citizen .. " --start fakeapp$")
     if len($found) == 1 then
       $starter = $found[0]
       break

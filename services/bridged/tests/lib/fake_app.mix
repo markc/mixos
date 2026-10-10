@@ -24,6 +24,9 @@
 --   leak             ok:false with the token in the error text (lower and upper case)
 --   leak_result      ok:true with the token in the result
 --   nook             a reply with the right id and no ok field
+--   stall            replies ok, then never reads this connection again
+--   trickle          replies ok, then reads this connection 1 KiB at a time,
+--                    discarding it (a slow reader)
 -- Single-threaded: one loop polls the listener and every connection.
 
 fn opt($name, $default)
@@ -74,6 +77,9 @@ fn answer($c, $msg)
     send_line($c, {id: $id, ok: true, result: {seen: $token}})
   elif $m == "nook" then
     send_line($c, {id: $id, result: "no ok here"})
+  elif $m == "stall" or $m == "trickle" then
+    send_line($c, {id: $id, ok: true, result: $m})
+    return merge($c, {reader: $m})
   else
     send_line($c, {id: $id, ok: false, error: "unknown method"})
   end
@@ -116,7 +122,12 @@ end
 fn advance($c, $mode, $token)
   $next = $c
   try
-    if $c.due != nil then
+    if $c.reader == "stall" then
+      -- Never read again.
+      $next = $c
+    elif $c.reader == "trickle" then
+      $chunk = tcp_recv($c.h, {timeout: 0.002, max: 1024})
+    elif $c.due != nil then
       -- Busy with a slow request: answer it when due, read nothing meanwhile.
       if monotonic() >= $c.due then
         send_line($c, {id: $c.slow_id, ok: true, result: "late"})
@@ -153,7 +164,7 @@ $end = monotonic() + 600
 while monotonic() < $end and process_alive($parent)
   $wait = if len($conns) == 0 then 0.05 else 0.002 end
   $h = tcp_accept($l, {timeout: $wait})
-  if $h != nil then push($conns, {h: $h, authed: false, due: nil, slow_id: nil}) end
+  if $h != nil then push($conns, {h: $h, authed: false, due: nil, slow_id: nil, reader: nil}) end
   $kept = []
   for each $c in $conns
     $n = advance($c, $mode, $token)

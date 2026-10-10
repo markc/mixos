@@ -15,9 +15,10 @@
 --
 -- Rules: the token is never returned, stored outside the state map, or put
 -- in an error text; an app that echoes it has the echo redacted. Every call
--- runs under one deadline (timeout_s) that covers connect, auth and the
--- request reads. Writes are not bounded until tcp_send takes a deadline (see
--- the TODOs below).
+-- runs under one deadline (timeout_s) that covers connect, the auth line and
+-- its reply, and the request and its reply: every write passes the time left
+-- as tcp_send's {timeout} (Mix >= 0.112.1), so no call blocks a serve pump
+-- longer than timeout_s, even against a peer that stops reading.
 --
 -- Also here: the serve-name guard (reserved_names, check_name), which keeps
 -- an instance from taking the first segment of a registered Bus verb.
@@ -190,6 +191,31 @@ fn check_name($name, $registry)
   return true
 end
 
+-- The oldest Mix whose tcp_send takes {timeout}: below it a write could
+-- outlive timeout_s, so the bridge refuses to start.
+$_MIN_MIX = "0.112.1"
+
+-- True when version $v (mix_version()'s map, or text holding "0.112.1") is at least $min.
+fn version_at_least($v, $min)
+  if type($v) == "map" then $v = $v.string end
+  $m = re_find(to_string($v ?? ""), "(\\d+)\\.(\\d+)\\.(\\d+)")
+  if len($m) == 0 then return false end
+  $have = map($m[0].groups, fn($x) = to_number($x))
+  $want = map(split($min, "."), fn($x) = to_number($x))
+  for $i = 0 to 2
+    if $have[$i] != $want[$i] then return $have[$i] > $want[$i] end
+  end
+  return true
+end
+
+-- Raise RUNTIME unless this Mix bounds writes (tcp_send {timeout}).
+fn check_runtime()
+  if not version_at_least(mix_version(), $_MIN_MIX) then
+    raise("RUNTIME", "bridged needs Mix >= " .. $_MIN_MIX .. " (tcp_send {timeout}); this is " .. to_string(mix_version().string ?? "unknown"))
+  end
+  return true
+end
+
 -- The instance config path: $BRIDGED_CONFIG when set, else
 -- <etc>/bridge/<name>.conf.mix, with <etc> = $MIXOS_ETC or /etc/mixos.
 fn config_path($name)
@@ -232,6 +258,23 @@ fn _close_quietly($h)
   return nil
 end
 
+-- Write $payload within what is left of $deadline: tcp_send's {timeout}
+-- bounds the whole send (Mix >= 0.112.1). Raises TIMEOUT without writing if
+-- the deadline has passed; a send that runs out raises TCP_SEND_TIMEOUT and
+-- retires the handle. Either is a transport failure to the caller.
+fn _send($h, $payload, $deadline)
+  $left = $deadline - monotonic()
+  if $left <= 0 then raise("TIMEOUT", "deadline passed before the write") end
+  tcp_send($h, $payload, {timeout: max($left, 0.001)})
+  return nil
+end
+
+-- A transport error's text, naming a write that ran out of time plainly.
+fn _why($m, $e)
+  if $e != nil and $e.code == "TCP_SEND_TIMEOUT" then return "write timed out: " .. $m end
+  return $m
+end
+
 -- Read lines until the reply carrying our id arrives. Lines that are not
 -- JSON or carry another id are skipped. Bounded by the deadline.
 fn _read_reply($h, $want, $deadline, $max)
@@ -262,14 +305,11 @@ fn _open($st, $deadline)
   end
   if $h != nil and $cfg.auth == "token" then
     try
-      -- TODO(mix 0.112.1): tcp_send has no whole-send deadline yet; a peer that
-      -- stops reading can block this write past timeout_s, unbounded. Pass the
-      -- remaining deadline as {timeout} once it lands (TCP_SEND_TIMEOUT).
-      tcp_send($h, json_encode({id: "auth", method: "auth", params: {token: $st.token}}) .. "\n")
+      _send($h, json_encode({id: "auth", method: "auth", params: {token: $st.token}}) .. "\n", $deadline)
       $reply = _read_reply($h, "auth", $deadline, $cfg.max_line)
       if $reply.ok != true then $err = "auth refused by app" end
-    catch $m
-      $err = "auth failed: " .. $m
+    catch $m, $e
+      $err = "auth failed: " .. _why($m, $e)
     end
     if $err != nil then
       _close_quietly($h)
@@ -291,13 +331,10 @@ end
 fn _exchange($h, $id, $method, $params, $deadline, $max)
   $out = {reply: nil, err: nil}
   try
-    -- TODO(mix 0.112.1): tcp_send has no whole-send deadline yet; a peer that
-    -- stops reading can block this write past timeout_s, unbounded. Pass the
-    -- remaining deadline as {timeout} once it lands (TCP_SEND_TIMEOUT).
-    tcp_send($h, json_encode({id: $id, method: $method, params: $params}) .. "\n")
+    _send($h, json_encode({id: $id, method: $method, params: $params}) .. "\n", $deadline)
     $out = {reply: _read_reply($h, $id, $deadline, $max), err: nil}
-  catch $m
-    $out = {reply: nil, err: "transport: " .. $m}
+  catch $m, $e
+    $out = {reply: nil, err: "transport: " .. _why($m, $e)}
   end
   return $out
 end

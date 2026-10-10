@@ -37,7 +37,7 @@ $core = require("lib/bridge_core.mix")
 
 -- A documented refusal exits 2 (the unit skips, never restarts). Anything
 -- else is unexpected and exits 3, so the unit fails visibly instead.
-$REFUSALS = ["NAME_INVALID", "NAME_RESERVED", "REGISTRY", "CONFIG", "TOKEN"]
+$REFUSALS = ["RUNTIME", "NAME_INVALID", "NAME_RESERVED", "REGISTRY", "CONFIG", "TOKEN"]
 
 fn refuse($code, $message)
   if contains($REFUSALS, $code) then
@@ -51,6 +51,7 @@ end
 -- Every start check: the name, the registry, the config and the token.
 -- Returns {cfg, token}.
 fn preflight($name)
+  $core.check_runtime()
   $core.check_name($name, $core.registry_path())
   $c = $core.load_config($core.config_path($name))
   $t = nil

@@ -48,10 +48,13 @@ the token.
 | 12 | A bad request from the caller (missing field, body not a JSON object) | text naming the field |
 
 Every call runs under one deadline, `timeout_s`, covering connect, the auth
-reply and the request's reply. **Writes are not bounded yet:** a peer that
-stops reading can hold a request write, and the serve pump with it, for an
-unbounded time until Mix 0.112.1's `tcp_send` timeout lands (pending); the
-bridge will then pass the remaining deadline to every write.
+line and its reply, and the request and its reply. Each write gets the time
+left as `tcp_send`'s `{timeout}`, which bounds the whole send, so a peer that
+stops reading, or reads too slowly, cannot hold a call (or the serve pump)
+past `timeout_s`: the write fails, the call answers rc 11 and the connection
+is dropped. A deadline already spent before a write fails the same way
+without sending. This needs Mix >= 0.112.1; on an older Mix the bridge
+refuses to start (`RUNTIME`).
 
 After a transport failure, or a reply without a boolean `ok`, the connection is dropped and no new one is tried for
 `backoff_s`; calls in that window answer rc 11 at once.
@@ -121,7 +124,8 @@ form refuses the start. `families` is optional, so the schema-1 registry and
 later schemas with families both read.
 
 A refused start prints `bridged: refusing to start: CODE: message` and exits
-2. Codes: `NAME_INVALID`, `NAME_RESERVED`, `REGISTRY`, `CONFIG`, `TOKEN`.
+2. Codes: `RUNTIME` (Mix older than 0.112.1), `NAME_INVALID`, `NAME_RESERVED`,
+`REGISTRY`, `CONFIG`, `TOKEN`.
 `mix bridged.mix --check <app>` runs the same checks without joining the Bus
 and exits 0 when the instance may start; an unexpected error at start exits 3,
 never 2.
