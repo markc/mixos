@@ -4,7 +4,9 @@ use crate::session_state::{self, Source, View};
 use ::bus::native_client::session::Hello;
 use ::bus::native_client::session::boottime_ms;
 use ::bus::native_client::{VerifiedCommand, VerifiedConnection};
-use ::bus::native_session::*;
+use ::bus::native_session::{
+    Assurance, BindingState, BrokerPrincipal, Capability, Policy, RecordRef, Role, SessionRecord,
+};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -308,6 +310,9 @@ pub(crate) async fn refuse(connection: &VerifiedConnection, event: &VerifiedComm
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ::bus::native_session::{
+        DecimalU64, HexBytes, PrincipalVersion, RecordAssurance, SessionIdentity,
+    };
     fn target() -> SessionRecord {
         SessionRecord {
             name: "test-pane".into(),

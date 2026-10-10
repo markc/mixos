@@ -40,7 +40,7 @@ use crate::editor::{self, Reply as EditorReply};
 use crate::session_state::{self, Phase, Source};
 use ::bus::native_client::session::Hello;
 use ::bus::native_client::{VerifiedCommand, VerifiedConnection};
-use ::bus::native_session::*;
+use ::bus::native_session::{BrokerPrincipal, Capability, DecimalU64, SessionRecord};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::{Mutex, OnceLock};
