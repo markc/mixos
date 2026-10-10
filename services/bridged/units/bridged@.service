@@ -5,6 +5,10 @@
 [Unit]
 Description=MixOS Bus bridge for the external application %i
 After=network.target
+# A broken install (a missing or unreadable script exits 1) is a failure,
+# restarted a few times and then left failed, never a silent skip.
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -13,19 +17,15 @@ User=mixos
 # the other MIXOS_* client variables, e.g. a session's) and where its config
 # lives (MIXOS_ETC, or BRIDGED_CONFIG for one file).
 EnvironmentFile=-/etc/mixos/bridge/%i.env
-# The start checks (name, verb registry, config, token) before the name is
-# registered on the Bus: a refused name never appears there. ExecCondition=
-# skips the unit on exit 1-254 and fails it on 255, so bridged_condition.mix
-# runs the check and maps its exit: a documented refusal is 2 (skipped
-# (condition), reason in the journal, never restarted); anything unexpected,
-# a crash included, is 255 (failed). ExecStartPre would loop under
-# Restart=on-failure.
-ExecCondition=/opt/mixos/bin/mix /opt/mixos/lib/bridged/bridged_condition.mix %i
-ExecStart=/opt/mixos/bin/mix --serve /opt/mixos/lib/bridged/bridged.mix --name %i
+# --start runs every start check (name, verb registry, config, token) in this
+# process, before the name reaches the Bus. A documented refusal exits 2.
+# Otherwise it runs `mix --serve bridged.mix --name %i` as its child (Mix has
+# no process-replacing exec) and exits with the child's code.
+ExecStart=/opt/mixos/bin/mix /opt/mixos/lib/bridged/bridged.mix --start %i
+# The stop signal reaches the parent and the serve child alike.
 KillMode=control-group
 TimeoutStopSec=10
 Restart=on-failure
 RestartSec=2
-# Exit 2 from the service itself is a refused start (the checks above passed,
-# then something changed); restarting cannot fix it.
+# Exit 2 is a refused start: restarting cannot fix it.
 RestartPreventExitStatus=2

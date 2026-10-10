@@ -4,22 +4,24 @@
 -- control channel, one instance per application. The protocol and logic are
 -- lib/bridge_core.mix; this file is only the Bus surface.
 --
--- Run: mix --serve bridged.mix --name <app>      (Bus service "<app>")
+-- Run: mix bridged.mix --start <app>             (the unit: checks, then serves)
+--      mix --serve bridged.mix --name <app>      (serve directly, Bus service "<app>")
 --      mix bridged.mix --check <app>             (the start checks only)
 --
 -- The serve name must be one Bus service-name segment ([a-z][a-z0-9-]{1,30})
 -- that no registered Bus verb already starts with (registry: $BRIDGED_VERBS,
 -- else /opt/mixos/share/bus/verbs.conf.mix; missing or unreadable refuses).
--- mix --serve registers the name before this file runs, so a refusal here
--- comes just after registration; the unit runs --check first (ExecCondition,
--- through bridged_condition.mix) so a refused name never reaches the Bus.
+-- mix --serve registers the name before this file runs, so a refusal in
+-- serve mode comes just after registration. --start runs the checks first,
+-- in this process, and only then starts the serve citizen as its child, so a
+-- refused name never reaches the Bus.
 -- Config: $BRIDGED_CONFIG, else <etc>/bridge/<app>.conf.mix with <etc> =
 -- $MIXOS_ETC or /etc/mixos. Keys: host, port, auth, token_file, timeout_s,
 -- connect_timeout_s, backoff_s, max_line, instance (docs/spec/bridge/).
 -- A refusal at start prints "bridged: refusing to start: CODE: message" and
 -- exits 2 (CODE: NAME_INVALID, NAME_RESERVED, REGISTRY, CONFIG, TOKEN); an
--- unexpected error at start exits 3. The unit maps these through
--- bridged_condition.mix.
+-- unexpected error at start exits 3. --start otherwise exits with its
+-- child's exit code. The unit never restarts on 2.
 --
 -- Verbs (body is a JSON object where one is listed):
 --   <app>.call        {method, params?}   pass-through, any method
@@ -59,17 +61,34 @@ end
 $svc = serve_name()
 if $svc == nil then
   $a = args()
-  if len($a) != 2 or $a[0] != "--check" then
-    eprint("usage: mix --serve bridged.mix --name <app> | mix bridged.mix --check <app>")
+  if len($a) != 2 or ($a[0] != "--check" and $a[0] != "--start") then
+    eprint("usage: mix bridged.mix --start <app> | mix bridged.mix --check <app> | mix --serve bridged.mix --name <app>")
     exit(3)
   end
+  $app = $a[1]
   try
-    $p = preflight($a[1])
-    print("bridged: " .. $a[1] .. " may start (" .. $core.config_path($a[1]) .. ", auth " .. $p.cfg.auth .. ")")
+    $p = preflight($app)
+    print("bridged: " .. $app .. " may start (" .. $core.config_path($app) .. ", auth " .. $p.cfg.auth .. ")")
+    $p = nil
   catch $m, $e
     refuse($e.code ?? "FAILED", $m)
   end
-  exit(0)
+  if $a[0] == "--check" then exit(0) end
+  -- --start: Mix has no process-replacing exec, so the serve citizen is a
+  -- child of this process (deliberately: the checks above ran first, in
+  -- process). This process waits for it and exits with its code; the unit's
+  -- control-group kill reaches both. BRIDGED_MIX names the mix binary for the
+  -- child (default /opt/mixos/bin/mix); it exists for tests.
+  $mix = env("BRIDGED_MIX") ?? ""
+  if $mix == "" then $mix = "/opt/mixos/bin/mix" end
+  $code = 3
+  try
+    $code = run_stream([$mix, "--serve", realpath($0), "--name", $app])
+  catch $m
+    eprint("bridged: could not start the serve citizen: " .. $m)
+    $code = 3
+  end
+  exit($code)
 end
 
 $cfg = nil

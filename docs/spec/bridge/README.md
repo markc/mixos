@@ -124,12 +124,20 @@ A refused start prints `bridged: refusing to start: CODE: message` and exits
 2. Codes: `NAME_INVALID`, `NAME_RESERVED`, `REGISTRY`, `CONFIG`, `TOKEN`.
 `mix bridged.mix --check <app>` runs the same checks without joining the Bus
 and exits 0 when the instance may start; an unexpected error at start exits 3,
-never 2. The unit runs it through `bridged_condition.mix` as
-`ExecCondition=`, which maps the exit for systemd: 0 stays 0; 2 (a documented
-refusal) stays 2, so the unit is skipped, not failed: inactive, shown as
-skipped (condition) with the reason in its journal, never restarted; any
-other exit, a crash, a signal or a timeout becomes 255, which systemd counts
-as a failure.
+never 2.
+
+The unit runs `mix bridged.mix --start <app>`. That process runs the same
+checks in process, before the name reaches the Bus, and exits 2 on a
+documented refusal without starting anything. Otherwise it runs
+`mix --serve bridged.mix --name <app>` as its child (no shell) and exits with
+the child's exit code. Mix has no process-replacing exec, so the parent and
+child pair is deliberate; the unit's control-group kill stops both. The unit
+never restarts on exit 2 (`RestartPreventExitStatus=2`); every other non-zero
+exit, including a missing or unreadable script (exit 1), is a failure,
+restarted under `Restart=on-failure` and rate-limited by
+`StartLimitBurst=5` in `StartLimitIntervalSec=60`. `$BRIDGED_MIX` overrides
+the mix binary the child runs under (default `/opt/mixos/bin/mix`); it exists
+for tests.
 
 ## Changes
 
