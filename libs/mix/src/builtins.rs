@@ -20427,6 +20427,13 @@ fn http_body_into_map(status: u16, buf: Vec<u8>, map: &mut indexmap::IndexMap<St
 #[cfg(feature = "http")]
 const MAX_HTTP_BODY_BYTES: u64 = 67_108_864;
 
+/// A response that by definition has no body (RFC 9110 §6.4.1): any reply
+/// to HEAD, and 1xx, 204 No Content and 304 Not Modified to any method.
+#[cfg(feature = "http")]
+fn response_is_bodyless(method: &str, status: u16) -> bool {
+    method == "HEAD" || (100..200).contains(&status) || status == 204 || status == 304
+}
+
 #[cfg(feature = "http")]
 fn finalise_http_response(
     method: &str,
@@ -20448,7 +20455,12 @@ fn finalise_http_response(
     // does not. A bodyless response is an empty body, not a failure: skip the
     // drain for HEAD and report the real status with an empty body. `method`
     // reaches here already upper-cased by every caller.
-    if method == "HEAD" {
+    //
+    // The same holds for 1xx, 204 and 304 on any method (RFC 9110 §6.4.1):
+    // GitHub's API answers an `If-None-Match` GET with a 304 that carries
+    // `Content-Encoding: gzip`, and the drain failed exactly as HEAD did,
+    // which made ETag polling impossible.
+    if response_is_bodyless(method, status) {
         http_body_into_map(status, Vec::new(), map);
         return;
     }
@@ -34198,6 +34210,18 @@ mod bytes_tests {
             map.get("bytes"),
             Some(&Value::bytes(b"hello world".to_vec()))
         );
+    }
+
+    #[test]
+    #[cfg(feature = "http")]
+    fn bodyless_responses_skip_the_drain() {
+        assert!(response_is_bodyless("HEAD", 200));
+        assert!(response_is_bodyless("GET", 304));
+        assert!(response_is_bodyless("GET", 204));
+        assert!(response_is_bodyless("POST", 101));
+        assert!(!response_is_bodyless("GET", 200));
+        assert!(!response_is_bodyless("GET", 404));
+        assert!(!response_is_bodyless("POST", 302));
     }
 
     #[test]
