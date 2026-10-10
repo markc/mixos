@@ -19,6 +19,7 @@ refusal, invalid input or unknown verbs. Domain status is structured in the body
 | --- | --- |
 | `settings.describe` | No mutation; version, fields, ranges, defaults, limits and implemented/deferred capabilities |
 | `settings.get` | `{binding:{instance,profile}}`; complete accepted snapshot, publication/recovery status |
+| `settings.appearance.get` | `{binding:{instance,profile}}`; read-only appearance projection (`mode`, `contrast`, sRGB `accent`) tagged with incarnation and revisions; the reply also includes the atomic `snapshot` for shared Consumer validation; `wrong_target` on a foreign binding |
 | `settings.validate` | Fenced apply-shaped body; resolve/compile candidate without a write or receipt; valid with current base identity or diagnostics/conflict |
 | `settings.apply` | Fenced batch described below; durable changed/unchanged receipt |
 | `settings.reset` | Apply-shaped body with empty changes and explicit reset paths; same transaction semantics |

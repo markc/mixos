@@ -20,6 +20,7 @@ mod_module_files = "deny"
 
 [dependencies]
 settings.workspace = true
+design.workspace = true
 config.workspace = true
 strict.workspace = true
 bus = { workspace = true, features = ["native"] }

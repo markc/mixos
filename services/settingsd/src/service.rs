@@ -10,6 +10,7 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
 pub const VERBS: &[&str] = &[
     "settings.describe",
     "settings.get",
+    "settings.appearance.get",
     "settings.validate",
     "settings.apply",
     "settings.reset",
@@ -52,6 +53,7 @@ pub fn dispatch(authority: &mut Authority, verb: &str, body: &str) -> Result<Val
         "HELP" => Ok(json!(manifest())),
         "settings.describe" => Ok(settings::describe()),
         "settings.get" => authority.read(decode(body)?),
+        "settings.appearance.get" => authority.appearance(decode(body)?),
         "settings.status" => {
             let req: StatusRequest = decode(body)?;
             authority.status(&req.binding, req.operation_id.as_deref())
@@ -122,6 +124,12 @@ async fn publish_pending(
 }
 
 pub async fn serve(root: PathBuf, binding: Binding) -> anyhow::Result<()> {
+    serve_at(root, binding, bus::client_helpers::resolve_noded_url()).await
+}
+
+/// The production authority loop with an explicit broker endpoint. This also
+/// lets native integration tests isolate the broker without process-global env.
+pub async fn serve_at(root: PathBuf, binding: Binding, noded_url: String) -> anyhow::Result<()> {
     let mut authority = tokio::task::spawn_blocking(move || {
         let (store, accepted) = Store::open(&root, &binding)?;
         Authority::new(store, accepted)
@@ -137,7 +145,7 @@ pub async fn serve(root: PathBuf, binding: Binding) -> anyhow::Result<()> {
         buildinfo::now_rfc3339(),
     );
     let client = Arc::new(
-        SupervisedClient::connect_options("settingsd", &bus::client_helpers::resolve_noded_url())
+        SupervisedClient::connect_options("settingsd", &noded_url)
             .bounded_incoming(64)
             .fatal_on_registration_rejection(true)
             .with_verbs(manifest())

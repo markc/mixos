@@ -259,6 +259,7 @@ refusal, invalid input or unknown verbs. Domain status is structured in the body
 <table><thead><tr><th>Verb</th><th>Input and result</th></tr></thead><tbody>
 <tr><td><code>settings.describe</code></td><td>No mutation; version, fields, ranges, defaults, limits and implemented/deferred capabilities</td></tr>
 <tr><td><code>settings.get</code></td><td><code>{binding:{instance,profile}}</code>; complete accepted snapshot, publication/recovery status</td></tr>
+<tr><td><code>settings.appearance.get</code></td><td><code>{binding:{instance,profile}}</code>; read-only appearance projection (<code>mode</code>, <code>contrast</code>, sRGB <code>accent</code>) tagged with incarnation and revisions; the reply also includes the atomic <code>snapshot</code> for shared Consumer validation; <code>wrong_target</code> on a foreign binding</td></tr>
 <tr><td><code>settings.validate</code></td><td>Fenced apply-shaped body; resolve/compile candidate without a write or receipt; valid with current base identity or diagnostics/conflict</td></tr>
 <tr><td><code>settings.apply</code></td><td>Fenced batch described below; durable changed/unchanged receipt</td></tr>
 <tr><td><code>settings.reset</code></td><td>Apply-shaped body with empty changes and explicit reset paths; same transaction semantics</td></tr>

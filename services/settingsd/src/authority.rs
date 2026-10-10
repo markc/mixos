@@ -34,6 +34,30 @@ impl Authority {
             json!({"status":"current","snapshot":self.snapshot,"publication_pending":self.published != Some(self.accepted.revision),"recovering":self.store.recovering,"restored_from_backup":self.store.restored}),
         )
     }
+    /// Headless appearance for portal consumers: the desktop context's mode,
+    /// contrast and the private accent stub, tagged with the snapshot identity.
+    pub fn appearance(&self, request: ReadRequest) -> Result<Value, Value> {
+        self.target(&request.binding)?;
+        let effective = self
+            .snapshot
+            .effective
+            .get(settings::appearance::APPEARANCE_CONTEXT);
+        let accent = effective
+            .and_then(crate::accent_stub::accent_srgb)
+            .ok_or_else(|| {
+                diagnostic(Diagnostic::new(
+                    "missing_accent",
+                    "design.pairs.accent",
+                    "Resolved design has no accent pair",
+                ))
+            })?;
+        let projection =
+            settings::appearance::AppearanceProjection::from_snapshot(&self.snapshot, accent)
+                .map_err(diagnostic)?;
+        // One atomic read supplies both the shared Consumer's authority evidence
+        // and the portal projection, including the private accent source.
+        Ok(json!({"status":"current","appearance":projection,"snapshot":self.snapshot}))
+    }
     pub fn status(&self, binding: &Binding, operation: Option<&str>) -> Result<Value, Value> {
         self.target(binding)?;
         let receipt =
