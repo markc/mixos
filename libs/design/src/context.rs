@@ -139,7 +139,13 @@ pub enum Style {
 }
 
 impl Style {
-    pub const ALL: [Self; 5] = [Self::Plain, Self::Pro, Self::Studio, Self::Classic, Self::Gnome];
+    pub const ALL: [Self; 5] = [
+        Self::Plain,
+        Self::Pro,
+        Self::Studio,
+        Self::Classic,
+        Self::Gnome,
+    ];
 
     pub const fn name(self) -> &'static str {
         match self {

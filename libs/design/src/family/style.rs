@@ -864,7 +864,10 @@ mod tests {
                     let old = match crate::compile_design(&before, context.clone()) {
                         DesignCompileResult::Success(old) => old,
                         DesignCompileResult::Fatal(failure) => {
-                            panic!("{scheme:?}/{mode:?}/{style:?} must compile: {:?}", failure.diagnostics)
+                            panic!(
+                                "{scheme:?}/{mode:?}/{style:?} must compile: {:?}",
+                                failure.diagnostics
+                            )
                         }
                     };
                     let DesignCompileResult::Success(new) = crate::compile_design(&today, context)

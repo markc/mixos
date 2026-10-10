@@ -726,7 +726,11 @@ fn claimed_schemes(source: &DesignV1Source, requested: Scheme) -> Vec<Scheme> {
         .collect()
 }
 
-fn axis_contexts(context: DesignContext, axis: ModifierAxis, source: &DesignV1Source) -> Vec<DesignContext> {
+fn axis_contexts(
+    context: DesignContext,
+    axis: ModifierAxis,
+    source: &DesignV1Source,
+) -> Vec<DesignContext> {
     match axis {
         ModifierAxis::Scheme => claimed_schemes(source, context.scheme)
             .into_iter()
