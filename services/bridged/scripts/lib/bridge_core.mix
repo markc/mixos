@@ -14,9 +14,10 @@
 --   {"id":N,"ok":true,"result":R} or {"id":N,"ok":false,"error":"..."}.
 --
 -- Rules: the token is never returned, stored outside the state map, or put
--- in an error text. Every call runs under one deadline (timeout_s) that
--- covers connect, auth and the request, so no call blocks a serve pump
--- longer than that.
+-- in an error text; an app that echoes it has the echo redacted. Every call
+-- runs under one deadline (timeout_s) that covers connect, auth and the
+-- request reads, so no call blocks a serve pump longer than that. Writes are
+-- the exception until tcp_send takes a deadline (see the TODOs below).
 --
 -- Also here: the serve-name guard (reserved_names, check_name), which keeps
 -- an instance from taking the first segment of a registered Bus verb.
@@ -67,6 +68,9 @@ fn load_config($path)
   end
   $cfg = merge($_DEFAULTS, $raw)
   if $cfg.host != "127.0.0.1" and $cfg.host != "localhost" then raise("CONFIG", "host must be loopback (127.0.0.1)") end
+  -- localhost can resolve to ::1 first, which an app listening on 127.0.0.1
+  -- never answers: connect to the IPv4 loopback either way.
+  $cfg = merge($cfg, {host: "127.0.0.1"})
   if not _is_int($cfg.port) or not _in_range($cfg.port, 1, 65535) then raise("CONFIG", "port must be an integer 1-65535") end
   if not _in_range($cfg.timeout_s, 0.001, 300) then raise("CONFIG", "timeout_s must be a number in (0, 300]") end
   if not _in_range($cfg.connect_timeout_s, 0.001, 300) then raise("CONFIG", "connect_timeout_s must be a number in (0, 300]") end
@@ -85,10 +89,18 @@ fn load_config($path)
   return merge($cfg, {auth: "token", token_file: _expand($cfg.token_file)})
 end
 
--- The token file holds exactly one line of 64 hex characters. The path is
--- named in errors; the content never is.
+-- The token file holds exactly one line of 64 hex characters and is readable
+-- by its owner only (no group or other bits). The path is named in errors;
+-- the content never is.
 fn load_token($path)
   if not is_file($path) then raise("TOKEN", "token file missing: " .. $path) end
+  $perm = nil
+  try
+    $perm = stat($path).perm
+  catch $m
+    raise("TOKEN", "token file unreadable: " .. $path)
+  end
+  if type($perm) != "number" or $perm % 64 != 0 then raise("TOKEN", "token file must not be readable or writable by group or other (chmod 600): " .. $path) end
   $text = ""
   try
     $text = read_file($path)
@@ -160,6 +172,16 @@ end
 fn check_name($name, $registry)
   if type($name) != "string" or not re_match($name, $_NAME) then
     raise("NAME_INVALID", "the serve name must match " .. $_NAME .. " (one segment), got '" .. to_string($name ?? "") .. "'")
+  end
+  -- mix --serve strips a leading mixos- before registering (mixos-x serves
+  -- as x), so the name checked here and the name on the Bus would differ.
+  if starts_with($name, "mixos-") then
+    raise("NAME_INVALID", "the serve name must not start with mixos- (mix --serve registers it without the prefix), got '" .. $name .. "'")
+  end
+  -- The broker's own names (noded refuses them at registration): noded and
+  -- its noded-<n> correlators, and the session-name shape <t|c><id>-<22 base32>.
+  if $name == "noded" or starts_with($name, "noded-") or re_match($name, "^[tc][a-z0-9]{1,7}-[a-z2-7]{22}$") then
+    raise("NAME_RESERVED", "the serve name '" .. $name .. "' is reserved by the Bus broker")
   end
   $taken = reserved_names($registry)
   if has_key($taken, $name) then
@@ -240,6 +262,9 @@ fn _open($st, $deadline)
   end
   if $h != nil and $cfg.auth == "token" then
     try
+      -- TODO(mix): tcp_send has no deadline; a peer that stops reading blocks
+      -- this write for Mix's socket default (30 s), outside timeout_s. Pass the
+      -- remaining deadline once tcp_send takes one.
       tcp_send($h, json_encode({id: "auth", method: "auth", params: {token: $st.token}}) .. "\n")
       $reply = _read_reply($h, "auth", $deadline, $cfg.max_line)
       if $reply.ok != true then $err = "auth refused by app" end
@@ -266,6 +291,9 @@ end
 fn _exchange($h, $id, $method, $params, $deadline, $max)
   $out = {reply: nil, err: nil}
   try
+    -- TODO(mix): tcp_send has no deadline; a peer that stops reading blocks
+    -- this write for Mix's socket default (30 s), outside timeout_s. Pass the
+    -- remaining deadline once tcp_send takes one.
     tcp_send($h, json_encode({id: $id, method: $method, params: $params}) .. "\n")
     $out = {reply: _read_reply($h, $id, $deadline, $max), err: nil}
   catch $m
@@ -274,9 +302,18 @@ fn _exchange($h, $id, $method, $params, $deadline, $max)
   return $out
 end
 
+-- $text with the token removed, in any letter case. Every error text passes
+-- through here before it is returned or stored: an app may echo the token
+-- back in its own error.
+fn redact($token, $text)
+  if $text == nil or type($token) != "string" or $token == "" then return $text end
+  return re_replace(to_string($text), "(?i)" .. $token, "[redacted]")
+end
+
 fn _finish($st, $t0, $rc, $err, $result)
   $lat = round((monotonic() - $t0) * 1000)
-  return {st: merge($st, {last_latency_ms: $lat}), ok: $rc == 0, rc: $rc, error: $err, result: $result, latency_ms: $lat}
+  $st = merge($st, {last_latency_ms: $lat, last_error: redact($st.token, $st.last_error)})
+  return {st: $st, ok: $rc == 0, rc: $rc, error: redact($st.token, $err), result: $result, latency_ms: $lat}
 end
 
 -- One API call. Returns {st, ok, rc, result, error, latency_ms}.
@@ -315,7 +352,8 @@ fn call($st, $method, $params)
     $st = merge($st, {last_error: $text})
     return _finish($st, $t0, 10, $text, nil)
   end
-  $st = merge($st, {last_error: "reply has no boolean ok field"})
+  -- A reply this bridge cannot read: the stream can no longer be trusted.
+  $st = _drop($st, "reply has no boolean ok field")
   return _finish($st, $t0, 11, "reply has no boolean ok field", nil)
 end
 
@@ -358,7 +396,9 @@ fn dispatch($st, $method, $params)
   else
     $body = $out.error
   end
-  return {st: $out.st, rc: $out.rc, body: $body}
+  -- The token is hex, so it survives JSON encoding unchanged: a result that
+  -- carries it is redacted too.
+  return {st: $out.st, rc: $out.rc, body: redact($out.st.token, $body)}
 end
 
 -- Connection health for the status verb. Never includes the token.

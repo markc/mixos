@@ -47,9 +47,17 @@ the token.
 | 11 | Connect, auth, transport or timeout failure, or backing off after one | text saying which |
 | 12 | A bad request from the caller (missing field, body not a JSON object) | text naming the field |
 
-Every call runs under one deadline, `timeout_s`, covering connect, auth and
-the request. After a transport failure the connection is dropped and no new
-one is tried for `backoff_s`; calls in that window answer rc 11 at once.
+Every call runs under one deadline, `timeout_s`, covering connect, the auth
+reply and the request's reply. **Writes are not yet under it:** a peer that
+stops reading can hold a request write for up to 30 seconds (Mix's socket
+default), so the worst case today is about `timeout_s` + 30 s. This closes
+when Mix's `tcp_send` takes a deadline. After a transport failure, or a reply
+without a boolean `ok`, the connection is dropped and no new one is tried for
+`backoff_s`; calls in that window answer rc 11 at once.
+
+The token never appears in a reply: any occurrence of it, in any letter case,
+in an app's error text, in a result, or in `last_error`, is replaced by
+`[redacted]`.
 
 **Registration is pending.** The six verbs are an instance family,
 `<app>.<verb>` with owner `bridged` and runtime members. They enter
@@ -73,7 +81,7 @@ timeout_s: 20
 | Key | Type | Default | Rule |
 |---|---|---|---|
 | `port` | integer | required | 1–65535 |
-| `host` | string | `"127.0.0.1"` | `"127.0.0.1"` or `"localhost"`; anything else is refused |
+| `host` | string | `"127.0.0.1"` | `"127.0.0.1"` or `"localhost"`, which is connected to as `127.0.0.1` (never `::1`); anything else is refused |
 | `auth` | string | `"token"` | `"token"` or `"none"`; an explicit `nil` is refused |
 | `token_file` | string | — | required with `auth: "token"`, refused with `auth: "none"`; a leading `~/` expands to `$HOME` |
 | `timeout_s` | number | 5 | (0, 300]: the whole-call deadline |
@@ -83,13 +91,18 @@ timeout_s: 20
 | `instance` | string | — | 1–64 of `[A-Za-z0-9_-]`; echoed by `status` so a launcher can recognise its own bridge |
 
 Unknown keys are refused, so a typo never falls back to a default. The token
-file holds exactly 64 hex characters (one trailing newline allowed). Errors
-name the file, never its content.
+file holds exactly 64 hex characters (one trailing newline allowed) and has
+no group or other permission bits (`chmod 600`). Errors name the file, never
+its content.
 
 ## Serve name and the start checks
 
 The name must match `^[a-z][a-z0-9-]{1,30}$`, the Bus's own rule for a
-service name. It must also not be the first segment of a verb the registry
+service name, and must not start with `mixos-` (`mix --serve` strips that
+prefix before registering, so the checked name and the Bus name would
+differ). The broker's own names are refused as noded refuses them: `noded`,
+`noded-*`, and the session-name shape `<t|c><1-7 of [a-z0-9]>-<22 of
+[a-z2-7]>`. It must also not be the first segment of a verb the registry
 already gives to another component, so an instance can never answer, say,
 `settings.status`. The registry read is `$BRIDGED_VERBS`, else the installed
 `/opt/mixos/share/bus/verbs.conf.mix`:
@@ -109,7 +122,9 @@ later schemas with families both read.
 A refused start prints `bridged: refusing to start: CODE: message` and exits
 2. Codes: `NAME_INVALID`, `NAME_RESERVED`, `REGISTRY`, `CONFIG`, `TOKEN`.
 `mix bridged.mix --check <app>` runs the same checks without joining the Bus
-and exits 0 when the instance may start.
+and exits 0 when the instance may start. The unit runs it as `ExecCondition=`,
+so a refused instance is not a failure: it stays inactive, shows as skipped
+(condition) with the reason in its journal, and is never restarted.
 
 ## Changes
 

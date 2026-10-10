@@ -21,5 +21,8 @@
   name:{pattern:"^[a-z][a-z0-9-]{1,30}$", registry:"/opt/mixos/share/bus/verbs.conf.mix", registry_env:"BRIDGED_VERBS"},
   verbs:["call", "commands", "execute", "inspect", "screenshot", "status"],
   rc:{ok:0, app_error:10, transport:11, bad_request:12},
+  deadline:{covers:["connect", "auth reply", "request reply"], write_bound_s:30, note:"writes wait for a deadline-aware tcp_send"},
+  host_connect:"127.0.0.1", token_mode_mask:63, redaction:"[redacted]",
+  name_refused:{prefix:"mixos-", broker:["noded", "noded-*", "^[tc][a-z0-9]{1,7}-[a-z2-7]{22}$"]},
   start_refusals:{exit:2, codes:["NAME_INVALID", "NAME_RESERVED", "REGISTRY", "CONFIG", "TOKEN"]}
 }

@@ -11,8 +11,8 @@
 -- that no registered Bus verb already starts with (registry: $BRIDGED_VERBS,
 -- else /opt/mixos/share/bus/verbs.conf.mix; missing or unreadable refuses).
 -- mix --serve registers the name before this file runs, so a refusal here
--- comes just after registration; the unit runs --check first (ExecStartPre)
--- so a refused name never reaches the Bus.
+-- comes just after registration; the unit runs --check first (ExecCondition,
+-- where exit 2 skips the unit) so a refused name never reaches the Bus.
 -- Config: $BRIDGED_CONFIG, else <etc>/bridge/<app>.conf.mix with <etc> =
 -- $MIXOS_ETC or /etc/mixos. Keys: host, port, auth, token_file, timeout_s,
 -- connect_timeout_s, backoff_s, max_line, instance (docs/spec/bridge/).

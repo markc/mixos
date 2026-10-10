@@ -79,6 +79,10 @@ try
   check("token: short file refused", contains(message_of(fn() = $core.load_token($tmp .. "/short.tok")), "64 hex"))
   check("token: non-hex file refused, content not echoed", contains(message_of(fn() = $core.load_token($tmp .. "/nothex.tok")), "64 hex") and not contains(message_of(fn() = $core.load_token($tmp .. "/nothex.tok")), "zzzz"))
   check("token: 64-hex file accepted with trailing newline", $core.load_token($tmp .. "/good.tok") == $good)
+  write_new($tmp .. "/open.tok", $good .. "\n", 0o644)
+  check("token: a file other users can read is refused", contains(message_of(fn() = $core.load_token($tmp .. "/open.tok")), "chmod 600"))
+  write_new($tmp .. "/group.tok", $good .. "\n", 0o640)
+  check("token: a file the group can read is refused", code_of(fn() = $core.load_token($tmp .. "/group.tok")) == "TOKEN")
 
   -- Config rules: strict data, loopback only, no unknown keys.
   $base = ["token_file: \"" .. $tmp .. "/good.tok\"", "port: " .. to_string($p_good), "timeout_s: 1", "backoff_s: 0.3"]
@@ -89,6 +93,11 @@ try
   check("config: missing file refused", starts_with(message_of(fn() = $core.load_config($tmp .. "/absent.conf.mix")), "config file not found"))
   check("config: no path refused", code_of(fn() = $core.load_config("")) == "CONFIG")
   check("config: unknown key refused", contains(message_of(fn() = $core.load_config(conf("unknown", concat($base, ["bogus: 1"])))), "unknown config keys: bogus"))
+  $lh = $core.load_config(conf("localhost", concat($base, ["host: \"localhost\""])))
+  check("config: localhost is normalised to 127.0.0.1", $lh.host == "127.0.0.1")
+  $x = $core.call($core.new_state($lh, $good), "engine.commands", {})
+  check("config: a localhost config reaches an app on 127.0.0.1", $x.rc == 0)
+  if $x.st.handle != nil then $closed = tcp_close($x.st.handle) end
   check("config: non-loopback host refused", contains(message_of(fn() = $core.load_config(conf("remote", concat($base, ["host: \"10.0.0.1\""])))), "loopback"))
   check("config: missing port refused", contains(message_of(fn() = $core.load_config(conf("noport", ["token_file: \"" .. $tmp .. "/good.tok\""]))), "missing config key: port"))
   check("config: out-of-range port refused", contains(message_of(fn() = $core.load_config(conf("badport", ["token_file: \"x\"", "port: 70000"]))), "port must be"))
@@ -140,6 +149,13 @@ try
   for each $bad in ["", "a", "Fake", "a.b", "-x", "9app", "a b", "@", "fake_app", repeat("a", 32)]
     check("guard: invalid name '" .. $bad .. "' refused", code_of(fn() = $core.check_name($bad, $reg)) == "NAME_INVALID")
   end
+  for each $bad in ["mixos-fakeapp", "mixos-settings"]
+    check("guard: a mixos- name is refused (" .. $bad .. ")", code_of(fn() = $core.check_name($bad, $reg)) == "NAME_INVALID")
+  end
+  for each $bad in ["noded", "noded-7", "noded-fakeapp", "tab-abcdefghijklmnopqrstuv", "c1-abcdefghijklmnopqrstuv"]
+    check("guard: a broker-reserved name is refused (" .. $bad .. ")", code_of(fn() = $core.check_name($bad, $reg)) == "NAME_RESERVED")
+  end
+  check("guard: a name near the session shape is accepted", code_of(fn() = $core.check_name("tab-short", $reg)) == "OK")
   check("guard: missing registry fails closed", code_of(fn() = $core.check_name("fakeapp", $tmp .. "/no-registry.conf.mix")) == "REGISTRY")
   write_file($tmp .. "/code.conf.mix", "{schema: 1, verbs: [1 + 1]}\n")
   check("guard: a registry that is not strict data fails closed", code_of(fn() = $core.check_name("fakeapp", $tmp .. "/code.conf.mix")) == "REGISTRY")
@@ -223,6 +239,30 @@ try
   $r = $core.call($S, "ui.inspect", {})
   $S = $r.st
   check("drop: reconnects after backoff", $r.rc == 0 and $S.connects == 3 and $S.failures == 2)
+
+  -- An app that echoes the token: redacted from the error, last_error and status.
+  $r = $core.call($S, "leak", {})
+  $S = $r.st
+  check("redact: the app's error is rc 10 without the token in either case", $r.rc == 10 and not contains(lower($r.error), $good) and contains($r.error, "[redacted]"))
+  check("redact: last_error and status never hold the token", not contains(lower(json_encode($core.status($S))), $good) and contains($S.last_error, "[redacted]"))
+  $d = $core.dispatch($S, "leak_result", {})
+  $S = $d.st
+  check("redact: a result carrying the token is redacted in the Bus body", $d.rc == 0 and not contains(lower($d.body), $good) and contains($d.body, "[redacted]"))
+  check("redact: nothing to redact without a token", $core.redact(nil, "abc") == "abc")
+
+  -- A reply with our id but no boolean ok: rc 11, and the connection is dropped.
+  $failures = $S.failures
+  $r = $core.call($S, "nook", {})
+  $S = $r.st
+  check("no ok: rc 11", $r.rc == 11 and contains($r.error, "no boolean ok"))
+  check("no ok: connection dropped, failure counted", not $S.connected and $core.status($S).connection == "down" and $S.failures == $failures + 1)
+  $r = $core.call($S, "engine.commands", {})
+  $S = $r.st
+  check("no ok: backing off before a reconnect", $r.rc == 11 and contains($r.error, "backing off"))
+  sleep(0.4)
+  $r = $core.call($S, "engine.commands", {})
+  $S = $r.st
+  check("no ok: a fresh connection after backoff", $r.rc == 0 and $S.connects == 4)
 
   -- A wrong token.
   $S2 = $core.new_state(merge($cfg, {port: $p_bad}), $good)
