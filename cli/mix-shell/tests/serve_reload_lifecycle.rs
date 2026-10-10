@@ -324,8 +324,11 @@ fn term_ignoring_child_fixture() {
     unsafe {
         libc::signal(libc::SIGTERM, libc::SIG_IGN);
     }
+    // `create`: the citizen spawns this child before its first tlog() creates
+    // the trace file, so a fast exec used to find no file and die silently.
     let mut trace = std::fs::OpenOptions::new()
         .append(true)
+        .create(true)
         .open(std::env::var_os("REL_TRACE").expect("fixture trace"))
         .unwrap();
     writeln!(trace, "legacy-ready|{{\"pid\":{}}}|t=0", std::process::id()).unwrap();
