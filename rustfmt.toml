@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# One formatting standard for the workspace: rustfmt defaults, 100 columns,
+# the 2024 style edition (matching the workspace edition). `cargo fmt --check`
+# runs as a gate; never hand-wrap against it.
+max_width = 100
+style_edition = "2024"
