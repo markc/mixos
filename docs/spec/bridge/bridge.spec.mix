@@ -22,7 +22,7 @@
   verbs:["call", "commands", "execute", "inspect", "screenshot", "status"],
   rc:{ok:0, app_error:10, transport:11, bad_request:12},
   deadline:{covers:["connect", "auth reply", "request reply"], writes:"unbounded until Mix 0.112.1 tcp_send timeout (pending)"},
-  start:{argv:"mix bridged.mix --start <app>", refusal_exit:2, unexpected_exit:3, otherwise:"the serve child's exit code"},
+  start:{argv:"mix bridged.mix --start <app>", refusal_exit:2, unexpected_exit:3, otherwise:"the serve child's exit code", clean_stop_exit:143},
   host_connect:"127.0.0.1", token_mode_mask:63, redaction:"[redacted]",
   name_refused:{prefix:"mixos-", broker:["noded", "noded-*", "^[tc][a-z0-9]{1,7}-[a-z2-7]{22}$"]},
   start_refusals:{exit:2, codes:["NAME_INVALID", "NAME_RESERVED", "REGISTRY", "CONFIG", "TOKEN"]}

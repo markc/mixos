@@ -15,7 +15,9 @@ Type=simple
 User=mixos
 # Optional per-instance environment: which Bus to join (MIXOS_NODED_URL and
 # the other MIXOS_* client variables, e.g. a session's) and where its config
-# lives (MIXOS_ETC, or BRIDGED_CONFIG for one file).
+# lives (MIXOS_ETC, or BRIDGED_CONFIG for one file). It must be writable only
+# by the administrator: whoever can change it (BRIDGED_MIX in particular)
+# picks the code that runs as mixos.
 EnvironmentFile=-/etc/mixos/bridge/%i.env
 # --start runs every start check (name, verb registry, config, token) in this
 # process, before the name reaches the Bus. A documented refusal exits 2.
@@ -24,6 +26,10 @@ EnvironmentFile=-/etc/mixos/bridge/%i.env
 ExecStart=/opt/mixos/bin/mix /opt/mixos/lib/bridged/bridged.mix --start %i
 # The stop signal reaches the parent and the serve child alike.
 KillMode=control-group
+# A clean stop: Mix records the SIGTERM the parent receives and exits 143,
+# whatever the child returned. (SuccessExitStatus=SIGTERM would not cover
+# the numeric 143.)
+SuccessExitStatus=143
 TimeoutStopSec=10
 Restart=on-failure
 RestartSec=2

@@ -53,8 +53,11 @@ The unit runs `mix bridged.mix --start fakeapp`. It checks the instance first,
 before the name joins the Bus, then runs `mix --serve bridged.mix --name
 fakeapp` as its child. A refused start exits 2, with the reason in the
 journal, and is never restarted. Any other failure (a crash, a broken
-install) is restarted a few times and then left failed. A start is refused
-when:
+install) is restarted a few times and then left failed. A normal
+`systemctl stop` ends the bridge with status 143, which the unit counts as
+clean. Run the bridge under the unit, not `--start` by hand: outside systemd,
+killing the `--start` process alone can leave the serve child running. A
+start is refused when:
 
 - the name is not a valid Bus service name, or starts with `mixos-`
   (`NAME_INVALID`);
@@ -113,6 +116,10 @@ Read this before bridging an application.
   `localhost`, and connects to `127.0.0.1` for either.
   An `auth: "none"` port is open to every local process while the
   application runs, Bus or no Bus; open it only for applications you bridge.
+- **The unit's environment is the administrator's.** Keep
+  `/etc/mixos/bridge/<app>.env` and the config writable only by root:
+  whoever can change them (`BRIDGED_MIX` in particular) picks the code that
+  runs as `mixos`.
 - **The name cannot shadow a system service.** The start checks refuse a
   name that a registered verb already starts with, and the Bus itself refuses
   a name that is already registered.
