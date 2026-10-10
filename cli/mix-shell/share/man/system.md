@@ -1922,7 +1922,7 @@ Errors are structured; read `$err.code` from `catch $msg, $err`:
 | `TCP_ACCEPT_HANDLE` | an unknown listener, or a connection handle |
 | `TCP_ACCEPT_ARGUMENT` | a bad option |
 | `TCP_ACCEPT_FAILED` | accept(2) failed on the listener |
-| `TCP_HANDLE_LIMIT` | 1024 live TCP handles (connections and listeners, `tcp_connect`'s included) |
+| `TCP_HANDLE_LIMIT` | 1024 live TCP sockets: every listener and connection holds a slot until it closes, and `tcp_connect` refuses past the limit too |
 | `TCP_LISTENER` | a connection verb was given a listener |
 
 **Serve mode and Class C.** A plain `tcp_accept` waits on the evaluator's
@@ -1938,7 +1938,8 @@ listener refuses numeric `tcp_accept` (`SOCKET_SUBSCRIBED`) and
 **Ownership.** A listener, and every connection `tcp_accept` or a
 subscribed listener hands out, belongs to the evaluator generation that
 made it: retiring the generation (a `--serve` reload or shutdown, or the
-evaluator going away) closes them. `tcp_connect` handles keep their
+evaluator going away) closes them, including one that is out in a Class C
+`tcp_recv` at that moment (it closes when the read returns). `tcp_connect` handles keep their
 process-wide lifetime. A reload's candidate runs while the old
 generation still holds its listeners, so it cannot bind the same fixed
 port (`TCP_LISTEN_ADDR_IN_USE`): a served listener should bind port `0`

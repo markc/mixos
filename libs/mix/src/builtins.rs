@@ -411,7 +411,7 @@ builtin_table! {
     ("ws_close", CapabilityClass::Network,        "system",  "Close a websocket handle: true when it was live, false when unknown/already retired (never raises for the not-held case, like funlock) (v0.74.0)", contract!((handle: number) -> bool; failure[raises])),
     ("http_serve", CapabilityClass::Network,      "system",  "BLOCKING static file server — the python -m http.server slot: http_serve(root[, {port, host, duration, index, listing, render_md, requests}]) -> requests served. GET/HEAD only (405 otherwise), NO TLS ever and NO dynamic handlers (both are webd's job). port 0 (default) binds ephemeral and PRINTS the URL; host defaults 127.0.0.1 (pass \"0.0.0.0\" to expose); duration 0 = until SIGINT; listing opts into directory indexes; render_md serves .md as HTML (markdown feature); spa (true=index, or a shell filename) answers an extensionless would-be-404 with that shell so a client-side router boots — for a single-shell SPA; clean_urls serves /foo.html for /foo (GitHub Pages parity — for a pre-rendered page-per-route site), tried before spa. Traversal-proof: every canonicalised path must stay under the canonicalised root (v0.75.0)", contract!((root: string, opts?: any_of(map("http_serve_options", {port: number, host: string, duration: number, index: string, listing: bool, render_md: bool, requests: number, spa: any_of(bool, string), clean_urls: bool}), nil)) -> number; effects[blocking]; failure[raises])),
     ("http_recv", CapabilityClass::Network,       "system",  "Accept ONE HTTP request, answer it, return it: http_recv(port[, {timeout, host, max, respond}]) -> {method, path, query, headers, body, bytes, from_host, from_port}, or nil on timeout. The OAuth-localhost-redirect / webhook-catch shape. respond: {status, body, content_type, headers} (default 200 \"ok\"); max caps the request body (default 1 MiB); host defaults 127.0.0.1 (v0.75.0)", contract!((port: number, opts?: any_of(map, nil)) -> any; effects[blocking]; failure[raises])),
-    ("tcp_connect", CapabilityClass::Network,     "system",  "Open a raw TCP connection: tcp_connect(host, port[, {timeout, tls, insecure}]) -> numeric handle. tls:true wraps in TLS (ring-pinned, webpki roots); insecure:true skips cert verification. The stream-socket primitive for a line/binary protocol (SMTP/redis/memcached probe, banner grab) UDP/WS/HTTP don't cover (v0.78.0)", contract!((host: string, port: number, opts?: any_of(map, nil)) -> number; effects[blocking]; failure[raises])),
+    ("tcp_connect", CapabilityClass::Network,     "system",  "Open a raw TCP connection: tcp_connect(host, port[, {timeout, tls, insecure}]) -> numeric handle. tls:true wraps in TLS (ring-pinned, webpki roots); insecure:true skips cert verification. The stream-socket primitive for a line/binary protocol (SMTP/redis/memcached probe, banner grab) UDP/WS/HTTP don't cover. Refuses TCP_HANDLE_LIMIT past 1024 live TCP sockets (v0.78.0; limit unreleased)", contract!((host: string, port: number, opts?: any_of(map, nil)) -> number; effects[blocking]; failure[raises])),
     ("tcp_send", CapabilityClass::Network,        "system",  "Send bytes on a TCP handle: tcp_send(h, payload) -> bytes sent (string/bytes/buffer, verbatim; flushed) (v0.78.0)", contract!((handle: number, payload: any_of(string, bytes, buffer)) -> number; effects[blocking]; failure[raises])),
     ("tcp_recv", CapabilityClass::Network,        "system",  "Read available bytes: tcp_recv(h[, {timeout, max}]) -> bytes (buffered bytes first, then one read of at most 256 KiB — poll again for more even when max is larger) | nil on timeout (poll again). Bytes not string — a stream has no frame boundary. A peer close RAISES and retires the handle. timeout default 30 (0=forever), max default 64 KiB. Numeric Class C recv yields on native readiness. Source-id recv yields outside serve; serve mode refuses SOCKET_RECV_SERVE and consumes frames through handlers. nil on timeout keeps the connection usable; terminal raises SOCKET_CLOSED (v0.78.0)", contract!((handle: any_of(number, string), opts?: any_of(map, nil)) -> any; effects[blocking]; failure[raises])),
     ("tcp_recv_line", CapabilityClass::Network,   "system",  "Read the next LINE: tcp_recv_line(h[, {timeout, max}]) -> string (LF + one trailing CR stripped) | nil on timeout. Buffers across reads; if `max` bytes accumulate with no newline the handle RAISES and RETIRES (a peer that never terminates a line — broken framing). For line protocols (SMTP/redis) so a caller need not hand-roll a \\r\\n scanner. Numeric Class C recv yields on native readiness. A line-mode source-id recv yields outside serve; serve mode refuses SOCKET_RECV_SERVE and uses event handlers. nil on timeout keeps the connection usable; terminal raises SOCKET_CLOSED (v0.78.0)", contract!((handle: any_of(number, string), opts?: any_of(map, nil)) -> any; effects[blocking]; failure[raises])),
@@ -21983,10 +21983,10 @@ fn builtin_ws_close(args: Vec<Value>) -> MixResult<Option<Value>> {
 
 #[cfg(feature = "ws")]
 mod tcp_client {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
     use std::io::{Read, Write};
-    use std::sync::atomic::AtomicU64;
-    use std::sync::{LazyLock, Mutex};
+    use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+    use std::sync::{Arc, LazyLock, Mutex};
 
     pub(super) enum Stream {
         Plain(std::net::TcpStream),
@@ -21995,17 +21995,131 @@ mod tcp_client {
 
     /// One connection: the stream plus a read-ahead buffer that
     /// tcp_recv_line owns (a line read may pull past the newline; those
-    /// bytes belong to the next read, not lost).
+    /// bytes belong to the next read, not lost). The handle-limit permit
+    /// and the generation ownership travel with the connection through
+    /// pulls and subscriptions, and are released only when it is dropped.
     pub(super) struct Conn {
         pub stream: Stream,
         pub buf: Vec<u8>,
+        _permit: TcpPermit,
+        pub ownership: Option<Ownership>,
     }
 
     pub(super) static NEXT_ID: AtomicU64 = AtomicU64::new(1);
     pub(super) static MAP: LazyLock<Mutex<HashMap<u64, Conn>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
 
+    /// A counted pool of live TCP sockets. Admission is one atomic
+    /// compare-and-swap, so concurrent acquirers can never exceed `max`.
+    pub(super) struct PermitPool {
+        live: AtomicUsize,
+        max: usize,
+    }
+
+    impl PermitPool {
+        pub(super) const fn new(max: usize) -> Self {
+            Self {
+                live: AtomicUsize::new(0),
+                max,
+            }
+        }
+
+        pub(super) fn try_acquire(&'static self) -> Option<TcpPermit> {
+            self.live
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                    (n < self.max).then_some(n + 1)
+                })
+                .ok()
+                .map(|_| TcpPermit { pool: self })
+        }
+
+        #[cfg(test)]
+        pub(super) fn live(&self) -> usize {
+            self.live.load(Ordering::Acquire)
+        }
+    }
+
+    /// Every live TCP socket (connected handle or listener, tcp_connect's
+    /// included) holds one permit from this pool.
+    pub(super) static TCP_PERMITS: PermitPool = PermitPool::new(super::tcp_server::MAX_TCP_HANDLES);
+
+    /// One reserved slot; released on drop.
+    pub(super) struct TcpPermit {
+        pool: &'static PermitPool,
+    }
+
+    impl Drop for TcpPermit {
+        fn drop(&mut self) {
+            self.pool.live.fetch_sub(1, Ordering::AcqRel);
+        }
+    }
+
+    impl TcpPermit {
+        /// Reserve a slot for a new socket, or refuse TCP_HANDLE_LIMIT.
+        pub(super) fn acquire(name: &str) -> crate::error::MixResult<Self> {
+            TCP_PERMITS.try_acquire().ok_or_else(|| {
+                crate::native_events::refusal(
+                    "TCP_HANDLE_LIMIT",
+                    format!(
+                        "{name}: {} live tcp handles is the limit; close some with tcp_close()",
+                        super::tcp_server::MAX_TCP_HANDLES
+                    ),
+                )
+            })
+        }
+    }
+
+    /// The live listeners and connections an evaluator generation owns.
+    /// Entries leave the set when their socket is finally dropped, so the
+    /// set holds only live sockets (bounded by the permit pool) and never
+    /// needs pruning. `retired` makes a connection that was out of the
+    /// registry (inside a Class C pull) at retirement close when it comes
+    /// back instead of being reinserted.
+    #[derive(Default)]
+    pub(crate) struct TcpOwner {
+        pub(super) ids: Mutex<HashSet<u64>>,
+        pub(super) retired: AtomicBool,
+    }
+
+    /// A socket's membership in its generation's set; removed on drop.
+    pub(super) struct Ownership {
+        owner: Arc<TcpOwner>,
+        id: u64,
+    }
+
+    impl Ownership {
+        pub(super) fn new(owner: Arc<TcpOwner>, id: u64) -> Self {
+            owner.ids.lock().unwrap().insert(id);
+            Self { owner, id }
+        }
+
+        pub(super) fn retired(&self) -> bool {
+            self.owner.retired.load(Ordering::Acquire)
+        }
+    }
+
+    impl Drop for Ownership {
+        fn drop(&mut self) {
+            self.owner.ids.lock().unwrap().remove(&self.id);
+        }
+    }
+
     impl Conn {
+        pub(super) fn new(stream: Stream, permit: TcpPermit) -> Self {
+            Self {
+                stream,
+                buf: Vec::new(),
+                _permit: permit,
+                ownership: None,
+            }
+        }
+
+        /// Has this connection's generation retired? Then it must close
+        /// rather than return to the registry.
+        pub(super) fn orphaned(&self) -> bool {
+            self.ownership.as_ref().is_some_and(Ownership::retired)
+        }
+
         /// The underlying TcpStream — where read/write timeouts live.
         pub(super) fn tcp(&self) -> &std::net::TcpStream {
             match &self.stream {
@@ -22179,6 +22293,9 @@ fn builtin_tcp_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
         ));
     }
     let timeout = std::time::Duration::from_secs_f64(timeout_seconds);
+    // Reserve the handle slot before connecting: it travels with the
+    // connection and is released when the connection is dropped.
+    let permit = tcp_client::TcpPermit::acquire("tcp_connect")?;
 
     use std::net::ToSocketAddrs;
     let resolve_host = host.trim_start_matches('[').trim_end_matches(']');
@@ -22267,13 +22384,10 @@ fn builtin_tcp_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
     };
 
     let id = tcp_client::NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    tcp_client::MAP.lock().unwrap().insert(
-        id,
-        tcp_client::Conn {
-            stream,
-            buf: Vec::new(),
-        },
-    );
+    tcp_client::MAP
+        .lock()
+        .unwrap()
+        .insert(id, tcp_client::Conn::new(stream, permit));
     Ok(Some(Value::Number(id as f64)))
 }
 
@@ -22545,64 +22659,114 @@ fn tcp_recv_opts(name: &str, opts: Option<&Value>, default_max: usize) -> MixRes
 // non-blocking for its whole life: tcp_accept waits in poll(2) (sync) or
 // on an AsyncFd (Class C) and then accepts, never holding the registry
 // lock across the wait. An accepted connection is an ordinary tcp_client
-// handle. The evaluator records every tcp_listen/tcp_accept result as
-// owned by its generation (NativeEvents::own_tcp), and closes them when
-// the generation retires; tcp_on on a listener moves it into a reader
-// thread (socket_sources::subscribe_listener).
+// handle. Every socket carries a permit from one process-wide pool
+// (tcp_client::TCP_PERMITS), and a listener or accepted connection also
+// carries its generation's ownership, attached before the handle is
+// returned; the generation closes what it owns when it retires
+// (socket_sources::close_owned). tcp_on on a listener moves it into a
+// reader thread (socket_sources::subscribe_listener).
 
 #[cfg(feature = "ws")]
 mod tcp_server {
+    use super::tcp_client::{Ownership, TcpPermit};
     use std::collections::HashMap;
     use std::sync::{Arc, LazyLock, Mutex};
 
+    /// A listening socket with its permit and (once recorded) its
+    /// generation ownership, both released when the last clone drops.
+    pub(super) struct Listener {
+        pub sock: std::net::TcpListener,
+        _permit: TcpPermit,
+        pub ownership: Mutex<Option<Ownership>>,
+    }
+
+    impl Listener {
+        pub(super) fn new(sock: std::net::TcpListener, permit: TcpPermit) -> Self {
+            Self {
+                sock,
+                _permit: permit,
+                ownership: Mutex::new(None),
+            }
+        }
+    }
+
     /// Live, unsubscribed listeners. An Arc, so a waiting accept holds the
     /// socket without holding the registry lock.
-    pub(super) static LISTENERS: LazyLock<Mutex<HashMap<u64, Arc<std::net::TcpListener>>>> =
+    pub(super) static LISTENERS: LazyLock<Mutex<HashMap<u64, Arc<Listener>>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
 
-    /// Live TCP handles (connections plus listeners) beyond which
-    /// tcp_listen and tcp_accept refuse, so a connection flood cannot
-    /// exhaust the process's descriptors. tcp_connect handles count.
+    /// Live TCP sockets (connections plus listeners, tcp_connect's
+    /// included) beyond which new ones refuse, so a connection flood
+    /// cannot exhaust the process's descriptors.
     pub(super) const MAX_TCP_HANDLES: usize = 1024;
     pub(super) const DEFAULT_BACKLOG: i32 = 128;
     pub(super) const MAX_BACKLOG: i32 = 4096;
-}
-
-#[cfg(feature = "ws")]
-fn live_tcp_handles() -> usize {
-    // Two separate locks, never nested: the reader thread takes them in
-    // the other order.
-    let conns = tcp_client::MAP.lock().unwrap().len();
-    let listeners = tcp_server::LISTENERS.lock().unwrap().len();
-    conns + listeners
-}
-
-#[cfg(feature = "ws")]
-fn check_tcp_handle_limit(name: &str) -> MixResult<()> {
-    if live_tcp_handles() >= tcp_server::MAX_TCP_HANDLES {
-        return Err(crate::native_events::refusal(
-            "TCP_HANDLE_LIMIT",
-            format!(
-                "{name}: {} live tcp handles is the limit; close some with tcp_close()",
-                tcp_server::MAX_TCP_HANDLES
-            ),
-        ));
-    }
-    Ok(())
 }
 
 /// Stop listening now. A Class C accept may still hold a clone of the
 /// listener; shutdown(2) wakes it instead of leaving the port open until
 /// the last clone drops.
 #[cfg(feature = "ws")]
-fn close_listener(listener: std::sync::Arc<std::net::TcpListener>) {
-    let _ = socket2::SockRef::from(listener.as_ref()).shutdown(std::net::Shutdown::Both);
+fn close_listener(listener: std::sync::Arc<tcp_server::Listener>) {
+    let _ = socket2::SockRef::from(&listener.sock).shutdown(std::net::Shutdown::Both);
+}
+
+/// Why an accept attempt produced no connection.
+#[cfg(feature = "ws")]
+enum AcceptError {
+    /// Every handle permit is taken; the connection was left queued.
+    Limit,
+    Io(std::io::Error),
+}
+
+#[cfg(feature = "ws")]
+impl AcceptError {
+    fn into_mix(self) -> MixError {
+        match self {
+            AcceptError::Limit => crate::native_events::refusal(
+                "TCP_HANDLE_LIMIT",
+                format!(
+                    "tcp_accept: {} live tcp handles is the limit; close some with tcp_close()",
+                    tcp_server::MAX_TCP_HANDLES
+                ),
+            ),
+            AcceptError::Io(e) => {
+                crate::native_events::refusal("TCP_ACCEPT_FAILED", format!("tcp_accept: {e}"))
+            }
+        }
+    }
+}
+
+/// One non-blocking accept. A permit is reserved before accept(2), so the
+/// limit is never exceeded, and dropped again when nothing is pending.
+/// Ok(None) means nothing was pending. With an owner, the connection is
+/// owned before its handle exists anywhere else.
+#[cfg(feature = "ws")]
+fn try_accept(
+    listener: &std::net::TcpListener,
+    owner: Option<&std::sync::Arc<tcp_client::TcpOwner>>,
+) -> Result<Option<(u64, std::net::SocketAddr)>, AcceptError> {
+    loop {
+        let Some(permit) = tcp_client::TCP_PERMITS.try_acquire() else {
+            return Err(AcceptError::Limit);
+        };
+        match listener.accept() {
+            Ok((stream, _)) => return Ok(Some(adopt_accepted(stream, permit, owner))),
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => return Ok(None),
+            Err(e) if accept_retryable(&e) => continue,
+            Err(e) => return Err(AcceptError::Io(e)),
+        }
+    }
 }
 
 /// Register an accepted stream as an ordinary connected handle with
 /// tcp_connect's plain-socket defaults: blocking, nodelay, 30 s timeouts.
 #[cfg(feature = "ws")]
-fn adopt_accepted(stream: std::net::TcpStream) -> (u64, std::net::SocketAddr) {
+fn adopt_accepted(
+    stream: std::net::TcpStream,
+    permit: tcp_client::TcpPermit,
+    owner: Option<&std::sync::Arc<tcp_client::TcpOwner>>,
+) -> (u64, std::net::SocketAddr) {
     // A peer that reset before we looked has no address; its first read
     // reports the close, which is the honest answer.
     let peer = stream
@@ -22619,13 +22783,9 @@ fn adopt_accepted(stream: std::net::TcpStream) -> (u64, std::net::SocketAddr) {
         .set_write_timeout(Some(std::time::Duration::from_secs(30)))
         .ok();
     let id = tcp_client::NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    tcp_client::MAP.lock().unwrap().insert(
-        id,
-        tcp_client::Conn {
-            stream: tcp_client::Stream::Plain(stream),
-            buf: Vec::new(),
-        },
-    );
+    let mut conn = tcp_client::Conn::new(tcp_client::Stream::Plain(stream), permit);
+    conn.ownership = owner.map(|o| tcp_client::Ownership::new(o.clone(), id));
+    tcp_client::MAP.lock().unwrap().insert(id, conn);
     (id, peer)
 }
 
@@ -22662,27 +22822,44 @@ fn accept_retryable_os(_code: Option<i32>) -> bool {
     false
 }
 
-/// Wait until the listener is readable or `timeout` passes (None waits
-/// forever). Ok(false) on timeout; a signal surfaces as Interrupted.
+/// Wait until the listener is readable, Ctrl-C arrives, or `timeout`
+/// passes (None waits forever). Ok(false) on timeout; a signal that
+/// interrupts poll surfaces as Interrupted. The interrupt wake socket
+/// (crate::interrupt::wake_fd) is in the poll set, so a SIGINT that lands
+/// just before poll, or on another thread, still ends the wait: its byte
+/// stays queued until drained here. The caller checks the interrupt flag
+/// after every wait.
 #[cfg(all(feature = "ws", unix))]
 fn wait_listener(
     listener: &std::net::TcpListener,
     timeout: Option<std::time::Duration>,
 ) -> std::io::Result<bool> {
     use std::os::fd::AsRawFd;
-    let mut pfd = libc::pollfd {
-        fd: listener.as_raw_fd(),
-        events: libc::POLLIN,
-        revents: 0,
-    };
+    let wake = crate::interrupt::wake_fd();
+    let mut fds = [
+        libc::pollfd {
+            fd: listener.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        },
+        libc::pollfd {
+            fd: wake.unwrap_or(-1),
+            events: libc::POLLIN,
+            revents: 0,
+        },
+    ];
     let ms = match timeout {
         None => -1,
         Some(d) => d.as_millis().clamp(1, i32::MAX as u128) as i32,
     };
-    // SAFETY: one valid pollfd that outlives the call.
-    let rc = unsafe { libc::poll(&mut pfd, 1, ms) };
+    let count = if wake.is_some() { 2 } else { 1 };
+    // SAFETY: `count` valid pollfds that outlive the call.
+    let rc = unsafe { libc::poll(fds.as_mut_ptr(), count, ms) };
     if rc < 0 {
         return Err(std::io::Error::last_os_error());
+    }
+    if fds[1].revents != 0 {
+        crate::interrupt::drain_wake();
     }
     Ok(rc > 0)
 }
@@ -22795,7 +22972,7 @@ fn builtin_tcp_listen(args: Vec<Value>) -> MixResult<Option<Value>> {
                 format!("tcp_listen: no address for '{host}'"),
             )
         })?;
-    check_tcp_handle_limit("tcp_listen")?;
+    let permit = tcp_client::TcpPermit::acquire("tcp_listen")?;
 
     let fail = |e: std::io::Error| {
         let code = match e.kind() {
@@ -22809,9 +22986,11 @@ fn builtin_tcp_listen(args: Vec<Value>) -> MixResult<Option<Value>> {
     use socket2::{Domain, Protocol, Socket, Type};
     let sock =
         Socket::new(Domain::for_address(addr), Type::STREAM, Some(Protocol::TCP)).map_err(fail)?;
-    // std's TcpListener::bind sets SO_REUSEADDR on unix, so a restarted
-    // server can rebind past TIME_WAIT. Linux still refuses a second
-    // live listener on the same address (EADDRINUSE).
+    // std's TcpListener::bind sets SO_REUSEADDR on unix too: it lets a
+    // restarted server rebind while connections from its previous run
+    // sit in TIME_WAIT. On Linux it does NOT allow a second live listener
+    // on the same address and port (that needs SO_REUSEPORT): bind still
+    // fails with EADDRINUSE, which errors_carry_stable_codes asserts.
     #[cfg(unix)]
     sock.set_reuse_address(true).map_err(fail)?;
     sock.bind(&addr.into()).map_err(fail)?;
@@ -22820,10 +22999,10 @@ fn builtin_tcp_listen(args: Vec<Value>) -> MixResult<Option<Value>> {
     let listener: std::net::TcpListener = sock.into();
 
     let id = tcp_client::NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    tcp_server::LISTENERS
-        .lock()
-        .unwrap()
-        .insert(id, std::sync::Arc::new(listener));
+    tcp_server::LISTENERS.lock().unwrap().insert(
+        id,
+        std::sync::Arc::new(tcp_server::Listener::new(listener, permit)),
+    );
     Ok(Some(Value::Number(id as f64)))
 }
 
@@ -22837,14 +23016,13 @@ fn builtin_tcp_accept(args: Vec<Value>) -> MixResult<Option<Value>> {
     let (listener, deadline) = socket_sources::prepare_accept(&args)?;
     let mut eintr = 0u32;
     loop {
-        match listener.accept() {
-            Ok((stream, _)) => {
-                let (id, _) = adopt_accepted(stream);
-                return Ok(Some(Value::Number(id as f64)));
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-            Err(e) if accept_retryable(&e) => continue,
-            Err(e) => return Err(refusal("TCP_ACCEPT_FAILED", format!("tcp_accept: {e}"))),
+        // The evaluator records ownership as soon as this returns, with no
+        // await in between, so the plain form needs no owner here.
+        if let Some((id, _)) = try_accept(&listener.sock, None).map_err(AcceptError::into_mix)? {
+            return Ok(Some(Value::Number(id as f64)));
+        }
+        if crate::interrupt::is_interrupted() {
+            return Ok(Some(Value::Nil));
         }
         let left = match deadline {
             None => None,
@@ -22856,16 +23034,13 @@ fn builtin_tcp_accept(args: Vec<Value>) -> MixResult<Option<Value>> {
                 Some(left)
             }
         };
-        match wait_listener(&listener, left) {
-            // Readable or timed out: the loop retries accept and then
-            // rechecks the deadline.
+        match wait_listener(&listener.sock, left) {
+            // Readable, woken by Ctrl-C, or timed out: the loop retries
+            // accept, then checks the interrupt flag and the deadline.
             Ok(_) => {}
-            // A signal (Ctrl-C is the common one) interrupts poll(2); stop
-            // when it was Ctrl-C, otherwise keep waiting, boundedly.
+            // A signal interrupts poll(2): the loop top stops on Ctrl-C;
+            // anything else keeps waiting, boundedly.
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
-                if crate::interrupt::is_interrupted() {
-                    return Ok(Some(Value::Nil));
-                }
                 eintr += 1;
                 if eintr > 10_000 {
                     return Err(refusal(
@@ -22887,7 +23062,8 @@ fn builtin_tcp_local_addr(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args("tcp_local_addr", &args, 1)?;
     let id = tcp_id_arg("tcp_local_addr", &args)?;
     let addr = if let Some(l) = tcp_server::LISTENERS.lock().unwrap().get(&id).cloned() {
-        l.local_addr()
+        l.sock
+            .local_addr()
             .map_err(|e| refusal("TCP_LOCAL_ADDR", format!("tcp_local_addr: {e}")))?
     } else if let Some(addr) = socket_sources::listening_addr(id) {
         addr
@@ -23077,6 +23253,8 @@ pub(crate) mod socket_sources {
     pub(crate) const KIND_TCP_LINE: &str = "tcp:line";
     /// A subscribed tcp_listen listener: one record per accepted connection.
     pub(crate) const KIND_TCP_ACCEPT: &str = "tcp:accept";
+
+    pub(crate) use super::tcp_client::TcpOwner;
 
     /// One ordered frame record. Owned Vec<u8> only — Send across std
     /// threads, never Rc<Value>.
@@ -23459,7 +23637,7 @@ pub(crate) mod socket_sources {
 
     /// The listener a numeric tcp_accept addresses: an Arc clone, so the
     /// wait never holds the registry lock.
-    fn listener_for_accept(id: u64) -> MixResult<Arc<std::net::TcpListener>> {
+    fn listener_for_accept(id: u64) -> MixResult<Arc<tcp_server::Listener>> {
         if let Some(l) = tcp_server::LISTENERS.lock().unwrap().get(&id).cloned() {
             return Ok(l);
         }
@@ -23526,15 +23704,14 @@ pub(crate) mod socket_sources {
             .and_then(|d| std::time::Instant::now().checked_add(d))
     }
 
-    /// Validate a numeric tcp_accept call: its listener, the handle limit
-    /// and the absolute deadline.
+    /// Validate a numeric tcp_accept call: its listener and the absolute
+    /// deadline. The handle limit is enforced per accept attempt.
     pub(crate) fn prepare_accept(
         args: &[Value],
-    ) -> MixResult<(Arc<std::net::TcpListener>, Option<std::time::Instant>)> {
+    ) -> MixResult<(Arc<tcp_server::Listener>, Option<std::time::Instant>)> {
         let id = client_id_of(args.first(), "tcp_accept")?;
         let timeout_seconds = accept_timeout(args.get(1))?;
         let listener = listener_for_accept(id)?;
-        super::check_tcp_handle_limit("tcp_accept")?;
         Ok((listener, deadline_after(timeout_seconds)))
     }
 
@@ -23542,28 +23719,29 @@ pub(crate) mod socket_sources {
     /// on an AsyncFd dup of the listener under the call's deadline, so the
     /// read permit is released while no connection is pending. Several
     /// waiters on one listener are safe: the loser of a race sees
-    /// WouldBlock and waits again.
+    /// WouldBlock and waits again. The connection is owned by `owner`
+    /// before this returns, so a task cancelled after the accept (while
+    /// the evaluator reacquires its permit) cannot leak it past
+    /// retirement.
     #[cfg(unix)]
     pub(crate) async fn pull_accept(
-        listener: Arc<std::net::TcpListener>,
+        listener: Arc<tcp_server::Listener>,
         deadline: Option<std::time::Instant>,
+        owner: Arc<TcpOwner>,
     ) -> MixResult<Value> {
         use tokio::io::Interest;
         use tokio::io::unix::AsyncFd;
         let dup = listener
+            .sock
             .try_clone()
             .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
         let ready = AsyncFd::with_interest(dup, Interest::READABLE)
             .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
         loop {
-            match listener.accept() {
-                Ok((stream, _)) => {
-                    let (id, _) = super::adopt_accepted(stream);
-                    return Ok(Value::Number(id as f64));
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-                Err(e) if super::accept_retryable(&e) => continue,
-                Err(e) => return Err(refusal("TCP_ACCEPT_FAILED", format!("tcp_accept: {e}"))),
+            if let Some((id, _)) = super::try_accept(&listener.sock, Some(&owner))
+                .map_err(super::AcceptError::into_mix)?
+            {
+                return Ok(Value::Number(id as f64));
             }
             let readiness = match deadline {
                 None => ready.readable().await,
@@ -23592,8 +23770,9 @@ pub(crate) mod socket_sources {
 
     #[cfg(not(unix))]
     pub(crate) async fn pull_accept(
-        _listener: Arc<std::net::TcpListener>,
+        _listener: Arc<tcp_server::Listener>,
         _deadline: Option<std::time::Instant>,
+        _owner: Arc<TcpOwner>,
     ) -> MixResult<Value> {
         Err(refusal(
             "SOCKET_UNSUPPORTED",
@@ -23638,29 +23817,32 @@ pub(crate) mod socket_sources {
         }
     }
 
-    /// Record a listener or accepted connection as owned by an evaluator
-    /// generation. At the handle limit, ids that are no longer live are
-    /// pruned first, so the set stays bounded.
-    pub(crate) fn own(owned: &Mutex<HashSet<u64>>, id: u64) {
-        let mut set = owned.lock().unwrap();
-        if set.len() >= tcp_server::MAX_TCP_HANDLES {
-            let conns: HashSet<u64> = tcp_client::MAP.lock().unwrap().keys().copied().collect();
-            let listeners: HashSet<u64> = tcp_server::LISTENERS
-                .lock()
-                .unwrap()
-                .keys()
-                .copied()
-                .collect();
-            set.retain(|h| conns.contains(h) || listeners.contains(h));
+    /// Record a listener or connection still in its registry as owned by
+    /// an evaluator generation. The ownership travels with the socket and
+    /// leaves the set only when the socket is dropped, so nothing is ever
+    /// pruned while it lives (pulled or subscribed included).
+    pub(crate) fn own(owner: &Arc<TcpOwner>, id: u64) {
+        if let Some(conn) = tcp_client::MAP.lock().unwrap().get_mut(&id) {
+            if conn.ownership.is_none() {
+                conn.ownership = Some(tcp_client::Ownership::new(owner.clone(), id));
+            }
+            return;
         }
-        set.insert(id);
+        if let Some(listener) = tcp_server::LISTENERS.lock().unwrap().get(&id) {
+            let mut slot = listener.ownership.lock().unwrap();
+            if slot.is_none() {
+                *slot = Some(tcp_client::Ownership::new(owner.clone(), id));
+            }
+        }
     }
 
-    /// Generation retirement: close every listener and connection it
-    /// owns that is still in a registry (a subscribed one is closed by its
-    /// source instead).
-    pub(crate) fn close_owned(owned: &Mutex<HashSet<u64>>) {
-        let ids: Vec<u64> = owned.lock().unwrap().drain().collect();
+    /// Generation retirement: close every owned listener and connection
+    /// in a registry. A subscribed one is closed by its source; one out
+    /// in a Class C pull closes when the pull returns it (`retired` is set
+    /// first, so the return sees it).
+    pub(crate) fn close_owned(owner: &TcpOwner) {
+        owner.retired.store(true, Ordering::Release);
+        let ids: Vec<u64> = owner.ids.lock().unwrap().iter().copied().collect();
         for id in ids {
             let listener = tcp_server::LISTENERS.lock().unwrap().remove(&id);
             if let Some(listener) = listener {
@@ -23678,7 +23860,7 @@ pub(crate) mod socket_sources {
         queue: Arc<Queue>,
         id: String,
         listener_id: u64,
-        owned: Arc<Mutex<HashSet<u64>>>,
+        owned: Arc<TcpOwner>,
     ) -> MixResult<SocketSource> {
         let listener = {
             let mut map = tcp_server::LISTENERS.lock().unwrap();
@@ -23877,6 +24059,10 @@ pub(crate) mod socket_sources {
                 PullWire::Ws(c) => {
                     ws_client::MAP.lock().unwrap().insert(self.key.id, *c);
                 }
+                // Its generation retired while the conn was out here:
+                // close it rather than return it to a registry nobody
+                // owns any more.
+                PullWire::Tcp(c) if c.orphaned() => drop(c),
                 PullWire::Tcp(c) => {
                     tcp_client::MAP.lock().unwrap().insert(self.key.id, c);
                 }
@@ -24511,13 +24697,13 @@ pub(crate) mod socket_sources {
             queue: Arc<Queue>,
             id: String,
             listener_id: u64,
-            listener: Arc<std::net::TcpListener>,
-            owned: Arc<Mutex<HashSet<u64>>>,
+            listener: Arc<tcp_server::Listener>,
+            owned: Arc<TcpOwner>,
         ) -> MixResult<SocketSource> {
             let key = ClientKey::listener(listener_id);
             let (cancel, cancel_wake) =
                 UnixStream::pair().map_err(|e| refusal("SOCKET_PAIR", e.to_string()))?;
-            mark_listening(listener_id, listener.local_addr().ok());
+            mark_listening(listener_id, listener.sock.local_addr().ok());
             let completed = Arc::new(AtomicBool::new(false));
             let worker_completed = completed.clone();
             let worker = std::thread::Builder::new()
@@ -24525,7 +24711,7 @@ pub(crate) mod socket_sources {
                 .spawn(move || {
                     let mut fds = [
                         libc::pollfd {
-                            fd: listener.as_raw_fd(),
+                            fd: listener.sock.as_raw_fd(),
                             events: libc::POLLIN,
                             revents: 0,
                         },
@@ -24552,7 +24738,7 @@ pub(crate) mod socket_sources {
                             break None;
                         }
                         if pending || fds[0].revents != 0 {
-                            match accept_batch(&queue, &id, &listener, &owned) {
+                            match accept_batch(&queue, &id, &listener.sock, &owned) {
                                 DrainOutcome::More => pending = false,
                                 DrainOutcome::Yield => pending = true,
                                 DrainOutcome::Overflow => {
@@ -24598,36 +24784,35 @@ pub(crate) mod socket_sources {
         }
 
         /// Accept what poll exposed, in bounded batches. Each connection
-        /// becomes a live handle owned by the generation before its record
-        /// is queued; a refused record closes it again (never a handle
-        /// nobody can name).
+        /// takes a permit (reserved before accept(2), so the limit holds)
+        /// and becomes a live handle owned by the generation before its
+        /// record is queued; a refused record closes it again (never a
+        /// handle nobody can name).
         fn accept_batch(
             queue: &Queue,
             id: &str,
             listener: &std::net::TcpListener,
-            owned: &Mutex<HashSet<u64>>,
+            owned: &Arc<TcpOwner>,
         ) -> DrainOutcome {
             for _ in 0..16 {
-                // Check before accepting: a connection left in the backlog
-                // is refused cleanly when the listener closes.
-                if super::super::live_tcp_handles() >= tcp_server::MAX_TCP_HANDLES {
-                    return DrainOutcome::Terminal("handle_limit".into());
-                }
-                match listener.accept() {
-                    Ok((stream, _)) => {
-                        let (handle, peer) = super::super::adopt_accepted(stream);
-                        own(owned, handle);
+                match super::super::try_accept(listener, Some(owned)) {
+                    Ok(Some((handle, peer))) => {
                         if !queue.socket_push(id, accepted_record(handle, peer)) {
                             let conn = tcp_client::MAP.lock().unwrap().remove(&handle);
                             drop(conn);
                             return DrainOutcome::Overflow;
                         }
                     }
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        return DrainOutcome::More;
+                    Ok(None) => return DrainOutcome::More,
+                    // No permit: the connection stays queued in the
+                    // backlog and is refused cleanly when the listener
+                    // closes.
+                    Err(super::super::AcceptError::Limit) => {
+                        return DrainOutcome::Terminal("handle_limit".into());
                     }
-                    Err(e) if super::super::accept_retryable(&e) => continue,
-                    Err(e) => return DrainOutcome::Terminal(e.to_string()),
+                    Err(super::super::AcceptError::Io(e)) => {
+                        return DrainOutcome::Terminal(e.to_string());
+                    }
                 }
             }
             DrainOutcome::Yield
@@ -25153,8 +25338,8 @@ pub(crate) mod socket_sources {
         _queue: Arc<Queue>,
         _id: String,
         _listener_id: u64,
-        _listener: Arc<std::net::TcpListener>,
-        _owned: Arc<Mutex<HashSet<u64>>>,
+        _listener: Arc<tcp_server::Listener>,
+        _owned: Arc<TcpOwner>,
     ) -> MixResult<SocketSource> {
         Err(refusal(
             "SOCKET_UNSUPPORTED",
@@ -25191,12 +25376,111 @@ pub(crate) mod socket_sources {
             let id = tcp_client::NEXT_ID.fetch_add(1, Ordering::Relaxed);
             tcp_client::MAP.lock().unwrap().insert(
                 id,
-                tcp_client::Conn {
-                    stream: tcp_client::Stream::Plain(stream),
-                    buf: Vec::new(),
-                },
+                tcp_client::Conn::new(
+                    tcp_client::Stream::Plain(stream),
+                    tcp_client::TcpPermit::acquire("test").unwrap(),
+                ),
             );
             id
+        }
+
+        /// Review fix 1: the Class C accept records ownership inside its
+        /// own future. Retirement closes the connection with no later
+        /// `own()` call, so a task cancelled after the accept (while the
+        /// evaluator reacquires its read permit) cannot leak it.
+        #[tokio::test]
+        async fn pull_accept_owns_the_connection_before_returning() {
+            use std::io::Read;
+            let sock = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            sock.set_nonblocking(true).unwrap();
+            let port = sock.local_addr().unwrap().port();
+            let listener = Arc::new(tcp_server::Listener::new(
+                sock,
+                tcp_client::TcpPermit::acquire("test").unwrap(),
+            ));
+            let mut client = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+            client
+                .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+                .unwrap();
+            let owner = Arc::new(TcpOwner::default());
+            let accepted = pull_accept(listener, deadline_after(5.0), owner.clone())
+                .await
+                .unwrap();
+            let Value::Number(n) = accepted else {
+                panic!("expected a handle, got {accepted:?}");
+            };
+            let handle = n as u64;
+            assert!(owner.ids.lock().unwrap().contains(&handle));
+            close_owned(&owner);
+            assert!(!tcp_client::MAP.lock().unwrap().contains_key(&handle));
+            let mut buf = [0u8; 4];
+            assert_eq!(client.read(&mut buf).unwrap(), 0, "the connection closed");
+            assert!(owner.ids.lock().unwrap().is_empty());
+        }
+
+        /// Review fix 2: ownership lives with the socket, not with registry
+        /// residence. Churn never prunes a live entry, and a connection out
+        /// in a Class C pull when its generation retires is closed when the
+        /// pull returns it instead of going back into the registry.
+        #[test]
+        fn retirement_closes_a_connection_parked_in_a_pull() {
+            use std::io::Read;
+            let sock = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = sock.local_addr().unwrap().port();
+            let mut client = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+            client
+                .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+                .unwrap();
+            let (stream, _) = sock.accept().unwrap();
+            let owner = Arc::new(TcpOwner::default());
+            let (handle, _) = super::super::adopt_accepted(
+                stream,
+                tcp_client::TcpPermit::acquire("test").unwrap(),
+                Some(&owner),
+            );
+            // More owned sockets come and go than the old prune threshold;
+            // the set holds exactly the live one throughout.
+            for _ in 0..tcp_server::MAX_TCP_HANDLES + 8 {
+                let id = tcp_client::NEXT_ID.fetch_add(1, Ordering::Relaxed);
+                drop(tcp_client::Ownership::new(owner.clone(), id));
+            }
+            assert_eq!(*owner.ids.lock().unwrap(), HashSet::from([handle]));
+            let guard = pull_conn("tcp_recv", handle).unwrap();
+            assert!(!tcp_client::MAP.lock().unwrap().contains_key(&handle));
+            close_owned(&owner); // retire while the conn is out in the pull
+            drop(guard); // the pull returns it
+            assert!(!tcp_client::MAP.lock().unwrap().contains_key(&handle));
+            let mut buf = [0u8; 4];
+            assert_eq!(client.read(&mut buf).unwrap(), 0, "the connection closed");
+            assert!(owner.ids.lock().unwrap().is_empty());
+        }
+
+        /// Review fix 3: admission to the handle pool is one atomic step,
+        /// so racing acquirers can never exceed the bound, and a slot comes
+        /// back only when its permit (carried by the socket) is dropped.
+        #[test]
+        fn permit_pool_admission_is_atomic() {
+            static POOL: tcp_client::PermitPool = tcp_client::PermitPool::new(8);
+            let start = Arc::new(std::sync::Barrier::new(32));
+            let racers: Vec<_> = (0..32)
+                .map(|_| {
+                    let start = start.clone();
+                    std::thread::spawn(move || {
+                        start.wait();
+                        POOL.try_acquire()
+                    })
+                })
+                .collect();
+            let permits: Vec<_> = racers
+                .into_iter()
+                .filter_map(|r| r.join().unwrap())
+                .collect();
+            assert_eq!(permits.len(), 8);
+            assert_eq!(POOL.live(), 8);
+            assert!(POOL.try_acquire().is_none());
+            drop(permits);
+            assert_eq!(POOL.live(), 0);
+            assert!(POOL.try_acquire().is_some());
         }
 
         #[tokio::test]
@@ -26273,10 +26557,10 @@ pub(crate) mod socket_sources {
             let tcp_stream = std::net::TcpStream::connect(("127.0.0.1", tcp_port)).unwrap();
             tcp_client::MAP.lock().unwrap().insert(
                 SHARED,
-                tcp_client::Conn {
-                    stream: tcp_client::Stream::Plain(tcp_stream),
-                    buf: Vec::new(),
-                },
+                tcp_client::Conn::new(
+                    tcp_client::Stream::Plain(tcp_stream),
+                    tcp_client::TcpPermit::acquire("test").unwrap(),
+                ),
             );
             // Concurrent pulls on the SAME id: both admitted (keyed by
             // family — not one SOCKET_BUSY on a phantom collision).

@@ -134,7 +134,50 @@ pub fn init(flag: Arc<AtomicBool>) -> bool {
              blocking builtins will not observe Ctrl-C"
         );
     }
+    // Registered after the flag, so a waiter woken by the byte already
+    // sees the flag set.
+    #[cfg(unix)]
+    install_wake();
     true
+}
+
+/// The read end of a socket pair that receives one byte per SIGINT, for
+/// blocking waits that sit in poll(2) (tcp_accept): a flag alone cannot
+/// wake a poll that started just after the signal, or a poll on another
+/// thread. Bytes stay queued until drained, so no wakeup is lost.
+#[cfg(unix)]
+static WAKE: OnceLock<std::os::unix::net::UnixStream> = OnceLock::new();
+
+#[cfg(unix)]
+fn install_wake() {
+    let Ok((read, write)) = std::os::unix::net::UnixStream::pair() else {
+        return;
+    };
+    // The handler's write must never block, and draining must not either.
+    if read.set_nonblocking(true).is_err() || write.set_nonblocking(true).is_err() {
+        return;
+    }
+    if signal_hook::low_level::pipe::register(signal_hook::consts::SIGINT, write).is_ok() {
+        let _ = WAKE.set(read);
+    }
+}
+
+/// The SIGINT wake descriptor to add to a poll set, when [`init`] has
+/// installed one.
+#[cfg(unix)]
+pub fn wake_fd() -> Option<std::os::fd::RawFd> {
+    use std::os::fd::AsRawFd;
+    WAKE.get().map(|s| s.as_raw_fd())
+}
+
+/// Consume queued wake bytes after poll reported the wake descriptor.
+#[cfg(unix)]
+pub fn drain_wake() {
+    use std::io::Read;
+    if let Some(mut s) = WAKE.get() {
+        let mut buf = [0u8; 64];
+        while matches!(s.read(&mut buf), Ok(n) if n > 0) {}
+    }
 }
 
 /// Test-only escape hatch: clear the published flag (if any). Not

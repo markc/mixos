@@ -12977,14 +12977,14 @@ impl Evaluator {
                 self.check_builtin_arity(name, eval_args.len())?;
                 let (listener, deadline) =
                     crate::builtins::socket_sources::prepare_accept(eval_args)?;
+                // Ownership is recorded inside the accept future, so a
+                // task cancelled while reacquiring its permit cannot leak
+                // the connection past retirement.
+                let owner = self.globals.borrow().native_events.tcp_owner();
                 let fut = Box::pin(crate::builtins::socket_sources::pull_accept(
-                    listener, deadline,
+                    listener, deadline, owner,
                 ));
-                let accepted = self.await_with_class_c_yield(fut).await??;
-                if let Value::Number(n) = &accepted {
-                    self.globals.borrow().native_events.own_tcp(*n as u64);
-                }
-                return Ok(Some(accepted));
+                return self.await_with_class_c_yield(fut).await?.map(Some);
             }
             if matches!(
                 name,

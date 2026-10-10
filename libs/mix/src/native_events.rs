@@ -629,7 +629,7 @@ pub(crate) struct NativeEvents {
     /// tcp_listen listeners and the connections they accepted, closed when
     /// this generation retires. Shared with listener reader threads.
     #[cfg(feature = "ws")]
-    tcp_owned: Arc<Mutex<std::collections::HashSet<u64>>>,
+    tcp_owned: Arc<crate::builtins::socket_sources::TcpOwner>,
     owner_id: u64,
 }
 
@@ -937,6 +937,13 @@ impl NativeEvents {
     #[cfg(feature = "ws")]
     pub fn own_tcp(&self, id: u64) {
         crate::builtins::socket_sources::own(&self.tcp_owned, id);
+    }
+
+    /// This generation's TCP owner, for an accept that must record
+    /// ownership before it returns (the Class C form).
+    #[cfg(feature = "ws")]
+    pub(crate) fn tcp_owner(&self) -> Arc<crate::builtins::socket_sources::TcpOwner> {
+        self.tcp_owned.clone()
     }
 
     #[cfg(feature = "ws")]
