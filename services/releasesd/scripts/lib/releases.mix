@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.2.0
+-- version: 0.3.0
 -- releases: the logic behind releasesd and the `releases` CLI. Follows the
 -- GitHub repositories in a catalogue, compares the installed version with the
 -- latest release, and installs each release's Linux tarball per user.
@@ -68,6 +68,26 @@ fn _not_root($what)
   if uid() == 0 then raise("ROOT", $what .. " refused as root: releases are installed per user, by that user") end
 end
 
+-- An exec_wrapper: argv put in front of an entry's Exec.
+fn valid_wrapper($w)
+  if type($w) != "list" or len($w) < 1 or len($w) > 32 then return false end
+  if not all($w, fn($s) = type($s) == "string" and $s != "" and not re_match($s, "[\\x00-\\x1f\\x7f]")) then return false end
+  -- The executable path may not contain `=` (Exec key rules).
+  return starts_with($w[0], "/") and not contains($w[0], "=")
+end
+
+-- One argument as a desktop entry's Exec writes it: % doubled, quoted when
+-- it holds a reserved character (with " ` $ \ escaped inside the quotes),
+-- then the string-value escape of every backslash (Desktop Entry
+-- Specification, "The Exec key").
+fn desktop_arg($s)
+  $s = replace($s, "%", "%%")
+  if re_match($s, "[ \\t\"'\\\\><~|&;$*?#()`]") then
+    $s = "\"" .. re_replace($s, "([\"`$\\\\])", '\${1}') .. "\""
+  end
+  return replace($s, "\\", "\\\\")
+end
+
 -- Load and check a catalogue document. A missing file is an empty catalogue.
 fn load_catalogue($path)
   if not is_file($path) then return [] end
@@ -81,6 +101,9 @@ fn load_catalogue($path)
       raise("CATALOGUE", $path .. ": each app needs a name matching " .. $NAME_RE .. " and a repo owner/name: " .. json_encode($a))
     end
     if $a.asset != nil and type($a.asset) != "string" then raise("CATALOGUE", $path .. ": " .. $a.name .. ".asset must be a regex string") end
+    if $a.exec_wrapper != nil and not valid_wrapper($a.exec_wrapper) then
+      raise("CATALOGUE", $path .. ": " .. $a.name .. ".exec_wrapper must be a list of 1 to 32 strings without control characters, the first an absolute path without =")
+    end
     if contains($seen, $a.name) then raise("CATALOGUE", $path .. ": duplicate app " .. $a.name) end
     push($seen, $a.name)
   end
@@ -385,19 +408,64 @@ fn _publish_manifest($ctx, $app, $entries)
 end
 
 -- A desktop entry with Exec/TryExec made absolute when the program is ours.
-fn rewrite_entry($text, $appdir, $viewdir)
+-- With a $wrapper (the catalogue's exec_wrapper), every Exec becomes
+-- `<wrapper…> -- <the entry's own Exec>`, field codes kept; TryExec stays
+-- the real program. Built from the app's own entry each time, so a relink
+-- never wraps twice.
+-- Whitespace before a key and around `=` is allowed (parsers ignore it), so
+-- keys are matched with it. A wrapped entry also loses D-Bus activation,
+-- which would start the app without its Exec. When wrapping, the main group
+-- and every Desktop Action must have a non-empty Exec, or the entry refuses
+-- (LAYOUT) rather than bypass the wrapper or become unlaunchable.
+fn rewrite_entry($text, $appdir, $viewdir, $wrapper)
   $out = []
+  $group = nil
+  $missing = []
   for $l in lines($text)
-    $m = re_find($l, "^(Exec|TryExec)=(\\S+)(.*)$")
+    $g = re_find($l, "^[ \\t]*\\[([^\\]]*)\\][ \\t]*$")
+    if len($g) > 0 then
+      $group = $g[0].groups[0]
+      if $group == "Desktop Entry" or starts_with($group, "Desktop Action ") then push($missing, $group) end
+    end
+    $m = re_find($l, "^[ \\t]*(Exec|TryExec)[ \\t]*=[ \\t]*(\\S*)(.*)$")
     if len($m) > 0 then
       $caps = $m[0].groups
-      if not contains($caps[1], "/") and is_file($appdir .. "/current/bin/" .. $caps[1]) then
-        $l = $caps[0] .. "=" .. $viewdir .. "/current/bin/" .. $caps[1] .. $caps[2]
+      $prog = $caps[1]
+      if $prog != "" and not contains($prog, "/") and is_file($appdir .. "/current/bin/" .. $prog) then
+        $prog = $viewdir .. "/current/bin/" .. $prog
       end
+      $l = $caps[0] .. "=" .. $prog .. $caps[2]
+      if $caps[0] == "Exec" and $wrapper != nil then
+        if $prog == "" then raise("LAYOUT", "a desktop entry has an empty Exec, which exec_wrapper cannot wrap") end
+        $l = "Exec=" .. join(map($wrapper, fn($a) = desktop_arg($a)), " ") .. " -- " .. $prog .. $caps[2]
+        $missing = filter($missing, fn($x) = $x != $group)
+      end
+    elif $wrapper != nil and re_match($l, "^[ \\t]*DBusActivatable[ \\t]*=") then
+      $l = "DBusActivatable=false"
     end
     push($out, $l)
   end
+  if $wrapper != nil and len($missing) > 0 then
+    raise("LAYOUT", "exec_wrapper needs an Exec in every launchable group; missing in [" .. join($missing, "], [") .. "]")
+  end
   return join($out, "\n") .. "\n"
+end
+
+-- Before a version becomes current: with an exec_wrapper, every desktop
+-- entry it ships must be wrappable, so a refusal never strands an activated
+-- version (LAYOUT, nothing changed).
+fn check_entries($app, $prefix)
+  if $app.exec_wrapper == nil then return end
+  for $f in glob($prefix .. "/share/applications/*.desktop")
+    $st = stat($f, {follow_symlinks: false})
+    if $st.is_file and not $st.is_symlink then
+      try
+        rewrite_entry(read_file($f), $prefix, $prefix, $app.exec_wrapper)
+      catch $msg, $err
+        raise($err.code ?? "LAYOUT", basename($f) .. ": " .. $msg)
+      end
+    end
+  end
 end
 
 -- Link the current version into this target, replacing only what is still
@@ -418,7 +486,7 @@ fn relink($ctx, $app)
     for $f in glob($cur .. "/share/applications/*.desktop")
       $st = stat($f, {follow_symlinks: false})
       if $st.is_file and not $st.is_symlink then
-        push($want, {path: $ctx.share_dir .. "/applications/" .. basename($f), text: rewrite_entry(read_file($f), $appdir, $viewdir)})
+        push($want, {path: $ctx.share_dir .. "/applications/" .. basename($f), text: rewrite_entry(read_file($f), $appdir, $viewdir, $app.exec_wrapper)})
       else
         push($skipped, $ctx.share_dir .. "/applications/" .. basename($f))
       end
@@ -516,6 +584,7 @@ fn install_tarball($ctx, $app, $version, $tar_path, $proof)
     end
     if len(glob($top .. "/bin/*")) == 0 then raise("LAYOUT", basename($tar_path) .. " has no bin/ directory: not a prefix tarball") end
     validate_prefix($top)
+    check_entries($app, $top)
     if is_dir($dest) then remove_dir($dest) end
     write_atomic($appdir .. "/.verified-" .. $version .. ".json", json_encode($proof))
     rename($top, $dest)
@@ -616,7 +685,31 @@ fn _settle($ctx, $app, $mode)
     if $mode == "link" then return {meta: $meta, resumed: nil, foreign: true} end
     raise("PENDING", $app.name .. ": an interrupted " .. to_string($p.op) .. " started from another link target (" .. to_string($p.origin) .. ") must be finished there first")
   end
-  if valid_version($p.target) and contains(_managed_versions($appdir), $p.target) then
+  $managed = _managed_versions($appdir)
+  if valid_version($p.target) and contains($managed, $p.target) then
+    -- The catalogue may have gained an exec_wrapper since the change began.
+    -- A target it cannot wrap is never made current: the change is
+    -- abandoned for the other recorded version when that one passes
+    -- (refused with LAYOUT, nothing changed, when it does not).
+    $why = nil
+    try
+      check_entries($app, $appdir .. "/" .. $p.target)
+    catch $msg
+      $why = $msg
+    end
+    if $why != nil then
+      $back = $meta.previous
+      if $back == $p.target then $back = nil end
+      if not valid_version($back) or not contains($managed, $back) then
+        raise("LAYOUT", $app.name .. ": the interrupted " .. to_string($p.op) .. " to " .. $p.target .. " cannot be finished (" .. $why .. ") and there is no other version to return to")
+      end
+      check_entries($app, $appdir .. "/" .. $back)
+      if current_version($ctx, $app) != $back then _flip_current($appdir, $back) end
+      relink($ctx, $app)
+      $meta = merge(delete($meta, "pending"), {version: $back, previous: nil, abandoned: {op: $p.op, target: $p.target, reason: $why}})
+      _write_meta($appdir, $meta)
+      return {meta: $meta, resumed: "abandoned"}
+    end
     if current_version($ctx, $app) != $p.target then _flip_current($appdir, $p.target) end
     relink($ctx, $app)
   end
@@ -627,6 +720,7 @@ end
 
 fn _activate($ctx, $app, $version, $previous, $proof)
   $appdir = $ctx.opt_dir .. "/" .. $app.name
+  check_entries($app, $appdir .. "/" .. $version)
   $meta = {name: $app.name, repo: $app.repo, version: $version,
     previous: $previous, verified: $proof, installed_at: now_iso()}
   _write_meta($appdir, merge($meta, {pending: {op: "install", target: $version, origin: target_id($ctx, true)}}))
@@ -692,8 +786,14 @@ fn rollback($ctx, $app)
   if $s.resumed == "rollback" then
     return {app: $app.name, version: $meta.version, previous: $meta.previous, action: "rolled back (finished an interrupted rollback)"}
   end
+  -- An interrupted change the exec_wrapper could not finish was undone:
+  -- that already returned to the version before it.
+  if $s.resumed == "abandoned" then
+    return {app: $app.name, version: $meta.version, previous: nil, action: "rolled back (abandoned an interrupted " .. to_string($meta.abandoned.op) .. " to " .. to_string($meta.abandoned.target) .. ")"}
+  end
   $prev = $meta.previous
   if $prev == nil or not contains(_managed_versions($appdir), $prev) then raise("NO_PREVIOUS", $app.name .. " has no previous version to roll back to") end
+  check_entries($app, $appdir .. "/" .. $prev)
   $now = current_version($ctx, $app)
   $meta.version = $prev
   $meta.previous = $now

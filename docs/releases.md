@@ -30,8 +30,11 @@ Your catalogue is `~/.config/mixos/releases.mx`. MixOS ships it empty:
 
 `name` is how you refer to the app and the directory it installs into;
 `repo` is the GitHub `owner/name`. If a release has several Linux tarballs,
-add `asset:` with a regular expression that picks the right one. The full
-schema is in the [releases contract](spec/releases/README.md).
+add `asset:` with a regular expression that picks the right one. To start an
+app through a launcher of your own, give `exec_wrapper:` its command as a
+list, for example `["/usr/local/bin/launch", "example"]`. The app's menu
+entry then runs `launch example -- <the app's own command>`. The full schema
+is in the [releases contract](spec/releases/README.md).
 
 ## Everyday use
 

@@ -264,8 +264,11 @@ settings panel can drive it), and on any Linux, not only MixOS.</p>
 </code></pre>
 <p><code>name</code> is how you refer to the app and the directory it installs into;
 <code>repo</code> is the GitHub <code>owner/name</code>. If a release has several Linux tarballs,
-add <code>asset:</code> with a regular expression that picks the right one. The full
-schema is in the <a href="/spec/releases/">releases contract</a>.</p>
+add <code>asset:</code> with a regular expression that picks the right one. To start an
+app through a launcher of your own, give <code>exec_wrapper:</code> its command as a
+list, for example <code>["/usr/local/bin/launch", "example"]</code>. The app's menu
+entry then runs <code>launch example -- &lt;the app's own command&gt;</code>. The full schema
+is in the <a href="/spec/releases/">releases contract</a>.</p>
 <h2 id="everyday-use">Everyday use</h2>
 <pre><code class="language-sh">mix releases.mix check            # ask GitHub what's new
 mix releases.mix                  # installed vs latest, no network

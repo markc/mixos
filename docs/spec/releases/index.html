@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Status: accepted, version 0.1.0. Verified by services/releasesd/tests/releases_test.mix (offline logic) and services/releasesd/tests/releasesd_test.mix (every…">
+    <meta name="description" content="Status: accepted, version 0.2.0 (0.2.0 adds exec_wrapper). Verified by services/releasesd/tests/releases_test.mix (offline logic) and…">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=c34fdc68c4" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/web/favicon.svg?v=51993ccf9f">
@@ -246,7 +246,7 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="releases-contract">Releases contract</h1>
-<p>Status: accepted, version 0.1.0. Verified by
+<p>Status: accepted, version 0.2.0 (0.2.0 adds <code>exec_wrapper</code>). Verified by
 <code>services/releasesd/tests/releases_test.mix</code> (offline logic) and
 <code>services/releasesd/tests/releasesd_test.mix</code> (every verb over a private
 broker).</p>
@@ -295,7 +295,31 @@ re-read on every request.</p>
 <tr><td><code>name</code></td><td><code>^[a-z0-9][a-z0-9-]{0,63}$</code>, unique; it becomes a directory name</td></tr>
 <tr><td><code>repo</code></td><td><code>owner/name</code> on GitHub</td></tr>
 <tr><td><code>asset</code></td><td>optional regex choosing the tarball when the default is wrong or ambiguous</td></tr>
+<tr><td><code>exec_wrapper</code></td><td>optional list of 1–32 non-empty strings without control characters, the first an absolute path without <code>=</code>; see below</td></tr>
 </tbody></table>
+<p><strong><code>exec_wrapper</code>.</strong> When <code>link</code> writes the app's desktop entries, every
+<code>Exec=</code> becomes <code>Exec=&lt;wrapper…&gt; -- &lt;the entry's own Exec&gt;</code>. The entry's own
+Exec keeps its field codes (<code>%F</code>, <code>%U</code> …) and is made absolute as usual.
+Each wrapper argument is written per the Desktop Entry Specification: <code>%</code> is
+doubled; an argument with a reserved character is double-quoted, with
+<code>"</code> <code>`</code> <code>$</code> <code>\</code> escaped inside the quotes; then every backslash is
+escaped once more as a string value. The literal <code>--</code> separates the wrapper
+from the app's command, so a wrapper can always fall back to running that
+command as it stands. Every <code>Exec</code> is wrapped, Desktop Actions included,
+with whitespace before the key and around <code>=</code> allowed. The main group and
+every Desktop Action must have a non-empty <code>Exec</code>, or the entry is refused
+(<code>LAYOUT</code>). An install, update or rollback checks this before the version
+becomes current, so a refusal changes nothing. If a wrapper is added while
+an install or rollback is interrupted and the target cannot be wrapped, the
+retry abandons that change: <code>current</code> returns to the other recorded version
+(if that one passes), <code>previous</code> is cleared, and <code>meta.json</code> records
+<code>abandoned: {op, target, reason}</code>. A rollback that does this reports it as
+its result. A wrapped entry gets <code>DBusActivatable=false</code>, since D-Bus
+activation would start the app without its <code>Exec</code>. <code>TryExec</code> stays the
+app's real program. The entry is
+rebuilt from the app's own copy on every link, so it is never wrapped twice.
+The link manifest records the final content. Removing the field unwraps the
+entry on the next link.</p>
 <p>The default asset is the one release file matching <code>linux[-_.]&lt;arch&gt;.tar.gz</code>
 (<code>x86_64</code>, <code>amd64</code> or <code>x64</code>; <code>aarch64</code> or <code>arm64</code>), excluding web builds.</p>
 <h2 id="verification">Verification</h2>
@@ -355,7 +379,7 @@ for <code>install</code> and <code>update</code>.</li>
 <table><thead><tr><th>Path</th><th>What</th></tr></thead><tbody>
 <tr><td><code>&lt;root&gt;/opt/&lt;app&gt;/&lt;version&gt;/</code></td><td>the release prefix: <code>bin/</code>, <code>share/</code></td></tr>
 <tr><td><code>&lt;root&gt;/opt/&lt;app&gt;/current</code></td><td>symlink to the active version</td></tr>
-<tr><td><code>&lt;root&gt;/opt/&lt;app&gt;/meta.json</code></td><td><code>{name, repo, version, previous, verified, installed_at, pending?}</code></td></tr>
+<tr><td><code>&lt;root&gt;/opt/&lt;app&gt;/meta.json</code></td><td><code>{name, repo, version, previous, verified, installed_at, pending?, abandoned?}</code></td></tr>
 <tr><td><code>&lt;root&gt;/opt/&lt;app&gt;/.verified-&lt;version&gt;.json</code></td><td>the proof of each kept version</td></tr>
 <tr><td><code>&lt;share&gt;/mixos/releases/&lt;app&gt;.links.json</code></td><td>what was made in this target: <code>[{path, states: [{link} or {sha256}]}]</code></td></tr>
 <tr><td><code>$XDG_STATE_HOME/mixos/releases/&lt;app&gt;.json</code></td><td>the last check: ETag, latest release</td></tr>

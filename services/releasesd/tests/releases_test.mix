@@ -3,7 +3,8 @@
 -- tarballs with bsdtar and drives lib/releases.mix directly: validation,
 -- catalogue checks, asset choice, checksum verification (and its refusals),
 -- install, prune, rollback, foreign files, a second link target seen through
--- a view path, layout and path-escape refusals, and remove.
+-- a view path, an exec_wrapper (quoting, shape, manifest, no double wrap),
+-- layout and path-escape refusals, and remove.
 -- Run from the checkout root: mix services/releasesd/tests/releases_test.mix
 -- Needs bsdtar. Prints PASS/FAIL per check; exits 1 on any failure.
 
@@ -41,7 +42,7 @@ fn make_tarball($name, $version, $opts)
   end
   mkdir($p .. "/share/applications", {parents: true})
   write_file($p .. "/share/applications/dev.example." .. $name .. ".desktop",
-    "[Desktop Entry]\nType=Application\nName=Demo\nExec=" .. $name .. " %F\nTryExec=" .. $name .. "\nIcon=dev.example." .. $name .. "\n")
+    "[Desktop Entry]\nType=Application\nName=Demo\nExec=" .. ($opts.exec ?? $name .. " %F") .. "\nTryExec=" .. $name .. "\nIcon=dev.example." .. $name .. "\n")
   mkdir($p .. "/share/icons/hicolor/48x48/apps", {parents: true})
   write_file($p .. "/share/icons/hicolor/48x48/apps/dev.example." .. $name .. ".png", "png " .. $version)
   mkdir($p .. "/share/mime/packages", {parents: true})
@@ -81,6 +82,19 @@ try
   refuses("catalogue: duplicate", "CATALOGUE", fn() = $r.load_catalogue($tmp .. "/bad3.mx"))
   write_file($tmp .. "/bad4.mx", "{schema: 1, apps: [{name: \"a\", repo: \"no-slash\"}]}\n")
   refuses("catalogue: repo form", "CATALOGUE", fn() = $r.load_catalogue($tmp .. "/bad4.mx"))
+  write_file($tmp .. "/wrap.mx", "{schema: 1, apps: [{name: \"a\", repo: \"a/b\", exec_wrapper: [\"/opt/w/run\", \"a\"]}]}\n")
+  check("catalogue: exec_wrapper accepted", deep_eq($r.load_catalogue($tmp .. "/wrap.mx")[0].exec_wrapper, ["/opt/w/run", "a"]))
+  for $bad in ["[]", "[\"relative/run\"]", "[\"/opt/w/run\", \"\"]", "[\"/opt/w/run\", 3]", "\"/opt/w/run\"", "[\"/opt/w/run\", \"a\\nb\"]", "[\"/opt/w/a=b\"]"]
+    write_file($tmp .. "/badw.mx", "{schema: 1, apps: [{name: \"a\", repo: \"a/b\", exec_wrapper: " .. $bad .. "}]}\n")
+    refuses("catalogue: exec_wrapper " .. $bad .. " refused", "CATALOGUE", fn() = $r.load_catalogue($tmp .. "/badw.mx"))
+  end
+
+  -- Exec arguments as the Desktop Entry Specification writes them.
+  check("exec arg: plain stays plain", $r.desktop_arg("/opt/w/run") == "/opt/w/run")
+  check("exec arg: space quoted", $r.desktop_arg("a b") == '"a b"')
+  check("exec arg: percent doubled", $r.desktop_arg("50%") == "50%%")
+  check("exec arg: $ and backslash escaped, then the backslash doubled", $r.desktop_arg('x$y\z') == '"x\\\\$y\\\\\\\\z"')
+  check("exec arg: quote escaped", $r.desktop_arg('say "hi"') == '"say \\\\"hi\\\\""')
 
   -- Asset choice (this machine's arch decides which tarball is right).
   $x = $ctx.arch
@@ -210,6 +224,30 @@ try
   check("target 2: linked", len($l2) == 1 and $l2[0].action == "linked")
   check("target 2: Exec through the view", contains($e2, "\nExec=/view/opt/demo/current/bin/demo %F\n"))
   check("target 2: own manifest; host's untouched", is_file($r.manifest_path($ctx2, $app)) and read_file($r.manifest_path($ctx, $app)) == $host_manifest)
+
+  -- A third target whose catalogue wraps the app's Exec.
+  $ctx3 = $r.new_context({root: $tmp .. "/root", state: $tmp .. "/state", catalogue: $tmp .. "/releases.mx",
+    share: $tmp .. "/wrapped/data", bin: $tmp .. "/wrapped/bin", view: "/view", offline: true})
+  $wapp = merge($app, {exec_wrapper: ["/opt/w/launch", "demo", "a b"]})
+  $r.link($ctx3, [$wapp])
+  $wpath = $tmp .. "/wrapped/data/applications/dev.example.demo.desktop"
+  $e3 = read_file($wpath)
+  check("wrapper: Exec is the wrapper, --, then the entry's own Exec", contains($e3, "\nExec=/opt/w/launch demo \"a b\" -- /view/opt/demo/current/bin/demo %F\n"))
+  check("wrapper: TryExec stays the real program", contains($e3, "\nTryExec=/view/opt/demo/current/bin/demo\n"))
+  $wm = filter(json_parse(read_file($r.manifest_path($ctx3, $wapp))), fn($e) = $e.path == $wpath)
+  check("wrapper: the manifest records the wrapped entry", len($wm) == 1 and $wm[0].states[0].sha256 == hash_file($wpath, "sha256"))
+  $r.link($ctx3, [$wapp])
+  check("wrapper: a relink does not wrap twice", read_file($wpath) == $e3 and len(split($e3, " -- ")) == 2)
+  $r.link($ctx3, [$app])
+  check("wrapper: dropped from the catalogue, the next link unwraps", contains(read_file($wpath), "\nExec=/view/opt/demo/current/bin/demo %F\n"))
+  check("wrapper: = allowed after the executable", $r.valid_wrapper(["/opt/w/run", "--opt=1"]))
+  $odd = "[Desktop Entry]\nExec = demo %U\nDBusActivatable=true\n[Desktop Action new]\nExec= demo --new\n"
+  $wo = $r.rewrite_entry($odd, $opt, "/view/opt/demo", ["/opt/w/launch", "demo"])
+  check("wrapper: Exec with spaces around = is wrapped", contains($wo, "\nExec=/opt/w/launch demo -- /view/opt/demo/current/bin/demo %U\n"))
+  check("wrapper: Desktop Action Exec is wrapped", contains($wo, "\nExec=/opt/w/launch demo -- /view/opt/demo/current/bin/demo --new\n"))
+  check("wrapper: D-Bus activation turned off", contains($wo, "\nDBusActivatable=false\n") and not contains($wo, "=true"))
+  check("no wrapper: D-Bus activation kept", contains($r.rewrite_entry($odd, $opt, "/view/opt/demo", nil), "\nDBusActivatable=true\n"))
+  refuses("wrapper: an empty Exec cannot be wrapped", "LAYOUT", fn() = $r.rewrite_entry("[Desktop Entry]\nExec=\n", $opt, "/view/opt/demo", ["/opt/w/launch"]))
 
   -- A rollback from the host target is cut while relinking. The second
   -- target links through a read-only opt and must not touch the journal;
@@ -356,6 +394,41 @@ try
   check("remove: forged target still intact", read_file($tmp .. "/precious") == "do not delete")
   $l3 = $r.link($ctx2, [$app])
   check("target 2: link drops a removed app", len($l3) == 1 and not is_file($tmp .. "/session/data/applications/dev.example.demo.desktop"))
+
+  -- exec_wrapper: entries it cannot wrap are refused, before anything moves.
+  $wr = ["/opt/w/launch", "demo"]
+  $ind = $r.rewrite_entry("[Desktop Entry]\n  Exec=demo %U\n\tDBusActivatable = true\n", "/none", "/v", $wr)
+  check("wrapper: indented Exec wrapped", contains($ind, "\nExec=/opt/w/launch demo -- demo %U\n"))
+  check("wrapper: indented DBusActivatable turned off", contains($ind, "\nDBusActivatable=false\n"))
+  refuses("wrapper: a D-Bus-only entry is refused", "LAYOUT", fn() = $r.rewrite_entry("[Desktop Entry]\nDBusActivatable=true\n", "/none", "/v", $wr))
+  refuses("wrapper: an action without Exec is refused", "LAYOUT", fn() = $r.rewrite_entry("[Desktop Entry]\nExec=demo\n[Desktop Action new]\nName=New\n", "/none", "/v", $wr))
+  check("no wrapper: a D-Bus-only entry passes", contains($r.rewrite_entry("[Desktop Entry]\nDBusActivatable=true\n", "/none", "/v", nil), "DBusActivatable=true"))
+  $ctx4 = $r.new_context({root: $tmp .. "/root4", state: $tmp .. "/state4", catalogue: $tmp .. "/releases.mx",
+    share: $tmp .. "/root4/share", bin: $tmp .. "/root4/bin", offline: true})
+  $wapp4 = merge($app, {exec_wrapper: $wr})
+  $t11 = make_tarball("demo", "11.0", {})
+  $t12 = make_tarball("demo", "12.0", {})
+  $t13 = make_tarball("demo", "13.0", {exec: ""})
+  $r.install_tarball($ctx4, $wapp4, "11.0", $t11, proof($t11))
+  $r.install_tarball($ctx4, $wapp4, "12.0", $t12, proof($t12))
+  refuses("wrapper: an update with an empty Exec is refused", "LAYOUT", fn() = $r.install_tarball($ctx4, $wapp4, "13.0", $t13, proof($t13)))
+  $opt4 = $ctx4.opt_dir .. "/demo"
+  check("wrapper: the refused update changed nothing", $r.current_version($ctx4, $wapp4) == "12.0" and not is_dir($opt4 .. "/13.0") and is_dir($opt4 .. "/11.0") and json_parse(read_file($opt4 .. "/meta.json")).pending == nil)
+  $rb4 = $r.rollback($ctx4, $wapp4)
+  check("wrapper: rollback still works after a refused update", $rb4.action == "rolled back" and $r.current_version($ctx4, $wapp4) == "11.0")
+
+  -- An install (made without a wrapper) is interrupted before `current`
+  -- moves; then the catalogue gains a wrapper the target cannot take.
+  $r.install_tarball($ctx4, $app, "13.0", $t13, proof($t13))
+  $m4 = json_parse(read_file($opt4 .. "/meta.json"))
+  write_file($opt4 .. "/meta.json", json_encode(merge($m4, {version: "13.0", previous: "11.0", pending: {op: "install", target: "13.0", origin: $r.target_id($ctx4, false)}})))
+  remove($opt4 .. "/current")
+  symlink("11.0", $opt4 .. "/current")
+  $rb5 = $r.rollback($ctx4, $wapp4)
+  $m5 = json_parse(read_file($opt4 .. "/meta.json"))
+  check("wrapper: rollback abandons an interrupted install it cannot wrap", contains($rb5.action, "abandoned") and $r.current_version($ctx4, $wapp4) == "11.0" and $m5.pending == nil and $m5.version == "11.0")
+  check("wrapper: after abandoning, the entry is wrapped", contains(read_file($ctx4.share_dir .. "/applications/dev.example.demo.desktop"), "Exec=/opt/w/launch demo -- "))
+  check("wrapper: no rollback to the abandoned version", $m5.previous == nil)
 finally
   remove_dir($tmp)
 end

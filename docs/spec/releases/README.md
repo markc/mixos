@@ -1,6 +1,6 @@
 # Releases contract
 
-Status: accepted, version 0.1.0. Verified by
+Status: accepted, version 0.2.0 (0.2.0 adds `exec_wrapper`). Verified by
 `services/releasesd/tests/releases_test.mix` (offline logic) and
 `services/releasesd/tests/releasesd_test.mix` (every verb over a private
 broker).
@@ -62,6 +62,31 @@ re-read on every request.
 | `name` | `^[a-z0-9][a-z0-9-]{0,63}$`, unique; it becomes a directory name |
 | `repo` | `owner/name` on GitHub |
 | `asset` | optional regex choosing the tarball when the default is wrong or ambiguous |
+| `exec_wrapper` | optional list of 1–32 non-empty strings without control characters, the first an absolute path without `=`; see below |
+
+**`exec_wrapper`.** When `link` writes the app's desktop entries, every
+`Exec=` becomes `Exec=<wrapper…> -- <the entry's own Exec>`. The entry's own
+Exec keeps its field codes (`%F`, `%U` …) and is made absolute as usual.
+Each wrapper argument is written per the Desktop Entry Specification: `%` is
+doubled; an argument with a reserved character is double-quoted, with
+`"` `` ` `` `$` `\` escaped inside the quotes; then every backslash is
+escaped once more as a string value. The literal `--` separates the wrapper
+from the app's command, so a wrapper can always fall back to running that
+command as it stands. Every `Exec` is wrapped, Desktop Actions included,
+with whitespace before the key and around `=` allowed. The main group and
+every Desktop Action must have a non-empty `Exec`, or the entry is refused
+(`LAYOUT`). An install, update or rollback checks this before the version
+becomes current, so a refusal changes nothing. If a wrapper is added while
+an install or rollback is interrupted and the target cannot be wrapped, the
+retry abandons that change: `current` returns to the other recorded version
+(if that one passes), `previous` is cleared, and `meta.json` records
+`abandoned: {op, target, reason}`. A rollback that does this reports it as
+its result. A wrapped entry gets `DBusActivatable=false`, since D-Bus
+activation would start the app without its `Exec`. `TryExec` stays the
+app's real program. The entry is
+rebuilt from the app's own copy on every link, so it is never wrapped twice.
+The link manifest records the final content. Removing the field unwraps the
+entry on the next link.
 
 The default asset is the one release file matching `linux[-_.]<arch>.tar.gz`
 (`x86_64`, `amd64` or `x64`; `aarch64` or `arm64`), excluding web builds.
@@ -129,7 +154,7 @@ Root defaults to `~/.local`.
 |---|---|
 | `<root>/opt/<app>/<version>/` | the release prefix: `bin/`, `share/` |
 | `<root>/opt/<app>/current` | symlink to the active version |
-| `<root>/opt/<app>/meta.json` | `{name, repo, version, previous, verified, installed_at, pending?}` |
+| `<root>/opt/<app>/meta.json` | `{name, repo, version, previous, verified, installed_at, pending?, abandoned?}` |
 | `<root>/opt/<app>/.verified-<version>.json` | the proof of each kept version |
 | `<share>/mixos/releases/<app>.links.json` | what was made in this target: `[{path, states: [{link} or {sha256}]}]` |
 | `$XDG_STATE_HOME/mixos/releases/<app>.json` | the last check: ETag, latest release |
