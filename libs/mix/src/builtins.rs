@@ -24622,7 +24622,7 @@ pub(crate) mod socket_sources {
                     // Writes that never block would otherwise never yield,
                     // starving the SIGTERM and Ctrl-C select arms.
                     steps += 1;
-                    if steps % 16 == 0 {
+                    if steps.is_multiple_of(16) {
                         tokio::task::yield_now().await;
                     }
                     continue;
