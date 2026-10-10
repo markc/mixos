@@ -58,8 +58,16 @@ fn live_rig() -> Rig {
 }
 
 fn rig_with(theme: Theme, builder: egui_kittest::HarnessBuilder<Option<Shell>>) -> Rig {
+    rig_sized(theme, builder, egui::vec2(980.0, 620.0))
+}
+
+fn rig_sized(
+    theme: Theme,
+    builder: egui_kittest::HarnessBuilder<Option<Shell>>,
+    size: egui::Vec2,
+) -> Rig {
     static RUNS: AtomicU64 = AtomicU64::new(0);
-    let mut h = builder.with_size(egui::vec2(980.0, 620.0)).build_ui_state(
+    let mut h = builder.with_size(size).build_ui_state(
         |ui, shell: &mut Option<Shell>| {
             if let Some(shell) = shell {
                 shell.logic(ui.ctx());
@@ -587,8 +595,8 @@ fn the_theme_verb_installs_its_choice() {
     wait(&mut rig, &[1]);
     let (_, rc, body) = reply(&rig, 1).unwrap();
     assert_eq!(
-        (rc, &body["effective"]),
-        (0, &json!({"scheme":"studio","mode":"dark"})),
+        (rc, &body["effective"]["scheme"], &body["effective"]["mode"]),
+        (0, &json!("studio"), &json!("dark")),
         "{body}"
     );
     rig.h.run_steps(5);
@@ -605,8 +613,13 @@ fn the_theme_verb_installs_its_choice() {
     wait(&mut rig, &[2]);
     let (_, rc, body) = reply(&rig, 2).unwrap();
     assert_eq!(
-        (rc, &body["scheme"], &body["effective"]),
-        (0, &Value::Null, &json!({"scheme":"pro","mode":"light"}))
+        (
+            rc,
+            &body["scheme"],
+            &body["effective"]["scheme"],
+            &body["effective"]["mode"]
+        ),
+        (0, &Value::Null, &json!("pro"), &json!("light"))
     );
     rig.h.run_steps(5);
     assert_eq!(
@@ -715,4 +728,151 @@ fn the_tree_filters_by_exact_label() {
     );
     wait(&mut rig, &[4]);
     assert_eq!(reply(&rig, 4).unwrap().2["error_code"], "ARGUMENT");
+}
+
+/// View › Theme's Style and framing groups, clicked over the Bus: Studio
+/// style puts the chrome widgets on the Pro palette, the system title bar
+/// asks for server decorations and draws no captions, and captions left
+/// moves Close to the top-left corner.
+#[test]
+fn view_theme_style_and_decorations_by_bus_clicks() {
+    use design::{CaptionSide, Decorations, Style};
+    let theme = Theme::for_context(design::DesignContext {
+        scheme: design::Scheme::Pro,
+        mode: design::Mode::Light,
+        ..Default::default()
+    });
+    // Tall enough for the whole Theme submenu.
+    let mut rig = rig_sized(
+        theme,
+        Harness::builder()
+            .with_step_dt(1.0 / 60.0)
+            .with_max_steps(240),
+        egui::vec2(980.0, 900.0),
+    );
+    let mut n = 0;
+    let mut click = |rig: &mut Rig, path: &[&str]| {
+        for name in path {
+            n += 1;
+            send(
+                rig,
+                n,
+                "busviewer.ui.click",
+                json!({"label":name,"exact":true}),
+            );
+            wait(rig, &[n]);
+            let (_, rc, body) = reply(rig, n).unwrap();
+            assert_eq!(rc, 0, "{name}: {body}");
+        }
+        rig.h.run_steps(10);
+    };
+    let view = label("view");
+    click(&mut rig, &[view.as_str(), "Theme", "Studio style"]);
+    assert_eq!(engine(&rig).ui.theme_style, Some(Some(Style::Studio)));
+    let chrome = toolkit::chrome::Chrome::of(&rig.h.ctx);
+    assert_eq!(chrome.style.title_bar_height, 38.0, "Studio's lengths");
+    assert_eq!(
+        rig.h.ctx.global_style().visuals.panel_fill,
+        panel_of(design::Scheme::Pro, design::Mode::Light),
+        "on the Pro palette"
+    );
+
+    click(&mut rig, &[view.as_str(), "Theme", "Captions left"]);
+    assert_eq!(engine(&rig).ui.theme_captions, Some(CaptionSide::Left));
+    let close = control_rect(&mut rig, 100, "Close");
+    // The harness draws the window 8 pt in.
+    assert!(close[0] <= 8.0, "Close in the top-left corner: {close:?}");
+
+    click(
+        &mut rig,
+        &[view.as_str(), "Theme", "System title bar (SSD)"],
+    );
+    assert_eq!(engine(&rig).ui.theme_decorations, Some(Decorations::Server));
+    assert_eq!(
+        toolkit::chrome::Chrome::of(&rig.h.ctx).decorations,
+        Decorations::Server
+    );
+    let captions = tree(&mut rig, 101, json!({"label":"Close","exact":true}));
+    assert!(captions.is_empty(), "no captions: {captions:?}");
+    let menus = tree(&mut rig, 102, json!({"label":view,"exact":true}));
+    assert!(!menus.is_empty(), "the menus stay, in the menu-bar row");
+
+    send(&mut rig, 103, "busviewer.commands", json!({}));
+    wait(&mut rig, &[103]);
+    let commands = reply(&rig, 103).unwrap().2;
+    let tick = |id: &str| {
+        commands["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["id"] == id)
+            .unwrap()["checked"]
+            .clone()
+    };
+    assert_eq!(
+        (
+            tick("view.style.studio"),
+            tick("view.style.own"),
+            tick("view.decorations.ssd"),
+            tick("view.captions.left")
+        ),
+        (json!(true), json!(false), json!(true), json!(true))
+    );
+}
+
+/// The theme verb's new axes reach the installed chrome; null follows the
+/// session again.
+#[test]
+fn the_theme_verb_sets_style_and_framing() {
+    let mut rig = live_rig();
+    send(
+        &mut rig,
+        1,
+        "busviewer.theme",
+        json!({"scheme":"forest","style":"classic","decorations":"ssd","caption_side":"left"}),
+    );
+    wait(&mut rig, &[1]);
+    let (_, rc, body) = reply(&rig, 1).unwrap();
+    assert_eq!(rc, 0, "{body}");
+    assert_eq!(
+        body["effective"],
+        json!({"scheme":"forest","style":"classic","mode":"light","decorations":"ssd","caption_side":"left"})
+    );
+    rig.h.run_steps(5);
+    let chrome = toolkit::chrome::Chrome::of(&rig.h.ctx);
+    assert!(chrome.style.bevels, "Classic's forms");
+    assert_eq!(
+        (chrome.decorations, chrome.captions),
+        (design::Decorations::Server, design::CaptionSide::Left)
+    );
+    send(
+        &mut rig,
+        2,
+        "busviewer.theme",
+        json!({"style":null,"decorations":null,"caption_side":null,"scheme":null}),
+    );
+    wait(&mut rig, &[2]);
+    rig.h.run_steps(5);
+    let chrome = toolkit::chrome::Chrome::of(&rig.h.ctx);
+    assert!(!chrome.style.bevels, "the session's Pro again");
+    assert_eq!(chrome.decorations, design::Decorations::Client);
+    assert_eq!(code_of(&mut rig, 3, json!({"style":"neon"})), "ARGUMENT");
+}
+
+fn code_of(rig: &mut Rig, n: u64, args: Value) -> String {
+    send(rig, n, "busviewer.theme", args);
+    wait(rig, &[n]);
+    let (_, _, body) = reply(rig, n).unwrap();
+    body["error_code"].as_str().unwrap_or_default().to_owned()
+}
+
+/// The rect of the control labelled `name`, by `busviewer.ui.tree`.
+fn control_rect(rig: &mut Rig, n: u64, name: &str) -> Vec<f64> {
+    let nodes = tree(rig, n, json!({"label":name,"exact":true,"role":"Button"}));
+    nodes[0]["rect"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{name}: {nodes:?}"))
+        .iter()
+        .map(|v| v.as_f64().unwrap())
+        .collect()
 }

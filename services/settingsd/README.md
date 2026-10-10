@@ -24,6 +24,9 @@ explicit binding/test directory. Use an isolated broker when testing.
 Profiles pin their initial package design source. Reload checks a content digest;
 a binary upgrade cannot change effective settings within the same revision.
 An effective interpretation digest fences compiler drift for explicit migration.
+The accepted record's format (`store::FORMAT`, now 2) is that migration: an older
+record whose seal verifies as stored is re-derived and re-sealed on open by
+`Accepted::upgrade`, whose doc comment says how to add the next field.
 Present corrupt primary data can restore a validated backup under a new
 incarnation. A missing primary fails visibly, including when a backup exists.
 I/O faults and intact unsupported documents fail without automatic rollback.

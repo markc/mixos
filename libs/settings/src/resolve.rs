@@ -12,7 +12,10 @@ pub fn describe() -> Value {
         "receipt_expiry": "missing receipts are unknown; no ordering of opaque operation IDs",
         "fields": {
             "appearance.scheme": {"type":"string", "enum":["ocean","crimson","stone","forest","sunset","mono","pro","studio","classic"]},
+            "appearance.style": {"type":"string|null", "enum":["plain","pro","studio","classic"], "null":"the scheme's own style"},
             "appearance.mode": {"type":"string", "enum":["light","dark"]},
+            "appearance.decorations": {"type":"string", "enum":["csd","ssd"]},
+            "appearance.caption_side": {"type":"string", "enum":["right","left"]},
             "appearance.contrast": {"type":"string", "enum":["normal","high"]},
             "appearance.source": {"type":"string|null", "max_bytes":MAX_SOURCE_BYTES},
             "ui.density": {"type":"number", "minimum":0.5, "maximum":2.0},
@@ -116,6 +119,12 @@ pub fn resolve_with_embedded(
                 bounded(scale, 0.5, 3.0, &format!("apps.{app}.text_scale"))?;
             }
         }
+        if design::Decorations::from_name(&desktop.appearance.decorations).is_none() {
+            return Err(error("appearance.decorations", "Unknown decorations"));
+        }
+        if design::CaptionSide::from_name(&desktop.appearance.caption_side).is_none() {
+            return Err(error("appearance.caption_side", "Unknown caption side"));
+        }
         if desktop
             .appearance
             .source
@@ -144,6 +153,9 @@ pub fn resolve_with_embedded(
         let overlay = app.and_then(|id| desktop.apps.get(id));
         let mut appearance = desktop.appearance.clone();
         let mut ui = desktop.ui.clone();
+        // Style, decorations and caption side come only from the profile and
+        // record no provenance, so a profile from before them keeps its
+        // effective digest.
         let mut provenance = BTreeMap::from([
             ("appearance.scheme".into(), "profile".into()),
             ("appearance.mode".into(), "profile".into()),
@@ -182,6 +194,14 @@ pub fn resolve_with_embedded(
                     .ok_or_else(|| error("appearance.mode", "Unknown mode"))?,
                 contrast: design::Contrast::from_name(&appearance.contrast)
                     .ok_or_else(|| error("appearance.contrast", "Unknown contrast"))?,
+                style: appearance
+                    .style
+                    .as_deref()
+                    .map(|name| {
+                        design::Style::from_name(name)
+                            .ok_or_else(|| error("appearance.style", "Unknown style"))
+                    })
+                    .transpose()?,
                 app: app.map(str::to_owned),
             })
         };
@@ -202,8 +222,11 @@ pub fn resolve_with_embedded(
             context.clone(),
             Effective {
                 scheme: appearance.scheme,
+                style: appearance.style,
                 mode: appearance.mode,
                 contrast: appearance.contrast,
+                decorations: appearance.decorations,
+                caption_side: appearance.caption_side,
                 ui,
                 design: projection,
                 provenance,
@@ -251,6 +274,19 @@ fn set(desktop: &mut Desktop, path: &str, value: Option<Value>) -> Result<(), Di
         "appearance.contrast" => {
             desktop.appearance.contrast =
                 typed(path, value.unwrap_or(json!(defaults.appearance.contrast)))?
+        }
+        "appearance.style" => desktop.appearance.style = typed(path, value.unwrap_or(Value::Null))?,
+        "appearance.decorations" => {
+            desktop.appearance.decorations = typed(
+                path,
+                value.unwrap_or(json!(defaults.appearance.decorations)),
+            )?
+        }
+        "appearance.caption_side" => {
+            desktop.appearance.caption_side = typed(
+                path,
+                value.unwrap_or(json!(defaults.appearance.caption_side)),
+            )?
         }
         "appearance.source" => {
             desktop.appearance.source = typed(path, value.unwrap_or(Value::Null))?
@@ -396,6 +432,75 @@ mod tests {
         assert_eq!(
             patch(&next, &BTreeMap::new(), &["apps.term".into()]).unwrap(),
             current
+        );
+    }
+
+    #[test]
+    fn style_decorations_and_caption_side_default_resolve_and_validate() {
+        let current = Desktop::default();
+        assert_eq!(current.appearance.style, None, "the scheme's own style");
+        assert_eq!(
+            (
+                current.appearance.decorations.as_str(),
+                current.appearance.caption_side.as_str()
+            ),
+            ("csd", "right")
+        );
+        let effective = resolve(&current).unwrap();
+        assert_eq!(effective["desktop"].style, None);
+        assert_eq!(effective["desktop"].decorations, "csd");
+        let next = patch(
+            &current,
+            &BTreeMap::from([
+                ("appearance.style".into(), json!("classic")),
+                ("appearance.decorations".into(), json!("ssd")),
+                ("appearance.caption_side".into(), json!("left")),
+            ]),
+            &[],
+        )
+        .unwrap();
+        let effective = resolve(&next).unwrap();
+        let desktop = &effective["desktop"];
+        assert_eq!(
+            (
+                desktop.style.as_deref(),
+                desktop.decorations.as_str(),
+                desktop.caption_side.as_str()
+            ),
+            (Some("classic"), "ssd", "left")
+        );
+        assert_eq!(
+            effective["app:ced"].style.as_deref(),
+            Some("classic"),
+            "every app context"
+        );
+        for (path, value) in [
+            ("appearance.style", json!("neon")),
+            ("appearance.decorations", json!("both")),
+            ("appearance.caption_side", json!("top")),
+        ] {
+            let bad = patch(&current, &BTreeMap::from([(path.into(), value)]), &[]).unwrap();
+            let errors = resolve(&bad).unwrap_err();
+            assert_eq!(errors[0].path, path, "{errors:?}");
+        }
+        let reset = patch(
+            &next,
+            &BTreeMap::new(),
+            &[
+                "appearance.style".into(),
+                "appearance.decorations".into(),
+                "appearance.caption_side".into(),
+            ],
+        )
+        .unwrap();
+        assert_eq!(reset, current, "a reset restores each default");
+        // A desktop saved before these keys loads with their defaults.
+        let old: Desktop =
+            serde_json::from_value(json!({"appearance":{"scheme":"forest","mode":"light"}}))
+                .unwrap();
+        assert_eq!(
+            (old.appearance.style, old.appearance.decorations.as_str()),
+            (None, "csd")
         );
     }
 }

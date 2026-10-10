@@ -363,8 +363,8 @@ A row's `kind` is `service`, `verb`, `error`, `peers`, `peer` or
 | `busviewer.split` | `value`, 0 to 1 | The services pane's share of the window, kept between 0.2 and 0.65. The answer reports the value in effect, to 4 places. |
 | `busviewer.dialog` | `open`: `"about"`, `"shortcuts"` or null | Opens a dialog, or closes the open one. |
 | `busviewer.call` | `service`, `verb` and `body`, each optional | Calls the selected verb once, or the given one; `service` and `verb` go together. The answer is the reply: `{service, verb, request_body, rc, body}`. A transport failure is never retried: it answers return code 10 with `transport_error` and `outcome_unknown`. |
-| `busviewer.theme` | `scheme` and `mode`, each optional: a name, or null | Chooses the window's theme, in this window only. A present key sets that axis (null follows the session's), an absent one leaves it, and an unknown name is refused with `ARGUMENT`. Schemes: `ocean`, `crimson`, `stone`, `forest`, `sunset`, `mono`, `pro`, `studio`, `classic`; modes: `light`, `dark`. The answer is `{scheme, mode, effective: {scheme, mode}}`: the choice, then what the window shows. Taken while a dialog is open. |
-| `busviewer.execute` | `id` | Runs one command, from the menus or the title bar: `file.refresh`, `file.quit`, `edit.format`, `edit.clear`, `edit.copy`, `bus.call`, `help.shortcuts`, `help.about`, `view.search`, `view.mode` (the light/dark switch), and View › Theme's choices `view.theme.<scheme>`, `view.theme.session`, `view.mode.light`, `view.mode.dark`, `view.mode.session`. `busviewer.commands` lists them all, with each choice's `checked` tick. |
+| `busviewer.theme` | `scheme`, `style`, `mode`, `decorations` and `caption_side`, each optional: a name, or null | Chooses the window's theme, in this window only. A present key sets that axis (null follows the session's), an absent one leaves it, and an unknown name is refused with `ARGUMENT`; nothing changes unless every axis is valid. Schemes: `ocean`, `crimson`, `stone`, `forest`, `sunset`, `mono`, `pro`, `studio`, `classic`; styles: `plain`, `pro`, `studio`, `classic`, or `own` for the scheme's own; modes: `light`, `dark`; decorations: `csd` (the app's title bar), `ssd` (the compositor's, with the menus in a menu-bar row); caption sides: `right`, `left`. The answer is `{scheme, style, mode, decorations, caption_side, effective: {…}}`: the choice, then what the window shows. Taken while a dialog is open. |
+| `busviewer.execute` | `id` | Runs one command, from the menus or the title bar: `file.refresh`, `file.quit`, `edit.format`, `edit.clear`, `edit.copy`, `bus.call`, `help.shortcuts`, `help.about`, `view.search`, `view.mode` (the light/dark switch), and View › Theme's choices `view.theme.<scheme>`, `view.theme.session`, `view.mode.light`, `view.mode.dark`, `view.mode.session`, `view.style.own`, `view.style.<style>`, `view.style.session`, `view.decorations.csd`, `view.decorations.ssd`, `view.captions.left`, `view.captions.right`. `busviewer.commands` lists them all, with each choice's `checked` tick. |
 | `busviewer.refresh` | | Discovers services again. |
 | `busviewer.show` | | Restores and focuses the window. |
 | `busviewer.quit` | | Closes once idle. |
@@ -870,6 +870,71 @@ the agent's single map of the tree.
 
 ---
 
+<!-- page: https://mixos.dev/decisions/2026-10-10-scheme-and-style-axes/ (source: https://mixos.dev/decisions/2026-10-10-scheme-and-style-axes.md) -->
+
+# Decision — scheme and style are separate axes
+
+Status: accepted 2026-10-10.
+
+## The decision
+
+- **Scheme and style are separate choices.** The scheme picks the colours:
+  one of the nine palettes. The style picks the chrome's forms and lengths:
+  `plain`, `pro`, `studio` or `classic`. A theme context has a scheme, a
+  style, a mode and a contrast. A style of "none" means the scheme's own
+  style, which keeps every existing selection exactly as it was.
+- **Any palette takes any style.** A chrome style draws from the chrome
+  colour roles. The `pro`, `studio` and `classic` palettes author those
+  roles. Every other palette derives them from its semantic pairs, through
+  a typed and documented mapping in the design (`families.chrome.derive`).
+  For example, the bar is the `base` surface, cards the `secondary`
+  surface, and selections and the menu highlight the `accent` pair. A
+  colour a palette does author always wins over the derivation. In the
+  other direction, the plain style draws any palette through its semantic
+  pairs, which every palette has.
+- **The contrast rules still hold.** The pairs keep their WCAG checks.
+  Derived text roles sit on surfaces of the same pair, or close to them,
+  and the design tests that text on derived chrome meets AA (4.5:1) in
+  every hue palette, mode and contrast. The authored chrome palettes stay
+  exact, as before.
+- **Light or dark base comes from the palette.** Whether the chrome sits
+  on a light or a dark base is read from the lightness of its own `chrome`
+  colour, not from the style. A light palette in a style first designed
+  for a dark one is still drawn light.
+- **Decorations and caption side sit beside the axes.** They change no
+  colour or length, so they are not part of the design context:
+  - `csd`: the application draws its own title bar, as before;
+  - `ssd`: the compositor decorates the window, and the application shows
+    its menus and right-hand controls in a menu-bar row;
+  - caption side `right` (the default) or `left`. On the left the order is
+    Close, Minimize, Maximize, with Close in the corner, and the menus
+    follow the captions.
+- **Every surface takes the axes.** Settings has `appearance.style`,
+  `appearance.decorations` and `appearance.caption_side`. The shared theme
+  file has `style:`, `decorations:` and `caption_side:`. Each application's
+  View → Theme menu has a Style group and a Decorations group. An app's own
+  choice persists, and older saved state loads with the defaults.
+
+## Why
+
+Palette and style answer different questions. Tying them together meant a
+colour preference forced a layout, and a layout preference forced colours.
+As separate axes, each new palette works in every style and each new style
+works with every palette.
+
+## Consequences
+
+- Every scheme, style, mode and contrast combination compiles; the design
+  tests compile them all.
+- A new palette needs no chrome colours to work in a chrome style. It can
+  still author any of them where the derived colour is not the one wanted.
+- The style family's binding from each scheme to its own style remains.
+  It is what "the scheme's own style" resolves to.
+- The style family no longer carries a base token. The light or dark base
+  is the palette's, as described above.
+
+---
+
 <!-- page: https://mixos.dev/decisions/2026-10-10-style-tokens-as-data/ (source: https://mixos.dev/decisions/2026-10-10-style-tokens-as-data.md) -->
 
 # Decision — style tokens as data
@@ -955,7 +1020,7 @@ layering gate.
 | [logging](https://github.com/markc/mixos/blob/main/libs/logging/Cargo.toml) | logging | lib | core | none | 0.1.1 |
 | [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.112.0 |
 | [props](https://github.com/markc/mixos/blob/main/libs/props/Cargo.toml) | props | lib | core | none | 0.1.1 |
-| [settings](https://github.com/markc/mixos/blob/main/libs/settings/Cargo.toml) | settings | lib | core | public | 0.3.4 |
+| [settings](https://github.com/markc/mixos/blob/main/libs/settings/Cargo.toml) | settings | lib | core | public | 0.3.5 |
 | [strict](https://github.com/markc/mixos/blob/main/libs/strict/Cargo.toml) | strict | lib | core | none | 0.1.1 |
 | [syntax](https://github.com/markc/mixos/blob/main/libs/syntax/Cargo.toml) | syntax | lib | core | none | 0.1.1 |
 | [test-broker](https://github.com/markc/mixos/blob/main/libs/test-broker/Cargo.toml) | test-broker | lib | core | none | 0.1.1 |
@@ -1893,7 +1958,8 @@ durable acceptance; a changed result can remain unpublished after broker failure
 
 ## Initial data and resolution
 
-The schema covers appearance scheme/mode/contrast plus embedded or complete
+The schema covers appearance scheme/style/mode/contrast, window decorations
+(csd or ssd) and caption side (right or left) plus embedded or complete
 strict-data design source; UI density/text scale/reduced motion; named panels
 with edge/mode/thickness; ordered shell pages; and whole app override records
 with scheme/mode/contrast/text scale. Describe supplies exact ranges. Unknown
@@ -1907,6 +1973,16 @@ new package source requires an explicit mutation with a new revision.
 The accepted effective digest also fences compiler interpretation drift. A
 changed interpretation requires explicit migration rather than changing the
 same accepted identity on reload.
+
+The accepted record carries a format number (absent in format 1; now 2). On
+open the record's seal is verified as stored, in its own format, so tampering
+is still refused. An older record is then upgraded by one rule: everything
+authored is kept, the effective interpretation is resolved again from the
+authored desktop and the pinned source (derived data is never trusted across
+formats), both digests are sealed at the current format, and the backup and
+then the primary are replaced atomically. A second open changes nothing. An
+authored field added later is omitted at its default, so older records still
+verify; a change to the effective interpretation bumps the format.
 
 Validate the whole candidate and all advertised app contexts before acceptance.
 Compilation checks the source's claimed contexts. App overlays affect their

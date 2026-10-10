@@ -179,3 +179,55 @@ fn window_dark() {
         "window_dark",
     );
 }
+
+fn crossed(scheme: Scheme, style: design::Style, mode: Mode) -> Theme {
+    Theme::for_context(DesignContext {
+        scheme,
+        mode,
+        style: Some(style),
+        ..DesignContext::default()
+    })
+}
+
+/// A hue palette in a chrome style: Forest's colours, derived into the
+/// chrome roles, in Studio's cards and pills.
+#[test]
+fn window_forest_studio_dark() {
+    window(
+        crossed(Scheme::Forest, design::Style::Studio, Mode::Dark),
+        "window_forest_studio_dark",
+    );
+}
+
+/// Ocean's colours in Pro's flat tab strips.
+#[test]
+fn window_ocean_pro_light() {
+    window(
+        crossed(Scheme::Ocean, design::Style::Pro, Mode::Light),
+        "window_ocean_pro_light",
+    );
+}
+
+/// A chrome palette in the plain style: Studio's colours through its pairs.
+#[test]
+fn window_studio_plain_dark() {
+    window(
+        crossed(Scheme::Studio, design::Style::Plain, Mode::Dark),
+        "window_studio_plain_dark",
+    );
+}
+
+/// Server-side decorations: no title, captions or mark; the menus and the
+/// right-hand controls in a menu-bar row.
+#[test]
+fn window_ssd() {
+    let theme = Theme::embedded().framed(design::Decorations::Server, design::CaptionSide::Right);
+    window(theme, "window_ssd");
+}
+
+/// The captions at the left, Close in the top-left corner.
+#[test]
+fn window_captions_left() {
+    let theme = Theme::embedded().framed(design::Decorations::Client, design::CaptionSide::Left);
+    window(theme, "window_captions_left");
+}

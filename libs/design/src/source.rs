@@ -428,6 +428,43 @@ pub struct ChromeMappingSource {
     pub coverage: CoveragePolicy,
     #[serde(default)]
     pub roles: BTreeMap<String, String>,
+    /// Role name to its colour for a palette that authors none.
+    #[serde(default)]
+    pub derive: BTreeMap<String, ChromeDeriveSource>,
+}
+
+/// Half of a semantic pair.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PairPart {
+    Surface,
+    Foreground,
+}
+
+/// A chrome role derived from the palette (`family::chrome`).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ChromeDeriveSource {
+    /// One half of a semantic pair, as rendered.
+    Pair { pair: String, part: PairPart },
+    /// A non-text colour.
+    NonText { value: String },
+    /// A colour primitive.
+    Primitive { value: String },
+    /// `from` moved toward `toward` of the same pair by `amount` (0 to 1).
+    /// With `min_contrast`, the move stops short where it would bring the
+    /// colour under that contrast with any of the chrome roles `against`
+    /// (the surfaces it is drawn on).
+    Mix {
+        pair: String,
+        from: PairPart,
+        toward: PairPart,
+        amount: f64,
+        #[serde(default)]
+        min_contrast: Option<f64>,
+        #[serde(default)]
+        against: Vec<String>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Deserialize)]
@@ -693,7 +730,23 @@ pub struct DesignSourceDocument {
     pub identity: SourceIdentity,
     pub legacy: LegacyV0Source,
     pub v1: DesignV1Source,
+    /// The top-level presentation selection beside `scheme:` and `mode:`.
+    pub presentation: PresentationSelection,
 }
+
+/// A theme document's own choice of style and window framing, each a name
+/// its reader validates (`style`: a style or `own`; `decorations`: `csd` or
+/// `ssd`; `caption_side`: `right` or `left`). None of them changes a token,
+/// so the compiler leaves them to the reader.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PresentationSelection {
+    pub style: Option<String>,
+    pub decorations: Option<String>,
+    pub caption_side: Option<String>,
+}
+
+/// The top-level presentation keys a theme document may carry.
+pub const PRESENTATION_KEYS: [&str; 3] = ["style", "decorations", "caption_side"];
 
 /// Parse only the v0-shaped surface. The `design` section is ignored, exactly
 /// as a v0 theme reader ignores it.
@@ -801,6 +854,9 @@ pub fn parse_design_source(
         "knob_size",
         "meter_width",
         "design",
+        "style",
+        "decorations",
+        "caption_side",
     ];
     if let Some(unknown) = top
         .keys()
@@ -843,10 +899,29 @@ pub fn parse_design_source(
             error.to_string(),
         )
     })?;
+    let mut presentation = PresentationSelection::default();
+    for (key, slot) in [
+        ("style", &mut presentation.style),
+        ("decorations", &mut presentation.decorations),
+        ("caption_side", &mut presentation.caption_side),
+    ] {
+        match top.get(key) {
+            None => {}
+            Some(Value::String(name)) => *slot = Some(name.clone()),
+            Some(_) => {
+                return Err(DesignSourceError::new(
+                    &identity,
+                    DesignSourceErrorCode::InvalidVersionedSource,
+                    format!("top-level {key:?} must be a name"),
+                ));
+            }
+        }
+    }
     Ok(DesignSourceDocument {
         identity,
         legacy,
         v1,
+        presentation,
     })
 }
 

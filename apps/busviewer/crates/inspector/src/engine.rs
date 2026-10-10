@@ -13,7 +13,7 @@
 
 use crate::bus::{CallError, Delivery, Reply};
 use crate::model::{self, APP_ID, Selection, Snapshot};
-use design::{Mode, Scheme};
+use design::{CaptionSide, Decorations, Mode, Scheme, Style};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -97,6 +97,14 @@ pub struct UiState {
     pub theme_scheme: Option<Scheme>,
     #[serde(default, with = "by_name::mode")]
     pub theme_mode: Option<Mode>,
+    /// The style: `None` follows the session, `Some(None)` is the scheme's
+    /// own (saved as "own"), else a style.
+    #[serde(default, with = "by_name::style")]
+    pub theme_style: Option<Option<Style>>,
+    #[serde(default, with = "by_name::decorations")]
+    pub theme_decorations: Option<Decorations>,
+    #[serde(default, with = "by_name::captions")]
+    pub theme_captions: Option<CaptionSide>,
     /// The view should give the services filter the keyboard (set by
     /// `view.search`, cleared by the view once it has); not saved.
     #[serde(skip)]
@@ -115,6 +123,9 @@ impl Default for UiState {
             dialog: None,
             theme_scheme: None,
             theme_mode: None,
+            theme_style: None,
+            theme_decorations: None,
+            theme_captions: None,
             focus_filter: false,
         }
     }
@@ -156,6 +167,64 @@ mod by_name {
     }
     named!(scheme, design::Scheme);
     named!(mode, design::Mode);
+    named!(decorations, design::Decorations);
+    named!(captions, design::CaptionSide);
+
+    /// The style axis: null follows the session, "own" the scheme's own
+    /// style, else a style's name.
+    pub mod style {
+        use serde::{Deserialize, Deserializer, Serializer};
+
+        pub fn serialize<S: Serializer>(
+            value: &Option<Option<design::Style>>,
+            s: S,
+        ) -> Result<S::Ok, S::Error> {
+            match value {
+                None => s.serialize_none(),
+                Some(style) => s.serialize_some(super::super::style_name(*style)),
+            }
+        }
+
+        pub fn deserialize<'de, D: Deserializer<'de>>(
+            d: D,
+        ) -> Result<Option<Option<design::Style>>, D::Error> {
+            match Option::<String>::deserialize(d)? {
+                None => Ok(None),
+                Some(name) => super::super::style_from_name(&name)
+                    .map(Some)
+                    .ok_or_else(|| serde::de::Error::custom(format!("unknown style {name:?}"))),
+            }
+        }
+    }
+}
+
+/// The scheme's own style, by name.
+pub const OWN_STYLE: &str = "own";
+
+/// A style axis value's name: a style, or [`OWN_STYLE`].
+pub fn style_name(style: Option<Style>) -> &'static str {
+    style.map_or(OWN_STYLE, Style::name)
+}
+
+/// The style axis value `name` names.
+pub fn style_from_name(name: &str) -> Option<Option<Style>> {
+    if name == OWN_STYLE {
+        Some(None)
+    } else {
+        Style::from_name(name).map(Some)
+    }
+}
+
+/// The session theme as the shell loaded it: what an unchosen axis of the
+/// window's theme choice shows.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Session {
+    pub scheme: Scheme,
+    /// `None` is the scheme's own style.
+    pub style: Option<Style>,
+    pub mode: Mode,
+    pub decorations: Decorations,
+    pub captions: CaptionSide,
 }
 
 #[derive(Clone, Debug)]
@@ -180,9 +249,8 @@ pub struct Engine {
     /// `busviewer.split` set the split: the shell drops the panel width
     /// egui remembers, so the window takes the new one.
     pub split_requested: bool,
-    /// The session theme's scheme and mode, as the shell loaded it: what an
-    /// unchosen axis of the theme choice shows.
-    pub session: (Scheme, Mode),
+    /// The session theme, as the shell loaded it.
+    pub session: Session,
     next_ticket: u64,
     discovery: Option<(u64, Option<u64>)>,
     call: Option<Call>,
@@ -204,7 +272,7 @@ impl Engine {
             connected: true,
             quitting: false,
             split_requested: false,
-            session: (Scheme::default(), Mode::default()),
+            session: Session::default(),
             next_ticket: 0,
             discovery: None,
             call: None,
@@ -265,9 +333,11 @@ impl Engine {
             "ui":self.ui})
     }
 
-    /// `busviewer.theme`: a present `scheme` or `mode` sets that axis of the
-    /// window's theme choice (a name, or null to follow the session); an
-    /// absent one leaves it. Both are checked before either applies.
+    /// `busviewer.theme`: a present `scheme`, `style`, `mode`, `decorations`
+    /// or `caption_side` sets that axis of the window's theme choice (a
+    /// name, or null to follow the session; `style` also takes "own", the
+    /// scheme's own style); an absent one leaves it. Every axis is checked
+    /// before any applies.
     fn theme(&mut self, args: &Value) -> Result<Value, (&'static str, String)> {
         type Axis<T> = Result<Option<Option<T>>, (&'static str, String)>;
         fn axis<T>(args: &Value, key: &str, from_name: fn(&str) -> Option<T>) -> Axis<T> {
@@ -281,18 +351,41 @@ impl Engine {
             }
         }
         let scheme = axis(args, "scheme", Scheme::from_name)?;
+        let style = axis(args, "style", style_from_name)?;
         let mode = axis(args, "mode", Mode::from_name)?;
+        let decorations = axis(args, "decorations", Decorations::from_name)?;
+        let captions = axis(args, "caption_side", CaptionSide::from_name)?;
         if let Some(scheme) = scheme {
             self.ui.theme_scheme = scheme;
+        }
+        if let Some(style) = style {
+            self.ui.theme_style = style;
         }
         if let Some(mode) = mode {
             self.ui.theme_mode = mode;
         }
-        let (scheme, mode) = self.effective_theme();
-        Ok(
-            json!({"scheme":self.ui.theme_scheme.map(Scheme::name),"mode":self.ui.theme_mode.map(Mode::name),
-            "effective":{"scheme":scheme.name(),"mode":mode.name()}}),
-        )
+        if let Some(decorations) = decorations {
+            self.ui.theme_decorations = decorations;
+        }
+        if let Some(captions) = captions {
+            self.ui.theme_captions = captions;
+        }
+        let ui = &self.ui;
+        let shown = self.effective();
+        Ok(json!({
+            "scheme": ui.theme_scheme.map(Scheme::name),
+            "style": ui.theme_style.map(style_name),
+            "mode": ui.theme_mode.map(Mode::name),
+            "decorations": ui.theme_decorations.map(Decorations::name),
+            "caption_side": ui.theme_captions.map(CaptionSide::name),
+            "effective": {
+                "scheme": shown.scheme.name(),
+                "style": style_name(shown.style),
+                "mode": shown.mode.name(),
+                "decorations": shown.decorations.name(),
+                "caption_side": shown.captions.name(),
+            }
+        }))
     }
 
     fn error(&mut self, id: u64, code: &str, message: &str) {
@@ -453,10 +546,21 @@ impl Engine {
     /// The scheme and mode the window shows: the choice, each unchosen
     /// axis the session's.
     pub fn effective_theme(&self) -> (Scheme, Mode) {
-        (
-            self.ui.theme_scheme.unwrap_or(self.session.0),
-            self.ui.theme_mode.unwrap_or(self.session.1),
-        )
+        let shown = self.effective();
+        (shown.scheme, shown.mode)
+    }
+
+    /// Every axis the window shows: the choice, each unchosen axis the
+    /// session's.
+    pub fn effective(&self) -> Session {
+        let ui = &self.ui;
+        Session {
+            scheme: ui.theme_scheme.unwrap_or(self.session.scheme),
+            style: ui.theme_style.unwrap_or(self.session.style),
+            mode: ui.theme_mode.unwrap_or(self.session.mode),
+            decorations: ui.theme_decorations.unwrap_or(self.session.decorations),
+            captions: ui.theme_captions.unwrap_or(self.session.captions),
+        }
     }
 
     /// Choose the window's scheme and mode (`None` follows the session).
@@ -1691,16 +1795,24 @@ mod tests {
     #[test]
     fn the_theme_verb_sets_present_axes_and_answers_the_effective_theme() {
         let mut e = engine();
-        e.session = (Scheme::Pro, Mode::Light);
+        e.session = Session {
+            scheme: Scheme::Pro,
+            mode: Mode::Light,
+            ..Session::default()
+        };
         let (rc, body) = ask(&mut e, "busviewer.theme", json!({"scheme":"forest"}));
         assert_eq!(rc, 0);
         assert_eq!(
             body,
-            json!({"scheme":"forest","mode":null,"effective":{"scheme":"forest","mode":"light"}})
+            json!({"scheme":"forest","style":null,"mode":null,"decorations":null,"caption_side":null,
+                "effective":{"scheme":"forest","style":"own","mode":"light","decorations":"csd","caption_side":"right"}})
         );
         let (_, body) = ask(&mut e, "busviewer.theme", json!({"mode":"dark"}));
         assert_eq!(body["scheme"], "forest", "an absent key leaves its axis");
-        assert_eq!(body["effective"], json!({"scheme":"forest","mode":"dark"}));
+        assert_eq!(
+            (&body["effective"]["scheme"], &body["effective"]["mode"]),
+            (&json!("forest"), &json!("dark"))
+        );
         let (_, body) = ask(&mut e, "busviewer.theme", json!({"scheme":null}));
         assert_eq!(
             (&body["scheme"], &body["effective"]["scheme"]),
@@ -1735,7 +1847,11 @@ mod tests {
     #[test]
     fn the_light_dark_switch_flips_the_mode_shown_and_keeps_the_scheme() {
         let mut e = engine();
-        e.session = (Scheme::Pro, Mode::Light);
+        e.session = Session {
+            scheme: Scheme::Pro,
+            mode: Mode::Light,
+            ..Session::default()
+        };
         e.set_theme(Some(Scheme::Studio), None);
         e.toggle_mode();
         assert_eq!(
@@ -1744,6 +1860,59 @@ mod tests {
         );
         e.toggle_mode();
         assert_eq!(e.effective_theme(), (Scheme::Studio, Mode::Light));
+    }
+
+    #[test]
+    fn the_theme_verb_sets_style_decorations_and_caption_side() {
+        let mut e = engine();
+        let (rc, body) = ask(
+            &mut e,
+            "busviewer.theme",
+            json!({"style":"classic","decorations":"ssd","caption_side":"left"}),
+        );
+        assert_eq!(rc, 0, "{body}");
+        assert_eq!(
+            (&body["style"], &body["decorations"], &body["caption_side"]),
+            (&json!("classic"), &json!("ssd"), &json!("left"))
+        );
+        assert_eq!(e.ui.theme_style, Some(Some(Style::Classic)));
+        let (_, body) = ask(&mut e, "busviewer.theme", json!({"style":"own"}));
+        assert_eq!(
+            (&body["style"], &body["effective"]["style"]),
+            (&json!("own"), &json!("own"))
+        );
+        assert_eq!(e.ui.theme_style, Some(None), "the scheme's own, chosen");
+        e.session.style = Some(Style::Pro);
+        let (_, body) = ask(
+            &mut e,
+            "busviewer.theme",
+            json!({"style":null,"decorations":null}),
+        );
+        assert_eq!(
+            (
+                &body["style"],
+                &body["effective"]["style"],
+                &body["effective"]["decorations"]
+            ),
+            (&Value::Null, &json!("pro"), &json!("csd")),
+            "null follows the session"
+        );
+        for bad in [
+            json!({"style":"neon"}),
+            json!({"decorations":"both"}),
+            json!({"caption_side":"top"}),
+            json!({"style":"pro","caption_side":4}),
+        ] {
+            assert_eq!(
+                code(ask(&mut e, "busviewer.theme", bad.clone())),
+                "ARGUMENT",
+                "{bad}"
+            );
+        }
+        assert_eq!(e.ui.theme_style, None, "a refused call changes no axis");
+        let saved = serde_json::to_string(&e.ui).unwrap();
+        let back: UiState = serde_json::from_str(&saved).unwrap();
+        assert_eq!(back, e.ui, "the axes save by name: {saved}");
     }
 
     #[test]
@@ -1757,13 +1926,20 @@ mod tests {
         let fields = old.as_object_mut().unwrap();
         fields.remove("theme_scheme");
         fields.remove("theme_mode");
+        fields.remove("theme_style");
+        fields.remove("theme_decorations");
+        fields.remove("theme_captions");
         // State saved by the build before this one, with its old toggle.
         fields.insert("invert_mode".into(), json!(true));
         let loaded: UiState = serde_json::from_value(old).unwrap();
         assert_eq!(
-            (loaded.theme_scheme, loaded.theme_mode),
-            (None, None),
+            (loaded.theme_scheme, loaded.theme_mode, loaded.theme_style),
+            (None, None, None),
             "older saved state loads, following the session"
+        );
+        assert_eq!(
+            (loaded.theme_decorations, loaded.theme_captions),
+            (None, None)
         );
         e.open(Dialog::About);
         e.filter_focused();

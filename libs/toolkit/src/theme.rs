@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! A compiled MixOS theme: the resolved design for one scheme, mode and
-//! contrast, together with the context it was compiled for.
+//! A compiled MixOS theme: the resolved design for one scheme, style, mode
+//! and contrast, together with the context it was compiled for, and how its
+//! windows are framed (decorations and caption side, which change no token).
 //!
 //! The `design` crate's resolved artifact does not record its context, so a
 //! consumer that compiled it would otherwise lose the scheme and mode it
 //! asked for. [`Theme`] keeps the two together. It is built from the
 //! embedded default design, from a full `theme.conf.mix` document, or from
-//! the shared selection-only file (`scheme:` and `mode:` alone), which is
-//! resolved against the embedded design.
+//! the shared selection-only file (`scheme:`, `mode:`, `style:`,
+//! `decorations:` and `caption_side:` alone), which is resolved against the
+//! embedded design.
 //!
 //! Transplanted from `libs/appearance/src/theme.rs` (markc/mixos-iced), less
 //! the iced font installation.
@@ -16,9 +18,9 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use design::{
-    Contrast, DesignCompileResult, DesignContext, DesignDiagnostic, DesignSourceDocument,
-    DesignSourceError, LegacyV0Source, Mode, ResolvedDictionary, ResolvedStyle, ResolvedTypography,
-    Scheme, SourceIdentity, UnstampedResolvedDesign,
+    CaptionSide, Contrast, Decorations, DesignCompileResult, DesignContext, DesignDiagnostic,
+    DesignSourceDocument, DesignSourceError, Mode, ResolvedDictionary, ResolvedStyle,
+    ResolvedTypography, Scheme, SourceIdentity, UnstampedResolvedDesign,
 };
 
 /// The shared theme file, `theme.conf.mix`, in the MixOS etc directory.
@@ -78,22 +80,37 @@ impl std::error::Error for Error {
     }
 }
 
-/// The resolved design for one context.
+/// The resolved design for one context, and how its windows are framed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Theme {
     context: DesignContext,
     design: UnstampedResolvedDesign,
     style: ResolvedStyle,
+    decorations: Decorations,
+    captions: CaptionSide,
+}
+
+/// The selection a selection-only file or a full document's legacy record
+/// makes; every axis optional.
+#[derive(Default)]
+struct Selection {
+    scheme: Option<String>,
+    mode: Option<String>,
+    style: Option<String>,
+    decorations: Option<String>,
+    caption_side: Option<String>,
 }
 
 impl Theme {
     /// The embedded default design in the default selection: studio, dark,
-    /// normal contrast.
+    /// normal contrast, the scheme's own style; client-side decorations with
+    /// the captions at the right.
     pub fn embedded() -> Self {
         Self::for_context(DesignContext::default())
     }
 
-    /// The embedded default design compiled for `context`.
+    /// The embedded default design compiled for `context` (scheme, style,
+    /// mode, contrast), with the default decorations.
     ///
     /// # Panics
     /// The embedded design claims every scheme, mode and contrast and the
@@ -104,15 +121,23 @@ impl Theme {
         Self::compile(&document, context).expect("the embedded default design compiles")
     }
 
-    /// A theme from `source`: a full design document (its own `scheme:` and
-    /// `mode:` select the context), or the shared selection-only file
-    /// holding nothing but `scheme:` and `mode:`, resolved against the
-    /// embedded design. `identity` names the source in diagnostics.
+    /// A theme from `source`: a full design document (its own `scheme:`,
+    /// `mode:`, `style:`, `decorations:` and `caption_side:` select the
+    /// context and framing), or the shared selection-only file
+    /// holding nothing but `scheme:`, `mode:`, `style:`, `decorations:` and
+    /// `caption_side:`, resolved against the embedded design. `identity`
+    /// names the source in diagnostics.
     pub fn from_source(identity: &str, source: &str) -> Result<Self, Error> {
         let (document, selection) =
             match design::parse_design_source(SourceIdentity::new(identity), source) {
                 Ok(document) => {
-                    let selection = document.legacy.clone();
+                    let selection = Selection {
+                        scheme: document.legacy.scheme.clone(),
+                        mode: document.legacy.mode.clone(),
+                        style: document.presentation.style.clone(),
+                        decorations: document.presentation.decorations.clone(),
+                        caption_side: document.presentation.caption_side.clone(),
+                    };
                     (document, selection)
                 }
                 Err(error) => {
@@ -126,9 +151,30 @@ impl Theme {
             scheme: axis(selection.scheme.as_deref(), "scheme", Scheme::from_name)?,
             mode: axis(selection.mode.as_deref(), "mode", Mode::from_name)?,
             contrast: Contrast::default(),
+            style: selection
+                .style
+                .as_deref()
+                .map(|name| {
+                    design::Style::from_name(name).ok_or_else(|| Error::Selection {
+                        field: "style",
+                        value: name.to_owned(),
+                    })
+                })
+                .transpose()?,
             app: None,
         };
-        Self::compile(&document, context)
+        let mut theme = Self::compile(&document, context)?;
+        theme.decorations = axis(
+            selection.decorations.as_deref(),
+            "decorations",
+            Decorations::from_name,
+        )?;
+        theme.captions = axis(
+            selection.caption_side.as_deref(),
+            "caption_side",
+            CaptionSide::from_name,
+        )?;
+        Ok(theme)
     }
 
     /// The theme in the file at `path`: `None` when there is no file, an
@@ -151,9 +197,18 @@ impl Theme {
     /// there is none or it is unusable. A caller that wants the reason uses
     /// [`Theme::read`].
     pub fn load() -> Self {
-        match Self::read(&theme_path()) {
+        let path = theme_path();
+        match Self::read(&path) {
             Ok(Some(theme)) => theme,
-            Ok(None) | Err(_) => Self::embedded(),
+            Ok(None) => Self::embedded(),
+            Err(error) => {
+                // Never silently: the session asked for a theme it is not getting.
+                eprintln!(
+                    "toolkit: theme {}: {error}; using the embedded theme",
+                    path.display()
+                );
+                Self::embedded()
+            }
         }
     }
 
@@ -161,7 +216,7 @@ impl Theme {
         match design::compile_design(document, context.clone()) {
             DesignCompileResult::Success(success) => {
                 // A design that authors no style family takes the embedded
-                // design's style for its scheme.
+                // design's style for its scheme and style axis.
                 let style = match success.candidate.dictionary().style {
                     Some(style) => style,
                     None => Self::for_context(context.clone()).style,
@@ -170,6 +225,8 @@ impl Theme {
                     context,
                     design: success.candidate,
                     style,
+                    decorations: Decorations::default(),
+                    captions: CaptionSide::default(),
                 })
             }
             DesignCompileResult::Fatal(failure) => Err(Error::Compile(failure.diagnostics)),
@@ -177,20 +234,37 @@ impl Theme {
     }
 
     /// This (session) theme with an app's own choice laid over it, as the
-    /// Theme menu ([`crate::theme_menu`]) makes it: with neither axis chosen,
-    /// the theme itself, so a custom session design stays intact; else the
-    /// embedded design in the chosen scheme and mode (each axis left `None`
-    /// keeps this theme's), at this theme's contrast. The session's theme
-    /// file is never touched.
-    pub fn with_choice(&self, scheme: Option<Scheme>, mode: Option<Mode>) -> Self {
-        if scheme.is_none() && mode.is_none() {
-            return self.clone();
-        }
-        Self::for_context(DesignContext {
-            scheme: scheme.unwrap_or(self.scheme()),
-            mode: mode.unwrap_or(self.mode()),
-            ..self.context.clone()
-        })
+    /// Theme menu ([`crate::theme_menu`]) makes it. With no colour axis
+    /// chosen (scheme, style, mode) the design is this theme's own, so a
+    /// custom session design stays intact; else it is the embedded design in
+    /// the chosen axes (each axis left `None` keeps this theme's), at this
+    /// theme's contrast. Decorations and caption side overlay either way.
+    /// The session's theme file is never touched.
+    pub fn with_choice(&self, choice: &Choice) -> Self {
+        let mut theme =
+            if choice.scheme.is_none() && choice.style.is_none() && choice.mode.is_none() {
+                self.clone()
+            } else {
+                let mut theme = Self::for_context(DesignContext {
+                    scheme: choice.scheme.unwrap_or(self.scheme()),
+                    mode: choice.mode.unwrap_or(self.mode()),
+                    style: choice.style.unwrap_or(self.context.style),
+                    ..self.context.clone()
+                });
+                theme.decorations = self.decorations;
+                theme.captions = self.captions;
+                theme
+            };
+        theme.decorations = choice.decorations.unwrap_or(theme.decorations);
+        theme.captions = choice.captions.unwrap_or(theme.captions);
+        theme
+    }
+
+    /// `self` with `decorations` and `captions`.
+    pub fn framed(mut self, decorations: Decorations, captions: CaptionSide) -> Self {
+        self.decorations = decorations;
+        self.captions = captions;
+        self
     }
 
     pub fn context(&self) -> &DesignContext {
@@ -209,6 +283,21 @@ impl Theme {
         self.context.contrast
     }
 
+    /// The style axis: `None` is the scheme's own style.
+    pub fn style_axis(&self) -> Option<design::Style> {
+        self.context.style
+    }
+
+    /// Who draws the title bar.
+    pub fn decorations(&self) -> Decorations {
+        self.decorations
+    }
+
+    /// Where a client-side title bar puts its caption buttons.
+    pub fn captions(&self) -> CaptionSide {
+        self.captions
+    }
+
     pub fn dictionary(&self) -> &ResolvedDictionary {
         self.design.dictionary()
     }
@@ -221,6 +310,29 @@ impl Theme {
     pub fn style(&self) -> ResolvedStyle {
         self.style
     }
+
+    /// The resolved design.
+    pub fn design(&self) -> &UnstampedResolvedDesign {
+        &self.design
+    }
+
+    /// The accent this theme draws ([`design::accent_for`] in its style's
+    /// widgets): the selection and accent fills, and what a desktop portal
+    /// reports.
+    pub fn accent(&self) -> Option<design::SrgbColour> {
+        design::accent_for(self.dictionary(), self.style.widgets)
+    }
+}
+
+/// An app's own theme choice over the session's: `None` on an axis follows
+/// the session. On `style`, `Some(None)` is the scheme's own style.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Choice {
+    pub scheme: Option<Scheme>,
+    pub style: Option<Option<design::Style>>,
+    pub mode: Option<Mode>,
+    pub decorations: Option<Decorations>,
+    pub captions: Option<CaptionSide>,
 }
 
 fn embedded_document() -> DesignSourceDocument {
@@ -231,17 +343,28 @@ fn embedded_document() -> DesignSourceDocument {
     .expect("the embedded default design parses")
 }
 
-/// The selection in a file that holds only `scheme:` and `mode:`.
-fn selection_only(source: &str) -> Option<LegacyV0Source> {
+/// The selection in a file that holds only selection keys, each a string.
+fn selection_only(source: &str) -> Option<Selection> {
     let value = config::parse(source).ok()?;
     let config::Value::Map(fields) = &value else {
         return None;
     };
-    if fields.keys().any(|key| key != "scheme" && key != "mode") {
-        return None;
+    let mut selection = Selection::default();
+    for (key, value) in fields {
+        let config::Value::String(text) = value else {
+            return None;
+        };
+        let slot = match key.as_str() {
+            "scheme" => &mut selection.scheme,
+            "mode" => &mut selection.mode,
+            "style" => &mut selection.style,
+            "decorations" => &mut selection.decorations,
+            "caption_side" => &mut selection.caption_side,
+            _ => return None,
+        };
+        *slot = Some(text.clone());
     }
-    let selection = design::parse_legacy_v0_source(source).ok()?;
-    selection.is_selection_only().then_some(selection)
+    (!fields.is_empty()).then_some(selection)
 }
 
 fn axis<T: Default>(
@@ -295,20 +418,156 @@ mod tests {
             ..DesignContext::default()
         });
         assert_eq!(
-            session.with_choice(None, None),
+            session.with_choice(&Choice::default()),
             session,
             "no choice: the session theme itself, unchanged"
         );
-        let forest = session.with_choice(Some(Scheme::Forest), None);
+        let forest = session.with_choice(&Choice {
+            scheme: Some(Scheme::Forest),
+            ..Choice::default()
+        });
         assert_eq!(
             (forest.scheme(), forest.mode(), forest.contrast()),
             (Scheme::Forest, Mode::Dark, Contrast::High)
         );
-        let light = session.with_choice(None, Some(Mode::Light));
+        let light = session.with_choice(&Choice {
+            mode: Some(Mode::Light),
+            ..Choice::default()
+        });
         assert_eq!(
             (light.scheme(), light.mode(), light.contrast()),
             (Scheme::Pro, Mode::Light, Contrast::High)
         );
+    }
+
+    /// The style axis and the framing overlay independently: a style alone
+    /// recompiles in this theme's scheme and mode; decorations alone keep
+    /// this theme's design.
+    #[test]
+    fn a_choice_sets_the_style_and_framing_axes() {
+        let session = Theme::for_context(DesignContext {
+            scheme: Scheme::Forest,
+            mode: Mode::Light,
+            ..DesignContext::default()
+        });
+        let studio = session.with_choice(&Choice {
+            style: Some(Some(design::Style::Studio)),
+            ..Choice::default()
+        });
+        assert_eq!(
+            (studio.scheme(), studio.mode(), studio.style_axis()),
+            (Scheme::Forest, Mode::Light, Some(design::Style::Studio))
+        );
+        assert_eq!(
+            studio.style(),
+            Theme::for_context(DesignContext {
+                style: Some(design::Style::Studio),
+                ..DesignContext::default()
+            })
+            .style()
+        );
+        let own = studio.with_choice(&Choice {
+            style: Some(None),
+            ..Choice::default()
+        });
+        assert_eq!(own.style(), session.style(), "the scheme's own style again");
+        let framed = session.with_choice(&Choice {
+            decorations: Some(Decorations::Server),
+            captions: Some(CaptionSide::Left),
+            ..Choice::default()
+        });
+        assert_eq!(
+            (framed.decorations(), framed.captions()),
+            (Decorations::Server, CaptionSide::Left)
+        );
+        assert_eq!(
+            framed.dictionary(),
+            session.dictionary(),
+            "the design is the session's"
+        );
+        let kept = framed.with_choice(&Choice {
+            scheme: Some(Scheme::Ocean),
+            ..Choice::default()
+        });
+        assert_eq!(
+            (kept.decorations(), kept.captions()),
+            (Decorations::Server, CaptionSide::Left),
+            "a recompile keeps the framing"
+        );
+    }
+
+    #[test]
+    fn a_selection_file_sets_every_axis() {
+        let theme = Theme::from_source(
+            "test",
+            "scheme: \"forest\"\nstyle: \"pro\"\nmode: \"dark\"\ndecorations: \"ssd\"\ncaption_side: \"left\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            (theme.scheme(), theme.style_axis(), theme.mode()),
+            (Scheme::Forest, Some(design::Style::Pro), Mode::Dark)
+        );
+        assert_eq!(
+            (theme.decorations(), theme.captions()),
+            (Decorations::Server, CaptionSide::Left)
+        );
+        let plain = Theme::from_source("test", "scheme: \"pro\"\n").unwrap();
+        assert_eq!(
+            (plain.style_axis(), plain.decorations(), plain.captions()),
+            (None, Decorations::Client, CaptionSide::Right)
+        );
+        let bad = Theme::from_source("test", "style: \"neon\"\n").unwrap_err();
+        assert_eq!(bad.to_string(), "unknown style \"neon\"");
+        assert!(matches!(
+            Theme::from_source("test", "decorations: \"both\"\n").unwrap_err(),
+            Error::Selection {
+                field: "decorations",
+                ..
+            }
+        ));
+    }
+
+    /// A full theme document takes the presentation keys beside its own
+    /// scheme and mode; an invalid value is an error, never a silent default.
+    #[test]
+    fn a_full_document_takes_every_presentation_key() {
+        let full = |extra: &str| format!("{extra}{}", design::EMBEDDED_DEFAULT_SOURCE);
+        let theme = Theme::from_source(
+            "test",
+            &full("style: \"classic\"\ndecorations: \"ssd\"\ncaption_side: \"left\"\n"),
+        )
+        .unwrap();
+        assert_eq!(
+            (theme.scheme(), theme.mode()),
+            (Scheme::Ocean, Mode::Light),
+            "the document's own selection"
+        );
+        assert_eq!(theme.style_axis(), Some(design::Style::Classic));
+        assert!(theme.style().bevels, "Classic's forms");
+        assert_eq!(
+            (theme.decorations(), theme.captions()),
+            (Decorations::Server, CaptionSide::Left)
+        );
+        let plain = Theme::from_source("test", design::EMBEDDED_DEFAULT_SOURCE).unwrap();
+        assert_eq!(
+            (plain.style_axis(), plain.decorations(), plain.captions()),
+            (None, Decorations::Client, CaptionSide::Right)
+        );
+        for (extra, field) in [
+            ("style: \"neon\"\n", "style"),
+            ("decorations: \"both\"\n", "decorations"),
+            ("caption_side: \"top\"\n", "caption_side"),
+        ] {
+            let error = Theme::from_source("test", &full(extra)).unwrap_err();
+            assert!(
+                matches!(error, Error::Selection { field: f, .. } if f == field),
+                "{extra}: {error}"
+            );
+        }
+        assert!(matches!(
+            Theme::from_source("test", &full("style: 4\n")).unwrap_err(),
+            Error::Source(_)
+        ));
     }
 
     #[test]

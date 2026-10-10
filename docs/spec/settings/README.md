@@ -70,7 +70,8 @@ durable acceptance; a changed result can remain unpublished after broker failure
 
 ## Initial data and resolution
 
-The schema covers appearance scheme/mode/contrast plus embedded or complete
+The schema covers appearance scheme/style/mode/contrast, window decorations
+(csd or ssd) and caption side (right or left) plus embedded or complete
 strict-data design source; UI density/text scale/reduced motion; named panels
 with edge/mode/thickness; ordered shell pages; and whole app override records
 with scheme/mode/contrast/text scale. Describe supplies exact ranges. Unknown
@@ -84,6 +85,16 @@ new package source requires an explicit mutation with a new revision.
 The accepted effective digest also fences compiler interpretation drift. A
 changed interpretation requires explicit migration rather than changing the
 same accepted identity on reload.
+
+The accepted record carries a format number (absent in format 1; now 2). On
+open the record's seal is verified as stored, in its own format, so tampering
+is still refused. An older record is then upgraded by one rule: everything
+authored is kept, the effective interpretation is resolved again from the
+authored desktop and the pinned source (derived data is never trusted across
+formats), both digests are sealed at the current format, and the backup and
+then the primary are replaced atomically. A second open changes nothing. An
+authored field added later is omitted at its default, so older records still
+verify; a change to the effective interpretation bumps the format.
 
 Validate the whole candidate and all advertised app contexts before acceptance.
 Compilation checks the source's claimed contexts. App overlays affect their

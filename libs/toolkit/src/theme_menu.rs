@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! The Theme menu every app can add ([`Registry::theme_menu`]): a "Theme"
-//! submenu of choice commands that picks the window's scheme and mode
-//! directly, each group ticking its current entry.
+//! submenu of choice commands that picks the window's scheme, style, mode
+//! and framing directly, each group ticking its current entry.
 //!
 //! | group | rows | ids |
 //! |---|---|---|
@@ -9,13 +9,18 @@
 //! | chrome schemes | Pro, Studio, Classic | `view.theme.<scheme>` |
 //! | | Session theme (the scheme follows the session) | `view.theme.session` |
 //! | modes | Light, Dark, Session mode (follows the session) | `view.mode.light`, `view.mode.dark`, `view.mode.session` |
+//! | styles | Scheme's own style, Plain, Pro, Studio and Classic style, Session style (follows the session) | `view.style.own`, `view.style.<style>`, `view.style.session` |
+//! | framing | App title bar (CSD), System title bar (SSD), Captions left, Captions right | `view.decorations.csd`, `view.decorations.ssd`, `view.captions.left`, `view.captions.right` |
 //!
-//! The app keeps the choice, `(Option<Scheme>, Option<Mode>)` with `None`
-//! following the session, and installs [`crate::Theme::with_choice`] when it
-//! changes. Labels come from the toolkit's own catalogue.
+//! The app keeps the [`Choice`], `None` on an axis following the session,
+//! and installs [`crate::Theme::with_choice`] when it changes. The framing
+//! group has no session row: with no choice on the axis, its defaults tick
+//! (CSD, captions right). Labels come
+//! from the toolkit's own catalogue.
 
 use crate::command::{Place, Registry};
-use design::{Mode, Scheme};
+pub use crate::theme::Choice;
+use design::{CaptionSide, Decorations, Mode, Scheme, Style};
 
 /// The submenu's label key.
 pub const SUBMENU: &str = "toolkit-theme";
@@ -68,8 +73,60 @@ const fn mode_label(mode: Mode) -> &'static str {
 pub const SESSION_SCHEME: &str = "view.theme.session";
 pub const SESSION_MODE: &str = "view.mode.session";
 
-/// The app's theme choice: `None` on an axis follows the session.
-pub type Choice = (Option<Scheme>, Option<Mode>);
+/// The scheme's own style, chosen.
+pub const OWN_STYLE: &str = "view.style.own";
+
+/// Following the session's style.
+pub const SESSION_STYLE: &str = "view.style.session";
+
+/// The command id of choosing `style`.
+pub const fn style_id(style: Style) -> &'static str {
+    match style {
+        Style::Plain => "view.style.plain",
+        Style::Pro => "view.style.pro",
+        Style::Studio => "view.style.studio",
+        Style::Classic => "view.style.classic",
+    }
+}
+
+const fn style_label(style: Style) -> &'static str {
+    match style {
+        Style::Plain => "toolkit-style-plain",
+        Style::Pro => "toolkit-style-pro",
+        Style::Studio => "toolkit-style-studio",
+        Style::Classic => "toolkit-style-classic",
+    }
+}
+
+/// The command id of choosing `decorations`.
+pub const fn decorations_id(decorations: Decorations) -> &'static str {
+    match decorations {
+        Decorations::Client => "view.decorations.csd",
+        Decorations::Server => "view.decorations.ssd",
+    }
+}
+
+const fn decorations_label(decorations: Decorations) -> &'static str {
+    match decorations {
+        Decorations::Client => "toolkit-decorations-csd",
+        Decorations::Server => "toolkit-decorations-ssd",
+    }
+}
+
+/// The command id of choosing the caption side.
+pub const fn captions_id(side: CaptionSide) -> &'static str {
+    match side {
+        CaptionSide::Left => "view.captions.left",
+        CaptionSide::Right => "view.captions.right",
+    }
+}
+
+const fn captions_label(side: CaptionSide) -> &'static str {
+    match side {
+        CaptionSide::Left => "toolkit-captions-left",
+        CaptionSide::Right => "toolkit-captions-right",
+    }
+}
 
 impl<S: 'static> Registry<S> {
     /// Add the Theme submenu to `menu` (a Fluent menu key, usually View):
@@ -78,7 +135,7 @@ impl<S: 'static> Registry<S> {
         &mut self,
         menu: &'static str,
         get: fn(&S) -> Choice,
-        set: fn(&mut S, Option<Scheme>, Option<Mode>),
+        set: fn(&mut S, Choice),
     ) -> &mut Self {
         let place = |id, label, group| Place {
             id,
@@ -87,43 +144,91 @@ impl<S: 'static> Registry<S> {
             submenu: Some(SUBMENU),
             group,
         };
+        let choose = move |s: &mut S, change: fn(&mut Choice)| {
+            let mut choice = get(s);
+            change(&mut choice);
+            set(s, choice);
+        };
         for scheme in Scheme::ALL {
             let group = if scheme.is_chrome_scheme() { 1 } else { 0 };
             self.add_choice(
                 place(scheme_id(scheme), scheme_label(scheme), group),
                 move |s| {
-                    let (_, mode) = get(s);
-                    set(s, Some(scheme), mode);
+                    let mut choice = get(s);
+                    choice.scheme = Some(scheme);
+                    set(s, choice);
                 },
-                move |s| get(s).0 == Some(scheme),
+                move |s| get(s).scheme == Some(scheme),
             );
         }
         self.add_choice(
             place(SESSION_SCHEME, "toolkit-theme-session", 2),
-            move |s| {
-                let (_, mode) = get(s);
-                set(s, None, mode);
-            },
-            move |s| get(s).0.is_none(),
+            move |s| choose(s, |c| c.scheme = None),
+            move |s| get(s).scheme.is_none(),
         );
         for mode in Mode::ALL {
             self.add_choice(
                 place(mode_id(mode), mode_label(mode), 3),
                 move |s| {
-                    let (scheme, _) = get(s);
-                    set(s, scheme, Some(mode));
+                    let mut choice = get(s);
+                    choice.mode = Some(mode);
+                    set(s, choice);
                 },
-                move |s| get(s).1 == Some(mode),
+                move |s| get(s).mode == Some(mode),
             );
         }
         self.add_choice(
             place(SESSION_MODE, "toolkit-mode-session", 3),
-            move |s| {
-                let (scheme, _) = get(s);
-                set(s, scheme, None);
-            },
-            move |s| get(s).1.is_none(),
+            move |s| choose(s, |c| c.mode = None),
+            move |s| get(s).mode.is_none(),
         );
+        self.add_choice(
+            place(OWN_STYLE, "toolkit-style-own", 4),
+            move |s| choose(s, |c| c.style = Some(None)),
+            move |s| get(s).style == Some(None),
+        );
+        for style in Style::ALL {
+            self.add_choice(
+                place(style_id(style), style_label(style), 4),
+                move |s| {
+                    let mut choice = get(s);
+                    choice.style = Some(Some(style));
+                    set(s, choice);
+                },
+                move |s| get(s).style == Some(Some(style)),
+            );
+        }
+        self.add_choice(
+            place(SESSION_STYLE, "toolkit-style-session", 4),
+            move |s| choose(s, |c| c.style = None),
+            move |s| get(s).style.is_none(),
+        );
+        for decorations in Decorations::ALL {
+            self.add_choice(
+                place(
+                    decorations_id(decorations),
+                    decorations_label(decorations),
+                    5,
+                ),
+                move |s| {
+                    let mut choice = get(s);
+                    choice.decorations = Some(decorations);
+                    set(s, choice);
+                },
+                move |s| get(s).decorations.unwrap_or_default() == decorations,
+            );
+        }
+        for side in [CaptionSide::Left, CaptionSide::Right] {
+            self.add_choice(
+                place(captions_id(side), captions_label(side), 5),
+                move |s| {
+                    let mut choice = get(s);
+                    choice.captions = Some(side);
+                    set(s, choice);
+                },
+                move |s| get(s).captions.unwrap_or_default() == side,
+            );
+        }
         self
     }
 }
@@ -143,7 +248,7 @@ mod tests {
         r.theme_menu(
             "menu-view",
             |a: &App| a.choice,
-            |a, scheme, mode| a.choice = (scheme, mode),
+            |a, choice| a.choice = choice,
         );
         r
     }
@@ -170,7 +275,7 @@ mod tests {
     }
 
     #[test]
-    fn the_submenu_groups_schemes_session_and_modes_and_ticks_the_session_by_default() {
+    fn the_submenu_groups_schemes_modes_styles_and_framing_and_ticks_the_defaults() {
         let r = registry();
         let rows = rows(&r, &App::default());
         let labels: Vec<_> = rows
@@ -196,13 +301,34 @@ mod tests {
                 Some("Light"),
                 Some("Dark"),
                 Some("Session mode"),
+                None,
+                Some("Scheme's own style"),
+                Some("Plain style"),
+                Some("Pro style"),
+                Some("Studio style"),
+                Some("Classic style"),
+                Some("Session style"),
+                None,
+                Some("App title bar (CSD)"),
+                Some("System title bar (SSD)"),
+                Some("Captions left"),
+                Some("Captions right"),
             ]
         );
         assert!(
             rows.iter().flatten().all(|(_, c)| c.is_some()),
             "every row is a choice"
         );
-        assert_eq!(ticked(&rows), ["Session theme", "Session mode"]);
+        assert_eq!(
+            ticked(&rows),
+            [
+                "Session theme",
+                "Session mode",
+                "Session style",
+                "App title bar (CSD)",
+                "Captions right"
+            ]
+        );
     }
 
     #[test]
@@ -210,18 +336,108 @@ mod tests {
         let r = registry();
         let mut app = App::default();
         r.execute("view.theme.forest", &mut app).unwrap();
-        assert_eq!(app.choice, (Some(Scheme::Forest), None));
-        r.execute("view.mode.dark", &mut app).unwrap();
         assert_eq!(
             app.choice,
-            (Some(Scheme::Forest), Some(Mode::Dark)),
-            "the scheme stays"
+            Choice {
+                scheme: Some(Scheme::Forest),
+                ..Choice::default()
+            }
         );
-        assert_eq!(ticked(&rows(&r, &app)), ["Forest", "Dark"]);
+        r.execute("view.mode.dark", &mut app).unwrap();
+        r.execute("view.style.studio", &mut app).unwrap();
+        r.execute("view.decorations.ssd", &mut app).unwrap();
+        r.execute("view.captions.left", &mut app).unwrap();
+        assert_eq!(
+            app.choice,
+            Choice {
+                scheme: Some(Scheme::Forest),
+                style: Some(Some(Style::Studio)),
+                mode: Some(Mode::Dark),
+                decorations: Some(Decorations::Server),
+                captions: Some(CaptionSide::Left),
+            },
+            "each axis stays"
+        );
+        assert_eq!(
+            ticked(&rows(&r, &app)),
+            [
+                "Forest",
+                "Dark",
+                "Studio style",
+                "System title bar (SSD)",
+                "Captions left"
+            ]
+        );
+        r.execute(OWN_STYLE, &mut app).unwrap();
+        assert_eq!(
+            app.choice.style,
+            Some(None),
+            "the scheme's own style, chosen"
+        );
+        assert_eq!(ticked(&rows(&r, &app))[2], "Scheme's own style");
         r.execute(SESSION_SCHEME, &mut app).unwrap();
-        assert_eq!(app.choice, (None, Some(Mode::Dark)), "the mode stays");
         r.execute(SESSION_MODE, &mut app).unwrap();
-        assert_eq!(app.choice, (None, None));
+        assert_eq!((app.choice.scheme, app.choice.mode), (None, None));
+        assert_eq!(
+            app.choice.decorations,
+            Some(Decorations::Server),
+            "framing stays"
+        );
+        r.execute(SESSION_STYLE, &mut app).unwrap();
+        assert_eq!(app.choice.style, None, "the session's style again");
+    }
+
+    /// After any choice, the session rows return the window to the whole
+    /// session theme: a custom session design, not the embedded one.
+    #[test]
+    fn the_session_rows_restore_a_custom_session_theme() {
+        let custom = design::EMBEDDED_DEFAULT_SOURCE.replacen(
+            "\"chrome.shade.shadow\": { color_space: \"oklch\", l: 0.0, c: 0.0, h: 0.0, alpha: 0.2 }",
+            "\"chrome.shade.shadow\": { color_space: \"oklch\", l: 0.0, c: 0.0, h: 0.0, alpha: 0.3 }",
+            1,
+        );
+        let session = crate::Theme::from_source("custom", &custom).unwrap();
+        let embedded = crate::Theme::for_context(session.context().clone());
+        assert_ne!(
+            session.dictionary(),
+            embedded.dictionary(),
+            "a custom design"
+        );
+        let r = registry();
+        let mut app = App::default();
+        for id in [
+            "view.theme.forest",
+            "view.style.pro",
+            "view.mode.dark",
+            "view.decorations.ssd",
+            "view.captions.left",
+        ] {
+            r.execute(id, &mut app).unwrap();
+        }
+        assert_ne!(
+            session.with_choice(&app.choice).dictionary(),
+            session.dictionary()
+        );
+        for id in [
+            SESSION_SCHEME,
+            SESSION_STYLE,
+            SESSION_MODE,
+            "view.decorations.csd",
+            "view.captions.right",
+        ] {
+            r.execute(id, &mut app).unwrap();
+        }
+        assert_eq!(app.choice.style, None);
+        let back = session.with_choice(&app.choice);
+        assert_eq!(
+            back.dictionary(),
+            session.dictionary(),
+            "the custom session design itself"
+        );
+        assert_eq!(
+            (back.decorations(), back.captions()),
+            (Decorations::Client, CaptionSide::Right)
+        );
     }
 
     #[test]
@@ -229,7 +445,11 @@ mod tests {
         let r = registry();
         let strings = Strings::new("menu-view = View\n");
         let app = App {
-            choice: (Some(Scheme::Pro), Some(Mode::Light)),
+            choice: Choice {
+                scheme: Some(Scheme::Pro),
+                mode: Some(Mode::Light),
+                ..Choice::default()
+            },
         };
         let described = r.describe(&app, &strings);
         let pro = described.iter().find(|d| d.id == "view.theme.pro").unwrap();
@@ -250,10 +470,12 @@ mod tests {
             .iter()
             .map(|c| c.id)
             .collect();
-        assert_eq!(found, ["view.theme.studio"]);
+        assert_eq!(found, ["view.theme.studio", "view.style.studio"]);
         let model = r.model(&egui::Context::default(), &app, &strings);
         let results = crate::menu::matching(&model, "forest");
         assert_eq!(results[0].label, "View › Theme › Forest");
         assert_eq!(results[0].checked, Some(false));
+        let results = crate::menu::matching(&model, "ssd");
+        assert_eq!(results[0].label, "View › Theme › System title bar (SSD)");
     }
 }

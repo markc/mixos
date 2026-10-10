@@ -78,12 +78,8 @@ pub fn registry() -> Registry<Engine> {
         enabled: undialogued,
         run: Engine::copy_reply,
     });
-    // View › Theme: any scheme and mode, in this window only.
-    r.theme_menu(
-        "view",
-        |e: &Engine| (e.ui.theme_scheme, e.ui.theme_mode),
-        Engine::set_theme,
-    );
+    // View › Theme: any scheme, style, mode and framing, in this window only.
+    r.theme_menu("view", choice, set_choice);
     r.add(Command {
         id: "bus.call",
         submenu: None,
@@ -145,6 +141,26 @@ pub fn registry() -> Registry<Engine> {
     r
 }
 
+/// The window's theme choice, as the Theme menu reads it.
+pub fn choice(e: &Engine) -> toolkit::theme_menu::Choice {
+    toolkit::theme_menu::Choice {
+        scheme: e.ui.theme_scheme,
+        style: e.ui.theme_style,
+        mode: e.ui.theme_mode,
+        decorations: e.ui.theme_decorations,
+        captions: e.ui.theme_captions,
+    }
+}
+
+/// Store the Theme menu's choice as the window's.
+fn set_choice(e: &mut Engine, choice: toolkit::theme_menu::Choice) {
+    e.ui.theme_scheme = choice.scheme;
+    e.ui.theme_style = choice.style;
+    e.ui.theme_mode = choice.mode;
+    e.ui.theme_decorations = choice.decorations;
+    e.ui.theme_captions = choice.captions;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -168,6 +184,28 @@ mod tests {
             );
             assert!(command.submenu.is_none_or(known), "{} submenu", command.id);
         }
+    }
+
+    #[test]
+    fn view_theme_style_and_framing_choices_set_the_window_choice() {
+        let r = registry();
+        let mut e = Engine::new(crate::label);
+        r.execute("view.style.classic", &mut e).unwrap();
+        r.execute("view.decorations.ssd", &mut e).unwrap();
+        r.execute("view.captions.left", &mut e).unwrap();
+        assert_eq!(e.ui.theme_style, Some(Some(design::Style::Classic)));
+        assert_eq!(
+            (e.ui.theme_decorations, e.ui.theme_captions),
+            (
+                Some(design::Decorations::Server),
+                Some(design::CaptionSide::Left)
+            )
+        );
+        assert_eq!(r.checked("view.style.classic", &e), Some(true));
+        assert_eq!(r.checked("view.style.own", &e), Some(false));
+        r.execute("view.style.own", &mut e).unwrap();
+        assert_eq!(e.ui.theme_style, Some(None));
+        assert_eq!(r.checked("view.style.own", &e), Some(true));
     }
 
     #[test]

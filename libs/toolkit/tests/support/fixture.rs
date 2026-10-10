@@ -146,7 +146,7 @@ pub fn registry() -> Registry<Fixture> {
     r.theme_menu(
         "menu-view",
         |s: &Fixture| s.theme,
-        |s, scheme, mode| s.theme = (scheme, mode),
+        |s, choice| s.theme = choice,
     );
     r
 }

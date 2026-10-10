@@ -213,7 +213,7 @@ impl Shell {
             exiting: false,
             held: VecDeque::new(),
             inbox,
-            installed: (None, None),
+            installed: toolkit::theme_menu::Choice::default(),
         };
         shell.engine.session = (shell.theme.scheme(), shell.theme.mode());
         shell.settle();
@@ -358,16 +358,16 @@ impl Shell {
     }
 
     fn choice(&self) -> toolkit::theme_menu::Choice {
-        (self.engine.ui.theme_scheme, self.engine.ui.theme_mode)
+        crate::commands::choice(&self.engine)
     }
 
     /// Install the session theme with the window's choice over it. The
     /// session's theme file is never written.
     fn install_theme(&mut self) {
-        let (scheme, mode) = self.choice();
-        toolkit::install(&self.ctx, &self.theme.with_choice(scheme, mode));
+        let choice = self.choice();
+        toolkit::install(&self.ctx, &self.theme.with_choice(&choice));
         self.engine.session = (self.theme.scheme(), self.theme.mode());
-        self.installed = (scheme, mode);
+        self.installed = choice;
     }
 
     fn follow_theme(&mut self) {

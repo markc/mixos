@@ -78,7 +78,10 @@ fn theme_submenu_pro_light() {
         .with_size(egui::vec2(760.0, 520.0))
         .wgpu();
     let mut h = fixture::harness(builder, &fixture::theme(Scheme::Pro, Mode::Light));
-    h.state_mut().theme = (Some(Scheme::Forest), None);
+    h.state_mut().theme = toolkit::theme_menu::Choice {
+        scheme: Some(Scheme::Forest),
+        ..Default::default()
+    };
     h.get_by_label("View").click();
     h.run();
     for key in [Key::ArrowDown, Key::ArrowDown, Key::ArrowRight] {

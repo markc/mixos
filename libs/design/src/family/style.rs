@@ -14,14 +14,19 @@
 //! }
 //! ```
 //!
-//! `styles` names token sets; `schemes` binds every scheme to one of them.
+//! `styles` names token sets; `schemes` binds every scheme to one of them,
+//! its own style. A context's style axis ([`crate::DesignContext::style`])
+//! selects any authored style instead, so any scheme can take any style.
 //! Every style authors every token: a missing, unknown or ill-typed token is
 //! an error, as is a scheme left unbound or bound to a style that does not
-//! exist. The binding is per scheme only, so a style is independent of mode
-//! and contrast, and modifier blocks cannot alter it.
+//! exist, or a selected style the design does not author. A style is
+//! independent of mode and contrast, and modifier blocks cannot alter it.
+//!
+//! Whether the chrome sits on a light or dark base is the palette's, not the
+//! style's: a renderer reads it from the chrome colours.
 
 use crate::source::{DesignV1Source, StyleFamilySource, StyleValueSource};
-use crate::{DesignDiagnostic, Scheme};
+use crate::{DesignDiagnostic, Scheme, Style};
 use std::collections::{BTreeMap, BTreeSet};
 
 const PATH: &str = "design.v1.families.style";
@@ -72,16 +77,6 @@ choice! {
         Pairs = "pairs",
         /// The chrome family's roles and the style's own geometry.
         Chrome = "chrome",
-    }
-}
-
-choice! {
-    /// The renderer's base palette under the chrome.
-    Base {
-        /// Follow the selected mode.
-        Mode = "mode",
-        Light = "light",
-        Dark = "dark",
     }
 }
 
@@ -295,7 +290,6 @@ macro_rules! style {
 style! {
     // The renderer.
     widgets: Widgets = NONE,
-    base: Base = NONE,
     faces: Faces = NONE,
     /// Body and button text size (chrome widgets only).
     body_size: f64 = LENGTH,
@@ -349,24 +343,59 @@ style! {
     radius_lg: u8 = RADIUS,
 }
 
-/// Compile the style family for `scheme`. `None` when the design authors no
-/// style family. Every style and binding is checked, not only the one
-/// selected, so a design that compiles for one scheme compiles for all.
+/// Tokens earlier designs authored that no longer select anything. They are
+/// accepted and ignored, so a design saved before they were retired still
+/// compiles: `base` (the light or dark base is now the palette's own).
+pub const RETIRED: &[&str] = &["base"];
+
+/// Compile the style family for `scheme`: `style`, or the scheme's own when
+/// `None`. `None` when the design authors no style family. Every style and
+/// binding is checked, not only the one selected, so a design that compiles
+/// for one context compiles for all.
 pub(crate) fn compile(
     source: &DesignV1Source,
     scheme: Scheme,
+    style: Option<Style>,
 ) -> Result<Option<ResolvedStyle>, Vec<DesignDiagnostic>> {
     source
         .families
         .style
         .as_ref()
-        .map_or(Ok(None), |family| compile_family(family, scheme).map(Some))
+        .map_or(Ok(None), |family| select(family, scheme, style).map(Some))
 }
 
+fn select(
+    family: &StyleFamilySource,
+    scheme: Scheme,
+    style: Option<Style>,
+) -> Result<ResolvedStyle, Vec<DesignDiagnostic>> {
+    let styles = compile_styles(family)?;
+    let name = style.map_or_else(
+        || family.schemes[scheme.name()].clone(),
+        |s| s.name().to_owned(),
+    );
+    styles.get(&name).copied().ok_or_else(|| {
+        vec![DesignDiagnostic::error(
+            "unknown-style-selection",
+            format!("{PATH}.styles.{name}"),
+            format!("the selected style `{name}` is not a style in `styles`"),
+        )]
+    })
+}
+
+/// The scheme's own style.
+#[cfg(test)]
 fn compile_family(
     family: &StyleFamilySource,
     scheme: Scheme,
 ) -> Result<ResolvedStyle, Vec<DesignDiagnostic>> {
+    select(family, scheme, None)
+}
+
+/// Every authored style, once every style and binding checks.
+fn compile_styles(
+    family: &StyleFamilySource,
+) -> Result<BTreeMap<String, ResolvedStyle>, Vec<DesignDiagnostic>> {
     let mut errors = Vec::new();
     let mut styles = BTreeMap::new();
     for (name, tokens) in &family.styles {
@@ -378,7 +407,7 @@ fn compile_family(
         };
         let style = read(&mut reader);
         errors.append(&mut reader.errors);
-        let known: BTreeSet<&str> = TOKENS.iter().copied().collect();
+        let known: BTreeSet<&str> = TOKENS.iter().chain(RETIRED.iter()).copied().collect();
         for token in tokens
             .keys()
             .filter(|token| !known.contains(token.as_str()))
@@ -389,7 +418,7 @@ fn compile_family(
                 format!("`{token}` is not a style token"),
             ));
         }
-        styles.insert(name.as_str(), style);
+        styles.insert(name.clone(), style);
     }
     for (name, style) in &family.schemes {
         let path = format!("{PATH}.schemes.{name}");
@@ -421,7 +450,7 @@ fn compile_family(
     if !errors.is_empty() {
         return Err(errors);
     }
-    Ok(styles[family.schemes[scheme.name()].as_str()])
+    Ok(styles)
 }
 
 #[cfg(test)]
@@ -457,7 +486,6 @@ mod tests {
     fn studio() -> ResolvedStyle {
         ResolvedStyle {
             widgets: Widgets::Chrome,
-            base: Base::Mode,
             faces: Faces::Fixed,
             body_size: 12.5,
             bevels: false,
@@ -502,7 +530,6 @@ mod tests {
 
     fn pro() -> ResolvedStyle {
         ResolvedStyle {
-            base: Base::Dark,
             body_size: 12.0,
             selection: Selection::Accent,
             toggle: Toggle::Checkbox,
@@ -538,7 +565,6 @@ mod tests {
 
     fn classic() -> ResolvedStyle {
         ResolvedStyle {
-            base: Base::Light,
             bevels: true,
             widget_stroke: WidgetStroke::Bevel,
             selection: Selection::Accent,
@@ -692,6 +718,85 @@ mod tests {
     fn a_design_without_a_style_family_has_none() {
         let mut document = embedded();
         document.v1.families.style = None;
-        assert_eq!(compile(&document.v1, Scheme::Pro).unwrap(), None);
+        assert_eq!(compile(&document.v1, Scheme::Pro, None).unwrap(), None);
+    }
+
+    /// A design saved before the style axis (its styles still author the
+    /// retired `base` token) compiles in every scheme and mode, with the
+    /// same styles as today's design, and takes the style axis.
+    #[test]
+    fn a_design_from_before_the_axes_still_compiles() {
+        let before = crate::parse_design_source(
+            SourceIdentity::new("before-axes"),
+            include_str!("../../tests/fixtures/revision-1-before-axes.theme.conf.mix"),
+        )
+        .expect("the old design parses");
+        let today = embedded();
+        for scheme in Scheme::ALL {
+            for mode in Mode::ALL {
+                for style in [None, Some(Style::Studio)] {
+                    let context = DesignContext {
+                        scheme,
+                        mode,
+                        style,
+                        ..DesignContext::default()
+                    };
+                    let DesignCompileResult::Success(old) =
+                        crate::compile_design(&before, context.clone())
+                    else {
+                        panic!("{scheme:?}/{mode:?}/{style:?} must compile");
+                    };
+                    let DesignCompileResult::Success(new) = crate::compile_design(&today, context)
+                    else {
+                        panic!("today's design compiles");
+                    };
+                    assert_eq!(
+                        old.candidate.dictionary().style,
+                        new.candidate.dictionary().style,
+                        "{scheme:?}/{mode:?}/{style:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The style axis takes any authored style for any scheme, whatever the
+    /// scheme's own; a style the design does not author is refused.
+    #[test]
+    fn the_style_axis_selects_any_style_for_any_scheme() {
+        let document = embedded();
+        for (style, want) in [
+            (Style::Plain, plain()),
+            (Style::Pro, pro()),
+            (Style::Studio, studio()),
+            (Style::Classic, classic()),
+        ] {
+            for scheme in Scheme::ALL {
+                let context = DesignContext {
+                    scheme,
+                    style: Some(style),
+                    ..DesignContext::default()
+                };
+                let DesignCompileResult::Success(success) =
+                    crate::compile_design(&document, context)
+                else {
+                    panic!("{scheme:?} in {style:?} must compile");
+                };
+                assert_eq!(
+                    success.candidate.dictionary().style,
+                    Some(want),
+                    "{scheme:?} in {style:?}"
+                );
+            }
+        }
+        let mut missing = family();
+        missing.schemes.insert("classic".into(), "studio".into());
+        missing.styles.remove("classic");
+        let codes: Vec<_> = select(&missing, Scheme::Forest, Some(Style::Classic))
+            .unwrap_err()
+            .iter()
+            .map(|d| d.code)
+            .collect();
+        assert_eq!(codes, ["unknown-style-selection"]);
     }
 }

@@ -101,6 +101,7 @@ pub(crate) fn validate_crosswalk_shape(
             scheme,
             mode,
             contrast: Contrast::Normal,
+            style: None,
             app: None,
         }),
         _ if document.legacy.scheme.is_some() && document.legacy.mode.is_some() => {

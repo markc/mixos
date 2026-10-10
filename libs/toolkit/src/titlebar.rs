@@ -14,6 +14,15 @@
 //! - minimize, maximize/restore and close, [`BUTTON_WIDTH`] wide each and
 //!   the full bar height, with Close flush in the top-right corner.
 //!
+//! With the captions at the left (the theme's caption side) the order is
+//! Close, Minimize, Maximize from the top-left corner, the mark and menus
+//! follow them, and the right-hand group keeps the bar's inner margin from
+//! the right end. With server-side decorations the compositor draws the
+//! title, captions and drag zone: the window asks for them
+//! (`ViewportCommand::Decorations`), and this row becomes the menu bar, the
+//! menus from the inner margin and the right-hand group at the far end,
+//! with no mark, title, captions or resize zones.
+//!
 //! Only the free gap between the menus and the caption buttons drags the
 //! window, so a press on a menu title opens the menu and never moves the
 //! window; a double-click there maximizes or restores. The gap is last
@@ -27,6 +36,7 @@ use crate::chrome::{CLOSE_PRESSED_ALPHA, Chrome};
 use crate::command::Registry;
 use crate::icons::{self, Icon};
 use crate::strings::Strings;
+use design::{CaptionSide, Decorations};
 use egui::emath::GuiRounding;
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
@@ -185,41 +195,66 @@ pub fn show_with<S>(
 ) -> Vec<&'static str> {
     let chrome = Chrome::of(ui.ctx());
     let (p, m) = (chrome.palette, chrome.metrics);
+    let server = chrome.decorations == Decorations::Server;
+    request_decorations(ui.ctx(), server);
     let mut fired = Vec::new();
     let panel = egui::Panel::top("toolkit-titlebar")
         .exact_size(m.title_bar_height)
         .frame(Frame::new().fill(p.chrome));
     panel.show(ui, |ui| {
         let bar = ui.max_rect();
+        if server {
+            // Server-side decorations: the compositor draws the title,
+            // captions and drag zone; this is the menu-bar row, the menus
+            // from the inner margin and the right-hand group at its end.
+            let menus_left = bar.left() + m.title_bar_margin;
+            let group_right = bar.right() - m.title_bar_margin;
+            let room =
+                Rect::from_min_max(pos2(menus_left, bar.top()), pos2(group_right, bar.bottom()));
+            let menus_right = menus(ui, room, registry, state, strings, &mut fired);
+            right_group(
+                ui,
+                controls,
+                registry,
+                state,
+                strings,
+                menus_right + m.title_gap,
+                group_right,
+                &mut fired,
+            );
+            return;
+        }
         let gap_id = ui.id().with("titlebar-gap");
         let gap = ui.data(|d| d.get_temp::<Rect>(gap_id)).unwrap_or(bar);
         // Registered first and over the free gap only, so nothing drawn
         // later loses its clicks to it.
         let drag = ui.interact(gap, ui.id().with("titlebar-drag"), Sense::click_and_drag());
 
+        // The caption buttons take one end, Close in its corner: at the
+        // right Minimize, Maximize, Close; at the left Close, Minimize,
+        // Maximize. The mark and menus start after the left-hand captions,
+        // and the right-hand group keeps the inner margin from the bar's
+        // right end instead.
+        let left = chrome.captions == CaptionSide::Left;
+        let captions_width = 3.0 * m.caption_width;
+        let (start, room_end, end) = if left {
+            let end = bar.right() - m.title_bar_margin;
+            (bar.left() + captions_width, end, end)
+        } else {
+            let captions = bar.right() - captions_width;
+            (bar.left(), captions, captions - m.caption_gap)
+        };
         if let Some(icon) = icon {
-            let at = pos2(
-                bar.left() + m.title_bar_margin,
-                bar.center().y - m.mark / 2.0,
-            );
+            let at = pos2(start + m.title_bar_margin, bar.center().y - m.mark / 2.0);
             let mark = Rect::from_min_size(at, vec2(m.mark, m.mark))
                 .round_to_pixels(ui.pixels_per_point());
             icons::image(icon, stroke, m.mark, p.icon).paint_at(ui, mark);
         }
 
-        let captions = bar.right() - 3.0 * m.caption_width;
-        let menus_left = bar.left() + m.title_bar_margin + m.mark + m.mark_gap;
-        let room = Rect::from_min_max(pos2(menus_left, bar.top()), pos2(captions, bar.bottom()));
-        let mut row = ui.new_child(
-            UiBuilder::new()
-                .max_rect(room)
-                .layout(Layout::left_to_right(Align::Center)),
-        );
-        row.spacing_mut().item_spacing.x = 0.0;
-        fired = registry.menus(&mut row, state, strings);
-        let menus_right = row.min_rect().right().max(menus_left);
+        let menus_left = start + m.title_bar_margin + m.mark + m.mark_gap;
+        let room = Rect::from_min_max(pos2(menus_left, bar.top()), pos2(room_end, bar.bottom()));
+        let menus_right = menus(ui, room, registry, state, strings, &mut fired);
 
-        let group_right = captions - m.caption_gap;
         let group_left = right_group(
             ui,
             controls,
@@ -227,22 +262,29 @@ pub fn show_with<S>(
             state,
             strings,
             menus_right + m.title_gap,
-            group_right,
+            end,
             &mut fired,
         );
 
-        for (index, caption) in [Caption::Minimize, Caption::Maximize, Caption::Close]
-            .into_iter()
-            .enumerate()
-        {
-            let left = captions + index as f32 * m.caption_width;
-            let rect =
-                Rect::from_min_size(pos2(left, bar.top()), vec2(m.caption_width, bar.height()));
+        let (order, from) = if left {
+            (
+                [Caption::Close, Caption::Minimize, Caption::Maximize],
+                bar.left(),
+            )
+        } else {
+            (
+                [Caption::Minimize, Caption::Maximize, Caption::Close],
+                bar.right() - captions_width,
+            )
+        };
+        for (index, caption) in order.into_iter().enumerate() {
+            let x = from + index as f32 * m.caption_width;
+            let rect = Rect::from_min_size(pos2(x, bar.top()), vec2(m.caption_width, bar.height()));
             caption_button(ui, rect, caption, &chrome);
         }
 
         let title_right = if controls.is_empty() {
-            captions
+            room_end
         } else {
             group_left
         };
@@ -265,6 +307,38 @@ pub fn show_with<S>(
         }
     });
     fired
+}
+
+/// The registry's menus laid out left to right in `room`; their commands
+/// join `fired`. Returns the menus' right edge.
+fn menus<S>(
+    ui: &mut Ui,
+    room: Rect,
+    registry: &Registry<S>,
+    state: &S,
+    strings: &Strings,
+    fired: &mut Vec<&'static str>,
+) -> f32 {
+    let mut row = ui.new_child(
+        UiBuilder::new()
+            .max_rect(room)
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    row.spacing_mut().item_spacing.x = 0.0;
+    fired.extend(registry.menus(&mut row, state, strings));
+    row.min_rect().right().max(room.left())
+}
+
+/// Ask the platform for its own decorations, or for none, when that is not
+/// what this window last asked for. The window opens undecorated
+/// ([`viewport`]), so a client-side window asks nothing.
+fn request_decorations(ctx: &egui::Context, server: bool) {
+    let id = egui::Id::new("toolkit.decorations");
+    let asked = ctx.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+    if asked != server {
+        ctx.data_mut(|d| d.insert_temp(id, server));
+        ctx.send_viewport_cmd(ViewportCommand::Decorations(server));
+    }
 }
 
 /// Lay out and draw the right-hand group, right to left from `right`, in
@@ -459,10 +533,11 @@ fn caption_button(ui: &mut Ui, rect: Rect, caption: Caption, chrome: &Chrome) {
 /// Invisible resize zones along the window's edges and corners. Call last in
 /// the frame, after everything else, so the zones take the border clicks.
 /// A maximized or full-screen window has none, so its top-right pixel hits
-/// Close.
+/// Close; nor has a window the compositor decorates, which resizes it.
 pub fn edges(ui: &mut Ui) {
     let fullscreen = ui.input(|i| i.viewport().fullscreen.unwrap_or(false));
-    if maximized(ui) || fullscreen {
+    let server = Chrome::of(ui.ctx()).decorations == Decorations::Server;
+    if maximized(ui) || fullscreen || server {
         return;
     }
     let m = Chrome::of(ui.ctx()).metrics;

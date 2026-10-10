@@ -6,5 +6,5 @@ pub mod bus;
 pub mod engine;
 pub mod model;
 
-pub use engine::{Dialog, Effect, Engine, Row, RowKind, UiState};
+pub use engine::{Dialog, Effect, Engine, Row, RowKind, Session, UiState};
 pub use model::{Selection, Snapshot};

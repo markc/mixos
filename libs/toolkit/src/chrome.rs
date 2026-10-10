@@ -11,7 +11,7 @@
 //! **Chrome widgets** ([`Widgets::Chrome`]; the shipped `pro`, `studio` and
 //! `classic` styles) take every colour from the design's chrome family
 //! (`dictionary().chrome`, one exact colour per role), on egui's light or
-//! dark base as the style's [`Base`] says. **Pair widgets** (the `plain`
+//! dark base as the chrome colour's lightness says ([`dark_base`]). **Pair widgets** (the `plain`
 //! style of the hue schemes) keep the pair-based style of [`crate::style`];
 //! their [`Palette`] is read back from that style ([`Palette::from_visuals`]),
 //! so the title bar and menus have one code path for every scheme.
@@ -35,24 +35,26 @@
 
 use crate::style::colour;
 use crate::theme::Theme;
-use design::family::style::{Base, ScrollBars, Selection, WidgetStroke, Widgets};
-use design::{Mode, ResolvedChrome, ResolvedStyle};
+use design::family::style::{ScrollBars, Selection, WidgetStroke, Widgets};
+use design::{CaptionSide, Decorations, Mode, ResolvedChrome, ResolvedStyle};
 use egui::{
     Color32, Context, CornerRadius, FontFamily, FontId, Id, Margin, Rect, Shadow, Stroke, Style,
     TextStyle, Vec2, Visuals, style::ScrollStyle, vec2,
 };
 
-/// Whether egui's dark base palette underlies `theme` (§1.5): its style's
-/// [`Base`], or the theme's own mode. The shipped Pro is dark in both modes
-/// (its light mode is medium grey), Studio follows the mode, Classic is
-/// light.
+/// Whether egui's dark base palette underlies `theme` (§1.5): for pair
+/// widgets the theme's mode; for chrome widgets the palette's own, read from
+/// its `chrome` role, so a palette's lightness and not its style decides
+/// (the shipped Pro is dark in both modes, its light mode being medium grey;
+/// Studio follows the mode; Classic is light).
 pub fn dark_base(theme: &Theme) -> bool {
-    match theme.style().base {
-        Base::Dark => true,
-        Base::Light => false,
-        Base::Mode => theme.mode() == Mode::Dark,
-    }
+    let chrome = Chrome::for_theme(theme);
+    chrome.is_dark(theme.mode())
 }
+
+/// A chrome surface at or below this relative luminance is dark: mid grey,
+/// CIE L* 50.
+const DARK_LUMINANCE: f32 = 0.18;
 
 macro_rules! palette {
     ($($role:ident),+ $(,)?) => {
@@ -365,6 +367,9 @@ pub struct Chrome {
     pub style: ResolvedStyle,
     pub palette: Palette,
     pub metrics: Metrics,
+    /// Who draws the title bar, and where its captions go.
+    pub decorations: Decorations,
+    pub captions: CaptionSide,
 }
 
 fn key() -> Id {
@@ -387,6 +392,10 @@ impl Chrome {
         {
             palette = palette.overlay(roles);
         }
+        // The accent as the design resolves it for this style.
+        if let Some(accent) = theme.accent() {
+            palette.accent = crate::style::srgb(accent);
+        }
         let metrics = if theme.dictionary().style.is_none() && style.widgets == Widgets::Pairs {
             Metrics::from_egui(&pairs, &style)
         } else {
@@ -396,6 +405,19 @@ impl Chrome {
             style,
             palette,
             metrics,
+            decorations: theme.decorations(),
+            captions: theme.captions(),
+        }
+    }
+
+    /// Whether this chrome draws on egui's dark base ([`dark_base`]).
+    pub fn is_dark(&self, mode: Mode) -> bool {
+        match self.style.widgets {
+            Widgets::Pairs => mode == Mode::Dark,
+            Widgets::Chrome => {
+                let c = egui::Rgba::from(self.palette.chrome);
+                0.2126 * c.r() + 0.7152 * c.g() + 0.0722 * c.b() <= DARK_LUMINANCE
+            }
         }
     }
 
@@ -411,6 +433,8 @@ impl Chrome {
                 style: tokens,
                 palette: Palette::from_visuals(&style.visuals),
                 metrics: Metrics::from_egui(&style, &tokens),
+                decorations: Decorations::default(),
+                captions: CaptionSide::default(),
             }
         })
     }
@@ -488,7 +512,7 @@ pub fn style(theme: &Theme) -> Style {
 /// The colours of chrome widgets (§1.5).
 fn visuals(theme: &Theme, chrome: &Chrome) -> Visuals {
     let (style, p, m) = (&chrome.style, &chrome.palette, &chrome.metrics);
-    let mut v = if dark_base(theme) {
+    let mut v = if chrome.is_dark(theme.mode()) {
         Visuals::dark()
     } else {
         Visuals::light()
@@ -817,6 +841,37 @@ mod tests {
                     derived,
                     "{scheme:?}/{mode:?}"
                 );
+            }
+        }
+    }
+
+    /// The design's accent accessor is what the toolkit draws: the accent
+    /// fill, and the selection where the style selects with the accent, in
+    /// every scheme, style and mode.
+    #[test]
+    fn the_design_accent_is_the_drawn_accent() {
+        for scheme in Scheme::ALL {
+            for style in design::Style::ALL {
+                for mode in Mode::ALL {
+                    let t = Theme::for_context(DesignContext {
+                        scheme,
+                        mode,
+                        style: Some(style),
+                        ..DesignContext::default()
+                    });
+                    let at = format!("{scheme:?}/{style:?}/{mode:?}");
+                    let accent = design::resolved_accent(t.design()).expect("an accent");
+                    let drawn = crate::style::srgb(accent);
+                    let chrome = Chrome::for_theme(&t);
+                    assert_eq!(chrome.palette.accent, drawn, "{at}");
+                    let visuals = crate::style::style(&t).visuals;
+                    if t.style().widgets == Widgets::Pairs
+                        || t.style().selection == Selection::Accent
+                    {
+                        assert_eq!(visuals.selection.bg_fill, drawn, "{at}: the selection");
+                    }
+                    assert_eq!(t.accent(), Some(accent), "{at}");
+                }
             }
         }
     }

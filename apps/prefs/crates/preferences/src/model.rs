@@ -130,7 +130,7 @@ pub fn describe() -> Value {
         {"name":"prefs.select","args":{"app":"an app name from prefs.apps"},"description":"Select an app in the Applications panel and load its release notes","read_only":false},
         {"name":"prefs.apps","description":"The Applications panel's rows, selection and notes","read_only":true},
         {"name":"prefs.dialog","args":{"open":"\"about\", \"shortcuts\" or null"},"description":"Open a dialog, or close the open one (a remove confirmation is closed, never confirmed, here)","read_only":false},
-        {"name":"prefs.theme","args":{"scheme":"optional scheme name or null to follow the session","mode":"optional light, dark or null to follow the session"},"description":"Choose the window's theme: a present key sets that axis, an absent one leaves it; answers the choice and the effective scheme and mode","read_only":false}
+        {"name":"prefs.theme","args":{"scheme":"optional scheme name or null to follow the session","style":"optional style (plain, pro, studio, classic), own for the scheme's own, or null to follow the session","mode":"optional light, dark or null to follow the session","decorations":"optional csd, ssd or null to follow the session","caption_side":"optional right, left or null to follow the session"},"description":"Choose the window's theme: a present key sets that axis, an absent one leaves it; answers the choice and the effective scheme and mode","read_only":false}
     ]})
 }
 

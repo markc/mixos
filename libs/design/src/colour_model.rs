@@ -50,6 +50,27 @@ impl LinearRgba {
         alpha: 1.0,
     };
 
+    /// This colour as an 8-bit sRGB renderer draws it: quantised to
+    /// [`Self::to_srgba8`], then back to linear light. Contrast a reader
+    /// sees is measured on this.
+    pub fn rendered(self) -> Self {
+        let decode = |channel: u8| {
+            let v = f64::from(channel) / 255.0;
+            if v <= 0.040_45 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        let [red, green, blue, alpha] = self.to_srgba8();
+        Self {
+            red: decode(red),
+            green: decode(green),
+            blue: decode(blue),
+            alpha: f64::from(alpha) / 255.0,
+        }
+    }
+
     pub fn to_srgba8(self) -> [u8; 4] {
         [
             quantise(linear_to_srgb(self.red)),

@@ -57,8 +57,24 @@ impl Binding {
 #[serde(default, deny_unknown_fields)]
 pub struct Appearance {
     pub scheme: String,
+    /// None takes the scheme's own style; Some names one of the four.
+    ///
+    /// These three fields are omitted from the serialised form at their
+    /// defaults. A profile written before they existed therefore
+    /// re-serialises byte for byte as it was written, and its stored
+    /// content and effective digests still verify: no migration, no
+    /// second representation. A non-default value appears only when
+    /// chosen, which only this code can do.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style: Option<String>,
     pub mode: String,
     pub contrast: String,
+    /// `csd` (the app's title bar) or `ssd` (the compositor's).
+    #[serde(skip_serializing_if = "is_default_decorations")]
+    pub decorations: String,
+    /// Where a client-side title bar puts its captions: `right` or `left`.
+    #[serde(skip_serializing_if = "is_default_caption_side")]
+    pub caption_side: String,
     /// None selects the profile-pinned package source; Some is complete strict data.
     pub source: Option<String>,
 }
@@ -66,8 +82,11 @@ impl Default for Appearance {
     fn default() -> Self {
         Self {
             scheme: "studio".into(),
+            style: None,
             mode: "dark".into(),
             contrast: "normal".into(),
+            decorations: "csd".into(),
+            caption_side: "right".into(),
             source: None,
         }
     }
@@ -209,11 +228,37 @@ pub struct Receipt {
 #[serde(deny_unknown_fields)]
 pub struct Effective {
     pub scheme: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<String>,
     pub mode: String,
     pub contrast: String,
+    // Omitted at their defaults, as in [`Appearance`], so effective digests
+    // from before these fields still verify.
+    #[serde(
+        default = "default_decorations",
+        skip_serializing_if = "is_default_decorations"
+    )]
+    pub decorations: String,
+    #[serde(
+        default = "default_caption_side",
+        skip_serializing_if = "is_default_caption_side"
+    )]
+    pub caption_side: String,
     pub ui: CommonUi,
     pub design: design::DesignReadProjection,
     pub provenance: BTreeMap<String, String>,
+}
+fn default_decorations() -> String {
+    Appearance::default().decorations
+}
+fn default_caption_side() -> String {
+    Appearance::default().caption_side
+}
+fn is_default_decorations(value: &str) -> bool {
+    value == "csd"
+}
+fn is_default_caption_side(value: &str) -> bool {
+    value == "right"
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

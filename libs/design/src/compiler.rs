@@ -111,20 +111,25 @@ fn compile_flat_source(
         }
     };
 
-    let (chrome, chrome_warnings) =
-        match crate::family::chrome::compile(source, &colours.value.primitives) {
-            Ok(compiled) => compiled,
-            Err(errors) => {
-                let mut diagnostics = colours.diagnostics;
-                diagnostics.extend(errors);
-                return DesignCompileResult::Fatal(DesignCompileFailure {
-                    attempted_source: identity.clone(),
-                    diagnostics,
-                });
-            }
-        };
+    let (chrome, chrome_warnings) = match crate::family::chrome::compile(
+        source,
+        &crate::family::chrome::Inputs {
+            colours: &colours.value,
+            authored: &flattened.authored_colours(),
+        },
+    ) {
+        Ok(compiled) => compiled,
+        Err(errors) => {
+            let mut diagnostics = colours.diagnostics;
+            diagnostics.extend(errors);
+            return DesignCompileResult::Fatal(DesignCompileFailure {
+                attempted_source: identity.clone(),
+                diagnostics,
+            });
+        }
+    };
 
-    let style = match crate::family::style::compile(source, context.scheme) {
+    let style = match crate::family::style::compile(source, context.scheme, context.style) {
         Ok(style) => style,
         Err(errors) => {
             let mut diagnostics = colours.diagnostics;
@@ -798,6 +803,20 @@ struct FlattenedSource {
     origins: SourceOrigins,
 }
 
+impl FlattenedSource {
+    /// The colour primitives a selected modifier block authors, as opposed
+    /// to the base's declarations.
+    fn authored_colours(&self) -> BTreeSet<String> {
+        self.origins
+            .values
+            .iter()
+            .filter(|(_, origin)| matches!(origin, ValueOrigin::Modifier(_)))
+            .filter_map(|(path, _)| path.strip_prefix("design.v1.primitives.colors."))
+            .map(str::to_owned)
+            .collect()
+    }
+}
+
 fn record_base_origins<T>(
     origins: &mut BTreeMap<String, ValueOrigin>,
     values: &BTreeMap<String, T>,
@@ -1445,6 +1464,7 @@ mod tests {
             scheme: Scheme::Ocean,
             mode: Mode::Dark,
             contrast: Contrast::Normal,
+            style: None,
             app: None,
         };
         let flattened = flatten_source(&document.v1, context.clone());
@@ -1532,6 +1552,7 @@ mod tests {
                     scheme,
                     mode,
                     contrast: Contrast::Normal,
+                    style: None,
                     app: None,
                 };
                 let flattened = flatten_source(&document.v1, context.clone());
@@ -3058,6 +3079,7 @@ mod tests {
                         scheme,
                         mode,
                         contrast,
+                        style: None,
                         app: None,
                     };
                     for axis in [
@@ -3206,6 +3228,7 @@ mod tests {
                     scheme,
                     mode,
                     contrast: Contrast::Normal,
+                    style: None,
                     app: None,
                 },
             );
@@ -3272,6 +3295,7 @@ mod tests {
                     scheme,
                     mode,
                     contrast: Contrast::Normal,
+                    style: None,
                     app: None,
                 };
                 let original_result = compile_design(&original, context.clone());
@@ -3553,6 +3577,7 @@ mod tests {
                     scheme,
                     mode,
                     contrast: Contrast::Normal,
+                    style: None,
                     app: None,
                 };
                 let result = compile_design(&document, context);

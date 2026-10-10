@@ -1,5 +1,15 @@
 # settings contract changes
 
+## 0.3.5
+
+Add the appearance keys `appearance.style` (null, the default, takes the
+scheme's own style; else plain, pro, studio or classic),
+`appearance.decorations` (csd, the default, or ssd) and
+`appearance.caption_side` (right, the default, or left). They resolve into
+every effective context; a style change is a paint and layout change and a
+decorations or caption-side change a layout change. Older desktops and
+snapshots load with the defaults. Authority verbs/schema remain 0.1.0/1.
+
 ## 0.3.4
 
 Expose the public snapshot identity of an activated cache capture so hosts can

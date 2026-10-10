@@ -145,6 +145,17 @@ pub struct Shell {
     installed: toolkit::theme_menu::Choice,
 }
 
+/// What the engine shows for an unchosen axis: the session theme's.
+fn session_of(theme: &Theme) -> inspector::Session {
+    inspector::Session {
+        scheme: theme.scheme(),
+        style: theme.style_axis(),
+        mode: theme.mode(),
+        decorations: theme.decorations(),
+        captions: theme.captions(),
+    }
+}
+
 type Deliveries = futures::channel::mpsc::Receiver<Delivery>;
 
 fn locked(inbox: &Mutex<Deliveries>) -> std::sync::MutexGuard<'_, Deliveries> {
@@ -213,9 +224,9 @@ impl Shell {
             exiting: false,
             held: VecDeque::new(),
             inbox,
-            installed: (None, None),
+            installed: toolkit::theme_menu::Choice::default(),
         };
-        shell.engine.session = (shell.theme.scheme(), shell.theme.mode());
+        shell.engine.session = session_of(&shell.theme);
         shell.settle();
         Ok(shell)
     }
@@ -367,16 +378,16 @@ impl Shell {
     /// The window's theme choice (View › Theme, the title bar's switch,
     /// `busviewer.theme`).
     fn choice(&self) -> toolkit::theme_menu::Choice {
-        (self.engine.ui.theme_scheme, self.engine.ui.theme_mode)
+        crate::commands::choice(&self.engine)
     }
 
     /// Install the session theme with the window's choice over it. The
     /// session's theme file is never written.
     fn install_theme(&mut self) {
-        let (scheme, mode) = self.choice();
-        toolkit::install(&self.ctx, &self.theme.with_choice(scheme, mode));
-        self.engine.session = (self.theme.scheme(), self.theme.mode());
-        self.installed = (scheme, mode);
+        let choice = self.choice();
+        toolkit::install(&self.ctx, &self.theme.with_choice(&choice));
+        self.engine.session = session_of(&self.theme);
+        self.installed = choice;
     }
 
     /// The choice changed since the theme was installed: install again.

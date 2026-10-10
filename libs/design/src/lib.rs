@@ -33,6 +33,7 @@
 pub const EMBEDDED_DEFAULT_SOURCE: &str = include_str!("defaults/revision-1.theme.conf.mix");
 pub const EMBEDDED_DEFAULT_REVISION: DesignRevision = DesignRevision::FIRST;
 
+mod accent;
 mod axis;
 mod colour;
 mod colour_model;
@@ -53,13 +54,14 @@ mod state;
 mod trial;
 mod typography;
 
+pub use accent::{SrgbColour, accent_for, resolved_accent};
 pub use colour::{ColourCompileFailure, compile_colour_tokens};
 pub use colour_model::{
     FocusRingProvenance, LinearRgba, NON_TEXT_NAMES, ResolvedColours, ResolvedNonTextColour,
     ResolvedPair, TEXT_PAIR_NAMES, contrast_ratio,
 };
 pub use compiler::compile_design;
-pub use context::{Contrast, DesignContext, Mode, Scheme};
+pub use context::{CaptionSide, Contrast, Decorations, DesignContext, Mode, Scheme, Style};
 pub use design_model::{
     AuthoredMetric, DesignApplyDecision, DesignApplyTransition, DesignCompileFailure,
     DesignCompileOutcome, DesignCompileResult, DesignCompileStatus, DesignCompileSuccess,
@@ -86,15 +88,15 @@ pub use recipe::{
     RecipePairDomain, RecipeParam, RecipeSignature, RecipeSubstitutionDomainConstraint,
 };
 pub use source::{
-    AuthoredPairSource, ButtonInheritanceSource, ButtonMappingSource, ChromeMappingSource,
-    ColourSpace, CoveragePolicy, DerivationCallSource, DesignSourceDocument, DesignSourceError,
-    DesignSourceErrorCode, DesignV1Source, FamilyMappingsSource, LegacyTypographySource,
-    LegacyV0Source, MappingRuleSource, MappingSelectorSource, MappingValueSource, MetricSource,
-    ModifierAxis, ModifierBlockSource, NonTextColourSource, OklchSource, PairSource,
-    PrimitiveSource, RecipeArgumentSource, SemanticSource, SourceKind, StyleFamilySource,
-    StyleValueSource, TaggedMetricSource, TypeRecordSource, TypographySource,
-    V0CrosswalkExpressionSource, V0MappingProperty, V0PairMember, parse_design_source,
-    parse_legacy_v0_source,
+    AuthoredPairSource, ButtonInheritanceSource, ButtonMappingSource, ChromeDeriveSource,
+    ChromeMappingSource, ColourSpace, CoveragePolicy, DerivationCallSource, DesignSourceDocument,
+    DesignSourceError, DesignSourceErrorCode, DesignV1Source, FamilyMappingsSource,
+    LegacyTypographySource, LegacyV0Source, MappingRuleSource, MappingSelectorSource,
+    MappingValueSource, MetricSource, ModifierAxis, ModifierBlockSource, NonTextColourSource,
+    OklchSource, PRESENTATION_KEYS, PairPart, PairSource, PresentationSelection, PrimitiveSource,
+    RecipeArgumentSource, SemanticSource, SourceKind, StyleFamilySource, StyleValueSource,
+    TaggedMetricSource, TypeRecordSource, TypographySource, V0CrosswalkExpressionSource,
+    V0MappingProperty, V0PairMember, parse_design_source, parse_legacy_v0_source,
 };
 pub use state::{InteractionState, StyleStateKey};
 pub use typography::{

@@ -69,6 +69,12 @@ fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
     )
 }
 
+/// A design sRGB colour as the egui colour it renders as.
+pub fn srgb(value: design::SrgbColour) -> Color32 {
+    let [r, g, b, a] = value.to_srgba8();
+    Color32::from_rgba_unmultiplied(r, g, b, a)
+}
+
 /// The rendered halves of a named pair.
 fn pair(colours: &ResolvedColours, name: &str) -> Option<(Color32, Color32)> {
     colours
@@ -244,9 +250,14 @@ fn pair_visuals(theme: &Theme) -> Visuals {
             state.fg_stroke.color = text;
         }
     }
-    if let Some((surface, text)) = pair(colours, "accent") {
-        v.selection.bg_fill = surface;
+    if let Some((_, text)) = pair(colours, "accent") {
         v.selection.stroke = Stroke::new(v.selection.stroke.width, text);
+    }
+    // The accent pair's surface, read through the design's one accessor.
+    if let Some(accent) =
+        design::accent_for(theme.dictionary(), design::family::style::Widgets::Pairs)
+    {
+        v.selection.bg_fill = srgb(accent);
     }
     if let Some((surface, _)) = pair(colours, "primary") {
         v.hyperlink_color = surface;

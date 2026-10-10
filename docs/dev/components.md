@@ -25,7 +25,7 @@ layering gate.
 | [logging](https://github.com/markc/mixos/blob/main/libs/logging/Cargo.toml) | logging | lib | core | none | 0.1.1 |
 | [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.112.0 |
 | [props](https://github.com/markc/mixos/blob/main/libs/props/Cargo.toml) | props | lib | core | none | 0.1.1 |
-| [settings](https://github.com/markc/mixos/blob/main/libs/settings/Cargo.toml) | settings | lib | core | public | 0.3.4 |
+| [settings](https://github.com/markc/mixos/blob/main/libs/settings/Cargo.toml) | settings | lib | core | public | 0.3.5 |
 | [strict](https://github.com/markc/mixos/blob/main/libs/strict/Cargo.toml) | strict | lib | core | none | 0.1.1 |
 | [syntax](https://github.com/markc/mixos/blob/main/libs/syntax/Cargo.toml) | syntax | lib | core | none | 0.1.1 |
 | [test-broker](https://github.com/markc/mixos/blob/main/libs/test-broker/Cargo.toml) | test-broker | lib | core | none | 0.1.1 |

@@ -93,8 +93,11 @@ fn font_key(record: &ReadType) -> impl PartialEq + '_ {
 fn view(effective: &Effective) -> &DesignReadProjection {
     let Effective {
         scheme: _,
+        style: _,
         mode: _,
         contrast: _,
+        decorations: _,
+        caption_side: _,
         ui,
         design,
         provenance: _,
@@ -142,7 +145,12 @@ fn compare(old: &Effective, new: &Effective) -> ChangePlan {
             .iter()
             .map(|c| (button_key(c), &c.typography))
             .eq(b.buttons.iter().map(|c| (button_key(c), &c.typography)));
-    let paint = old.scheme != new.scheme
+    // A style changes the chrome's forms and lengths; the framing, the
+    // title bar's layout.
+    let style = old.style != new.style;
+    let framing = old.decorations != new.decorations || old.caption_side != new.caption_side;
+    let paint = style
+        || old.scheme != new.scheme
         || old.mode != new.mode
         || old.contrast != new.contrast
         || a.primitives != b.primitives
@@ -161,6 +169,8 @@ fn compare(old: &Effective, new: &Effective) -> ChangePlan {
                 .iter()
                 .map(|c| (button_key(c), pair_key(&c.pair), c.border, c.ring)));
     let layout = text
+        || style
+        || framing
         || old.ui.density != new.ui.density
         || a.metrics != b.metrics
         || a.scales != b.scales

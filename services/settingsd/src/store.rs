@@ -9,11 +9,25 @@ use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
+/// The sealed profile's format. A record of an older format is verified
+/// against its own seal first, then upgraded by [`Accepted::upgrade`], the
+/// one place that rule lives.
+///
+/// History:
+/// - 1: the original record, with no `format` field.
+/// - 2: the record seals its format; settings 0.3.5 adds `appearance.style`,
+///   `appearance.decorations` and `appearance.caption_side` (authored,
+///   omitted at their defaults) and their resolved values in `Effective`.
+pub const FORMAT: u32 = 2;
+
 const MAX_STORE_BYTES: u64 = 2 * 1024 * 1024;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Accepted {
     pub schema: u32,
+    /// The sealed record's format ([`FORMAT`]); absent in format 1.
+    #[serde(default = "format_one", skip_serializing_if = "is_format_one")]
+    pub format: u32,
     pub binding: Binding,
     pub incarnation: String,
     pub revision: Revision,
@@ -24,9 +38,18 @@ pub struct Accepted {
     pub receipts: Vec<Receipt>,
     pub content_digest: String,
 }
+fn format_one() -> u32 {
+    1
+}
+fn is_format_one(format: &u32) -> bool {
+    *format == 1
+}
 impl Accepted {
+    /// The content digest in the record's own format: format 1 sealed the
+    /// fields below; later formats also seal the format itself, so a record
+    /// cannot be relabelled older without breaking its seal.
     fn digest(&self) -> anyhow::Result<String> {
-        Ok(settings::digest(&(
+        let fields = (
             &self.schema,
             &self.binding,
             &self.incarnation,
@@ -36,7 +59,47 @@ impl Accepted {
             &self.embedded_source,
             &self.effective_digest,
             &self.receipts,
-        ))?)
+        );
+        Ok(if self.format == 1 {
+            settings::digest(&fields)?
+        } else {
+            settings::digest(&(fields, self.format))?
+        })
+    }
+
+    /// The one upgrade rule for sealed profiles. Call only on a record whose
+    /// seal [`Accepted::check`] verified as stored; returns it at [`FORMAT`]
+    /// and whether anything changed.
+    ///
+    /// An older record keeps everything it authored (the desktop, the pinned
+    /// source, its history). What is derived from them, the effective
+    /// interpretation, is never trusted across formats: it is resolved again
+    /// from the authored desktop and pinned source, and both digests are
+    /// sealed anew at the current format. The store writes the result
+    /// through its normal atomic path ([`Store::open`]).
+    ///
+    /// To add the next field:
+    /// - an authored field (in [`Desktop`] or here) is `#[serde(default)]`
+    ///   and `skip_serializing_if` its default, so an older record still
+    ///   re-serialises as it was written and its seal verifies;
+    /// - a field of the derived interpretation ([`Effective`]) changes the
+    ///   effective digest: bump [`FORMAT`], add a line to its history, and
+    ///   this function re-derives older records on their next open.
+    pub fn upgrade(mut self) -> anyhow::Result<(Self, bool)> {
+        if self.format == FORMAT {
+            return Ok((self, false));
+        }
+        anyhow::ensure!(
+            self.format < FORMAT,
+            "accepted format {} is newer than {FORMAT}",
+            self.format
+        );
+        let effective = settings::resolve_with_embedded(&self.desktop, &self.embedded_source)
+            .map_err(|e| anyhow::anyhow!("accepted desktop no longer resolves: {e:?}"))?;
+        self.effective_digest = settings::digest(&effective)?;
+        self.format = FORMAT;
+        self.seal()?;
+        Ok((self, true))
     }
     pub fn seal(&mut self) -> anyhow::Result<()> {
         self.content_digest = self.digest()?;
@@ -216,6 +279,7 @@ impl Store {
             .map_err(|e| anyhow::anyhow!("invalid initial desktop: {e:?}"))?;
         let mut accepted = Accepted {
             schema: SCHEMA,
+            format: FORMAT,
             binding,
             incarnation: uuid::Uuid::now_v7().to_string(),
             revision: Revision(1),
@@ -267,6 +331,19 @@ impl Store {
                 Ok(data)
             }) {
             Ok(data) => {
+                // A verified older record is upgraded, its backup first, both
+                // through the atomic replacement path.
+                let (data, upgraded) = data.upgrade()?;
+                if upgraded {
+                    store.upgrade_backup(binding)?;
+                    store.check_root()?;
+                    config::atomic::replace_in(
+                        &store.directory,
+                        "desktop.conf.mix".as_ref(),
+                        &encode(&data)?,
+                    )?;
+                    store.check_root()?;
+                }
                 // An intact accepted document may require a newer compiler or
                 // migration. Semantic refusal must preserve it, not roll back.
                 data.effective()?;
@@ -285,7 +362,7 @@ impl Store {
                     // only malformed syntax/integrity enters automatic restore.
                     return Err(primary_error);
                 }
-                let mut previous: Accepted = open_in(
+                let previous: Accepted = open_in(
                     &store.directory,
                     "desktop.previous.conf.mix",
                     libc::O_RDONLY,
@@ -297,6 +374,7 @@ impl Store {
                     )
                 })?;
                 previous.check(binding)?;
+                let (mut previous, _) = previous.upgrade()?;
                 previous.effective()?;
                 // Preserve user/corrupt evidence before replacing anything.
                 store.check_root()?;
@@ -331,6 +409,29 @@ impl Store {
                 Ok((store, previous))
             }
         }
+    }
+    /// Upgrade the backup in place when it is an intact older record (its
+    /// seal verified as stored); leave an absent or unreadable one for the
+    /// next commit to replace.
+    fn upgrade_backup(&self, binding: &Binding) -> anyhow::Result<()> {
+        let Ok(previous) = open_in(&self.directory, "desktop.previous.conf.mix", libc::O_RDONLY)
+            .and_then(read_typed::<Accepted>)
+        else {
+            return Ok(());
+        };
+        if previous.check(binding).is_err() {
+            return Ok(());
+        }
+        let (previous, upgraded) = previous.upgrade()?;
+        if upgraded {
+            self.check_root()?;
+            config::atomic::replace_in(
+                &self.directory,
+                "desktop.previous.conf.mix".as_ref(),
+                &encode(&previous)?,
+            )?;
+        }
+        Ok(())
     }
     fn path(&self) -> PathBuf {
         self.root.join("desktop.conf.mix")

@@ -10,7 +10,7 @@
 //! late reply can never land on a newer operation.
 use crate::model::{self, APP_ID, AppRow, Notes, Panel};
 use citizen::{CallError, Delivery, Reply};
-use design::{Mode, Scheme};
+use design::{CaptionSide, Decorations, Mode, Scheme, Style};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -129,6 +129,14 @@ pub struct UiState {
     pub theme_scheme: Option<Scheme>,
     #[serde(default, with = "by_name::mode")]
     pub theme_mode: Option<Mode>,
+    /// The style: `None` follows the session, `Some(None)` is the scheme's
+    /// own (saved as "own"), else a style.
+    #[serde(default, with = "by_name::style")]
+    pub theme_style: Option<Option<Style>>,
+    #[serde(default, with = "by_name::decorations")]
+    pub theme_decorations: Option<Decorations>,
+    #[serde(default, with = "by_name::captions")]
+    pub theme_captions: Option<CaptionSide>,
 }
 
 impl Default for UiState {
@@ -139,6 +147,9 @@ impl Default for UiState {
             dialog: None,
             theme_scheme: None,
             theme_mode: None,
+            theme_style: None,
+            theme_decorations: None,
+            theme_captions: None,
         }
     }
 }
@@ -179,6 +190,36 @@ mod by_name {
     }
     named!(scheme, design::Scheme);
     named!(mode, design::Mode);
+    named!(decorations, design::Decorations);
+    named!(captions, design::CaptionSide);
+
+    /// The style axis: null follows the session, "own" the scheme's own
+    /// style, else a style's name.
+    pub mod style {
+        use serde::{Deserialize, Deserializer, Serializer};
+
+        pub fn serialize<S: Serializer>(
+            value: &Option<Option<design::Style>>,
+            s: S,
+        ) -> Result<S::Ok, S::Error> {
+            match value {
+                None => s.serialize_none(),
+                Some(style) => s.serialize_some(style.map_or("own", design::Style::name)),
+            }
+        }
+
+        pub fn deserialize<'de, D: Deserializer<'de>>(
+            d: D,
+        ) -> Result<Option<Option<design::Style>>, D::Error> {
+            match Option::<String>::deserialize(d)? {
+                None => Ok(None),
+                Some(name) if name == "own" => Ok(Some(None)),
+                Some(name) => design::Style::from_name(&name)
+                    .map(|style| Some(Some(style)))
+                    .ok_or_else(|| serde::de::Error::custom(format!("unknown style {name:?}"))),
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -695,9 +736,10 @@ impl Engine {
         self.effects.push(Effect::Reply { id, rc: 0, body });
     }
 
-    /// `prefs.theme`: a present `scheme` or `mode` sets that axis (a name,
-    /// or null to follow the session); an absent one leaves it. Both are
-    /// checked before either applies.
+    /// `prefs.theme`: a present `scheme`, `style`, `mode`, `decorations` or
+    /// `caption_side` sets that axis (a name, or null to follow the session;
+    /// `style` also takes "own", the scheme's own style); an absent one
+    /// leaves it. Every axis is checked before any applies.
     fn theme(&mut self, args: &Value) -> Result<Value, (&'static str, String)> {
         type Axis<T> = Result<Option<Option<T>>, (&'static str, String)>;
         fn axis<T>(args: &Value, key: &str, from_name: fn(&str) -> Option<T>) -> Axis<T> {
@@ -710,17 +752,39 @@ impl Engine {
                 Some(_) => Err(("ARGUMENT", format!("{key} must be a name or null"))),
             }
         }
+        fn style_axis(name: &str) -> Option<Option<Style>> {
+            if name == "own" {
+                Some(None)
+            } else {
+                Style::from_name(name).map(Some)
+            }
+        }
         let scheme = axis(args, "scheme", Scheme::from_name)?;
         let mode = axis(args, "mode", Mode::from_name)?;
+        let style = axis(args, "style", style_axis)?;
+        let decorations = axis(args, "decorations", Decorations::from_name)?;
+        let captions = axis(args, "caption_side", CaptionSide::from_name)?;
         if let Some(scheme) = scheme {
             self.ui.theme_scheme = scheme;
         }
         if let Some(mode) = mode {
             self.ui.theme_mode = mode;
         }
+        if let Some(style) = style {
+            self.ui.theme_style = style;
+        }
+        if let Some(decorations) = decorations {
+            self.ui.theme_decorations = decorations;
+        }
+        if let Some(captions) = captions {
+            self.ui.theme_captions = captions;
+        }
         let (scheme, mode) = self.effective_theme();
         Ok(
             json!({"scheme":self.ui.theme_scheme.map(Scheme::name),"mode":self.ui.theme_mode.map(Mode::name),
+            "style":self.ui.theme_style.map(|s| s.map_or("own", Style::name)),
+            "decorations":self.ui.theme_decorations.map(Decorations::name),
+            "caption_side":self.ui.theme_captions.map(CaptionSide::name),
             "effective":{"scheme":scheme.name(),"mode":mode.name()}}),
         )
     }
@@ -1210,6 +1274,53 @@ mod tests {
         );
         assert_eq!(reply(7).unwrap().1["error_code"], "UNKNOWN_VERB");
         assert_eq!(reply(8).unwrap().1["error_code"], "ARGUMENT");
+    }
+
+    /// prefs.theme takes every axis; null on style follows the session.
+    #[test]
+    fn the_theme_verb_takes_style_and_framing_and_null_follows_the_session() {
+        let mut e = listed();
+        e.command(
+            1,
+            "prefs.theme",
+            r#"{"style":"classic","decorations":"ssd","caption_side":"left"}"#,
+        );
+        e.command(2, "prefs.theme", r#"{"style":"neon"}"#);
+        let effects = e.take_effects();
+        let reply = |id: u64| {
+            effects.iter().find_map(|x| match x {
+                Effect::Reply { id: i, rc, body } if *i == id => Some((*rc, body.clone())),
+                _ => None,
+            })
+        };
+        let (rc, body) = reply(1).unwrap();
+        assert_eq!(rc, 0, "{body}");
+        assert_eq!(
+            (&body["style"], &body["decorations"], &body["caption_side"]),
+            (&json!("classic"), &json!("ssd"), &json!("left"))
+        );
+        assert_eq!(reply(2).unwrap().1["error_code"], "ARGUMENT");
+        assert_eq!(
+            e.ui.theme_style,
+            Some(Some(Style::Classic)),
+            "a refused call changes nothing"
+        );
+        e.command(3, "prefs.theme", r#"{"style":"own"}"#);
+        assert_eq!(e.ui.theme_style, Some(None));
+        e.command(
+            4,
+            "prefs.theme",
+            r#"{"style":null,"decorations":null,"caption_side":null}"#,
+        );
+        assert_eq!(
+            (
+                e.ui.theme_style,
+                e.ui.theme_decorations,
+                e.ui.theme_captions
+            ),
+            (None, None, None),
+            "the session again"
+        );
     }
 
     fn lost(message: &str) -> Result<Reply, CallError> {

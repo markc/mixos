@@ -49,12 +49,8 @@ pub fn registry() -> Registry<Engine> {
         enabled: Engine::can_refresh,
         run: Engine::refresh,
     });
-    // View › Theme: any scheme and mode, in this window only.
-    r.theme_menu(
-        "view",
-        |e: &Engine| (e.ui.theme_scheme, e.ui.theme_mode),
-        Engine::set_theme,
-    );
+    // View › Theme: any scheme, style, mode and framing, in this window only.
+    r.theme_menu("view", choice, set_choice);
     r.add(Command {
         id: "apps.check",
         submenu: None,
@@ -147,6 +143,26 @@ pub fn registry() -> Registry<Engine> {
     // Help opens with a field that searches every command.
     r.search_menu("help");
     r
+}
+
+/// The window's theme choice, as the Theme menu reads it.
+pub fn choice(e: &Engine) -> toolkit::theme_menu::Choice {
+    toolkit::theme_menu::Choice {
+        scheme: e.ui.theme_scheme,
+        style: e.ui.theme_style,
+        mode: e.ui.theme_mode,
+        decorations: e.ui.theme_decorations,
+        captions: e.ui.theme_captions,
+    }
+}
+
+/// Store the Theme menu's choice as the window's.
+fn set_choice(e: &mut Engine, choice: toolkit::theme_menu::Choice) {
+    e.ui.theme_scheme = choice.scheme;
+    e.ui.theme_style = choice.style;
+    e.ui.theme_mode = choice.mode;
+    e.ui.theme_decorations = choice.decorations;
+    e.ui.theme_captions = choice.captions;
 }
 
 #[cfg(test)]

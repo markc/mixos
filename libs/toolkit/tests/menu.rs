@@ -603,7 +603,10 @@ fn theme_choices_are_ticked_radio_items_and_a_click_chooses() {
     h.run();
     assert_eq!(
         h.state().theme,
-        (Some(design::Scheme::Forest), None),
+        toolkit::theme_menu::Choice {
+            scheme: Some(design::Scheme::Forest),
+            ..Default::default()
+        },
         "the click chose Forest"
     );
     assert!(current(&h).is_none(), "and closed the menus");

@@ -1140,9 +1140,15 @@ fn show_level(
                     if let Some((search, query)) = header {
                         search_header(ui, chrome, search, query, layout.size.x, entries.is_empty());
                     }
+                    // At least the rows, up to the window: an egui area
+                    // starts at the style's default area size (400 pt high),
+                    // and a scroll area alone never grows past its area, so
+                    // a long level would scroll in a 400 pt box however tall
+                    // the window. Asking for the rows makes the area grow.
                     let out = ScrollArea::vertical()
                         .id_salt(id.with("scroll"))
                         .max_height(max_height)
+                        .min_scrolled_height(max_height.min(layout.size.y))
                         .auto_shrink([true, true])
                         .show(ui, |ui| {
                             level_rows(
