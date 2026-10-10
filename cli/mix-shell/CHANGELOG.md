@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.112.1
+
+### Fixed
+
+- Built on mix 0.112.1: SIGTERM and Ctrl-C end a blocking `tcp_accept`,
+  `tcp_recv`, `tcp_recv_line` or `ws_recv` at once, `tcp_send` takes a
+  whole-send `{timeout}` (`TCP_SEND_TIMEOUT`), and receives serve buffered
+  data first while traffic that delivers nothing counts against the
+  deadline. `mix man system` documents them.
+
 ## 0.112.0
 
 ### Added

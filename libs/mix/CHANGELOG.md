@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.112.1
 
 ### Added
 
@@ -21,6 +21,11 @@
   looping on `tcp_accept($l, {timeout: 0.05})` ignored SIGTERM until the
   15 s backstop forced it out. Options, results and error messages are
   unchanged.
+- A receive returns data already buffered before it judges the deadline, so
+  a very short timeout no longer returns nil while a line sits in the buffer.
+  Traffic that delivers nothing (a WebSocket Pong flood, a line trickled with
+  no newline) now counts against the deadline and the interrupt flag, so a
+  finite timeout ends on time and SIGTERM still ends an untimed wait.
 - A very large receive timeout in a Class C `tcp_recv`/`ws_recv` waits
   forever instead of overflowing the deadline.
 

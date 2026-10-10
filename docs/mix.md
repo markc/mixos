@@ -2,8 +2,8 @@
 
 Mix is the MixOS shell and scripting language. The interpreter lives in the
 `mix` library; `cli/mix-shell` owns the binary, interactive shell and native ABP
-citizen runtime. The current language version is 0.112.0 and the shell source
-version is 0.112.0.
+citizen runtime. The current language version is 0.112.1 and the shell source
+version is 0.112.1.
 
 Use `mix builtins --names` to discover valid builtin names, and `mix builtins
 <name>` for their contracts. `mix man overview` and `mix man syntax` explain the

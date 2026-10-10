@@ -1856,7 +1856,7 @@ end
 tcp_close($h)
 ```
 
-**Send deadline (unreleased).** Without options, `tcp_send` writes the
+**Send deadline (v0.112.1).** Without options, `tcp_send` writes the
 whole payload with each write bounded by the socket's 30 s write timeout,
 so a reader that drains a few bytes at a time can stretch one send far
 past 30 s. `tcp_send(h, payload, {timeout: 5})` instead bounds the WHOLE
@@ -1886,7 +1886,7 @@ end
 
 On unix a numeric `tcp_recv`/`tcp_recv_line` (and `ws_recv`) waits on the
 async runtime rather than in a blocking read, the way `sleep()` does, so
-SIGTERM and Ctrl-C end the wait at once (unreleased; before, a SIGTERM
+SIGTERM and Ctrl-C end the wait at once (v0.112.1; before, a SIGTERM
 waited for the read's timeout). Data already buffered is returned first,
 however short the timeout, while traffic that delivers nothing (WebSocket
 control frames, part of a line) still counts against it: a timed-out
@@ -2116,7 +2116,7 @@ close or error raises (`SOCKET_CLOSED`) and retires the handle, exactly
 like the sync path. Pull frames never enter the subscription FIFO, so
 the event pump cannot steal them, and the numeric pull therefore also
 works in serve mode. Plain and Class S numeric recv use the same pull
-(unreleased), keeping the blocking form's options and error messages and
+(v0.112.1), keeping the blocking form's options and error messages and
 adding an interrupt-flag recheck every 250 ms, so SIGTERM and Ctrl-C end
 the wait as they end `sleep()`. The pull's AsyncFd readiness await
 is unix-only: on other targets the Class C interception falls through
