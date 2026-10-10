@@ -25529,7 +25529,7 @@ pub(crate) mod socket_sources {
                 .set_read_timeout(Some(std::time::Duration::from_secs(10)))
                 .unwrap();
             let owner = Arc::new(TcpOwner::default());
-            let accepted = pull_accept(listener, deadline_after(5.0), owner.clone())
+            let accepted = pull_accept(listener, deadline_after(5.0), owner.clone(), false)
                 .await
                 .unwrap();
             let Value::Number(n) = accepted else {
