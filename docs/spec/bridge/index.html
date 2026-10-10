@@ -284,10 +284,13 @@ the token.</p>
 <tr><td>12</td><td>A bad request from the caller (missing field, body not a JSON object)</td><td>text naming the field</td></tr>
 </tbody></table>
 <p>Every call runs under one deadline, <code>timeout_s</code>, covering connect, the auth
-reply and the request's reply. <strong>Writes are not bounded yet:</strong> a peer that
-stops reading can hold a request write, and the serve pump with it, for an
-unbounded time until Mix 0.112.1's <code>tcp_send</code> timeout lands (pending); the
-bridge will then pass the remaining deadline to every write.</p>
+line and its reply, and the request and its reply. Each write gets the time
+left as <code>tcp_send</code>'s <code>{timeout}</code>, which bounds the whole send, so a peer that
+stops reading, or reads too slowly, cannot hold a call (or the serve pump)
+past <code>timeout_s</code>: the write fails, the call answers rc 11 and the connection
+is dropped. A deadline already spent before a write fails the same way
+without sending. This needs Mix &gt;= 0.112.1; on an older Mix the bridge
+refuses to start (<code>RUNTIME</code>).</p>
 <p>After a transport failure, or a reply without a boolean <code>ok</code>, the connection is dropped and no new one is tried for
 <code>backoff_s</code>; calls in that window answer rc 11 at once.</p>
 <p>The token never appears in a reply: any occurrence of it, in any letter case,
@@ -341,7 +344,8 @@ already gives to another component, so an instance can never answer, say,
 form refuses the start. <code>families</code> is optional, so the schema-1 registry and
 later schemas with families both read.</p>
 <p>A refused start prints <code>bridged: refusing to start: CODE: message</code> and exits
-2. Codes: <code>NAME_INVALID</code>, <code>NAME_RESERVED</code>, <code>REGISTRY</code>, <code>CONFIG</code>, <code>TOKEN</code>.
+2. Codes: <code>RUNTIME</code> (Mix older than 0.112.1), <code>NAME_INVALID</code>, <code>NAME_RESERVED</code>,
+<code>REGISTRY</code>, <code>CONFIG</code>, <code>TOKEN</code>.
 <code>mix bridged.mix --check &lt;app&gt;</code> runs the same checks without joining the Bus
 and exits 0 when the instance may start; an unexpected error at start exits 3,
 never 2.</p>

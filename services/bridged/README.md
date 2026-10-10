@@ -19,8 +19,9 @@ no Cargo package, identity in `component.mx`.
 | `tests/bridge_core_test.mix` | offline: config, token, guard, spec fixture, the client against stand-in apps |
 | `tests/bridged_test.mix` | every verb over a private broker, the start refusals, `--start` (no child on a refusal, the child's exit code passed through), the app dying and coming back |
 
-Run the tests from the checkout root (the Bus test needs a `noded`, default
-`/opt/mixos/bin/noded`, or `--noded <path>`):
+Run the tests from the checkout root with Mix >= 0.112.1 (the Bus test needs
+a `noded`, default `/opt/mixos/bin/noded`, or `--noded <path>`; to test
+another mix binary, run the tests with it and set `BRIDGED_MIX` to it):
 
 ```sh
 mix services/bridged/tests/bridge_core_test.mix

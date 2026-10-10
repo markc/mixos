@@ -15,7 +15,8 @@ auth, transport or timeout) or 12 (a bad request).
 - Start checks, also as `mix bridged.mix --check <app>`: the Bus service-name
   rule, and no name that a registered verb already starts with (read from the
   installed verb registry, failing closed). A refusal exits 2 with
-  `NAME_INVALID`, `NAME_RESERVED`, `REGISTRY`, `CONFIG` or `TOKEN`.
+  `RUNTIME`, `NAME_INVALID`, `NAME_RESERVED`, `REGISTRY`, `CONFIG` or
+  `TOKEN`.
 - The name may not start with `mixos-` (mix --serve strips it) or be one of
   the broker's (`noded`, `noded-*`, the session-name shape).
 - The token is redacted from every error, result and `last_error`; the token
@@ -29,8 +30,10 @@ auth, transport or timeout) or 12 (a bad request).
   143 (`SuccessExitStatus=143`). Run `--start` under the unit: outside
   systemd it has no parent-death protection. `BRIDGED_MIX` and the `.env`
   file must be administrator-controlled.
-- Known gap: request writes are not bounded until Mix 0.112.1's `tcp_send`
-  timeout lands (pending).
+- Writes are bounded by `timeout_s` too: every `tcp_send` gets the time left
+  as `{timeout}`, and a send that runs out is rc 11 with the connection
+  dropped. Requires Mix >= 0.112.1; an older Mix is refused at start
+  (`RUNTIME`).
 - Verb registration in `docs/spec/bus/verbs.conf.mix` is pending the registry
   gate's instance-family mapping.
 
