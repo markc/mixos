@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+- `tcp_send(handle, payload[, {timeout}])`: one deadline bounds the whole
+  send, however many partial writes a slow reader forces (seconds, 0 = wait
+  forever). On expiry it raises `TCP_SEND_TIMEOUT` with
+  `details: {written, total}` and retires the handle; bytes already written
+  stay written. The wait honours SIGTERM and Ctrl-C. On a `tcp_on` handle
+  the timeout is the receipt deadline. Without the option `tcp_send` is
+  unchanged.
+
 ### Fixed
 
 - SIGTERM now ends a blocking `tcp_accept`, `tcp_recv`, `tcp_recv_line` or

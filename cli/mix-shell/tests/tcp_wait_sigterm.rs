@@ -120,3 +120,21 @@ end
         WITHIN,
     );
 }
+
+/// A send blocked on a peer that never reads (payload larger than the
+/// socket buffers, no deadline) ends on SIGTERM too.
+#[test]
+fn sigterm_ends_a_send_blocked_on_a_non_reading_peer() {
+    sigterm_ends(
+        "send-blocked",
+        r#"$l = tcp_listen("127.0.0.1", 0)
+$a = tcp_local_addr($l)
+$c = tcp_connect("127.0.0.1", $a.port, {timeout: 5})
+$s = tcp_accept($l, {timeout: 5})
+$payload = repeat("x", 67108864)
+print("ready")
+tcp_send($c, $payload, {timeout: 0})
+"#,
+        WITHIN,
+    );
+}

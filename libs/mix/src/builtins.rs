@@ -412,7 +412,7 @@ builtin_table! {
     ("http_serve", CapabilityClass::Network,      "system",  "BLOCKING static file server — the python -m http.server slot: http_serve(root[, {port, host, duration, index, listing, render_md, requests}]) -> requests served. GET/HEAD only (405 otherwise), NO TLS ever and NO dynamic handlers (both are webd's job). port 0 (default) binds ephemeral and PRINTS the URL; host defaults 127.0.0.1 (pass \"0.0.0.0\" to expose); duration 0 = until SIGINT; listing opts into directory indexes; render_md serves .md as HTML (markdown feature); spa (true=index, or a shell filename) answers an extensionless would-be-404 with that shell so a client-side router boots — for a single-shell SPA; clean_urls serves /foo.html for /foo (GitHub Pages parity — for a pre-rendered page-per-route site), tried before spa. Traversal-proof: every canonicalised path must stay under the canonicalised root (v0.75.0)", contract!((root: string, opts?: any_of(map("http_serve_options", {port: number, host: string, duration: number, index: string, listing: bool, render_md: bool, requests: number, spa: any_of(bool, string), clean_urls: bool}), nil)) -> number; effects[blocking]; failure[raises])),
     ("http_recv", CapabilityClass::Network,       "system",  "Accept ONE HTTP request, answer it, return it: http_recv(port[, {timeout, host, max, respond}]) -> {method, path, query, headers, body, bytes, from_host, from_port}, or nil on timeout. The OAuth-localhost-redirect / webhook-catch shape. respond: {status, body, content_type, headers} (default 200 \"ok\"); max caps the request body (default 1 MiB); host defaults 127.0.0.1 (v0.75.0)", contract!((port: number, opts?: any_of(map, nil)) -> any; effects[blocking]; failure[raises])),
     ("tcp_connect", CapabilityClass::Network,     "system",  "Open a raw TCP connection: tcp_connect(host, port[, {timeout, tls, insecure}]) -> numeric handle. tls:true wraps in TLS (ring-pinned, webpki roots); insecure:true skips cert verification. The stream-socket primitive for a line/binary protocol (SMTP/redis/memcached probe, banner grab) UDP/WS/HTTP don't cover (v0.78.0)", contract!((host: string, port: number, opts?: any_of(map, nil)) -> number; effects[blocking]; failure[raises])),
-    ("tcp_send", CapabilityClass::Network,        "system",  "Send bytes on a TCP handle: tcp_send(h, payload) -> bytes sent (string/bytes/buffer, verbatim; flushed) (v0.78.0)", contract!((handle: number, payload: any_of(string, bytes, buffer)) -> number; effects[blocking]; failure[raises])),
+    ("tcp_send", CapabilityClass::Network,        "system",  "Send bytes on a TCP handle: tcp_send(h, payload[, {timeout}]) -> bytes sent (string/bytes/buffer, verbatim; flushed). Without timeout each write is bounded by the socket's 30 s write timeout, as before. With {timeout} (seconds, 0 = wait forever) one deadline bounds the WHOLE send however many partial writes it takes; on expiry it raises TCP_SEND_TIMEOUT (details {written, total}) and retires the handle, and bytes already written stay written. The timed wait honours SIGTERM and Ctrl-C. On a tcp_on handle the timeout is the receipt deadline (0 keeps the 30 s bound) (v0.78.0; timeout unreleased)", contract!((handle: number, payload: any_of(string, bytes, buffer), opts?: any_of(map, nil)) -> number; effects[blocking]; failure[raises])),
     ("tcp_recv", CapabilityClass::Network,        "system",  "Read available bytes: tcp_recv(h[, {timeout, max}]) -> bytes (buffered bytes first, then one read of at most 256 KiB — poll again for more even when max is larger) | nil on timeout (poll again). Bytes not string — a stream has no frame boundary. A peer close RAISES and retires the handle. timeout default 30 (0=forever), max default 64 KiB. Numeric Class C recv yields on native readiness. Source-id recv yields outside serve; serve mode refuses SOCKET_RECV_SERVE and consumes frames through handlers. nil on timeout keeps the connection usable; terminal raises SOCKET_CLOSED (v0.78.0)", contract!((handle: any_of(number, string), opts?: any_of(map, nil)) -> any; effects[blocking]; failure[raises])),
     ("tcp_recv_line", CapabilityClass::Network,   "system",  "Read the next LINE: tcp_recv_line(h[, {timeout, max}]) -> string (LF + one trailing CR stripped) | nil on timeout. Buffers across reads; if `max` bytes accumulate with no newline the handle RAISES and RETIRES (a peer that never terminates a line — broken framing). For line protocols (SMTP/redis) so a caller need not hand-roll a \\r\\n scanner. Numeric Class C recv yields on native readiness. A line-mode source-id recv yields outside serve; serve mode refuses SOCKET_RECV_SERVE and uses event handlers. nil on timeout keeps the connection usable; terminal raises SOCKET_CLOSED (v0.78.0)", contract!((handle: any_of(number, string), opts?: any_of(map, nil)) -> any; effects[blocking]; failure[raises])),
     ("ws_on",   CapabilityClass::Network,         "system",  "Subscribe a ws_connect handle to the event stream: ws_on(handle, command) -> source id (string). The connection MOVES to an evaluator-generation reader thread: ordered frames arrive as `command` events {watch, frame:{kind:\"text\"|\"binary\", data}} (binary data hex-encoded), a peer close as ONE terminal {watch, closed:{reason}} — then the source retires. ws_send on the moved handle routes to the owner and awaits its receipt; numeric ws_recv refuses. Serve handlers receive frames as events. The reader parks in poll(2) when idle (no timer). Overflow hard-closes the socket with exactly one terminal event, never a silent drop. ws_unwatch cancels, joins and emits NO terminal marker (v0.107.0)", contract!((handle: number, command: string) -> string; failure[raises])),
@@ -22121,6 +22121,10 @@ mod tcp_client {
             }
         }
 
+        pub(super) fn is_tls(&self) -> bool {
+            matches!(self.stream, Stream::Tls(_))
+        }
+
         /// Has this connection's generation retired? Then it must close
         /// rather than return to the registry.
         pub(super) fn orphaned(&self) -> bool {
@@ -22395,46 +22399,283 @@ fn builtin_tcp_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
     Ok(Some(Value::Number(id as f64)))
 }
 
-/// `tcp_send(h, payload)` → bytes sent (string/bytes/buffer, verbatim).
-/// On a SUBSCRIBED handle the send routes through the owner thread's
-/// bounded command endpoint and blocks (bounded by the owner's send
-/// deadline) for the completion receipt.
+/// The payload of a tcp_send call: string, bytes or buffer, verbatim.
 #[cfg(feature = "ws")]
-fn builtin_tcp_send(args: Vec<Value>) -> MixResult<Option<Value>> {
-    expect_args("tcp_send", &args, 2)?;
-    let id = tcp_id_arg("tcp_send", &args)?;
-    let payload: Vec<u8> = match &args[1] {
-        Value::String(s) => s.as_bytes().to_vec(),
-        Value::Bytes(b) => b.to_vec(),
-        Value::Buffer(b) => b.borrow().clone(),
-        other => {
-            return Err(tcp_err(
-                "tcp_send()",
-                format!(
-                    "payload must be a string, bytes or buffer, got {}",
-                    other.type_name()
-                ),
+pub(crate) fn tcp_send_payload(v: &Value) -> MixResult<Vec<u8>> {
+    match v {
+        Value::String(s) => Ok(s.as_bytes().to_vec()),
+        Value::Bytes(b) => Ok(b.to_vec()),
+        Value::Buffer(b) => Ok(b.borrow().clone()),
+        other => Err(tcp_err(
+            "tcp_send()",
+            format!(
+                "payload must be a string, bytes or buffer, got {}",
+                other.type_name()
+            ),
+        )),
+    }
+}
+
+/// tcp_send's `{timeout}`: None when no option was given (the unchanged
+/// default path), else seconds for the whole send, 0 = wait forever.
+#[cfg(feature = "ws")]
+pub(crate) fn tcp_send_timeout(opts: Option<&Value>) -> MixResult<Option<f64>> {
+    use crate::native_events::refusal;
+    match opts {
+        None | Some(Value::Nil) => Ok(None),
+        Some(Value::Map(m)) => {
+            for k in m.keys() {
+                if k != "timeout" {
+                    return Err(refusal(
+                        "TCP_SEND_ARGUMENT",
+                        format!("tcp_send(): unknown option '{k}' (supported: timeout)"),
+                    ));
+                }
+            }
+            let Some(v) = m.get("timeout") else {
+                return Ok(None);
+            };
+            let t = extract_number(v, InputPolicy::NumberOnly).ok_or_else(|| {
+                refusal(
+                    "TCP_SEND_ARGUMENT",
+                    format!(
+                        "tcp_send(): option 'timeout' must be a number, got {}",
+                        v.type_name()
+                    ),
+                )
+            })?;
+            as_duration("tcp_send(): option 'timeout'", t)?;
+            Ok(Some(t))
+        }
+        Some(other) => Err(refusal(
+            "TCP_SEND_ARGUMENT",
+            format!(
+                "tcp_send(): options must be a map or nil, got {}",
+                other.type_name()
+            ),
+        )),
+    }
+}
+
+/// The deadline expired with `written` of `total` bytes on the wire. The
+/// handle is retired: a partial write leaves the stream unusable.
+#[cfg(feature = "ws")]
+pub(crate) fn tcp_send_timeout_error(written: usize, total: usize) -> MixError {
+    tcp_send_stopped(
+        "TCP_SEND_TIMEOUT",
+        "did not complete in time",
+        written,
+        total,
+    )
+}
+
+#[cfg(feature = "ws")]
+fn tcp_send_stopped(code: &str, why: &str, written: usize, total: usize) -> MixError {
+    let mut details = indexmap::IndexMap::new();
+    details.insert("written".to_string(), Value::Number(written as f64));
+    details.insert("total".to_string(), Value::Number(total as f64));
+    MixError::Structured(Box::new(
+        crate::error::ErrorInfo::new(
+            code,
+            format!(
+                "tcp_send: the send {why} after {written} of {total} bytes; the connection was closed"
+            ),
+        )
+        .with_details(Value::map(details)),
+    ))
+}
+
+/// One non-blocking step of a deadline send: write more of the payload,
+/// or flush (TLS records) once it is all accepted.
+#[cfg(feature = "ws")]
+pub(crate) enum SendStep {
+    Progress,
+    WouldBlock,
+    Done,
+    Failed(std::io::Error),
+}
+
+#[cfg(feature = "ws")]
+pub(crate) fn send_step(conn: &mut tcp_client::Conn, payload: &[u8], off: &mut usize) -> SendStep {
+    use std::io::ErrorKind;
+    if *off < payload.len() {
+        match conn.write(&payload[*off..]) {
+            // A TLS stream accepts no more plaintext until its records
+            // drain: flush, then try again.
+            Ok(0) if conn.is_tls() => match conn.flush() {
+                Ok(()) => SendStep::Progress,
+                Err(e) if e.kind() == ErrorKind::WouldBlock => SendStep::WouldBlock,
+                Err(e) if e.kind() == ErrorKind::Interrupted => SendStep::Progress,
+                Err(e) => SendStep::Failed(e),
+            },
+            Ok(0) => SendStep::Failed(std::io::Error::new(
+                ErrorKind::WriteZero,
+                "write returned 0 bytes",
+            )),
+            Ok(n) => {
+                *off += n;
+                SendStep::Progress
+            }
+            Err(e) if e.kind() == ErrorKind::WouldBlock => SendStep::WouldBlock,
+            Err(e) if e.kind() == ErrorKind::Interrupted => SendStep::Progress,
+            Err(e) => SendStep::Failed(e),
+        }
+    } else {
+        match conn.flush() {
+            Ok(()) => SendStep::Done,
+            Err(e) if e.kind() == ErrorKind::WouldBlock => SendStep::WouldBlock,
+            Err(e) if e.kind() == ErrorKind::Interrupted => SendStep::Progress,
+            Err(e) => SendStep::Failed(e),
+        }
+    }
+}
+
+/// Wait until the socket is writable, Ctrl-C arrives or `timeout` passes.
+#[cfg(all(feature = "ws", unix))]
+fn wait_writable(tcp: &std::net::TcpStream, timeout: std::time::Duration) -> std::io::Result<bool> {
+    use std::os::fd::AsRawFd;
+    let wake = crate::interrupt::wake_fd();
+    let mut fds = [
+        libc::pollfd {
+            fd: tcp.as_raw_fd(),
+            events: libc::POLLOUT,
+            revents: 0,
+        },
+        libc::pollfd {
+            fd: wake.unwrap_or(-1),
+            events: libc::POLLIN,
+            revents: 0,
+        },
+    ];
+    let ms = timeout.as_millis().clamp(1, i32::MAX as u128) as i32;
+    let count = if wake.is_some() { 2 } else { 1 };
+    // SAFETY: `count` valid pollfds that outlive the call.
+    let rc = unsafe { libc::poll(fds.as_mut_ptr(), count, ms) };
+    if rc < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    if fds[1].revents != 0 {
+        crate::interrupt::drain_wake();
+    }
+    Ok(rc > 0)
+}
+
+#[cfg(all(feature = "ws", not(unix)))]
+fn wait_writable(
+    _tcp: &std::net::TcpStream,
+    timeout: std::time::Duration,
+) -> std::io::Result<bool> {
+    std::thread::sleep(timeout.min(std::time::Duration::from_millis(20)));
+    Ok(true)
+}
+
+/// The blocking deadline send (non-unix, direct call_builtin callers; on
+/// unix the evaluator runs the async form). One deadline bounds the whole
+/// payload, however many partial writes it takes.
+#[cfg(feature = "ws")]
+fn tcp_send_deadline(
+    mut conn: tcp_client::Conn,
+    id: u64,
+    payload: &[u8],
+    timeout_seconds: f64,
+) -> MixResult<Option<Value>> {
+    let deadline = socket_sources::deadline_after(timeout_seconds);
+    let (read_timeout, write_timeout) = (
+        conn.tcp().read_timeout().ok().flatten(),
+        conn.tcp().write_timeout().ok().flatten(),
+    );
+    conn.tcp()
+        .set_nonblocking(true)
+        .map_err(|e| tcp_err("tcp_send", e))?;
+    let mut off = 0usize;
+    loop {
+        match send_step(&mut conn, payload, &mut off) {
+            SendStep::Progress => continue,
+            SendStep::Done => break,
+            // The connection is dropped here: retired, as on any send error.
+            SendStep::Failed(e) => return Err(tcp_err("tcp_send", e)),
+            SendStep::WouldBlock => {}
+        }
+        if crate::interrupt::is_interrupted() {
+            return Err(tcp_send_stopped(
+                "TCP_SEND_INTERRUPTED",
+                "was interrupted",
+                off,
+                payload.len(),
             ));
         }
-    };
+        let left = match deadline {
+            None => ACCEPT_SLICE,
+            Some(d) => {
+                let left = d.saturating_duration_since(std::time::Instant::now());
+                if left.is_zero() {
+                    return Err(tcp_send_timeout_error(off, payload.len()));
+                }
+                left.min(ACCEPT_SLICE)
+            }
+        };
+        match wait_writable(conn.tcp(), left) {
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(tcp_err("tcp_send", e)),
+        }
+    }
+    let _ = conn.tcp().set_nonblocking(false);
+    let _ = conn.tcp().set_read_timeout(read_timeout);
+    let _ = conn.tcp().set_write_timeout(write_timeout);
+    tcp_client::MAP.lock().unwrap().insert(id, conn);
+    Ok(Some(Value::Number(payload.len() as f64)))
+}
+
+/// A subscribed handle's send receipt as the caller sees it. With an
+/// explicit `{timeout}`, expiry raises TCP_SEND_TIMEOUT like the direct
+/// path; without one, the source's SOCKET_SEND_TIMEOUT stays as it was.
+#[cfg(feature = "ws")]
+pub(crate) fn tcp_send_receipt(
+    receipt: Result<socket_sources::SendReceipt, tokio::sync::oneshot::error::RecvError>,
+    timed: bool,
+) -> MixResult<Value> {
+    match receipt {
+        Ok(Ok(n)) => Ok(Value::Number(n as f64)),
+        Ok(Err((code, message))) if timed && code == "SOCKET_SEND_TIMEOUT" => Err(
+            crate::native_events::refusal("TCP_SEND_TIMEOUT", format!("tcp_send: {message}")),
+        ),
+        Ok(Err((code, message))) => Err(crate::native_events::refusal(&code, message)),
+        Err(_) => Err(crate::native_events::refusal(
+            "SOCKET_SEND_CLOSED",
+            "the socket source was closed before the send completed",
+        )),
+    }
+}
+
+/// `tcp_send(h, payload[, {timeout}])` → bytes sent (string/bytes/buffer,
+/// verbatim; flushed). Without `{timeout}` each write is bounded by the
+/// socket's 30 s write timeout, as before. With it, one deadline bounds
+/// the whole send; on expiry TCP_SEND_TIMEOUT is raised and the handle
+/// retired (bytes already written stay written). On a SUBSCRIBED handle
+/// the send routes through the owner thread's bounded command endpoint
+/// and blocks for the completion receipt, its deadline the caller's
+/// timeout when given (0 keeps the source's 30 s bound).
+#[cfg(feature = "ws")]
+fn builtin_tcp_send(args: Vec<Value>) -> MixResult<Option<Value>> {
+    expect_args_between("tcp_send", &args, 2, 3)?;
+    let id = tcp_id_arg("tcp_send", &args)?;
+    let payload = tcp_send_payload(&args[1])?;
+    let timeout = tcp_send_timeout(args.get(2))?;
     if crate::builtins::socket_sources::is_subscribed(
         crate::builtins::socket_sources::ClientKey::tcp(id),
     ) {
-        let rx = crate::builtins::socket_sources::send_tcp(id, payload)?;
-        return match rx.blocking_recv() {
-            Ok(Ok(n)) => Ok(Some(Value::Number(n as f64))),
-            Ok(Err((code, message))) => Err(crate::native_events::refusal(&code, message)),
-            Err(_) => Err(crate::native_events::refusal(
-                "SOCKET_SEND_CLOSED",
-                "the socket source was closed before the send completed",
-            )),
-        };
+        let rx = crate::builtins::socket_sources::send_tcp(id, payload, timeout)?;
+        return tcp_send_receipt(rx.blocking_recv(), timeout.is_some()).map(Some);
     }
     let mut conn = tcp_client::MAP
         .lock()
         .unwrap()
         .remove(&id)
         .ok_or_else(|| tcp_unknown("tcp_send", id))?;
+    if let Some(t) = timeout {
+        return tcp_send_deadline(conn, id, &payload, t);
+    }
     match conn.write_all(&payload) {
         Ok(()) => {
             let n = payload.len();
@@ -23733,7 +23974,7 @@ pub(crate) mod socket_sources {
 
     /// The absolute deadline for a wait; None waits forever (timeout 0,
     /// or one too far away to represent).
-    fn deadline_after(timeout_seconds: f64) -> Option<std::time::Instant> {
+    pub(crate) fn deadline_after(timeout_seconds: f64) -> Option<std::time::Instant> {
         if timeout_seconds <= 0.0 {
             return None;
         }
@@ -24024,10 +24265,13 @@ pub(crate) mod socket_sources {
     }
 
     /// `tcp_send` on a subscribed handle (bytes sent = payload length).
+    /// `timeout` (seconds) replaces the source's receipt deadline; None
+    /// or 0 keeps the bounded default.
     #[cfg(target_os = "linux")]
     pub(crate) fn send_tcp(
         id: u64,
         payload: Vec<u8>,
+        timeout: Option<f64>,
     ) -> MixResult<tokio::sync::oneshot::Receiver<SendReceipt>> {
         if payload.len() > MAX_FRAME {
             return Err(refusal(
@@ -24042,7 +24286,13 @@ pub(crate) mod socket_sources {
             )
         })?;
         let permits = endpoint.admit(payload.len())?;
-        let deadline = std::time::Instant::now() + endpoint.send_deadline();
+        let bound = timeout
+            .filter(|t| *t > 0.0)
+            .and_then(|t| std::time::Duration::try_from_secs_f64(t).ok())
+            .unwrap_or_else(|| endpoint.send_deadline());
+        let deadline = std::time::Instant::now()
+            .checked_add(bound)
+            .unwrap_or_else(|| std::time::Instant::now() + endpoint.send_deadline());
         let (tx, rx) = tokio::sync::oneshot::channel();
         endpoint.send(SocketCommand::Tcp {
             payload,
@@ -24069,6 +24319,7 @@ pub(crate) mod socket_sources {
     pub(crate) fn send_tcp(
         _id: u64,
         _payload: Vec<u8>,
+        _timeout: Option<f64>,
     ) -> MixResult<tokio::sync::oneshot::Receiver<SendReceipt>> {
         Err(refusal(
             "SOCKET_UNSUPPORTED",
@@ -24111,6 +24362,9 @@ pub(crate) mod socket_sources {
         wire: Option<PullWire>,
         read_timeout: Option<std::time::Duration>,
         write_timeout: Option<std::time::Duration>,
+        /// Set once a send has put bytes on the wire: a cancelled send then
+        /// retires the conn instead of returning a half-written stream.
+        retire_on_drop: bool,
     }
 
     /// At most one Class C pull per numeric handle, process-wide — keyed
@@ -24186,7 +24440,11 @@ pub(crate) mod socket_sources {
     impl Drop for PullGuard {
         fn drop(&mut self) {
             if self.wire.is_some() {
-                self.finish();
+                if self.retire_on_drop {
+                    self.retire();
+                } else {
+                    self.finish();
+                }
             }
         }
     }
@@ -24270,6 +24528,7 @@ pub(crate) mod socket_sources {
             wire: Some(wire),
             read_timeout,
             write_timeout,
+            retire_on_drop: false,
         };
         if let Err(e) = guard.tcp().set_nonblocking(true) {
             drop(guard); // Drop reinserts the conn and clears the slot
@@ -24289,6 +24548,126 @@ pub(crate) mod socket_sources {
         max: usize,
     ) -> MixResult<Value> {
         pull_recv_with(name, guard, timeout_seconds, max, false).await
+    }
+
+    /// `tcp_send(h, payload, {timeout})` on an unsubscribed handle: one
+    /// deadline over the whole payload, with non-blocking writes and
+    /// writability awaited on the runtime (so SIGTERM and Ctrl-C cancel
+    /// it, as they cancel sleep()). A slow reader cannot stretch the send
+    /// past the deadline however many partial writes it takes. On expiry
+    /// the handle is retired with TCP_SEND_TIMEOUT; bytes already written
+    /// stay written. A cancelled send that wrote anything retires too.
+    #[cfg(unix)]
+    pub(crate) async fn pull_send(
+        mut guard: PullGuard,
+        payload: Vec<u8>,
+        timeout_seconds: f64,
+        interruptible: bool,
+    ) -> MixResult<Value> {
+        use tokio::io::Interest;
+        use tokio::io::unix::AsyncFd;
+        let dup = guard
+            .tcp()
+            .try_clone()
+            .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
+        let ready = AsyncFd::with_interest(dup, Interest::WRITABLE)
+            .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
+        let deadline = deadline_after(timeout_seconds);
+        let mut off = 0usize;
+        loop {
+            let Some(PullWire::Tcp(conn)) = guard.wire.as_mut() else {
+                return Err(refusal("SOCKET_PULL", "tcp_send: not a tcp connection"));
+            };
+            let step = super::send_step(conn, &payload, &mut off);
+            if off > 0 {
+                guard.retire_on_drop = true;
+            }
+            match step {
+                super::SendStep::Progress => continue,
+                super::SendStep::Done => {
+                    guard.retire_on_drop = false;
+                    guard.finish();
+                    return Ok(Value::Number(payload.len() as f64));
+                }
+                super::SendStep::Failed(e) => {
+                    guard.retire();
+                    return Err(super::tcp_err("tcp_send", e));
+                }
+                super::SendStep::WouldBlock => {}
+            }
+            let expired = deadline.is_some_and(|d| d <= std::time::Instant::now());
+            if expired {
+                guard.retire();
+                return Err(super::tcp_send_timeout_error(off, payload.len()));
+            }
+            match wait_writable(&ready, deadline, interruptible).await {
+                Wait::Ready => {}
+                Wait::Done => {
+                    guard.retire();
+                    return Err(
+                        if deadline.is_some_and(|d| d <= std::time::Instant::now()) {
+                            super::tcp_send_timeout_error(off, payload.len())
+                        } else {
+                            super::tcp_send_stopped(
+                                "TCP_SEND_INTERRUPTED",
+                                "was interrupted",
+                                off,
+                                payload.len(),
+                            )
+                        },
+                    );
+                }
+                Wait::Failed(e) => {
+                    guard.retire();
+                    return Err(super::tcp_err("tcp_send", e));
+                }
+            }
+        }
+    }
+
+    /// wait_ready for writability: the same deadline, slice and interrupt
+    /// rules.
+    #[cfg(unix)]
+    async fn wait_writable<T: std::os::fd::AsRawFd>(
+        ready: &tokio::io::unix::AsyncFd<T>,
+        deadline: Option<std::time::Instant>,
+        interruptible: bool,
+    ) -> Wait {
+        loop {
+            if interruptible && crate::interrupt::is_interrupted() {
+                return Wait::Done;
+            }
+            let left = match deadline {
+                None => None,
+                Some(d) => {
+                    let left = d.saturating_duration_since(std::time::Instant::now());
+                    if left.is_zero() {
+                        return Wait::Done;
+                    }
+                    Some(left)
+                }
+            };
+            let slice = if interruptible {
+                Some(left.map_or(super::ACCEPT_SLICE, |l| l.min(super::ACCEPT_SLICE)))
+            } else {
+                left
+            };
+            let outcome = match slice {
+                None => ready.writable().await.map(Some),
+                Some(s) => match tokio::time::timeout(s, ready.writable()).await {
+                    Ok(r) => r.map(Some),
+                    Err(_) => Ok(None),
+                },
+            };
+            match outcome {
+                Ok(Some(mut r)) => {
+                    r.clear_ready();
+                    return Wait::Ready;
+                }
+                Ok(None) => continue,
+                Err(e) => return Wait::Failed(e),
+            }
+        }
     }
 
     /// Plain and Class S numeric tcp_recv/tcp_recv_line: the same pull,
@@ -25656,6 +26035,36 @@ pub(crate) mod socket_sources {
             assert!(POOL.try_acquire().is_some());
         }
 
+        /// The blocking tcp_send deadline (non-unix and direct callers):
+        /// one deadline over the whole payload against a peer that never
+        /// reads, TCP_SEND_TIMEOUT with the bytes written, handle retired.
+        #[test]
+        fn blocking_deadline_send_bounds_the_whole_payload() {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let id = tcp_client_handle(port);
+            let (_held, _) = listener.accept().unwrap();
+            let mut opts = indexmap::IndexMap::new();
+            opts.insert("timeout".to_string(), Value::Number(0.3));
+            let started = std::time::Instant::now();
+            let err = super::super::builtin_tcp_send(vec![
+                Value::Number(id as f64),
+                Value::bytes(vec![0u8; 64 * 1024 * 1024]),
+                Value::map(opts),
+            ])
+            .unwrap_err();
+            let elapsed = started.elapsed();
+            assert!(
+                elapsed < std::time::Duration::from_secs(2),
+                "took {elapsed:?}"
+            );
+            let MixError::Structured(info) = err else {
+                panic!("expected a structured error, got {err}");
+            };
+            assert_eq!(info.code, "TCP_SEND_TIMEOUT");
+            assert!(!tcp_client::MAP.lock().unwrap().contains_key(&id));
+        }
+
         #[tokio::test]
         async fn ws_subscription_orders_frames_then_one_terminal_and_retires() {
             let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -26098,7 +26507,7 @@ pub(crate) mod socket_sources {
             }
             // The subscribed numeric handle is still sendable, via the
             // owner thread's bounded command endpoint.
-            let receipt = send_tcp(id, b"pong-payload".to_vec()).unwrap();
+            let receipt = send_tcp(id, b"pong-payload".to_vec(), None).unwrap();
             assert_eq!(receipt.await.unwrap().unwrap(), 12);
             assert_eq!(
                 rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap(),
@@ -26760,7 +27169,7 @@ pub(crate) mod socket_sources {
             let q = ne.queue.clone();
             // Sends route to the RIGHT peer through each owner thread.
             let send_w = send_ws(SHARED, true, b"w-out".to_vec()).unwrap();
-            let send_t = send_tcp(SHARED, b"t-out".to_vec()).unwrap();
+            let send_t = send_tcp(SHARED, b"t-out".to_vec(), None).unwrap();
             assert_eq!(send_w.await.unwrap().unwrap(), 5);
             assert_eq!(send_t.await.unwrap().unwrap(), 5);
             assert_eq!(
@@ -26801,7 +27210,7 @@ pub(crate) mod socket_sources {
                     .unwrap(),
                 b"w-out2"
             );
-            let err = send_tcp(SHARED, b"x".to_vec()).unwrap_err();
+            let err = send_tcp(SHARED, b"x".to_vec(), None).unwrap_err();
             assert!(matches!(err, MixError::Structured(info) if info.code == "SOCKET_SEND_CLOSED"));
             let err = pull_conn("ws_recv", SHARED)
                 .err()
@@ -26848,7 +27257,14 @@ pub(crate) mod socket_sources {
                 (MAX_SEND_OPS - 1, MAX_SEND_BYTES)
             );
             drop(empty);
-            assert_eq!(send_tcp(id, Vec::new()).unwrap().await.unwrap().unwrap(), 0);
+            assert_eq!(
+                send_tcp(id, Vec::new(), None)
+                    .unwrap()
+                    .await
+                    .unwrap()
+                    .unwrap(),
+                0
+            );
             // Ops bound: 64 reservations, the 65th refuses.
             let mut manual = Vec::new();
             for _ in 0..MAX_SEND_OPS {
@@ -26867,9 +27283,9 @@ pub(crate) mod socket_sources {
             let mut rxs = Vec::new();
             let payload = vec![0x5au8; 8 * 1024 * 1024];
             for _ in 0..8 {
-                rxs.push(send_tcp(id, payload.clone()).unwrap());
+                rxs.push(send_tcp(id, payload.clone(), None).unwrap());
             }
-            let err = send_tcp(id, payload).unwrap_err();
+            let err = send_tcp(id, payload, None).unwrap_err();
             assert!(matches!(err, MixError::Structured(info) if info.code == "SOCKET_SEND_BUSY"));
             assert_eq!(endpoint.available_permits(), (MAX_SEND_OPS - 8, 0));
             // Retire: every receipt answers, every permit releases.
@@ -26919,9 +27335,9 @@ pub(crate) mod socket_sources {
             endpoint.set_deadline_for_test(std::time::Duration::from_millis(300));
             let q = ne.queue.clone();
             let admitted = std::time::Instant::now();
-            let big = send_tcp(id, vec![0x33u8; 8 * 1024 * 1024]).unwrap();
-            let queued1 = send_tcp(id, b"q1".to_vec()).unwrap();
-            let queued2 = send_tcp(id, b"q2".to_vec()).unwrap();
+            let big = send_tcp(id, vec![0x33u8; 8 * 1024 * 1024], None).unwrap();
+            let queued1 = send_tcp(id, b"q1".to_vec(), None).unwrap();
+            let queued2 = send_tcp(id, b"q2".to_vec(), None).unwrap();
             // In-flight expiry: fails its receipt (bounded from ADMISSION)
             // and hard-closes — a resend would duplicate partial bytes.
             let (code, _) = big.await.unwrap().unwrap_err();
@@ -26974,7 +27390,7 @@ pub(crate) mod socket_sources {
                 .unwrap();
             let endpoint = send_endpoint(ClientKey::tcp(id)).unwrap();
             endpoint.set_deadline_for_test(std::time::Duration::from_millis(300));
-            let rx = send_tcp(id, vec![0x44u8; 8 * 1024 * 1024]).unwrap();
+            let rx = send_tcp(id, vec![0x44u8; 8 * 1024 * 1024], None).unwrap();
             drop(rx); // cancelled caller: the send reports nowhere
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             assert_eq!(
@@ -27032,7 +27448,7 @@ pub(crate) mod socket_sources {
             // await every receipt: a wedged wake drain would hang here.
             let mut rxs = Vec::new();
             for i in 0..MAX_SEND_OPS as u8 {
-                rxs.push(send_tcp(id, vec![i]).unwrap());
+                rxs.push(send_tcp(id, vec![i], None).unwrap());
             }
             for rx in rxs {
                 assert_eq!(rx.await.unwrap().unwrap(), 1);
@@ -27083,7 +27499,7 @@ pub(crate) mod socket_sources {
             endpoint.set_deadline_for_test(std::time::Duration::from_millis(300));
             let q = ne.queue.clone();
             let admitted = std::time::Instant::now();
-            let rx = send_tcp(id, vec![0x66u8; 8 * 1024 * 1024]).unwrap();
+            let rx = send_tcp(id, vec![0x66u8; 8 * 1024 * 1024], None).unwrap();
             let (code, _) = rx.await.unwrap().unwrap_err();
             assert_eq!(code, "SOCKET_SEND_TIMEOUT");
             assert!(
@@ -38408,6 +38824,7 @@ mod strict_write_and_bool_option_tests {
             ("ws_recv", "timeout"),
             ("tcp_connect", "opts"),
             ("tcp_recv", "opts"),
+            ("tcp_send", "opts"),
             ("tcp_recv_line", "opts"),
             ("tcp_listen", "opts"),
             ("tcp_accept", "opts"),

@@ -1820,7 +1820,7 @@ ws_close($h)
 
 ```
 tcp_connect(host, port[, {timeout, tls, insecure}]) -> handle
-tcp_send(h, payload)                    -> bytes sent (string/bytes/buffer)
+tcp_send(h, payload[, {timeout}])       -> bytes sent (string/bytes/buffer)
 tcp_recv(h[, {timeout, max}])           -> bytes | nil on timeout
 tcp_recv_line(h[, {timeout, max}])      -> string (LF+CR stripped) | nil
 tcp_close(h)                            -> bool
@@ -1854,6 +1854,31 @@ loop
   if not starts_with($line, "250-") then break end -- 250<space> = last line
 end
 tcp_close($h)
+```
+
+**Send deadline (unreleased).** Without options, `tcp_send` writes the
+whole payload with each write bounded by the socket's 30 s write timeout,
+so a reader that drains a few bytes at a time can stretch one send far
+past 30 s. `tcp_send(h, payload, {timeout: 5})` instead bounds the WHOLE
+send by one deadline, computed once (seconds; `0` waits forever, like
+`tcp_recv`): writes are non-blocking and the wait for room happens on the
+async runtime, so SIGTERM and Ctrl-C end it too. On expiry it raises
+`TCP_SEND_TIMEOUT` with `details: {written, total}` and retires the
+handle, because a partly written message leaves the stream unusable.
+Bytes already written stay written; the peer may have received part of
+the payload. Ctrl-C in a plain script raises `TCP_SEND_INTERRUPTED` the
+same way. On a `tcp_on` handle the timeout becomes the send's receipt
+deadline (`0` keeps the source's 30 s bound), and expiry raises
+`TCP_SEND_TIMEOUT`.
+
+```mix
+try
+  tcp_send($h, $frame, {timeout: 2})
+catch $msg, $err
+  if $err.code == "TCP_SEND_TIMEOUT" then
+    print("peer stalled after " .. $err.details.written .. " bytes")
+  end
+end
 ```
 
 On unix a numeric `tcp_recv`/`tcp_recv_line` (and `ws_recv`) waits on the

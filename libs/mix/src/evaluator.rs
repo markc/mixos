@@ -13019,6 +13019,33 @@ impl Evaluator {
                 ));
                 return self.await_with_class_c_yield(fut).await?.map(Some);
             }
+            // tcp_send with {timeout} on an unsubscribed handle: one deadline
+            // over the whole payload, waited for on the runtime so SIGTERM and
+            // Ctrl-C cancel it. Without the option the blocking builtin runs
+            // unchanged.
+            if name == "tcp_send"
+                && matches!(eval_args.get(2), Some(Value::Map(_)))
+                && matches!(eval_args.first(), Some(Value::Number(_)))
+                && let Ok(id) =
+                    crate::builtins::socket_sources::client_id_of(eval_args.first(), name)
+                && !crate::builtins::socket_sources::is_subscribed(
+                    crate::builtins::socket_sources::ClientKey::tcp(id),
+                )
+                && let Some(timeout_seconds) = crate::builtins::tcp_send_timeout(eval_args.get(2))?
+            {
+                self.check_capability(name)?;
+                self.check_builtin_arity(name, eval_args.len())?;
+                let payload = crate::builtins::tcp_send_payload(&eval_args[1])?;
+                let guard = crate::builtins::socket_sources::pull_conn(name, id)?;
+                let interruptible = self.ctx.class_c_read_permit.is_none();
+                let fut = Box::pin(crate::builtins::socket_sources::pull_send(
+                    guard,
+                    payload,
+                    timeout_seconds,
+                    interruptible,
+                ));
+                return self.await_with_class_c_yield(fut).await?.map(Some);
+            }
             // Plain and Class S numeric ws_recv/tcp_recv/tcp_recv_line: the
             // same reason as tcp_accept above. The blocking builtin's
             // options and error forms are kept; a subscribed handle falls
@@ -13099,6 +13126,12 @@ impl Evaluator {
                     };
                     if let Some(payload) = payload {
                         let ws = name == "ws_send";
+                        // tcp_send's {timeout} becomes the receipt deadline.
+                        let timeout = if ws {
+                            None
+                        } else {
+                            crate::builtins::tcp_send_timeout(eval_args.get(2))?
+                        };
                         let rx = if ws {
                             crate::builtins::socket_sources::send_ws(
                                 id,
@@ -13106,22 +13139,23 @@ impl Evaluator {
                                 payload,
                             )?
                         } else {
-                            crate::builtins::socket_sources::send_tcp(id, payload)?
+                            crate::builtins::socket_sources::send_tcp(id, payload, timeout)?
                         };
                         let fut = async move {
-                            match rx.await {
-                                Ok(Ok(n)) => Ok(if ws {
-                                    Value::Nil
-                                } else {
-                                    Value::Number(n as f64)
-                                }),
-                                Ok(Err((code, message))) => {
-                                    Err(crate::native_events::refusal(&code, message))
+                            let receipt = rx.await;
+                            if ws {
+                                match receipt {
+                                    Ok(Ok(_)) => Ok(Value::Nil),
+                                    Ok(Err((code, message))) => {
+                                        Err(crate::native_events::refusal(&code, message))
+                                    }
+                                    Err(_) => Err(crate::native_events::refusal(
+                                        "SOCKET_SEND_CLOSED",
+                                        "the socket source was closed before the send completed",
+                                    )),
                                 }
-                                Err(_) => Err(crate::native_events::refusal(
-                                    "SOCKET_SEND_CLOSED",
-                                    "the socket source was closed before the send completed",
-                                )),
+                            } else {
+                                crate::builtins::tcp_send_receipt(receipt, timeout.is_some())
                             }
                         };
                         return self.await_with_class_c_yield(fut).await?.map(Some);
