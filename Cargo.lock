@@ -1484,6 +1484,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "editor"
+version = "0.1.1"
+dependencies = [
+ "design",
+ "edit",
+ "editor-model",
+ "egui",
+ "egui_kittest",
+ "serde",
+ "tempfile",
+ "toolkit",
+]
+
+[[package]]
 name = "editor-model"
 version = "0.1.1"
 dependencies = [
