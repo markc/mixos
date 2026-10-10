@@ -908,11 +908,12 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         #[cfg(not(feature = "ws"))]
         name @ ("ws_connect" | "ws_send" | "ws_recv" | "ws_close" | "tcp_connect" | "tcp_send"
         | "tcp_recv" | "tcp_recv_line" | "tcp_close" | "ws_on" | "tcp_on"
-        | "ws_unwatch" | "tcp_unwatch" | "tcp_listen" | "tcp_accept"
-        | "tcp_local_addr") => Err(MixError::RuntimeError {
-            span: None,
-            msg: format!("{name}() requires the `ws` feature (tungstenite/rustls)"),
-        }),
+        | "ws_unwatch" | "tcp_unwatch" | "tcp_listen" | "tcp_accept" | "tcp_local_addr") => {
+            Err(MixError::RuntimeError {
+                span: None,
+                msg: format!("{name}() requires the `ws` feature (tungstenite/rustls)"),
+            })
+        }
         #[cfg(feature = "sqlite")]
         "sqlopen" => builtin_sqlopen(args),
         #[cfg(feature = "sqlite")]
@@ -22714,7 +22715,10 @@ fn builtin_tcp_listen(args: Vec<Value>) -> MixResult<Option<Value>> {
         other => {
             return Err(refusal(
                 "TCP_LISTEN_ARGUMENT",
-                format!("tcp_listen(): host must be a string, got {}", other.type_name()),
+                format!(
+                    "tcp_listen(): host must be a string, got {}",
+                    other.type_name()
+                ),
             ));
         }
     };
@@ -22803,8 +22807,8 @@ fn builtin_tcp_listen(args: Vec<Value>) -> MixResult<Option<Value>> {
         refusal(code, format!("tcp_listen: '{addr}': {e}"))
     };
     use socket2::{Domain, Protocol, Socket, Type};
-    let sock = Socket::new(Domain::for_address(addr), Type::STREAM, Some(Protocol::TCP))
-        .map_err(fail)?;
+    let sock =
+        Socket::new(Domain::for_address(addr), Type::STREAM, Some(Protocol::TCP)).map_err(fail)?;
     // std's TcpListener::bind sets SO_REUSEADDR on unix, so a restarted
     // server can rebind past TIME_WAIT. Linux still refuses a second
     // live listener on the same address (EADDRINUSE).
@@ -23467,8 +23471,8 @@ pub(crate) mod socket_sources {
                 ),
             ));
         }
-        let connection = tcp_client::MAP.lock().unwrap().contains_key(&id)
-            || is_subscribed(ClientKey::tcp(id));
+        let connection =
+            tcp_client::MAP.lock().unwrap().contains_key(&id) || is_subscribed(ClientKey::tcp(id));
         Err(refusal(
             "TCP_ACCEPT_HANDLE",
             if connection {

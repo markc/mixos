@@ -13137,8 +13137,10 @@ impl Evaluator {
                     .map(Some);
                 }
             }
-            if matches!(name, "ws_recv" | "tcp_recv" | "tcp_recv_line" | "tcp_accept")
-                && matches!(eval_args.first(), Some(Value::String(_)))
+            if matches!(
+                name,
+                "ws_recv" | "tcp_recv" | "tcp_recv_line" | "tcp_accept"
+            ) && matches!(eval_args.first(), Some(Value::String(_)))
             {
                 self.check_capability(name)?;
                 self.check_builtin_arity(name, eval_args.len())?;
@@ -13216,16 +13218,14 @@ impl Evaluator {
                         crate::native_events::SocketNext::Frame(rec) => match rec.kind {
                             // The connection is already a live handle
                             // owned by this generation.
-                            "accepted" => {
-                                crate::builtins::socket_sources::accepted_handle(&rec)
-                                    .map(|h| Value::Number(h as f64))
-                                    .ok_or_else(|| {
-                                        crate::native_events::refusal(
-                                            "TCP_ACCEPT_FAILED",
-                                            "tcp_accept(): malformed accept record",
-                                        )
-                                    })
-                            }
+                            "accepted" => crate::builtins::socket_sources::accepted_handle(&rec)
+                                .map(|h| Value::Number(h as f64))
+                                .ok_or_else(|| {
+                                    crate::native_events::refusal(
+                                        "TCP_ACCEPT_FAILED",
+                                        "tcp_accept(): malformed accept record",
+                                    )
+                                }),
                             "text" | "line" => Ok(Value::String(
                                 String::from_utf8_lossy(&rec.data).into_owned(),
                             )),
