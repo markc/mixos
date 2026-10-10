@@ -1,16 +1,34 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- Accepted Bus verb registry, schema 1. Each component registers its verbs
--- here when it enters the tree (AGENTS.md §5).
+-- Accepted Bus verb registry, schema 3. Each component registers its verbs
+-- here when it enters the tree (AGENTS.md §5). tools/verb_registry_gate.mix
+-- checks this file against the verbs the code registers.
 --
--- The toolkit drive verbs (docs/drive.md) are one family that every egui
--- app answers under its own prefix: <app>.ui.tree, .ui.click, .ui.pointer,
--- .ui.scroll, .ui.key, .ui.type, .ui.menu, .ui.capture, <app>.window and
--- <app>.window.state. This schema has no family entries, so each app
--- registers its concrete names, owned by the app that answers them.
+-- Two lists, one entry per line:
+--   verbs:    a concrete name: {name, owner, version, status, note?, declared_by?}.
+--   families: a pattern for a set of names: {pattern, owner, version, status, note?}.
+--             The first segment is `<app>`, the app's own prefix, and matches
+--             any one segment. A `*` segment matches exactly one later segment,
+--             so "<app>.ui.*" covers "<app>.ui.tree" but not "<app>.ui.a.b".
+--             A pattern never starts with `*`. Families must not overlap, and
+--             every code verb must match exactly one entry (concrete or family).
+--
+-- The toolkit drive verbs (docs/drive.md) are one family that every egui app
+-- answers under its own prefix: <app>.ui.* (tree, click, pointer, scroll, key,
+-- type, menu, capture), <app>.window and <app>.window.state. The three
+-- families below cover them, so an app lists only the verbs it answers itself.
+--
+-- owner: the component that answers the verb (its directory name).
+-- declared_by: set when a different component declares the verb than the one
+--   that answers it. Two shapes: a const VERBS table (libs/edit's wire.rs, which
+--   editd answers), or a parse arm (libs/bus native_session/bootstrap.rs, which
+--   noded answers through its SessionCommand arm). Absent means the owner declares it.
+-- version: the owner's crate version at registration.
+-- status: draft, accepted or retired. A retired name or pattern stays here
+-- forever (AGENTS.md §3.5) and must not appear in code.
 -- HELP and app.describe are protocol verbs every service answers; they are
--- not registered per component.
+-- not registered here.
 {
-  schema: 1,
+  schema: 3,
   verbs: [
     {name:"settings.describe", owner:"settingsd", version:"0.1.0", status:"accepted"},
     {name:"settings.get", owner:"settingsd", version:"0.1.0", status:"accepted"},
@@ -38,16 +56,80 @@
     {name:"busviewer.select_row", owner:"busviewer", version:"0.1.1", status:"accepted"},
     {name:"busviewer.dialog", owner:"busviewer", version:"0.1.1", status:"accepted"},
     {name:"busviewer.theme", owner:"busviewer", version:"0.1.1", status:"accepted"},
-    {name:"busviewer.ui.tree", owner:"busviewer", version:"0.1.1", status:"accepted"},
-    {name:"busviewer.ui.click", owner:"busviewer", version:"0.1.1", status:"accepted"},
-    {name:"busviewer.ui.pointer", owner:"busviewer", version:"0.1.1", status:"accepted"},
-    {name:"busviewer.ui.scroll", owner:"busviewer", version:"0.1.1", status:"accepted"},
-    {name:"busviewer.ui.key", owner:"busviewer", version:"0.1.1", status:"accepted"},
-    {name:"busviewer.ui.type", owner:"busviewer", version:"0.1.1", status:"accepted"},
-    {name:"busviewer.ui.menu", owner:"busviewer", version:"0.1.1", status:"accepted"},
-    {name:"busviewer.ui.capture", owner:"busviewer", version:"0.1.1", status:"accepted"},
-    {name:"busviewer.window", owner:"busviewer", version:"0.1.1", status:"accepted"},
-    {name:"busviewer.window.state", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"edit.ping", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit", note:"wire table in libs/edit/src/wire.rs; answered by editd"},
+    {name:"edit.info", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.list", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.open", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.close", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.save", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.reload", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.get", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.insert", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.delete", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.replace", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.apply", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.find", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.select", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.cursor", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.anchor.set", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.anchor.get", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.anchor.clear", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.undo", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.redo", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.history", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.recovery.flush", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.props.get", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.props.list", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.props.describe", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"edit.props.watch", owner:"editd", version:"0.2.0", status:"accepted", declared_by:"edit"},
+    {name:"noded.register", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"noded.deregister", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"noded.list", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"noded.info", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"noded.ping", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"noded.peers", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"noded.inventory", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"noded.observe.start", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"noded.observe.stop", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"noded.tap", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"noded.props.subscribe_grant", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"noded.props.get", owner:"noded", version:"0.18.3", status:"accepted", note:"under the noded.props. prefix arm (noded.rs); answered by libs/props dispatch_props"},
+    {name:"noded.props.list", owner:"noded", version:"0.18.3", status:"accepted", note:"under the noded.props. prefix arm (noded.rs); answered by libs/props dispatch_props"},
+    {name:"noded.props.describe", owner:"noded", version:"0.18.3", status:"accepted", note:"under the noded.props. prefix arm (noded.rs); answered by libs/props dispatch_props"},
+    {name:"mon.status", owner:"noded", version:"0.18.3", status:"accepted", note:"monitor.rs command dispatch"},
+    {name:"mon.processes", owner:"noded", version:"0.18.3", status:"accepted", note:"monitor.rs command dispatch"},
+    {name:"topic.publish", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"topic.subscribe", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"topic.unsubscribe", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"topic.subscriber_count", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"topic.list", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"topic.clear", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"ui.subscribe", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"ui.unsubscribe", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"props.watch", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"spec.get", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"spec.v2.get", owner:"noded", version:"0.18.3", status:"accepted"},
+    {name:"noded.session.hello", owner:"noded", version:"0.1.1", status:"accepted", declared_by:"bus", note:"parsed in libs/bus native_session/bootstrap.rs; answered by noded session.rs"},
+    {name:"noded.session.list", owner:"noded", version:"0.1.1", status:"accepted", declared_by:"bus"},
+    {name:"noded.session.self", owner:"noded", version:"0.1.1", status:"accepted", declared_by:"bus"},
+    {name:"noded.session.allocate", owner:"noded", version:"0.1.1", status:"accepted", declared_by:"bus"},
+    {name:"noded.session.grant.create", owner:"noded", version:"0.1.1", status:"accepted", declared_by:"bus"},
+    {name:"noded.session.grant.fetch", owner:"noded", version:"0.1.1", status:"accepted", declared_by:"bus"},
+    {name:"noded.session.challenge", owner:"noded", version:"0.1.1", status:"accepted", declared_by:"bus"},
+    {name:"noded.session.prove", owner:"noded", version:"0.1.1", status:"accepted", declared_by:"bus"},
+    {name:"noded.session.renew", owner:"noded", version:"0.1.1", status:"accepted", declared_by:"bus"},
+    {name:"noded.session.revoke", owner:"noded", version:"0.1.1", status:"accepted", declared_by:"bus"},
+    {name:"noded.session.lease.check", owner:"noded", version:"0.1.1", status:"accepted", declared_by:"bus"},
+    {name:"lifecycle.commit", owner:"mix-shell", version:"0.111.0", status:"accepted", note:"post-swap event; a client call gets an error (serve_runtime.rs)"},
+    {name:"shell.execute", owner:"mix-shell", version:"0.111.0", status:"accepted", note:"submit a command for evaluation by request_id; idle-prompt admission on the enrolled attachment; BUSY when the prompt is not idle, UNSUPPORTED on the rustyline path (session_execute.rs)"},
+    {name:"shell.execute.result", owner:"mix-shell", version:"0.111.0", status:"accepted", note:"read an evaluation's recorded outcome by operation_id (session_execute.rs)"},
+    {name:"shell.execute.cancel", owner:"mix-shell", version:"0.111.0", status:"accepted", note:"cancel an evaluation by operation_id (session_execute.rs)"},
+    {name:"shell.task.submit", owner:"mix-shell", version:"0.111.0", status:"accepted", note:"start an isolated task process by request_id; no idle-prompt admission (session_execute.rs)"},
+    {name:"shell.task.result", owner:"mix-shell", version:"0.111.0", status:"accepted", note:"poll an isolated task's report by operation_id; poll-only in v1 (session_execute.rs)"},
+    {name:"shell.task.cancel", owner:"mix-shell", version:"0.111.0", status:"accepted", note:"cancel an isolated task by operation_id (session_execute.rs)"},
+    {name:"shell.task.watch", owner:"mix-shell", version:"0.111.0", status:"accepted", note:"deferred: answers UNSUPPORTED with reason deferred; use shell.task.result (session_execute.rs)"},
+    {name:"shell.task.list", owner:"mix-shell", version:"0.111.0", status:"accepted", note:"deferred: answers UNSUPPORTED with reason deferred; use shell.task.result (session_execute.rs)"},
+    {name:"shell.status", owner:"mix-shell", version:"0.111.0", status:"accepted", note:"resident shell state snapshot; read-only (ReadState); a snapshot is information, never an execution permit (session_status.rs)"},
     {name:"releases.status", owner:"releasesd", version:"0.1.0", status:"accepted"},
     {name:"releases.list", owner:"releasesd", version:"0.1.0", status:"accepted"},
     {name:"releases.check", owner:"releasesd", version:"0.1.0", status:"accepted"},
@@ -69,16 +151,11 @@
     {name:"prefs.appearance", owner:"prefs", version:"0.1.0", status:"accepted"},
     {name:"prefs.appearance.set", owner:"prefs", version:"0.1.0", status:"accepted"},
     {name:"prefs.dialog", owner:"prefs", version:"0.1.0", status:"accepted"},
-    {name:"prefs.theme", owner:"prefs", version:"0.1.0", status:"accepted"},
-    {name:"prefs.ui.tree", owner:"prefs", version:"0.1.0", status:"accepted"},
-    {name:"prefs.ui.click", owner:"prefs", version:"0.1.0", status:"accepted"},
-    {name:"prefs.ui.pointer", owner:"prefs", version:"0.1.0", status:"accepted"},
-    {name:"prefs.ui.scroll", owner:"prefs", version:"0.1.0", status:"accepted"},
-    {name:"prefs.ui.key", owner:"prefs", version:"0.1.0", status:"accepted"},
-    {name:"prefs.ui.type", owner:"prefs", version:"0.1.0", status:"accepted"},
-    {name:"prefs.ui.menu", owner:"prefs", version:"0.1.0", status:"accepted"},
-    {name:"prefs.ui.capture", owner:"prefs", version:"0.1.0", status:"accepted"},
-    {name:"prefs.window", owner:"prefs", version:"0.1.0", status:"accepted"},
-    {name:"prefs.window.state", owner:"prefs", version:"0.1.0", status:"accepted"}
+    {name:"prefs.theme", owner:"prefs", version:"0.1.0", status:"accepted"}
+  ],
+  families: [
+    {pattern:"<app>.ui.*", owner:"toolkit", version:"0.1.1", status:"accepted", note:"drive verbs: tree, click, pointer, scroll, key, type, menu, capture"},
+    {pattern:"<app>.window", owner:"toolkit", version:"0.1.1", status:"accepted", note:"window command: minimize, maximize, restore, close, focus"},
+    {pattern:"<app>.window.state", owner:"toolkit", version:"0.1.1", status:"accepted", note:"window size, state and pixels per point"}
   ]
 }
