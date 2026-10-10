@@ -1,0 +1,382 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- bridge_core: the stateless core of bridged, the Bus bridge to an external
+-- application's line-delimited JSON control channel. The serve citizen
+-- (bridged.mix) owns one state map and threads it through these functions;
+-- this module keeps no state of its own.
+--
+-- Wire protocol (app-neutral; docs/spec/bridge/README.md):
+--   TCP to 127.0.0.1:<port>. With auth: "token" (the default) the FIRST line on
+--   every connection is {"id":"auth","method":"auth","params":{"token":"<64 hex>"}};
+--   nothing else is sent until that reply is ok. With auth: "none" (apps whose
+--   loopback port has no handshake) requests start at once. Each request is one
+--   JSON line {"id":N,"method":M,"params":P}; each reply is one JSON line
+--   {"id":N,"ok":true,"result":R} or {"id":N,"ok":false,"error":"..."}.
+--
+-- Rules: the token is never returned, stored outside the state map, or put
+-- in an error text. Every call runs under one deadline (timeout_s) that
+-- covers connect, auth and the request, so no call blocks a serve pump
+-- longer than that.
+--
+-- Also here: the serve-name guard (reserved_names, check_name), which keeps
+-- an instance from taking the first segment of a registered Bus verb.
+
+$_DEFAULTS = {host: "127.0.0.1", timeout_s: 5, connect_timeout_s: 2, backoff_s: 2, max_line: 1048576}
+$_KNOWN = ["host", "port", "auth", "token_file", "timeout_s", "connect_timeout_s", "backoff_s", "max_line", "instance"]
+$_REQUIRED = ["port"]
+-- The Bus's own rule for a service name (noded.register).
+$_NAME = "^[a-z][a-z0-9-]{1,30}$"
+
+-- The config contract as data, so a test can hold it against the spec fixture
+-- (docs/spec/bridge/bridge.spec.mix).
+fn schema()
+  return {keys: $_KNOWN, required: $_REQUIRED, defaults: merge($_DEFAULTS, {auth: "token"}), name: $_NAME}
+end
+
+fn _expand($path)
+  if starts_with($path, "~/") then return env("HOME") .. strip_prefix($path, "~") end
+  return $path
+end
+
+fn _in_range($v, $lo, $hi)
+  if type($v) != "number" then return false end
+  return $v >= $lo and $v <= $hi
+end
+
+fn _is_int($v)
+  if type($v) != "number" then return false end
+  return floor($v) == $v
+end
+
+-- Strict-data config. Unknown keys are refused so a typo cannot silently
+-- fall back to a default.
+fn load_config($path)
+  if $path == nil or $path == "" then raise("CONFIG", "no config path given") end
+  if not is_file($path) then raise("CONFIG", "config file not found: " .. $path) end
+  $raw = nil
+  try
+    $raw = load_data($path)
+  catch $m
+    raise("CONFIG", "config is not strict data: " .. $path .. ": " .. $m)
+  end
+  if type($raw) != "map" then raise("CONFIG", "config is not a strict-data map: " .. $path) end
+  $unknown = filter(keys($raw), fn($k) = not contains($_KNOWN, $k))
+  if len($unknown) > 0 then raise("CONFIG", "unknown config keys: " .. join($unknown, ", ")) end
+  for each $k in $_REQUIRED
+    if not has_key($raw, $k) then raise("CONFIG", "missing config key: " .. $k) end
+  end
+  $cfg = merge($_DEFAULTS, $raw)
+  if $cfg.host != "127.0.0.1" and $cfg.host != "localhost" then raise("CONFIG", "host must be loopback (127.0.0.1)") end
+  if not _is_int($cfg.port) or not _in_range($cfg.port, 1, 65535) then raise("CONFIG", "port must be an integer 1-65535") end
+  if not _in_range($cfg.timeout_s, 0.001, 300) then raise("CONFIG", "timeout_s must be a number in (0, 300]") end
+  if not _in_range($cfg.connect_timeout_s, 0.001, 300) then raise("CONFIG", "connect_timeout_s must be a number in (0, 300]") end
+  if not _in_range($cfg.backoff_s, 0, 300) then raise("CONFIG", "backoff_s must be a number in [0, 300]") end
+  if not _is_int($cfg.max_line) or not _in_range($cfg.max_line, 64, 16777216) then raise("CONFIG", "max_line must be an integer 64-16777216") end
+  -- instance: an opaque id a launcher sets to recognise ITS bridge in status.
+  if has_key($raw, "instance") and (type($raw.instance) != "string" or not re_match($raw.instance, "^[A-Za-z0-9_-]{1,64}$")) then raise("CONFIG", "instance must be 1-64 characters of [A-Za-z0-9_-]") end
+  $auth = if has_key($raw, "auth") then $raw.auth else "token" end
+  if type($auth) != "string" or ($auth != "token" and $auth != "none") then raise("CONFIG", "auth must be \"token\" or \"none\"") end
+  if $auth == "none" then
+    -- A token file next to auth: "none" is a contradiction, not a default to ignore.
+    if has_key($raw, "token_file") then raise("CONFIG", "token_file is not used with auth: \"none\"; remove it") end
+    return merge($cfg, {auth: "none"})
+  end
+  if type($cfg.token_file) != "string" or $cfg.token_file == "" then raise("CONFIG", "token_file must be a non-empty path (auth: \"token\")") end
+  return merge($cfg, {auth: "token", token_file: _expand($cfg.token_file)})
+end
+
+-- The token file holds exactly one line of 64 hex characters. The path is
+-- named in errors; the content never is.
+fn load_token($path)
+  if not is_file($path) then raise("TOKEN", "token file missing: " .. $path) end
+  $text = ""
+  try
+    $text = read_file($path)
+  catch $m
+    raise("TOKEN", "token file unreadable: " .. $path)
+  end
+  $tok = strip($text)
+  if not re_match($tok, "^[0-9a-fA-F]{64}$") then raise("TOKEN", "token file must hold 64 hex characters: " .. $path) end
+  return $tok
+end
+
+-- ---------------------------------------------------------------- serve-name guard
+
+-- An instance answers <name>.call, <name>.status and so on, so its name must
+-- not be the first segment of any verb the registry already gives to someone
+-- else. Returns {<segment>: <an example verb or pattern>}.
+--
+-- Registry shapes read (docs/spec/bus/verbs.conf.mix):
+--   verbs:    [{name, ...}]               every entry reserves its first segment,
+--                                         whatever its status (retired names stay
+--                                         reserved forever).
+--   families: [{pattern, members?, ...}]  optional. members: "instances" (runtime
+--                                         members, such as bridged's own families)
+--                                         reserves nothing. members: [names]
+--                                         reserves each name. A literal first
+--                                         segment (not <app> or *) is reserved.
+-- Anything else (no verbs list, an entry with neither name nor pattern, an
+-- unknown members form) is refused: the guard fails closed.
+fn reserved_names($path)
+  if $path == nil or $path == "" then raise("REGISTRY", "no verb registry path given") end
+  if not is_file($path) then raise("REGISTRY", "verb registry not found: " .. $path) end
+  $doc = nil
+  try
+    $doc = load_data($path)
+  catch $m
+    raise("REGISTRY", "verb registry unreadable: " .. $path .. ": " .. $m)
+  end
+  if type($doc) != "map" or type($doc.verbs) != "list" then raise("REGISTRY", "verb registry has no verbs list: " .. $path) end
+  $families = $doc.families ?? []
+  if type($families) != "list" then raise("REGISTRY", "verb registry families is not a list: " .. $path) end
+  $out = {}
+  for each $e in $doc.verbs
+    if type($e) != "map" or type($e.name) != "string" or $e.name == "" then raise("REGISTRY", "verb registry entry without a name: " .. json_encode($e)) end
+    $seg = split($e.name, ".")[0]
+    if not has_key($out, $seg) then $out[$seg] = $e.name end
+  end
+  for each $e in $families
+    if type($e) != "map" or type($e.pattern) != "string" or $e.pattern == "" then raise("REGISTRY", "verb registry family without a pattern: " .. json_encode($e)) end
+    $members = $e.members
+    if $members != "instances" then
+      if type($members) == "list" then
+        for each $n in $members
+          if type($n) != "string" or $n == "" then raise("REGISTRY", "family " .. $e.pattern .. " lists a member that is not a name") end
+          if not has_key($out, $n) then $out[$n] = $e.pattern end
+        end
+      elif $members != nil then
+        raise("REGISTRY", "family " .. $e.pattern .. " has an unknown members form")
+      end
+      $seg = split($e.pattern, ".")[0]
+      if not starts_with($seg, "<") and $seg != "*" and not has_key($out, $seg) then $out[$seg] = $e.pattern end
+    end
+  end
+  return $out
+end
+
+-- Raise NAME_INVALID or NAME_RESERVED (or REGISTRY from reserved_names) unless
+-- $name may be a bridged instance. The name rule is the Bus's own for a
+-- service name, so a name that passes here also registers.
+fn check_name($name, $registry)
+  if type($name) != "string" or not re_match($name, $_NAME) then
+    raise("NAME_INVALID", "the serve name must match " .. $_NAME .. " (one segment), got '" .. to_string($name ?? "") .. "'")
+  end
+  $taken = reserved_names($registry)
+  if has_key($taken, $name) then
+    raise("NAME_RESERVED", "the serve name '" .. $name .. "' is taken by registered Bus verbs (" .. $taken[$name] .. " in " .. $registry .. ")")
+  end
+  return true
+end
+
+-- The instance config path: $BRIDGED_CONFIG when set, else
+-- <etc>/bridge/<name>.conf.mix, with <etc> = $MIXOS_ETC or /etc/mixos.
+fn config_path($name)
+  $explicit = env("BRIDGED_CONFIG") ?? ""
+  if $explicit != "" then return $explicit end
+  $etc = env("MIXOS_ETC") ?? ""
+  if $etc == "" then $etc = "/etc/mixos" end
+  return $etc .. "/bridge/" .. $name .. ".conf.mix"
+end
+
+-- The installed verb registry: $BRIDGED_VERBS when set, else the installed copy.
+fn registry_path()
+  $explicit = env("BRIDGED_VERBS") ?? ""
+  if $explicit != "" then return $explicit end
+  return "/opt/mixos/share/bus/verbs.conf.mix"
+end
+
+-- ---------------------------------------------------------------- client
+
+fn new_state($cfg, $token)
+  return {cfg: $cfg, token: $token, handle: nil, connected: false, connects: 0, failures: 0, calls: 0, next_id: 1, next_try: 0, last_error: nil, last_latency_ms: nil}
+end
+
+fn _parse_json($text)
+  $v = nil
+  try
+    $v = json_parse($text)
+  catch $m
+    $v = nil
+  end
+  return $v
+end
+
+fn _close_quietly($h)
+  try
+    tcp_close($h)
+  catch $m
+    return nil
+  end
+  return nil
+end
+
+-- Read lines until the reply carrying our id arrives. Lines that are not
+-- JSON or carry another id are skipped. Bounded by the deadline.
+fn _read_reply($h, $want, $deadline, $max)
+  while true
+    $left = $deadline - monotonic()
+    if $left <= 0 then raise("TIMEOUT", "no reply before the deadline") end
+    $line = tcp_recv_line($h, {timeout: $left, max: $max})
+    if $line == nil then raise("TIMEOUT", "no reply before the deadline") end
+    $msg = _parse_json($line)
+    if type($msg) == "map" then
+      if deep_eq($msg.id, $want) then return $msg end
+    end
+  end
+end
+
+-- Connect and authenticate. Returns {st, err}; on failure the handle is
+-- closed and st is returned unchanged.
+fn _open($st, $deadline)
+  $cfg = $st.cfg
+  $left = $deadline - monotonic()
+  if $left <= 0 then return {st: $st, err: "deadline passed before connect"} end
+  $h = nil
+  $err = nil
+  try
+    $h = tcp_connect($cfg.host, $cfg.port, {timeout: min($cfg.connect_timeout_s, $left)})
+  catch $m
+    $err = "connect failed: " .. $m
+  end
+  if $h != nil and $cfg.auth == "token" then
+    try
+      tcp_send($h, json_encode({id: "auth", method: "auth", params: {token: $st.token}}) .. "\n")
+      $reply = _read_reply($h, "auth", $deadline, $cfg.max_line)
+      if $reply.ok != true then $err = "auth refused by app" end
+    catch $m
+      $err = "auth failed: " .. $m
+    end
+    if $err != nil then
+      _close_quietly($h)
+      $h = nil
+    end
+  end
+  if $err != nil then return {st: $st, err: $err} end
+  return {st: merge($st, {handle: $h, connected: true, connects: $st.connects + 1, next_try: 0}), err: nil}
+end
+
+-- Drop the connection after a transport failure and hold off reconnecting
+-- for backoff_s, so a dead app is not hammered once per call.
+fn _drop($st, $err)
+  if $st.handle != nil then _close_quietly($st.handle) end
+  return merge($st, {handle: nil, connected: false, failures: $st.failures + 1, last_error: $err, next_try: time() + $st.cfg.backoff_s})
+end
+
+-- One request/reply on an open handle. Returns {reply, err}.
+fn _exchange($h, $id, $method, $params, $deadline, $max)
+  $out = {reply: nil, err: nil}
+  try
+    tcp_send($h, json_encode({id: $id, method: $method, params: $params}) .. "\n")
+    $out = {reply: _read_reply($h, $id, $deadline, $max), err: nil}
+  catch $m
+    $out = {reply: nil, err: "transport: " .. $m}
+  end
+  return $out
+end
+
+fn _finish($st, $t0, $rc, $err, $result)
+  $lat = round((monotonic() - $t0) * 1000)
+  return {st: merge($st, {last_latency_ms: $lat}), ok: $rc == 0, rc: $rc, error: $err, result: $result, latency_ms: $lat}
+end
+
+-- One API call. Returns {st, ok, rc, result, error, latency_ms}.
+--   rc 0   app replied ok:true (result is its result)
+--   rc 10  app replied ok:false (error is its error text)
+--   rc 11  transport, connect, auth or timeout failure
+--   rc 12  bad request from the caller
+fn call($st, $method, $params)
+  $t0 = monotonic()
+  $deadline = $t0 + $st.cfg.timeout_s
+  $st = merge($st, {calls: $st.calls + 1})
+  if type($method) != "string" then return _finish($st, $t0, 12, "method must be a string", nil) end
+  if $method == "" then return _finish($st, $t0, 12, "method must not be empty", nil) end
+  if $st.handle == nil then
+    if time() < $st.next_try then
+      return _finish($st, $t0, 11, "not connected; backing off after: " .. ($st.last_error ?? "no error recorded"), nil)
+    end
+    $o = _open($st, $deadline)
+    $st = $o.st
+    if $o.err != nil then
+      $st = _drop($st, $o.err)
+      return _finish($st, $t0, 11, $o.err, nil)
+    end
+  end
+  $id = $st.next_id
+  $st = merge($st, {next_id: $id + 1})
+  $r = _exchange($st.handle, $id, $method, $params, $deadline, $st.cfg.max_line)
+  if $r.err != nil then
+    $st = _drop($st, $r.err)
+    return _finish($st, $t0, 11, $r.err, nil)
+  end
+  $reply = $r.reply
+  if $reply.ok == true then return _finish($st, $t0, 0, nil, $reply.result) end
+  if $reply.ok == false then
+    $text = to_string($reply.error ?? "app reported an error without text")
+    $st = merge($st, {last_error: $text})
+    return _finish($st, $t0, 10, $text, nil)
+  end
+  $st = merge($st, {last_error: "reply has no boolean ok field"})
+  return _finish($st, $t0, 11, "reply has no boolean ok field", nil)
+end
+
+-- Body helpers for the serve verbs. A body is a JSON text; nil when it is
+-- empty or not JSON.
+fn parse_body($raw)
+  $v = nil
+  try
+    $v = json_parse($raw)
+  catch $m
+    $v = nil
+  end
+  return $v
+end
+
+-- nil when $req is an object with a non-empty string $field; else the reason.
+fn need_string($req, $field)
+  if type($req) != "map" then return "body must be a JSON object" end
+  if type($req[$field]) != "string" or $req[$field] == "" then return "field '" .. $field .. "' must be a non-empty string" end
+  return nil
+end
+
+-- Copy only the listed keys that are present in $req.
+fn optional_params($req, $names)
+  $p = {}
+  if type($req) != "map" then return $p end
+  for each $n in $names
+    if has_key($req, $n) then $p[$n] = $req[$n] end
+  end
+  return $p
+end
+
+-- Run one call and shape it for a Bus reply: {st, rc, body}. The body is the
+-- app's result as JSON text on rc 0, else the error text.
+fn dispatch($st, $method, $params)
+  $out = call($st, $method, $params)
+  $body = ""
+  if $out.ok then
+    $body = json_encode($out.result)
+  else
+    $body = $out.error
+  end
+  return {st: $out.st, rc: $out.rc, body: $body}
+end
+
+-- Connection health for the status verb. Never includes the token.
+fn status($st)
+  $connection = "down"
+  if $st.connected then $connection = "up" end
+  if not $st.connected and $st.connects == 0 then $connection = "never-connected" end
+  return {
+    connection: $connection,
+    host: $st.cfg.host,
+    port: $st.cfg.port,
+    auth: $st.cfg.auth,
+    instance: $st.cfg.instance,
+    connects: $st.connects,
+    failures: $st.failures,
+    calls: $st.calls,
+    last_error: $st.last_error,
+    last_latency_ms: $st.last_latency_ms,
+    retry_after_s: max(0, $st.next_try - time())
+  }
+end

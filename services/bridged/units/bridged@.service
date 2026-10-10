@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# One bridge per external application: bridged@<app>.service serves the Bus
+# service <app> (verbs <app>.call, .commands, .execute, .inspect, .screenshot,
+# .status) from /etc/mixos/bridge/<app>.conf.mix.
+[Unit]
+Description=MixOS Bus bridge for the external application %i
+After=network.target
+
+[Service]
+Type=simple
+User=mixos
+# Optional per-instance environment: which Bus to join (MIXOS_NODED_URL and
+# the other MIXOS_* client variables, e.g. a session's) and where its config
+# lives (MIXOS_ETC, or BRIDGED_CONFIG for one file).
+EnvironmentFile=-/etc/mixos/bridge/%i.env
+# The start checks (name, verb registry, config, token) before the name is
+# registered on the Bus: a refused name never appears there.
+ExecStartPre=/opt/mixos/bin/mix /opt/mixos/lib/bridged/bridged.mix --check %i
+ExecStart=/opt/mixos/bin/mix --serve /opt/mixos/lib/bridged/bridged.mix --name %i
+KillMode=control-group
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=2
+# Exit 2 is a refused start; restarting cannot fix it.
+RestartPreventExitStatus=2
