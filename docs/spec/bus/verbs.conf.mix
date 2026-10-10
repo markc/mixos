@@ -56,6 +56,27 @@
     {name:"releases.update", owner:"releasesd", version:"0.1.0", status:"accepted"},
     {name:"releases.rollback", owner:"releasesd", version:"0.1.0", status:"accepted"},
     {name:"releases.remove", owner:"releasesd", version:"0.1.0", status:"accepted"},
-    {name:"releases.link", owner:"releasesd", version:"0.1.0", status:"accepted"}
+    {name:"releases.link", owner:"releasesd", version:"0.1.0", status:"accepted"},
+    {name:"prefs.ping", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.info", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.show", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.commands", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.execute", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.quit", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.panel", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.select", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.apps", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.dialog", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.theme", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.ui.tree", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.ui.click", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.ui.pointer", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.ui.scroll", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.ui.key", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.ui.type", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.ui.menu", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.ui.capture", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.window", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.window.state", owner:"prefs", version:"0.1.0", status:"accepted"}
   ]
 }

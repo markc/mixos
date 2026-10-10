@@ -1117,6 +1117,7 @@ mod tests {
             Ok(Reply {
                 rc: 0,
                 body: "{\"ok\":true}".into(),
+                error: None,
             }),
         );
         assert!(e.reply.contains("rc = 0"));
@@ -1136,6 +1137,7 @@ mod tests {
             Ok(Reply {
                 rc: 0,
                 body: "late".into(),
+                error: None,
             }),
         );
         assert!(e.calling(), "a stale ticket is ignored");
@@ -1144,6 +1146,7 @@ mod tests {
             Ok(Reply {
                 rc: 3,
                 body: "mine".into(),
+                error: None,
             }),
         );
         assert!(!e.calling());
@@ -1262,6 +1265,7 @@ mod tests {
             Ok(Reply {
                 rc: 0,
                 body: "{}".into(),
+                error: None,
             }),
         );
         assert!(e.take_effects().contains(&Effect::Exit));
@@ -1654,6 +1658,7 @@ mod tests {
             Ok(Reply {
                 rc: 0,
                 body: "{\"ok\":true}".into(),
+                error: None,
             }),
         );
         let (rc, body) = ask(&mut e, "busviewer.reply", json!({}));

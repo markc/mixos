@@ -621,6 +621,23 @@ impl SupervisedClient {
             .map_err(SupervisedError::Transport)
     }
 
+    /// See [`Connection::call_with_headers_raw_within`].
+    pub async fn call_with_headers_raw_within(
+        &self,
+        to: &str,
+        command: &str,
+        headers: &BTreeMap<String, String>,
+        body: &str,
+        limit: std::time::Duration,
+    ) -> Result<(u8, String, Option<String>), SupervisedError> {
+        self.gate()?;
+        self.connection()
+            .await?
+            .call_with_headers_raw_within(to, command, headers, body, limit)
+            .await
+            .map_err(SupervisedError::Transport)
+    }
+
     /// See [`Connection::respond_parts`]. Gated like every other outbound
     /// call: a reply attempted while disconnected fails fast.
     pub async fn respond_parts(

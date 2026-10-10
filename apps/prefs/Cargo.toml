@@ -1,0 +1,39 @@
+# prefs: the egui shell around the preferences engine — MixOS's preference
+# editors in one window, Applications first (AGENTS.md §4.1).
+[package]
+name = "prefs"
+description = "MixOS preferences: one window of editors, starting with Applications over the releases service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "prefs"
+kind = "app"
+layer = "desktop"
+contract = "public"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+buildinfo.workspace = true
+citizen.workspace = true
+design.workspace = true
+eframe.workspace = true
+egui.workspace = true
+futures.workspace = true
+preferences = { path = "crates/preferences" }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "sync", "time"] }
+toolkit.workspace = true
+
+[dev-dependencies]
+citizen = { workspace = true, features = ["testing"] }
+egui_kittest.workspace = true
+
+[build-dependencies]
+buildinfo.workspace = true

@@ -1,0 +1,27 @@
+# preferences: Prefs' headless engine — its panels, the Applications panel's
+# rows and release notes over the releases service, one operation at a time,
+# and the prefs.* Bus verbs. No UI dependency: the prefs shell renders it.
+[package]
+name = "preferences"
+description = "Prefs' headless engine: panels, the Applications panel over releases.*, and the prefs.* verbs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "prefs"
+kind = "app"
+layer = "core"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+citizen.workspace = true
+design.workspace = true
+serde.workspace = true
+serde_json.workspace = true

@@ -1,0 +1,32 @@
+# citizen: an app's supervised Bus connection — registration, commands in,
+# replies and calls out, a drained shutdown, single-instance activation and
+# compd window activation. Headless; shared by the apps (AGENTS.md §2.2:
+# promoted from BusViewer's engine when Prefs became its second owner).
+[package]
+name = "citizen"
+description = "An app's supervised Bus connection: commands, replies, calls, drained shutdown, activation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "citizen"
+kind = "lib"
+layer = "core"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[features]
+# The logging handle (`Handle::sink`) for app tests.
+testing = []
+
+[dependencies]
+bus = { workspace = true, features = ["native"] }
+futures.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }

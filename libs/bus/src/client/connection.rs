@@ -167,6 +167,21 @@ impl Connection {
             .map_err(ClientError::from_native)
     }
 
+    /// [`Self::call_with_headers_raw`] waiting up to `limit` for the response.
+    pub async fn call_with_headers_raw_within(
+        &self,
+        to: &str,
+        command: &str,
+        headers: &BTreeMap<String, String>,
+        body: &str,
+        limit: std::time::Duration,
+    ) -> Result<(u8, String, Option<String>), ClientError> {
+        self.inner
+            .call_with_headers_raw_within(to, command, headers, body, limit)
+            .await
+            .map_err(ClientError::from_native)
+    }
+
     pub async fn send_with_headers(
         &self,
         to: &str,

@@ -353,6 +353,10 @@ impl std::error::Error for RegistrationRejected {}
 /// without being parsed.
 const REGISTRATION_REJECTION_BODY_MAX_BYTES: usize = 4096;
 
+/// How long a raw call waits for its response unless the caller says
+/// otherwise ([`NodedClient::call_with_headers_raw_within`]).
+const RESPONSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// The structural envelope of a v1 registration-rejection body. Only
 /// `schema` and `error_code` are structural for classification; the
 /// `message` field is diagnostic-only and deliberately excluded here — it
@@ -872,6 +876,23 @@ impl NodedClient {
         headers: &std::collections::BTreeMap<String, String>,
         body: &str,
     ) -> Result<(u8, String, Option<String>)> {
+        self.call_with_headers_raw_within(to, command, headers, body, RESPONSE_TIMEOUT)
+            .await
+    }
+
+    /// [`call_with_headers_raw`] waiting up to `limit` for the response
+    /// instead of the default 60 s, for verbs whose work legitimately runs
+    /// long (an install downloading). Past `limit` the outcome is unknown.
+    ///
+    /// [`call_with_headers_raw`]: Self::call_with_headers_raw
+    pub async fn call_with_headers_raw_within(
+        &self,
+        to: &str,
+        command: &str,
+        headers: &std::collections::BTreeMap<String, String>,
+        body: &str,
+        limit: std::time::Duration,
+    ) -> Result<(u8, String, Option<String>)> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed).to_string();
 
         let (tx, rx) = oneshot::channel();
@@ -904,7 +925,7 @@ impl NodedClient {
 
         self.send_raw(&msg).await?;
 
-        let response = match tokio::time::timeout(std::time::Duration::from_secs(60), rx).await {
+        let response = match tokio::time::timeout(limit, rx).await {
             Ok(Ok(resp)) => resp,
             Ok(Err(_)) => return Err(crate::ClientError::Closed.into()),
             Err(_) => return Err(crate::ClientError::Timeout { to: to.to_owned() }.into()),
@@ -1648,6 +1669,90 @@ mod connect_cancellation_tests {
             .expect("cancelled connect must not retain the reader/socket")
             .unwrap();
         broker.await.unwrap();
+    }
+}
+
+#[cfg(test)]
+mod response_limit_tests {
+    use super::*;
+    use std::time::Duration;
+
+    use tokio::net::TcpListener;
+    use tokio_tungstenite::accept_async;
+
+    /// A broker that answers each request `delay` after it arrives.
+    async fn slow_broker(delay: Duration) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut websocket = accept_async(socket).await.unwrap();
+            while let Some(Ok(message)) = websocket.next().await {
+                let Ok(wire) = message.into_text() else {
+                    continue;
+                };
+                let request = crate::parse(&wire).unwrap();
+                tokio::time::sleep(delay).await;
+                let reply = BusMessage::new()
+                    .with_header("type", "response")
+                    .with_header("rc", "0")
+                    .with_header("id", request.get("id").unwrap())
+                    .with_body("{\"done\":true}");
+                let _ = websocket.send(Message::Text(reply.to_wire().into())).await;
+            }
+        });
+        format!("ws://{address}")
+    }
+
+    /// The caller's limit is the one applied: a reply inside it arrives, one
+    /// past it is a timeout. (Real time: paused time races the socket.)
+    #[tokio::test]
+    async fn the_callers_limit_is_the_one_applied() {
+        let url = slow_broker(Duration::from_millis(300)).await;
+        let client = NodedClient::connect_anonymous(&url).await.unwrap();
+        let (rc, body, _) = client
+            .call_with_headers_raw_within(
+                "slow",
+                "slow.work",
+                &BTreeMap::new(),
+                "{}",
+                Duration::from_secs(5),
+            )
+            .await
+            .unwrap();
+        assert_eq!((rc, body.as_str()), (0, "{\"done\":true}"));
+
+        let url = slow_broker(Duration::from_secs(2)).await;
+        let client = NodedClient::connect_anonymous(&url).await.unwrap();
+        let error = client
+            .call_with_headers_raw_within(
+                "slow",
+                "slow.work",
+                &BTreeMap::new(),
+                "{}",
+                Duration::from_millis(300),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<crate::ClientError>(),
+            Some(crate::ClientError::Timeout { .. })
+        ));
+    }
+
+    /// Every other caller keeps the 60 s limit.
+    #[tokio::test(start_paused = true)]
+    async fn the_default_limit_is_still_sixty_seconds() {
+        let url = slow_broker(Duration::from_secs(90)).await;
+        let client = NodedClient::connect_anonymous(&url).await.unwrap();
+        let error = client
+            .call_with_headers_raw("slow", "slow.work", &BTreeMap::new(), "{}")
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<crate::ClientError>(),
+            Some(crate::ClientError::Timeout { .. })
+        ));
     }
 }
 

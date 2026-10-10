@@ -70,6 +70,7 @@ fn engine() -> Engine {
         Ok(Reply {
             rc: 0,
             body: "{\"key\":\"appearance.scheme\",\"value\":\"ocean\"}".into(),
+            error: None,
         }),
     );
     e.take_effects();

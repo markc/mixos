@@ -21,10 +21,11 @@ mod_module_files = "deny"
 
 [features]
 # The logging Bus handle (`bus::Handle::sink`) for the shell tests.
-testing = []
+testing = ["citizen/testing"]
 
 [dependencies]
 bus = { workspace = true, features = ["native"] }
+citizen.workspace = true
 design.workspace = true
 futures.workspace = true
 serde.workspace = true
