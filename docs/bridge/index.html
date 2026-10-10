@@ -312,10 +312,13 @@ send fakeapp fakeapp.call body='{"method":"echo","params":{"a":1}}'
 </tbody></table>
 <p>The bridge keeps one connection open. If the application goes away, calls
 answer rc 11, the bridge waits <code>backoff_s</code> (default 2 seconds), then
-reconnects and authenticates again on the next call. Every call is bounded
-by <code>timeout_s</code>, writes included: an application that stops reading, or reads
-too slowly, gets rc 11 at <code>timeout_s</code> and a fresh connection after the
-backoff. This needs Mix 0.112.1 or later.</p>
+reconnects and authenticates again on the next call. Each call's network
+work (connect, auth, writing the request, reading the reply) shares one
+<code>timeout_s</code> budget, so an application that stops reading, or reads too
+slowly, gets rc 11 at about <code>timeout_s</code> and a fresh connection after the
+backoff. Preparing the request (encoding a large body) cannot be cut short,
+so it can add to the time a call takes beyond <code>timeout_s</code>; the network step
+after it then fails at once. This needs Mix 0.112.1 or later.</p>
 <h2 id="security">Security</h2>
 <p>Read this before bridging an application.</p>
 <ul>

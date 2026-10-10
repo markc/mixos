@@ -283,14 +283,21 @@ the token.</p>
 <tr><td>11</td><td>Connect, auth, transport or timeout failure, or backing off after one</td><td>text saying which</td></tr>
 <tr><td>12</td><td>A bad request from the caller (missing field, body not a JSON object)</td><td>text naming the field</td></tr>
 </tbody></table>
-<p>Every call runs under one deadline, <code>timeout_s</code>, covering connect, the auth
-line and its reply, and the request and its reply. Each write gets the time
-left as <code>tcp_send</code>'s <code>{timeout}</code>, which bounds the whole send, so a peer that
-stops reading, or reads too slowly, cannot hold a call (or the serve pump)
-past <code>timeout_s</code>: the write fails, the call answers rc 11 and the connection
-is dropped. A deadline already spent before a write fails the same way
-without sending. This needs Mix &gt;= 0.112.1; on an older Mix the bridge
-refuses to start (<code>RUNTIME</code>).</p>
+<p>Every call has one transport deadline, <code>timeout_s</code>, starting when the call
+does. Connect, the auth line and its reply, and the request and its reply
+all draw on that one budget: each write gets the time left as <code>tcp_send</code>'s
+<code>{timeout}</code>, which bounds the whole send, and each read gets the time left
+too. So a peer that stops reading or reads too slowly cannot hold a call
+past it: the write fails, the call answers rc 11 and the connection is
+dropped. A budget already spent before a write fails the same way without
+sending.</p>
+<p>The budget bounds transport, not local work. Encoding the request
+(<code>json_encode</code>) and Mix's scheduling run on the same clock but cannot be
+interrupted, so they can take a call past <code>timeout_s</code>; the next transport
+step then fails at once without touching the network. For example, a
+32 MiB request with <code>timeout_s</code> 0.001 spends tens of milliseconds encoding,
+then is refused before writing. This needs Mix &gt;= 0.112.1; on an older Mix
+the bridge refuses to start (<code>RUNTIME</code>).</p>
 <p>After a transport failure, or a reply without a boolean <code>ok</code>, the connection is dropped and no new one is tried for
 <code>backoff_s</code>; calls in that window answer rc 11 at once.</p>
 <p>The token never appears in a reply: any occurrence of it, in any letter case,
