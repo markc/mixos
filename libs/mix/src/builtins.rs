@@ -22488,7 +22488,7 @@ fn tcp_send_stopped(code: &str, why: &str, written: usize, total: usize) -> MixE
 /// One non-blocking step of a deadline send: write more of the payload,
 /// or flush (TLS records) once it is all accepted.
 #[cfg(feature = "ws")]
-pub(crate) enum SendStep {
+enum SendStep {
     Progress,
     WouldBlock,
     Done,
@@ -22496,7 +22496,7 @@ pub(crate) enum SendStep {
 }
 
 #[cfg(feature = "ws")]
-pub(crate) fn send_step(conn: &mut tcp_client::Conn, payload: &[u8], off: &mut usize) -> SendStep {
+fn send_step(conn: &mut tcp_client::Conn, payload: &[u8], off: &mut usize) -> SendStep {
     use std::io::ErrorKind;
     if *off < payload.len() {
         match conn.write(&payload[*off..]) {
