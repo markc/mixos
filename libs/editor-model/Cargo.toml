@@ -6,11 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "ced's local echo, highlighting, motions and diagnostic model"
+description = "Headless text-editing model: commands and motions, highlighting, diagnostics, and the edit-service mirror"
 
 [package.metadata.mixos]
-component = "ced"
-kind = "app"
+component = "editor-model"
+kind = "lib"
 layer = "core"
 contract = "none"
 
@@ -24,7 +24,7 @@ fake = []
 
 [dependencies]
 edit.workspace = true
-syntax = { path = "../syntax" }
+syntax.workspace = true
 mix = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true

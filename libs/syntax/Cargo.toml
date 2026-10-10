@@ -6,11 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "ced's deterministic Microsoft Edit syntax adapter"
+description = "Deterministic syntax highlighting over Microsoft Edit's lsh definitions"
 
 [package.metadata.mixos]
-component = "ced"
-kind = "app"
+component = "syntax"
+kind = "lib"
 layer = "core"
 contract = "none"
 
@@ -18,8 +18,8 @@ contract = "none"
 mod_module_files = "deny"
 
 [dependencies]
-lsh = { package = "msedit-lsh", path = "../../../../vendor/msedit/lsh" }
-stdext = { package = "msedit-stdext", path = "../../../../vendor/msedit/stdext" }
+lsh = { package = "msedit-lsh", path = "../../vendor/msedit/lsh" }
+stdext = { package = "msedit-stdext", path = "../../vendor/msedit/stdext" }
 
 [dev-dependencies]
 proptest = "1"
