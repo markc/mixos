@@ -1,0 +1,381 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- component_install_test: tools/component_install.mix against a throwaway
+-- checkout (Mix components `demod` and `demoe`, in their own git repository)
+-- and throwaway roots. Install, an unchanged reinstall, an upgrade that keeps
+-- the previous tree, --check (a tampered file, a changed checkout), repair,
+-- rollback with its units, unit ownership (foreign, identical foreign,
+-- another component's), a dropped unit removed only while unchanged, an
+-- interruption at every step of install, repair and rollback, a damaged
+-- previous tree, symlinked directories in the root, the lock, refusals and
+-- --dry-run.
+-- Run from the checkout root: mix tests/component_install_test.mix
+
+$tool = realpath(dirname(realpath($0)) .. "/../tools/component_install.mix")
+$tmp = "/var/tmp/component-install-test." .. uuid()
+$src = $tmp .. "/src"
+$root = $tmp .. "/root"
+$comp = $src .. "/services/demod"
+$unit = $root .. "/etc/systemd/system/demod@.service"
+$lib = $root .. "/opt/mixos/lib"
+$results = []
+
+fn check($name, $ok)
+  push($results, {name: $name, ok: $ok})
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+
+fn tool_in($r, $argv, $crash)
+  $env = if $crash == nil then {} else {MIXOS_COMPONENT_INSTALL_CRASH: $crash} end
+  return run_argv(concat(["/opt/mixos/bin/mix", $tool, "--source", $src, "--root", $r], $argv),
+    {timeout: 60, stderr: "stdout", env: $env})
+end
+
+fn tool($argv)
+  return tool_in($root, $argv, nil)
+end
+
+-- Write version $v of demod, with or without its unit, and commit.
+fn version($v, $with_unit)
+  mkdir($comp .. "/scripts/lib", {parents: true})
+  write_file($comp .. "/component.mx", "{schema: 1, name: \"demod\", component: \"demod\", kind: \"service\", layer: \"core\", contract: \"none\", version: \"" .. $v .. "\", program: \"scripts/demod.mix\"}\n")
+  write_file($comp .. "/scripts/demod.mix", "print(\"demod " .. $v .. "\")\n")
+  write_file($comp .. "/scripts/lib/util.mix", "fn v()\n  return \"" .. $v .. "\"\nend\n")
+  if $with_unit then
+    mkdir($comp .. "/units", {parents: true})
+    write_file($comp .. "/units/demod@.service", "[Service]\nExecStart=/opt/mixos/bin/mix /opt/mixos/lib/demod/demod.mix # " .. $v .. "\n")
+  else
+    remove_dir($comp .. "/units")
+  end
+  commit($v)
+end
+
+fn commit($msg)
+  run_argv_must(["git", "-C", $src, "add", "-A"])
+  run_argv_must(["git", "-C", $src, "-c", "user.name=test", "-c", "user.email=test@example.invalid", "commit", "-q", "-m", $msg])
+end
+
+fn lexists($p)
+  return exists($p, {follow_symlinks: false})
+end
+
+fn script_in($r, $dir)
+  $p = $r .. "/opt/mixos/lib/" .. $dir .. "/demod.mix"
+  return if is_file($p) then read_file($p) else "" end
+end
+
+fn unit_in($r)
+  $p = $r .. "/etc/systemd/system/demod@.service"
+  return if is_file($p) then read_file($p) else "" end
+end
+
+-- Nothing left behind but the live tree, .previous, the lock and the other
+-- component.
+fn tidy($r)
+  $extra = filter(glob($r .. "/opt/mixos/lib/.demod.*"), fn($p) = basename($p) != ".demod.previous")
+  return len($extra) == 0
+end
+
+-- A fresh root with demod $a installed and then $b over it.
+fn fresh_root($label, $a, $b)
+  $r = $tmp .. "/root-" .. $label
+  mkdir($r, {parents: true})
+  version($a, true)
+  tool_in($r, ["demod"], nil)
+  version($b, true)
+  tool_in($r, ["demod"], nil)
+  return $r
+end
+
+mkdir($src, {parents: true})
+mkdir($root, {parents: true})
+try
+  run_argv_must(["git", "-C", $src, "init", "-q"])
+  version("1.0", true)
+
+  $dry = tool(["--dry-run"])
+  check("dry run: reports, writes nothing", $dry.exit_code == 0 and contains($dry.stdout, "demod: would install 1.0") and not is_dir($lib))
+
+  $r = tool([])
+  check("install: reported", $r.exit_code == 0 and contains($r.stdout, "demod: installed 1.0") and contains($r.stdout, "daemon-reload"))
+  check("install: scripts tree at /opt/mixos/lib/demod", read_file($lib .. "/demod/demod.mix") == "print(\"demod 1.0\")\n" and is_file($lib .. "/demod/lib/util.mix"))
+  check("install: unit in etc/systemd/system", contains(read_file($unit), "# 1.0"))
+  $rec = json_parse(read_file($lib .. "/demod/.installed.json"))
+  check("install: record has version, commit and hashes", $rec.version == "1.0" and len($rec.source) == 40 and $rec.dirty == false and $rec.files["demod.mix"] == hash_file($comp .. "/scripts/demod.mix", "sha256"))
+  check("install: files 0644", band(stat($lib .. "/demod/demod.mix").perm, 0o777) == 0o644)
+
+  $r = tool([])
+  check("reinstall: unchanged", contains($r.stdout, "demod: unchanged 1.0") and not contains($r.stdout, "daemon-reload"))
+  check("check: as the checkout", tool(["--check"]).exit_code == 0)
+
+  version("2.0", true)
+  check("check: a changed checkout is reported", tool(["--check"]).exit_code == 1)
+  $r = tool([])
+  check("upgrade: 2.0 over 1.0", contains($r.stdout, "demod: installed 2.0 (previous 1.0)"))
+  check("upgrade: previous tree kept", read_file($lib .. "/.demod.previous/demod.mix") == "print(\"demod 1.0\")\n")
+  check("upgrade: unit follows", contains(read_file($unit), "# 2.0"))
+
+  write_file($lib .. "/demod/demod.mix", "tampered\n")
+  $c = tool(["--check"])
+  check("check: a tampered file is reported", $c.exit_code == 1 and contains($c.stdout, "changed since install"))
+  $r = tool([])
+  check("reinstall repairs a tampered file", contains($r.stdout, "demod: repaired 2.0") and read_file($lib .. "/demod/demod.mix") == "print(\"demod 2.0\")\n")
+  remove($unit)
+  $r = tool([])
+  check("reinstall restores a missing unit", contains($r.stdout, "demod: repaired 2.0") and contains(read_file($unit), "# 2.0"))
+  check("repairs keep the real previous (1.0)", read_file($lib .. "/.demod.previous/demod.mix") == "print(\"demod 1.0\")\n" and tidy($root))
+
+  -- Permission drift is reported and repaired: unreadable, world-writable,
+  -- and a unit file with the right bytes but the wrong mode.
+  for $mode in [0o600, 0o666]
+    chmod($lib .. "/demod/demod.mix", $mode)
+    $c = tool(["--check"])
+    $r = tool([])
+    check("script mode " .. to_string($mode) .. ": reported, repaired to 0644", $c.exit_code == 1 and contains($c.stdout, "modes") and contains($r.stdout, "demod: repaired 2.0") and stat($lib .. "/demod/demod.mix").perm == 0o644)
+  end
+  chmod($unit, 0o666)
+  $c = tool(["--check"])
+  $r = tool([])
+  check("unit mode drift: reported, repaired, says reload", $c.exit_code == 1 and contains($r.stdout, "repaired") and contains($r.stdout, "daemon-reload") and stat($unit).perm == 0o644 and tool(["--check"]).exit_code == 0)
+  check("mode repairs keep the real previous (1.0)", read_file($lib .. "/.demod.previous/demod.mix") == "print(\"demod 1.0\")\n" and tidy($root))
+
+  $r = tool(["--rollback", "demod"])
+  check("rollback: back to 1.0", $r.exit_code == 0 and contains($r.stdout, "rolled back to 1.0") and read_file($lib .. "/demod/demod.mix") == "print(\"demod 1.0\")\n")
+  check("rollback: unit back to 1.0", contains(read_file($unit), "# 1.0"))
+  check("rollback: 2.0 is now the previous", read_file($lib .. "/.demod.previous/demod.mix") == "print(\"demod 2.0\")\n")
+  $r = tool(["--rollback", "demod"])
+  check("rollback again: forward to 2.0", contains($r.stdout, "rolled back to 2.0") and contains(read_file($unit), "# 2.0"))
+
+  -- A damaged previous tree is never rolled back to.
+  write_file($lib .. "/.demod.previous/demod.mix", "tampered\n")
+  $r = tool(["--rollback", "demod"])
+  check("rollback: a tampered previous is refused, nothing moves", $r.exit_code != 0 and contains($r.stdout, "NO_PREVIOUS") and read_file($lib .. "/demod/demod.mix") == "print(\"demod 2.0\")\n")
+  write_file($lib .. "/.demod.previous/demod.mix", "print(\"demod 1.0\")\n")
+  write_file($lib .. "/.demod.previous/units/demod@.service", "[Service]\nExecStart=/usr/bin/evil\n")
+  $r = tool(["--rollback", "demod"])
+  check("rollback: a tampered previous unit copy is refused", $r.exit_code != 0 and contains($r.stdout, "NO_PREVIOUS") and contains(read_file($unit), "# 2.0"))
+
+  -- A unit this installer did not write is never overwritten.
+  write_file($unit, "[Service]\nExecStart=/usr/bin/true # mine\n")
+  version("3.0", true)
+  $r = tool([])
+  check("foreign unit: refused", $r.exit_code != 0 and contains($r.stdout, "UNIT_CONFLICT"))
+  check("foreign unit: install and unit untouched", read_file($lib .. "/demod/demod.mix") == "print(\"demod 2.0\")\n" and contains(read_file($unit), "# mine"))
+  remove($unit)
+  $r = tool([])
+  check("after moving it away: installs 3.0", contains($r.stdout, "demod: installed 3.0") and contains(read_file($unit), "# 3.0"))
+
+  -- A unit the component no longer ships goes, while unchanged.
+  version("4.0", false)
+  tool([])
+  check("dropped unit: removed", not is_file($unit))
+  version("5.0", true)
+  tool([])
+  write_file($unit, "edited by the admin\n")
+  version("6.0", false)
+  $r = tool([])
+  check("dropped unit: kept when changed", is_file($unit) and contains($r.stdout, "kept"))
+
+  -- An unclaimed unit with exactly the bytes being installed is still not ours.
+  $r2 = $tmp .. "/root-identical"
+  mkdir($r2 .. "/etc/systemd/system", {parents: true})
+  version("7.0", true)
+  copy($comp .. "/units/demod@.service", $r2 .. "/etc/systemd/system/demod@.service")
+  $r = tool_in($r2, ["demod"], nil)
+  check("identical foreign unit: refused", $r.exit_code != 0 and contains($r.stdout, "UNIT_CONFLICT") and not is_dir($r2 .. "/opt/mixos/lib/demod"))
+
+  -- Two components may not own one unit name.
+  $other = $src .. "/services/demoe"
+  mkdir($other .. "/scripts", {parents: true})
+  mkdir($other .. "/units", {parents: true})
+  write_file($other .. "/component.mx", "{schema: 1, name: \"demoe\", component: \"demoe\", kind: \"service\", layer: \"core\", contract: \"none\", version: \"1.0\", program: \"scripts/demoe.mix\"}\n")
+  write_file($other .. "/scripts/demoe.mix", "print(\"demoe\")\n")
+  write_file($other .. "/units/demod@.service", "[Service]\nExecStart=/usr/bin/true # demoe\n")
+  commit("demoe")
+  $r = tool(["demoe"])
+  check("another component's unit: refused", $r.exit_code != 0 and contains($r.stdout, "belongs to demod") and not is_dir($lib .. "/demoe"))
+  remove_dir($other)
+  commit("drop demoe")
+
+  -- An interruption at every step of an install, then a plain rerun.
+  for $point in ["journaled", "retired", "kept", "activated", "units"]
+    $r = fresh_root("install-" .. $point, "8.0", "9.0")
+    version("10.0", true)
+    $crash = tool_in($r, ["demod"], $point)
+    $again = tool_in($r, ["demod"], nil)
+    $ok = all([$crash.exit_code == 75, $again.exit_code == 0,
+      script_in($r, "demod") == "print(\"demod 10.0\")\n",
+      script_in($r, ".demod.previous") == "print(\"demod 9.0\")\n",
+      contains(unit_in($r), "# 10.0"), tidy($r),
+      tool_in($r, ["--check", "demod"], nil).exit_code == 0], fn($x) = $x)
+    check("install interrupted at " .. $point .. ": rerun converges, previous 9.0", $ok)
+  end
+
+  -- An interruption at every step of a repair keeps the real previous.
+  for $point in ["journaled", "kept", "activated", "units"]
+    $r = fresh_root("repair-" .. $point, "11.0", "12.0")
+    write_file($r .. "/opt/mixos/lib/demod/demod.mix", "tampered\n")
+    $crash = tool_in($r, ["demod"], $point)
+    $again = tool_in($r, ["demod"], nil)
+    $ok = all([$crash.exit_code == 75, $again.exit_code == 0,
+      script_in($r, "demod") == "print(\"demod 12.0\")\n",
+      script_in($r, ".demod.previous") == "print(\"demod 11.0\")\n", tidy($r),
+      tool_in($r, ["--check", "demod"], nil).exit_code == 0], fn($x) = $x)
+    check("repair interrupted at " .. $point .. ": rerun repairs, previous 11.0", $ok)
+  end
+
+  -- An interruption at every step of a rollback; rerunning it rolls back once.
+  for $point in ["journaled", "swapped", "restored", "rotated", "units"]
+    $r = fresh_root("rollback-" .. $point, "13.0", "14.0")
+    $crash = tool_in($r, ["--rollback", "demod"], $point)
+    $again = tool_in($r, ["--rollback", "demod"], nil)
+    $ok = all([$crash.exit_code == 75, $again.exit_code == 0,
+      script_in($r, "demod") == "print(\"demod 13.0\")\n",
+      script_in($r, ".demod.previous") == "print(\"demod 14.0\")\n",
+      contains(unit_in($r), "# 13.0"), tidy($r), contains($again.stdout, "daemon-reload")], fn($x) = $x)
+    check("rollback interrupted at " .. $point .. ": rerun lands on 13.0 once, says reload", $ok)
+  end
+
+  -- A repair that restored a unit, interrupted before it could say so.
+  $r = fresh_root("repair-unit-notice", "19.0", "20.0")
+  remove($r .. "/etc/systemd/system/demod@.service")
+  $crash = tool_in($r, ["demod"], "units")
+  $again = tool_in($r, ["demod"], nil)
+  check("interrupted unit repair: the rerun still says reload", $crash.exit_code == 75 and contains(unit_in($r), "# 20.0") and contains($again.stdout, "daemon-reload"))
+
+  -- A later component's failure keeps an earlier component's reload notice.
+  $r = fresh_root("multi-notice", "21.0", "22.0")
+  version("23.0", true)
+  $bad = $src .. "/services/demoz"
+  mkdir($bad .. "/scripts", {parents: true})
+  write_file($bad .. "/component.mx", "{schema: 1, name: \"demoz\", component: \"demoz\", kind: \"service\", layer: \"core\", contract: \"none\", version: \"1.0\", program: \"scripts/demoz.mix\"}\n")
+  write_file($bad .. "/scripts/demoz.mix", "print(\"demoz\")\n")
+  symlink("demoz.mix", $bad .. "/scripts/alias.mix")
+  commit("demoz")
+  $res = tool_in($r, ["demod", "demoz"], nil)
+  check("a later failure: the earlier reload notice is still printed", $res.exit_code != 0 and contains($res.stdout, "demod: installed 23.0") and contains($res.stdout, "INSTALL_FILE") and contains($res.stdout, "daemon-reload"))
+  remove_dir($bad)
+  commit("drop demoz")
+
+  -- A failure after a unit was written still says reload.
+  for $point in ["unit-writing", "unit-written", "units"]
+    $r = fresh_root("fail-" .. $point, "24.0", "25.0")
+    version("26.0", true)
+    $res = run_argv(["/opt/mixos/bin/mix", $tool, "--source", $src, "--root", $r, "demod"],
+      {timeout: 60, stderr: "stdout", env: {MIXOS_COMPONENT_INSTALL_FAIL: $point}})
+    check("failure at " .. $point .. ": the reload notice is printed", $res.exit_code != 0 and contains($res.stdout, "INSTALL_TEST") and contains($res.stdout, "daemon-reload"))
+  end
+
+  -- An undo that is itself interrupted still converges: a first install and
+  -- a repair, each interrupted before activation, then in the undo.
+  for $point in ["undo-moved", "undo-cleared"]
+    $r = $tmp .. "/root-undo-first-" .. $point
+    mkdir($r)
+    version("30.0", true)
+    tool_in($r, ["demod"], "journaled")
+    $mid = tool_in($r, ["demod"], $point)
+    $end = tool_in($r, ["demod"], nil)
+    check("first install, undo interrupted at " .. $point .. ": converges", $mid.exit_code == 75 and $end.exit_code == 0 and script_in($r, "demod") == "print(\"demod 30.0\")\n" and tidy($r))
+    $r = fresh_root("undo-repair-" .. $point, "31.0", "32.0")
+    write_file($r .. "/opt/mixos/lib/demod/demod.mix", "tampered\n")
+    tool_in($r, ["demod"], "kept")
+    $mid = tool_in($r, ["demod"], $point)
+    $end = tool_in($r, ["demod"], nil)
+    check("repair, undo interrupted at " .. $point .. ": converges, previous 31.0", $mid.exit_code == 75 and $end.exit_code == 0 and script_in($r, "demod") == "print(\"demod 32.0\")\n" and script_in($r, ".demod.previous") == "print(\"demod 31.0\")\n" and tidy($r))
+  end
+
+  -- A rollback interrupted after the switch, whose live script then drifted
+  -- to world-writable: recovery restores the mode.
+  $r = fresh_root("rollback-mode", "33.0", "34.0")
+  tool_in($r, ["--rollback", "demod"], "restored")
+  chmod($r .. "/opt/mixos/lib/demod/demod.mix", 0o666)
+  $again = tool_in($r, ["--rollback", "demod"], nil)
+  check("interrupted rollback with mode drift: completed at 0644", $again.exit_code == 0 and script_in($r, "demod") == "print(\"demod 33.0\")\n" and stat($r .. "/opt/mixos/lib/demod/demod.mix").perm == 0o644)
+
+  -- An upgrade over a unit whose mode drifted ends at 0644.
+  $r = fresh_root("unit-mode-upgrade", "35.0", "36.0")
+  chmod($r .. "/etc/systemd/system/demod@.service", 0o666)
+  version("37.0", true)
+  $res = tool_in($r, ["demod"], nil)
+  check("upgrade over a drifted unit mode: 0644", $res.exit_code == 0 and contains(unit_in($r), "# 37.0") and stat($r .. "/etc/systemd/system/demod@.service").perm == 0o644)
+
+  -- Recovery never publishes a unit copy that drifted while interrupted.
+  $r = fresh_root("drifted-copy", "27.0", "28.0")
+  version("29.0", true)
+  tool_in($r, ["demod"], "activated")
+  write_file($r .. "/opt/mixos/lib/demod/units/demod@.service", "[Service]\nExecStart=/usr/bin/evil\n")
+  $res = tool_in($r, ["demod"], nil)
+  check("drifted unit copy: recovery stops, journal kept, unit untouched", $res.exit_code != 0 and contains($res.stdout, "INSTALL_JOURNAL") and is_file($r .. "/opt/mixos/lib/.demod.journal.json") and contains(unit_in($r), "# 28.0"))
+
+  -- Diagnostics write nothing: --check on a read-only lib with no lock file.
+  $r = fresh_root("read-only", "38.0", "38.1")
+  remove($r .. "/opt/mixos/lib/.component-install.lock")
+  chmod($r .. "/opt/mixos/lib", 0o555)
+  $chk = tool_in($r, ["--check", "demod"], nil)
+  $dr = tool_in($r, ["--dry-run", "demod"], nil)
+  chmod($r .. "/opt/mixos/lib", 0o755)
+  check("read-only lib: --check and --dry-run work, no lock file made", $chk.exit_code == 0 and $dr.exit_code == 0 and not lexists($r .. "/opt/mixos/lib/.component-install.lock"))
+
+  -- A lock path that is a symlink is never followed.
+  $r = $tmp .. "/root-lock-link"
+  mkdir($r .. "/opt/mixos/lib", {parents: true})
+  symlink($tmp .. "/outside-lock", $r .. "/opt/mixos/lib/.component-install.lock")
+  $res = tool_in($r, ["demod"], nil)
+  $chk = tool_in($r, ["--check", "demod"], nil)
+  check("symlinked lock: refused, its target never created", $res.exit_code != 0 and contains($res.stdout, "INSTALL_ROOT") and contains($chk.stdout, "INSTALL_ROOT") and not lexists($tmp .. "/outside-lock"))
+
+  -- Recovery in a copy of an interrupted root touches only the copy.
+  $a = fresh_root("copied-a", "16.0", "17.0")
+  version("18.0", true)
+  tool_in($a, ["demod"], "kept")
+  $b = $tmp .. "/root-copied-b"
+  copy_tree($a, $b)
+  $again = tool_in($b, ["demod"], nil)
+  $ok = all([$again.exit_code == 0, script_in($b, "demod") == "print(\"demod 18.0\")\n",
+    script_in($b, ".demod.previous") == "print(\"demod 17.0\")\n", tidy($b),
+    is_file($a .. "/opt/mixos/lib/.demod.journal.json"), not is_dir($a .. "/opt/mixos/lib/demod"),
+    len(glob($a .. "/opt/mixos/lib/.demod.stage-*")) == 1], fn($x) = $x)
+  check("copied interrupted root: recovers the copy, leaves the original alone", $ok)
+
+  -- A journal naming a path outside the lib directory is refused.
+  $victim = $tmp .. "/victim"
+  mkdir($victim)
+  write_file($victim .. "/keep.txt", "mine\n")
+  write_file($lib .. "/.demod.journal.json", json_encode({component: "demod", op: "install", stage: $victim,
+    keep: ".demod.previous", retired: nil, old_units: {}, new_units: {}}))
+  $r = tool([])
+  check("crafted journal: refused, the outside path untouched", $r.exit_code != 0 and contains($r.stdout, "INSTALL_JOURNAL") and is_file($victim .. "/keep.txt"))
+  remove($lib .. "/.demod.journal.json")
+
+  -- Symlinked directories inside the root are never written through.
+  for $d in ["etc/systemd/system", "opt/mixos/lib"]
+    $r = $tmp .. "/root-link-" .. replace($d, "/", "-")
+    $outside = $tmp .. "/outside-" .. replace($d, "/", "-")
+    mkdir($outside, {parents: true})
+    mkdir(dirname($r .. "/" .. $d), {parents: true})
+    symlink($outside, $r .. "/" .. $d)
+    $res = tool_in($r, ["demod"], nil)
+    check("symlinked " .. $d .. ": refused, nothing written outside", $res.exit_code != 0 and contains($res.stdout, "INSTALL_ROOT") and len(glob($outside .. "/*")) == 0)
+  end
+
+  -- A held lock blocks a second installer, which changes nothing.
+  version("15.0", true)
+  flock($lib .. "/.component-install.lock", {wait: 5})
+  $res = run_argv(["/opt/mixos/bin/mix", $tool, "--source", $src, "--root", $root, "demod"], {timeout: 3, stderr: "stdout"})
+  check("lock: a second installer waits and changes nothing", $res.timed_out and read_file($lib .. "/demod/demod.mix") == "print(\"demod 6.0\")\n")
+
+  -- Refusals.
+  symlink("demod.mix", $comp .. "/scripts/alias.mix")
+  run_argv_must(["git", "-C", $src, "add", "-A"])
+  $r = tool_in($tmp .. "/root-identical", ["demod"], nil)
+  check("symlink in scripts/: refused", $r.exit_code != 0 and contains($r.stdout, "INSTALL_FILE"))
+  remove($comp .. "/scripts/alias.mix")
+  $r = tool(["nosuch"])
+  check("unknown component: refused", $r.exit_code != 0 and contains($r.stdout, "INSTALL_COMPONENT"))
+  check("relative root: refused", run_argv(["/opt/mixos/bin/mix", $tool, "--source", $src, "--root", "relative"], {stderr: "stdout"}).exit_code != 0)
+finally
+  remove_dir($tmp)
+end
+
+$failed = filter($results, fn($x) = not $x.ok)
+print(to_string(len($results) - len($failed)) .. "/" .. to_string(len($results)) .. " passed")
+if len($failed) > 0 then exit(1) end

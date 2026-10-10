@@ -74,7 +74,10 @@ the agent's single map of the tree.
   releases).
 - The generic line-JSON bridge for external applications (AGENTS.md §4.1)
   will land the same way.
-- There is no unit collector yet. When it lands, it gathers `units/` from
-  Mix components as well.
+- `tools/component_install.mix` installs Mix components: `scripts/` to
+  `/opt/mixos/lib/<component>/` and `units/` to `/etc/systemd/system`. It
+  writes an install record, keeps one previous tree for rollback and has a
+  `--check` for drift. `--root` targets an image or container tree. Units of
+  Rust components still wait for the unit collector.
 - Rejected: a separate top-level directory for Mix programs. It would
   classify by language, not by kind of artefact.

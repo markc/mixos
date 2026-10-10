@@ -1,0 +1,680 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+-- Install Mix components (component.mx; docs/decisions/2026-10-10-mix-components.md)
+-- from this checkout into a system root.
+--
+--   mix tools/component_install.mix [--root /] [--source <checkout>] [--dry-run] [component...]
+--   mix tools/component_install.mix --check [--root /] [component...]
+--   mix tools/component_install.mix --rollback <component> [--root /]
+--
+-- Per component:
+--   <root>/opt/mixos/lib/<component>/   its scripts/ tree, component.mx, units/
+--                                       and .installed.json (version, source
+--                                       commit, the sha256 of every file)
+--   <root>/opt/mixos/lib/.<component>.previous/   the tree it replaced
+--   <root>/etc/systemd/system/<unit>    its units/ files
+--
+-- Safety:
+-- - Every directory between the root and what is written must be a plain
+--   directory: a symlinked opt/mixos/lib or etc/systemd/system inside a
+--   container root is refused, so nothing is written through it. The check
+--   is repeated before every change, but it is not race-free against a
+--   writer inside the root: install into a root whose own root processes you
+--   trust, or a stopped container.
+-- - One exclusive lock (<root>/opt/mixos/lib/.component-install.lock) covers
+--   every install and rollback. --check and --dry-run write nothing: they
+--   take it shared only when it exists and can be opened.
+-- - A unit is this installer's only when a record lists it. An existing unit
+--   file that no record claims is refused before anything changes, even when
+--   its bytes match, and so is a unit name another component claims. A unit
+--   the component no longer ships is removed only while unchanged.
+-- - Each install, repair and rollback writes a journal (.<component>.journal.json)
+--   before its first change. The next run recovers from an interruption:
+--   before the new tree is live it is undone, after it is finished. The
+--   journal names its trees by basename only (never a path outside the
+--   lib directory), is written durably, and the filesystems are synced at
+--   each boundary, so this holds across a power loss too.
+-- - A reinstall over drifted files (the record matches the checkout but the
+--   disk does not) is a repair: it keeps the real previous version.
+-- - --rollback verifies the saved previous tree against its record first.
+-- When units change it says so: run `systemctl daemon-reload` in that root.
+-- --check compares what is installed with the checkout and with the files on
+-- disk, and exits 1 on any difference. --dry-run reports and writes nothing.
+-- No component names = every Mix component in the checkout.
+-- Test hooks: MIXOS_COMPONENT_INSTALL_CRASH=<point> exits 75 at that point;
+-- MIXOS_COMPONENT_INSTALL_FAIL=<point> raises there instead.
+
+$g = getopt(args(), {help: {short: "h"}, root: {arg: true}, source: {arg: true},
+  check: {}, rollback: {arg: true}, "dry-run": {}})
+if len($g.errors) != 0 then raise("INSTALL_ARGS", join($g.errors, "; ")) end
+if $g.opts.help then
+  print("usage: mix tools/component_install.mix [--root DIR] [--source DIR] [--check | --rollback NAME | --dry-run] [component...]")
+  exit(0)
+end
+$root = $g.opts.root ?? "/"
+if not starts_with($root, "/") then raise("INSTALL_ROOT", "--root must be absolute") end
+if not is_dir($root) then raise("INSTALL_ROOT", $root .. " is not a directory") end
+$root = realpath($root)
+$root = if $root == "/" then "" else $root end
+$source = $g.opts.source ?? dirname(dirname(realpath($0)))
+$dry = $g.opts["dry-run"]
+$lib = $root .. "/opt/mixos/lib"
+$unitdir = $root .. "/etc/systemd/system"
+$KINDS = {apps: "app", services: "service", cli: "cli", libs: "lib"}
+$NAME_RE = "^[a-z0-9][a-z0-9-]{0,63}$"
+$UNIT_RE = "^[A-Za-z0-9_.@-]+$"
+-- Set the moment any unit is written or removed (or a recovery finishes a
+-- change with units), so the reload notice survives any later failure.
+$RUN = {reload: false}
+
+fn json_or($path, $default)
+  if not is_file($path) then return $default end
+  return json_parse(read_file($path))
+end
+
+fn crash($point)
+  if env("MIXOS_COMPONENT_INSTALL_CRASH") == $point then exit(75) end
+  if env("MIXOS_COMPONENT_INSTALL_FAIL") == $point then raise("INSTALL_TEST", "injected failure at " .. $point) end
+end
+
+fn lexists($p)
+  return exists($p, {follow_symlinks: false})
+end
+
+-- Every directory between the root and what this tool writes is a plain
+-- directory, never a symlink. Creates missing ones when $create.
+fn guard($create)
+  for $d in [$root .. "/opt", $root .. "/opt/mixos", $lib, $root .. "/etc", $root .. "/etc/systemd", $unitdir]
+    if lexists($d) then
+      $st = stat($d, {follow_symlinks: false})
+      if $st.is_symlink or not $st.is_dir then
+        raise("INSTALL_ROOT", $d .. " is not a plain directory; refusing to write through it")
+      end
+    elif $create then
+      mkdir($d)
+      chmod($d, 0o755)
+    end
+  end
+end
+
+fn no_link($p)
+  if lexists($p) and stat($p, {follow_symlinks: false}).is_symlink then
+    raise("INSTALL_ROOT", $p .. " is a symlink; refusing to use it")
+  end
+end
+
+fn move($from, $to)
+  guard(false)
+  no_link($from)
+  no_link($to)
+  rename($from, $to)
+end
+
+fn rmtree($p)
+  if not lexists($p) then return end
+  guard(false)
+  if stat($p, {follow_symlinks: false}).is_symlink then remove($p) else remove_dir($p) end
+end
+
+-- Every Mix component in the checkout: {name, dir, version, kind}.
+fn components()
+  $out = []
+  for $kind in sort(keys($KINDS))
+    for $doc in sort(glob($source .. "/" .. $kind .. "/*/component.mx"))
+      $meta = load_data($doc)
+      $dir = dirname($doc)
+      if type($meta) != "map" or $meta.name != basename($dir) or not re_match($meta.name, $NAME_RE) then
+        raise("INSTALL_COMPONENT", $doc .. ": name must be the directory name")
+      end
+      push($out, {name: $meta.name, dir: $dir, version: $meta.version, kind: $meta.kind})
+    end
+  end
+  return $out
+end
+
+-- The files under $dir, as {relative path: sha256}. Only regular files: a
+-- symlink or special file is refused.
+fn tree($dir)
+  $files = {}
+  if not is_dir($dir) then return $files end
+  no_link($dir)
+  for $p in walk($dir, {follow_symlinks: false})
+    $st = stat($p, {follow_symlinks: false})
+    $rel = slice($p, len($dir) + 1, len($p))
+    if $st.is_symlink or (not $st.is_file and not $st.is_dir) then
+      raise("INSTALL_FILE", $p .. ": only regular files are installed")
+    end
+    if $st.is_file then $files[$rel] = hash_file($p, "sha256") end
+  end
+  return $files
+end
+
+fn source_commit()
+  $r = run_argv(["git", "-C", $source, "rev-parse", "HEAD"], {timeout: 30})
+  return if $r.exit_code == 0 then trim($r.stdout) else nil end
+end
+
+fn dirty($dir)
+  $r = run_argv(["git", "-C", $source, "status", "--porcelain", "--", $dir], {timeout: 30})
+  return $r.exit_code != 0 or trim($r.stdout) != ""
+end
+
+-- What installing $c would put down: {files, units, version}.
+fn shipped($c)
+  $files = tree($c.dir .. "/scripts")
+  $files["component.mx"] = hash_file($c.dir .. "/component.mx", "sha256")
+  $units = tree($c.dir .. "/units")
+  for $u in keys($units)
+    if not re_match($u, $UNIT_RE) then raise("INSTALL_FILE", $c.dir .. "/units/" .. $u .. ": units/ holds unit files only") end
+  end
+  return {files: $files, units: $units, version: $c.version}
+end
+
+-- What an installed tree holds, by its record: files plus the unit copies.
+fn wanted($record)
+  $want = merge($record.files ?? {}, {})
+  for $u in keys($record.units ?? {})
+    $want["units/" .. $u] = $record.units[$u]
+  end
+  return $want
+end
+
+fn tree_matches($dir, $record)
+  if not is_dir($dir) then return false end
+  return deep_eq(delete(tree($dir), ".installed.json"), wanted($record))
+end
+
+fn unit_matches($u, $sha)
+  $path = $unitdir .. "/" .. $u
+  return lexists($path) and not stat($path, {follow_symlinks: false}).is_symlink and is_file($path) and hash_file($path, "sha256") == $sha
+end
+
+-- Directories 0755, files 0644, all owned by whoever owns the directory
+-- they were installed under: nothing unreadable, nothing others can change.
+fn mode_ok($p, $uid)
+  $st = stat($p, {follow_symlinks: false})
+  return $st.uid == $uid and $st.perm == (if $st.is_dir then 0o755 else 0o644 end)
+end
+
+fn modes_ok($dir, $record)
+  if not is_dir($dir) then return false end
+  $uid = stat($lib).uid
+  if not mode_ok($dir, $uid) then return false end
+  if not all(walk($dir, {include_dirs: true, follow_symlinks: false}), fn($p) = mode_ok($p, $uid)) then return false end
+  $uuid = if is_dir($unitdir) then stat($unitdir).uid else $uid end
+  return all(keys($record.units ?? {}), fn($u) = not is_file($unitdir .. "/" .. $u) or mode_ok($unitdir .. "/" .. $u, $uuid))
+end
+
+-- The installed tree and units are exactly what $record says.
+fn intact($dest, $record)
+  return tree_matches($dest, $record) and modes_ok($dest, $record) and all(keys($record.units ?? {}), fn($u) = unit_matches($u, $record.units[$u]))
+end
+
+fn journal_path($name)
+  return $lib .. "/." .. $name .. ".journal.json"
+end
+
+-- A {unit: sha256} map whose names are plain unit file names.
+fn units_map($m, $where)
+  $m = $m ?? {}
+  if type($m) != "map" or not all(keys($m), fn($u) = re_match($u, $UNIT_RE)) then
+    raise("INSTALL_JOURNAL", $where .. ": bad unit list")
+  end
+  return $m
+end
+
+-- A journal names its working trees by basename only, and each must be one
+-- of this component's own working names, so a copied or crafted journal
+-- can never point outside this root's lib directory.
+fn in_lib($name, $base)
+  if $base == nil then return nil end
+  $ok = type($base) == "string" and ($base == "." .. $name .. ".previous" or re_match($base, "^\\." .. $name .. "\\.(stage|damaged|retired|swap)-[0-9a-f-]{36}$"))
+  if not $ok then raise("INSTALL_JOURNAL", journal_path($name) .. ": " .. to_string($base) .. " is not one of " .. $name .. "'s working names") end
+  return $lib .. "/" .. $base
+end
+
+fn read_journal($name)
+  $jp = journal_path($name)
+  if not lexists($jp) then return nil end
+  no_link($jp)
+  $j = json_parse(read_file($jp))
+  if type($j) != "map" or $j.component != $name or not contains(["install", "repair", "rollback"], $j.op) then
+    raise("INSTALL_JOURNAL", $jp .. " is not a journal of " .. $name)
+  end
+  for $k in ["stage", "keep", "retired", "swap"]
+    $j[$k] = in_lib($name, $j[$k])
+  end
+  $j.old_units = units_map($j.old_units, $jp)
+  $j.new_units = units_map($j.new_units, $jp)
+  return $j
+end
+
+fn write_journal($name, $j)
+  no_link(journal_path($name))
+  write_atomic(journal_path($name), json_encode($j), {durability: "full", mode: 0o644})
+end
+
+-- Mix has no fsync for a directory tree yet (TODO-mix): sync the
+-- filesystems holding the lib and unit directories at each boundary.
+fn flush()
+  run_argv_must(["sync", "-f", $lib], {timeout: 120})
+  if is_dir($unitdir) then run_argv_must(["sync", "-f", $unitdir], {timeout: 120}) end
+end
+
+-- Remove a journal durably: a journal that came back after a power loss
+-- would replay a finished change (and could swallow the next rollback).
+fn drop_journal($name)
+  remove(journal_path($name))
+  flush()
+end
+
+-- The identity of an installed generation: the hash of its record.
+fn record_id($dir)
+  $p = $dir .. "/.installed.json"
+  return if is_file($p) then hash_file($p, "sha256") else nil end
+end
+
+-- Units claimed by any other component's records or journal: {unit: component}.
+fn foreign_units($name)
+  $owners = {}
+  for $rp in glob($lib .. "/*/.installed.json")
+    $r = json_or($rp, {})
+    if type($r) == "map" and $r.component != nil and $r.component != $name then
+      for $u in keys($r.units ?? {})
+        $owners[$u] = $r.component
+      end
+    end
+  end
+  for $jp in glob($lib .. "/.*.journal.json")
+    $j = json_or($jp, {})
+    if type($j) == "map" and $j.component != nil and $j.component != $name then
+      for $u in concat(keys($j.old_units ?? {}), keys($j.new_units ?? {}))
+        $owners[$u] = $j.component
+      end
+    end
+  end
+  return $owners
+end
+
+-- Refuse a unit path another component claims, or that holds a file whose
+-- hash is not in $allowed (this component's own recorded bytes).
+fn unit_ok($name, $u, $allowed)
+  $path = $unitdir .. "/" .. $u
+  $owner = foreign_units($name)[$u]
+  if $owner != nil then raise("UNIT_CONFLICT", $path .. " belongs to " .. $owner) end
+  if not lexists($path) then return true end
+  $st = stat($path, {follow_symlinks: false})
+  if $st.is_symlink or not $st.is_file or not contains($allowed, hash_file($path, "sha256")) then
+    raise("UNIT_CONFLICT", $path .. " was not written by this installer; move it away first")
+  end
+  return true
+end
+
+-- The hashes of $u that $name's records own: none unless $old lists it.
+fn owned($u, $old, $new)
+  if $old[$u] == nil then return [] end
+  return filter([$old[$u], $new[$u]], fn($x) = $x != nil)
+end
+
+-- Modes 0755/0644 and the lib directory's owner, on a tree holding only
+-- directories and regular files (tree() refused anything else).
+fn set_modes($dir)
+  $own = stat($lib)
+  for $p in concat([$dir], walk($dir, {include_dirs: true, follow_symlinks: false}))
+    no_link($p)
+    chown($p, $own.uid, $own.gid)
+    chmod($p, if is_dir($p) then 0o755 else 0o644 end)
+  end
+end
+
+-- Write the unit copies in $tree for $new_units over $old_units; remove old
+-- units no longer shipped while unchanged. Within a journaled change both
+-- generations are this component's. Returns whether anything changed.
+fn apply_units($name, $tree, $new_units, $old_units)
+  $changed = false
+  guard(len(keys($new_units)) > 0)
+  for $u in sort(keys($new_units))
+    $path = $unitdir .. "/" .. $u
+    if not unit_matches($u, $new_units[$u]) then
+      unit_ok($name, $u, filter([$old_units[$u], $new_units[$u]], fn($x) = $x != nil))
+      guard(false)
+      -- Before the write: a durable write can replace the file and then fail.
+      $RUN.reload = true
+      crash("unit-writing")
+      write_atomic($path, read_file($tree .. "/units/" .. $u), {mode: 0o644, durability: "full"})
+      $changed = true
+      crash("unit-written")
+    end
+    -- A replacement keeps the old file's owner and mode: always end with
+    -- the unit directory's owner and 0644.
+    if not mode_ok($path, stat($unitdir).uid) then
+      $RUN.reload = true
+      chown($path, stat($unitdir).uid, stat($unitdir).gid)
+      chmod($path, 0o644)
+      $changed = true
+    end
+  end
+  for $u in sort(keys($old_units))
+    if $new_units[$u] == nil then
+      $path = $unitdir .. "/" .. $u
+      if unit_matches($u, $old_units[$u]) then
+        guard(false)
+        $RUN.reload = true
+        remove($path)
+        $changed = true
+      elif lexists($path) then
+        print("  kept " .. $path .. ": changed since it was installed")
+      end
+    end
+  end
+  return $changed
+end
+
+-- Finish or undo an interrupted install, repair or rollback of $name.
+-- Returns nil (nothing pending) or {op, result: "undone" | "completed",
+-- units_changed}.
+fn recover($name)
+  $j = read_journal($name)
+  if $j == nil then return nil end
+  $jp = journal_path($name)
+  $dest = $lib .. "/" .. $name
+  $prev = $lib .. "/." .. $name .. ".previous"
+  $undone = {op: $j.op, result: "undone", units_changed: false}
+  if $j.op == "rollback" then
+    -- The commit point is the previous tree becoming the live one.
+    if is_dir($j.swap) and not is_dir($dest) then
+      move($j.swap, $dest)
+      flush()
+      drop_journal($name)
+      return $undone
+    end
+    if is_dir($j.swap) then move($j.swap, $prev) end
+    if record_id($dest) == $j.from_id then
+      drop_journal($name)
+      return $undone
+    end
+  elif is_dir($j.stage) then
+    -- install or repair: the commit point is the stage becoming the live tree.
+    if not is_dir($dest) and is_dir($j.keep) then move($j.keep, $dest) end
+    if $j.retired != nil and is_dir($j.retired) and not is_dir($j.keep) then move($j.retired, $j.keep) end
+    flush()
+    crash("undo-moved")
+    -- The journal goes before the stage: while the stage exists the journal
+    -- still reads as "undo", and a stage without a journal is swept later.
+    drop_journal($name)
+    crash("undo-cleared")
+    rmtree($j.stage)
+    return $undone
+  end
+  $live = json_or($dest .. "/.installed.json", {})
+  $units = units_map($live.units, $dest)
+  -- Never publish unit copies from a tree that drifted while interrupted.
+  if not tree_matches($dest, $live) then
+    raise("INSTALL_JOURNAL", $dest .. " no longer matches its record; recovery stopped and " .. $jp .. " kept: inspect it, then restore the tree or remove the journal")
+  end
+  -- The bytes are right: put the modes back, and refuse a foreign owner.
+  set_modes($dest)
+  if not modes_ok($dest, {units: {}}) then
+    raise("INSTALL_JOURNAL", $dest .. " is not owned like " .. $lib .. "; recovery stopped and " .. $jp .. " kept")
+  end
+  $changed = apply_units($name, $dest, $units, $j.old_units)
+  if $j.retired != nil then rmtree($j.retired) end
+  if $j.op == "repair" then rmtree($j.keep) end
+  flush()
+  drop_journal($name)
+  -- The interrupted run may have written units without saying so: a
+  -- completed change with any units asks for a reload (harmless if spare).
+  return {op: $j.op, result: "completed", units_changed: $changed or len(keys($units)) + len(keys($j.old_units)) > 0}
+end
+
+-- Recover, and clear stages left by a run that died before its journal.
+fn settle($name)
+  $r = recover($name)
+  if $r != nil then print($name .. ": " .. $r.result .. " an interrupted " .. $r.op) end
+  for $s in glob($lib .. "/." .. $name .. ".stage-*")
+    rmtree($s)
+  end
+  return $r
+end
+
+fn install($c)
+  $dest = $lib .. "/" .. $c.name
+  $prev = $lib .. "/." .. $c.name .. ".previous"
+  $old = json_or($dest .. "/.installed.json", {files: {}, units: {}})
+  $old_units = units_map($old.units, $dest)
+  $new = shipped($c)
+  $same = deep_eq($old.files ?? {}, $new.files) and deep_eq($old_units, $new.units)
+  -- Unchanged only when the checkout matches the record AND the files on
+  -- disk still match it; otherwise a reinstall repairs them.
+  if $same and intact($dest, $old) then
+    return {component: $c.name, action: "unchanged", version: $c.version, units_changed: false}
+  end
+  -- Refuse before anything moves.
+  for $u in sort(keys($new.units))
+    unit_ok($c.name, $u, owned($u, $old_units, $new.units))
+  end
+  if $dry then
+    return {component: $c.name, action: "would install", version: $c.version, previous: $old.version, units_changed: not deep_eq($old_units, $new.units)}
+  end
+  $dot = "." .. $c.name
+  $stage = $lib .. "/" .. $dot .. ".stage-" .. uuid()
+  guard(true)
+  mkdir($stage)
+  try
+    if is_dir($c.dir .. "/scripts") then copy_tree($c.dir .. "/scripts", $stage) end
+    copy($c.dir .. "/component.mx", $stage .. "/component.mx")
+    if len(keys($new.units)) > 0 then copy_tree($c.dir .. "/units", $stage .. "/units") end
+    write_file($stage .. "/.installed.json", json_encode({component: $c.name, kind: $c.kind, version: $c.version,
+      source: source_commit(), dirty: dirty($c.dir), installed_at: now_iso(), files: $new.files, units: $new.units}))
+    set_modes($stage)
+    -- The copy must be what was hashed.
+    if not tree_matches($stage, $new) then raise("INSTALL_COPY", $c.name .. ": the staged copy differs from the checkout") end
+    if not modes_ok($stage, {units: {}}) then raise("INSTALL_COPY", $c.name .. ": the staged copy could not be given the modes and owner of " .. $lib) end
+  catch $msg, $err
+    rmtree($stage)
+    raise($err.code ?? "INSTALL", $msg)
+  end
+  -- A repair (the record already matches the checkout; only the disk
+  -- drifted) sets the damaged copy aside and keeps the real previous version.
+  $repair = $same and is_dir($dest)
+  $keep = if $repair then $dot .. ".damaged-" .. uuid() else $dot .. ".previous" end
+  $retired = if not $repair and is_dir($prev) then $dot .. ".retired-" .. uuid() else nil end
+  $j = {component: $c.name, op: if $repair then "repair" else "install" end, stage: basename($stage),
+    keep: $keep, retired: $retired, old_units: $old_units, new_units: $new.units}
+  flush()
+  write_journal($c.name, $j)
+  crash("journaled")
+  $keep = $lib .. "/" .. $keep
+  $retired = if $retired == nil then nil else $lib .. "/" .. $retired end
+  try
+    if $retired != nil then move($prev, $retired) end
+    crash("retired")
+    if is_dir($dest) then move($dest, $keep) end
+    crash("kept")
+    move($stage, $dest)
+    flush()
+    crash("activated")
+  catch $msg, $err
+    try
+      recover($c.name)
+    catch $m2
+      print("  recovery failed: " .. $m2 .. " (the journal stays for the next run)")
+    end
+    raise($err.code ?? "INSTALL", $msg)
+  end
+  $changed = apply_units($c.name, $dest, $new.units, $old_units)
+  crash("units")
+  if $retired != nil then rmtree($retired) end
+  if $repair then rmtree($keep) end
+  flush()
+  drop_journal($c.name)
+  if $repair then
+    return {component: $c.name, action: "repaired", version: $c.version, units_changed: $changed}
+  end
+  return {component: $c.name, action: "installed", version: $c.version, previous: $old.version, units_changed: $changed}
+end
+
+fn rollback($name)
+  $dest = $lib .. "/" .. $name
+  $prev = $lib .. "/." .. $name .. ".previous"
+  if not is_dir($prev) or not is_file($prev .. "/.installed.json") then raise("NO_PREVIOUS", $name .. " has no previous install") end
+  $from = json_or($dest .. "/.installed.json", {units: {}})
+  $to = json_parse(read_file($prev .. "/.installed.json"))
+  if type($to) != "map" or $to.component != $name or type($to.files ?? nil) != "map" or type($to.units ?? {}) != "map" then
+    raise("NO_PREVIOUS", $prev .. ": the record is not a record of " .. $name)
+  end
+  for $u in keys($to.units ?? {})
+    if not re_match($u, $UNIT_RE) then raise("NO_PREVIOUS", $prev .. ": bad unit name " .. $u) end
+  end
+  if not tree_matches($prev, $to) or not modes_ok($prev, {units: {}}) then raise("NO_PREVIOUS", $prev .. " changed since it was installed; not rolling back to it") end
+  $from_units = units_map($from.units, $dest)
+  $to_units = $to.units ?? {}
+  for $u in sort(keys($to_units))
+    unit_ok($name, $u, owned($u, $from_units, $to_units))
+  end
+  if $dry then return {component: $name, action: "would roll back", version: $to.version, previous: $from.version, units_changed: false} end
+  $swap = "." .. $name .. ".swap-" .. uuid()
+  write_journal($name, {component: $name, op: "rollback", swap: $swap,
+    from_id: record_id($dest), old_units: $from_units, new_units: $to_units})
+  crash("journaled")
+  $swap = $lib .. "/" .. $swap
+  try
+    if is_dir($dest) then move($dest, $swap) end
+    crash("swapped")
+    move($prev, $dest)
+    flush()
+    crash("restored")
+    if is_dir($swap) then move($swap, $prev) end
+    crash("rotated")
+  catch $msg, $err
+    try
+      recover($name)
+    catch $m2
+      print("  recovery failed: " .. $m2 .. " (the journal stays for the next run)")
+    end
+    raise($err.code ?? "INSTALL", $msg)
+  end
+  $changed = apply_units($name, $dest, $to_units, $from_units)
+  crash("units")
+  flush()
+  drop_journal($name)
+  return {component: $name, action: "rolled back", version: $to.version, previous: $from.version, units_changed: $changed}
+end
+
+-- Differences between the checkout, the record and the files on disk.
+fn check($c)
+  $dest = $lib .. "/" .. $c.name
+  $out = []
+  if is_file(journal_path($c.name)) then
+    push($out, "a change was interrupted; run the installer again to recover")
+  end
+  $record = json_or($dest .. "/.installed.json", nil)
+  if $record == nil then
+    push($out, "not installed")
+    return $out
+  end
+  $new = shipped($c)
+  if not deep_eq($record.files, $new.files) or not deep_eq($record.units ?? {}, $new.units) then
+    push($out, "the checkout differs from the install (" .. to_string($record.version) .. " at " .. slice(to_string($record.source), 0, 12) .. ")")
+  end
+  if not tree_matches($dest, $record) then push($out, "files under " .. $dest .. " changed since install") end
+  if not modes_ok($dest, $record) then push($out, "modes or owners under " .. $dest .. " or of its units differ from 0755/0644 and the lib owner") end
+  for $u in sort(keys($record.units ?? {}))
+    $path = $unitdir .. "/" .. $u
+    if not lexists($path) then
+      push($out, $path .. " is missing")
+    elif not unit_matches($u, $record.units[$u]) then
+      push($out, $path .. " changed since install")
+    end
+  end
+  return $out
+end
+
+-- The lock: exclusive for changes, shared for --check and --dry-run (and
+-- only when the lib directory already exists, so they create nothing).
+fn lock($shared)
+  if $shared then
+    if not is_dir($lib) then return end
+    guard(false)
+  else
+    guard(true)
+  end
+  -- flock creates and follows its path: only a plain file, or nothing yet.
+  $lk = $lib .. "/.component-install.lock"
+  if lexists($lk) then
+    $st = stat($lk, {follow_symlinks: false})
+    if $st.is_symlink or not $st.is_file then raise("INSTALL_ROOT", $lk .. " is not a plain file; refusing to lock through it") end
+  end
+  if $shared then
+    -- Diagnostics never write: flock opens read-write and creates (TODO-mix),
+    -- so --check and --dry-run lock only an existing lock file they can open,
+    -- and otherwise read unlocked (an interrupted change still shows, by its
+    -- journal).
+    if not is_file($lk) then return end
+    try
+      if not flock($lk, {shared: true, wait: 60}) then raise("INSTALL_LOCKED", "another install holds " .. $lk) end
+    catch $msg, $err
+      if $err.code == "INSTALL_LOCKED" then raise("INSTALL_LOCKED", $msg) end
+    end
+    return
+  end
+  if not flock($lk, {wait: 60}) then
+    raise("INSTALL_LOCKED", "another install holds " .. $lk)
+  end
+end
+
+$all = components()
+$names = $g.rest
+for $n in $names
+  if len(filter($all, fn($c) = $c.name == $n)) == 0 then raise("INSTALL_COMPONENT", $n .. " is not a Mix component in " .. $source) end
+end
+$chosen = if len($names) == 0 then $all else filter($all, fn($c) = contains($names, $c.name)) end
+$where = if $root == "" then "/" else $root end
+
+if $g.opts.check then
+  lock(true)
+  $bad = 0
+  for $c in $chosen
+    $diffs = check($c)
+    if len($diffs) == 0 then
+      print($c.name .. ": as the checkout")
+    else
+      $bad = $bad + 1
+      for $d in $diffs
+        print($c.name .. ": " .. $d)
+      end
+    end
+  end
+  exit(if $bad > 0 then 1 else 0 end)
+end
+
+fn note($s)
+  if $s != nil and $s.units_changed then $RUN.reload = true end
+  return $s
+end
+
+-- Installs and rollbacks: the reload notice prints on every way out,
+-- failures included, once any unit has changed.
+try
+  lock($dry)
+  if $g.opts.rollback != nil then
+    $name = $g.opts.rollback
+    if not re_match($name, $NAME_RE) then raise("INSTALL_COMPONENT", $name .. " is not a component name") end
+    $s = if $dry then nil else note(settle($name)) end
+    -- A finished interrupted rollback is the rollback asked for.
+    if $s == nil or $s.result != "completed" or $s.op != "rollback" then
+      $r = note(rollback($name))
+      print($r.component .. ": " .. $r.action .. " to " .. to_string($r.version) .. " (was " .. to_string($r.previous) .. ")")
+    end
+  else
+    for $c in $chosen
+      if not $dry then note(settle($c.name)) end
+      $r = note(install($c))
+      $line = $r.component .. ": " .. $r.action .. " " .. to_string($r.version)
+      if $r.previous != nil then $line = $line .. " (previous " .. to_string($r.previous) .. ")" end
+      print($line)
+    end
+  end
+finally
+  if $RUN.reload then print("units changed: run systemctl daemon-reload in " .. $where) end
+end

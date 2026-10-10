@@ -156,7 +156,11 @@ services/releasesd/
 ```
 
 - A directory with both `Cargo.toml` and `component.mx` is refused.
-- `scripts/` installs to `/opt/mixos/lib/<component>/`.
+- `scripts/` installs to `/opt/mixos/lib/<component>/` and `units/` to
+  `/etc/systemd/system`, with `mix tools/component_install.mix [--root DIR]
+  [component...]`. It records what it wrote (`.installed.json`), keeps the
+  previous tree for `--rollback`, reports drift with `--check`, and never
+  overwrites a unit it did not write.
 - The component gate checks `component.mx` like a package's metadata. The
   layer is checked at review: a Mix component uses only the `mix` binary, the
   Bus and the verbs of components at or below its layer.

@@ -275,7 +275,8 @@ mix releases.mix update           # every installed app that has a newer release
 mix releases.mix rollback example # back to the previous version
 mix releases.mix remove example
 </code></pre>
-<p>(<code>releases.mix</code> lives with the service in <code>/opt/mixos/lib/releasesd/</code>.)</p>
+<p>(<code>releases.mix</code> lives with the service in <code>/opt/mixos/lib/releasesd/</code>;
+<code>mix tools/component_install.mix releasesd</code> puts it there from a checkout.)</p>
 <p><code>check</code> uses conditional requests, so asking again costs almost nothing. It
 uses <code>GITHUB_TOKEN</code>, or your <code>gh</code> login if you have one; without either,
 GitHub allows 60 requests an hour.</p>

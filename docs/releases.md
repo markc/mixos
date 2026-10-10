@@ -45,7 +45,8 @@ mix releases.mix rollback example # back to the previous version
 mix releases.mix remove example
 ```
 
-(`releases.mix` lives with the service in `/opt/mixos/lib/releasesd/`.)
+(`releases.mix` lives with the service in `/opt/mixos/lib/releasesd/`;
+`mix tools/component_install.mix releasesd` puts it there from a checkout.)
 
 `check` uses conditional requests, so asking again costs almost nothing. It
 uses `GITHUB_TOKEN`, or your `gh` login if you have one; without either,
