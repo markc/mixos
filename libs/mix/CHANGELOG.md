@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- SIGTERM now ends a blocking `tcp_accept`, `tcp_recv`, `tcp_recv_line` or
+  `ws_recv` at once, as it ends `sleep()`. On unix these numeric waits now
+  wait on the async runtime instead of blocking the evaluator's thread, so
+  the shell's SIGTERM and Ctrl-C handling can cancel them. Before, a script
+  looping on `tcp_accept($l, {timeout: 0.05})` ignored SIGTERM until the
+  15 s backstop forced it out. Options, results and error messages are
+  unchanged.
+- A very large receive timeout in a Class C `tcp_recv`/`ws_recv` waits
+  forever instead of overflowing the deadline.
+
 ## 0.112.0
 
 ### Added

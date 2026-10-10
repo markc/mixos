@@ -12997,10 +12997,11 @@ impl Evaluator {
             // read permit released. A subscribed or unknown listener is
             // refused by prepare_accept, exactly as the sync builtin
             // would. The accepted handle belongs to this generation.
-            if name == "tcp_accept"
-                && self.ctx.class_c_read_permit.is_some()
-                && matches!(eval_args.first(), Some(Value::Number(_)))
-            {
+            // Every numeric tcp_accept waits on the runtime, not in a
+            // blocking poll: like sleep(), the wait then pends, so the
+            // shell's SIGTERM and Ctrl-C select arms can cancel it. Plain
+            // and Class S waits also recheck the interrupt flag.
+            if name == "tcp_accept" && matches!(eval_args.first(), Some(Value::Number(_))) {
                 self.check_capability(name)?;
                 self.check_builtin_arity(name, eval_args.len())?;
                 let (listener, deadline) =
@@ -13009,8 +13010,44 @@ impl Evaluator {
                 // task cancelled while reacquiring its permit cannot leak
                 // the connection past retirement.
                 let owner = self.globals.borrow().native_events.tcp_owner();
+                let interruptible = self.ctx.class_c_read_permit.is_none();
                 let fut = Box::pin(crate::builtins::socket_sources::pull_accept(
-                    listener, deadline, owner,
+                    listener,
+                    deadline,
+                    owner,
+                    interruptible,
+                ));
+                return self.await_with_class_c_yield(fut).await?.map(Some);
+            }
+            // Plain and Class S numeric ws_recv/tcp_recv/tcp_recv_line: the
+            // same reason as tcp_accept above. The blocking builtin's
+            // options and error forms are kept; a subscribed handle falls
+            // through to it and is refused there as before.
+            if matches!(name, "ws_recv" | "tcp_recv" | "tcp_recv_line")
+                && self.ctx.class_c_read_permit.is_none()
+                && matches!(eval_args.first(), Some(Value::Number(_)))
+                && let Ok(id) =
+                    crate::builtins::socket_sources::client_id_of(eval_args.first(), name)
+                && !crate::builtins::socket_sources::is_subscribed(
+                    crate::builtins::socket_sources::ClientKey::of(name, id),
+                )
+            {
+                self.check_capability(name)?;
+                self.check_builtin_arity(name, eval_args.len())?;
+                let (timeout_seconds, max) = if name == "ws_recv" {
+                    (
+                        crate::builtins::ws_recv_timeout(eval_args.get(1))?,
+                        usize::MAX,
+                    )
+                } else {
+                    crate::builtins::tcp_recv_opts(name, eval_args.get(1), 65536)?
+                };
+                let guard = crate::builtins::socket_sources::pull_conn(name, id)?;
+                let fut = Box::pin(crate::builtins::socket_sources::pull_recv_plain(
+                    name,
+                    guard,
+                    timeout_seconds,
+                    max,
                 ));
                 return self.await_with_class_c_yield(fut).await?.map(Some);
             }

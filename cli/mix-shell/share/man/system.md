@@ -1856,9 +1856,13 @@ end
 tcp_close($h)
 ```
 
-Same inline-blocking caveat as the others (below): a pending `tcp_recv`
-holds the evaluator's thread, so `{timeout: 0}` in a `--serve` citizen
-can wedge the pump.
+On unix a numeric `tcp_recv`/`tcp_recv_line` (and `ws_recv`) waits on the
+async runtime rather than in a blocking read, the way `sleep()` does, so
+SIGTERM and Ctrl-C end the wait at once (unreleased; before, a SIGTERM
+waited for the read's timeout). Options, results and errors are those of
+the blocking form. A pending read in a Class S handler still holds the
+handler's turn for its duration, so `{timeout: 0}` in a `--serve`
+citizen can still stall other handlers.
 
 ## Raw TCP server — `tcp_listen`, `tcp_accept`, `tcp_local_addr` (v0.112.0)
 
@@ -1925,8 +1929,10 @@ Errors are structured; read `$err.code` from `catch $msg, $err`:
 | `TCP_HANDLE_LIMIT` | 1024 live server-side sockets: every listener and accepted connection holds a slot until it closes. The limit is server-side only; `tcp_connect` is not counted or limited |
 | `TCP_LISTENER` | a connection verb was given a listener |
 
-**Serve mode and Class C.** A plain `tcp_accept` waits on the evaluator's
-thread, like `tcp_recv` (the caveat below applies). In a Class C async
+**Serve mode and Class C.** On unix every numeric `tcp_accept` waits on
+the async runtime, like `sleep()`: SIGTERM and Ctrl-C end it at once, and
+plain and Class S waits also recheck the interrupt flag every 250 ms. A
+Class S handler still holds its turn while it waits. In a Class C async
 body the numeric form waits on native readiness with the read permit
 released, so other handlers keep running. For a `--serve` citizen the
 event form is usually the better fit: `tcp_on($listener, "app.conn")`
@@ -2077,8 +2083,10 @@ and a failed generation's resource survives for the next one; a peer
 close or error raises (`SOCKET_CLOSED`) and retires the handle, exactly
 like the sync path. Pull frames never enter the subscription FIFO, so
 the event pump cannot steal them, and the numeric pull therefore also
-works in serve mode. Class S and plain evaluation keep the pre-existing
-synchronous client path unchanged. The pull's AsyncFd readiness await
+works in serve mode. Plain and Class S numeric recv use the same pull
+(unreleased), keeping the blocking form's options and error messages and
+adding an interrupt-flag recheck every 250 ms, so SIGTERM and Ctrl-C end
+the wait as they end `sleep()`. The pull's AsyncFd readiness await
 is unix-only: on other targets the Class C interception falls through
 to the sync builtin (honest Class S blocking semantics), never a
 silently claimed yield.

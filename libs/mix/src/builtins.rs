@@ -21854,6 +21854,22 @@ fn builtin_ws_send(args: Vec<Value>) -> MixResult<Option<Value>> {
     }
 }
 
+/// ws_recv's timeout argument: seconds, default 30, 0 = wait forever.
+#[cfg(feature = "ws")]
+pub(crate) fn ws_recv_timeout(v: Option<&Value>) -> MixResult<f64> {
+    let Some(v) = v.filter(|v| !matches!(v, Value::Nil)) else {
+        return Ok(30.0);
+    };
+    let timeout_seconds = extract_number(v, InputPolicy::NumberOnly).ok_or_else(|| {
+        ws_err(
+            "ws_recv()",
+            format!("timeout must be a number, got {}", v.type_name()),
+        )
+    })?;
+    as_duration("ws_recv(): timeout", timeout_seconds)?;
+    Ok(timeout_seconds)
+}
+
 /// `ws_recv(handle[, timeout])` → the next text frame as a string, the
 /// next binary frame as bytes, or `nil` on timeout (an ordinary answer —
 /// poll again). Ping/pong are handled internally and never surface. A
@@ -21863,18 +21879,7 @@ fn builtin_ws_send(args: Vec<Value>) -> MixResult<Option<Value>> {
 fn builtin_ws_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args_between("ws_recv", &args, 1, 2)?;
     let id = ws_handle_arg("ws_recv", &args)?;
-    let mut timeout_seconds = 30.0;
-    if let Some(v) = args.get(1)
-        && !matches!(v, Value::Nil)
-    {
-        timeout_seconds = extract_number(v, InputPolicy::NumberOnly).ok_or_else(|| {
-            ws_err(
-                "ws_recv()",
-                format!("timeout must be a number, got {}", v.type_name()),
-            )
-        })?;
-        as_duration("ws_recv(): timeout", timeout_seconds)?;
-    }
+    let timeout_seconds = ws_recv_timeout(args.get(1))?;
     // Same take-out/put-back discipline as ws_send: the registry mutex is
     // never held across the blocking read.
     let mut conn = ws_client::MAP
@@ -22597,7 +22602,11 @@ fn builtin_tcp_recv_line(args: Vec<Value>) -> MixResult<Option<Value>> {
 }
 
 #[cfg(feature = "ws")]
-fn tcp_recv_opts(name: &str, opts: Option<&Value>, default_max: usize) -> MixResult<(f64, usize)> {
+pub(crate) fn tcp_recv_opts(
+    name: &str,
+    opts: Option<&Value>,
+    default_max: usize,
+) -> MixResult<(f64, usize)> {
     let mut timeout_seconds = 30.0;
     let mut max = default_max;
     if let Some(v) = opts {
@@ -23028,8 +23037,9 @@ pub fn tcp_accept_waits_entered() -> usize {
 }
 
 /// `tcp_accept(listener[, {timeout}])` → connected handle | nil on
-/// timeout. The plain blocking form; the evaluator intercepts the Class C
-/// numeric form (socket_sources::pull_accept) and the source-id form.
+/// timeout. The blocking form, for non-unix targets and direct
+/// call_builtin callers: on unix the evaluator runs every numeric form on
+/// the runtime (socket_sources::pull_accept), and the source-id form.
 #[cfg(feature = "ws")]
 fn builtin_tcp_accept(args: Vec<Value>) -> MixResult<Option<Value>> {
     use crate::native_events::refusal;
@@ -23751,11 +23761,18 @@ pub(crate) mod socket_sources {
     /// before this returns, so a task cancelled after the accept (while
     /// the evaluator reacquires its permit) cannot leak it past
     /// retirement.
+    ///
+    /// The evaluator runs every numeric tcp_accept here on unix, not only
+    /// Class C ones: waiting on the runtime lets the shell's SIGTERM and
+    /// Ctrl-C select arms cancel the wait, as they cancel sleep().
+    /// `interruptible` (plain and Class S evaluation) also rechecks the
+    /// interrupt flag every ACCEPT_SLICE for embedders with no such select.
     #[cfg(unix)]
     pub(crate) async fn pull_accept(
         listener: Arc<tcp_server::Listener>,
         deadline: Option<std::time::Instant>,
         owner: Arc<TcpOwner>,
+        interruptible: bool,
     ) -> MixResult<Value> {
         use tokio::io::Interest;
         use tokio::io::unix::AsyncFd;
@@ -23765,28 +23782,21 @@ pub(crate) mod socket_sources {
             .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
         let ready = AsyncFd::with_interest(dup, Interest::READABLE)
             .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
+        let mut entered = false;
         loop {
             if let Some((id, _)) = super::try_accept(&listener.sock, Some(&owner))
                 .map_err(super::AcceptError::into_mix)?
             {
                 return Ok(Value::Number(id as f64));
             }
-            let readiness = match deadline {
-                None => ready.readable().await,
-                Some(d) => {
-                    let left = d.saturating_duration_since(std::time::Instant::now());
-                    if left.is_zero() {
-                        return Ok(Value::Nil);
-                    }
-                    match tokio::time::timeout(left, ready.readable()).await {
-                        Ok(r) => r,
-                        Err(_) => return Ok(Value::Nil),
-                    }
-                }
-            };
-            match readiness {
-                Ok(mut r) => r.clear_ready(),
-                Err(e) => {
+            if !entered {
+                entered = true;
+                super::ACCEPT_WAITS.fetch_add(1, Ordering::AcqRel);
+            }
+            match wait_ready(&ready, deadline, interruptible).await {
+                Wait::Ready => {}
+                Wait::Done => return Ok(Value::Nil),
+                Wait::Failed(e) => {
                     return Err(refusal(
                         "TCP_ACCEPT_FAILED",
                         format!("tcp_accept: readiness failed: {e}"),
@@ -23796,11 +23806,69 @@ pub(crate) mod socket_sources {
         }
     }
 
+    /// How a readiness wait ended.
+    #[cfg(unix)]
+    enum Wait {
+        Ready,
+        /// The deadline passed, or (interruptible waits) Ctrl-C arrived.
+        Done,
+        Failed(std::io::Error),
+    }
+
+    /// Await readiness under an absolute deadline (None = forever). A
+    /// Class C wait is purely event-driven. An interruptible wait (plain
+    /// and Class S evaluation) also rechecks the interrupt flag every
+    /// ACCEPT_SLICE, so an embedder without a Ctrl-C select still stops.
+    #[cfg(unix)]
+    async fn wait_ready<T: std::os::fd::AsRawFd>(
+        ready: &tokio::io::unix::AsyncFd<T>,
+        deadline: Option<std::time::Instant>,
+        interruptible: bool,
+    ) -> Wait {
+        loop {
+            if interruptible && crate::interrupt::is_interrupted() {
+                return Wait::Done;
+            }
+            let left = match deadline {
+                None => None,
+                Some(d) => {
+                    let left = d.saturating_duration_since(std::time::Instant::now());
+                    if left.is_zero() {
+                        return Wait::Done;
+                    }
+                    Some(left)
+                }
+            };
+            let slice = if interruptible {
+                Some(left.map_or(super::ACCEPT_SLICE, |l| l.min(super::ACCEPT_SLICE)))
+            } else {
+                left
+            };
+            let outcome = match slice {
+                None => ready.readable().await.map(Some),
+                Some(s) => match tokio::time::timeout(s, ready.readable()).await {
+                    Ok(r) => r.map(Some),
+                    Err(_) => Ok(None),
+                },
+            };
+            match outcome {
+                Ok(Some(mut r)) => {
+                    r.clear_ready();
+                    return Wait::Ready;
+                }
+                // The slice or the deadline ran out: the loop top decides.
+                Ok(None) => continue,
+                Err(e) => return Wait::Failed(e),
+            }
+        }
+    }
+
     #[cfg(not(unix))]
     pub(crate) async fn pull_accept(
         _listener: Arc<tcp_server::Listener>,
         _deadline: Option<std::time::Instant>,
         _owner: Arc<TcpOwner>,
+        _interruptible: bool,
     ) -> MixResult<Value> {
         Err(refusal(
             "SOCKET_UNSUPPORTED",
@@ -24216,9 +24284,46 @@ pub(crate) mod socket_sources {
     #[cfg(unix)]
     pub(crate) async fn pull_recv(
         name: &str,
+        guard: PullGuard,
+        timeout_seconds: f64,
+        max: usize,
+    ) -> MixResult<Value> {
+        pull_recv_with(name, guard, timeout_seconds, max, false).await
+    }
+
+    /// Plain and Class S numeric tcp_recv/tcp_recv_line: the same pull,
+    /// so the wait sits on the runtime where the shell's SIGTERM and
+    /// Ctrl-C select arms can cancel it (as they cancel sleep()), plus an
+    /// interrupt recheck every ACCEPT_SLICE. Failures keep the blocking
+    /// builtin's form: a close or read error raises the same message as a
+    /// plain runtime error, not SOCKET_CLOSED.
+    #[cfg(unix)]
+    pub(crate) async fn pull_recv_plain(
+        name: &str,
+        guard: PullGuard,
+        timeout_seconds: f64,
+        max: usize,
+    ) -> MixResult<Value> {
+        pull_recv_with(name, guard, timeout_seconds, max, true)
+            .await
+            .map_err(|e| match e {
+                crate::error::MixError::Structured(info) if info.code == "SOCKET_CLOSED" => {
+                    crate::error::MixError::RuntimeError {
+                        span: None,
+                        msg: info.message,
+                    }
+                }
+                other => other,
+            })
+    }
+
+    #[cfg(unix)]
+    async fn pull_recv_with(
+        name: &str,
         mut guard: PullGuard,
         timeout_seconds: f64,
         max: usize,
+        interruptible: bool,
     ) -> MixResult<Value> {
         use tokio::io::Interest;
         use tokio::io::unix::AsyncFd;
@@ -24228,9 +24333,8 @@ pub(crate) mod socket_sources {
             .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
         let ready = AsyncFd::with_interest(dup, Interest::READABLE)
             .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
-        let deadline = (timeout_seconds > 0.0).then(|| {
-            std::time::Instant::now() + std::time::Duration::from_secs_f64(timeout_seconds)
-        });
+        // checked_add: a huge timeout waits forever instead of panicking.
+        let deadline = deadline_after(timeout_seconds);
         loop {
             let left = deadline.map(|d| d.saturating_duration_since(std::time::Instant::now()));
             if left.is_some_and(|l| l.is_zero()) {
@@ -24353,31 +24457,19 @@ pub(crate) mod socket_sources {
                 }
             };
             if would_block {
-                match left {
-                    None => match ready.readable().await {
-                        Ok(mut readiness) => readiness.clear_ready(),
-                        Err(e) => {
-                            guard.retire();
-                            return Err(refusal(
-                                "SOCKET_CLOSED",
-                                format!("{name}: readiness failed: {e}"),
-                            ));
-                        }
-                    },
-                    Some(l) => match tokio::time::timeout(l, ready.readable()).await {
-                        Ok(Ok(mut readiness)) => readiness.clear_ready(),
-                        Ok(Err(e)) => {
-                            guard.retire();
-                            return Err(refusal(
-                                "SOCKET_CLOSED",
-                                format!("{name}: readiness failed: {e}"),
-                            ));
-                        }
-                        Err(_) => {
-                            guard.finish();
-                            return Ok(Value::Nil);
-                        }
-                    },
+                match wait_ready(&ready, deadline, interruptible).await {
+                    Wait::Ready => {}
+                    Wait::Done => {
+                        guard.finish();
+                        return Ok(Value::Nil);
+                    }
+                    Wait::Failed(e) => {
+                        guard.retire();
+                        return Err(refusal(
+                            "SOCKET_CLOSED",
+                            format!("{name}: readiness failed: {e}"),
+                        ));
+                    }
                 }
             }
         }
