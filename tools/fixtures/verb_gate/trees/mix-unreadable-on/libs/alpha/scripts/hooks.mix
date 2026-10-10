@@ -1,0 +1,5 @@
+-- Fixture: on headers whose verb name is not a plain literal (an interpolated string, a
+-- variable). The gate cannot read these names, so each is a violation, not a skip.
+on alpha.other end
+on "alpha.${suffix}" end
+on $handler end

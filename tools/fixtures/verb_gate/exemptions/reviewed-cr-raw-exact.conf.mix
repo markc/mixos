@@ -1,0 +1,7 @@
+-- Fixture exemptions (schema 1), round 15: the exact cr raw string. Used by rs-cr-raw-space: must be clean.
+{
+  schema: 1,
+  exemptions: [
+    {file:"libs/alpha/src/select.rs", "fn":"pick", text:'select(cr#"x"  y"#, false) == command', reason:"fixture: a selector call with a cr raw C-string, reviewed exactly as written."}
+  ]
+}

@@ -1,0 +1,6 @@
+-- Fixture: `on @.call` (the serve-name placeholder, fakeapp-6e's grammar, feature 10d0a82).
+-- The family mapping (`<app>.call`, owner bridged) is not in the gate yet, so the placeholder
+-- is an unreadable handler: it fails closed, it is never silently skipped. Not run.
+on @.call desc "Forward a call to the bridged program"
+  print("call")
+end

@@ -1,0 +1,13 @@
+-- Fixture registry: schema 2 and an unknown top-level key; a protocol verb; a duplicate
+-- entry; a version that is not MAJOR.MINOR.PATCH. Each must be reported.
+{
+  schema: 2,
+  extra: 1,
+  verbs: [
+    {name:"alpha.ping", owner:"alpha", version:"0.1.0", status:"accepted"},
+    {name:"alpha.ping", owner:"alpha", version:"0.1.0", status:"accepted"},
+    {name:"app.describe", owner:"alpha", version:"0.1.0", status:"accepted"},
+    {name:"alpha.hi", owner:"alpha", version:"1.0", status:"accepted"}
+  ],
+  families: []
+}

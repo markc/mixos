@@ -1,0 +1,10 @@
+-- Fixture exemptions (schema 1), round 16: a wrong-verb entry in fn check. The text matches the
+-- guard for beta.nope, but the entry lists alpha.ping, so it is stale and the guard still counts
+-- as dispatch. Used by rb-wrong-verb.
+{
+  schema: 1,
+  exemptions: [],
+  request_builders: [
+    {file:"libs/beta/src/client.rs", text:'verb == "beta.nope"', verbs:["alpha.ping"], "fn":"check", reason:"fixture: a client building outgoing beta.nope requests."}
+  ]
+}

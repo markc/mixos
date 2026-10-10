@@ -1,0 +1,9 @@
+-- Fixture registry (round 23) for trees/rs-const-two-impls: alpha.ping and alpha.other.
+{
+  schema: 3,
+  verbs: [
+    {name:"alpha.ping", owner:"alpha", version:"0.1.0", status:"accepted"},
+    {name:"alpha.other", owner:"alpha", version:"0.1.0", status:"accepted"}
+  ],
+  families: []
+}

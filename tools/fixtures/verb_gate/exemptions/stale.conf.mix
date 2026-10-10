@@ -1,0 +1,8 @@
+-- Fixture exemptions: the real cache entry, plus one that matches no site (stale).
+{
+  schema: 1,
+  exemptions: [
+    {file:"libs/alpha/src/dispatch.rs", "fn":"run", text:"cached.command == request.command", reason:"fixture: replay cache equality, two runtime values"},
+    {file:"libs/alpha/src/gone.rs", "fn":"run", text:"x == verb", reason:"fixture: no such site"}
+  ]
+}

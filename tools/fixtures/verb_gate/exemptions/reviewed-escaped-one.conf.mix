@@ -1,0 +1,8 @@
+-- Fixture exemptions (schema 1), round 14: the escaped literal with ONE space after the escaped
+-- quote. Used by rs-value-escaped, whose literal has two: must be unreviewed and stale.
+{
+  schema: 1,
+  exemptions: [
+    {file:"libs/alpha/src/select.rs", "fn":"pick", text:'select("x\" y", false) == command', reason:"fixture: a selector call with an escaped quote in its literal, reviewed with one space after it."}
+  ]
+}

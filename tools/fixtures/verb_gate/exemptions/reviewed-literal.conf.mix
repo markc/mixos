@@ -1,0 +1,8 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Fixture exemptions (schema 1): the reviewed verb comparison whose call holds a literal argument.
+{
+  schema: 1,
+  exemptions: [
+    {file:"libs/alpha/src/select.rs", "fn":"pick", text:'select("alpha.ping", false) == command', reason:"fixture: a selector call compared with the command; the literal argument is part of the reviewed text."}
+  ]
+}

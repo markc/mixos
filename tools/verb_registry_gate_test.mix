@@ -1,0 +1,283 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Regression fixtures for the verb registry gate (tools/verb_registry_gate.mix).
+-- Each case runs the gate on a mini tree and registry under tools/fixtures/verb_gate,
+-- or on bad arguments, and asserts the exit code, the violation codes and the
+-- report text. The real tree is checked by the gate itself, not here.
+-- Usage: mix tools/verb_registry_gate_test.mix
+-- Exit: 0 every case passed, 1 a case failed, 2 the runner could not run.
+
+$HERE = dirname(realpath($0))
+$GATE = $HERE .. "/verb_registry_gate.mix"
+$FIX = $HERE .. "/fixtures/verb_gate"
+$TREES = $FIX .. "/trees"
+$REGS = $FIX .. "/registries"
+
+-- The gate's arguments for a fixture tree and a fixture registry, with no reviewed value
+-- comparisons (exemptions/none.conf.mix), so an unreviewed comparison is a violation.
+fn tree_args($tree, $reg)
+  return ex_args($tree, $reg, "none")
+end
+
+-- The same, with a named fixture exemptions file (exemptions/NAME.conf.mix).
+fn ex_args($tree, $reg, $ex)
+  return ["--root", $TREES .. "/" .. $tree, "--registry", $REGS .. "/" .. $reg .. ".conf.mix", "--exemptions", $FIX .. "/exemptions/" .. $ex .. ".conf.mix"]
+end
+
+-- Runs the gate with these arguments; returns the process result, or nil.
+fn run_gate($args)
+  $argv = ["mix", $GATE]
+  for each $a in $args
+    push($argv, $a)
+  end
+  $res = nil
+  try
+    -- the default invocation scans the whole repo and takes minutes, so the timeout is 1500s
+    $res = run_argv($argv, {timeout: 1500})
+  catch $e
+    eprint("verb-registry-gate-test: cannot run the gate: " .. to_string($e))
+  end
+  return $res
+end
+
+-- chmod a path to this mode; true when it worked.
+fn set_mode($mode, $path)
+  $res = nil
+  try
+    $res = run_argv(["chmod", $mode, $path], nil)
+  catch $e
+    return false
+  end
+  return $res.ok and $res.exit_code == 0
+end
+
+-- Each case: args for the gate, the exit code it must give, the violation codes
+-- it must report, text it must print, and a directory to make unreadable ("" for none).
+$CASES = [
+  {name: "clean tree: every form, declared_by, tests skipped", args: tree_args("clean", "clean"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "missed dispatch forms are read (offset, leading |, tuple, guard, prefix, on)", args: tree_args("forms", "forms"), exit: 1, codes: ["unregistered"], text: ["unregistered: x.form.offset ", "unregistered: x.form.leading ", "unregistered: x.form.tuple ", "unregistered: x.form.guard ", "unregistered: the prefix x.form.prefix.", "unregistered: x.form.on "], lock: ""},
+  {name: "invalid literal is reported, not dropped", args: tree_args("bad-name", "bad-name"), exit: 1, codes: ["bad-name"], text: ["'Bad.Name' at apps/bad/src/main.rs:5"], lock: ""},
+  {name: "two family patterns overlap", args: tree_args("clean", "family-overlap"), exit: 1, codes: ["family-overlap"], text: ["<app>.ui.* and <app>.ui.tree"], lock: ""},
+  {name: "concrete verb also matched by a family", args: tree_args("clean", "double"), exit: 1, codes: ["double-registered", "registry-overlap"], text: [], lock: ""},
+  {name: "answering component is not the owner", args: tree_args("clean", "owner-mismatch"), exit: 1, codes: ["owner-mismatch"], text: ["alpha.ping is owned by beta but answered by alpha"], lock: ""},
+  {name: "declared_by missing: declaring component is not the owner", args: tree_args("clean", "declared-by"), exit: 1, codes: ["owner-mismatch"], text: ["edit.ping is declared by edit but owned by editd"], lock: ""},
+  {name: "two components answer one verb", args: tree_args("conflict", "conflict"), exit: 1, codes: ["owner-conflict"], text: ["x.shared.verb is answered by more than one component: alpha, beta"], lock: ""},
+  {name: "retired name still answered", args: tree_args("clean", "retired"), exit: 1, codes: ["retired-in-code"], text: ["alpha.ping is retired but still answered"], lock: ""},
+  {name: "declared but unanswered, and registered with no code", args: tree_args("unanswered", "unanswered"), exit: 1, codes: ["not-answered", "not-in-code"], text: [], lock: ""},
+  {name: "registry shape, protocol verb, duplicate, bad version", args: tree_args("clean", "registry-bad"), exit: 1, codes: ["registry-shape", "registry-protocol", "registry-duplicate", "registry-entry"], text: [], lock: ""},
+  {name: "unloadable registry fails closed", args: tree_args("clean", "unloadable"), exit: 2, codes: [], text: ["cannot-check registry: cannot load"], lock: ""},
+  {name: "missing --root directory fails closed", args: ["--root", $FIX .. "/no-such-root"], exit: 2, codes: [], text: ["is not a directory"], lock: ""},
+  {name: "missing --registry file fails closed", args: ["--root", $TREES .. "/clean", "--registry", "no-such.conf.mix"], exit: 2, codes: [], text: ["cannot-check registry: cannot load"], lock: ""},
+  {name: "unknown argument is a usage error", args: ["--bogus"], exit: 2, codes: [], text: ["usage:"], lock: ""},
+  {name: "--root without a value is a usage error", args: ["--root"], exit: 2, codes: [], text: ["usage:"], lock: ""},
+  {name: "missing source root (cli) fails closed", args: tree_args("no-cli", "empty"), exit: 2, codes: [], text: ["cannot-check scan: source root cli is missing"], lock: ""},
+  {name: "families with no suffix table fail closed", args: tree_args("no-suffix", "clean"), exit: 2, codes: [], text: ["suffix table VERBS not found in libs/toolkit/src/drive.rs"], lock: ""},
+  {name: "empty tree fails closed (no vacuous pass)", args: tree_args("empty", "empty"), exit: 2, codes: [], text: ["no verb registrations found"], lock: ""},
+  {name: "unreadable directory fails closed (find error)", args: tree_args("unreadable", "empty"), exit: 2, codes: [], text: ["cannot-check scan: cannot list libs"], lock: $TREES .. "/unreadable/libs/locked"},
+  {name: "inline test module skipped by brace balance; a production handler after it is read", args: tree_args("after-test", "after-test"), exit: 1, codes: ["unregistered"], text: ["unregistered: alpha.late (dispatch, owner alpha)"], absent: ["alpha.test_only"], lock: ""},
+  {name: "match on method: unregistered literal read, HTTP tokens exempt", args: tree_args("method-match", "empty"), exit: 1, codes: ["unregistered"], text: ["unregistered: alpha.unreg_match (dispatch, owner alpha)"], absent: ["'GET'", "'HEAD'"], lock: ""},
+  {name: "guard on method: unregistered literal read, HTTP tokens exempt", args: tree_args("method-guard", "empty"), exit: 1, codes: ["unregistered"], text: ["unregistered: alpha.unreg_guard (guard, owner alpha)"], absent: ["'HEAD'"], lock: ""},
+  {name: "parse arm answered by its owner's variant arm is clean", args: tree_args("parse-clean", "parse"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "parse arm with no owner variant arm is not-answered (bus parse is no answer)", args: tree_args("parse-unanswered", "parse"), exit: 1, codes: ["not-answered"], text: ["noded.session.hello is declared at libs/bus/src/native_session/bootstrap.rs:"], absent: ["violation owner-mismatch"], lock: ""},
+  {name: "a comment naming a variant before the real construction does not answer for it", args: tree_args("parse-unanswered", "parse"), exit: 1, codes: ["not-answered"], text: ["noded.session.hello is declared at libs/bus/src/native_session/bootstrap.rs:"], absent: ["ambiguous-arm"], lock: ""},
+  {name: "owner's Hello arm commented out with // is not an answer (not-answered)", args: tree_args("parse-commented-line", "parse"), exit: 1, codes: ["not-answered"], text: ["noded.session.hello is declared at libs/bus/src/native_session/bootstrap.rs:"], absent: ["ambiguous-arm"], lock: ""},
+  {name: "owner's Hello arm commented out inside a /* */ block is not an answer (not-answered)", args: tree_args("parse-commented-block", "parse"), exit: 1, codes: ["not-answered"], text: ["noded.session.hello is declared at libs/bus/src/native_session/bootstrap.rs:"], absent: ["ambiguous-arm"], lock: ""},
+  {name: "a raw string naming a declared-but-unanswered verb in a guard and a prefix arm is not an answer (not-answered)", args: tree_args("raw-guard", "raw-literal"), exit: 1, codes: ["not-answered"], text: ["alpha.ping"], absent: ["alpha.other is"], lock: ""},
+  {name: "an on line inside a multi-line Mix string is not a handler (not-answered)", args: tree_args("raw-on", "raw-literal"), exit: 1, codes: ["not-answered"], text: ["alpha.ping"], absent: ["alpha.other is"], lock: ""},
+  {name: "a raw string naming a variant is not a construction (clean parse arm)",args: tree_args("parse-clean", "parse"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "parse arm constructing two variants is an ambiguous-arm violation", args: tree_args("parse-ambiguous", "parse"), exit: 1, codes: ["ambiguous-arm"], text: ["constructs SessionCommand::SelfRecord, SessionCommand::Hello; one arm answers one variant"], absent: [], lock: ""},
+  {name: "block comment with a brace (nested) inside a test module does not hold the skip open; the later handler is read", args: tree_args("after-test-comment", "after-test"), exit: 1, codes: ["unregistered"], text: ["unregistered: alpha.late (dispatch, owner alpha)"], absent: ["alpha.test_only"], lock: ""},
+  {name: "test module never closed before EOF fails closed (cannot-check, names the file)", args: tree_args("unterminated-test", "after-test"), exit: 2, codes: [], text: ["cannot-check scan: apps/alpha/src/main.rs: the #[cfg(test)] module never closes"], lock: ""},
+  {name: "file ending inside a block comment fails closed (names the file)", args: tree_args("unterminated-comment", "parse"), exit: 2, codes: [], text: ["cannot-check scan: libs/bus/src/native_session/bootstrap.rs ends inside an unclosed comment or literal (block)"], lock: ""},
+  {name: "a single-quoted multi-line string holding an on line is not a handler (clean)", args: tree_args("mix-sq-on", "only-other"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "a heredoc body holding an on line is not a handler (clean)", args: tree_args("mix-heredoc-on", "only-other"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "a quote inside a # comment does not hide the handler after it (clean)", args: tree_args("mix-hash-hides", "hidden-other"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "a raw string match arm answers its verb (clean)", args: tree_args("raw-arm", "raw-literal"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "a raw string VERBS table entry declares its verb (clean)", args: tree_args("raw-table", "raw-table"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "a raw string guard name answers its verb (clean)", args: tree_args("raw-guard-name", "raw-literal"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "an on handler after a ; on the same line is read (unregistered)", args: tree_args("mix-same-line", "only-other"), exit: 1, codes: ["unregistered"], text: ["unregistered: alpha.unregistered"], lock: ""},
+  {name: "a ; inside a string or a comment is not a statement boundary (clean)", args: tree_args("mix-semi-string", "only-other"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "on handlers after then, a fn header, an on body and a quoted name are all read (unregistered)", args: tree_args("mix-stmt-forms", "only-other"), exit: 1, codes: ["unregistered"], text: ["unregistered: alpha.form_then", "unregistered: alpha.form_fn", "unregistered: alpha.form_body", "unregistered: alpha.form_quoted"], lock: ""},
+  {name: "an on header whose name follows a backslash-newline continuation is read (unregistered, line 1)", args: tree_args("mix-cont-on", "only-other"), exit: 1, codes: ["unregistered"], text: ["unregistered: alpha.unregistered"], lock: ""},
+  {name: "an on header whose name cannot be read is unreadable, not skipped (quoted interpolation, variable)", args: tree_args("mix-unreadable-on", "only-other"), exit: 1, codes: ["unreadable"], text: ["unreadable handler: ", "hooks.mix:4", "hooks.mix:5"], lock: ""},
+  {name: "a backslash inside a string is not a continuation (clean)", args: tree_args("mix-backslash-string", "only-other"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "a VERBS row naming a constant is unreadable, not skipped", args: tree_args("rs-unreadable-table", "only-other"), exit: 1, codes: ["unreadable"], text: ["unreadable table row: ", "verbs.rs:5"], lock: ""},
+  {name: "a guard on a constant, a constant arm, a split constant arm and a prefix arm are unreadable, not skipped", args: tree_args("rs-unreadable-arms", "only-other"), exit: 1, codes: ["unreadable"], text: ["unreadable guard: ", "dispatch.rs:4", "unreadable arm: ", "dispatch.rs:9", "dispatch.rs:10", "unreadable prefix: ", "dispatch.rs:12"], lock: ""},
+  {name: "a verb match whose opening brace is on the next line is unreadable, not skipped", args: tree_args("rs-unreadable-dispatch", "only-other"), exit: 1, codes: ["unreadable"], text: ["unreadable dispatch: ", "dispatch.rs:6"], lock: ""},
+  {name: "a resolved constant arm (same file, plain use, crate path, pub(crate)) that is registered is clean", args: tree_args("rs-const-resolved", "alpha-const"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "a resolved constant arm that is unregistered is a violation", args: tree_args("rs-const-unregistered", "alpha-const"), exit: 1, codes: ["unregistered"], text: ["unregistered: alpha.gone"], lock: ""},
+  {name: "an unresolvable constant arm stays unreadable, not skipped", args: tree_args("rs-const-unresolvable", "alpha-const"), exit: 1, codes: ["unreadable"], text: ["unreadable arm: ", "dispatch.rs:7", "dispatch.rs:8", "dispatch.rs:9"], lock: ""},
+  {name: "a negated field-receiver guard naming a resolved const that is registered is clean", args: tree_args("rs-field-guard-resolved", "alpha-field"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "a negated field-receiver guard naming a resolved const that is unregistered is a violation", args: tree_args("rs-field-guard-unregistered", "alpha-field"), exit: 1, codes: ["unregistered"], text: ["unregistered: alpha.gone"], lock: ""},
+  {name: "a field-receiver guard whose operand cannot be resolved (!= const, eq() arg) is unreadable", args: tree_args("rs-field-guard-unresolvable", "alpha-field"), exit: 1, codes: ["unreadable"], text: ["unreadable guard: ", "dispatch.rs:7", "dispatch.rs:10", "dispatch.rs:13"], lock: ""},
+  {name: "literal matches!, eq() and != verb forms are read and an unregistered name is a violation", args: tree_args("rs-verb-forms", "alpha-field"), exit: 1, codes: ["unregistered"], text: ["unregistered: alpha.m_gone", "unregistered: alpha.e_gone", "unregistered: alpha.n_gone"], lock: ""},
+  {name: "a comparison of two runtime values with no reviewed exemption is an unreviewed value comparison (violation)", args: tree_args("rs-value-compare", "alpha-field"), exit: 1, codes: ["unreviewed-value"], text: ["unreviewed value comparison at libs/alpha/src/dispatch.rs:5 in fn run: `cached.command == request.command`"], lock: ""},
+  {name: "a comparison of two runtime values, reviewed in the exemptions file, is clean and counted as reviewed", args: ex_args("rs-value-compare", "alpha-field", "reviewed-cached"), exit: 0, codes: [], text: ["verb-registry-gate: clean", "reviewed value comparisons: 1"], lock: ""},
+  {name: "an exemption that matches no value comparison is a stale exemption (violation)", args: ex_args("rs-value-compare", "alpha-field", "stale"), exit: 1, codes: ["stale-exemption"], text: ["stale exemption: libs/alpha/src/gone.rs `x == verb`"], lock: ""},
+  {name: "known limit: a lowercase local bound from a literal is a runtime operand (value comparison, reviewed, not read)", args: ex_args("rs-local-known-limit", "alpha-field", "reviewed-local"), exit: 0, codes: [], text: ["verb-registry-gate: clean", "reviewed value comparisons: 1"], lock: ""},
+  {name: "Sol's reproducer: a routing table row naming an unregistered verb (alpha.gone) is a violation; a table whose value starts on the next line is read too", args: tree_args("rs-route-unregistered", "alpha-field"), exit: 1, codes: ["unregistered"], text: ["unregistered: alpha.gone", "unregistered: alpha.wrapped"], lock: ""},
+  {name: "a routing table of tuple and struct rows naming registered verbs is clean; an unshaped first literal is ignored", args: tree_args("rs-route-registered", "alpha-field"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], absent: ["ready text"], lock: ""},
+  {name: "matches! followed by a literal after its closing paren: the literal is not a pattern (clean)", args: tree_args("rs-then-some", "alpha-field"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], absent: ["'ready'"], lock: ""},
+  {name: "matches! followed by a constant after its closing paren: the constant is not a pattern (clean)", args: tree_args("rs-trailing-const", "alpha-field"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], absent: ["alpha.gone"], lock: ""},
+  {name: "verb on the right of ==/!= (literal and constant on the left) is read; an unregistered name is a violation", args: tree_args("rs-verb-reversed", "alpha-field"), exit: 1, codes: ["unregistered"], text: ["unregistered: alpha.r_gone", "unregistered: alpha.c_gone"], lock: ""},
+  {name: "a Self::NAME constant of the impl in this file resolves and, registered, is clean", args: tree_args("rs-self-const", "alpha-field"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 23: a const redefined in a #[cfg(test)] module does not shadow the production const (production arm unregistered, test-only verb not-in-code)", args: tree_args("rs-const-test-shadow", "alpha-ping"), exit: 1, codes: ["unregistered", "not-in-code"], text: ["unregistered: alpha.ghost"], absent: ["unregistered: alpha.ping"], lock: ""},
+  {name: "round 23: two impls each with their own same-name Self:: const resolve per impl and, registered, are clean", args: tree_args("rs-const-two-impls", "alpha-two"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 23: two file-level consts of one name are ambiguous-constant (fail closed), not last-wins", args: tree_args("rs-const-same-scope", "alpha-ping"), exit: 1, codes: ["ambiguous-constant"], text: ["ambiguous constant: libs/alpha/src/dispatch.rs:"], absent: ["unreadable"], lock: ""},
+  {name: "round 24: a bare arm with an impl const and a same-named import is ambiguous-constant (sol's first case)", args: tree_args("rs-const-impl-vs-import", "alpha-ping"), exit: 1, codes: ["ambiguous-constant"], text: ["ambiguous constant: libs/alpha/src/dispatch.rs:"], absent: ["unreadable"], lock: ""},
+  {name: "round 24: a bare arm with a sibling fn's local and a same-named import is ambiguous-constant (the local does not win)", args: tree_args("rs-const-sibling-vs-import", "alpha-ping"), exit: 1, codes: ["ambiguous-constant"], text: ["ambiguous constant: libs/alpha/src/dispatch.rs:"], absent: ["unreadable"], lock: ""},
+  {name: "round 24: a const declared mid-line in a fn beside a file const of one name is ambiguous-constant (sol's second case)", args: tree_args("rs-const-midline", "alpha-ping"), exit: 1, codes: ["ambiguous-constant"], text: ["ambiguous constant: libs/alpha/src/dispatch.rs:"], absent: ["unreadable"], lock: ""},
+  {name: "round 24: a bare arm with one import and no definition resolves to the imported module's literal (clean)", args: tree_args("rs-const-single-import", "alpha-ping"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 24: a bare arm with one file-level const and no import resolves to its literal (clean)", args: tree_args("rs-const-single-file", "alpha-ping"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 24: Self::NAME in an impl with a same-named import resolves to the impl's own const (clean)", args: tree_args("rs-const-self-with-import", "alpha-ping"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 24: two impls each with a bare same-name arm are ambiguous-constant (the Self:: form stays clean)", args: tree_args("rs-const-two-impls-bare", "alpha-ping"), exit: 1, codes: ["ambiguous-constant"], text: ["ambiguous constant: libs/alpha/src/dispatch.rs:"], absent: ["unreadable"], lock: ""},
+  {name: "round 24: a bare arm reachable only through a glob import is unreadable (fail closed)", args: tree_args("rs-const-glob", "alpha-ping"), exit: 1, codes: ["unreadable"], text: ["unreadable arm: libs/alpha/src/dispatch.rs:"], absent: ["ambiguous-constant"], lock: ""},
+  {name: "round 24: a local const beside a glob import shadows the glob and resolves (clean)", args: tree_args("rs-const-glob-local", "alpha-ping"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 24: crate::a::NAME ignores a private glob in a and reads a's own definition (clean)", args: tree_args("rs-const-path-private-glob", "alpha-ping"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 24: crate::a::NAME through a pub glob re-export with no own definition is unreadable", args: tree_args("rs-const-path-pub-glob", "alpha-ping"), exit: 1, codes: ["unreadable"], text: ["unreadable arm: libs/alpha/src/dispatch.rs:"], absent: ["ambiguous-constant"], lock: ""},
+  {name: "round 24: crate::a::NAME with an own definition beside a pub glob re-export resolves to the own definition (clean)", args: tree_args("rs-const-path-pub-glob-local", "alpha-ping"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 25: crate::names::ALPHA_PING through a pub glob, with a fn-local const of that name in names.rs, is unreadable (fail closed)", args: tree_args("rs-const-fn-local-glob", "alpha-ping"), exit: 1, codes: ["unreadable"], text: ["unreadable arm: libs/alpha/src/dispatch.rs:"], absent: ["ambiguous-constant"], lock: ""},
+  {name: "round 25: crate::names::ALPHA_PING with only a fn-local const in names.rs is unreadable (fail closed)", args: tree_args("rs-const-fn-local-no-glob", "alpha-ping"), exit: 1, codes: ["unreadable"], text: ["unreadable arm: libs/alpha/src/dispatch.rs:"], lock: ""},
+  {name: "round 25: crate::names::inner::ALPHA_PING reads the inline module's own top-level const (clean)", args: tree_args("rs-const-path-inline-mod", "alpha-ping"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 25: crate::names::ALPHA_PING does not reach a const inside the inline module inner (unreadable, fail closed)", args: tree_args("rs-const-path-inline-other", "alpha-ping"), exit: 1, codes: ["unreadable"], text: ["unreadable arm: libs/alpha/src/dispatch.rs:"], absent: ["ambiguous-constant"], lock: ""},
+  {name: "round 26: Self::ALPHA_NAME with a fn-local const of that name in a helper, and only the trait default, is unreadable (sol's case, fail closed)", args: tree_args("rs-assoc-fn-local-self", "alpha-ping"), exit: 1, codes: ["unreadable"], text: ["unreadable arm: libs/alpha/src/dispatch.rs:"], absent: ["ambiguous-constant"], lock: ""},
+  {name: "round 26: Alpha::ALPHA_NAME in a free fn, with only a trait default and a fn-local const, is unreadable (fail closed)", args: tree_args("rs-assoc-fn-local-type", "alpha-ping"), exit: 1, codes: ["unreadable"], text: ["unreadable arm: libs/alpha/src/dispatch.rs:"], absent: ["ambiguous-constant"], lock: ""},
+  {name: "round 26: Self::ALPHA_NAME with an impl-level const in the trait impl resolves (clean)", args: tree_args("rs-assoc-impl-level", "alpha-ping"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 26: Self::ALPHA_NAME with only a trait default in the impl is unreadable (traits are not resolved, fail closed)", args: tree_args("rs-assoc-trait-default", "alpha-ping"), exit: 1, codes: ["unreadable"], text: ["unreadable arm: libs/alpha/src/dispatch.rs:"], absent: ["ambiguous-constant"], lock: ""},
+  {name: "round 26: a bare ALPHA_NAME arm with a glob import and only an impl-level const is unreadable, not the impl literal (fail closed)", args: tree_args("rs-assoc-impl-glob", "alpha-ping"), exit: 1, codes: ["unreadable"], text: ["unreadable arm: libs/alpha/src/dispatch.rs:"], absent: ["ambiguous-constant"], lock: ""},
+  {name: "round 26: Self::ALPHA_NAME with an inherent and a trait impl-level const is ambiguous", args: tree_args("rs-assoc-two-impl", "alpha-ping"), exit: 1, codes: ["ambiguous-constant"], text: ["ambiguous constant: libs/alpha/src/dispatch.rs:"], lock: ""},
+  {name: "round 27: Self::ALPHA_NAME in a top-level impl does not read helper::Alpha's const in another module (unreadable, sol's case)", args: tree_args("rs-assoc-mod-same-name", "alpha-ping"), exit: 1, codes: ["unreadable"], text: ["unreadable arm: libs/alpha/src/dispatch.rs:"], absent: ["ambiguous-constant"], lock: ""},
+  {name: "round 27: Self::ALPHA_NAME defined only in another impl of the same type is unreadable (own block only)", args: tree_args("rs-assoc-self-other-impl", "alpha-ping"), exit: 1, codes: ["unreadable"], text: ["unreadable arm: libs/alpha/src/dispatch.rs:"], absent: ["ambiguous-constant"], lock: ""},
+  {name: "round 27: Alpha::ALPHA_NAME with one file-level Alpha and its file-level impl resolves (clean)", args: tree_args("rs-assoc-type-unique", "alpha-ping"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 27: a qualified dispatch::Alpha::ALPHA_NAME arm is unreadable (qualified Type:: is not read)", args: tree_args("rs-assoc-path-qualified", "alpha-ping"), exit: 1, codes: ["unreadable"], text: ["unreadable arm: libs/alpha/src/dispatch.rs:"], absent: ["ambiguous-constant"], lock: ""},
+  {name: "round 27: Alpha::ALPHA_NAME with its only impl inside an inline module is unreadable (impl not file-level)", args: tree_args("rs-assoc-impl-in-mod", "alpha-ping"), exit: 1, codes: ["unreadable"], text: ["unreadable arm: libs/alpha/src/dispatch.rs:"], absent: ["ambiguous-constant"], lock: ""},
+  {name: "round 28: sol's medium: a fn-local `use helper::Beta as Alpha` rebinds Alpha, so Alpha::ALPHA_NAME is unreadable (fail closed)", args: tree_args("rs-assoc-local-alias", "alpha-ping"), exit: 1, codes: ["unreadable"], text: ["unreadable arm: libs/alpha/src/dispatch.rs:"], absent: ["ambiguous-constant"], lock: ""},
+  {name: "round 28: a generic parameter named Alpha (wrap<Alpha: Clone>) is a second binding of the type, so Alpha::ALPHA_NAME is unreadable", args: tree_args("rs-assoc-generic-param", "alpha-ping"), exit: 1, codes: ["unreadable"], text: ["unreadable arm: libs/alpha/src/dispatch.rs:"], absent: ["ambiguous-constant"], lock: ""},
+  {name: "round 28: a glob import anywhere in the file makes Alpha::ALPHA_NAME unreadable, even with one file-level Alpha", args: tree_args("rs-assoc-glob-in-file", "alpha-ping"), exit: 1, codes: ["unreadable"], text: ["unreadable arm: libs/alpha/src/dispatch.rs:"], absent: ["ambiguous-constant"], lock: ""},
+  {name: "round 12: a fn-pointer array whose closure guard names an unregistered verb is a violation (array contents are scanned)", args: tree_args("rs-fn-array", "alpha-field"), exit: 1, codes: ["unregistered"], text: ["unregistered: alpha.gone"], lock: ""},
+  {name: "round 12: a tuple row whose callback holds an unregistered guard is a violation (row contents are scanned)", args: tree_args("rs-row-callback", "alpha-field"), exit: 1, codes: ["unregistered"], text: ["unregistered: alpha.gone"], lock: ""},
+  {name: "round 12: a changed argument in an exempted comparison is an unreviewed value comparison and a stale exemption", args: ex_args("rs-value-arg", "alpha-field", "reviewed-native"), exit: 1, codes: ["unreviewed-value", "stale-exemption"], text: ["unreviewed value comparison at libs/alpha/src/native.rs:"], lock: ""},
+  {name: "round 12: the exact full-operand comparison matches its exemption and is clean (reviewed value comparisons: 1)", args: ex_args("rs-value-exact", "alpha-field", "reviewed-native"), exit: 0, codes: [], text: ["verb-registry-gate: clean", "reviewed value comparisons: 1"], lock: ""},
+  {name: "round 12: a closure deref `*v == verb` before a closing paren is read whole; reviewed it is clean (reviewed value comparisons: 1)", args: ex_args("rs-deref-closure", "alpha-field", "reviewed-deref"), exit: 0, codes: [], text: ["verb-registry-gate: clean", "reviewed value comparisons: 1"], lock: ""},
+  {name: "round 12: the same closure deref, unreviewed, is an unreviewed value comparison keyed to its full text `*v == verb`", args: tree_args("rs-deref-closure", "alpha-field"), exit: 1, codes: ["unreviewed-value"], text: ["unreviewed value comparison at libs/alpha/src/router.rs:5 in fn route: `*v == verb`"], lock: ""},
+  {name: "round 12: a value comparison whose operand is not closed is unreadable, not a silent pass", args: tree_args("rs-value-unclosed", "alpha-field"), exit: 1, codes: ["unreadable"], text: ["unreadable value comparison"], lock: ""},
+  {name: "round 13: the exact literal call, reviewed by its literal text, is clean (reviewed value comparisons: 1)", args: ex_args("rs-value-literal-exact", "alpha-field", "reviewed-literal"), exit: 0, codes: [], text: ["verb-registry-gate: clean", "reviewed value comparisons: 1"], lock: ""},
+  {name: "round 13: the call with its literal changed to an equal-length literal is unreviewed and its exemption stale, with the literal kept in both messages", args: ex_args("rs-value-literal-changed", "alpha-field", "reviewed-literal"), exit: 1, codes: ["unreviewed-value", "stale-exemption"], text: ["unreviewed value comparison at libs/alpha/src/select.rs:6 in fn pick: `select(\"alpha.gone\", false) == command`", "stale exemption: libs/alpha/src/select.rs `select(\"alpha.ping\", false) == command`"], lock: ""},
+  {name: "round 13 regression (214ac7d passed this silently): the blanked key `select(\"          \", false)` does not match an equal-length literal; both unreviewed-value and stale-exemption are reported", args: ex_args("rs-value-literal-changed", "alpha-field", "reviewed-literal-214"), exit: 1, codes: ["unreviewed-value", "stale-exemption"], text: ["unreviewed value comparison at libs/alpha/src/select.rs:6 in fn pick: `select(\"alpha.gone\", false) == command`", "stale exemption: libs/alpha/src/select.rs `select(\"          \", false) == command`"], lock: ""},
+  {name: "round 13: a blanked-form exemption no longer keys the exact literal call, so it is unreviewed and stale (literal text is what the key keeps)", args: ex_args("rs-value-literal-exact", "alpha-field", "reviewed-literal-214"), exit: 1, codes: ["unreviewed-value", "stale-exemption"], text: ["unreviewed value comparison at libs/alpha/src/select.rs:5 in fn pick: `select(\"alpha.ping\", false) == command`"], lock: ""},
+  {name: "round 13: an unresolved arm whose guard names a literal quotes that literal in the unreadable-arm message", args: tree_args("rs-arm-guard-literal", "alpha-field"), exit: 1, codes: ["unreadable"], text: ["unreadable arm: libs/alpha/src/dispatch.rs:8; the pattern ALPHA_GUARD if verb == \"alpha.ping\" names no literal"], lock: ""},
+  {name: "round 14 regression (b0576f8 passed this silently): a literal changed from one space to two is unreviewed and its one-space exemption stale; the spaces inside the literal are kept", args: ex_args("rs-value-space-two", "alpha-field", "reviewed-space-one"), exit: 1, codes: ["unreviewed-value", "stale-exemption"], text: ["unreviewed value comparison at libs/alpha/src/select.rs:5 in fn pick: `select(\"  \", false) == command`", "stale exemption: libs/alpha/src/select.rs `select(\" \", false) == command`"], lock: ""},
+  {name: "round 14: a TAB inside the literal is not a space: the call is unreviewed and the one-space exemption stale", args: ex_args("rs-value-tab", "alpha-field", "reviewed-space-one"), exit: 1, codes: ["unreviewed-value", "stale-exemption"], text: ["unreviewed value comparison at libs/alpha/src/select.rs:5", "stale exemption: libs/alpha/src/select.rs `select(\" \", false) == command`"], lock: ""},
+  {name: "round 14: an escaped quote does not end the literal: two spaces after it are kept, so a one-space exemption is unreviewed and stale", args: ex_args("rs-value-escaped", "alpha-field", "reviewed-escaped-one"), exit: 1, codes: ["unreviewed-value", "stale-exemption"], text: ["unreviewed value comparison at libs/alpha/src/select.rs:6 in fn pick: `select(\"x\\\"  y\", false) == command`", "stale exemption: libs/alpha/src/select.rs `select(\"x\\\" y\", false) == command`"], lock: ""},
+  {name: "round 14: the escaped literal reviewed exactly as written is clean (reviewed value comparisons: 1)", args: ex_args("rs-value-escaped", "alpha-field", "reviewed-escaped-exact"), exit: 0, codes: [], text: ["verb-registry-gate: clean", "reviewed value comparisons: 1"], lock: ""},
+  {name: "round 14: the spaces inside a raw string are literal contents: two against a one-space exemption is unreviewed and stale", args: ex_args("rs-value-raw-space", "alpha-field", "reviewed-raw-one"), exit: 1, codes: ["unreviewed-value", "stale-exemption"], text: ["unreviewed value comparison at libs/alpha/src/select.rs:5 in fn pick: `select(r#\"a  b\"#, false) == command`"], lock: ""},
+  {name: "round 14: a char literal holding a TAB is not the space char: unreviewed and its exemption stale", args: ex_args("rs-value-char-tab", "alpha-field", "reviewed-char-space"), exit: 1, codes: ["unreviewed-value", "stale-exemption"], text: ["unreviewed value comparison at libs/alpha/src/select.rs:5"], lock: ""},
+  {name: "round 15 regression (98f5339 passed this silently): cr#\"x\"  y\"# with a one-space exemption is unreviewed and stale", args: ex_args("rs-cr-raw-space", "alpha-field", "reviewed-cr-raw-one"), exit: 1, codes: ["unreviewed-value", "stale-exemption"], text: ["unreviewed value comparison at libs/alpha/src/select.rs:4 in fn pick: `select(cr#\"x\"  y\"#, false) == command`"], lock: ""},
+  {name: "round 15: cr#\"x\"  y\"# reviewed exactly as written is clean (reviewed value comparisons: 1)", args: ex_args("rs-cr-raw-space", "alpha-field", "reviewed-cr-raw-exact"), exit: 0, codes: [], text: ["reviewed value comparisons: 1", "verb-registry-gate: clean"], lock: ""},
+  {name: "round 15: br#\"x\"  y\"# with a one-space exemption is unreviewed and stale", args: ex_args("rs-br-raw-space", "alpha-field", "reviewed-br-raw-one"), exit: 1, codes: ["unreviewed-value", "stale-exemption"], text: ["unreviewed value comparison at libs/alpha/src/select.rs:4 in fn pick: `select(br#\"x\"  y\"#, false) == command`"], lock: ""},
+  {name: "round 15: br#\"x\"  y\"# reviewed exactly as written is clean", args: ex_args("rs-br-raw-space", "alpha-field", "reviewed-br-raw-exact"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 15: c\"x  y\" with a one-space exemption is unreviewed and stale", args: ex_args("rs-c-string-space", "alpha-field", "reviewed-c-string-one"), exit: 1, codes: ["unreviewed-value", "stale-exemption"], text: ["unreviewed value comparison at libs/alpha/src/select.rs:4 in fn pick: `select(c\"x  y\", false) == command`"], lock: ""},
+  {name: "round 15: c\"x  y\" reviewed exactly as written is clean", args: ex_args("rs-c-string-space", "alpha-field", "reviewed-c-string-exact"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 15: b'\\t' is not b' ': a space exemption is unreviewed and stale", args: ex_args("rs-byte-tab", "alpha-field", "reviewed-byte-space"), exit: 1, codes: ["unreviewed-value", "stale-exemption"], text: ["unreviewed value comparison at libs/alpha/src/select.rs:4 in fn pick: `select(b'\\t', false) == command`"], lock: ""},
+  {name: "round 15: b'\\t' reviewed exactly as written is clean", args: ex_args("rs-byte-tab", "alpha-field", "reviewed-byte-tab-exact"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 15: r##\"a\"#  b\"## (the \"# is content) with a one-space exemption is unreviewed and stale", args: ex_args("rs-raw-hash-two", "alpha-field", "reviewed-raw-hash-one"), exit: 1, codes: ["unreviewed-value", "stale-exemption"], text: ["unreviewed value comparison at libs/alpha/src/select.rs:5 in fn pick: `select(r##\"a\"#  b\"##, false) == command`"], lock: ""},
+  {name: "round 15: r##\"a\"#  b\"## reviewed exactly as written is clean", args: ex_args("rs-raw-hash-two", "alpha-field", "reviewed-raw-hash-exact"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 15: r##\"a  b\"## (more hashes than content) with a one-space exemption is unreviewed and stale", args: ex_args("rs-raw-hash-more", "alpha-field", "reviewed-raw-hash-more-one"), exit: 1, codes: ["unreviewed-value", "stale-exemption"], text: ["unreviewed value comparison at libs/alpha/src/select.rs:5 in fn pick: `select(r##\"a  b\"##, false) == command`"], lock: ""},
+  {name: "round 15: r##\"a  b\"## reviewed exactly as written is clean", args: ex_args("rs-raw-hash-more", "alpha-field", "reviewed-raw-hash-more-exact"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 15: zz\"x\" is no known prefix: unreadable literal, fails closed", args: tree_args("rs-unknown-prefix", "alpha-field"), exit: 1, codes: ["unreadable"], text: ["unreadable literal: libs/alpha/src/select.rs:4; zz\""], lock: ""},
+  {name: "round 21: a listed test double answering a registered verb is scanned and clean (its answer is not an owner, so no owner-conflict)", args: ex_args("rs-double-listed", "doubles", "doubles-listed"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 21: a listed test double answering an unregistered verb is unregistered (the double is scanned in full)", args: ex_args("rs-double-unregistered", "doubles", "doubles-listed"), exit: 1, codes: ["unregistered"], text: ["beta.ghost (", "at libs/beta/src/fake.rs:7 matches no registry entry"], lock: ""},
+  {name: "round 21: a verb answered only by a listed test double is not-in-code for its owner (a double is not an owner)", args: ex_args("rs-double-sole", "doubles-sole", "doubles-listed"), exit: 1, codes: ["not-in-code"], text: ["alpha.sole (owner alpha) is registered but only the listed test double libs/beta/src/fake.rs answers it"], lock: ""},
+  {name: "round 21: a listed test double with no answering site is stale-test-double and applies to nothing", args: ex_args("rs-double-nosites", "doubles", "doubles-listed"), exit: 1, codes: ["stale-test-double"], text: ["libs/beta/src/fake.rs is listed as a test double", "holds no answering site the gate reads"], lock: ""},
+  {name: "round 21: a listed test double whose file is missing is stale-test-double", args: ex_args("rs-double-missing", "doubles", "doubles-listed"), exit: 1, codes: ["stale-test-double"], text: ["libs/beta/src/fake.rs is listed as a test double", "the file does not exist or is a directory"], lock: ""},
+  {name: "round 21, Sol's inline redirect: #[cfg_attr(all(), path = \".\")] mod production { pub mod fake; } is read as nothing; fake.rs is scanned and its registered answer is not an owner: clean", args: ex_args("rs-double-inline-redirect", "doubles", "doubles-listed"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 21: a raw-identifier alias (pub mod r#type; under a cfg_attr path to the listed file) cannot hide an unregistered verb in the double", args: ex_args("rs-double-raw-unregistered", "doubles", "doubles-listed"), exit: 1, codes: ["unregistered"], text: ["beta.ghost (", "at libs/beta/src/fake.rs:7 matches no registry entry"], lock: ""},
+  {name: "round 21: a multi-line cfg_attr path to the listed file cannot hide an unregistered verb in the double", args: ex_args("rs-double-multiline-unregistered", "doubles", "doubles-listed"), exit: 1, codes: ["unregistered"], text: ["beta.ghost (", "at libs/beta/src/fake.rs:7 matches no registry entry"], lock: ""},
+  {name: "round 22: a declaration-only listed double is stale, and its declaration is still checked (the double does not hide owner-mismatch)", args: ex_args("rs-double-decl-only", "doubles-decl", "doubles-decl"), exit: 1, codes: ["stale-test-double", "owner-mismatch"], text: ["libs/edit/src/wire.rs is listed as a test double", "holds no answering site the gate reads", "edit.ping is declared by edit but owned by editd"], lock: ""},
+  {name: "round 22: a variant-only listed double is fresh (a variant handler is a site) and clean; noded's own answer is the owner", args: ex_args("rs-double-variant-only", "parse-hello", "doubles-variant"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 16: a listed request builder (a guard, a keyed match head and a tuple, all for alpha.ping) is clean and answers nothing", args: ex_args("rb-listed", "builders", "builders-listed"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 16: a request builder for a verb the registry does not hold is unregistered-request, and its guard is not an answer", args: ex_args("rb-unregistered", "builders", "builders-unregistered"), exit: 1, codes: ["unregistered-request"], text: ["builds a request for beta.nope (`verb == \"beta.nope\"`), which the registry does not register"], absent: ["unregistered: beta.nope"], lock: ""},
+  {name: "round 16: an arm for a verb the keyed match does not list still counts as dispatch (owner-conflict for alpha.build; alpha.ping, listed, does not)", args: ex_args("rb-unlisted-arm", "builders", "builders-unlisted"), exit: 1, codes: ["owner-conflict"], text: ["alpha.build is answered by more than one component: alpha, beta"], absent: ["alpha.ping is answered"], lock: ""},
+  {name: "round 16: a guard entry whose text matches but whose verbs do not list the guard's verb is stale, and the guard is still dispatch (unregistered-request)", args: ex_args("rb-wrong-verb", "builders", "builders-wrong-verb"), exit: 1, codes: ["stale-request-builder", "unregistered"], text: ["lists a request builder `verb == \"beta.nope\"`", "unregistered: beta.nope (guard"], lock: ""},
+  {name: "round 16: a request builder whose match head is absent from its file is stale-request-builder", args: ex_args("rb-stale", "builders", "builders-stale"), exit: 1, codes: ["stale-request-builder"], text: ["lists a request builder `match verb {`"], lock: ""},
+  {name: "round 16: on @.call (the serve-name placeholder) is an unreadable handler and fails closed; the <app>.x family mapping is not yet in the gate", args: tree_args("mix-serve-prefix", "only-other"), exit: 1, codes: ["unreadable"], text: ["unreadable handler: libs/bridge/scripts/serve.mix:4"], absent: ["unregistered:"], lock: ""},
+  {name: "round 16: a request builder's match head in fn build does not bind the same head in fn answer, which is dispatch (owner-conflict for alpha.ping)", args: ex_args("rb-other-fn", "builders", "builders-head-build"), exit: 1, codes: ["owner-conflict"], text: ["alpha.ping is answered by more than one component: alpha, beta"], lock: ""},
+  {name: "round 16: a request builder guard in fn check does not bind the same guard in fn other, which is dispatch (owner-conflict for alpha.ping)", args: ex_args("rb-guard-other-fn", "builders", "builders-guard-check"), exit: 1, codes: ["owner-conflict"], text: ["alpha.ping is answered by more than one component: alpha, beta"], lock: ""},
+  {name: "round 16: two identical request-builder guards in one fn are ambiguous-exemption (fail closed)", args: ex_args("rb-guard-ambiguous", "builders", "builders-guard-check"), exit: 1, codes: ["ambiguous-exemption"], text: ["for fn check", "2 sites in that fn match it"], lock: ""},
+  {name: "round 17: a literal that is only the return value of a match arm is not an answer (clean; the gate reads pattern literals only)", args: tree_args("rs-arm-rhs", "clean"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 20: a raw identifier fn (fn r#build) binds a listed request builder: clean", args: ex_args("rb-raw-fn", "builders", "builders-raw-fn"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 18 regression: the DEFAULT invocation (repo root, no arguments) is clean, with the fixture trees in the repo", args: [], exit: 0, codes: [], text: ["verb-registry-gate: clean"], lock: ""},
+  {name: "round 15: lifetimes and loop labels stay code (clean, no unreadable literal)", args: tree_args("rs-lifetime-label", "alpha-field"), exit: 0, codes: [], text: ["verb-registry-gate: clean"], absent: ["unreadable literal"], lock: ""},
+]
+
+$ran = 0
+$failed = 0
+for each $c in $CASES
+  $ran = $ran + 1
+  $problems = []
+  $skip = false
+  $locked = false
+  if $c.lock != "" then
+    $locked = true
+    $id = run_argv(["id", "-u"], nil)
+    if trim($id.stdout) == "0" then
+      $skip = true
+      $locked = false
+    elif not set_mode("000", $c.lock) then
+      push($problems, "could not chmod 000 " .. $c.lock)
+      $locked = false
+    end
+  end
+  if $skip then
+    print("SKIP " .. $c.name .. " (running as root: mode bits do not bind)")
+  else
+    $res = run_gate($c.args)
+    if $res == nil then
+      push($problems, "the gate did not run")
+    else
+      $out = $res.stdout .. $res.stderr
+      if $res.exit_code != $c.exit then
+        push($problems, "exit " .. to_string($res.exit_code) .. ", expected " .. to_string($c.exit))
+      end
+      for each $code in $c.codes
+        if not contains($out, "violation " .. $code .. ":") then
+          push($problems, "no violation " .. $code)
+        end
+      end
+      for each $t in $c.text
+        if not contains($out, $t) then
+          push($problems, "output lacks: " .. $t)
+        end
+      end
+      -- absent: text the output must NOT contain (a test-only literal, an HTTP token).
+      if has_key($c, "absent") then
+        for each $t in $c.absent
+          if contains($out, $t) then
+            push($problems, "output has: " .. $t)
+          end
+        end
+      end
+    end
+  end
+  if $locked then
+    if not set_mode("755", $c.lock) then
+      push($problems, "could not restore mode of " .. $c.lock)
+    end
+  end
+  if $skip then
+    -- counted as neither pass nor fail
+  elif len($problems) == 0 then
+    print("PASS " .. $c.name)
+  else
+    $failed = $failed + 1
+    print("FAIL " .. $c.name)
+    for each $p in $problems
+      print("  " .. $p)
+    end
+  end
+end
+
+print("verb-registry-gate-test: " .. to_string($ran) .. " cases, " .. to_string($failed) .. " failed")
+if $failed > 0 then
+  exit(1)
+end
+exit(0)

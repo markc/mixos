@@ -1,0 +1,10 @@
+-- Fixture exemptions (schema 1), round 22: libs/edit/src/wire.rs listed as a test double while it holds
+-- only a VERBS declaration. Used by rs-double-decl-only: stale (no answering site), and its declaration
+-- of edit.ping is still checked (owner-mismatch).
+{
+  schema: 1,
+  exemptions: [],
+  test_doubles: [
+    {file:"libs/edit/src/wire.rs", reason:"fixture: a declaration-only file, listed to check that a double cannot hide its declaration."}
+  ]
+}

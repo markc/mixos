@@ -1,0 +1,8 @@
+-- Fixture registry for trees/bad-name: x.good.one is registered; "Bad.Name" is not a valid name.
+{
+  schema: 3,
+  verbs: [
+    {name:"x.good.one", owner:"bad", version:"0.1.0", status:"accepted"}
+  ],
+  families: []
+}

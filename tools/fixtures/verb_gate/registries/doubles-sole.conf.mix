@@ -1,0 +1,9 @@
+-- Fixture registry for the sole-double case (round 21): alpha.ping and alpha.sole, both owned by alpha.
+{
+  schema: 3,
+  verbs: [
+    {name:"alpha.ping", owner:"alpha", version:"0.1.0", status:"accepted"},
+    {name:"alpha.sole", owner:"alpha", version:"0.1.0", status:"accepted"}
+  ],
+  families: []
+}

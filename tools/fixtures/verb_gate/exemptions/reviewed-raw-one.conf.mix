@@ -1,0 +1,8 @@
+-- Fixture exemptions (schema 1), round 14: the raw string with one space. Used by rs-value-raw-space,
+-- whose raw string has two: must be unreviewed and stale.
+{
+  schema: 1,
+  exemptions: [
+    {file:"libs/alpha/src/select.rs", "fn":"pick", text:'select(r#"a b"#, false) == command', reason:"fixture: a selector call with a raw-string literal, reviewed with one space inside it."}
+  ]
+}

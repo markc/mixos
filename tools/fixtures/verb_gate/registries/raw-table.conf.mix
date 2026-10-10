@@ -1,0 +1,10 @@
+-- Fixture registry for trees/raw-table: alpha.ping is declared by the VERBS table, where
+-- its entry is a raw string; alpha.other is declared there as a plain string.
+{
+  schema: 3,
+  verbs: [
+    {name:"alpha.ping", owner:"alpha", version:"0.1.0", status:"accepted", declared_by:"alpha"},
+    {name:"alpha.other", owner:"alpha", version:"0.1.0", status:"accepted"}
+  ],
+  families: []
+}

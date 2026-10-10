@@ -1,0 +1,9 @@
+-- Fixture registry: two parse-declared session verbs owned by noded, declared by bus.
+{
+  schema: 3,
+  verbs: [
+    {name: "noded.session.hello", owner: "noded", version: "0.1.1", status: "accepted", declared_by: "bus"},
+    {name: "noded.session.self", owner: "noded", version: "0.1.1", status: "accepted", declared_by: "bus"}
+  ],
+  families: []
+}

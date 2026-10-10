@@ -1,0 +1,4 @@
+-- Fixture: a shipped `on` handler, unregistered (exit 1). Not run.
+on x.form.on
+  print("on")
+end

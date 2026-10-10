@@ -1,0 +1,7 @@
+-- Fixture exemptions: the cache equality of trees/rs-value-compare, reviewed.
+{
+  schema: 1,
+  exemptions: [
+    {file:"libs/alpha/src/dispatch.rs", "fn":"run", text:"cached.command == request.command", reason:"fixture: replay cache equality, two runtime values"}
+  ]
+}

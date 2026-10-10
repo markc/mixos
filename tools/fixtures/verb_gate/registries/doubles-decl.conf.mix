@@ -1,0 +1,9 @@
+-- Fixture registry for the declaration-only double (round 22): edit.ping, owned by editd. Its
+-- declaration in libs/edit is an owner mismatch (no declared_by), and the double must not hide it.
+{
+  schema: 3,
+  verbs: [
+    {name:"edit.ping", owner:"editd", version:"0.1.0", status:"accepted"}
+  ],
+  families: []
+}

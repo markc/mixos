@@ -1,0 +1,11 @@
+-- Fixture registry for trees/raw-guard and trees/raw-on: alpha.ping is declared but
+-- no real arm or handler answers it (its only mention is inside a string); alpha.other
+-- is answered by a real arm or handler in each tree.
+{
+  schema: 3,
+  verbs: [
+    {name:"alpha.ping", owner:"alpha", version:"0.1.0", status:"accepted"},
+    {name:"alpha.other", owner:"alpha", version:"0.1.0", status:"accepted"}
+  ],
+  families: []
+}

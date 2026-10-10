@@ -1,0 +1,11 @@
+-- Fixture exemptions (schema 1), round 20: the builders-listed entries with the fn written as a
+-- raw identifier, r#build. Used by rb-raw-fn (clean): the fn binds to build as plain_fn reads it.
+{
+  schema: 1,
+  exemptions: [],
+  request_builders: [
+    {file:"libs/beta/src/client.rs", text:'verb == "alpha.ping"', verbs:["alpha.ping"], "fn":"r#build", reason:"fixture: a client building outgoing alpha.ping requests; alpha answers."},
+    {file:"libs/beta/src/client.rs", text:"match verb {", verbs:["alpha.ping"], "fn":"r#build", reason:"fixture: a client building outgoing alpha.ping requests; alpha answers."},
+    {file:"libs/beta/src/client.rs", text:'("alpha.ping", body)', verbs:["alpha.ping"], "fn":"r#build", reason:"fixture: a client building outgoing alpha.ping requests; alpha answers."}
+  ]
+}

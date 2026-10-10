@@ -1,0 +1,10 @@
+-- Fixture exemptions (schema 1): the regression for round 13. This entry is the key 214ac7d
+-- produced for the call select("alpha.ping", false) == command: the literal's contents blanked
+-- to ten spaces. A reviewer who copied that key reviews the call as written. The same key also
+-- matches select("alpha.gone", false) on 214ac7d, which is the silent pass the new gate must catch.
+{
+  schema: 1,
+  exemptions: [
+    {file:"libs/alpha/src/select.rs", "fn":"pick", text:'select("          ", false) == command', reason:"fixture: a selector call compared with the command; keyed to the blanked literal the 214ac7d gate printed."}
+  ]
+}

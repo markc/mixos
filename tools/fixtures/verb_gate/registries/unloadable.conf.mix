@@ -1,0 +1,5 @@
+-- Fixture registry that does not parse: the list is never closed. The gate must exit 2.
+{
+  schema: 3,
+  verbs: [
+    {name:"alpha.ping", owner:"alpha", version:"0.1.0", status:"accepted"}

@@ -1,0 +1,6 @@
+-- Fixture registry: valid and empty. With trees that register nothing, the scan has no anchor.
+{
+  schema: 3,
+  verbs: [],
+  families: []
+}

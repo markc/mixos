@@ -1,0 +1,10 @@
+-- Fixture exemptions (schema 1), round 16: a keyed match head in fn route that lists alpha.ping
+-- only. Used by rb-unlisted-arm: the alpha.build arm in that match still counts as dispatch
+-- (owner-conflict).
+{
+  schema: 1,
+  exemptions: [],
+  request_builders: [
+    {file:"libs/beta/src/client.rs", text:"match verb {", verbs:["alpha.ping"], "fn":"route", reason:"fixture: a client building outgoing alpha.ping requests; alpha answers."}
+  ]
+}

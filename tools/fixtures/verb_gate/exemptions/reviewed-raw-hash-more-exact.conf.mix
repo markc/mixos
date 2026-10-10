@@ -1,0 +1,8 @@
+-- Fixture exemptions (schema 1), round 15: the exact two-hash raw string with no inner hash. Used by
+-- rs-raw-hash-more: must be clean.
+{
+  schema: 1,
+  exemptions: [
+    {file:"libs/alpha/src/select.rs", "fn":"pick", text:'select(r##"a  b"##, false) == command', reason:"fixture: a selector call with a two-hash raw string, reviewed exactly as written."}
+  ]
+}

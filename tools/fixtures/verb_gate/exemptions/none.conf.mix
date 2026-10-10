@@ -1,0 +1,5 @@
+-- Fixture exemptions: none reviewed. Every value comparison in a tree is unreviewed.
+{
+  schema: 1,
+  exemptions: []
+}

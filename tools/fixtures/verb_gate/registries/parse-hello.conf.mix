@@ -1,0 +1,8 @@
+-- Fixture registry for the variant-only double (round 22): one parse-declared session verb, owned by noded.
+{
+  schema: 3,
+  verbs: [
+    {name: "noded.session.hello", owner: "noded", version: "0.1.1", status: "accepted", declared_by: "bus"}
+  ],
+  families: []
+}

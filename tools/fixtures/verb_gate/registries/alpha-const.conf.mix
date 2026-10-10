@@ -1,0 +1,10 @@
+-- Fixture registry for trees/rs-const-*: the three verbs that the constant arms name.
+{
+  schema: 3,
+  verbs: [
+    {name:"alpha.ping", owner:"alpha", version:"0.1.0", status:"accepted"},
+    {name:"alpha.other", owner:"alpha", version:"0.1.0", status:"accepted"},
+    {name:"alpha.split", owner:"alpha", version:"0.1.0", status:"accepted"}
+  ],
+  families: []
+}

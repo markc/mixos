@@ -1,0 +1,5 @@
+-- A single-quoted usage text spanning lines: its middle line is text, not a handler.
+$usage = 'usage:
+on alpha.ping
+done'
+on alpha.other

@@ -1,0 +1,9 @@
+-- Fixture exemptions (schema 1), round 16: a request builder for beta.nope, which the registry
+-- does not hold, in fn check. Used by rb-unregistered (unregistered-request).
+{
+  schema: 1,
+  exemptions: [],
+  request_builders: [
+    {file:"libs/beta/src/client.rs", text:'verb == "beta.nope"', verbs:["beta.nope"], "fn":"check", reason:"fixture: a client building outgoing beta.nope requests."}
+  ]
+}

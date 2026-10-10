@@ -1,0 +1,8 @@
+-- Fixture registry for the test-double cases: alpha.ping, owned by alpha.
+{
+  schema: 3,
+  verbs: [
+    {name:"alpha.ping", owner:"alpha", version:"0.1.0", status:"accepted"}
+  ],
+  families: []
+}

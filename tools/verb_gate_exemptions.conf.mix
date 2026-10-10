@@ -1,0 +1,70 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Reviewed value comparisons, schema 1. tools/verb_registry_gate.mix reads this file.
+--
+-- A value comparison is a verb compared with a runtime value: neither operand is a string
+-- literal or a resolvable constant, so the gate cannot name the verb it compares. Every such
+-- comparison must be listed here, or the gate reports it as an unreviewed value comparison.
+-- An entry that matches no site is a stale exemption, also a violation.
+--
+-- Each entry has four keys:
+--   file    the path, relative to the repo root, as the gate reports it;
+--   fn      the enclosing function, NAME or Type::NAME for a method in an impl block. The
+--           entry binds only a site whose enclosing fn AND text both match. Two matching
+--           sites are an ambiguous exemption, and the gate fails closed;
+--   text    the comparison as the gate normalises it: the left operand, the operator and
+--           the right operand, one space each side (a method form reads `x.eq(y)`). Line
+--           numbers are not part of an entry, so a site moves with its code;
+--   reason  why the comparison is safe. It is read by the reviewer, not the gate.
+--
+-- The optional test_doubles list names a fake service, a file compiled only for tests. Each
+-- entry has two keys (round 21):
+--   file    the path, relative to the repo root, as the gate reports it;
+--   reason  why the file is a test double. It is read by the reviewer, not the gate.
+-- The file is scanned like any other file: every registration in it is checked, so an
+-- unregistered, retired or badly named verb in it still fails, and its declarations and parse
+-- arms are checked for owner and declared_by in full (round 22). Its answers are not an owner,
+-- though: they create no owner-conflict and count for no coverage, so a verb that only the
+-- double answers is not-in-code for its registered owner. The gate does not read cfg or
+-- module declarations, so an entry says nothing about where the file is compiled.
+-- An entry whose file is missing, or holds no answering site, is stale-test-double and
+-- applies to nothing. An answering site is a dispatch, prefix, guard, route row, Mix on handler
+-- or variant handler; a declaration alone is not one, so a declaration-only file is stale.
+--
+-- The optional request_builders list names a site that BUILDS a request for a verb, rather than
+-- answering it: the client side of a verb whose answer lives in another component. Each entry
+-- has five keys:
+--   file    as above;
+--   fn      as above: the enclosing fn of the site. The entry binds only a site whose fn and
+--           text both match; two matching sites are an ambiguous exemption;
+--   text    the site's exact normalised keep-view source, as the gate reads it: a `match <expr> {`
+--           head (the entry covers the listed verbs' arms in that match only), a comparison
+--           `LHS == "verb"` (matched exactly), or a tuple expression (`("verb", body)`);
+--   verbs   the verbs the site builds requests for. Each must be registered, concrete or by
+--           family, or the entry is an unregistered-request violation. A listed verb at the site
+--           contributes no answer; an arm for an unlisted verb in a keyed match still counts;
+--   reason  why the site only builds requests. It is read by the reviewer, not the gate.
+-- An entry that matches no site in its file and fn is a stale request builder, also a violation.
+-- A `match <expr> {` head is keyed only when <expr> is a dispatch scrutinee (verb, command, cmd,
+-- method or command_name()). A match on any other expression, such as `match self {`, is never
+-- read as dispatch: its arms are not read, so it needs no entry and an entry for it is stale.
+-- The gate reads an arm's pattern (the left of `=>`), never its value: `Op::List => "releases.list"`
+-- records nothing. A dispatch arm `"verb" => ...` does record its literal pattern.
+{
+  schema: 1,
+  exemptions: [
+    {file:"services/noded/src/session.rs", "fn":"Sessions::execute", text:"cached.command == request.command", reason:"replay cache equality: a stored command is compared with the incoming one; equal means replay and unequal is a Conflict. Both sides are runtime values and no verb is dispatched from the comparison."},
+    {file:"apps/busviewer/crates/inspector/src/model.rs", "fn":"Snapshot::verb", text:"v.name == selection.verb", reason:"selection lookup: finds the verb whose name is the selected one and returns an Option. A miss is an absent selection, not a dispatch."},
+    {file:"services/editd/src/router.rs", "fn":"Editd::route", text:"*v == verb", reason:"membership before dispatch: the requested verb is looked up in the VERBS table, whose declarations and dispatch arms the gate scans. An unknown verb is refused and never dispatched."},
+    {file:"libs/bus/src/native_client/native.rs", "fn":"NodedClient::session_request", text:"response.command_name() != Some(command)", reason:"response envelope echo check: a native-session client validates that the reply names the command it sent (alongside bus, native-session, type, id, rc); not dispatch."}
+  ],
+  test_doubles: [
+    {file:"libs/editor-model/src/fake.rs", reason:"fake editd for editor-model mirror tests; compiled only under test or the fake feature"}
+  ],
+  request_builders: [
+    {file:"libs/editor-model/src/mirror.rs", "fn":"Mirror::send_server", text:'verb == "edit.save"', verbs:["edit.save"], reason:"editor-model mirror client: builds outgoing edit.* request bodies; editd answers"},
+    {file:"libs/editor-model/src/mirror.rs", "fn":"Mirror::resend", text:'wire.verb == "edit.save"', verbs:["edit.save"], reason:"editor-model mirror client: builds outgoing edit.* request bodies; editd answers"},
+    {file:"libs/editor-model/src/mirror.rs", "fn":"Mirror::server_body", text:"match verb {", verbs:["edit.insert", "edit.delete"], reason:"editor-model mirror client: builds outgoing edit.* request bodies; editd answers"},
+    {file:"libs/editor-model/src/mirror.rs", "fn":"Mirror::server_body", text:'("edit.save", body)', verbs:["edit.save"], reason:"editor-model mirror client: builds outgoing edit.* request bodies; editd answers"},
+    {file:"apps/prefs/src/shell.rs", "fn":"budget", text:"match verb {", verbs:["releases.list", "releases.notes", "releases.status", "releases.check"], reason:"Prefs releases call budget: a timeout per releases.* verb it sends; releasesd answers"}
+  ]
+}

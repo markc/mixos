@@ -1,0 +1,10 @@
+-- Fixture registry for trees/mix-hash-hides: alpha.hidden is a real handler that a
+-- quote inside a # comment must not hide; alpha.other is the second real handler.
+{
+  schema: 3,
+  verbs: [
+    {name:"alpha.hidden", owner:"alpha", version:"0.1.0", status:"accepted"},
+    {name:"alpha.other", owner:"alpha", version:"0.1.0", status:"accepted"}
+  ],
+  families: []
+}

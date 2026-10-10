@@ -1,0 +1,8 @@
+-- Fixture registry (round 23) for trees/rs-const-test-shadow: alpha.ping only.
+{
+  schema: 3,
+  verbs: [
+    {name:"alpha.ping", owner:"alpha", version:"0.1.0", status:"accepted"}
+  ],
+  families: []
+}

@@ -1,0 +1,2 @@
+-- Fixture: a real handler, so the registry anchor has a registration to find.
+on alpha.other end

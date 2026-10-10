@@ -1,0 +1,7 @@
+-- Fixture exemptions (schema 1), round 15: the exact C string. Used by rs-c-string-space: must be clean.
+{
+  schema: 1,
+  exemptions: [
+    {file:"libs/alpha/src/select.rs", "fn":"pick", text:'select(c"x  y", false) == command', reason:"fixture: a selector call with a C string, reviewed exactly as written."}
+  ]
+}

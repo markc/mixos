@@ -1,0 +1,4 @@
+-- Fixture: a handler under tests/ is skipped by the gate. Not run.
+on alpha.test_only
+  print("test only")
+end

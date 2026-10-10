@@ -1,0 +1,7 @@
+-- Fixture exemptions: the lowercase-local comparison of trees/rs-local-known-limit, reviewed.
+{
+  schema: 1,
+  exemptions: [
+    {file:"libs/alpha/src/dispatch.rs", "fn":"run", text:"command.command == v", reason:"fixture: a local bound from a literal is a runtime operand"}
+  ]
+}

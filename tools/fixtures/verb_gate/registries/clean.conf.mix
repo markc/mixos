@@ -1,0 +1,21 @@
+-- Fixture registry matching trees/clean: every form the gate reads, all clean.
+{
+  schema: 3,
+  verbs: [
+    {name:"alpha.ping", owner:"alpha", version:"0.1.0", status:"accepted"},
+    {name:"alpha.hello", owner:"alpha", version:"0.1.0", status:"accepted"},
+    {name:"alpha.hi", owner:"alpha", version:"0.1.0", status:"accepted"},
+    {name:"alpha.table", owner:"alpha", version:"0.1.0", status:"accepted"},
+    {name:"alpha.tuple", owner:"alpha", version:"0.1.0", status:"accepted"},
+    {name:"alpha.guard", owner:"alpha", version:"0.1.0", status:"accepted"},
+    {name:"alpha.wrapped", owner:"alpha", version:"0.1.0", status:"accepted"},
+    {name:"alpha.evt", owner:"alpha", version:"0.1.0", status:"accepted"},
+    {name:"alpha.sub.run", owner:"alpha", version:"0.1.0", status:"accepted"},
+    {name:"edit.ping", owner:"editd", version:"0.1.0", status:"accepted", declared_by:"edit"}
+  ],
+  families: [
+    {pattern:"<app>.ui.*", owner:"toolkit", version:"0.1.1", status:"accepted"},
+    {pattern:"<app>.window", owner:"toolkit", version:"0.1.1", status:"accepted"},
+    {pattern:"<app>.window.state", owner:"toolkit", version:"0.1.1", status:"accepted"}
+  ]
+}

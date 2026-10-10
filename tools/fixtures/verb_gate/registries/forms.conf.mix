@@ -1,0 +1,6 @@
+-- Fixture registry: nothing is registered, so every form in trees/forms is unregistered.
+{
+  schema: 3,
+  verbs: [],
+  families: []
+}

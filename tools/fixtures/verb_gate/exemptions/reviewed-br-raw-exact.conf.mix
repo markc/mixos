@@ -1,0 +1,7 @@
+-- Fixture exemptions (schema 1), round 15: the exact br raw string. Used by rs-br-raw-space: must be clean.
+{
+  schema: 1,
+  exemptions: [
+    {file:"libs/alpha/src/select.rs", "fn":"pick", text:'select(br#"x"  y"#, false) == command', reason:"fixture: a selector call with a br raw byte string, reviewed exactly as written."}
+  ]
+}

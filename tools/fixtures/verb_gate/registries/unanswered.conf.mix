@@ -1,0 +1,10 @@
+-- Fixture registry for trees/unanswered: edit.lost is declared but never answered;
+-- x.ghost.v has no code at all.
+{
+  schema: 3,
+  verbs: [
+    {name:"edit.lost", owner:"editd", version:"0.1.0", status:"accepted", declared_by:"edit"},
+    {name:"x.ghost.v", owner:"alpha", version:"0.1.0", status:"accepted"}
+  ],
+  families: []
+}

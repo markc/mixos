@@ -1,0 +1,4 @@
+-- The `;` inside the string and the comment is not a statement boundary, so the text
+-- after it is not a handler. Only the on alpha.other statement is.
+$s = "x; on alpha.unregistered end"; on alpha.other end
+# note; on alpha.unregistered end

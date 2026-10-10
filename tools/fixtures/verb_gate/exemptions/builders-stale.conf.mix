@@ -1,0 +1,9 @@
+-- Fixture exemptions (schema 1), round 16: a request builder whose match head is absent from its
+-- file: fn plain has no match on a verb. Used by rb-stale (stale-request-builder).
+{
+  schema: 1,
+  exemptions: [],
+  request_builders: [
+    {file:"libs/beta/src/client.rs", text:"match verb {", verbs:["alpha.ping"], "fn":"plain", reason:"fixture: a client building outgoing alpha.ping requests; alpha answers."}
+  ]
+}

@@ -1,0 +1,5 @@
+-- Fixture: an on header whose name follows a backslash continuation. The parser
+-- reads `on \` + newline + `alpha.unregistered end` as the handler alpha.unregistered.
+on \
+alpha.unregistered end
+on alpha.other end

@@ -1,0 +1,5 @@
+-- Fixture: the `on alpha.ping` line inside the string is not a handler; the real one below is.
+$doc = "usage:
+on alpha.ping
+done"
+on alpha.other

@@ -1,0 +1,9 @@
+-- Fixture exemptions (schema 1), round 22: services/noded/src/fake.rs listed as a test double while it
+-- holds only a variant handler. Used by rs-double-variant-only: fresh (a variant handler is a site), clean.
+{
+  schema: 1,
+  exemptions: [],
+  test_doubles: [
+    {file:"services/noded/src/fake.rs", reason:"fixture: a variant-only fake session handler, compiled only under test."}
+  ]
+}

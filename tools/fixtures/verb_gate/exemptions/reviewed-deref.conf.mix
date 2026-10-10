@@ -1,0 +1,8 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Fixture exemptions (schema 1): the reviewed membership check on a deref of a closure parameter.
+{
+  schema: 1,
+  exemptions: [
+    {file:"libs/alpha/src/router.rs", "fn":"route", text:"*v == verb", reason:"membership before dispatch: the requested verb is looked up in the VERBS table; an unknown verb is refused and never dispatched."}
+  ]
+}

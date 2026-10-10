@@ -1,0 +1,3708 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.10.0
+-- Verb registry gate (AGENTS.md §5). Every Bus verb in code is registered in
+-- docs/spec/bus/verbs.conf.mix, every registration is backed by code, and the
+-- component that answers a verb is its registered owner.
+-- Reads only: mix tools/verb_registry_gate.mix [--root DIR] [--registry FILE]
+--                                              [--exemptions FILE]
+--   --root DIR          the tree to check (default: the repo this file lives in)
+--   --registry FILE     the registry, absolute or relative to --root
+--                       (default docs/spec/bus/verbs.conf.mix)
+--   --exemptions FILE   the reviewed value comparisons (default
+--                       verb_gate_exemptions.conf.mix beside this gate)
+-- Regression fixtures: mix tools/verb_registry_gate_test.mix
+--
+-- Exit: 0 clean, 1 violations, 2 could not check (fails closed: an unreadable
+-- or unlistable file, a missing anchor, a failed scan or an unloadable registry
+-- is never a pass).
+--
+-- Registry checks (schema 3):
+--   registry-shape      top-level keys schema, verbs, families; entries have
+--                       exactly their keys; declared_by only on verbs
+--   registry-entry      names, patterns, owners, versions, statuses well formed
+--   registry-protocol   a protocol word is registered
+--   registry-duplicate  a name or pattern is listed twice
+--   registry-overlap    a concrete verb is also matched by a family
+--   family-overlap      two family patterns can match the same name
+--
+-- Code checks, for every registration found:
+--   bad-name            a registration literal is not a valid name (none is
+--                       dropped silently; a protocol word is exempt)
+--   unregistered        a code verb, prefix or suffix matches no registry entry
+--   ambiguous-constant  a bare NAME an arm or guard names has more than one candidate in the
+--                       file (round 24): every `const NAME` at any position and scope, and every
+--                       `use` of NAME, counts once. Two or more is ambiguous, and fails closed.
+--                       Test bodies contribute nothing. Self::NAME and Type::NAME count only the
+--                       associated consts of that impl (or of impls of that Type). Type::NAME
+--                       (round 28) reads only when the name Type has exactly one binding in the
+--                       whole file (one file-level struct, enum, union or type alias, and no use,
+--                       `as` alias, trait, mod or generic parameter of that name at any scope),
+--                       and no glob `use ...::*` anywhere in the file; otherwise it is unreadable.
+--                       A definition with no readable literal still counts, and a glob import
+--                       or a `const` line with no readable name makes a bare name unreadable.
+--   double-registered   a code verb matches more than one entry (exactly one)
+--   retired-in-code     a retired name or pattern is still answered
+--   not-in-code         a registry entry has no code registration
+--   not-answered        a concrete verb is declared but no code answers it
+--   owner-mismatch      the answering component (or declaring component) is not
+--                       the registered owner (or declared_by)
+--   owner-conflict      two components answer the same verb
+--   stale-test-double   a test_doubles entry (tools/verb_gate_exemptions.conf.mix) whose
+--                       file is missing or is a directory, or holds no answering site (a
+--                       dispatch, prefix, guard, route, Mix on handler or variant handler the
+--                       scan reads in it; a declaration or parse arm is not an answer); the
+--                       entry then applies to nothing.
+--   test doubles (rounds 21-22): a listed file is scanned like any other file, so every
+--                       registration in it is checked (bad-name, unregistered, retired-in-code,
+--                       double-registered), and its declarations and parse arms are checked
+--                       for owner and declared_by in full. Only its answers are not an owner:
+--                       they create no owner-conflict or owner-mismatch and satisfy no coverage,
+--                       so a verb that only a double answers is not-in-code (or not-answered)
+--                       for its owner.
+--                       The gate does not resolve `mod` declarations, #[path] or #[cfg_attr]
+--                       paths, and does not evaluate cfg: where a file is compiled changes no
+--                       check. Known limit: a double's answers are never owners, so a double
+--                       answering a verb under the wrong owner is not reported as such.
+--                       The walk covers only $SCAN_ROOTS (apps, services, libs, cli); tools/ is
+--                       never scanned, so the gate's fixture trees are read only through --root.
+--                       Raw identifiers (round 20): the lexer drops the `r#` of `r#name` in both
+--                       views, and a request builder's or exemption's `fn` binds with or without
+--                       `r#` (plain_fn). Known limit: an exemption's `text` keeps `r#` as written,
+--                       since a raw string literal can contain `r#`. A text with `r#name`
+--                       therefore matches nothing in the plain code view and fails closed (stale).
+--   unregistered-request a request_builders entry lists a verb the registry does not hold,
+--                       concrete or by family (the site still counts for nothing)
+--   stale-request-builder a request_builders entry that matches no site in its file, in its
+--                       fn (the entry's fn names the enclosing function of the site)
+--   ambiguous-exemption  an exemption (request_builders or exemptions) that matches more
+--                       than one site with the same fn and text; it fails closed
+--   ambiguous-arm      a parse arm constructs more than one SessionCommand variant
+--   unreadable          a construct whose verb name the gate cannot read is a
+--                       violation, never a silent skip: `unreadable handler:` (an
+--                       `on` keyword whose name is not a plain literal or dotted
+--                       path; this includes `on @.x`, the serve-name placeholder,
+--                       which fails closed until the `<app>.x` instance-family mapping
+--                       lands: the next change, designed in
+--                       ~/.mix/_doc/2026-10-10-bridged-verb-families.md),
+--                       `unreadable table row:`, `unreadable arm:`,
+--                       `unreadable prefix:`, `unreadable guard:`, `unreadable
+--                       dispatch:` (a verb match with no readable opener),
+--                       `unreadable literal:` (a word before a quote that is no
+--                       known literal prefix, so the gate never guesses at it)
+--
+-- Constant arms: an arm alternative that is a constant path (`ALPHA_PING`,
+-- `crate::a::ALPHA_PING`) counts as its literal when it resolves. It resolves to a
+-- one-line `const NAME: &str = "lit";` in the same file, to one imported by a plain
+-- `use crate::a::NAME;`, or to one in the module `crate::a` (its file src/a.rs). Any
+-- other constant arm, and any constant a guard, table row or prefix names, is an
+-- unreadable violation.
+--
+-- A string literal that spans lines where a name is read, or a file the lexer cannot
+-- read, is a cannot-check (exit 2), which also fails closed.
+--
+-- Registration shapes (the gate reads nothing else):
+--   decl      a const VERBS table entry, in any file. Declares the verb; the
+--             declaring component is the file's directory under apps/services/
+--             libs/cli.
+--   dispatch  an arm of a match whose scrutinee is verb, command, cmd, method
+--             or command_name() (optionally .as_str()/.as_ref()/.as_deref(), or
+--             a field such as cli.command). A tuple scrutinee is dispatch when
+--             any component is. Arm heads sit at the match indent + 4 (a head
+--             starting with `|` or `(` continues one); every literal in a head
+--             is a registration.
+--   guard     a comparison (`==`, `!=`, or the eq, ne and eq_ignore_ascii_case
+--             methods) with a verb expression on one side (verb, command, cmd or
+--             method, through a field chain such as `command.command` or `msg.verb`,
+--             optionally `.as_str()`) and a constant-like operand on the other: a
+--             string literal, or a constant path (`NAME`, `crate::a::NAME`,
+--             `Self::NAME`; its last segment is SCREAMING_CASE). A literal or a
+--             constant that resolves names a verb; a constant-like operand that does
+--             not resolve is an unreadable guard. A `matches!(verb operand, pattern)`
+--             names its literal and constant patterns. Its pattern list is read to the
+--             balanced close paren only, so text after the macro (`.then_some("x")`,
+--             a trailing constant) is not read as a pattern.
+--   route     a row of any const or static table whose value is `[...]` or `&[...]`
+--             (rows are tuples or structs, `("alpha.ping", "ready")` or
+--             `Route { verb: "alpha.ping", .. }`). The first item of a row is a
+--             registration when its literal is shaped like a verb (NAME_RE); other
+--             literals are ignored. A first item that is not a literal is an
+--             unreadable table row. A table whose opening bracket is on a later line
+--             than the declaration is read the same way. The lines of a table are
+--             also read by the guard and dispatch scanners: a callback in a row, or
+--             a fn-pointer array's closure, is never skipped.
+--   value    a comparison with a verb expression on one side and a runtime operand
+--             on the other (a field, a lowercase local, a call such as
+--             `response.command_name()`). It is not dispatch and is never a violation
+--             by itself, but it must be reviewed: every value comparison is listed in
+--             tools/verb_gate_exemptions.conf.mix (schema 1: file, text, reason). Text
+--             is the normalised comparison, `LHS OP RHS`, with each operand read whole
+--             as written, its wrapper arguments and suffixes included
+--             (`response.command_name() != Some(command)`). The boundaries are found in
+--             the code view and the text is the keep view's at those columns, so a literal
+--             argument (`select("alpha.ping", false)`) keeps its contents; only whitespace
+--             is normalised. A comparison that no
+--             exemption names fails closed as `unreviewed value comparison`; an
+--             exemption that matches no comparison fails closed as `stale exemption`.
+--             An operand that cannot be read whole (a bracket that does not close on
+--             its line, or no end of comparison after it) is an `unreadable value
+--             comparison` violation. The summary line counts the reviewed comparisons
+--             ("reviewed value comparisons: N"). Known limit: a lowercase local bound
+--             from a literal (`let v = "x";` then `verb == v`) is a runtime operand and
+--             is not read.
+--   prefix    a guard arm `c if c.starts_with("p.")`: answers every verb under
+--             the prefix p.
+--   on        a shipped .mix `on <name>` handler, outside tests.
+--   suffix    an entry of a SUFFIX_TABLES const table: a suffix under <app>.
+--   parse     an arm of a dispatch match in a PARSE_FILES file. It declares the
+--             verb (declared by the file's component) and names the
+--             SessionCommand variant it parses to, found in the arm's lines.
+--             It answers nothing.
+--   variant   an arm head `SessionCommand::X` of a dispatch match. A parse-
+--             declared verb is answered by its owner's variant arm; no such
+--             arm is not-answered.
+--
+-- A `method` scrutinee or guard ignores HTTP method tokens (GET, HEAD, ...).
+--
+-- Skipped: tests/, fuzz/, benches/ and target/ directories, *_test.rs,
+-- *_tests.rs, *_test.mix, and the body of an inline `#[cfg(test)] mod x {`,
+-- found by brace balance on the lexically stripped text (literals and comments
+-- blanked; scanning resumes after it; EOF inside it is a cannot-check). Every
+-- scanned file is stripped (strip_line): structure, arm heads and variants read
+-- the `code` view, where comments and literal contents are blanked, so a
+-- commented-out arm is neither an arm nor an answer. Names are read from the
+-- `keep` view (comments blanked, literal text kept) only where the code view has
+-- the string or the structure (rs_literals, reg_names), so a name inside a raw or
+-- multi-line string is never a registration. A raw string at a registration position
+-- (arm, table row, guard, prefix) is read from strip_line's raws; if it spans lines
+-- there, the gate cannot check it. NOT_DISPATCH files keep their tables
+-- but their matches and guards are not Bus dispatch.
+
+-- ------------------------------------------------------------- constants
+
+-- Protocol words are not registered. HELP, INFO, QUIT and RELOAD are the bare
+-- serve-mode universals (cli/mix-shell serve_runtime.rs, routed by `to:`, never
+-- prefixed); app.describe is the protocol verb every service answers.
+$PROTOCOL = ["HELP", "INFO", "QUIT", "RELOAD", "app.describe"]
+$STATUSES = ["draft", "accepted", "retired"]
+$SCAN_ROOTS = ["apps", "services", "libs", "cli"]
+$SKIP_DIRS = ["tests", "fuzz", "benches", "target"]
+-- Files whose const VERBS table holds suffixes under <app> (drive verbs).
+$SUFFIX_TABLES = ["libs/toolkit/src/drive.rs"]
+-- Non-Bus `match` blocks: native event names (libs/mix), the interactive
+-- shell's builtins, cd and exit (cli/mix-shell shell_handler.rs), and the
+-- `mix stats` CLI subcommands (cli/mix-shell stats_io.rs: overview, builtins,
+-- sessions, ...), and the editor's job-control words (cli/mix-shell editor.rs and
+-- editor/runtime.rs: jobs, fg, bg, cancel, exit, matched on a command line). None of
+-- these is a Bus verb.
+$NOT_DISPATCH = ["libs/mix/src/native_events.rs", "cli/mix-shell/src/shell_handler.rs", "cli/mix-shell/src/stats_io.rs", "cli/mix-shell/src/editor.rs", "cli/mix-shell/src/editor/runtime.rs"]
+-- Dispatch files whose arms are parse-only: a literal names a typed command.
+-- The arm declares the verb; the owner answers it through the variant arm.
+$PARSE_FILES = ["libs/bus/src/native_session/bootstrap.rs"]
+-- HTTP method tokens. In a `method` match or guard they are not verbs
+-- (libs/mix/src/builtins.rs compares `method == "HEAD"` for an HTTP request).
+$HTTP_METHODS = ["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "CONNECT", "TRACE"]
+-- Event names matched on the receive side (`command == ...` on a received
+-- message that is an event). An event is not a verb and is never registered.
+-- A guard with one of these names is a consumer, not a registration.
+$EVENTS = ["noded.observe.event", "noded.session.lifecycle", "noded.session.lifecycle.gap"]
+$REGISTRY_SCHEMA = 3
+$NAME_RE = "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)+$"
+$SUFFIX_RE = "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*$"
+$PREFIX_RE = "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*\\.$"
+$PATTERN_RE = "^<app>\\.[a-z0-9_]+(\\.[a-z0-9_]+)*(\\.\\*)?$"
+$OWNER_RE = "^[a-z][a-z0-9-]*$"
+$VERSION_RE = "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+-- Structure is matched in the code view: string contents are blanked and quotes kept,
+-- and a raw string opens with RAW_MARK at its r/br column (its contents are blanked).
+-- Names are read from the keep view at the same columns; a raw string's value comes
+-- from strip_line's raws. So text inside a string is never structure, while a literal
+-- at a registration position (arm, table row, guard, prefix) is read in full, or the
+-- gate cannot check it. U+0002 never occurs in source, so the marker is unambiguous.
+$RAW_MARK = chr(2)
+-- A string literal in a code line: an opening quote or a raw-string marker.
+$RS_LIT_RE = "\"|" .. $RAW_MARK
+-- A verb operand: verb, command, cmd or method, read through a field chain (`command.command`,
+-- `msg.verb`) and optionally as a string (`.as_str()`). It is compared by `==`, `!=`, or the
+-- eq, ne and eq_ignore_ascii_case methods, and the compared operand follows it. Its keyword is
+-- the first capture group. A receiver that is a method result (`command_name()`) is not one.
+-- A comparison operator: `==`, `!=`, or the eq, ne and eq_ignore_ascii_case methods. For a
+-- method the operator is `.name(`, and its right operand is the argument.
+$CMP_OP_RE = "==|!=|\\.(?:eq|ne|eq_ignore_ascii_case)\\("
+-- A verb expression ending a left operand: verb, command, cmd or method through a field
+-- chain (`command.command`, `msg.verb`), optionally `.as_str()`, `.as_ref()` or
+-- `.as_deref()`. A receiver that is a method result (`command_name()`) is not one.
+$LHS_VERB_RE = "(?:^|[^.A-Za-z0-9_])(?:[A-Za-z_][A-Za-z0-9_]*\\.)*(verb|command|cmd|method)(?:\\.as_str\\(\\)|\\.as_ref\\(\\)|\\.as_deref\\(\\))?\\s*$"
+-- A verb expression starting a right operand, ending at a non-operand character or the end.
+$RHS_VERB_RE = "^(?:[A-Za-z_][A-Za-z0-9_]*\\.)*(verb|command|cmd|method)(?:\\.as_str\\(\\)|\\.as_ref\\(\\)|\\.as_deref\\(\\))?(?:[\\s),{;]|$)"
+-- A constant-like path ending a left operand, or starting a right one. Its last segment is
+-- SCREAMING_CASE; the path may be crate::-rooted or Self::-rooted.
+$LHS_CONST_RE = "(?:^|[^A-Za-z0-9_:.])((?:crate::|Self::)?(?:[a-z_][a-z0-9_]*::)*[A-Z][A-Z0-9_]*)\\s*\\)*\\s*$"
+$RHS_CONST_RE = "^((?:crate::|Self::)?(?:[a-z_][a-z0-9_]*::)*[A-Z][A-Z0-9_]*)(?:[\\s),{;]|$)"
+-- A string literal ending a left operand: a plain literal's closing quote, or a raw string's `"#`.
+$LHS_LIT_RE = "\"#*\\s*\\)*\\s*$"
+-- Leading characters of a right operand that are not part of its value, and `Some(`.
+$LEAD_CHAR_RE = "^[\\s&*(]$"
+$SOME_RE = "^Some\\("
+-- A `matches!` on a verb: the scrutinee is the keyword (through a field chain, `*`, `&` or
+-- `.as_str()`), and its patterns follow the comma.
+$MATCHES_RE = "matches!\\(\\s*[&*\\s]*(?:[A-Za-z_][A-Za-z0-9_]*\\.)*(verb|command|cmd|method)(?:\\.as_str\\(\\)|\\.as_ref\\(\\)|\\.as_deref\\(\\))?\\s*,"
+-- A constant path inside a pattern: `NAME` or `crate::a::NAME`, as a whole word.
+$CONST_TOKEN_RE = "\\b(?:crate::|Self::)?(?:[a-z_][a-z0-9_]*::)*[A-Z][A-Z0-9_]*\\b"
+$PREFIX_BEFORE_RE = "^\\s*[A-Za-z_][A-Za-z0-9_]*\\s+if\\s+[A-Za-z_][A-Za-z0-9_]*\\.starts_with\\($"
+$TABLE_RE = "^\\s*(pub(\\([a-z]+\\))?\\s+)?const VERBS\\b"
+$OPEN_RE = "^(\\s*)(?:.*[^A-Za-z0-9_])?match\\s+(.+?)\\s*\\{\\s*$"
+$SCRUT_RE = "^(?:.*\\.)?(?:verb|command|cmd|method|command_name\\(\\))(?:\\.as_str\\(\\)|\\.as_ref\\(\\)|\\.as_deref\\(\\))?$"
+$METHOD_SCRUT_RE = "^(?:.*\\.)?method(?:\\.as_str\\(\\)|\\.as_ref\\(\\)|\\.as_deref\\(\\))?$"
+$VARIANT_HEAD_RE = "^SessionCommand::([A-Za-z0-9_]+)"
+$VARIANT_BODY_RE = "SessionCommand::([A-Za-z0-9_]+)"
+-- A Mix handler name, read from the joined keep view (see join_mix). A bare segment
+-- starts with a letter or `_`; a quoted name may hold only these characters.
+$ON_SEG_RE = "^[A-Za-z_][A-Za-z0-9_\\-]*"
+$QUOTED_NAME_RE = "^[A-Za-z0-9_.\\-]*$"
+-- A Rust arm alternative that is a constant path (`SUBMIT`, `crate::m::TASK_LIST`): its
+-- last segment is SCREAMING_CASE. A verb constant names a verb the gate cannot read. An
+-- enum variant, `None` or a lowercase binding is not a verb string and is not matched.
+$BARE_ALT_RE = "^(?:[A-Za-z_][A-Za-z0-9_]*::)*[A-Z][A-Z0-9_]*(\\s+if\\b.*)?$"
+-- The scrutinee of a match line, up to its brace (or the line end); tested with SCRUT_RE.
+$MATCH_SCRUT_RE = "(?:^|[^A-Za-z0-9_])match\\s+([^{]+?)\\s*(?:\\{.*)?$"
+$STARTS_RE = "\\.starts_with\\("
+-- A constant path that may name a verb: `NAME`, `crate::a::b::NAME`, `Self::NAME` or `Type::NAME`.
+$CONST_PATH_RE = "^(?:crate::(?:[a-z_][a-z0-9_]*::)*|Self::|[A-Z][A-Za-z0-9_]*::)?[A-Z][A-Z0-9_]*$"
+-- A `const NAME` token anywhere in a code line (round 24: not anchored, so a const that follows
+-- a statement on the same line counts). A name at the end of a line (its `:` on the next) counts too.
+$CONST_DEF_RE = "\\bconst\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?::|$)"
+-- a type declaration (round 27): struct, enum, union or type alias, with the declared name
+$TYPE_DECL_RE = "\\b(?:struct|enum|union|type)\\s+([A-Za-z_][A-Za-z0-9_]*)"
+-- a type keyword that ends its line, so the declared name is on the next line (round 27)
+$TYPE_OPEN_RE = "\\b(?:struct|enum|union|type)\\s*$"
+-- A line that ends in a bare `const`: the name it declares is on no line the gate can read.
+$CONST_OPEN_RE = "\\bconst\\s*$"
+-- One `use` statement of the joined code text: its body, up to the `;`.
+$USE_STMT_RE = "\\buse\\s+([^;]*);"
+-- Round 28: the other bindings of a type name (type_index): an `extern crate` statement, a trait
+-- or mod declaration, a generic parameter (a name after `<` or `,`, then `,` `>` `=` or a single
+-- `:` that is not the start of `::`), and each word of a use body.
+$EXTERN_CRATE_RE = "\\bextern\\s+crate\\s+([^;]*);"
+$OTHER_DECL_RE = "\\b(?:trait|mod)\\s+([A-Za-z_][A-Za-z0-9_]*)"
+$GENERIC_BIND_RE = "[<,]\\s*(?:const\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*(?:[,>=]|:[^:])"
+$WORD_RE = "\\b[A-Za-z_][A-Za-z0-9_]*\\b"
+$PUB_USE_RE = "\\bpub(?:\\s*\\([^)]*\\))?\\s+use\\s+([^;]*);"
+-- The bodies of a `use` statement (whitespace already joined): a plain `crate::a::b::NAME`, and
+-- the same with `as ALIAS` (groups: path, original name, alias).
+$USE_PLAIN_RE = "^crate::((?:[a-z_][a-z0-9_]*::)*[a-z_][a-z0-9_]*)::([A-Z][A-Z0-9_]*)$"
+$USE_ALIAS_RE = "^crate::((?:[a-z_][a-z0-9_]*::)*[a-z_][a-z0-9_]*)::([A-Z][A-Z0-9_]*)\\s+as\\s+([A-Za-z_][A-Za-z0-9_]*)$"
+-- Every constant-shaped word of a `use` body (the names a grouped or external import brings in).
+$CONST_WORD_RE = "\\b[A-Z][A-Z0-9_]*\\b"
+-- Rust lexical stripper: the next token in code, the end of a normal string, and the
+-- next block-comment marker.
+-- A word run that ends at a quote (any hashes) or an apostrophe is a literal opener, so it is
+-- matched whole; lit_open reads which literal form it is.
+$TOK_RE = "//|/\\*|\"|'|[A-Za-z0-9_]+#*\"|[A-Za-z0-9_]+'|r#"
+$STR_END_RE = "\\\\.|\""
+$BLOCK_RE = "/\\*|\\*/"
+-- Any character that can open a token the stripper must look at.
+$PLAIN_RE = "[\"'/]"
+-- Mix lexer (strip_mix_line). In code: a comment opener, a string opener, or `<<`.
+$MIX_CODE_RE = "--|#|\"|'|<<"
+$MIX_PLAIN_RE = "[-#\"'<]"
+-- In a double-quoted string: an escape (a lone backslash at end of line included),
+-- the closing quote, or an interpolation opener. The opener is built at run time:
+-- a literal dollar-brace in a Mix string would itself start an interpolation.
+$INTERP_OPEN = chr(36) .. "{"
+$MIX_DQ_RE = "\\\\.?|\"|\\$\\{"
+-- In a single-quoted string: an escape, or the closing quote.
+$MIX_SQ_RE = "\\\\.?|'"
+-- Interpolation ends at the first closing brace.
+$MIX_INTERP_RE = "\\}"
+-- A heredoc opener: `<<TAG`, then only blanks or a `--` comment to the end of the line.
+$HEREDOC_RE = "^<<([A-Za-z_][A-Za-z0-9_]*)[ \\t]*(?:--.*)?$"
+
+$VIOLATIONS = []
+-- Value comparisons seen in dispatch files: {rel, n, text} per comparison with a verb expression
+-- on one side and a runtime value on the other. Each must have a reviewed exemption (checked
+-- after the scan); text is its normalised source (value_text), which the exemptions key on.
+$VALUE_CMPS = []
+-- The reviewed value comparisons (tools/verb_gate_exemptions.conf.mix): schema, and the keys
+-- every entry has. An entry is {file, text, reason}; text is the comparison's normalised source.
+$EXEMPT_SCHEMA = 1
+$EXEMPT_KEYS = ["file", "text", "reason", "fn"]
+$DOUBLE_KEYS = ["file", "reason"]
+-- Request builders (exemptions key request_builders): a site that BUILDS a request for a verb
+-- rather than answering it. An entry is {file, text, verbs, reason}; text is the exact normalised
+-- keep-view source of the site, and verbs lists the verbs whose arms or guards at that site are
+-- not answers. Three site forms are keyed: a `match <expr> {` head line (text starts "match ";
+-- the entry covers the listed verbs' arms in that match only, and an arm for an unlisted verb
+-- still counts as dispatch), a comparison `LHS == "verb"` (text is value_text of the comparison,
+-- matched exactly), and a tuple expression (text starts "("; matched as a substring of a
+-- normalised line, and it contributes no record). Every entry also names `fn`, the enclosing
+-- function of its site (NAME, or Type::NAME inside an impl block; see fn_scopes), and it binds
+-- only a site whose fn AND text both match. Two sites for one entry is ambiguous-exemption.
+-- $BUILDERS holds the entries, each with its index idx and its fn as scope; $BUILDER_HITS
+-- lists the idx of every site an entry matched, once per site.
+$BUILDER_KEYS = ["file", "text", "verbs", "reason", "fn"]
+$BUILDERS = []
+$BUILDER_HITS = []
+-- A routing table: a const or static array (its type or value holds `[`) with tuple or struct
+-- rows. Its rows are read by route_table; the VERBS table is matched first by TABLE_RE.
+$ROUTE_DECL_RE = "^\\s*(?:pub(?:\\([^)]*\\))?\\s+)?(?:const|static)\\s+[A-Za-z_][A-Za-z0-9_]*\\s*:[^=]*\\[[^=]*="
+-- The head of a struct or tuple-like row: an identifier path followed by `(` or `{`, ending
+-- at that delimiter.
+$ROW_HEAD_RE = "^[A-Za-z_][A-Za-z0-9_:]*\\s*[({]"
+-- A struct field name and its colon, not a path separator: `verb: "x"`.
+$FIELD_RE = "^[A-Za-z_][A-Za-z0-9_]*\\s*:\\s*"
+$BLANK_RE = "^\\s$"
+-- Leading characters of a routing row's value that are not part of it: `&` and blanks.
+$LEAD_VAL_RE = "^[&\\s]$"
+-- The parts of a comparison operand, read by operand_left and operand_right: a path
+-- character, a deref, borrow or negation prefix, and the first character of an identifier.
+$PATH_CH_RE = "^[A-Za-z0-9_:.]$"
+$PREFIX_CH_RE = "^[*&!]$"
+$OPERAND_START_RE = "^[A-Za-z_]$"
+-- What may come before a left operand, as the text of the line before it: the start of the
+-- line, an opening bracket, a separator, a closure's bar, `=`, `&&`, `||`, or a keyword.
+$LEFT_BOUND_RE = "(?:^|[({;,|=]|&&|\\|\\||\\b(?:if|while|return|match|else))\\s*$"
+
+fn cannot($code, $msg)
+  print("cannot-check " .. $code .. ": " .. $msg)
+  print("verb-registry-gate: could not check (exit 2)")
+  exit(2)
+end
+
+fn violate($code, $msg)
+  push($VIOLATIONS, $code)
+  print("violation " .. $code .. ": " .. $msg)
+end
+
+-- Comma-separated text of a list of strings, for messages.
+fn list_text($xs)
+  $out = ""
+  for each $x in $xs
+    if $out == "" then
+      $out = $x
+    else
+      $out = $out .. ", " .. $x
+    end
+  end
+  return $out
+end
+
+-- Distinct owners of a list of records, in first-seen order.
+fn owners_of($recs)
+  $out = []
+  for each $r in $recs
+    if not contains($out, $r.owner) then
+      push($out, $r.owner)
+    end
+  end
+  return $out
+end
+
+-- `file:line` of a record.
+fn loc($r)
+  return $r.file .. ":" .. to_string($r.line)
+end
+
+-- ---------------------------------------------------------------- arguments
+
+$root = ""
+$REGISTRY = "docs/spec/bus/verbs.conf.mix"
+-- The reviewed value comparisons ship beside this gate; --exemptions overrides it.
+$EXEMPTIONS = dirname(realpath($0)) .. "/verb_gate_exemptions.conf.mix"
+$argv = args()
+$ai = 0
+$given_root = false
+while $ai < len($argv)
+  if $argv[$ai] == "--root" and $ai + 1 < len($argv) then
+    $root = $argv[$ai + 1]
+    $given_root = true
+    $ai = $ai + 2
+  elif $argv[$ai] == "--registry" and $ai + 1 < len($argv) then
+    $REGISTRY = $argv[$ai + 1]
+    $ai = $ai + 2
+  elif $argv[$ai] == "--exemptions" and $ai + 1 < len($argv) then
+    $EXEMPTIONS = $argv[$ai + 1]
+    $ai = $ai + 2
+  else
+    eprint("usage: mix tools/verb_registry_gate.mix [--root DIR] [--registry FILE] [--exemptions FILE]")
+    exit(2)
+  end
+end
+if not $given_root then
+  $root = dirname(dirname(realpath($0)))
+end
+if not is_dir($root) then
+  cannot("root", $root .. " is not a directory")
+end
+$root = realpath($root)
+$reg_path = $REGISTRY
+if not starts_with($REGISTRY, "/") then
+  $reg_path = $root .. "/" .. $REGISTRY
+end
+
+-- ----------------------------------------------------------------- registry
+
+$reg = nil
+try
+  $reg = load_data($reg_path)
+catch $e
+  cannot("registry", "cannot load " .. $REGISTRY .. ": " .. to_string($e))
+end
+
+if type($reg) != "map" then
+  cannot("registry", $REGISTRY .. " is not a map")
+end
+for each $k in keys($reg)
+  if not contains(["schema", "verbs", "families"], $k) then
+    violate("registry-shape", "unknown top-level key '" .. $k .. "'")
+  end
+end
+if not has_key($reg, "schema") or not has_key($reg, "verbs") or not has_key($reg, "families") then
+  cannot("registry", $REGISTRY .. " must have schema, verbs and families")
+end
+if $reg.schema != $REGISTRY_SCHEMA then
+  violate("registry-shape", "schema is " .. to_string($reg.schema) .. ", expected " .. to_string($REGISTRY_SCHEMA))
+end
+if type($reg.verbs) != "list" or type($reg.families) != "list" then
+  cannot("registry", "verbs and families must both be lists")
+end
+
+-- The problems with one entry: its keys, and the shape of its values.
+fn entry_problems($e, $kind, $where)
+  $problems = []
+  $required = ["pattern", "owner", "version", "status"]
+  $allowed = ["pattern", "owner", "version", "status", "note"]
+  if $kind == "verb" then
+    $required = ["name", "owner", "version", "status"]
+    $allowed = ["name", "owner", "version", "status", "note", "declared_by"]
+  end
+  if type($e) != "map" then
+    push($problems, $where .. " is not a map")
+    return $problems
+  end
+  for each $k in keys($e)
+    if not contains($allowed, $k) then
+      push($problems, $where .. " has unknown key '" .. $k .. "'")
+    end
+  end
+  for each $k in $required
+    if not has_key($e, $k) then
+      push($problems, $where .. " lacks '" .. $k .. "'")
+    end
+  end
+  if has_key($e, "name") and not (type($e.name) == "string" and re_match($e.name, $NAME_RE)) then
+    push($problems, $where .. " name is not a dotted verb name: " .. to_string($e.name))
+  end
+  if has_key($e, "pattern") and not (type($e.pattern) == "string" and re_match($e.pattern, $PATTERN_RE)) then
+    push($problems, $where .. " pattern must start with <app>. : " .. to_string($e.pattern))
+  end
+  if has_key($e, "owner") and not (type($e.owner) == "string" and re_match($e.owner, $OWNER_RE)) then
+    push($problems, $where .. " owner is not a component name: " .. to_string($e.owner))
+  end
+  if has_key($e, "declared_by") and not (type($e.declared_by) == "string" and re_match($e.declared_by, $OWNER_RE)) then
+    push($problems, $where .. " declared_by is not a component name: " .. to_string($e.declared_by))
+  end
+  if has_key($e, "version") and not (type($e.version) == "string" and re_match($e.version, $VERSION_RE)) then
+    push($problems, $where .. " version is not MAJOR.MINOR.PATCH: " .. to_string($e.version))
+  end
+  if has_key($e, "status") and not contains($STATUSES, $e.status) then
+    push($problems, $where .. " status '" .. to_string($e.status) .. "' is not draft, accepted or retired")
+  end
+  return $problems
+end
+
+$concrete = []
+$families = []
+$names = []
+$patterns = []
+
+$i = 0
+for each $e in $reg.verbs
+  $where = "verbs[" .. to_string($i) .. "]"
+  for each $p in entry_problems($e, "verb", $where)
+    violate("registry-entry", $p)
+  end
+  if type($e) == "map" and has_key($e, "name") and type($e.name) == "string" then
+    if contains($PROTOCOL, $e.name) then
+      violate("registry-protocol", $e.name .. " is a protocol verb and must not be registered")
+    elif contains($names, $e.name) then
+      violate("registry-duplicate", "verb " .. $e.name .. " is listed twice")
+    end
+    push($names, $e.name)
+    push($concrete, $e)
+  end
+  $i = $i + 1
+end
+
+$i = 0
+for each $e in $reg.families
+  $where = "families[" .. to_string($i) .. "]"
+  for each $p in entry_problems($e, "family", $where)
+    violate("registry-entry", $p)
+  end
+  if type($e) == "map" and has_key($e, "pattern") and type($e.pattern) == "string" then
+    if contains($patterns, $e.pattern) then
+      violate("registry-duplicate", "family " .. $e.pattern .. " is listed twice")
+    end
+    push($patterns, $e.pattern)
+    push($families, $e)
+  end
+  $i = $i + 1
+end
+
+-- Matches a dotted name against a family pattern. <app> takes the first
+-- segment whatever it is; a segment `*` takes exactly one later segment.
+fn family_matches($pattern, $name)
+  $p = split($pattern, ".")
+  $n = split($name, ".")
+  if len($p) != len($n) then
+    return false
+  end
+  $i = 0
+  for each $seg in $p
+    if $i > 0 and $seg != "*" and $seg != $n[$i] then
+      return false
+    end
+    $i = $i + 1
+  end
+  return true
+end
+
+-- Can two family patterns match one common name? Same length, and every
+-- position equal or wildcarded (`*`, or `<app>` at position 0).
+fn patterns_overlap($p, $q)
+  $a = split($p, ".")
+  $b = split($q, ".")
+  if len($a) != len($b) then
+    return false
+  end
+  $k = 0
+  while $k < len($a)
+    $x = $a[$k]
+    $y = $b[$k]
+    if not ($x == $y or $x == "*" or $x == "<app>" or $y == "*" or $y == "<app>") then
+      return false
+    end
+    $k = $k + 1
+  end
+  return true
+end
+
+-- A concrete name a family pattern also matches is listed twice.
+for each $c in $concrete
+  for each $f in $families
+    if family_matches($f.pattern, $c.name) then
+      violate("registry-overlap", "verb " .. $c.name .. " is listed concretely and also matched by " .. $f.pattern)
+    end
+  end
+end
+
+-- Two families that can match one name overlap.
+$fi = 0
+while $fi < len($families)
+  $fj = $fi + 1
+  while $fj < len($families)
+    if patterns_overlap($families[$fi].pattern, $families[$fj].pattern) then
+      violate("family-overlap", $families[$fi].pattern .. " and " .. $families[$fj].pattern .. " can match the same name")
+    end
+    $fj = $fj + 1
+  end
+  $fi = $fi + 1
+end
+
+-- The concrete entry with this name, or nil.
+fn concrete_named($name)
+  for each $c in $concrete
+    if $c.name == $name then
+      return $c
+    end
+  end
+  return nil
+end
+
+-- Every family whose pattern matches this name.
+fn families_matching($name)
+  $out = []
+  for each $f in $families
+    if family_matches($f.pattern, $name) then
+      push($out, $f)
+    end
+  end
+  return $out
+end
+
+-- ------------------------------------------------------------------- scan
+
+-- The value of the raw string whose marker sits at this column, from strip_line's raws;
+-- nil when it is not on this line (it spans lines) or there is no such literal.
+fn raw_value($raws, $col)
+  for each $r in $raws
+    if $r.start == $col then
+      return $r.value
+    end
+  end
+  return nil
+end
+
+-- The string literals in a code line, left to right, as {col, name, bad}. A plain
+-- string is named from the keep view between its quotes; a raw string from raws. bad
+-- marks a literal whose text is not all on this line, which the gate cannot read.
+fn rs_literals($cline, $kline, $raws)
+  $out = []
+  $ms = re_find($cline, $RS_LIT_RE)
+  $i = 0
+  while $i < len($ms)
+    $m = $ms[$i]
+    if $m.match == $RAW_MARK then
+      $v = raw_value($raws, $m.start)
+      push($out, {col: $m.start, name: $v, bad: $v == nil})
+      $i = $i + 1
+    elif $i + 1 < len($ms) and $ms[$i + 1].match == "\"" then
+      push($out, {col: $m.start, name: slice($kline, $m.start + 1, $ms[$i + 1].start), bad: false})
+      $i = $i + 2
+    else
+      -- an opening quote with no closing quote on this line
+      push($out, {col: $m.start, name: nil, bad: true})
+      $i = $i + 1
+    end
+  end
+  return $out
+end
+
+-- The names at a registration position (a table row, an arm head): every literal in
+-- the line. A literal the gate cannot read is a cannot-check, never a skipped name.
+fn reg_names($cline, $kline, $raws, $rel, $n)
+  $out = []
+  for each $l in rs_literals($cline, $kline, $raws)
+    if $l.bad then
+      cannot("scan", "a string literal at " .. $rel .. ":" .. to_string($n) .. " spans lines where a verb name is read; it cannot be checked")
+    end
+    push($out, $l.name)
+  end
+  return $out
+end
+
+-- The literal in rs_literals that starts at column col, or nil.
+fn lit_at($lits, $col)
+  for each $l in $lits
+    if $l.col == $col then
+      return $l
+    end
+  end
+  return nil
+end
+
+-- The literal that a left operand ends with (`"lit" == verb`), or nil when the text before
+-- the operator does not end in a literal. The literal is the last one that starts before it.
+fn lhs_literal($lits, $lhs)
+  if not re_match($lhs, $LHS_LIT_RE) then
+    return nil
+  end
+  $best = nil
+  for each $l in $lits
+    if $l.col < len($lhs) then
+      if $best == nil then
+        $best = $l
+      elif $l.col > $best.col then
+        $best = $l
+      end
+    end
+  end
+  return $best
+end
+
+-- The column of a right operand's value, past its leading `&`, `*`, `(` and `Some(`.
+fn skip_operand_lead($cline, $p)
+  $q = $p
+  while $q < len($cline) and re_match(slice($cline, $q, $q + 1), $LEAD_CHAR_RE)
+    $q = $q + 1
+  end
+  if re_match(slice($cline, $q, len($cline)), $SOME_RE) then
+    $q = $q + 5
+    while $q < len($cline) and re_match(slice($cline, $q, $q + 1), $LEAD_CHAR_RE)
+      $q = $q + 1
+    end
+  end
+  return $q
+end
+
+-- The column of the bracket that closes the one open at p (`(` or `[`), or -1 when the line
+-- ends first. Only these two kinds nest here; a string is blank in the code view.
+fn bracket_close($s, $p)
+  $depth = 0
+  $q = $p
+  while $q < len($s)
+    $ch = slice($s, $q, $q + 1)
+    if $ch == "(" or $ch == "[" then
+      $depth = $depth + 1
+    elif $ch == ")" or $ch == "]" then
+      $depth = $depth - 1
+      if $depth == 0 then
+        return $q
+      end
+    end
+    $q = $q + 1
+  end
+  return -1
+end
+
+-- The column of the bracket that opens the one closed at p (`)` or `]`), or -1 when the text
+-- before p holds no opener for it.
+fn bracket_open($s, $p)
+  $depth = 0
+  $q = $p
+  while $q >= 0
+    $ch = slice($s, $q, $q + 1)
+    if $ch == ")" or $ch == "]" then
+      $depth = $depth + 1
+    elif $ch == "(" or $ch == "[" then
+      $depth = $depth - 1
+      if $depth == 0 then
+        return $q
+      end
+    end
+    $q = $q - 1
+  end
+  return -1
+end
+
+-- Whether the text after a right operand can end it: the end of the line, a closing bracket,
+-- a separator, `{`, `&&`, `||` or `=>`. Anything else (`as u8`, `+ 1`) is not a whole operand.
+fn ends_operand($rest)
+  $t = trim($rest)
+  if $t == "" then
+    return true
+  end
+  $ok = false
+  for each $s in ["{", ";", ")", "]", "}", ",", "&&", "||", "=>"]
+    if starts_with($t, $s) then
+      $ok = true
+    end
+  end
+  return $ok
+end
+
+-- The whole left operand of a comparison, read backwards from the operator: its prefix (deref,
+-- borrow, negation), a path, and any call, index or `?` suffixes, every bracket kept whole. nil
+-- when a bracket has no opener on this line, or the text before the operand cannot start one.
+fn operand_left($lhs)
+  $q = len($lhs)
+  while $q > 0 and re_match(slice($lhs, $q - 1, $q), $BLANK_RE)
+    $q = $q - 1
+  end
+  $e = $q
+  $go = true
+  while $go and $q > 0
+    $ch = slice($lhs, $q - 1, $q)
+    if $ch == ")" or $ch == "]" then
+      $o = bracket_open($lhs, $q - 1)
+      if $o < 0 then
+        return nil
+      end
+      $q = $o
+    elif re_match($ch, $PATH_CH_RE) or $ch == "?" then
+      $q = $q - 1
+    else
+      $go = false
+    end
+  end
+  -- $p is where the path starts; the prefix (`*`, `&`, `!`) sits before it, so the operand
+  -- starts at $q, and the path's first character is the one that must be a name.
+  $p = $q
+  while $q > 0 and re_match(slice($lhs, $q - 1, $q), $PREFIX_CH_RE)
+    $q = $q - 1
+  end
+  if not re_match(slice($lhs, $p, $p + 1), $OPERAND_START_RE) then
+    return nil
+  end
+  if not re_match(slice($lhs, 0, $q), $LEFT_BOUND_RE) then
+    return nil
+  end
+  return {start: $q, end: $e}
+end
+
+-- The whole right operand of a comparison, read forwards from the operator: its prefix, a
+-- path, and any call, index or `?` suffixes, every bracket kept whole (`Some(command)`). nil
+-- when a bracket does not close on this line or the operand does not end where one ends.
+fn operand_right($after)
+  $p = 0
+  while $p < len($after) and re_match(slice($after, $p, $p + 1), $BLANK_RE)
+    $p = $p + 1
+  end
+  $s = $p
+  while $p < len($after) and re_match(slice($after, $p, $p + 1), $PREFIX_CH_RE)
+    $p = $p + 1
+  end
+  if not re_match(slice($after, $p, $p + 1), $OPERAND_START_RE) then
+    return nil
+  end
+  $go = true
+  while $go and $p < len($after)
+    $ch = slice($after, $p, $p + 1)
+    if re_match($ch, $PATH_CH_RE) or $ch == "?" then
+      $p = $p + 1
+    elif $ch == "(" or $ch == "[" then
+      $c = bracket_close($after, $p)
+      if $c < 0 then
+        return nil
+      end
+      $p = $c + 1
+    else
+      $go = false
+    end
+  end
+  if not ends_operand(slice($after, $p, len($after))) then
+    return nil
+  end
+  return {start: $s, end: $p}
+end
+
+-- Collapses each run of whitespace OUTSIDE a literal to one space and trims the ends. A literal is
+-- copied byte for byte: its contents, its escapes and the spaces or tabs inside it are part of the
+-- key. The spans are found by re_lit_end, which re-lexes the operand's keep text with strip_line's
+-- rules (the code view blanks a char literal whole and a raw string's closing marker, so it cannot
+-- give those spans). The operand is already bounded by the code view (value_text).
+fn norm_text($s)
+  $cs = chars($s)
+  $n = len($cs)
+  $out = []
+  $p = 0
+  $gap = false
+  while $p < $n
+    if re_match($cs[$p], "\\s") then
+      $gap = true
+      $p = $p + 1
+    else
+      if $gap and len($out) > 0 then
+        push($out, " ")
+      end
+      $gap = false
+      $e = re_lit_end($cs, $p)
+      push($out, join(slice($cs, $p, $e), ""))
+      $p = $e
+    end
+  end
+  return join($out, "")
+end
+
+-- The index just past the token that starts at p: a plain string (escapes kept), a raw string
+-- (`r"…"`, `r#"…"#`, `br…`), a char literal, or else the single character at p. An unclosed
+-- literal runs to the end, which is what the gate reads for a literal that does not close here.
+fn re_lit_end($cs, $p)
+  $n = len($cs)
+  -- inside a word run there is no opener: only the run's first character can start one
+  if $p > 0 and re_match($cs[$p - 1], "[A-Za-z0-9_]") and re_match($cs[$p], "[A-Za-z0-9_]") then
+    return $p + 1
+  end
+  $o = lit_open($cs, $p)
+  if $o.kind == "plain" then
+    $k = $o.body
+    while $k < $n
+      if $cs[$k] == "\\" then
+        $k = $k + 2
+      elif $cs[$k] == "\"" then
+        return $k + 1
+      else
+        $k = $k + 1
+      end
+    end
+    return $n
+  end
+  if $o.kind == "char" then
+    return $o.close + 1
+  end
+  if $o.kind == "raw" then
+    $close = re_find(join(slice($cs, $o.body, $n), ""), "\"" .. repeat("#", $o.hashes))
+    if len($close) == 0 then
+      return $n
+    end
+    return $o.body + $close[0].start + 1 + $o.hashes
+  end
+  return $p + 1
+end
+
+-- The normalised text of a value comparison, which its exemption names: the whole operand on the
+-- verb side and the whole one on the other, as written, joined by the operator with one space
+-- each side (`response.command_name() != Some(command)`). A method form (`x.eq(y)`) reads
+-- `x.eq(y)`. nil when an operand is not read whole.
+fn value_text($cline, $kline, $c, $op)
+  $after = $c + len($op)
+  -- the boundaries are found in the code view, where a literal's contents are blank, so a
+  -- bracket or operator inside a literal cannot move them; the text is then the keep view's
+  -- at the same columns, so the literal's contents survive into the key
+  $lt = operand_left(slice($cline, 0, $c))
+  $rt = operand_right(slice($cline, $after, len($cline)))
+  if $lt == nil or $rt == nil then
+    return nil
+  end
+  $l = norm_text(slice($kline, $lt.start, $lt.end))
+  $r = norm_text(slice($kline, $after + $rt.start, $after + $rt.end))
+  if starts_with($op, ".") then
+    return $l .. $op .. $r .. ")"
+  end
+  return $l .. " " .. $op .. " " .. $r
+end
+
+-- Queues a value comparison for its exemption. An operand that is not read whole cannot be keyed
+-- to an exemption, so the comparison is an unreadable violation, never a silent pass.
+fn value_cmp($rel, $n, $cline, $kline, $c, $op, $scope)
+  $t = value_text($cline, $kline, $c, $op)
+  if $t == nil then
+    violate("unreadable", "unreadable value comparison: " .. $rel .. ":" .. to_string($n) .. "; an operand is not read whole (a bracket does not close, or the operand is not followed by the end of a comparison), so it cannot be keyed to an exemption")
+  else
+    push($VALUE_CMPS, {rel: $rel, n: $n, text: $t, scope: $scope})
+  end
+end
+
+-- The column of the `)` that closes the group open before start (the pattern list of a
+-- matches!), or -1 when the line ends first. String contents are blanked in the code view.
+fn balanced_close($cline, $start)
+  $depth = 0
+  $p = $start
+  while $p < len($cline)
+    $ch = slice($cline, $p, $p + 1)
+    if $ch == "(" then
+      $depth = $depth + 1
+    elif $ch == ")" then
+      if $depth == 0 then
+        return $p
+      end
+      $depth = $depth - 1
+    end
+    $p = $p + 1
+  end
+  return -1
+end
+
+-- Walks the square brackets of a code line from an open depth. Returns the depth after the
+-- line, and the column where the depth first returns to zero (-1 when it does not).
+fn bracket_walk($text, $depth)
+  $col = -1
+  $p = 0
+  while $p < len($text)
+    $ch = slice($text, $p, $p + 1)
+    if $ch == "[" then
+      $depth = $depth + 1
+    elif $ch == "]" then
+      $depth = $depth - 1
+      if $depth == 0 and $col < 0 then
+        $col = $p
+      end
+    end
+    $p = $p + 1
+  end
+  return {depth: $depth, col: $col}
+end
+
+-- The index of the line that holds offset off, given where each joined line starts.
+fn line_at($starts, $off)
+  $ln = 0
+  $i = 0
+  while $i < len($starts)
+    if $starts[$i] <= $off then
+      $ln = $i
+    end
+    $i = $i + 1
+  end
+  return $ln
+end
+
+-- One row of a routing table: the element of the joined code text $C from es up to ep (a
+-- depth-zero comma, or the table's closing bracket). A tuple or struct row, `( ... )` or
+-- `Name { ... }`, whose body holds a string literal names a verb at its first item, which
+-- must be that literal (after an optional struct field name, `&` and blanks). A literal there
+-- is the name when it has the verb shape (NAME_RE); an unshaped one is ignored. A first item
+-- that is not a literal fails closed as an unreadable table row. Anything else, a plain
+-- literal, a constant or a number, is not a routing row. Returns the record, or nil.
+fn route_row($C, $es, $ep, $lits, $starts, $rel, $owner, $start)
+  $ps = $es
+  while $ps < $ep and re_match(slice($C, $ps, $ps + 1), $BLANK_RE)
+    $ps = $ps + 1
+  end
+  if $ps >= $ep then
+    return nil
+  end
+  $n = $start + line_at($starts, $ps) + 1
+  $open = -1
+  if slice($C, $ps, $ps + 1) == "(" then
+    $open = $ps
+  else
+    $hm = re_find(slice($C, $ps, $ep), $ROW_HEAD_RE)
+    if len($hm) > 0 then
+      $open = $ps + len($hm[0].match) - 1
+    end
+  end
+  if $open < 0 then
+    return nil
+  end
+  $kind = slice($C, $open, $open + 1)
+  $want = ")"
+  if $kind == "{" then
+    $want = "}"
+  end
+  $cl = -1
+  $q = $open + 1
+  $d = 0
+  while $q < $ep and $cl < 0
+    $ch = slice($C, $q, $q + 1)
+    if $ch == $kind then
+      $d = $d + 1
+    elif $ch == $want then
+      if $d == 0 then
+        $cl = $q
+      else
+        $d = $d - 1
+      end
+    end
+    $q = $q + 1
+  end
+  if $cl < 0 then
+    cannot("scan", $rel .. ":" .. to_string($n) .. " a routing row's brackets do not close; it cannot be read")
+  end
+  -- the first string literal in the body, which is the one the row names
+  $first = nil
+  for each $l in $lits
+    if $l.off > $open and $l.off < $cl and $first == nil then
+      $first = $l
+    end
+  end
+  if $first == nil then
+    return nil
+  end
+  -- the first item: from the body's start to a depth-zero comma
+  $fs = $open + 1
+  while $fs < $cl and re_match(slice($C, $fs, $fs + 1), $BLANK_RE)
+    $fs = $fs + 1
+  end
+  $fe = $cl
+  $d = 0
+  $q = $fs
+  $fe_found = false
+  while $q < $cl and not $fe_found
+    $ch = slice($C, $q, $q + 1)
+    if $ch == "(" or $ch == "[" or $ch == "{" then
+      $d = $d + 1
+    elif $ch == ")" or $ch == "]" or $ch == "}" then
+      $d = $d - 1
+    elif $ch == "," and $d == 0 then
+      $fe = $q
+      $fe_found = true
+    end
+    $q = $q + 1
+  end
+  -- its value starts after a struct field name (`verb:`, not a path `::`), and past `&`
+  $vs = $fs
+  $fm = re_find(slice($C, $fs, $fe), $FIELD_RE)
+  if len($fm) > 0 then
+    $after = $fs + len($fm[0].match)
+    if slice($C, $after, $after + 1) != ":" then
+      $vs = $after
+    end
+  end
+  while $vs < $fe and re_match(slice($C, $vs, $vs + 1), $LEAD_VAL_RE)
+    $vs = $vs + 1
+  end
+  if $first.off != $vs then
+    violate("unreadable", "unreadable table row: " .. $rel .. ":" .. to_string($n) .. "; a routing row's first item is not a string literal, so the verb it names cannot be read")
+    return nil
+  end
+  if $first.bad then
+    cannot("scan", "a string literal at " .. $rel .. ":" .. to_string($n) .. " spans lines where a verb name is read; it cannot be checked")
+  end
+  if re_match($first.name, $NAME_RE) then
+    return record($first.name, $owner, $rel, $n, "route")
+  end
+  return nil
+end
+
+-- A routing table (ROUTE_DECL_RE) read from its declaration line $start through the line that
+-- closes its bracket. Returns {last, records}: the index of the last line (the caller resumes
+-- after it) and the registrations its rows name. The rows are read from the joined code view,
+-- so a row may span lines; each literal keeps its line. A table that never closes fails
+-- closed. Its opening bracket may sit on the first code line after a declaration that ends
+-- at `=` (rustfmt's layout); a value that does not open with `[` or `&[` is not a table, so
+-- it yields no records.
+fn route_table($code, $keep, $raws, $start, $rel, $owner)
+  -- The value is the text after the declaration's `=`, or, when the line ends at the `=`
+  -- (rustfmt's layout), the first later line with code. It must open with `[` or `&[`;
+  -- anything else is a constant or a call, with no table of literals to read.
+  $first = $code[$start]
+  $eq = index_of($first, "=")
+  $vk = $start
+  $vtext = slice($first, $eq + 1, len($first))
+  while trim($vtext) == "" and $vk + 1 < len($code)
+    $vk = $vk + 1
+    $vtext = $code[$vk]
+  end
+  $vm = re_find($vtext, "^\\s*&?\\s*\\[")
+  if len($vm) == 0 then
+    return {last: $start, records: []}
+  end
+  $open_k = $vk
+  $open_col = len($vm[0].match) - 1
+  if $vk == $start then
+    $open_col = $eq + 1 + $open_col
+  end
+  $walk = bracket_walk(slice($code[$open_k], $open_col, len($code[$open_k])), 0)
+  $end_k = -1
+  $end_col = -1
+  $depth = $walk.depth
+  if $walk.col >= 0 then
+    $end_k = $open_k
+    $end_col = $open_col + $walk.col
+  end
+  $k = $open_k + 1
+  while $end_k < 0 and $k < len($code)
+    $w = bracket_walk($code[$k], $depth)
+    $depth = $w.depth
+    if $w.col >= 0 then
+      $end_k = $k
+      $end_col = $w.col
+    end
+    $k = $k + 1
+  end
+  if $end_k < 0 then
+    cannot("scan", $rel .. ":" .. to_string($start + 1) .. " a routing table never closes before end of file; the rest of the file cannot be read")
+  end
+  -- the joined code view of the table's lines, and each line's start offset
+  $C = ""
+  $starts = []
+  $off = 0
+  $k = $start
+  while $k <= $end_k
+    push($starts, $off)
+    $C = $C .. $code[$k] .. "\n"
+    $off = $off + len($code[$k]) + 1
+    $k = $k + 1
+  end
+  $open = $starts[$open_k - $start] + $open_col
+  $close = $starts[$end_k - $start] + $end_col
+  -- every string literal of the table, with its offset in the joined view
+  $lits = []
+  $k = $start
+  while $k <= $end_k
+    for each $l in rs_literals($code[$k], $keep[$k], $raws[$k])
+      push($lits, {off: $starts[$k - $start] + $l.col, name: $l.name, bad: $l.bad})
+    end
+    $k = $k + 1
+  end
+  $recs = []
+  $p = $open + 1
+  $depth = 0
+  $es = $p
+  while $p <= $close
+    $ch = slice($C, $p, $p + 1)
+    if $p == $close or ($depth == 0 and $ch == ",") then
+      $r = route_row($C, $es, $p, $lits, $starts, $rel, $owner, $start)
+      if $r != nil then
+        push($recs, $r)
+      end
+      $es = $p + 1
+    elif $ch == "(" or $ch == "[" or $ch == "{" then
+      $depth = $depth + 1
+    elif $ch == ")" or $ch == "]" or $ch == "}" then
+      $depth = $depth - 1
+    end
+    $p = $p + 1
+  end
+  return {last: $end_k, records: $recs}
+end
+
+-- Why an exemption entry is malformed, or "" when it is well formed: a map whose keys are
+-- exactly file, text and reason, each a non-empty string.
+fn exemption_problem($e)
+  if type($e) != "map" then
+    return "an exemption is not a map"
+  end
+  for each $k in keys($e)
+    if not contains($EXEMPT_KEYS, $k) then
+      return "an exemption has an unknown key '" .. $k .. "'"
+    end
+  end
+  for each $k in $EXEMPT_KEYS
+    if not has_key($e, $k) then
+      return "an exemption has no '" .. $k .. "'"
+    end
+    if type($e[$k]) != "string" or trim($e[$k]) == "" then
+      return "an exemption's '" .. $k .. "' is not a non-empty string"
+    end
+  end
+  if scope_problem(plain_fn($e["fn"])) != "" then
+    return "an exemption's fn " .. scope_problem(plain_fn($e["fn"]))
+  end
+  return ""
+end
+
+-- A `fn` value with its raw-identifier markers dropped, so `r#build` is `build`: the form fn_scopes
+-- writes (the lexer reads `r#name` as `name`). A non-string passes through for scope_problem to refuse.
+fn plain_fn($f)
+  if type($f) == "string" then
+    return replace($f, "r#", "")
+  end
+  return $f
+end
+
+-- Why a `fn` value is not a function name the gate can bind a site to, or "" when it is: NAME,
+-- or Type::NAME inside an impl block, each an identifier. fn_scopes writes the same form.
+fn scope_problem($f)
+  if not re_match($f, "^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)?$") then
+    return "is not a function name (NAME or Type::NAME)"
+  end
+  return ""
+end
+
+-- Why a request_builders entry is malformed, or "" when it is well formed: a map whose keys are
+-- exactly file, text, verbs, reason and fn; file, text, reason and fn non-empty strings (fn a
+-- function name); verbs a non-empty list of non-empty strings.
+fn builder_problem($b)
+  if type($b) != "map" then
+    return "a request builder is not a map"
+  end
+  for each $k in keys($b)
+    if not contains($BUILDER_KEYS, $k) then
+      return "a request builder has an unknown key '" .. $k .. "'"
+    end
+  end
+  for each $k in $BUILDER_KEYS
+    if not has_key($b, $k) then
+      return "a request builder has no '" .. $k .. "'"
+    end
+  end
+  for each $k in ["file", "text", "reason", "fn"]
+    if type($b[$k]) != "string" or trim($b[$k]) == "" then
+      return "a request builder's '" .. $k .. "' is not a non-empty string"
+    end
+  end
+  if scope_problem(plain_fn($b["fn"])) != "" then
+    return "a request builder's fn " .. scope_problem(plain_fn($b["fn"]))
+  end
+  if type($b.verbs) != "list" or len($b.verbs) == 0 then
+    return "a request builder's verbs is not a non-empty list"
+  end
+  for each $v in $b.verbs
+    if type($v) != "string" or trim($v) == "" then
+      return "a request builder's verbs holds a value that is not a non-empty string"
+    end
+  end
+  return ""
+end
+
+-- Why a test-double entry is malformed, or "" when it is well formed: a map whose keys are
+-- exactly file and reason, each a non-empty string.
+fn double_problem($d)
+  if type($d) != "map" then
+    return "a test double is not a map"
+  end
+  for each $k in keys($d)
+    if not contains($DOUBLE_KEYS, $k) then
+      return "a test double has an unknown key '" .. $k .. "'"
+    end
+  end
+  for each $k in $DOUBLE_KEYS
+    if not has_key($d, $k) then
+      return "a test double has no '" .. $k .. "'"
+    end
+    if type($d[$k]) != "string" or trim($d[$k]) == "" then
+      return "a test double's '" .. $k .. "' is not a non-empty string"
+    end
+  end
+  return ""
+end
+
+-- Why a listed test double does not apply, or "" when it does (round 21). A listed file is scanned
+-- like any other file, so the entry changes only the owner check: its answers are not an owner. It
+-- applies only while the file exists and is not a directory, and holds at least one answering site,
+-- a registration the scan read in it. $sites counts the answering sites the scan found in the file
+-- (is_answer records and variant handlers); a declaration alone is not a site (round 22).
+fn double_stale($root, $file, $sites)
+  if not exists($root .. "/" .. $file) or is_dir($root .. "/" .. $file) then
+    return "the file does not exist or is a directory"
+  end
+  if $sites == 0 then
+    return "the file holds no answering site the gate reads"
+  end
+  return ""
+end
+
+-- The verb guards in a line, as {keyword, name}. A comparison is a guard when one operand is
+-- a verb expression and the other is constant-like: a string literal, or a constant path. A
+-- literal names its verb; a constant path names the literal it resolves to, and one that
+-- does not resolve is an unreadable guard (a violation, never a skip). Any other operand is a
+-- runtime value, so the comparison is a value comparison: counted in VALUE_CMPS, not dispatch.
+-- A matches! on a verb operand names its literal and constant patterns.
+fn guards_in($cline, $kline, $raws, $ix, $rel, $n, $scope, $site)
+  $out = []
+  $lits = rs_literals($cline, $kline, $raws)
+  for each $m in re_find($cline, $CMP_OP_RE)
+    $c = $m.start
+    -- the comparison's normalised text, the key a request_builders guard entry matches exactly
+    $gt = value_text($cline, $kline, $c, $m.match)
+    $rstart = skip_operand_lead($cline, $c + len($m.match))
+    $lhs = slice($cline, 0, $c)
+    $rhs = slice($cline, $rstart, len($cline))
+    $lv = re_find($lhs, $LHS_VERB_RE)
+    $rv = re_find($rhs, $RHS_VERB_RE)
+    if len($lv) > 0 then
+      -- the verb is on the left, so the other operand is the right one
+      $kw = $lv[0].groups[0]
+      $lit = lit_at($lits, $rstart)
+      if $lit != nil then
+        if $lit.bad then
+          cannot("scan", "a guard literal at " .. $rel .. ":" .. to_string($n) .. " spans lines; it cannot be checked")
+        end
+        push($out, {keyword: $kw, name: $lit.name, text: lit_guard_text($cline, $kline, $c, $rstart)})
+      else
+        $cp = re_find($rhs, $RHS_CONST_RE)
+        if len($cp) > 0 then
+          $name = const_name($cp[0].groups[0], $ix, $rel, $n, $site)
+          if $name != nil then
+            push($out, {keyword: $kw, name: $name, text: $gt})
+          end
+        else
+          value_cmp($rel, $n, $cline, $kline, $c, $m.match, $scope)
+        end
+      end
+    elif len($rv) > 0 then
+      -- the verb is on the right, so the other operand is the left one
+      $kw = $rv[0].groups[0]
+      $lit = lhs_literal($lits, $lhs)
+      if $lit != nil then
+        if $lit.bad then
+          cannot("scan", "a guard literal at " .. $rel .. ":" .. to_string($n) .. " spans lines; it cannot be checked")
+        end
+        push($out, {keyword: $kw, name: $lit.name, text: $gt})
+      else
+        $cp = re_find($lhs, $LHS_CONST_RE)
+        if len($cp) > 0 then
+          $name = const_name($cp[0].groups[0], $ix, $rel, $n, $site)
+          if $name != nil then
+            push($out, {keyword: $kw, name: $name, text: $gt})
+          end
+        else
+          value_cmp($rel, $n, $cline, $kline, $c, $m.match, $scope)
+        end
+      end
+    end
+  end
+  for each $m in re_find($cline, $MATCHES_RE)
+    $start = $m.start + len($m.match)
+    -- the pattern list ends at its balanced `)`: anything after it is not a pattern. A
+    -- line that ends before the `)` is read to its end (the list continues on a later line).
+    $cut = len($cline)
+    $close = balanced_close($cline, $start)
+    if $close >= 0 then
+      $cut = $close
+    end
+    $ifs = re_find(slice($cline, $start, $cut), "\\bif\\b")
+    if len($ifs) > 0 then
+      $cut = $start + $ifs[0].start
+    end
+    for each $l in rs_literals($cline, $kline, $raws)
+      if $l.col >= $start and $l.col < $cut then
+        if $l.bad then
+          cannot("scan", "a matches! literal at " .. $rel .. ":" .. to_string($n) .. " spans lines; it cannot be checked")
+        end
+        push($out, {keyword: $m.groups[0], name: $l.name})
+      end
+    end
+    for each $c in re_find(slice($cline, $start, $cut), $CONST_TOKEN_RE)
+      $name = const_name($c.match, $ix, $rel, $n, $site)
+      if $name != nil then
+        push($out, {keyword: $m.groups[0], name: $name})
+      end
+    end
+  end
+  return $out
+end
+
+-- The normalised text of a guard `LHS == "literal"` for a request_builders key: the left operand
+-- read whole, through the literal's token (value_text does not read a literal operand). nil when
+-- the left operand is not read whole, so the guard is not keyed and the entry will be stale.
+fn lit_guard_text($cline, $kline, $c, $rstart)
+  $lt = operand_left(slice($cline, 0, $c))
+  if $lt == nil then
+    return nil
+  end
+  $e = re_lit_end(chars($kline), $rstart)
+  return norm_text(slice($kline, $lt.start, $e))
+end
+
+-- The literal of a constant operand of a verb comparison or matches!, or nil after an
+-- unreadable violation. Only a constant path (SCREAMING_CASE, optionally crate::-rooted)
+-- can resolve; a lowercase path is a variable or a field and is never a constant.
+fn const_name($p, $ix, $rel, $n, $site)
+  if re_match($p, $CONST_PATH_RE) then
+    $r = resolve_const($p, $ix, $rel, $site)
+    if $r.amb then
+      violate("ambiguous-constant", "ambiguous constant: " .. $rel .. ":" .. to_string($n) .. "; " .. $p .. " has more than one definition visible here, so the gate cannot tell which literal it names")
+      return nil
+    end
+    if $r.lit != nil then
+      return $r.lit
+    end
+  end
+  violate("unreadable", "unreadable guard: " .. $rel .. ":" .. to_string($n) .. "; a verb comparison names " .. $p .. ", which the gate cannot resolve to a literal")
+  return nil
+end
+
+-- The names in an arm head, split into prefix arms (`x if x.starts_with("...")`) and
+-- exact names. Every literal in the head is one or the other, so none is dropped.
+fn arm_names($chead, $head, $raws, $rel, $n)
+  $prefix = []
+  $exact = []
+  for each $l in rs_literals($chead, $head, $raws)
+    if $l.bad then
+      cannot("scan", "a string literal at " .. $rel .. ":" .. to_string($n) .. " spans lines where a verb name is read; it cannot be checked")
+    end
+    if len(re_find(slice($chead, 0, $l.col), $PREFIX_BEFORE_RE)) > 0 then
+      push($prefix, $l.name)
+    else
+      push($exact, $l.name)
+    end
+  end
+  return {prefix: $prefix, exact: $exact}
+end
+
+-- A starts_with() in an arm head that is not a prefix arm with a literal prefix (a
+-- constant, a format!, or a second test) names a prefix the gate cannot read.
+fn unreadable_prefix($chead, $claimed, $rel, $n)
+  if len(re_find($chead, $STARTS_RE)) > $claimed then
+    violate("unreadable", "unreadable prefix: " .. $rel .. ":" .. to_string($n) .. "; a starts_with arm names no literal prefix the gate can read")
+  end
+end
+
+-- The constant index of a Rust code view (round 24), read at any position and scope. Every
+-- `const NAME` outside test bodies is a candidate, mid-line or at line start, file level, fn
+-- body or impl block; every `use` that brings NAME in is an import of it (use_imports). A
+-- definition is {lit, impl, tname}: lit is its literal when its line reads as exactly one
+-- one-line `&str` const (else nil, and a definition with no readable literal still counts);
+-- impl is the id of the impl block it sits in (0 outside any impl) and tname that impl's Type.
+-- unknown is true when a line ends in a bare `const`, so the name it declares is not known.
+-- fs is fn_scopes of the same code view, read for each line's impl.
+fn const_index($code, $keep, $raws, $tmask, $fs)
+  $defs = {}
+  $unknown = false
+  $i = 0
+  while $i < len($code)
+    if not $tmask[$i] then
+      $cm = re_find($code[$i], $CONST_DEF_RE)
+      $site = $fs.impls[$i]
+      for each $m in $cm
+        $name = $m.groups[0]
+        $lit = nil
+        if len($cm) == 1 then
+          $lit = decl_literal($code[$i], $keep[$i], $raws[$i], $name)
+        end
+        $list = []
+        if has_key($defs, $name) then
+          $list = $defs[$name]
+        end
+        -- the item kind this definition sits in (round 25): "unknown" when the braces do not
+        -- balance, so no qualified path can be read past it
+        -- the impl the definition sits in is read at the same position (round 26), so a one-line
+        -- `impl X { const A ... }` after a brace is the right Type
+        $ctx = "unknown"
+        $dsite = $site
+        if $fs.bal then
+          $snap = snap_at($fs.ctxs[$i], $m.start)
+          $ctx = $snap.ctx
+          $dsite = $snap.site
+        end
+        push($list, {lit: $lit, impl: $dsite.id, tname: $dsite.tname, top: $dsite.top, ctx: $ctx})
+        $defs[$name] = $list
+      end
+      if re_match($code[$i], $CONST_OPEN_RE) then
+        $unknown = true
+      end
+    end
+    $i = $i + 1
+  end
+  $ui = use_imports($code, $tmask)
+  $ti = type_index($code, $fs)
+  return {defs: $defs, unknown: $unknown, imps: $ui.imps, glob: $ui.glob, pub_uses: $ui.pub_uses, types: $ti.types, tunknown: $ti.tunknown, binds: $ti.binds, tglob: $ti.tglob, heads: $fs.heads}
+end
+
+-- The type declarations of a code view (round 27): name -> list of {ctx}, the item kind at each
+-- declaration (struct, enum, union or type alias, in or out of tests). A line that ends in a type
+-- keyword has its name on the next line, which is not read, so tunknown is set and no Type:: path
+-- resolves in this file.
+--
+-- Round 28: binds is every OTHER binding of a name in the whole file, at any scope: each word of
+-- a `use` or `extern crate` statement (`use a::X`, `as X`, a grouped list, a fn-local use), each
+-- `trait` or `mod` of that name, and each generic parameter (`<X>`, `<X: Bound>`, `<const X: ..>`).
+-- tglob is set by any glob `use ...::*` in the file, since a glob can bind any name. Type::NAME
+-- reads only a name with exactly one file-level declaration and no entry here, in a file with no
+-- glob. The search is over the joined code, so a statement or a generic list split over lines is
+-- one match; test bodies count too (the search is the whole file, so it can only fail closed).
+fn type_index($code, $fs)
+  $types = {}
+  $tunknown = false
+  $i = 0
+  while $i < len($code)
+    for each $m in re_find($code[$i], $TYPE_DECL_RE)
+      $ctx = "unknown"
+      if $fs.bal then
+        $snap = snap_at($fs.ctxs[$i], $m.start)
+        $ctx = $snap.ctx
+      end
+      $name = $m.groups[0]
+      $list = []
+      if has_key($types, $name) then
+        $list = $types[$name]
+      end
+      push($list, {ctx: $ctx})
+      $types[$name] = $list
+    end
+    if len(re_find($code[$i], $TYPE_OPEN_RE)) > 0 then
+      $tunknown = true
+    end
+    $i = $i + 1
+  end
+  $joined = join($code, "\n")
+  $binds = {}
+  $tglob = false
+  for each $m in re_find($joined, $USE_STMT_RE)
+    if index_of($m.groups[0], "*") >= 0 then
+      $tglob = true
+    end
+    for each $w in re_find($m.groups[0], $WORD_RE)
+      $binds[$w.match] = true
+    end
+  end
+  for each $m in re_find($joined, $EXTERN_CRATE_RE)
+    for each $w in re_find($m.groups[0], $WORD_RE)
+      $binds[$w.match] = true
+    end
+  end
+  for each $m in re_find($joined, $OTHER_DECL_RE)
+    $binds[$m.groups[0]] = true
+  end
+  for each $m in re_find($joined, $GENERIC_BIND_RE)
+    $binds[$m.groups[0]] = true
+  end
+  return {types: $types, tunknown: $tunknown, binds: $binds, tglob: $tglob}
+end
+
+-- The literal of the constant NAME declared on this code line, when the line holds exactly one
+-- one-line `&str` string const of that name and it reads as one literal; else nil.
+fn decl_literal($line, $kline, $raw, $name)
+  $tmpl = "\\bconst\\s+" .. $name .. "\\s*:\\s*&(?:'static\\s+)?str\\s*=\\s*\"[ ]*\"\\s*;"
+  if len(re_find($line, $tmpl)) == 0 then
+    return nil
+  end
+  $lits = rs_literals($line, $kline, $raw)
+  if len($lits) == 1 and not $lits[0].bad then
+    return $lits[0].name
+  end
+  return nil
+end
+
+-- The names every `use` statement of a code view (outside test bodies) brings in (round 24),
+-- read from the joined text, so a use split over lines is one statement. name -> list of
+-- {path, orig}: a plain `use crate::a::NAME;` gives path a and orig NAME; `use crate::a::NAME
+-- as X;` gives X with path a and orig NAME; any other form (a grouped list, an external path)
+-- gives every constant-shaped word in it, each with path "?", which no module can be.
+fn use_imports($code, $tmask)
+  $kept = []
+  $i = 0
+  while $i < len($code)
+    if $tmask[$i] then
+      push($kept, "")
+    else
+      push($kept, $code[$i])
+    end
+    $i = $i + 1
+  end
+  $imps = {}
+  -- a glob (`use x::*`) brings in names this scan cannot list (round 24: a bare name with no
+  -- local definition or explicit import is then unreadable; a local item shadows the glob)
+  $glob = false
+  -- the body of each `pub use` statement, for what this module re-exports (module_item)
+  $pub_uses = []
+  for each $pm in re_find(join($kept, "\n"), $PUB_USE_RE)
+    push($pub_uses, replace($pm.groups[0], "\n", " "))
+  end
+  for each $m in re_find(join($kept, "\n"), $USE_STMT_RE)
+    $body = replace($m.groups[0], "\n", " ")
+    if index_of($body, "*") >= 0 then
+      $glob = true
+    end
+    $al = re_find($body, $USE_ALIAS_RE)
+    if len($al) > 0 then
+      $imps = add_import($imps, $al[0].groups[2], $al[0].groups[0], $al[0].groups[1])
+    else
+      $pl = re_find($body, $USE_PLAIN_RE)
+      if len($pl) > 0 then
+        $imps = add_import($imps, $pl[0].groups[1], $pl[0].groups[0], $pl[0].groups[1])
+      else
+        for each $w in re_find($body, $CONST_WORD_RE)
+          $imps = add_import($imps, $w.match, "?", $w.match)
+        end
+      end
+    end
+  end
+  return {imps: $imps, glob: $glob, pub_uses: $pub_uses}
+end
+
+-- Adds one import of `local` to an import map from use_imports.
+fn add_import($imps, $local, $path, $orig)
+  $list = []
+  if has_key($imps, $local) then
+    $list = $imps[$local]
+  end
+  push($list, {path: $path, orig: $orig})
+  $imps[$local] = $list
+  return $imps
+end
+
+-- The definitions of NAME in an index, as a list (empty when none).
+fn defs_of($ix, $name)
+  if has_key($ix.defs, $name) then
+    return $ix.defs[$name]
+  end
+  return []
+end
+
+-- The imports of NAME in an index, as a list (empty when none).
+fn imps_of($ix, $name)
+  if has_key($ix.imps, $name) then
+    return $ix.imps[$name]
+  end
+  return []
+end
+
+-- A bare NAME at a site in a file (round 24). Every definition and import of NAME in the whole
+-- file is a candidate, whatever its scope, and the count decides: two or more are ambiguous,
+-- one definition is its literal, and one import is followed into its module (module_item, which
+-- does not follow an import again). An unknown `const` line makes every bare name unreadable.
+-- A glob import (`use x::*`) may bring NAME in from a module the scan cannot list, so with no
+-- local definition or explicit import the name is unreadable; a local item shadows a glob, as
+-- in Rust, so a single local definition still resolves.
+fn bare_const($name, $ix, $rel)
+  if $ix.unknown then
+    return {found: true, amb: false, lit: nil}
+  end
+  $defs = defs_of($ix, $name)
+  $imps = imps_of($ix, $name)
+  -- a definition of unknown item kind could be the candidate: fail closed (round 26)
+  for each $d in $defs
+    if $d.ctx == "unknown" then
+      return {found: true, amb: false, lit: nil}
+    end
+  end
+  $n = len($defs) + len($imps)
+  if $n == 0 then
+    return {found: $ix.glob, amb: false, lit: nil}
+  end
+  if $n > 1 then
+    return {found: true, amb: true, lit: nil}
+  end
+  if len($defs) == 1 then
+    -- with a glob, a single impl-level or inline-module definition does not settle what a
+    -- bare name means in this file (round 26): an impl item is not in bare scope at all, so
+    -- the glob may supply NAME. Fail closed.
+    $dc = $defs[0].ctx
+    if $ix.glob and $dc != "file" and $dc != "fn" then
+      return {found: true, amb: false, lit: nil}
+    end
+    return {found: true, amb: false, lit: $defs[0].lit}
+  end
+  $imp = $imps[0]
+  if $imp.path == "?" then
+    return {found: true, amb: false, lit: nil}
+  end
+  return module_const($imp.path, $imp.orig, $rel)
+end
+
+-- Self::NAME (round 27): only an impl-level definition in the impl block that encloses the use
+-- site (the same impl id, item kind "impl"). A fn or block local never counts, and nor does an
+-- inherited trait default or a definition in another impl: with none in the own block the name is
+-- not found, which leaves the arm unreadable. A second impl-level definition of NAME for the same
+-- Type in this file is ambiguous, as is more than one in the own block. An unknown definition of
+-- NAME fails closed. Limit: an inherent impl of the same Type in another file is not read.
+fn self_const($name, $ix, $site)
+  if $site.id == 0 or $site.tname == "" then
+    return {found: false, amb: false, lit: nil}
+  end
+  if $ix.unknown then
+    return {found: true, amb: false, lit: nil}
+  end
+  $own = []
+  $other = 0
+  for each $d in defs_of($ix, $name)
+    if $d.ctx == "unknown" then
+      return {found: true, amb: false, lit: nil}
+    end
+    if $d.ctx == "impl" then
+      if $d.impl == $site.id then
+        push($own, $d)
+      elif $d.tname == $site.tname then
+        $other = $other + 1
+      end
+    end
+  end
+  if len($own) == 0 then
+    return {found: false, amb: false, lit: nil}
+  end
+  if len($own) > 1 or $other > 0 then
+    return {found: true, amb: true, lit: nil}
+  end
+  return {found: true, amb: false, lit: $own[0].lit}
+end
+
+-- Type::NAME for a bare Type (rounds 27-28). It reads only when the name Type has exactly ONE
+-- binding in the whole file: one file-level declaration (struct, enum, union or type alias) and
+-- no other binding at any scope (type_index: a use of that word, a fn-local or grouped use, an
+-- `as` alias, a trait or mod of the name, a generic parameter of the name). A glob `use ...::*`
+-- anywhere in the file also makes it unreadable: a glob cannot bind over a local declaration, but
+-- the rule stays simple and sound. Every impl of Type in this file must be file-level, and the
+-- impl-level definitions of NAME among those impls decide: none is not found (inherited or
+-- elsewhere), one is its literal, and more than one is ambiguous. Anything not read (an unknown
+-- definition, an impl header whose Type is not read, a type keyword split over lines) fails closed.
+-- A qualified path/Type::NAME is never read (resolve_const).
+fn type_const($name, $ix, $ty)
+  if $ix.unknown or $ix.tunknown or $ix.tglob then
+    return {found: true, amb: false, lit: nil}
+  end
+  for each $d in defs_of($ix, $name)
+    if $d.ctx == "unknown" then
+      return {found: true, amb: false, lit: nil}
+    end
+  end
+  if not has_key($ix.types, $ty) or has_key($ix.binds, $ty) then
+    return {found: true, amb: false, lit: nil}
+  end
+  $decls = $ix.types[$ty]
+  if len($decls) != 1 or $decls[0].ctx != "file" then
+    return {found: true, amb: false, lit: nil}
+  end
+  for each $h in $ix.heads
+    if $h.tname == "" or ($h.tname == $ty and not $h.top) then
+      return {found: true, amb: false, lit: nil}
+    end
+  end
+  $list = []
+  for each $d in defs_of($ix, $name)
+    if $d.ctx == "impl" and $d.tname == $ty then
+      if not $d.top then
+        return {found: true, amb: false, lit: nil}
+      end
+      push($list, $d)
+    end
+  end
+  if len($list) == 0 then
+    return {found: false, amb: false, lit: nil}
+  end
+  if len($list) > 1 then
+    return {found: true, amb: true, lit: nil}
+  end
+  return {found: true, amb: false, lit: $list[0].lit}
+end
+
+-- What `crate::a::NAME` reaches in module a (round 24). A path reaches only what the module
+-- exports: its own file-level definitions of NAME, and its `pub use` re-exports. A private
+-- import or a private glob is not reachable through a path, so it is ignored. A `pub use` that
+-- names NAME, or a `pub use` glob, is a re-export this scan does not follow: with an own
+-- definition too the names clash (ambiguous) or the own definition shadows the glob, and with
+-- no own definition the path is unreadable. An associated constant is not reachable.
+fn module_item($name, $ix, $inline)
+  if $ix.unknown then
+    return {found: true, amb: false, lit: nil}
+  end
+  -- the item kind a qualified path reads: the file's own top level, or the top level of the
+  -- inline module path $inline (round 25). fn locals and impl items are not module items.
+  $want = "file"
+  if $inline != "" then
+    $want = "mod:" .. $inline
+  end
+  $defs = []
+  for each $d in defs_of($ix, $name)
+    -- a definition whose item kind is not known could be this item: fail closed
+    if $d.ctx == "unknown" then
+      return {found: true, amb: false, lit: nil}
+    end
+    if $d.ctx == $want then
+      push($defs, $d)
+    end
+  end
+  $named = 0
+  $globp = false
+  for each $b in $ix.pub_uses
+    if index_of($b, "*") >= 0 then
+      $globp = true
+    end
+    if len(re_find($b, "\\b" .. $name .. "\\b")) > 0 then
+      $named = $named + 1
+    end
+  end
+  $n = len($defs) + $named
+  if $n > 1 then
+    return {found: true, amb: true, lit: nil}
+  end
+  if $n == 1 and len($defs) == 1 then
+    return {found: true, amb: false, lit: $defs[0].lit}
+  end
+  if $n == 1 or $globp then
+    return {found: true, amb: false, lit: nil}
+  end
+  return {found: false, amb: false, lit: nil}
+end
+
+-- The index of module `path` of this crate, read from that module's file (the crate's src/
+-- holds module a::b at src/a/b.rs), and what its `name` reaches (module_item). found is false
+-- when the file cannot be read, the path is outside a src/ tree, or the module has no such
+-- constant; an unreadable module file is not found, so the arm stays unreadable.
+fn module_const($path, $name, $rel)
+  $idx = index_of($rel, "/src/")
+  if $idx < 0 then
+    return {found: false, amb: false, lit: nil}
+  end
+  -- the module is the longest leading run of segments with a file (a::b is src/a/b.rs, or else
+  -- src/a.rs holding an inline `mod b`); the rest of the path is the inline module path (round 25)
+  $base = $root .. "/" .. slice($rel, 0, $idx + 4) .. "/"
+  $segs = split($path, "::")
+  $k = len($segs)
+  $j = $k
+  while $j >= 1
+    $lines = read_src($base .. join(seg_part($segs, 0, $j), "/") .. ".rs")
+    if $lines != nil then
+      $inline = ""
+      if $j < $k then
+        $inline = join(seg_part($segs, $j, $k), "::")
+      end
+      return module_file($lines, $inline, $name)
+    end
+    $j = $j - 1
+  end
+  return {found: false, amb: false, lit: nil}
+end
+
+-- The lines of a module file, or nil when it cannot be read (round 25).
+fn read_src($file)
+  $lines = nil
+  try
+    $lines = read_lines($file)
+  catch $e
+    $lines = nil
+  end
+  return $lines
+end
+
+-- The segments of a path from index $from up to, not including, $to (round 25).
+fn seg_part($segs, $from, $to)
+  $out = []
+  $k = $from
+  while $k < $to
+    push($out, $segs[$k])
+    $k = $k + 1
+  end
+  return $out
+end
+
+-- What a module file's `name` reaches through the module path $inline (round 25): "" is the
+-- file's own top level, "b::c" the top level of its inline `mod b { mod c { } }`.
+fn module_file($lines, $inline, $name)
+  $st = strip_rust($lines)
+  if $st.mode != "code" or $st.bad_n > 0 then
+    return {found: false, amb: false, lit: nil}
+  end
+  $tm = test_mask($st.code)
+  $fs = fn_scopes($st.code)
+  $ix = const_index($st.code, $st.keep, $st.raws, $tm.mask, $fs)
+  return module_item($name, $ix, $inline)
+end
+
+-- The snapshot a position sits in, from the snapshots of one line (rounds 25-26). Each snapshot
+-- is {pos, ctx, site} for the stack after the brace at pos (pos -1 is the line start): the last
+-- one before pos gives the item kind (ctx) and the innermost impl (site) at pos.
+fn snap_at($snaps, $pos)
+  $at = $snaps[0]
+  for each $s in $snaps
+    if $s.pos < $pos then
+      $at = $s
+    end
+  end
+  return $at
+end
+
+-- The binding a constant path names at a site (rounds 24-27): {found, amb, lit}. A bare NAME is
+-- bare_const over the file; Self::NAME is self_const (the site's own impl block only); a bare
+-- Type::NAME is type_const (one file-level Type, all its impls file-level); crate::a::NAME is
+-- module a's constant. amb is true when the count is more than one. Anything else (self, super,
+-- a qualified path/Type::NAME, a glob, a missing item) is not found and stays unreadable.
+fn resolve_const($p, $ix, $rel, $site)
+  if not re_match($p, $CONST_PATH_RE) then
+    return {found: false, amb: false, lit: nil}
+  end
+  $segs = split($p, "::")
+  $name = $segs[len($segs) - 1]
+  if len($segs) == 1 then
+    return bare_const($name, $ix, $rel)
+  end
+  if $segs[0] == "Self" then
+    -- Self is the impl the site sits in: only its own impl-level definition (round 27)
+    if len($segs) != 2 then
+      return {found: false, amb: false, lit: nil}
+    end
+    return self_const($name, $ix, $site)
+  end
+  if $segs[0] == "crate" then
+    $mods = []
+    $k = 1
+    while $k < len($segs) - 1
+      push($mods, $segs[$k])
+      $k = $k + 1
+    end
+    if len($mods) == 0 then
+      return {found: false, amb: false, lit: nil}
+    end
+    return module_const(join($mods, "::"), $name, $rel)
+  end
+  -- a bare Type::NAME (round 27); a qualified path/Type::NAME is not read
+  if len($segs) != 2 then
+    return {found: false, amb: false, lit: nil}
+  end
+  return type_const($name, $ix, $segs[0])
+end
+
+-- One arm alternative, between `|`: {name, bad}. name is the literal of a constant path
+-- that resolves (a guard after it is not part of the path). bad marks a bare path the gate
+-- cannot read: a constant or a non-SessionCommand variant. Prefix arms (with starts_with),
+-- catch-alls (`_`, `_x`) and SessionCommand variants are not bad here.
+fn arm_alt($alt, $ix, $rel, $site)
+  $a = trim($alt)
+  $p = $a
+  $g = re_find($a, "\\s+if\\b")
+  if len($g) > 0 then
+    $p = trim(slice($a, 0, $g[0].start))
+  end
+  $r = resolve_const($p, $ix, $rel, $site)
+  if $r.amb then
+    return {name: nil, bad: false, amb: true}
+  end
+  if $r.lit != nil then
+    return {name: $r.lit, bad: false, amb: false}
+  end
+  $bad = re_match($a, $BARE_ALT_RE) and not starts_with($a, "_") and not starts_with($a, "SessionCommand::") and index_of($a, "starts_with") < 0
+  return {name: nil, bad: $bad, amb: false}
+end
+
+-- The alternatives of an arm head or pattern line: the literals of its constants that
+-- resolve, and each bare path the gate cannot read is an unreadable arm. A parse file
+-- passes empty tables, so every constant there is unreadable.
+fn arm_consts($head, $khead, $ix, $rel, $n, $site)
+  $names = []
+  -- $off is the column of each alternative in the head; the message quotes the same columns
+  -- of the keep view, so a literal in a guard after the path is shown, not blanked
+  $off = 0
+  for each $alt in split($head, "|")
+    $r = arm_alt($alt, $ix, $rel, $site)
+    if $r.amb then
+      violate("ambiguous-constant", "ambiguous constant: " .. $rel .. ":" .. to_string($n) .. "; the pattern " .. norm_text(slice($khead, $off, $off + len($alt))) .. " names a constant with more than one definition visible here")
+    elif $r.name != nil then
+      push($names, $r.name)
+    elif $r.bad then
+      violate("unreadable", "unreadable arm: " .. $rel .. ":" .. to_string($n) .. "; the pattern " .. norm_text(slice($khead, $off, $off + len($alt))) .. " names no literal the gate can read")
+    end
+    $off = $off + len($alt) + 1
+  end
+  return $names
+end
+
+-- A VERBS table row, or the expression part of the table head, with a word other than
+-- true or false: a constant or a path where the verb's text belongs. Literals are
+-- blanked in the code view, so only names are found here.
+fn unreadable_row($cline, $rel, $n, $head)
+  $text = $cline
+  if $head then
+    $eq = re_find($cline, "=")
+    if len($eq) == 0 then
+      return nil
+    end
+    $text = slice($cline, $eq[len($eq) - 1].start + 1, len($cline))
+  end
+  for each $w in re_find($text, "[A-Za-z_][A-Za-z0-9_]*")
+    if $w.match != "true" and $w.match != "false" then
+      violate("unreadable", "unreadable table row: " .. $rel .. ":" .. to_string($n) .. "; a VERBS row names a word the gate cannot read as a verb")
+      return nil
+    end
+  end
+  return nil
+end
+
+-- The Mix logical lines of a file. The lexer splices a `\` that ends an odd run in
+-- ordinary source together with its newline, so a header can run over physical lines
+-- (`on \` then `alpha.x end`). Each logical line joins its physical lines in both views:
+-- the spliced backslash becomes one blank, which is how the parser reads it (probed:
+-- `on \` + newline + name parses as `on name`). starts[k] is where physical line
+-- lines[k] begins in the joined text, so a column maps back to its line for messages.
+fn join_mix($st)
+  $out = []
+  $total = len($st.code)
+  $i = 0
+  while $i < $total
+    $cs = []
+    $ks = []
+    $starts = []
+    $lines = []
+    $off = 0
+    $j = $i
+    $more = true
+    while $more
+      $c = $st.code[$j]
+      $k = $st.keep[$j]
+      $cont = false
+      $run = re_find($c, "\\\\+$")
+      if len($run) > 0 and len($run[0].match) % 2 == 1 and $j + 1 < $total then
+        $cont = true
+        $c = slice($c, 0, len($c) - 1) .. " "
+        $k = slice($k, 0, len($k) - 1) .. " "
+      end
+      push($starts, $off)
+      push($lines, $j)
+      push($cs, $c)
+      push($ks, $k)
+      $off = $off + len($c)
+      $j = $j + 1
+      $more = $cont
+    end
+    push($out, {code: join($cs, ""), keep: join($ks, ""), starts: $starts, lines: $lines})
+    $i = $j
+  end
+  return $out
+end
+
+-- The physical line index (0-based) of a column in a joined logical line.
+fn phys_line($lg, $off)
+  $k = 0
+  $i = 0
+  while $i < len($lg.starts)
+    if $lg.starts[$i] <= $off then
+      $k = $i
+    end
+    $i = $i + 1
+  end
+  return $lg.lines[$k]
+end
+
+-- The first column at or after $p that is not a blank, in the code view.
+fn skip_blanks($cg, $p)
+  $q = $p
+  while $q < len($cg) and re_match(slice($cg, $q, $q + 1), "[ \\t]")
+    $q = $q + 1
+  end
+  return $q
+end
+
+-- The name of an `on` header whose keyword ends at column $p of a joined logical line
+-- (code view $cg, keep view $kg). The parser reads a name as one literal (a double-
+-- or single-quoted string) or a bare segment, with dotted segments joined by a dot
+-- whatever blanks surround it. Returns {bad, name}; bad means the gate cannot read it,
+-- and the caller reports that rather than skipping the header.
+fn on_name_at($cg, $kg, $p)
+  $q = skip_blanks($cg, $p)
+  if $q >= len($cg) then
+    return {bad: true, name: ""}
+  end
+  $c = slice($cg, $q, $q + 1)
+  if $c == "\"" or $c == "'" then
+    $close = index_of(slice($cg, $q + 1, len($cg)), $c)
+    if $close < 0 then
+      return {bad: true, name: ""}
+    end
+    $name = slice($kg, $q + 1, $q + 1 + $close)
+    if not re_match($name, $QUOTED_NAME_RE) then
+      return {bad: true, name: ""}
+    end
+    $after = skip_blanks($cg, $q + 2 + $close)
+    if $after < len($cg) and slice($cg, $after, $after + 1) == "." then
+      return {bad: true, name: ""}
+    end
+    return {bad: false, name: $name}
+  end
+  $seg = re_find(slice($kg, $q, len($kg)), $ON_SEG_RE)
+  if len($seg) == 0 then
+    return {bad: true, name: ""}
+  end
+  $name = $seg[0].match
+  $pos = $q + len($name)
+  $more = true
+  while $more
+    $r = skip_blanks($cg, $pos)
+    if $r < len($cg) and slice($cg, $r, $r + 1) == "." then
+      $r2 = skip_blanks($cg, $r + 1)
+      $next = re_find(slice($kg, $r2, len($kg)), $ON_SEG_RE)
+      if len($next) == 0 then
+        return {bad: true, name: ""}
+      end
+      $name = $name .. "." .. $next[0].match
+      $pos = $r2 + len($next[0].match)
+    else
+      $more = false
+    end
+  end
+  return {bad: false, name: $name}
+end
+
+-- Every `on` handler keyword in a joined logical line. A keyword is the word `on`
+-- in the code view (a comment, string or heredoc is blanked there): not run into by a
+-- letter, digit, `_`, `.` or `$` on either side. `on:` (a map key) and `on.` (a dotted
+-- segment) are not headers. Every other keyword is a handler, and its name is read
+-- (on_name_at); one the gate cannot read comes back bad, never dropped. Returns a list
+-- of {offset, bad, name}.
+fn on_tokens($cg, $kg)
+  $out = []
+  for each $m in re_find($cg, "on")
+    $s = $m.start
+    $before = ""
+    if $s > 0 then
+      $before = slice($cg, $s - 1, $s)
+    end
+    $after = slice($cg, $s + 2, $s + 3)
+    $own = ($before == "") or (not re_match($before, "[.$A-Za-z0-9_]"))
+    $word = ($after == "") or (not re_match($after, "[A-Za-z0-9_]"))
+    if $own and $word then
+      $nq = skip_blanks($cg, $s + 2)
+      $nx = slice($cg, $nq, $nq + 1)
+      if $nx != ":" and $nx != "." then
+        $r = on_name_at($cg, $kg, $s + 2)
+        push($out, {offset: $s, bad: $r.bad, name: $r.name})
+      end
+    end
+  end
+  return $out
+end
+
+-- Is this path out of scope? Only .rs and .mix files count; test and
+-- benchmark trees and test files are skipped.
+fn skipped($rel)
+  $parts = split($rel, "/")
+  $file = $parts[len($parts) - 1]
+  if not (ends_with($file, ".rs") or ends_with($file, ".mix")) then
+    return true
+  end
+  if re_match($file, "_tests?\\.rs$") or re_match($file, "_test\\.mix$") then
+    return true
+  end
+  for each $seg in $parts
+    if contains($SKIP_DIRS, $seg) then
+      return true
+    end
+  end
+  return false
+end
+
+-- Is the `#[cfg(test)]` at line $i followed by an inline `mod x {`?
+fn test_mod_follows($lines, $i)
+  $j = $i + 1
+  while $j < len($lines) and re_match($lines[$j], "^\\s*#\\[")
+    $j = $j + 1
+  end
+  if $j >= len($lines) then
+    return false
+  end
+  return re_match($lines[$j], "^\\s*(pub\\s+)?mod\\s+[A-Za-z0-9_]+\\s*\\{")
+end
+
+-- A guard comparison that is a request_builders site: its text is exactly an entry's text (a guard
+-- entry, not a match head or tuple). It is a hit for that entry; it is dropped (no answer) only
+-- when the entry lists the guard's verb, and the guard is in the entry's fn (the guard's enclosing
+-- fn is $scope). Returns true when the guard is dropped.
+fn builder_guard_drop($bfile, $g, $scope)
+  $drop = false
+  for each $b in $bfile
+    -- an entry answers only at its own site for its own verbs: a text match for a verb it does
+    -- not list is no hit (the entry goes stale), and the guard still counts as dispatch
+    if not starts_with($b.text, "match ") and not starts_with($b.text, "(") and $g.text != nil and $b.text == $g.text and contains($b.verbs, $g.name) and $b.scope == $scope then
+      push($BUILDER_HITS, $b.idx)
+      $drop = true
+    end
+  end
+  return $drop
+end
+
+-- How many sites an entry matched (its idx is in $BUILDER_HITS once per site).
+fn hit_count($idx)
+  $n = 0
+  for each $h in $BUILDER_HITS
+    if $h == $idx then
+      $n = $n + 1
+    end
+  end
+  return $n
+end
+
+-- The enclosing function of each line of a Rust code view, the scope a request_builders entry's
+-- `fn` names: the nearest `fn NAME` whose body is open at the start of the line, written
+-- Type::NAME when it sits directly in an `impl Type` block (impl_type reads Type). A line that
+-- holds a fn or impl header is "?", a scope no entry can name, so a site there is never keyed.
+-- Only the code view is read, so a comment or a string cannot open or close a body. Braces are
+-- counted over the whole file; a header's `{` is the one that opens its body (a `;` before it, at
+-- bracket depth 0, is a bodyless declaration and drops the header).
+$SCOPE_TOKEN_RE = "\\bfn\\s+([A-Za-z_][A-Za-z0-9_]*)|\\bimpl\\b|\\bmod\\s+[A-Za-z_][A-Za-z0-9_]*|[{};()\\[\\]]"
+-- Returns {fns, impls} (round 24): fns is the scope above per line; impls is, per line, the
+-- innermost impl open at its start as {id, tname} (see impl_at), which Self:: and Type:: read.
+fn fn_scopes($code)
+  $out = []
+  $bout = []
+  $stack = []
+  $depth = 0
+  -- the pending header, when a fn or impl header has no body open yet (locals, not map fields)
+  $hopen = false
+  $hkind = ""
+  $hname = ""
+  $htext = ""
+  $hnest = 0
+  $bcount = 0
+  -- every impl header of the file, as {tname, top} (round 27)
+  $heads = []
+  -- the item kind after each brace, per line (round 25), and whether the braces balance
+  $ctxs = []
+  $neg = false
+  for each $line in $code
+    $cur = scope_at($stack)
+    $site = impl_at($stack)
+    $hdr_line = false
+    $snaps = [{pos: -1, ctx: item_ctx($stack), site: impl_at($stack)}]
+    $p = 0
+    for each $m in re_find($line, $SCOPE_TOKEN_RE)
+      $t = $m.match
+      if $hopen then
+        $htext = $htext .. slice($line, $p, $m.start)
+      end
+      $p = $m.start + len($t)
+      if starts_with($t, "fn ") or $t == "impl" or starts_with($t, "mod") then
+        if not $hopen then
+          $hopen = true
+          $hnest = 0
+          $htext = ""
+          if starts_with($t, "fn ") then
+            $hdr_line = true
+            $hkind = "fn"
+            $hname = $m.groups[0]
+          elif starts_with($t, "mod") then
+            $hkind = "mod"
+            $hname = trim(slice($t, 3, len($t)))
+          else
+            $hdr_line = true
+            $hkind = "impl"
+            $hname = ""
+          end
+        end
+      elif $t == "(" or $t == "[" then
+        if $hopen then
+          $hnest = $hnest + 1
+        end
+      elif $t == ")" or $t == "]" then
+        if $hopen then
+          $hnest = $hnest - 1
+        end
+      elif $t == ";" then
+        if $hopen and $hnest <= 0 then
+          $hopen = false
+        end
+      elif $t == "{" then
+        if $hopen then
+          $bcount = $bcount + 1
+          -- an impl is at file level (round 27) when no block is open around it
+          $htop = len($stack) == 0
+          $sname = scope_name($hkind, $hname, $htext, $stack)
+          push($stack, {kind: $hkind, name: $sname, depth: $depth, id: $bcount, top: $htop})
+          if $hkind == "impl" then
+            push($heads, {tname: $sname, top: $htop})
+          end
+          $hopen = false
+        else
+          push($stack, {kind: "other", name: "", depth: $depth})
+        end
+        $depth = $depth + 1
+        push($snaps, {pos: $m.start, ctx: item_ctx($stack), site: impl_at($stack)})
+      elif $t == "}" then
+        $depth = $depth - 1
+        if $depth < 0 then
+          $neg = true
+        end
+        $more = true
+        while $more and len($stack) > 0
+          $tp = $stack[len($stack) - 1]
+          if $tp.depth >= $depth then
+            pop($stack)
+          else
+            $more = false
+          end
+        end
+        push($snaps, {pos: $m.start, ctx: item_ctx($stack), site: impl_at($stack)})
+      end
+    end
+    if $hopen then
+      $htext = $htext .. slice($line, $p, len($line)) .. " "
+    end
+    if $hdr_line then
+      push($out, "?")
+    else
+      push($out, $cur)
+    end
+    push($bout, $site)
+    push($ctxs, $snaps)
+  end
+  return {fns: $out, impls: $bout, ctxs: $ctxs, heads: $heads, bal: $depth == 0 and len($stack) == 0 and not $neg}
+end
+
+-- The item kind a stack of open blocks sits in (round 25): "fn" when any fn is open (a fn-local
+-- item is never a module item), else "impl", else "other" for any other open block that is not
+-- an inline module, else the module path "mod:a::b" of nested inline modules, "file" at the top.
+fn item_ctx($stack)
+  $sfn = false
+  $simpl = false
+  $sother = false
+  $names = []
+  for each $e in $stack
+    if $e.kind == "fn" then
+      $sfn = true
+    elif $e.kind == "impl" then
+      $simpl = true
+    elif $e.kind == "mod" then
+      push($names, $e.name)
+    else
+      $sother = true
+    end
+  end
+  -- an impl body is "impl" only when no fn and no other block is open inside it (round 26)
+  if $sfn then
+    return "fn"
+  end
+  if $sother then
+    return "other"
+  end
+  if $simpl then
+    return "impl"
+  end
+  if len($names) == 0 then
+    return "file"
+  end
+  return "mod:" .. join($names, "::")
+end
+
+-- The innermost impl open on a stack, as {id, tname, top} (round 24): the scope a Self:: path
+-- reads (id), the Type a Type:: path names (tname), and whether that impl is at file level (top,
+-- round 27). {id: 0, tname: "", top: false} outside any impl.
+fn impl_at($stack)
+  $k = len($stack) - 1
+  while $k >= 0
+    $e = $stack[$k]
+    if $e.kind == "impl" then
+      return {id: $e.id, tname: $e.name, top: $e.top}
+    end
+    $k = $k - 1
+  end
+  return {id: 0, tname: "", top: false}
+end
+
+-- The lines a `#[cfg(test)]` module body covers (round 23): mask[i] is true for the attribute
+-- line and every line of the body after it, so skipped code contributes no definition and no
+-- verb site. open is true when a body never closes. Both the const tables and the scan read it.
+fn test_mask($code)
+  $mask = []
+  $in_test = false
+  $tdepth = 0
+  $tstarted = false
+  $i = 0
+  while $i < len($code)
+    $cline = $code[$i]
+    if $in_test then
+      $opens = len(split($cline, "{")) - 1
+      $tdepth = $tdepth + $opens - (len(split($cline, "}")) - 1)
+      if $opens > 0 then
+        $tstarted = true
+      end
+      if $tstarted and $tdepth <= 0 then
+        $in_test = false
+      end
+      push($mask, true)
+    elif re_match($cline, "^\\s*#\\[cfg\\(test\\)\\]") and test_mod_follows($code, $i) then
+      $in_test = true
+      $tdepth = 0
+      $tstarted = false
+      push($mask, true)
+    else
+      push($mask, false)
+    end
+    $i = $i + 1
+  end
+  return {mask: $mask, open: $in_test}
+end
+
+-- The scope of a line from the stack of open bodies: the nearest open fn, or "" outside any fn.
+fn scope_at($stack)
+  $k = len($stack) - 1
+  while $k >= 0
+    $e = $stack[$k]
+    if $e.kind == "fn" then
+      return $e.name
+    end
+    $k = $k - 1
+  end
+  return ""
+end
+
+-- The name a body opened by a header gets: an impl's Type; a fn's NAME, Type::NAME when the
+-- body sits directly in an impl block; "" for any other body.
+fn scope_name($kind, $name, $text, $stack)
+  if $kind == "mod" then
+    return $name
+  end
+  if $kind == "impl" then
+    return impl_type($text)
+  end
+  if $kind != "fn" then
+    return ""
+  end
+  if len($stack) > 0 then
+    $top = $stack[len($stack) - 1]
+    if $top.kind == "impl" then
+      return $top.name .. "::" .. $name
+    end
+  end
+  return $name
+end
+
+-- The Type an impl header names (the text between `impl` and its `{`): the generics after
+-- `impl` are skipped, `Trait for` is dropped, a `where` clause is dropped, and the last segment of
+-- the path is the name. "" when the header is not read, so a Type:: scope never matches.
+fn impl_type($text)
+  $t = trim($text)
+  if starts_with($t, "<") then
+    $cs = chars($t)
+    $d = 0
+    $cut = -1
+    $k = 0
+    while $k < len($cs) and $cut < 0
+      if $cs[$k] == "<" then
+        $d = $d + 1
+      elif $cs[$k] == ">" then
+        $d = $d - 1
+        if $d == 0 then
+          $cut = $k
+        end
+      end
+      $k = $k + 1
+    end
+    if $cut < 0 then
+      return ""
+    end
+    $t = trim(slice($t, $cut + 1, len($t)))
+  end
+  $parts = split($t, " for ")
+  $t = trim($parts[len($parts) - 1])
+  $parts = split($t, " where ")
+  $t = trim($parts[0])
+  $pm = re_find($t, "^([A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*)")
+  if len($pm) == 0 then
+    return ""
+  end
+  $segs = split($pm[0].groups[0], "::")
+  return $segs[len($segs) - 1]
+end
+
+-- The normalised keep-view text of a match head, from its `match` keyword to the end of the line
+-- (`let body = match verb {` keys as `match verb {`); "" when the line has no match keyword.
+fn match_head($kline)
+  $mm = re_find($kline, "(?:^|[^A-Za-z0-9_])match\\s")
+  if len($mm) == 0 then
+    return ""
+  end
+  $hs = $mm[0].start + len($mm[0].match) - 6
+  return norm_text(slice($kline, $hs, len($kline)))
+end
+
+-- An arm of a keyed match (its open stack entry lists the request_builders entries that key the
+-- match head): dropped only for a verb one of those entries lists. Any other arm still counts.
+fn builder_arm_drop($top, $v)
+  for each $b in $top.builders
+    if contains($b.verbs, $v) then
+      return true
+    end
+  end
+  return false
+end
+
+fn record($name, $owner, $rel, $n, $kind)
+  return {name: $name, owner: $owner, file: $rel, line: $n, kind: $kind, variant: ""}
+end
+
+fn parse_record($name, $owner, $rel, $n, $variant)
+  return {name: $name, owner: $owner, file: $rel, line: $n, kind: "parse", variant: $variant}
+end
+
+-- Whether a record answers a verb in code (round 22): a dispatch arm, prefix, guard, route row or
+-- Mix `on` handler. A declaration (decl, suffix) and a parse arm are not answers. A variant handler
+-- is an answer too, but it lives in $variants, not in $records, and is counted there.
+fn is_answer($r)
+  return contains(["dispatch", "prefix", "guard", "route", "on"], $r.kind)
+end
+
+-- Does a line open a dispatch match? Returns {indent, method} (the match indent,
+-- and whether the scrutinee is `method`), or nil.
+fn dispatch_open($line)
+  $m = re_find($line, $OPEN_RE)
+  if len($m) == 0 then
+    return nil
+  end
+  $indent = len($m[0].groups[0])
+  $s = trim($m[0].groups[1])
+  $parts = [$s]
+  if starts_with($s, "(") and ends_with($s, ")") then
+    $parts = split(slice($s, 1, len($s) - 1), ",")
+  end
+  $dispatch = false
+  $method = false
+  for each $part in $parts
+    if re_match(trim($part), $SCRUT_RE) then
+      $dispatch = true
+    end
+    if re_match(trim($part), $METHOD_SCRUT_RE) then
+      $method = true
+    end
+  end
+  if not $dispatch then
+    return nil
+  end
+  return {indent: $indent, method: $method}
+end
+
+-- The distinct SessionCommand variants a parse arm constructs, in order of
+-- appearance: read from $code (the stripped text, so comments and literals
+-- cannot name one), from the head line $i to the next arm head or the match's
+-- close. A `|` line continues the pattern, so it does not end the arm.
+fn arm_variants($code, $i, $match_indent)
+  $arm_indent = $match_indent + 4
+  $found = []
+  $j = $i
+  while $j < len($code)
+    $l = $code[$j]
+    if $j > $i and re_match($l, "^\\s{" .. to_string($match_indent) .. "}\\}") then
+      return $found
+    end
+    if $j > $i and re_match($l, "^\\s{" .. to_string($arm_indent) .. "}[^\\s|]") and is_head($l) then
+      return $found
+    end
+    for each $m in re_find($l, $VARIANT_BODY_RE)
+      $path = "SessionCommand::" .. $m.groups[0]
+      if not contains($found, $path) then
+        push($found, $path)
+      end
+    end
+    $j = $j + 1
+  end
+  return $found
+end
+
+-- If a char literal opens at $i ('x', '\n', '\'', '\u{..}'), the index of its
+-- closing quote; -1 when the quote starts a lifetime or label ('a) instead.
+fn char_end($cs, $i)
+  $n = len($cs)
+  if $i + 1 >= $n then
+    return -1
+  end
+  if $cs[$i + 1] == "\\" then
+    $k = $i + 3
+    while $k < $n and $cs[$k] != "'" and $cs[$k] != "\n"
+      $k = $k + 1
+    end
+    if $k < $n and $cs[$k] == "'" then
+      return $k
+    end
+    return -1
+  end
+  if $i + 2 < $n and $cs[$i + 2] == "'" and $cs[$i + 1] != "\n" then
+    return $i + 2
+  end
+  return -1
+end
+
+-- The one table of Rust literal openers, read by both lexers (strip_line and re_lit_end).
+-- The literal, if any, that opens at $a (a bare quote, or the word run before a quote or an
+-- apostrophe, with its hashes). Known prefixes: none or b or c for a plain string (backslash
+-- escapes); r, br or cr for a raw string with any number of hashes (no escapes); b for a byte
+-- char. Any other word before a quote, and a b-char that does not close, is `bad`: the gate
+-- never guesses at a literal. A bare apostrophe that is no char is a lifetime or label.
+-- Returns {kind, q, body, hashes, close}: q is the opening quote's column, body the first
+-- content column, close the closing apostrophe of a char (-1 otherwise). kind is plain, raw,
+-- char, lifetime, bad or none.
+-- The record lit_open returns (see below).
+fn lit_rec($kind, $q, $body, $hashes, $close)
+  return {kind: $kind, q: $q, body: $body, hashes: $hashes, close: $close}
+end
+
+fn lit_open($cs, $a)
+  $n = len($cs)
+  $p = $a
+  while $p < $n and re_match($cs[$p], "[A-Za-z0-9_]")
+    $p = $p + 1
+  end
+  $word = join(slice($cs, $a, $p), "")
+  $h = 0
+  while $p < $n and $cs[$p] == "#"
+    $h = $h + 1
+    $p = $p + 1
+  end
+  if $p >= $n then
+    return lit_rec("none", $p, $p, 0, -1)
+  end
+  if $cs[$p] == "\"" then
+    if $word == "" then
+      return lit_rec("plain", $p, $p + 1, 0, -1)
+    end
+    if $h == 0 and ($word == "b" or $word == "c") then
+      return lit_rec("plain", $p, $p + 1, 0, -1)
+    end
+    if $word == "r" or $word == "br" or $word == "cr" then
+      return lit_rec("raw", $p, $p + 1, $h, -1)
+    end
+    return lit_rec("bad", $p, $p + 1, 0, -1)
+  end
+  if $cs[$p] == "'" then
+    if $word == "" then
+      $e = char_end($cs, $p)
+      if $e >= 0 then
+        return lit_rec("char", $p, $p + 1, 0, $e)
+      end
+      return lit_rec("lifetime", $p, $p + 1, 0, -1)
+    end
+    if $word == "b" and $h == 0 then
+      $e = char_end($cs, $p)
+      if $e >= 0 then
+        return lit_rec("char", $p, $p + 1, 0, $e)
+      end
+    end
+    return lit_rec("bad", $p, $p + 1, 0, -1)
+  end
+  return lit_rec("none", $p, $p, 0, -1)
+end
+
+-- Strips one source line into two views of the same columns. $st is the lexical
+-- state carried from the line before: {mode, depth, hashes}, mode one of code,
+-- block, str, raw. Returns {code, keep, st}.
+--   code: comments blanked, literal contents and char literals blanked; a string's
+--         quote marks stay, so a line still starts with `"` when it starts a literal.
+--         Structure (braces, arms, `=>`, tables) is read from this view.
+--   keep: comments blanked, literal text kept verbatim. Registration names are read
+--         from this view.
+-- Both views keep the line's columns, so a position found in one holds in the other.
+fn strip_line($line, $st)
+  -- Fast path: plain code with no quote, apostrophe or slash passes unchanged.
+  if $st.mode == "code" and not re_match($line, $PLAIN_RE) and index_of($line, "r#") < 0 then
+    return {code: $line, keep: $line, raws: [], st: $st, bad: ""}
+  end
+  $cs = chars($line)
+  $L = len($cs)
+  $mode = $st.mode
+  $depth = $st.depth
+  $hashes = $st.hashes
+  $out = []
+  $kout = []
+  -- bad: the first literal on this line the gate cannot read (its text), or "" when none.
+  $bad = ""
+  -- raws: the raw strings this line opens, as {start (the marker column), value}; value
+  -- is nil when the literal closes on a later line. rawstart is the open one, if any.
+  $raws = []
+  $rawstart = -1
+  $rawcs = 0
+  -- drop: the columns of `r#` raw-identifier markers removed from both views so far on this line.
+  -- A raw identifier reads as its plain name in code and keep alike (`r#type` is `type`), and
+  -- raws.start is the column in those views (the original column less drop).
+  $drop = 0
+  $p = 0
+  while $p < $L
+    $rest = join(slice($cs, $p, $L), "")
+    if $mode == "code" then
+      $m = re_find($rest, $TOK_RE)
+      if len($m) == 0 then
+        push($out, $rest)
+        push($kout, $rest)
+        $p = $L
+      else
+        $a = $p + $m[0].start
+        $tok = $m[0].match
+        $gap = join(slice($cs, $p, $a), "")
+        push($out, $gap)
+        push($kout, $gap)
+        if $tok == "//" then
+          push($out, repeat(" ", $L - $a))
+          push($kout, repeat(" ", $L - $a))
+          $p = $L
+        elif $tok == "/*" then
+          $mode = "block"
+          $depth = 1
+          push($out, "  ")
+          push($kout, "  ")
+          $p = $a + 2
+        elif $tok == "r#" then
+          -- a raw identifier (r#name) when a plain identifier follows and the r is not part of a
+          -- longer word: the r# is dropped from both views. Otherwise the r# stays as code.
+          $prev = ""
+          if $a > 0 then
+            $prev = join(slice($cs, $a - 1, $a), "")
+          end
+          $nxt = join(slice($cs, $a + 2, $a + 3), "")
+          if re_match($nxt, "^[A-Za-z_]$") and not re_match($prev, "^[A-Za-z0-9_]$") then
+            $drop = $drop + 2
+          else
+            push($out, "r#")
+            push($kout, "r#")
+          end
+          $p = $a + 2
+        else
+          -- a quote, or a word run before one: lit_open reads the literal form
+          $o = lit_open($cs, $a)
+          if $o.kind == "plain" then
+            -- "..", b"..", c"..: the prefix is code; the contents are blank in code
+            $pre = join(slice($cs, $a, $o.q + 1), "")
+            push($out, $pre)
+            push($kout, $pre)
+            $mode = "str"
+            $p = $o.q + 1
+          elif $o.kind == "char" then
+            -- 'x', '\n', b'x': blank in code, kept in keep (a byte char keeps its b)
+            $pre = join(slice($cs, $a, $o.q), "")
+            push($out, $pre .. repeat(" ", $o.close - $o.q + 1))
+            push($kout, $pre .. join(slice($cs, $o.q, $o.close + 1), ""))
+            $p = $o.close + 1
+          elif $o.kind == "raw" then
+            -- r"..", r#".."#, br.., cr..: the marker stands for the literal in code; the rest
+            -- is blank, as its content is
+            $hashes = $o.hashes
+            $mode = "raw"
+            push($out, $RAW_MARK .. repeat(" ", $o.body - $a - 1))
+            push($kout, join(slice($cs, $a, $o.body), ""))
+            $rawstart = $a - $drop
+            $rawcs = $o.body
+            $p = $o.body
+          elif $o.kind == "lifetime" then
+            push($out, "'")
+            push($kout, "'")
+            $p = $a + 1
+          else
+            -- an unknown prefix, or a byte char that does not close: kept as code, and the
+            -- line is marked bad so the gate reports it (it never guesses at the literal)
+            $txt = join(slice($cs, $a, $o.q + 1), "")
+            if $bad == "" then
+              $bad = $txt
+            end
+            push($out, $txt)
+            push($kout, $txt)
+            $p = $o.q + 1
+          end
+        end
+      end
+    elif $mode == "str" then
+      $m = re_find($rest, $STR_END_RE)
+      if len($m) == 0 then
+        push($out, repeat(" ", $L - $p))
+        push($kout, join(slice($cs, $p, $L), ""))
+        $p = $L
+      else
+        $a = $p + $m[0].start
+        push($out, repeat(" ", $a - $p))
+        push($kout, join(slice($cs, $p, $a), ""))
+        if $m[0].match == "\"" then
+          $mode = "code"
+          push($out, "\"")
+          push($kout, "\"")
+          $p = $a + 1
+        else
+          push($out, "  ")
+          push($kout, join(slice($cs, $a, $a + 2), ""))
+          $p = $a + 2
+        end
+      end
+    elif $mode == "raw" then
+      -- closed by a quote followed by exactly $hashes hashes
+      $m = re_find($rest, "\"" .. repeat("#", $hashes))
+      if len($m) == 0 then
+        push($out, repeat(" ", $L - $p))
+        push($kout, join(slice($cs, $p, $L), ""))
+        $p = $L
+      else
+        $a = $p + $m[0].start
+        $stop = $a + 1 + $hashes
+        push($out, repeat(" ", $stop - $p))
+        push($kout, join(slice($cs, $p, $stop), ""))
+        if $rawstart >= 0 then
+          push($raws, {start: $rawstart, value: join(slice($cs, $rawcs, $a), "")})
+          $rawstart = -1
+        end
+        $mode = "code"
+        $p = $stop
+      end
+    else
+      -- block comment, nested: /* opens a level, */ closes one
+      $m = re_find($rest, $BLOCK_RE)
+      if len($m) == 0 then
+        push($out, repeat(" ", $L - $p))
+        push($kout, repeat(" ", $L - $p))
+        $p = $L
+      else
+        $a = $p + $m[0].start
+        push($out, repeat(" ", $a - $p))
+        push($kout, repeat(" ", $a - $p))
+        if $m[0].match == "/*" then
+          $depth = $depth + 1
+        else
+          $depth = $depth - 1
+        end
+        push($out, "  ")
+        push($kout, "  ")
+        $p = $a + 2
+        if $depth == 0 then
+          $mode = "code"
+        end
+      end
+    end
+  end
+  if $rawstart >= 0 then
+    push($raws, {start: $rawstart, value: nil})
+  end
+  return {code: join($out, ""), keep: join($kout, ""), raws: $raws, st: {mode: $mode, depth: $depth, hashes: $hashes}, bad: $bad}
+end
+
+-- The Rust lexical stripper, over a file's lines: one code and one keep line per
+-- input line (see strip_line). Blanks line comments and nested block comments;
+-- string, byte-string and raw-string contents (any number of #) and char literals
+-- are blanked in code only; lifetimes stay code. Returns {code, keep, mode}, where
+-- mode is the state at end of file: anything but "code" means a comment or literal
+-- never closed. raws holds each line's raw strings (see strip_line). bad_n is the first
+-- line (1-based, 0 when none) with a literal the gate cannot read, and bad_text its text.
+fn strip_rust($lines)
+  $st = {mode: "code", depth: 0, hashes: 0}
+  $code = []
+  $keep = []
+  $raws = []
+  $n = 0
+  $bad_n = 0
+  $bad_text = ""
+  for each $l in $lines
+    $n = $n + 1
+    $r = strip_line($l, $st)
+    push($code, $r.code)
+    push($keep, $r.keep)
+    push($raws, $r.raws)
+    if $bad_n == 0 and $r.bad != "" then
+      $bad_n = $n
+      $bad_text = $r.bad
+    end
+    $st = $r.st
+  end
+  return {code: $code, keep: $keep, raws: $raws, mode: $st.mode, bad_n: $bad_n, bad_text: $bad_text}
+end
+
+-- Is this line an arm head of a dispatch block (already known to sit at the
+-- arm indent)? A head has `=>`, or starts a pattern with a literal, `|` or `(`.
+fn is_head($line)
+  if re_match($line, "=>") then
+    return true
+  end
+  return re_match(trim($line), "^(\"|" .. $RAW_MARK .. "|\\||\\()")
+end
+
+-- The column where an arm's head ends: its `=>` in the code view, or the line's
+-- end (a `|` continuation has no `=>`). The head is then the code and keep text
+-- before that column.
+fn arm_cut($code_line)
+  $m = re_find($code_line, "=>")
+  if len($m) == 0 then
+    return len($code_line)
+  end
+  return $m[0].start
+end
+
+-- Registrations in one Rust file: const VERBS tables (decl, or suffix for a
+-- SUFFIX_TABLES file), dispatch arms (dispatch, or parse in a PARSE_FILES
+-- file), variant arms, guards and prefix arms. Returns {records, variants}.
+fn scan_rs($lines, $rel, $owner, $is_suffix, $dispatch_ok, $is_parse)
+  $found = []
+  $variants = []
+  $tkind = "decl"
+  if $is_suffix then
+    $tkind = "suffix"
+  end
+  $arm_kind = "dispatch"
+  if $is_parse then
+    $arm_kind = "parse"
+  end
+  $stack = []
+  $table = false
+  -- the last line of a routing table already read in full (-1 when none is open)
+  $route_end = -1
+  -- Every file is read in the two stripped views of strip_line. $code drives all
+  -- structure: braces, tables, cfg(test), arm heads, `=>`, variants and the
+  -- dispatch scrutinee, so a commented-out or quoted arm is not an arm. $keep
+  -- supplies names: literal text is kept, comments are blanked. Both share columns.
+  for each $l in $lines
+    if index_of($l, $RAW_MARK) >= 0 then
+      cannot("scan", $rel .. " holds a U+0002 control character, which the gate reads as its raw-string marker; it cannot be read")
+    end
+  end
+  $st = strip_rust($lines)
+  if $st.mode != "code" then
+    cannot("scan", $rel .. " ends inside an unclosed comment or literal (" .. $st.mode .. "); it cannot be read")
+  end
+  if $st.bad_n > 0 then
+    violate("unreadable", "unreadable literal: " .. $rel .. ":" .. to_string($st.bad_n) .. "; " .. $st.bad_text .. " is not a literal form the gate can read (a prefix is none, b, c, r, br or cr, and a byte char is b'..')")
+  end
+  $code = $st.code
+  $keep = $st.keep
+  $raws = $st.raws
+  -- This file's request_builders entries. A tuple entry (text starts "(") is a hit on any
+  -- normalised line that contains it; it contributes no record, so it only has to match.
+  $bfile = []
+  for each $b in $BUILDERS
+    if $b.file == $rel then
+      push($bfile, $b)
+    end
+  end
+  -- each line's enclosing fn (fn_scopes): an entry binds only a site in its own fn
+  $fs = fn_scopes($code)
+  $scopes = $fs.fns
+  $impls = $fs.impls
+  -- the test bodies are skipped here and in the const index alike (round 23)
+  $tm = test_mask($code)
+  $tmask = $tm.mask
+  for each $b in $bfile
+    if starts_with($b.text, "(") then
+      $kn = 0
+      for each $kl in $keep
+        if $b.scope == $scopes[$kn] and index_of(norm_text($kl), $b.text) >= 0 then
+          push($BUILDER_HITS, $b.idx)
+        end
+        $kn = $kn + 1
+      end
+    end
+  end
+  -- The constants this file can resolve (const_index): every `const NAME` and every `use` of
+  -- NAME, at any position and scope, counted for the whole file. A parse file resolves none.
+  $ix = {defs: {}, unknown: false, imps: {}, glob: false}
+  if not $is_parse then
+    $ix = const_index($code, $keep, $raws, $tmask, $fs)
+  end
+  -- An inline `#[cfg(test)] mod x {` body is skipped (test_mask), and its lines are not read.
+  $i = 0
+  while $i < len($lines)
+    $cline = $code[$i]
+    $kline = $keep[$i]
+    $n = $i + 1
+    if $tmask[$i] then
+      -- a test body: skipped whole
+    elif $table then
+      unreadable_row($cline, $rel, $n, false)
+      for each $v in reg_names($cline, $kline, $raws[$i], $rel, $n)
+        push($found, record($v, $owner, $rel, $n, $tkind))
+      end
+      if re_match($cline, "\\];") then
+        $table = false
+      end
+    elif re_match($cline, $TABLE_RE) then
+      $table = true
+      unreadable_row($cline, $rel, $n, true)
+      for each $v in reg_names($cline, $kline, $raws[$i], $rel, $n)
+        push($found, record($v, $owner, $rel, $n, $tkind))
+      end
+      if re_match($cline, "\\];") then
+        $table = false
+      end
+    else
+      -- A routing table (any const or static of tuple or struct rows, ROUTE_DECL_RE) is read in
+      -- full here, from its declaration: every row whose first item is a verb-shaped literal is a
+      -- registration. Its lines are then read by the scanners below like every other line, so a
+      -- callback or a match inside a row is never skipped.
+      if $i > $route_end and re_match($cline, $ROUTE_DECL_RE) then
+        $rt = route_table($code, $keep, $raws, $i, $rel, $owner)
+        for each $r in $rt.records
+          push($found, $r)
+        end
+        $route_end = $rt.last
+      end
+      $top = nil
+      if len($stack) > 0 then
+        $top = $stack[len($stack) - 1]
+      end
+      if $top != nil and re_match($cline, "^\\s{" .. to_string($top.indent) .. "}\\}") then
+        pop($stack)
+      elif $top != nil and $dispatch_ok and re_match($cline, "^\\s{" .. to_string($top.indent + 4) .. "}[A-Za-z_]") and not is_head($cline) then
+        -- a pattern at arm column with no `=>` on its line and no leading `|`, `(` or
+        -- quote: it continues on a later line, and its names are read from here
+        for each $v in arm_consts($cline, $kline, $ix, $rel, $n, $impls[$i])
+          if not ($arm_kind == "dispatch" and builder_arm_drop($top, $v)) then
+            push($found, record($v, $owner, $rel, $n, $arm_kind))
+          end
+        end
+      elif $top != nil and $dispatch_ok and re_match($cline, "^\\s{" .. to_string($top.indent + 4) .. "}[^\\s]") and is_head($cline) then
+        -- the head is the arm's text before its `=>`: structure from the code view, names from keep
+        $cut = arm_cut($cline)
+        $chead = slice($cline, 0, $cut)
+        $head = slice($kline, 0, $cut)
+        $an = arm_names($chead, $head, $raws[$i], $rel, $n)
+        $exact = $an.exact
+        for each $c in arm_consts($chead, $head, $ix, $rel, $n, $impls[$i])
+          push($exact, $c)
+        end
+        unreadable_prefix($chead, len($an.prefix), $rel, $n)
+        for each $p in $an.prefix
+          push($found, record($p, $owner, $rel, $n, "prefix"))
+        end
+        $vm = re_find(trim($cline), $VARIANT_HEAD_RE)
+        if len($vm) > 0 then
+          push($variants, record("SessionCommand::" .. $vm[0].groups[0], $owner, $rel, $n, "variant"))
+        end
+        -- A parse arm answers one variant; constructing two is ambiguous.
+        $pvar = ""
+        if $is_parse then
+          $pvars = arm_variants($code, $i, $top.indent)
+          if len($pvars) > 1 then
+            violate("ambiguous-arm", "the parse arm at " .. $rel .. ":" .. to_string($n) .. " constructs " .. list_text($pvars) .. "; one arm answers one variant")
+          end
+          if len($pvars) > 0 then
+            $pvar = $pvars[0]
+          end
+        end
+        for each $v in $exact
+          if $top.method and contains($HTTP_METHODS, $v) then
+            -- an HTTP method token in a method match is not a verb
+          elif $is_parse then
+            push($found, parse_record($v, $owner, $rel, $n, $pvar))
+          else
+            if not ($arm_kind == "dispatch" and builder_arm_drop($top, $v)) then
+              push($found, record($v, $owner, $rel, $n, $arm_kind))
+            end
+          end
+        end
+      end
+      if $dispatch_ok then
+        for each $g in guards_in($cline, $kline, $raws[$i], $ix, $rel, $n, $scopes[$i], $impls[$i])
+          if not ($g.keyword == "method" and contains($HTTP_METHODS, $g.name)) and not builder_guard_drop($bfile, $g, $scopes[$i]) then
+            push($found, record($g.name, $owner, $rel, $n, "guard"))
+          end
+        end
+        $o = dispatch_open($cline)
+        if $o != nil then
+          -- a match head that a request_builders entry keys: the entries are its builders, and
+          -- a head entry is a hit here, in its own fn only (its arms are then read as keyed in
+          -- builder_arm_drop)
+          $hk = match_head($kline)
+          $bl = []
+          for each $b in $bfile
+            if starts_with($b.text, "match ") and $b.text == $hk and $b.scope == $scopes[$i] then
+              push($bl, $b)
+              push($BUILDER_HITS, $b.idx)
+            end
+          end
+          $o = {indent: $o.indent, method: $o.method, builders: $bl}
+          push($stack, $o)
+        else
+          -- a match on a verb that the opener test does not take (no brace on its line,
+          -- or a one-line match): its arms would be skipped, so it is a violation
+          $ms = re_find($cline, $MATCH_SCRUT_RE)
+          if len($ms) > 0 and re_match(trim($ms[0].groups[0]), $SCRUT_RE) then
+            violate("unreadable", "unreadable dispatch: " .. $rel .. ":" .. to_string($n) .. "; a match on a verb has no opening brace on its line, so its arms cannot be read")
+          end
+        end
+      end
+    end
+    $i = $i + 1
+  end
+  -- A test module that never closes would skip the rest of the file: fail closed.
+  if $tm.open then
+    cannot("scan", $rel .. ": the #[cfg(test)] module never closes before end of file; the rest of the file cannot be read")
+  end
+  return {records: $found, variants: $variants}
+end
+
+-- One line of the Mix lexical view, as strip_line is for Rust. The state machine follows
+-- the Mix lexer (verified by probe; see `mix man syntax`):
+--   code     `#` and `--` start a comment to the end of the line; `"` opens a
+--            double-quoted string; `'` opens a single-quoted one; `<<TAG` opens a
+--            heredoc, and the opener must own its line (only blanks or a `--` comment
+--            may follow). Any other `<<` is a lexer error, reported as bad.
+--   dq       `\` escapes the next character (a lone one at end of line too); `${`
+--            opens an interpolation, which ends at the first `}` and in which quotes
+--            do not count; `"` closes the string.
+--   interp   the text up to the first `}`, then back to dq; it may span lines.
+--   sq       `\` escapes the next character; `'` closes the string. No interpolation.
+--   heredoc  raw body lines, until a line whose trimmed text is TAG.
+-- code blanks comments and literal contents (quotes and the opener stay); keep blanks
+-- only comments. Returns {code, keep, st, bad}; st is {mode, tag} for the next line.
+fn strip_mix_line($line, $st)
+  if $st.mode == "code" and not re_match($line, $MIX_PLAIN_RE) then
+    return {code: $line, keep: $line, st: $st, bad: ""}
+  end
+  $cs = chars($line)
+  $L = len($cs)
+  if $st.mode == "heredoc" then
+    $next = $st
+    if trim($line) == $st.tag then
+      $next = {mode: "code", tag: ""}
+    end
+    return {code: repeat(" ", $L), keep: $line, st: $next, bad: ""}
+  end
+  $mode = $st.mode
+  $tag = $st.tag
+  $bad = ""
+  $out = []
+  $kout = []
+  $p = 0
+  while $p < $L
+    $rest = join(slice($cs, $p, $L), "")
+    if $mode == "code" then
+      $m = re_find($rest, $MIX_CODE_RE)
+      if len($m) == 0 then
+        push($out, $rest)
+        push($kout, $rest)
+        $p = $L
+      else
+        $a = $p + $m[0].start
+        $tok = $m[0].match
+        $gap = join(slice($cs, $p, $a), "")
+        push($out, $gap)
+        push($kout, $gap)
+        if $tok == "--" or $tok == "#" then
+          push($out, repeat(" ", $L - $a))
+          push($kout, repeat(" ", $L - $a))
+          $p = $L
+        elif $tok == "\"" then
+          $mode = "dq"
+          push($out, "\"")
+          push($kout, "\"")
+          $p = $a + 1
+        elif $tok == "'" then
+          $mode = "sq"
+          push($out, "'")
+          push($kout, "'")
+          $p = $a + 1
+        else
+          $h = re_find(join(slice($cs, $a, $L), ""), $HEREDOC_RE)
+          if len($h) == 0 then
+            $bad = "a `<<` that is not a heredoc opener (`<<TAG` must end its line)"
+            push($out, $rest)
+            push($kout, $rest)
+            $p = $L
+          else
+            -- the opener keeps its text; the rest of its line is a comment or blank
+            $tag = $h[0].groups[0]
+            $e = $a + 2 + len(chars($tag))
+            push($out, repeat(" ", $L - $a))
+            push($kout, join(slice($cs, $a, $e), "") .. repeat(" ", $L - $e))
+            $mode = "heredoc"
+            $p = $L
+          end
+        end
+      end
+    elif $mode == "dq" then
+      $m = re_find($rest, $MIX_DQ_RE)
+      if len($m) == 0 then
+        push($out, repeat(" ", $L - $p))
+        push($kout, $rest)
+        $p = $L
+      else
+        $a = $p + $m[0].start
+        $tok = $m[0].match
+        push($out, repeat(" ", $a - $p))
+        push($kout, join(slice($cs, $p, $a), ""))
+        if $tok == "\"" then
+          $mode = "code"
+          push($out, "\"")
+          push($kout, "\"")
+          $p = $a + 1
+        elif $tok == $INTERP_OPEN then
+          $mode = "interp"
+          push($out, "  ")
+          push($kout, $INTERP_OPEN)
+          $p = $a + 2
+        else
+          $e = $a + len(chars($tok))
+          push($out, repeat(" ", $e - $a))
+          push($kout, $tok)
+          $p = $e
+        end
+      end
+    elif $mode == "interp" then
+      $m = re_find($rest, $MIX_INTERP_RE)
+      if len($m) == 0 then
+        push($out, repeat(" ", $L - $p))
+        push($kout, $rest)
+        $p = $L
+      else
+        $a = $p + $m[0].start
+        push($out, repeat(" ", $a + 1 - $p))
+        push($kout, join(slice($cs, $p, $a + 1), ""))
+        $mode = "dq"
+        $p = $a + 1
+      end
+    else
+      -- sq
+      $m = re_find($rest, $MIX_SQ_RE)
+      if len($m) == 0 then
+        push($out, repeat(" ", $L - $p))
+        push($kout, $rest)
+        $p = $L
+      else
+        $a = $p + $m[0].start
+        $tok = $m[0].match
+        push($out, repeat(" ", $a - $p))
+        push($kout, join(slice($cs, $p, $a), ""))
+        if $tok == "'" then
+          $mode = "code"
+          push($out, "'")
+          push($kout, "'")
+          $p = $a + 1
+        else
+          $e = $a + len(chars($tok))
+          push($out, repeat(" ", $e - $a))
+          push($kout, $tok)
+          $p = $e
+        end
+      end
+    end
+  end
+  return {code: join($out, ""), keep: join($kout, ""), st: {mode: $mode, tag: $tag}, bad: $bad}
+end
+
+-- The Mix lexical view of a file: strip_mix_line over each line, state carried. A
+-- file that ends inside a literal or heredoc, or holds a lexer error, cannot be read.
+-- Returns {code, keep}.
+fn strip_mix($lines, $rel)
+  $st = {mode: "code", tag: ""}
+  $code = []
+  $keep = []
+  for each $line in $lines
+    $r = strip_mix_line($line, $st)
+    if $r.bad != "" then
+      cannot("scan", $rel .. " has " .. $r.bad .. "; the Mix lexer rejects it, so it cannot be read")
+    end
+    push($code, $r.code)
+    push($keep, $r.keep)
+    $st = $r.st
+  end
+  if $st.mode != "code" then
+    cannot("scan", $rel .. " ends inside an unterminated " .. $st.mode .. " (string or heredoc); it cannot be read")
+  end
+  return {code: $code, keep: $keep}
+end
+
+-- Shipped .mix `on <name>` handlers, at any statement position on any logical line
+-- (join_mix). Structure is read from the code view, so an `on` inside a comment, a
+-- string or a heredoc is not a handler; the name is read from the keep view. A header
+-- whose name the gate cannot read is a violation at its line, never a silent skip.
+fn scan_mix($lines, $rel, $owner)
+  $found = []
+  $st = strip_mix($lines, $rel)
+  for each $lg in join_mix($st)
+    for each $t in on_tokens($lg.code, $lg.keep)
+      $n = phys_line($lg, $t.offset) + 1
+      if $t.bad then
+        violate("unreadable", "unreadable handler: " .. $rel .. ":" .. to_string($n) .. "; its verb name is not a plain literal the gate can read")
+      else
+        push($found, record($t.name, $owner, $rel, $n, "on"))
+      end
+    end
+  end
+  return $found
+end
+
+-- ----------------------------------------------------------- exemptions
+
+-- The reviewed value comparisons. A malformed entry is a violation and is not used; a
+-- file that cannot be read or has the wrong schema is a cannot-check. Read before the
+-- walk.
+$EXEMPTS = []
+if not exists($EXEMPTIONS) then
+  cannot("exemptions", $EXEMPTIONS .. " is missing; the reviewed value comparisons cannot be read")
+end
+$exdata = nil
+try
+  $exdata = load_data($EXEMPTIONS)
+catch $e
+  cannot("exemptions", "cannot load " .. $EXEMPTIONS .. ": " .. to_string($e))
+end
+if type($exdata) != "map" or not has_key($exdata, "schema") or not has_key($exdata, "exemptions") then
+  cannot("exemptions", $EXEMPTIONS .. " is not a map with schema and exemptions")
+end
+if $exdata.schema != $EXEMPT_SCHEMA then
+  cannot("exemptions", $EXEMPTIONS .. " has schema " .. to_string($exdata.schema) .. "; the gate reads schema " .. to_string($EXEMPT_SCHEMA))
+end
+if type($exdata.exemptions) != "list" then
+  cannot("exemptions", $EXEMPTIONS .. ": exemptions is not a list")
+end
+for each $xe in $exdata.exemptions
+  $xp = exemption_problem($xe)
+  if $xp == "" then
+    push($EXEMPTS, {file: $xe.file, text: $xe.text, reason: $xe.reason, "fn": plain_fn($xe["fn"])})
+  else
+    violate("exemption", $xp)
+  end
+end
+
+-- Test doubles (rounds 21-22): each entry is {file, reason}. A listed file is scanned like any other
+-- file, and its registrations are checked in full, declarations included. Only its answers are not
+-- an owner: $TEST_DOUBLES (set after the scan, by double_stale) keeps them out of the owner and
+-- family checks. Coverage still sees them, and a verb only a double answers is not-in-code.
+-- The key is optional; absent means none. Only the entry's shape is checked here.
+$DOUBLE_ENTRIES = []
+$TEST_DOUBLES = []
+if has_key($exdata, "test_doubles") then
+  if type($exdata.test_doubles) != "list" then
+    cannot("exemptions", $EXEMPTIONS .. ": test_doubles is not a list")
+  end
+  for each $td in $exdata.test_doubles
+    $tp = double_problem($td)
+    if $tp != "" then
+      violate("test-double", $tp)
+    else
+      push($DOUBLE_ENTRIES, $td)
+    end
+  end
+end
+
+-- Request builders: sites that build a request for a verb, not answers to it (see $BUILDERS). The
+-- key is optional; absent means none. A malformed entry is a violation and is not keyed.
+if has_key($exdata, "request_builders") then
+  if type($exdata.request_builders) != "list" then
+    cannot("exemptions", $EXEMPTIONS .. ": request_builders is not a list")
+  end
+  for each $rb in $exdata.request_builders
+    $bp = builder_problem($rb)
+    if $bp != "" then
+      violate("request-builder", $bp)
+    else
+      push($BUILDERS, {file: $rb.file, text: $rb.text, verbs: $rb.verbs, reason: $rb.reason, scope: plain_fn($rb["fn"]), idx: len($BUILDERS)})
+    end
+  end
+end
+
+$records = []
+$variants = []
+$files_scanned = 0
+for each $root_dir in $SCAN_ROOTS
+  $base = $root .. "/" .. $root_dir
+  if not is_dir($base) then
+    cannot("scan", "source root " .. $root_dir .. " is missing")
+  end
+  -- find, not a Mix walk: an unreadable directory is an error, not a silent skip.
+  $res = nil
+  try
+    $res = run_argv(["find", $base, "-type", "f", "(", "-name", "*.rs", "-o", "-name", "*.mix", ")"], nil)
+  catch $e
+    cannot("scan", "cannot run find on " .. $root_dir .. ": " .. to_string($e))
+  end
+  if not $res.ok or $res.exit_code != 0 or $res.stderr != "" then
+    cannot("scan", "cannot list " .. $root_dir .. ": " .. trim($res.stderr))
+  end
+  $paths = []
+  for each $p in split($res.stdout, "\n")
+    if $p != "" then
+      push($paths, $p)
+    end
+  end
+  for each $path in sort($paths)
+    $rel = substr($path, len($root) + 1)
+    if not skipped($rel) then
+      $lines = []
+      try
+        $lines = read_lines($path)
+      catch $e
+        cannot("scan", "cannot read " .. $rel .. ": " .. to_string($e))
+      end
+      $owner = split($rel, "/")[1]
+      if ends_with($rel, ".mix") then
+        for each $r in scan_mix($lines, $rel, $owner)
+          push($records, $r)
+        end
+      else
+        $is_suffix = contains($SUFFIX_TABLES, $rel)
+        $dispatch_ok = not contains($NOT_DISPATCH, $rel) and not $is_suffix
+        $scan = scan_rs($lines, $rel, $owner, $is_suffix, $dispatch_ok, contains($PARSE_FILES, $rel))
+        for each $r in $scan.records
+          if not ($r.kind == "guard" and contains($EVENTS, $r.name)) then
+            push($records, $r)
+          end
+        end
+        for each $v in $scan.variants
+          push($variants, $v)
+        end
+      end
+      $files_scanned = $files_scanned + 1
+    end
+  end
+end
+
+-- Stale test doubles (round 21), decided once every file is read so each entry's sites are known.
+-- A site is an answer (is_answer) or a variant handler (round 22): a declaration or parse arm is
+-- not, so a file that holds only a declaration is stale. A stale entry is a violation and applies
+-- to nothing; a live one joins $TEST_DOUBLES.
+for each $td in $DOUBLE_ENTRIES
+  $sites = 0
+  for each $r in $records
+    if $r.file == $td.file and is_answer($r) then
+      $sites = $sites + 1
+    end
+  end
+  for each $v in $variants
+    if $v.file == $td.file then
+      $sites = $sites + 1
+    end
+  end
+  $why = double_stale($root, $td.file, $sites)
+  if $why == "" then
+    push($TEST_DOUBLES, $td.file)
+  else
+    violate("stale-test-double", $td.file .. " is listed as a test double in " .. $EXEMPTIONS .. ", but " .. $why .. "; the entry applies to nothing until it is fixed or removed")
+  end
+end
+
+-- Each suffix table must yield suffixes when families exist; an absent table
+-- is a missing anchor, never a pass.
+if len($families) > 0 then
+  for each $rel in $SUFFIX_TABLES
+    $found = false
+    for each $r in $records
+      if $r.file == $rel and $r.kind == "suffix" then
+        $found = true
+      end
+    end
+    if not $found then
+      cannot("anchor", "suffix table VERBS not found in " .. $rel)
+    end
+  end
+end
+if len($records) == 0 then
+  cannot("anchor", "no verb registrations found; the scan would pass vacuously")
+end
+
+-- ----------------------------------------------------------------- checks
+
+-- Request builders: each entry must match a site, and each verb it lists must be registered,
+-- concrete or by family, so the exemption cannot launder an unknown verb.
+for each $b in $BUILDERS
+  $hits = hit_count($b.idx)
+  if $hits == 0 then
+    violate("stale-request-builder", $b.file .. " lists a request builder `" .. $b.text .. "` for fn " .. $b.scope .. " in " .. $EXEMPTIONS .. ", but no site in that fn in that file matches it; the entry is stale and must be fixed or removed")
+  elif $hits > 1 then
+    violate("ambiguous-exemption", $b.file .. " lists a request builder `" .. $b.text .. "` for fn " .. $b.scope .. " in " .. $EXEMPTIONS .. ", but " .. to_string($hits) .. " sites in that fn match it; an entry binds one site, so it fails closed until it is split or the duplicate is removed")
+  end
+  for each $v in $b.verbs
+    if concrete_named($v) == nil and len(families_matching($v)) == 0 then
+      violate("unregistered-request", $b.file .. " builds a request for " .. $v .. " (`" .. $b.text .. "`), which the registry does not register; list the verb in the registry or remove it from the request builder")
+    end
+  end
+end
+
+-- Value comparisons: each one must match a reviewed exemption (same file, same normalised
+-- text), and each exemption must match at least one site. Neither is a skip: an unreviewed
+-- comparison is a violation, and a stale exemption is one too.
+-- An exemption binds a comparison only when its file, its normalised text AND its enclosing fn
+-- all match. Two comparisons that one exemption binds are ambiguous, and fail closed.
+$REVIEWED = 0
+for each $xv in $VALUE_CMPS
+  $xok = false
+  for each $xe in $EXEMPTS
+    if $xv.rel == $xe.file and $xv.text == $xe.text and $xv.scope == $xe["fn"] then
+      $xok = true
+    end
+  end
+  if $xok then
+    $REVIEWED = $REVIEWED + 1
+  else
+    violate("unreviewed-value", "unreviewed value comparison at " .. $xv.rel .. ":" .. to_string($xv.n) .. " in fn " .. $xv.scope .. ": `" .. $xv.text .. "`; list it in tools/verb_gate_exemptions.conf.mix with its fn and a reason, or make it a registered name")
+  end
+end
+for each $xe in $EXEMPTS
+  $xseen = 0
+  for each $xv in $VALUE_CMPS
+    if $xv.rel == $xe.file and $xv.text == $xe.text and $xv.scope == $xe["fn"] then
+      $xseen = $xseen + 1
+    end
+  end
+  if $xseen == 0 then
+    violate("stale-exemption", "stale exemption: " .. $xe.file .. " `" .. $xe.text .. "` in fn " .. $xe["fn"] .. " matches no value comparison; remove it")
+  elif $xseen > 1 then
+    violate("ambiguous-exemption", "ambiguous exemption: " .. $xe.file .. " `" .. $xe.text .. "` in fn " .. $xe["fn"] .. " matches " .. to_string($xseen) .. " value comparisons; an exemption binds one, so it fails closed until it is split or the duplicate is removed")
+  end
+end
+
+-- Every literal is validated; a protocol word is exempt. Only valid records
+-- go on to coverage and ownership.
+$valid = []
+for each $r in $records
+  if not contains($PROTOCOL, $r.name) then
+    $ok = re_match($r.name, $NAME_RE)
+    if $r.kind == "suffix" then
+      $ok = re_match($r.name, $SUFFIX_RE)
+    elif $r.kind == "prefix" then
+      $ok = re_match($r.name, $PREFIX_RE)
+    end
+    if $ok then
+      push($valid, $r)
+    else
+      violate("bad-name", "'" .. $r.name .. "' at " .. loc($r) .. " is not a valid " .. $r.kind .. " name")
+    end
+  end
+end
+
+-- Coverage: every code registration matches exactly one registry entry.
+for each $r in $valid
+  if $r.kind == "prefix" then
+    $under = 0
+    for each $c in $concrete
+      if starts_with($c.name, $r.name) then
+        $under = $under + 1
+        if $c.status == "retired" then
+          violate("retired-in-code", $c.name .. " is retired but the prefix " .. $r.name .. " at " .. loc($r) .. " still answers it")
+        end
+      end
+    end
+    if $under == 0 then
+      violate("unregistered", "the prefix " .. $r.name .. " at " .. loc($r) .. " answers no registry verb")
+    end
+  else
+    $name = $r.name
+    if $r.kind == "suffix" then
+      $name = "x." .. $r.name
+    end
+    $fams = families_matching($name)
+    $total = len($fams)
+    $c = nil
+    if $r.kind != "suffix" then
+      $c = concrete_named($r.name)
+      if $c != nil then
+        $total = $total + 1
+        if $c.status == "retired" then
+          violate("retired-in-code", $r.name .. " is retired but still answered at " .. loc($r))
+        end
+      end
+    end
+    for each $f in $fams
+      if $f.status == "retired" then
+        violate("retired-in-code", $f.pattern .. " is retired but " .. $name .. " still matches it at " .. loc($r))
+      end
+    end
+    if $total == 0 then
+      violate("unregistered", $r.name .. " (" .. $r.kind .. ", owner " .. $r.owner .. ") at " .. loc($r) .. " matches no registry entry")
+    elif $total > 1 then
+      violate("double-registered", $r.name .. " at " .. loc($r) .. " matches " .. to_string($total) .. " registry entries; exactly one is required")
+    end
+  end
+end
+
+-- The records that can make an owner: every valid record except a listed test double's answers
+-- (rounds 21-22). A double's declarations and parse arms stay in, so declared_by and decl checks run
+-- in full. Coverage above still sees all of a double's records, so its unregistered, retired and
+-- bad-name verbs fail.
+$owned = []
+for each $r in $valid
+  if not (contains($TEST_DOUBLES, $r.file) and is_answer($r)) then
+    push($owned, $r)
+  end
+end
+
+-- Concrete entries: each has code, is answered by its owner alone, and is
+-- declared by declared_by (or by the owner when declared_by is absent).
+for each $c in $concrete
+  if $c.status != "retired" then
+    $hits = []
+    $answers = []
+    $decls = []
+    for each $r in $owned
+      if $r.kind == "prefix" then
+        if starts_with($c.name, $r.name) then
+          push($hits, $r)
+          push($answers, $r)
+        end
+      elif $r.name == $c.name then
+        push($hits, $r)
+        if $r.kind == "decl" or $r.kind == "parse" then
+          push($decls, $r)
+        else
+          push($answers, $r)
+        end
+      end
+    end
+    -- A parse arm declares the verb; its owner answers it through the variant.
+    for each $d in $decls
+      if $d.kind == "parse" then
+        for each $v in $variants
+          if $v.name == $d.variant and not contains($TEST_DOUBLES, $v.file) then
+            push($answers, $v)
+          end
+        end
+      end
+    end
+    if len($hits) == 0 then
+      $dbl_file = ""
+      for each $r in $valid
+        if $r.name == $c.name and contains($TEST_DOUBLES, $r.file) and is_answer($r) then
+          $dbl_file = $r.file
+        end
+      end
+      if $dbl_file != "" then
+        violate("not-in-code", $c.name .. " (owner " .. $c.owner .. ") is registered but only the listed test double " .. $dbl_file .. " answers it, and a test double is not an owner")
+      else
+        violate("not-in-code", $c.name .. " (owner " .. $c.owner .. ") is registered but no code registers it")
+      end
+    else
+      $ans_owners = owners_of($answers)
+      if len($answers) == 0 then
+        violate("not-answered", $c.name .. " is declared at " .. loc($decls[0]) .. " but no code answers it")
+      elif len($ans_owners) > 1 then
+        violate("owner-conflict", $c.name .. " is answered by more than one component: " .. list_text($ans_owners))
+      elif $ans_owners[0] != $c.owner then
+        violate("owner-mismatch", $c.name .. " is owned by " .. $c.owner .. " but answered by " .. $ans_owners[0] .. " at " .. loc($answers[0]))
+      end
+      $decl_owners = owners_of($decls)
+      if has_key($c, "declared_by") then
+        if not (len($decl_owners) == 1 and $decl_owners[0] == $c.declared_by) then
+          violate("owner-mismatch", $c.name .. " must be declared by " .. $c.declared_by .. "; declared by: " .. list_text($decl_owners))
+        end
+      else
+        for each $o in $decl_owners
+          if $o != $c.owner then
+            violate("owner-mismatch", $c.name .. " is declared by " .. $o .. " but owned by " .. $c.owner)
+          end
+        end
+      end
+    end
+  end
+end
+
+-- Families: each matches some code, and every code registration it matches
+-- belongs to the family's owner.
+for each $f in $families
+  if $f.status != "retired" then
+    $hit = 0
+    for each $r in $owned
+      if $r.kind != "prefix" then
+        $name = $r.name
+        if $r.kind == "suffix" then
+          $name = "x." .. $r.name
+        end
+        if family_matches($f.pattern, $name) then
+          $hit = $hit + 1
+          if $r.owner != $f.owner then
+            violate("owner-mismatch", $f.pattern .. " is owned by " .. $f.owner .. " but " .. $r.name .. " at " .. loc($r) .. " is owned by " .. $r.owner)
+          end
+        end
+      end
+    end
+    if $hit == 0 then
+      violate("not-in-code", "family " .. $f.pattern .. " matches no code registration")
+    end
+  end
+end
+
+-- --------------------------------------------------------------- summary
+
+$counts = to_string(len($records)) .. " code registrations in " .. to_string($files_scanned) .. " files"
+$held = to_string(len($concrete)) .. " verbs and " .. to_string(len($families)) .. " families registered"
+print("verb-registry-gate: " .. $counts .. "; " .. $held .. "; reviewed value comparisons: " .. to_string($REVIEWED) .. "; " .. to_string(len($VIOLATIONS)) .. " violation(s)")
+if len($VIOLATIONS) > 0 then
+  exit(1)
+end
+print("verb-registry-gate: clean")
+exit(0)

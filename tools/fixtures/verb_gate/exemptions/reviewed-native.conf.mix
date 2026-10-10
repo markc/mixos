@@ -1,0 +1,8 @@
+-- Reviewed value comparisons for the rs-value-arg and rs-value-exact fixtures: the echo check
+-- in libs/alpha/src/native.rs, with its whole operand.
+{
+  schema: 1,
+  exemptions: [
+    {file:"libs/alpha/src/native.rs", "fn":"echo_ok", text:"response.command_name() != Some(command)", reason:"response envelope echo check: the reply names the command that was sent. Not dispatch."}
+  ]
+}

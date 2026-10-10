@@ -1,0 +1,4 @@
+-- Fixture: a shipped handler the gate must read. Not run.
+on alpha.evt desc "fixture handler"
+  print("evt")
+end

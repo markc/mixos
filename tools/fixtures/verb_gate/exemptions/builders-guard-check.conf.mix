@@ -1,0 +1,10 @@
+-- Fixture exemptions (schema 1), round 16: the alpha.ping guard in fn check. Used by
+-- rb-guard-other-fn (the same guard in fn other is dispatch: owner-conflict) and rb-guard-ambiguous
+-- (two identical guards in fn check: ambiguous-exemption).
+{
+  schema: 1,
+  exemptions: [],
+  request_builders: [
+    {file:"libs/beta/src/client.rs", text:'verb == "alpha.ping"', verbs:["alpha.ping"], "fn":"check", reason:"fixture: a client building outgoing alpha.ping requests; alpha answers."}
+  ]
+}

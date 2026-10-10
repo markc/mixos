@@ -1,0 +1,8 @@
+-- Fixture exemptions (schema 1), round 14: the one-space literal. Used by rs-value-space-two (two
+-- spaces: must be unreviewed and stale) and rs-value-tab (a TAB: must be unreviewed and stale).
+{
+  schema: 1,
+  exemptions: [
+    {file:"libs/alpha/src/select.rs", "fn":"pick", text:'select(" ", false) == command', reason:"fixture: a selector call compared with the command, reviewed with one space as the literal."}
+  ]
+}

@@ -1,0 +1,8 @@
+-- Fixture registry: one verb, answered before and after an inline test module.
+{
+  schema: 3,
+  verbs: [
+    {name: "alpha.ok", owner: "alpha", version: "0.1.0", status: "accepted"}
+  ],
+  families: []
+}

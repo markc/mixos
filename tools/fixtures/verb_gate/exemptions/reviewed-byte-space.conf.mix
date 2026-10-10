@@ -1,0 +1,8 @@
+-- Fixture exemptions (schema 1), round 15: the byte char with a space. Used by rs-byte-tab, whose
+-- byte char holds a tab escape: must be unreviewed and stale.
+{
+  schema: 1,
+  exemptions: [
+    {file:"libs/alpha/src/select.rs", "fn":"pick", text:"select(b' ', false) == command", reason:"fixture: a selector call with a byte char, reviewed as a space."}
+  ]
+}

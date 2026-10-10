@@ -1,0 +1,2 @@
+-- The second handler follows a `;` on the same line; only alpha.other is registered.
+on alpha.other end; on alpha.unregistered end

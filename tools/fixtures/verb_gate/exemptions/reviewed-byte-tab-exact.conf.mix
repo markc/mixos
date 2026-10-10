@@ -1,0 +1,8 @@
+-- Fixture exemptions (schema 1), round 15: the exact byte char with a tab escape. Used by rs-byte-tab:
+-- must be clean.
+{
+  schema: 1,
+  exemptions: [
+    {file:"libs/alpha/src/select.rs", "fn":"pick", text:"select(b'\\t', false) == command", reason:"fixture: a selector call with a byte char tab escape, reviewed exactly as written."}
+  ]
+}

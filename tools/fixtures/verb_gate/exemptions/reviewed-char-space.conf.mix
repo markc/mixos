@@ -1,0 +1,8 @@
+-- Fixture exemptions (schema 1), round 14: the char literal with a space. Used by rs-value-char-tab,
+-- whose char literal holds a TAB: must be unreviewed and stale.
+{
+  schema: 1,
+  exemptions: [
+    {file:"libs/alpha/src/select.rs", "fn":"pick", text:"select(' ', false) == command", reason:"fixture: a selector call with a char literal, reviewed with a space inside it."}
+  ]
+}

@@ -1,0 +1,8 @@
+-- Fixture: a backslash inside a double- or single-quoted string is an escape, not a
+-- continuation. The text on the next line is still inside the string, so it is not a
+-- handler, and the only handler is alpha.other.
+$s = "x\
+on alpha.unregistered end"
+$t = 'y\
+on alpha.unregistered end'
+on alpha.other end

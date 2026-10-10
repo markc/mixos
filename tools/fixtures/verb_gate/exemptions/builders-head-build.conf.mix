@@ -1,0 +1,9 @@
+-- Fixture exemptions (schema 1), round 16: the keyed match head in fn build only. The same head in
+-- fn answer is not in the entry's fn, so it is dispatch. Used by rb-other-fn (owner-conflict).
+{
+  schema: 1,
+  exemptions: [],
+  request_builders: [
+    {file:"libs/beta/src/client.rs", text:"match verb {", verbs:["alpha.ping"], "fn":"build", reason:"fixture: a client building outgoing alpha.ping requests; alpha answers."}
+  ]
+}

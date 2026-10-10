@@ -1,0 +1,7 @@
+-- Each handler below sits at a statement position the live parser accepts mid-line,
+-- or uses a quoted name. Only alpha.other is registered, so each of the four is unregistered.
+on alpha.other end
+if true then on alpha.form_then end end
+fn f() on alpha.form_fn end end
+on alpha.other on alpha.form_body end end
+on "alpha.form_quoted" end

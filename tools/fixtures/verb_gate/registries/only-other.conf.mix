@@ -1,0 +1,9 @@
+-- Fixture registry for trees/mix-sq-on and trees/mix-heredoc-on: alpha.other is the only
+-- real handler; any other on line in those trees must come from a string or heredoc.
+{
+  schema: 3,
+  verbs: [
+    {name:"alpha.other", owner:"alpha", version:"0.1.0", status:"accepted"}
+  ],
+  families: []
+}

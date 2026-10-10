@@ -1,0 +1,11 @@
+-- Fixture exemptions (schema 1), round 21: one listed test double, libs/beta/src/fake.rs. Used by
+-- rs-double-listed, rs-double-unregistered, rs-double-raw-unregistered, rs-double-multiline-unregistered
+-- and rs-double-inline-redirect (scanned in full, not an owner), rs-double-sole (the only answer to
+-- alpha.sole), rs-double-nosites (no answering site: stale) and rs-double-missing (file absent: stale).
+{
+  schema: 1,
+  exemptions: [],
+  test_doubles: [
+    {file:"libs/beta/src/fake.rs", reason:"fixture: a fake editd, compiled only under test or the fake feature."}
+  ]
+}

@@ -1,0 +1,8 @@
+-- Fixture registry for trees/conflict: alpha and beta both answer x.shared.verb.
+{
+  schema: 3,
+  verbs: [
+    {name:"x.shared.verb", owner:"alpha", version:"0.1.0", status:"accepted"}
+  ],
+  families: []
+}

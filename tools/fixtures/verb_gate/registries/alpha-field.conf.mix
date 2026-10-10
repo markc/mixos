@@ -1,0 +1,9 @@
+-- Fixture registry for trees/rs-field-guard-*, rs-verb-forms: the verbs the guards and arms name.
+{
+  schema: 3,
+  verbs: [
+    {name:"alpha.ping", owner:"alpha", version:"0.1.0", status:"accepted"},
+    {name:"alpha.status", owner:"alpha", version:"0.1.0", status:"accepted"}
+  ],
+  families: []
+}
