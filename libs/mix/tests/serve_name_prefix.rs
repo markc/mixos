@@ -134,6 +134,26 @@ fn quoted_at_name_is_refused() {
 }
 
 #[test]
+fn quoted_segments_after_the_placeholder_must_be_bare_names() {
+    for (source, seg) in [
+        ("on @.\"@.call\"\nend\n", "\"@.call\""),
+        ("on @.a.\"@\".b\nend\n", "\"@\""),
+        ("on @.\"\"\nend\n", "\"\""),
+        ("on @.\"a.b\"\nend\n", "\"a.b\""),
+        ("on @.\" x\"\nend\n", "\" x\""),
+    ] {
+        let e = parse_err(source);
+        assert!(
+            e.contains(&format!("on: {seg} is not a valid segment after `@.`")),
+            "{source:?}: {e}"
+        );
+    }
+    // A quoted segment that IS a bare name is the same as writing it bare.
+    let p = parse("on @.\"call\"\nend\n");
+    assert_eq!(on_command(&p).0, "@.call");
+}
+
+#[test]
 fn at_in_an_expression_is_a_parse_error_naming_the_one_use() {
     let e = parse_err("$x = @\n");
     assert!(e.contains("serve-name placeholder"), "{e}");

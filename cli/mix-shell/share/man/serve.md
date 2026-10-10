@@ -261,9 +261,14 @@ Dispatch, `HELP` and every handler listing see the resolved name. Two `on`
 statements that resolve to the same name append handlers, exactly like two
 literal ones. Outside `mix --serve` (a plain script, `-c`, the REPL) there is
 no name to substitute, and the statement raises the catchable
-`SERVE_PREFIX_OUTSIDE_SERVE`. `@` anywhere else is a parse error: `on a.@.b`,
-`on @`, `on @x.y`, a quoted `on "@.call"` (a literal can't look like the
-placeholder) and `@` in an expression.
+`SERVE_PREFIX_OUTSIDE_SERVE`. Every segment after `@.` must be a bare name (a
+letter or `_`, then letters, digits or `_`), quoted or not. These are parse
+errors: `on a.@.b`, `on @`, `on @x.y`, a quoted `on "@.call"` (a literal can't
+look like the placeholder), a quoted segment that isn't a bare name
+(`on @."a.b"`, `on @.""`), and `@` in an expression. Positions that read raw
+source text rather than tokens take `@` as an ordinary character: a bareword
+`source`/`include` path (`source ./foo@bar.mix`) and the command text after
+`|` (`print(1) | cat @foo`).
 
 ---
 

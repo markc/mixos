@@ -25,6 +25,16 @@ const STMT_NESTING_COST: usize = 4;
 /// `Token::Function` is deliberately absent: both `fn` and `function` lex to
 /// it, so the original spelling can't be recovered — returning "function"
 /// for a source `fn` would silently store the wrong key.
+/// A segment a bare dotted name can spell: the lexer's identifier shape
+/// (`lex_identifier`), which keyword lexemes also have.
+fn is_bare_segment(seg: &str) -> bool {
+    let mut chars = seg.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 fn keyword_lexeme(tok: &Token) -> Option<&'static str> {
     Some(match tok {
         Token::If => "if",
@@ -1932,8 +1942,34 @@ impl Parser {
         }
         self.advance(); // @
         self.advance(); // .
-        let rest = self.parse_bus_dotted_name()?;
-        Ok(format!("@.{rest}"))
+        // Same loop as `parse_bus_dotted_name`, but every segment must be
+        // one a bare dotted name could spell: a quoted segment (`"@.x"`,
+        // `"a.b"`, `""`) would otherwise smuggle `@`, dots or nothing into
+        // the resolved verb.
+        let mut name = String::from("@");
+        loop {
+            let seg_span = self.peek_span();
+            let Some(seg) = self.bus_segment_at(self.pos) else {
+                break;
+            };
+            if !is_bare_segment(&seg) {
+                return Err(MixError::ParseError {
+                    msg: format!(
+                        "on: {seg:?} is not a valid segment after `@.`: each segment must be a \
+                         bare name (a letter or `_`, then letters, digits or `_`)"
+                    ),
+                    span: seg_span,
+                });
+            }
+            self.advance(); // segment
+            name.push('.');
+            name.push_str(&seg);
+            if self.peek() != &Token::Dot || self.bus_segment_at(self.pos + 1).is_none() {
+                break;
+            }
+            self.advance(); // '.'
+        }
+        Ok(name)
     }
 
     /// The token after the current one, as a STATIC string literal — a plain
