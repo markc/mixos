@@ -17,11 +17,13 @@
   carry stable codes (`TCP_LISTEN_ADDR_IN_USE`, `TCP_LISTEN_PERMISSION`,
   `TCP_LISTEN_ADDR_UNAVAILABLE`, `TCP_LISTEN_ADDRESS`, `TCP_LISTEN_ARGUMENT`,
   `TCP_ACCEPT_HANDLE`, `TCP_HANDLE_LIMIT`, `TCP_LISTENER`).
-- At most 1024 TCP sockets are live at once. Every listener and connection
-  holds a slot until it closes, so `tcp_connect` now also refuses with
-  `TCP_HANDLE_LIMIT` past the limit.
-- A blocking `tcp_accept` wakes on Ctrl-C through a SIGINT wake socket that
-  `interrupt::init` installs, even when the signal lands on another thread.
+- The handle limit is server-side: at most 1024 listeners and accepted
+  connections are live at once, each holding a slot until it closes, and
+  `tcp_listen` and `tcp_accept` refuse with `TCP_HANDLE_LIMIT` past it.
+  `tcp_connect` is not limited and behaves as before.
+- A blocking `tcp_accept` wakes promptly on Ctrl-C through a SIGINT wake
+  socket that `interrupt::init` installs, and rechecks the interrupt flag at
+  least every 250 ms, so no waiter misses it.
 
 ## 0.111.0
 

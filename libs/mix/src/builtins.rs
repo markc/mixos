@@ -411,7 +411,7 @@ builtin_table! {
     ("ws_close", CapabilityClass::Network,        "system",  "Close a websocket handle: true when it was live, false when unknown/already retired (never raises for the not-held case, like funlock) (v0.74.0)", contract!((handle: number) -> bool; failure[raises])),
     ("http_serve", CapabilityClass::Network,      "system",  "BLOCKING static file server — the python -m http.server slot: http_serve(root[, {port, host, duration, index, listing, render_md, requests}]) -> requests served. GET/HEAD only (405 otherwise), NO TLS ever and NO dynamic handlers (both are webd's job). port 0 (default) binds ephemeral and PRINTS the URL; host defaults 127.0.0.1 (pass \"0.0.0.0\" to expose); duration 0 = until SIGINT; listing opts into directory indexes; render_md serves .md as HTML (markdown feature); spa (true=index, or a shell filename) answers an extensionless would-be-404 with that shell so a client-side router boots — for a single-shell SPA; clean_urls serves /foo.html for /foo (GitHub Pages parity — for a pre-rendered page-per-route site), tried before spa. Traversal-proof: every canonicalised path must stay under the canonicalised root (v0.75.0)", contract!((root: string, opts?: any_of(map("http_serve_options", {port: number, host: string, duration: number, index: string, listing: bool, render_md: bool, requests: number, spa: any_of(bool, string), clean_urls: bool}), nil)) -> number; effects[blocking]; failure[raises])),
     ("http_recv", CapabilityClass::Network,       "system",  "Accept ONE HTTP request, answer it, return it: http_recv(port[, {timeout, host, max, respond}]) -> {method, path, query, headers, body, bytes, from_host, from_port}, or nil on timeout. The OAuth-localhost-redirect / webhook-catch shape. respond: {status, body, content_type, headers} (default 200 \"ok\"); max caps the request body (default 1 MiB); host defaults 127.0.0.1 (v0.75.0)", contract!((port: number, opts?: any_of(map, nil)) -> any; effects[blocking]; failure[raises])),
-    ("tcp_connect", CapabilityClass::Network,     "system",  "Open a raw TCP connection: tcp_connect(host, port[, {timeout, tls, insecure}]) -> numeric handle. tls:true wraps in TLS (ring-pinned, webpki roots); insecure:true skips cert verification. The stream-socket primitive for a line/binary protocol (SMTP/redis/memcached probe, banner grab) UDP/WS/HTTP don't cover. Refuses TCP_HANDLE_LIMIT past 1024 live TCP sockets (v0.78.0; limit unreleased)", contract!((host: string, port: number, opts?: any_of(map, nil)) -> number; effects[blocking]; failure[raises])),
+    ("tcp_connect", CapabilityClass::Network,     "system",  "Open a raw TCP connection: tcp_connect(host, port[, {timeout, tls, insecure}]) -> numeric handle. tls:true wraps in TLS (ring-pinned, webpki roots); insecure:true skips cert verification. The stream-socket primitive for a line/binary protocol (SMTP/redis/memcached probe, banner grab) UDP/WS/HTTP don't cover (v0.78.0)", contract!((host: string, port: number, opts?: any_of(map, nil)) -> number; effects[blocking]; failure[raises])),
     ("tcp_send", CapabilityClass::Network,        "system",  "Send bytes on a TCP handle: tcp_send(h, payload) -> bytes sent (string/bytes/buffer, verbatim; flushed) (v0.78.0)", contract!((handle: number, payload: any_of(string, bytes, buffer)) -> number; effects[blocking]; failure[raises])),
     ("tcp_recv", CapabilityClass::Network,        "system",  "Read available bytes: tcp_recv(h[, {timeout, max}]) -> bytes (buffered bytes first, then one read of at most 256 KiB — poll again for more even when max is larger) | nil on timeout (poll again). Bytes not string — a stream has no frame boundary. A peer close RAISES and retires the handle. timeout default 30 (0=forever), max default 64 KiB. Numeric Class C recv yields on native readiness. Source-id recv yields outside serve; serve mode refuses SOCKET_RECV_SERVE and consumes frames through handlers. nil on timeout keeps the connection usable; terminal raises SOCKET_CLOSED (v0.78.0)", contract!((handle: any_of(number, string), opts?: any_of(map, nil)) -> any; effects[blocking]; failure[raises])),
     ("tcp_recv_line", CapabilityClass::Network,   "system",  "Read the next LINE: tcp_recv_line(h[, {timeout, max}]) -> string (LF + one trailing CR stripped) | nil on timeout. Buffers across reads; if `max` bytes accumulate with no newline the handle RAISES and RETIRES (a peer that never terminates a line — broken framing). For line protocols (SMTP/redis) so a caller need not hand-roll a \\r\\n scanner. Numeric Class C recv yields on native readiness. A line-mode source-id recv yields outside serve; serve mode refuses SOCKET_RECV_SERVE and uses event handlers. nil on timeout keeps the connection usable; terminal raises SOCKET_CLOSED (v0.78.0)", contract!((handle: any_of(number, string), opts?: any_of(map, nil)) -> any; effects[blocking]; failure[raises])),
@@ -21995,13 +21995,14 @@ mod tcp_client {
 
     /// One connection: the stream plus a read-ahead buffer that
     /// tcp_recv_line owns (a line read may pull past the newline; those
-    /// bytes belong to the next read, not lost). The handle-limit permit
-    /// and the generation ownership travel with the connection through
-    /// pulls and subscriptions, and are released only when it is dropped.
+    /// bytes belong to the next read, not lost). An accepted connection's
+    /// handle-limit permit and generation ownership travel with it through
+    /// pulls and subscriptions, and are released only when it is dropped;
+    /// a tcp_connect client has neither (the limit is server-side).
     pub(super) struct Conn {
         pub stream: Stream,
         pub buf: Vec<u8>,
-        _permit: TcpPermit,
+        _permit: Option<TcpPermit>,
         pub ownership: Option<Ownership>,
     }
 
@@ -22039,8 +22040,9 @@ mod tcp_client {
         }
     }
 
-    /// Every live TCP socket (connected handle or listener, tcp_connect's
-    /// included) holds one permit from this pool.
+    /// Every live server-side TCP socket (a listener or a connection it
+    /// accepted) holds one permit from this pool. tcp_connect clients do
+    /// not.
     pub(super) static TCP_PERMITS: PermitPool = PermitPool::new(super::tcp_server::MAX_TCP_HANDLES);
 
     /// One reserved slot; released on drop.
@@ -22105,7 +22107,7 @@ mod tcp_client {
     }
 
     impl Conn {
-        pub(super) fn new(stream: Stream, permit: TcpPermit) -> Self {
+        pub(super) fn new(stream: Stream, permit: Option<TcpPermit>) -> Self {
             Self {
                 stream,
                 buf: Vec::new(),
@@ -22293,9 +22295,6 @@ fn builtin_tcp_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
         ));
     }
     let timeout = std::time::Duration::from_secs_f64(timeout_seconds);
-    // Reserve the handle slot before connecting: it travels with the
-    // connection and is released when the connection is dropped.
-    let permit = tcp_client::TcpPermit::acquire("tcp_connect")?;
 
     use std::net::ToSocketAddrs;
     let resolve_host = host.trim_start_matches('[').trim_end_matches(']');
@@ -22387,7 +22386,7 @@ fn builtin_tcp_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
     tcp_client::MAP
         .lock()
         .unwrap()
-        .insert(id, tcp_client::Conn::new(stream, permit));
+        .insert(id, tcp_client::Conn::new(stream, None));
     Ok(Some(Value::Number(id as f64)))
 }
 
@@ -22659,8 +22658,8 @@ fn tcp_recv_opts(name: &str, opts: Option<&Value>, default_max: usize) -> MixRes
 // non-blocking for its whole life: tcp_accept waits in poll(2) (sync) or
 // on an AsyncFd (Class C) and then accepts, never holding the registry
 // lock across the wait. An accepted connection is an ordinary tcp_client
-// handle. Every socket carries a permit from one process-wide pool
-// (tcp_client::TCP_PERMITS), and a listener or accepted connection also
+// handle. Every server-side socket carries a permit from one
+// process-wide pool (tcp_client::TCP_PERMITS), and a listener or accepted connection also
 // carries its generation's ownership, attached before the handle is
 // returned; the generation closes what it owns when it retires
 // (socket_sources::close_owned). tcp_on on a listener moves it into a
@@ -22695,9 +22694,10 @@ mod tcp_server {
     pub(super) static LISTENERS: LazyLock<Mutex<HashMap<u64, Arc<Listener>>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
 
-    /// Live TCP sockets (connections plus listeners, tcp_connect's
-    /// included) beyond which new ones refuse, so a connection flood
-    /// cannot exhaust the process's descriptors.
+    /// Live server-side TCP sockets (listeners plus the connections they
+    /// accepted) beyond which tcp_listen and accepts refuse, so a
+    /// connection flood cannot exhaust the process's descriptors.
+    /// tcp_connect clients are not counted.
     pub(super) const MAX_TCP_HANDLES: usize = 1024;
     pub(super) const DEFAULT_BACKLOG: i32 = 128;
     pub(super) const MAX_BACKLOG: i32 = 4096;
@@ -22783,7 +22783,7 @@ fn adopt_accepted(
         .set_write_timeout(Some(std::time::Duration::from_secs(30)))
         .ok();
     let id = tcp_client::NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let mut conn = tcp_client::Conn::new(tcp_client::Stream::Plain(stream), permit);
+    let mut conn = tcp_client::Conn::new(tcp_client::Stream::Plain(stream), Some(permit));
     conn.ownership = owner.map(|o| tcp_client::Ownership::new(o.clone(), id));
     tcp_client::MAP.lock().unwrap().insert(id, conn);
     (id, peer)
@@ -22825,10 +22825,10 @@ fn accept_retryable_os(_code: Option<i32>) -> bool {
 /// Wait until the listener is readable, Ctrl-C arrives, or `timeout`
 /// passes (None waits forever). Ok(false) on timeout; a signal that
 /// interrupts poll surfaces as Interrupted. The interrupt wake socket
-/// (crate::interrupt::wake_fd) is in the poll set, so a SIGINT that lands
-/// just before poll, or on another thread, still ends the wait: its byte
-/// stays queued until drained here. The caller checks the interrupt flag
-/// after every wait.
+/// (crate::interrupt::wake_fd) is in the poll set as the fast path: a
+/// SIGINT on another thread still ends the wait. Correctness never rests
+/// on the byte (another waiter may drain it): the caller bounds each wait
+/// (ACCEPT_SLICE) and checks the interrupt flag between waits.
 #[cfg(all(feature = "ws", unix))]
 fn wait_listener(
     listener: &std::net::TcpListener,
@@ -23006,6 +23006,27 @@ fn builtin_tcp_listen(args: Vec<Value>) -> MixResult<Option<Value>> {
     Ok(Some(Value::Number(id as f64)))
 }
 
+/// The longest a blocking tcp_accept sits in one poll(2). The SIGINT
+/// wake socket is only the fast path: with several waiters one may drain
+/// the byte another needed, so every waiter rechecks the interrupt flag
+/// at least this often.
+#[cfg(feature = "ws")]
+const ACCEPT_SLICE: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// Blocking tcp_accept calls that have reached their wait loop: a
+/// synchronisation point for tests that must signal a waiter that is
+/// really waiting.
+#[cfg(feature = "ws")]
+static ACCEPT_WAITS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// How many blocking tcp_accept calls have entered their wait loop.
+/// Test synchronisation only; not part of the Mix contract.
+#[cfg(feature = "ws")]
+#[doc(hidden)]
+pub fn tcp_accept_waits_entered() -> usize {
+    ACCEPT_WAITS.load(std::sync::atomic::Ordering::Acquire)
+}
+
 /// `tcp_accept(listener[, {timeout}])` → connected handle | nil on
 /// timeout. The plain blocking form; the evaluator intercepts the Class C
 /// numeric form (socket_sources::pull_accept) and the source-id form.
@@ -23015,6 +23036,7 @@ fn builtin_tcp_accept(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args_between("tcp_accept", &args, 1, 2)?;
     let (listener, deadline) = socket_sources::prepare_accept(&args)?;
     let mut eintr = 0u32;
+    let mut entered = false;
     loop {
         // The evaluator records ownership as soon as this returns, with no
         // await in between, so the plain form needs no owner here.
@@ -23034,9 +23056,15 @@ fn builtin_tcp_accept(args: Vec<Value>) -> MixResult<Option<Value>> {
                 Some(left)
             }
         };
-        match wait_listener(&listener.sock, left) {
-            // Readable, woken by Ctrl-C, or timed out: the loop retries
-            // accept, then checks the interrupt flag and the deadline.
+        if !entered {
+            entered = true;
+            ACCEPT_WAITS.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        }
+        let slice = left.map_or(ACCEPT_SLICE, |l| l.min(ACCEPT_SLICE));
+        match wait_listener(&listener.sock, Some(slice)) {
+            // Readable, woken by Ctrl-C, or the slice ended: the loop
+            // retries accept, then checks the interrupt flag and the
+            // deadline.
             Ok(_) => {}
             // A signal interrupts poll(2): the loop top stops on Ctrl-C;
             // anything else keeps waiting, boundedly.
@@ -24059,12 +24087,21 @@ pub(crate) mod socket_sources {
                 PullWire::Ws(c) => {
                     ws_client::MAP.lock().unwrap().insert(self.key.id, *c);
                 }
-                // Its generation retired while the conn was out here:
-                // close it rather than return it to a registry nobody
-                // owns any more.
-                PullWire::Tcp(c) if c.orphaned() => drop(c),
                 PullWire::Tcp(c) => {
-                    tcp_client::MAP.lock().unwrap().insert(self.key.id, c);
+                    // The retirement check and the reinsert happen under
+                    // one registry lock. close_owned marks retirement
+                    // before it sweeps under this lock, so either the
+                    // sweep runs after the insert and removes the conn, or
+                    // this sees the mark and closes it here. A generation
+                    // that retired while the conn was out never gets it
+                    // back in the registry.
+                    let mut map = tcp_client::MAP.lock().unwrap();
+                    if c.orphaned() {
+                        drop(map);
+                        drop(c);
+                    } else {
+                        map.insert(self.key.id, c);
+                    }
                 }
             }
             PULLED.lock().unwrap().remove(&self.key);
@@ -25376,10 +25413,7 @@ pub(crate) mod socket_sources {
             let id = tcp_client::NEXT_ID.fetch_add(1, Ordering::Relaxed);
             tcp_client::MAP.lock().unwrap().insert(
                 id,
-                tcp_client::Conn::new(
-                    tcp_client::Stream::Plain(stream),
-                    tcp_client::TcpPermit::acquire("test").unwrap(),
-                ),
+                tcp_client::Conn::new(tcp_client::Stream::Plain(stream), None),
             );
             id
         }
@@ -25449,6 +25483,53 @@ pub(crate) mod socket_sources {
             assert!(!tcp_client::MAP.lock().unwrap().contains_key(&handle));
             close_owned(&owner); // retire while the conn is out in the pull
             drop(guard); // the pull returns it
+            assert!(!tcp_client::MAP.lock().unwrap().contains_key(&handle));
+            let mut buf = [0u8; 4];
+            assert_eq!(client.read(&mut buf).unwrap(), 0, "the connection closed");
+            assert!(owner.ids.lock().unwrap().is_empty());
+        }
+
+        /// The pull's return races retirement on another thread. Another
+        /// thread holds the registry lock (standing in for close_owned's
+        /// sweep, which finds nothing because the conn is out), and marks
+        /// the generation retired only after the pull has started to
+        /// return. The return must see the mark under the lock and close
+        /// the conn; a check made before taking the lock would reinsert it
+        /// and leak it, and its permit, past retirement.
+        #[test]
+        fn a_pull_returning_during_retirement_cannot_reinsert() {
+            use std::io::Read;
+            let sock = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = sock.local_addr().unwrap().port();
+            let mut client = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+            client
+                .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+                .unwrap();
+            let (stream, _) = sock.accept().unwrap();
+            let owner = Arc::new(TcpOwner::default());
+            let (handle, _) = super::super::adopt_accepted(
+                stream,
+                tcp_client::TcpPermit::acquire("test").unwrap(),
+                Some(&owner),
+            );
+            let guard = pull_conn("tcp_recv", handle).unwrap();
+            let (locked_tx, locked_rx) = std::sync::mpsc::channel();
+            let sweeper = std::thread::spawn({
+                let owner = owner.clone();
+                move || {
+                    let map = tcp_client::MAP.lock().unwrap();
+                    locked_tx.send(()).unwrap();
+                    // Long enough for the pull's return to be waiting on
+                    // the lock (or, before the fix, to have read the
+                    // still-unset mark).
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                    owner.retired.store(true, Ordering::Release);
+                    drop(map);
+                }
+            });
+            locked_rx.recv().unwrap();
+            drop(guard); // the pull returns its conn
+            sweeper.join().unwrap();
             assert!(!tcp_client::MAP.lock().unwrap().contains_key(&handle));
             let mut buf = [0u8; 4];
             assert_eq!(client.read(&mut buf).unwrap(), 0, "the connection closed");
@@ -26557,10 +26638,7 @@ pub(crate) mod socket_sources {
             let tcp_stream = std::net::TcpStream::connect(("127.0.0.1", tcp_port)).unwrap();
             tcp_client::MAP.lock().unwrap().insert(
                 SHARED,
-                tcp_client::Conn::new(
-                    tcp_client::Stream::Plain(tcp_stream),
-                    tcp_client::TcpPermit::acquire("test").unwrap(),
-                ),
+                tcp_client::Conn::new(tcp_client::Stream::Plain(tcp_stream), None),
             );
             // Concurrent pulls on the SAME id: both admitted (keyed by
             // family — not one SOCKET_BUSY on a phantom collision).

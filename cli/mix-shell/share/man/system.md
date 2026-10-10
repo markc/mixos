@@ -1922,7 +1922,7 @@ Errors are structured; read `$err.code` from `catch $msg, $err`:
 | `TCP_ACCEPT_HANDLE` | an unknown listener, or a connection handle |
 | `TCP_ACCEPT_ARGUMENT` | a bad option |
 | `TCP_ACCEPT_FAILED` | accept(2) failed on the listener |
-| `TCP_HANDLE_LIMIT` | 1024 live TCP sockets: every listener and connection holds a slot until it closes, and `tcp_connect` refuses past the limit too |
+| `TCP_HANDLE_LIMIT` | 1024 live server-side sockets: every listener and accepted connection holds a slot until it closes. The limit is server-side only; `tcp_connect` is not counted or limited |
 | `TCP_LISTENER` | a connection verb was given a listener |
 
 **Serve mode and Class C.** A plain `tcp_accept` waits on the evaluator's
@@ -2037,7 +2037,7 @@ Outside serve mode, `tcp_accept("tcp:3")` takes the next accepted handle
 from the source (Class C, like the recv forms). Accepted connections that
 are never delivered, because the source was unwatched or retired with
 records still queued, are closed rather than left open with no name. At
-1024 live TCP handles the reader stops accepting and closes the listener
+1024 live server-side sockets the reader stops accepting and closes the listener
 with one terminal event (`closed: {"reason": "handle_limit"}`); a queue
 overflow closes it with `reason: "overflow"`, as for a connection.
 
