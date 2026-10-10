@@ -1,0 +1,365 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- releases_test: the releasesd logic, offline. Builds fixture release
+-- tarballs with bsdtar and drives lib/releases.mix directly: validation,
+-- catalogue checks, asset choice, checksum verification (and its refusals),
+-- install, prune, rollback, foreign files, a second link target seen through
+-- a view path, layout and path-escape refusals, and remove.
+-- Run from the checkout root: mix services/releasesd/tests/releases_test.mix
+-- Needs bsdtar. Prints PASS/FAIL per check; exits 1 on any failure.
+
+$r = require("../scripts/lib/releases.mix")
+$tmp = "/var/tmp/releases-test." .. uuid()
+$results = []
+
+fn check($name, $ok)
+  push($results, {name: $name, ok: $ok})
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+
+-- $f must raise with $code.
+fn refuses($name, $code, $f)
+  try
+    $f()
+    check($name .. " (expected " .. $code .. ", nothing raised)", false)
+  catch $msg, $err
+    check($name, $err.code == $code)
+    if $err.code != $code then print("     got " .. to_string($err.code) .. ": " .. $msg) end
+  end
+end
+
+-- A release tarball with a top directory like the real ones. $opts: {nobin}.
+fn make_tarball($name, $version, $opts)
+  $top = $name .. "-" .. $version .. "-linux-x86_64"
+  $src = $tmp .. "/src-" .. $name .. "-" .. $version
+  $p = $src .. "/" .. $top
+  if not ($opts.nobin ?? false) then
+    mkdir($p .. "/bin", {parents: true})
+    write_file($p .. "/bin/" .. $name, "#!/bin/sh\necho " .. $version .. "\n")
+    chmod($p .. "/bin/" .. $name, 0o755)
+    write_file($p .. "/bin/" .. $name .. "-cli", "#!/bin/sh\necho cli " .. $version .. "\n")
+    chmod($p .. "/bin/" .. $name .. "-cli", 0o755)
+  end
+  mkdir($p .. "/share/applications", {parents: true})
+  write_file($p .. "/share/applications/dev.example." .. $name .. ".desktop",
+    "[Desktop Entry]\nType=Application\nName=Demo\nExec=" .. $name .. " %F\nTryExec=" .. $name .. "\nIcon=dev.example." .. $name .. "\n")
+  mkdir($p .. "/share/icons/hicolor/48x48/apps", {parents: true})
+  write_file($p .. "/share/icons/hicolor/48x48/apps/dev.example." .. $name .. ".png", "png " .. $version)
+  mkdir($p .. "/share/mime/packages", {parents: true})
+  write_file($p .. "/share/mime/packages/dev.example." .. $name .. ".xml", "<mime-info/>\n")
+  $out = $tmp .. "/" .. $top .. ".tar.gz"
+  run_argv_must(["bsdtar", "-czf", $out, "-C", $src, $top])
+  return $out
+end
+
+fn proof($path)
+  return {asset: basename($path), sha256: hash_file($path, "sha256"), proofs: ["test"]}
+end
+
+mkdir($tmp, {parents: true})
+try
+  write_file($tmp .. "/releases.mx", "{schema: 1, apps: [{name: \"demo\", repo: \"example/demo\"}]}\n")
+  $ctx = $r.new_context({root: $tmp .. "/root", state: $tmp .. "/state", catalogue: $tmp .. "/releases.mx",
+    share: $tmp .. "/root/share", bin: $tmp .. "/root/bin", offline: true})
+  $app = $r.app_by_name($ctx, "demo")
+
+  -- Validation.
+  check("names: plain accepted", $r.valid_name("demo-app"))
+  check("names: traversal refused", not $r.valid_name("../x") and not $r.valid_name("a/b") and not $r.valid_name(""))
+  check("tags: release accepted", $r.valid_tag("v1.2.3-rc.1") and $r.valid_tag("2026.10.10"))
+  check("tags: traversal refused", not $r.valid_tag("..") and not $r.valid_tag("../x") and not $r.valid_tag("/abs"))
+  check("versions: reserved names refused", not $r.valid_version("current") and not $r.valid_version("meta.json") and $r.valid_version("1.0"))
+  refuses("unknown app", "UNKNOWN_APP", fn() = $r.app_by_name($ctx, "nope"))
+  refuses("bad app name", "USAGE", fn() = $r.app_by_name($ctx, "../etc"))
+
+  -- Catalogue.
+  check("catalogue: missing file is empty", len($r.load_catalogue($tmp .. "/absent.mx")) == 0)
+  write_file($tmp .. "/bad1.mx", "{schema: 2, apps: []}\n")
+  refuses("catalogue: wrong schema", "CATALOGUE", fn() = $r.load_catalogue($tmp .. "/bad1.mx"))
+  write_file($tmp .. "/bad2.mx", "{schema: 1, apps: [{name: \"../x\", repo: \"a/b\"}]}\n")
+  refuses("catalogue: path name", "CATALOGUE", fn() = $r.load_catalogue($tmp .. "/bad2.mx"))
+  write_file($tmp .. "/bad3.mx", "{schema: 1, apps: [{name: \"a\", repo: \"a/b\"}, {name: \"a\", repo: \"c/d\"}]}\n")
+  refuses("catalogue: duplicate", "CATALOGUE", fn() = $r.load_catalogue($tmp .. "/bad3.mx"))
+  write_file($tmp .. "/bad4.mx", "{schema: 1, apps: [{name: \"a\", repo: \"no-slash\"}]}\n")
+  refuses("catalogue: repo form", "CATALOGUE", fn() = $r.load_catalogue($tmp .. "/bad4.mx"))
+
+  -- Asset choice (this machine's arch decides which tarball is right).
+  $x = $ctx.arch
+  $assets = map(["demo-1.0-linux-x86_64.tar.gz", "demo-1.0-linux-aarch64.tar.gz", "demo-web-1.0.zip",
+    "demo-1.0-linux-" .. $x .. ".AppImage", "demo-web-1.0-linux-" .. $x .. ".tar.gz", "SHA256SUMS.txt"], fn($n) = {name: $n})
+  check("asset: the linux " .. $x .. " tarball", $r.pick_tarball($ctx, $app, $assets).name == "demo-1.0-linux-" .. $x .. ".tar.gz")
+  refuses("asset: none", "NO_ASSET", fn() = $r.pick_tarball($ctx, $app, [{name: "demo.dmg"}]))
+  refuses("asset: ambiguous", "AMBIGUOUS_ASSET", fn() = $r.pick_tarball($ctx, $app,
+    [{name: "demo-1.0-linux-" .. $x .. ".tar.gz"}, {name: "demo-full-1.0-linux-" .. $x .. ".tar.gz"}]))
+  check("asset: catalogue override", $r.pick_tarball($ctx, {name: "demo", repo: "e/d", asset: "full"},
+    [{name: "demo-1.0-linux-" .. $x .. ".tar.gz"}, {name: "demo-full.tar.gz"}]).name == "demo-full.tar.gz")
+  check("sums: found", $r.pick_sums($assets, {name: "x"}).name == "SHA256SUMS.txt")
+  check("sums: per-file form", $r.pick_sums([{name: "t.tar.gz.sha256"}], {name: "t.tar.gz"}).name == "t.tar.gz.sha256")
+
+  -- Verification.
+  $t1 = make_tarball("demo", "1.0", {})
+  $h1 = hash_file($t1, "sha256")
+  $n1 = basename($t1)
+  write_file($tmp .. "/SUMS", $h1 .. "  " .. $n1 .. "\nffff  other.tar.gz\n")
+  $v = $r.verify($t1, {name: $n1, digest: "sha256:" .. $h1}, {name: "SUMS", digest: "sha256:" .. hash_file($tmp .. "/SUMS", "sha256")}, $tmp .. "/SUMS")
+  check("verify: digest and sums both", len($v.proofs) == 2 and $v.sha256 == $h1)
+  check("verify: sums alone", len($r.verify($t1, {name: $n1}, {name: "SUMS"}, $tmp .. "/SUMS").proofs) == 1)
+  refuses("verify: wrong API digest", "DIGEST", fn() = $r.verify($t1, {name: $n1, digest: "sha256:00"}, nil, nil))
+  refuses("verify: sums file tampered", "DIGEST", fn() = $r.verify($t1, {name: $n1}, {name: "SUMS", digest: "sha256:00"}, $tmp .. "/SUMS"))
+  write_file($tmp .. "/SUMS2", "ffff  other.tar.gz\n")
+  refuses("verify: not listed", "DIGEST", fn() = $r.verify($t1, {name: $n1}, {name: "SUMS2"}, $tmp .. "/SUMS2"))
+  write_file($tmp .. "/SUMS3", "0000" .. slice($h1, 4, 64) .. "  " .. $n1 .. "\n")
+  refuses("verify: listed hash differs", "DIGEST", fn() = $r.verify($t1, {name: $n1}, {name: "SUMS3"}, $tmp .. "/SUMS3"))
+  refuses("verify: nothing to check against", "UNVERIFIABLE", fn() = $r.verify($t1, {name: $n1}, nil, nil))
+
+  -- Install, with a file that isn't ours already where a link would go.
+  mkdir($ctx.bin_dir, {parents: true})
+  write_file($ctx.bin_dir .. "/demo-cli", "someone else's\n")
+  $i1 = $r.install_tarball($ctx, $app, "1.0", $t1, proof($t1))
+  $opt = $ctx.opt_dir .. "/demo"
+  check("install: current is 1.0", $r.current_version($ctx, $app) == "1.0")
+  check("install: bin linked through current", read_link($ctx.bin_dir .. "/demo") == $opt .. "/current/bin/demo")
+  check("install: runs", trim(run_argv_must([$ctx.bin_dir .. "/demo"])) == "1.0")
+  check("install: foreign file skipped and kept", contains($i1.skipped, $ctx.bin_dir .. "/demo-cli") and read_file($ctx.bin_dir .. "/demo-cli") == "someone else's\n")
+  $entry = read_file($ctx.share_dir .. "/applications/dev.example.demo.desktop")
+  check("install: Exec absolute through current", contains($entry, "\nExec=" .. $opt .. "/current/bin/demo %F\n"))
+  check("install: TryExec absolute", contains($entry, "\nTryExec=" .. $opt .. "/current/bin/demo\n"))
+  check("install: icon linked", read_link($ctx.share_dir .. "/icons/hicolor/48x48/apps/dev.example.demo.png") == $opt .. "/current/share/icons/hicolor/48x48/apps/dev.example.demo.png")
+  check("install: mime linked", exists($ctx.share_dir .. "/mime/packages/dev.example.demo.xml", {follow_symlinks: false}))
+  check("install: proof kept", is_file($opt .. "/.verified-1.0.json"))
+  $manifest = map(json_parse(read_file($r.manifest_path($ctx, $app))), fn($e) = $e.path)
+  check("install: manifest lists only ours", contains($manifest, $ctx.bin_dir .. "/demo") and not contains($manifest, $ctx.bin_dir .. "/demo-cli"))
+
+  -- Two more versions: 1.0 is pruned once it is neither current nor previous.
+  $t2 = make_tarball("demo", "2.0", {})
+  $i2 = $r.install_tarball($ctx, $app, "2.0", $t2, proof($t2))
+  check("update: previous recorded", $i2.previous == "1.0" and trim(run_argv_must([$ctx.bin_dir .. "/demo"])) == "2.0")
+  $t3 = make_tarball("demo", "3.0", {})
+  $r.install_tarball($ctx, $app, "3.0", $t3, proof($t3))
+  check("prune: 1.0 and its proof gone", not is_dir($opt .. "/1.0") and not is_file($opt .. "/.verified-1.0.json"))
+  check("prune: 2.0 kept for rollback", is_dir($opt .. "/2.0"))
+
+  -- Rollback both ways.
+  $rb = $r.rollback($ctx, $app)
+  check("rollback: to 2.0", $rb.version == "2.0" and $rb.previous == "3.0" and trim(run_argv_must([$ctx.bin_dir .. "/demo"])) == "2.0")
+  $rb2 = $r.rollback($ctx, $app)
+  check("rollback: back to 3.0", $rb2.version == "3.0" and $r.current_version($ctx, $app) == "3.0")
+
+  -- An interrupted rollback (meta.json written, `current` not yet moved):
+  -- the retry finishes it rather than rolling back twice.
+  -- (State here: current 3.0, previous 2.0.) Each case writes the journal a
+  -- crash would leave, then retries.
+  $mpath_meta = $opt .. "/meta.json"
+  $base_meta = json_parse(read_file($mpath_meta))
+  $key = $r.target_id($ctx, true)
+  fn journal($version, $previous, $op, $target)
+    write_file($mpath_meta, json_encode(merge($base_meta, {version: $version, previous: $previous, pending: {op: $op, target: $target, origin: $key}})))
+  end
+  fn flip($v)
+    remove($opt .. "/current")
+    symlink($v, $opt .. "/current")
+  end
+  -- A: rollback interrupted after `current` moved, while relinking.
+  journal("2.0", "3.0", "rollback", "2.0")
+  flip("2.0")
+  $a1 = $r.rollback($ctx, $app)
+  check("rollback cut after the flip: retry finishes it, stays on 2.0", $a1.version == "2.0" and $r.current_version($ctx, $app) == "2.0" and contains($a1.action, "finished"))
+  check("rollback cut after the flip: links follow 2.0", trim(run_argv_must([$ctx.bin_dir .. "/demo"])) == "2.0")
+  check("rollback cut after the flip: journal cleared", json_parse(read_file($mpath_meta)).pending == nil)
+  -- B: rollback interrupted before `current` moved.
+  journal("3.0", "2.0", "rollback", "3.0")
+  $b1 = $r.rollback($ctx, $app)
+  check("rollback cut before the flip: retry finishes it on 3.0", $b1.version == "3.0" and $r.current_version($ctx, $app) == "3.0" and contains($b1.action, "finished"))
+  -- C: an interrupted install, then a rollback is asked for: the install is
+  -- finished first, then the rollback happens from it.
+  journal("3.0", "2.0", "install", "3.0")
+  flip("2.0")
+  $c1 = $r.rollback($ctx, $app)
+  check("install cut, then rollback: install finished, then rolled back to 2.0", $c1.action == "rolled back" and $c1.version == "2.0" and $c1.previous == "3.0" and $r.current_version($ctx, $app) == "2.0")
+  $back = $r.rollback($ctx, $app)
+  check("rollback still works after recovery", $back.version == "3.0" and $r.current_version($ctx, $app) == "3.0")
+
+  -- An interrupted relink: the intent manifest lists the old and new states,
+  -- so the next link recognises the half-written entry and finishes.
+  $desk = $ctx.share_dir .. "/applications/dev.example.demo.desktop"
+  $expected = read_file($desk)
+  write_file($desk, "half-written\n")
+  $mf = json_parse(read_file($r.manifest_path($ctx, $app)))
+  $mf = map($mf, fn($e) = if $e.path == $desk then {path: $e.path, states: concat([{sha256: hash_sha256("half-written\n")}], $e.states)} else $e end)
+  write_file($r.manifest_path($ctx, $app), json_encode($mf))
+  $r.link($ctx, [$app])
+  $after = filter(json_parse(read_file($r.manifest_path($ctx, $app))), fn($e) = $e.path == $desk)
+  check("interrupted relink: finished, entry back to the expected content", read_file($desk) == $expected and len($after) == 1 and len($after[0].states) == 1)
+  write_file($desk, "edited by the user\n")
+  $r.link($ctx, [$app])
+  check("relink: an entry the user edited is left alone", read_file($desk) == "edited by the user\n")
+  remove($desk)
+  $r.link($ctx, [$app])
+  check("relink: a missing entry is recreated", read_file($desk) == $expected)
+
+  -- Rows from state written by a check.
+  write_file($ctx.state_dir .. "/demo.json", json_encode({latest: {tag: "v4.0", published: "2026-10-10T00:00:00Z"}, checked: "x"}))
+  $row = $r.row($ctx, $app)
+  check("row: update available", $row.installed == "3.0" and $row.latest == "4.0" and $row.status == "update")
+
+  -- A second target (another session's data dir) seen through a view path.
+  $ctx2 = $r.new_context({root: $tmp .. "/root", state: $tmp .. "/state", catalogue: $tmp .. "/releases.mx",
+    share: $tmp .. "/session/data", bin: $tmp .. "/session/bin", view: "/view", offline: true})
+  $host_manifest = read_file($r.manifest_path($ctx, $app))
+  $l2 = $r.link($ctx2, [$app])
+  $e2 = read_file($tmp .. "/session/data/applications/dev.example.demo.desktop")
+  check("target 2: linked", len($l2) == 1 and $l2[0].action == "linked")
+  check("target 2: Exec through the view", contains($e2, "\nExec=/view/opt/demo/current/bin/demo %F\n"))
+  check("target 2: own manifest; host's untouched", is_file($r.manifest_path($ctx2, $app)) and read_file($r.manifest_path($ctx, $app)) == $host_manifest)
+
+  -- A rollback from the host target is cut while relinking. The second
+  -- target links through a read-only opt and must not touch the journal;
+  -- it cannot start its own change; the host's retry finishes the rollback.
+  journal("2.0", "3.0", "rollback", "2.0")
+  flip("2.0")
+  chmod($opt, 0o555)
+  $ok2 = true
+  try
+    $r.link($ctx2, [$app])
+  catch $m
+    $ok2 = false
+    print("     " .. $m)
+  end
+  chmod($opt, 0o755)
+  check("other target: links through a read-only opt", $ok2)
+  check("other target: the journal is untouched", json_parse(read_file($mpath_meta)).pending != nil)
+  refuses("other target: cannot start a change while one is pending", "PENDING", fn() = $r.rollback($ctx2, $app))
+  refuses("other target: cannot remove while one is pending", "PENDING", fn() = $r.remove_app($ctx2, $app))
+  -- Same paths, different target (as in another mount namespace): a journal
+  -- from a target with another id is not ours to resume or clear.
+  $mine = json_parse(read_file($mpath_meta))
+  write_file($mpath_meta, json_encode(merge($mine, {pending: merge($mine.pending, {origin: "another-namespace"})})))
+  $r.link($ctx, [$app])
+  check("identity: same paths, other id: journal untouched", json_parse(read_file($mpath_meta)).pending.origin == "another-namespace")
+  refuses("identity: same paths, other id: no change starts", "PENDING", fn() = $r.rollback($ctx, $app))
+  write_file($mpath_meta, json_encode($mine))
+  check("locks: one installation lock, whatever the state dir; one lock per target", $r.lock_paths($ctx).install == $r.lock_paths($ctx2).install and $r.lock_paths($ctx).target != $r.lock_paths($ctx2).target)
+  -- Through an opt it cannot lock (read-only), a link takes only its target
+  -- lock and must not resume even its own pending transition.
+  chmod($opt .. "/..", 0o555)
+  remove($r.lock_paths($ctx).install)
+  $lk = $r.acquire($ctx, "link", 0)
+  chmod($opt .. "/..", 0o755)
+  check("locks: read-only opt: link proceeds without the installation lock", $lk.opt_locked == false and len($lk.held) == 1)
+  $ro = merge($ctx, {opt_locked: false})
+  $r.link($ro, [$app])
+  check("locks: read-only opt: own pending journal left alone", json_parse(read_file($mpath_meta)).pending != nil)
+  $r.release($lk.held)
+  $both = $r.acquire($ctx, "rollback", 0)
+  check("locks: a change holds installation then target", len($both.held) == 2 and $both.held[0] == $r.lock_paths($ctx).install and $both.opt_locked)
+  $r.release($both.held)
+  check("identity: each target has its own id", $r.target_id($ctx, true) != $r.target_id($ctx2, true))
+  $h1 = $r.rollback($ctx, $app)
+  check("origin target: retry finishes the rollback on 2.0", $h1.version == "2.0" and $r.current_version($ctx, $app) == "2.0" and contains($h1.action, "finished"))
+  $r.rollback($ctx, $app)
+  check("origin target: back to 3.0 for what follows", $r.current_version($ctx, $app) == "3.0")
+
+  -- Refusals that must leave the install alone.
+  $t4 = make_tarball("demo", "4.0", {nobin: true})
+  refuses("layout: no bin/ refused", "LAYOUT", fn() = $r.install_tarball($ctx, $app, "4.0", $t4, proof($t4)))
+  check("layout: install untouched", $r.current_version($ctx, $app) == "3.0" and not is_dir($opt .. "/4.0"))
+  refuses("version: path refused", "USAGE", fn() = $r.install_tarball($ctx, $app, "../x", $t3, proof($t3)))
+  mkdir($tmp .. "/evil/bin", {parents: true})
+  write_file($tmp .. "/evil/bin/demo", "x")
+  write_file($tmp .. "/evil/escape", "x")
+  run_argv_must(["bsdtar", "-czf", $tmp .. "/evil.tar.gz", "-C", $tmp .. "/evil", "-s", ",^escape,../../escaped,", "bin", "escape"])
+  $escaped = false
+  try
+    $r.install_tarball($ctx, $app, "5.0", $tmp .. "/evil.tar.gz", proof($tmp .. "/evil.tar.gz"))
+  catch $m
+  end
+  for $f in walk($tmp)
+    if basename($f) == "escaped" then $escaped = true end
+  end
+  check("tar: a ../ member is never written", not $escaped)
+
+  -- Prefix checks: escaping symlinks, special files and setuid bits refuse.
+  $vt = $tmp .. "/vprefix"
+  mkdir($vt .. "/bin", {parents: true})
+  write_file($vt .. "/bin/demo", "x")
+  symlink("demo", $vt .. "/bin/alias")
+  check("prefix: an internal symlink is fine", $r.validate_prefix($vt))
+  symlink("../../../etc/passwd", $vt .. "/bin/out")
+  refuses("prefix: a relative symlink out of the release", "LAYOUT", fn() = $r.validate_prefix($vt))
+  remove($vt .. "/bin/out")
+  symlink("/etc/shadow", $vt .. "/bin/abs")
+  refuses("prefix: an absolute symlink", "LAYOUT", fn() = $r.validate_prefix($vt))
+  remove($vt .. "/bin/abs")
+  chmod($vt .. "/bin/demo", 0o4755)
+  refuses("prefix: setuid", "LAYOUT", fn() = $r.validate_prefix($vt))
+  chmod($vt .. "/bin/demo", 0o755)
+  run_argv_must(["mkfifo", $vt .. "/bin/fifo"])
+  refuses("prefix: a special file", "LAYOUT", fn() = $r.validate_prefix($vt))
+  remove($vt .. "/bin/fifo")
+  -- Chains: each link stays inside lexically, but together they leave.
+  symlink(".", $vt .. "/a")
+  symlink("a/..", $vt .. "/b")
+  refuses("prefix: a symlink through another symlink", "LAYOUT", fn() = $r.validate_prefix($vt))
+  remove($vt .. "/b")
+  symlink("../a/demo", $vt .. "/bin/chain")
+  refuses("prefix: a link whose path crosses a symlink", "LAYOUT", fn() = $r.validate_prefix($vt))
+  remove($vt .. "/bin/chain")
+  remove($vt .. "/a")
+  symlink("missing", $vt .. "/bin/dangling")
+  refuses("prefix: a dangling symlink", "LAYOUT", fn() = $r.validate_prefix($vt))
+  remove($vt .. "/bin/dangling")
+  symlink("bin", $vt .. "/bindir")
+  check("prefix: a link to an internal directory is fine", $r.validate_prefix($vt))
+
+  -- A release whose desktop entry is a symlink to a private file: refused
+  -- before anything is copied.
+  $ev = $tmp .. "/leaky/demo-6.0"
+  mkdir($ev .. "/bin", {parents: true})
+  mkdir($ev .. "/share/applications", {parents: true})
+  write_file($ev .. "/bin/demo", "#!/bin/sh\necho 6.0\n")
+  chmod($ev .. "/bin/demo", 0o755)
+  symlink("/etc/passwd", $ev .. "/share/applications/leak.desktop")
+  run_argv_must(["bsdtar", "-czf", $tmp .. "/leaky.tar.gz", "-C", $tmp .. "/leaky", "demo-6.0"])
+  refuses("tar: a desktop symlink out of the release", "LAYOUT", fn() = $r.install_tarball($ctx, $app, "6.0", $tmp .. "/leaky.tar.gz", proof($tmp .. "/leaky.tar.gz")))
+  check("tar: nothing leaked, install untouched", not is_file($ctx.share_dir .. "/applications/leak.desktop") and $r.current_version($ctx, $app) == "3.0")
+
+  -- Reserved and unmanaged version directories.
+  refuses("version: reserved name refused", "USAGE", fn() = $r.install_tarball($ctx, $app, "current", $t3, proof($t3)))
+  mkdir($opt .. "/7.0", {parents: true})
+  write_file($opt .. "/7.0/mine", "a backup")
+  refuses("version: an unmanaged dir of that name is not replaced", "LAYOUT", fn() = $r.install_tarball($ctx, $app, "7.0", $t3, proof($t3)))
+  check("version: the unmanaged dir is intact", read_file($opt .. "/7.0/mine") == "a backup")
+  mkdir($opt .. "/backup", {parents: true})
+  write_file($opt .. "/backup/keep", "x")
+
+  -- Manifests are evidence: a forged entry outside the target, and a link
+  -- the user replaced with their own file, are both left alone.
+  write_file($tmp .. "/precious", "do not delete")
+  $mp = $r.manifest_path($ctx, $app)
+  $entries = json_parse(read_file($mp))
+  push($entries, {path: $tmp .. "/precious", link: "x"})
+  push($entries, {path: $ctx.share_dir .. "/../precious", link: "x"})
+  write_file($mp, json_encode($entries))
+  remove($ctx.bin_dir .. "/demo")
+  write_file($ctx.bin_dir .. "/demo", "my own demo\n")
+  $rl = $r.link($ctx, [$app])
+  check("manifest: a replaced link is skipped, not overwritten", read_file($ctx.bin_dir .. "/demo") == "my own demo\n" and contains($rl[0].skipped, $ctx.bin_dir .. "/demo"))
+  check("manifest: a forged entry outside the target is ignored", read_file($tmp .. "/precious") == "do not delete")
+
+  -- Remove: our links go; the foreign file, the replaced link and anything
+  -- unmanaged in the app directory stay.
+  $rm = $r.remove_app($ctx, $app)
+  check("remove: managed versions gone", $rm.action == "removed" and not is_dir($opt .. "/3.0") and not is_dir($opt .. "/2.0") and not exists($opt .. "/current", {follow_symlinks: false}))
+  check("remove: unmanaged dirs kept, and the app dir with them", read_file($opt .. "/backup/keep") == "x" and is_dir($opt .. "/7.0") and contains($rm.kept, $opt))
+  check("remove: our links gone", not is_file($ctx.share_dir .. "/applications/dev.example.demo.desktop") and not exists($ctx.share_dir .. "/icons/hicolor/48x48/apps/dev.example.demo.png", {follow_symlinks: false}))
+  check("remove: the user's replacement kept", read_file($ctx.bin_dir .. "/demo") == "my own demo\n")
+  check("remove: foreign file kept", read_file($ctx.bin_dir .. "/demo-cli") == "someone else's\n")
+  check("remove: forged target still intact", read_file($tmp .. "/precious") == "do not delete")
+  $l3 = $r.link($ctx2, [$app])
+  check("target 2: link drops a removed app", len($l3) == 1 and not is_file($tmp .. "/session/data/applications/dev.example.demo.desktop"))
+finally
+  remove_dir($tmp)
+end
+
+$failed = filter($results, fn($x) = not $x.ok)
+print(to_string(len($results) - len($failed)) .. "/" .. to_string(len($results)) .. " passed")
+if len($failed) > 0 then exit(1) end

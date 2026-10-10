@@ -1,0 +1,14 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Identity of a Mix component (docs/decisions/2026-10-10-mix-components.md).
+-- Read by tools/component_index.mix; the same fields as a Cargo package's
+-- [package.metadata.mixos], plus the name, version and principal program.
+{
+  schema: 1,
+  name: "releasesd",
+  component: "releasesd",
+  kind: "service",
+  layer: "desktop",
+  contract: "public",
+  version: "0.1.0",
+  program: "scripts/releasesd.mix"
+}

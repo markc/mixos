@@ -47,6 +47,15 @@
     {name:"busviewer.ui.menu", owner:"busviewer", version:"0.1.1", status:"accepted"},
     {name:"busviewer.ui.capture", owner:"busviewer", version:"0.1.1", status:"accepted"},
     {name:"busviewer.window", owner:"busviewer", version:"0.1.1", status:"accepted"},
-    {name:"busviewer.window.state", owner:"busviewer", version:"0.1.1", status:"accepted"}
+    {name:"busviewer.window.state", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"releases.status", owner:"releasesd", version:"0.1.0", status:"accepted"},
+    {name:"releases.list", owner:"releasesd", version:"0.1.0", status:"accepted"},
+    {name:"releases.check", owner:"releasesd", version:"0.1.0", status:"accepted"},
+    {name:"releases.notes", owner:"releasesd", version:"0.1.0", status:"accepted"},
+    {name:"releases.install", owner:"releasesd", version:"0.1.0", status:"accepted"},
+    {name:"releases.update", owner:"releasesd", version:"0.1.0", status:"accepted"},
+    {name:"releases.rollback", owner:"releasesd", version:"0.1.0", status:"accepted"},
+    {name:"releases.remove", owner:"releasesd", version:"0.1.0", status:"accepted"},
+    {name:"releases.link", owner:"releasesd", version:"0.1.0", status:"accepted"}
   ]
 }

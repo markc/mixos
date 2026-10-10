@@ -1,0 +1,146 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- releasesd: upstream application releases as a Bus service. It follows the
+-- GitHub repositories in the user's catalogue and installs their Linux
+-- release tarballs per user, verified and with one-step rollback. The logic
+-- is lib/releases.mix; this file is only the Bus surface.
+--
+-- Run: mix --serve releasesd.mix --name releases     (Bus service "releases")
+--
+-- Verbs (bodies are JSON objects; every field is optional unless named):
+--   releases.status                    paths, catalogue size, installed count
+--   releases.list     {apps}           installed vs latest, from the last check
+--   releases.check    {apps}           ask GitHub (ETag-conditional), then list
+--   releases.notes    {app}            the latest release's notes
+--   releases.install  {app, tag}       install the latest (or a tagged) release
+--   releases.update   {apps}           install newer releases (default: installed apps)
+--   releases.rollback {app}            back to the previous version
+--   releases.remove   {app}            remove the install and its links
+--   releases.link     {apps}           relink into this service's target; no download
+-- Replies: rc 0 with JSON; rc 10 bad request; rc 14 unknown app; rc 15 the
+-- operation failed. Error bodies use the Bus unified shape {error_code, message},
+-- which a caller sees as "CODE: message".
+-- After install, update, rollback, remove or link, the application registry
+-- is asked to rescan (apps.reload), when it is on the Bus.
+--
+-- Install and update download and unpack before replying: callers should
+-- allow a few minutes (send ... timeout=600).
+
+$r = require("lib/releases.mix")
+-- The service context (paths, catalogue, token), built once at start.
+$C = nil
+try
+  $C = $r.new_context({})
+catch $m
+  eprint("releasesd: refusing to start: " .. $m)
+  exit(2)
+end
+
+fn body()
+  if $event.body == nil or trim($event.body) == "" then return {} end
+  try
+    $v = json_parse($event.body)
+    if type($v) == "map" then return $v end
+  catch $m
+  end
+  return nil
+end
+
+fn fail($code, $message)
+  $rc = if $code == "USAGE" then 10 elif $code == "UNKNOWN_APP" then 14 else 15 end
+  reply($rc, json_encode({error_code: $code, message: $message}))
+end
+
+-- Run $f() with the catalogue re-read, replying with its JSON or the error.
+-- $changes is false for a read, else the operation ("install", "link", …):
+-- it takes the same locks, in the same order, as the CLI (lib acquire).
+fn answer($f, $changes)
+  $held = []
+  try
+    $C.catalogue = $r.load_catalogue($C.catalogue_path)
+    if $changes != false then
+      -- Root is refused inside acquire, before any lock file is touched.
+      $locks = $r.acquire($C, $changes, 600)
+      $held = $locks.held
+      $C.opt_locked = $locks.opt_locked
+    end
+    $out = $f()
+    $r.release($held)
+    $held = []
+    if $changes != false then
+      try
+        send apps apps.reload timeout=10
+      catch $ignored
+      end
+    end
+    reply(0, json_encode($out))
+  catch $msg, $err
+    $r.release($held)
+    fail($err.code ?? "FAILED", $msg)
+  end
+end
+
+fn names($b)
+  $a = $b.apps ?? []
+  if type($a) != "list" or len(filter($a, fn($x) = type($x) != "string")) > 0 then raise("USAGE", "apps must be a list of names") end
+  return $a
+end
+
+fn one($b)
+  if type($b.app) != "string" then raise("USAGE", "app is required") end
+  return $r.app_by_name($C, $b.app)
+end
+
+fn bad_body()
+  reply(10, json_encode({error_code: "USAGE", message: "body must be a JSON object"}))
+end
+
+on releases.status desc "Paths, catalogue size and installed count."
+  answer(fn() = {catalogue: $C.catalogue_path, apps: len($C.catalogue), installed: len($r.installed($C)),
+    root: $C.root, share: $C.share_dir, bin: $C.bin_dir, state: $C.state_dir,
+    authenticated: $C.token != nil, arch: $C.arch}, false)
+end
+
+on releases.list desc "Installed version vs latest known release per app, from the last check. Body {apps?}."
+  $b = body()
+  if $b == nil then bad_body() else answer(fn() = $r.rows($C, $r.selected($C, names($b))), false) end
+end
+
+on releases.check desc "Ask GitHub for each app's latest release (ETag-conditional), then list. Body {apps?}."
+  $b = body()
+  if $b == nil then bad_body() else answer(fn() = $r.check($C, $r.selected($C, names($b))), false) end
+end
+
+on releases.notes desc "The latest release's tag, date, URL and notes. Body {app}."
+  $b = body()
+  if $b == nil then bad_body() else answer(fn() = $r.notes($C, one($b)), false) end
+end
+
+on releases.install desc "Install the latest release, or {tag}, verified against its published checksums. Body {app, tag?}."
+  $b = body()
+  if $b == nil then bad_body() else answer(fn() = $r.install($C, one($b), $b.tag), "install") end
+end
+
+on releases.update desc "Install newer releases. Body {apps?}; default every installed app."
+  $b = body()
+  if $b == nil then
+    bad_body()
+  else
+    answer(fn() = $r.update($C, if len(names($b)) > 0 then $r.selected($C, names($b)) else $r.installed($C) end), "update")
+  end
+end
+
+on releases.rollback desc "Switch back to the previous installed version. Body {app}."
+  $b = body()
+  if $b == nil then bad_body() else answer(fn() = $r.rollback($C, one($b)), "rollback") end
+end
+
+on releases.remove desc "Remove an installed app and the links this service made for it. Body {app}."
+  $b = body()
+  if $b == nil then bad_body() else answer(fn() = $r.remove_app($C, one($b)), "remove") end
+end
+
+on releases.link desc "Relink installed apps into this service's target (entries, icons, MIME, bin); no download. Body {apps?}."
+  $b = body()
+  if $b == nil then bad_body() else answer(fn() = $r.link($C, $r.selected($C, names($b))), "link") end
+end

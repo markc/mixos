@@ -1,0 +1,185 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- releasesd_test: the releases.* verbs over a real Bus, offline. A private
+-- noded broker (tests/lib/private_bus.mix), a static stand-in for the GitHub
+-- API (http_serve over release JSON and fixture tarballs) and releasesd
+-- itself as a serve citizen. Every verb is driven with `send`, including the
+-- refusals: a tampered digest, a bad body, an unknown app and a path tag.
+-- Run from the checkout root: mix services/releasesd/tests/releasesd_test.mix [--noded PATH]
+-- Needs bsdtar and a noded binary (default /opt/mixos/bin/noded).
+
+$pb = require("../../../tests/lib/private_bus.mix")
+$here = dirname(realpath($0))
+$citizen = realpath($here .. "/../scripts/releasesd.mix")
+$noded = "/opt/mixos/bin/noded"
+$a = args()
+if len($a) == 2 and $a[0] == "--noded" then $noded = $a[1] end
+$tmp = "/var/tmp/releasesd-test." .. uuid()
+$results = []
+$pids = []
+
+fn check($name, $ok)
+  push($results, {name: $name, ok: $ok})
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+
+-- One Bus call: {rc, v} where v is the decoded reply.
+fn call($verb, $body)
+  $b = json_encode($body)
+  send releases $verb body=$b timeout=120
+  $v = $result
+  if type($v) == "string" then
+    try
+      $v = json_parse($v)
+    catch $m
+    end
+  end
+  return {rc: $rc, v: $v}
+end
+
+-- The error code of a refusal: send decodes the unified {error_code, message}
+-- body; a caller that only has text sees "CODE: message".
+fn code($v)
+  if type($v) == "map" then return $v.error_code end
+  if type($v) == "string" then return split($v, ":")[0] end
+  return nil
+end
+
+fn make_tarball($dir, $version)
+  $top = "demo-" .. $version .. "-linux-x86_64"
+  $p = $tmp .. "/src-" .. $version .. "/" .. $top
+  mkdir($p .. "/bin", {parents: true})
+  write_file($p .. "/bin/demo", "#!/bin/sh\necho " .. $version .. "\n")
+  chmod($p .. "/bin/demo", 0o755)
+  mkdir($p .. "/share/applications", {parents: true})
+  write_file($p .. "/share/applications/dev.example.demo.desktop", "[Desktop Entry]\nType=Application\nName=Demo\nExec=demo %F\n")
+  $name = "demo-" .. $version .. "-linux-" .. platform().arch .. ".tar.gz"
+  run_argv_must(["bsdtar", "-czf", $dir .. "/" .. $name, "-C", $tmp .. "/src-" .. $version, $top])
+  return $name
+end
+
+-- Release JSON as the GitHub API shapes it. $tamper: "digest" breaks the API
+-- digest, "size" claims a smaller tarball than is served.
+fn release($base, $repo, $tag, $tarname, $dl, $tamper)
+  $sha = hash_file($dl .. "/" .. $tarname, "sha256")
+  $sums = $tag .. "-SHA256SUMS.txt"
+  write_file($dl .. "/" .. $sums, $sha .. "  " .. $tarname .. "\n")
+  $assets = [
+    {name: $tarname, size: stat($dl .. "/" .. $tarname).size - (if $tamper == "size" then 100 else 0 end),
+      digest: "sha256:" .. (if $tamper == "digest" then "00" .. slice($sha, 2, 64) else $sha end), browser_download_url: $base .. "/dl/" .. $tarname},
+    {name: "SHA256SUMS.txt", size: stat($dl .. "/" .. $sums).size, digest: "sha256:" .. hash_file($dl .. "/" .. $sums, "sha256"), browser_download_url: $base .. "/dl/" .. $sums}
+  ]
+  return {tag_name: $tag, name: $tag, published_at: "2026-10-10T00:00:00Z", html_url: "https://example.invalid/" .. $repo .. "/" .. $tag,
+    body: "Notes for " .. $tag, assets: $assets}
+end
+
+$bus = nil
+mkdir($tmp, {parents: true})
+try
+  -- The stand-in API.
+  $port = random(48000, 48999)
+  $base = "http://127.0.0.1:" .. to_string($port)
+  $api = $tmp .. "/api"
+  $dl = $api .. "/dl"
+  mkdir($dl, {parents: true})
+  $t1 = make_tarball($dl, "1.0")
+  $t2 = make_tarball($dl, "2.0")
+  for $spec in [["example/demo", "v1.0", $t1, ""], ["example/demo", "v2.0", $t2, ""], ["example/bad", "v2.0", $t2, "digest"], ["example/big", "v2.0", $t2, "size"]]
+    $rel = release($base, $spec[0], $spec[1], $spec[2], $dl, $spec[3])
+    mkdir($api .. "/repos/" .. $spec[0] .. "/releases/tags", {parents: true})
+    write_file($api .. "/repos/" .. $spec[0] .. "/releases/tags/" .. $spec[1], json_encode($rel))
+    write_file($api .. "/repos/" .. $spec[0] .. "/releases/latest", json_encode($rel))
+  end
+  push($pids, spawn(["/opt/mixos/bin/mix", "-c", "http_serve(\"" .. $api .. "\", {port: " .. to_string($port) .. ", host: \"127.0.0.1\", duration: 300})"],
+    {detach: true, stdout: {file: $tmp .. "/http.log"}, stderr: "stdout"}))
+
+  -- The broker and the citizen.
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "releasesd-test", noded: $noded})
+  write_file($tmp .. "/releases.mx", "{schema: 1, apps: [{name: \"demo\", repo: \"example/demo\"}, {name: \"bad\", repo: \"example/bad\"}, {name: \"big\", repo: \"example/big\"}]}\n")
+  $env = merge($pb.client_env($bus), {HOME: $tmp .. "/home", MIXOS_RELEASES_ROOT: $tmp .. "/root",
+    MIXOS_RELEASES_STATE: $tmp .. "/state", MIXOS_RELEASES_CATALOGUE: $tmp .. "/releases.mx",
+    MIXOS_RELEASES_API: $base, GITHUB_TOKEN: "test-token"})
+  push($pids, spawn(["/opt/mixos/bin/mix", "--serve", $citizen, "--name", "releases"],
+    {detach: true, env: $env, stdout: {file: $tmp .. "/releasesd.log"}, stderr: "stdout"}))
+  $up = false
+  for $i = 1 to 60
+    if call("releases.status", {}).rc == 0 then
+      $up = true
+      break
+    end
+    sleep(0.25)
+  end
+  check("citizen answers releases.status", $up)
+  if not $up then raise("SETUP", "releasesd never answered; see " .. $tmp .. "/releasesd.log") end
+
+  $s = call("releases.status", {})
+  check("status: catalogue of 3, none installed", $s.v.apps == 3 and $s.v.installed == 0)
+  $l = call("releases.list", {})
+  check("list: unchecked before a check", $l.rc == 0 and $l.v[0].status == "unchecked")
+  $c = call("releases.check", {apps: ["demo"]})
+  check("check: latest 2.0, not installed", $c.rc == 0 and $c.v[0].latest == "2.0" and $c.v[0].status == "not installed")
+  $n = call("releases.notes", {app: "demo"})
+  check("notes: from the release", $n.rc == 0 and $n.v.notes == "Notes for v2.0")
+
+  $i = call("releases.install", {app: "demo"})
+  check("install: 2.0 over HTTP, both checksums", $i.rc == 0 and $i.v.version == "2.0" and len($i.v.verified.proofs) == 2)
+  check("install: the binary runs", trim(run_argv_must([$tmp .. "/root/bin/demo"])) == "2.0")
+  remove($tmp .. "/root/bin/demo")
+  $again = call("releases.install", {app: "demo"})
+  check("retry: already current repairs a missing link", $again.rc == 0 and $again.v.action == "already current" and trim(run_argv_must([$tmp .. "/root/bin/demo"])) == "2.0")
+  $i1 = call("releases.install", {app: "demo", tag: "v1.0"})
+  check("install tag: 1.0, previous 2.0", $i1.rc == 0 and $i1.v.version == "1.0" and $i1.v.previous == "2.0")
+  $u = call("releases.update", {})
+  check("update: back to 2.0 from the kept, proven dir", $u.rc == 0 and $u.v[0].version == "2.0" and $u.v[0].action == "installed")
+  $u2 = call("releases.update", {apps: ["demo"]})
+  check("update: already current", $u2.rc == 0 and $u2.v[0].action == "already current")
+  $rb = call("releases.rollback", {app: "demo"})
+  check("rollback: to 1.0", $rb.rc == 0 and $rb.v.version == "1.0" and trim(run_argv_must([$tmp .. "/root/bin/demo"])) == "1.0")
+  $lk = call("releases.link", {apps: ["demo"]})
+  check("link: relinked", $lk.rc == 0 and $lk.v[0].action == "linked")
+
+  $bad = call("releases.install", {app: "bad"})
+  check("tampered digest: rc 15 DIGEST, nothing installed", $bad.rc == 15 and code($bad.v) == "DIGEST" and not is_dir($tmp .. "/root/opt/bad/2.0"))
+  $big = call("releases.install", {app: "big"})
+  check("oversize download: rc 15 DOWNLOAD, nothing installed", $big.rc == 15 and code($big.v) == "DOWNLOAD" and not is_dir($tmp .. "/root/opt/big/2.0"))
+  $b1 = call("releases.install", {app: "demo", tag: "../../x"})
+  check("path tag: rc 10", $b1.rc == 10 and code($b1.v) == "USAGE")
+  $b2 = call("releases.install", {app: "nope"})
+  check("unknown app: rc 14", $b2.rc == 14 and code($b2.v) == "UNKNOWN_APP")
+  $b3 = call("releases.install", {})
+  check("missing app: rc 10", $b3.rc == 10)
+  send releases releases.list body="[1]" timeout=30
+  check("non-object body: rc 10", $rc == 10)
+
+  -- Two processes, separate state and link targets, one shared opt, at once:
+  -- the installation lock must serialise them into one consistent install.
+  $cli = realpath($here .. "/../scripts/releases.mix")
+  fn cli_env($tag)
+    return {HOME: $tmp .. "/home", MIXOS_RELEASES_ROOT: $tmp .. "/root", MIXOS_RELEASES_STATE: $tmp .. "/state-" .. $tag,
+      MIXOS_RELEASES_SHARE: $tmp .. "/share-" .. $tag, MIXOS_RELEASES_BIN: $tmp .. "/bin-" .. $tag,
+      MIXOS_RELEASES_CATALOGUE: $tmp .. "/releases.mx", MIXOS_RELEASES_API: $base, PATH: env("PATH")}
+  end
+  $racer = spawn(["/opt/mixos/bin/mix", $cli, "install", "demo", "v2.0"], {detach: true, clear_env: true, env: cli_env("a"), stdout: {file: $tmp .. "/race-a.log"}, stderr: "stdout"})
+  $other = run_argv(["/opt/mixos/bin/mix", $cli, "install", "demo", "v1.0"], {clear_env: true, env: cli_env("b"), timeout: 300, stderr: "stdout"})
+  for $w = 1 to 600
+    if not process_alive($racer) then break end
+    sleep(0.1)
+  end
+  $opt = $tmp .. "/root/opt/demo"
+  $cur = read_link($opt .. "/current")
+  $meta = json_parse(read_file($opt .. "/meta.json"))
+  check("race: both finished, both succeeded", $other.exit_code == 0 and not process_alive($racer) and contains(read_file($tmp .. "/race-a.log"), "demo: installed 2.0"))
+  check("race: one consistent install", is_dir($opt .. "/" .. $cur) and $meta.version == $cur and $meta.pending == nil and is_file($opt .. "/.verified-" .. $cur .. ".json"))
+
+  $rm = call("releases.remove", {app: "demo"})
+  check("remove: gone", $rm.rc == 0 and $rm.v.action == "removed" and not is_dir($tmp .. "/root/opt/demo"))
+finally
+  for $p in $pids
+    kill($p, 15)
+  end
+  if $bus != nil then $pb.stop($bus) end
+  if len(filter($results, fn($x) = not $x.ok)) == 0 then remove_dir($tmp) else print("kept for inspection: " .. $tmp) end
+end
+
+$failed = filter($results, fn($x) = not $x.ok)
+print(to_string(len($results) - len($failed)) .. "/" .. to_string(len($results)) .. " passed")
+if len($failed) > 0 then exit(1) end

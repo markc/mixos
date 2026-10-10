@@ -1,0 +1,269 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+-- private_bus.mix — a throwaway, owned noded broker for tests of Bus citizens
+-- written in Mix (component tests/*_test.mix). The noded binary defaults to
+-- /opt/mixos/bin/noded; pass {noded: <path>} for a fresh build.
+--
+--   $pb = require("<relative path to>/tests/lib/private_bus.mix")
+--   $bus = $pb.start({dir: "/var/tmp/my-test.<id>", name: "my-test"})
+--   ... send/spawn against it ...
+--   $pb.stop($bus)
+-- or
+--   $pb.with_bus({dir: ..., name: ...}, fn($bus) = run_my_checks($bus))
+--
+-- What it does:
+--   * writes <dir>/etc/node.conf.mix (admission off, loopback, its own unix
+--     socket under <dir>/run/noded) and an empty-roster <dir>/etc/mesh.conf.mix
+--     (noded will not start without one), and makes etc, var, run/noded, home;
+--   * starts noded detached with a cleared env (HOME and MIXOS_* inside <dir>)
+--     on a random loopback port in 47000-47999, retrying up to 10 times;
+--   * readiness is OWNERSHIP, not a pong: noded.info must answer with this
+--     node name AND this pid (a broker someone else left on the port is refused);
+--   * EXPORTS MIXOS_NODED_URL / MIXOS_NODE_CONFIG / MIXOS_RUN / MIXOS_ETC /
+--     MIXOS_VAR into this process (unless export: false), so later `send`,
+--     spawn and run_argv calls in this process reach the private broker. stop()
+--     puts back what was there before and reconnects;
+--   * records the broker's identity in <dir>/noded.pid (pid, kernel start time,
+--     exact noded path, node name, config path). start() on a dir whose recorded
+--     broker is still alive retires it first (a killed test skips `finally`), but
+--     only if EVERY identity field still matches: same owner uid, same start time,
+--     argv[0] the recorded noded, `--node <name>`, and the exact
+--     MIXOS_NODE_CONFIG=<conf> entry in its environment.
+-- Every signal is preceded by the same identity check, so a reused pid is never
+-- signalled. (Without pidfd signalling, a pid could in theory be reused in the
+-- microseconds between the check and kill(); the start-time check closes every
+-- longer window.)
+-- Brokers whose lifetimes overlap must be stopped in reverse start order (stop()
+-- hands the client back to the env that was current at start(), and warns if
+-- that broker is no longer listening).
+-- stop() is TERM, wait, KILL, wait, and raises BROKER_STOP if the broker
+-- survives. client_env($bus) is the map to pass to children explicitly.
+
+$_CLIENT_VARS = ["MIXOS_NODED_URL", "MIXOS_NODE_CONFIG", "MIXOS_RUN", "MIXOS_ETC", "MIXOS_VAR"]
+
+-- Kernel start time (clock ticks since boot; /proc/<pid>/stat field 22), or nil.
+fn _starttime($pid)
+  if $pid == nil then return nil end
+  $path = "/proc/" .. to_string($pid) .. "/stat"
+  if not is_file($path) then return nil end
+  try
+    $s = read_file($path)
+    $rest = split(trim(slice($s, last_index_of($s, ")") + 2)), " ")
+    return $rest[19]
+  catch $m
+    return nil
+  end
+end
+
+-- Is $id.pid exactly the broker $id describes? ($id: {pid, starttime, noded, name, conf})
+fn _is($id)
+  if $id == nil or $id.pid == nil or $id.starttime == nil or not process_alive($id.pid) then return false end
+  $proc = "/proc/" .. to_string($id.pid)
+  try
+    if stat($proc).uid != uid() then return false end
+    if _starttime($id.pid) != $id.starttime then return false end
+    $argv = split(read_file($proc .. "/cmdline"), "\0")
+    if len($argv) < 2 or $argv[0] != $id.noded then return false end
+    $i = index_of($argv, "--node")
+    if $i < 0 or ($argv[$i + 1] ?? "") != $id.name then return false end
+    return contains(split(read_file($proc .. "/environ"), "\0"), "MIXOS_NODE_CONFIG=" .. $id.conf)
+  catch $m
+    return false
+  end
+end
+
+-- Stop the broker $id describes; raises if it survives. Never signals a pid
+-- that no longer matches the identity.
+fn _retire($id)
+  for $sig in [15, 9]
+    if not _is($id) then return true end
+    $k = kill($id.pid, $sig)
+    for $wait = 1 to 60
+      if not _is($id) then return true end
+      sleep(0.05)
+    end
+  end
+  raise("BROKER_STOP", "private broker " .. to_string($id.pid) .. " did not retire")
+end
+
+fn _record($dir)
+  $f = $dir .. "/noded.pid"
+  if not is_file($f) then return nil end
+  try
+    return json_parse(read_file($f))
+  catch $m
+    return nil
+  end
+end
+
+-- A previous run in the same dir that was killed before its stop().
+fn _reap_stale($dir)
+  $old = _record($dir)
+  if $old != nil and _is($old) then _retire($old) end
+  return nil
+end
+
+fn _client_now()
+  $m = {}
+  for $k in $_CLIENT_VARS
+    $m[$k] = env($k)
+  end
+  return $m
+end
+
+-- Point this process's Bus client at $vars (a map of the five client vars).
+fn _client_set($vars)
+  export MIXOS_NODED_URL=$vars.MIXOS_NODED_URL ?? ""
+  export MIXOS_NODE_CONFIG=$vars.MIXOS_NODE_CONFIG ?? ""
+  export MIXOS_RUN=$vars.MIXOS_RUN ?? ""
+  export MIXOS_ETC=$vars.MIXOS_ETC ?? ""
+  export MIXOS_VAR=$vars.MIXOS_VAR ?? ""
+  bus_reconnect()
+  return nil
+end
+
+-- True once something accepts TCP on the port while the broker lives (20 s cap).
+fn _listening($pid, $port)
+  $deadline = monotonic() + 20
+  while monotonic() < $deadline
+    if not process_alive($pid) then return false end
+    $h = nil
+    try
+      $h = tcp_connect("127.0.0.1", $port, {timeout: 0.5})
+    catch $m
+      $h = nil
+    end
+    if $h != nil then
+      $closed = tcp_close($h)
+      return true
+    end
+    sleep(0.1)
+  end
+  return false
+end
+
+fn _listening_now($port)
+  try
+    $h = tcp_connect("127.0.0.1", $port, {timeout: 0.5})
+    $closed = tcp_close($h)
+    return true
+  catch $m
+    return false
+  end
+end
+
+fn client_env($bus)
+  return {MIXOS_NODED_URL: $bus.url, MIXOS_NODE_CONFIG: $bus.conf, MIXOS_RUN: $bus.dir .. "/run",
+    MIXOS_ETC: $bus.dir .. "/etc", MIXOS_VAR: $bus.dir .. "/var"}
+end
+
+-- One noded.info through this process's client: "yes" (this broker), "no"
+-- (no answer yet) or "foreign" (someone else answered, or a malformed reply).
+fn _owned($name, $pid)
+  send noded noded.info timeout=2
+  if $rc != 0 then return "no" end
+  $info = $result
+  try
+    if type($info) == "string" then $info = json_parse($info) end
+    if type($info) != "map" or type($info.noded) != "map" then return "foreign" end
+    if $info.node == $name and $info.noded.pid == $pid then return "yes" end
+  catch $m
+    return "foreign"
+  end
+  return "foreign"
+end
+
+fn start($opts)
+  $dir = $opts.dir ?? ""
+  if $dir == "" then raise("BROKER", "private_bus.start needs {dir}") end
+  $name = $opts.name ?? "private-bus"
+  $noded = $opts.noded ?? "/opt/mixos/bin/noded"
+  if not is_file($noded) then raise("BROKER", "no noded at " .. $noded) end
+  for each $child in ["etc", "var", "run/noded", "home"]
+    mkdir($dir .. "/" .. $child, {parents: true})
+  end
+  _reap_stale($dir)
+  $conf = $dir .. "/etc/node.conf.mix"
+  $mesh = $dir .. "/etc/mesh.conf.mix"
+  $export = $opts.export ?? true
+  $before = _client_now()
+  for $attempt = 1 to 10
+    $port = $opts.port ?? random(47000, 47999)
+    $log = $dir .. "/noded-" .. to_string($attempt) .. ".log"
+    write_file($conf, json_encode({node: $name, mesh: $name .. ".invalid", wg_ip: "127.0.0.1",
+      noded: {port: $port, admission: "off", unix_socket: $dir .. "/run/noded/bus.sock"}}))
+    -- noded refuses to start ("Broker failed to start", nothing logged) without a
+    -- mesh config it can read; an owned empty roster keeps it off every other mesh.
+    write_file($mesh, json_encode({node_name: $name, peers: []}))
+    $p = spawn([$noded, "serve", "--listen", "127.0.0.1:" .. to_string($port), "--node", $name, "--no-monitor", "--no-log", "--mesh-config", $mesh],
+      {detach: true, clear_env: true, env: {PATH: env("PATH"), USER: env("USER"), HOME: $dir .. "/home",
+        MIXOS_ETC: $dir .. "/etc", MIXOS_VAR: $dir .. "/var", MIXOS_RUN: $dir .. "/run", MIXOS_NODE_CONFIG: $conf},
+        stdout: {file: $log}, stderr: "stdout"})
+    $id = {pid: $p, starttime: _starttime($p), noded: $noded, name: $name, conf: $conf}
+    $bus = merge($id, {port: $port, url: "ws://127.0.0.1:" .. to_string($port) .. "/ws", dir: $dir, log: $log, before: $before})
+    -- From here on the spawned broker is ours to clean up on ANY failure.
+    $state = "no"
+    try
+      if $id.starttime == nil then raise("BROKER", "spawned noded " .. to_string($p) .. " exited at once; see " .. $log) end
+      write_file($dir .. "/noded.pid", json_encode($id))
+      -- Readiness goes through this process's own client, so point it at the
+      -- candidate. Wait for the listener first: a failed connect is sticky
+      -- (later sends answer -3 until bus_reconnect(); TODO-mix).
+      _client_set(client_env($bus))
+      if _listening($p, $port) then
+        for $ready = 1 to 40
+          if not process_alive($p) then break end
+          bus_reconnect()
+          $state = _owned($name, $p)
+          if $state != "no" then break end
+          sleep(0.25)
+        end
+      end
+    catch $m
+      _client_set($before)
+      if $id.starttime != nil then _retire($id) end
+      raise("BROKER", "private broker start failed: " .. $m)
+    end
+    if $state == "yes" then
+      if not $export then _client_set($before) end
+      return $bus
+    end
+    _client_set($before)
+    _retire($id)
+    if $opts.port != nil then raise("BROKER", "private broker on fixed port " .. to_string($port) .. " not owned (" .. $state .. "); see " .. $log) end
+  end
+  raise("BROKER", "no owned private broker after 10 attempts in " .. $dir)
+end
+
+fn stop($bus)
+  if $bus == nil then return true end
+  -- Hand the client back first, if it still points at this broker.
+  if env("MIXOS_NODED_URL") == $bus.url then
+    $prev = $bus.before ?? {}
+    _client_set($prev)
+    -- Overlapping brokers must be stopped in reverse start order; otherwise the
+    -- predecessor handed back here may already be gone. Say so rather than hide it.
+    $m = re_find($prev.MIXOS_NODED_URL ?? "", "^ws://127\\.0\\.0\\.1:(\\d+)/")
+    if len($m) > 0 and not _listening_now(to_number($m[0].groups[0])) then
+      eprint("private_bus: stop handed the Bus client back to " .. $prev.MIXOS_NODED_URL .. ", which is not listening (stop brokers in reverse start order)")
+    end
+  end
+  _retire($bus)
+  $rec = _record($bus.dir)
+  if $rec != nil and $rec.pid == $bus.pid and $rec.starttime == $bus.starttime then
+    run_argv_must(["rm", "-f", $bus.dir .. "/noded.pid"])
+  end
+  return true
+end
+
+-- Start, run $body($bus), always stop. Returns $body's value; re-raises its error.
+fn with_bus($opts, $body)
+  $bus = start($opts)
+  $out = nil
+  try
+    $out = $body($bus)
+  finally
+    stop($bus)
+  end
+  return $out
+end

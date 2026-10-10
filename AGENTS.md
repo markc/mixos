@@ -138,6 +138,31 @@ removal-impact report (`tools/`) lists:
 Removal never deletes user data. A removed component's names are retired
 (§3.5).
 
+### 2.5 Mix components
+
+A component may be written entirely in Mix
+([decision](docs/decisions/2026-10-10-mix-components.md)). It has no
+`Cargo.toml`. Its identity is `component.mx` at the top of the component:
+`schema: 1`, `name` (= directory = component), `component`, `kind`, `layer`,
+`contract`, its own `version`, and `program`, the principal `.mix` file.
+
+```
+services/releasesd/
+├── component.mx
+├── scripts/releasesd.mix   scripts/lib/releases.mix
+├── units/releasesd@.service
+├── tests/*_test.mix
+└── README.md
+```
+
+- A directory with both `Cargo.toml` and `component.mx` is refused.
+- `scripts/` installs to `/opt/mixos/lib/<component>/`.
+- The component gate checks `component.mx` like a package's metadata. The
+  layer is checked at review: a Mix component uses only the `mix` binary, the
+  Bus and the verbs of components at or below its layer.
+- Shared Mix test helpers live in `tests/lib/` (`private_bus.mix`: an owned
+  throwaway broker).
+
 ## 3. Naming
 
 1. **Plain names only.** Every package, binary and directory has a plain
@@ -305,7 +330,8 @@ are prerendered, and every page is also published as Markdown.
 
 1. Kind → directory (§1).
 2. Plain, unique, unretired name (§3).
-3. `Cargo.toml` with `publish = false` and `[package.metadata.mixos]` (§2.3).
+3. `Cargo.toml` with `publish = false` and `[package.metadata.mixos]` (§2.3),
+   or, for a Mix component, `component.mx` (§2.5).
 4. Its units, scripts, assets, i18n and tests inside the component (§2).
 5. Contracts registered (verbs, schemas) if it has any (§5).
 6. SPDX headers; third-party attribution intact (§4).

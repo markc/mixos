@@ -1,0 +1,88 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- releases: the command-line face of releasesd, for people and scripts. It
+-- runs the same logic (lib/releases.mix) in-process, so it works with or
+-- without the service running.
+--
+--   mix releases.mix [list] [app...]       installed vs latest (no network)
+--   mix releases.mix check [app...]        ask GitHub, then list
+--   mix releases.mix notes <app>
+--   mix releases.mix install <app> [tag]
+--   mix releases.mix update [app...]       default: every installed app
+--   mix releases.mix rollback <app>
+--   mix releases.mix remove <app>
+--   mix releases.mix link [app...]         relink into the target; no download
+--   --json                                  machine output (the Bus reply shapes)
+-- Environment: see new_context() in lib/releases.mix.
+
+$r = require("lib/releases.mix")
+$g = getopt(args(), {json: {}})
+$json_out = $g.opts.json
+$cmd = $g.rest[0] ?? "list"
+$names = slice($g.rest, 1, len($g.rest))
+$ctx = $r.new_context({})
+
+fn need_one($names)
+  if len($names) < 1 then raise("USAGE", "name an app (see `releases list`)") end
+  return $r.app_by_name($ctx, $names[0])
+end
+
+fn print_rows($rows)
+  print(rpad("APP", 16) .. rpad("INSTALLED", 11) .. rpad("LATEST", 11) .. rpad("PUBLISHED", 12) .. "STATUS")
+  for $x in $rows
+    print(rpad($x.app, 16) .. rpad($x.installed ?? "-", 11) .. rpad($x.latest ?? "-", 11) .. rpad($x.published ?? "-", 12) .. $x.status)
+  end
+end
+
+fn print_results($results)
+  for $x in $results
+    $line = $x.app .. ": " .. $x.action .. (if $x.version != nil then " " .. $x.version else "" end)
+    if $x.previous != nil then $line = $line .. " (previous " .. $x.previous .. ")" end
+    if $x.verified != nil and $x.verified.proofs != nil then $line = $line .. " verified by " .. join($x.verified.proofs, " + ") end
+    if $x.error != nil then $line = $line .. ": " .. $x.error end
+    print($line)
+    for $s in ($x.skipped ?? [])
+      print("  not linked (a file that isn't ours is there): " .. $s)
+    end
+  end
+end
+
+$result = nil
+if $cmd == "list" then
+  $result = $r.rows($ctx, $r.selected($ctx, $names))
+  if not $json_out then print_rows($result) end
+elif $cmd == "check" then
+  $result = $r.check($ctx, $r.selected($ctx, $names))
+  if not $json_out then print_rows($result) end
+elif $cmd == "notes" then
+  $result = $r.notes($ctx, need_one($names))
+  if not $json_out then
+    print($result.app .. " " .. $result.tag .. " (" .. slice($result.published ?? "", 0, 10) .. ") " .. $result.url)
+    print("")
+    print($result.notes)
+  end
+else
+  if not contains(["install", "update", "rollback", "remove", "link"], $cmd) then
+    raise("USAGE", "unknown command " .. $cmd .. ": list, check, notes, install, update, rollback, remove, link")
+  end
+  -- Root is refused inside acquire, before any lock file is touched.
+  $locks = $r.acquire($ctx, $cmd, 600)
+  $ctx.opt_locked = $locks.opt_locked
+  try
+    if $cmd == "install" then
+      $result = [$r.install($ctx, need_one($names), $names[1])]
+    elif $cmd == "rollback" then
+      $result = [$r.rollback($ctx, need_one($names))]
+    elif $cmd == "remove" then
+      $result = [$r.remove_app($ctx, need_one($names))]
+    elif $cmd == "link" then
+      $result = $r.link($ctx, $r.selected($ctx, $names))
+    else
+      $result = $r.update($ctx, if len($names) > 0 then $r.selected($ctx, $names) else $r.installed($ctx) end)
+    end
+  finally
+    $r.release($locks.held)
+  end
+  if not $json_out then print_results($result) end
+end
+if $json_out then print(json_encode($result)) end

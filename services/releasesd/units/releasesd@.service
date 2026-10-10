@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixOS application releases for session %i
+Wants=noded@%i.service
+After=noded@%i.service network-online.target
+PartOf=session@%i.target
+
+[Service]
+Type=simple
+User=mixos
+# The session's HOME and XDG directories: installs go to the session user's
+# ~/.local, the catalogue is ~/.config/mixos/releases.mx.
+EnvironmentFile=/etc/mixos/session/%i.env
+ExecStart=/opt/mixos/bin/mix --serve /opt/mixos/lib/releasesd/releasesd.mix --name releases
+KillMode=control-group
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=2

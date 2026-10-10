@@ -1,0 +1,806 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+-- releases: the logic behind releasesd and the `releases` CLI. Follows the
+-- GitHub repositories in a catalogue, compares the installed version with the
+-- latest release, and installs each release's Linux tarball per user.
+-- Nothing here knows any one project: the catalogue does.
+--
+--   $r = require("lib/releases.mix")
+--   $ctx = $r.new_context({})        -- paths and catalogue from the environment
+--   $r.check($ctx, [])               -- rows for every catalogue app
+--
+-- Every function takes the context first. Mutating functions return a result
+-- map {app, action, ...}; failures raise with a code (USAGE, ROOT,
+-- UNKNOWN_APP, NO_RELEASE, NO_ASSET, AMBIGUOUS_ASSET, DOWNLOAD, DIGEST,
+-- UNVERIFIABLE, LAYOUT, NO_PREVIOUS, CATALOGUE).
+--
+-- Trust rules:
+--   * it never changes anything as root: installs are per user, by that user;
+--   * a release is unpacked into a stage and checked before it is used: no
+--     symlink may leave the prefix, no special files, no setuid/setgid bits;
+--   * a link manifest is evidence, not permission: a path is replaced or
+--     removed only if it is inside this target and still exactly what was
+--     made (the same symlink target, or the same sha256);
+--   * only version directories carrying their own proof are managed; nothing
+--     else under <root>/opt/<app> is pruned or removed.
+--
+-- Layout (root defaults to ~/.local):
+--   <root>/opt/<app>/<version>/      unpacked release prefix (bin/, share/)
+--   <root>/opt/<app>/current         symlink to the active version
+--   <root>/opt/<app>/meta.json       name, repo, version, previous
+--   <root>/opt/<app>/.verified-<v>.json   the proof of each managed version
+--   <share>/mixos/releases/<app>.links.json   what was made in this target
+
+-- App names and versions become path components: keep them boring.
+$NAME_RE = "^[a-z0-9][a-z0-9-]{0,63}$"
+$REPO_RE = "^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"
+$TAG_RE = "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$"
+-- Downloads: the tarball may not exceed its published size (else this cap),
+-- and no single file may take longer than the deadline.
+$MAX_TARBALL = 2147483648
+$MAX_SUMS = 1048576
+$DEADLINE_S = 1800
+
+fn _env_or($name, $default)
+  $v = env($name)
+  return if $v == "" then $default else $v end
+end
+
+fn _json_or($path, $default)
+  if not is_file($path) then return $default end
+  return json_parse(read_file($path))
+end
+
+fn valid_name($s)
+  return type($s) == "string" and re_match($s, $NAME_RE)
+end
+
+fn valid_tag($s)
+  return type($s) == "string" and re_match($s, $TAG_RE) and not contains($s, "..")
+end
+
+-- A version is a directory name beside `current` and `meta.json`.
+fn valid_version($s)
+  return valid_tag($s) and $s != "current" and not ends_with($s, ".json")
+end
+
+fn _not_root($what)
+  if uid() == 0 then raise("ROOT", $what .. " refused as root: releases are installed per user, by that user") end
+end
+
+-- Load and check a catalogue document. A missing file is an empty catalogue.
+fn load_catalogue($path)
+  if not is_file($path) then return [] end
+  $doc = load_data($path)
+  if type($doc) != "map" or $doc.schema != 1 or type($doc.apps) != "list" then
+    raise("CATALOGUE", $path .. ": expected {schema: 1, apps: [...]}")
+  end
+  $seen = []
+  for $a in $doc.apps
+    if type($a) != "map" or not valid_name($a.name) or type($a.repo) != "string" or not re_match($a.repo, $REPO_RE) then
+      raise("CATALOGUE", $path .. ": each app needs a name matching " .. $NAME_RE .. " and a repo owner/name: " .. json_encode($a))
+    end
+    if $a.asset != nil and type($a.asset) != "string" then raise("CATALOGUE", $path .. ": " .. $a.name .. ".asset must be a regex string") end
+    if contains($seen, $a.name) then raise("CATALOGUE", $path .. ": duplicate app " .. $a.name) end
+    push($seen, $a.name)
+  end
+  return $doc.apps
+end
+
+fn _github_token()
+  $t = env("GITHUB_TOKEN")
+  if $t != "" then return $t end
+  if which("gh") == nil then return nil end
+  $r = run_argv(["gh", "auth", "token"], {timeout: 15})
+  if $r.exit_code == 0 and trim($r.stdout) != "" then return trim($r.stdout) end
+  return nil
+end
+
+-- The context: paths, catalogue, token and arch. $over overrides any key.
+-- Environment: MIXOS_RELEASES_ROOT (~/.local), MIXOS_RELEASES_VIEW (the root
+-- as the apps will see it, for installs into a container; default the root),
+-- MIXOS_RELEASES_SHARE (<root>/share), MIXOS_RELEASES_BIN (<root>/bin),
+-- MIXOS_RELEASES_CATALOGUE ($XDG_CONFIG_HOME/mixos/releases.mx),
+-- MIXOS_RELEASES_STATE ($XDG_STATE_HOME/mixos/releases), MIXOS_RELEASES_API
+-- (https://api.github.com; tests point it at a local server), GITHUB_TOKEN.
+-- (Not named context(): `mix --serve` has a builtin of that name, and it
+-- wins even over a module member call; see TODO-mix.)
+fn new_context($over)
+  $home = env("HOME")
+  $root = $over.root ?? _env_or("MIXOS_RELEASES_ROOT", $home .. "/.local")
+  $config_home = _env_or("XDG_CONFIG_HOME", $home .. "/.config")
+  $state_home = _env_or("XDG_STATE_HOME", $home .. "/.local/state")
+  $arch = platform().arch
+  $ctx = {
+    root: $root,
+    opt_dir: $root .. "/opt",
+    view_opt: ($over.view ?? _env_or("MIXOS_RELEASES_VIEW", $root)) .. "/opt",
+    share_dir: $over.share ?? _env_or("MIXOS_RELEASES_SHARE", $root .. "/share"),
+    bin_dir: $over.bin ?? _env_or("MIXOS_RELEASES_BIN", $root .. "/bin"),
+    state_dir: $over.state ?? _env_or("MIXOS_RELEASES_STATE", $state_home .. "/mixos/releases"),
+    catalogue_path: $over.catalogue ?? _env_or("MIXOS_RELEASES_CATALOGUE", $config_home .. "/mixos/releases.mx"),
+    api: $over.api ?? _env_or("MIXOS_RELEASES_API", "https://api.github.com"),
+    arch: $arch,
+    arch_re: if $arch == "x86_64" then "(x86_64|amd64|x64)" elif $arch == "aarch64" then "(aarch64|arm64)" else $arch end,
+    token: if $over.offline then nil else _github_token() end
+  }
+  $ctx.catalogue = load_catalogue($ctx.catalogue_path)
+  if uid() != 0 then mkdir($ctx.state_dir, {parents: true}) end
+  return $ctx
+end
+
+fn app_by_name($ctx, $name)
+  if not valid_name($name) then raise("USAGE", "not an app name: " .. to_string($name)) end
+  $hit = filter($ctx.catalogue, fn($a) = $a.name == $name)
+  if len($hit) == 0 then raise("UNKNOWN_APP", $name .. " is not in the catalogue " .. $ctx.catalogue_path) end
+  return $hit[0]
+end
+
+fn selected($ctx, $names)
+  if len($names) == 0 then return $ctx.catalogue end
+  return map($names, fn($n) = app_by_name($ctx, $n))
+end
+
+fn _api_get($ctx, $path, $etag)
+  $h = {"Accept": "application/vnd.github+json", "User-Agent": "mixos-releasesd", "X-GitHub-Api-Version": "2022-11-28"}
+  -- The token only ever goes to GitHub itself, never to an overridden API base.
+  if $ctx.token != nil and $ctx.api == "https://api.github.com" then $h["Authorization"] = "Bearer " .. $ctx.token end
+  if $etag != nil then $h["If-None-Match"] = $etag end
+  return http_get($ctx.api .. $path, $h, {timeout: 30})
+end
+
+fn summarise($rel)
+  return {tag: $rel.tag_name, name: $rel.name, published: $rel.published_at, url: $rel.html_url,
+    notes: slice($rel.body ?? "", 0, 8000),
+    assets: map($rel.assets ?? [], fn($a) = {name: $a.name, size: $a.size, digest: $a.digest, url: $a.browser_download_url})}
+end
+
+-- The latest release into the app's state, conditional on the stored ETag.
+fn check_app($ctx, $app)
+  _not_root("check")
+  $sp = $ctx.state_dir .. "/" .. $app.name .. ".json"
+  $st = _json_or($sp, {})
+  $r = _api_get($ctx, "/repos/" .. $app.repo .. "/releases/latest", if $st.latest != nil then $st.etag else nil end)
+  $st.checked = now_iso()
+  $st.error = nil
+  if $r.status == 304 then
+    $st.changed = false
+  elif $r.status == 200 then
+    $latest = summarise(json_parse($r.body))
+    $st.changed = $st.latest == nil or $st.latest.tag != $latest.tag
+    $st.latest = $latest
+    $st.etag = ($r.headers["etag"] ?? [])[0]
+  elif $r.status == 404 then
+    $st.error = "no published release"
+  else
+    $left = (($r.headers ?? {})["x-ratelimit-remaining"] ?? ["?"])[0]
+    $st.error = "GitHub answered " .. to_string($r.status) .. " " .. to_string($r.error ?? "") .. " (rate limit left " .. $left .. ")"
+  end
+  write_atomic($sp, json_encode($st))
+  return $st
+end
+
+fn _release_for($ctx, $app, $tag)
+  if $tag == nil then
+    $st = check_app($ctx, $app)
+    if $st.latest == nil then raise("NO_RELEASE", $app.name .. ": " .. to_string($st.error)) end
+    return $st.latest
+  end
+  if not valid_tag($tag) then raise("USAGE", "not a release tag: " .. to_string($tag)) end
+  $r = _api_get($ctx, "/repos/" .. $app.repo .. "/releases/tags/" .. $tag, nil)
+  if $r.status != 200 then raise("NO_RELEASE", $app.name .. " " .. $tag .. ": GitHub answered " .. to_string($r.status)) end
+  return summarise(json_parse($r.body))
+end
+
+fn pick_tarball($ctx, $app, $assets)
+  $pat = $app.asset ?? ("(?i)linux[-_.]" .. $ctx.arch_re .. "\\.tar\\.gz$")
+  $c = filter($assets, fn($a) = re_match($a.name, $pat) and not re_match($a.name, "(?i)[-_.]web[-_.]"))
+  if len($c) > 1 then
+    $c = filter($c, fn($a) = starts_with($a.name, $app.name .. "-") and not contains($a.name, "-cli-"))
+  end
+  if len($c) == 0 then raise("NO_ASSET", $app.name .. ": no Linux " .. $ctx.arch .. " tarball in " .. join(map($assets, fn($a) = $a.name), ", ")) end
+  if len($c) > 1 then raise("AMBIGUOUS_ASSET", $app.name .. ": set `asset` in the catalogue; candidates " .. join(map($c, fn($a) = $a.name), ", ")) end
+  return $c[0]
+end
+
+fn pick_sums($assets, $tar)
+  $c = filter($assets, fn($a) = re_match($a.name, "(?i)^(sha256sums?|checksums?)(\\.txt)?$") or $a.name == $tar.name .. ".sha256")
+  return if len($c) > 0 then $c[0] else nil end
+end
+
+-- GitHub release downloads answer 302 to a signed CDN URL; http_get_file
+-- returns redirects rather than following them. Only https is followed.
+-- $max caps the size in bytes; the whole file must arrive within the deadline.
+fn fetch($url, $dest, $max)
+  $u = $url
+  for $hop in range(0, 4)
+    $r = http_get_file($u, $dest, {overwrite: true, idle_timeout: 60, deadline: $DEADLINE_S, max_bytes: $max})
+    if $r.status == 200 then return $r end
+    if $r.status < 300 or $r.status > 399 then raise("DOWNLOAD", json_encode({url: $u, status: $r.status, error: $r.error, error_code: $r.error_code})) end
+    $loc = ($r.headers["location"] ?? [])[0] ?? ""
+    if not starts_with($loc, "https://") then raise("DOWNLOAD", "redirect without an https Location: " .. $u) end
+    $u = $loc
+  end
+  raise("DOWNLOAD", "too many redirects: " .. $url)
+end
+
+-- The size cap for an asset: its published size when it has one.
+fn _cap($asset, $ceiling)
+  $s = $asset.size
+  if type($s) == "number" and $s > 0 and $s <= $ceiling then return $s end
+  return $ceiling
+end
+
+-- Fail closed: every checksum source present must match, and there must be
+-- one. $tar is the asset map ({name, digest}); $sums_path is the downloaded
+-- checksum file or nil, $sums its asset map.
+fn verify($tar_path, $tar, $sums, $sums_path)
+  $got = hash_file($tar_path, "sha256")
+  $proofs = []
+  if $tar.digest != nil then
+    if $tar.digest != "sha256:" .. $got then raise("DIGEST", $tar.name .. ": API digest " .. $tar.digest .. " but the file is sha256:" .. $got) end
+    push($proofs, "api-digest")
+  end
+  if $sums != nil then
+    if $sums.digest != nil and $sums.digest != "sha256:" .. hash_file($sums_path, "sha256") then raise("DIGEST", $sums.name .. " does not match its own API digest") end
+    $listed = filter(read_lines($sums_path), fn($l) = len(fields($l)) >= 2 and re_replace(fields($l)[len(fields($l)) - 1], "^\\*", "") == $tar.name)
+    if len($listed) != 1 then raise("DIGEST", $sums.name .. " lists " .. $tar.name .. " " .. to_string(len($listed)) .. " times") end
+    if lower(fields($listed[0])[0]) != $got then raise("DIGEST", $sums.name .. " says " .. fields($listed[0])[0] .. " but the file is " .. $got) end
+    push($proofs, $sums.name)
+  end
+  if len($proofs) == 0 then raise("UNVERIFIABLE", $tar.name .. ": the release publishes no digest and no checksum file") end
+  return {sha256: $got, proofs: $proofs}
+end
+
+-- Lexical normalisation of an absolute path ("." and ".." resolved).
+fn _normalise($path)
+  $out = []
+  for $part in split($path, "/")
+    if $part == "" or $part == "." then
+      continue
+    elif $part == ".." then
+      if len($out) > 0 then pop($out) end
+    else
+      push($out, $part)
+    end
+  end
+  return "/" .. join($out, "/")
+end
+
+-- Follow $target from $base one component at a time, as the kernel would:
+-- every step must stay inside $top, exist, and not be a symlink itself, so
+-- no chain ("a -> .", "b -> a/..") can lead anywhere. Lexical normalisation
+-- alone is not enough: "a/.." through a symlinked "a" is not "." on disk.
+fn _plain_target($top, $base, $target)
+  if $target == "" or starts_with($target, "/") then return false end
+  $cur = $base
+  for $part in split($target, "/")
+    if $part == "" or $part == "." then
+      continue
+    elif $part == ".." then
+      if $cur == $top then return false end
+      $cur = dirname($cur)
+    else
+      $cur = $cur .. "/" .. $part
+      if not exists($cur, {follow_symlinks: false}) then return false end
+      if stat($cur, {follow_symlinks: false}).is_symlink then return false end
+    end
+    if $cur != $top and not starts_with($cur, $top .. "/") then return false end
+  end
+  return true
+end
+
+-- Refuse a prefix that could act outside itself: symlinks that leave it or
+-- go through another symlink, special files, and setuid/setgid bits.
+fn validate_prefix($top)
+  $top_n = _normalise($top)
+  for $p in walk($top, {include_dirs: true, follow_symlinks: false})
+    $st = stat($p, {follow_symlinks: false})
+    $rel = slice($p, len($top) + 1, len($p))
+    if $st.is_symlink then
+      $target = read_link($p)
+      if not _plain_target($top_n, _normalise(dirname($p)), $target) then
+        raise("LAYOUT", "symlink " .. $rel .. " must point at an existing file or directory inside the release, through no other symlink: " .. $target)
+      end
+    elif not $st.is_file and not $st.is_dir then
+      raise("LAYOUT", $rel .. " is a special file")
+    elif band($st.perm, 0o6000) != 0 then
+      raise("LAYOUT", $rel .. " is setuid or setgid")
+    end
+  end
+  return true
+end
+
+fn current_version($ctx, $app)
+  $cur = $ctx.opt_dir .. "/" .. $app.name .. "/current"
+  if not exists($cur, {follow_symlinks: false}) then return nil end
+  return read_link($cur)
+end
+
+fn _flip_current($appdir, $version)
+  $tmp = $appdir .. "/.current.tmp"
+  remove($tmp)
+  symlink($version, $tmp)
+  rename($tmp, $appdir .. "/current")
+end
+
+fn manifest_path($ctx, $app)
+  return $ctx.share_dir .. "/mixos/releases/" .. $app.name .. ".links.json"
+end
+
+-- A manifest entry is used only if it names a path inside this target.
+fn _confined($ctx, $path)
+  if type($path) != "string" or contains($path, "/../") or contains($path, "/./") or ends_with($path, "/..") then return false end
+  return starts_with($path, $ctx.share_dir .. "/") or starts_with($path, $ctx.bin_dir .. "/")
+end
+
+-- Entries are {path, states}: every state ({link} or {sha256}) in which the
+-- path counts as ours. An intent manifest, written before any change, lists
+-- both the old and the new state, so an interrupted relink is recognised and
+-- finished by the next one.
+fn _valid_state($s)
+  return type($s) == "map" and (type($s.link) == "string" or type($s.sha256) == "string")
+end
+
+fn _read_manifest($ctx, $app)
+  $raw = _json_or(manifest_path($ctx, $app), [])
+  if type($raw) != "list" then return [] end
+  $out = []
+  for $e in $raw
+    if type($e) == "map" and _confined($ctx, $e.path) and type($e.states) == "list" then
+      $states = filter($e.states, fn($s) = _valid_state($s))
+      if len($states) > 0 then push($out, {path: $e.path, states: $states}) end
+    end
+  end
+  return $out
+end
+
+fn _matches($path, $state)
+  $st = stat($path, {follow_symlinks: false})
+  if $state.link != nil then return $st.is_symlink and read_link($path) == $state.link end
+  return $st.is_file and not $st.is_symlink and hash_file($path, "sha256") == $state.sha256
+end
+
+-- Is this entry's path still in one of the states we made?
+fn _still_ours($e)
+  if not exists($e.path, {follow_symlinks: false}) then return false end
+  return any($e.states, fn($s) = _matches($e.path, $s))
+end
+
+-- Free, or ours and unchanged since: the only paths relink may write.
+fn _writable($path, $old)
+  if not exists($path, {follow_symlinks: false}) then return true end
+  $mine = filter($old, fn($e) = $e.path == $path)
+  return len($mine) == 1 and _still_ours($mine[0])
+end
+
+fn _publish_manifest($ctx, $app, $entries)
+  $mpath = manifest_path($ctx, $app)
+  if len($entries) > 0 then
+    mkdir(dirname($mpath), {parents: true})
+    write_atomic($mpath, json_encode($entries))
+  else
+    remove($mpath)
+  end
+end
+
+-- A desktop entry with Exec/TryExec made absolute when the program is ours.
+fn rewrite_entry($text, $appdir, $viewdir)
+  $out = []
+  for $l in lines($text)
+    $m = re_find($l, "^(Exec|TryExec)=(\\S+)(.*)$")
+    if len($m) > 0 then
+      $caps = $m[0].groups
+      if not contains($caps[1], "/") and is_file($appdir .. "/current/bin/" .. $caps[1]) then
+        $l = $caps[0] .. "=" .. $viewdir .. "/current/bin/" .. $caps[1] .. $caps[2]
+      end
+    end
+    push($out, $l)
+  end
+  return join($out, "\n") .. "\n"
+end
+
+-- Link the current version into this target, replacing only what is still
+-- ours, then drop our unchanged leftovers. Returns {links, skipped, kept}.
+fn relink($ctx, $app)
+  _not_root("link")
+  $appdir = $ctx.opt_dir .. "/" .. $app.name
+  $viewdir = $ctx.view_opt .. "/" .. $app.name
+  $old = _read_manifest($ctx, $app)
+  $made = []
+  $skipped = []
+  $cur = $appdir .. "/current"
+  if exists($cur) then
+    $want = []
+    for $f in glob($cur .. "/bin/*")
+      push($want, {path: $ctx.bin_dir .. "/" .. basename($f), link: $viewdir .. "/current/bin/" .. basename($f)})
+    end
+    for $f in glob($cur .. "/share/applications/*.desktop")
+      $st = stat($f, {follow_symlinks: false})
+      if $st.is_file and not $st.is_symlink then
+        push($want, {path: $ctx.share_dir .. "/applications/" .. basename($f), text: rewrite_entry(read_file($f), $appdir, $viewdir)})
+      else
+        push($skipped, $ctx.share_dir .. "/applications/" .. basename($f))
+      end
+    end
+    $shared = concat(if is_dir($cur .. "/share/icons") then walk($cur .. "/share/icons", {follow_symlinks: false}) else [] end,
+      glob($cur .. "/share/mime/packages/*.xml"))
+    for $f in filter($shared, fn($p) = is_file($p))
+      $rel = slice($f, len($cur .. "/share/"), len($f))
+      push($want, {path: $ctx.share_dir .. "/" .. $rel, link: $viewdir .. "/current/share/" .. $rel})
+    end
+    -- The plan: what may be written, and the state each path will be in.
+    for $w in $want
+      if _writable($w.path, $old) then
+        $w.state = if $w.link != nil then {link: $w.link} else {sha256: hash_sha256($w.text)} end
+        push($made, $w)
+      else
+        push($skipped, $w.path)
+      end
+    end
+  end
+  $made_paths = map($made, fn($w) = $w.path)
+  -- Intent: every path we may touch, accepting its old and its new state.
+  $intent = []
+  for $w in $made
+    $prior = filter($old, fn($e) = $e.path == $w.path)
+    push($intent, {path: $w.path, states: concat(if len($prior) == 1 then $prior[0].states else [] end, [$w.state])})
+  end
+  for $e in $old
+    if not contains($made_paths, $e.path) then push($intent, $e) end
+  end
+  _publish_manifest($ctx, $app, $intent)
+  -- Changes.
+  for $w in $made
+    mkdir(dirname($w.path), {parents: true})
+    remove($w.path)
+    if $w.link != nil then symlink($w.link, $w.path) else write_atomic($w.path, $w.text) end
+  end
+  $kept = []
+  $final = map($made, fn($w) = {path: $w.path, states: [$w.state]})
+  for $e in $old
+    if not contains($made_paths, $e.path) then
+      if contains($skipped, $e.path) then
+        -- Still wanted but not ours to write now: keep the evidence while it
+        -- matches, so a later run can tidy it.
+        if _still_ours($e) then push($final, $e) end
+      elif _still_ours($e) then
+        remove($e.path)
+      elif exists($e.path, {follow_symlinks: false}) then
+        push($kept, $e.path)
+      end
+    end
+  end
+  _publish_manifest($ctx, $app, $final)
+  if which("update-desktop-database") != nil and is_dir($ctx.share_dir .. "/applications") then
+    run_argv(["update-desktop-database", $ctx.share_dir .. "/applications"], {timeout: 60})
+  end
+  if which("update-mime-database") != nil and is_dir($ctx.share_dir .. "/mime/packages") then
+    run_argv(["update-mime-database", $ctx.share_dir .. "/mime"], {timeout: 120})
+  end
+  return {links: len($made), skipped: $skipped, kept: $kept}
+end
+
+-- Versions this service manages: directories that carry their own proof.
+fn _managed_versions($appdir)
+  $out = []
+  for $p in glob($appdir .. "/.verified-*.json")
+    $v = slice(basename($p), len(".verified-"), len(basename($p)) - len(".json"))
+    if valid_version($v) and is_dir($appdir .. "/" .. $v) then push($out, $v) end
+  end
+  return $out
+end
+
+-- Unpack a verified tarball as <version>, check it, flip `current`, prune
+-- and relink. Split from install() so it can be tested without a network.
+fn install_tarball($ctx, $app, $version, $tar_path, $proof)
+  _not_root("install")
+  if not valid_version($version) then raise("USAGE", "not a usable version: " .. to_string($version)) end
+  $appdir = $ctx.opt_dir .. "/" .. $app.name
+  $dest = $appdir .. "/" .. $version
+  $previous = current_version($ctx, $app)
+  if exists($dest, {follow_symlinks: false}) and not contains(_managed_versions($appdir), $version) then
+    raise("LAYOUT", $dest .. " exists and is not managed here; move it away first")
+  end
+  mkdir($appdir, {parents: true})
+  $stage = $appdir .. "/.stage-" .. uuid()
+  mkdir($stage .. "/prefix", {parents: true})
+  try
+    -- bsdtar refuses absolute and .. members by default; never keep owners
+    -- or special permissions.
+    run_argv_must(["bsdtar", "-xzf", $tar_path, "--no-same-owner", "--no-same-permissions", "--no-acls", "--no-xattrs", "--no-fflags", "-C", $stage .. "/prefix"], {timeout: 300})
+    $top = $stage .. "/prefix"
+    if not is_dir($top .. "/bin") then
+      $dirs = filter(glob($top .. "/*"), fn($d) = is_dir($d) and not stat($d, {follow_symlinks: false}).is_symlink)
+      if len($dirs) == 1 and is_dir($dirs[0] .. "/bin") then $top = $dirs[0] end
+    end
+    if len(glob($top .. "/bin/*")) == 0 then raise("LAYOUT", basename($tar_path) .. " has no bin/ directory: not a prefix tarball") end
+    validate_prefix($top)
+    if is_dir($dest) then remove_dir($dest) end
+    write_atomic($appdir .. "/.verified-" .. $version .. ".json", json_encode($proof))
+    rename($top, $dest)
+  finally
+    remove_dir($stage)
+  end
+  return _activate($ctx, $app, $version, $previous, $proof)
+end
+
+-- Transitions are journalled in meta.json. Before `current` moves, meta is
+-- written with the new {version, previous} and pending: {op, target}; pending
+-- is cleared only after the relink succeeds. A pending transition found
+-- later is resumed exactly: `current` moved to its target (if it hadn't),
+-- links reconciled, pending cleared. Returns {meta, resumed: op or nil}.
+fn _write_meta($appdir, $meta)
+  write_atomic($appdir .. "/meta.json", json_encode($meta))
+end
+
+-- The link target a transition belongs to. Several targets may share one
+-- opt directory (a session seeing it through a read-only bind): only the
+-- target that started a transition resumes and clears it. A target is known
+-- by a random id kept in its own storage, never by its path: two mount
+-- namespaces can show different directories under the same path.
+fn _target_id_path($ctx)
+  return $ctx.share_dir .. "/mixos/releases/.target-id"
+end
+
+fn target_id($ctx, $create)
+  $p = _target_id_path($ctx)
+  if is_file($p) then return trim(read_file($p)) end
+  if not $create then return nil end
+  mkdir(dirname($p), {parents: true})
+  try
+    write_new($p, uuid() .. "\n", 0o644)
+  catch $m
+  end
+  return trim(read_file($p))
+end
+
+-- Locks, always taken in this order: the installation (<opt>/.releases.lock,
+-- shared by every target using that opt, whatever its state directory),
+-- then the target (<share>/mixos/releases/.lock).
+--   install, update, rollback, remove: both, or BUSY.
+--   link: the target, plus the installation when it can be opened; through a
+--   read-only opt it cannot, and the link then only reconciles its own links
+--   and never resumes a pending transition (opt_locked: false).
+-- Returns {held, opt_locked}; the caller sets $ctx.opt_locked and calls
+-- release(held) when done.
+fn lock_paths($ctx)
+  return {install: $ctx.opt_dir .. "/.releases.lock", target: $ctx.share_dir .. "/mixos/releases/.lock"}
+end
+
+fn acquire($ctx, $cmd, $wait)
+  _not_root($cmd)
+  $p = lock_paths($ctx)
+  $held = []
+  $opt_locked = true
+  try
+    if $cmd == "link" then
+      $got = nil
+      try
+        $got = flock($p.install, {wait: $wait})
+      catch $m
+        $opt_locked = false
+      end
+      if $got == false then raise("BUSY", "another releases run holds " .. $p.install) end
+      if $got == true then push($held, $p.install) end
+    else
+      mkdir($ctx.opt_dir, {parents: true})
+      if not flock($p.install, {wait: $wait}) then raise("BUSY", "another releases run holds " .. $p.install) end
+      push($held, $p.install)
+    end
+    mkdir(dirname($p.target), {parents: true})
+    if not flock($p.target, {wait: $wait}) then raise("BUSY", "another releases run holds " .. $p.target) end
+    push($held, $p.target)
+  catch $msg, $err
+    release($held)
+    raise($err.code ?? "BUSY", $msg)
+  end
+  return {held: $held, opt_locked: $opt_locked}
+end
+
+fn release($held)
+  for $l in reverse($held)
+    funlock($l)
+  end
+end
+
+-- $mode "link": another target's pending change is left alone (this target
+-- only reconciles its own links, and may not be able to write opt at all).
+-- Otherwise another target's pending change refuses with PENDING.
+fn _settle($ctx, $app, $mode)
+  $appdir = $ctx.opt_dir .. "/" .. $app.name
+  $meta = _json_or($appdir .. "/meta.json", {})
+  $p = $meta.pending
+  if type($p) != "map" then return {meta: $meta, resumed: nil} end
+  if $p.origin != nil and $p.origin != target_id($ctx, false) then
+    if $mode == "link" then return {meta: $meta, resumed: nil, foreign: true} end
+    raise("PENDING", $app.name .. ": an interrupted " .. to_string($p.op) .. " started from another link target (" .. to_string($p.origin) .. ") must be finished there first")
+  end
+  if valid_version($p.target) and contains(_managed_versions($appdir), $p.target) then
+    if current_version($ctx, $app) != $p.target then _flip_current($appdir, $p.target) end
+    relink($ctx, $app)
+  end
+  $meta = delete($meta, "pending")
+  _write_meta($appdir, $meta)
+  return {meta: $meta, resumed: $p.op}
+end
+
+fn _activate($ctx, $app, $version, $previous, $proof)
+  $appdir = $ctx.opt_dir .. "/" .. $app.name
+  $meta = {name: $app.name, repo: $app.repo, version: $version,
+    previous: $previous, verified: $proof, installed_at: now_iso()}
+  _write_meta($appdir, merge($meta, {pending: {op: "install", target: $version, origin: target_id($ctx, true)}}))
+  _flip_current($appdir, $version)
+  -- Keep current and previous; prune the other managed versions only.
+  for $v in _managed_versions($appdir)
+    if $v != $version and $v != $previous then
+      remove_dir($appdir .. "/" .. $v)
+      remove($appdir .. "/.verified-" .. $v .. ".json")
+    end
+  end
+  $l = relink($ctx, $app)
+  _write_meta($appdir, $meta)
+  return {app: $app.name, version: $version, previous: $previous, action: "installed", verified: $proof, links: $l.links, skipped: $l.skipped}
+end
+
+fn install($ctx, $app, $tag)
+  _not_root("install")
+  _settle($ctx, $app, "install")
+  $rel = _release_for($ctx, $app, $tag)
+  $version = re_replace($rel.tag, "^v", "")
+  if not valid_version($version) then raise("NO_RELEASE", $app.name .. ": unusable tag " .. to_string($rel.tag)) end
+  $appdir = $ctx.opt_dir .. "/" .. $app.name
+  $previous = current_version($ctx, $app)
+  -- Already current: reconcile the links, so a retry finishes an
+  -- activation that failed while linking.
+  if $previous == $version then
+    $l = relink($ctx, $app)
+    return {app: $app.name, version: $version, action: "already current", links: $l.links, skipped: $l.skipped}
+  end
+  -- A managed version still on disk is reused; anything else is fetched.
+  if contains(_managed_versions($appdir), $version) then
+    $proof = _json_or($appdir .. "/.verified-" .. $version .. ".json", nil)
+    return _activate($ctx, $app, $version, $previous, $proof)
+  end
+  $tar = pick_tarball($ctx, $app, $rel.assets)
+  $sums = pick_sums($rel.assets, $tar)
+  mkdir($appdir, {parents: true})
+  $dl = $appdir .. "/.download-" .. uuid()
+  mkdir($dl)
+  try
+    $tp = $dl .. "/" .. basename($tar.name)
+    fetch($tar.url, $tp, _cap($tar, $MAX_TARBALL))
+    $sp = nil
+    if $sums != nil then
+      $sp = $dl .. "/" .. basename($sums.name)
+      fetch($sums.url, $sp, _cap($sums, $MAX_SUMS))
+    end
+    $v = verify($tp, $tar, $sums, $sp)
+    return install_tarball($ctx, $app, $version, $tp, {asset: $tar.name, sha256: $v.sha256, proofs: $v.proofs, tag: $rel.tag})
+  finally
+    remove_dir($dl)
+  end
+end
+
+fn rollback($ctx, $app)
+  _not_root("rollback")
+  $appdir = $ctx.opt_dir .. "/" .. $app.name
+  $s = _settle($ctx, $app, "rollback")
+  $meta = $s.meta
+  -- An interrupted rollback, now resumed, is the rollback that was asked
+  -- for. A resumed install is not: roll back from it as usual.
+  if $s.resumed == "rollback" then
+    return {app: $app.name, version: $meta.version, previous: $meta.previous, action: "rolled back (finished an interrupted rollback)"}
+  end
+  $prev = $meta.previous
+  if $prev == nil or not contains(_managed_versions($appdir), $prev) then raise("NO_PREVIOUS", $app.name .. " has no previous version to roll back to") end
+  $now = current_version($ctx, $app)
+  $meta.version = $prev
+  $meta.previous = $now
+  $meta.rolled_back_at = now_iso()
+  _write_meta($appdir, merge($meta, {pending: {op: "rollback", target: $prev, origin: target_id($ctx, true)}}))
+  _flip_current($appdir, $prev)
+  relink($ctx, $app)
+  _write_meta($appdir, $meta)
+  return {app: $app.name, version: $prev, previous: $now, action: "rolled back"}
+end
+
+-- Removes this target's unchanged links and the managed versions. Anything
+-- else in the app directory is kept, and so is the directory. Other targets
+-- keep dangling links until their next link(), which tidies them.
+fn remove_app($ctx, $app)
+  _not_root("remove")
+  $appdir = $ctx.opt_dir .. "/" .. $app.name
+  if is_dir($appdir) then _settle($ctx, $app, "remove") end
+  $kept = []
+  for $e in _read_manifest($ctx, $app)
+    if _still_ours($e) then remove($e.path) elif exists($e.path, {follow_symlinks: false}) then push($kept, $e.path) end
+  end
+  remove(manifest_path($ctx, $app))
+  if not is_dir($appdir) then return {app: $app.name, action: "not installed", kept: $kept} end
+  for $v in _managed_versions($appdir)
+    remove_dir($appdir .. "/" .. $v)
+    remove($appdir .. "/.verified-" .. $v .. ".json")
+  end
+  if exists($appdir .. "/current", {follow_symlinks: false}) and stat($appdir .. "/current", {follow_symlinks: false}).is_symlink then remove($appdir .. "/current") end
+  remove($appdir .. "/meta.json")
+  $left = walk($appdir, {max_depth: 1, include_dirs: true, follow_symlinks: false})
+  if len($left) == 0 then
+    remove_dir($appdir)
+  else
+    push($kept, $appdir)
+  end
+  return {app: $app.name, action: "removed", kept: $kept}
+end
+
+-- (Re)link installed apps into this target; tidy absent ones. No download.
+fn link($ctx, $apps)
+  _not_root("link")
+  $out = []
+  for $a in $apps
+    -- Resuming a transition writes opt: only with the installation locked.
+    if ($ctx.opt_locked ?? true) and is_dir($ctx.opt_dir .. "/" .. $a.name) then _settle($ctx, $a, "link") end
+    $v = current_version($ctx, $a)
+    if $v != nil then
+      $l = relink($ctx, $a)
+      push($out, {app: $a.name, action: "linked", version: $v, links: $l.links, skipped: $l.skipped, kept: $l.kept})
+    elif is_file(manifest_path($ctx, $a)) then
+      $kept = []
+      for $e in _read_manifest($ctx, $a)
+        if _still_ours($e) then remove($e.path) elif exists($e.path, {follow_symlinks: false}) then push($kept, $e.path) end
+      end
+      remove(manifest_path($ctx, $a))
+      push($out, {app: $a.name, action: "unlinked (not installed)", kept: $kept})
+    end
+  end
+  return $out
+end
+
+fn row($ctx, $app)
+  $st = _json_or($ctx.state_dir .. "/" .. $app.name .. ".json", {})
+  $inst = current_version($ctx, $app)
+  $latest = if $st.latest != nil then re_replace($st.latest.tag, "^v", "") else nil end
+  $status = if $st.error != nil then "error: " .. $st.error
+    elif $latest == nil then "unchecked"
+    elif $inst == nil then "not installed"
+    elif $inst == $latest then "current"
+    else "update" end
+  return {app: $app.name, repo: $app.repo, installed: $inst, latest: $latest,
+    published: if $st.latest != nil then slice($st.latest.published ?? "", 0, 10) else nil end,
+    checked: $st.checked, status: $status}
+end
+
+fn rows($ctx, $apps)
+  return map($apps, fn($a) = row($ctx, $a))
+end
+
+fn check($ctx, $apps)
+  for $a in $apps
+    check_app($ctx, $a)
+  end
+  return rows($ctx, $apps)
+end
+
+fn notes($ctx, $app)
+  $st = _json_or($ctx.state_dir .. "/" .. $app.name .. ".json", {})
+  if $st.latest == nil then $st = check_app($ctx, $app) end
+  if $st.latest == nil then raise("NO_RELEASE", $app.name .. ": " .. to_string($st.error)) end
+  return {app: $app.name, tag: $st.latest.tag, published: $st.latest.published, url: $st.latest.url, notes: $st.latest.notes}
+end
+
+-- Install the latest release of each app; one failure doesn't stop the rest.
+fn update($ctx, $apps)
+  $out = []
+  for $a in $apps
+    try
+      push($out, install($ctx, $a, nil))
+    catch $msg
+      push($out, {app: $a.name, action: "failed", error: $msg})
+    end
+  end
+  return $out
+end
+
+fn installed($ctx)
+  return filter($ctx.catalogue, fn($a) = current_version($ctx, $a) != nil)
+end
