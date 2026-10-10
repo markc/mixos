@@ -1,0 +1,18 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+{
+  status:"accepted", version:"0.1.0", service:"portald",
+  bus:{name:"org.freedesktop.portal.Desktop", path:"/org/freedesktop/portal/desktop", interface:"org.freedesktop.portal.Settings", version:2},
+  source:{verb:"settings.appearance.get", topic:"settingsd.desktop.changed.default", schema:1},
+  defaults:{"org.freedesktop.appearance":{"color-scheme":1,"contrast":0}},
+  keys:[
+    {namespace:"org.freedesktop.appearance", key:"color-scheme", type:"u", values:[1,2]},
+    {namespace:"org.freedesktop.appearance", key:"contrast", type:"u", values:[0,1]},
+    {namespace:"org.freedesktop.appearance", key:"accent-color", type:"(ddd)", optional:true}
+  ],
+  startup_wait_ms:0,
+  startup_read_deadline_ms:250,
+  read_all:{max_filters:64, max_filter_bytes:256, empty_matches_all:true},
+  backoff_ms:{initial:250, ceiling:30000},
+  cache:{file:"<instance>/<profile>/appearance.json", max_bytes:65536, reject_wrong_binding:true},
+  deferred:["file_chooser", "accent_export", "sandbox_app_id"]
+}

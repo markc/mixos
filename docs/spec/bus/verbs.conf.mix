@@ -19,6 +19,7 @@
     {name:"settings.apply", owner:"settingsd", version:"0.1.0", status:"accepted"},
     {name:"settings.reset", owner:"settingsd", version:"0.1.0", status:"accepted"},
     {name:"settings.status", owner:"settingsd", version:"0.1.0", status:"accepted"},
+    {name:"portald.status", owner:"portald", version:"0.1.0", status:"accepted"},
     {name:"busviewer.ping", owner:"busviewer", version:"0.1.1", status:"accepted"},
     {name:"busviewer.info", owner:"busviewer", version:"0.1.1", status:"accepted"},
     {name:"busviewer.show", owner:"busviewer", version:"0.1.1", status:"accepted"},

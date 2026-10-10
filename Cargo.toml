@@ -4,7 +4,7 @@
 
 [workspace]
 resolver = "3"
-members = ["libs/*", "services/noded", "services/noded/crates/*", "cli/mix-shell", "services/editd", "services/settingsd", "apps/busviewer", "apps/busviewer/crates/*"]
+members = ["libs/*", "services/noded", "services/noded/crates/*", "cli/mix-shell", "services/editd", "services/settingsd", "services/portald", "apps/busviewer", "apps/busviewer/crates/*"]
 exclude = ["vendor", "vendor/msedit/lsh", "vendor/msedit/stdext"]
 
 [workspace.package]
@@ -51,6 +51,9 @@ tracing = { version = "=0.1.44" }
 tracing-appender = "0.2"
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
 uuid = { version = "=1.24.1", features = ["fast-rng", "serde", "v7"] }
+# D-Bus for the session portal (services/portald). Pinned to the version the
+# lock already resolves; the tokio backend only, no async-io or blocking API.
+zbus = { version = "=5.19.0", default-features = false, features = ["tokio"] }
 
 # GUI (AGENTS.md §4.1): egui on wgpu from crates.io, one version of each.
 eframe = { version = "=0.36.2", default-features = false, features = ["accesskit", "default_fonts", "wayland", "wgpu"] }

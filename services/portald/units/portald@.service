@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixOS Settings portal for session %i
+# Wants, not Requires: the portal owns the session bus name and keeps serving
+# last-good values when settingsd or the ABP broker is down.
+Wants=noded@%i.service settingsd@%i.service
+After=noded@%i.service settingsd@%i.service
+PartOf=session@%i.target
+# Bus downtime must never exhaust restarts: portald exits on bus loss and must keep retrying.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=mixos
+# Keeps DBUS_SESSION_BUS_ADDRESS: the portal serves the session bus itself.
+EnvironmentFile=/etc/mixos/session/%i.env
+StateDirectory=portald
+ExecStart=/opt/mixos/bin/portald serve --instance %H
+KillMode=control-group
+TimeoutStopSec=10
+Restart=on-failure
+# Back off while the bus stays down: 1s growing to 15s over five restarts (systemd 254+).
+RestartSec=1
+RestartSteps=5
+RestartMaxDelaySec=15

@@ -1,0 +1,218 @@
+-- Restart recovery: portald must come back by itself once the session bus
+-- returns, under the restart policy written in its unit file.
+--
+-- Run from the checkout root after `cargo build --locked -p portald`:
+--   mix services/portald/tests/restart_recovery_test.mix \
+--       [--unit <unit file>] [--profile debug|release] [--workdir <dir>]
+-- Needs dbus-daemon, busctl, systemd-run and a systemd --user manager.
+--
+-- The restart keys are read from the unit file itself, not copied here, so
+-- the test checks the committed policy. Steps:
+--   1. a private session dbus-daemon listens on <workdir>/bus;
+--   2. target/<profile>/portald runs as a transient user unit carrying the
+--      file's [Unit] StartLimitIntervalSec and [Service] Restart, RestartSec,
+--      RestartSteps and RestartMaxDelaySec, with DBUS_SESSION_BUS_ADDRESS set;
+--   3. Settings ReadOne answers on the private bus;
+--   4. the bus is killed and the test waits 20 s, past systemd's 10 s default
+--      start-limit window; the unit must not be failed or start-limit-hit and
+--      must have restarted at least once;
+--   5. the bus returns on the same socket and ReadOne must answer within 40 s
+--      with no intervention.
+-- Prints PASS or FAIL and exits 1 on FAIL. The unit and daemon are cleaned up
+-- on every path.
+
+$DOWN_SECONDS = 20
+$RECOVER_SECONDS = 40
+-- [section, key] pairs read from the unit file. A key that is absent is simply
+-- not passed on, so a file without StartLimitIntervalSec runs with defaults.
+$KEYS = [["Unit", "StartLimitIntervalSec"], ["Unit", "StartLimitBurst"],
+  ["Service", "Restart"], ["Service", "RestartSec"],
+  ["Service", "RestartSteps"], ["Service", "RestartMaxDelaySec"]]
+
+-- The [Unit]/[Service] settings from $path that are listed in $KEYS.
+fn unit_settings($path)
+  $section = ""
+  $found = []
+  for each $raw in read_lines($path)
+    $text = trim($raw)
+    if starts_with($text, "[") then
+      $section = strip_prefix(replace($text, "]", ""), "[")
+    end
+    for each $key in $KEYS
+      if $section == $key[0] and starts_with($text, $key[1] .. "=") then
+        for each $seen in $found
+          if $seen.key == $key[1] then raise("UNIT", $key[1] .. " is set twice in " .. $path) end
+        end
+        push($found, {section: $section, key: $key[1], value: strip_prefix($text, $key[1] .. "=")})
+      end
+    end
+  end
+  return $found
+end
+
+fn start_bus($address, $log)
+  return spawn(["dbus-daemon", "--session", "--address=" .. $address, "--nofork", "--nopidfile"],
+    {detach: true, stdout: {file: $log, append: true}, stderr: "stdout"})
+end
+
+-- Bounded wait for the bus socket to appear.
+fn wait_socket($socket)
+  for each $i in range(1, 100)
+    if exists($socket) then return true end
+    sleep(0.1)
+  end
+  raise("BUS", "dbus-daemon did not create " .. $socket)
+end
+
+-- One ReadOne of org.freedesktop.appearance color-scheme on the private bus.
+fn read_scheme($address)
+  $r = run_argv(["busctl", "--address=" .. $address, "--timeout=5", "call",
+    "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
+    "org.freedesktop.portal.Settings", "ReadOne", "ss",
+    "org.freedesktop.appearance", "color-scheme"],
+    {timeout: 15, stderr: "stdout", max_output: 100000})
+  $out = trim($r.stdout)
+  return {answered: $r.ok and $r.exit_code == 0 and starts_with($out, "v "), out: $out}
+end
+
+-- Polls ReadOne once a second until it answers or $seconds pass. Returns
+-- {tries, out, elapsed} or nil.
+fn wait_answer($address, $seconds)
+  $start = monotonic()
+  $tries = 0
+  while monotonic() < $start + $seconds
+    $tries = $tries + 1
+    $r = read_scheme($address)
+    if $r.answered then
+      return {tries: $tries, out: $r.out, elapsed: monotonic() - $start}
+    end
+    sleep(1)
+  end
+  return nil
+end
+
+fn unit_state($unit)
+  $r = run_argv(["systemctl", "--user", "show", "-p", "ActiveState", "-p", "SubState",
+    "-p", "Result", "-p", "NRestarts", $unit .. ".service"], {timeout: 15, stderr: "stdout"})
+  $state = {}
+  for each $line in lines($r.stdout)
+    $kv = split_once($line, "=")
+    if $kv != nil then $state[$kv[0]] = $kv[1] end
+  end
+  return $state
+end
+
+-- Arguments: --unit, --profile and --workdir, each followed by a value.
+$unit_path = "services/portald/units/portald@.service"
+$profile = "debug"
+$workdir = ""
+$pending = ""
+for each $arg in args()
+  if $pending == "" then
+    if $arg == "--unit" or $arg == "--profile" or $arg == "--workdir" then
+      $pending = $arg
+    else
+      raise("ARGS", "unknown argument " .. $arg)
+    end
+  else
+    if $pending == "--unit" then $unit_path = $arg end
+    if $pending == "--profile" then $profile = $arg end
+    if $pending == "--workdir" then $workdir = $arg end
+    $pending = ""
+  end
+end
+if $pending != "" then raise("ARGS", $pending .. " needs a value") end
+
+if not is_file($unit_path) then raise("TEST_CONFIG", "no unit file at " .. $unit_path) end
+if not re_match($profile, "^[a-z]+$") then raise("ARGS", "bad profile " .. $profile) end
+$portald = cwd() .. "/target/" .. $profile .. "/portald"
+if not is_file($portald) then raise("TEST_CONFIG", "no binary at " .. $portald .. " (cargo build --locked -p portald)") end
+
+$settings = unit_settings($unit_path)
+$has_restart = false
+$argv_props = []
+for each $setting in $settings
+  push($argv_props, "--property=" .. $setting.key .. "=" .. $setting.value)
+  if $setting.key == "Restart" and $setting.value == "on-failure" then $has_restart = true end
+end
+if not $has_restart then raise("UNIT", "Restart=on-failure missing from " .. $unit_path) end
+
+$created = false
+if $workdir == "" then
+  $workdir = trim(run_argv_must(["mktemp", "-d"], {timeout: 15}))
+  $created = true
+else
+  mkdir($workdir)
+end
+$socket = $workdir .. "/bus"
+$address = "unix:path=" .. $socket
+$bus_log = $workdir .. "/bus.log"
+$unit = "portald-restart-" .. to_string(pid()) .. "-" .. to_string(trunc(time()))
+
+$bus_pid = nil
+$verdict = "FAIL"
+$reason = ""
+try
+  print("unit file: " .. $unit_path .. " settings: " .. json_encode($settings))
+  $bus_pid = start_bus($address, $bus_log)
+  wait_socket($socket)
+
+  $argv = ["systemd-run", "--user", "--quiet", "--unit=" .. $unit]
+  for each $prop in $argv_props
+    push($argv, $prop)
+  end
+  push($argv, "--setenv=DBUS_SESSION_BUS_ADDRESS=" .. $address)
+  for each $word in ["--", $portald, "serve", "--instance", "test"]
+    push($argv, $word)
+  end
+  $started = run_argv($argv, {timeout: 30, stderr: "stdout"})
+  if not $started.ok or $started.exit_code != 0 then
+    raise("UNIT", "systemd-run failed: " .. $started.stdout)
+  end
+
+  $first = wait_answer($address, 30)
+  if $first == nil then raise("SETTINGS", "ReadOne did not answer before the outage") end
+  print("before outage: ReadOne answered after " .. to_string($first.tries) .. " tries: " .. $first.out)
+
+  kill($bus_pid)
+  if exists($socket) then remove($socket) end
+  sleep($DOWN_SECONDS)
+  $during = unit_state($unit)
+  print("during outage (" .. to_string($DOWN_SECONDS) .. " s): ActiveState=" .. $during["ActiveState"] ..
+    " SubState=" .. $during["SubState"] .. " Result=" .. $during["Result"] .. " NRestarts=" .. $during["NRestarts"])
+  if $during["ActiveState"] == "failed" or $during["Result"] == "start-limit-hit" then
+    raise("START_LIMIT", "unit gave up while the bus was down: ActiveState=" .. $during["ActiveState"] ..
+      " Result=" .. $during["Result"])
+  end
+  if $during["NRestarts"] == "0" or $during["NRestarts"] == nil then
+    raise("NO_RESTART", "unit never restarted while the bus was down; the outage did not exercise the policy")
+  end
+
+  $bus_pid = start_bus($address, $bus_log)
+  wait_socket($socket)
+  $back = wait_answer($address, $RECOVER_SECONDS)
+  if $back == nil then
+    $after = unit_state($unit)
+    raise("RECOVERY", "ReadOne did not answer " .. to_string($RECOVER_SECONDS) .. " s after the bus returned; ActiveState=" ..
+      $after["ActiveState"] .. " Result=" .. $after["Result"] .. " NRestarts=" .. $after["NRestarts"])
+  end
+  $verdict = "PASS"
+  print("after bus return: ReadOne answered after " .. to_string(trunc($back.elapsed, 1)) .. " s: " .. $back.out)
+catch $err
+  $reason = to_string($err)
+finally
+  $_stop = run_argv(["systemctl", "--user", "stop", $unit .. ".service"], {timeout: 30})
+  $journal = run_argv(["journalctl", "--user", "-u", $unit .. ".service", "--no-pager", "-n", "60"], {timeout: 30, max_output: 200000})
+  print("--- journal for " .. $unit .. " ---\n" .. $journal.stdout)
+  $_reset = run_argv(["systemctl", "--user", "reset-failed", $unit .. ".service"], {timeout: 30})
+  if $bus_pid != nil then $_kill = kill($bus_pid) end
+  if exists($socket) then remove($socket) end
+  if $created and starts_with($workdir, "/") then remove_dir($workdir) end
+end
+
+if $verdict == "PASS" then
+  print("PASS portald restarts recover after a session-bus outage under the unit file policy")
+else
+  print("FAIL " .. $reason)
+  exit(1)
+end

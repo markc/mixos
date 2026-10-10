@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[package]
+name = "portald"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "XDG desktop portal on the session bus: the Settings interface"
+
+[package.metadata.mixos]
+component = "portald"
+kind = "service"
+layer = "core"
+contract = "public"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+settings = { workspace = true, features = ["native"] }
+bus = { workspace = true, features = ["native"] }
+zbus.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "signal"] }
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+buildinfo.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+futures-util.workspace = true
+test-broker = { path = "../../libs/test-broker" }
+settingsd = { path = "../settingsd" }
+
+[build-dependencies]
+buildinfo.workspace = true

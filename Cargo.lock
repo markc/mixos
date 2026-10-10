@@ -4557,6 +4557,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "portald"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "buildinfo",
+ "bus",
+ "clap",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "settings",
+ "settingsd",
+ "tempfile",
+ "test-broker",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "zbus",
+]
+
+[[package]]
 name = "potential_utf"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5381,6 +5402,7 @@ dependencies = [
  "bus",
  "clap",
  "config",
+ "design",
  "libc",
  "serde",
  "serde_json",
@@ -6007,6 +6029,7 @@ dependencies = [
  "signal-hook-registry",
  "socket2",
  "tokio-macros",
+ "tracing",
  "windows-sys 0.61.2",
 ]
 
@@ -7579,6 +7602,7 @@ dependencies = [
  "rustix 1.1.4",
  "serde",
  "serde_repr",
+ "tokio",
  "tracing",
  "uds_windows",
  "uuid",
