@@ -68,10 +68,6 @@ impl Parser {
         self.tokens.get(self.pos).unwrap_or(&Token::Eof)
     }
 
-    fn peek_at(&self, offset: usize) -> &Token {
-        self.tokens.get(self.pos + offset).unwrap_or(&Token::Eof)
-    }
-
     fn advance(&mut self) -> Token {
         let token = self.peek().clone();
         if self.pos < self.tokens.len() {

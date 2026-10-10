@@ -16,10 +16,10 @@
 //!   missing key;
 //! - unary `-`, `not` and `!`; arithmetic `+ - * / % **` over f64 with
 //!   numeric-string and bool coercion; `..` concatenation with Mix's text
-//!   forms (`1 .. 2` is `"12"`, nil is `"nil"`); comparisons `== != < > <=
-//!   >= eq ne`; short-circuit `and`, `or` and `??`, which return the
-//!   deciding operand; `cond ? a : b`; `if c then a elif d then b else e
-//!   end`.
+//!   forms (`1 .. 2` is `"12"`, nil is `"nil"`); comparisons
+//!   `== != < > <= >= eq ne`; short-circuit `and`, `or` and `??`, which
+//!   return the deciding operand; `cond ? a : b`; `if c then a elif d then b
+//!   else e end`.
 //!
 //! Anything that could call out, loop, assign or run a statement is
 //! refused when compiling, with [`ErrorKind::NotAllowed`]: function calls
