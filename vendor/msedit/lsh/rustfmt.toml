@@ -1,0 +1,6 @@
+# Upstream microsoft/edit's rustfmt.toml, stable options only, so the
+# workspace's `cargo fmt --all --check` keeps this crate in upstream's shape.
+style_edition = "2024"
+use_small_heuristics = "Max"
+newline_style = "Unix"
+use_field_init_shorthand = true

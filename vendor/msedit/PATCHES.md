@@ -24,6 +24,13 @@ External path modules declare their child file paths explicitly, including
 the extracted stdext module, so the same buffer compiles from its global
 vendor location without `mod.rs` files or duplicate implementations.
 
+`lsh/rustfmt.toml` and `stdext/rustfmt.toml` carry the stable options of
+upstream's `rustfmt.toml` (`group_imports`, `imports_granularity` and
+`format_code_in_doc_comments` need nightly and are left out). ced's `syntax`
+crate depends on both by path, so the workspace's `cargo fmt --all` reaches
+them; the files keep them in upstream's formatting. `buffer/` is compiled
+into `libs/edit` and follows the workspace style.
+
 Guards: the retained allocation-failure and Unicode buffer tests, property
 and OT convergence tests, deterministic generator and committed-definition
 freshness tests. A refresh must preserve all of them.
