@@ -23,8 +23,11 @@ pub const MAX_SNAPSHOT_BYTES: usize = 1024 * 1024 - 64 * 1024;
 pub const MAX_RECEIPTS: usize = 128;
 
 /// Registered service ownership is settingsd, independent of profile name.
+/// The settings topic is `TOPIC_PREFIX` followed by the profile name.
+pub const TOPIC_PREFIX: &str = "settingsd.desktop.changed.";
+
 pub fn topic(profile: &str) -> String {
-    format!("settingsd.desktop.changed.{profile}")
+    format!("{TOPIC_PREFIX}{profile}")
 }
 
 pub fn digest<T: serde::Serialize>(value: &T) -> Result<String, serde_json::Error> {

@@ -11,6 +11,9 @@ pub use bus::native_client::SupervisedClient as Client;
 use std::time::Duration;
 
 pub const BOOTSTRAP_BUDGET: Duration = Duration::from_secs(1);
+/// Owner stamp written by noded on reserved-publisher topics (services/noded
+/// `BROKER_SERVICE_HEADER`). Read only from the verified broker frame.
+const BROKER_SERVICE_HEADER: &str = "broker_service";
 
 /// Sample a coherent lifecycle/generation pair on the UI loop. Holding the
 /// watch read guard prevents a state transition between the two observations.
@@ -177,12 +180,39 @@ impl Decoded {
             && self.fingerprint.is_some()
             && self.fingerprint == other.fingerprint
     }
-    pub fn from_command(binding: &Binding, command: &IncomingCommand) -> Option<Self> {
-        if command.topic() != Some(topic(&binding.profile).as_str())
-            || command.header("broker_service") != Some("settingsd")
-        {
-            return None;
+    /// Admit one broker delivery. Only a frame on OUR topic is judged: any
+    /// other frame is [`Admission::Other`]. A frame on our topic without the
+    /// broker's `settingsd` owner stamp is [`Admission::Refused`] with a stable
+    /// reason code, never silently dropped. The stamp is only written by a
+    /// noded that knows the settings topic is reserved to settingsd; an older
+    /// noded delivers the same topic unstamped.
+    pub fn admit(binding: &Binding, command: &IncomingCommand) -> Admission {
+        // Compared without building the topic string: a refused frame is the hot
+        // path under a peer's flood, and it must not allocate.
+        let on_our_topic = command
+            .topic()
+            .and_then(|topic| topic.strip_prefix(crate::TOPIC_PREFIX))
+            == Some(binding.profile.as_str());
+        if !on_our_topic {
+            return Admission::Other;
         }
+        match command.header(BROKER_SERVICE_HEADER) {
+            Some("settingsd") => {}
+            Some(_) => return Admission::Refused(REFUSED_WRONG_OWNER),
+            None => return Admission::Refused(REFUSED_MISSING_OWNER),
+        }
+        Admission::Admitted(Box::new(Self::decode(binding, command)))
+    }
+
+    /// Admitted deliveries only; see [`Self::admit`] for the refusal reasons.
+    pub fn from_command(binding: &Binding, command: &IncomingCommand) -> Option<Self> {
+        match Self::admit(binding, command) {
+            Admission::Admitted(decoded) => Some(*decoded),
+            Admission::Other | Admission::Refused(_) => None,
+        }
+    }
+
+    fn decode(binding: &Binding, command: &IncomingCommand) -> Self {
         let result = if command.body.len() > MAX_SNAPSHOT_BYTES {
             Err(Diagnostic::new(
                 "invalid_delivery",
@@ -193,12 +223,100 @@ impl Decoded {
             serde_json::from_str::<Snapshot>(&command.body)
                 .map_err(|error| Diagnostic::new("invalid_delivery", "snapshot", error.to_string()))
         };
-        Some(Self {
+        Self {
             binding: binding.clone(),
             generation: command.generation,
             result,
             fingerprint: (command.body.len() <= MAX_SNAPSHOT_BYTES)
                 .then(|| *blake3::hash(command.body.as_bytes()).as_bytes()),
-        })
+        }
+    }
+}
+
+/// Stable reason codes for a refused delivery on our topic. They are logged and
+/// reported by hosts, so they never embed the peer-supplied header value.
+pub const REFUSED_MISSING_OWNER: &str = "missing_broker_service";
+pub const REFUSED_WRONG_OWNER: &str = "wrong_broker_service";
+
+/// Outcome of [`Decoded::admit`] for one broker frame.
+#[derive(Debug)]
+pub enum Admission {
+    /// Not a delivery on this binding's settings topic.
+    Other,
+    /// On our topic but not owner-stamped by settingsd. Never decoded.
+    Refused(&'static str),
+    Admitted(Box<Decoded>),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    fn binding() -> Binding {
+        Binding {
+            instance: "host".into(),
+            profile: "default".into(),
+        }
+    }
+
+    /// A delivery as the native reader builds it: `topic` names the topic and
+    /// `broker_service` is present only when the broker stamped the owner.
+    fn delivery(headers: &[(&str, &str)]) -> IncomingCommand {
+        IncomingCommand {
+            generation: 1,
+            from: "noded".into(),
+            command: topic("default"),
+            id: None,
+            args: serde_json::Value::Null,
+            body: "{}".into(),
+            headers: headers
+                .iter()
+                .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+                .collect::<BTreeMap<_, _>>(),
+        }
+    }
+
+    #[test]
+    fn an_unstamped_frame_on_our_topic_is_refused_with_a_reason() {
+        // A noded older than the settings reservation delivers the topic
+        // without broker_service. Admission must say so, not return None.
+        let frame = delivery(&[("topic", &topic("default"))]);
+        assert!(matches!(
+            Decoded::admit(&binding(), &frame),
+            Admission::Refused(REFUSED_MISSING_OWNER)
+        ));
+        assert!(Decoded::from_command(&binding(), &frame).is_none());
+    }
+
+    #[test]
+    fn a_frame_stamped_by_another_owner_is_refused_with_a_reason() {
+        let frame = delivery(&[("topic", &topic("default")), ("broker_service", "operator")]);
+        assert!(matches!(
+            Decoded::admit(&binding(), &frame),
+            Admission::Refused(REFUSED_WRONG_OWNER)
+        ));
+    }
+
+    #[test]
+    fn a_settingsd_stamped_frame_on_our_topic_is_admitted() {
+        let frame = delivery(&[
+            ("topic", &topic("default")),
+            ("broker_service", "settingsd"),
+        ]);
+        assert!(matches!(
+            Decoded::admit(&binding(), &frame),
+            Admission::Admitted(_)
+        ));
+        assert!(Decoded::from_command(&binding(), &frame).is_some());
+    }
+
+    #[test]
+    fn other_topics_are_not_judged_and_stay_silent() {
+        let frame = delivery(&[("topic", "settingsd.desktop.changed.other")]);
+        assert!(matches!(
+            Decoded::admit(&binding(), &frame),
+            Admission::Other
+        ));
     }
 }

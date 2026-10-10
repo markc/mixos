@@ -477,3 +477,35 @@ fn revert_cancels_unapplied_stage_and_unchanged_valid_update_clears_failure() {
     assert!(state.fault().is_none());
     assert_eq!(state.applied().unwrap().revision, Revision(5));
 }
+#[test]
+fn refresh_during_a_read_merges_into_one_follow_up() {
+    // The consumer's refresh starts one authority read and adopts nothing itself.
+    // Portald's feed no longer calls refresh for a refused hint during a read,
+    // because that discards the in-flight result. This pins the consumer contract.
+    let mut state = consumer();
+    activate(&mut state, snapshot(1, "a"));
+    let read = state.refresh().expect("one authority read");
+    assert_eq!(read.kind(), WorkKind::Read);
+    assert_eq!(state.current().unwrap().revision, Revision(1));
+    assert!(state.pending().is_none());
+    // A burst during that read merges into it and starts nothing new.
+    assert!(state.refresh().is_none());
+    assert!(state.refresh().is_none());
+    assert!(state.current_work() == Some(&read));
+    // The in-flight result is not activated; exactly one follow-up read starts.
+    let follow_up = state
+        .complete(&read, Ok(Some(snapshot(2, "a"))))
+        .expect("one follow-up read");
+    assert_eq!(follow_up.kind(), WorkKind::Read);
+    assert!(state.pending().is_none());
+    assert_eq!(state.current().unwrap().revision, Revision(1));
+    // Only the follow-up's result is adopted, and nothing further is queued.
+    assert!(
+        state
+            .complete(&follow_up, Ok(Some(snapshot(2, "a"))))
+            .is_none()
+    );
+    // Render data is unchanged, so the revision advances without a stage.
+    assert!(state.pending().is_none());
+    assert_eq!(state.applied().unwrap().revision, Revision(2));
+}

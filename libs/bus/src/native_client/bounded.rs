@@ -92,6 +92,22 @@ impl BoundedIncomingReceiver {
         }
     }
 
+    /// Take the next retained command or overflow marker if one is already queued.
+    /// Never waits: `None` means nothing is ready now. Ordering matches `recv`.
+    pub fn try_recv(&mut self) -> Option<BoundedIncomingEvent> {
+        let dropped = self.overflow.take_pending();
+        if dropped != 0 {
+            return Some(BoundedIncomingEvent::Overflow { dropped });
+        }
+        if let Some(command) = self.deferred.take() {
+            return self.deliver(Some(command));
+        }
+        match self.receiver.try_recv() {
+            Ok(command) => self.deliver(Some(command)),
+            Err(_) => None,
+        }
+    }
+
     fn deliver(&mut self, command: Option<IncomingCommand>) -> Option<BoundedIncomingEvent> {
         // Linearise delivery against recording loss, independently of the
         // notification. Keep an already-dequeued command until invalidation.
@@ -145,6 +161,29 @@ impl BoundedIncomingSender {
     pub(crate) fn record_overflow(&self, dropped: u64) {
         self.overflow.record(dropped);
     }
+}
+
+/// Producer half of a bounded lane, for feed tests. It is the dispatcher's own
+/// sender, so an injected frame overflows exactly as a broker frame does.
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct BoundedIncomingInjector(BoundedIncomingSender);
+
+impl BoundedIncomingInjector {
+    /// Never waits. A full lane drops the frame and counts it, as the dispatcher
+    /// does. Returns `false` only when the consumer has gone away.
+    pub fn try_send(&self, command: IncomingCommand) -> bool {
+        self.0.try_send(command)
+    }
+}
+
+/// A bounded lane of `capacity` with an injector for its producer side.
+#[doc(hidden)]
+pub fn bounded_incoming_injector(
+    capacity: usize,
+) -> (BoundedIncomingInjector, BoundedIncomingReceiver) {
+    let (sender, receiver) = bounded_incoming_channel(capacity);
+    (BoundedIncomingInjector(sender), receiver)
 }
 
 pub(crate) fn bounded_incoming_channel(

@@ -13,7 +13,10 @@ pub use crate::PortReply;
 pub use crate::client::{
     ConnState, MAX_INITIAL_ATTEMPTS, SubscriptionRegistry, SupervisedClient, SupervisedError,
 };
-pub use bounded::{BoundedIncomingEvent, BoundedIncomingReceiver};
+pub use bounded::{
+    BoundedIncomingEvent, BoundedIncomingInjector, BoundedIncomingReceiver,
+    bounded_incoming_injector,
+};
 pub use native::{
     NameCollision, NativeIncomingReceiver, NodedClient, RegistrationRejected,
     RegistrationRejectionKind,

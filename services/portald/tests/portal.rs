@@ -761,6 +761,12 @@ async fn native_startup_live_change_and_settingsd_restart_without_broker_reconne
         .await?;
     assert_eq!(changed["status"], "changed");
     wait_source(&portal, 2, 0).await?;
+    // The live change arrived as a broker delivery stamped by THIS tree's noded.
+    // A refusal here means the broker stopped stamping settingsd as the owner.
+    assert_eq!(
+        status::report(&portal.shared)["portal"]["delivery_refusals"],
+        0
+    );
     // Check the broker transport never changed generation while startup/live
     // update/restart were handled, and the signal is from the D-Bus name owner.
     let current_appearance = operator

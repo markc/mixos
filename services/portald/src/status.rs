@@ -30,6 +30,22 @@ pub struct Status {
     pub accepted: u64,
     pub stale: u64,
     pub rejected: u64,
+    /// Settings deliveries on our topic refused before decoding (not owner-stamped).
+    pub delivery_refusals: u64,
+    /// Reason code of the most recent refused delivery.
+    pub last_delivery_refusal: Option<&'static str>,
+    /// Refused-delivery warning lines logged. Rate-limited; `delivery_refusals` stays exact.
+    pub refusal_reports: u64,
+    /// Lane commands dropped because the feed was behind. Exact. Each loss is a hint.
+    pub lane_dropped: u64,
+    /// Lane overflow warning lines logged. Rate-limited; `lane_dropped` stays exact.
+    pub overflow_reports: u64,
+    /// Replies shed because the drain's reply queue was full. Exact.
+    pub replies_dropped: u64,
+    /// Shed-reply warning lines logged. Rate-limited; `replies_dropped` stays exact.
+    pub reply_reports: u64,
+    /// Appearance reads started against settingsd, all causes.
+    pub authority_reads: u64,
 }
 
 impl Status {
@@ -44,6 +60,14 @@ impl Status {
             accepted: 0,
             stale: 0,
             rejected: 0,
+            delivery_refusals: 0,
+            last_delivery_refusal: None,
+            refusal_reports: 0,
+            lane_dropped: 0,
+            overflow_reports: 0,
+            replies_dropped: 0,
+            reply_reports: 0,
+            authority_reads: 0,
         }
     }
 }
