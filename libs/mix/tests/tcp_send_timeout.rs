@@ -121,6 +121,30 @@ async fn a_slow_reader_cannot_stretch_the_send_past_the_deadline() {
     .await;
 }
 
+/// A steady reader that drains fast enough that writes rarely or never
+/// block, but too slowly for the payload (about 32 MB/s for 64 MiB): the
+/// deadline is checked on every write, so the send still fails at it.
+#[tokio::test(flavor = "current_thread")]
+async fn a_steady_reader_cannot_finish_the_send_after_the_deadline() {
+    times_out(
+        |mut stream| {
+            stream
+                .set_read_timeout(Some(Duration::from_millis(500)))
+                .unwrap();
+            let until = Instant::now() + Duration::from_secs(3);
+            let mut buf = vec![0u8; 256 * 1024];
+            while Instant::now() < until {
+                if matches!(stream.read(&mut buf), Ok(0)) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(8));
+            }
+        },
+        false,
+    )
+    .await;
+}
+
 /// The same option on a tcp_on handle: the receipt deadline.
 #[tokio::test(flavor = "current_thread")]
 async fn a_subscribed_handle_honours_the_send_timeout() {

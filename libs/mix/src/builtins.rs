@@ -22588,13 +22588,13 @@ fn tcp_send_deadline(
         .set_nonblocking(true)
         .map_err(|e| tcp_err("tcp_send", e))?;
     let mut off = 0usize;
+    let expired = || deadline.is_some_and(|d| d <= std::time::Instant::now());
     loop {
-        match send_step(&mut conn, payload, &mut off) {
-            SendStep::Progress => continue,
-            SendStep::Done => break,
-            // The connection is dropped here: retired, as on any send error.
-            SendStep::Failed(e) => return Err(tcp_err("tcp_send", e)),
-            SendStep::WouldBlock => {}
+        // A hard bound, checked on every step (an early return drops, and
+        // so retires, the connection): a peer that drains fast enough never
+        // to block still cannot carry the send past the deadline.
+        if expired() {
+            return Err(tcp_send_timeout_error(off, payload.len()));
         }
         if crate::interrupt::is_interrupted() {
             return Err(tcp_send_stopped(
@@ -22603,6 +22603,15 @@ fn tcp_send_deadline(
                 off,
                 payload.len(),
             ));
+        }
+        match send_step(&mut conn, payload, &mut off) {
+            SendStep::Progress => continue,
+            SendStep::Done if expired() => {
+                return Err(tcp_send_timeout_error(off, payload.len()));
+            }
+            SendStep::Done => break,
+            SendStep::Failed(e) => return Err(tcp_err("tcp_send", e)),
+            SendStep::WouldBlock => {}
         }
         let left = match deadline {
             None => ACCEPT_SLICE,
@@ -24583,7 +24592,24 @@ pub(crate) mod socket_sources {
             .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
         let deadline = deadline_after(timeout_seconds);
         let mut off = 0usize;
+        let mut steps = 0u32;
         loop {
+            // A hard bound, checked on every step: a peer that drains fast
+            // enough never to block, but too slowly for the payload, still
+            // fails at the deadline, never after it.
+            if deadline.is_some_and(|d| d <= std::time::Instant::now()) {
+                guard.retire();
+                return Err(super::tcp_send_timeout_error(off, payload.len()));
+            }
+            if interruptible && crate::interrupt::is_interrupted() {
+                guard.retire();
+                return Err(super::tcp_send_stopped(
+                    "TCP_SEND_INTERRUPTED",
+                    "was interrupted",
+                    off,
+                    payload.len(),
+                ));
+            }
             let Some(PullWire::Tcp(conn)) = guard.wire.as_mut() else {
                 return Err(refusal("SOCKET_PULL", "tcp_send: not a tcp connection"));
             };
@@ -24592,8 +24618,20 @@ pub(crate) mod socket_sources {
                 guard.retire_on_drop = true;
             }
             match step {
-                super::SendStep::Progress => continue,
+                super::SendStep::Progress => {
+                    // Writes that never block would otherwise never yield,
+                    // starving the SIGTERM and Ctrl-C select arms.
+                    steps += 1;
+                    if steps % 16 == 0 {
+                        tokio::task::yield_now().await;
+                    }
+                    continue;
+                }
                 super::SendStep::Done => {
+                    if deadline.is_some_and(|d| d <= std::time::Instant::now()) {
+                        guard.retire();
+                        return Err(super::tcp_send_timeout_error(off, payload.len()));
+                    }
                     guard.retire_on_drop = false;
                     guard.finish();
                     return Ok(Value::Number(payload.len() as f64));
@@ -24723,12 +24761,10 @@ pub(crate) mod socket_sources {
             .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
         // checked_add: a huge timeout waits forever instead of panicking.
         let deadline = deadline_after(timeout_seconds);
+        // Expiry is decided only when nothing is ready (wait_ready returns
+        // Done): a frame, line or bytes already buffered are served first,
+        // however short the timeout, as the blocking builtins do.
         loop {
-            let left = deadline.map(|d| d.saturating_duration_since(std::time::Instant::now()));
-            if left.is_some_and(|l| l.is_zero()) {
-                guard.finish();
-                return Ok(Value::Nil);
-            }
             let would_block = match guard.wire.as_mut().expect("wire present") {
                 PullWire::Ws(conn) => match conn.read() {
                     Ok(tungstenite::Message::Text(t)) => {

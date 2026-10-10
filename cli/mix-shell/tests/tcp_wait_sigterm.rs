@@ -15,6 +15,10 @@ use std::time::{Duration, Instant};
 /// Run `script`, wait for it to print "ready", send SIGTERM, and require a
 /// graceful 128+SIGTERM exit within `within`.
 fn sigterm_ends(name: &str, script: &str, within: Duration) {
+    sigterm_ends_with(name, script, within, &[]);
+}
+
+fn sigterm_ends_with(name: &str, script: &str, within: Duration, envs: &[(&str, String)]) {
     let dir = std::env::temp_dir().join(format!("tcp-sigterm-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -24,6 +28,7 @@ fn sigterm_ends(name: &str, script: &str, within: Duration) {
     let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
         .arg(&path)
         .env("MIX_SIGTERM_BACKSTOP_SECS", "60")
+        .envs(envs.iter().map(|(k, v)| (*k, v.as_str())))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -136,5 +141,34 @@ print("ready")
 tcp_send($c, $payload, {timeout: 0})
 "#,
         WITHIN,
+    );
+}
+
+/// A 128 MiB send to a peer that keeps draining (about 32 MB/s), so writes rarely
+/// or never block: the send loop yields to the runtime regularly, so
+/// SIGTERM is not starved by a stream of successful writes.
+#[test]
+fn sigterm_ends_a_send_to_a_steadily_draining_peer() {
+    use std::io::Read;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        let Ok((mut stream, _)) = listener.accept() else {
+            return;
+        };
+        let mut buf = vec![0u8; 256 * 1024];
+        while !matches!(stream.read(&mut buf), Ok(0) | Err(_)) {
+            std::thread::sleep(Duration::from_millis(8));
+        }
+    });
+    sigterm_ends_with(
+        "send-draining",
+        r#"$c = tcp_connect("127.0.0.1", to_number(env("PEER_PORT")), {timeout: 5})
+$payload = repeat("x", 134217728)
+print("ready")
+tcp_send($c, $payload, {timeout: 0})
+"#,
+        WITHIN,
+        &[("PEER_PORT", port.to_string())],
     );
 }

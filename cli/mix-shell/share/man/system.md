@@ -1862,7 +1862,9 @@ so a reader that drains a few bytes at a time can stretch one send far
 past 30 s. `tcp_send(h, payload, {timeout: 5})` instead bounds the WHOLE
 send by one deadline, computed once (seconds; `0` waits forever, like
 `tcp_recv`): writes are non-blocking and the wait for room happens on the
-async runtime, so SIGTERM and Ctrl-C end it too. On expiry it raises
+async runtime, so SIGTERM and Ctrl-C end it too. The deadline is checked
+before every write, so a peer that keeps draining without ever filling
+the socket cannot carry the send past it. On expiry it raises
 `TCP_SEND_TIMEOUT` with `details: {written, total}` and retires the
 handle, because a partly written message leaves the stream unusable.
 Bytes already written stay written; the peer may have received part of

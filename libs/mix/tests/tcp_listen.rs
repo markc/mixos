@@ -159,6 +159,46 @@ tcp_close($s)
     e.close_native_events();
 }
 
+/// Data already buffered is served before a timeout is judged: two lines
+/// arriving in one write come back one per call even with a timeout so
+/// short it has passed before the first look at the socket.
+#[tokio::test(flavor = "current_thread")]
+async fn buffered_lines_are_served_before_a_tiny_timeout_expires() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream.write_all(b"one\ntwo\n").unwrap();
+        std::thread::sleep(Duration::from_millis(1500));
+    });
+    let mut e = Evaluator::new();
+    e.set_global("port", Value::Number(port as f64));
+    exec(
+        &mut e,
+        r#"$h = tcp_connect("127.0.0.1", $port, {timeout: 5})"#,
+    )
+    .await
+    .unwrap();
+    // Let both lines land in the socket before the first receive.
+    std::thread::sleep(Duration::from_millis(200));
+    exec(
+        &mut e,
+        r#"
+$first = tcp_recv_line($h, {timeout: 0.000000001})
+$second = tcp_recv_line($h, {timeout: 0.000000001})
+$third = tcp_recv_line($h, {timeout: 0.000000001})
+$none = $third == nil
+tcp_close($h)
+"#,
+    )
+    .await
+    .unwrap();
+    assert_eq!(global_str(&e, "first"), "one");
+    assert_eq!(global_str(&e, "second"), "two");
+    assert_eq!(global_str(&e, "none"), "true");
+    server.join().unwrap();
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn accept_timeout_returns_nil_and_the_listener_stays_usable() {
     let mut e = Evaluator::new();
