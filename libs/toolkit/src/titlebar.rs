@@ -235,7 +235,7 @@ fn right_group<S>(
             Control::Combo { .. } => Slot::Combo,
             Control::Icon { .. } => Slot::Fixed(ICON_BUTTON),
             Control::Link { command, .. } => {
-                let label = registry.get(command).map(|c| strings.get(c.label)).unwrap_or_default();
+                let label = registry.get(command).map(|c| crate::command::label_text(strings, c.label)).unwrap_or_default();
                 Slot::Link(Link::width(ui, &label))
             }
         })
@@ -248,7 +248,7 @@ fn right_group<S>(
             Control::Combo { .. } => combo_width,
             Control::Icon { .. } => ICON_BUTTON,
             Control::Link { command, .. } => {
-                let label = registry.get(command).map(|c| strings.get(c.label)).unwrap_or_default();
+                let label = registry.get(command).map(|c| crate::command::label_text(strings, c.label)).unwrap_or_default();
                 Link::width(ui, &label)
             }
         };
@@ -265,7 +265,7 @@ fn right_group<S>(
                 (c, cell.add_enabled((c.enabled)(state), button).clicked())
             }),
             Control::Link { command, icon } => registry.get(command).map(|c| {
-                let link = Link::new(*icon, strings.get(c.label));
+                let link = Link::new(*icon, crate::command::label_text(strings, c.label));
                 (c, cell.add_enabled((c.enabled)(state), link).clicked())
             }),
         };

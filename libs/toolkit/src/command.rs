@@ -14,7 +14,19 @@ use crate::menu::{self, Entry, Menu, Row};
 use crate::strings::Strings;
 use egui::{KeyboardShortcut, ModifierNames};
 use serde::Serialize;
+use std::collections::HashMap;
 use std::fmt;
+
+/// The message `key` from the app's catalogue, else from the toolkit's own
+/// (the labels of toolkit-made commands, such as the Theme menu's), else
+/// the key itself.
+pub fn label_text(strings: &Strings, key: &str) -> String {
+    if strings.has(key) {
+        strings.get(key)
+    } else {
+        crate::strings::own(key)
+    }
+}
 
 /// One action.
 pub struct Command<S> {
@@ -70,20 +82,46 @@ pub struct Described {
     pub menu: Option<String>,
     pub shortcut: Option<String>,
     pub enabled: bool,
+    /// A choice command's tick; `None` for an ordinary command.
+    pub checked: Option<bool>,
 }
+
+/// Runs a choice command: a closure, so it can carry its choice.
+type ChoiceRun<S> = Box<dyn Fn(&mut S)>;
+
+/// Whether a choice command is the current choice.
+type ChoiceChecked<S> = Box<dyn Fn(&S) -> bool>;
 
 /// The application's commands, in menu order.
 pub struct Registry<S> {
     commands: Vec<Command<S>>,
     /// Fluent key of the menu that opens with a search field (§3.5).
     search_menu: Option<&'static str>,
+    /// Choice commands ([`Registry::add_choice`]): their runs and ticks,
+    /// by command id. Their [`Command`] entries carry everything else.
+    choice_runs: HashMap<&'static str, ChoiceRun<S>>,
+    choice_checks: HashMap<&'static str, ChoiceChecked<S>>,
 }
 
 impl<S> Default for Registry<S> {
     fn default() -> Self {
-        Self { commands: Vec::new(), search_menu: None }
+        Self { commands: Vec::new(), search_menu: None, choice_runs: HashMap::new(), choice_checks: HashMap::new() }
     }
 }
+
+/// Where a choice command sits and what it shows: a [`Command`]'s fields
+/// less its `run` and `enabled` (a choice can always be chosen).
+#[derive(Clone, Copy, Debug)]
+pub struct Place {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub menu: Option<&'static str>,
+    pub submenu: Option<&'static str>,
+    pub group: u8,
+}
+
+/// A choice command's own run does nothing: the registry runs its closure.
+fn choose<S>(_: &mut S) {}
 
 impl<S> Registry<S> {
     pub fn new() -> Self {
@@ -108,6 +146,26 @@ impl<S> Registry<S> {
         self
     }
 
+    /// Add a choice command: one of a group, ticked in its menu while
+    /// `checked` holds, running `run` (a closure, so it can carry the
+    /// choice). Menus, Help search, [`Registry::describe`] (with its tick)
+    /// and [`Registry::execute`] treat it as any other command.
+    ///
+    /// # Panics
+    /// On a duplicate id, as [`Registry::add`].
+    pub fn add_choice(&mut self, place: Place, run: impl Fn(&mut S) + 'static, checked: impl Fn(&S) -> bool + 'static) -> &mut Self {
+        let Place { id, label, menu, submenu, group } = place;
+        self.add(Command { id, label, menu, submenu, group, shortcut: None, icon: None, enabled: always, run: choose });
+        self.choice_runs.insert(id, Box::new(run));
+        self.choice_checks.insert(id, Box::new(checked));
+        self
+    }
+
+    /// Whether command `id` is a choice, and if so whether it is ticked.
+    pub fn checked(&self, id: &str, state: &S) -> Option<bool> {
+        self.choice_checks.get(id).map(|checked| checked(state))
+    }
+
     /// Open the menu `menu` (a Fluent menu key, usually Help) with a field
     /// that searches every command (§3.5).
     pub fn search_menu(&mut self, menu: &'static str) -> &mut Self {
@@ -130,7 +188,10 @@ impl<S> Registry<S> {
         if !(command.enabled)(state) {
             return Err(CommandError::Disabled(command.id));
         }
-        (command.run)(state);
+        match self.choice_runs.get(command.id) {
+            Some(run) => run(state),
+            None => (command.run)(state),
+        }
         Ok(())
     }
 
@@ -140,10 +201,11 @@ impl<S> Registry<S> {
             .iter()
             .map(|c| Described {
                 id: c.id,
-                label: strings.get(c.label),
-                menu: c.menu.map(|m| strings.get(m)),
+                label: label_text(strings, c.label),
+                menu: c.menu.map(|m| label_text(strings, m)),
                 shortcut: c.shortcut.map(|s| s.format(&ModifierNames::NAMES, false)),
                 enabled: (c.enabled)(state),
+                checked: self.checked(c.id, state),
             })
             .collect()
     }
@@ -193,7 +255,7 @@ impl<S> Registry<S> {
     pub fn menus(&self, ui: &mut egui::Ui, state: &S, strings: &Strings) -> Vec<&'static str> {
         let model = self.model(ui.ctx(), state, strings);
         let search = self.search_menu.and_then(|key| {
-            let title = strings.get(key);
+            let title = label_text(strings, key);
             let menu = model.iter().position(|m| m.title == title)?;
             Some(menu::Search { menu, hint: crate::strings::own("search-menus"), empty: crate::strings::own("no-matching-commands") })
         });
@@ -214,7 +276,12 @@ impl<S> Registry<S> {
         }
         let row = |c: &Command<S>| {
             let shortcut = c.shortcut.map(|s| ctx.format_shortcut(&s));
-            Entry::Row(Row::command(c.id, strings.get(c.label), shortcut, (c.enabled)(state)))
+            let label = label_text(strings, c.label);
+            let enabled = (c.enabled)(state);
+            Entry::Row(match self.checked(c.id, state) {
+                Some(checked) => Row::choice(c.id, label, shortcut, enabled, checked),
+                None => Row::command(c.id, label, shortcut, enabled),
+            })
         };
         // Rows with a separator at each change of group.
         let grouped = |commands: &mut dyn Iterator<Item = (u8, Entry)>| {
@@ -238,11 +305,11 @@ impl<S> Registry<S> {
                     Some(sub) if !placed.contains(&sub) => {
                         placed.push(sub);
                         let mut children = in_menu.iter().filter(|d| d.submenu == Some(sub)).map(|d| (d.group, row(d)));
-                        Some((c.group, Entry::Row(Row::submenu(strings.get(sub), grouped(&mut children)))))
+                        Some((c.group, Entry::Row(Row::submenu(label_text(strings, sub), grouped(&mut children)))))
                     }
                     Some(_) => None,
                 });
-                Menu { title: strings.get(key), entries: menu::tidy(grouped(&mut top)) }
+                Menu { title: label_text(strings, key), entries: menu::tidy(grouped(&mut top)) }
             })
             .collect()
     }
@@ -253,7 +320,7 @@ impl<S> Registry<S> {
         let query = query.to_lowercase();
         self.commands
             .iter()
-            .filter(|c| (c.enabled)(state) && strings.get(c.label).to_lowercase().contains(&query))
+            .filter(|c| (c.enabled)(state) && label_text(strings, c.label).to_lowercase().contains(&query))
             .collect()
     }
 }

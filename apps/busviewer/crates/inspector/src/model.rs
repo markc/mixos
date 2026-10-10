@@ -136,7 +136,7 @@ pub fn bounded(body: &str, marker: &str) -> String {
 
 /// Every verb the engine answers itself. The window-level verbs
 /// (`busviewer.ui.*`, `busviewer.window*`) belong to the toolkit drive layer.
-pub const VERBS: [&str; 19] = [
+pub const VERBS: [&str; 20] = [
     "HELP",
     "app.describe",
     "busviewer.ping",
@@ -156,6 +156,7 @@ pub const VERBS: [&str; 19] = [
     "busviewer.expand",
     "busviewer.select_row",
     "busviewer.dialog",
+    "busviewer.theme",
 ];
 
 /// The engine's Bus surface (`HELP` / `app.describe` add the drive verbs).
@@ -179,7 +180,8 @@ pub fn describe() -> Value {
         {"name":"busviewer.split","args":{"value":"number from 0 to 1 (kept within 0.2 to 0.65)"},"description":"Set the services pane's share of the window","read_only":false},
         {"name":"busviewer.expand","args":{"key":"row key","open":"bool"},"description":"Open or close a tree row that has children","read_only":false},
         {"name":"busviewer.select_row","args":{"key":"row key"},"description":"Select any tree row; a verb row also selects its verb","read_only":false},
-        {"name":"busviewer.dialog","args":{"open":"\"about\", \"shortcuts\" or null"},"description":"Open a dialog, or close the open one","read_only":false}
+        {"name":"busviewer.dialog","args":{"open":"\"about\", \"shortcuts\" or null"},"description":"Open a dialog, or close the open one","read_only":false},
+        {"name":"busviewer.theme","args":{"scheme":"optional scheme name (ocean, crimson, stone, forest, sunset, mono, pro, studio, classic) or null to follow the session","mode":"optional light, dark or null to follow the session"},"description":"Choose the window's theme: a present key sets that axis, an absent one leaves it; answers the choice and the effective scheme and mode","read_only":false}
     ]})
 }
 

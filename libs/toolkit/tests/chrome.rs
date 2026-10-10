@@ -62,6 +62,22 @@ fn chrome_classic() {
     submenu_open(Scheme::Classic, Mode::Light, "chrome_classic");
 }
 
+/// View › Theme open in Pro Medium Gray, Forest chosen: the check-row
+/// gutter and tick.
+#[test]
+fn theme_submenu_pro_light() {
+    let builder = Harness::builder().with_size(egui::vec2(760.0, 520.0)).wgpu();
+    let mut h = fixture::harness(builder, &fixture::theme(Scheme::Pro, Mode::Light));
+    h.state_mut().theme = (Some(Scheme::Forest), None);
+    h.get_by_label("View").click();
+    h.run();
+    for key in [Key::ArrowDown, Key::ArrowDown, Key::ArrowRight] {
+        h.key_press(key);
+        h.run();
+    }
+    h.snapshot("theme_submenu_pro_light");
+}
+
 #[test]
 fn caption_close_hover_pro_light() {
     caption_hover(Scheme::Pro, Mode::Light, "Close", "caption_close_hover_pro_light");

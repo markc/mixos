@@ -363,7 +363,8 @@ A row's `kind` is `service`, `verb`, `error`, `peers`, `peer` or
 | `busviewer.split` | `value`, 0 to 1 | The services pane's share of the window, kept between 0.2 and 0.65. The answer reports the value in effect, to 4 places. |
 | `busviewer.dialog` | `open`: `"about"`, `"shortcuts"` or null | Opens a dialog, or closes the open one. |
 | `busviewer.call` | `service`, `verb` and `body`, each optional | Calls the selected verb once, or the given one; `service` and `verb` go together. The answer is the reply: `{service, verb, request_body, rc, body}`. A transport failure is never retried: it answers return code 10 with `transport_error` and `outcome_unknown`. |
-| `busviewer.execute` | `id` | Runs one menu command: `file.refresh`, `file.quit`, `edit.format`, `edit.clear`, `edit.copy`, `bus.call`, `help.shortcuts` or `help.about`. |
+| `busviewer.theme` | `scheme` and `mode`, each optional: a name, or null | Chooses the window's theme, in this window only. A present key sets that axis (null follows the session's), an absent one leaves it, and an unknown name is refused with `ARGUMENT`. Schemes: `ocean`, `crimson`, `stone`, `forest`, `sunset`, `mono`, `pro`, `studio`, `classic`; modes: `light`, `dark`. The answer is `{scheme, mode, effective: {scheme, mode}}`: the choice, then what the window shows. Taken while a dialog is open. |
+| `busviewer.execute` | `id` | Runs one command, from the menus or the title bar: `file.refresh`, `file.quit`, `edit.format`, `edit.clear`, `edit.copy`, `bus.call`, `help.shortcuts`, `help.about`, `view.search`, `view.mode` (the light/dark switch), and View › Theme's choices `view.theme.<scheme>`, `view.theme.session`, `view.mode.light`, `view.mode.dark`, `view.mode.session`. `busviewer.commands` lists them all, with each choice's `checked` tick. |
 | `busviewer.refresh` | | Discovers services again. |
 | `busviewer.show` | | Restores and focuses the window. |
 | `busviewer.quit` | | Closes once idle. |

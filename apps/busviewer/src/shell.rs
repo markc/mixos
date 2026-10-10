@@ -57,7 +57,7 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
             UiEvent::Split(split) => engine.set_split(split),
             UiEvent::CloseDialog => engine.close_dialog(),
             UiEvent::FilterFocused => engine.filter_focused(),
-            UiEvent::SetMode(invert) => engine.set_mode(invert),
+            UiEvent::SetMode(mode) => engine.set_mode(mode),
         }
     }
 }
@@ -133,8 +133,8 @@ pub struct Shell {
     /// under its lock, which the forwarder holds while it hands one on, so
     /// every command is in this inbox or in `rx`, never between the two.
     inbox: Arc<Mutex<Deliveries>>,
-    /// Whether the installed theme is the session theme's opposite mode.
-    inverted: bool,
+    /// The theme choice installed last.
+    installed: toolkit::theme_menu::Choice,
 }
 
 type Deliveries = futures::channel::mpsc::Receiver<Delivery>;
@@ -200,8 +200,9 @@ impl Shell {
             exiting: false,
             held: VecDeque::new(),
             inbox,
-            inverted: false,
+            installed: (None, None),
         };
+        shell.engine.session = (shell.theme.scheme(), shell.theme.mode());
         shell.settle();
         Ok(shell)
     }
@@ -336,18 +337,24 @@ impl Shell {
         }
     }
 
-    /// Install the session theme, or its opposite mode while the window's
-    /// light/dark toggle (`view.mode`) is on. The session's theme file is
-    /// never written.
-    fn install_theme(&mut self) {
-        let theme = if self.engine.ui.invert_mode { self.theme.opposite_mode() } else { self.theme.clone() };
-        toolkit::install(&self.ctx, &theme);
-        self.inverted = self.engine.ui.invert_mode;
+    /// The window's theme choice (View › Theme, the title bar's switch,
+    /// `busviewer.theme`).
+    fn choice(&self) -> toolkit::theme_menu::Choice {
+        (self.engine.ui.theme_scheme, self.engine.ui.theme_mode)
     }
 
-    /// The toggle changed since the theme was installed: install again.
-    fn follow_mode(&mut self) {
-        if self.engine.ui.invert_mode != self.inverted {
+    /// Install the session theme with the window's choice over it. The
+    /// session's theme file is never written.
+    fn install_theme(&mut self) {
+        let (scheme, mode) = self.choice();
+        toolkit::install(&self.ctx, &self.theme.with_choice(scheme, mode));
+        self.engine.session = (self.theme.scheme(), self.theme.mode());
+        self.installed = (scheme, mode);
+    }
+
+    /// The choice changed since the theme was installed: install again.
+    fn follow_theme(&mut self) {
+        if self.choice() != self.installed {
             self.install_theme();
             self.ctx.request_repaint();
         }
@@ -361,7 +368,7 @@ impl Shell {
             self.bus.reply(answer.id, answer.rc, answer.body);
         }
         self.pump();
-        self.follow_mode();
+        self.follow_theme();
         // Closing waits for accepted work: the engine quits once it is idle.
         if ctx.input(|i| i.viewport().close_requested()) && !self.exiting {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
@@ -385,9 +392,9 @@ impl Shell {
         self.settle();
         // A command this frame may have been the last thing holding others.
         self.release();
-        // A mode change is installed by the next frame's logic, before any
+        // A theme change is installed by the next frame's logic, before any
         // drawing: never midway through the frame that saw the click.
-        if self.engine.ui.invert_mode != self.inverted {
+        if self.choice() != self.installed {
             ui.ctx().request_repaint();
         }
     }

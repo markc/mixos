@@ -35,6 +35,7 @@
     {name:"busviewer.expand", owner:"busviewer", version:"0.1.1", status:"accepted"},
     {name:"busviewer.select_row", owner:"busviewer", version:"0.1.1", status:"accepted"},
     {name:"busviewer.dialog", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.theme", owner:"busviewer", version:"0.1.1", status:"accepted"},
     {name:"busviewer.ui.tree", owner:"busviewer", version:"0.1.1", status:"accepted"},
     {name:"busviewer.ui.click", owner:"busviewer", version:"0.1.1", status:"accepted"},
     {name:"busviewer.ui.pointer", owner:"busviewer", version:"0.1.1", status:"accepted"},

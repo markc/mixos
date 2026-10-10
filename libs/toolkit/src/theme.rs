@@ -150,12 +150,21 @@ impl Theme {
         }
     }
 
-    /// The embedded design in this theme's scheme and contrast, in the
-    /// opposite mode: an app's own light/dark switch, which never touches
-    /// the session's theme file.
-    pub fn opposite_mode(&self) -> Self {
-        let mode = if self.mode() == Mode::Dark { Mode::Light } else { Mode::Dark };
-        Self::for_context(DesignContext { mode, ..self.context.clone() })
+    /// This (session) theme with an app's own choice laid over it, as the
+    /// Theme menu ([`crate::theme_menu`]) makes it: with neither axis chosen,
+    /// the theme itself, so a custom session design stays intact; else the
+    /// embedded design in the chosen scheme and mode (each axis left `None`
+    /// keeps this theme's), at this theme's contrast. The session's theme
+    /// file is never touched.
+    pub fn with_choice(&self, scheme: Option<Scheme>, mode: Option<Mode>) -> Self {
+        if scheme.is_none() && mode.is_none() {
+            return self.clone();
+        }
+        Self::for_context(DesignContext {
+            scheme: scheme.unwrap_or(self.scheme()),
+            mode: mode.unwrap_or(self.mode()),
+            ..self.context.clone()
+        })
     }
 
     pub fn context(&self) -> &DesignContext {
@@ -233,11 +242,18 @@ mod tests {
     }
 
     #[test]
-    fn the_opposite_mode_keeps_the_scheme() {
-        let pro = Theme::for_context(DesignContext { scheme: Scheme::Pro, mode: Mode::Dark, ..DesignContext::default() });
-        let flipped = pro.opposite_mode();
-        assert_eq!((flipped.scheme(), flipped.mode()), (Scheme::Pro, Mode::Light));
-        assert_eq!(flipped.opposite_mode().mode(), Mode::Dark);
+    fn a_choice_overlays_the_session_theme_and_no_choice_keeps_it() {
+        let session = Theme::for_context(DesignContext {
+            scheme: Scheme::Pro,
+            mode: Mode::Dark,
+            contrast: Contrast::High,
+            ..DesignContext::default()
+        });
+        assert_eq!(session.with_choice(None, None), session, "no choice: the session theme itself, unchanged");
+        let forest = session.with_choice(Some(Scheme::Forest), None);
+        assert_eq!((forest.scheme(), forest.mode(), forest.contrast()), (Scheme::Forest, Mode::Dark, Contrast::High));
+        let light = session.with_choice(None, Some(Mode::Light));
+        assert_eq!((light.scheme(), light.mode(), light.contrast()), (Scheme::Pro, Mode::Light, Contrast::High));
     }
 
     #[test]

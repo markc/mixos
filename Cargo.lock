@@ -2789,6 +2789,7 @@ name = "inspector"
 version = "0.1.1"
 dependencies = [
  "bus",
+ "design",
  "futures",
  "serde",
  "serde_json",

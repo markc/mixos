@@ -65,6 +65,8 @@ pub struct Fixture {
     pub workspace: usize,
     /// An "Image Size" dialog is open.
     pub dialog: bool,
+    /// The View › Theme choice.
+    pub theme: toolkit::theme_menu::Choice,
 }
 
 /// The height of the dialog's stand-in body: with its title, rule and
@@ -131,6 +133,7 @@ pub fn registry() -> Registry<Fixture> {
         r.add(Command { id, label, menu: None, submenu: None, group: 0, shortcut, icon: None, enabled: always, run: |_| {} });
     }
     r.search_menu("menu-help");
+    r.theme_menu("menu-view", |s: &Fixture| s.theme, |s, scheme, mode| s.theme = (scheme, mode));
     r
 }
 

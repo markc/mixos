@@ -247,14 +247,15 @@ fn control(rig: &mut Rig, id: u64, name: &str) -> String {
 fn a_bus_click_on_the_mode_toggle_flips_it_exactly_once() {
     let mut rig = live_rig();
     let toggle = control(&mut rig, 1, &label("toggle-mode"));
-    for (n, expected) in [(10, true), (20, false), (30, true)] {
-        let before = engine(&rig).ui.invert_mode;
+    use design::Mode::{Dark, Light};
+    for (n, expected) in [(10, Some(Dark)), (20, Some(Light)), (30, Some(Dark))] {
+        let before = engine(&rig).ui.theme_mode;
         send(&mut rig, n, "busviewer.ui.click", json!({"id":toggle}));
         wait(&mut rig, &[n]);
         assert_eq!(reply(&rig, n).unwrap().1, 0);
         // Idle passes after the click, as a live window keeps drawing.
         rig.h.run_steps(30);
-        assert_eq!(engine(&rig).ui.invert_mode, expected, "click {n} from {before}");
+        assert_eq!(engine(&rig).ui.theme_mode, expected, "click {n} from {before:?}");
     }
     // And the window shows it: Pro light's opposite, Pro dark, is installed.
     assert_eq!(rig.h.ctx.global_style().visuals.panel_fill, egui::Color32::from_rgb(0x32, 0x32, 0x32));
@@ -272,7 +273,7 @@ fn title_bar_controls_click_at_one_pass_a_second() {
     send(&mut rig, 2, "busviewer.ui.click", json!({"id":toggle}));
     wait(&mut rig, &[2]);
     rig.h.run_steps(2);
-    assert!(engine(&rig).ui.invert_mode, "the toggle flipped");
+    assert_eq!(engine(&rig).ui.theme_mode, Some(design::Mode::Dark), "the toggle flipped");
     let search = tree(&mut rig, 3, json!({"label":label("search-services"),"role":"Button"}));
     let search = search[0]["id"].as_str().unwrap().to_owned();
     send(&mut rig, 4, "busviewer.ui.click", json!({"id":search}));
@@ -331,7 +332,59 @@ fn a_bus_dialog_is_an_accessible_modal_and_a_bus_close_frees_the_window() {
     send(&mut rig, 6, "busviewer.ui.click", json!({"id":toggle}));
     wait(&mut rig, &[6]);
     rig.h.run_steps(2);
-    assert!(engine(&rig).ui.invert_mode, "the title bar takes clicks again");
+    assert_eq!(engine(&rig).ui.theme_mode, Some(design::Mode::Dark), "the title bar takes clicks again");
+}
+
+/// The panel colour `scheme` in `mode` installs: what the window shows.
+fn panel_of(scheme: design::Scheme, mode: design::Mode) -> egui::Color32 {
+    let theme = Theme::for_context(design::DesignContext { scheme, mode, ..Default::default() });
+    toolkit::style::style(&theme).visuals.panel_fill
+}
+
+/// View › Theme › Forest, clicked over the Bus as a person would, installs
+/// Forest in the session's mode, and the menu ticks it.
+#[test]
+fn view_theme_forest_by_bus_clicks_installs_forest() {
+    use design::{Mode, Scheme};
+    let mut rig = live_rig();
+    assert_eq!(rig.h.ctx.global_style().visuals.panel_fill, panel_of(Scheme::Pro, Mode::Light), "the session theme");
+    for (n, name) in [(1, label("view")), (2, "Theme".to_owned()), (3, "Forest".to_owned())] {
+        send(&mut rig, n, "busviewer.ui.click", json!({"label":name}));
+        wait(&mut rig, &[n]);
+        let (_, rc, body) = reply(&rig, n).unwrap();
+        assert_eq!(rc, 0, "{name}: {body}");
+    }
+    rig.h.run_steps(10);
+    assert_eq!((engine(&rig).ui.theme_scheme, engine(&rig).ui.theme_mode), (Some(Scheme::Forest), None));
+    assert_eq!(rig.h.ctx.global_style().visuals.panel_fill, panel_of(Scheme::Forest, Mode::Light), "Forest is installed");
+    send(&mut rig, 4, "busviewer.commands", json!({}));
+    wait(&mut rig, &[4]);
+    let commands = reply(&rig, 4).unwrap().2;
+    let tick = |id: &str| commands["commands"].as_array().unwrap().iter().find(|c| c["id"] == id).unwrap()["checked"].clone();
+    assert_eq!((tick("view.theme.forest"), tick("view.theme.session"), tick("bus.call")), (json!(true), json!(false), Value::Null));
+}
+
+/// busviewer.theme sets an axis, null follows the session again, an unknown
+/// name is refused; the window installs each answer's effective theme.
+#[test]
+fn the_theme_verb_installs_its_choice() {
+    use design::{Mode, Scheme};
+    let mut rig = live_rig();
+    send(&mut rig, 1, "busviewer.theme", json!({"scheme":"studio","mode":"dark"}));
+    wait(&mut rig, &[1]);
+    let (_, rc, body) = reply(&rig, 1).unwrap();
+    assert_eq!((rc, &body["effective"]), (0, &json!({"scheme":"studio","mode":"dark"})), "{body}");
+    rig.h.run_steps(5);
+    assert_eq!(rig.h.ctx.global_style().visuals.panel_fill, panel_of(Scheme::Studio, Mode::Dark));
+    send(&mut rig, 2, "busviewer.theme", json!({"scheme":null,"mode":null}));
+    wait(&mut rig, &[2]);
+    let (_, rc, body) = reply(&rig, 2).unwrap();
+    assert_eq!((rc, &body["scheme"], &body["effective"]), (0, &Value::Null, &json!({"scheme":"pro","mode":"light"})));
+    rig.h.run_steps(5);
+    assert_eq!(rig.h.ctx.global_style().visuals.panel_fill, panel_of(Scheme::Pro, Mode::Light), "back to the session theme");
+    send(&mut rig, 3, "busviewer.theme", json!({"scheme":"neon"}));
+    wait(&mut rig, &[3]);
+    assert_eq!(reply(&rig, 3).unwrap().2["error_code"], "ARGUMENT");
 }
 
 /// The one link named `name` exactly.
@@ -362,7 +415,7 @@ fn a_click_by_label_prefers_the_control_over_its_tooltip() {
     assert_eq!(rc, 0, "{body}");
     assert_eq!(body["target"]["id"].as_str(), Some(toggle.as_str()), "the button, not its tooltip");
     rig.h.run_steps(6);
-    assert!(engine(&rig).ui.invert_mode);
+    assert_eq!(engine(&rig).ui.theme_mode, Some(design::Mode::Dark));
 }
 
 /// Live bug 3: each expander names its row, so it can be read and

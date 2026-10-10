@@ -30,7 +30,7 @@ pub enum UiEvent {
     /// The services filter took the keyboard, as `view.search` asked.
     FilterFocused,
     /// The title bar's light/dark toggle: invert the session mode or not.
-    SetMode(bool),
+    SetMode(design::Mode),
 }
 
 const ICON: f32 = 14.0;
@@ -53,7 +53,9 @@ pub fn view(ui: &mut Ui, engine: &Engine, commands: &Registry<Engine>, strings: 
     for id in fired {
         if id == "view.mode" {
             if !mode_set {
-                events.push(UiEvent::SetMode(!engine.ui.invert_mode));
+                let shown = engine.effective_theme().1;
+                let target = if shown == design::Mode::Dark { design::Mode::Light } else { design::Mode::Dark };
+                events.push(UiEvent::SetMode(target));
                 mode_set = true;
             }
         } else {

@@ -77,8 +77,10 @@ pub fn registry() -> Registry<Engine> {
         icon: Some(Icon::Copy),
         enabled: undialogued,
         run: Engine::copy_reply,
-    })
-    .add(Command {
+    });
+    // View › Theme: any scheme and mode, in this window only.
+    r.theme_menu("view", |e: &Engine| (e.ui.theme_scheme, e.ui.theme_mode), Engine::set_theme);
+    r.add(Command {
         id: "bus.call",
         submenu: None,
         group: 0,
@@ -146,10 +148,29 @@ mod tests {
     #[test]
     fn every_label_and_menu_is_in_the_catalogue() {
         let strings = crate::strings();
+        // The Theme menu's labels are the toolkit's own.
+        let known = |key: &str| toolkit::command::label_text(&strings, key) != key;
         for command in registry().iter() {
-            assert!(strings.has(command.label), "{} label {:?}", command.id, command.label);
+            assert!(known(command.label), "{} label {:?}", command.id, command.label);
             assert!(command.menu.is_none_or(|m| strings.has(m)), "{} menu", command.id);
+            assert!(command.submenu.is_none_or(known), "{} submenu", command.id);
         }
+    }
+
+    #[test]
+    fn view_theme_choices_set_the_window_theme_and_tick_it() {
+        let r = registry();
+        let mut e = Engine::new(crate::label);
+        r.execute("view.theme.forest", &mut e).unwrap();
+        r.execute("view.mode.dark", &mut e).unwrap();
+        assert_eq!((e.ui.theme_scheme, e.ui.theme_mode), (Some(design::Scheme::Forest), Some(design::Mode::Dark)));
+        assert_eq!(r.checked("view.theme.forest", &e), Some(true));
+        assert_eq!(r.checked("view.theme.session", &e), Some(false));
+        let described = r.describe(&e, &crate::strings());
+        let forest = described.iter().find(|d| d.id == "view.theme.forest").unwrap();
+        assert_eq!((forest.menu.as_deref(), forest.checked), (Some("View"), Some(true)));
+        r.execute("view.mode.session", &mut e).unwrap();
+        assert_eq!(e.ui.theme_mode, None);
     }
 
     #[test]

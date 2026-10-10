@@ -35,6 +35,11 @@ use std::sync::Arc;
 /// The stock submenu arrow, in the shortcut column (§3.5).
 pub const SUBMENU_ARROW: &str = "⏵";
 
+/// The tick of a ticked choice row, in a gutter before the label (§3.5:
+/// "✔" and a space; every label of a level with choices indents by it).
+pub const TICK: &str = "✔";
+const TICK_GUTTER: &str = "✔ ";
+
 /// One line of a menu.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Entry {
@@ -61,19 +66,27 @@ pub struct Row {
     /// Already formatted for the platform ("Ctrl+Alt+Shift+O").
     pub shortcut: Option<String>,
     pub enabled: bool,
+    /// A choice row's tick (§3.5, check rows): `Some(true)` ticked,
+    /// `Some(false)` not; `None` for a row that is no choice.
+    pub checked: Option<bool>,
     /// The submenu's entries; empty for a command row.
     pub children: Vec<Entry>,
 }
 
 impl Row {
     pub fn command(id: &'static str, label: impl Into<String>, shortcut: Option<String>, enabled: bool) -> Self {
-        Self { id: Some(id), label: label.into(), shortcut, enabled, children: Vec::new() }
+        Self { id: Some(id), label: label.into(), shortcut, enabled, checked: None, children: Vec::new() }
+    }
+
+    /// A choice row, ticked when `checked`.
+    pub fn choice(id: &'static str, label: impl Into<String>, shortcut: Option<String>, enabled: bool, checked: bool) -> Self {
+        Self { checked: Some(checked), ..Self::command(id, label, shortcut, enabled) }
     }
 
     /// A submenu row: enabled when any of its children is (§3.5).
     pub fn submenu(label: impl Into<String>, children: Vec<Entry>) -> Self {
         let enabled = children.iter().filter_map(Entry::row).any(|r| r.enabled);
-        Self { id: None, label: label.into(), shortcut: None, enabled, children: tidy(children) }
+        Self { id: None, label: label.into(), shortcut: None, enabled, checked: None, children: tidy(children) }
     }
 
     pub fn is_submenu(&self) -> bool {
@@ -802,6 +815,9 @@ struct Layout {
     heights: Vec<f32>,
     /// The content size (inside the frame's margin).
     size: Vec2,
+    /// The tick's gutter before every label, when the level has choices.
+    gutter: f32,
+    tick: Option<Arc<Galley>>,
 }
 
 impl Layout {
@@ -812,6 +828,10 @@ impl Layout {
         let font = Chrome::menu_font(ui.style());
         let painter = ui.painter();
         let galley = |text: &str| painter.layout_no_wrap(text.to_owned(), font.clone(), Color32::PLACEHOLDER);
+        // A level with any choice gives every label the tick's gutter, so
+        // ticked and unticked labels line up (§3.5).
+        let choices = entries.iter().filter_map(Entry::row).any(|r| r.checked.is_some());
+        let (gutter, tick) = if choices { (galley(TICK_GUTTER).size().x, Some(galley(TICK))) } else { (0.0, None) };
         let mut width: f32 = min_width;
         let mut lines = Vec::with_capacity(entries.len());
         let mut heights = Vec::with_capacity(entries.len());
@@ -826,14 +846,14 @@ impl Layout {
                     let right = if row.is_submenu() { Some(galley(SUBMENU_ARROW)) } else { row.shortcut.as_deref().map(galley) };
                     // Labels never wrap: the menu widens instead (§3.4).
                     let right_width = right.as_ref().map_or(0.0, |g| m.shortcut_gap + g.size().x);
-                    width = width.max(2.0 * m.menu_row_padding.x + label.size().x + right_width);
+                    width = width.max(2.0 * m.menu_row_padding.x + gutter + label.size().x + right_width);
                     lines.push(Some((label, right)));
                     heights.push(m.menu_row_height);
                 }
             }
         }
         let size = vec2(width, heights.iter().sum());
-        Self { lines, heights, size }
+        Self { lines, heights, size, gutter, tick }
     }
 }
 
@@ -973,6 +993,14 @@ fn level_rows(
         let response = ui.interact(*row_rect, id.with(index), Sense::click());
         if let Entry::Row(row) = entry {
             response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, row.enabled, &row.label));
+            if let Some(checked) = row.checked {
+                // A choice is one of a group, ticked or not: a radio menu
+                // item to assistive technology and the drive layer.
+                ui.ctx().accesskit_node_builder(response.id, |node| {
+                    node.set_role(egui::accesskit::Role::MenuItemRadio);
+                    node.set_toggled(if checked { egui::accesskit::Toggled::True } else { egui::accesskit::Toggled::False });
+                });
+            }
             if row.enabled && response.clicked() && !response.clicked_by(PointerButton::Primary) {
                 activated = Some(index);
             }
@@ -1027,6 +1055,13 @@ fn paint(ui: &Ui, chrome: &Chrome, level: usize, entries: &[Entry], layout: &Lay
                 }
                 let ink = if row.enabled { ink } else { ink.gamma_multiply(DISABLED_ALPHA) };
                 let x = rect.left() + m.menu_row_padding.x;
+                if row.checked == Some(true)
+                    && let Some(tick) = &layout.tick
+                {
+                    let at = pos2(x, rect.center().y - tick.size().y / 2.0).round_to_pixels(ppp);
+                    painter.galley(at, tick.clone(), ink);
+                }
+                let x = x + layout.gutter;
                 let at = pos2(x, rect.center().y - label.size().y / 2.0).round_to_pixels(ppp);
                 painter.galley(at, label.clone(), ink);
                 if let Some(right) = right {
@@ -1176,6 +1211,25 @@ mod tests {
         m.clear();
         nav.validate(&m);
         assert_eq!(nav, Nav::default(), "the menu is gone");
+    }
+
+    #[test]
+    fn a_level_with_choices_gives_every_label_the_tick_gutter() {
+        let ctx = Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let chrome = Chrome::of(ui.ctx());
+            let plain = Layout::new(ui, &chrome, &[cmd("alpha", true), cmd("beta", true)], 0.0);
+            assert_eq!((plain.gutter, plain.tick.is_some()), (0.0, false), "no choices, no gutter");
+            let mixed = [Entry::Row(Row::choice("alpha", "alpha", None, true, false)), cmd("beta", true)];
+            let choices = Layout::new(ui, &chrome, &mixed, 0.0);
+            let tick = ui.painter().layout_no_wrap(TICK_GUTTER.to_owned(), Chrome::menu_font(ui.style()), Color32::PLACEHOLDER);
+            assert_eq!(choices.gutter, tick.size().x, "\"✔ \" wide, for every row of the level");
+            assert!(choices.tick.is_some());
+            assert_eq!(choices.size.x, plain.size.x + choices.gutter, "the level widens by the gutter");
+        });
+        output.textures_delta.clear();
+        assert_eq!(Row::choice("a", "A", None, true, true).checked, Some(true));
+        assert_eq!(Row::command("a", "A", None, true).checked, None);
     }
 
     #[test]

@@ -2,6 +2,7 @@
 //! toolkit: the shared shell for MixOS egui applications (AGENTS.md §4.1).
 //!
 //! - [`theme`]: the resolved design for one scheme, mode and contrast;
+//! - [`theme_menu`]: the View › Theme submenu that picks it, in every app;
 //! - [`style`]: that design as an egui style (colours, spacing, radii, type);
 //! - [`chrome`]: title-bar and menu colours and geometry, and the whole
 //!   style of the chrome schemes (`pro`, `studio`, `classic`);
@@ -54,6 +55,7 @@ pub mod strings;
 pub mod style;
 pub mod tabs;
 pub mod theme;
+pub mod theme_menu;
 pub mod titlebar;
 pub mod toggle;
 pub mod tooltip;

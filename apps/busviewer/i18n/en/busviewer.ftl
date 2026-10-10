@@ -1,6 +1,7 @@
 title = BusViewer
 file = File
 edit = Edit
+view = View
 bus = Bus
 help = Help
 refresh = Refresh services

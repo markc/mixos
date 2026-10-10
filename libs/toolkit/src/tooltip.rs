@@ -21,7 +21,7 @@ pub fn text(label: &str, shortcut: Option<&str>) -> String {
 /// form.
 pub fn for_command<S>(ctx: &egui::Context, command: &Command<S>, strings: &Strings) -> String {
     let shortcut = command.shortcut.map(|s| ctx.format_shortcut(&s));
-    text(&strings.get(command.label), shortcut.as_deref())
+    text(&crate::command::label_text(strings, command.label), shortcut.as_deref())
 }
 
 #[cfg(test)]

@@ -393,6 +393,37 @@ fn nothing_matching_says_so_and_a_click_inside_help_keeps_it_open() {
     assert!(h.state().ran.is_empty(), "Enter with no results runs nothing");
 }
 
+/// View › Theme, opened by keyboard: Down to the Theme row, Right into it.
+fn open_theme(h: &mut Harness<'_, Fixture>) {
+    h.get_by_label("View").click();
+    h.run();
+    press(h, Key::ArrowDown);
+    press(h, Key::ArrowDown);
+    press(h, Key::ArrowRight);
+}
+
+#[test]
+fn theme_choices_are_ticked_radio_items_and_a_click_chooses() {
+    use egui_kittest::kittest::NodeT;
+    let mut h = window();
+    open_theme(&mut h);
+    assert_eq!(path(&h), labels("View", &[Some("Theme"), Some("Ocean")]));
+    let toggled = |h: &Harness<'_, Fixture>, label: &str| {
+        h.get_by_role_and_label(Role::MenuItemRadio, label).accesskit_node().toggled()
+    };
+    use egui::accesskit::Toggled;
+    assert_eq!(toggled(&h, "Session theme"), Some(Toggled::True), "the session is the default choice");
+    assert_eq!(toggled(&h, "Session mode"), Some(Toggled::True));
+    assert_eq!(toggled(&h, "Forest"), Some(Toggled::False));
+    h.get_by_label("Forest").click();
+    h.run();
+    assert_eq!(h.state().theme, (Some(design::Scheme::Forest), None), "the click chose Forest");
+    assert!(current(&h).is_none(), "and closed the menus");
+    open_theme(&mut h);
+    assert_eq!(toggled(&h, "Forest"), Some(Toggled::True), "Forest is ticked now");
+    assert_eq!(toggled(&h, "Session theme"), Some(Toggled::False));
+}
+
 /// Text and then Enter in one frame (one RawInput).
 fn type_then_enter(h: &mut Harness<'_, Fixture>, text: &str) {
     let enter = |pressed| Event::Key { key: Key::Enter, physical_key: None, pressed, repeat: false, modifiers: Modifiers::NONE };
