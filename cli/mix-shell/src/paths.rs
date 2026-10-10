@@ -17,13 +17,15 @@
 //! | Kind | Env override | Root known        | Root unknown (legacy FHS/XDG)        |
 //! |------|--------------|-------------------|--------------------------------------|
 //! | Src  | MIXOS_SRC   | `$MIXOS/src`     | `~/Projects/mixos/src`              |
-//! | Etc  | MIXOS_ETC   | `$MIXOS/etc`     | `~/.config/mixos/` · `/etc/mixos/` |
 //! | Bin  | MIXOS_BIN   | `$MIXOS/bin`     | `~/.local/bin/` · `/usr/local/bin/`  |
 //! | Share | MIXOS_SHARE | `/opt/mixos/share` | `/opt/mixos/share` (both)         |
 //!
+//! Etc is not cached here: the node configuration reads it through
+//! `EtcEnvironment`, which captures the environment without calling `dirs`.
+//!
 //! A system install (`/opt/mixos/bin/mix`, no `$MIXOS`, no checkout
 //! above it) therefore keeps the FHS defaults it always had. Mix keeps
-//! only Src/Etc/Bin/Share from the parent's full enum. Share deliberately does
+//! only Src/Bin/Share from the parent's full enum. Share deliberately does
 //! not depend on the checkout root or user ID.
 
 use std::path::{Path, PathBuf};
@@ -32,7 +34,6 @@ use std::sync::OnceLock;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Dir {
     Src,
-    Etc,
     Bin,
     // Mirror the shared path contract even before a Mix caller needs this kind.
     #[allow(dead_code)]
@@ -42,7 +43,6 @@ pub enum Dir {
 struct ResolvedPaths {
     root: Option<PathBuf>,
     src: PathBuf,
-    etc: PathBuf,
     bin: PathBuf,
     share: PathBuf,
 }
@@ -53,7 +53,6 @@ pub fn mixos_path(kind: Dir) -> PathBuf {
     let paths = PATHS.get_or_init(resolve_all);
     match kind {
         Dir::Src => paths.src.clone(),
-        Dir::Etc => paths.etc.clone(),
         Dir::Bin => paths.bin.clone(),
         Dir::Share => paths.share.clone(),
     }
@@ -106,8 +105,6 @@ fn resolve_all() -> ResolvedPaths {
         root.clone().unwrap_or_else(|| default_root(&home))
     });
 
-    let etc = config::path(config::Dir::Etc);
-
     let bin = env_or("MIXOS_BIN", || PathBuf::from("/opt/mixos/bin"));
 
     let share = config::path(config::Dir::Share);
@@ -115,17 +112,9 @@ fn resolve_all() -> ResolvedPaths {
     ResolvedPaths {
         root,
         src,
-        etc,
         bin,
         share,
     }
-}
-
-/// Installed resources have the same root for every user and service.
-pub fn resolve_share(override_path: Option<PathBuf>) -> PathBuf {
-    override_path
-        .filter(|path| path.is_absolute())
-        .unwrap_or_else(|| PathBuf::from("/opt/mixos/share"))
 }
 
 fn env_or(var: &str, fallback: impl FnOnce() -> PathBuf) -> PathBuf {
@@ -201,20 +190,6 @@ fn home_without_environment() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn shared_resources_use_an_absolute_installation_override() {
-        assert_eq!(resolve_share(None), PathBuf::from("/opt/mixos/share"));
-        assert_eq!(resolve_share(Some(PathBuf::from(""))), resolve_share(None));
-        assert_eq!(
-            resolve_share(Some(PathBuf::from("relative"))),
-            resolve_share(None)
-        );
-        assert_eq!(
-            resolve_share(Some(PathBuf::from("/srv/resources"))),
-            PathBuf::from("/srv/resources")
-        );
-    }
 
     #[test]
     fn captured_etc_environment_preserves_override_and_root_precedence() {

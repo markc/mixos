@@ -5,8 +5,8 @@
 //! cos daemons running on the same node resolve the same broker URL:
 //!
 //! 1. `MIXOS_NODE_CONFIG` env var (explicit path override).
-//! 2. `mixos_path(Etc).join("node.conf.mix")` — normally under
-//!    `~/.config/mixos/` for non-root users, `/etc/mixos/` for root.
+//! 2. `node.conf.mix` in the Etc directory (`EtcEnvironment`) — normally
+//!    under `~/.config/mixos/` for non-root users, `/etc/mixos/` for root.
 //! 3. `/etc/mixos/node.conf.mix` as the system fallback — suppressed
 //!    when `MIXOS_ETC` env var is set (the explicit isolation knob for
 //!    tests, chroots, alternate installs).
@@ -28,11 +28,9 @@
 //! the file fails to parse, OR `wg_ip` / `noded.port` are missing —
 //! matching `resolve_noded_url()`'s permissive behaviour.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::Deserialize;
-
-use crate::paths::{Dir, mixos_path};
 
 const FALLBACK_URL: &str = "ws://127.0.0.1:4200/ws";
 
@@ -166,34 +164,6 @@ fn parse_native_endpoint(contents: &str) -> Result<Option<PathBuf>, &'static str
     Ok(config.noded.unix_socket)
 }
 
-/// Walk `search_paths()` until the first **existing** file. Return the
-/// parse result for that one file — success → Some, parse error → None
-/// (caller falls back to loopback). **Does NOT continue searching past
-/// a file that exists but fails to parse**, matching the upstream
-/// `config::node::load_node_config()` behaviour: the first
-/// existing file is authoritative, even if broken. Falling through
-/// past a broken primary to a secondary would let mix dial a
-/// different broker than cos daemons running on the same node.
-fn load() -> Option<MixNodeConfig> {
-    for path in search_paths() {
-        if path.exists() {
-            return load_from(&path);
-        }
-    }
-    None
-}
-
-fn search_paths() -> Vec<PathBuf> {
-    if let Ok(path) = std::env::var("MIXOS_NODE_CONFIG") {
-        return vec![PathBuf::from(path)];
-    }
-
-    let etc = mixos_path(Dir::Etc);
-    let mixos_etc_set = std::env::var_os("MIXOS_ETC").is_some();
-
-    paths_from_etc(etc, mixos_etc_set)
-}
-
 fn paths_from_etc(etc: PathBuf, mixos_etc_set: bool) -> Vec<PathBuf> {
     let mut dirs = vec![etc];
     if !mixos_etc_set {
@@ -219,8 +189,10 @@ fn expand_node_paths(dirs: Vec<PathBuf>) -> Vec<PathBuf> {
 /// `deny_unknown_fields`), so the full node.conf.mix that cos's
 /// `node.rs` writes parses down to the two fields mix needs. Returns
 /// `None` (→ loopback) on any read/parse failure, matching the
-/// permissive fallback contract. READ-ONLY — never writes.
-fn load_from(path: &Path) -> Option<MixNodeConfig> {
+/// permissive fallback contract. READ-ONLY — never writes. Test-only: the
+/// resolver reads through `native_from_paths`, which shares this parse.
+#[cfg(test)]
+fn load_from(path: &std::path::Path) -> Option<MixNodeConfig> {
     let contents = std::fs::read_to_string(path).ok()?;
     mix::from_conf_mix_str(&contents).ok()
 }

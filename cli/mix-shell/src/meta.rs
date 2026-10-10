@@ -2884,11 +2884,12 @@ fn cmd_man(topic: Option<&str>) {
 
     // An installed session carries the manual matching its binary. Explicit
     // remote/cache selection keeps the existing fetch contract available.
-    if env::var_os("MIXOS_MAN_SOURCE").is_none() && env::var_os("MIXOS_MAN_URL").is_none() {
-        if let Some(content) = read_local_man_page(&filename) {
-            print!("{content}");
-            return;
-        }
+    if env::var_os("MIXOS_MAN_SOURCE").is_none()
+        && env::var_os("MIXOS_MAN_URL").is_none()
+        && let Some(content) = read_local_man_page(&filename)
+    {
+        print!("{content}");
+        return;
     }
 
     if source == ManSource::Local {
