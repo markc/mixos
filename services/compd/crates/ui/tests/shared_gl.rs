@@ -226,3 +226,96 @@ fn egui_paints_into_the_shared_context_and_smithay_composites_it() {
         "composite blue (orientation)",
     );
 }
+
+/// A full surface of one colour, changed by message.
+struct Fill(egui::Color32);
+
+impl UiProgram for Fill {
+    type Message = egui::Color32;
+
+    fn show(&mut self, ui: &mut egui::Ui, _emit: &mut Vec<egui::Color32>) {
+        let rect = ui.ctx().content_rect();
+        ui.ctx().layer_painter(egui::LayerId::background()).rect_filled(rect, 0.0, self.0);
+    }
+
+    fn update(&mut self, colour: egui::Color32) {
+        self.0 = colour;
+    }
+
+    fn setup(&mut self, _ctx: &egui::Context) {}
+}
+
+/// Two runtimes, each with its own painter, alternate with smithay draws for
+/// several rounds: neither leaves GL state that breaks the other.
+#[test]
+#[ignore = "needs a GPU render node"]
+fn two_painters_alternate_with_smithay_draws() {
+    let node = std::env::var("COMPD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
+    let file = std::fs::OpenOptions::new().read(true).write(true).open(&node).expect("render node");
+    let gbm = GbmDevice::new(DeviceFd::from(OwnedFd::from(file))).expect("gbm device");
+    let display = unsafe { EGLDisplay::new(gbm) }.expect("EGL display");
+    let context = EGLContext::new(&display).expect("EGL context");
+    let mut gles = unsafe { GlesRenderer::new(context) }.expect("GLES renderer");
+    let registrar = render_gles::format::registrar::registrar::Registrar::new();
+    let wgpu = graphics::surface::create_wgpu_gl_context(&registrar, &mut gles).expect("wgpu");
+    let size: Size<i32, Physical> = (W, H).into();
+    let gpu = || ui::engine::Gpu {
+        device: wgpu.device.clone(),
+        queue: wgpu.queue.clone(),
+        format: graphics::surface::FORMAT,
+    };
+    let mut left = UiRuntime::new(Fill(egui::Color32::RED), (W as u32, H as u32), 1.0, gpu());
+    let mut right = UiRuntime::new(Fill(egui::Color32::GREEN), (W as u32, H as u32), 1.0, gpu());
+    let mut left_surface = graphics::surface::UiSurface::allocate(&node, &wgpu, &mut gles, size).expect("surface");
+    let mut right_surface = graphics::surface::UiSurface::allocate(&node, &wgpu, &mut gles, size).expect("surface");
+    let mut target = Offscreen::<smithay::backend::renderer::gles::GlesTexture>::create_buffer(
+        &mut gles,
+        Fourcc::Abgr8888,
+        (W, H).into(),
+    )
+    .expect("offscreen target");
+    let rounds = [
+        (egui::Color32::RED, egui::Color32::GREEN),
+        (egui::Color32::BLUE, egui::Color32::YELLOW),
+        (egui::Color32::WHITE, egui::Color32::BLACK),
+    ];
+    for (round, (a, b)) in rounds.into_iter().enumerate() {
+        left.queue_message(a);
+        right.queue_message(b);
+        for (runtime, surface) in [(&mut left, &mut left_surface), (&mut right, &mut right_surface)] {
+            runtime.tick();
+            graphics::surface::make_current(&mut gles);
+            wgpu.acquire_gl_state();
+            let view = surface.begin_render_view().expect("view");
+            runtime.render_into(&view);
+            surface.submitted(false);
+            let _ = wgpu.device.poll(wgpu::PollType::wait_indefinitely());
+            wgpu.release_gl_state();
+            surface.poll();
+        }
+        // smithay: left texture on the left half, right on the right half.
+        let left_texture = left_surface.gles_texture().expect("left").clone();
+        let right_texture = right_surface.gles_texture().expect("right").clone();
+        {
+            let mut framebuffer = gles.bind(&mut target).expect("bind");
+            let mut frame = gles.render(&mut framebuffer, size, Transform::Normal).expect("frame");
+            let full = Rectangle::from_size(size);
+            frame.clear(Color32F::new(0.5, 0.5, 0.5, 1.0), &[full]).expect("clear");
+            let half = Rectangle::new((0, 0).into(), (W / 2, H).into());
+            let other = Rectangle::new((W / 2, 0).into(), (W / 2, H).into());
+            let src = Rectangle::from_size(((W / 2) as f64, H as f64).into());
+            Frame::render_texture_from_to(&mut frame, &left_texture, src, half, &[half], &[], Transform::Normal, 1.0).expect("left draw");
+            Frame::render_texture_from_to(&mut frame, &right_texture, src, other, &[other], &[], Transform::Normal, 1.0).expect("right draw");
+            frame.finish().expect("finish");
+        }
+        let framebuffer = gles.bind(&mut target).expect("rebind");
+        let mapping = gles
+            .copy_framebuffer(&framebuffer, Rectangle::from_size((W, H).into()), Fourcc::Abgr8888)
+            .expect("copy");
+        drop(framebuffer);
+        let pixels = gles.map_texture(&mapping).expect("map").to_vec();
+        save(&pixels, &format!("shared_gl_round{round}.png"));
+        close(pixel(&pixels, 32, 64), a.to_array(), &format!("round {round} left"));
+        close(pixel(&pixels, 224, 64), b.to_array(), &format!("round {round} right"));
+    }
+}
