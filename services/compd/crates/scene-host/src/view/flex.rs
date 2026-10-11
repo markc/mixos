@@ -28,7 +28,10 @@
 //!   its `w` x `h` (16 by default), a sized `spacer` at its size.
 //! - A vertical `list` is a column of `row_height` cells, `max_rows` (8)
 //!   tall unless sized, scrolling past that; a horizontal list is a row of
-//!   cells. Each cell holds one instance of the row template.
+//!   cells that shrink when the row is crowded (an `elide` text in them
+//!   gives up its width), each down to its instance's floor: an explicit
+//!   `min_width` or a fixed width keeps its width. Each cell holds one
+//!   instance of the row template.
 //! - Hidden nodes and their subtrees are left out (reported hidden, zero
 //!   size). The panel's recovered glyphs are the one exception (see
 //!   `crate::images::panel_fallback`).
@@ -185,6 +188,37 @@ fn lpa(v: f32) -> LengthPercentageAuto {
     LengthPercentageAuto::length(v)
 }
 
+/// How narrow a row instance in a crowded horizontal list may get: its
+/// explicit minimum, else its fixed width (equal `min_`/`max_` bounds, a
+/// number, or square on a fixed height, as `sizing` fixes them),
+/// else the square minimum of a fixed-height centred row, else nothing.
+fn width_floor(node: &Node) -> f32 {
+    let height = number(node, "height");
+    let square = matches!(port_text(node, "width"), "height" | "square") || flag(node, "square");
+    let elides = node.family == "text" && flag(node, "elide");
+    if let Some(min) = number(node, "min_width") {
+        // An explicit minimum wins over a maximum, as in flexbox.
+        return min;
+    }
+    let fixed = if elides {
+        // An eliding text may always shrink below its width.
+        0.0
+    } else if let Some(width) = number(node, "width") {
+        width
+    } else if let (true, Some(h)) = (square, height) {
+        h
+    } else if let (true, Some(h)) = (
+        node.family == "row" && port_text(node, "justify") == "center",
+        height,
+    ) {
+        h
+    } else {
+        0.0
+    };
+    // Never above what the node's maximum lets it be.
+    number(node, "max_width").map_or(fixed, |max| fixed.min(max))
+}
+
 impl<'a> Builder<'a> {
     fn text_style(&self, mono: bool) -> TextStyle {
         if mono {
@@ -236,6 +270,20 @@ impl<'a> Builder<'a> {
             style.flex_grow = grow.unwrap_or(1.0);
             style.flex_basis = len(0.0);
         }
+        // The schema's remaining flex-item ports, as CSS has them.
+        if let Some(shrink) = number(node, "shrink").filter(|s| *s >= 0.0) {
+            style.flex_shrink = shrink;
+        }
+        if let Some(basis) = number(node, "basis") {
+            style.flex_basis = len(basis);
+        }
+        style.align_self = match port_text(node, "align_self") {
+            "start" => Some(AlignSelf::FLEX_START),
+            "center" => Some(AlignSelf::CENTER),
+            "end" => Some(AlignSelf::FLEX_END),
+            "stretch" => Some(AlignSelf::STRETCH),
+            _ => style.align_self,
+        };
         if let Some(w) = number(node, "width") {
             style.size.width = len(w);
         }
@@ -507,6 +555,8 @@ impl<'a> Builder<'a> {
         let row_height = number(node, "row_height").unwrap_or(24.0);
         let gap = number(node, "gap").unwrap_or(0.0);
         let mut cells = Vec::with_capacity(items.len());
+        // The sum of the cells' floors (see below): the list's own minimum.
+        let mut floors = 0.0;
         for item in items {
             let item_id = item["id"].as_str().unwrap_or_default().to_owned();
             let Some(instance) = data.instances.get(&item_id) else {
@@ -549,7 +599,20 @@ impl<'a> Builder<'a> {
                 flex_shrink: 0.0,
                 ..Style::default()
             };
-            if !horizontal {
+            if horizontal {
+                // A crowded horizontal list (the panel's tasks) shrinks its
+                // cells rather than running off its row, each down to its
+                // instance's floor (an explicit minimum or a fixed width):
+                // an `elide` text inside gives up its width, a fixed cell
+                // keeps it.
+                let floor = instance.get(&template).map_or(0.0, width_floor);
+                floors += floor;
+                cell_style.flex_shrink = 1.0;
+                cell_style.min_size.width = lpa(floor);
+                let mut inner_style = self.tree.style(content).ok()?.clone();
+                inner_style.min_size.width = lpa(floor);
+                self.tree.set_style(content, inner_style).ok()?;
+            } else {
                 cell_style.size.height = len(row_height);
             }
             let cell = self.tree.new_with_children(cell_style, &[content]).ok()?;
@@ -580,6 +643,10 @@ impl<'a> Builder<'a> {
                 "end" => AlignItems::FLEX_END,
                 _ => AlignItems::FLEX_START,
             });
+            if !node.ports.contains_key("min_width") {
+                let gaps = gap * cells.len().saturating_sub(1) as f32;
+                style.min_size.width = lpa(floors + gaps);
+            }
         } else {
             style.flex_direction = FlexDirection::Column;
             style.gap = Size {

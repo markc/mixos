@@ -276,7 +276,7 @@ impl<P: UiProgram> UiRuntime<P> {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
             max_texture_side,
             time: Some(self.started.elapsed().as_secs_f64()),
-            events: std::mem::take(&mut self.events),
+            events: self.take_events(),
             focused: self.focused,
             ..RawInput::default()
         };
@@ -309,8 +309,33 @@ impl<P: UiProgram> UiRuntime<P> {
         self.dirty = true;
         // What the pass emitted changed state the pass has not drawn yet.
         self.needs_pass = dispatch(&mut self.program, &mut self.handler, emitted);
+        // Input held back for the next pass (see `take_events`) runs now.
+        self.needs_pass |= !self.events.is_empty();
         if self.needs_pass {
             self.wake.request(Duration::ZERO);
+        }
+    }
+
+    /// The events for this pass. egui sees a button pressed and released in
+    /// one pass as no click (a fast touchpad tap, or an injected click), so
+    /// a pass ends at a press whose release is already queued and the
+    /// release goes to the next pass.
+    fn take_events(&mut self) -> Vec<Event> {
+        let split = self.events.iter().enumerate().find_map(|(at, event)| match event {
+            Event::PointerButton { button, pressed: true, .. } => self.events[at + 1..]
+                .iter()
+                .any(|later| {
+                    matches!(later, Event::PointerButton { button: b, pressed: false, .. } if b == button)
+                })
+                .then_some(at),
+            _ => None,
+        });
+        match split {
+            Some(at) => {
+                let rest = self.events.split_off(at + 1);
+                std::mem::replace(&mut self.events, rest)
+            }
+            None => std::mem::take(&mut self.events),
         }
     }
 

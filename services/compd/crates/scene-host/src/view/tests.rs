@@ -134,6 +134,96 @@ fn panel_has_square_pager_two_clock_lines_and_full_task_hit_targets() {
     assert_eq!((peek.width(), peek.height()), (20.0, 20.0));
 }
 
+/// A panel too narrow for its tasks shrinks them (their titles elide) and
+/// keeps everything on the edge, instead of pushing the right end off it.
+#[test]
+fn a_crowded_panel_shrinks_its_tasks_and_stays_on_screen() {
+    let width = 450.0;
+    let rt = runtime(
+        include_str!("../../tests/fixtures/panel-render.scene.mix"),
+        (width as u32, 52),
+    );
+    let task = row_of(&rt, "tasks", "task");
+    assert!(task.width() < 218.0, "the task gave way: {task:?}");
+    // Every drawn rectangle, the task cells and their contents included.
+    for placed in &rt.program.layout().placed {
+        assert!(
+            placed.rect.right() <= width + 0.5,
+            "{} runs off the edge: {:?}",
+            placed.key,
+            placed.rect
+        );
+    }
+    assert_eq!(
+        rect_of(&rt, "peek").right(),
+        width - 4.0,
+        "peek ends at the padding"
+    );
+}
+
+/// Crowding never shrinks a cell below its instance's floor: square
+/// fixed-height cells and equal width bounds keep their width, and cells
+/// never overlap.
+#[test]
+fn crowded_horizontal_cells_keep_their_floors_and_never_overlap() {
+    let source = |template: &str| {
+        format!(
+            "---\nscene: 1\nname: crowd\ncitizen: c\n---\n```mix\nroot: {{widget: \"row\", children: [\"list\"]}}\nlist: {{widget: \"list\", flow: \"horizontal\", row: \"cell\", row_height: 30, gap: 4, rows: [{{id: \"a\", cells: [\"1\"]}}, {{id: \"b\", cells: [\"2\"]}}, {{id: \"c\", cells: [\"3\"]}}, {{id: \"d\", cells: [\"4\"]}}]}}\ncell: {template}\nlabel: {{widget: \"text\", text: \"{{0}}\"}}\n```\n"
+        )
+    };
+    for (template, floor) in [
+        (
+            "{widget: \"row\", height: 30, justify: \"center\", padding: 8, children: [\"label\"]}",
+            30.0,
+        ),
+        (
+            "{widget: \"row\", min_width: 60, max_width: 60, children: [\"label\"]}",
+            60.0,
+        ),
+    ] {
+        let rt = runtime(&source(template), (80, 40));
+        let mut cells: Vec<egui::Rect> = ["a", "b", "c", "d"]
+            .iter()
+            .map(|id| row_of(&rt, "list", id))
+            .collect();
+        cells.sort_by(|x, y| x.left().total_cmp(&y.left()));
+        for cell in &cells {
+            assert!(cell.width() >= floor - 0.5, "{template}: {cell:?}");
+        }
+        for pair in cells.windows(2) {
+            assert!(
+                pair[1].left() >= pair[0].right() - 0.5,
+                "{template}: overlap {pair:?}"
+            );
+        }
+    }
+    // A square floor above the row's maximum is held to the maximum,
+    // crowded or not.
+    let bounded =
+        "{widget: \"row\", height: 30, justify: \"center\", max_width: 20, children: [\"label\"]}";
+    for surface in [80, 400] {
+        let rt = runtime(&source(bounded), (surface, 40));
+        for id in ["a", "b", "c", "d"] {
+            let cell = row_of(&rt, "list", id);
+            assert!(cell.width() <= 20.5, "{surface}: {id} {cell:?}");
+        }
+    }
+}
+
+/// `shrink`, `basis` and `align_self` act as their flexbox names say.
+#[test]
+fn shrink_basis_and_align_self_follow_flexbox() {
+    let source = "---\nscene: 1\nname: items\ncitizen: c\n---\n```mix\nroot: {widget: \"row\", height: 40, children: [\"keep\", \"give\", \"low\"]}\nkeep: {widget: \"column\", basis: 80, shrink: 0, min_width: 0, children: []}\ngive: {widget: \"column\", basis: 80, min_width: 0, children: []}\nlow: {widget: \"column\", min_width: 10, max_width: 10, min_height: 10, max_height: 10, align_self: \"end\", children: []}\n```\n";
+    let rt = runtime(source, (120, 40));
+    assert_eq!(
+        rect_of(&rt, "keep").width(),
+        80.0,
+        "shrink 0 keeps its basis"
+    );
+    assert!(rect_of(&rt, "give").width() < 80.0, "the other gives way");
+    assert_eq!(rect_of(&rt, "low").bottom(), 40.0, "align_self end");
+}
+
 #[test]
 fn panel_pager_digits_sit_at_the_centre_of_their_hit_targets() {
     let rt = runtime(
