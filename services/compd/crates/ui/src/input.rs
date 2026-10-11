@@ -301,13 +301,18 @@ impl Translator {
                     return;
                 }
                 let logical = if key.pressed {
-                    let logical = egui_key(key.keysym, key.text.as_deref());
-                    if let Some(logical) = logical
-                        && !self.keys.iter().any(|(code, _)| *code == key.code)
-                    {
-                        self.keys.push((key.code, logical));
+                    // A key already held presses again as the key it first
+                    // pressed, so its one release matches.
+                    match self.keys.iter().find(|(code, _)| *code == key.code) {
+                        Some((_, held)) => Some(*held),
+                        None => {
+                            let logical = egui_key(key.keysym, key.text.as_deref());
+                            if let Some(logical) = logical {
+                                self.keys.push((key.code, logical));
+                            }
+                            logical
+                        }
                     }
-                    logical
                 } else {
                     let at = self.keys.iter().position(|(code, _)| *code == key.code);
                     at.map(|at| self.keys.remove(at).1)
@@ -557,6 +562,32 @@ mod tests {
                 }
             ),
             "as the key it pressed: {events:?}"
+        );
+    }
+
+    #[test]
+    fn a_held_key_pressed_again_after_shift_stays_one_key() {
+        let events = run(vec![
+            key(21, 0x003d, Some("="), true, false),
+            key(50, XK_SHIFT_L, None, true, false),
+            key(21, 0x002b, Some("+"), true, true),
+            key(21, 0x002b, None, false, false),
+        ]);
+        let keys: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                egui::Event::Key { key, pressed, .. } => Some((*key, *pressed)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            keys,
+            vec![
+                (egui::Key::Equals, true),
+                (egui::Key::Equals, true),
+                (egui::Key::Equals, false)
+            ],
+            "{events:?}"
         );
     }
 
