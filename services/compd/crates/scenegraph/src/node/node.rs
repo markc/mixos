@@ -6,15 +6,17 @@
 //! old implicit push-order assembly: layering is now explicit and the
 //! node→element lowering lives in exactly one place.
 
-use smithay::backend::renderer::element::solid::SolidColorRenderElement;
-use smithay::backend::renderer::element::surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement};
-use smithay::backend::renderer::element::{Element, Kind};
-use smithay::utils::{Physical, Point, Scale};
-use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::backend::renderer::{ImportAll, ImportDma, ImportMem, Renderer, Texture};
-use dispatcher::frame::frame::SceneDispatch;
 use crate::scene::element::element::{PreImported, SceneElement};
+use dispatcher::frame::frame::SceneDispatch;
 use slots::world::frame::base::Layer;
+use smithay::backend::renderer::element::solid::SolidColorRenderElement;
+use smithay::backend::renderer::element::surface::{
+    WaylandSurfaceRenderElement, render_elements_from_surface_tree,
+};
+use smithay::backend::renderer::element::{Element, Kind};
+use smithay::backend::renderer::{ImportAll, ImportDma, ImportMem, Renderer, Texture};
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::utils::{Physical, Point, Scale};
 
 type UI = ui::UiRenderElement;
 
@@ -98,7 +100,10 @@ where
     pub fn lower(
         mut self,
         renderer: &mut R,
-    ) -> (Vec<SceneElement<R>>, Vec<dispatcher::frame::frame::ElementMeta>) {
+    ) -> (
+        Vec<SceneElement<R>>,
+        Vec<dispatcher::frame::frame::ElementMeta>,
+    ) {
         use dispatcher::frame::frame::ElementMeta;
         self.nodes.sort_by(|a, b| b.0.cmp(&a.0));
         let mut elements = Vec::new();
@@ -132,17 +137,19 @@ where
 {
     pub fn lower(self, renderer: &mut R) -> Vec<SceneElement<R>> {
         match self {
-            DrawNode::Surface(n) => render_elements_from_surface_tree::<R, WaylandSurfaceRenderElement<R>>(
-                renderer,
-                &n.surface,
-                n.location,
-                Scale::from(n.scale),
-                n.alpha,
-                Kind::Unspecified,
-            )
-            .into_iter()
-            .map(SceneElement::Layershell)
-            .collect(),
+            DrawNode::Surface(n) => {
+                render_elements_from_surface_tree::<R, WaylandSurfaceRenderElement<R>>(
+                    renderer,
+                    &n.surface,
+                    n.location,
+                    Scale::from(n.scale),
+                    n.alpha,
+                    Kind::Unspecified,
+                )
+                .into_iter()
+                .map(SceneElement::Layershell)
+                .collect()
+            }
             DrawNode::Pointer(e) => vec![SceneElement::Pointer(e)],
             DrawNode::Layershell(e) => vec![SceneElement::Layershell(e)],
             DrawNode::Canvas { elem, .. } => vec![SceneElement::Canvas(elem)],
@@ -161,7 +168,9 @@ where
                     .collect()
             }
             DrawNode::Effect(e) => {
-                import_texture(renderer, &e.dmabuf, e.location, e.size, 1.0, e.id, e.commit).into_iter().collect()
+                import_texture(renderer, &e.dmabuf, e.location, e.size, 1.0, e.id, e.commit)
+                    .into_iter()
+                    .collect()
             }
         }
     }
@@ -183,7 +192,14 @@ where
     R::TextureId: Texture + Clone + Send + 'static,
 {
     match renderer.import_dmabuf(dmabuf, None) {
-        Ok(texture) => Some(SceneElement::Texture(PreImported { texture, location, size, world_zoom, id, commit })),
+        Ok(texture) => Some(SceneElement::Texture(PreImported {
+            texture,
+            location,
+            size,
+            world_zoom,
+            id,
+            commit,
+        })),
         Err(err) => {
             error!("draw.node: dmabuf import into the active renderer failed: {err}");
             None

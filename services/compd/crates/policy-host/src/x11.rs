@@ -36,7 +36,10 @@ pub fn publish_desktops(lp: &Loop) {
         return;
     };
     let comp = &lp.inner.comp;
-    let pair = (comp.workspaces.count, comp.current_workspace().saturating_sub(1));
+    let pair = (
+        comp.workspaces.count,
+        comp.current_workspace().saturating_sub(1),
+    );
     if PUBLISHED.with(Cell::get) == Some(pair) {
         return;
     }
@@ -61,21 +64,48 @@ pub fn sync_windows(lp: &Loop, ids: impl IntoIterator<Item = SurfaceId>) {
     }
     let comp = &lp.inner.comp;
     use dispatcher::wire::trait_::surface_event::SurfaceHandle;
-    let mut wanted: std::collections::HashMap<u32, (u32, bool)> = ids.into_iter().filter_map(|id| {
-        let record = comp.registry.get(id)?;
-        if record.role() != (SurfaceRole::X11 { override_redirect: false }) || !record.mapped() { return None; }
-        let SurfaceHandle::X11(window_id) = record.handle() else { return None };
-        Some((*window_id, (record.workspace()?.saturating_sub(1),
-            policy::workspaces::x11_suspended(record, comp.current_workspace()))))
-    }).collect();
-    if wanted.is_empty() { return; }
+    let mut wanted: std::collections::HashMap<u32, (u32, bool)> = ids
+        .into_iter()
+        .filter_map(|id| {
+            let record = comp.registry.get(id)?;
+            if record.role()
+                != (SurfaceRole::X11 {
+                    override_redirect: false,
+                })
+                || !record.mapped()
+            {
+                return None;
+            }
+            let SurfaceHandle::X11(window_id) = record.handle() else {
+                return None;
+            };
+            Some((
+                *window_id,
+                (
+                    record.workspace()?.saturating_sub(1),
+                    policy::workspaces::x11_suspended(record, comp.current_workspace()),
+                ),
+            ))
+        })
+        .collect();
+    if wanted.is_empty() {
+        return;
+    }
     for space in lp.inner.all_world_spaces() {
         for window in space.state.elements() {
-            let Some(x11) = window.x11_surface() else { continue };
-            let Some((desktop, suspended)) = wanted.remove(&x11.window_id()) else { continue };
-            if x11.desktop() != Some(desktop) { let _ = x11.set_desktop(desktop); }
+            let Some(x11) = window.x11_surface() else {
+                continue;
+            };
+            let Some((desktop, suspended)) = wanted.remove(&x11.window_id()) else {
+                continue;
+            };
+            if x11.desktop() != Some(desktop) {
+                let _ = x11.set_desktop(desktop);
+            }
             let _ = x11.set_hidden_hint(suspended);
-            if wanted.is_empty() { return; }
+            if wanted.is_empty() {
+                return;
+            }
         }
     }
 }
@@ -91,7 +121,13 @@ pub fn sync(lp: &Loop) {
         .comp
         .registry
         .surface_rows()
-        .filter(|record| record.role() == SurfaceRole::X11 { override_redirect: false } && record.mapped())
+        .filter(|record| {
+            record.role()
+                == SurfaceRole::X11 {
+                    override_redirect: false,
+                }
+                && record.mapped()
+        })
         .map(|record| record.id())
         .collect();
     sync_windows(lp, ids);
@@ -107,7 +143,12 @@ thread_local! {
 /// (a map stamp, a minimise, a switch, a count change) or the window
 /// manager came up. Idle passes write nothing.
 pub fn sync_if_changed(lp: &mut Loop) {
-    let revision = lp.state.xwayland.xwm.as_ref().map(|_| lp.inner.comp.revision());
+    let revision = lp
+        .state
+        .xwayland
+        .xwm
+        .as_ref()
+        .map(|_| lp.inner.comp.revision());
     if SYNCED.with(Cell::get) == revision {
         return;
     }
@@ -150,17 +191,36 @@ pub fn sync_stacking(lp: &mut Loop) {
         let comp = &lp.inner.comp;
         // Workspace settlement also restacks. Index both sides once rather
         // than scanning the registry and every window for each drawable.
-        let records: std::collections::HashMap<_, _> = comp.registry.surface_rows().filter_map(|record| {
-            if record.role() != (SurfaceRole::X11 { override_redirect: false }) || !record.mapped() { return None; }
-            let dispatcher::wire::trait_::surface_event::SurfaceHandle::X11(id) = record.handle() else { return None };
-            Some((record.uuid()?, *id))
-        }).collect();
+        let records: std::collections::HashMap<_, _> = comp
+            .registry
+            .surface_rows()
+            .filter_map(|record| {
+                if record.role()
+                    != (SurfaceRole::X11 {
+                        override_redirect: false,
+                    })
+                    || !record.mapped()
+                {
+                    return None;
+                }
+                let dispatcher::wire::trait_::surface_event::SurfaceHandle::X11(id) =
+                    record.handle()
+                else {
+                    return None;
+                };
+                Some((record.uuid()?, *id))
+            })
+            .collect();
         let elements: std::collections::HashMap<_, _> = lp
             .inner
             .all_world_spaces()
             .iter()
             .flat_map(|space| space.state.elements())
-            .filter_map(|window| window.x11_surface().map(|x11| (x11.window_id(), x11.clone())))
+            .filter_map(|window| {
+                window
+                    .x11_surface()
+                    .map(|x11| (x11.window_id(), x11.clone()))
+            })
             .collect();
         // `drawable_order` is topmost first; the XWM wants bottom to top.
         lp.inner
@@ -174,7 +234,9 @@ pub fn sync_stacking(lp: &mut Loop) {
     if order.is_empty() || STACKED.with(|stacked| *stacked.borrow() == order) {
         return;
     }
-    let Some(xwm) = lp.state.xwayland.xwm.as_mut() else { return };
+    let Some(xwm) = lp.state.xwayland.xwm.as_mut() else {
+        return;
+    };
     if xwm.update_stacking_order_upwards(windows.iter()).is_ok() {
         STACKED.with(|stacked| *stacked.borrow_mut() = order);
     }

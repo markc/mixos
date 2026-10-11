@@ -2,8 +2,8 @@ use crate::pointer::input::native_press;
 use smithay::backend::input::{ButtonState, Event, InputBackend, PointerButtonEvent};
 use smithay::input::pointer::ButtonEvent;
 use smithay::utils::{Physical, Point, SERIAL_COUNTER};
-use world::state::{Loop, Transform};
 use world::state::state::CoordinateTrait;
+use world::state::{Loop, Transform};
 use world::surface::interface::hit::surface_under_filtered;
 use world::window::interface::draw::visible::DrawWindow;
 
@@ -19,7 +19,9 @@ use world::window::interface::draw::visible::DrawWindow;
 /// an active lock or confine (the pointer is the client's; a replayed crossing
 /// would release its lock).
 fn refresh_pointer_focus(_loop: &mut Loop, time: u32) {
-    let Some(pointer) = _loop.state.seat.seat.get_pointer() else { return };
+    let Some(pointer) = _loop.state.seat.seat.get_pointer() else {
+        return;
+    };
     if pointer.is_grabbed() || crate::pointer::input::constraint::constraint_active(_loop) {
         return;
     }
@@ -46,7 +48,11 @@ pub fn button<I: InputBackend>(event: &<I as InputBackend>::PointerButtonEvent, 
     // Shared by winit and udev: reserved corner squares take presses BEFORE
     // chrome, legacy corners, popup grabs, furniture or application routing.
     // Their matching releases stay consumed even after pointer departure.
-    if world::comp::scenes::pointer_button(_loop, event.button_code(), event.state() == ButtonState::Pressed) {
+    if world::comp::scenes::pointer_button(
+        _loop,
+        event.button_code(),
+        event.state() == ButtonState::Pressed,
+    ) {
         return;
     }
 
@@ -54,12 +60,18 @@ pub fn button<I: InputBackend>(event: &<I as InputBackend>::PointerButtonEvent, 
     // the same button, and clears its pressed look either way (decor). It
     // consumes nothing: the release still reaches the seat below, which ends
     // the implicit click grab or a chrome move/resize grab.
-    if event.state() == ButtonState::Released && event.button_code() == crate::pointer::input::chrome::BTN_LEFT {
+    if event.state() == ButtonState::Released
+        && event.button_code() == crate::pointer::input::chrome::BTN_LEFT
+    {
         crate::pointer::input::chrome::release(_loop);
     }
 
     // A press on an engaged hot corner, and its release, are the corner's (`corner.clicked*`); neither reaches a client.
-    if world::comp::corners::button(_loop, event.button_code(), event.state() == ButtonState::Pressed) {
+    if world::comp::corners::button(
+        _loop,
+        event.button_code(),
+        event.state() == ButtonState::Pressed,
+    ) {
         return;
     }
 
@@ -90,7 +102,13 @@ pub fn button<I: InputBackend>(event: &<I as InputBackend>::PointerButtonEvent, 
 
     // Viewport separator drag: a press on a separator bar starts a resize; the
     // matching release ends it. Both consume the event (no window/canvas routing).
-    let cursor_world = _loop.state.seat.seat.get_pointer().unwrap().current_location();
+    let cursor_world = _loop
+        .state
+        .seat
+        .seat
+        .get_pointer()
+        .unwrap()
+        .current_location();
     let cursor_phys: Point<f64, Physical> = {
         let t: Transform = ((cursor_world.x, cursor_world.y), _loop.focus_pane_context()).into();
         t.into()
@@ -107,7 +125,11 @@ pub fn button<I: InputBackend>(event: &<I as InputBackend>::PointerButtonEvent, 
                     smithay::utils::Size::from((pw.round() as i32, ph.round() as i32)),
                 )
             };
-            if world::viewport::interaction::interaction::try_begin_separator(_loop.inner.output_views_mut(), bounds, cursor_phys) {
+            if world::viewport::interaction::interaction::try_begin_separator(
+                _loop.inner.output_views_mut(),
+                bounds,
+                cursor_phys,
+            ) {
                 return;
             }
             // Floating pane move (Super-drag) / resize (Super+Shift-drag) near an
@@ -120,18 +142,26 @@ pub fn button<I: InputBackend>(event: &<I as InputBackend>::PointerButtonEvent, 
                 _ => None,
             };
             if let Some(resize) = tool {
-                if world::viewport::interaction::interaction::try_begin_floating(_loop.inner.output_views_mut(), cursor_phys, resize) {
+                if world::viewport::interaction::interaction::try_begin_floating(
+                    _loop.inner.output_views_mut(),
+                    cursor_phys,
+                    resize,
+                ) {
                     return;
                 }
             }
         }
         ButtonState::Released => {
             if _loop.inner.output_views().separator_drag.is_some() {
-                world::viewport::interaction::interaction::end_separator(_loop.inner.output_views_mut());
+                world::viewport::interaction::interaction::end_separator(
+                    _loop.inner.output_views_mut(),
+                );
                 return;
             }
             if _loop.inner.output_views().floating_drag.is_some() {
-                world::viewport::interaction::interaction::end_floating(_loop.inner.output_views_mut());
+                world::viewport::interaction::interaction::end_floating(
+                    _loop.inner.output_views_mut(),
+                );
                 return;
             }
         }
@@ -200,7 +230,13 @@ pub fn button<I: InputBackend>(event: &<I as InputBackend>::PointerButtonEvent, 
         }) {
             // It is directly over a window.
             native_press::press::input_received::<I>(
-                pointer, event, _loop, hit, keyboard, button_state, grabbed,
+                pointer,
+                event,
+                _loop,
+                hit,
+                keyboard,
+                button_state,
+                grabbed,
             )
         }
     }

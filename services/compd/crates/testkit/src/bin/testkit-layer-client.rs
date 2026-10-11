@@ -31,8 +31,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use wayland_client::protocol::{
     wl_buffer::WlBuffer, wl_callback, wl_callback::WlCallback, wl_compositor::WlCompositor,
-    wl_pointer::WlPointer, wl_registry, wl_registry::WlRegistry, wl_seat::WlSeat, wl_shm, wl_shm::WlShm,
-    wl_shm_pool::WlShmPool, wl_surface::WlSurface,
+    wl_pointer::WlPointer, wl_registry, wl_registry::WlRegistry, wl_seat::WlSeat, wl_shm,
+    wl_shm::WlShm, wl_shm_pool::WlShmPool, wl_surface::WlSurface,
 };
 use wayland_client::{Connection, Dispatch, QueueHandle, delegate_noop};
 use wayland_protocols_wlr::layer_shell::v1::client::{
@@ -51,8 +51,20 @@ struct State {
 }
 
 impl Dispatch<WlRegistry, ()> for State {
-    fn event(state: &mut Self, _: &WlRegistry, event: wl_registry::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
-        if let wl_registry::Event::Global { name, interface, version } = event {
+    fn event(
+        state: &mut Self,
+        _: &WlRegistry,
+        event: wl_registry::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wl_registry::Event::Global {
+            name,
+            interface,
+            version,
+        } = event
+        {
             state.globals.push((name, interface, version));
         }
     }
@@ -68,7 +80,11 @@ impl Dispatch<ZwlrLayerSurfaceV1, ()> for State {
         _: &QueueHandle<Self>,
     ) {
         match event {
-            zwlr_layer_surface_v1::Event::Configure { serial, width, height } => {
+            zwlr_layer_surface_v1::Event::Configure {
+                serial,
+                width,
+                height,
+            } => {
                 layer.ack_configure(serial);
                 state.configured = Some((width, height));
             }
@@ -79,7 +95,14 @@ impl Dispatch<ZwlrLayerSurfaceV1, ()> for State {
 }
 
 impl Dispatch<WlCallback, ()> for State {
-    fn event(state: &mut Self, _: &WlCallback, event: wl_callback::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+    fn event(
+        state: &mut Self,
+        _: &WlCallback,
+        event: wl_callback::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
         if let wl_callback::Event::Done { .. } = event {
             state.frame_due = true;
         }
@@ -101,7 +124,10 @@ fn fail(message: &str) -> ! {
 }
 
 fn arg(args: &[String], name: &str) -> Option<String> {
-    args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
+    args.iter()
+        .position(|a| a == name)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
 }
 
 /// An opaque `width` x `height` shm buffer.
@@ -110,7 +136,10 @@ fn buffer(shm: &WlShm, qh: &QueueHandle<State>, width: i32, height: i32) -> WlBu
     let size = stride * height;
     let fd = unsafe { libc::memfd_create(c"testkit-layer-client".as_ptr(), libc::MFD_CLOEXEC) };
     if fd < 0 {
-        fail(&format!("memfd_create: {}", std::io::Error::last_os_error()));
+        fail(&format!(
+            "memfd_create: {}",
+            std::io::Error::last_os_error()
+        ));
     }
     let file = unsafe { File::from_raw_fd(fd) };
     if let Err(error) = file.set_len(size as u64) {
@@ -136,15 +165,23 @@ fn main() {
         // SAFETY: the handler only stores to an atomic, which is
         // async-signal-safe.
         unsafe {
-            libc::signal(libc::SIGUSR1, on_usr1 as extern "C" fn(libc::c_int) as libc::sighandler_t);
+            libc::signal(
+                libc::SIGUSR1,
+                on_usr1 as extern "C" fn(libc::c_int) as libc::sighandler_t,
+            );
         }
     }
     let Some(namespace) = arg(&args, "--namespace") else {
         fail("--namespace TOKEN is required");
     };
     let edge = arg(&args, "--edge").unwrap_or_else(|| "top".into());
-    let size: u32 = arg(&args, "--size").and_then(|s| s.parse().ok()).unwrap_or(32).max(1);
-    let exclusive: i32 = arg(&args, "--exclusive").and_then(|s| s.parse().ok()).unwrap_or(0);
+    let size: u32 = arg(&args, "--size")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(32)
+        .max(1);
+    let exclusive: i32 = arg(&args, "--exclusive")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
     let keyboard = match arg(&args, "--keyboard").as_deref() {
         None | Some("none") => KeyboardInteractivity::None,
         Some("exclusive") => KeyboardInteractivity::Exclusive,
@@ -166,15 +203,28 @@ fn main() {
         other => fail(&format!("unknown --edge {other}")),
     };
 
-    let connection = Connection::connect_to_env().unwrap_or_else(|error| fail(&format!("connect: {error}")));
+    let connection =
+        Connection::connect_to_env().unwrap_or_else(|error| fail(&format!("connect: {error}")));
     let mut queue = connection.new_event_queue();
     let qh = queue.handle();
     let registry = connection.display().get_registry(&qh, ());
     let mut state = State::default();
-    queue.roundtrip(&mut state).unwrap_or_else(|error| fail(&format!("roundtrip: {error}")));
+    queue
+        .roundtrip(&mut state)
+        .unwrap_or_else(|error| fail(&format!("roundtrip: {error}")));
 
-    let bind = |interface: &str| state.globals.iter().find(|(_, i, _)| i == interface).map(|(n, _, v)| (*n, *v));
-    let (compositor, shm, shell) = match (bind("wl_compositor"), bind("wl_shm"), bind("zwlr_layer_shell_v1")) {
+    let bind = |interface: &str| {
+        state
+            .globals
+            .iter()
+            .find(|(_, i, _)| i == interface)
+            .map(|(n, _, v)| (*n, *v))
+    };
+    let (compositor, shm, shell) = match (
+        bind("wl_compositor"),
+        bind("wl_shm"),
+        bind("zwlr_layer_shell_v1"),
+    ) {
         (Some(compositor), Some(shm), Some(shell)) => (compositor, shm, shell),
         _ => fail("compd advertised no wl_compositor / wl_shm / zwlr_layer_shell_v1"),
     };
@@ -230,17 +280,24 @@ fn main() {
         if concealed {
             continue;
         }
-        let Some((width, height)) = state.configured else { continue };
+        let Some((width, height)) = state.configured else {
+            continue;
+        };
         let (width, height) = (width.max(1) as i32, height.max(1) as i32);
         if !mapped || state.frame_due {
             state.frame_due = false;
-            if current.as_ref().is_none_or(|(size, _)| *size != (width, height)) {
+            if current
+                .as_ref()
+                .is_none_or(|(size, _)| *size != (width, height))
+            {
                 if let Some((_, old)) = current.take() {
                     old.destroy();
                 }
                 current = Some(((width, height), buffer(&shm, &qh, width, height)));
             }
-            let Some((_, buffer)) = current.as_ref() else { continue };
+            let Some((_, buffer)) = current.as_ref() else {
+                continue;
+            };
             surface.attach(Some(buffer), 0, 0);
             surface.damage_buffer(0, 0, width, height);
             surface.frame(&qh, ());

@@ -1,7 +1,7 @@
+use dispatcher::state::state::Dispatch;
 use smithay::backend::input::{Axis, AxisSource, Event, InputBackend, PointerAxisEvent};
 use smithay::input::pointer::{AxisFrame, PointerHandle};
 use world::state::Loop;
-use dispatcher::state::state::Dispatch;
 
 /// Overall speed of a two-finger touchpad (libinput `Finger`) scroll forwarded to
 /// a window; `<1.0` slows it. Discrete wheels are unaffected. Tuning knob.
@@ -27,7 +27,8 @@ pub fn input_received<I: InputBackend>(
     // (and UI), matching the inversion the canvas-pan path applies. A discrete
     // wheel is left untouched. `stop`/zero detection below reads the raw event,
     // so flipping the forwarded amounts here does not affect it.
-    let invert = matches!(source, AxisSource::Finger) && _loop.inner.preference.input_natural_scroll;
+    let invert =
+        matches!(source, AxisSource::Finger) && _loop.inner.preference.input_natural_scroll;
     let sign = if invert { -1.0 } else { 1.0 };
     let mut horizontal_amount = horizontal_amount * sign;
     let mut vertical_amount = vertical_amount * sign;
@@ -39,7 +40,8 @@ pub fn input_received<I: InputBackend>(
     // finger-source amount up over the first few events; the stop event resets it.
     // (Discrete/v120 wheels have no such start burst and are left untouched.)
     if source == AxisSource::Finger {
-        if event.amount(Axis::Horizontal) == Some(0.0) && event.amount(Axis::Vertical) == Some(0.0) {
+        if event.amount(Axis::Horizontal) == Some(0.0) && event.amount(Axis::Vertical) == Some(0.0)
+        {
             _loop.inner.finger_scroll_ramp.end();
         } else {
             let f = FINGER_SCROLL_SCALE * _loop.inner.finger_scroll_ramp.factor(event.time_msec());

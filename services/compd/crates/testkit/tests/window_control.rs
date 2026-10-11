@@ -125,7 +125,11 @@ fn placed_fullscreen_requests_survive_an_earlier_cross_world_activation() {
         let (a_surface, _, a_top) = h.mapped_toplevel(64, 48);
         let a = h.wire.inner.space.state.elements().next().unwrap().clone();
         let a_uuid = a.uuid().unwrap();
-        h.wire.inner.space.state.map_element(a.clone(), (17, 23), false);
+        h.wire
+            .inner
+            .space
+            .state
+            .map_element(a.clone(), (17, 23), false);
         slot::set_expected_size(&a, (64, 48).into());
         let restore_at = h.wire.inner.space.state.element_location(&a).unwrap();
         if !fullscreen {
@@ -145,20 +149,30 @@ fn placed_fullscreen_requests_survive_an_earlier_cross_world_activation() {
         h.wire.inner.serviced_lifecycle.clear();
         assert_eq!(h.wire.inner.pending_placements(), 0);
 
-        h.wire.inner.request_activation(b.clone(), ActivationOrigin::Foreign);
+        h.wire
+            .inner
+            .request_activation(b.clone(), ActivationOrigin::Foreign);
         // Real xdg request, ordered after Activate(B), on the placed A.
-        if fullscreen { a_top.set_fullscreen(None); } else { a_top.unset_fullscreen(); }
+        if fullscreen {
+            a_top.set_fullscreen(None);
+        } else {
+            a_top.unset_fullscreen();
+        }
         h.roundtrip();
         assert_eq!(h.wire.inner.lifecycle[0].len(), 2);
         h.service_lifecycle();
         assert_eq!(h.wire.inner.active_world, 1);
-        assert_eq!(h.wire.inner.serviced_lifecycle, [
-            (b.uuid().unwrap(), "activated"), (a_uuid, "fullscreen"),
-        ]);
+        assert_eq!(
+            h.wire.inner.serviced_lifecycle,
+            [(b.uuid().unwrap(), "activated"), (a_uuid, "fullscreen"),]
+        );
         assert_eq!(a.is_fullscreen(), fullscreen);
         assert_eq!(ident::states(&a).fullscreen, fullscreen);
         assert!(ident::states(&b).activated);
-        assert!(!ident::states(&a).activated, "off-world fullscreen cannot steal activation");
+        assert!(
+            !ident::states(&a).activated,
+            "off-world fullscreen cannot steal activation"
+        );
         assert!(h.wire.inner.space.state.element_location(&a).is_none());
         assert_eq!(h.wire.inner.space.state.element_location(&b), b_at);
         assert!(h.record(&h.handle_of(&a_surface)).unwrap().mapped());
@@ -167,14 +181,27 @@ fn placed_fullscreen_requests_survive_an_earlier_cross_world_activation() {
         h.tick_frame();
         assert_eq!(a.is_fullscreen(), fullscreen);
         if !fullscreen {
-            assert_eq!(h.wire.inner.space.state.element_location(&a), Some(restore_at));
+            assert_eq!(
+                h.wire.inner.space.state.element_location(&a),
+                Some(restore_at)
+            );
             assert_eq!(slot::decided_size(&a), Some((64, 48).into()));
         } else {
-            assert_eq!(h.wire.inner.space.state.element_location(&a), Some((0, 0).into()));
-            assert_eq!(slot::decided_size(&a), Some(testkit::host::OUTPUT_SIZE.into()));
+            assert_eq!(
+                h.wire.inner.space.state.element_location(&a),
+                Some((0, 0).into())
+            );
+            assert_eq!(
+                slot::decided_size(&a),
+                Some(testkit::host::OUTPUT_SIZE.into())
+            );
         }
         assert!(h.wire.inner.lifecycle.iter().all(Vec::is_empty));
-        assert_eq!(h.wire.inner.serviced_lifecycle.len(), 2, "consumed exactly once");
+        assert_eq!(
+            h.wire.inner.serviced_lifecycle.len(),
+            2,
+            "consumed exactly once"
+        );
     }
 }
 
@@ -203,7 +230,9 @@ fn parked_retained_fullscreen_cannot_overtake_a_later_unfullscreen() {
     h.client.attach_null(&surface);
     top.set_fullscreen(None);
     h.roundtrip();
-    h.wire.inner.request_activation(b, ActivationOrigin::Foreign);
+    h.wire
+        .inner
+        .request_activation(b, ActivationOrigin::Foreign);
     h.wire.inner.serviced_lifecycle.clear();
     assert_eq!(h.service_lifecycle(), 0);
     assert_eq!(h.wire.inner.active_world, 1);
@@ -220,7 +249,10 @@ fn parked_retained_fullscreen_cannot_overtake_a_later_unfullscreen() {
         WindowLifecycleEvent::Fullscreen(enter, true),
         WindowLifecycleEvent::Fullscreen(exit, false),
     ] if map == &a && enter == &a && exit == &a));
-    assert!(h.wire.inner.lifecycle[1].is_empty(), "B cannot consume A's exit early");
+    assert!(
+        h.wire.inner.lifecycle[1].is_empty(),
+        "B cannot consume A's exit early"
+    );
     let serviced = h.wire.inner.serviced_lifecycle.clone();
     assert_eq!(h.service_lifecycle(), 0);
     assert_eq!(h.wire.inner.serviced_lifecycle, serviced);
@@ -232,9 +264,10 @@ fn parked_retained_fullscreen_cannot_overtake_a_later_unfullscreen() {
     assert_eq!(h.service_lifecycle(), 0, "a buffer alone cannot place in B");
     h.wire.inner.switch_world();
     assert_eq!(h.service_lifecycle(), 1);
-    assert_eq!(&h.wire.inner.serviced_lifecycle[1..], [
-        (uuid, "placed"), (uuid, "fullscreen"), (uuid, "fullscreen"),
-    ]);
+    assert_eq!(
+        &h.wire.inner.serviced_lifecycle[1..],
+        [(uuid, "placed"), (uuid, "fullscreen"), (uuid, "fullscreen"),]
+    );
     assert!(!a.is_fullscreen(), "the later exit wins when A returns");
     assert!(!protocols::window::ident::ident::states(&a).fullscreen);
     assert_eq!(slot::decided_size(&a), Some((64, 48).into()));
@@ -250,7 +283,14 @@ fn every_later_request_joins_the_parked_windows_retained_tail() {
     use world::window::interface::record::window::LoopWindow;
     use world::window::lifecycle::event::event::WindowLifecycleEvent;
 
-    for request in ["map", "fullscreen", "activate", "drag", "destroy", "destroy_x11"] {
+    for request in [
+        "map",
+        "fullscreen",
+        "activate",
+        "drag",
+        "destroy",
+        "destroy_x11",
+    ] {
         let mut h = Harness::new();
         h.wire.inner.switch_world();
         let (_, _, _) = h.mapped_toplevel(80, 60);
@@ -267,7 +307,9 @@ fn every_later_request_joins_the_parked_windows_retained_tail() {
         let server = a.toplevel().unwrap().wl_surface().clone();
         h.client.attach_null(&surface);
         h.roundtrip();
-        h.wire.inner.request_activation(b, ActivationOrigin::Foreign);
+        h.wire
+            .inner
+            .request_activation(b, ActivationOrigin::Foreign);
         h.service_lifecycle();
         assert_eq!(h.wire.inner.active_world, 1);
         assert_eq!(h.wire.inner.lifecycle[0].len(), 1);
@@ -275,7 +317,10 @@ fn every_later_request_joins_the_parked_windows_retained_tail() {
         match request {
             "map" => h.wire.inner.place_window(a.clone(), a.geometry()),
             "fullscreen" => h.wire.inner.fullscreen_request(a.clone(), true),
-            "activate" => h.wire.inner.request_activation(a.clone(), ActivationOrigin::Foreign),
+            "activate" => h
+                .wire
+                .inner
+                .request_activation(a.clone(), ActivationOrigin::Foreign),
             "drag" => h.wire.inner.settle_toplevel_drag(server),
             "destroy_x11" => h.wire.inner.destroy_x11_data(a.clone()),
             "destroy" => {
@@ -286,7 +331,10 @@ fn every_later_request_joins_the_parked_windows_retained_tail() {
             _ => unreachable!(),
         }
         assert_eq!(h.wire.inner.lifecycle[0].len(), 2, "{request} appends to A");
-        assert!(h.wire.inner.lifecycle[1].is_empty(), "{request} cannot bypass A in B");
+        assert!(
+            h.wire.inner.lifecycle[1].is_empty(),
+            "{request} cannot bypass A in B"
+        );
         let tail = &h.wire.inner.lifecycle[0][1];
         if request == "destroy" || request == "destroy_x11" {
             assert!(matches!(tail, WindowLifecycleEvent::Destroyed(id, _, _) if *id == uuid));
@@ -321,9 +369,13 @@ fn teardown_after_cross_world_activation_cleans_the_owning_draw_order() {
             let b_key = h.wire.inner.draw_orders[1].key(b_id);
             assert!(h.wire.inner.draw_orders[0].key(a_id).is_some());
             assert!(b_key.is_some());
-            h.wire.inner.request_activation(b, ActivationOrigin::Foreign);
+            h.wire
+                .inner
+                .request_activation(b, ActivationOrigin::Foreign);
             if withdrawn {
-                if unmapped { h.wire.inner.space.state.unmap_elem(&a); }
+                if unmapped {
+                    h.wire.inner.space.state.unmap_elem(&a);
+                }
                 let world = h.wire.inner.world_ids[0];
                 h.wire.inner.withdraw_x11(world, a.clone());
                 assert!(h.wire.inner.draw_orders[0].key(a_id).is_none());
@@ -333,7 +385,11 @@ fn teardown_after_cross_world_activation_cleans_the_owning_draw_order() {
                 h.roundtrip();
                 if !unmapped {
                     // Production Space GC can lag role death.
-                    h.wire.inner.space.state.map_element(a.clone(), (0, 0), false);
+                    h.wire
+                        .inner
+                        .space
+                        .state
+                        .map_element(a.clone(), (0, 0), false);
                 }
             }
             h.service_lifecycle();
@@ -373,7 +429,10 @@ fn every_lifecycle_event_tracks_membership_and_waits_behind_its_own_initial_map(
     ];
     for event in &events {
         for other in &events {
-            assert!(event.same_window(other), "all event identities route to the same tail");
+            assert!(
+                event.same_window(other),
+                "all event identities route to the same tail"
+            );
         }
     }
     let waiting = [WindowLifecycleEvent::InitialMap(a.clone())];
@@ -382,11 +441,17 @@ fn every_lifecycle_event_tracks_membership_and_waits_behind_its_own_initial_map(
         let owner = event.owning_space(h.wire.inner.all_world_spaces()).unwrap();
         assert!(std::ptr::eq(owner, &h.wire.inner.other_space));
         assert!(event.defer_for_placement(
-            &h.wire.inner.comp, h.wire.inner.all_world_spaces(), &h.wire.inner.space, &waiting,
+            &h.wire.inner.comp,
+            h.wire.inner.all_world_spaces(),
+            &h.wire.inner.space,
+            &waiting,
         ));
     }
     assert!(events[0].defer_for_placement(
-        &h.wire.inner.comp, h.wire.inner.all_world_spaces(), &h.wire.inner.space, &[],
+        &h.wire.inner.comp,
+        h.wire.inner.all_world_spaces(),
+        &h.wire.inner.space,
+        &[],
     ));
     // A world move changes membership, while every queued identity stays the same.
     h.wire.inner.other_space.state.unmap_elem(&a);
@@ -395,7 +460,10 @@ fn every_lifecycle_event_tracks_membership_and_waits_behind_its_own_initial_map(
         let owner = event.owning_space(h.wire.inner.all_world_spaces()).unwrap();
         assert!(std::ptr::eq(owner, &h.wire.inner.space));
         assert!(!event.defer_for_placement(
-            &h.wire.inner.comp, h.wire.inner.all_world_spaces(), &h.wire.inner.space, &[],
+            &h.wire.inner.comp,
+            h.wire.inner.all_world_spaces(),
+            &h.wire.inner.space,
+            &[],
         ));
     }
 }

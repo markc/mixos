@@ -47,13 +47,13 @@
 //! It cannot influence pacing: while frames flow it only ever observes.
 
 use protocols::redraw::schedule::schedule::Schedule;
-use world::state::Loop;
-use world::state::state::StatusSession;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{LoopHandle, RegistrationToken};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
+use world::state::Loop;
+use world::state::state::StatusSession;
 
 /// How long outstanding work may make no progress (no flip of its own) before
 /// it is rescued.
@@ -85,10 +85,19 @@ fn sync(records: &mut Vec<(String, PipeRescue)>, owed: &[String], flips: &dyn Fn
     for key in owed {
         let now = flips(key);
         match records.iter_mut().find(|(k, _)| k == key) {
-            None => records.push((key.clone(), PipeRescue { flips_at: now, ..PipeRescue::default() })),
+            None => records.push((
+                key.clone(),
+                PipeRescue {
+                    flips_at: now,
+                    ..PipeRescue::default()
+                },
+            )),
             Some((_, record)) => {
                 if record.faulted_at.is_some_and(|at| at != now) {
-                    *record = PipeRescue { flips_at: now, ..PipeRescue::default() };
+                    *record = PipeRescue {
+                        flips_at: now,
+                        ..PipeRescue::default()
+                    };
                 }
             }
         }
@@ -111,7 +120,10 @@ fn step(
         }
         let now = flips(key);
         if now != record.flips_at {
-            *record = PipeRescue { flips_at: now, ..PipeRescue::default() };
+            *record = PipeRescue {
+                flips_at: now,
+                ..PipeRescue::default()
+            };
         } else if !record.rescued {
             record.rescued = true;
             acts.push((key.clone(), Act::Rescue));
@@ -125,7 +137,9 @@ fn step(
 
 /// Whether any owing pipe is still being watched (not faulted).
 fn watching(records: &[(String, PipeRescue)]) -> bool {
-    records.iter().any(|(_, record)| record.faulted_at.is_none())
+    records
+        .iter()
+        .any(|(_, record)| record.faulted_at.is_none())
 }
 
 struct Inner {
@@ -199,7 +213,11 @@ impl IdleRescue {
         };
         let owed = Self::owed(&inner, state);
         let acts = step(&mut inner.records, &owed, &flips_of(&state.state.redraw));
-        let reasons = if acts.is_empty() { String::new() } else { pending_reasons(state) };
+        let reasons = if acts.is_empty() {
+            String::new()
+        } else {
+            pending_reasons(state)
+        };
         let mut forced = false;
         for (key, act) in &acts {
             match act {
@@ -208,7 +226,11 @@ impl IdleRescue {
                     warn!(
                         "native: {key} made no progress in {}s{} — rescuing once (owed: {reasons})",
                         NO_PROGRESS.as_secs(),
-                        if in_flight { " with a flip in flight (treating it as lost)" } else { "" },
+                        if in_flight {
+                            " with a flip in flight (treating it as lost)"
+                        } else {
+                            ""
+                        },
                     );
                     // Smithay's pending flip first, then the schedule's flight:
                     // see the module note for why both, and the trade-off.
@@ -235,7 +257,11 @@ impl IdleRescue {
                 .redraw
                 .force_for(protocols::redraw::schedule::schedule::RedrawReason::Rescue);
         }
-        if keep { TimeoutAction::ToDuration(NO_PROGRESS) } else { TimeoutAction::Drop }
+        if keep {
+            TimeoutAction::ToDuration(NO_PROGRESS)
+        } else {
+            TimeoutAction::Drop
+        }
     }
 }
 
@@ -267,13 +293,22 @@ mod tests {
     /// Flip counts the tests move by hand.
     struct Flips(RefCell<HashMap<String, u64>>);
     impl Flips {
-        fn new() -> Self { Self(RefCell::new(HashMap::new())) }
-        fn flip(&self, key: &str) { *self.0.borrow_mut().entry(key.to_string()).or_default() += 1; }
-        fn get(&self, key: &str) -> u64 { self.0.borrow().get(key).copied().unwrap_or(0) }
+        fn new() -> Self {
+            Self(RefCell::new(HashMap::new()))
+        }
+        fn flip(&self, key: &str) {
+            *self.0.borrow_mut().entry(key.to_string()).or_default() += 1;
+        }
+        fn get(&self, key: &str) -> u64 {
+            self.0.borrow().get(key).copied().unwrap_or(0)
+        }
     }
 
     fn acts_for(acts: &[(String, Act)], key: &str) -> Vec<Act> {
-        acts.iter().filter(|(k, _)| k == key).map(|(_, a)| *a).collect()
+        acts.iter()
+            .filter(|(k, _)| k == key)
+            .map(|(_, a)| *a)
+            .collect()
     }
 
     /// Round-1 A: a sibling's flips do not hide a pipe that is stuck.
@@ -299,7 +334,10 @@ mod tests {
         sync(&mut records, &owed, &f);
         assert_eq!(acts_for(&step(&mut records, &owed, &f), "a"), [Act::Rescue]);
         assert_eq!(acts_for(&step(&mut records, &owed, &f), "a"), [Act::Fault]);
-        assert!(step(&mut records, &owed, &f).is_empty(), "a fault is not repeated");
+        assert!(
+            step(&mut records, &owed, &f).is_empty(),
+            "a fault is not repeated"
+        );
         assert!(!watching(&records));
     }
 
@@ -319,7 +357,11 @@ mod tests {
         assert!(step(&mut records, &owed, &f).is_empty());
         flips.flip("a"); // a keeps moving; b stalls
         let acts = step(&mut records, &owed, &f);
-        assert_eq!(acts_for(&acts, "b"), [Act::Rescue], "b's first stall is a rescue, not a fault");
+        assert_eq!(
+            acts_for(&acts, "b"),
+            [Act::Rescue],
+            "b's first stall is a rescue, not a fault"
+        );
     }
 
     /// Round-2 finding 3 (fable): a sibling starting to flip does not clear a
@@ -338,7 +380,10 @@ mod tests {
         for _ in 0..3 {
             flips.flip("b");
             sync(&mut records, &owed, &f);
-            assert!(acts_for(&step(&mut records, &owed, &f), "a").is_empty(), "still faulted");
+            assert!(
+                acts_for(&step(&mut records, &owed, &f), "a").is_empty(),
+                "still faulted"
+            );
         }
         flips.flip("a");
         sync(&mut records, &owed, &f);
@@ -356,6 +401,10 @@ mod tests {
         sync(&mut records, &keys(&[]), &f);
         assert!(records.is_empty());
         sync(&mut records, &keys(&["a"]), &f);
-        assert_eq!(acts_for(&step(&mut records, &keys(&["a"]), &f), "a"), [Act::Rescue], "a new stall, a new rescue");
+        assert_eq!(
+            acts_for(&step(&mut records, &keys(&["a"]), &f), "a"),
+            [Act::Rescue],
+            "a new stall, a new rescue"
+        );
     }
 }

@@ -6,23 +6,32 @@ use smithay::{
         seat::WaylandFocus,
     },
 };
-use world::state::Loop;
 use world::camera::transform::translate::map;
 use world::canvas::input::state::state::{ActiveOption, CanvasGrab};
+use world::state::Loop;
 
 /// The hand tool owns the pointer while it is active: no client lock or confine
 /// applies to it, none may activate, and the client is not fed relative motion
 /// (`native_motion::dispatch`) — the pan is the canvas's, not the game's.
 pub(crate) fn hand_active(_loop: &Loop) -> bool {
-    matches!(_loop.inner.canvas().Grab, CanvasGrab::Active(ActiveOption::Hand))
+    matches!(
+        _loop.inner.canvas().Grab,
+        CanvasGrab::Active(ActiveOption::Hand)
+    )
 }
 
 /// Whether the focused client holds an ACTIVE lock or confine: the pointer is
 /// the client's, and nothing but its own motion may move its focus.
 pub(crate) fn constraint_active(_loop: &Loop) -> bool {
-    let Some(pointer) = _loop.state.seat.seat.get_pointer() else { return false };
-    let Some(focused) = pointer.current_focus() else { return false };
-    let Some(focused_surface) = focused.wl_surface() else { return false };
+    let Some(pointer) = _loop.state.seat.seat.get_pointer() else {
+        return false;
+    };
+    let Some(focused) = pointer.current_focus() else {
+        return false;
+    };
+    let Some(focused_surface) = focused.wl_surface() else {
+        return false;
+    };
     let mut active = false;
     with_pointer_constraint(&focused_surface, &pointer, |constraint| {
         active = constraint.is_some_and(|constraint| constraint.is_active());
@@ -89,7 +98,9 @@ pub fn apply_pointer_constraint(
 
     with_pointer_constraint(&focused_surface, &pointer, |constraint| {
         let Some(constraint) = constraint else { return };
-        if !constraint.is_active() { return }
+        if !constraint.is_active() {
+            return;
+        }
         active = true;
 
         match &*constraint {
@@ -104,7 +115,9 @@ pub fn apply_pointer_constraint(
                 };
                 let local = map.to_local(candidate);
                 let inside = match confined.region() {
-                    Some(region) => region.contains((local.x.floor() as i32, local.y.floor() as i32)),
+                    Some(region) => {
+                        region.contains((local.x.floor() as i32, local.y.floor() as i32))
+                    }
                     // No region: the whole surface, at its real (viewport / scaled) extent.
                     None => {
                         local.x >= 0.0
@@ -113,7 +126,11 @@ pub fn apply_pointer_constraint(
                             && local.y < map.extent.h as f64
                     }
                 };
-                result = if inside { candidate } else { previous_pointer_location };
+                result = if inside {
+                    candidate
+                } else {
+                    previous_pointer_location
+                };
             }
         }
     });

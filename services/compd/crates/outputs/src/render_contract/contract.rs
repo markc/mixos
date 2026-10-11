@@ -16,8 +16,8 @@
 
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::format::FormatSet;
-use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::DisplayHandle;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
 /// Re-export of the pre-existing display-output backend trait, which
 /// `lifecycle::initialize` consumes. The render contract extends it.

@@ -11,12 +11,12 @@
 //! it, `start_draw` runs the normal stroke (draw on a tablet app, click on a window,
 //! inert on bare canvas).
 
-use smithay::backend::input::{Event, InputBackend, TabletToolAxisEvent, TabletToolEvent};
-use smithay::utils::SERIAL_COUNTER;
-use smithay::input::tablet::TabletDescriptor;
-use dispatcher::wire::tablet::tablet::Stroke;
-use world::state::Loop;
 use crate::pointer::input::tablet::{client, coords, cursor, hand_active, select_active, tip};
+use dispatcher::wire::tablet::tablet::Stroke;
+use smithay::backend::input::{Event, InputBackend, TabletToolAxisEvent, TabletToolEvent};
+use smithay::input::tablet::TabletDescriptor;
+use smithay::utils::SERIAL_COUNTER;
+use world::state::Loop;
 
 pub fn axis<I: InputBackend>(event: &I::TabletToolAxisEvent, _loop: &mut Loop) {
     let tool = event.tool();
@@ -34,7 +34,12 @@ pub fn axis<I: InputBackend>(event: &I::TabletToolAxisEvent, _loop: &mut Loop) {
         cursor::follow(_loop, screen, world, time);
         if _loop.state.tablet.stroke == Stroke::Pan {
             if let Some(last) = last {
-                crate::pointer::input::touch::emulate::pan(_loop, screen.x - last.x, screen.y - last.y, false);
+                crate::pointer::input::touch::emulate::pan(
+                    _loop,
+                    screen.x - last.x,
+                    screen.y - last.y,
+                    false,
+                );
             }
         }
         return;
@@ -53,7 +58,10 @@ pub fn axis<I: InputBackend>(event: &I::TabletToolAxisEvent, _loop: &mut Loop) {
         _loop.state.tablet.tool_rotation(&tool, event.rotation());
     }
     if event.slider_has_changed() {
-        _loop.state.tablet.tool_slider(&tool, event.slider_position());
+        _loop
+            .state
+            .tablet
+            .tool_slider(&tool, event.slider_position());
     }
     if event.wheel_has_changed() {
         _loop

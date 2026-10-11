@@ -42,18 +42,19 @@ pub fn absolute<I: InputBackend>(
     let (pw, ph) = screen.screen_size_physical;
     // The hot corners sample first, and a pointer in a corner hotspot holds
     // no edge pan (corner bands win).
-    let position_screen = if world::comp::corners::sample(_loop, position_screen, (pw, ph), (0.0, 0.0)) {
-        extent::release_absolute(_loop);
-        position_screen
-    } else {
-        extent::hold(
-            _loop,
-            position_screen,
-            (raw_pos.x / pw.max(1.0), raw_pos.y / ph.max(1.0)),
-            pw,
-            ph,
-        )
-    };
+    let position_screen =
+        if world::comp::corners::sample(_loop, position_screen, (pw, ph), (0.0, 0.0)) {
+            extent::release_absolute(_loop);
+            position_screen
+        } else {
+            extent::hold(
+                _loop,
+                position_screen,
+                (raw_pos.x / pw.max(1.0), raw_pos.y / ph.max(1.0)),
+                pw,
+                ph,
+            )
+        };
     // Carry the pinning into the value the bus + native motion are given.
     let raw_pos = Point::<f64, Logical>::from((position_screen.x, position_screen.y));
 
@@ -85,10 +86,19 @@ pub fn absolute<I: InputBackend>(
 
     // Separator / floating-pane drag in progress → apply it and move the cursor,
     // but do not route to the canvas/window grab systems.
-    if world::viewport::interaction::interaction::update_separator(_loop.inner.output_views_mut(), position_screen)
-        || world::viewport::interaction::interaction::update_floating(_loop.inner.output_views_mut(), position_screen)
-    {
-        native_motion::absolute::input_received_normalized::<I>(event, _loop, position_normalized, &raw_pos);
+    if world::viewport::interaction::interaction::update_separator(
+        _loop.inner.output_views_mut(),
+        position_screen,
+    ) || world::viewport::interaction::interaction::update_floating(
+        _loop.inner.output_views_mut(),
+        position_screen,
+    ) {
+        native_motion::absolute::input_received_normalized::<I>(
+            event,
+            _loop,
+            position_normalized,
+            &raw_pos,
+        );
         return;
     }
 
@@ -171,8 +181,11 @@ fn teleport_cross(
     my: f64,
     pw: f64,
     ph: f64,
-) -> Option<(Point<f64, Physical>, world::camera::transform::translate::transform::Context)> {
-    use drivers::output::base::{Edge, CURSOR_PLACEMENT_MUT, TELEPORT_LAYOUT};
+) -> Option<(
+    Point<f64, Physical>,
+    world::camera::transform::translate::transform::Context,
+)> {
+    use drivers::output::base::{CURSOR_PLACEMENT_MUT, Edge, TELEPORT_LAYOUT};
     // Teleport is suppressed while ANY system holds the suppression lock (a refcount);
     // a canvas pan is the built-in client (it pins the cursor to its output for the pan's
     // duration). This path knows nothing about pan specifically — just the lock.
@@ -192,7 +205,11 @@ fn teleport_cross(
         return None; // still inside the output → not a crossing
     };
     let from_id = current_placement(_loop)?;
-    let n = _loop.inner.kernel.get(&TELEPORT_LAYOUT).neighbor(from_id, edge, frac)?;
+    let n = _loop
+        .inner
+        .kernel
+        .get(&TELEPORT_LAYOUT)
+        .neighbor(from_id, edge, frac)?;
     // Adopt the entered monitor + zone. The teleport layout and `output_key` share
     // the same EDID identity, so the placement key IS the output key. Point the
     // per-output view state at it so the input systems (pan/zoom on this monitor)
@@ -226,7 +243,9 @@ fn current_placement(_loop: &mut Loop) -> Option<u64> {
     let key = _loop.inner.current_output_key();
     let id = {
         let t = _loop.inner.kernel.get(&TELEPORT_LAYOUT);
-        t.first_of(&key).or_else(|| t.placements.first()).map(|p| p.id)?
+        t.first_of(&key)
+            .or_else(|| t.placements.first())
+            .map(|p| p.id)?
     };
     *_loop.inner.kernel.get_mut(&CURSOR_PLACEMENT_MUT) = Some(id);
     Some(id)
@@ -257,7 +276,10 @@ pub fn relative<I: InputBackend>(
     // Snapshot previous position in both spaces.
     let previous_phys = _loop.inner.pointer_mut().motion.clone();
     // Pane under the cursor (records the `pointer` slot); map world through it.
-    let ctx = _loop.pointer_context(Point::<f64, Physical>::from((previous_phys.x, previous_phys.y)));
+    let ctx = _loop.pointer_context(Point::<f64, Physical>::from((
+        previous_phys.x,
+        previous_phys.y,
+    )));
     let previous_world: Point<f64, Logical> = {
         let pt = Point::<f64, Physical>::from((previous_phys.x, previous_phys.y));
         let t: Transform = (pt, ctx).into();
@@ -317,7 +339,11 @@ pub fn relative<I: InputBackend>(
         // ALONG an edge). The teleport/push below still take the strict test, since
         // both are driven by actual overflow.
         let at_extent = mx <= 0.0 || mx >= pw || my <= 0.0 || my >= ph;
-        let mut policy = if at_extent { extent::resolve(_loop) } else { extent::Extent::Clamp };
+        let mut policy = if at_extent {
+            extent::resolve(_loop)
+        } else {
+            extent::Extent::Clamp
+        };
         // Super with no grab means "cross to the next monitor" — so a cursor merely
         // RESTING against the edge under it must not start a continuous pan instead.
         let teleport_intent = policy == extent::Extent::Teleport;
@@ -337,7 +363,10 @@ pub fn relative<I: InputBackend>(
         let in_corner = crossed.is_none()
             && world::comp::corners::sample(
                 _loop,
-                Point::<f64, Physical>::from((mx.clamp(0.0, (pw - 1.0).max(0.0)), my.clamp(0.0, (ph - 1.0).max(0.0)))),
+                Point::<f64, Physical>::from((
+                    mx.clamp(0.0, (pw - 1.0).max(0.0)),
+                    my.clamp(0.0, (ph - 1.0).max(0.0)),
+                )),
                 (pw, ph),
                 (dt.x * sensitivity, dt.y * sensitivity),
             );
@@ -385,7 +414,11 @@ pub fn relative<I: InputBackend>(
                     policy == extent::Extent::Pan && extent::pan(_loop, mx, my, pw, ph, step);
                 // `ctx` was built against the pre-pan camera; re-derive it when the
                 // camera just moved, else the world point is a pan step stale.
-                let ctx = if panned { _loop.pointer_context(pt) } else { ctx };
+                let ctx = if panned {
+                    _loop.pointer_context(pt)
+                } else {
+                    ctx
+                };
                 let t: Transform = (pt, ctx).into();
                 t.into_storage_point_f64()
             }
@@ -412,8 +445,9 @@ pub fn relative<I: InputBackend>(
             .any(|o| world::state::state::output_key(o) == *key)
     });
     if stale {
-        _loop.inner.cursor_output =
-            Some(world::state::state::output_key(_loop.inner.current_output()));
+        _loop.inner.cursor_output = Some(world::state::state::output_key(
+            _loop.inner.current_output(),
+        ));
     }
     if let Some(co) = _loop.inner.cursor_output.clone() {
         _loop.inner.output_views_mut().set_current(&co);
@@ -433,16 +467,21 @@ pub fn relative<I: InputBackend>(
         Point::<f64, Physical>::from((position_screen.x, position_screen.y)),
     );
     world::comp::scenes::pointer_motion(
-        _loop, Some(Point::<f64, Physical>::from((position_screen.x, position_screen.y))),
+        _loop,
+        Some(Point::<f64, Physical>::from((
+            position_screen.x,
+            position_screen.y,
+        ))),
     );
     // Only the WORLD point is warped. Re-derived from the final accumulator
     // rather than from `final_world`, because that is the value the constraint
     // and teleport branches agreed on and it is already in true space.
     let position_normalized = if warp_active(_loop) {
-        let pt = warp_screen(_loop, &eff_ctx, Point::<f64, Physical>::from((
-            position_screen.x,
-            position_screen.y,
-        )));
+        let pt = warp_screen(
+            _loop,
+            &eff_ctx,
+            Point::<f64, Physical>::from((position_screen.x, position_screen.y)),
+        );
         let t: Transform = (pt, eff_ctx).into();
         t.into_storage_point_f64()
     } else {
@@ -455,7 +494,7 @@ pub fn relative<I: InputBackend>(
 
     // Apply motion only if this is equals false
     // !was_constrained || final_world != previous_world a
-    
+
     let was_constrained_locked = !(!was_constrained || final_world != previous_world);
 
     // Previous code start(working pre motion relative and constraint impl.)
@@ -551,9 +590,13 @@ pub fn relative<I: InputBackend>(
     // Separator / floating drag in progress → apply + move cursor, skip canvas.
     // `position_screen` carries physical values under a Logical marker; re-tag.
     let cursor_phys = Point::<f64, Physical>::from((position_screen.x, position_screen.y));
-    if world::viewport::interaction::interaction::update_separator(_loop.inner.output_views_mut(), cursor_phys)
-        || world::viewport::interaction::interaction::update_floating(_loop.inner.output_views_mut(), cursor_phys)
-    {
+    if world::viewport::interaction::interaction::update_separator(
+        _loop.inner.output_views_mut(),
+        cursor_phys,
+    ) || world::viewport::interaction::interaction::update_floating(
+        _loop.inner.output_views_mut(),
+        cursor_phys,
+    ) {
         native_motion::relative::input_received_normalized::<I>(
             event,
             _loop,

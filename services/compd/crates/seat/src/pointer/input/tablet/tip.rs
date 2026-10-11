@@ -10,12 +10,15 @@
 //!     from a bad driver can't pan).
 //! Mirrors how `touch/session.rs` maps `TouchMode` onto the same canvas mechanisms.
 
-use smithay::backend::input::{Event, InputBackend, TabletToolDescriptor, TabletToolEvent, TabletToolTipEvent, TabletToolTipState};
+use crate::pointer::input::tablet::{client, coords, cursor, hand_active, select_active};
+use dispatcher::wire::tablet::tablet::Stroke;
+use smithay::backend::input::{
+    Event, InputBackend, TabletToolDescriptor, TabletToolEvent, TabletToolTipEvent,
+    TabletToolTipState,
+};
 use smithay::utils::{Logical, Physical, Point, SERIAL_COUNTER};
 use world::state::Loop;
 use world::state::export::{CanvasGrab, TargetOption};
-use dispatcher::wire::tablet::tablet::Stroke;
-use crate::pointer::input::tablet::{client, coords, cursor, hand_active, select_active};
 
 /// Begin a stroke at `world` (`screen` = the physical cursor position): a native tool
 /// tip on a tablet-aware surface; else a `Pointer` click over any other window / UI
@@ -56,7 +59,10 @@ pub fn end_draw(_loop: &mut Loop, tool: &TabletToolDescriptor, time: u32) {
 
 /// Clear the transient Select grab on lift, mirroring `touch/session.rs::disarm_select`.
 fn disarm_select(_loop: &mut Loop) {
-    if matches!(_loop.inner.canvas().Grab, CanvasGrab::Target(TargetOption::Select { .. })) {
+    if matches!(
+        _loop.inner.canvas().Grab,
+        CanvasGrab::Target(TargetOption::Select { .. })
+    ) {
         _loop.inner.canvas_mut().Grab = CanvasGrab::None;
     }
 }
@@ -75,7 +81,8 @@ pub fn tip<I: InputBackend>(event: &I::TabletToolTipEvent, _loop: &mut Loop) {
             } else if select_active(_loop) {
                 // Select tool: arm the transient grab (disarmed on lift) so the
                 // emulated press + drag rubber-band selects, like the touch session.
-                _loop.inner.canvas_mut().Grab = CanvasGrab::Target(TargetOption::Select { Append: true });
+                _loop.inner.canvas_mut().Grab =
+                    CanvasGrab::Target(TargetOption::Select { Append: true });
                 cursor::follow(_loop, screen, world, time);
                 crate::pointer::input::touch::emulate::press(_loop, time);
                 _loop.state.tablet.stroke = Stroke::Pointer;

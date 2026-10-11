@@ -9,12 +9,17 @@
 //! step has a correct delta. Native tablet events (forwarded separately) sit on top of
 //! this for tablet-aware apps.
 
+use slots::input::event::base::{InputEvent, InputFlow};
 use smithay::utils::{Logical, Physical, Point, SERIAL_COUNTER};
 use world::state::Loop;
 use world::state::state::CoordinateTrait;
-use slots::input::event::base::{InputEvent, InputFlow};
 
-pub fn follow(_loop: &mut Loop, screen: Point<f64, Physical>, world: Point<f64, Logical>, time: u32) {
+pub fn follow(
+    _loop: &mut Loop,
+    screen: Point<f64, Physical>,
+    world: Point<f64, Logical>,
+    time: u32,
+) {
     // The `pointer_state` descriptor. This path MIRRORS `motion::absolute` rather
     // than calling it, so anything published there has to be published here too —
     // otherwise a pen moves the cursor and a shader watching the cursor never
@@ -35,7 +40,11 @@ pub fn follow(_loop: &mut Loop, screen: Point<f64, Physical>, world: Point<f64, 
     if crate::input::drive::drive::route(_loop, ev) == InputFlow::Consume {
         return;
     }
-    let Some(pointer) = _loop.state.seat.seat.get_pointer() else { return };
+    let Some(pointer) = _loop.state.seat.seat.get_pointer() else {
+        return;
+    };
     let serial = SERIAL_COUNTER.next_serial();
-    crate::pointer::input::native_motion::dispatch::dispatch(_loop, time, serial, pointer, world, None, false);
+    crate::pointer::input::native_motion::dispatch::dispatch(
+        _loop, time, serial, pointer, world, None, false,
+    );
 }

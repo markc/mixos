@@ -3,9 +3,9 @@
 //! NEW capability of the restructure: previously the UdevBackend was dropped
 //! after the initial lookup and hotplug events never flowed.
 
-use kms::gpu::registry::node::node::NodeRegistry;
 use crate::context::render::render::NativeRenderContext;
 use crate::context::topology::topology::Topology;
+use kms::gpu::registry::node::node::NodeRegistry;
 use kms::udev::loop_::watch::watch::UdevWatch;
 use smithay::reexports::calloop::EventLoop;
 use std::cell::RefCell;
@@ -78,7 +78,9 @@ pub fn register(
             // output per preferences (fail over / recover), or go dark + wait. Runs
             // in this udev dispatch (not the vblank callback), so the modeset is safe.
             if reconcile {
-                if let Some(change) = crate::context::display::reconcile::reconcile::reconcile(state, &ctx_rc) {
+                if let Some(change) =
+                    crate::context::display::reconcile::reconcile::reconcile(state, &ctx_rc)
+                {
                     apply_output_change(state, change);
                 }
             }
@@ -87,17 +89,13 @@ pub fn register(
             let active = ctx_rc.borrow().pipe().connector;
             let ctx = ctx_rc.borrow();
             let manager = ctx.drm_output_manager.borrow();
-            let snap = crate::context::display::base::compute(
-                manager.device(),
-                active,
-            );
+            let snap = crate::context::display::base::compute(manager.device(), active);
             drop(manager);
             drop(ctx);
             *state
                 .inner
                 .kernel
-                .get_mut(&drivers::lid::base::DISPLAY_SNAPSHOT_MUT) =
-                snap;
+                .get_mut(&drivers::lid::base::DISPLAY_SNAPSHOT_MUT) = snap;
         })
         .unwrap();
 }

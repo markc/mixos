@@ -34,7 +34,10 @@ impl Device for InjectedDevice {
         "comp-injected".into()
     }
     fn has_capability(&self, capability: DeviceCapability) -> bool {
-        matches!(capability, DeviceCapability::Pointer | DeviceCapability::Keyboard)
+        matches!(
+            capability,
+            DeviceCapability::Pointer | DeviceCapability::Keyboard
+        )
     }
     fn usb_id(&self) -> Option<(u32, u32)> {
         None
@@ -212,8 +215,19 @@ pub fn pointer_by(lp: &mut Loop, dx: f64, dy: f64, time: u32) {
 }
 
 pub fn button(lp: &mut Loop, button: u32, pressed: bool, time: u32) {
-    let state = if pressed { ButtonState::Pressed } else { ButtonState::Released };
-    crate::pointer::input::button::button::<Injected>(&Btn { time, button, state }, lp);
+    let state = if pressed {
+        ButtonState::Pressed
+    } else {
+        ButtonState::Released
+    };
+    crate::pointer::input::button::button::<Injected>(
+        &Btn {
+            time,
+            button,
+            state,
+        },
+        lp,
+    );
 }
 
 pub fn scroll(lp: &mut Loop, scroll: Scroll) {
@@ -221,6 +235,10 @@ pub fn scroll(lp: &mut Loop, scroll: Scroll) {
 }
 
 pub fn key(lp: &mut Loop, code: Keycode, pressed: bool, time: u32) {
-    let state = if pressed { KeyState::Pressed } else { KeyState::Released };
+    let state = if pressed {
+        KeyState::Pressed
+    } else {
+        KeyState::Released
+    };
     crate::keyboard::input::keyboard::input_received::<Injected>(&Key { time, code, state }, lp);
 }

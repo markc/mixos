@@ -5,11 +5,11 @@
 //! window command), which is the only place in the delegate that decides rather than
 //! forwards.
 
-use world::state::Loop;
 use smithay::backend::input::{
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent, GestureSwipeUpdateEvent,
     InputBackend, InputEvent,
 };
+use world::state::Loop;
 
 /// Handle a gesture event. Returns `false` if `event` was not a gesture, so the
 /// caller can continue matching.

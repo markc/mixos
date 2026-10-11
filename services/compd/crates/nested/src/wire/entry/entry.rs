@@ -8,8 +8,8 @@ use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::renderer::{ImportDma, ImportEgl};
 use smithay::output::{Mode, Output};
 use smithay::reexports::calloop::EventLoop;
-use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::DisplayHandle;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use std::ffi::OsString;
 use world::state::Loop;
 
@@ -90,8 +90,8 @@ impl RenderContract for WinitContract {
 
 pub fn wire(_loop: &mut Loop, _wayland_socket_name: OsString, event_loop: &mut EventLoop<Loop>) {
     info!("Backend initialization - Winit");
-    let winit = crate::window::factory::factory::create()
-        .expect("winit backend initialization failed");
+    let winit =
+        crate::window::factory::factory::create().expect("winit backend initialization failed");
 
     info!("Backend initialization - wire backend to renderer and initialize renderer");
 
@@ -139,19 +139,25 @@ pub fn wire(_loop: &mut Loop, _wayland_socket_name: OsString, event_loop: &mut E
     // and bevy surface failed to allocate. Published here, after the GLES fallback has
     // been resolved, so it names the renderer that will actually sample.
     {
-        let formats = smithay::backend::renderer::ImportDma::dmabuf_formats(
-            context.winit_backend.renderer(),
+        let formats =
+            smithay::backend::renderer::ImportDma::dmabuf_formats(context.winit_backend.renderer());
+        info!(
+            "winit: compositor-importable dmabuf pairs: {}",
+            formats.iter().count()
         );
-        info!("winit: compositor-importable dmabuf pairs: {}", formats.iter().count());
         // Nested: no DRM node of our own, so this registers against
         // UNSPECIFIED. Still a real registration — what matters is that the
         // advertisement can see it.
-        _loop.inner.kernel.get(&render_gles::format::registrar::registrar::FORMATS).register(
-            render_gles::format::registrar::registrar::Device::UNSPECIFIED,
-            render_gles::format::role::role::Role::Sample,
-            formats,
-            "winit renderer",
-        );
+        _loop
+            .inner
+            .kernel
+            .get(&render_gles::format::registrar::registrar::FORMATS)
+            .register(
+                render_gles::format::registrar::registrar::Device::UNSPECIFIED,
+                render_gles::format::role::role::Role::Sample,
+                formats,
+                "winit renderer",
+            );
     }
 
     // WHAT NESTED DOES NOT HAVE, said out loud.
@@ -166,9 +172,15 @@ pub fn wire(_loop: &mut Loop, _wayland_socket_name: OsString, event_loop: &mut E
     // is none" from "it has not arrived yet".
     {
         use render_gles::format::role::role::Role;
-        let formats = _loop.inner.kernel.get(&render_gles::format::registrar::registrar::FORMATS);
+        let formats = _loop
+            .inner
+            .kernel
+            .get(&render_gles::format::registrar::registrar::FORMATS);
         formats.absent(Role::ScanoutEgl, "winit (nested: no scanout device)");
-        formats.absent(Role::Render, "winit (nested: nothing renders into a scanout format)");
+        formats.absent(
+            Role::Render,
+            "winit (nested: nothing renders into a scanout format)",
+        );
         formats.absent(Role::Plane, "winit (nested: no KMS plane)");
     }
 
@@ -179,7 +191,6 @@ pub fn wire(_loop: &mut Loop, _wayland_socket_name: OsString, event_loop: &mut E
     // frames finds it built.
     frames::scene::gpu::prewarm(_loop, context.winit_backend.renderer());
 
-
     // Shared by the winit source, the redraw ping below and the empty-frame
     // callback timer (`compose::owe_frames`). calloop runs one callback at a
     // time, so the borrows never overlap.
@@ -189,8 +200,8 @@ pub fn wire(_loop: &mut Loop, _wayland_socket_name: OsString, event_loop: &mut E
     // A redraw REQUEST reaches winit only through the schedule's
     // ping, mapped here to `request_redraw` (which winit holds until the host's
     // frame callback). Nothing else asks winit for frames.
-    let (redraw_ping, redraw_source) = smithay::reexports::calloop::ping::make_ping()
-        .expect("winit: redraw ping");
+    let (redraw_ping, redraw_source) =
+        smithay::reexports::calloop::ping::make_ping().expect("winit: redraw ping");
     {
         let context = context.clone();
         event_loop

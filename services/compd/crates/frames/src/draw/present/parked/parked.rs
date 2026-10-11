@@ -25,7 +25,9 @@
 //! goes quiet and never refills the burst: the worst case is [`BURST_FRAMES`]
 //! extra frames per [`BURST_QUIET`].
 
-use crate::draw::present::callbacks::callbacks::{surface_awaits_frame, tree_awaits_frame, OCCLUDED_TRICKLE};
+use crate::draw::present::callbacks::callbacks::{
+    OCCLUDED_TRICKLE, surface_awaits_frame, tree_awaits_frame,
+};
 use smithay::desktop::layer_map_for_output;
 use smithay::desktop::utils::send_frames_surface_tree;
 use smithay::output::Output;
@@ -59,7 +61,11 @@ fn next_period(last_send: Option<Instant>, now: Instant, burst: &mut u32) -> Dur
     if last_send.is_none_or(|sent| now.duration_since(sent) >= BURST_QUIET) {
         *burst = BURST_FRAMES;
     }
-    if *burst > 0 { BURST_INTERVAL } else { PARKED_TRICKLE }
+    if *burst > 0 {
+        BURST_INTERVAL
+    } else {
+        PARKED_TRICKLE
+    }
 }
 
 /// The output callbacks are attributed to: the active one, else any mapped one.
@@ -76,7 +82,9 @@ fn target_output(state: &Loop) -> Option<Output> {
 /// The compositor-drawn surfaces (cursor, drag icon) that hold a callback.
 fn drawn_surfaces(state: &Loop) -> Vec<WlSurface> {
     let mut out = Vec::new();
-    if let smithay::input::pointer::CursorImageStatus::Surface(surface) = &state.state.seat.pointer_status {
+    if let smithay::input::pointer::CursorImageStatus::Surface(surface) =
+        &state.state.seat.pointer_status
+    {
         out.push(surface.clone());
     }
     if let Some(icon) = &state.state.dnd.icon {
@@ -97,11 +105,13 @@ fn waiting(state: &Loop) -> bool {
         return false;
     }
     let space = &state.inner.space_state().state;
-    space.elements().any(|w| w.wl_surface().is_some_and(|s| tree_awaits_frame(&s)))
+    space
+        .elements()
+        .any(|w| w.wl_surface().is_some_and(|s| tree_awaits_frame(&s)))
         || space.outputs().any(|o| {
-            layer_map_for_output(o)
-                .layers()
-                .any(|l| !world::comp::panels::concealed(l.wl_surface()) && tree_awaits_frame(l.wl_surface()))
+            layer_map_for_output(o).layers().any(|l| {
+                !world::comp::panels::concealed(l.wl_surface()) && tree_awaits_frame(l.wl_surface())
+            })
         })
 }
 
@@ -109,10 +119,14 @@ fn waiting(state: &Loop) -> bool {
 /// smithay throttle: a throttle equal to the period would drop alternate
 /// sends to timer jitter.
 fn send(state: &Loop) {
-    let Some(output) = target_output(state) else { return };
+    let Some(output) = target_output(state) else {
+        return;
+    };
     let frame_time = state.inner.start_time.elapsed();
     for surface in drawn_surfaces(state) {
-        send_frames_surface_tree(&surface, &output, frame_time, None, |_, _| Some(output.clone()));
+        send_frames_surface_tree(&surface, &output, frame_time, None, |_, _| {
+            Some(output.clone())
+        });
     }
     if world::comp::session_lock::active(state) {
         return;
@@ -171,7 +185,10 @@ mod tests {
     #[test]
     fn first_demand_bursts() {
         let mut burst = 0;
-        assert_eq!(next_period(None, Instant::now(), &mut burst), BURST_INTERVAL);
+        assert_eq!(
+            next_period(None, Instant::now(), &mut burst),
+            BURST_INTERVAL
+        );
         assert_eq!(burst, BURST_FRAMES);
     }
 
@@ -179,9 +196,15 @@ mod tests {
     fn spent_burst_trickles_until_quiet() {
         let sent = Instant::now();
         let mut burst = 0;
-        assert_eq!(next_period(Some(sent), sent + PARKED_TRICKLE, &mut burst), PARKED_TRICKLE);
+        assert_eq!(
+            next_period(Some(sent), sent + PARKED_TRICKLE, &mut burst),
+            PARKED_TRICKLE
+        );
         assert_eq!(burst, 0);
-        assert_eq!(next_period(Some(sent), sent + BURST_QUIET, &mut burst), BURST_INTERVAL);
+        assert_eq!(
+            next_period(Some(sent), sent + BURST_QUIET, &mut burst),
+            BURST_INTERVAL
+        );
         assert_eq!(burst, BURST_FRAMES);
     }
 
@@ -189,7 +212,10 @@ mod tests {
     fn burst_in_progress_is_not_refilled() {
         let sent = Instant::now();
         let mut burst = 3;
-        assert_eq!(next_period(Some(sent), sent + BURST_INTERVAL, &mut burst), BURST_INTERVAL);
+        assert_eq!(
+            next_period(Some(sent), sent + BURST_INTERVAL, &mut burst),
+            BURST_INTERVAL
+        );
         assert_eq!(burst, 3);
     }
 }

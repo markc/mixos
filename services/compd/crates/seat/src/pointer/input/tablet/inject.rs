@@ -5,22 +5,33 @@
 //! xkb, so held modifiers register) and `PointerHandle::axis` — so modifier state and
 //! client focus stay consistent.
 
+use model::environment::preference::base::KeyBind;
 use smithay::backend::input::{Axis, AxisSource, KeyState};
 use smithay::input::keyboard::{FilterResult, Keycode};
 use smithay::input::pointer::AxisFrame;
 use smithay::utils::SERIAL_COUNTER;
-use model::environment::preference::base::KeyBind;
 use world::state::Loop;
 
 /// Forward one synthetic key edge to the focused client. `code` is a keyboard keycode
 /// as delivered to the seat (xkb = evdev + 8), captured verbatim by the binding UI.
 fn key(_loop: &mut Loop, code: u32, pressed: bool, time: u32) {
-    let Some(keyboard) = _loop.state.seat.seat.get_keyboard() else { return };
+    let Some(keyboard) = _loop.state.seat.seat.get_keyboard() else {
+        return;
+    };
     let serial = SERIAL_COUNTER.next_serial();
-    let st = if pressed { KeyState::Pressed } else { KeyState::Released };
-    let _ = keyboard.input::<(), _>(&mut _loop.state, Keycode::new(code), st, serial, time, |_, _, _| {
-        FilterResult::Forward
-    });
+    let st = if pressed {
+        KeyState::Pressed
+    } else {
+        KeyState::Released
+    };
+    let _ = keyboard.input::<(), _>(
+        &mut _loop.state,
+        Keycode::new(code),
+        st,
+        serial,
+        time,
+        |_, _, _| FilterResult::Forward,
+    );
 }
 
 /// Inject a captured keyboard combo. On the trigger's press edge, press the modifiers

@@ -21,7 +21,14 @@ fn switch(h: &mut Harness, to: u32) -> (u32, u32) {
     let default = comp.default_output.clone();
     let (switched, _effects) = comp
         .workspaces
-        .switch(&comp.registry, default.as_ref(), None, WorkspaceTarget::Index(to), false, None)
+        .switch(
+            &comp.registry,
+            default.as_ref(),
+            None,
+            WorkspaceTarget::Index(to),
+            false,
+            None,
+        )
         .expect("a switch within the count");
     (switched.from, switched.to)
 }
@@ -63,7 +70,13 @@ fn moving_a_window_hides_it_without_switching() {
     let default = comp.default_output.clone();
     let ((from, to), _effects) = comp
         .workspaces
-        .move_window(&mut comp.registry, default.as_ref(), id, WorkspaceTarget::Index(3), None)
+        .move_window(
+            &mut comp.registry,
+            default.as_ref(),
+            id,
+            WorkspaceTarget::Index(3),
+            None,
+        )
         .expect("a mapped toplevel moves");
     assert_eq!((from, to), (1, 3));
     assert_eq!(h.comp().current_workspace(), 1, "a move never switches");

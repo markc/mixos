@@ -2,16 +2,16 @@
 //! idempotent), then — on `In` over a tablet-aware window — forwards `proximity_in`
 //! so the client gets hover (brush preview / hover cursor). Hover is never a pan.
 
+use crate::pointer::input::tablet::{client, coords, cursor, hand_active};
+use dispatcher::state::state::Dispatch;
 use dispatcher::state::state::RedrawReason;
+use dispatcher::wire::tablet::tablet::Stroke;
 use smithay::backend::input::{
     Event, InputBackend, ProximityState, TabletToolEvent, TabletToolProximityEvent,
 };
-use smithay::utils::SERIAL_COUNTER;
 use smithay::input::tablet::TabletDescriptor;
+use smithay::utils::SERIAL_COUNTER;
 use world::state::Loop;
-use dispatcher::state::state::Dispatch;
-use dispatcher::wire::tablet::tablet::Stroke;
-use crate::pointer::input::tablet::{client, coords, cursor, hand_active};
 
 pub fn proximity<I: InputBackend>(event: &I::TabletToolProximityEvent, _loop: &mut Loop) {
     let tool = event.tool();

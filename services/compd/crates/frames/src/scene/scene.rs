@@ -1,6 +1,10 @@
-use crate::scene::layershell::layershell;
-use dispatcher::state::state::RedrawReason;
 use crate::scene::hooks;
+use crate::scene::layershell::layershell;
+use dispatcher::frame::frame::SceneDispatch;
+use dispatcher::state::state::RedrawReason;
+use scenegraph::node::node::{DrawNode, Plan, SurfaceNode};
+use scenegraph::scene::element::element::SceneElement;
+use slots::world::frame::base as layer;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::{AsRenderElements, Id, Kind, RenderElement};
@@ -13,13 +17,9 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Physical, Point, Scale, Size};
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::wlr_layer::Layer as WlrLayer;
-use world::window::interface::record::window::LoopWindow;
-use dispatcher::frame::frame::SceneDispatch;
-use scenegraph::scene::element::element::SceneElement;
 use world::state::Loop;
 use world::state::state::CoordinateTrait;
-use scenegraph::node::node::{DrawNode, Plan, SurfaceNode};
-use slots::world::frame::base as layer;
+use world::window::interface::record::window::LoopWindow;
 
 pub struct Scene<R: Renderer> {
     pub Element: Vec<SceneElement<R>>,
@@ -71,9 +71,18 @@ fn update_fractional(state: &mut Loop) {
         .space_state()
         .state
         .outputs()
-        .map(|o| (world::state::state::output_key(o), o.current_scale().fractional_scale()))
+        .map(|o| {
+            (
+                world::state::state::output_key(o),
+                o.current_scale().fractional_scale(),
+            )
+        })
         .collect();
-    let current_scale = state.inner.current_output().current_scale().fractional_scale();
+    let current_scale = state
+        .inner
+        .current_output()
+        .current_scale()
+        .fractional_scale();
     let mut best: std::collections::HashMap<
         smithay::reexports::wayland_server::backend::ObjectId,
         (f64, WlSurface),
@@ -82,13 +91,20 @@ fn update_fractional(state: &mut Loop) {
     for (key, vps) in &state.inner.output_views().map {
         let output_scale = scale_of.get(key).copied().unwrap_or(current_scale);
         for (slot, uuids) in &vps.on_pane_grace {
-            let zoom = vps.camera_of(*slot).map(|c| c.transform.zoom).unwrap_or(1.0);
+            let zoom = vps
+                .camera_of(*slot)
+                .map(|c| c.transform.zoom)
+                .unwrap_or(1.0);
             let want = protocols::fractional::debounce::published(&cfg, zoom, output_scale);
             max_scale = Some(max_scale.map_or(want, |m| m.max(want)));
             for u in uuids {
                 if let Some(surf) = uuid_surface.get(u) {
                     best.entry(surf.id())
-                        .and_modify(|e| if want > e.0 { *e = (want, surf.clone()); })
+                        .and_modify(|e| {
+                            if want > e.0 {
+                                *e = (want, surf.clone());
+                            }
+                        })
                         .or_insert_with(|| (want, surf.clone()));
                 }
             }
@@ -130,7 +146,12 @@ fn update_fractional(state: &mut Loop) {
         // Windows of every non-hosted world: invisible by definition — scale 1
         // lets their clients drop hi-res buffers while the world is parked.
         for space in state.inner.other_world_spaces() {
-            idle.extend(space.state.elements().filter_map(|w| w.wl_surface().map(|s| s.into_owned())));
+            idle.extend(
+                space
+                    .state
+                    .elements()
+                    .filter_map(|w| w.wl_surface().map(|s| s.into_owned())),
+            );
         }
     }
     if full {
@@ -162,8 +183,9 @@ fn update_fractional(state: &mut Loop) {
     // visible, what a window at zoom 1 on the current output gets (else the
     // hook's sharpest-visible stands, which is never below it).
     if per.is_empty() {
-        state.state.fractional.last_emitted_scale =
-            Some(protocols::fractional::debounce::published(&cfg, 1.0, current_scale));
+        state.state.fractional.last_emitted_scale = Some(
+            protocols::fractional::debounce::published(&cfg, 1.0, current_scale),
+        );
     }
     reassert_slots_after_scale(state, &emitted);
 }
@@ -189,19 +211,26 @@ fn reassert_slots_after_scale(state: &mut Loop, emitted: &[WlSurface]) {
     if emitted.is_empty() {
         return;
     }
-    for window in state.inner.space_state().state.elements().cloned().collect::<Vec<_>>() {
-        let Some(surface) = window.wl_surface() else { continue };
+    for window in state
+        .inner
+        .space_state()
+        .state
+        .elements()
+        .cloned()
+        .collect::<Vec<_>>()
+    {
+        let Some(surface) = window.wl_surface() else {
+            continue;
+        };
         if !emitted.iter().any(|s| s == surface.as_ref()) {
             continue;
         }
-        let Some(decided) = world::camera::transform::translate::slot::decided_size(&window)
-        else {
+        let Some(decided) = world::camera::transform::translate::slot::decided_size(&window) else {
             continue;
         };
         dispatcher::wayland::compositor::place::arm_size_propagation(&window, decided);
     }
 }
-
 
 /// Grace margin for the "full" fractional strategy, in world-logical units,
 /// zoom-scaled the same way as the snap ranges (divided by zoom — so it is a
@@ -242,8 +271,7 @@ fn grace_windows(
             continue;
         }
         let project = |x: f64, y: f64| -> Point<i32, Physical> {
-            let t: world::camera::transform::translate::transform::Transform =
-                ((x, y), ctx).into();
+            let t: world::camera::transform::translate::transform::Transform = ((x, y), ctx).into();
             t.into()
         };
         let tl = project(loc.x as f64, loc.y as f64);
@@ -278,8 +306,16 @@ const FLOATING_BORDER_COLOR: [f32; 4] = [0.30, 0.52, 0.92, 1.0];
 const FLOATING_BORDER: i32 = 3;
 
 /// Four edge bars framing `rect` (top, bottom, left, right), each `FLOATING_BORDER` thick.
-fn border_edges(rect: smithay::utils::Rectangle<i32, Physical>) -> [smithay::utils::Rectangle<i32, Physical>; 4] {
-    let (x, y, w, h, t) = (rect.loc.x, rect.loc.y, rect.size.w, rect.size.h, FLOATING_BORDER);
+fn border_edges(
+    rect: smithay::utils::Rectangle<i32, Physical>,
+) -> [smithay::utils::Rectangle<i32, Physical>; 4] {
+    let (x, y, w, h, t) = (
+        rect.loc.x,
+        rect.loc.y,
+        rect.size.w,
+        rect.size.h,
+        FLOATING_BORDER,
+    );
     [
         smithay::utils::Rectangle::from_loc_and_size((x, y), (w, t)),
         smithay::utils::Rectangle::from_loc_and_size((x, y + h - t), (w, t)),
@@ -363,10 +399,7 @@ pub struct PreparedGles {
     /// The notification pill, above everything (`None` while nothing is queued).
     pub notify: Option<world::notify::present::base::NotifyFrame>,
     /// What the effects host produced for this output (empty with `NullEffects`).
-    pub effects: Vec<(
-        effects::EffectBand,
-        effects::EffectElement,
-    )>,
+    pub effects: Vec<(effects::EffectBand, effects::EffectElement)>,
 }
 
 /// Per-pane cameras + sub-rects for the current output, matching how the content
@@ -374,10 +407,7 @@ pub struct PreparedGles {
 /// recomputes the same `layout::compute` the content band uses; the duplication
 /// is deliberate — backing (de)allocation needs the GLES renderer and must run in
 /// `prepare()`, before the renderer-agnostic `scene()` builds the content band.
-fn ui_panes(
-    state: &Loop,
-    size: Size<i32, Physical>,
-) -> Vec<ui::PaneView> {
+fn ui_panes(state: &Loop, size: Size<i32, Physical>) -> Vec<ui::PaneView> {
     let scale = state.viewport_context().scale;
     let vps = state.inner.viewports();
     let computed = world::viewport::layout::layout::compute(
@@ -433,7 +463,10 @@ pub fn prepare(
 
     // Rim hooks, then the systems tick; the world's plan is bridged below
     // (parallax) and the notification pill is handed through to `scene()`.
-    let hooks::Ticked { plan: _frame, notify } = hooks::hooks(state, renderer, size);
+    let hooks::Ticked {
+        plan: _frame,
+        notify,
+    } = hooks::hooks(state, renderer, size);
 
     // De-alloc feature gate (`release_hidden_surfaces`). Set the flag up front so
     // `process_frame` (inside the surface scene below) sees this frame's value,
@@ -491,20 +524,13 @@ pub fn prepare(
 fn effects_for_output(
     state: &mut Loop,
     size: Size<i32, Physical>,
-) -> Vec<(
-    effects::EffectBand,
-    effects::EffectElement,
-)> {
+) -> Vec<(effects::EffectBand, effects::EffectElement)> {
     let frame = effects::EffectFrame {
         output: std::sync::Arc::from(state.inner.current_output_key().as_str()),
         size,
         scale: state.size_ctx_all().scale,
     };
-    let Some(host) = state
-        .inner
-        .kernel
-        .try_get_mut(&effects::EFFECTS_MUT)
-    else {
+    let Some(host) = state.inner.kernel.try_get_mut(&effects::EFFECTS_MUT) else {
         return Vec::new();
     };
     host.prepare(&frame);
@@ -541,9 +567,7 @@ where
     // whatever monitor drew last, alternating every frame on a mixed-refresh
     // desktop. Fastest rather than slowest because bevy elements are not gated
     // per output — see `Orchestrator::fastest_refresh`.
-    model::environment::interface::base::set_refresh(
-        state.inner.fastest_refresh(),
-    );
+    model::environment::interface::base::set_refresh(state.inner.fastest_refresh());
 
     // Screen-space overlays (the cursor, layer-shell, and screen UI like the
     // launcher / settings window) belong to ONE output — the one under the cursor
@@ -595,12 +619,21 @@ where
         if let Some((surface, location, scale)) = lock.surface {
             plan.push(
                 layer::UI_SCREEN,
-                DrawNode::Surface(SurfaceNode { surface, location, scale, alpha: 1.0 }),
+                DrawNode::Surface(SurfaceNode {
+                    surface,
+                    location,
+                    scale,
+                    alpha: 1.0,
+                }),
             );
         }
         plan.push(layer::UI_SCREEN, DrawNode::Solid(lock.blank));
         let (elements, meta) = plan.lower(renderer);
-        return Scene { Element: elements, meta, visible_window: Vec::new() };
+        return Scene {
+            Element: elements,
+            meta,
+            visible_window: Vec::new(),
+        };
     }
     // The notification pill, above the pointer and the fades alike. Per OUTPUT
     // (the presenter keeps one per monitor and hands back this pass's), so it is
@@ -646,7 +679,6 @@ where
         }
     }
 
-
     // CONTENT band: windows + world UI INTERLEAVED by the DrawOrder authority
     // ("everything interleaves").
     let canvas_window = {
@@ -668,13 +700,14 @@ where
             // the first-pushed element is front-most, so iterate in reverse to draw
             // floating panes (and their backgrounds) on top of the tiled root.
             for (region_index, region) in computed.regions.iter().enumerate().rev() {
-                state.inner.render_target = Some(
-                    world::state::state::RenderTarget {
-                        slot: region.slot,
-                        origin_logical: (region.rect.loc.x as f64 / scale, region.rect.loc.y as f64 / scale),
-                        size_physical: (region.rect.size.w as f64, region.rect.size.h as f64),
-                    },
-                );
+                state.inner.render_target = Some(world::state::state::RenderTarget {
+                    slot: region.slot,
+                    origin_logical: (
+                        region.rect.loc.x as f64 / scale,
+                        region.rect.loc.y as f64 / scale,
+                    ),
+                    size_physical: (region.rect.size.w as f64, region.rect.size.h as f64),
+                });
                 // Floating (detached) panes stack ABOVE the root content; tiled
                 // root panes use the base bands. Both get the per-pane parallax;
                 // floating panes ALSO get an opaque black backfill behind the
@@ -721,7 +754,13 @@ where
                         world::canvas::draw::scene::scene::ContentItem::UI(e) => {
                             // World-space UI surfaces clip to the pane (native +
                             // GLES paths handled in `DrawNode::lower`).
-                            plan.push(content_layer, DrawNode::UiCropped { elem: e, crop: region.rect })
+                            plan.push(
+                                content_layer,
+                                DrawNode::UiCropped {
+                                    elem: e,
+                                    crop: region.rect,
+                                },
+                            )
                         }
                     }
                 }
@@ -742,7 +781,8 @@ where
                 // A window panned off every pane (and not captured) is in neither
                 // — it stops re-rendering and receiving scale updates until
                 // revealed.
-                let mut uuids: Vec<uuid::Uuid> = vis.on_pane.iter().filter_map(|w| w.uuid()).collect();
+                let mut uuids: Vec<uuid::Uuid> =
+                    vis.on_pane.iter().filter_map(|w| w.uuid()).collect();
                 // "full" grace band: windows just outside the pane get their REAL
                 // scale published ahead of reveal, so panning them in doesn't flash
                 // a stale scale-1 buffer. Fractional-only — they are still culled
@@ -762,8 +802,16 @@ where
                 // cull, which had both rects, not by re-projecting every window here.
                 let on_pane_awake: Vec<uuid::Uuid> =
                     vis.on_pane_awake.iter().filter_map(|w| w.uuid()).collect();
-                state.inner.viewports_mut().on_pane_awake.insert(region.slot, on_pane_awake);
-                state.inner.viewports_mut().on_pane_grace.insert(region.slot, uuids);
+                state
+                    .inner
+                    .viewports_mut()
+                    .on_pane_awake
+                    .insert(region.slot, on_pane_awake);
+                state
+                    .inner
+                    .viewports_mut()
+                    .on_pane_grace
+                    .insert(region.slot, uuids);
                 cw.extend(vis.drawn);
             }
             state.inner.render_target = None;
@@ -798,7 +846,9 @@ where
             // selection runs (and the clean frame its reply waits for).
             plan.extend(
                 layer::UI_SCREEN,
-                world::comp::region::overlay(state, size).into_iter().map(DrawNode::Solid),
+                world::comp::region::overlay(state, size)
+                    .into_iter()
+                    .map(DrawNode::Solid),
             );
             cw
         }
@@ -828,7 +878,8 @@ where
     // its own instead of waiting for the next motion / release. Collect first (borrows the space),
     // then send.
     let resize_due: Vec<(Window, Size<i32, Logical>)> = state
-        .inner.space_state()
+        .inner
+        .space_state()
         .state
         .elements()
         .filter_map(|w| {

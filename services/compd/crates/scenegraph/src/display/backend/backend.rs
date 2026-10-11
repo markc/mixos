@@ -10,7 +10,6 @@ use smithay::reexports::wayland_server::DisplayHandle;
 //     pub output: Output,
 // }
 
-
 pub trait Backend {
     /// Backend responsible to delegate events into the event handler, so it needs a reference to event handler.
     /// This is problematic because backend cannot hold mutable reference to the event handler.

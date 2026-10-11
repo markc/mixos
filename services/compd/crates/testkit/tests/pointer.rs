@@ -11,7 +11,10 @@ fn a_press_reaches_the_client_with_a_serial_and_its_seat() {
     let mut h = Harness::new();
     let (surface, _xdg, _toplevel) = h.mapped_toplevel(64, 48);
     let serial = h.press(&surface, BTN_LEFT);
-    assert!(h.client.state.enter_serial.is_some(), "the pointer entered the surface first");
+    assert!(
+        h.client.state.enter_serial.is_some(),
+        "the pointer entered the surface first"
+    );
     let (_, button, pressed, seat) = *h
         .client
         .state

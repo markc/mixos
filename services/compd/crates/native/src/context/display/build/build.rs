@@ -4,17 +4,17 @@
 //! to it. Mirrors the assembly pipe bring-up (`assemble.renderer`) for one
 //! additional connector, over the same validating mode fallback chain.
 
-use kms::edid::parse::parse::HdrInfo;
-use render_gles::element::wrap::wrap::GlesElementWrapper;
-use kms::scanout::surface::output::output::{NativeDrmOutput, NativeDrmOutputManager};
-use world::state::state::StateDRMBinding;
-use scenegraph::scene::element::element::SceneElement;
 use drivers::output::base::ModeInfo;
+use kms::edid::parse::parse::HdrInfo;
+use kms::scanout::surface::output::output::{NativeDrmOutput, NativeDrmOutputManager};
+use render_gles::element::wrap::wrap::GlesElementWrapper;
+use scenegraph::scene::element::element::SceneElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::{Mode, Output};
-use smithay::reexports::drm::control::{connector, crtc, Mode as DrmMode};
+use smithay::reexports::drm::control::{Mode as DrmMode, connector, crtc};
 use std::cell::RefCell;
 use std::rc::Rc;
+use world::state::state::StateDRMBinding;
 
 /// The runtime-built pipe plus the metadata the switch gate swaps into the context.
 pub struct BuiltOutput {
@@ -66,16 +66,17 @@ pub fn build(
 ) -> Result<BuiltOutput, String> {
     let mut binding = gpu_binding.borrow_mut();
     let StateDRMBinding { gpus, primary } = &mut *binding;
-    let mut renderer = gpus.single_renderer(primary).map_err(|e| format!("renderer: {e:?}"))?;
+    let mut renderer = gpus
+        .single_renderer(primary)
+        .map_err(|e| format!("renderer: {e:?}"))?;
 
     let mut mgr = manager.borrow_mut();
     // Read everything off the device before the mutable `initialize` borrow.
     let (pipe, hdr) = {
         let drm = mgr.device();
         let res = kms::connector::scan::scan::resources(drm);
-        let pipe =
-            kms::scanout::pipe::claim::free::free::claim_excluding(drm, target, &res, busy)
-                .ok_or_else(|| "no free CRTC for switch".to_string())?;
+        let pipe = kms::scanout::pipe::claim::free::free::claim_excluding(drm, target, &res, busy)
+            .ok_or_else(|| "no free CRTC for switch".to_string())?;
         let hdr = kms::edid::parse::parse::read(drm, target)
             .as_ref()
             .map(kms::edid::parse::parse::parse_hdr)
@@ -106,8 +107,14 @@ pub fn build(
         match kms::scanout::surface::output::output::initialize::<
             _,
             GlesElementWrapper<SceneElement<GlesRenderer>>,
-        >(&mut mgr, pipe, mode, &[target.handle()], output, &mut renderer)
-        {
+        >(
+            &mut mgr,
+            pipe,
+            mode,
+            &[target.handle()],
+            output,
+            &mut renderer,
+        ) {
             Ok(out) => {
                 slot = Some(out);
                 Ok(())
@@ -129,8 +136,10 @@ pub fn build(
         GlesElementWrapper<SceneElement<GlesRenderer>>,
     >(&mut mgr, &mut renderer)
     {
-        warn!("restore_modifiers failed after bringing up crtc {pipe:?}: {e} \
-               — pipes may be left on implicit modifiers");
+        warn!(
+            "restore_modifiers failed after bringing up crtc {pipe:?}: {e} \
+               — pipes may be left on implicit modifiers"
+        );
     }
 
     // Release the manager/renderer borrows before touching the new pipe: the calls
@@ -144,11 +153,8 @@ pub fn build(
     // the surface's PENDING state and this is a brand new surface, so without this
     // a second monitor — or the primary after any fail-over/rebuild — silently
     // scans out fixed-refresh while the setting still says VRR is on.
-    let vrr = kms::scanout::surface::output::output::apply_vrr(
-        &drm_output,
-        target.handle(),
-        env.vrr,
-    );
+    let vrr =
+        kms::scanout::surface::output::output::apply_vrr(&drm_output, target.handle(), env.vrr);
     model::stats::registry::base::set_vrr(vrr.supported, vrr.enabled);
 
     // Record the achieved scanout format FOR THIS CRTC. Per-CRTC and not one
@@ -169,7 +175,6 @@ pub fn build(
             1,
         );
     }
-
 
     Ok(BuiltOutput {
         drm_output,

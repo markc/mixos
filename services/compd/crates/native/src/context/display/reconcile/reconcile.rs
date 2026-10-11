@@ -10,21 +10,21 @@
 //! connector — that doesn't fit independently-driven multi-output, and mode changes
 //! now go per-pipe through `display.mode`. It has been removed.)
 use crate::context::render::render::NativeRenderContext;
-use render_gles::preference::output::profile::profile::{self, ModeRequest};
-use world::event::output::output::OutputChange;
-use world::state::Loop;
-use world::state::state::CoordinateTrait;
 use drivers::lid::base::{DISPLAY_OFF_MUT, DISPLAY_SNAPSHOT_MUT};
 use drivers::output::base::{
-    ModeInfo, OutputModesSnapshot, OutputsSnapshot, OUTPUTS_SNAPSHOT_MUT, OUTPUT_MODES_SNAPSHOT_MUT,
-    OUTPUT_RECONCILE_REQUEST, OUTPUT_RECONCILE_REQUEST_MUT,
+    ModeInfo, OUTPUT_MODES_SNAPSHOT_MUT, OUTPUT_RECONCILE_REQUEST, OUTPUT_RECONCILE_REQUEST_MUT,
+    OUTPUTS_SNAPSHOT_MUT, OutputModesSnapshot, OutputsSnapshot,
 };
+use render_gles::preference::output::profile::profile::{self, ModeRequest};
 use smithay::backend::drm::DrmDevice;
 use smithay::output::Mode;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
-use smithay::reexports::drm::control::{connector, crtc, Mode as DrmMode};
+use smithay::reexports::drm::control::{Mode as DrmMode, connector, crtc};
 use std::cell::RefCell;
 use std::rc::Rc;
+use world::event::output::output::OutputChange;
+use world::state::Loop;
+use world::state::state::CoordinateTrait;
 
 type Ctx = Rc<RefCell<NativeRenderContext>>;
 
@@ -53,7 +53,11 @@ pub fn drain_reconcile(state: &mut Loop, ctx_rc: &Ctx) {
 }
 
 fn mode_info(m: DrmMode) -> ModeInfo {
-    ModeInfo { width: m.size().0, height: m.size().1, refresh_mhz: m.vrefresh() * 1000 }
+    ModeInfo {
+        width: m.size().0,
+        height: m.size().1,
+        refresh_mhz: m.vrefresh() * 1000,
+    }
 }
 
 /// The EDID identity key ("make model serial") for a connector — the same key the
@@ -86,7 +90,13 @@ fn find_target(drm: &DrmDevice, key: &str) -> Option<connector::Info> {
 /// out. On success the context reflects the new connector/mode. On failure
 /// `ctx.pipe().drm_output` is left `None` — the caller must rebuild a working output
 /// (render frames skip while it is `None`).
-fn bring_up(state: &mut Loop, ctx: &mut NativeRenderContext, target: &connector::Info, requested: Option<ModeInfo>, busy: &[crtc::Handle]) -> Result<(), String> {
+fn bring_up(
+    state: &mut Loop,
+    ctx: &mut NativeRenderContext,
+    target: &connector::Info,
+    requested: Option<ModeInfo>,
+    busy: &[crtc::Handle],
+) -> Result<(), String> {
     // A smithay `Output` may NOT be carried across a change of MONITOR.
     //
     // `output_key` — the identity every per-output map keys on: the viewport trees
@@ -111,8 +121,7 @@ fn bring_up(state: &mut Loop, ctx: &mut NativeRenderContext, target: &connector:
             &format!("{:?}-{}", target.interface(), target.interface_id()),
         )
     };
-    let replace = identity.key()
-        != world::state::state::output_key(&ctx.pipe().output);
+    let replace = identity.key() != world::state::state::output_key(&ctx.pipe().output);
     // Keep the anchor where it already sat: a fail-over must not shuffle the
     // placement out from under a surviving secondary.
     let position = state
@@ -133,7 +142,10 @@ fn bring_up(state: &mut Loop, ctx: &mut NativeRenderContext, target: &connector:
         false => ctx.pipe().output.clone(),
     };
     let built = crate::context::display::build::build::build(
-        state.inner.kernel.get(&render_gles::format::registrar::registrar::FORMATS),
+        state
+            .inner
+            .kernel
+            .get(&render_gles::format::registrar::registrar::FORMATS),
         &ctx.drm_output_manager,
         &ctx.gpu_binding,
         &output,
@@ -168,10 +180,8 @@ fn bring_up(state: &mut Loop, ctx: &mut NativeRenderContext, target: &connector:
             None,
             (position.x, position.y),
         );
-        let global = output
-            .create_global::<dispatcher::state::state::Dispatch>(
-                &ctx.display_handle,
-            );
+        let global =
+            output.create_global::<dispatcher::state::state::Dispatch>(&ctx.display_handle);
         ctx.pipe_mut().global = Some(global);
         state.inner.map_output_everywhere(&output, position);
         info!(
@@ -198,8 +208,13 @@ fn bring_up(state: &mut Loop, ctx: &mut NativeRenderContext, target: &connector:
     // schedule still records for the torn-down output is over (else the render
     // loop would skip the rebuilt pipe and it would never flip / never get a
     // vblank to end it).
-    state.state.redraw.completed(&world::state::state::output_key(&ctx.pipe().output));
-    ctx.pipe().output.change_current_state(Some(new_mode), None, None, None);
+    state
+        .state
+        .redraw
+        .completed(&world::state::state::output_key(&ctx.pipe().output));
+    ctx.pipe()
+        .output
+        .change_current_state(Some(new_mode), None, None, None);
     Ok(())
 }
 
@@ -224,8 +239,11 @@ fn write_snapshots(state: &mut Loop, ctx: &NativeRenderContext) {
         snap
     };
     if let Some(d) = snap.displays.iter().find(|d| d.active) {
-        *state.inner.kernel.get_mut(&OUTPUT_MODES_SNAPSHOT_MUT) =
-            OutputModesSnapshot { edid_key: d.edid_key.clone(), current: d.current, available: d.available.clone() };
+        *state.inner.kernel.get_mut(&OUTPUT_MODES_SNAPSHOT_MUT) = OutputModesSnapshot {
+            edid_key: d.edid_key.clone(),
+            current: d.current,
+            available: d.available.clone(),
+        };
     }
     *state.inner.kernel.get_mut(&OUTPUTS_SNAPSHOT_MUT) = snap;
 }
@@ -241,9 +259,15 @@ fn preferred_key() -> Option<String> {
 /// builder fall back to the default-policy mode.
 fn pref_mode(drm: &DrmDevice, info: &connector::Info) -> Option<ModeInfo> {
     let to_info = |m: &ModeRequest| match m {
-        ModeRequest::Advertised { width, height, refresh_mhz } => {
-            Some(ModeInfo { width: *width, height: *height, refresh_mhz: *refresh_mhz })
-        }
+        ModeRequest::Advertised {
+            width,
+            height,
+            refresh_mhz,
+        } => Some(ModeInfo {
+            width: *width,
+            height: *height,
+            refresh_mhz: *refresh_mhz,
+        }),
         _ => None,
     };
     let key = identity_key(drm, info);
@@ -302,7 +326,10 @@ fn add_output(
     // Second pipe on a free CRTC (excluding the ones already lit).
     let busy: Vec<crtc::Handle> = ctx.outputs.iter().map(|p| p.crtc).collect();
     let built = crate::context::display::build::build::build(
-        state.inner.kernel.get(&render_gles::format::registrar::registrar::FORMATS),
+        state
+            .inner
+            .kernel
+            .get(&render_gles::format::registrar::registrar::FORMATS),
         &ctx.drm_output_manager,
         &ctx.gpu_binding,
         &output,
@@ -327,11 +354,11 @@ fn add_output(
     // Keep the GlobalId so the pipe's `wl_output` can be destroyed when this output is
     // pruned (disconnect/deactivate) — otherwise a stale global lingers and re-adding
     // the monitor advertises a duplicate.
-    let global = output.create_global::<dispatcher::state::state::Dispatch>(
-        &ctx.display_handle,
-    );
+    let global = output.create_global::<dispatcher::state::state::Dispatch>(&ctx.display_handle);
     // Every world's Space, not just the hosted one (`map_output_everywhere`).
-    state.inner.map_output_everywhere(&output, smithay::utils::Point::from((x, 0)));
+    state
+        .inner
+        .map_output_everywhere(&output, smithay::utils::Point::from((x, 0)));
     let env = model::environment::config::base::get();
     // compd: SDR only without the Vulkan renderer (see `new_hdr_active` above).
     let hdr_active = env.hdr && built.hdr.hdr_capable() && false;
@@ -344,29 +371,30 @@ fn add_output(
         x,
         ctx.outputs.len() + 1,
     );
-    ctx.outputs.push(crate::context::render::render::OutputPipe {
-        crtc: built.crtc,
-        mode,
-        output,
-        drm_output: Some(built.drm_output),
-        hdr_caps: built.hdr,
-        hdr_active,
-        props_applied: false,
-        render_failures: 0,
-        connector: built.connector,
-        current_drm_mode: built.drm_mode,
-        modes: built.modes,
-        mode_revert: None,
-        global: Some(global),
-        last_vblank: None,
-        render_start: None,
-        flip_trace: None,
-        last_tear: false,
-        cap_interval: None,
-        cap_wake: None,
-        settlement: Default::default(),
-        owed_frames: None,
-    });
+    ctx.outputs
+        .push(crate::context::render::render::OutputPipe {
+            crtc: built.crtc,
+            mode,
+            output,
+            drm_output: Some(built.drm_output),
+            hdr_caps: built.hdr,
+            hdr_active,
+            props_applied: false,
+            render_failures: 0,
+            connector: built.connector,
+            current_drm_mode: built.drm_mode,
+            modes: built.modes,
+            mode_revert: None,
+            global: Some(global),
+            last_vblank: None,
+            render_start: None,
+            flip_trace: None,
+            last_tear: false,
+            cap_interval: None,
+            cap_wake: None,
+            settlement: Default::default(),
+            owed_frames: None,
+        });
     Ok(())
 }
 
@@ -407,7 +435,10 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
         let drm = mgr.device();
         let res = kms::connector::scan::scan::resources(drm);
         let infos = kms::connector::scan::scan::connectors(drm, &res);
-        infos.into_iter().filter(|i| i.state() == connector::State::Connected).collect::<Vec<_>>()
+        infos
+            .into_iter()
+            .filter(|i| i.state() == connector::State::Connected)
+            .collect::<Vec<_>>()
     };
 
     // The set to DRIVE: connected monitors the user has left active. If none are
@@ -415,16 +446,25 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
     // first connected — so we never go dark just because everything was deactivated.
     let profiles = render_gles::preference::output::profile::profile::get();
     let is_active = |key: &str| {
-        profiles.iter().find(|p| p.identity.as_deref() == Some(key)).map(|p| p.active).unwrap_or(true)
+        profiles
+            .iter()
+            .find(|p| p.identity.as_deref() == Some(key))
+            .map(|p| p.active)
+            .unwrap_or(true)
     };
     let (drive_set, connected_keys): (Vec<connector::Info>, Vec<String>) = {
         let mgr = ctx.drm_output_manager.borrow();
         let drm = mgr.device();
-        let keyed: Vec<(connector::Info, String)> =
-            connected.iter().map(|c| (c.clone(), identity_key(drm, c))).collect();
+        let keyed: Vec<(connector::Info, String)> = connected
+            .iter()
+            .map(|c| (c.clone(), identity_key(drm, c)))
+            .collect();
         let connected_keys: Vec<String> = keyed.iter().map(|(_, k)| k.clone()).collect();
-        let active: Vec<connector::Info> =
-            keyed.iter().filter(|(_, k)| is_active(k)).map(|(c, _)| c.clone()).collect();
+        let active: Vec<connector::Info> = keyed
+            .iter()
+            .filter(|(_, k)| is_active(k))
+            .map(|(c, _)| c.clone())
+            .collect();
         let drive = if !active.is_empty() {
             active
         } else if !connected.is_empty() {
@@ -445,8 +485,13 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
     while i < ctx.outputs.len() {
         if !drive_handles.contains(&ctx.outputs[i].connector) {
             let removed = ctx.outputs.remove(i);
-            state.state.redraw.remove(&world::state::state::output_key(&removed.output));
-            protocols::tearing::liveness::liveness::remove(&world::state::state::output_key(&removed.output));
+            state
+                .state
+                .redraw
+                .remove(&world::state::state::output_key(&removed.output));
+            protocols::tearing::liveness::liveness::remove(&world::state::state::output_key(
+                &removed.output,
+            ));
             // Every world's Space, not just the hosted one (`unmap_output_everywhere`).
             state.inner.unmap_output_everywhere(&removed.output);
             // Destroy this output's `wl_output` global so re-adding the monitor doesn't
@@ -456,7 +501,10 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                 ctx.display_handle
                     .remove_global::<dispatcher::state::state::Dispatch>(gid);
             }
-            info!("reconcile: removed output {:?} (disconnected or deactivated)", removed.connector);
+            info!(
+                "reconcile: removed output {:?} (disconnected or deactivated)",
+                removed.connector
+            );
             // Tell the off-thread producers, which key their buffers by output:
             // this is the deterministic signal that a monitor's panes are gone,
             // so their rings are freed here rather than inferred from a lapse in
@@ -481,8 +529,8 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
 
     // 2. PRIMARY (`outputs[0]`, the never-pruned anchor): if it isn't driving a
     //    drive-set monitor, fail it over to one (preferred first), else go dark.
-    let primary_ok = ctx.outputs[0].drm_output.is_some()
-        && drive_handles.contains(&ctx.outputs[0].connector);
+    let primary_ok =
+        ctx.outputs[0].drm_output.is_some() && drive_handles.contains(&ctx.outputs[0].connector);
     if !primary_ok {
         let target = {
             let mgr = ctx.drm_output_manager.borrow();
@@ -500,8 +548,13 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                 while i < ctx.outputs.len() {
                     if ctx.outputs[i].connector == th && ctx.outputs[i].drm_output.is_some() {
                         let removed = ctx.outputs.remove(i);
-                        state.state.redraw.remove(&world::state::state::output_key(&removed.output));
-                        protocols::tearing::liveness::liveness::remove(&world::state::state::output_key(&removed.output));
+                        state
+                            .state
+                            .redraw
+                            .remove(&world::state::state::output_key(&removed.output));
+                        protocols::tearing::liveness::liveness::remove(
+                            &world::state::state::output_key(&removed.output),
+                        );
                         // Every world's Space, not just the hosted one
                         // (`unmap_output_everywhere`).
                         state.inner.unmap_output_everywhere(&removed.output);
@@ -509,7 +562,10 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                             ctx.display_handle
                                 .remove_global::<dispatcher::state::state::Dispatch>(gid);
                         }
-                        info!("reconcile: evicted secondary {:?} so the primary can take it over", removed.connector);
+                        info!(
+                            "reconcile: evicted secondary {:?} so the primary can take it over",
+                            removed.connector
+                        );
                     } else {
                         i += 1;
                     }
@@ -551,8 +607,11 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
         .filter(|p| p.drm_output.is_some())
         .map(|p| p.connector)
         .collect();
-    let to_add: Vec<connector::Info> =
-        drive_set.iter().filter(|c| !driven.contains(&c.handle())).cloned().collect();
+    let to_add: Vec<connector::Info> = drive_set
+        .iter()
+        .filter(|c| !driven.contains(&c.handle()))
+        .cloned()
+        .collect();
     for c in &to_add {
         let requested = {
             let mgr = ctx.drm_output_manager.borrow();
@@ -590,8 +649,14 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
     // survive (`build_teleport` filters). The active flags come from the live in-memory
     // prefs (settings updates memory + disk together before requesting a reconcile).
     let layout = drivers::output::base::build_teleport(&state.inner.preference, &connected_keys);
-    *state.inner.kernel.get_mut(&drivers::output::base::TELEPORT_LAYOUT_MUT) = layout;
-    *state.inner.kernel.get_mut(&drivers::output::base::CURSOR_PLACEMENT_MUT) = None;
+    *state
+        .inner
+        .kernel
+        .get_mut(&drivers::output::base::TELEPORT_LAYOUT_MUT) = layout;
+    *state
+        .inner
+        .kernel
+        .get_mut(&drivers::output::base::CURSOR_PLACEMENT_MUT) = None;
     // The cursor's monitor may be the one that just went away.
     //
     // Nothing else clears `cursor_output`: the motion path only SEEDS it while it
@@ -611,7 +676,12 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
     // and the cursor is never moved off it — the exact case this block exists for.
     let cursor_mapped = state.inner.cursor_output.as_ref().is_some_and(|k| {
         live_keys.iter().any(|lk| lk == k)
-            && state.inner.space_state().state.outputs().any(|o| world::state::state::output_key(o) == *k)
+            && state
+                .inner
+                .space_state()
+                .state
+                .outputs()
+                .any(|o| world::state::state::output_key(o) == *k)
     });
     if !cursor_mapped {
         // Prefer a live output; fall back to any mapped one (all-dark: the anchor is
@@ -652,11 +722,16 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
         for key in &activated {
             state.state.redraw.register(key);
         }
-        state.state.redraw.force_for(protocols::redraw::schedule::schedule::RedrawReason::Output);
+        state
+            .state
+            .redraw
+            .force_for(protocols::redraw::schedule::schedule::RedrawReason::Output);
         let handle = state.loop_handle.clone();
         crate::wire::watchdog::settle::settle::arm(&handle, &mut state.state.redraw, activated);
     } else {
-        state.state.schedule_redraw(protocols::redraw::schedule::schedule::RedrawReason::Output);
+        state
+            .state
+            .schedule_redraw(protocols::redraw::schedule::schedule::RedrawReason::Output);
     }
     if !any_live {
         Some(OutputChange::WentDark)

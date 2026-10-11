@@ -7,11 +7,9 @@
 //!   4. Topology — USB touch → sole external output (or the internal panel if there
 //!      is none); a non-USB touch → sole built-in panel. Ambiguity → settings.
 
-use world::state::state::output_key;
+use drivers::output::base::{TOUCH_DEVICES_SNAPSHOT_MUT, TouchDeviceInfo, TouchDevicesSnapshot};
 use world::state::Loop;
-use drivers::output::base::{
-    TouchDeviceInfo, TouchDevicesSnapshot, TOUCH_DEVICES_SNAPSHOT_MUT,
-};
+use world::state::state::output_key;
 // Backend `Device` trait (for `syspath()`); anon import avoids the struct clash.
 use smithay::backend::input::Device as _;
 use smithay::output::Output;
@@ -26,7 +24,10 @@ const MAX_SIZE_DIFF: f64 = 0.05;
 pub fn touch_device_id(device: &Device) -> String {
     let name = device.name();
     let serial = unsafe { device.udev_device() }
-        .and_then(|d| d.property_value("ID_SERIAL_SHORT").map(|s| s.to_string_lossy().into_owned()))
+        .and_then(|d| {
+            d.property_value("ID_SERIAL_SHORT")
+                .map(|s| s.to_string_lossy().into_owned())
+        })
         .filter(|s| !s.is_empty());
     match serial {
         Some(s) => format!("{name} {s}"),

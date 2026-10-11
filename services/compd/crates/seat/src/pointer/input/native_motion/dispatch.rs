@@ -85,12 +85,7 @@ pub fn dispatch(
     let (ui_transform, ui_output_size) = hit::ui_camera(_loop);
 
     if let Some(registry) = _loop.inner.surface_mut().registry.as_mut() {
-        registry.route_pointer_to(
-            ui_target,
-            ui_screen_point,
-            &ui_transform,
-            ui_output_size,
-        );
+        registry.route_pointer_to(ui_target, ui_screen_point, &ui_transform, ui_output_size);
     }
 
     // CHECK: Improve to not use cloning and for the latter call.(the focus check)

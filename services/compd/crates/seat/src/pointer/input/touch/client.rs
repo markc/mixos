@@ -17,8 +17,14 @@ fn topmost(_loop: &mut Loop, world: Point<f64, Logical>) -> Option<SurfaceHit> {
 /// for UI/empty (those are handled by pointer emulation, not touch forwarding).
 fn focus_of(hit: &SurfaceHit) -> Option<(WlSurface, Point<f64, Logical>)> {
     match hit {
-        SurfaceHit::Window { surface, position, .. } => Some((surface.clone(), *position)),
-        SurfaceHit::Layer { surface, position_space, .. } => Some((surface.clone(), *position_space)),
+        SurfaceHit::Window {
+            surface, position, ..
+        } => Some((surface.clone(), *position)),
+        SurfaceHit::Layer {
+            surface,
+            position_space,
+            ..
+        } => Some((surface.clone(), *position_space)),
         _ => None,
     }
 }
@@ -78,7 +84,9 @@ fn slot(id: i32) -> smithay::backend::input::TouchSlot {
 }
 
 pub fn down(_loop: &mut Loop, id: i32, world: Point<f64, Logical>, time: u32) {
-    let Some(hit) = topmost(_loop, world) else { return };
+    let Some(hit) = topmost(_loop, world) else {
+        return;
+    };
     let serial = SERIAL_COUNTER.next_serial();
     // A tap raises + activates + keyboard-focuses the surface, exactly like a
     // click — `TouchHandle::down` alone only sets *touch* focus.
@@ -89,21 +97,53 @@ pub fn down(_loop: &mut Loop, id: i32, world: Point<f64, Logical>, time: u32) {
     // pointer rim does on a crossing (`native_motion`): the X server hit-tests its own
     // tree, so a tap on an overlapped X11 window has to find it on top. A no-op for
     // anything that is not X11.
-    _loop.state.raise_x11_for_pointer(focus.as_ref().map(|(surface, _)| surface));
-    let Some(touch) = _loop.state.seat.seat.get_touch() else { return };
-    touch.down(&mut _loop.state, focus, &DownEvent { slot: slot(id), location: world, serial, time });
+    _loop
+        .state
+        .raise_x11_for_pointer(focus.as_ref().map(|(surface, _)| surface));
+    let Some(touch) = _loop.state.seat.seat.get_touch() else {
+        return;
+    };
+    touch.down(
+        &mut _loop.state,
+        focus,
+        &DownEvent {
+            slot: slot(id),
+            location: world,
+            serial,
+            time,
+        },
+    );
 }
 
 pub fn motion(_loop: &mut Loop, id: i32, world: Point<f64, Logical>, time: u32) {
     // Focus is only used for DnD hit-testing during motion; keep it current.
     let focus = topmost(_loop, world).as_ref().and_then(focus_of);
-    let Some(touch) = _loop.state.seat.seat.get_touch() else { return };
-    touch.motion(&mut _loop.state, focus, &MotionEvent { slot: slot(id), location: world, time });
+    let Some(touch) = _loop.state.seat.seat.get_touch() else {
+        return;
+    };
+    touch.motion(
+        &mut _loop.state,
+        focus,
+        &MotionEvent {
+            slot: slot(id),
+            location: world,
+            time,
+        },
+    );
 }
 
 pub fn up(_loop: &mut Loop, id: i32, time: u32) {
-    let Some(touch) = _loop.state.seat.seat.get_touch() else { return };
-    touch.up(&mut _loop.state, &UpEvent { slot: slot(id), serial: SERIAL_COUNTER.next_serial(), time });
+    let Some(touch) = _loop.state.seat.seat.get_touch() else {
+        return;
+    };
+    touch.up(
+        &mut _loop.state,
+        &UpEvent {
+            slot: slot(id),
+            serial: SERIAL_COUNTER.next_serial(),
+            time,
+        },
+    );
 }
 
 /// End of an input batch — flush queued down/motion/up to the client.

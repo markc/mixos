@@ -7,12 +7,14 @@
 //! latches its emulated-button route so the matching release fires the same thing
 //! even if the pen crossed a window edge while held.
 
-use smithay::backend::input::{ButtonState, Event, InputBackend, TabletToolButtonEvent, TabletToolEvent};
-use smithay::utils::SERIAL_COUNTER;
-use model::environment::preference::base::PenAction;
-use world::state::Loop;
 use crate::pointer::input::tablet::action;
 use crate::pointer::input::touch::backend::{BTN_LEFT, BTN_MIDDLE, BTN_RIGHT};
+use model::environment::preference::base::PenAction;
+use smithay::backend::input::{
+    ButtonState, Event, InputBackend, TabletToolButtonEvent, TabletToolEvent,
+};
+use smithay::utils::SERIAL_COUNTER;
+use world::state::Loop;
 
 /// linux/input-event-codes.h stylus button codes.
 const BTN_STYLUS: u32 = 0x14b;
@@ -61,7 +63,10 @@ pub fn button<I: InputBackend>(event: &I::TabletToolButtonEvent, _loop: &mut Loo
             if _loop.state.tablet.tool_has_focus(&tool) {
                 // Tablet-aware surface → native stylus button.
                 let serial = SERIAL_COUNTER.next_serial();
-                _loop.state.tablet.tool_button(&tool, raw, state, serial, time);
+                _loop
+                    .state
+                    .tablet
+                    .tool_button(&tool, raw, state, serial, time);
             } else if let Some(mapped) = map_stylus_button(raw) {
                 // Non-tablet target → the pen is a mouse.
                 crate::pointer::input::touch::emulate::button(_loop, mapped, true, time);
@@ -75,7 +80,10 @@ pub fn button<I: InputBackend>(event: &I::TabletToolButtonEvent, _loop: &mut Loo
                 crate::pointer::input::touch::emulate::button(_loop, mapped, false, time);
             } else {
                 let serial = SERIAL_COUNTER.next_serial();
-                _loop.state.tablet.tool_button(&tool, raw, state, serial, time);
+                _loop
+                    .state
+                    .tablet
+                    .tool_button(&tool, raw, state, serial, time);
             }
         }
     }

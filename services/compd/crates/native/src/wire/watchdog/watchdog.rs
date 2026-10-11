@@ -12,11 +12,11 @@
 //! source schedules normally, and a 30Hz timer asking "has anything composited"
 //! is answering a question no one asked.
 
-use world::state::Loop;
 use protocols::tearing::floor::floor;
 use protocols::tearing::liveness::liveness;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{LoopHandle, RegistrationToken};
+use world::state::Loop;
 
 /// Register the watchdog if it is not already running. Idempotent.
 pub fn arm(loop_handle: &LoopHandle<'static, Loop>, slot: &mut Option<RegistrationToken>) {
@@ -30,24 +30,30 @@ pub fn arm(loop_handle: &LoopHandle<'static, Loop>, slot: &mut Option<Registrati
     // cadence away and moves on with every composite, so the timer only ever
     // fires to find a pipe genuinely due. One source for the whole engagement —
     // not a per-frame registration, which at 300fps would churn 300 a second.
-    match loop_handle.insert_source(Timer::from_duration(floor::get()), |_, _, state: &mut Loop| {
-        if !protocols::tearing::gate::gate::engaged() {
-            return TimeoutAction::ToDuration(floor::get());
-        }
-        if let Some(remaining) = liveness::until_due() {
-            // Not due yet: the last composite moved the deadline. Sleep to it.
-            // Clearing the rescue flag: frames arriving now are the pacer's.
-            liveness::set_rescue(false);
-            return TimeoutAction::ToDuration(remaining);
-        }
-        // Due (or nothing recorded yet). Tell liveness whose frames the next ones
-        // are BEFORE asking for them: rescue frames must not be measured as the
-        // pacer's cadence, or each would space the next further out and the
-        // watchdog would talk itself down to 4fps.
-        liveness::set_rescue(true);
-        state.state.redraw.force_for(protocols::redraw::schedule::schedule::RedrawReason::Watchdog);
-        TimeoutAction::ToDuration(floor::get())
-    }) {
+    match loop_handle.insert_source(
+        Timer::from_duration(floor::get()),
+        |_, _, state: &mut Loop| {
+            if !protocols::tearing::gate::gate::engaged() {
+                return TimeoutAction::ToDuration(floor::get());
+            }
+            if let Some(remaining) = liveness::until_due() {
+                // Not due yet: the last composite moved the deadline. Sleep to it.
+                // Clearing the rescue flag: frames arriving now are the pacer's.
+                liveness::set_rescue(false);
+                return TimeoutAction::ToDuration(remaining);
+            }
+            // Due (or nothing recorded yet). Tell liveness whose frames the next ones
+            // are BEFORE asking for them: rescue frames must not be measured as the
+            // pacer's cadence, or each would space the next further out and the
+            // watchdog would talk itself down to 4fps.
+            liveness::set_rescue(true);
+            state
+                .state
+                .redraw
+                .force_for(protocols::redraw::schedule::schedule::RedrawReason::Watchdog);
+            TimeoutAction::ToDuration(floor::get())
+        },
+    ) {
         Ok(token) => {
             *slot = Some(token);
             info!("tearing: pacing floor deadline armed");

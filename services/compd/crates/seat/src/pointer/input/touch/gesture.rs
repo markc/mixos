@@ -3,8 +3,8 @@
 //! one code path: 2 fingers → pinch-zoom + pan, 3 → directional swipe, 4 → fit.
 use super::backend::{PinchEvent, TouchEmu};
 use super::{emulate, geom};
-use world::state::Loop;
 use world::seat::gesture::touch::touch::{Mode, TouchMode};
+use world::state::Loop;
 
 /// 2-finger-tap slop (physical px of centroid drift) and pinch tolerance (|scale-1|)
 /// beyond which the gesture is a pan/pinch, not a tap → cancels the right click.
@@ -34,7 +34,10 @@ pub fn begin(_loop: &mut Loop, mode: Mode, time: u32) {
             _loop.inner.gesture.pinch_to_window = false;
             _loop.inner.gesture.pinch_prev_scale = 1.0;
         }
-        Mode::Zoom => crate::pointer::input::pinch::begin::<TouchEmu>(&pinch(time, 1.0, 0.0, 0.0, false), _loop),
+        Mode::Zoom => crate::pointer::input::pinch::begin::<TouchEmu>(
+            &pinch(time, 1.0, 0.0, 0.0, false),
+            _loop,
+        ),
         Mode::Swipe => _loop.inner.gesture.begin(3),
         Mode::Fit | Mode::None => {}
     }
@@ -64,7 +67,10 @@ pub fn update(_loop: &mut Loop, time: u32) {
             // (the canvas-zoom + scroll handlers key off the pointer location).
             let (nx, ny) = geom::fraction_of(_loop, centroid);
             emulate::move_to(_loop, nx, ny, time);
-            crate::pointer::input::pinch::update::<TouchEmu>(&pinch(time, scale, dx, dy, false), _loop);
+            crate::pointer::input::pinch::update::<TouchEmu>(
+                &pinch(time, scale, dx, dy, false),
+                _loop,
+            );
             // Canvas-owned pinch → also pan via the centroid delta; a window-
             // forwarded pinch already receives the centre delta itself. A 2-finger
             // pan is STRICT (no momentum) — `pan(.., false)`.
@@ -74,7 +80,8 @@ pub fn update(_loop: &mut Loop, time: u32) {
         }
         Mode::Swipe => _loop.inner.gesture.update(dx, dy),
         Mode::Fit => {
-            _loop.inner.touch.fit_scale = _loop.inner.touch.spread() / _loop.inner.touch.base_spread;
+            _loop.inner.touch.fit_scale =
+                _loop.inner.touch.spread() / _loop.inner.touch.base_spread;
         }
         Mode::None => {}
     }
@@ -84,7 +91,10 @@ pub fn update(_loop: &mut Loop, time: u32) {
 /// four-finger fit command.
 pub fn end(_loop: &mut Loop, mode: Mode, time: u32, cancelled: bool) {
     match mode {
-        Mode::Zoom => crate::pointer::input::pinch::end::<TouchEmu>(&pinch(time, 1.0, 0.0, 0.0, cancelled), _loop),
+        Mode::Zoom => crate::pointer::input::pinch::end::<TouchEmu>(
+            &pinch(time, 1.0, 0.0, 0.0, cancelled),
+            _loop,
+        ),
         Mode::Swipe => {
             // A three-finger swipe has no navigator to drive (cut with the
             // camera controls); nothing to fire.
@@ -97,5 +107,12 @@ pub fn end(_loop: &mut Loop, mode: Mode, time: u32, cancelled: bool) {
 }
 
 fn pinch(time: u32, scale: f64, dx: f64, dy: f64, cancelled: bool) -> PinchEvent {
-    PinchEvent { time, fingers: 2, scale, dx, dy, cancelled }
+    PinchEvent {
+        time,
+        fingers: 2,
+        scale,
+        dx,
+        dy,
+        cancelled,
+    }
 }

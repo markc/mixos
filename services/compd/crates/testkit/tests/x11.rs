@@ -61,7 +61,9 @@ fn off_world_unmap_remap_keeps_the_readmitted_draw_order_entry() {
         let host = &mut h.wire.inner;
         host.surface_event(SurfaceEvent::RoleTaken {
             handle: handle.clone(),
-            role: SurfaceRole::X11 { override_redirect: false },
+            role: SurfaceRole::X11 {
+                override_redirect: false,
+            },
             parent: None,
         });
         host.initialize_surface_data(candidate.clone());
@@ -85,16 +87,36 @@ fn off_world_unmap_remap_keeps_the_readmitted_draw_order_entry() {
 
     // The actual production protocol drain, without lifecycle service between
     // these two events. No Xwayland server is needed for identity/stacking.
-    h.wire.state.deferred.push(Deferred::WindowWithdrawn(surface.clone()));
-    h.wire.state.deferred.push(Deferred::WindowMapped(Mapped::X11(surface.clone())));
+    h.wire
+        .state
+        .deferred
+        .push(Deferred::WindowWithdrawn(surface.clone()));
+    h.wire
+        .state
+        .deferred
+        .push(Deferred::WindowMapped(Mapped::X11(surface.clone())));
     h.wire.drain_protocol();
-    assert_eq!(h.wire.inner.active_world, 1, "readmission must not switch worlds");
-    assert_eq!(h.wire.inner.other_space.state.element_location(a), Some((17, 23).into()));
-    let readmitted_key = h.wire.inner.draw_orders[0].key(a_id).expect("readmission registers A");
-    assert!(readmitted_key > peer_key, "a returning window is raised above its peer");
+    assert_eq!(
+        h.wire.inner.active_world, 1,
+        "readmission must not switch worlds"
+    );
+    assert_eq!(
+        h.wire.inner.other_space.state.element_location(a),
+        Some((17, 23).into())
+    );
+    let readmitted_key = h.wire.inner.draw_orders[0]
+        .key(a_id)
+        .expect("readmission registers A");
+    assert!(
+        readmitted_key > peer_key,
+        "a returning window is raised above its peer"
+    );
     assert_eq!(h.wire.inner.draw_orders[0].key(peer_id), Some(peer_key));
     assert_eq!(h.wire.inner.draw_orders[1].key(b_id), b_key);
-    assert!(h.wire.inner.lifecycle.iter().all(Vec::is_empty), "no delayed Withdrawn or InitialMap");
+    assert!(
+        h.wire.inner.lifecycle.iter().all(Vec::is_empty),
+        "no delayed Withdrawn or InitialMap"
+    );
     let handle = SurfaceHandle::x11(surface);
     assert!(h.record(&handle).unwrap().mapped());
     assert_eq!(h.record(&handle).unwrap().uuid(), Some(a_id.0));
@@ -104,9 +126,17 @@ fn off_world_unmap_remap_keeps_the_readmitted_draw_order_entry() {
     h.wire.inner.switch_world();
     assert_eq!(h.tick_frame(), 0);
     assert_eq!(h.wire.inner.draw_orders[0].key(a_id), Some(readmitted_key));
-    let front_to_back: Vec<_> = h.wire.inner.draw_orders[0].ordered()
-        .into_iter().rev().map(|(id, _)| id).collect();
-    assert_eq!(front_to_back, [a_id, peer_id], "the surviving entry stays on top on return");
+    let front_to_back: Vec<_> = h.wire.inner.draw_orders[0]
+        .ordered()
+        .into_iter()
+        .rev()
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(
+        front_to_back,
+        [a_id, peer_id],
+        "the surviving entry stays on top on return"
+    );
     assert!(h.wire.inner.space.state.element_location(a).is_some());
     assert_eq!(h.wire.inner.draw_orders[1].key(b_id), b_key);
 }

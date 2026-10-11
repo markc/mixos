@@ -31,7 +31,8 @@ pub struct NativeHandles {
 /// (`set_or_empty` → empty → the term is dropped), so this changes no decision;
 /// what it changes is that the layer can tell "there is none" from "not yet".
 fn absent(_loop: &mut Loop, why: &'static str) {
-    _loop.inner
+    _loop
+        .inner
         .kernel
         .get(&render_gles::format::registrar::registrar::FORMATS)
         .absent(render_gles::format::role::role::Role::Render, why);
@@ -48,7 +49,10 @@ pub fn wire(
     //      failure — a compositor without a display/renderer cannot run.
     trace!("native: assembling display (DRM/GBM) then renderer");
     let mut display = crate::assemble::display::display::assemble(
-        _loop.inner.kernel.get(&render_gles::format::registrar::registrar::FORMATS),
+        _loop
+            .inner
+            .kernel
+            .get(&render_gles::format::registrar::registrar::FORMATS),
     );
     // The composite is GLES only. GLES consults no Vulkan device, so the `Render`
     // role has no renderable set to publish — SAY so rather than leaving it silent:
@@ -56,12 +60,18 @@ pub fn wire(
     // answer across it, and the assembly below is the first thing that asks.
     absent(_loop, "gles composite (no vulkan device is consulted)");
     let renderer = crate::assemble::renderer::renderer::assemble(
-        _loop.inner.kernel.get(&render_gles::format::registrar::registrar::FORMATS),
+        _loop
+            .inner
+            .kernel
+            .get(&render_gles::format::registrar::registrar::FORMATS),
         &mut display,
     );
 
     // Bind the RC cell into loop so it can register a DMABuf global.
-    *_loop.inner.kernel.get_mut(&world::state::state::GPU_BINDING_MUT) = Some(renderer.gpu_binding.clone());
+    *_loop
+        .inner
+        .kernel
+        .get_mut(&world::state::state::GPU_BINDING_MUT) = Some(renderer.gpu_binding.clone());
 
     // logind client for lid-close suspend (None if logind is unavailable).
     *_loop
@@ -78,13 +88,11 @@ pub fn wire(
 
     // Hook syncobj impls; the support probe (`drm.syncobj/syncobj.device`)
     // records what the device can do for the explicit-sync path.
-    let syncobj_eventfd =
-        kms::syncobj::device::device::supports_eventfd(&display.drm_fd);
+    let syncobj_eventfd = kms::syncobj::device::device::supports_eventfd(&display.drm_fd);
     info!("syncobj eventfd support: {syncobj_eventfd}");
-    dispatcher::wayland::dmabuf::dispatch::dispatch::hook_syncobj::<dispatcher::state::state::Dispatch>(
-        &mut _loop.state,
-        display.drm_fd.clone(),
-    );
+    dispatcher::wayland::dmabuf::dispatch::dispatch::hook_syncobj::<
+        dispatcher::state::state::Dispatch,
+    >(&mut _loop.state, display.drm_fd.clone());
 
     // ---- The COMPOSITING renderer, chosen and PUBLISHED here (`Role::Sample`).
     //      The dmabuf feedback clients negotiate against narrows the EGL set to
@@ -109,19 +117,22 @@ pub fn wire(
     {
         let formats = {
             let mut binding = renderer.gpu_binding.borrow_mut();
-            let world::state::state::StateDRMBinding {
-                gpus,
-                primary,
-            } = &mut *binding;
+            let world::state::state::StateDRMBinding { gpus, primary } = &mut *binding;
             let primary = *primary;
             render_gles::multigpu::bind::bind::texture_formats(gpus, &primary)
         };
-        _loop.inner.kernel.get(&render_gles::format::registrar::registrar::FORMATS).register(
-            render_gles::format::registrar::registrar::Device::of(&render_gles::format::registrar::registrar::composite_node(display.primary_gpu)),
-            render_gles::format::role::role::Role::Sample,
-            formats,
-            "gles (texture_formats)",
-        );
+        _loop
+            .inner
+            .kernel
+            .get(&render_gles::format::registrar::registrar::FORMATS)
+            .register(
+                render_gles::format::registrar::registrar::Device::of(
+                    &render_gles::format::registrar::registrar::composite_node(display.primary_gpu),
+                ),
+                render_gles::format::role::role::Role::Sample,
+                formats,
+                "gles (texture_formats)",
+            );
     }
     // And whether the composite can be TOLD what a surface's numbers mean. Only
     // the HDR composite takes a per-surface transfer, so this decides whether the
@@ -132,7 +143,11 @@ pub fn wire(
     // `lifecycle::initialize`, which is next.
     // compd: only the Vulkan composite took a per-surface transfer (HDR); GLES is SDR.
     let hdr_active = env.hdr && display.hdr.hdr_capable() && false;
-    _loop.inner.kernel.get(&render_gles::format::registrar::registrar::FORMATS).set_color_managed(hdr_active);
+    _loop
+        .inner
+        .kernel
+        .get(&render_gles::format::registrar::registrar::FORMATS)
+        .set_color_managed(hdr_active);
     // A split configuration is legal but only half-supported, and it is invisible
     // from the client side: what gets advertised is the SCANOUT device, while the
     // off-thread producers allocate on `render_node`. Their modifier sets then
@@ -140,9 +155,9 @@ pub fn wire(
     // they do not. Say it once, here, next to the topology line.
     {
         let cfg = model::environment::config::base::get();
-        if let Some(rn) = kms::device::node::node::render_node(
-            std::path::Path::new(&cfg.render_node),
-        ) {
+        if let Some(rn) =
+            kms::device::node::node::render_node(std::path::Path::new(&cfg.render_node))
+        {
             if rn.dev_id() != display.primary_gpu.dev_id() {
                 warn!(
                     "render_node {:?} is a DIFFERENT device from the scanout node {:?}. dmabuf \
@@ -160,12 +175,11 @@ pub fn wire(
     info!("Backend initialization - wire backend to renderer and initialize renderer");
 
     // ---- Compositor lifecycle init through the contract (DisplayBackend shape).
-    let mut contract =
-        crate::assemble::renderer::renderer::NativeContract {
-            output: display.output.clone(),
-            mode: display.mode,
-            gpu_binding: renderer.gpu_binding.clone(),
-        };
+    let mut contract = crate::assemble::renderer::renderer::NativeContract {
+        output: display.output.clone(),
+        mode: display.mode,
+        gpu_binding: renderer.gpu_binding.clone(),
+    };
     // The returned `OutputDamageTracker` is DISCARDED: on the native path every
     // pipe's damage tracking lives inside its own smithay `DrmCompositor`, so a
     // second tracker here would never be read. `initialize` is still called for
@@ -178,15 +192,14 @@ pub fn wire(
         &mut contract,
     );
 
-
     // ---- Input stack (panics internally; a compositor without input cannot run).
-    trace!("native: creating libinput stack for seat '{}'", display.seat_name);
-    let libinput_context = kms::input::libinput::factory::factory::create(
-        display.session.clone(),
-        &display.seat_name,
+    trace!(
+        "native: creating libinput stack for seat '{}'",
+        display.seat_name
     );
-    let libinput_source =
-        kms::input::loop_::libinput::libinput::source(libinput_context.clone());
+    let libinput_context =
+        kms::input::libinput::factory::factory::create(display.session.clone(), &display.seat_name);
+    let libinput_source = kms::input::loop_::libinput::libinput::source(libinput_context.clone());
 
     info!("Backend initialization - Native.start()");
 
@@ -287,14 +300,13 @@ pub fn wire(
         *_loop
             .inner
             .kernel
-            .get_mut(&drivers::output::base::OUTPUT_MODES_SNAPSHOT_MUT) =
-            OutputModesSnapshot {
-                // EDID identity "make model serial" — the per-monitor key the picker
-                // selects with and the settings-editor persists.
-                edid_key: display.identity.key(),
-                current: Some(to_info(&display.drm_mode)),
-                available: display.connector.modes().iter().map(to_info).collect(),
-            };
+            .get_mut(&drivers::output::base::OUTPUT_MODES_SNAPSHOT_MUT) = OutputModesSnapshot {
+            // EDID identity "make model serial" — the per-monitor key the picker
+            // selects with and the settings-editor persists.
+            edid_key: display.identity.key(),
+            current: Some(to_info(&display.drm_mode)),
+            available: display.connector.modes().iter().map(to_info).collect(),
+        };
     }
 
     // ---- Topology bookkeeping for the device authority.
@@ -332,10 +344,7 @@ pub fn wire(
         let active = display.connector.handle();
         let ctx = ctx_rc.borrow();
         let manager = ctx.drm_output_manager.borrow();
-        let snap = crate::context::display::base::compute(
-            manager.device(),
-            active,
-        );
+        let snap = crate::context::display::base::compute(manager.device(), active);
         drop(manager);
         drop(ctx);
         *_loop
@@ -384,26 +393,22 @@ pub fn wire(
             let handle = state.loop_handle.clone();
             // A resume render has no commit behind it: move the epoch, or the
             // executor's epoch-current skip finds every pipe up to date.
-            state.state.redraw.request_silent_for(protocols::redraw::schedule::schedule::RedrawReason::Resume);
+            state
+                .state
+                .redraw
+                .request_silent_for(protocols::redraw::schedule::schedule::RedrawReason::Resume);
             let _ = crate::render::execute::execute::execute(
-                ctx, handle, state,
+                ctx,
+                handle,
+                state,
                 crate::render::execute::execute::RenderScope::All,
             );
         },
     );
 
-    crate::wire::frame::frame::register(
-        event_loop,
-        _loop,
-        display.drm_notifier,
-        ctx_rc.clone(),
-    );
+    crate::wire::frame::frame::register(event_loop, _loop, display.drm_notifier, ctx_rc.clone());
 
-    crate::wire::input::input::register(
-        event_loop,
-        libinput_source,
-        ctx_rc.clone(),
-    );
+    crate::wire::input::input::register(event_loop, libinput_source, ctx_rc.clone());
 
     // Control-plane ping: drains the input-independent control-plane OFF the
     // libinput source, on its own loop iteration when pinged (via
@@ -430,13 +435,7 @@ pub fn wire(
 
     // Retained udev watch (panics internally if udev vanished post-snapshot).
     let watch = kms::udev::loop_::watch::watch::watch(&display.seat_name);
-    crate::wire::plugin::plugin::register(
-        event_loop,
-        watch,
-        registry,
-        topology,
-        ctx_rc.clone(),
-    );
+    crate::wire::plugin::plugin::register(event_loop, watch, registry, topology, ctx_rc.clone());
 
     // Light up every OTHER connected monitor as an additional output (the primary
     // is already up from assembly). The set-reconciler adds one pipe per connected
@@ -455,7 +454,9 @@ pub fn wire(
                 let gles: &mut smithay::backend::renderer::gles::GlesRenderer = renderer.as_mut();
                 frames::scene::gpu::prewarm(_loop, gles);
             }
-            Err(err) => warn!("native: no renderer to prewarm the wgpu-gl context ({err:?}); the first frame builds it"),
+            Err(err) => warn!(
+                "native: no renderer to prewarm the wgpu-gl context ({err:?}); the first frame builds it"
+            ),
         }
     }
 

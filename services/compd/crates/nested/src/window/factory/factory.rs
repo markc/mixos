@@ -15,7 +15,9 @@ static SCALE: AtomicU64 = AtomicU64::new(0);
 /// Set (or clear) the nested output scale. Call before `wire`; a value that is
 /// not finite and positive clears it.
 pub fn set_scale(scale: Option<f64>) {
-    let bits = scale.filter(|s| s.is_finite() && *s > 0.0).map_or(0, f64::to_bits);
+    let bits = scale
+        .filter(|s| s.is_finite() && *s > 0.0)
+        .map_or(0, f64::to_bits);
     SCALE.store(bits, Ordering::Relaxed);
 }
 
@@ -50,7 +52,10 @@ pub fn create() -> Result<WinitWindow, String> {
             let s = f64::from_bits(bits);
             WinitBackend::init_from_attributes::<GlesRenderer>(
                 WindowAttributes::default()
-                    .with_surface_size(PhysicalSize::new((1280.0 * s).round() as u32, (800.0 * s).round() as u32))
+                    .with_surface_size(PhysicalSize::new(
+                        (1280.0 * s).round() as u32,
+                        (800.0 * s).round() as u32,
+                    ))
                     .with_title("Smithay")
                     .with_visible(true),
             )
@@ -99,7 +104,10 @@ pub fn create() -> Result<WinitWindow, String> {
         Some((0, 0).into()),
     );
     output.set_preferred(mode);
-    info!("winit output 'winit' configured (scale {}; rendered through Flipped180, advertised Normal)", scale.fractional_scale());
+    info!(
+        "winit output 'winit' configured (scale {}; rendered through Flipped180, advertised Normal)",
+        scale.fractional_scale()
+    );
 
     Ok(WinitWindow {
         output,

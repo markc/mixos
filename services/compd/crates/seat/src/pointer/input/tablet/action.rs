@@ -3,17 +3,20 @@
 //! discrete press/release. `Passthrough` is handled by the caller (it forwards the
 //! native protocol event); the dial-only `Zoom`/`Wheel` no-op in a button context.
 
+use crate::pointer::input::tablet::inject;
+use model::environment::preference::base::PenAction;
 use smithay::input::pointer::CursorIcon;
 use world::state::Loop;
 use world::state::export::{ActiveOption, CanvasGrab};
-use model::environment::preference::base::PenAction;
-use crate::pointer::input::tablet::inject;
 
 /// Toggle the canvas Hand grab (navigation mode) — the same state + forced grab
 /// cursor the keyboard hand-tool chord drives, so pen, mouse and keyboard share one
 /// mode (`ActiveOption::Hand`).
 pub fn toggle_hand(_loop: &mut Loop) {
-    if matches!(_loop.inner.canvas().Grab, CanvasGrab::Active(ActiveOption::Hand)) {
+    if matches!(
+        _loop.inner.canvas().Grab,
+        CanvasGrab::Active(ActiveOption::Hand)
+    ) {
         _loop.inner.canvas_mut().Grab = CanvasGrab::None;
         _loop.state.seat.force_cursor = None;
     } else {
@@ -44,7 +47,9 @@ pub fn execute(_loop: &mut Loop, action: &PenAction, pressed: bool, time: u32) {
                 open_touch_menu(_loop);
             }
         }
-        PenAction::Click(btn) => crate::pointer::input::touch::emulate::button(_loop, btn.code(), pressed, time),
+        PenAction::Click(btn) => {
+            crate::pointer::input::touch::emulate::button(_loop, btn.code(), pressed, time)
+        }
         PenAction::Key(bind) => inject::combo(_loop, bind, pressed, time),
         // Not button actions: passthrough is the caller's job; zoom/wheel are the dial's.
         PenAction::Passthrough | PenAction::Zoom | PenAction::Wheel { .. } => {}

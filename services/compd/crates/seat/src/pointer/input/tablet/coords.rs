@@ -6,9 +6,9 @@
 
 use smithay::backend::input::{AbsolutePositionEvent, InputBackend};
 use smithay::utils::{Logical, Physical, Point, Size};
+use world::camera::transform::translate::transform::Transform;
 use world::state::Loop;
 use world::state::state::CoordinateTrait;
-use world::camera::transform::translate::transform::Transform;
 
 pub fn world<I, E>(event: &E, _loop: &mut Loop) -> (Point<f64, Physical>, Point<f64, Logical>)
 where

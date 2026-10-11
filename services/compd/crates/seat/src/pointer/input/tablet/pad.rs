@@ -4,9 +4,9 @@
 //! `zwp_tablet_pad_v2` button to the focused client; a bound one runs its action
 //! (toggle hand mode / open touch menu / key combo / click) and is NOT forwarded.
 
+use crate::pointer::input::tablet::action;
 use model::environment::preference::base::PenAction;
 use world::state::Loop;
-use crate::pointer::input::tablet::action;
 
 /// Handle one pad-button edge for device `key`, button index `button`.
 pub fn button(_loop: &mut Loop, key: &str, button: u32, pressed: bool, time: u32) {

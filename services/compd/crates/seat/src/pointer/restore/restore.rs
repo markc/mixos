@@ -2,11 +2,11 @@
 //! policy, so it lives in the pointer chain rather than on the state root — the
 //! Orchestrator keeps only the `saved_cursor` value (see `pointer.snapshot`).
 
-use world::state::{Loop, state::output_key};
-use world::seat::pointer::snapshot::snapshot::CursorSnapshot;
 use smithay::backend::input::{InputBackend, InputEvent};
 use smithay::input::pointer::MotionEvent;
 use smithay::utils::SERIAL_COUNTER;
+use world::seat::pointer::snapshot::snapshot::CursorSnapshot;
+use world::state::{Loop, state::output_key};
 
 /// The single shared cursor "disappears" while a touch sequence owns the active
 /// output, and is restored the instant a real pointer / pen event arrives.
@@ -29,7 +29,13 @@ impl TouchCursor for Loop {
         if self.inner.saved_cursor.is_some() {
             return;
         }
-        let Some(location) = self.state.seat.seat.get_pointer().map(|p| p.current_location()) else {
+        let Some(location) = self
+            .state
+            .seat
+            .seat
+            .get_pointer()
+            .map(|p| p.current_location())
+        else {
             return;
         };
         self.inner.saved_cursor = Some(CursorSnapshot {
@@ -67,10 +73,13 @@ impl TouchCursor for Loop {
         // monitor that no longer exists (`set_current` -> `ensure` creates on miss)
         // and strand the cursor on it, so fall back to leaving the current output
         // alone when the key is stale.
-        let live = snap
-            .output
-            .as_ref()
-            .is_some_and(|key| self.inner.space_state().state.outputs().any(|o| output_key(o) == *key));
+        let live = snap.output.as_ref().is_some_and(|key| {
+            self.inner
+                .space_state()
+                .state
+                .outputs()
+                .any(|o| output_key(o) == *key)
+        });
         if live {
             self.inner.cursor_output = snap.output.clone();
             if let Some(key) = &snap.output {
@@ -90,7 +99,11 @@ impl TouchCursor for Loop {
             pointer.motion(
                 &mut self.state,
                 None,
-                &MotionEvent { location: snap.location, serial, time },
+                &MotionEvent {
+                    location: snap.location,
+                    serial,
+                    time,
+                },
             );
             pointer.frame(&mut self.state);
         }

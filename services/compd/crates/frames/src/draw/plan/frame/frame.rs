@@ -4,7 +4,7 @@
 //! `(render_scene, render_lock)` match in both backends. Backends execute the
 //! plan; they do not derive it.
 
-use crate::draw::plan::tap::tap::{TapPoint, POST_SCENE};
+use crate::draw::plan::tap::tap::{POST_SCENE, TapPoint};
 use world::state::state::Status;
 
 /// A render pass kind. The *meaning* of each kind (which element source feeds
@@ -33,11 +33,15 @@ impl FramePlan {
     }
 
     pub fn has_pass(&self, pass: FramePass) -> bool {
-        self.steps.iter().any(|s| matches!(s, PlanStep::Pass(p) if *p == pass))
+        self.steps
+            .iter()
+            .any(|s| matches!(s, PlanStep::Pass(p) if *p == pass))
     }
 
     pub fn has_tap(&self, tap: TapPoint) -> bool {
-        self.steps.iter().any(|s| matches!(s, PlanStep::Tap(t) if *t == tap))
+        self.steps
+            .iter()
+            .any(|s| matches!(s, PlanStep::Tap(t) if *t == tap))
     }
 }
 

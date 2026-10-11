@@ -1,16 +1,18 @@
 //! Which pen tool is active: the Hand/Select predicates the tablet handlers
 //! branch on. Re-exported from `tablet` so call sites are unchanged.
+use world::seat::gesture::touch::touch::TouchMode;
 use world::state::Loop;
 use world::state::export::{ActiveOption, CanvasGrab};
-use world::seat::gesture::touch::touch::TouchMode;
 
 /// Is the Hand (navigation) tool active for the pen? True for BOTH the mouse/keyboard
 /// canvas Hand grab (`CanvasGrab::Active(Hand)`) AND the touch pane's Hand mode
 /// (`TouchMode::Hand`), so picking Hand in the touch menu also drives the pen. In hand
 /// mode the pen navigates (tip-drag pans anywhere, dial zooms) instead of drawing.
 pub fn hand_active(l: &Loop) -> bool {
-    matches!(l.inner.canvas().Grab, CanvasGrab::Active(ActiveOption::Hand))
-        || l.inner.touch.tool_mode == TouchMode::Hand
+    matches!(
+        l.inner.canvas().Grab,
+        CanvasGrab::Active(ActiveOption::Hand)
+    ) || l.inner.touch.tool_mode == TouchMode::Hand
 }
 
 /// Is the Select tool active (touch pane's Select mode)? The pen then arms the same

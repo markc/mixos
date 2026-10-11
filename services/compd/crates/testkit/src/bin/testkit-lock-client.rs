@@ -22,9 +22,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use wayland_client::protocol::{
-    wl_buffer::WlBuffer, wl_compositor::WlCompositor, wl_keyboard, wl_keyboard::WlKeyboard, wl_output::WlOutput,
-    wl_registry, wl_registry::WlRegistry, wl_seat::WlSeat, wl_shm, wl_shm::WlShm, wl_shm_pool::WlShmPool,
-    wl_surface::WlSurface,
+    wl_buffer::WlBuffer, wl_compositor::WlCompositor, wl_keyboard, wl_keyboard::WlKeyboard,
+    wl_output::WlOutput, wl_registry, wl_registry::WlRegistry, wl_seat::WlSeat, wl_shm,
+    wl_shm::WlShm, wl_shm_pool::WlShmPool, wl_surface::WlSurface,
 };
 use wayland_client::{Connection, Dispatch, QueueHandle, WEnum, delegate_noop};
 use wayland_protocols::ext::session_lock::v1::client::{
@@ -52,15 +52,34 @@ struct State {
 }
 
 impl Dispatch<WlRegistry, ()> for State {
-    fn event(state: &mut Self, _: &WlRegistry, event: wl_registry::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
-        if let wl_registry::Event::Global { name, interface, version } = event {
+    fn event(
+        state: &mut Self,
+        _: &WlRegistry,
+        event: wl_registry::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wl_registry::Event::Global {
+            name,
+            interface,
+            version,
+        } = event
+        {
             state.globals.push((name, interface, version));
         }
     }
 }
 
 impl Dispatch<ExtSessionLockV1, ()> for State {
-    fn event(state: &mut Self, _: &ExtSessionLockV1, event: ext_session_lock_v1::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+    fn event(
+        state: &mut Self,
+        _: &ExtSessionLockV1,
+        event: ext_session_lock_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
         match event {
             ext_session_lock_v1::Event::Locked => {
                 state.locked = true;
@@ -81,7 +100,12 @@ impl Dispatch<ExtSessionLockSurfaceV1, usize> for State {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let ext_session_lock_surface_v1::Event::Configure { serial, width, height } = event {
+        if let ext_session_lock_surface_v1::Event::Configure {
+            serial,
+            width,
+            height,
+        } = event
+        {
             surface.ack_configure(serial);
             state.configures.push((*index, width, height));
         }
@@ -89,7 +113,14 @@ impl Dispatch<ExtSessionLockSurfaceV1, usize> for State {
 }
 
 impl Dispatch<WlKeyboard, ()> for State {
-    fn event(_: &mut Self, _: &WlKeyboard, event: wl_keyboard::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+    fn event(
+        _: &mut Self,
+        _: &WlKeyboard,
+        event: wl_keyboard::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
         if let wl_keyboard::Event::Key { key, state, .. } = event {
             let state = match state {
                 WEnum::Value(wl_keyboard::KeyState::Pressed) => "pressed",
@@ -115,7 +146,10 @@ fn fail(message: &str) -> ! {
 }
 
 fn arg(args: &[String], name: &str) -> Option<String> {
-    args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
+    args.iter()
+        .position(|a| a == name)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
 }
 
 /// A `width` x `height` shm buffer filled with [`COLOUR`].
@@ -124,7 +158,10 @@ fn buffer(shm: &WlShm, qh: &QueueHandle<State>, width: i32, height: i32) -> WlBu
     let size = stride * height;
     let fd = unsafe { libc::memfd_create(c"testkit-lock-client".as_ptr(), libc::MFD_CLOEXEC) };
     if fd < 0 {
-        fail(&format!("memfd_create: {}", std::io::Error::last_os_error()));
+        fail(&format!(
+            "memfd_create: {}",
+            std::io::Error::last_os_error()
+        ));
     }
     let mut file = unsafe { File::from_raw_fd(fd) };
     let pixels: Vec<u8> = COLOUR.repeat((width * height) as usize);
@@ -139,20 +176,37 @@ fn buffer(shm: &WlShm, qh: &QueueHandle<State>, width: i32, height: i32) -> WlBu
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let hold = Duration::from_secs(arg(&args, "--hold").and_then(|s| s.parse().ok()).unwrap_or(60));
+    let hold = Duration::from_secs(
+        arg(&args, "--hold")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(60),
+    );
     unsafe {
         libc::signal(libc::SIGUSR1, on_usr1 as *const () as libc::sighandler_t);
     }
 
-    let connection = Connection::connect_to_env().unwrap_or_else(|error| fail(&format!("connect: {error}")));
+    let connection =
+        Connection::connect_to_env().unwrap_or_else(|error| fail(&format!("connect: {error}")));
     let mut queue = connection.new_event_queue();
     let qh = queue.handle();
     let registry = connection.display().get_registry(&qh, ());
     let mut state = State::default();
-    queue.roundtrip(&mut state).unwrap_or_else(|error| fail(&format!("roundtrip: {error}")));
+    queue
+        .roundtrip(&mut state)
+        .unwrap_or_else(|error| fail(&format!("roundtrip: {error}")));
 
-    let bind = |interface: &str| state.globals.iter().find(|(_, i, _)| i == interface).map(|(n, _, v)| (*n, *v));
-    let (compositor, shm, manager) = match (bind("wl_compositor"), bind("wl_shm"), bind("ext_session_lock_manager_v1")) {
+    let bind = |interface: &str| {
+        state
+            .globals
+            .iter()
+            .find(|(_, i, _)| i == interface)
+            .map(|(n, _, v)| (*n, *v))
+    };
+    let (compositor, shm, manager) = match (
+        bind("wl_compositor"),
+        bind("wl_shm"),
+        bind("ext_session_lock_manager_v1"),
+    ) {
         (Some(compositor), Some(shm), Some(manager)) => (compositor, shm, manager),
         _ => fail("compd advertised no wl_compositor / wl_shm / ext_session_lock_manager_v1"),
     };
@@ -187,7 +241,9 @@ fn main() {
     let lock = manager.lock(&qh, ());
     // Learn a refusal before asking for surfaces: compd treats lock surfaces
     // from a lock object it did not accept as a protocol error.
-    queue.roundtrip(&mut state).unwrap_or_else(|error| fail(&format!("roundtrip: {error}")));
+    queue
+        .roundtrip(&mut state)
+        .unwrap_or_else(|error| fail(&format!("roundtrip: {error}")));
     if state.finished {
         eprintln!("testkit-lock-client: finished");
         std::process::exit(3);
@@ -201,12 +257,16 @@ fn main() {
             (surface, lock_surface)
         })
         .collect();
-    connection.flush().unwrap_or_else(|error| fail(&format!("flush: {error}")));
+    connection
+        .flush()
+        .unwrap_or_else(|error| fail(&format!("flush: {error}")));
 
     let deadline = Instant::now() + hold;
     let mut buffers: Vec<Option<WlBuffer>> = (0..surfaces.len()).map(|_| None).collect();
     while !UNLOCK.load(Ordering::SeqCst) && Instant::now() < deadline {
-        queue.dispatch_pending(&mut state).unwrap_or_else(|error| fail(&format!("dispatch: {error}")));
+        queue
+            .dispatch_pending(&mut state)
+            .unwrap_or_else(|error| fail(&format!("dispatch: {error}")));
         if state.finished {
             eprintln!("testkit-lock-client: finished");
             std::process::exit(3);
@@ -222,13 +282,21 @@ fn main() {
             surface.damage_buffer(0, 0, width, height);
             surface.commit();
         }
-        connection.flush().unwrap_or_else(|error| fail(&format!("flush: {error}")));
+        connection
+            .flush()
+            .unwrap_or_else(|error| fail(&format!("flush: {error}")));
         // Wait for events, waking every 100 ms to see SIGUSR1 or the deadline.
         if let Some(guard) = queue.prepare_read() {
-            let mut fd = libc::pollfd { fd: guard.connection_fd().as_raw_fd(), events: libc::POLLIN, revents: 0 };
+            let mut fd = libc::pollfd {
+                fd: guard.connection_fd().as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
             let ready = unsafe { libc::poll(&mut fd, 1, 100) };
             if ready > 0 {
-                guard.read().unwrap_or_else(|error| fail(&format!("read: {error}")));
+                guard
+                    .read()
+                    .unwrap_or_else(|error| fail(&format!("read: {error}")));
             }
         }
     }

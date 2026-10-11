@@ -21,8 +21,14 @@ pub fn route(event: &WinitEvent, state: &mut Loop, context: &mut WinitRenderCont
                 "winit(gles): resized {size:?} host-scale {scale_factor} output-scale {} (physical output, fractional scale)",
                 scale.fractional_scale()
             );
-            scenegraph::state::lifecycle::lifecycle::resize(context.output.clone(), *size, Some(scale));
-            state.state.schedule_redraw(protocols::redraw::schedule::schedule::RedrawReason::Output);
+            scenegraph::state::lifecycle::lifecycle::resize(
+                context.output.clone(),
+                *size,
+                Some(scale),
+            );
+            state
+                .state
+                .schedule_redraw(protocols::redraw::schedule::schedule::RedrawReason::Output);
         }
         WinitEvent::Input(input_event) => {
             // Per-event logging omitted: input is a high-frequency path.
@@ -42,10 +48,7 @@ pub fn route(event: &WinitEvent, state: &mut Loop, context: &mut WinitRenderCont
         WinitEvent::Focus(focused) => {
             info!("winit: focus={focused}");
             // Take the pointer while focused, hand it back when not.
-            crate::input::capture::capture::capture(
-                context.winit_backend.window(),
-                *focused,
-            );
+            crate::input::capture::capture::capture(context.winit_backend.window(), *focused);
             if !focused {
                 world::comp::scenes::pointer_motion(state, None);
                 info!("winit: focus lost — clearing held modifiers");

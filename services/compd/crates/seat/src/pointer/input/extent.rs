@@ -41,11 +41,11 @@
 //! thing being drawn; see [`pans`].
 
 use dispatcher::state::state::RedrawReason;
-use world::state::Loop;
-use world::seat::pointer::state::state::{EdgeHold, EdgeSeed};
 use slots::input::event::base::InputEvent;
 use smithay::utils::{Physical, Point};
 use std::time::{Duration, Instant};
+use world::seat::pointer::state::state::{EdgeHold, EdgeSeed};
+use world::state::Loop;
 
 /// How far from an edge an ABSOLUTE pointer starts pulling the canvas, in physical
 /// px. Wide enough to enter deliberately before the host pins the cursor to the
@@ -128,7 +128,11 @@ pub fn resolve(state: &Loop) -> Extent {
 /// edge-pan on the push still belongs to the camera, so it pans rather than
 /// leaving Super+edge as a dead zone on a single monitor.
 pub fn fallback(state: &Loop) -> Extent {
-    if pans(state) { Extent::Pan } else { Extent::Clamp }
+    if pans(state) {
+        Extent::Pan
+    } else {
+        Extent::Clamp
+    }
 }
 
 /// Whether a push past an extent belongs to the CAMERA at all.
@@ -205,7 +209,11 @@ pub fn pan(state: &mut Loop, mx: f64, my: f64, pw: f64, ph: f64, dt: f64) -> boo
 /// nothing more once pinned (its screen delta is zero), so the two add up to
 /// exactly the motion the user made.
 fn travel(state: &Loop, dx: f64, dy: f64) -> (f64, f64) {
-    if state.inner.canvas().position_updating { (-dx, -dy) } else { (dx, dy) }
+    if state.inner.canvas().position_updating {
+        (-dx, -dy)
+    } else {
+        (dx, dy)
+    }
 }
 
 /// ABSOLUTE pointer (winit): arm or drop the simulated edge pan for the reported
@@ -216,7 +224,13 @@ fn travel(state: &Loop, dx: f64, dy: f64) -> (f64, f64) {
 ///
 /// A no-op returning `pos` unchanged whenever the pointer is a DIRECT device, isn't
 /// in the band, or the extent isn't a pan (edge-pan off, or a select box).
-pub fn hold(state: &mut Loop, pos: Point<f64, Physical>, n: (f64, f64), pw: f64, ph: f64) -> Point<f64, Physical> {
+pub fn hold(
+    state: &mut Loop,
+    pos: Point<f64, Physical>,
+    n: (f64, f64),
+    pw: f64,
+    ph: f64,
+) -> Point<f64, Physical> {
     // A replay is [`tick`] re-stating where the pointer already is, not news about
     // where it went — the tick owns the hold across that call, so leave it be.
     // Without this the replay of a RELATIVE hold would land inside the band and
@@ -253,7 +267,11 @@ pub fn hold(state: &mut Loop, pos: Point<f64, Physical>, n: (f64, f64), pw: f64,
     let speed = |r: Option<(f64, f64)>| r.map_or(0.0, |(dir, t)| dir * t * full);
     // Keep the existing clock across events so a pointer sliding ALONG the band
     // doesn't restart its step and stall the scroll.
-    let last = state.inner.pointer().edge_hold.map_or_else(Instant::now, |h| h.last);
+    let last = state
+        .inner
+        .pointer()
+        .edge_hold
+        .map_or_else(Instant::now, |h| h.last);
     // No arrival seeding: an absolute pointer's speed comes from how deep into the
     // band it is, which is already the "how hard" measure the seed provides.
     state.inner.pointer_mut().edge_hold = Some(EdgeHold {
@@ -322,7 +340,15 @@ pub fn sustain(
         release(state);
         return dt;
     }
-    let dir = |v: f64, max: f64| if v <= 0.0 { -1.0 } else if v >= max { 1.0 } else { 0.0 };
+    let dir = |v: f64, max: f64| {
+        if v <= 0.0 {
+            -1.0
+        } else if v >= max {
+            1.0
+        } else {
+            0.0
+        }
+    };
     let (dx, dy) = (dir(pinned.x, pw), dir(pinned.y, ph));
     if dx == 0.0 && dy == 0.0 {
         release(state);
@@ -372,7 +398,9 @@ pub fn sustain(
 /// then a push is meant to add on top, not re-measure.
 fn absorb(hold: &mut EdgeHold, push: (f64, f64), dt: f64, gain: f64, now: Instant) {
     let (dir_x, dir_y) = (hold.dir_x, hold.dir_y);
-    let Some(seed) = hold.seed.as_mut() else { return };
+    let Some(seed) = hold.seed.as_mut() else {
+        return;
+    };
     let px = (push.0 * dir_x).max(0.0);
     let py = (push.1 * dir_y).max(0.0);
     if px > 0.0 {
@@ -384,7 +412,11 @@ fn absorb(hold: &mut EdgeHold, push: (f64, f64), dt: f64, gain: f64, now: Instan
         seed.active_y += dt;
     }
     let rate = |d: f64, t: f64| {
-        if t > 0.0 { (d / t).clamp(EDGE_SUSTAIN_MIN, EDGE_SUSTAIN_MAX) * gain } else { 0.0 }
+        if t > 0.0 {
+            (d / t).clamp(EDGE_SUSTAIN_MIN, EDGE_SUSTAIN_MAX) * gain
+        } else {
+            0.0
+        }
     };
     hold.vx = dir_x * rate(seed.push_x, seed.active_x);
     hold.vy = dir_y * rate(seed.push_y, seed.active_y);
@@ -398,7 +430,10 @@ fn absorb(hold: &mut EdgeHold, push: (f64, f64), dt: f64, gain: f64, now: Instan
 /// well as on motion: a pointer that slams into the edge and stops sends nothing
 /// more, and its measurement still has to stop accepting samples.
 fn ripen(hold: &mut EdgeHold, now: Instant) {
-    if hold.seed.is_some_and(|s| now.duration_since(s.since) >= EDGE_SEED_WINDOW) {
+    if hold
+        .seed
+        .is_some_and(|s| now.duration_since(s.since) >= EDGE_SEED_WINDOW)
+    {
         hold.seed = None;
     }
 }
@@ -443,10 +478,13 @@ pub fn tick(state: &mut Loop) {
     // `hooks` runs once per output per frame; only step during the pass for the
     // output the cursor is on, or the pan would run N times per frame on a
     // multi-monitor setup. Unset `render_output` = off the render loop, so proceed.
-    if state.inner.render_output.is_some() && state.inner.render_output != state.inner.cursor_output {
+    if state.inner.render_output.is_some() && state.inner.render_output != state.inner.cursor_output
+    {
         return;
     }
-    let Some(mut hold) = state.inner.pointer().edge_hold else { return };
+    let Some(mut hold) = state.inner.pointer().edge_hold else {
+        return;
+    };
     let now = Instant::now();
     // Fix the arrival window here too: a pointer that slammed into the edge and
     // stopped sends no further motion, and this is the only clock still running.
@@ -497,7 +535,11 @@ fn now_msec() -> u32 {
 /// sign. `0.0` once the sustained travel already covers it.
 fn net(push: f64, sustained: f64) -> f64 {
     let excess = push.abs() - sustained;
-    if excess <= 0.0 { 0.0 } else { excess.copysign(push) }
+    if excess <= 0.0 {
+        0.0
+    } else {
+        excess.copysign(push)
+    }
 }
 
 /// How far past `0..=max` the accumulator went, signed (negative = past the low

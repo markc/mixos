@@ -34,7 +34,11 @@ pub fn move_to(_loop: &mut world::state::Loop, nx: f64, ny: f64, time: u32) {
 /// Emulate a left-button press at the current pointer location.
 pub fn press(_loop: &mut world::state::Loop, time: u32) {
     crate::pointer::input::button::button::<TouchEmu>(
-        &BtnEvent { time, state: ButtonState::Pressed, button: BTN_LEFT },
+        &BtnEvent {
+            time,
+            state: ButtonState::Pressed,
+            button: BTN_LEFT,
+        },
         _loop,
     );
 }
@@ -42,7 +46,11 @@ pub fn press(_loop: &mut world::state::Loop, time: u32) {
 /// Emulate a left-button release.
 pub fn release(_loop: &mut world::state::Loop, time: u32) {
     crate::pointer::input::button::button::<TouchEmu>(
-        &BtnEvent { time, state: ButtonState::Released, button: BTN_LEFT },
+        &BtnEvent {
+            time,
+            state: ButtonState::Released,
+            button: BTN_LEFT,
+        },
         _loop,
     );
 }
@@ -51,19 +59,38 @@ pub fn release(_loop: &mut world::state::Loop, time: u32) {
 /// current pointer location (the pen's barrel-button mouse emulation on non-tablet
 /// targets).
 pub fn button(_loop: &mut world::state::Loop, button: u32, pressed: bool, time: u32) {
-    let state = if pressed { ButtonState::Pressed } else { ButtonState::Released };
-    crate::pointer::input::button::button::<TouchEmu>(&BtnEvent { time, state, button }, _loop);
+    let state = if pressed {
+        ButtonState::Pressed
+    } else {
+        ButtonState::Released
+    };
+    crate::pointer::input::button::button::<TouchEmu>(
+        &BtnEvent {
+            time,
+            state,
+            button,
+        },
+        _loop,
+    );
 }
 
 /// Emulate a full right-button click (press + release) at the current pointer
 /// location — the pointer-mode 2-finger tap.
 pub fn right_click(_loop: &mut world::state::Loop, time: u32) {
     crate::pointer::input::button::button::<TouchEmu>(
-        &BtnEvent { time, state: ButtonState::Pressed, button: BTN_RIGHT },
+        &BtnEvent {
+            time,
+            state: ButtonState::Pressed,
+            button: BTN_RIGHT,
+        },
         _loop,
     );
     crate::pointer::input::button::button::<TouchEmu>(
-        &BtnEvent { time, state: ButtonState::Released, button: BTN_RIGHT },
+        &BtnEvent {
+            time,
+            state: ButtonState::Released,
+            button: BTN_RIGHT,
+        },
         _loop,
     );
 }
@@ -78,9 +105,19 @@ pub fn pan(_loop: &mut world::state::Loop, dx: f64, dy: f64, momentum: bool) {
     // post-release coast regardless of what the call site requested.
     let speed = PAN_SPEED * _loop.inner.preference.input_touch_pan_speed;
     let momentum = momentum && !_loop.inner.preference.input_touch_linear_pan;
-    let loc = _loop.state.seat.seat.get_pointer().unwrap().current_location();
+    let loc = _loop
+        .state
+        .seat
+        .seat
+        .get_pointer()
+        .unwrap()
+        .current_location();
     let (dx, dy) = (dx * speed, dy * speed);
-    let (h, v) = if _loop.inner.preference.input_natural_scroll { (-dx, -dy) } else { (dx, dy) };
+    let (h, v) = if _loop.inner.preference.input_natural_scroll {
+        (-dx, -dy)
+    } else {
+        (dx, dy)
+    };
     let ev = slots::input::event::base::InputEvent::PointerAxis {
         horizontal: h,
         vertical: v,

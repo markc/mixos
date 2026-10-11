@@ -1,8 +1,8 @@
-use world::state::Loop;
 use drivers::lid::base::{
-    DisplayRequest, DisplaySnapshot, LidPosition, DISPLAY_REQUEST_MUT, DISPLAY_SNAPSHOT,
-    LID_POSITION, LID_POSITION_MUT,
+    DISPLAY_REQUEST_MUT, DISPLAY_SNAPSHOT, DisplayRequest, DisplaySnapshot, LID_POSITION,
+    LID_POSITION_MUT, LidPosition,
 };
+use world::state::Loop;
 
 /// Decide and dispatch the reaction to a lid switch toggle.
 ///

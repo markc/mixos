@@ -5,22 +5,20 @@
 //!
 //! GLES only: there is no renderer selection and no Vulkan path.
 
-use render_gles::element::wrap::wrap::GlesElementWrapper;
 use crate::assemble::display::display::DisplayAssembly;
-use kms::scanout::surface::output::output::{
-    NativeDrmOutput, NativeDrmOutputManager,
-};
+use kms::scanout::surface::output::output::{NativeDrmOutput, NativeDrmOutputManager};
 use outputs::render_contract::contract::{RenderContract, RendererId};
+use render_gles::element::wrap::wrap::GlesElementWrapper;
+use scenegraph::scene::element::element::SceneElement;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::renderer::ImportEgl;
-use smithay::output::{Mode, Output};
-use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::output::{Mode, Output};
+use smithay::reexports::wayland_server::DisplayHandle;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use std::cell::RefCell;
 use std::rc::Rc;
-use scenegraph::scene::element::element::SceneElement;
 use world::state::state::StateDRMBinding;
 
 pub struct RendererAssembly {
@@ -30,12 +28,18 @@ pub struct RendererAssembly {
 }
 
 /// The assembly (GLES; the only renderer).
-pub fn assemble(formats: &render_gles::format::registrar::registrar::Registrar, display: &mut DisplayAssembly) -> RendererAssembly {
+pub fn assemble(
+    formats: &render_gles::format::registrar::registrar::Registrar,
+    display: &mut DisplayAssembly,
+) -> RendererAssembly {
     assemble_gles(formats, display)
 }
 
 /// The gles arm (the original path, with the mode fallback chain made real).
-fn assemble_gles(formats: &render_gles::format::registrar::registrar::Registrar, display: &mut DisplayAssembly) -> RendererAssembly {
+fn assemble_gles(
+    formats: &render_gles::format::registrar::registrar::Registrar,
+    display: &mut DisplayAssembly,
+) -> RendererAssembly {
     // Native scanout machine validation (reinstated de-delegation crates):
     // kernel-checked against the real device, screen untouched. The hosted
     // manager remains the live path until the swap-over; a compiled-in
@@ -56,15 +60,12 @@ fn assemble_gles(formats: &render_gles::format::registrar::registrar::Registrar,
 
     // Allocator + exporter (flag policy in drm.gbm/gbm.alloc).
     let allocator = kms::gbm::alloc::alloc::allocator(display.gbm.clone());
-    let exporter =
-        kms::gbm::alloc::alloc::exporter(display.gbm.clone(), display.primary_gpu);
+    let exporter = kms::gbm::alloc::alloc::exporter(display.gbm.clone(), display.primary_gpu);
 
     // Render formats from the primary's EGL context, narrowed by the Law-7
     // modifier filter when its double gate is satisfied.
-    let mut renderer = render_gles::multigpu::factory::factory::single_renderer(
-        &mut gpus,
-        &display.primary_gpu,
-    );
+    let mut renderer =
+        render_gles::multigpu::factory::factory::single_renderer(&mut gpus, &display.primary_gpu);
     // Register the scanout device's own answer, then ASK the format layer. This
     // crate no longer intersects anything: it hands over a capability and takes a
     // decision.
@@ -72,7 +73,13 @@ fn assemble_gles(formats: &render_gles::format::registrar::registrar::Registrar,
     formats.register(
         render_gles::format::registrar::registrar::Device::of(&display.primary_gpu),
         render_gles::format::role::role::Role::ScanoutEgl,
-        filter_formats(renderer.as_mut().egl_context().dmabuf_render_formats().clone()),
+        filter_formats(
+            renderer
+                .as_mut()
+                .egl_context()
+                .dmabuf_render_formats()
+                .clone(),
+        ),
         "scanout egl (dmabuf_render_formats)",
     );
     // THE REST OF THE MACHINE, BEFORE THE FIRST ANSWER.
@@ -104,11 +111,19 @@ fn assemble_gles(formats: &render_gles::format::registrar::registrar::Registrar,
     // to the same question. Checking rather than predicating on the `renderer`
     // setting also covers the case where Vulkan was asked for and its physical
     // device lookup failed: nothing registered, and this fills in.
-    if formats.view().set(render_gles::format::role::role::Role::Sample).is_none() {
+    if formats
+        .view()
+        .set(render_gles::format::role::role::Role::Sample)
+        .is_none()
+    {
         formats.register(
             render_gles::format::registrar::registrar::Device::of(&display.primary_gpu),
             render_gles::format::role::role::Role::Sample,
-            renderer.as_mut().egl_context().dmabuf_texture_formats().clone(),
+            renderer
+                .as_mut()
+                .egl_context()
+                .dmabuf_texture_formats()
+                .clone(),
             "gles composite (dmabuf_texture_formats)",
         );
     }
@@ -235,11 +250,7 @@ fn assemble_gles(formats: &render_gles::format::registrar::registrar::Registrar,
     // implementation so a second monitor and a failed-over primary get exactly
     // what the assembly pipe gets.
     let conn = display.connector.handle();
-    let vrr = kms::scanout::surface::output::output::apply_vrr(
-        &drm_output,
-        conn,
-        env.vrr,
-    );
+    let vrr = kms::scanout::surface::output::output::apply_vrr(&drm_output, conn, env.vrr);
     info!(
         "native: VRR requested={} supported={} enabled={}",
         env.vrr, vrr.supported, vrr.enabled
@@ -249,16 +260,8 @@ fn assemble_gles(formats: &render_gles::format::registrar::registrar::Registrar,
     // Output + mode for the Statistics tab.
     {
         let m = display.mode;
-        let mode_str = format!(
-            "{}x{}@{:.2}",
-            m.size.w,
-            m.size.h,
-            m.refresh as f32 / 1000.0
-        );
-        model::stats::registry::base::set_output(
-            &display.output.name(),
-            &mode_str,
-        );
+        let mode_str = format!("{}x{}@{:.2}", m.size.w, m.size.h, m.refresh as f32 / 1000.0);
+        model::stats::registry::base::set_output(&display.output.name(), &mode_str);
     }
 
     drop(renderer);
@@ -342,7 +345,10 @@ fn native_scanout_self_test(display: &DisplayAssembly) -> String {
 
     let drm_fd = &display.drm_fd;
     let res = kms::connector::scan::scan::resources(
-        display.drm.as_ref().expect("self-test must run before the manager takes the device"),
+        display
+            .drm
+            .as_ref()
+            .expect("self-test must run before the manager takes the device"),
     );
 
     // Pipeline property tables + the primary plane for the claimed pipe.
@@ -351,8 +357,7 @@ fn native_scanout_self_test(display: &DisplayAssembly) -> String {
 
     // Swapchain over the GL-path allocator; one slot; cached framebuffer.
     let allocator = kms::gbm::alloc::alloc::allocator(display.gbm.clone());
-    let exporter =
-        kms::gbm::alloc::alloc::exporter(display.gbm.clone(), display.primary_gpu);
+    let exporter = kms::gbm::alloc::alloc::exporter(display.gbm.clone(), display.primary_gpu);
     let (w, h) = (
         display.drm_mode.size().0 as u32,
         display.drm_mode.size().1 as u32,
@@ -367,9 +372,8 @@ fn native_scanout_self_test(display: &DisplayAssembly) -> String {
         vec![render_gles::format::rule::rule::UNKNOWN],
     );
     let buffer_slot = acquire::acquire(&mut swapchain);
-    let fb = kms::scanout::framebuffer::export::export::framebuffer_for(
-        &exporter, drm_fd, &buffer_slot,
-    );
+    let fb =
+        kms::scanout::framebuffer::export::export::framebuffer_for(&exporter, drm_fd, &buffer_slot);
     let _ = buffer_slot.size(); // the slot derefs to the allocator buffer
     let fb_handle = kms::scanout::framebuffer::export::export::handle(&fb);
 
@@ -419,8 +423,16 @@ fn native_scanout_self_test(display: &DisplayAssembly) -> String {
 
     format!(
         "primary plane {plane:?}, modeset+flip TEST_ONLY OK, slot age {age},          IN_FENCE_FD {}, OUT_FENCE_PTR {}",
-        if in_supported { "attached" } else { "unsupported (nvidia-class)" },
-        if out_supported { "armed" } else { "unsupported" },
+        if in_supported {
+            "attached"
+        } else {
+            "unsupported (nvidia-class)"
+        },
+        if out_supported {
+            "armed"
+        } else {
+            "unsupported"
+        },
     )
 }
 

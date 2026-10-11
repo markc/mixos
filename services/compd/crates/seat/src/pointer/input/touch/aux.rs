@@ -21,14 +21,35 @@ pub fn down<I: InputBackend>(event: &I::TouchDownEvent, _loop: &mut Loop, abs: A
     let (nx, ny) = fraction::<I, _>(event);
     let time = event.time_msec();
     abs(&AbsEvent { time, nx, ny }, _loop);
-    btn(&BtnEvent { time, state: ButtonState::Pressed, button: BTN_LEFT }, _loop);
+    btn(
+        &BtnEvent {
+            time,
+            state: ButtonState::Pressed,
+            button: BTN_LEFT,
+        },
+        _loop,
+    );
 }
 
 pub fn motion<I: InputBackend>(event: &I::TouchMotionEvent, _loop: &mut Loop, abs: Abs) {
     let (nx, ny) = fraction::<I, _>(event);
-    abs(&AbsEvent { time: event.time_msec(), nx, ny }, _loop);
+    abs(
+        &AbsEvent {
+            time: event.time_msec(),
+            nx,
+            ny,
+        },
+        _loop,
+    );
 }
 
 pub fn release<I: InputBackend, E: Event<I>>(event: &E, _loop: &mut Loop, btn: Btn) {
-    btn(&BtnEvent { time: event.time_msec(), state: ButtonState::Released, button: BTN_LEFT }, _loop);
+    btn(
+        &BtnEvent {
+            time: event.time_msec(),
+            state: ButtonState::Released,
+            button: BTN_LEFT,
+        },
+        _loop,
+    );
 }

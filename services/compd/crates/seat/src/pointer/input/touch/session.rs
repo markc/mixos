@@ -5,9 +5,9 @@
 //!   * two+ fingers on the desktop  → compositor gestures (pan/zoom/swipe/fit).
 use super::{client, edge, emulate, geom, gesture};
 use smithay::backend::input::{Event, InputBackend, TouchEvent};
+use world::seat::gesture::touch::touch::{Mode, Role, TouchMode};
 use world::state::Loop;
 use world::state::export::{CanvasGrab, TargetOption};
-use world::seat::gesture::touch::touch::{Mode, Role, TouchMode};
 
 /// Max lifetime of a pointer-mode 2-finger tap that still counts as a right click
 /// (a slower two-finger hold is not a tap).
@@ -147,7 +147,8 @@ pub fn down<I: InputBackend>(event: &I::TouchDownEvent, _loop: &mut Loop) {
                 gesture::begin(_loop, m, time);
                 // Pointer mode: a 2-finger tap (quick, still) is a right click — arm
                 // the candidate now; `gesture::update` / a 3rd finger disqualify it.
-                if _loop.inner.touch.tool_mode == TouchMode::Pointer && _loop.inner.touch.len() == 2 {
+                if _loop.inner.touch.tool_mode == TouchMode::Pointer && _loop.inner.touch.len() == 2
+                {
                     _loop.inner.touch.rtap_candidate = true;
                     _loop.inner.touch.rtap_ms = time;
                     _loop.inner.touch.rtap_origin = _loop.inner.touch.centroid();

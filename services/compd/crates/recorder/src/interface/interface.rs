@@ -15,44 +15,40 @@ use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
-use world::scene::layer::base::Layer;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
 use uuid::Uuid;
+use world::scene::layer::base::Layer;
 
-use world::camera::transform::translate::slot;
-use world::camera::transform::translate::transform::Transform;
-use world::state::Loop;
-use world::state::state::CoordinateTrait;
 use graphics::capture::encode::{
     AsyncReadback, OptimizedCodec, ReencodeJob, ReencodeStatus, ffmpeg_format, partial_path,
     readback, reencode_detached, save_fallback, save_png,
 };
+use graphics::capture::registry::{CaptureSource, OutputId};
 use graphics::capture::vaapi::{
     Backend, CaptureEncoder, EncoderThread, NvencCudaEncoder, VaapiEncoder, backend_from_config,
     capture_background_auto, capture_cfr, capture_codec_name, capture_codecs, capture_cq,
     capture_fps, capture_nvenc_readback_fallback, capture_render_node,
 };
-use graphics::capture::registry::{CaptureSource, OutputId};
-use world::capture::session::message::{
-    CaptureMedia, CaptureMessage, OverlayRect, TargetKind,
-};
-use world::capture::session::session::{
-    ActiveState, CapturePhase, CaptureTarget, PendingSave,
-};
+use ui::engine::UiProgram;
+use ui::{HandleId, UiHandle};
+use world::camera::transform::translate::slot;
+use world::camera::transform::translate::transform::Transform;
+use world::capture::session::message::{CaptureMedia, CaptureMessage, OverlayRect, TargetKind};
+use world::capture::session::session::{ActiveState, CapturePhase, CaptureTarget, PendingSave};
+use world::state::Loop;
+use world::state::state::CoordinateTrait;
 use world::surface::draw::capture::border::RegionBorder;
 use world::surface::draw::capture::dialog::ContinueDialog;
 use world::surface::draw::capture::dim::RegionDim;
-use world::surface::draw::capture::hud::StopHud;
 use world::surface::draw::capture::encodialog::EncodingDialog;
 use world::surface::draw::capture::errordialog::ErrorDialog;
+use world::surface::draw::capture::hud::StopHud;
 use world::surface::draw::capture::savedialog::SaveDialog;
 use world::surface::draw::capture::setup::SetupOverlay;
 use world::surface::draw::handle::handle::{UiSpace, load, load_snapshot};
 use world::surface::protocol::protocol::{SurfaceMessage, SurfaceMessageType};
 use world::window::interface::record::window::LoopWindow;
-use ui::{HandleId, UiHandle};
-use ui::engine::UiProgram;
 
 /// Time a video capture runs before the "still capturing?" prompt appears.
 const KEEPALIVE: Duration = Duration::from_secs(300);
@@ -76,8 +72,17 @@ const DIALOG_H: i32 = 170;
 /// The Super+S keybinding asks for setup; the per-frame hook (which has a
 /// renderer) spawns the overlay.
 pub fn request_setup(state: &mut Loop) {
-    if state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).is_idle() {
-        state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).pending_setup = true;
+    if state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .is_idle()
+    {
+        state
+            .inner
+            .kernel
+            .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+            .pending_setup = true;
     }
 }
 
@@ -85,16 +90,40 @@ pub fn request_setup(state: &mut Loop) {
 /// pending setup request, keeps the capture region projected to the current
 /// camera, and services the video keep-alive.
 pub fn per_frame(state: &mut Loop, renderer: &mut GlesRenderer, _size: Size<i32, Physical>) {
-    if state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).pending_setup {
-        state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).pending_setup = false;
-        if state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).is_idle() {
+    if state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .pending_setup
+    {
+        state
+            .inner
+            .kernel
+            .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+            .pending_setup = false;
+        if state
+            .inner
+            .kernel
+            .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+            .is_idle()
+        {
             start_setup(state, renderer);
         }
     }
-    if state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).is_active() {
+    if state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .is_active()
+    {
         // Screenshot: wait a couple of frames for the capture tap to fill the
         // entry, then read it back and go straight to the Save dialog.
-        let shot = match &mut state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase {
+        let shot = match &mut state
+            .inner
+            .kernel
+            .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+            .phase
+        {
             CapturePhase::Active(a) => a.shot_wait.as_mut().map(|w| {
                 *w = w.saturating_add(1);
                 *w
@@ -117,9 +146,19 @@ pub fn per_frame(state: &mut Loop, renderer: &mut GlesRenderer, _size: Size<i32,
         update_crop(state, renderer);
         video_frame(state);
         video_keepalive(state, renderer);
-    } else if state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).is_saving() {
+    } else if state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .is_saving()
+    {
         poll_saveas(state, renderer);
-    } else if state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).is_encoding() {
+    } else if state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .is_encoding()
+    {
         poll_encoding(state, renderer);
     }
 }
@@ -136,7 +175,12 @@ pub fn per_frame(state: &mut Loop, renderer: &mut GlesRenderer, _size: Size<i32,
 /// and `video_keepalive` (its dialog renders on the scene layer, hidden beneath
 /// the overlay).
 pub fn overlay_per_frame(state: &mut Loop) {
-    if state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).is_active() {
+    if state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .is_active()
+    {
         video_frame(state);
     }
 }
@@ -159,7 +203,12 @@ pub fn handle(state: &mut Loop, renderer: &mut GlesRenderer, msg: CaptureMessage
 
 /// Stop the active capture: finalize the artifact and show the Save dialog.
 pub fn stop(state: &mut Loop, renderer: &mut GlesRenderer) {
-    if state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).is_active() {
+    if state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .is_active()
+    {
         begin_saving(state, renderer);
     } else {
         teardown(state);
@@ -175,15 +224,29 @@ pub fn stop_and_discard(state: &mut Loop) {
 /// Recompute the tracked window bbox + force-render set. Call on window
 /// move/resize/destroy while a capture is active (event-driven, not per-frame).
 pub fn on_window_geometry_changed(state: &mut Loop) {
-    if !state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).is_active() {
+    if !state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .is_active()
+    {
         return;
     }
-    let target = match &state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase {
+    let target = match &state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .phase
+    {
         CapturePhase::Active(a) => a.target.clone(),
         _ => return,
     };
     if let CaptureTarget::Windows(ids) = &target {
-        state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).windows_bbox = windows_bbox_world_of(state, ids);
+        state
+            .inner
+            .kernel
+            .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+            .windows_bbox = windows_bbox_world_of(state, ids);
     }
     compute_force_set(state, &target);
 }
@@ -200,14 +263,25 @@ fn start_setup(state: &mut Loop, renderer: &mut GlesRenderer) {
     // Snapshot the canvas window selection NOW (Super+S). The capture uses this
     // snapshot, not the live canvas — so switching media / interacting with the
     // overlay can't silently drop the selection (→ fullscreen fallback).
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).setup_selection = selected_uuids(state);
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .setup_selection = selected_uuids(state);
 
     // Pre-seed the overlay with the snapshot's bbox (if any), so the "Windows"
     // target is preselected with its hole already drawn.
-    let preselect = windows_bbox_world_of(state, &state.inner.kernel.get(&world::driver::capture::base::CAPTURE).setup_selection)
-        .map(|w| world_to_phys(state, w))
-        .and_then(|p| clamp_rect(p, sw, sh))
-        .map(to_overlay);
+    let preselect = windows_bbox_world_of(
+        state,
+        &state
+            .inner
+            .kernel
+            .get(&world::driver::capture::base::CAPTURE)
+            .setup_selection,
+    )
+    .map(|w| world_to_phys(state, w))
+    .and_then(|p| clamp_rect(p, sw, sh))
+    .map(to_overlay);
     let kind = if preselect.is_some() {
         TargetKind::Windows
     } else {
@@ -223,8 +297,16 @@ fn start_setup(state: &mut Loop, renderer: &mut GlesRenderer) {
         UiSpace::Screen,
         Layer::SCENE.bits(),
     );
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).setup_id = Some(handle.untyped());
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase = CapturePhase::Setup;
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .setup_id = Some(handle.untyped());
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .phase = CapturePhase::Setup;
     forward(state, handle);
     if let Some(reg) = state.inner.surface_mut().registry.as_mut() {
         reg.set_keyboard_focus(Some(handle.untyped()));
@@ -233,10 +315,20 @@ fn start_setup(state: &mut Loop, renderer: &mut GlesRenderer) {
 }
 
 fn begin_active(state: &mut Loop, renderer: &mut GlesRenderer) {
-    if !state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).is_setup() {
+    if !state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .is_setup()
+    {
         return;
     }
-    let Some(setup_id) = state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).setup_id else {
+    let Some(setup_id) = state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .setup_id
+    else {
         return;
     };
 
@@ -256,7 +348,14 @@ fn begin_active(state: &mut Loop, renderer: &mut GlesRenderer) {
 
     let target = match kind {
         // Use the snapshot taken at Super+S, not the live canvas selection.
-        TargetKind::Windows => CaptureTarget::Windows(state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).setup_selection.clone()),
+        TargetKind::Windows => CaptureTarget::Windows(
+            state
+                .inner
+                .kernel
+                .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+                .setup_selection
+                .clone(),
+        ),
         TargetKind::ScreenRegion => {
             let Some(d) = draft else {
                 teardown(state);
@@ -276,7 +375,11 @@ fn begin_active(state: &mut Loop, renderer: &mut GlesRenderer) {
 
     // Tear down the setup overlay + its exclusive input.
     destroy(state, Some(setup_id));
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).setup_id = None;
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .setup_id = None;
     if let Some(reg) = state.inner.surface_mut().registry.as_mut() {
         reg.set_keyboard_focus(None);
     }
@@ -285,7 +388,11 @@ fn begin_active(state: &mut Loop, renderer: &mut GlesRenderer) {
 
     // Window bbox + force-render set (before computing the crop, which needs
     // the bbox for the Windows target).
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).windows_bbox = match &target {
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .windows_bbox = match &target {
         CaptureTarget::Windows(ids) => windows_bbox_world_of(state, ids),
         _ => None,
     };
@@ -295,7 +402,9 @@ fn begin_active(state: &mut Loop, renderer: &mut GlesRenderer) {
     // so the encoder's dmabuf stays a constant size as windows move).
     let region_origin: Point<i32, Logical> = match &target {
         CaptureTarget::Windows(_) => state
-            .inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT)
+            .inner
+            .kernel
+            .get_mut(&world::driver::capture::base::CAPTURE_MUT)
             .windows_bbox
             .map(|b| b.loc)
             .unwrap_or_default(),
@@ -339,7 +448,9 @@ fn begin_active(state: &mut Loop, renderer: &mut GlesRenderer) {
 
     let gpu = state.inner.environment.GPU.clone();
     let req = state
-        .inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_REGISTRY_MUT)
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_REGISTRY_MUT)
         .as_ref()
         .map(|reg| reg.request(&gpu, renderer, source));
     let capture = match req {
@@ -357,7 +468,11 @@ fn begin_active(state: &mut Loop, renderer: &mut GlesRenderer) {
     // jump straight to the Save dialog (`video_frame`/`per_frame` drive this
     // via `shot_wait`).
     if media == CaptureMedia::Screenshot {
-        state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase = CapturePhase::Active(ActiveState {
+        state
+            .inner
+            .kernel
+            .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+            .phase = CapturePhase::Active(ActiveState {
             media,
             target,
             capture,
@@ -462,7 +577,11 @@ fn begin_active(state: &mut Loop, renderer: &mut GlesRenderer) {
     );
     let dim_id = dim.untyped();
     bind_output(state, dim_id, &origin_key);
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).dim_id = Some(dim_id);
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .dim_id = Some(dim_id);
 
     let border = load(
         state,
@@ -474,7 +593,11 @@ fn begin_active(state: &mut Loop, renderer: &mut GlesRenderer) {
     );
     let border_id = border.untyped();
     bind_output(state, border_id, &origin_key);
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).border_id = Some(border_id);
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .border_id = Some(border_id);
 
     // One Stop button per monitor: anchored to each monitor's own top-right and
     // bound to that output, so the control shows on every screen and is clickable
@@ -495,10 +618,19 @@ fn begin_active(state: &mut Loop, renderer: &mut GlesRenderer) {
         let stop_id = stop.untyped();
         bind_output(state, stop_id, &key);
         forward(state, stop);
-        state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).stop_hud_ids.push(stop_id);
+        state
+            .inner
+            .kernel
+            .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+            .stop_hud_ids
+            .push(stop_id);
     }
 
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase = CapturePhase::Active(ActiveState {
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .phase = CapturePhase::Active(ActiveState {
         media,
         target,
         capture,
@@ -507,7 +639,7 @@ fn begin_active(state: &mut Loop, renderer: &mut GlesRenderer) {
         readback: video_readback,
         region_origin,
         last_frame: None,
-            video_start: None,
+        video_start: None,
         shot_wait: None,
         last_crop: None,
         keepalive_anchor: Instant::now(),
@@ -517,9 +649,25 @@ fn begin_active(state: &mut Loop, renderer: &mut GlesRenderer) {
 }
 
 fn on_continue(state: &mut Loop) {
-    destroy(state, state.inner.kernel.get(&world::driver::capture::base::CAPTURE).continue_dialog_id);
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).continue_dialog_id = None;
-    if let CapturePhase::Active(a) = &mut state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase {
+    destroy(
+        state,
+        state
+            .inner
+            .kernel
+            .get(&world::driver::capture::base::CAPTURE)
+            .continue_dialog_id,
+    );
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .continue_dialog_id = None;
+    if let CapturePhase::Active(a) = &mut state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .phase
+    {
         a.keepalive_anchor = Instant::now();
         a.dialog_deadline = None;
     }
@@ -530,7 +678,14 @@ fn on_continue(state: &mut Loop) {
 /// in-flight encoder and any unsaved temp video — nothing is saved.
 fn teardown(state: &mut Loop) {
     // Clean encoder / temp file before the phase (and its `CaptureHandle`) drops.
-    let phase = std::mem::replace(&mut state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase, CapturePhase::Idle);
+    let phase = std::mem::replace(
+        &mut state
+            .inner
+            .kernel
+            .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+            .phase,
+        CapturePhase::Idle,
+    );
     match phase {
         CapturePhase::Active(a) => {
             if let Some(e) = a.encoder {
@@ -551,7 +706,10 @@ fn teardown(state: &mut Loop) {
     }
 
     let ids: Vec<HandleId> = {
-        let c = &state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT);
+        let c = &state
+            .inner
+            .kernel
+            .get_mut(&world::driver::capture::base::CAPTURE_MUT);
         [
             c.setup_id,
             c.border_id,
@@ -565,7 +723,10 @@ fn teardown(state: &mut Loop) {
         .collect()
     };
     {
-        let c = &mut state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT);
+        let c = &mut state
+            .inner
+            .kernel
+            .get_mut(&world::driver::capture::base::CAPTURE_MUT);
         c.pending_setup = false;
         c.setup_id = None;
         c.border_id = None;
@@ -595,11 +756,18 @@ fn video_frame(state: &mut Loop) {
     let now = Instant::now();
     let interval = Duration::from_millis(1000 / capture_fps() as u64);
     let ctx = state
-        .inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_REGISTRY_MUT)
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_REGISTRY_MUT)
         .as_ref()
         .map(|r| r.wgpu_ctx().clone());
     let flip = state.inner.storage.nested;
-    let CapturePhase::Active(a) = &mut state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase else {
+    let CapturePhase::Active(a) = &mut state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .phase
+    else {
         return;
     };
     let due = a
@@ -660,7 +828,14 @@ fn video_frame(state: &mut Loop) {
 /// Active → Saving: finalize the artifact (read back the screenshot or finish
 /// the video) and raise the Save dialog.
 fn begin_saving(state: &mut Loop, renderer: &mut GlesRenderer) {
-    let phase = std::mem::replace(&mut state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase, CapturePhase::Idle);
+    let phase = std::mem::replace(
+        &mut state
+            .inner
+            .kernel
+            .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+            .phase,
+        CapturePhase::Idle,
+    );
     let CapturePhase::Active(active) = phase else {
         return;
     };
@@ -668,8 +843,17 @@ fn begin_saving(state: &mut Loop, renderer: &mut GlesRenderer) {
 
     // Drop the live indicators; we keep no force-render set once stopped.
     destroy_indicators(state);
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).force_set.clear();
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).windows_bbox = None;
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .force_set
+        .clear();
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .windows_bbox = None;
 
     let pending = match media {
         CaptureMedia::Video => match active.encoder.and_then(|e| e.finish()) {
@@ -684,7 +868,9 @@ fn begin_saving(state: &mut Loop, renderer: &mut GlesRenderer) {
             let flip = state.inner.storage.nested;
             let frame = active.capture.wgpu_texture().and_then(|t| {
                 state
-                    .inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_REGISTRY_MUT)
+                    .inner
+                    .kernel
+                    .get_mut(&world::driver::capture::base::CAPTURE_REGISTRY_MUT)
                     .as_ref()
                     .and_then(|reg| readback(reg.wgpu_ctx(), &t))
             });
@@ -724,9 +910,17 @@ fn begin_saving(state: &mut Loop, renderer: &mut GlesRenderer) {
         UiSpace::Screen,
         Layer::SCENE.bits(),
     );
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).save_dialog_id = Some(dlg.untyped());
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .save_dialog_id = Some(dlg.untyped());
     forward(state, dlg);
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase = CapturePhase::Saving {
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .phase = CapturePhase::Saving {
         media,
         pending,
         saveas: None,
@@ -735,7 +929,12 @@ fn begin_saving(state: &mut Loop, renderer: &mut GlesRenderer) {
 }
 
 fn save_default(state: &mut Loop, renderer: &mut GlesRenderer) {
-    let video = match &state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase {
+    let video = match &state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .phase
+    {
         CapturePhase::Saving { media, .. } => *media == CaptureMedia::Video,
         _ => return,
     };
@@ -750,7 +949,12 @@ fn save_as(state: &mut Loop) {
         warn!("capture Save As is unavailable; use Save to write to the default path");
         return;
     }
-    let CapturePhase::Saving { media, saveas, .. } = &mut state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase else {
+    let CapturePhase::Saving { media, saveas, .. } = &mut state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .phase
+    else {
         return;
     };
     if saveas.is_some() {
@@ -763,8 +967,7 @@ fn save_as(state: &mut Loop) {
     };
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let result =
-            graphics::capture::encode::portal::save_file_dialog("Save capture", suggested);
+        let result = graphics::capture::encode::portal::save_file_dialog("Save capture", suggested);
         let _ = tx.send(result);
     });
     *saveas = Some(rx);
@@ -776,7 +979,12 @@ fn poll_saveas(state: &mut Loop, renderer: &mut GlesRenderer) {
     // `None` → portal still running; `Some(v)` → it returned (`v` is `None` if
     // cancelled/failed).
     let resolved: Option<Option<PathBuf>> = {
-        let CapturePhase::Saving { saveas, .. } = &state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase else {
+        let CapturePhase::Saving { saveas, .. } = &state
+            .inner
+            .kernel
+            .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+            .phase
+        else {
             return;
         };
         let Some(rx) = saveas else { return };
@@ -796,7 +1004,12 @@ fn poll_saveas(state: &mut Loop, renderer: &mut GlesRenderer) {
         return;
     };
     // Clear the in-flight receiver either way.
-    if let CapturePhase::Saving { saveas, .. } = &mut state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase {
+    if let CapturePhase::Saving { saveas, .. } = &mut state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .phase
+    {
         *saveas = None;
     }
     match outcome {
@@ -814,7 +1027,11 @@ fn discard_saving(state: &mut Loop) {
 /// working hardware video encoder). The dialog's OK button emits `Discard`,
 /// which routes to `teardown` and dismisses it.
 fn show_capture_error(state: &mut Loop, renderer: &mut GlesRenderer, message: &str) {
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase = CapturePhase::Idle;
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .phase = CapturePhase::Idle;
     let (sw, sh) = output_size(state);
     let rect = Rectangle::new(
         Point::from(((sw - DIALOG_W) / 2, (sh - DIALOG_H) / 2)),
@@ -828,7 +1045,11 @@ fn show_capture_error(state: &mut Loop, renderer: &mut GlesRenderer, message: &s
         UiSpace::Screen,
         Layer::SCENE.bits(),
     );
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).save_dialog_id = Some(dlg.untyped());
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .save_dialog_id = Some(dlg.untyped());
     forward(state, dlg);
     warn!("capture aborted — {message}");
 }
@@ -843,7 +1064,14 @@ fn commit_save(state: &mut Loop, renderer: &mut GlesRenderer, target: PathBuf) {
     // a re-encode even when the user didn't opt into "Optimized encoding".
     let cfr = capture_cfr();
 
-    let phase = std::mem::replace(&mut state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase, CapturePhase::Idle);
+    let phase = std::mem::replace(
+        &mut state
+            .inner
+            .kernel
+            .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+            .phase,
+        CapturePhase::Idle,
+    );
     let CapturePhase::Saving { pending, .. } = phase else {
         return;
     };
@@ -921,8 +1149,16 @@ fn begin_encoding(
         UiSpace::Screen,
         Layer::SCENE.bits(),
     );
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).save_dialog_id = Some(dlg.untyped());
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase = CapturePhase::Encoding {
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .save_dialog_id = Some(dlg.untyped());
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .phase = CapturePhase::Encoding {
         job,
         target,
         output: partial,
@@ -936,7 +1172,12 @@ fn begin_encoding(
 /// Per-frame poll of the manual re-encode: update the progress bar; on success
 /// place the optimized file; on failure revert to the save dialog (lossless kept).
 fn poll_encoding(state: &mut Loop, renderer: &mut GlesRenderer) {
-    let status = match &mut state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase {
+    let status = match &mut state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .phase
+    {
         CapturePhase::Encoding { job, .. } => job.poll(),
         _ => return,
     };
@@ -952,8 +1193,18 @@ fn poll_encoding(state: &mut Loop, renderer: &mut GlesRenderer) {
             state.schedule_redraw(RedrawReason::Capture);
         }
         ReencodeStatus::Done(output) => {
-            let phase = std::mem::replace(&mut state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase, CapturePhase::Idle);
-            if let CapturePhase::Encoding { target, lossless, .. } = phase {
+            let phase = std::mem::replace(
+                &mut state
+                    .inner
+                    .kernel
+                    .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+                    .phase,
+                CapturePhase::Idle,
+            );
+            if let CapturePhase::Encoding {
+                target, lossless, ..
+            } = phase
+            {
                 save_fallback(&output, &target); // place the finished optimized file
                 let _ = std::fs::remove_file(&lossless);
                 info!("optimized video saved: {}", target.display());
@@ -961,8 +1212,18 @@ fn poll_encoding(state: &mut Loop, renderer: &mut GlesRenderer) {
             close_save_dialog(state);
         }
         ReencodeStatus::Failed => {
-            let phase = std::mem::replace(&mut state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase, CapturePhase::Idle);
-            if let CapturePhase::Encoding { lossless, output, .. } = phase {
+            let phase = std::mem::replace(
+                &mut state
+                    .inner
+                    .kernel
+                    .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+                    .phase,
+                CapturePhase::Idle,
+            );
+            if let CapturePhase::Encoding {
+                lossless, output, ..
+            } = phase
+            {
                 let _ = std::fs::remove_file(&output);
                 warn!("optimized encode failed — reverting to save (lossless kept)");
                 close_save_dialog(state);
@@ -988,9 +1249,17 @@ fn respawn_save_dialog(state: &mut Loop, renderer: &mut GlesRenderer, lossless: 
         UiSpace::Screen,
         Layer::SCENE.bits(),
     );
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).save_dialog_id = Some(dlg.untyped());
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .save_dialog_id = Some(dlg.untyped());
     forward(state, dlg);
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase = CapturePhase::Saving {
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .phase = CapturePhase::Saving {
         media: CaptureMedia::Video,
         pending: PendingSave::Video(lossless),
         saveas: None,
@@ -999,7 +1268,12 @@ fn respawn_save_dialog(state: &mut Loop, renderer: &mut GlesRenderer, lossless: 
 
 /// Push the latest re-encode progress (0..=100) to the encoding dialog.
 fn set_encode_progress(state: &mut Loop, percent: u32) {
-    let Some(id) = state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).save_dialog_id else {
+    let Some(id) = state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .save_dialog_id
+    else {
         return;
     };
     if let Some(reg) = state.inner.surface_mut().registry.as_mut() {
@@ -1012,19 +1286,36 @@ fn set_encode_progress(state: &mut Loop, percent: u32) {
 
 /// Read the save dialog's "Optimized encoding" checkbox state (false if absent).
 fn save_dialog_optimized(state: &mut Loop) -> bool {
-    let Some(id) = state.inner.kernel.get(&world::driver::capture::base::CAPTURE).save_dialog_id else {
+    let Some(id) = state
+        .inner
+        .kernel
+        .get(&world::driver::capture::base::CAPTURE)
+        .save_dialog_id
+    else {
         return false;
     };
     let Some(reg) = state.inner.surface_mut().registry.as_ref() else {
         return false;
     };
-    reg.snapshot::<SaveDialog>(UiHandle::from_id(id)).unwrap_or(false)
+    reg.snapshot::<SaveDialog>(UiHandle::from_id(id))
+        .unwrap_or(false)
 }
 
 /// Destroy the save/encoding dialog and clear its handle. Leaves the phase as-is.
 fn close_save_dialog(state: &mut Loop) {
-    destroy(state, state.inner.kernel.get(&world::driver::capture::base::CAPTURE).save_dialog_id);
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).save_dialog_id = None;
+    destroy(
+        state,
+        state
+            .inner
+            .kernel
+            .get(&world::driver::capture::base::CAPTURE)
+            .save_dialog_id,
+    );
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .save_dialog_id = None;
 }
 
 /// Map the configured codec to the software re-encode codec.
@@ -1038,7 +1329,10 @@ fn optimized_codec() -> OptimizedCodec {
 
 fn destroy_indicators(state: &mut Loop) {
     let ids: Vec<HandleId> = {
-        let c = &state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT);
+        let c = &state
+            .inner
+            .kernel
+            .get_mut(&world::driver::capture::base::CAPTURE_MUT);
         [c.border_id, c.dim_id, c.continue_dialog_id]
             .into_iter()
             .flatten()
@@ -1046,7 +1340,10 @@ fn destroy_indicators(state: &mut Loop) {
             .collect()
     };
     {
-        let c = &mut state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT);
+        let c = &mut state
+            .inner
+            .kernel
+            .get_mut(&world::driver::capture::base::CAPTURE_MUT);
         c.border_id = None;
         c.dim_id = None;
         c.stop_hud_ids.clear();
@@ -1062,7 +1359,12 @@ fn destroy_indicators(state: &mut Loop) {
 fn update_crop(state: &mut Loop, renderer: &mut GlesRenderer) {
     let (sw, sh) = output_size(state);
     let (entry, target, last) = {
-        let CapturePhase::Active(a) = &state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase else {
+        let CapturePhase::Active(a) = &state
+            .inner
+            .kernel
+            .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+            .phase
+        else {
             return;
         };
         (a.capture.entry_id(), a.target.clone(), a.last_crop)
@@ -1095,7 +1397,12 @@ fn update_crop(state: &mut Loop, renderer: &mut GlesRenderer) {
     if matches!(target, CaptureTarget::ScreenRegion(_)) {
         if let Some(crop) = clamp_rect(indicator, sw, sh) {
             let gpu = state.inner.environment.GPU.clone();
-            if let Some(reg) = state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_REGISTRY_MUT).as_ref() {
+            if let Some(reg) = state
+                .inner
+                .kernel
+                .get_mut(&world::driver::capture::base::CAPTURE_REGISTRY_MUT)
+                .as_ref()
+            {
                 if let Err(e) = reg.set_region(&gpu, renderer, entry, crop) {
                     warn!("capture set_region failed: {e:?}");
                 }
@@ -1104,20 +1411,48 @@ fn update_crop(state: &mut Loop, renderer: &mut GlesRenderer) {
     }
 
     let ov = to_overlay(indicator);
-    set_region_msg::<RegionBorder>(state, state.inner.kernel.get(&world::driver::capture::base::CAPTURE).border_id, ov);
-    set_region_msg::<RegionDim>(state, state.inner.kernel.get(&world::driver::capture::base::CAPTURE).dim_id, ov);
+    set_region_msg::<RegionBorder>(
+        state,
+        state
+            .inner
+            .kernel
+            .get(&world::driver::capture::base::CAPTURE)
+            .border_id,
+        ov,
+    );
+    set_region_msg::<RegionDim>(
+        state,
+        state
+            .inner
+            .kernel
+            .get(&world::driver::capture::base::CAPTURE)
+            .dim_id,
+        ov,
+    );
 
-    if let CapturePhase::Active(a) = &mut state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase {
+    if let CapturePhase::Active(a) = &mut state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .phase
+    {
         a.last_crop = Some(indicator);
     }
 }
 
 fn video_keepalive(state: &mut Loop, renderer: &mut GlesRenderer) {
     let now = Instant::now();
-    let (is_video, anchor, deadline) = match &state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase {
-        CapturePhase::Active(a) => {
-            (a.media == CaptureMedia::Video, a.keepalive_anchor, a.dialog_deadline)
-        }
+    let (is_video, anchor, deadline) = match &state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .phase
+    {
+        CapturePhase::Active(a) => (
+            a.media == CaptureMedia::Video,
+            a.keepalive_anchor,
+            a.dialog_deadline,
+        ),
         _ => return,
     };
     if !is_video {
@@ -1168,16 +1503,30 @@ fn spawn_dialog(state: &mut Loop, renderer: &mut GlesRenderer, deadline: Instant
         UiSpace::Screen,
         Layer::SCENE.bits(),
     );
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).continue_dialog_id = Some(dialog.untyped());
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .continue_dialog_id = Some(dialog.untyped());
     forward(state, dialog);
-    if let CapturePhase::Active(a) = &mut state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).phase {
+    if let CapturePhase::Active(a) = &mut state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .phase
+    {
         a.dialog_deadline = Some(deadline);
     }
     info!("video over 5 min — continue prompt shown");
 }
 
 fn set_countdown(state: &mut Loop, secs: u32) {
-    let Some(id) = state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).continue_dialog_id else {
+    let Some(id) = state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .continue_dialog_id
+    else {
         return;
     };
     if let Some(reg) = state.inner.surface_mut().registry.as_mut() {
@@ -1211,7 +1560,14 @@ fn target_crop_physical(
         CaptureTarget::FullScreen => return None,
         CaptureTarget::ScreenRegion(r) => *r,
         CaptureTarget::WorldRegion(r) => world_to_phys(state, *r),
-        CaptureTarget::Windows(_) => world_to_phys(state, state.inner.kernel.get(&world::driver::capture::base::CAPTURE).windows_bbox?),
+        CaptureTarget::Windows(_) => world_to_phys(
+            state,
+            state
+                .inner
+                .kernel
+                .get(&world::driver::capture::base::CAPTURE)
+                .windows_bbox?,
+        ),
     };
     clamp_rect(phys, sw, sh)
 }
@@ -1226,7 +1582,13 @@ fn render_entry_size(state: &Loop, target: &CaptureTarget) -> Option<Size<i32, P
     let scale = state.size_ctx_all().scale;
     let world = match target {
         CaptureTarget::WorldRegion(r) => *r,
-        CaptureTarget::Windows(_) => state.inner.kernel.get(&world::driver::capture::base::CAPTURE).windows_bbox?,
+        CaptureTarget::Windows(_) => {
+            state
+                .inner
+                .kernel
+                .get(&world::driver::capture::base::CAPTURE)
+                .windows_bbox?
+        }
         _ => return None,
     };
     let mut w = (world.size.w as f64 * scale).round() as i32;
@@ -1281,7 +1643,13 @@ fn live_windows_bbox(state: &Loop) -> Option<Rectangle<i32, Logical>> {
     let mut acc: Option<Rectangle<i32, Logical>> = None;
     for w in state.inner.space_state().state.elements() {
         let Some(id) = w.uuid() else { continue };
-        if !state.inner.kernel.get(&world::driver::capture::base::CAPTURE).force_set.contains(&id) {
+        if !state
+            .inner
+            .kernel
+            .get(&world::driver::capture::base::CAPTURE)
+            .force_set
+            .contains(&id)
+        {
             continue;
         }
         if let Some(g) = window_slot_rect(state, w) {
@@ -1322,7 +1690,6 @@ fn clamp_rect(r: Rectangle<i32, Physical>, sw: i32, sh: i32) -> Option<Rectangle
     }
 }
 
-
 fn windows_bbox_world_of(state: &Loop, ids: &[Uuid]) -> Option<Rectangle<i32, Logical>> {
     let set: HashSet<Uuid> = ids.iter().copied().collect();
     let mut acc: Option<Rectangle<i32, Logical>> = None;
@@ -1351,12 +1718,17 @@ fn compute_force_set(state: &mut Loop, target: &CaptureTarget) {
             windows_intersecting_world(state, world)
         }
     };
-    state.inner.kernel.get_mut(&world::driver::capture::base::CAPTURE_MUT).force_set = set;
+    state
+        .inner
+        .kernel
+        .get_mut(&world::driver::capture::base::CAPTURE_MUT)
+        .force_set = set;
 }
 
 fn windows_intersecting_world(state: &Loop, region: Rectangle<i32, Logical>) -> HashSet<Uuid> {
     state
-        .inner.space_state()
+        .inner
+        .space_state()
         .state
         .elements()
         .filter_map(|w| {
@@ -1420,7 +1792,8 @@ fn from_overlay(r: OverlayRect) -> Rectangle<i32, Physical> {
 /// one overlay instance per monitor. Outputs without a current mode are skipped.
 fn output_sizes(state: &Loop) -> Vec<(String, (i32, i32))> {
     state
-        .inner.space_state()
+        .inner
+        .space_state()
         .state
         .outputs()
         .filter_map(|o| {
@@ -1445,14 +1818,19 @@ fn forward<U>(state: &mut Loop, handle: UiHandle<U>)
 where
     U: UiProgram<Message = CaptureMessage>,
 {
-    let tx = state.inner.surface_mut().surface_message_buffer_channel.0.clone();
+    let tx = state
+        .inner
+        .surface_mut()
+        .surface_message_buffer_channel
+        .0
+        .clone();
     if let Some(reg) = state.inner.surface_mut().registry.as_mut() {
         {
             reg.set_message_handler(handle, move |m: &CaptureMessage| {
-                    let _ = tx.send(SurfaceMessage {
-                        message: SurfaceMessageType::Capture(m.clone()),
-                    });
+                let _ = tx.send(SurfaceMessage {
+                    message: SurfaceMessageType::Capture(m.clone()),
                 });
+            });
         }
     }
 }
@@ -1500,7 +1878,9 @@ fn destroy_anywhere(state: &mut Loop, ids: &[HandleId]) {
         else {
             continue;
         };
-        let Some(reg) = surface.registry.as_mut() else { continue };
+        let Some(reg) = surface.registry.as_mut() else {
+            continue;
+        };
         for id in ids {
             reg.destroy_by_id(*id);
         }

@@ -1,10 +1,11 @@
+use slots::input::event::base::{InputEvent, InputFlow, PinchPhase};
 use smithay::backend::input::{
-    Event, GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as BackendPinchUpdate, InputBackend,
+    Event, GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as BackendPinchUpdate,
+    InputBackend,
 };
 use smithay::input::pointer as sp;
 use smithay::utils::{Logical, Point, SERIAL_COUNTER};
 use world::state::Loop;
-use slots::input::event::base::{InputEvent, InputFlow, PinchPhase};
 
 /// Pinch begin: latch a fresh gesture and decide ownership ONCE. The world bus
 /// (`CameraSystem`) answers `Consume` when the canvas owns the pinch (hand mode
@@ -17,15 +18,26 @@ pub fn begin<I: InputBackend>(event: &I::GesturePinchBeginEvent, loop_: &mut Loo
     loop_.inner.gesture.pinch_prev_scale = 1.0;
 
     let (x, y) = pointer_location(loop_);
-    let to_window = route(loop_, InputEvent::PointerPinch { phase: PinchPhase::Begin, scale: 1.0, x, y })
-        == InputFlow::Pass;
+    let to_window = route(
+        loop_,
+        InputEvent::PointerPinch {
+            phase: PinchPhase::Begin,
+            scale: 1.0,
+            x,
+            y,
+        },
+    ) == InputFlow::Pass;
     loop_.inner.gesture.pinch_to_window = to_window;
 
     if to_window {
         let pointer = loop_.state.seat.seat.get_pointer().unwrap();
         pointer.gesture_pinch_begin(
             &mut loop_.state,
-            &sp::GesturePinchBeginEvent { serial: SERIAL_COUNTER.next_serial(), time, fingers },
+            &sp::GesturePinchBeginEvent {
+                serial: SERIAL_COUNTER.next_serial(),
+                time,
+                fingers,
+            },
         );
     }
 }
@@ -40,7 +52,12 @@ pub fn update<I: InputBackend>(event: &I::GesturePinchUpdateEvent, loop_: &mut L
         let pointer = loop_.state.seat.seat.get_pointer().unwrap();
         pointer.gesture_pinch_update(
             &mut loop_.state,
-            &sp::GesturePinchUpdateEvent { time: event.time_msec(), delta, scale: event.scale(), rotation: event.rotation() },
+            &sp::GesturePinchUpdateEvent {
+                time: event.time_msec(),
+                delta,
+                scale: event.scale(),
+                rotation: event.rotation(),
+            },
         );
         return;
     }
@@ -51,7 +68,15 @@ pub fn update<I: InputBackend>(event: &I::GesturePinchUpdateEvent, loop_: &mut L
     loop_.inner.gesture.pinch_prev_scale = scale;
 
     let (x, y) = pointer_location(loop_);
-    route(loop_, InputEvent::PointerPinch { phase: PinchPhase::Update, scale: factor, x, y });
+    route(
+        loop_,
+        InputEvent::PointerPinch {
+            phase: PinchPhase::Update,
+            scale: factor,
+            x,
+            y,
+        },
+    );
 }
 
 /// Pinch end: close out the native gesture if it was window-owned, then clear the
@@ -61,7 +86,11 @@ pub fn end<I: InputBackend>(event: &I::GesturePinchEndEvent, loop_: &mut Loop) {
         let pointer = loop_.state.seat.seat.get_pointer().unwrap();
         pointer.gesture_pinch_end(
             &mut loop_.state,
-            &sp::GesturePinchEndEvent { serial: SERIAL_COUNTER.next_serial(), time: event.time_msec(), cancelled: event.cancelled() },
+            &sp::GesturePinchEndEvent {
+                serial: SERIAL_COUNTER.next_serial(),
+                time: event.time_msec(),
+                cancelled: event.cancelled(),
+            },
         );
     }
     loop_.inner.gesture.pinch_to_window = false;
@@ -69,7 +98,13 @@ pub fn end<I: InputBackend>(event: &I::GesturePinchEndEvent, loop_: &mut Loop) {
 }
 
 fn pointer_location(loop_: &Loop) -> (f64, f64) {
-    let loc = loop_.state.seat.seat.get_pointer().unwrap().current_location();
+    let loc = loop_
+        .state
+        .seat
+        .seat
+        .get_pointer()
+        .unwrap()
+        .current_location();
     (loc.x, loc.y)
 }
 

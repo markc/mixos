@@ -47,9 +47,7 @@ use world::state::Loop;
 /// first sender, leaving the rest a no-op tree walk). What this fixes is which output's
 /// cadence the client is paced by.
 pub fn send_frames(state: &Loop, output: &Output) {
-    if world::state::state::output_key(output)
-        != state.inner.active_output_key()
-    {
+    if world::state::state::output_key(output) != state.inner.active_output_key() {
         return;
     }
     let frame_time = state.inner.start_time.elapsed();
@@ -69,4 +67,3 @@ pub fn send_frames(state: &Loop, output: &Output) {
         send(icon);
     }
 }
-

@@ -2330,6 +2330,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "frames"
+version = "0.1.1"
+dependencies = [
+ "dispatcher",
+ "effects",
+ "graphics",
+ "model",
+ "protocols",
+ "recorder",
+ "render-gles",
+ "scenegraph",
+ "seat",
+ "slots",
+ "smithay",
+ "ui",
+ "uuid",
+ "world",
+]
+
+[[package]]
 name = "fsevent-sys"
 version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4284,6 +4304,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "native"
+version = "0.1.1"
+dependencies = [
+ "decor",
+ "dispatcher",
+ "drivers",
+ "frames",
+ "graphics",
+ "kms",
+ "ledger",
+ "model",
+ "outputs",
+ "protocols",
+ "recorder",
+ "render-gles",
+ "scenegraph",
+ "screencopy",
+ "seat",
+ "slots",
+ "smithay",
+ "uuid",
+ "world",
+ "x11-wm",
+]
+
+[[package]]
 name = "ndk"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4311,6 +4357,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee6cda3051665f1fb8d9e08fc35c96d5a244fb1be711a03b71118828afc9a873"
 dependencies = [
  "jni-sys 0.3.1",
+]
+
+[[package]]
+name = "nested"
+version = "0.1.1"
+dependencies = [
+ "decor",
+ "dispatcher",
+ "frames",
+ "graphics",
+ "ledger",
+ "model",
+ "outputs",
+ "protocols",
+ "recorder",
+ "render-gles",
+ "scenegraph",
+ "screencopy",
+ "seat",
+ "slots",
+ "smithay",
+ "world",
 ]
 
 [[package]]
@@ -4922,6 +4990,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "outputs"
+version = "0.1.1"
+dependencies = [
+ "dispatcher",
+ "model",
+ "render-gles",
+ "scenegraph",
+ "smithay",
+ "world",
+]
+
+[[package]]
 name = "parking"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5175,6 +5255,26 @@ dependencies = [
  "comp-model",
  "serde_json",
  "surfaces",
+]
+
+[[package]]
+name = "policy-host"
+version = "0.1.1"
+dependencies = [
+ "comp-model",
+ "config",
+ "decor",
+ "dispatcher",
+ "ledger",
+ "policy",
+ "protocols",
+ "screencopy",
+ "seat",
+ "serde_json",
+ "smithay",
+ "surfaces",
+ "world",
+ "x11-wm",
 ]
 
 [[package]]
@@ -5676,6 +5776,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "recorder"
+version = "0.1.1"
+dependencies = [
+ "dispatcher",
+ "graphics",
+ "model",
+ "smithay",
+ "ui",
+ "uuid",
+ "world",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6026,6 +6139,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "scenegraph"
+version = "0.1.1"
+dependencies = [
+ "dispatcher",
+ "effects",
+ "model",
+ "render-gles",
+ "seat",
+ "slots",
+ "smithay",
+ "ui",
+ "world",
+]
+
+[[package]]
 name = "scoped-tls"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6049,6 +6177,22 @@ dependencies = [
  "protocols",
  "serde_json",
  "smithay",
+]
+
+[[package]]
+name = "seat"
+version = "0.1.1"
+dependencies = [
+ "decor",
+ "dispatcher",
+ "drivers",
+ "model",
+ "protocols",
+ "slots",
+ "smithay",
+ "ui",
+ "uuid",
+ "world",
 ]
 
 [[package]]
@@ -6799,6 +6943,26 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "zeroize",
+]
+
+[[package]]
+name = "testkit"
+version = "0.1.1"
+dependencies = [
+ "dispatcher",
+ "libc",
+ "model",
+ "policy",
+ "policy-host",
+ "protocols",
+ "screencopy",
+ "smithay",
+ "surfaces",
+ "uuid",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-protocols-wlr",
+ "world",
 ]
 
 [[package]]

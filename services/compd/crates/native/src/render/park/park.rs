@@ -44,10 +44,13 @@ impl Holds {
     }
 
     pub fn names(&self) -> Vec<&'static str> {
-        [(self.dmabuf_import, "dmabuf_import"), (self.resuming, "resuming")]
-            .into_iter()
-            .filter_map(|(on, name)| on.then_some(name))
-            .collect()
+        [
+            (self.dmabuf_import, "dmabuf_import"),
+            (self.resuming, "resuming"),
+        ]
+        .into_iter()
+        .filter_map(|(on, name)| on.then_some(name))
+        .collect()
     }
 
     /// The reason the continuation frame is requested for.

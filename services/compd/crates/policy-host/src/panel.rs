@@ -28,8 +28,8 @@ use comp_model::snapshot::EdgeCounts;
 use dispatcher::state::state::RedrawReason;
 use dispatcher::wire::trait_::surface_event::SurfaceHandle;
 use policy::panel::{
-    Claim, ENFORCE_GRACE, Membership, PROBE_TIMEOUT, PanelOp, PointerHold, PopupRestore, Probe, apply_panel_request,
-    panel_claim, resolve_panel_surface,
+    Claim, ENFORCE_GRACE, Membership, PROBE_TIMEOUT, PanelOp, PointerHold, PopupRestore, Probe,
+    apply_panel_request, panel_claim, resolve_panel_surface,
 };
 use surfaces::{SurfaceId, SurfaceRole};
 use world::comp::panels::set_concealed;
@@ -62,17 +62,25 @@ pub fn request(lp: &mut Loop, request: &PanelRequest) -> ControlReply {
         return ControlReply::refused("unknown_panel_surface", json!({"surface": request.surface}));
     }
     let key = (request.output.clone(), request.edge.clone());
-    let (owner, reporter, current_generation) = lp
-        .inner
-        .comp
-        .panels
-        .holders
-        .get(&key)
-        .map_or((None, None, None), |panel| (panel.owner.clone(), panel.reporter.clone(), panel.generation));
+    let (owner, reporter, current_generation) =
+        lp.inner
+            .comp
+            .panels
+            .holders
+            .get(&key)
+            .map_or((None, None, None), |panel| {
+                (
+                    panel.owner.clone(),
+                    panel.reporter.clone(),
+                    panel.generation,
+                )
+            });
     // The holder service is the first registered service to report the edge;
     // only it reports it after that.
-    let from_reporter =
-        !request.sender.is_empty() && reporter.as_deref().is_none_or(|reporter| reporter == request.sender);
+    let from_reporter = !request.sender.is_empty()
+        && reporter
+            .as_deref()
+            .is_none_or(|reporter| reporter == request.sender);
     let reporting = request.mode.is_some() && from_reporter;
     let foreign_report = request.mode.is_some() && !reporting && reporter.is_some();
     // Generations only move forward.
@@ -80,23 +88,35 @@ pub fn request(lp: &mut Loop, request: &PanelRequest) -> ControlReply {
         && let (Some(generation), Some(current)) = (request.generation, current_generation)
         && generation < current
     {
-        return ControlReply::refused("stale_generation", json!({"generation": generation, "current": current}));
+        return ControlReply::refused(
+            "stale_generation",
+            json!({"generation": generation, "current": current}),
+        );
     }
     let may_adopt = reporting || (from_reporter && reporter.is_some());
     let claim = id.map(|id| claim_for(lp, owner.as_ref(), id, may_adopt));
     match &claim {
         Some(Claim::Refuse) => {
-            return ControlReply::refused("panel_owner_mismatch", json!({"surface": request.surface}));
+            return ControlReply::refused(
+                "panel_owner_mismatch",
+                json!({"surface": request.surface}),
+            );
         }
         Some(Claim::Unowned) if request.acquire == Some(true) => {
-            return ControlReply::refused("unknown_panel_surface", json!({"surface": request.surface}));
+            return ControlReply::refused(
+                "unknown_panel_surface",
+                json!({"surface": request.surface}),
+            );
         }
         _ => {}
     }
     let bound = !foreign_report && claim.as_ref().is_some_and(Claim::binds);
     let id = id.filter(|_| bound);
     let panels = &mut lp.inner.comp.panels;
-    let recorded = panels.holders.get(&key).map(|panel| (panel.surface.clone(), panel.id));
+    let recorded = panels
+        .holders
+        .get(&key)
+        .map(|panel| (panel.surface.clone(), panel.id));
     if let Some(panel) = panels.holders.get_mut(&key) {
         // A replacement drops the dead incarnation before this request lands.
         if let Some(replace @ Claim::Replace(_)) = claim.clone()
@@ -170,7 +190,12 @@ pub fn request(lp: &mut Loop, request: &PanelRequest) -> ControlReply {
             .holders
             .get(&key)
             .map_or_else(|| request.surface.clone(), |panel| panel.surface.clone());
-        panels.commands.push((request.output.clone(), request.edge.clone(), surface, reveal));
+        panels.commands.push((
+            request.output.clone(),
+            request.edge.clone(),
+            surface,
+            reveal,
+        ));
     }
     ControlReply::Body(json!({"accepted": true, "surface": request.surface}))
 }
@@ -195,7 +220,11 @@ pub fn service(lp: &mut Loop, now: Instant) -> Option<Instant> {
     }
     // An output that went away takes its edges' modes and holds with it.
     let live = live_outputs(lp);
-    lp.inner.comp.panels.holders.retain(|(output, _), _| live.contains(output));
+    lp.inner
+        .comp
+        .panels
+        .holders
+        .retain(|(output, _), _| live.contains(output));
     // The owning Wayland client disconnected: its incarnation ends.
     let gone: Vec<(String, String)> = lp
         .inner
@@ -203,7 +232,12 @@ pub fn service(lp: &mut Loop, now: Instant) -> Option<Instant> {
         .panels
         .holders
         .iter()
-        .filter(|(_, panel)| panel.owner.as_ref().is_some_and(|owner| !client_alive(lp, owner)))
+        .filter(|(_, panel)| {
+            panel
+                .owner
+                .as_ref()
+                .is_some_and(|owner| !client_alive(lp, owner))
+        })
         .map(|(key, _)| key.clone())
         .collect();
     for key in gone {
@@ -221,8 +255,13 @@ pub fn service(lp: &mut Loop, now: Instant) -> Option<Instant> {
         .holders
         .iter()
         .map(|(key, panel)| {
-            let id = resolve_panel_surface(candidates(lp, &panel.surface, &key.0)).ok().flatten();
-            let may_adopt = panel.reporter.as_deref().is_some_and(|reporter| !reporter.is_empty())
+            let id = resolve_panel_surface(candidates(lp, &panel.surface, &key.0))
+                .ok()
+                .flatten();
+            let may_adopt = panel
+                .reporter
+                .as_deref()
+                .is_some_and(|reporter| !reporter.is_empty())
                 && panel.reported_surface.as_deref() == Some(panel.surface.as_str());
             let claim = id.map(|id| claim_for(lp, panel.owner.as_ref(), id, may_adopt));
             (key.clone(), id, claim)
@@ -268,7 +307,13 @@ fn track(lp: &mut Loop, now: Instant) -> Option<Instant> {
     let corner = corners
         .output()
         .zip(corners.contact())
-        .map(|(output, corner)| (output.to_string(), corner, corners.engaged() == Some(corner)));
+        .map(|(output, corner)| {
+            (
+                output.to_string(),
+                corner,
+                corners.engaged() == Some(corner),
+            )
+        });
     // Every layer the holder state names, looked up once: `None` once gone.
     let ids: BTreeSet<SurfaceId> = lp
         .inner
@@ -286,10 +331,16 @@ fn track(lp: &mut Loop, now: Instant) -> Option<Instant> {
                 .chain(panel.enforced.iter().copied())
         })
         .collect();
-    let layers: BTreeMap<SurfaceId, Option<LayerFacts>> =
-        ids.into_iter().map(|id| (id, layer_facts(lp, id))).collect();
+    let layers: BTreeMap<SurfaceId, Option<LayerFacts>> = ids
+        .into_iter()
+        .map(|id| (id, layer_facts(lp, id)))
+        .collect();
     let alive = |id: &SurfaceId| layers.get(id).is_some_and(Option::is_some);
-    let mapped = |id: &SurfaceId| layers.get(id).is_some_and(|facts| facts.as_ref().is_some_and(|(mapped, _)| *mapped));
+    let mapped = |id: &SurfaceId| {
+        layers
+            .get(id)
+            .is_some_and(|facts| facts.as_ref().is_some_and(|(mapped, _)| *mapped))
+    };
     let panels = &mut lp.inner.comp.panels;
     let user_input = std::mem::take(&mut panels.user_input);
     let mut commands = Vec::new();
@@ -305,7 +356,9 @@ fn track(lp: &mut Loop, now: Instant) -> Option<Instant> {
     for (key, panel) in &mut panels.holders {
         let (output, edge) = key;
         // A popup's closing is its release, whatever Quoin has said yet.
-        panel.held.retain(|kind, (_, id)| kind != "popup" || alive(&*id));
+        panel
+            .held
+            .retain(|kind, (_, id)| kind != "popup" || alive(&*id));
         panel.popups.retain(alive);
         // A layer its client unmapped or destroyed is hidden by the client.
         panel.enforced.retain(mapped);
@@ -314,15 +367,21 @@ fn track(lp: &mut Loop, now: Instant) -> Option<Instant> {
             panel.settle_owed();
         }
         // A probe went unanswered: the owner is stopped.
-        if panel.probe.as_ref().is_some_and(|probe| probe.deadline <= now) {
+        if panel
+            .probe
+            .as_ref()
+            .is_some_and(|probe| probe.deadline <= now)
+        {
             panel.probe = None;
             panel.stall();
         }
-        let on_hotspot = corner
-            .as_ref()
-            .filter(|(corner_output, corner, _)| corner.summoned_edge() == edge.as_str() && corner_output == output);
+        let on_hotspot = corner.as_ref().filter(|(corner_output, corner, _)| {
+            corner.summoned_edge() == edge.as_str() && corner_output == output
+        });
         let over = |target: Option<SurfaceId>| {
-            target.is_some_and(|target| panel.id == Some(target) || panel.held.values().any(|(_, id)| *id == target))
+            target.is_some_and(|target| {
+                panel.id == Some(target) || panel.held.values().any(|(_, id)| *id == target)
+            })
         };
         let seen = Membership {
             dwelled: on_hotspot.is_some_and(|(_, _, engaged)| *engaged),
@@ -346,9 +405,11 @@ fn track(lp: &mut Loop, now: Instant) -> Option<Instant> {
             .chain(panel.popups.iter().copied())
             .filter(|id| {
                 owner.is_some()
-                    && layers
-                        .get(id)
-                        .is_some_and(|facts| facts.as_ref().is_some_and(|(mapped, client)| *mapped && *client == owner))
+                    && layers.get(id).is_some_and(|facts| {
+                        facts
+                            .as_ref()
+                            .is_some_and(|(mapped, client)| *mapped && *client == owner)
+                    })
             })
             .collect();
         let owes = panel.hidden() && panel.verdict == Some(false);
@@ -381,7 +442,12 @@ fn track(lp: &mut Loop, now: Instant) -> Option<Instant> {
             let candidates: Vec<SurfaceId> = if panel.pending.is_empty() {
                 showing.iter().copied().collect()
             } else {
-                panel.pending.iter().copied().filter(|id| showing.contains(id)).collect()
+                panel
+                    .pending
+                    .iter()
+                    .copied()
+                    .filter(|id| showing.contains(id))
+                    .collect()
             };
             if !candidates.is_empty() && panel.probe.is_none() {
                 probes.push((key.clone(), candidates));
@@ -392,7 +458,9 @@ fn track(lp: &mut Loop, now: Instant) -> Option<Instant> {
         let only_popup_or_focus = panel.verdict == Some(true)
             && panel.pointer == PointerHold::Out
             && !panel.held.contains_key("pointer")
-            && (panel.focused || panel.held.contains_key("popup") || panel.held.contains_key("focus"));
+            && (panel.focused
+                || panel.held.contains_key("popup")
+                || panel.held.contains_key("focus"));
         if only_popup_or_focus
             && panel.probe.is_none()
             && !panel.stalled
@@ -406,7 +474,10 @@ fn track(lp: &mut Loop, now: Instant) -> Option<Instant> {
             probes.push((key.clone(), showing.iter().copied().collect()));
         }
         let probe_at = panel.probe.as_ref().map(|probe| probe.deadline);
-        for at in [panel.conceal_deadline(), panel.enforce_at, probe_at].into_iter().flatten() {
+        for at in [panel.conceal_deadline(), panel.enforce_at, probe_at]
+            .into_iter()
+            .flatten()
+        {
             deadline = Some(deadline.map_or(at, |current| current.min(at)));
         }
     }
@@ -421,7 +492,10 @@ fn track(lp: &mut Loop, now: Instant) -> Option<Instant> {
         }
         let at = now + PROBE_TIMEOUT;
         if let Some(panel) = lp.inner.comp.panels.holders.get_mut(&key) {
-            panel.probe = Some(Probe { deadline: at, serials });
+            panel.probe = Some(Probe {
+                deadline: at,
+                serials,
+            });
             deadline = Some(deadline.map_or(at, |current| current.min(at)));
         }
     }
@@ -464,22 +538,33 @@ fn apply_enforcement(lp: &mut Loop) {
             .and_then(|surface| lp.inner.comp.id_for_surface(&surface))
             .is_some_and(|id| enforced.contains(&id))
     {
-        keyboard.set_focus(&mut lp.state, None, smithay::utils::SERIAL_COUNTER.next_serial());
+        keyboard.set_focus(
+            &mut lp.state,
+            None,
+            smithay::utils::SERIAL_COUNTER.next_serial(),
+        );
     }
     lp.state.schedule_redraw(RedrawReason::Layer);
 }
 
 /// An ack at or after a probe's serial answers it;
 /// any ack clears a stalled mark on its owner; an owner that answered rests.
-fn note_layer_ack(lp: &mut Loop, id: SurfaceId, client: Option<ClientId>, serial: Serial, now: Instant) {
+fn note_layer_ack(
+    lp: &mut Loop,
+    id: SurfaceId,
+    client: Option<ClientId>,
+    serial: Serial,
+    now: Instant,
+) {
     let panels = &mut lp.inner.comp.panels;
     let mut answered = false;
     for panel in panels.holders.values_mut() {
-        if panel
-            .probe
-            .as_ref()
-            .is_some_and(|probe| probe.serials.iter().any(|(probed, sent)| *probed == id && serial >= *sent))
-        {
+        if panel.probe.as_ref().is_some_and(|probe| {
+            probe
+                .serials
+                .iter()
+                .any(|(probed, sent)| *probed == id && serial >= *sent)
+        }) {
             panel.settle_owed();
             panel.quiet = true;
             answered = true;
@@ -552,10 +637,14 @@ fn service_popup_restores(lp: &mut Loop) {
         .collect();
     for (popup, restore) in closed {
         lp.inner.comp.panels.popup_restores.remove(&popup);
-        let (Some(prior), Some(fallback), None) = (restore.prior, restore.fallback, restore.departed_to) else {
+        let (Some(prior), Some(fallback), None) =
+            (restore.prior, restore.fallback, restore.departed_to)
+        else {
             continue;
         };
-        let Some(keyboard) = lp.state.seat.seat.get_keyboard() else { continue };
+        let Some(keyboard) = lp.state.seat.seat.get_keyboard() else {
+            continue;
+        };
         let current = keyboard
             .current_focus()
             .and_then(|surface| lp.inner.comp.id_for_surface(&surface))
@@ -563,11 +652,20 @@ fn service_popup_restores(lp: &mut Loop) {
         if current != fallback || current == Some(prior) {
             continue;
         }
-        let mapped = lp.inner.comp.registry.get(SurfaceId(prior)).is_some_and(|record| record.mapped());
+        let mapped = lp
+            .inner
+            .comp
+            .registry
+            .get(SurfaceId(prior))
+            .is_some_and(|record| record.mapped());
         let Some(surface) = surface_of(lp, SurfaceId(prior)).filter(|_| mapped) else {
             continue;
         };
-        keyboard.set_focus(&mut lp.state, Some(surface), smithay::utils::SERIAL_COUNTER.next_serial());
+        keyboard.set_focus(
+            &mut lp.state,
+            Some(surface),
+            smithay::utils::SERIAL_COUNTER.next_serial(),
+        );
     }
 }
 
@@ -598,18 +696,25 @@ fn record_popup_focus(lp: &mut Loop, popup: SurfaceId) {
             entry.departed_to = None;
         }
     }
-    panels.popup_restores.entry(popup.0).or_insert(PopupRestore {
-        prior,
-        fallback: None,
-        departed_to: None,
-    });
+    panels
+        .popup_restores
+        .entry(popup.0)
+        .or_insert(PopupRestore {
+            prior,
+            fallback: None,
+            departed_to: None,
+        });
 }
 
 /// A holder service that left the Bus takes its
 /// explicit holds with it; the Wayland-side state stays with the client.
 pub fn services_live(lp: &mut Loop, live: &BTreeSet<String>) {
     for panel in lp.inner.comp.panels.holders.values_mut() {
-        if panel.reporter.as_ref().is_some_and(|reporter| !live.contains(reporter)) {
+        if panel
+            .reporter
+            .as_ref()
+            .is_some_and(|reporter| !live.contains(reporter))
+        {
             panel.drop_holds();
             panel.reporter = None;
             panel.reported_surface = None;
@@ -675,7 +780,12 @@ pub fn take_commands(lp: &mut Loop) -> Vec<PanelCommand> {
 
 /// The live outputs, by name.
 fn live_outputs(lp: &Loop) -> BTreeSet<String> {
-    lp.inner.space_state().state.outputs().map(|output| output.name()).collect()
+    lp.inner
+        .space_state()
+        .state
+        .outputs()
+        .map(|output| output.name())
+        .collect()
 }
 
 /// Every layer whose namespace is `token`, flagged by whether it is on
@@ -704,22 +814,43 @@ fn surface_of(lp: &Loop, id: SurfaceId) -> Option<WlSurface> {
 /// The record is still a known layer (a destroyed layer is a closed
 /// popup).
 fn layer_alive(lp: &Loop, id: SurfaceId) -> bool {
-    lp.inner.comp.registry.get(id).is_some_and(|record| record.role() == SurfaceRole::Layer)
+    lp.inner
+        .comp
+        .registry
+        .get(id)
+        .is_some_and(|record| record.role() == SurfaceRole::Layer)
 }
 
 /// A live layer's mapped state and its Wayland client; `None` once gone.
 fn layer_facts(lp: &Loop, id: SurfaceId) -> Option<LayerFacts> {
-    let record = lp.inner.comp.registry.get(id).filter(|record| record.role() == SurfaceRole::Layer)?;
-    let client = surface_of(lp, id).and_then(|surface| surface.client()).map(|client| client.id());
+    let record = lp
+        .inner
+        .comp
+        .registry
+        .get(id)
+        .filter(|record| record.role() == SurfaceRole::Layer)?;
+    let client = surface_of(lp, id)
+        .and_then(|surface| surface.client())
+        .map(|client| client.id());
     Some((record.mapped(), client))
 }
 
 fn client_alive(lp: &Loop, client: &ClientId) -> bool {
-    lp.state.output.display_handle.backend_handle().get_client_data(client.clone()).is_ok()
+    lp.state
+        .output
+        .display_handle
+        .backend_handle()
+        .get_client_data(client.clone())
+        .is_ok()
 }
 
 /// Incarnation fencing by the layer's Wayland client.
-fn claim_for(lp: &Loop, owner: Option<&ClientId>, id: SurfaceId, may_adopt: bool) -> Claim<ClientId> {
+fn claim_for(
+    lp: &Loop,
+    owner: Option<&ClientId>,
+    id: SurfaceId,
+    may_adopt: bool,
+) -> Claim<ClientId> {
     let client = layer_facts(lp, id).and_then(|(_, client)| client);
     let owner_alive = owner.is_some_and(|owner| client_alive(lp, owner));
     panel_claim(owner, owner_alive, client, may_adopt)

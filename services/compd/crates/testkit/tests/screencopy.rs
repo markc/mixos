@@ -2,9 +2,9 @@
 //! services it after a frame (`Harness::service_screencopy`, a top-down pixman
 //! framebuffer standing in for the renderer).
 
+use smithay::utils::{Physical, Rectangle};
 use testkit::Harness;
 use testkit::client::FrameEvents;
-use smithay::utils::{Physical, Rectangle};
 use wayland_client::protocol::wl_shm;
 
 /// `wl_shm.format` XRGB8888.

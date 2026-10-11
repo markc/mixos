@@ -1,11 +1,11 @@
 use smithay::backend::input::{
     Axis, AxisSource, Event, InputBackend, KeyState, KeyboardKeyEvent, PointerAxisEvent,
 };
+use smithay::desktop::layer_map_for_output;
 use smithay::input::keyboard::{FilterResult, Keycode, Keysym};
 use smithay::input::pointer::{AxisFrame, PointerHandle};
-use smithay::utils::SERIAL_COUNTER;
-use smithay::desktop::layer_map_for_output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::shell::wlr_layer::{KeyboardInteractivity, Layer};
 use world::state::Loop;
 
@@ -32,9 +32,14 @@ pub fn release_held_keys(loop_: &mut Loop) {
     let time = loop_.inner.start_time.elapsed().as_millis() as u32;
     for key in to_release {
         let serial = SERIAL_COUNTER.next_serial();
-        let _ = keyboard.input::<(), _>(&mut loop_.state, key, KeyState::Released, serial, time, |_, _, _| {
-            FilterResult::Forward
-        });
+        let _ = keyboard.input::<(), _>(
+            &mut loop_.state,
+            key,
+            KeyState::Released,
+            serial,
+            time,
+            |_, _, _| FilterResult::Forward,
+        );
     }
 }
 
@@ -144,10 +149,18 @@ pub fn nested_shortcut_view(
 /// captured combo, replayed by the injector (`tablet/inject.rs`).
 fn modifier_keycodes(m: &smithay::input::keyboard::ModifiersState) -> Vec<u32> {
     let mut v = Vec::new();
-    if m.ctrl { v.push(37); }   // LEFTCTRL 29 + 8
-    if m.alt { v.push(64); }    // LEFTALT  56 + 8
-    if m.shift { v.push(50); }  // LEFTSHIFT 42 + 8
-    if m.logo { v.push(133); }  // LEFTMETA 125 + 8
+    if m.ctrl {
+        v.push(37);
+    } // LEFTCTRL 29 + 8
+    if m.alt {
+        v.push(64);
+    } // LEFTALT  56 + 8
+    if m.shift {
+        v.push(50);
+    } // LEFTSHIFT 42 + 8
+    if m.logo {
+        v.push(133);
+    } // LEFTMETA 125 + 8
     v
 }
 
@@ -233,14 +246,16 @@ pub fn input_received<I: InputBackend>(event: &I::KeyboardKeyEvent, _loop: &mut 
             // the key to a NON-ASCII printable (a non-Latin letter, e.g. `il`) do we fall
             // back to the Latin/base sym, so Super+N/Super+F still match there.
             let shortcut = match modified.key_char() {
-                Some(c) if !c.is_ascii() => {
-                    handle.raw_latin_sym_or_raw_current_sym().unwrap_or(modified)
-                }
+                Some(c) if !c.is_ascii() => handle
+                    .raw_latin_sym_or_raw_current_sym()
+                    .unwrap_or(modified),
                 _ => modified,
             };
             // The binding filter matches the layout-agnostic sym ALWAYS
             // (`raw_latin_sym_or_raw_current_sym`), so Ctrl+Alt+F1 reads F1 there.
-            let binding = handle.raw_latin_sym_or_raw_current_sym().map(|sym| sym.raw());
+            let binding = handle
+                .raw_latin_sym_or_raw_current_sym()
+                .map(|sym| sym.raw());
             (modified, shortcut, binding, *modifiers)
         },
     );
@@ -272,7 +287,14 @@ pub fn input_received<I: InputBackend>(event: &I::KeyboardKeyEvent, _loop: &mut 
     }
 
     if should_forward::<I>(_loop, keysym, shortcut_sym, key_state, &modifiers) {
-        keyboard.input_forward(&mut _loop.state, key_code, key_state, serial, time, mods_changed);
+        keyboard.input_forward(
+            &mut _loop.state,
+            key_code,
+            key_state,
+            serial,
+            time,
+            mods_changed,
+        );
     }
 }
 
@@ -286,8 +308,14 @@ pub fn input_received<I: InputBackend>(event: &I::KeyboardKeyEvent, _loop: &mut 
 /// otherwise → forward to the focused client.
 pub fn inject_key(_loop: &mut Loop, key_code: Keycode, pressed: bool, time: u32) {
     let serial = SERIAL_COUNTER.next_serial();
-    let key_state = if pressed { KeyState::Pressed } else { KeyState::Released };
-    let Some(keyboard) = _loop.state.seat.seat.get_keyboard() else { return };
+    let key_state = if pressed {
+        KeyState::Pressed
+    } else {
+        KeyState::Released
+    };
+    let Some(keyboard) = _loop.state.seat.seat.get_keyboard() else {
+        return;
+    };
     let ((keysym, _modifiers), mods_changed) = keyboard.input_intercept(
         &mut _loop.state,
         key_code,
@@ -303,7 +331,14 @@ pub fn inject_key(_loop: &mut Loop, key_code: Keycode, pressed: bool, time: u32)
     if ui_focused {
         ui_handle(_loop, keysym, key_state);
     } else {
-        keyboard.input_forward(&mut _loop.state, key_code, key_state, serial, time, mods_changed);
+        keyboard.input_forward(
+            &mut _loop.state,
+            key_code,
+            key_state,
+            serial,
+            time,
+            mods_changed,
+        );
     }
 }
 
@@ -321,7 +356,10 @@ fn should_forward<I: InputBackend>(
     // Shortcut matchers (overlay + canvas) get the layout-agnostic `shortcut_sym`; UI
     // TEXT sinks below get `keysym` (the active-layout char being typed).
     if world::overlay::interface::keyboard::keyboard::input_received::<I>(
-        _loop, shortcut_sym, key_state, modifiers,
+        _loop,
+        shortcut_sym,
+        key_state,
+        modifiers,
     ) {
         return false; // overlay shortcut consumed it
     }
@@ -357,7 +395,12 @@ fn should_forward<I: InputBackend>(
     // UI takes it too) gets the key ahead of the focused client. Only an
     // Exclusive layer, which just took the seat's focus above, outranks it.
     let ui_holds = exclusive_layer(_loop).is_none()
-        && _loop.inner.surface().registry.as_ref().is_some_and(|r| r.keyboard_focus().is_some());
+        && _loop
+            .inner
+            .surface()
+            .registry
+            .as_ref()
+            .is_some_and(|r| r.keyboard_focus().is_some());
     if ui_holds && let Some(result) = ui_handle(_loop, keysym, key_state) {
         return !result;
     }
@@ -412,10 +455,7 @@ fn exclusive_layer(_loop: &Loop) -> Option<WlSurface> {
 /// The compositor currently has no visible output (DPMS-off, lid closed, or every
 /// monitor unplugged). Set/cleared by the display apply/switch paths.
 fn is_dark(_loop: &Loop) -> bool {
-    *_loop
-        .inner
-        .kernel
-        .get(&drivers::lid::base::DISPLAY_OFF)
+    *_loop.inner.kernel.get(&drivers::lid::base::DISPLAY_OFF)
 }
 
 /// An output mode / preferred-monitor change is provisionally applied and awaiting
@@ -455,7 +495,8 @@ fn ui_handle(state: &mut Loop, keysym: Keysym, key_state: KeyState) -> Option<bo
         // Non-modifier key: route to the focused UI. Its modifier state already
         // travelled through `modifier_changed`.
         if let Some(focused) = registry.keyboard_focus() {
-            let input = ui::registry::translate_keyboard(keysym_raw, utf8.as_deref(), key_state, false);
+            let input =
+                ui::registry::translate_keyboard(keysym_raw, utf8.as_deref(), key_state, false);
             let _ = registry.dispatch_input(focused, input);
             return Some(true);
         }

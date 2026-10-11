@@ -1,6 +1,6 @@
-use world::state::Loop;
-use world::scene::platform::platform::Platform;
 use slots::input::event::base::{InputEvent, InputFlow};
+use world::scene::platform::platform::Platform;
+use world::state::Loop;
 
 /// The input driver: every seat entry point offers the event to the ACTIVE
 /// world's input bus FIRST (priority layers, then registration order; systems
@@ -22,5 +22,7 @@ pub fn route(l: &mut Loop, event: InputEvent) -> InputFlow {
     let mut platform = unsafe { Platform::new(None, &mut l.inner.space_state_mut().state, &gpu) };
     let worlds = &mut l.inner.worlds;
     let kernel = &l.inner.kernel;
-    worlds.active_mut().input(kernel, &event, Some(&mut platform), Some(seat))
+    worlds
+        .active_mut()
+        .input(kernel, &event, Some(&mut platform), Some(seat))
 }

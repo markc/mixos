@@ -121,9 +121,7 @@ pub(super) fn UI(
     dump_id: usize,
     frame: &DumpFrame,
 ) {
-    let path = frame
-        .dir
-        .join(format!("UI-{dump_id}-{}.ppm", frame.number));
+    let path = frame.dir.join(format!("UI-{dump_id}-{}.ppm", frame.number));
     match write_texture(renderer, texture, &path, false) {
         Ok((alpha, _)) => info!(
             "KMS_DIAG texture id={id:?} dump_id={dump_id} frame={} nonzero_alpha={alpha}/{} file={}",

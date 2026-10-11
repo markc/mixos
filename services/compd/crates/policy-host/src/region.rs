@@ -44,15 +44,22 @@ pub fn start(
     let busy = !lp.inner.comp.region.idle()
         || sequences_running
         || lp.inner.comp.interactive.is_some()
-        || pointer.as_ref().is_some_and(|pointer| pointer.is_grabbed() || !pointer.current_pressed().is_empty())
-        || keyboard.as_ref().is_some_and(|keyboard| keyboard.is_grabbed())
+        || pointer
+            .as_ref()
+            .is_some_and(|pointer| pointer.is_grabbed() || !pointer.current_pressed().is_empty())
+        || keyboard
+            .as_ref()
+            .is_some_and(|keyboard| keyboard.is_grabbed())
         || seat.input_method().keyboard_grabbed();
     if busy {
         return Err(ControlReply::Busy);
     }
     let space = &lp.inner.space_state().state;
     let chosen = match output {
-        Some(name) => space.outputs().find(|candidate| candidate.name() == name).cloned(),
+        Some(name) => space
+            .outputs()
+            .find(|candidate| candidate.name() == name)
+            .cloned(),
         None => {
             let key = lp.inner.cursor_output.clone();
             space
@@ -66,11 +73,16 @@ pub fn start(
         return Err(ControlReply::refused("unknown_output", json!({})));
     };
     if Instant::now() >= admitted + timeout {
-        return Err(ControlReply::Body(json!({"version": 1, "status": "timeout"})));
+        return Err(ControlReply::Body(
+            json!({"version": 1, "status": "timeout"}),
+        ));
     }
     let scale = chosen.current_scale().fractional_scale();
     let (width, height) = chosen.current_mode().map_or((0.0, 0.0), |mode| {
-        (f64::from(mode.size.w) / scale, f64::from(mode.size.h) / scale)
+        (
+            f64::from(mode.size.w) / scale,
+            f64::from(mode.size.h) / scale,
+        )
     });
     let motion = lp.inner.pointer().motion;
     let pointer_at = (motion.x / scale, motion.y / scale);
@@ -115,7 +127,9 @@ pub fn service(lp: &mut Loop, now: Instant) -> Option<ControlReply> {
             "coordinate_space": "output-local-logical",
             "region": {"x": x, "y": y, "width": width, "height": height},
         })),
-        Outcome::Cancelled(reason) => ControlReply::Body(json!({"version": 1, "status": "cancelled", "reason": reason})),
+        Outcome::Cancelled(reason) => {
+            ControlReply::Body(json!({"version": 1, "status": "cancelled", "reason": reason}))
+        }
         Outcome::Timeout => ControlReply::Body(json!({"version": 1, "status": "timeout"})),
         Outcome::Busy => ControlReply::Busy,
         Outcome::Refused(error) => ControlReply::refused(error, json!({})),

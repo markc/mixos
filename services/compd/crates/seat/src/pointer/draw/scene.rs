@@ -3,9 +3,9 @@ use smithay::backend::renderer::element::{AsRenderElements, Kind};
 use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
 use smithay::utils::{Physical, Point, Rectangle, Scale, Size};
 use std::os::linux::raw::stat;
+use world::seat::pointer::element::element::PointerRenderElement;
 use world::state::state::CoordinateTrait;
 use world::state::{Loop, Transform};
-use world::seat::pointer::element::element::PointerRenderElement;
 
 pub fn element<R>(
     state: &mut Loop,
@@ -101,7 +101,7 @@ where
             1.0,
             Kind::Unspecified,
         );
-        
+
         elements.extend(dnd_element);
     }
 

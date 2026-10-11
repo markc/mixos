@@ -13,7 +13,7 @@ use kms::edid::parse::parse::HdrInfo;
 use smithay::backend::drm::DrmDeviceFd;
 use smithay::reexports::drm::control::atomic::AtomicModeReq;
 use smithay::reexports::drm::control::{
-    connector, property, AtomicCommitFlags, Device as ControlDevice,
+    AtomicCommitFlags, Device as ControlDevice, connector, property,
 };
 
 /// Kernel `struct hdr_metadata_infoframe` (CTA-861 static metadata type 1).
@@ -143,10 +143,18 @@ fn opt_prop(drm: &DrmDeviceFd, conn: connector::Handle, name: &str) -> Option<pr
 
 /// The connector's CURRENT raw value for `handle` — what the previous owner of
 /// this connector left behind. Logged so a stale value is visible as a fact.
-fn current_raw(drm: &DrmDeviceFd, conn: connector::Handle, handle: property::Handle) -> Option<u64> {
+fn current_raw(
+    drm: &DrmDeviceFd,
+    conn: connector::Handle,
+    handle: property::Handle,
+) -> Option<u64> {
     let set = drm.get_properties(conn).ok()?;
     let (handles, values) = set.as_props_and_values();
-    handles.iter().zip(values.iter()).find(|(h, _)| **h == handle).map(|(_, v)| *v)
+    handles
+        .iter()
+        .zip(values.iter())
+        .find(|(h, _)| **h == handle)
+        .map(|(_, v)| *v)
 }
 
 /// Clamp `want` into an unsigned-range property's advertised bounds.
@@ -258,8 +266,9 @@ pub fn apply_connector_props(
     if let Some(h) = bpc_prop {
         let was = current_raw(drm, conn, h);
         let would = clamp_range(drm, h, want_bpc);
-        outcome.max_bpc =
-            format!("{was:?} (observed only, NOT written; would have been {would} for depth request {want_bpc})");
+        outcome.max_bpc = format!(
+            "{was:?} (observed only, NOT written; would have been {would} for depth request {want_bpc})"
+        );
     }
     let bpc: Option<(property::Handle, u64)> = None;
 
@@ -289,15 +298,19 @@ pub fn apply_connector_props(
         if let Some(b) = blob_raw {
             let _ = drm.destroy_property_blob(b);
         }
-        return Err(format!("connector-props TEST commit rejected: {e} [{}|{}|{}]",
-            outcome.colorspace, outcome.metadata, outcome.max_bpc));
+        return Err(format!(
+            "connector-props TEST commit rejected: {e} [{}|{}|{}]",
+            outcome.colorspace, outcome.metadata, outcome.max_bpc
+        ));
     }
     if let Err(e) = drm.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, build()) {
         if let Some(b) = blob_raw {
             let _ = drm.destroy_property_blob(b);
         }
-        return Err(format!("connector-props commit failed: {e} [{}|{}|{}]",
-            outcome.colorspace, outcome.metadata, outcome.max_bpc));
+        return Err(format!(
+            "connector-props commit failed: {e} [{}|{}|{}]",
+            outcome.colorspace, outcome.metadata, outcome.max_bpc
+        ));
     }
     // The HDR blob is intentionally leaked for as long as the property references
     // it; it is replaced (or cleared) by the next pass on this connector.

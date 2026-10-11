@@ -15,9 +15,9 @@
 
 use std::sync::Arc;
 
+use smithay::backend::renderer::gles::GlesRenderer;
 use ui::{WgpuGlContext, create_wgpu_gl_context, make_current};
 use world::state::Loop;
-use smithay::backend::renderer::gles::GlesRenderer;
 
 /// Make the renderer's context current for this frame's wgpu work, building the
 /// GPU context and everything that hangs off it on the first call.
@@ -41,7 +41,12 @@ pub fn begin(state: &mut Loop, renderer: &mut GlesRenderer) {
     }
     // wgpu's vertex array, which `end` unbound last frame (graphics
     // `WgpuGlContext::acquire_gl_state`): without it every wgpu draw is refused.
-    if let Some(ctx) = state.inner.kernel.get(&world::surface::system::base::UI_CONTEXT).as_ref() {
+    if let Some(ctx) = state
+        .inner
+        .kernel
+        .get(&world::surface::system::base::UI_CONTEXT)
+        .as_ref()
+    {
         ctx.acquire_gl_state();
     }
 }
@@ -76,9 +81,7 @@ fn build(state: &mut Loop, renderer: &mut GlesRenderer) {
         .clone();
     let ctx: Arc<WgpuGlContext> = match create_wgpu_gl_context(&formats, renderer) {
         Ok(ctx) => ctx.into_arc(),
-        Err(e) => model::abort!(
-            "wgpu-gl: no wgpu context over the renderer's EGL context: {e:?}"
-        ),
+        Err(e) => model::abort!("wgpu-gl: no wgpu context over the renderer's EGL context: {e:?}"),
     };
     *state
         .inner
@@ -89,8 +92,9 @@ fn build(state: &mut Loop, renderer: &mut GlesRenderer) {
     *state
         .inner
         .kernel
-        .get_mut(&world::driver::capture::base::CAPTURE_REGISTRY_MUT) =
-        Some(graphics::capture::registry::CaptureRegistry::new(ctx.clone()));
+        .get_mut(&world::driver::capture::base::CAPTURE_REGISTRY_MUT) = Some(
+        graphics::capture::registry::CaptureRegistry::new(ctx.clone()),
+    );
 
     // Every world's UI registry (each no-ops where its slot is absent — e.g. an
     // overlay world without SurfaceSystem). Covers the static worlds AND any

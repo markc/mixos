@@ -1,11 +1,11 @@
+use crate::display::output::backend::Backend;
+use crate::display::output::output;
 use smithay::backend::input::{InputBackend, InputEvent};
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 use world::state::Loop;
-use crate::display::output::backend::Backend;
-use crate::display::output::output;
 
 pub fn initialize(
     _loop: &mut Loop,

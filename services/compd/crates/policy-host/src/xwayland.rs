@@ -74,11 +74,18 @@ fn switch() -> &'static Switch {
             .and_then(|name| name.to_str())
             .filter(|name| !name.is_empty())
             .unwrap_or("wayland-0");
-        let path = config::path(config::Dir::Etc).join("comp").join(format!("xwayland-enabled.{socket}"));
+        let path = config::path(config::Dir::Etc)
+            .join("comp")
+            .join(format!("xwayland-enabled.{socket}"));
         let (file, read_note) = match std::fs::read_to_string(&path) {
             Ok(text) => (Some(text), None),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => (None, None),
-            Err(error) => (None, Some(format!("unreadable persisted file ({error}); defaulting to enabled"))),
+            Err(error) => (
+                None,
+                Some(format!(
+                    "unreadable persisted file ({error}); defaulting to enabled"
+                )),
+            ),
         };
         let env = std::env::var(ENV).ok();
         let (enabled, note) = resolve(env.as_deref(), file.as_deref());
@@ -131,7 +138,12 @@ fn resolve(env: Option<&str>, file: Option<&str>) -> (bool, Option<&'static str>
     if let Some(text) = file {
         match parse_file(text) {
             Some(enabled) => return (enabled, note),
-            None => return (true, Some("unparseable persisted xwayland.enabled; defaulting to enabled")),
+            None => {
+                return (
+                    true,
+                    Some("unparseable persisted xwayland.enabled; defaulting to enabled"),
+                );
+            }
         }
     }
     (true, note)
@@ -202,7 +214,9 @@ impl Lifecycle {
 static LIFECYCLE: std::sync::Mutex<Lifecycle> = std::sync::Mutex::new(Lifecycle::new());
 
 fn lifecycle() -> std::sync::MutexGuard<'static, Lifecycle> {
-    LIFECYCLE.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    LIFECYCLE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// A generation was spawned (the first, or the retry).
@@ -227,14 +241,18 @@ pub fn generation() -> u64 {
 
 /// The descriptor's path under `runtime_dir` for Wayland socket `socket`.
 pub fn descriptor_path_in(runtime_dir: &Path, socket: &str) -> PathBuf {
-    runtime_dir.join("compd").join(format!("{socket}.xwayland.env"))
+    runtime_dir
+        .join("compd")
+        .join(format!("{socket}.xwayland.env"))
 }
 
 /// This compositor's descriptor path: `XDG_RUNTIME_DIR` and the socket
 /// compd exported as `WAYLAND_DISPLAY`. `None` without either.
 pub fn descriptor_path() -> Option<PathBuf> {
     let dir = std::env::var_os("XDG_RUNTIME_DIR").filter(|dir| !dir.is_empty())?;
-    let socket = std::env::var("WAYLAND_DISPLAY").ok().filter(|socket| !socket.is_empty())?;
+    let socket = std::env::var("WAYLAND_DISPLAY")
+        .ok()
+        .filter(|socket| !socket.is_empty())?;
     Some(descriptor_path_in(Path::new(&dir), &socket))
 }
 
@@ -243,7 +261,9 @@ pub fn descriptor_path() -> Option<PathBuf> {
 pub fn publish_descriptor_at(path: &Path, display: u32, generation: u64) -> std::io::Result<()> {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
-    let parent = path.parent().ok_or_else(|| std::io::Error::other("descriptor path has no parent"))?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| std::io::Error::other("descriptor path has no parent"))?;
     std::fs::create_dir_all(parent)?;
     let mut temporary = path.as_os_str().to_owned();
     temporary.push(".tmp");
@@ -267,13 +287,16 @@ pub fn publish_descriptor_at(path: &Path, display: u32, generation: u64) -> std:
 
 /// Publish this compositor's descriptor for the current generation.
 pub fn publish_descriptor(display: u32) -> std::io::Result<()> {
-    let path = descriptor_path().ok_or_else(|| std::io::Error::other("no XDG_RUNTIME_DIR or WAYLAND_DISPLAY"))?;
+    let path = descriptor_path()
+        .ok_or_else(|| std::io::Error::other("no XDG_RUNTIME_DIR or WAYLAND_DISPLAY"))?;
     publish_descriptor_at(&path, display, generation())
 }
 
 /// Remove the descriptor (the generation ended). Missing is fine.
 pub fn remove_descriptor() -> std::io::Result<()> {
-    let Some(path) = descriptor_path() else { return Ok(()) };
+    let Some(path) = descriptor_path() else {
+        return Ok(());
+    };
     match std::fs::remove_file(path) {
         Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error),
         _ => Ok(()),
@@ -319,12 +342,24 @@ mod tests {
         let path = descriptor_path_in(&dir, "wayland-9");
         assert!(path.ends_with("compd/wayland-9.xwayland.env"));
         publish_descriptor_at(&path, 3, 2).unwrap();
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "DISPLAY=:3\nGENERATION=2\n");
-        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
-        assert!(!path.with_extension("env.tmp").exists(), "no temporary left behind");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "DISPLAY=:3\nGENERATION=2\n"
+        );
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert!(
+            !path.with_extension("env.tmp").exists(),
+            "no temporary left behind"
+        );
         // A rewrite (the retry's generation) replaces it whole.
         publish_descriptor_at(&path, 4, 3).unwrap();
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "DISPLAY=:4\nGENERATION=3\n");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "DISPLAY=:4\nGENERATION=3\n"
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -354,9 +389,15 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("policy-host-xwayland-{}", std::process::id()));
         let path = dir.join("comp").join("xwayland-enabled.wayland-test");
         write(&path, false).unwrap();
-        assert_eq!(parse_file(&std::fs::read_to_string(&path).unwrap()), Some(false));
+        assert_eq!(
+            parse_file(&std::fs::read_to_string(&path).unwrap()),
+            Some(false)
+        );
         write(&path, true).unwrap();
-        assert_eq!(parse_file(&std::fs::read_to_string(&path).unwrap()), Some(true));
+        assert_eq!(
+            parse_file(&std::fs::read_to_string(&path).unwrap()),
+            Some(true)
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 }

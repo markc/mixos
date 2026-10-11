@@ -4,13 +4,11 @@
 //! state (a lid-open arrives as an input event in the same cycle).
 
 use crate::context::render::render::NativeRenderContext;
+use drivers::lid::base::{DISPLAY_OFF_MUT, DISPLAY_REQUEST_MUT, DisplayRequest};
 use kms::scanout::surface::output::output;
-use world::state::Loop;
-use drivers::lid::base::{
-    DisplayRequest, DISPLAY_OFF_MUT, DISPLAY_REQUEST_MUT,
-};
 use std::cell::RefCell;
 use std::rc::Rc;
+use world::state::Loop;
 
 /// Take and perform at most one pending display request.
 pub fn drain(state: &mut Loop, ctx_rc: &Rc<RefCell<NativeRenderContext>>) {
@@ -21,11 +19,7 @@ pub fn drain(state: &mut Loop, ctx_rc: &Rc<RefCell<NativeRenderContext>>) {
     match request {
         DisplayRequest::Suspend => {
             info!("display request: Suspend (logind)");
-            match state
-                .inner
-                .kernel
-                .get(&drivers::logind::base::LOGIND)
-            {
+            match state.inner.kernel.get(&drivers::logind::base::LOGIND) {
                 Some(logind) => logind.suspend(),
                 None => warn!("Suspend requested but logind is unavailable"),
             }
@@ -55,7 +49,10 @@ pub fn drain(state: &mut Loop, ctx_rc: &Rc<RefCell<NativeRenderContext>>) {
 /// Power the active connector's display on/off via DPMS, gating the frame
 /// executor in tandem (a page-flip would re-power a blanked connector).
 fn panel_dpms(state: &mut Loop, ctx_rc: &Rc<RefCell<NativeRenderContext>>, on: bool) {
-    info!("display request: panel DPMS {}", if on { "on" } else { "off" });
+    info!(
+        "display request: panel DPMS {}",
+        if on { "on" } else { "off" }
+    );
     let mut ctx = ctx_rc.borrow_mut();
     let ctx_ref = &mut *ctx;
 
@@ -78,7 +75,9 @@ fn panel_dpms(state: &mut Loop, ctx_rc: &Rc<RefCell<NativeRenderContext>>, on: b
         drop(ctx);
         // Ungate the executor and kick a repaint.
         *state.inner.kernel.get_mut(&DISPLAY_OFF_MUT) = false;
-        state.state.schedule_redraw(protocols::redraw::schedule::schedule::RedrawReason::Output);
+        state
+            .state
+            .schedule_redraw(protocols::redraw::schedule::schedule::RedrawReason::Output);
     } else {
         // Gate the executor before blanking so no stray flip re-powers it.
         *state.inner.kernel.get_mut(&DISPLAY_OFF_MUT) = true;

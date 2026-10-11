@@ -15,10 +15,10 @@
 //!
 //! Returns `true` when the caller should reconcile the active output.
 
-use kms::connector::diff::diff;
-use kms::gpu::registry::node::node::NodeRegistry;
 use crate::context::render::render::NativeRenderContext;
 use crate::context::topology::topology::Topology;
+use kms::connector::diff::diff;
+use kms::gpu::registry::node::node::NodeRegistry;
 use kms::udev::loop_::event::event::DeviceEvent;
 use render_gles::preference::gpu::rank::rank::GpuRank;
 use std::cell::RefCell;
@@ -31,8 +31,8 @@ pub fn route(
     rank: &GpuRank,
     ctx_rc: &Rc<RefCell<NativeRenderContext>>,
 ) -> bool {
-    use crate::device::delegate::delegate::{classify, DeviceClass};
-    use crate::device::select::select::{decide, Decision};
+    use crate::device::delegate::delegate::{DeviceClass, classify};
+    use crate::device::select::select::{Decision, decide};
 
     match event {
         DeviceEvent::Added { device_id, path } => {
@@ -40,23 +40,25 @@ pub fn route(
                 DeviceClass::KnownGpu => {
                     trace!("device re-announced; ignoring: {device_id:?}");
                 }
-                DeviceClass::NewGpu => match decide(&path, rank) {
-                    Decision::Ignore => {
-                        info!("DRM device preference-excluded; not bookkeeping: {path:?}");
-                    }
-                    Decision::Register => {
-                        let node = kms::device::node::node::render_node(&path)
+                DeviceClass::NewGpu => {
+                    match decide(&path, rank) {
+                        Decision::Ignore => {
+                            info!("DRM device preference-excluded; not bookkeeping: {path:?}");
+                        }
+                        Decision::Register => {
+                            let node = kms::device::node::node::render_node(&path)
                             .unwrap_or_else(|| {
                                 abort!("udev announced a DRM device with no resolvable node: {path:?}")
                             });
-                        registry.add(device_id, node);
-                        topology.register_device(device_id, node);
-                        info!(
-                            "DRM device registered (single-GPU policy: only the \
+                            registry.add(device_id, node);
+                            topology.register_device(device_id, node);
+                            info!(
+                                "DRM device registered (single-GPU policy: only the \
                              primary is driven): {path:?}"
-                        );
+                            );
+                        }
                     }
-                },
+                }
                 DeviceClass::Unknown => {}
             }
             false

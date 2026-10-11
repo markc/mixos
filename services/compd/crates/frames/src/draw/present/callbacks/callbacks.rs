@@ -2,8 +2,10 @@
 //! housekeeping. Replaces the `refresh()` blocks duplicated in both backends.
 
 use smithay::backend::renderer::element::RenderElementStates;
-use smithay::desktop::utils::{surface_presentation_feedback_flags_from_states, OutputPresentationFeedback};
-use smithay::desktop::{layer_map_for_output, Window};
+use smithay::desktop::utils::{
+    OutputPresentationFeedback, surface_presentation_feedback_flags_from_states,
+};
+use smithay::desktop::{Window, layer_map_for_output};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use std::time::Duration;
@@ -26,7 +28,11 @@ use world::state::Loop;
 /// frame genuinely has no predictable next presentation.
 pub fn hw_flip_kind(tearing: bool) -> wp_presentation_feedback::Kind {
     let hw = wp_presentation_feedback::Kind::HwClock | wp_presentation_feedback::Kind::HwCompletion;
-    if tearing { hw } else { wp_presentation_feedback::Kind::Vsync | hw }
+    if tearing {
+        hw
+    } else {
+        wp_presentation_feedback::Kind::Vsync | hw
+    }
 }
 
 /// Collect presentation feedback for the windows visible in the frame about to be
@@ -50,9 +56,11 @@ pub fn collect_feedback(
             // permanently — a torn frame passing `hw_flip_kind(true)` had it ORed
             // straight back in. `ZeroCopy` belongs here because it is a fact about
             // THIS surface in THIS frame that per-output `presented()` cannot know.
-            |s, _| states.map_or(wp_presentation_feedback::Kind::empty(), |st| {
-                surface_presentation_feedback_flags_from_states(s, None, st)
-            }),
+            |s, _| {
+                states.map_or(wp_presentation_feedback::Kind::empty(), |st| {
+                    surface_presentation_feedback_flags_from_states(s, None, st)
+                })
+            },
         );
     }
     feedback
@@ -90,13 +98,17 @@ thread_local! {
 /// callback the client is waiting on.
 fn awaits_frame(window: &Window) -> bool {
     use smithay::wayland::seat::WaylandFocus;
-    window.wl_surface().is_some_and(|surface| tree_awaits_frame(&surface))
+    window
+        .wl_surface()
+        .is_some_and(|surface| tree_awaits_frame(&surface))
 }
 
 /// [`surface_awaits_frame`] for `surface` and each of its popups: the trees
 /// `Window::send_frame` and `LayerSurface::send_frame` answer. A popup is its
 /// own tree, so a popup-only wait is invisible to the root check alone.
-pub fn tree_awaits_frame(surface: &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface) -> bool {
+pub fn tree_awaits_frame(
+    surface: &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface,
+) -> bool {
     surface_awaits_frame(surface)
         || smithay::desktop::PopupManager::popups_for_surface(surface)
             .any(|(popup, _)| surface_awaits_frame(popup.wl_surface()))
@@ -104,8 +116,12 @@ pub fn tree_awaits_frame(surface: &smithay::reexports::wayland_server::protocol:
 
 /// Whether any surface in `surface`'s tree holds a frame callback the client is
 /// waiting on.
-pub fn surface_awaits_frame(surface: &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface) -> bool {
-    use smithay::wayland::compositor::{SurfaceAttributes, TraversalAction, with_surface_tree_downward};
+pub fn surface_awaits_frame(
+    surface: &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface,
+) -> bool {
+    use smithay::wayland::compositor::{
+        SurfaceAttributes, TraversalAction, with_surface_tree_downward,
+    };
     // A Cell: the visit closure sets it and the continue predicate reads it.
     let pending = std::cell::Cell::new(false);
     with_surface_tree_downward(
@@ -113,7 +129,13 @@ pub fn surface_awaits_frame(surface: &smithay::reexports::wayland_server::protoc
         (),
         |_, _, _| TraversalAction::DoChildren(()),
         |_, states, _| {
-            if !states.cached_state.get::<SurfaceAttributes>().current().frame_callbacks.is_empty() {
+            if !states
+                .cached_state
+                .get::<SurfaceAttributes>()
+                .current()
+                .frame_callbacks
+                .is_empty()
+            {
                 pending.set(true);
             }
         },
@@ -144,7 +166,11 @@ fn trickle_targets(state: &Loop) -> Vec<(Window, Output)> {
             let window = space.elements().find(|w| w.uuid() == Some(uuid))?.clone();
             let output = space
                 .outputs()
-                .find(|o| outputs.iter().any(|key| *key == world::state::state::output_key(o)))?
+                .find(|o| {
+                    outputs
+                        .iter()
+                        .any(|key| *key == world::state::state::output_key(o))
+                })?
                 .clone();
             awaits_frame(&window).then_some((window, output))
         })
@@ -191,7 +217,9 @@ pub fn trickle(state: &Loop) {
             TRICKLE_ARMED.set(false);
             let frame_time = state.inner.start_time.elapsed();
             for (window, output) in trickle_targets(state) {
-                window.send_frame(&output, frame_time, Some(OCCLUDED_TRICKLE), |_, _| Some(output.clone()));
+                window.send_frame(&output, frame_time, Some(OCCLUDED_TRICKLE), |_, _| {
+                    Some(output.clone())
+                });
             }
             let _ = state.inner.loader.display_handle.flush_clients();
             trickle(state);

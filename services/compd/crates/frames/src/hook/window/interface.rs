@@ -1,5 +1,8 @@
 use dispatcher::state::state::RedrawReason;
 use dispatcher::wire::trait_::wire_trait::WireTrait;
+use protocols::window::find::find;
+use protocols::window::ident::ident;
+use protocols::window::shell::shell;
 use smithay::desktop::Window;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -14,9 +17,6 @@ use world::camera::transform::translate::slot;
 use world::state::Loop;
 use world::window::interface::record::window::LoopWindow;
 use world::window::lifecycle::event::event::WindowLifecycleEvent;
-use protocols::window::find::find;
-use protocols::window::ident::ident;
-use protocols::window::shell::shell;
 /// Activate `window` on behalf of an external request (e.g. a dock via wlr foreign-toplevel
 /// `activate`): raise + activate + give it keyboard focus.
 ///
@@ -25,15 +25,16 @@ fn activate_window(_loop: &mut Loop, window: Window) {
     // An override-redirect X11 window is never activated or focused (a dock or
     // xdg-activation cannot reach one through the registry; this is the
     // engine-side backstop).
-    if window.x11_surface().is_some_and(|x11| x11.is_override_redirect()) {
+    if window
+        .x11_surface()
+        .is_some_and(|x11| x11.is_override_redirect())
+    {
         return;
     }
     // Placement may run before this pass's lock/latch arbitration. Consult
     // live policy, including a layer mapped in the same protocol batch, so
     // activation cannot switch worlds or deliver a keyboard enter while held.
-    if world::comp::session_lock::active(_loop)
-        || world::comp::latch::blocks_window_focus(_loop)
-    {
+    if world::comp::session_lock::active(_loop) || world::comp::latch::blocks_window_focus(_loop) {
         return;
     }
     // Cross-world activation: if the window lives on another world, switch to it FIRST.
@@ -45,7 +46,11 @@ fn activate_window(_loop: &mut Loop, window: Window) {
         }
     }
 
-    _loop.inner.space_state_mut().state.raise_element(&window, true);
+    _loop
+        .inner
+        .space_state_mut()
+        .state
+        .raise_element(&window, true);
     // Activate the target and DEACTIVATE every other window across all worlds (not just
     // the hosted one). A cross-world activate otherwise leaves the previously-focused
     // window still `activated` in another world; the foreign mirror advertises all worlds
@@ -102,16 +107,18 @@ pub fn drain_lifecycle(_loop: &mut Loop) {
     if _loop.inner.space_state().state.outputs().next().is_none()
         || _loop.inner.output_views().map.is_empty()
         || _loop.inner.active_output().current_mode().is_none()
-        || _loop.inner.space_state().state.output_geometry(_loop.inner.active_output()).is_none()
+        || _loop
+            .inner
+            .space_state()
+            .state
+            .output_geometry(_loop.inner.active_output())
+            .is_none()
     {
         return;
     }
 
     let queue_world = _loop.inner.worlds.spawn_target();
-    let process = std::mem::take(
-        &mut _loop.inner.window_lifecycle_of_mut(queue_world)
-            .incoming,
-    );
+    let process = std::mem::take(&mut _loop.inner.window_lifecycle_of_mut(queue_world).incoming);
     // generally no-op. _state.inner.window.incoming becomes Vec::default().
     // _loop.inner.window.incoming.clear();
 
@@ -136,15 +143,17 @@ pub fn drain_lifecycle(_loop: &mut Loop) {
         }
         processed = true;
         match item {
-            world::window::lifecycle::event::event::WindowLifecycleEvent::InitialMap(
-                window,
-            ) => {
+            world::window::lifecycle::event::event::WindowLifecycleEvent::InitialMap(window) => {
                 _initial_mapped(_loop, window);
             }
             WindowLifecycleEvent::Fullscreen(window, fullscreen) => {
                 if world::comp::live_window_space(
-                    &_loop.inner.comp, _loop.inner.all_world_spaces(), &window,
-                ).is_some() {
+                    &_loop.inner.comp,
+                    _loop.inner.all_world_spaces(),
+                    &window,
+                )
+                .is_some()
+                {
                     world::window::interface::draw::fullscreen::fullscreen_set(
                         _loop, window, fullscreen,
                     );
@@ -188,7 +197,8 @@ pub fn drain_lifecycle(_loop: &mut Loop) {
     // enqueue. Activation may have changed the hosted world during this pass.
     let mut retained = std::collections::BTreeMap::<Uuid, Vec<WindowLifecycleEvent>>::new();
     for item in waiting {
-        let owner = item.owning_space(_loop.inner.all_world_spaces())
+        let owner = item
+            .owning_space(_loop.inner.all_world_spaces())
             .and_then(|space| space.state.elements().find(|window| item.targets(window)))
             .and_then(|window| _loop.inner.world_of_window(window))
             .unwrap_or(queue_world);
@@ -235,10 +245,17 @@ fn _apply_toplevel_drag_moves(state: &mut Loop) {
             continue;
         };
         if world::comp::live_window_space(
-            &state.inner.comp, state.inner.all_world_spaces(), &window,
-        ).is_none() { continue }
+            &state.inner.comp,
+            state.inner.all_world_spaces(),
+            &window,
+        )
+        .is_none()
+        {
+            continue;
+        }
         state
-            .inner.space_of_mut(world)
+            .inner
+            .space_of_mut(world)
             .state
             .map_element(window, location.to_i32_round(), false);
     }
@@ -255,11 +272,9 @@ fn _initial_mapped(state: &mut Loop, window: Window) {
     //
     // Space GC may not have run yet. The role, resource and committed buffer
     // must still be live too; membership alone cannot establish that.
-    let Some(owner) = world::comp::live_window_space(
-        &state.inner.comp,
-        state.inner.all_world_spaces(),
-        &window,
-    ) else {
+    let Some(owner) =
+        world::comp::live_window_space(&state.inner.comp, state.inner.all_world_spaces(), &window)
+    else {
         warn!("initial map for a window no longer live; dropping it");
         return;
     };
@@ -323,17 +338,26 @@ fn _initial_mapped(state: &mut Loop, window: Window) {
     // `is_popup_x11` declines still needs the anchor, and X11 does not require it to name
     // a parent either.
     let fallback = ident::is_ephemeral_x11(&window)
-        .then(|| state.state.xwayland.map_position_parent_hover.or(state.state.xwayland.map_position_parent_focus))
+        .then(|| {
+            state
+                .state
+                .xwayland
+                .map_position_parent_hover
+                .or(state.state.xwayland.map_position_parent_focus)
+        })
         .flatten();
-    let parented = carried.is_none().then(|| {
-        let space = &state.inner.space_state().state;
-        let (parent, offset) = protocols::window::child::child::parent_offset(
-            space.elements(),
-            &window,
-            fallback,
-        )?;
-        space.element_location(&parent).map(|at| at + offset)
-    }).flatten();
+    let parented = carried
+        .is_none()
+        .then(|| {
+            let space = &state.inner.space_state().state;
+            let (parent, offset) = protocols::window::child::child::parent_offset(
+                space.elements(),
+                &window,
+                fallback,
+            )?;
+            space.element_location(&parent).map(|at| at + offset)
+        })
+        .flatten();
 
     // Resolve one storage position for placement, rounded without a render context.
     //
@@ -377,7 +401,8 @@ fn _initial_mapped(state: &mut Loop, window: Window) {
         .state
         .map_element(window.clone(), at, false);
     // The comp registry's map edge: placement has completed, with or without a frame.
-    if let Some(handle) = dispatcher::wire::trait_::surface_event::SurfaceHandle::of_window(&window) {
+    if let Some(handle) = dispatcher::wire::trait_::surface_event::SurfaceHandle::of_window(&window)
+    {
         dispatcher::wire::trait_::wire_trait::WireTrait::surface_event(
             &mut state.inner,
             dispatcher::wire::trait_::surface_event::SurfaceEvent::Placed(handle),
@@ -399,13 +424,18 @@ fn _initial_mapped(state: &mut Loop, window: Window) {
     // Register the window in the spatial world's draw-order authority
     // (non-destructive; spawn = top of stack).
     if let Some(uuid) = window.uuid() {
-        state.inner.register_drawable(uuid, world::order::track::base::DrawLayer::CONTENT);
+        state
+            .inner
+            .register_drawable(uuid, world::order::track::base::DrawLayer::CONTENT);
     }
 
     // Focus-on-map: a managed window takes the keyboard (and the top of the
     // stack) when it first maps, without waiting for a click. An override-redirect X11
     // window is not a focus candidate.
-    if !window.x11_surface().is_some_and(|x11| x11.is_override_redirect()) {
+    if !window
+        .x11_surface()
+        .is_some_and(|x11| x11.is_override_redirect())
+    {
         activate_window(state, window.clone());
     }
 
@@ -462,13 +492,18 @@ pub fn reform_force(state: &mut Loop, window: Window, transform_update: Transfor
 // on without a cycle via the orchestration focus accessors).
 
 fn _reform(state: &mut Loop, window: Window, transform_update: TransformUpdate, force: bool) {
-    if world::comp::live_window_space(
-        &state.inner.comp, state.inner.all_world_spaces(), &window,
-    ).is_none() { return }
-    let Some(owner) = state.inner.world_of_window(&window) else { return };
+    if world::comp::live_window_space(&state.inner.comp, state.inner.all_world_spaces(), &window)
+        .is_none()
+    {
+        return;
+    }
+    let Some(owner) = state.inner.world_of_window(&window) else {
+        return;
+    };
     if let Some(position) = transform_update.position {
         state
-            .inner.space_of_mut(owner)
+            .inner
+            .space_of_mut(owner)
             .state
             .map_element(window.clone(), position, false);
     }
@@ -512,7 +547,6 @@ fn _reform(state: &mut Loop, window: Window, transform_update: TransformUpdate, 
     // A window moved/resized — refresh the capture region's tracked bbox +
     // force-render set (event-driven, mirrors the group bbox invalidation).
     recorder::interface::interface::on_window_geometry_changed(state);
-
 }
 
 // fn force_window_geometry(window: &Window, new_geom: Rectangle<i32, Logical>) {

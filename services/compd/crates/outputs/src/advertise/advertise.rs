@@ -13,10 +13,10 @@
 
 use std::os::unix::raw::dev_t;
 
-use smithay::wayland::dmabuf::DmabufFeedbackBuilder;
 use render_gles::format::answer::answer;
 use render_gles::format::registrar::registrar;
 use render_gles::format::role::role::Role;
+use smithay::wayland::dmabuf::DmabufFeedbackBuilder;
 use world::state::Loop;
 
 /// Build the `zwp_linux_dmabuf_v1` global from the format layer's answer.
@@ -26,7 +26,11 @@ use world::state::Loop;
 /// by the delay: the event loop has not started dispatching, so no client can
 /// have seen the registry yet.
 pub fn advertise_dmabuf(_loop: &mut Loop) {
-    let formats = _loop.inner.kernel.get(&render_gles::format::registrar::registrar::FORMATS).clone();
+    let formats = _loop
+        .inner
+        .kernel
+        .get(&render_gles::format::registrar::registrar::FORMATS)
+        .clone();
     // The baseline for the log below, read back from the registrar rather than
     // threaded through from `bind_display` — it is the same set, and the layer is
     // where a capability set is supposed to be looked up.
@@ -51,12 +55,21 @@ pub fn advertise_dmabuf(_loop: &mut Loop) {
             v
         };
         let offered = codes(&dma_formats);
-        let held: Vec<String> = codes(&egl_formats).into_iter().filter(|c| !offered.contains(c)).collect();
+        let held: Vec<String> = codes(&egl_formats)
+            .into_iter()
+            .filter(|c| !offered.contains(c))
+            .collect();
         info!(
             "dmabuf feedback: advertising {} pair(s) over {} fourcc(s): {} || withheld (EGL takes \
              them; the composite cannot import or cannot express them): {}",
-            dma_formats.iter().count(), offered.len(), offered.join(", "),
-            if held.is_empty() { "none".to_string() } else { held.join(", ") },
+            dma_formats.iter().count(),
+            offered.len(),
+            offered.join(", "),
+            if held.is_empty() {
+                "none".to_string()
+            } else {
+                held.join(", ")
+            },
         );
     }
 
@@ -76,7 +89,9 @@ pub fn advertise_dmabuf(_loop: &mut Loop) {
     // or a GLES route for what it cannot take; it is NOT re-widening this.
     type Dispatch = dispatcher::state::state::Dispatch;
     let handle = _loop.state.output.display_handle.clone();
-    let node = _loop.inner.kernel
+    let node = _loop
+        .inner
+        .kernel
         .get(&world::state::state::GPU_BINDING)
         .as_ref()
         .map(|b| b.borrow().primary);
@@ -87,11 +102,19 @@ pub fn advertise_dmabuf(_loop: &mut Loop) {
                 .build()
                 .unwrap_or_else(|e| abort!("Failed to build dmabuf feedback: {e:?}"));
             info!("dmabuf global v5, main_device {main_device:#x}");
-            _loop.state.dmabuf.state.create_global_with_default_feedback::<Dispatch>(&handle, &feedback)
+            _loop
+                .state
+                .dmabuf
+                .state
+                .create_global_with_default_feedback::<Dispatch>(&handle, &feedback)
         }
         None => {
             warn!("dmabuf global v3 instead of v5: the primary gpu is not set");
-            _loop.state.dmabuf.state.create_global::<Dispatch>(&handle, dma_formats)
+            _loop
+                .state
+                .dmabuf
+                .state
+                .create_global::<Dispatch>(&handle, dma_formats)
         }
     });
 }

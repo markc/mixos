@@ -1,10 +1,10 @@
-use smithay::backend::renderer::gles::GlesRenderer;
 use dispatcher::state::state::RedrawReason;
+use slots::world::frame::base::FramePlan;
+use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Physical, Size};
+use world::notify::present::base::NotifyFrame;
 use world::state::Loop;
 use world::state::state::CoordinateTrait;
-use slots::world::frame::base::FramePlan;
-use world::notify::present::base::NotifyFrame;
 
 /// What one output's systems tick produced: the active world's remaining draw
 /// plan (the pass bridges what it knows), and the kernel host's notification
@@ -57,9 +57,7 @@ pub fn hooks(state: &mut Loop, renderer: &mut GlesRenderer, size: Size<i32, Phys
             continue;
         }
         let world = state.inner.worlds.get(world_id);
-        slots::persist::flush::base::commit_world(
-            world_id, world.storage(), &world.systems,
-        );
+        slots::persist::flush::base::commit_world(world_id, world.storage(), &world.systems);
     }
 
     // DEFERRED (plan): DrawOrder GC of destroyed drawables. The proper form is
@@ -82,7 +80,11 @@ pub fn hooks(state: &mut Loop, renderer: &mut GlesRenderer, size: Size<i32, Phys
 /// does NOT tick: the lock screen shows no notifications, and not ticking the
 /// kernel host is what keeps a queued message waiting for the unlock instead of
 /// being consumed unseen.
-pub fn world_tick(state: &mut Loop, renderer: &mut GlesRenderer, size: Size<i32, Physical>) -> Ticked {
+pub fn world_tick(
+    state: &mut Loop,
+    renderer: &mut GlesRenderer,
+    size: Size<i32, Physical>,
+) -> Ticked {
     // Per-frame screen context for systems (KernelData). Background systems read
     // physical output size from here (SCREEN) — the former background.shared
     // OUTPUT_SIZE world token is gone.
@@ -91,7 +93,11 @@ pub fn world_tick(state: &mut Loop, renderer: &mut GlesRenderer, size: Size<i32,
         let output = std::sync::Arc::from(state.inner.current_output_key().as_str());
         world::smithay_glue::data::data::update_screen(
             &mut state.inner.kernel,
-            world::smithay_glue::data::data::ScreenContext { size, scale, output },
+            world::smithay_glue::data::data::ScreenContext {
+                size,
+                scale,
+                output,
+            },
         );
     }
     state.inner.pilot_tick += 1;

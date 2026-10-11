@@ -66,7 +66,11 @@ fn xdg_toplevel_maps_without_frame_and_unmaps_on_destroy() {
         h.client.state.configures >= 1,
         "the initial configure arrived"
     );
-    assert_eq!(h.service_lifecycle(), 0, "a bufferless configure needs no placement");
+    assert_eq!(
+        h.service_lifecycle(),
+        0,
+        "a bufferless configure needs no placement"
+    );
 
     h.client.attach(&surface, 64, 48);
     h.roundtrip();
@@ -263,9 +267,12 @@ fn repeated_commits_queue_one_initial_placement() {
     assert_eq!(h.service_lifecycle(), 1);
     let handle = h.handle_of(&surface);
     let before = h.record(&handle).unwrap().clone();
-    let at = h.wire.inner.space.state.element_location(
-        h.wire.inner.space.state.elements().next().unwrap(),
-    );
+    let at = h
+        .wire
+        .inner
+        .space
+        .state
+        .element_location(h.wire.inner.space.state.elements().next().unwrap());
     for _ in 0..3 {
         h.client.commit(&surface);
         h.roundtrip();
@@ -278,9 +285,14 @@ fn repeated_commits_queue_one_initial_placement() {
     assert_eq!(after.uuid(), before.uuid());
     assert_eq!(after.generation(), before.generation());
     assert_eq!(after.workspace(), before.workspace());
-    assert_eq!(h.wire.inner.space.state.element_location(
-        h.wire.inner.space.state.elements().next().unwrap(),
-    ), at);
+    assert_eq!(
+        h.wire
+            .inner
+            .space
+            .state
+            .element_location(h.wire.inner.space.state.elements().next().unwrap(),),
+        at
+    );
 }
 
 #[test]
@@ -299,7 +311,11 @@ fn destroy_before_lifecycle_does_not_resurrect_window() {
     xdg.destroy();
     h.roundtrip();
     // Retain membership deliberately: production Space GC can lag role death.
-    h.wire.inner.space.state.map_element(window.clone(), (0, 0), false);
+    h.wire
+        .inner
+        .space
+        .state
+        .map_element(window.clone(), (0, 0), false);
     assert_eq!(h.record(&handle).unwrap().role(), SurfaceRole::Dormant);
     assert_eq!(h.service_lifecycle(), 0);
     assert_eq!(h.wire.inner.pending_placements(), 0);
@@ -326,12 +342,20 @@ fn null_buffer_before_lifecycle_does_not_map_window() {
     assert_eq!(h.service_lifecycle(), 0);
     assert!(!h.record(&h.handle_of(&surface)).unwrap().mapped());
     assert_eq!(h.comp().registry.windows().count(), 0);
-    assert_eq!(h.wire.inner.pending_placements(), 1, "retain the only candidate");
+    assert_eq!(
+        h.wire.inner.pending_placements(),
+        1,
+        "retain the only candidate"
+    );
     h.client.commit(&surface);
     h.roundtrip();
     h.client.attach(&surface, 64, 48);
     h.roundtrip();
-    assert_eq!(h.wire.inner.pending_placements(), 1, "the marker prevents duplicates");
+    assert_eq!(
+        h.wire.inner.pending_placements(),
+        1,
+        "the marker prevents duplicates"
+    );
     assert_eq!(h.service_lifecycle(), 1);
     assert!(h.record(&h.handle_of(&surface)).unwrap().mapped());
     assert_eq!(h.tick_frame(), 0);

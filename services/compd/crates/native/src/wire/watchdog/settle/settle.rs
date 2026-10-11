@@ -16,12 +16,12 @@
 //! logged as a fault, not kicked forever.
 
 use protocols::redraw::schedule::schedule::Schedule;
-use world::state::Loop;
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+use world::state::Loop;
 
 /// How long a fresh activation may go without its first flip before it is
 /// kicked, and the spacing of kicks while it still has not flipped.
@@ -52,7 +52,10 @@ pub fn arm(loop_handle: &LoopHandle<'static, Loop>, schedule: &mut Schedule, key
         return;
     }
     if let Ok(mut window) = WINDOW.lock() {
-        let window = window.get_or_insert_with(|| Window { until: Instant::now(), pipes: Vec::new() });
+        let window = window.get_or_insert_with(|| Window {
+            until: Instant::now(),
+            pipes: Vec::new(),
+        });
         window.until = Instant::now() + SETTLE;
         for key in keys {
             // Registered first: a pipe the schedule does not know (a session
@@ -83,8 +86,12 @@ pub fn arm(loop_handle: &LoopHandle<'static, Loop>, schedule: &mut Schedule, key
                     window.pipes.retain(|(key, baseline)| {
                         !proven(state.state.redraw.flips(key), *baseline)
                     });
-                    let waiting: Vec<String> = window.pipes.iter().map(|(k, _)| k.clone()).collect();
-                    (verdict(waiting.is_empty(), Instant::now() >= window.until), waiting)
+                    let waiting: Vec<String> =
+                        window.pipes.iter().map(|(k, _)| k.clone()).collect();
+                    (
+                        verdict(waiting.is_empty(), Instant::now() >= window.until),
+                        waiting,
+                    )
                 }
                 // Unreadable or cleared: retire rather than pin the timer on.
                 None => (Verdict::Proven, Vec::new()),
@@ -100,7 +107,10 @@ pub fn arm(loop_handle: &LoopHandle<'static, Loop>, schedule: &mut Schedule, key
             Verdict::GaveUp => {
                 RUNNING.store(false, Ordering::Relaxed);
                 clear();
-                warn!("settle: no page flip within {:?} of activation on {:?}", SETTLE, waiting);
+                warn!(
+                    "settle: no page flip within {:?} of activation on {:?}",
+                    SETTLE, waiting
+                );
                 TimeoutAction::Drop
             }
             Verdict::Kick => {
@@ -113,7 +123,10 @@ pub fn arm(loop_handle: &LoopHandle<'static, Loop>, schedule: &mut Schedule, key
         }
     });
     match result {
-        Ok(_) => info!("settle: first-flip deadline armed ({:?}, up to {:?})", PROOF, SETTLE),
+        Ok(_) => info!(
+            "settle: first-flip deadline armed ({:?}, up to {:?})",
+            PROOF, SETTLE
+        ),
         // Not fatal: the reconcile already forced a render of the new pipe, and the
         // stall rescue (`watchdog.idle`) catches one that stays behind its epoch.
         Err(e) => {

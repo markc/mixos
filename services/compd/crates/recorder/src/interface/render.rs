@@ -22,10 +22,10 @@ use smithay::utils::{Physical, Point, Rectangle, Scale, Size, Transform};
 // compd: the parallax backdrop behind captured windows went with
 // compositor.background; a window capture is always the windows on transparent.
 use dispatcher::frame::frame::frame::SceneDispatch;
-use world::state::Loop;
-use world::state::state::CoordinateTrait;
 use graphics::capture::registry::EntryId;
 use world::capture::session::session::{CapturePhase, CaptureTarget};
+use world::state::Loop;
+use world::state::state::CoordinateTrait;
 use world::window::interface::record::window::LoopWindow;
 
 /// The per-frame "render these windows into this capture entry" job.
@@ -73,7 +73,14 @@ fn live_windows_bbox(state: &Loop) -> Option<LogicalRect> {
     for w in state.inner.space_state().state.elements() {
         let in_set = w
             .uuid()
-            .map(|id| state.inner.kernel.get(&world::driver::capture::base::CAPTURE).force_set.contains(&id))
+            .map(|id| {
+                state
+                    .inner
+                    .kernel
+                    .get(&world::driver::capture::base::CAPTURE)
+                    .force_set
+                    .contains(&id)
+            })
             .unwrap_or(false);
         if !in_set {
             continue;
@@ -91,7 +98,12 @@ fn live_windows_bbox(state: &Loop) -> Option<LogicalRect> {
 /// Build the render job for the active capture, or `None` if the current
 /// target is screen-space (uses the blit path) or there's nothing to render.
 pub fn window_render_job(state: &Loop) -> Option<WindowRenderJob> {
-    let CapturePhase::Active(a) = &state.inner.kernel.get(&world::driver::capture::base::CAPTURE).phase else {
+    let CapturePhase::Active(a) = &state
+        .inner
+        .kernel
+        .get(&world::driver::capture::base::CAPTURE)
+        .phase
+    else {
         return None;
     };
     let entry_id = a.capture.entry_id();
@@ -159,7 +171,14 @@ pub fn window_render_job(state: &Loop) -> Option<WindowRenderJob> {
             for w in state.inner.space_state().state.elements() {
                 let in_set = w
                     .uuid()
-                    .map(|id| state.inner.kernel.get(&world::driver::capture::base::CAPTURE).force_set.contains(&id))
+                    .map(|id| {
+                        state
+                            .inner
+                            .kernel
+                            .get(&world::driver::capture::base::CAPTURE)
+                            .force_set
+                            .contains(&id)
+                    })
                     .unwrap_or(false);
                 if !in_set {
                     continue;

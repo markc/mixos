@@ -1,3 +1,4 @@
+use dispatcher::state::state::Dispatch;
 use smithay::backend::input::{ButtonState, Event, InputBackend, PointerButtonEvent};
 use smithay::desktop::{Window, WindowSurfaceType, layer_map_for_output};
 use smithay::input::keyboard::KeyboardHandle;
@@ -6,12 +7,11 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{SERIAL_COUNTER, Serial};
 use smithay::wayland::shell::wlr_layer::{KeyboardInteractivity, Layer};
 use world::state::Loop;
-use dispatcher::state::state::Dispatch;
 use world::surface::interface::hit::SurfaceHit;
 // Trait import: provides `uuid()` / `is_fullscreen()` on `Window` below.
-use world::window::interface::record::window::LoopWindow;
-use protocols::window::shell::shell;
 use protocols::window::ident::ident;
+use protocols::window::shell::shell;
+use world::window::interface::record::window::LoopWindow;
 
 // This is only called on presses when there was a surface hit.
 // Currently, I cancel wayland focus on a different place. so please provide a snippet on how to invoke the de-activation.
@@ -37,7 +37,10 @@ use protocols::window::ident::ident;
 /// The `keyboard_interactivity` a mapped layer surface committed, found by locating the
 /// surface in each output's layer map. `None` (the return) means it is not a currently
 /// mapped layer surface.
-fn layer_keyboard_interactivity(_loop: &Loop, surface: &WlSurface) -> Option<KeyboardInteractivity> {
+fn layer_keyboard_interactivity(
+    _loop: &Loop,
+    surface: &WlSurface,
+) -> Option<KeyboardInteractivity> {
     for output in _loop.inner.space_state().state.outputs() {
         let map = layer_map_for_output(output);
         if let Some(ls) = map.layer_for_surface(surface, WindowSurfaceType::TOPLEVEL) {
@@ -102,8 +105,16 @@ pub fn input_received<I: InputBackend>(
     // move or resize grab, toggles maximise on a titlebar double-click, or arms a
     // caption button (`pointer::input::chrome`). After the button reached the
     // seat, so the grab replaces the implicit click grab that press opened.
-    if !grabbed && button == crate::pointer::input::chrome::BTN_LEFT && button_state == ButtonState::Pressed {
-        crate::pointer::input::chrome::press(_loop, &hit, pointer.current_location(), event.time_msec());
+    if !grabbed
+        && button == crate::pointer::input::chrome::BTN_LEFT
+        && button_state == ButtonState::Pressed
+    {
+        crate::pointer::input::chrome::press(
+            _loop,
+            &hit,
+            pointer.current_location(),
+            event.time_msec(),
+        );
     }
 
     if !grabbed {
@@ -152,7 +163,9 @@ pub fn apply_focus(
     // keep their keyboard exception, because compd refuses X popup grabs and
     // a search box in a menu would otherwise get no keys.
     if let SurfaceHit::Window { window, .. } | SurfaceHit::WindowChrome { window, .. } = hit
-        && window.x11_surface().is_some_and(|x11| x11.is_override_redirect())
+        && window
+            .x11_surface()
+            .is_some_and(|x11| x11.is_override_redirect())
     {
         return;
     }
@@ -165,7 +178,11 @@ pub fn apply_focus(
         // the window and ends by taking the toplevel's surface for KEYBOARD
         // focus, which is a property of the window, not of where the click fell.
         SurfaceHit::Window { window, .. } | SurfaceHit::WindowChrome { window, .. } => {
-            _loop.inner.space_state_mut().state.raise_element(window, true);
+            _loop
+                .inner
+                .space_state_mut()
+                .state
+                .raise_element(window, true);
             if let Some(uuid) = window.uuid() {
                 _loop.inner.raise_drawable(uuid);
             }
@@ -178,13 +195,18 @@ pub fn apply_focus(
             // A fullscreen window must stay above its peers even when another
             // window (outside its bounds) is raised.
             let fullscreen = _loop
-                .inner.space_state()
+                .inner
+                .space_state()
                 .state
                 .elements()
                 .find(|w| w.is_fullscreen() && *w != window)
                 .cloned();
             if let Some(fullscreen) = fullscreen {
-                _loop.inner.space_state_mut().state.raise_element(&fullscreen, false);
+                _loop
+                    .inner
+                    .space_state_mut()
+                    .state
+                    .raise_element(&fullscreen, false);
                 if let Some(uuid) = fullscreen.uuid() {
                     _loop.inner.raise_drawable(uuid);
                 }
@@ -228,11 +250,11 @@ pub fn apply_focus(
                 .registry
                 .as_ref()
                 .and_then(|r| r.space_of(*handle))
-                .is_some_and(|s| {
-                    matches!(s, ui::UiSpace::World)
-                });
+                .is_some_and(|s| matches!(s, ui::UiSpace::World));
             if is_world {
-                _loop.inner.raise_drawable(uuid::Uuid::from_u128(handle.0 as u128));
+                _loop
+                    .inner
+                    .raise_drawable(uuid::Uuid::from_u128(handle.0 as u128));
             }
             for window in _loop.inner.space_state().state.elements() {
                 window.set_activated(false);

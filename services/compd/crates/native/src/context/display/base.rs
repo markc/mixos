@@ -2,8 +2,8 @@
 //! active?) from a live connector scan. The kernel owns the DRM device; the rim
 //! reads only this primitive summary via the lid driver token.
 
-use kms::connector::kind::kind::{classify, ConnectorKind};
 use drivers::lid::base::DisplaySnapshot;
+use kms::connector::kind::kind::{ConnectorKind, classify};
 use smithay::backend::drm::DrmDevice;
 use smithay::reexports::drm::control::connector;
 

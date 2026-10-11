@@ -32,8 +32,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use comp_model::diff::collect_snapshot_diff;
 use comp_model::observation::{ObservationRecord, PendingPropChanges, SurfaceEdgeWindow};
 use comp_model::snapshot::{CompSnapshot, OutputSnapshot, ReadScopes, output_key};
-use policy::corner::CornerTopic;
 use dispatcher::wire::trait_::surface_event::SurfaceHandle;
+use policy::corner::CornerTopic;
 use surfaces::{SurfaceRecord, SurfaceRole};
 use world::state::Loop;
 
@@ -99,7 +99,11 @@ impl Edges {
     }
 
     /// One pass: the records owed since the last one, numbered 0.
-    pub fn pass(&mut self, lp: &Loop, identity: impl FnOnce() -> Identity) -> Vec<ObservationRecord> {
+    pub fn pass(
+        &mut self,
+        lp: &Loop,
+        identity: impl FnOnce() -> Identity,
+    ) -> Vec<ObservationRecord> {
         let mut records = Vec::new();
         // Outputs change without registry traffic (a resize, a scale): looked
         // at every pass, a few rows.
@@ -175,7 +179,11 @@ impl Edges {
                     mapped: true,
                     role: "layer",
                     foreign_id: None,
-                    window: SurfaceEdgeWindow { generation: row.generation, app_id: None, title: None },
+                    window: SurfaceEdgeWindow {
+                        generation: row.generation,
+                        app_id: None,
+                        title: None,
+                    },
                 },
             );
         }
@@ -187,7 +195,9 @@ impl Edges {
             let new_mapped = new.is_some_and(|new| new.mapped);
             let replaced = old_mapped
                 && new_mapped
-                && old.zip(new).is_some_and(|(old, new)| old.window.generation != new.window.generation);
+                && old
+                    .zip(new)
+                    .is_some_and(|(old, new)| old.window.generation != new.window.generation);
             if old_mapped == new_mapped && !replaced {
                 continue;
             }
@@ -202,9 +212,11 @@ impl Edges {
                     window: new.window.clone(),
                     event_seq: 0,
                 }),
-                (new, Some(old)) => {
-                    records.push(unmapped(id, old, new.and_then(|new| new.foreign_id.clone())))
-                }
+                (new, Some(old)) => records.push(unmapped(
+                    id,
+                    old,
+                    new.and_then(|new| new.foreign_id.clone()),
+                )),
                 (_, None) => {}
             }
         }
@@ -262,5 +274,7 @@ fn published(lp: &Loop, record: &SurfaceRecord<SurfaceHandle>) -> Published {
 fn unix_millis() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_or(0, |elapsed| i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX))
+        .map_or(0, |elapsed| {
+            i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX)
+        })
 }

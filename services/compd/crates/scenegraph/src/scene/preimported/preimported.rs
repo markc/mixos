@@ -1,6 +1,4 @@
-use smithay::backend::renderer::element::{
-    Element as SmithayElement, Id, Kind, RenderElement,
-};
+use smithay::backend::renderer::element::{Element as SmithayElement, Id, Kind, RenderElement};
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
 use smithay::backend::renderer::{Frame, Renderer, RendererSuper};
 use smithay::utils::user_data::UserDataMap;
@@ -55,9 +53,15 @@ impl<R: Renderer> SmithayElement for PreImported<R> {
     fn transform(&self) -> Transform {
         Transform::Normal
     }
-    fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
+    fn damage_since(
+        &self,
+        scale: Scale<f64>,
+        commit: Option<CommitCounter>,
+    ) -> DamageSet<i32, Physical> {
         if commit != Some(self.commit) {
-            vec![Rectangle::from_size(self.geometry(scale).size)].into_iter().collect()
+            vec![Rectangle::from_size(self.geometry(scale).size)]
+                .into_iter()
+                .collect()
         } else {
             DamageSet::default()
         }

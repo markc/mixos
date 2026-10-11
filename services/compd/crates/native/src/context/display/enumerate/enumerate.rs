@@ -4,15 +4,19 @@
 //! including connected-but-inactive ones. Probing connectors (force-probe, like
 //! every hotplug) reads their modes/EDID without modesetting the active pipe.
 
+use drivers::output::base::{DisplayInfo, ModeInfo, OutputsSnapshot};
 use kms::edid::identity::identity;
 use kms::edid::parse::parse;
 use render_gles::preference::output::profile::profile::{self, ModeRequest};
-use drivers::output::base::{DisplayInfo, ModeInfo, OutputsSnapshot};
 use smithay::backend::drm::DrmDevice;
-use smithay::reexports::drm::control::{connector, Mode as DrmMode};
+use smithay::reexports::drm::control::{Mode as DrmMode, connector};
 
 fn to_info(m: &DrmMode) -> ModeInfo {
-    ModeInfo { width: m.size().0, height: m.size().1, refresh_mhz: m.vrefresh() * 1000 }
+    ModeInfo {
+        width: m.size().0,
+        height: m.size().1,
+        refresh_mhz: m.vrefresh() * 1000,
+    }
 }
 
 /// The mode saved in preferences for the monitor keyed by `edid_key` (its per-output
@@ -24,9 +28,15 @@ fn preferred_mode(edid_key: &str) -> Option<ModeInfo> {
         .find(|p| p.identity.as_deref() == Some(edid_key))
         .and_then(|p| p.mode.as_ref())
         .and_then(|m| match m {
-            ModeRequest::Advertised { width, height, refresh_mhz } => {
-                Some(ModeInfo { width: *width, height: *height, refresh_mhz: *refresh_mhz })
-            }
+            ModeRequest::Advertised {
+                width,
+                height,
+                refresh_mhz,
+            } => Some(ModeInfo {
+                width: *width,
+                height: *height,
+                refresh_mhz: *refresh_mhz,
+            }),
             _ => None,
         })
 }
@@ -65,7 +75,10 @@ pub fn enumerate(
         let available: Vec<ModeInfo> = info.modes().iter().map(to_info).collect();
         // Each DRIVEN connector reports its own live mode; a connected-but-undriven
         // one has no "current" and the UI defaults a selection from `available`.
-        let current = lit.iter().find(|(h, _)| *h == info.handle()).map(|(_, m)| *m);
+        let current = lit
+            .iter()
+            .find(|(h, _)| *h == info.handle())
+            .map(|(_, m)| *m);
         let preferred = preferred_mode(&edid_key);
         // User enable/disable (the settings "Inactive" toggle); profile-less → enabled.
         let enabled = render_gles::preference::output::profile::profile::active(&edid_key);

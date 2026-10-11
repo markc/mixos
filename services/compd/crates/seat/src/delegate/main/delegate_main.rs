@@ -1,9 +1,9 @@
+use crate::pointer::input::touch;
 use smithay::backend::input::{
     AbsolutePositionEvent, ButtonState, InputBackend, InputEvent, KeyboardKeyEvent,
     PointerButtonEvent, Switch, SwitchState, SwitchToggleEvent,
 };
 use world::state::Loop;
-use crate::pointer::input::touch;
 
 /// Delegation of input events from the compositor seat loop
 pub fn process_input_event<I: InputBackend>(_loop: &mut Loop, event: &InputEvent<I>) {
@@ -20,9 +20,7 @@ pub fn process_input_event<I: InputBackend>(_loop: &mut Loop, event: &InputEvent
         }
     }
     // Touchpad swipe / pinch carry their own policy — delegated whole.
-    if crate::delegate::gesture::delegate_gesture::process_input_event::<I>(
-        _loop, event,
-    ) {
+    if crate::delegate::gesture::delegate_gesture::process_input_event::<I>(_loop, event) {
         return;
     }
     match event {

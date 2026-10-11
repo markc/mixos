@@ -750,10 +750,7 @@ fn run() -> Result<bool, String> {
 /// string with no `--` escape, so a value spelled `--version` must reach the
 /// parser, not this check.
 fn version_requested() -> bool {
-    matches!(
-        env::args().nth(1).as_deref(),
-        Some("--version" | "-V")
-    )
+    matches!(env::args().nth(1).as_deref(), Some("--version" | "-V"))
 }
 
 fn main() -> ExitCode {
@@ -1007,9 +1004,21 @@ mod tests {
         assert_eq!((options.width, options.height), (256, 256));
         assert!(!options.callbacks_only && !options.expect_kms);
         let options = parse(&[
-            "--frames", "10", "--burst", "3", "--size", "64x32", "--timeout-s", "5",
-            "--hold-s", "2", "--callbacks-only", "--expect-kms-refresh-ns", "16666667",
-            "--expect-output", "HDMI-A-1",
+            "--frames",
+            "10",
+            "--burst",
+            "3",
+            "--size",
+            "64x32",
+            "--timeout-s",
+            "5",
+            "--hold-s",
+            "2",
+            "--callbacks-only",
+            "--expect-kms-refresh-ns",
+            "16666667",
+            "--expect-output",
+            "HDMI-A-1",
         ])
         .unwrap();
         assert_eq!((options.frames, options.burst), (10, 3));
@@ -1164,7 +1173,9 @@ mod tests {
     #[test]
     fn feedback_is_requested_for_the_first_and_last_commit_of_a_burst() {
         assert!((0..6).all(|commit| asks_feedback(commit, 1)));
-        let asked = (0..6).filter(|commit| asks_feedback(*commit, 3)).collect::<Vec<_>>();
+        let asked = (0..6)
+            .filter(|commit| asks_feedback(*commit, 3))
+            .collect::<Vec<_>>();
         assert_eq!(asked, [0, 2, 3, 5]);
         assert!(is_last_of_burst(2, 3) && is_last_of_burst(5, 3));
         assert!(!is_last_of_burst(3, 3));

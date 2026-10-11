@@ -12,10 +12,6 @@ use dispatcher::wire::trait_::surface_event::{SurfaceEvent, SurfaceHandle};
 use dispatcher::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};
 use protocols::space::state::SpaceState;
 use protocols::window::ident::ident;
-use world::comp::CompState;
-use world::window::interface::data::data::WindowData;
-use world::window::interface::record::window::LoopWindow;
-use world::window::lifecycle::event::event::WindowLifecycleEvent;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::desktop::{Space, Window};
 use smithay::output::{Mode, Output, PhysicalProperties, Scale, Subpixel};
@@ -25,6 +21,10 @@ use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 use smithay::wayland::dmabuf::{DmabufGlobal, ImportNotifier};
 use smithay::wayland::shell::xdg::ToplevelSurface;
 use smithay::xwayland::X11Surface;
+use world::comp::CompState;
+use world::window::interface::data::data::WindowData;
+use world::window::interface::record::window::LoopWindow;
+use world::window::lifecycle::event::event::WindowLifecycleEvent;
 
 /// The fake output's mode.
 pub const OUTPUT_SIZE: (i32, i32) = (1920, 1080);
@@ -104,12 +104,8 @@ impl TestHost {
         let mut waiting = Vec::new();
         let queue_world = self.active_world;
         for event in std::mem::take(&mut self.lifecycle[queue_world]) {
-            if event.defer_for_placement(
-                &self.comp,
-                self.all_world_spaces(),
-                &self.space,
-                &waiting,
-            ) {
+            if event.defer_for_placement(&self.comp, self.all_world_spaces(), &self.space, &waiting)
+            {
                 waiting.push(event);
                 continue;
             }
@@ -166,17 +162,29 @@ impl TestHost {
                         .push((window.uuid().unwrap(), "activated"));
                 }
                 WindowLifecycleEvent::Fullscreen(window, fullscreen) => {
-                    if let Some(owner) = world::comp::live_window_space(
-                        &self.comp, self.all_world_spaces(), &window,
-                    ) {
+                    if let Some(owner) =
+                        world::comp::live_window_space(&self.comp, self.all_world_spaces(), &window)
+                    {
                         let hosted = std::ptr::eq(owner, &self.space);
-                        let target = owner.state.outputs_for_element(&window).into_iter().next()
+                        let target = owner
+                            .state
+                            .outputs_for_element(&window)
+                            .into_iter()
+                            .next()
                             .or_else(|| owner.state.outputs().next().cloned())
                             .and_then(|output| owner.state.output_geometry(&output))
                             .map(|geometry| (geometry.loc, geometry.size));
-                        let space = if hosted { &mut self.space } else { &mut self.other_space };
+                        let space = if hosted {
+                            &mut self.space
+                        } else {
+                            &mut self.other_space
+                        };
                         world::window::interface::draw::fullscreen::fullscreen_set_in_space(
-                            &mut space.state, &window, fullscreen, target, hosted,
+                            &mut space.state,
+                            &window,
+                            fullscreen,
+                            target,
+                            hosted,
                         );
                         self.serviced_lifecycle
                             .push((window.uuid().unwrap(), "fullscreen"));
@@ -193,12 +201,16 @@ impl TestHost {
         // the hosted world while this queue was being drained.
         let mut retained: [Vec<WindowLifecycleEvent>; 2] = std::array::from_fn(|_| Vec::new());
         for event in waiting {
-            let owner = event.owning_space(self.all_world_spaces())
-                .map(|space| if std::ptr::eq(space, &self.space) {
-                    self.active_world
-                } else {
-                    self.active_world ^ 1
-                }).unwrap_or(queue_world);
+            let owner = event
+                .owning_space(self.all_world_spaces())
+                .map(|space| {
+                    if std::ptr::eq(space, &self.space) {
+                        self.active_world
+                    } else {
+                        self.active_world ^ 1
+                    }
+                })
+                .unwrap_or(queue_world);
             retained[owner].push(event);
         }
         for (owner, mut events) in retained.into_iter().enumerate() {
@@ -210,8 +222,13 @@ impl TestHost {
 
     /// Use the production routing rule for every lifecycle producer.
     pub fn enqueue_lifecycle(&mut self, event: WindowLifecycleEvent) {
-        let owner = event.pending_queue(self.lifecycle.iter().enumerate()
-            .map(|(owner, events)| (owner, events.as_slice())))
+        let owner = event
+            .pending_queue(
+                self.lifecycle
+                    .iter()
+                    .enumerate()
+                    .map(|(owner, events)| (owner, events.as_slice())),
+            )
             .unwrap_or(self.active_world);
         self.lifecycle[owner].push(event);
     }
@@ -225,7 +242,8 @@ impl TestHost {
     fn remove_drawable(&mut self, uuid: uuid::Uuid) {
         // Teardown can follow an activation, and Space unmap can precede both.
         world::order::track::base::DrawOrder::remove_from_all(
-            world::order::track::base::ComponentId(uuid), &mut self.draw_orders,
+            world::order::track::base::ComponentId(uuid),
+            &mut self.draw_orders,
         );
     }
 
@@ -325,11 +343,15 @@ impl WireTrait for TestHost {
         if let Some((world, window, _)) = self.withdrawn_x11.get(&surface.window_id()) {
             return Some((*world, window.clone()));
         }
-        [(&self.space, self.active_world), (&self.other_space, self.active_world ^ 1)]
-            .into_iter().find_map(|(space, owner)| {
-                protocols::window::find::find::by_x11(space.state.elements(), surface)
-                    .map(|window| (self.world_ids[owner], window))
-            })
+        [
+            (&self.space, self.active_world),
+            (&self.other_space, self.active_world ^ 1),
+        ]
+        .into_iter()
+        .find_map(|(space, owner)| {
+            protocols::window::find::find::by_x11(space.state.elements(), surface)
+                .map(|window| (self.world_ids[owner], window))
+        })
     }
     fn space_of_world_mut(&mut self, world: uuid::Uuid) -> &mut SpaceState {
         assert!(self.world_ids.contains(&world));
@@ -346,9 +368,14 @@ impl WireTrait for TestHost {
     }
     fn withdraw_x11(&mut self, world: uuid::Uuid, window: Window) {
         let Some(uuid) = window.uuid() else { return };
-        let at = self.space_of_world_mut(world).state.element_location(&window).unwrap_or_default();
+        let at = self
+            .space_of_world_mut(world)
+            .state
+            .element_location(&window)
+            .unwrap_or_default();
         if let Some(surface) = window.x11_surface() {
-            self.withdrawn_x11.insert(surface.window_id(), (world, window.clone(), at));
+            self.withdrawn_x11
+                .insert(surface.window_id(), (world, window.clone(), at));
         }
         self.space_of_world_mut(world).state.unmap_elem(&window);
         self.remove_drawable(uuid);
@@ -356,14 +383,21 @@ impl WireTrait for TestHost {
     }
     fn readmit_x11(&mut self, window: Window) {
         let Some(uuid) = window.uuid() else { return };
-        let Some(surface) = window.x11_surface() else { return };
+        let Some(surface) = window.x11_surface() else {
+            return;
+        };
         let xid = surface.window_id();
         let override_redirect = surface.is_override_redirect();
         let names = SurfaceEvent::x11_names(surface);
         let pid = ident::pid(&window, &self.display_handle);
-        let Some((world, _, at)) = self.withdrawn_x11.remove(&xid) else { return };
-        self.space_of_world_mut(world).state.map_element(window, at, false);
-        self.comp.readmit(SurfaceHandle::X11(xid), override_redirect, uuid, pid);
+        let Some((world, _, at)) = self.withdrawn_x11.remove(&xid) else {
+            return;
+        };
+        self.space_of_world_mut(world)
+            .state
+            .map_element(window, at, false);
+        self.comp
+            .readmit(SurfaceHandle::X11(xid), override_redirect, uuid, pid);
         self.comp.apply(names);
         let owner = self.world_ids.iter().position(|id| *id == world).unwrap();
         self.draw_orders[owner].raise(world::order::track::base::ComponentId(uuid));

@@ -2,10 +2,10 @@
 //! each layer's `wl_surface` + physical placement; the backend builds the
 //! `WaylandSurfaceRenderElement`s at lowering time. No renderer here.
 
-use smithay::desktop::{layer_map_for_output, PopupManager};
+use scenegraph::node::node::SurfaceNode;
+use smithay::desktop::{PopupManager, layer_map_for_output};
 use smithay::utils::{Physical, Size};
 use smithay::wayland::shell::wlr_layer::Layer;
-use scenegraph::node::node::SurfaceNode;
 use world::state::Loop;
 
 /// Each node carries its wlr `Layer` so the caller can slot it into the matching
@@ -64,7 +64,10 @@ pub fn layershell(
                     band,
                     SurfaceNode {
                         surface: popup.wl_surface().clone(),
-                        location: (geo.loc + offset).to_f64().to_physical(scale).to_i32_round(),
+                        location: (geo.loc + offset)
+                            .to_f64()
+                            .to_physical(scale)
+                            .to_i32_round(),
                         scale,
                         alpha: 1.0,
                     },
