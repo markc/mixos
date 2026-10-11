@@ -7,25 +7,24 @@
 //! menus).
 
 use egui::KeyboardShortcut;
-use toolkit::{Command, Icon, Registry};
+use toolkit::{Command, Registry};
 
 use crate::app::{App, Dialog};
 use crate::keymap::Keymap;
 
-/// `(id, label, menu, group, icon)` for every action, in menu order.
+/// `(id, label, menu, group)` for every action, in menu order.
 type Row = (
     &'static str,
     &'static str,
     Option<&'static str>,
     u8,
-    Option<Icon>,
 );
 
 macro_rules! actions {
-    ($r:ident, $k:ident, $used:ident; $( $id:literal, $label:literal, $menu:expr, $group:literal, $icon:expr; )*) => {
+    ($r:ident, $k:ident, $used:ident; $( $id:literal, $label:literal, $menu:expr, $group:literal; )*) => {
         $(
             {
-                let row: Row = ($id, $label, $menu, $group, $icon);
+                let row: Row = ($id, $label, $menu, $group);
                 let command = Command {
                     id: row.0,
                     label: row.1,
@@ -33,7 +32,7 @@ macro_rules! actions {
                     submenu: None,
                     group: row.3,
                     shortcut: first_free($k, $id, &mut $used),
-                    icon: row.4,
+                    icon: None,
                     enabled: |a: &App| a.enabled($id),
                     run: |a: &mut App| a.action($id),
                 };
@@ -116,37 +115,37 @@ pub fn registry(keymap: &Keymap) -> Registry<App> {
     let view = Some("view");
     let go = Some("go");
     actions! { r, k, used;
-        "file.open", "file-open", file, 0, Some(Icon::ExternalLink);
-        "file.new-folder", "file-new-folder", file, 0, Some(Icon::FolderPlus);
-        "file.rename", "file-rename", file, 1, Some(Icon::Pencil);
-        "file.copy-other-pane", "file-copy", file, 1, Some(Icon::Copy);
-        "file.move-other-pane", "file-move", file, 1, Some(Icon::FolderInput);
-        "file.delete", "file-delete", file, 2, Some(Icon::Trash);
-        "app.quit", "quit", file, 3, None;
-        "view.toggle-places", "view-places", view, 0, Some(Icon::PanelLeft);
-        "view.toggle-properties", "view-properties", view, 0, Some(Icon::PanelRight);
-        "view.toggle-hidden", "view-hidden", view, 1, Some(Icon::Eye);
-        "view.refresh", "view-refresh", view, 1, Some(Icon::RefreshCw);
-        "view.sort-name", "view-sort-name", view, 2, None;
-        "view.sort-size", "view-sort-size", view, 2, None;
-        "view.sort-modified", "view-sort-modified", view, 2, None;
-        "nav.back", "go-back", go, 0, Some(Icon::ArrowLeft);
-        "nav.forward", "go-forward", go, 0, Some(Icon::ArrowRight);
-        "nav.parent", "go-parent", go, 0, Some(Icon::ArrowUp);
-        "nav.home", "go-home", go, 0, Some(Icon::House);
-        "location.focus", "go-location", go, 1, None;
-        "nav.switch-pane", "go-switch-pane", go, 1, None;
-        "selection.next", "select-next", None, 0, None;
-        "selection.previous", "select-previous", None, 0, None;
-        "selection.first", "select-first", None, 0, None;
-        "selection.last", "select-last", None, 0, None;
-        "theme.mode-toggle", "theme-mode-toggle", None, 0, None;
-        "theme.scheme-ocean", "theme-ocean", None, 0, None;
-        "theme.scheme-crimson", "theme-crimson", None, 0, None;
-        "theme.scheme-stone", "theme-stone", None, 0, None;
-        "theme.scheme-forest", "theme-forest", None, 0, None;
-        "theme.scheme-sunset", "theme-sunset", None, 0, None;
-        "theme.scheme-mono", "theme-mono", None, 0, None;
+        "file.open", "file-open", file, 0;
+        "file.new-folder", "file-new-folder", file, 0;
+        "file.rename", "file-rename", file, 1;
+        "file.copy-other-pane", "file-copy", file, 1;
+        "file.move-other-pane", "file-move", file, 1;
+        "file.delete", "file-delete", file, 2;
+        "app.quit", "quit", file, 3;
+        "view.toggle-places", "view-places", view, 0;
+        "view.toggle-properties", "view-properties", view, 0;
+        "view.toggle-hidden", "view-hidden", view, 1;
+        "view.refresh", "view-refresh", view, 1;
+        "view.sort-name", "view-sort-name", view, 2;
+        "view.sort-size", "view-sort-size", view, 2;
+        "view.sort-modified", "view-sort-modified", view, 2;
+        "nav.back", "go-back", go, 0;
+        "nav.forward", "go-forward", go, 0;
+        "nav.parent", "go-parent", go, 0;
+        "nav.home", "go-home", go, 0;
+        "location.focus", "go-location", go, 1;
+        "nav.switch-pane", "go-switch-pane", go, 1;
+        "selection.next", "select-next", None, 0;
+        "selection.previous", "select-previous", None, 0;
+        "selection.first", "select-first", None, 0;
+        "selection.last", "select-last", None, 0;
+        "theme.mode-toggle", "theme-mode-toggle", None, 0;
+        "theme.scheme-ocean", "theme-ocean", None, 0;
+        "theme.scheme-crimson", "theme-crimson", None, 0;
+        "theme.scheme-stone", "theme-stone", None, 0;
+        "theme.scheme-forest", "theme-forest", None, 0;
+        "theme.scheme-sunset", "theme-sunset", None, 0;
+        "theme.scheme-mono", "theme-mono", None, 0;
     }
     aliases(&mut r, keymap, &mut used);
     // View › Theme: any scheme, style, mode and framing, in this window only.
@@ -159,7 +158,7 @@ pub fn registry(keymap: &Keymap) -> Registry<App> {
         group: 0,
         shortcut: Some(KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::F1))
             .filter(|s| !used.contains(s)),
-        icon: Some(Icon::Keyboard),
+        icon: None,
         enabled: |a: &App| a.dialog.is_none(),
         run: |a: &mut App| a.open(Dialog::Shortcuts),
     })
@@ -170,7 +169,7 @@ pub fn registry(keymap: &Keymap) -> Registry<App> {
         submenu: None,
         group: 1,
         shortcut: None,
-        icon: Some(Icon::Info),
+        icon: None,
         enabled: |a: &App| a.dialog.is_none(),
         run: |a: &mut App| a.open(Dialog::About),
     });

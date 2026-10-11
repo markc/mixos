@@ -3,15 +3,16 @@
 //! person did as [`UiEvent`]s; [`apply`] runs them after the frame, so
 //! drawing never changes state.
 //!
-//! The window, top to bottom: the toolkit title bar with the menus, the
-//! toolbar (Places and Properties toggles at the ends, navigation and file
-//! commands between), the body, and the status bar. The body is the Places
-//! sidebar, the two panes with a divider between them, and the Properties
-//! sidebar. Each pane has its location bar (click to edit), the column
+//! The window, top to bottom: the toolkit title bar with the menus (every
+//! action is there, with its shortcut), the body, and the status bar. The
+//! body is the Places sidebar, the two panes with a divider between them,
+//! and the Properties sidebar. Each sidebar has its toggle and title on its
+//! top row; a closed one leaves a slim strip with the toggle. Each pane has its location bar (click to edit), the column
 //! headers (click to sort), the file list and a summary footer.
 //!
 //! The file list is virtualised: only the rows on screen are laid out.
-//! Rows are a tree (a chevron or a double-click opens a folder in place).
+//! Rows are a tree: a chevron or a double-click opens or closes a folder
+//! in place; a double-click on a file opens it.
 //! Dragging rows onto a folder (or the background) of the other pane asks
 //! Move, Copy or Cancel.
 
@@ -35,7 +36,7 @@ use crate::{label, label_with};
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiEvent {
     Command(&'static str),
-    /// A toolbar or context-menu action on a pane (it activates first).
+    /// A context-menu action on a pane (it activates first).
     CommandIn(&'static str, PaneId),
     Activate(PaneId),
     Click {
@@ -118,7 +119,6 @@ pub fn view(
         strings,
     );
     events.extend(fired.into_iter().map(UiEvent::Command));
-    toolbar(ui, app, commands, strings, &mut events);
     bars::status(ui, |ui| {
         ui.small(app.info());
     });
@@ -129,7 +129,10 @@ pub fn view(
             .resizable(true)
             .default_size(total * places.width)
             .frame(bars::dock_frame(ui.ctx()))
-            .show(ui, |ui| places_panel(ui, app, stroke, &mut events));
+            .show(ui, |ui| {
+                panel_header(ui, app, commands, strings, Side::Left, &mut events);
+                places_panel(ui, app, stroke, &mut events);
+            });
         sidebar_width(
             Sidebar::Places,
             shown.response.rect.width(),
@@ -137,6 +140,8 @@ pub fn view(
             places.width,
             &mut events,
         );
+    } else {
+        collapsed(ui, app, commands, strings, Side::Left, &mut events);
     }
     let properties = app.core.sidebar(Sidebar::Properties);
     if properties.open {
@@ -144,7 +149,10 @@ pub fn view(
             .resizable(true)
             .default_size(total * properties.width)
             .frame(bars::dock_frame(ui.ctx()))
-            .show(ui, |ui| properties_panel(ui, app));
+            .show(ui, |ui| {
+                panel_header(ui, app, commands, strings, Side::Right, &mut events);
+                properties_panel(ui, app);
+            });
         sidebar_width(
             Sidebar::Properties,
             shown.response.rect.width(),
@@ -152,6 +160,8 @@ pub fn view(
             properties.width,
             &mut events,
         );
+    } else {
+        collapsed(ui, app, commands, strings, Side::Right, &mut events);
     }
     egui::CentralPanel::default()
         .frame(bars::dock_frame(ui.ctx()))
@@ -171,92 +181,103 @@ fn sidebar_width(sidebar: Sidebar, width: f32, total: f32, known: f32, events: &
     }
 }
 
-/// An icon button for command `id`, acting on the active pane.
-fn command_button(
-    ui: &mut Ui,
-    app: &App,
-    commands: &Registry<App>,
-    strings: &Strings,
-    id: &'static str,
-    selected: bool,
-    events: &mut Vec<UiEvent>,
-) {
-    let Some(command) = commands.get(id) else {
-        return;
-    };
-    let icon = command.icon.unwrap_or(Icon::Square);
-    let tip = tooltip::for_command(ui.ctx(), command, strings);
-    let button = IconButton::new(icon).selected(selected).tooltip(tip);
-    if ui.add_enabled((command.enabled)(app), button).clicked() {
-        events.push(UiEvent::Command(id));
+/// Which sidebar.
+#[derive(Clone, Copy, PartialEq)]
+enum Side {
+    Left,
+    Right,
+}
+
+impl Side {
+    fn command(self) -> &'static str {
+        match self {
+            Side::Left => "view.toggle-places",
+            Side::Right => "view.toggle-properties",
+        }
+    }
+
+    fn icon(self) -> Icon {
+        match self {
+            Side::Left => Icon::PanelLeft,
+            Side::Right => Icon::PanelRight,
+        }
+    }
+
+    fn title(self) -> String {
+        label(match self {
+            Side::Left => "places",
+            Side::Right => "properties",
+        })
     }
 }
 
-fn toolbar(
+/// A sidebar's toggle button; its tooltip names it with its shortcut.
+fn toggle_button(
     ui: &mut Ui,
     app: &App,
     commands: &Registry<App>,
     strings: &Strings,
+    side: Side,
     events: &mut Vec<UiEvent>,
 ) {
-    bars::options(ui, |ui| {
-        let on = |id| app.checked(id) == Some(true);
-        command_button(
-            ui,
-            app,
-            commands,
-            strings,
-            "view.toggle-places",
-            on("view.toggle-places"),
-            events,
-        );
-        bars::divider(ui, bars::DIVIDER_HEIGHT);
-        for id in [
-            "nav.back",
-            "nav.forward",
-            "nav.parent",
-            "nav.home",
-            "view.refresh",
-        ] {
-            command_button(ui, app, commands, strings, id, false, events);
-        }
-        bars::divider(ui, bars::DIVIDER_HEIGHT);
-        for id in [
-            "file.open",
-            "file.new-folder",
-            "file.rename",
-            "file.copy-other-pane",
-            "file.move-other-pane",
-            "file.delete",
-        ] {
-            command_button(ui, app, commands, strings, id, false, events);
-        }
-        bars::divider(ui, bars::DIVIDER_HEIGHT);
-        command_button(
-            ui,
-            app,
-            commands,
-            strings,
-            "view.toggle-hidden",
-            on("view.toggle-hidden"),
-            events,
-        );
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            command_button(
-                ui,
-                app,
-                commands,
-                strings,
-                "view.toggle-properties",
-                on("view.toggle-properties"),
-                events,
-            );
-        });
+    let Some(command) = commands.get(side.command()) else {
+        return;
+    };
+    let tip = tooltip::for_command(ui.ctx(), command, strings);
+    let open = app.checked(side.command()) == Some(true);
+    let button = IconButton::new(side.icon()).selected(open).tooltip(tip);
+    if ui.add_enabled((command.enabled)(app), button).clicked() {
+        events.push(UiEvent::Command(command.id));
+    }
+}
+
+/// An open sidebar's top row: its toggle on the window's edge, then its
+/// title.
+fn panel_header(
+    ui: &mut Ui,
+    app: &App,
+    commands: &Registry<App>,
+    strings: &Strings,
+    side: Side,
+    events: &mut Vec<UiEvent>,
+) {
+    let layout = match side {
+        Side::Left => Layout::left_to_right(Align::Center),
+        Side::Right => Layout::right_to_left(Align::Center),
+    };
+    let height = toolkit::button::ICON_BUTTON;
+    ui.allocate_ui_with_layout(vec2(ui.available_width(), height), layout, |ui| {
+        toggle_button(ui, app, commands, strings, side, events);
+        ui.label(RichText::new(side.title()).strong());
     });
+    ui.add_space(4.0);
+}
+
+/// A closed sidebar: a slim strip that keeps its toggle.
+fn collapsed(
+    ui: &mut Ui,
+    app: &App,
+    commands: &Registry<App>,
+    strings: &Strings,
+    side: Side,
+    events: &mut Vec<UiEvent>,
+) {
+    let panel = match side {
+        Side::Left => egui::Panel::left("places-closed"),
+        Side::Right => egui::Panel::right("properties-closed"),
+    };
+    panel
+        .exact_size(toolkit::button::ICON_BUTTON + 8.0)
+        .resizable(false)
+        .frame(bars::dock_frame(ui.ctx()))
+        .show(ui, |ui| {
+            ui.vertical_centered(|ui| {
+                toggle_button(ui, app, commands, strings, side, events);
+            });
+        });
 }
 
 fn places_panel(ui: &mut Ui, app: &App, stroke: f32, events: &mut Vec<UiEvent>) {
-    toolkit::panel::section_label(ui, &label("places"));
     let active = &app.core.pane(app.core.active()).path;
     let font = TextStyle::Body.resolve(ui.style());
     ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
@@ -282,7 +303,6 @@ fn places_panel(ui: &mut Ui, app: &App, stroke: f32, events: &mut Vec<UiEvent>) 
 }
 
 fn properties_panel(ui: &mut Ui, app: &App) {
-    toolkit::panel::section_label(ui, &label("properties"));
     let field = |ui: &mut Ui, key: &str, value: &str| {
         ui.label(RichText::new(label(key)).small().weak());
         ui.add(egui::Label::new(value).wrap());
@@ -416,7 +436,15 @@ fn pane_view(
     let row_h = (ui.text_style_height(&TextStyle::Body) + 6.0).round();
     let footer_h = ui.text_style_height(&TextStyle::Small) + 6.0;
     let list_h = (ui.available_height() - footer_h).max(row_h);
-    let list = ui.allocate_ui(vec2(width, list_h), |ui| {
+    // The pane's background, registered before the rows so they sit on top
+    // of it: a click on the empty part activates the pane, a drop there
+    // lands in its folder, and its context menu offers the pane's commands.
+    let background = ui.interact(
+        Rect::from_min_size(ui.cursor().min, vec2(width, list_h)),
+        Id::new(("pane-background", pane.index())),
+        Sense::click(),
+    );
+    ui.allocate_ui(vec2(width, list_h), |ui| {
         ScrollArea::vertical()
             .id_salt(("rows", pane.index()))
             .auto_shrink(false)
@@ -436,13 +464,6 @@ fn pane_view(
                 }
             });
     });
-    // The pane's background: a click activates the pane, a drop lands in
-    // its folder, and its context menu offers the pane's commands.
-    let background = ui.interact(
-        list.response.rect,
-        Id::new(("pane-background", pane.index())),
-        Sense::click(),
-    );
     if background.clicked() {
         events.push(UiEvent::Activate(pane));
     }
@@ -473,7 +494,16 @@ fn location_bar(ui: &mut Ui, app: &App, pane: PaneId, active: bool, events: &mut
                         .desired_width(ui.available_width() - 6.0);
                     let response = ui.add(field);
                     if app.focus_location {
+                        // The whole path selected, so typing replaces it.
                         response.request_focus();
+                        if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), response.id) {
+                            let all = egui::text::CCursorRange::two(
+                                egui::text::CCursor::new(0),
+                                egui::text::CCursor::new(text.chars().count()),
+                            );
+                            state.cursor.set_char_range(Some(all));
+                            state.store(ui.ctx(), response.id);
+                        }
                         events.push(UiEvent::LocationFocused);
                     }
                     if response.changed() {
@@ -753,12 +783,14 @@ fn row(
         );
     }
     // Interaction: click selects (Ctrl toggles, Shift extends); a
-    // double-click on a folder opens it in place.
+    // double-click opens a file, and opens or closes a folder in place.
     let modifiers = ui.input(|i| i.modifiers);
-    if response.double_clicked() && entry.is_dir {
-        events.push(UiEvent::Toggle {
-            pane,
-            path: entry.path.clone(),
+    if response.double_clicked() {
+        let path = entry.path.clone();
+        events.push(if entry.is_dir {
+            UiEvent::Toggle { pane, path }
+        } else {
+            UiEvent::OpenFile { pane, path }
         });
     } else if response.clicked() {
         events.push(UiEvent::Click {
@@ -1045,6 +1077,10 @@ pub fn apply(app: &mut App, commands: &Registry<App>, events: Vec<UiEvent>) {
                     app.core.set_active_pane(pane);
                     app.core.toggle_expand(pane, &path);
                 }
+            }
+            UiEvent::OpenFile { pane, path } => {
+                app.click_row(pane, path, false, false);
+                app.action_in("file.open", pane);
             }
             UiEvent::Sort { pane, column } => app.sort(pane, column),
             UiEvent::EditLocation(pane) => app.edit_location(pane),
