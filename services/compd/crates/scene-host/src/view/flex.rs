@@ -558,8 +558,10 @@ impl<'a> Builder<'a> {
                 cell_style.flex_shrink = 1.0;
                 cell_style.min_size.width = lpa(0.0);
                 let mut inner_style = self.tree.style(content).ok()?.clone();
-                inner_style.min_size.width = lpa(0.0);
-                self.tree.set_style(content, inner_style).ok()?;
+                if inner_style.min_size.width.is_auto() {
+                    inner_style.min_size.width = lpa(0.0);
+                    self.tree.set_style(content, inner_style).ok()?;
+                }
             } else {
                 cell_style.size.height = len(row_height);
             }
