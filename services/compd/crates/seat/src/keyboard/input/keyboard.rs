@@ -286,7 +286,14 @@ pub fn input_received<I: InputBackend>(event: &I::KeyboardKeyEvent, _loop: &mut 
         return;
     }
 
-    if should_forward::<I>(_loop, keysym, shortcut_sym, key_state, &modifiers) {
+    if should_forward::<I>(
+        _loop,
+        key_code.raw(),
+        keysym,
+        shortcut_sym,
+        key_state,
+        &modifiers,
+    ) {
         keyboard.input_forward(
             &mut _loop.state,
             key_code,
@@ -329,7 +336,7 @@ pub fn inject_key(_loop: &mut Loop, key_code: Keycode, pressed: bool, time: u32)
         .as_ref()
         .is_some_and(|r| r.keyboard_focus().is_some());
     if ui_focused {
-        ui_handle(_loop, keysym, key_state);
+        ui_handle(_loop, key_code.raw(), keysym, key_state);
     } else {
         keyboard.input_forward(
             &mut _loop.state,
@@ -348,6 +355,7 @@ pub fn inject_key(_loop: &mut Loop, key_code: Keycode, pressed: bool, time: u32)
 /// (`false`). Mirrors the pre-P2 in-callback `FilterResult` decision exactly.
 fn should_forward<I: InputBackend>(
     _loop: &mut Loop,
+    key_code: u32,
     keysym: Keysym,
     shortcut_sym: Keysym,
     key_state: KeyState,
@@ -373,7 +381,7 @@ fn should_forward<I: InputBackend>(
     // way out of a bad (black) mode is to wait for the auto-revert timeout.
     if is_dark(_loop) {
         if output_provisioning(_loop) {
-            if let Some(result) = ui_handle(_loop, keysym, key_state) {
+            if let Some(result) = ui_handle(_loop, key_code, keysym, key_state) {
                 return !result;
             }
         }
@@ -401,13 +409,13 @@ fn should_forward<I: InputBackend>(
             .registry
             .as_ref()
             .is_some_and(|r| r.keyboard_focus().is_some());
-    if ui_holds && let Some(result) = ui_handle(_loop, keysym, key_state) {
+    if ui_holds && let Some(result) = ui_handle(_loop, key_code, keysym, key_state) {
         return !result;
     }
     if let Some(result) = wayland_handle(_loop) {
         return !result;
     }
-    if let Some(result) = ui_handle(_loop, keysym, key_state) {
+    if let Some(result) = ui_handle(_loop, key_code, keysym, key_state) {
         return !result;
     }
     true
@@ -479,7 +487,7 @@ fn wayland_handle(state: &mut Loop) -> Option<bool> {
     None
 }
 
-fn ui_handle(state: &mut Loop, keysym: Keysym, key_state: KeyState) -> Option<bool> {
+fn ui_handle(state: &mut Loop, key_code: u32, keysym: Keysym, key_state: KeyState) -> Option<bool> {
     // This was moved before wayland. It shouldn't matter unless the prior screen space logic is being used.
     if let Some(registry) = state.inner.surface_mut().registry.as_mut() {
         let keysym_raw = keysym.raw();
@@ -495,8 +503,13 @@ fn ui_handle(state: &mut Loop, keysym: Keysym, key_state: KeyState) -> Option<bo
         // Non-modifier key: route to the focused UI. Its modifier state already
         // travelled through `modifier_changed`.
         if let Some(focused) = registry.keyboard_focus() {
-            let input =
-                ui::registry::translate_keyboard(keysym_raw, utf8.as_deref(), key_state, false);
+            let input = ui::registry::translate_keyboard(
+                key_code,
+                keysym_raw,
+                utf8.as_deref(),
+                key_state,
+                false,
+            );
             let _ = registry.dispatch_input(focused, input);
             return Some(true);
         }

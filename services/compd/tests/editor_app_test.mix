@@ -1,0 +1,87 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Real loader reducer + shipped planner, with explicit injected boundary I/O.
+$root=dirname(dirname(dirname(dirname(realpath($0)))))
+$loader=require("../scripts/lib/scenes.mix")
+$app=require("../scripts/lib/editor_app.mix")
+$templates=$root .. "/share/scenes"
+$tmp="/tmp/editor-app-" .. uuid()
+mkdir($tmp)
+fn check($condition,$message)
+  if not $condition then raise("EDITOR_APP_TEST",$message) end
+end
+fn rpc($target,$verb,$args)
+  if $target=="scenes" then raise("SELF_RPC","recursive loader RPC") end
+  if $verb=="shell.scenes.list" then return [] end
+  if $verb=="shell.props.get" then return {panels:{bottom:{mode:"docked",width_px:40,pages:[],declared:[]}}} end
+  if $verb=="shell.scene.validate" then return {valid:true} end
+  if $verb=="apps.launch" then return {launched:true,args:$args} end
+  if $verb=="scene-editor.show" then return {shown:true,args:$args} end
+  if $verb=="scene-editor.quit" then return {quitting:true} end
+  raise("SCENES_UPSTREAM","injected host refusal",{upstream:{error_code:"HOST_REFUSED",message:"test host refused"}})
+end
+fn parsed($path,$opts) return {ok:true,problems:[]} end
+fn notify($body) return true end
+fn stop($pid,$tag) return true end
+fn launch($dir,$name,$generation,$host,$me) raise("UNEXPECTED_LAUNCH","disabled installation must not start") end
+$io={rpc:fn($t,$v,$a)=rpc($t,$v,$a),check:fn($p,$o)=parsed($p,$o),notify:fn($b)=notify($b),stop:fn($p,$t)=stop($p,$t),launch:fn($d,$n,$g,$h,$m)=launch($d,$n,$g,$h,$m)}
+try
+  $s=$loader.initial($tmp,$templates,"shell","scenes",$io)
+  $s=$loader.rescan($s,false)
+  $s=$app.request($s,"snapshot",{},$loader)
+  check($s.rc==0 and $s.response.schema=="scene-editor.snapshot.v1" and len($s.response.state_token)==64,"versioned native snapshot")
+  $token=$s.response.state_token
+  $selection={view:"gallery",template:"notes",scene:nil,page:nil}
+  $s=$app.request($s,"action",{action:"install",selection:$selection,state_token:$token},$loader)
+  check($s.rc==0 and is_file($tmp .. "/notes/scene.mix") and not $s.scenes.notes.enabled,"install executes the real reducer without self RPC")
+  check($s.response.selection.scene=="notes","completion includes updated selection")
+  $installed_token=$s.response.state_token
+  $s=$app.request($s,"action",{action:"install",selection:$selection,state_token:$token},$loader)
+  check($s.rc==10 and $s.response.failure.code=="SCENES_STALE" and not is_dir($tmp .. "/notes-2"),"stale retry refuses before mutation")
+  $selection={view:"installed",template:nil,scene:"notes",page:nil}
+  $s=$app.request($s,"action",{action:"remove",selection:$selection,state_token:$installed_token},$loader)
+  check($s.rc==10 and $s.response.error_code=="SCENES_CONFIRM" and is_dir($tmp .. "/notes"),"removal requires explicit confirmation")
+  $s=$app.request($s,"action",{action:"mode",edge:"bottom",mode:"pinned",selection:$selection,state_token:$installed_token},$loader)
+  check($s.rc==10 and $s.response.failure.code=="HOST_REFUSED" and is_dir($tmp .. "/notes"),"upstream refusal remains a refusal with authoritative snapshot")
+  write_file($tmp .. "/notes/scene.mix",read_file($tmp .. "/notes/scene.mix") .. "\n-- externally saved after snapshot\n")
+  $s=$app.request($s,"action",{action:"remove",selection:$selection,state_token:$installed_token,confirmed:true},$loader)
+  check($s.rc==10 and $s.response.failure.code=="SCENES_STALE" and is_dir($tmp .. "/notes"),"disk save that beats its watcher event also refuses stale removal")
+  $s=$app.request($s,"snapshot",{selection:$selection},$loader)
+  $token=$s.response.state_token
+  $s=$app.request($s,"action",{action:"remove",selection:$selection,state_token:$token,confirmed:true},$loader)
+  check($s.rc==0 and not is_dir($tmp .. "/notes") and is_dir($tmp .. "/.recovery"),"confirmed removal retains real recovery copy: " .. json_encode($s.response))
+  check($s.response.selection.scene==nil,"removed identity clears selection")
+  $s=$app.request($s,"action",{action:"arbitrary",target:"noded",verb:"anything"},$loader)
+  check($s.rc==10 and $s.response.error_code=="SCENES_ARGUMENT","caller cannot select arbitrary relay target")
+  $s=$app.request($s,"snapshot",{selection:{view:"sideways"}},$loader)
+  check($s.rc==10 and $s.response.error_code=="SCENES_ARGUMENT","invalid view refused")
+  $s.editor_app=true;$s.editor_frontend=$app;$s.services=["apps"]
+  $s=$loader.request($s,"editor.open",{view:"arrange",scene:"panel",first_run:true})
+  check($s.rc==0 and $s.response.source=="application" and $s.response.launch.args.id=="dev.mixos.scene-editor","cold activation routes apps.launch")
+  check($s.response.launch.args.uris[0]=="mixos-scene-editor:arrange/panel" and $s.editor_first_run_pending and not $s.scenes.editor.dismissed,"cold activation preserves selection and waits for actual activation")
+  $s.services=["apps","scene-editor"]
+  $s=$loader.request($s,"editor.open",{view:"installed",scene:"panel",first_run:true})
+  check($s.rc==0 and $s.response.shown and $s.response.args.scene=="panel","warm activation forwards selection")
+  check($s.scenes.editor.dismissed and not $s.editor_first_run_pending,"confirmed activation completes first-run dismissal")
+  $s=$loader.request($s,"editor.close",{})
+  check($s.rc==0 and $s.response.quitting,"close routes registered app")
+  mkdir($tmp .. "/fresh")
+  $boot=$loader.initial($tmp .. "/fresh",$templates,"shell","scenes",$io)
+  $boot.editor_app=true;$boot.editor_frontend=$app;$boot.first_run_enabled=true
+  $boot=$loader.services($boot,["shell"],false)
+  check(not $boot.scenes.editor.dismissed,"first-run launch waits for launcher registration")
+  $boot=$loader.services($boot,["shell","apps"],false)
+  check($boot.editor_first_run_pending and not $boot.scenes.editor.dismissed,"later launcher registration starts the owed first-run launch")
+  $boot=$loader.services($boot,["shell","apps","scene-editor"],false)
+  check($boot.scenes.editor.dismissed,"app registration confirms first-run activation")
+  $boot=$loader.services($boot,["shell","apps"],false)
+  check($boot.scenes.editor.dismissed,"closing the app never repeats first-run")
+  $boot.scenes.editor.dismissed=false;$boot.editor_first_run_pending=true
+  $boot=$app.activation_failed($boot,"test startup failed")
+  $boot=$loader.services($boot,["shell","apps"],false)
+  check(not $boot.editor_first_run_pending and $boot.scenes.editor.diagnostic.error_code=="SCENES_EDITOR_START_FAILED","failed startup is explicit and does not leave a sticky pending launch")
+  $boot=$loader.request($boot,"editor.open",{view:"gallery"})
+  check($boot.rc==0 and not $boot.editor_activation_failed,"manual open may retry a failed startup")
+  print("native scene editor backend: snapshots, stale refusal, recovery, upstream failure and routing pass")
+finally
+  run_argv_must(["rm","-rf","--",$tmp])
+end

@@ -78,6 +78,9 @@ pub enum ScrollDelta {
 /// One key press or release.
 #[derive(Clone, Debug, PartialEq)]
 pub struct KeyInput {
+    /// The physical key (evdev code + 8, as xkb and smithay count): what
+    /// matches a release to its press while modifiers change the keysym.
+    pub code: u32,
     /// The raw xkb keysym.
     pub keysym: u32,
     /// The composed text of a press, if it types anything.
@@ -128,11 +131,12 @@ pub fn keysym_modifier(keysym: u32) -> Option<Modifiers> {
 }
 
 /// A key event from smithay's keyboard handler.
-pub fn key(keysym: u32, utf8: Option<&str>, pressed: bool, repeat: bool) -> Input {
+pub fn key(code: u32, keysym: u32, utf8: Option<&str>, pressed: bool, repeat: bool) -> Input {
     let text = utf8
         .filter(|text| pressed && !text.is_empty())
         .map(str::to_owned);
     Input::Key(KeyInput {
+        code,
         keysym,
         text,
         pressed,
@@ -226,8 +230,8 @@ pub(crate) struct Translator {
     /// off the surface still releases there.
     last: Option<egui::Pos2>,
     buttons: Vec<egui::PointerButton>,
-    /// The key each held keysym pressed, so its release is the same key
-    /// whatever the text or modifiers say by then.
+    /// The key each held physical key pressed, so its release is the same
+    /// key whatever keysym, text or modifiers it carries by then.
     keys: Vec<(u32, egui::Key)>,
     modifiers: Modifiers,
 }
@@ -297,15 +301,20 @@ impl Translator {
                     return;
                 }
                 let logical = if key.pressed {
-                    let logical = egui_key(key.keysym, key.text.as_deref());
-                    if let Some(logical) = logical
-                        && !self.keys.iter().any(|(sym, _)| *sym == key.keysym)
-                    {
-                        self.keys.push((key.keysym, logical));
+                    // A key already held presses again as the key it first
+                    // pressed, so its one release matches.
+                    match self.keys.iter().find(|(code, _)| *code == key.code) {
+                        Some((_, held)) => Some(*held),
+                        None => {
+                            let logical = egui_key(key.keysym, key.text.as_deref());
+                            if let Some(logical) = logical {
+                                self.keys.push((key.code, logical));
+                            }
+                            logical
+                        }
                     }
-                    logical
                 } else {
-                    let at = self.keys.iter().position(|(sym, _)| *sym == key.keysym);
+                    let at = self.keys.iter().position(|(code, _)| *code == key.code);
                     at.map(|at| self.keys.remove(at).1)
                 };
                 if let Some(logical) = logical {
@@ -333,6 +342,19 @@ impl Translator {
                 }
             }
             Input::Focused(focused) => {
+                // Keys held when focus goes release here; their real releases
+                // go elsewhere.
+                if !focused {
+                    for (_, logical) in self.keys.drain(..) {
+                        out.push(egui::Event::Key {
+                            key: logical,
+                            physical_key: None,
+                            pressed: false,
+                            repeat: false,
+                            modifiers,
+                        });
+                    }
+                }
                 if !focused && !self.modifiers.is_empty() {
                     self.modifiers = Modifiers::NONE;
                     out.push(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
@@ -359,7 +381,7 @@ mod tests {
     #[test]
     fn a_click_lands_where_the_pointer_is_with_the_held_modifiers() {
         let events = run(vec![
-            key(XK_SHIFT_L, None, true, false),
+            key(50, XK_SHIFT_L, None, true, false),
             Input::PointerMoved { x: 10.0, y: 20.0 },
             Input::Button {
                 code: 0x110,
@@ -395,7 +417,7 @@ mod tests {
 
     #[test]
     fn typing_yields_a_key_and_its_text_but_a_chord_only_the_key() {
-        let events = run(vec![key(0x0061, Some("a"), true, false)]);
+        let events = run(vec![key(38, 0x0061, Some("a"), true, false)]);
         assert!(matches!(
             events[0],
             egui::Event::Key {
@@ -406,8 +428,8 @@ mod tests {
         ));
         assert_eq!(events[1], egui::Event::Text("a".into()));
         let events = run(vec![
-            key(XK_CONTROL_L, None, true, false),
-            key(0x0061, Some("a"), true, false),
+            key(37, XK_CONTROL_L, None, true, false),
+            key(38, 0x0061, Some("a"), true, false),
         ]);
         assert!(
             events
@@ -423,8 +445,8 @@ mod tests {
     #[test]
     fn named_keys_and_releases() {
         let events = run(vec![
-            key(0xff1b, None, true, false),
-            key(0xff1b, None, false, false),
+            key(9, 0xff1b, None, true, false),
+            key(9, 0xff1b, None, false, false),
         ]);
         assert!(matches!(
             events[0],
@@ -444,7 +466,7 @@ mod tests {
         ));
         assert_eq!(events.len(), 2, "Escape types nothing");
         // A release with no press behind it is not invented.
-        assert!(run(vec![key(0xff1b, None, false, false)]).is_empty());
+        assert!(run(vec![key(9, 0xff1b, None, false, false)]).is_empty());
     }
 
     #[test]
@@ -501,8 +523,8 @@ mod tests {
             (0x002f, "/", egui::Key::Slash),
         ] {
             let events = run(vec![
-                key(keysym, Some(text), true, false),
-                key(keysym, Some(text), false, false),
+                key(20, keysym, Some(text), true, false),
+                key(20, keysym, Some(text), false, false),
             ]);
             let keys: Vec<_> = events
                 .iter()
@@ -518,10 +540,9 @@ mod tests {
     #[test]
     fn a_held_key_releases_as_pressed_whatever_the_modifiers_became() {
         let events = run(vec![
-            key(0x0061, Some("a"), true, false),
-            key(XK_SHIFT_L, None, true, false),
-            key(0x0041, Some("A"), false, false),
-            key(0x0061, None, false, false),
+            key(38, 0x0061, Some("a"), true, false),
+            key(50, XK_SHIFT_L, None, true, false),
+            key(38, 0x0041, None, false, false),
         ]);
         let releases: Vec<_> = events
             .iter()
@@ -530,14 +551,50 @@ mod tests {
         assert_eq!(
             releases.len(),
             1,
-            "only the held keysym releases: {events:?}"
+            "the physical key releases once: {events:?}"
+        );
+        assert!(
+            matches!(
+                releases[0],
+                egui::Event::Key {
+                    key: egui::Key::A,
+                    ..
+                }
+            ),
+            "as the key it pressed: {events:?}"
+        );
+    }
+
+    #[test]
+    fn a_held_key_pressed_again_after_shift_stays_one_key() {
+        let events = run(vec![
+            key(21, 0x003d, Some("="), true, false),
+            key(50, XK_SHIFT_L, None, true, false),
+            key(21, 0x002b, Some("+"), true, true),
+            key(21, 0x002b, None, false, false),
+        ]);
+        let keys: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                egui::Event::Key { key, pressed, .. } => Some((*key, *pressed)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            keys,
+            vec![
+                (egui::Key::Equals, true),
+                (egui::Key::Equals, true),
+                (egui::Key::Equals, false)
+            ],
+            "{events:?}"
         );
     }
 
     #[test]
     fn losing_focus_releases_held_modifiers() {
         let events = run(vec![
-            key(XK_CONTROL_L, None, true, false),
+            key(37, XK_CONTROL_L, None, true, false),
             Input::Focused(false),
         ]);
         assert_eq!(
@@ -545,5 +602,20 @@ mod tests {
             egui::Event::ModifiersChanged(egui::Modifiers::NONE)
         );
         assert_eq!(events[2], egui::Event::WindowFocused(false));
+        let events = run(vec![
+            key(38, 0x0061, Some("a"), true, false),
+            Input::Focused(false),
+        ]);
+        assert!(
+            events.iter().any(|event| matches!(
+                event,
+                egui::Event::Key {
+                    key: egui::Key::A,
+                    pressed: false,
+                    ..
+                }
+            )),
+            "a key held when focus goes is released: {events:?}"
+        );
     }
 }

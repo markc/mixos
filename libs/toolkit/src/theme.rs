@@ -177,6 +177,27 @@ impl Theme {
         Ok(theme)
     }
 
+    /// `source` (a full design document, or a selection-only file over the
+    /// embedded design) compiled at `context`, the selection a caller has
+    /// already resolved (settingsd's effective scheme, mode, style and
+    /// contrast), whatever the source itself selects. Default framing.
+    pub fn from_source_in(
+        identity: &str,
+        source: &str,
+        context: DesignContext,
+    ) -> Result<Self, Error> {
+        let document = match design::parse_design_source(SourceIdentity::new(identity), source) {
+            Ok(document) => document,
+            Err(error) => {
+                if selection_only(source).is_none() {
+                    return Err(Error::Source(error));
+                }
+                embedded_document()
+            }
+        };
+        Self::compile(&document, context)
+    }
+
     /// The theme in the file at `path`: `None` when there is no file, an
     /// error when there is one that does not read, parse or compile.
     pub fn read(path: &Path) -> Result<Option<Self>, Error> {

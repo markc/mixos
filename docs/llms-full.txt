@@ -1622,6 +1622,7 @@ layering gate.
 | [syntax](https://github.com/markc/mixos/blob/main/libs/syntax/Cargo.toml) | syntax | lib | core | none | 0.1.1 |
 | [test-broker](https://github.com/markc/mixos/blob/main/libs/test-broker/Cargo.toml) | test-broker | lib | core | none | 0.1.1 |
 | [toolkit](https://github.com/markc/mixos/blob/main/libs/toolkit/Cargo.toml) | toolkit | lib | desktop | none | 0.1.1 |
+| [compd](https://github.com/markc/mixos/blob/main/services/compd/Cargo.toml) | compd | service | desktop | public | 0.2.0 |
 | [comp-model](https://github.com/markc/mixos/blob/main/services/compd/crates/comp-model/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [comp-service](https://github.com/markc/mixos/blob/main/services/compd/crates/comp-service/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [decor](https://github.com/markc/mixos/blob/main/services/compd/crates/decor/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
@@ -1642,6 +1643,7 @@ layering gate.
 | [protocols](https://github.com/markc/mixos/blob/main/services/compd/crates/protocols/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [recorder](https://github.com/markc/mixos/blob/main/services/compd/crates/recorder/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [render-gles](https://github.com/markc/mixos/blob/main/services/compd/crates/render-gles/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [scene-host](https://github.com/markc/mixos/blob/main/services/compd/crates/scene-host/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [scenegraph](https://github.com/markc/mixos/blob/main/services/compd/crates/scenegraph/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [screencopy](https://github.com/markc/mixos/blob/main/services/compd/crates/screencopy/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [seat](https://github.com/markc/mixos/blob/main/services/compd/crates/seat/Cargo.toml) | compd | service | desktop | none | 0.1.1 |

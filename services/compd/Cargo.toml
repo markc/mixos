@@ -1,0 +1,78 @@
+[package]
+name = "compd"
+version = "0.2.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+build = "build.rs"
+
+[package.metadata.mixos]
+component = "compd"
+kind = "service"
+layer = "desktop"
+contract = "public"
+
+[[bin]]
+name = "compd"
+path = "src/main.rs"
+
+[lints.rust]
+warnings = "allow"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[features]
+default = ["backend-winit"]
+# Optional compatibility adapters. The native session does not enable these.
+desktop-dbus = ["dep:zbus", "world/desktop-dbus", "graphics/desktop-dbus", "slots/desktop-dbus"]
+backend-native = ["dep:native"]
+# Both backends in one binary; the backend is picked at runtime (src/cli.rs).
+backend-all = ["backend-native", "backend-winit"]
+backend-winit = ["dep:nested"]
+# Hardware video capture through libav (VA-API, NVENC). Off by default, so the
+# default binary links no ffmpeg; screenshots work either way.
+capture-ffmpeg = ["graphics/capture-ffmpeg"]
+flip-estimate = ["native?/flip-estimate"]
+mode-synthesize = ["native?/mode-synthesize"]
+modifier-fallback = ["native?/modifier-fallback"]
+native-scanout = ["native?/native-scanout"]
+timing-predict = ["native?/timing-predict"]
+timing-throttle = ["native?/timing-throttle"]
+
+[dependencies]
+buildinfo = { workspace = true }
+comp-service = { workspace = true }
+comp-model = { workspace = true }
+dispatcher = { workspace = true }
+outputs = { workspace = true }
+kms = { workspace = true }
+effects = { workspace = true }
+frames = { workspace = true }
+graphics = { workspace = true }
+ui = { workspace = true }
+model = { workspace = true }
+native = { workspace = true, optional = true }
+policy = { workspace = true }
+policy-host = { workspace = true }
+surfaces = { workspace = true }
+render-gles = { workspace = true }
+scenegraph = { workspace = true }
+scene-host = { workspace = true }
+slots = { workspace = true }
+protocols = { workspace = true }
+nested = { workspace = true, optional = true }
+world = { workspace = true }
+x11-wm = { workspace = true }
+libc = { workspace = true }
+serde_json = { workspace = true }
+smithay = { workspace = true }
+zbus = { workspace = true, optional = true }
+
+[build-dependencies]
+buildinfo = { workspace = true }
+
+[dev-dependencies]
+egui = { workspace = true }
+tokio = { workspace = true }
