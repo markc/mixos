@@ -194,14 +194,11 @@ impl Shell {
 
     /// Apply every Bus delivery that has arrived.
     fn pump_bus(&mut self) {
-        loop {
-            let Some(delivery) = self
-                .bus
-                .as_mut()
-                .and_then(|b| b.deliveries.try_recv().ok())
-            else {
-                break;
-            };
+        while let Some(delivery) = self
+            .bus
+            .as_mut()
+            .and_then(|b| b.deliveries.try_recv().ok())
+        {
             match delivery {
                 Delivery::Command(cmd) => {
                     if self.exiting {

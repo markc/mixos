@@ -117,7 +117,14 @@ pub fn chord_text(chord: Chord) -> String {
             out.push_str(name);
         }
     }
-    out.push_str(chord.key.name());
+    // The keymap names the arrows as egui parses them, not as it prints them.
+    out.push_str(match chord.key {
+        Key::ArrowLeft => "ArrowLeft",
+        Key::ArrowRight => "ArrowRight",
+        Key::ArrowUp => "ArrowUp",
+        Key::ArrowDown => "ArrowDown",
+        key => key.name(),
+    });
     out
 }
 
