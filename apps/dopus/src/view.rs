@@ -21,8 +21,8 @@ use dopus_core::config::Sidebar;
 use dopus_core::properties::Properties;
 use dopus_core::{PaneId, SortColumn, VisibleRow};
 use egui::{
-    Align, Align2, FontId, Id, Key, Layout, Rect, RichText, ScrollArea, Sense, TextStyle,
-    Ui, UiBuilder, pos2, vec2,
+    Align, Align2, FontId, Id, Key, Layout, Rect, RichText, ScrollArea, Sense, TextStyle, Ui,
+    UiBuilder, pos2, vec2,
 };
 use toolkit::button::IconButton;
 use toolkit::dialog::{self, Choice, Role};
@@ -45,9 +45,18 @@ pub enum UiEvent {
         shift: bool,
     },
     /// Right-click: select the row unless it is in the selection already.
-    Point { pane: PaneId, path: PathBuf },
-    Toggle { pane: PaneId, path: PathBuf },
-    Sort { pane: PaneId, column: SortColumn },
+    Point {
+        pane: PaneId,
+        path: PathBuf,
+    },
+    Toggle {
+        pane: PaneId,
+        path: PathBuf,
+    },
+    Sort {
+        pane: PaneId,
+        column: SortColumn,
+    },
     EditLocation(PaneId),
     LocationText(String),
     SubmitLocation,
@@ -121,7 +130,13 @@ pub fn view(
             .default_size(total * places.width)
             .frame(bars::dock_frame(ui.ctx()))
             .show(ui, |ui| places_panel(ui, app, stroke, &mut events));
-        sidebar_width(Sidebar::Places, shown.response.rect.width(), total, places.width, &mut events);
+        sidebar_width(
+            Sidebar::Places,
+            shown.response.rect.width(),
+            total,
+            places.width,
+            &mut events,
+        );
     }
     let properties = app.core.sidebar(Sidebar::Properties);
     if properties.open {
@@ -140,7 +155,9 @@ pub fn view(
     }
     egui::CentralPanel::default()
         .frame(bars::dock_frame(ui.ctx()))
-        .show(ui, |ui| panes(ui, app, commands, strings, stroke, &mut events));
+        .show(ui, |ui| {
+            panes(ui, app, commands, strings, stroke, &mut events)
+        });
     drag_preview(ui.ctx(), stroke);
     dialogs(ui.ctx(), app, commands, strings, &mut events);
     toolkit::titlebar::edges(ui);
@@ -184,9 +201,23 @@ fn toolbar(
 ) {
     bars::options(ui, |ui| {
         let on = |id| app.checked(id) == Some(true);
-        command_button(ui, app, commands, strings, "view.toggle-places", on("view.toggle-places"), events);
+        command_button(
+            ui,
+            app,
+            commands,
+            strings,
+            "view.toggle-places",
+            on("view.toggle-places"),
+            events,
+        );
         bars::divider(ui, bars::DIVIDER_HEIGHT);
-        for id in ["nav.back", "nav.forward", "nav.parent", "nav.home", "view.refresh"] {
+        for id in [
+            "nav.back",
+            "nav.forward",
+            "nav.parent",
+            "nav.home",
+            "view.refresh",
+        ] {
             command_button(ui, app, commands, strings, id, false, events);
         }
         bars::divider(ui, bars::DIVIDER_HEIGHT);
@@ -201,7 +232,15 @@ fn toolbar(
             command_button(ui, app, commands, strings, id, false, events);
         }
         bars::divider(ui, bars::DIVIDER_HEIGHT);
-        command_button(ui, app, commands, strings, "view.toggle-hidden", on("view.toggle-hidden"), events);
+        command_button(
+            ui,
+            app,
+            commands,
+            strings,
+            "view.toggle-hidden",
+            on("view.toggle-hidden"),
+            events,
+        );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             command_button(
                 ui,
@@ -333,11 +372,15 @@ fn panes(
         ));
     }
     let line = ui.visuals().widgets.noninteractive.bg_stroke;
-    ui.painter().vline(divider.center().x, divider.y_range(), line);
+    ui.painter()
+        .vline(divider.center().x, divider.y_range(), line);
     for (pane, rect) in [(PaneId::Left, left), (PaneId::Right, right)] {
-        ui.scope_builder(UiBuilder::new().max_rect(rect).id_salt(pane.index()), |ui| {
-            pane_view(ui, app, commands, strings, pane, stroke, events);
-        });
+        ui.scope_builder(
+            UiBuilder::new().max_rect(rect).id_salt(pane.index()),
+            |ui| {
+                pane_view(ui, app, commands, strings, pane, stroke, events);
+            },
+        );
     }
 }
 
@@ -364,7 +407,10 @@ fn pane_view(
     ui.add_space(2.0);
     location_bar(ui, app, pane, active, events);
     let width = ui.available_width();
-    let (show_size, show_modified) = (width >= NAME_MIN + SIZE_W, width >= NAME_MIN + SIZE_W + MODIFIED_W);
+    let (show_size, show_modified) = (
+        width >= NAME_MIN + SIZE_W,
+        width >= NAME_MIN + SIZE_W + MODIFIED_W,
+    );
     header(ui, app, pane, show_size, show_modified, events);
     let rows = app.core.visible_rows(pane);
     let row_h = (ui.text_style_height(&TextStyle::Body) + 6.0).round();
@@ -482,17 +528,31 @@ fn header(
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
     let columns = column_rects(rect, show_size, show_modified);
     for (column, key, cell, align) in [
-        (SortColumn::Name, "column-name", Some(columns.0), Align2::LEFT_CENTER),
-        (SortColumn::Size, "column-size", columns.1, Align2::RIGHT_CENTER),
-        (SortColumn::Modified, "column-modified", columns.2, Align2::RIGHT_CENTER),
+        (
+            SortColumn::Name,
+            "column-name",
+            Some(columns.0),
+            Align2::LEFT_CENTER,
+        ),
+        (
+            SortColumn::Size,
+            "column-size",
+            columns.1,
+            Align2::RIGHT_CENTER,
+        ),
+        (
+            SortColumn::Modified,
+            "column-modified",
+            columns.2,
+            Align2::RIGHT_CENTER,
+        ),
     ] {
         let Some(cell) = cell else { continue };
         let response = ui
             .interact(cell, Id::new(("header", pane.index(), key)), Sense::click())
             .on_hover_text(label_with("sort-by", &[("column", &label(key))]));
-        response.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label(key))
-        });
+        response
+            .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label(key)));
         if response.hovered() {
             ui.painter()
                 .rect_filled(cell, 2.0, ui.visuals().widgets.hovered.weak_bg_fill);
@@ -518,10 +578,17 @@ fn header(
 }
 
 /// Name, Size and Modified cells in `rect`; the narrow ones hide first.
-fn column_rects(rect: Rect, show_size: bool, show_modified: bool) -> (Rect, Option<Rect>, Option<Rect>) {
+fn column_rects(
+    rect: Rect,
+    show_size: bool,
+    show_modified: bool,
+) -> (Rect, Option<Rect>, Option<Rect>) {
     let mut right = rect.right();
     let modified = show_modified.then(|| {
-        let cell = Rect::from_min_max(pos2(right - MODIFIED_W, rect.top()), pos2(right, rect.bottom()));
+        let cell = Rect::from_min_max(
+            pos2(right - MODIFIED_W, rect.top()),
+            pos2(right, rect.bottom()),
+        );
         right -= MODIFIED_W;
         cell
     });
@@ -554,7 +621,12 @@ fn row(
     let (rect, response) =
         ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click_and_drag());
     response.widget_info(|| {
-        egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, selected, &entry.name)
+        egui::WidgetInfo::selected(
+            egui::WidgetType::SelectableLabel,
+            true,
+            selected,
+            &entry.name,
+        )
     });
     let visuals = ui.visuals().clone();
     let fill = if selected {
@@ -600,11 +672,7 @@ fn row(
     // The chevron opens a folder in place.
     if entry.is_dir {
         let chevron = Rect::from_center_size(pos2(x + ICON / 2.0, mid), vec2(ICON, ICON));
-        let toggle = ui.interact(
-            chevron,
-            response.id.with("chevron"),
-            Sense::click(),
-        );
+        let toggle = ui.interact(chevron, response.id.with("chevron"), Sense::click());
         let name = label_with(
             if expanded { "collapse" } else { "expand" },
             &[("name", &entry.name)],
@@ -615,7 +683,8 @@ fn row(
         } else {
             Icon::ChevronRight
         };
-        icons::image(icon, stroke, ICON * 0.8, visuals.weak_text_color()).paint_at(ui, chevron.shrink(1.0));
+        icons::image(icon, stroke, ICON * 0.8, visuals.weak_text_color())
+            .paint_at(ui, chevron.shrink(1.0));
         if toggle.clicked() {
             events.push(UiEvent::Toggle {
                 pane,
@@ -636,8 +705,19 @@ fn row(
     icons::image(file_icon, stroke, ICON, icon_colour).paint_at(ui, icon_rect);
     x += ICON + 6.0;
     let font = TextStyle::Body.resolve(ui.style());
-    let name = crate::elide::fit(ui, &entry.name, &font, (name_cell.right() - x - 4.0).max(0.0));
-    painter.text(pos2(x, mid), Align2::LEFT_CENTER, name, font.clone(), text_colour);
+    let name = crate::elide::fit(
+        ui,
+        &entry.name,
+        &font,
+        (name_cell.right() - x - 4.0).max(0.0),
+    );
+    painter.text(
+        pos2(x, mid),
+        Align2::LEFT_CENTER,
+        name,
+        font.clone(),
+        text_colour,
+    );
     let small = FontId::new(font.size * 0.92, font.family.clone());
     let dim = if selected {
         text_colour
@@ -648,15 +728,29 @@ fn row(
         let size = if entry.is_dir {
             dopus_core::format_child_count(entry.child_count)
         } else {
-            entry.size.map_or_else(|| "—".to_owned(), dopus_core::format_size)
+            entry
+                .size
+                .map_or_else(|| "—".to_owned(), dopus_core::format_size)
         };
-        painter.text(pos2(cell.right() - 6.0, mid), Align2::RIGHT_CENTER, size, small.clone(), dim);
+        painter.text(
+            pos2(cell.right() - 6.0, mid),
+            Align2::RIGHT_CENTER,
+            size,
+            small.clone(),
+            dim,
+        );
     }
     if let Some(cell) = modified_cell {
         let modified = entry
             .modified
             .map_or_else(|| "—".to_owned(), dopus_core::format_modified_at);
-        painter.text(pos2(cell.right() - 6.0, mid), Align2::RIGHT_CENTER, modified, small, dim);
+        painter.text(
+            pos2(cell.right() - 6.0, mid),
+            Align2::RIGHT_CENTER,
+            modified,
+            small,
+            dim,
+        );
     }
     // Interaction: click selects (Ctrl toggles, Shift extends); a
     // double-click on a folder opens it in place.
@@ -714,7 +808,12 @@ fn row(
 }
 
 /// A drop of rows from the other pane on `response` lands in `destination`.
-fn drop_target(response: &egui::Response, pane: PaneId, destination: PathBuf, events: &mut Vec<UiEvent>) {
+fn drop_target(
+    response: &egui::Response,
+    pane: PaneId,
+    destination: PathBuf,
+    events: &mut Vec<UiEvent>,
+) {
     if let Some(dragged) = response.dnd_release_payload::<Dragged>()
         && dragged.pane != pane
     {
@@ -802,7 +901,11 @@ fn dialogs(
                     Choice::new(label("no"), Role::Cancel),
                 ])
                 .show(ctx, |ui| ui.add(egui::Label::new(message.as_str()).wrap()));
-            answered(shown.chosen, shown.dismissed, &[Answer::Accept, Answer::Cancel])
+            answered(
+                shown.chosen,
+                shown.dismissed,
+                &[Answer::Accept, Answer::Cancel],
+            )
         }
         Dialog::Prompt { kind, text, .. } => {
             let title = match kind {
@@ -828,17 +931,26 @@ fn dialogs(
                         events.push(UiEvent::PromptText(value));
                     }
                     if let Err(problem) = &check {
-                        ui.label(RichText::new(problem).small().color(ui.visuals().warn_fg_color));
+                        ui.label(
+                            RichText::new(problem)
+                                .small()
+                                .color(ui.visuals().warn_fg_color),
+                        );
                     }
                 });
-            answered(shown.chosen, shown.dismissed, &[Answer::Accept, Answer::Cancel])
+            answered(
+                shown.chosen,
+                shown.dismissed,
+                &[Answer::Accept, Answer::Cancel],
+            )
         }
         Dialog::Drop {
             paths, destination, ..
         } => {
-            let target = destination
-                .file_name()
-                .map_or_else(|| destination.display().to_string(), |n| n.to_string_lossy().into_owned());
+            let target = destination.file_name().map_or_else(
+                || destination.display().to_string(),
+                |n| n.to_string_lossy().into_owned(),
+            );
             let shown = dialog::Dialog::new(id, target)
                 .buttons(vec![
                     Choice::new(label("move-here"), Role::Default),
@@ -846,7 +958,10 @@ fn dialogs(
                     Choice::new(label("cancel"), Role::Cancel),
                 ])
                 .show(ctx, |ui| {
-                    ui.label(label_with("drop-body", &[("count", &paths.len().to_string())]));
+                    ui.label(label_with(
+                        "drop-body",
+                        &[("count", &paths.len().to_string())],
+                    ));
                 });
             answered(
                 shown.chosen,
@@ -859,14 +974,18 @@ fn dialogs(
                 .buttons(vec![Choice::new(label("done"), Role::Default)])
                 .show(ctx, |ui| {
                     ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
-                        egui::Grid::new("shortcut-grid").striped(false).show(ui, |ui| {
-                            for command in commands.iter() {
-                                let Some(shortcut) = command.shortcut else { continue };
-                                ui.label(toolkit::command::label_text(strings, command.label));
-                                ui.label(RichText::new(ctx.format_shortcut(&shortcut)).weak());
-                                ui.end_row();
-                            }
-                        });
+                        egui::Grid::new("shortcut-grid")
+                            .striped(false)
+                            .show(ui, |ui| {
+                                for command in commands.iter() {
+                                    let Some(shortcut) = command.shortcut else {
+                                        continue;
+                                    };
+                                    ui.label(toolkit::command::label_text(strings, command.label));
+                                    ui.label(RichText::new(ctx.format_shortcut(&shortcut)).weak());
+                                    ui.end_row();
+                                }
+                            });
                     });
                 });
             answered(shown.chosen, shown.dismissed, &[Answer::Accept])

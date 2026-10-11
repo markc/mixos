@@ -26,7 +26,10 @@ pub enum Delivery {
     /// A `dopus.*` command.
     Command(Command),
     /// A frame on a subscribed topic.
-    Topic { topic: String, body: String },
+    Topic {
+        topic: String,
+        body: String,
+    },
     Connected,
     Disconnected,
     /// The answer to session-look read `ticket`: `rc`, the body and the
@@ -36,9 +39,13 @@ pub enum Delivery {
         reply: Option<(u8, String, Option<String>)>,
     },
     /// A look retry armed with [`BusHandle::retry_look`] is due.
-    LookRetry { generation: u64 },
+    LookRetry {
+        generation: u64,
+    },
     /// A subscription landed: frames on `topic` arrive from now on.
-    Subscribed { topic: String },
+    Subscribed {
+        topic: String,
+    },
     /// The Bus thread finished.
     Stopped,
 }

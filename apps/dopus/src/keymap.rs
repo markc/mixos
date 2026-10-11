@@ -112,7 +112,11 @@ pub fn parse_chord(text: &str) -> Option<Chord> {
 /// The text a chord is shown and reported as.
 pub fn chord_text(chord: Chord) -> String {
     let mut out = String::new();
-    for (on, name) in [(chord.ctrl, "Ctrl+"), (chord.alt, "Alt+"), (chord.shift, "Shift+")] {
+    for (on, name) in [
+        (chord.ctrl, "Ctrl+"),
+        (chord.alt, "Alt+"),
+        (chord.shift, "Shift+"),
+    ] {
         if on {
             out.push_str(name);
         }
@@ -182,16 +186,18 @@ impl Keymap {
     fn apply(&mut self, overlay: Overlay) {
         let replaced: std::collections::BTreeSet<&str> =
             overlay.custom.iter().map(|o| o.action.as_str()).collect();
-        self.bindings.retain(|(_, a)| !replaced.contains(a.as_str()));
+        self.bindings
+            .retain(|(_, a)| !replaced.contains(a.as_str()));
         let mut added = Vec::new();
         for o in &overlay.custom {
             let Some(strokes) = &o.chord else { continue };
             match strokes.as_slice() {
                 [one] => match parse_chord(one) {
                     Some(chord) => added.push((chord, o.action.clone())),
-                    None => self
-                        .notes
-                        .push(format!("{}: chord {one:?} is not a key dopus knows", o.action)),
+                    None => self.notes.push(format!(
+                        "{}: chord {one:?} is not a key dopus knows",
+                        o.action
+                    )),
                 },
                 _ => self.notes.push(format!(
                     "{}: chord {strokes:?} has {} strokes; only single strokes are bound",
@@ -300,6 +306,9 @@ mod tests {
             vec![parse_chord("Shift+Delete").unwrap()]
         );
         assert!(k.chords_for("nav.parent").is_empty());
-        assert_eq!(load(Some(&dir.path().join("absent"))).unwrap(), Keymap::default());
+        assert_eq!(
+            load(Some(&dir.path().join("absent"))).unwrap(),
+            Keymap::default()
+        );
     }
 }

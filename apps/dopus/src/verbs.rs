@@ -307,7 +307,11 @@ pub enum Served {
         name: String,
     },
     /// Focus the pane's location bar, then reply.
-    LocationFocus { id: u64, pane: PaneId, action: String },
+    LocationFocus {
+        id: u64,
+        pane: PaneId,
+        action: String,
+    },
     /// Quit (the reply went out before this).
     Quit { id: u64 },
 }
@@ -351,8 +355,14 @@ pub const ACTIONS: &[(&str, &str)] = &[
     ("file.open", "Open the selection"),
     ("file.new-folder", "New folder"),
     ("file.rename", "Rename the selection"),
-    ("file.copy-other-pane", "Copy the selection to the other pane"),
-    ("file.move-other-pane", "Move the selection to the other pane"),
+    (
+        "file.copy-other-pane",
+        "Copy the selection to the other pane",
+    ),
+    (
+        "file.move-other-pane",
+        "Move the selection to the other pane",
+    ),
     ("file.delete", "Delete the selection"),
     ("nav.back", "Go back"),
     ("nav.forward", "Go forward"),
@@ -444,7 +454,11 @@ pub fn apply_action(action: &str, core: &mut DopusCore) -> Result<Applied, Refus
 /// Apply one action to `pane`. Global actions (switch pane, theme, quit)
 /// keep their meaning. Each `file.*` arm checks the core's availability
 /// first and refuses as the action table shows it disabled.
-pub fn apply_action_in(action: &str, core: &mut DopusCore, pane: PaneId) -> Result<Applied, Refusal> {
+pub fn apply_action_in(
+    action: &str,
+    core: &mut DopusCore,
+    pane: PaneId,
+) -> Result<Applied, Refusal> {
     use dopus_core::SortColumn;
     let done = Ok(Applied::Done);
     let availability = core.availability();
@@ -771,7 +785,10 @@ pub fn serve_command(
                 build_time: info.build_time.to_owned(),
                 headless: meta.headless,
                 panes: 2,
-                pane_states: vec![pane_state(core, PaneId::Left), pane_state(core, PaneId::Right)],
+                pane_states: vec![
+                    pane_state(core, PaneId::Left),
+                    pane_state(core, PaneId::Right),
+                ],
                 config_path: meta.config_path.clone(),
             },
         )],
@@ -780,7 +797,10 @@ pub fn serve_command(
             &StateReply {
                 places: core.sidebar(dopus_core::config::Sidebar::Places),
                 properties: core.sidebar(dopus_core::config::Sidebar::Properties),
-                panes: vec![pane_state(core, PaneId::Left), pane_state(core, PaneId::Right)],
+                panes: vec![
+                    pane_state(core, PaneId::Left),
+                    pane_state(core, PaneId::Right),
+                ],
                 theme_scheme: meta.theme_scheme.clone(),
                 theme_mode: meta.theme_mode.clone(),
                 appearance: meta.appearance.clone(),
@@ -980,9 +1000,9 @@ mod tests {
 
     fn refusal(served: &[Served]) -> Option<String> {
         served.iter().find_map(|s| match s {
-            Served::Reply { rc: 10, body, .. } => {
-                serde_json::from_str::<Refusal>(body).ok().map(|r| r.error_code)
-            }
+            Served::Reply { rc: 10, body, .. } => serde_json::from_str::<Refusal>(body)
+                .ok()
+                .map(|r| r.error_code),
             _ => None,
         })
     }
@@ -1001,10 +1021,18 @@ mod tests {
             if action.starts_with("file.") {
                 assert_eq!(code.as_deref(), Some(code::FORBIDDEN), "{action}");
             } else if action.starts_with("theme.")
-                || ["location.focus", "view.toggle-places", "view.toggle-properties"]
-                    .contains(action)
+                || [
+                    "location.focus",
+                    "view.toggle-places",
+                    "view.toggle-properties",
+                ]
+                .contains(action)
             {
-                assert_eq!(code.as_deref(), Some(code::UNAVAILABLE), "{action} headless");
+                assert_eq!(
+                    code.as_deref(),
+                    Some(code::UNAVAILABLE),
+                    "{action} headless"
+                );
             } else {
                 assert_eq!(code, None, "{action}: {served:?}");
             }

@@ -13,7 +13,13 @@ use crate::app::{App, Dialog};
 use crate::keymap::Keymap;
 
 /// `(id, label, menu, group, icon)` for every action, in menu order.
-type Row = (&'static str, &'static str, Option<&'static str>, u8, Option<Icon>);
+type Row = (
+    &'static str,
+    &'static str,
+    Option<&'static str>,
+    u8,
+    Option<Icon>,
+);
 
 macro_rules! actions {
     ($r:ident, $k:ident, $used:ident; $( $id:literal, $label:literal, $menu:expr, $group:literal, $icon:expr; )*) => {
@@ -185,7 +191,12 @@ mod tests {
         }
         let known = |key: &str| toolkit::command::label_text(&strings, key) != key;
         for command in r.iter() {
-            assert!(known(command.label), "{} label {:?}", command.id, command.label);
+            assert!(
+                known(command.label),
+                "{} label {:?}",
+                command.id,
+                command.label
+            );
             assert!(
                 command.menu.is_none_or(|m| strings.has(m)),
                 "{} menu",
@@ -200,7 +211,10 @@ mod tests {
         let alias = r.get("file.rename#2").expect("Ctrl+E alias");
         assert_eq!(
             alias.shortcut,
-            Some(KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::E))
+            Some(KeyboardShortcut::new(
+                egui::Modifiers::COMMAND,
+                egui::Key::E
+            ))
         );
         assert!(alias.menu.is_none());
         assert!(r.get("nav.switch-pane#2").is_some(), "Tab");

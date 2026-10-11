@@ -130,7 +130,13 @@ pub fn run(
     bus.quit();
     // Let the quit's own reply reach the wire before the process goes.
     runtime.block_on(async {
-        let wait = async { while deliveries.next().await.is_some_and(|d| d != Delivery::Stopped) {} };
+        let wait = async {
+            while deliveries
+                .next()
+                .await
+                .is_some_and(|d| d != Delivery::Stopped)
+            {}
+        };
         let _ = tokio::time::timeout(Duration::from_secs(3), wait).await;
     });
     Ok(())

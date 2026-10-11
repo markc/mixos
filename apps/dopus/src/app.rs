@@ -25,7 +25,10 @@ use crate::verbs::{self, ActionReply, Applied, Refusal, Served, ServerMeta, Them
 #[derive(Debug, Clone, PartialEq)]
 pub enum Dialog {
     /// Yes or No (delete).
-    Confirm { token: u64, message: String },
+    Confirm {
+        token: u64,
+        message: String,
+    },
     /// A name (New folder, Rename).
     Prompt {
         token: u64,
@@ -67,7 +70,11 @@ pub enum Answer {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Effect {
     /// Reply to Bus command `id`.
-    Reply { id: u64, rc: u8, body: String },
+    Reply {
+        id: u64,
+        rc: u8,
+        body: String,
+    },
     /// Open a file with the desktop's handler.
     OpenFile(PathBuf),
     /// Set the window's theme by name, then reply to `id` (if a caller asked).
@@ -381,7 +388,10 @@ impl App {
 
     /// Whether the core waits on a dialog's answer.
     pub fn waiting(&self) -> bool {
-        self.dialog.iter().chain(&self.queued).any(|d| d.core_token().is_some())
+        self.dialog
+            .iter()
+            .chain(&self.queued)
+            .any(|d| d.core_token().is_some())
     }
 
     /// Start editing `pane`'s location bar with its path.
@@ -552,6 +562,9 @@ mod tests {
             &meta,
         );
         assert_ne!(a.checked("view.toggle-places"), open);
-        assert!(matches!(&a.effects[..], [Effect::Reply { id: 9, rc: 0, .. }]));
+        assert!(matches!(
+            &a.effects[..],
+            [Effect::Reply { id: 9, rc: 0, .. }]
+        ));
     }
 }

@@ -142,7 +142,11 @@ impl Shell {
         if let Some(bus) = &shell.bus {
             // Hints arrive once the subscription lands; the read then
             // (`Delivery::Subscribed`) catches any change missed before.
-            for topic in [shell.look_topic.clone(), THEME_TOPIC.into(), PROPS_TOPIC.into()] {
+            for topic in [
+                shell.look_topic.clone(),
+                THEME_TOPIC.into(),
+                PROPS_TOPIC.into(),
+            ] {
                 bus.handle.subscribe(topic);
             }
         }
@@ -194,11 +198,7 @@ impl Shell {
 
     /// Apply every Bus delivery that has arrived.
     fn pump_bus(&mut self) {
-        while let Some(delivery) = self
-            .bus
-            .as_mut()
-            .and_then(|b| b.deliveries.try_recv().ok())
-        {
+        while let Some(delivery) = self.bus.as_mut().and_then(|b| b.deliveries.try_recv().ok()) {
             match delivery {
                 Delivery::Command(cmd) => {
                     if self.exiting {
@@ -519,8 +519,8 @@ impl Shell {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         // Shortcuts are off while a text field (the location bar, a prompt)
         // has the keyboard, a menu is open, or a dialog is up.
-        let typing = ui.ctx().memory(|m| m.focused().is_some())
-            && ui.ctx().egui_wants_keyboard_input();
+        let typing =
+            ui.ctx().memory(|m| m.focused().is_some()) && ui.ctx().egui_wants_keyboard_input();
         if !typing && !toolkit::menu::is_open(ui.ctx()) && self.app.dialog.is_none() {
             let fired = self.commands.shortcuts(ui.ctx(), &self.app);
             let events = fired
