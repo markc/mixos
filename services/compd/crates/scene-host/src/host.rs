@@ -636,7 +636,7 @@ pub struct SceneHost {
     wiring: Wiring,
     actions: Receiver<Action>,
     menu_surface: Option<crate::menu::Surface>,
-    settings: crate::lane::native::Ui<crate::appearance::Look>,
+    settings: crate::lane::native::Ui<Arc<crate::appearance::Look>>,
     appearance_generation: u64,
     input_geometry: Option<InputGeometry>,
 }
@@ -969,7 +969,7 @@ impl SceneHost {
             .session()
             .host()
             .presentation()
-            .map(|presentation| Arc::clone(&presentation.content().prepared));
+            .map(|presentation| Arc::clone(presentation.content()));
         // Return the old menu's keyboard before a newly shown dialog grabs
         // it, so that dialog remembers the application's original focus.
         if self.host.panels.menu().is_none() {

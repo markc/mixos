@@ -130,7 +130,7 @@ pub struct Port {
     /// connection generation from it directly (an atomic load), so a
     /// reconnect the worker has not yet reported still fences.
     client: Arc<OnceLock<Arc<SupervisedClient>>>,
-    settings_ui: Option<SettingsUi<Look>>,
+    settings_ui: Option<SettingsUi<Arc<Look>>>,
     registry: RegistryMailbox,
 }
 
@@ -169,7 +169,9 @@ impl Port {
         let consumer = settings::consumer::Consumer::for_shell(binding)
             .map_err(|error| format!("shell settings: {error:?}"))?;
         let settings_worker =
-            SettingsWorker::offline_with_cache(cache_directory, crate::appearance::build);
+            SettingsWorker::offline_with_cache(cache_directory, |snapshot: &settings::Snapshot| {
+                crate::appearance::build(snapshot).map(Arc::new)
+            });
         let (ui, lane) = bridge(Session::new(consumer), settings_worker);
         let registry = RegistryMailbox::default();
         let worker_registry = Arc::clone(&registry);
@@ -231,7 +233,7 @@ impl Port {
         })
     }
 
-    pub(crate) fn take_settings_ui(&mut self) -> SettingsUi<Look> {
+    pub(crate) fn take_settings_ui(&mut self) -> SettingsUi<Arc<Look>> {
         self.settings_ui
             .take()
             .expect("settings UI taken only once")
@@ -510,7 +512,7 @@ async fn worker(
     pending_events: Arc<AtomicUsize>,
     mut shutdown: watch::Receiver<bool>,
     published: Arc<OnceLock<Arc<SupervisedClient>>>,
-    mut lane: SettingsLane<Look>,
+    mut lane: SettingsLane<Arc<Look>>,
     registry_mailbox: RegistryMailbox,
 ) {
     let waker = Arc::clone(&delivery.waker);
@@ -606,7 +608,7 @@ async fn serve(
     events: &mut tokio_mpsc::UnboundedReceiver<Event>,
     pending_events: Arc<AtomicUsize>,
     shutdown: &mut watch::Receiver<bool>,
-    lane: &mut SettingsLane<Look>,
+    lane: &mut SettingsLane<Arc<Look>>,
     registry_mailbox: &RegistryMailbox,
     notify: &impl Fn(bool),
 ) -> std::time::Instant {
@@ -951,7 +953,7 @@ mod tests {
     fn settings_drive(
         port: &Port,
         wake: &Receiver<()>,
-        session: &mut SettingsUi<Look>,
+        session: &mut SettingsUi<Arc<Look>>,
         panels: &mut crate::panels::Panels,
         revision: Option<u64>,
     ) -> usize {
@@ -991,7 +993,7 @@ mod tests {
     fn settings_port(
         url: String,
         cache_directory: std::path::PathBuf,
-    ) -> (Port, Receiver<()>, SettingsUi<Look>) {
+    ) -> (Port, Receiver<()>, SettingsUi<Arc<Look>>) {
         install_settings_fonts();
         let (notify, wake) = mpsc::channel();
         let mut port = Port::start_at(
@@ -1146,8 +1148,8 @@ mod tests {
             .content()
             .clone();
         assert_ne!(
-            after.prepared.tokens().palette,
-            before.prepared.tokens().palette
+            after.palette(true),
+            before.palette(true)
         );
         for style in decor::ChromeStyle::ALL {
             assert_eq!(
@@ -1219,10 +1221,8 @@ mod tests {
                 .presentation()
                 .unwrap()
                 .content()
-                .prepared
-                .tokens()
-                .palette,
-            after.prepared.tokens().palette
+                .palette(true),
+            after.palette(true)
         );
         let client = port.client.get().unwrap();
         client.close().await;
@@ -1276,10 +1276,8 @@ mod tests {
                 .presentation()
                 .unwrap()
                 .content()
-                .prepared
-                .tokens()
-                .palette,
-            after.prepared.tokens().palette
+                .palette(true),
+            after.palette(true)
         );
         assert_eq!(port.settings_generation(), None);
         assert!(!cached.session().host().consumer().evidence().confirmed);
@@ -1311,7 +1309,7 @@ mod tests {
     fn drive_fallback(
         port: &Port,
         wake: &Receiver<()>,
-        session: &mut SettingsUi<Look>,
+        session: &mut SettingsUi<Arc<Look>>,
         panels: &mut crate::panels::Panels,
         kind: settings::fallback::PresentationKind,
     ) {

@@ -152,7 +152,7 @@ pub(crate) fn fixture(mode: &str, scale: f64) -> Arc<Look> {
     let effective = settings::resolve(&desktop).unwrap();
     let snapshot = Snapshot {
         schema: settings::SCHEMA,
-        binding: settings::Binding::new("desktop", "test").unwrap(),
+        binding: settings::Binding { instance: "desktop".into(), profile: "test".into() },
         incarnation: "test".into(),
         revision: settings::Revision(1),
         design_revision: settings::Revision(1),
@@ -177,6 +177,6 @@ mod tests {
         assert_ne!(dark.palette(false).base, dark.palette(true).base, "an edge page is on the secondary pair");
         let title = light.chrome(ChromeStyle::ALL[0]);
         let unscaled = dark.chrome(ChromeStyle::ALL[0]);
-        assert!(title.deco.title_size > unscaled.deco.title_size);
+        assert!(title.deco.metrics.title_size_px > unscaled.deco.metrics.title_size_px);
     }
 }

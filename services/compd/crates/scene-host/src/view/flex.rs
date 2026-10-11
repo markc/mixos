@@ -36,8 +36,12 @@
 use std::collections::BTreeMap;
 
 use egui::{Pos2, Rect, Vec2, pos2, vec2};
+// taffy's prelude also names a Rect; ours is egui's.
 use scene::Node;
-use taffy::prelude::*;
+use taffy::prelude::{
+    AlignItems, AlignSelf, Dimension, Display, FlexDirection, JustifyContent, LengthPercentageAuto, NodeId,
+    Size, Style, TaffyTree, length, zero,
+};
 use taffy::{AvailableSpace, LayoutInput, LayoutOutput, Overflow};
 
 use super::{Content, Nodes, TITLEBAR, flag, number};
@@ -94,7 +98,7 @@ pub(crate) struct ListBox {
 }
 
 /// A scene laid out on a surface.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct SceneLayout {
     /// Drawn nodes in paint order (parents before children).
     pub placed: Vec<Placed>,
@@ -108,6 +112,19 @@ pub(crate) struct SceneLayout {
     pub body: Rect,
     /// The dialog frame's close button, when framed.
     pub close: Option<Rect>,
+}
+
+impl Default for SceneLayout {
+    fn default() -> Self {
+        Self {
+            placed: Vec::new(),
+            nodes: BTreeMap::new(),
+            instances: BTreeMap::new(),
+            lists: BTreeMap::new(),
+            body: Rect::NOTHING,
+            close: None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -225,7 +242,7 @@ impl<'a> Builder<'a> {
                     style.flex_grow = style.flex_grow.max(1.0);
                     style.flex_basis = len(0.0);
                 } else {
-                    style.align_self = Some(AlignSelf::Stretch);
+                    style.align_self = Some(AlignSelf::STRETCH);
                 }
             }
             let min = number(node, &format!("min_{port}"));
@@ -304,25 +321,25 @@ impl<'a> Builder<'a> {
                 bottom *= ratio;
             }
         }
-        style.padding = Rect {
+        style.padding = taffy::Rect {
             left: length(number(node, "padding_left").unwrap_or(all)),
             right: length(number(node, "padding_right").unwrap_or(all)),
             top: length(top),
             bottom: length(bottom),
         };
         style.align_items = Some(match port_text(node, "align") {
-            "center" => AlignItems::Center,
-            "end" => AlignItems::FlexEnd,
-            "stretch" => AlignItems::Stretch,
-            _ => AlignItems::FlexStart,
+            "center" => AlignItems::CENTER,
+            "end" => AlignItems::FLEX_END,
+            "stretch" => AlignItems::STRETCH,
+            _ => AlignItems::FLEX_START,
         });
         style.justify_content = Some(match port_text(node, "justify") {
-            "center" => JustifyContent::Center,
-            "end" => JustifyContent::FlexEnd,
-            "between" | "space_between" => JustifyContent::SpaceBetween,
-            "around" | "space_around" => JustifyContent::SpaceAround,
-            "evenly" | "space_evenly" => JustifyContent::SpaceEvenly,
-            _ => JustifyContent::FlexStart,
+            "center" => JustifyContent::CENTER,
+            "end" => JustifyContent::FLEX_END,
+            "between" | "space_between" => JustifyContent::SPACE_BETWEEN,
+            "around" | "space_around" => JustifyContent::SPACE_AROUND,
+            "evenly" | "space_evenly" => JustifyContent::SPACE_EVENLY,
+            _ => JustifyContent::FLEX_START,
         });
         style
     }
@@ -452,7 +469,7 @@ impl<'a> Builder<'a> {
             let mut cell_style = Style {
                 display: Display::Flex,
                 flex_direction: if horizontal { FlexDirection::Row } else { FlexDirection::Column },
-                align_items: Some(AlignItems::Stretch),
+                align_items: Some(AlignItems::STRETCH),
                 flex_shrink: 0.0,
                 ..Style::default()
             };
@@ -480,14 +497,14 @@ impl<'a> Builder<'a> {
             style.flex_direction = FlexDirection::Row;
             style.gap = Size { width: length(gap), height: zero() };
             style.align_items = Some(match port_text(node, "align") {
-                "center" => AlignItems::Center,
-                "end" => AlignItems::FlexEnd,
-                _ => AlignItems::FlexStart,
+                "center" => AlignItems::CENTER,
+                "end" => AlignItems::FLEX_END,
+                _ => AlignItems::FLEX_START,
             });
         } else {
             style.flex_direction = FlexDirection::Column;
             style.gap = Size { width: zero(), height: length(gap) };
-            style.align_items = Some(AlignItems::Stretch);
+            style.align_items = Some(AlignItems::STRETCH);
             style.overflow = taffy::Point { x: Overflow::Visible, y: Overflow::Scroll };
             style.scrollbar_width = 0.0;
             if style.size.height == Dimension::auto() && style.flex_grow == 0.0 {
@@ -574,7 +591,7 @@ pub(crate) fn layout(
     let page_style = Style {
         display: Display::Flex,
         flex_direction: FlexDirection::Column,
-        align_items: Some(AlignItems::Stretch),
+        align_items: Some(AlignItems::STRETCH),
         size: Size { width: len(body.width()), height: len(body.height()) },
         ..Style::default()
     };
@@ -628,7 +645,7 @@ fn collect(tree: &TaffyTree<Meta>, node: NodeId, origin: Pos2, out: &mut SceneLa
             && meta.source == Source::Tree
             && tree.style(node).is_ok_and(|style| style.overflow.y == Overflow::Scroll)
         {
-            let content_height = layout.content_size.height.max(layout.size.height);
+            let content_height = layout.scrollable_overflow_rect.bottom.max(layout.size.height);
             out.lists.insert(meta.id.clone(), ListBox { rect, content_height });
         }
     }

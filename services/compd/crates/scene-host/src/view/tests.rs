@@ -192,7 +192,8 @@ fn every_calendar_node_has_visible_non_zero_bounds_including_the_footer() {
 fn scene_buttons_take_their_design_cell_for_every_tone_and_state() {
     let theme = embedded(true);
     let tree = scene::resolve(&scene::parse("---\nscene: 1\nname: b\ncitizen: c\n---\n```mix\nroot: {widget: \"row\", children: [\"plain\", \"primary\", \"danger\"]}\nplain: {widget: \"button\", label: \"P\"}\nprimary: {widget: \"button\", label: \"P\", tone: \"primary\"}\ndanger: {widget: \"button\", label: \"D\", tone: \"danger\"}\n```\n").unwrap()).unwrap();
-    let cell = |id: &str, state| theme.design().tables().button.cell(button_key(&tree.nodes[id], state)).pair.surface;
+    let tables = theme.design().tables();
+    let cell = |id: &str, state| tables.button.cell(button_key(&tree.nodes[id], state)).pair.surface;
     for state in [InteractionState::Resting, InteractionState::Hovered, InteractionState::Pressed] {
         assert_ne!(cell("plain", state), cell("primary", state), "{state:?}");
         assert_ne!(cell("primary", state), cell("danger", state), "{state:?}");

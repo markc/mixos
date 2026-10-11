@@ -1,23 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use super::*;
 use settings::{Binding, Desktop, Revision};
-use toolkit::fonts::{FontChoice, FontSelection, FontSet};
 mod bridge;
 mod cache;
-
-fn install_fonts() {
-    static INSTALLED: std::sync::Once = std::sync::Once::new();
-    INSTALLED.call_once(|| {
-        toolkit::fonts::install(
-            FontSet::new().sans(
-                include_bytes!("../../../../../vendor/font/Inter-VariableFont_opsz,wght.ttf")
-                    .as_slice(),
-            ),
-            None,
-        )
-        .unwrap();
-    });
-}
 
 fn binding() -> Binding {
     Binding {
@@ -50,15 +35,7 @@ fn session() -> Session<u64> {
 }
 fn ready(request: Request) -> Completion<u64> {
     let rev = request.update().snapshot().revision.0;
-    request.prepare(
-        |_, _| {
-            Ok(FontSelection {
-                font: crate::UI::Font::DEFAULT,
-                choice: FontChoice::Declared,
-            })
-        },
-        |_| Ok(rev),
-    )
+    request.prepare_registered(|_| Ok(rev))
 }
 fn decoded(rev: u64) -> Decoded {
     decoded_snapshot(snapshot(rev, false))
@@ -159,17 +136,8 @@ fn current_embedded_fallback_runs_activation_hook_once() {
     let request = jobs.fallback.unwrap();
     let mut presentation = None;
     let fallback = request
-        .prepare(None, |snapshot, context, _| {
-            let appearance = Projection::new(&snapshot.effective[context])?.prepare(|_, _| {
-                Ok(FontSelection {
-                    font: crate::UI::Font::DEFAULT,
-                    choice: FontChoice::Declared,
-                })
-            })?;
-            presentation = Some(Presentation {
-                appearance,
-                content: 77,
-            });
+        .prepare(None, |_snapshot, _context, _| {
+            presentation = Some(Presentation { content: 77 });
             Ok(())
         })
         .unwrap();
@@ -197,17 +165,8 @@ fn live_stage_fences_a_ready_fallback_on_the_same_connection() {
     let request = jobs.fallback.unwrap();
     let mut presentation = None;
     let fallback = request
-        .prepare(None, |snapshot, context, _| {
-            let appearance = Projection::new(&snapshot.effective[context])?.prepare(|_, _| {
-                Ok(FontSelection {
-                    font: crate::UI::Font::DEFAULT,
-                    choice: FontChoice::Declared,
-                })
-            })?;
-            presentation = Some(Presentation {
-                appearance,
-                content: 77,
-            });
+        .prepare(None, |_snapshot, _context, _| {
+            presentation = Some(Presentation { content: 77 });
             Ok(())
         })
         .unwrap();
@@ -326,11 +285,10 @@ fn fallback_attempt_is_fenced_and_does_not_retry_a_failed_resource_in_a_loop() {
 }
 #[tokio::test]
 async fn superseded_blocking_jobs_are_physically_serial_and_keep_only_latest() {
-    install_fonts();
-    let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
     let (release_tx, release_rx) = std::sync::mpsc::channel();
     let release_rx = std::sync::Mutex::new(release_rx);
-    let mut worker = Worker::offline(move |_, snapshot| {
+    let mut worker = Worker::offline(move |snapshot| {
         entered_tx.send(snapshot.revision.0).unwrap();
         release_rx.lock().unwrap().recv().unwrap();
         Ok(snapshot.revision.0)

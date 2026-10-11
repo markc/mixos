@@ -183,7 +183,8 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                     InteractionState::Resting
                 };
                 let theme = scene.theme();
-                let cell = theme.design().tables().button.cell(button_key(&node, interaction));
+                let tables = theme.design().tables();
+                let cell = tables.button.cell(button_key(&node, interaction));
                 let radius = cell.radius as f32;
                 painter.rect_filled(rect, radius, linear(cell.pair.surface));
                 if let Some(border) = cell.border {
