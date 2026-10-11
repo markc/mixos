@@ -36,8 +36,10 @@ auth, transport or timeout) or 12 (a bad request).
   and scheduling cannot be interrupted and can run past it. Requires Mix >=
   0.112.1; an older Mix is refused at start
   (`RUNTIME`).
-- Requests are bounded by `max_line` like replies: an encoded request over it
-  is refused with rc 12 before the connection is touched.
+- `max_line` bounds both directions exactly: an encoded request over it is
+  refused with rc 12 before the connection is touched; a reply line over it
+  is rc 11 with the connection dropped, even when it arrives whole in one
+  read.
 - The unit is sandboxed (no capabilities or new privileges, read-only file
   system with private `/tmp`, loopback-only IP by `IPAddressAllow=localhost`
   and `IPAddressDeny=any`; a non-loopback Bus needs a drop-in).

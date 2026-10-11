@@ -167,7 +167,9 @@ read-only with private `/tmp` and `/var/tmp` (config and token files must
 live elsewhere), address families limited to IPv4, IPv6 and unix sockets,
 and IP traffic to loopback only (`IPAddressAllow=localhost`,
 `IPAddressDeny=any`). A Bus endpoint off loopback needs a drop-in adding its
-address to `IPAddressAllow`.
+address to `IPAddressAllow`. The IP filter is cgroup BPF: enforced on hosts
+that support it, ignored where they do not, and not proven by the offline
+`systemd-analyze security` score.
 
 `--start` outside systemd has no parent-death protection: killing the
 `--start` process alone can orphan the serve child. Run it under the unit,

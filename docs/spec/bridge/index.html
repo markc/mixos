@@ -383,7 +383,9 @@ read-only with private <code>/tmp</code> and <code>/var/tmp</code> (config and t
 live elsewhere), address families limited to IPv4, IPv6 and unix sockets,
 and IP traffic to loopback only (<code>IPAddressAllow=localhost</code>,
 <code>IPAddressDeny=any</code>). A Bus endpoint off loopback needs a drop-in adding its
-address to <code>IPAddressAllow</code>.</p>
+address to <code>IPAddressAllow</code>. The IP filter is cgroup BPF: enforced on hosts
+that support it, ignored where they do not, and not proven by the offline
+<code>systemd-analyze security</code> score.</p>
 <p><code>--start</code> outside systemd has no parent-death protection: killing the
 <code>--start</code> process alone can orphan the serve child. Run it under the unit,
 whose control group holds both. <code>BRIDGED_MIX</code> and the instance's <code>.env</code> file
