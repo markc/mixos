@@ -49,7 +49,7 @@ fn decoded_snapshot(snapshot: Snapshot) -> Decoded {
         args: serde_json::Value::Null,
         body: serde_json::to_string(&snapshot).unwrap(),
         headers: std::collections::BTreeMap::from([
-            ("topic".into(), settings::topic("default")),
+            ("topic".into(), settings::compact::compact_topic("default")),
             ("broker_service".into(), "settingsd".into()),
         ]),
     };

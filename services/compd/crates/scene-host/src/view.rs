@@ -368,8 +368,12 @@ impl SceneUi {
 impl ui::UiProgram for SceneUi {
     type Message = SceneMessage;
 
-    fn setup(&mut self, _ctx: &egui::Context) {
-        // The look is installed by `show`, which knows the scene's kind.
+    fn setup(&mut self, ctx: &egui::Context) {
+        // Before the first pass: egui binds new fonts from the next pass on,
+        // and the first pass already measures text in the named families.
+        let identity = self.look.as_ref().map_or(0, |look| Arc::as_ptr(look) as usize);
+        crate::appearance::install(ctx, &self.theme(), self.text_scale(), self.content.dialog);
+        self.installed = Some((identity, self.content.dialog));
     }
 
     fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<SceneMessage>) {

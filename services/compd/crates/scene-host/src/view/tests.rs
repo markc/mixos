@@ -126,6 +126,7 @@ fn bounded_centred_groups_keep_their_gaps_and_centre_their_content() {
         assert!((b.left() - a.right() - 6.0).abs() < 0.1);
         assert!((d.top() - c.bottom() - 6.0).abs() < 0.1);
         // min_width holds against the short content; min = max fixes the column.
+        eprintln!("DEBUG width={width} row={row:?} a={a:?} b={b:?} placed={:?}", rt.program.layout().placed.iter().map(|p| (p.id.clone(), p.rect)).collect::<Vec<_>>());
         assert!((row.width() - 60.0).abs() < 0.1, "row={row:?}");
         assert!((column.width() - 60.0).abs() < 0.1 && (column.height() - 60.0).abs() < 0.1, "column={column:?}");
         assert!(a.left() >= row.left() && b.right() <= row.right());
@@ -191,7 +192,7 @@ fn every_calendar_node_has_visible_non_zero_bounds_including_the_footer() {
 #[test]
 fn scene_buttons_take_their_design_cell_for_every_tone_and_state() {
     let theme = embedded(true);
-    let tree = scene::resolve(&scene::parse("---\nscene: 1\nname: b\ncitizen: c\n---\n```mix\nroot: {widget: \"row\", children: [\"plain\", \"primary\", \"danger\"]}\nplain: {widget: \"button\", label: \"P\"}\nprimary: {widget: \"button\", label: \"P\", tone: \"primary\"}\ndanger: {widget: \"button\", label: \"D\", tone: \"danger\"}\n```\n").unwrap()).unwrap();
+    let tree = scene::resolve(&scene::parse("---\nscene: 1\nname: buttons\ncitizen: c\n---\n```mix\nroot: {widget: \"row\", children: [\"plain\", \"primary\", \"danger\"]}\nplain: {widget: \"button\", label: \"P\"}\nprimary: {widget: \"button\", label: \"P\", tone: \"primary\"}\ndanger: {widget: \"button\", label: \"D\", tone: \"danger\"}\n```\n").unwrap()).unwrap();
     let tables = theme.design().tables();
     let cell = |id: &str, state| tables.button.cell(button_key(&tree.nodes[id], state)).pair.surface;
     for state in [InteractionState::Resting, InteractionState::Hovered, InteractionState::Pressed] {
@@ -269,7 +270,7 @@ fn escape_routes_to_the_dialog_or_the_edge() {
 #[test]
 fn spacers_and_explicit_lengths_keep_their_sizes() {
     let rt = runtime(
-        "---\nscene: 1\nname: sizes\ncitizen: c\n---\n```mix\nroot: {widget: \"row\", children: [\"fixed\", \"gap\", \"box\", \"grow\", \"tail\"]}\nfixed: {widget: \"text\", text: \"x\", width: 50}\ngap: {widget: \"spacer\", size: 12}\nbox: {widget: \"column\", width: 40, height: 30, children: []}\ngrow: {widget: \"spacer\"}\ntail: {widget: \"text\", text: \"end\"}\n```\n",
+        "---\nscene: 1\nname: sizes\ncitizen: c\n---\n```mix\nroot: {widget: \"row\", children: [\"fixed\", \"gap\", \"box\", \"grow\", \"tail\"]}\nfixed: {widget: \"text\", text: \"x\", width: 50}\ngap: {widget: \"spacer\", size: 12}\nbox: {widget: \"image\", src: \"\", w: 40, h: 30}\ngrow: {widget: \"spacer\"}\ntail: {widget: \"text\", text: \"end\"}\n```\n",
         (400, 100),
     );
     assert_eq!(rect_of(&rt, "fixed").width(), 50.0);
@@ -284,13 +285,13 @@ fn spacers_and_explicit_lengths_keep_their_sizes() {
 #[test]
 fn autofocus_only_lands_on_a_reachable_visible_field() {
     let hidden = content(
-        "---\nscene: 1\nname: l\ncitizen: c\nwindow: {\"kind\":\"edge\",\"edge\":\"left\",\"autofocus\":\"search\"}\n---\n```mix\nroot: {widget: \"column\", children: [\"wrap\"]}\nwrap: {widget: \"column\", hidden: true, children: [\"search\"]}\nsearch: {widget: \"field\"}\n```\n",
+        "---\nscene: 1\nname: lists\ncitizen: c\nwindow: {\"kind\":\"edge\",\"edge\":\"left\",\"autofocus\":\"search\"}\n---\n```mix\nroot: {widget: \"column\", children: [\"wrap\"]}\nwrap: {widget: \"column\", hidden: true, children: [\"search\"]}\nsearch: {widget: \"field\"}\n```\n",
         None,
         false,
     );
     assert_eq!(autofocus(&hidden.tree), None);
     let not_a_field = content(
-        "---\nscene: 1\nname: l\ncitizen: c\nwindow: {\"kind\":\"edge\",\"edge\":\"left\",\"autofocus\":\"search\"}\n---\n```mix\nroot: {widget: \"column\", children: [\"search\"]}\nsearch: {widget: \"text\", text: \"x\"}\n```\n",
+        "---\nscene: 1\nname: lists\ncitizen: c\nwindow: {\"kind\":\"edge\",\"edge\":\"left\",\"autofocus\":\"search\"}\n---\n```mix\nroot: {widget: \"column\", children: [\"search\"]}\nsearch: {widget: \"text\", text: \"x\"}\n```\n",
         None,
         false,
     );
@@ -301,7 +302,7 @@ fn autofocus_only_lands_on_a_reachable_visible_field() {
 fn a_list_shows_at_most_max_rows_before_it_scrolls() {
     let rows: Vec<String> = (0..12).map(|i| format!("{{id: \"r{i}\", cells: [\"row {i}\"]}}")).collect();
     let source = format!(
-        "---\nscene: 1\nname: l\ncitizen: c\n---\n```mix\nroot: {{widget: \"column\", children: [\"list\"]}}\nlist: {{widget: \"list\", row: \"item\", row_height: 20, max_rows: 5, rows: [{}]}}\nitem: {{widget: \"row\", children: [\"label\"]}}\nlabel: {{widget: \"text\", text: \"{{0}}\"}}\n```\n",
+        "---\nscene: 1\nname: lists\ncitizen: c\n---\n```mix\nroot: {{widget: \"column\", children: [\"list\"]}}\nlist: {{widget: \"list\", row: \"item\", row_height: 20, max_rows: 5, rows: [{}]}}\nitem: {{widget: \"row\", children: [\"label\"]}}\nlabel: {{widget: \"text\", text: \"{{0}}\"}}\n```\n",
         rows.join(", ")
     );
     let rt = runtime(&source, (300, 600));
