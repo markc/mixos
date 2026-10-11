@@ -34,6 +34,12 @@ SPDX-FileCopyrightText = "2026 Mark Constable <mc@mixos.dev>"
 SPDX-License-Identifier = "MIT OR Apache-2.0"
 
 [[annotations]]
+path = "services/compd/**"
+precedence = "closest"
+SPDX-FileCopyrightText = ["2026 Mark Constable <mc@mixos.dev>", "2026 Yarden Apelker"]
+SPDX-License-Identifier = "MIT OR Apache-2.0"
+
+[[annotations]]
 path = ["docs/web/fonts/icons.woff2", "docs/web/fonts/LICENSE-MaterialSymbols.txt"]
 precedence = "override"
 SPDX-FileCopyrightText = "Google LLC (Material Symbols)"

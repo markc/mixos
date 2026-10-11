@@ -4,7 +4,7 @@
 
 [workspace]
 resolver = "3"
-members = ["libs/*", "services/noded", "services/noded/crates/*", "cli/mix-shell", "services/editd", "services/settingsd", "services/portald", "apps/busviewer", "apps/busviewer/crates/*", "apps/prefs", "apps/prefs/crates/*", "apps/ced", "apps/ced/crates/*"]
+members = ["libs/*", "services/noded", "services/noded/crates/*", "cli/mix-shell", "services/editd", "services/settingsd", "services/portald", "apps/busviewer", "apps/busviewer/crates/*", "apps/prefs", "apps/prefs/crates/*", "apps/ced", "apps/ced/crates/*", "services/compd/crates/*"]
 exclude = ["vendor", "vendor/msedit/lsh", "vendor/msedit/stdext"]
 
 [workspace.package]
@@ -80,6 +80,7 @@ logging = { path = "libs/logging" }
 mix = { path = "libs/mix" }
 syntax = { path = "libs/syntax" }
 props = { path = "libs/props" }
+scene = { path = "libs/scene" }
 settings = { path = "libs/settings" }
 strict = { path = "libs/strict" }
 mimedb = { path = "libs/mimedb" }
@@ -92,6 +93,28 @@ citizen = { path = "libs/citizen" }
 smithay = { path = "vendor/smithay", version = "0.7.0", default-features = false, features = ["backend_drm", "backend_egl", "backend_gbm", "backend_libinput", "backend_session_libseat", "backend_udev", "backend_winit", "desktop", "drm", "gbm", "renderer_gl", "renderer_multi", "renderer_pixman", "use_system_lib", "wayland-egl", "wayland_frontend", "xwayland"] }
 wgpu = { version = "=30.0.1", default-features = false, features = ["gles", "parking_lot", "std", "wgsl"] }
 egui-wgpu = { version = "=0.36.2", default-features = false }
+bindgen = "=0.71.1"
+bitflags = "=2.13.1"
+cc = "=1.4.3"
+crossbeam-channel = "=0.5.16"
+drm-ffi = "=0.9.1"
+gbm = "=0.18.0"
+glow = "=0.17.0"
+image = { version = "=0.25.10", default-features = false, features = ["png"] }
+pkg-config = "=0.3.34"
+pollster = "=1.0.1"
+
+# compd private crates (services/compd/crates/).
+comp-model = { path = "services/compd/crates/comp-model" }
+edges = { path = "services/compd/crates/edges" }
+graphics = { path = "services/compd/crates/graphics" }
+kms = { path = "services/compd/crates/kms" }
+ledger = { path = "services/compd/crates/ledger" }
+model = { path = "services/compd/crates/model" }
+policy = { path = "services/compd/crates/policy" }
+render-gles = { path = "services/compd/crates/render-gles" }
+slots = { path = "services/compd/crates/slots" }
+surfaces = { path = "services/compd/crates/surfaces" }
 
 # noded private crates (services/noded/crates/).
 mesh = { path = "services/noded/crates/mesh" }

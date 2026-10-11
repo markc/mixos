@@ -1,0 +1,99 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- closure_gate.mix — what each compd crate's resolved closure may contain.
+-- version: 0.1.0
+--
+-- For every crate of services/compd/layers.conf.mix that is in the workspace
+-- (plus libs/scene), resolve its normal and build closure with `cargo tree -p
+-- <crate>` in two feature modes (default and --all-features). cargo tree
+-- resolves features for the selected package only, so another member's
+-- features (eframe's Vulkan backend, say) cannot leak into the answer the way
+-- a workspace-wide `cargo metadata` resolve would.
+--
+-- Rules:
+--   1. no crate reaches the iced toolkit (packages named iced or iced_*, or
+--      cryoglyph);
+--   2. `headless_crates` reach no smithay, egui*, eframe, wgpu*, winit or
+--      bevy*;
+--   3. `core_crates` reach no bevy* and no ash (the compositor is GLES only),
+--      unless listed in `effects_crates`.
+--
+-- Usage: mix tools/closure_gate.mix [--layers <conf>] [--locked] [--offline]
+-- Run from the repo root. Exit 0 clean, 1 a violation, 2 setup failed.
+
+$root = dirname(dirname(realpath($0)))
+$layers_path = $root .. "/services/compd/layers.conf.mix"
+$pass = []
+$av = args()
+$i = 0
+while $i < len($av)
+  $a = $av[$i]
+  if $a == "--layers" then
+    $layers_path = $av[$i + 1]
+    $i = $i + 2
+  elif $a == "--locked" or $a == "--offline" then
+    push($pass, $a)
+    $i = $i + 1
+  else
+    eprint("closure_gate: unknown argument " .. $a)
+    exit(2)
+  end
+end
+
+$table = load_data($layers_path)
+$meta = run_argv(concat(["cargo", "metadata", "--format-version", "1", "--no-deps", "--manifest-path", $root .. "/Cargo.toml"], $pass), {timeout: 600, max_output: 268435456})
+if not $meta.ok then
+  eprint("closure_gate: cargo metadata failed\n" .. $meta.stderr)
+  exit(2)
+end
+$present = map(json_parse($meta.stdout).packages, fn($p) = $p.name)
+$crates = filter(concat(keys($table.layers), ["scene"]), fn($c) = contains($present, $c))
+if len($crates) == 0 then
+  print("closure_gate: no compd crate in the workspace yet")
+  exit(0)
+end
+
+fn is_iced($n)
+  return $n == "iced" or starts_with($n, "iced_") or $n == "cryoglyph"
+end
+fn is_gui($n)
+  return $n == "smithay" or $n == "egui" or starts_with($n, "egui") or $n == "eframe" or $n == "wgpu" or starts_with($n, "wgpu-") or $n == "winit" or $n == "bevy" or starts_with($n, "bevy_")
+end
+fn is_bevy_or_ash($n)
+  return $n == "bevy" or starts_with($n, "bevy_") or $n == "ash"
+end
+
+$headless = $table.headless_crates ?? []
+$core = $table.core_crates ?? []
+$effects = $table.effects_crates ?? []
+$fail = []
+for each $c in $crates
+  for each $mode in [[], ["--all-features"]]
+    $argv = concat(["cargo", "tree", "-p", $c, "-e", "normal,build", "--prefix", "none", "--no-dedupe", "-f", "{p}", "--manifest-path", $root .. "/Cargo.toml"], $mode, $pass)
+    $r = run_argv($argv, {timeout: 600, max_output: 268435456})
+    if not $r.ok then
+      eprint("closure_gate: cargo tree -p " .. $c .. " failed\n" .. $r.stderr)
+      exit(2)
+    end
+    $names = []
+    for each $line in split($r.stdout, "\n")
+      $n = trim($line)
+      if $n != "" then
+        $name = split($n, " ")[0]
+        if not contains($names, $name) then push($names, $name) end
+      end
+    end
+    $label = len($mode) == 0 ? "default" : "all-features"
+    for each $n in $names
+      if is_iced($n) then push($fail, $c .. " (" .. $label .. ") reaches " .. $n) end
+      if contains($headless, $c) and is_gui($n) then push($fail, $c .. " (" .. $label .. ", headless) reaches " .. $n) end
+      if contains($core, $c) and not contains($effects, $c) and is_bevy_or_ash($n) then push($fail, $c .. " (" .. $label .. ", core) reaches " .. $n) end
+    end
+  end
+end
+if len($fail) > 0 then
+  for each $f in $fail
+    print("FAIL " .. $f)
+  end
+  exit(1)
+end
+print("closure_gate: " .. to_string(len($crates)) .. " crate(s) clean: " .. join($crates, ", "))

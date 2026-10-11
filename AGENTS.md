@@ -217,7 +217,9 @@ services/releasesd/
   `mod.rs` or a `foo/foo.rs`. This is a ratchet: no new `mod.rs` anywhere,
   checked by `clippy::mod_module_files` in new crates. Existing trees migrate
   a crate at a time when substantially edited, never as a drive-by inside
-  other work.
+  other work. compd's crates entered with every `mod.rs` renamed and their
+  self-named module files kept as a shrinking exception
+  ([decision](docs/decisions/2026-10-11-compd-module-layout.md)).
 - **Mix files:** `snake_case.mix`. Strict-data config is `*.conf.mix`
   (loaded with `load_data`, never executed). Specs are `*.spec.mix`. Mix tests
   are `*_test.mix`. Code transplanted from elsewhere is renamed on entry, and
