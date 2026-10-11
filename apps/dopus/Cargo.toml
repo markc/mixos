@@ -1,0 +1,44 @@
+# dopus: the MixOS twin-pane file manager — the egui shell around the
+# `dopus-core` engine (AGENTS.md §4.1).
+[package]
+name = "dopus"
+description = "The MixOS twin-pane file manager"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "dopus"
+kind = "app"
+layer = "desktop"
+contract = "public"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+bus = { workspace = true, features = ["native"] }
+buildinfo.workspace = true
+config.workspace = true
+design.workspace = true
+dopus-core = { path = "crates/dopus-core" }
+eframe.workspace = true
+egui.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+settings.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }
+toolkit.workspace = true
+tracing.workspace = true
+unicode-segmentation = "1"
+
+[dev-dependencies]
+egui_kittest.workspace = true
+tempfile.workspace = true
+
+[build-dependencies]
+buildinfo.workspace = true
