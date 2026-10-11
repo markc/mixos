@@ -15,7 +15,13 @@ use crate::templates::PreparedLists;
 fn content(source: &str, frame: Option<Frame>, dialog: bool) -> Arc<Content> {
     let tree = scene::resolve(&scene::parse(source).unwrap()).unwrap();
     let lists = crate::templates::validate_templates(&tree).unwrap();
-    Arc::new(Content { tree, lists, revision: 1, frame, dialog })
+    Arc::new(Content {
+        tree,
+        lists,
+        revision: 1,
+        frame,
+        dialog,
+    })
 }
 
 fn runtime(source: &str, size: (u32, u32)) -> UiRuntime<SceneUi> {
@@ -43,7 +49,12 @@ fn text_in_row(rt: &UiRuntime<SceneUi>, list: &str, item: &str, id: &str) -> egu
         .placed
         .iter()
         .find(|placed| {
-            placed.id == id && placed.source == flex::Source::Row { list: list.into(), item: item.into() }
+            placed.id == id
+                && placed.source
+                    == flex::Source::Row {
+                        list: list.into(),
+                        item: item.into(),
+                    }
         })
         .map(|placed| placed.rect)
         .unwrap_or_else(|| panic!("{list}/{item}/{id} not drawn"))
@@ -57,40 +68,78 @@ fn appearance_keeps_content_local_edits_and_toggles_and_updates_the_page() {
         true,
     ));
     let content = Arc::clone(&ui.content);
-    let route = Arc::new(Route::new(&content.tree, "entry", &content.tree.nodes["entry"]));
-    ui::UiProgram::update(&mut ui, SceneMessage::Input(Arc::clone(&route), "/root/entry".into(), "unsaved edit".into()));
-    ui::UiProgram::update(&mut ui, SceneMessage::Toggle(route, "/root/enabled".into(), true));
+    let route = Arc::new(Route::new(
+        &content.tree,
+        "entry",
+        &content.tree.nodes["entry"],
+    ));
+    ui::UiProgram::update(
+        &mut ui,
+        SceneMessage::Input(
+            Arc::clone(&route),
+            "/root/entry".into(),
+            "unsaved edit".into(),
+        ),
+    );
+    ui::UiProgram::update(
+        &mut ui,
+        SceneMessage::Toggle(route, "/root/enabled".into(), true),
+    );
     ui.apply_appearance(crate::appearance::fixture("light", 1.0));
     let light = ui.page();
-    ui::UiProgram::update(&mut ui, SceneMessage::Appearance(crate::appearance::fixture("dark", 1.5)));
+    ui::UiProgram::update(
+        &mut ui,
+        SceneMessage::Appearance(crate::appearance::fixture("dark", 1.5)),
+    );
     assert!(Arc::ptr_eq(&content, &ui.content));
     assert_eq!(ui.edits["/root/entry"], "unsaved edit");
     assert!(ui.toggles["/root/enabled"]);
     assert_ne!(ui.page(), light);
-    assert!(ui.text_styles().ui.size > TEXT_SIZE, "text scale 1.5 applies");
+    assert!(
+        ui.text_styles().ui.size > TEXT_SIZE,
+        "text scale 1.5 applies"
+    );
 }
 
 #[test]
 fn panel_has_square_pager_two_clock_lines_and_full_task_hit_targets() {
-    let rt = runtime(include_str!("../../tests/fixtures/panel-render.scene.mix"), (1536, 52));
+    let rt = runtime(
+        include_str!("../../tests/fixtures/panel-render.scene.mix"),
+        (1536, 52),
+    );
     for id in ["1", "2", "3", "4"] {
         let cell = row_of(&rt, "pager", id);
-        assert!((cell.width() - cell.height()).abs() < 0.1, "pager {id}: {cell:?}");
+        assert!(
+            (cell.width() - cell.height()).abs() < 0.1,
+            "pager {id}: {cell:?}"
+        );
         assert!((cell.height() - 30.0).abs() < 0.1, "pager {id}: {cell:?}");
     }
     let time = rect_of(&rt, "clock_time");
     let date = rect_of(&rt, "clock_date");
-    assert!(time.height() >= 22.0 && date.height() >= 13.0, "clock: {time:?}, {date:?}");
-    assert!(date.top() >= time.bottom() - 0.1 && date.bottom() <= 48.0, "clock: {time:?}, {date:?}");
+    assert!(
+        time.height() >= 22.0 && date.height() >= 13.0,
+        "clock: {time:?}, {date:?}"
+    );
+    assert!(
+        date.top() >= time.bottom() - 0.1 && date.bottom() <= 48.0,
+        "clock: {time:?}, {date:?}"
+    );
     let task = row_of(&rt, "tasks", "task");
-    assert!(task.width() >= 218.0 && task.height() >= 40.0, "task: {task:?}");
+    assert!(
+        task.width() >= 218.0 && task.height() >= 40.0,
+        "task: {task:?}"
+    );
     let peek = rect_of(&rt, "peek_i");
     assert_eq!((peek.width(), peek.height()), (20.0, 20.0));
 }
 
 #[test]
 fn panel_pager_digits_sit_at_the_centre_of_their_hit_targets() {
-    let rt = runtime(include_str!("../../tests/fixtures/panel-render.scene.mix"), (1536, 52));
+    let rt = runtime(
+        include_str!("../../tests/fixtures/panel-render.scene.mix"),
+        (1536, 52),
+    );
     let template = rt.program.content.tree.nodes["pager"]
         .ports
         .get("row")
@@ -107,8 +156,14 @@ fn panel_pager_digits_sit_at_the_centre_of_their_hit_targets() {
             .map(|(id, _)| id.clone())
             .unwrap_or_else(|| panic!("pager row {id} ({template}) has no text"));
         let digit = text_in_row(&rt, "pager", id, &text_id);
-        assert!((digit.center().x - cell.center().x).abs() < 0.6, "pager {id}: digit={digit:?}, cell={cell:?}");
-        assert!((digit.center().y - cell.center().y).abs() < 0.6, "pager {id}: digit={digit:?}, cell={cell:?}");
+        assert!(
+            (digit.center().x - cell.center().x).abs() < 0.6,
+            "pager {id}: digit={digit:?}, cell={cell:?}"
+        );
+        assert!(
+            (digit.center().y - cell.center().y).abs() < 0.6,
+            "pager {id}: digit={digit:?}, cell={cell:?}"
+        );
         assert!(digit.left() >= cell.left() - 0.1 && digit.right() <= cell.right() + 0.1);
     }
 }
@@ -121,14 +176,26 @@ fn bounded_centred_groups_keep_their_gaps_and_centre_their_content() {
         let row = rect_of(&rt, "r");
         let column = rect_of(&rt, "c");
         let [a, b, c, d] = ["a", "b", "cc", "dd"].map(|id| rect_of(&rt, id));
-        assert!(((a.left() + b.right()) / 2.0 - row.center().x).abs() < 0.1, "row={row:?}, a={a:?}, b={b:?}");
-        assert!(((c.top() + d.bottom()) / 2.0 - column.center().y).abs() < 0.1, "column={column:?}, c={c:?}, d={d:?}");
+        assert!(
+            ((a.left() + b.right()) / 2.0 - row.center().x).abs() < 0.1,
+            "row={row:?}, a={a:?}, b={b:?}"
+        );
+        assert!(
+            ((c.top() + d.bottom()) / 2.0 - column.center().y).abs() < 0.1,
+            "column={column:?}, c={c:?}, d={d:?}"
+        );
         assert!((b.left() - a.right() - 6.0).abs() < 0.1);
         assert!((d.top() - c.bottom() - 6.0).abs() < 0.1);
         // min_width holds against the short content; min = max fixes the column.
         // Flexbox (taffy, as Quoin): a fit-content row inside its bounds.
-        assert!(row.width() >= 60.0 - 0.1 && row.width() <= 80.0 + 0.1, "row={row:?}");
-        assert!((column.width() - 60.0).abs() < 0.1 && (column.height() - 60.0).abs() < 0.1, "column={column:?}");
+        assert!(
+            row.width() >= 60.0 - 0.1 && row.width() <= 80.0 + 0.1,
+            "row={row:?}"
+        );
+        assert!(
+            (column.width() - 60.0).abs() < 0.1 && (column.height() - 60.0).abs() < 0.1,
+            "column={column:?}"
+        );
         assert!(a.left() >= row.left() && b.right() <= row.right());
     }
 }
@@ -157,7 +224,8 @@ fn autofocus_targets_the_field_and_typing_emits_filter() {
     }
     let seen = seen.lock().unwrap();
     assert!(
-        seen.iter().any(|(handler, body)| handler == "filter" && body["value"] == json!("f")),
+        seen.iter()
+            .any(|(handler, body)| handler == "filter" && body["value"] == json!("f")),
         "{seen:?}"
     );
 }
@@ -165,10 +233,16 @@ fn autofocus_targets_the_field_and_typing_emits_filter() {
 #[test]
 fn every_calendar_node_has_visible_non_zero_bounds_including_the_footer() {
     for (width, height) in [(360, 600), (380, 812), (360, 600)] {
-        let rt = runtime(include_str!("../../tests/fixtures/calendar.scene.mix"), (width, height));
+        let rt = runtime(
+            include_str!("../../tests/fixtures/calendar.scene.mix"),
+            (width, height),
+        );
         for id in rt.program.content.tree.nodes.keys() {
             let bounds = rect_of(&rt, id);
-            assert!(bounds.width() > 0.0 && bounds.height() > 0.0, "{id}: {bounds:?} at {width}x{height}");
+            assert!(
+                bounds.width() > 0.0 && bounds.height() > 0.0,
+                "{id}: {bounds:?} at {width}x{height}"
+            );
             assert!(
                 bounds.left() >= 0.0
                     && bounds.top() >= 0.0
@@ -194,19 +268,35 @@ fn scene_buttons_take_their_design_cell_for_every_tone_and_state() {
     let theme = embedded(true);
     let tree = scene::resolve(&scene::parse("---\nscene: 1\nname: buttons\ncitizen: c\n---\n```mix\nroot: {widget: \"row\", children: [\"plain\", \"primary\", \"danger\"]}\nplain: {widget: \"button\", label: \"P\"}\nprimary: {widget: \"button\", label: \"P\", tone: \"primary\"}\ndanger: {widget: \"button\", label: \"D\", tone: \"danger\"}\n```\n").unwrap()).unwrap();
     let tables = theme.design().tables();
-    let cell = |id: &str, state| tables.button.cell(button_key(&tree.nodes[id], state)).pair.surface;
-    for state in [InteractionState::Resting, InteractionState::Hovered, InteractionState::Pressed] {
+    let cell = |id: &str, state| {
+        tables
+            .button
+            .cell(button_key(&tree.nodes[id], state))
+            .pair
+            .surface
+    };
+    for state in [
+        InteractionState::Resting,
+        InteractionState::Hovered,
+        InteractionState::Pressed,
+    ] {
         assert_ne!(cell("plain", state), cell("primary", state), "{state:?}");
         assert_ne!(cell("primary", state), cell("danger", state), "{state:?}");
     }
-    assert_ne!(cell("primary", InteractionState::Resting), cell("primary", InteractionState::Hovered));
+    assert_ne!(
+        cell("primary", InteractionState::Resting),
+        cell("primary", InteractionState::Hovered)
+    );
 }
 
 #[test]
 fn scene_colours_parse_as_quoin_parses_them() {
     assert_eq!(hex("#fff"), Some(Color32::from_rgb(255, 255, 255)));
     assert_eq!(hex("#20242d"), Some(Color32::from_rgb(0x20, 0x24, 0x2d)));
-    assert_eq!(hex("#00000080").map(|c| c.to_srgba_unmultiplied()[3]), Some(128));
+    assert_eq!(
+        hex("#00000080").map(|c| c.to_srgba_unmultiplied()[3]),
+        Some(128)
+    );
     for bad in ["", "fff", "#ff", "#gggggg", "#ffffffff0", "#ééé"] {
         assert_eq!(hex(bad), None, "{bad}");
     }
@@ -220,7 +310,10 @@ fn events_carry_the_quoin_payload_and_only_bound_handlers_fire() {
     let click = SceneMessage::Click(Arc::clone(&button));
     let (citizen, handler, body) = event_of(&click).unwrap();
     assert_eq!((citizen, handler), ("conformance-citizen", "go"));
-    assert_eq!(body, json!({"scene":"conformance","node":"button","kind":"click"}));
+    assert_eq!(
+        body,
+        json!({"scene":"conformance","node":"button","kind":"click"})
+    );
     assert!(event_of(&SceneMessage::Toggle(button, "k".into(), true)).is_none());
     let field = Arc::new(Route::new(&tree, "field", &tree.nodes["field"]));
     let submit = SceneMessage::Submit(Arc::clone(&field), "typed".into());
@@ -231,7 +324,10 @@ fn events_carry_the_quoin_payload_and_only_bound_handlers_fire() {
     let row_click = SceneMessage::Click(Arc::new(row));
     let (_, handler, body) = event_of(&row_click).unwrap();
     assert_eq!(handler, "select");
-    assert_eq!(body, json!({"scene":"conformance","node":"list","kind":"click","item":{"id":"1","cells":["one"]}}));
+    assert_eq!(
+        body,
+        json!({"scene":"conformance","node":"list","kind":"click","item":{"id":"1","cells":["one"]}})
+    );
 }
 
 #[test]
@@ -240,8 +336,15 @@ fn edges_draw_on_the_dark_panel_pair_and_dialogs_on_the_base_pair() {
     let edge = SceneUi::new(content(source, None, false));
     let dialog = SceneUi::new(content(source, Some(Frame { title: "t".into() }), true));
     let dark = crate::appearance::page(&embedded(false), true);
-    assert_eq!(edge.page(), colour(dark.secondary.surface), "edge: the secondary pair, dark");
-    assert_eq!(dialog.page(), colour(crate::appearance::page(&embedded(true), true).base.surface));
+    assert_eq!(
+        edge.page(),
+        colour(dark.secondary.surface),
+        "edge: the secondary pair, dark"
+    );
+    assert_eq!(
+        dialog.page(),
+        colour(crate::appearance::page(&embedded(true), true).base.surface)
+    );
     assert_eq!(hex(&hex_of(edge.page())), Some(edge.page()));
 }
 
@@ -249,7 +352,8 @@ fn edges_draw_on_the_dark_panel_pair_and_dialogs_on_the_base_pair() {
 fn escape_routes_to_the_dialog_or_the_edge() {
     for (dialog, expected) in [(true, "close"), (false, "edge")] {
         let source = scene::fixtures::CONFORMANCE;
-        let mut rt = UiRuntime::headless(SceneUi::new(content(source, None, dialog)), (400, 300), 1.0);
+        let mut rt =
+            UiRuntime::headless(SceneUi::new(content(source, None, dialog)), (400, 300), 1.0);
         let seen = Arc::new(Mutex::new(Vec::new()));
         let sink = Arc::clone(&seen);
         rt.set_message_handler(move |message: &SceneMessage| {
@@ -278,8 +382,14 @@ fn spacers_and_explicit_lengths_keep_their_sizes() {
     assert_eq!((gap.width(), gap.height()), (12.0, 12.0));
     let boxed = rect_of(&rt, "box");
     assert_eq!((boxed.width(), boxed.height()), (40.0, 30.0));
-    assert!(rect_of(&rt, "grow").width() > 200.0, "an unsized spacer takes the rest");
-    assert!((rect_of(&rt, "tail").right() - 400.0).abs() < 0.6, "pushed to the end");
+    assert!(
+        rect_of(&rt, "grow").width() > 200.0,
+        "an unsized spacer takes the rest"
+    );
+    assert!(
+        (rect_of(&rt, "tail").right() - 400.0).abs() < 0.6,
+        "pushed to the end"
+    );
 }
 
 #[test]
@@ -300,7 +410,9 @@ fn autofocus_only_lands_on_a_reachable_visible_field() {
 
 #[test]
 fn a_list_shows_at_most_max_rows_before_it_scrolls() {
-    let rows: Vec<String> = (0..12).map(|i| format!("{{id: \"r{i}\", cells: [\"row {i}\"]}}")).collect();
+    let rows: Vec<String> = (0..12)
+        .map(|i| format!("{{id: \"r{i}\", cells: [\"row {i}\"]}}"))
+        .collect();
     let source = format!(
         "---\nscene: 1\nname: lists\ncitizen: c\n---\n```mix\nroot: {{widget: \"column\", children: [\"list\"]}}\nlist: {{widget: \"list\", row: \"item\", row_height: 20, max_rows: 5, rows: [{}]}}\nitem: {{widget: \"row\", children: [\"label\"]}}\nlabel: {{widget: \"text\", text: \"{{0}}\"}}\n```\n",
         rows.join(", ")
@@ -309,9 +421,16 @@ fn a_list_shows_at_most_max_rows_before_it_scrolls() {
     let list = rect_of(&rt, "list");
     assert_eq!(list.height(), 100.0, "five rows of twenty");
     let boxed = &rt.program.layout().lists["list"];
-    assert!(boxed.content_height >= 240.0, "twelve rows to scroll through: {}", boxed.content_height);
+    assert!(
+        boxed.content_height >= 240.0,
+        "twelve rows to scroll through: {}",
+        boxed.content_height
+    );
     assert_eq!(row_of(&rt, "list", "r0").height(), 20.0);
-    assert!(row_of(&rt, "list", "r11").top() > list.bottom(), "past the box, until scrolled");
+    assert!(
+        row_of(&rt, "list", "r11").top() > list.bottom(),
+        "past the box, until scrolled"
+    );
 }
 
 /// A scrolled list that shrinks keeps its surviving rows in view: the
@@ -319,7 +438,9 @@ fn a_list_shows_at_most_max_rows_before_it_scrolls() {
 #[test]
 fn a_shrunk_list_pulls_its_scroll_back_into_its_content() {
     let source = |count: usize| {
-        let rows: Vec<String> = (0..count).map(|i| format!("{{id: \"r{i}\", cells: [\"row {i}\"]}}")).collect();
+        let rows: Vec<String> = (0..count)
+            .map(|i| format!("{{id: \"r{i}\", cells: [\"row {i}\"]}}"))
+            .collect();
         format!(
             "---\nscene: 1\nname: lists\ncitizen: c\n---\n```mix\nroot: {{widget: \"column\", children: [\"list\"]}}\nlist: {{widget: \"list\", row: \"item\", row_height: 20, max_rows: 5, rows: [{}]}}\nitem: {{widget: \"row\", children: [\"label\"]}}\nlabel: {{widget: \"text\", text: \"{{0}}\"}}\n```\n",
             rows.join(", ")
@@ -336,14 +457,23 @@ fn a_shrunk_list_pulls_its_scroll_back_into_its_content() {
     rt.program.scroll.insert("gone".into(), 10.0);
     rt.request_redraw();
     rt.tick();
-    assert!(!rt.program.scroll.contains_key("gone"), "a list's offset leaves with it");
+    assert!(
+        !rt.program.scroll.contains_key("gone"),
+        "a list's offset leaves with it"
+    );
 }
 
 #[test]
 fn a_dialog_frame_reports_its_close_button_and_puts_the_page_below_the_title_bar() {
     let rt = {
         let mut rt = UiRuntime::headless(
-            SceneUi::new(content(scene::fixtures::CONFORMANCE, Some(Frame { title: "Title".into() }), true)),
+            SceneUi::new(content(
+                scene::fixtures::CONFORMANCE,
+                Some(Frame {
+                    title: "Title".into(),
+                }),
+                true,
+            )),
             (720, 520),
             1.0,
         );

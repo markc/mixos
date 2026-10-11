@@ -286,7 +286,14 @@ pub fn input_received<I: InputBackend>(event: &I::KeyboardKeyEvent, _loop: &mut 
         return;
     }
 
-    if should_forward::<I>(_loop, key_code.raw(), keysym, shortcut_sym, key_state, &modifiers) {
+    if should_forward::<I>(
+        _loop,
+        key_code.raw(),
+        keysym,
+        shortcut_sym,
+        key_state,
+        &modifiers,
+    ) {
         keyboard.input_forward(
             &mut _loop.state,
             key_code,
@@ -496,8 +503,13 @@ fn ui_handle(state: &mut Loop, key_code: u32, keysym: Keysym, key_state: KeyStat
         // Non-modifier key: route to the focused UI. Its modifier state already
         // travelled through `modifier_changed`.
         if let Some(focused) = registry.keyboard_focus() {
-            let input =
-                ui::registry::translate_keyboard(key_code, keysym_raw, utf8.as_deref(), key_state, false);
+            let input = ui::registry::translate_keyboard(
+                key_code,
+                keysym_raw,
+                utf8.as_deref(),
+                key_state,
+                false,
+            );
             let _ = registry.dispatch_input(focused, input);
             return Some(true);
         }

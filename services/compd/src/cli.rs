@@ -240,21 +240,44 @@ mod tests {
     fn bus_service_is_accepted_and_defaults_by_backend() {
         let c = p(&["--nested", "--bus-service", "compd-smoke-7"]);
         assert_eq!(c.bus_service.as_deref(), Some("compd-smoke-7"));
-        assert_eq!(crate::comp::service_name(Backend::Nested, c.bus_service.as_deref()), "compd-smoke-7");
-        assert_eq!(crate::comp::service_name(Backend::Nested, None), "comp-nested");
+        assert_eq!(
+            crate::comp::service_name(Backend::Nested, c.bus_service.as_deref()),
+            "compd-smoke-7"
+        );
+        assert_eq!(
+            crate::comp::service_name(Backend::Nested, None),
+            "comp-nested"
+        );
         assert_eq!(crate::comp::service_name(Backend::Kms, None), "comp");
     }
 
     #[test]
     fn scene_service_is_accepted_in_both_forms() {
-        assert_eq!(p(&["--nested", "--scene-service", "shell-nested"]).scene_service.as_deref(), Some("shell-nested"));
-        assert_eq!(p(&["--scene-service=shell-7"]).scene_service.as_deref(), Some("shell-7"));
+        assert_eq!(
+            p(&["--nested", "--scene-service", "shell-nested"])
+                .scene_service
+                .as_deref(),
+            Some("shell-nested")
+        );
+        assert_eq!(
+            p(&["--scene-service=shell-7"]).scene_service.as_deref(),
+            Some("shell-7")
+        );
         assert_eq!(p(&["--nested"]).scene_service, None);
     }
 
     #[test]
     fn comp_kms_live_launch_parses() {
-        let c = p(&["kms-live", "--device", "/dev/dri/card1", "--connector", "HDMI-A-1", "--scale", "1", "--kms-confirm"]);
+        let c = p(&[
+            "kms-live",
+            "--device",
+            "/dev/dri/card1",
+            "--connector",
+            "HDMI-A-1",
+            "--scale",
+            "1",
+            "--kms-confirm",
+        ]);
         assert_eq!(c.backend, Some(Backend::Kms));
         assert_eq!(c.device.as_deref(), Some("/dev/dri/card1"));
         assert_eq!(c.connector.as_deref(), Some("HDMI-A-1"));
@@ -276,8 +299,16 @@ mod tests {
         assert!(parse_scale("inf").is_err());
         assert!(parse_scale("two").is_err());
         let nested = p(&["--nested"]);
-        assert_eq!(output_scale(&nested, Backend::Nested), None, "nested follows the host");
-        assert_eq!(output_scale(&nested, Backend::Kms), Some(1.0), "KMS defaults to 1");
+        assert_eq!(
+            output_scale(&nested, Backend::Nested),
+            None,
+            "nested follows the host"
+        );
+        assert_eq!(
+            output_scale(&nested, Backend::Kms),
+            Some(1.0),
+            "KMS defaults to 1"
+        );
         let scaled = p(&["--nested", "--scale=2.5"]);
         assert_eq!(output_scale(&scaled, Backend::Nested), Some(2.5));
     }

@@ -44,7 +44,7 @@ fn bridge_fences_completion_and_activates_current_content_once() {
 
 #[tokio::test]
 async fn cancelled_bridge_drive_keeps_one_resource_job_and_completion() {
-        let (entered, mut started) = tokio::sync::mpsc::unbounded_channel();
+    let (entered, mut started) = tokio::sync::mpsc::unbounded_channel();
     let (release, blocked) = std::sync::mpsc::channel();
     let blocked = std::sync::Mutex::new(blocked);
     let worker = Worker::offline(move |snapshot| {

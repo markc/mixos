@@ -52,7 +52,9 @@ impl Display for PageError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::EmptyName => formatter.write_str("sub-panel name must not be empty"),
-            Self::Duplicate(name) => write!(formatter, "sub-panel name '{name}' is already registered"),
+            Self::Duplicate(name) => {
+                write!(formatter, "sub-panel name '{name}' is already registered")
+            }
         }
     }
 }
@@ -95,7 +97,12 @@ impl PageRegistry {
         }
         self.seats.insert(
             name.to_owned(),
-            PageSeat { output: output.to_owned(), edge, owner: owner.to_owned(), accepted_at },
+            PageSeat {
+                output: output.to_owned(),
+                edge,
+                owner: owner.to_owned(),
+                accepted_at,
+            },
         );
         Ok(())
     }
@@ -126,7 +133,10 @@ pub struct DialogSeat {
 pub enum DialogError {
     EmptyName,
     /// Another scene holds the seat; the load did not ask to pre-empt.
-    Busy { scene: String, owner: String },
+    Busy {
+        scene: String,
+        owner: String,
+    },
     /// Release named a scene that does not hold the seat.
     Unknown(String),
 }
@@ -135,7 +145,9 @@ impl Display for DialogError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::EmptyName => formatter.write_str("dialog scene name must not be empty"),
-            Self::Busy { scene, owner } => write!(formatter, "the dialog seat is held by {scene} ({owner})"),
+            Self::Busy { scene, owner } => {
+                write!(formatter, "the dialog seat is held by {scene} ({owner})")
+            }
             Self::Unknown(scene) => write!(formatter, "{scene} does not hold the dialog seat"),
         }
     }
@@ -161,7 +173,10 @@ impl DialogSlot {
         if let Some(held) = &self.seat
             && (held.scene != seat.scene || held.owner != seat.owner)
         {
-            return Err(DialogError::Busy { scene: held.scene.clone(), owner: held.owner.clone() });
+            return Err(DialogError::Busy {
+                scene: held.scene.clone(),
+                owner: held.owner.clone(),
+            });
         }
         self.seat = Some(seat);
         Ok(())
@@ -211,13 +226,23 @@ mod tests {
     fn page_mount_refuses_cross_output_edge_and_owner_collisions_atomically() {
         let mut registry = PageRegistry::default();
         registry.mount("page", "DP-1", Edge::Right, "a", 1).unwrap();
-        for (output, edge, owner) in [("DP-2", Edge::Right, "a"), ("DP-1", Edge::Left, "a"), ("DP-1", Edge::Right, "b")] {
-            assert_eq!(registry.mount("page", output, edge, owner, 9), Err(PageError::Duplicate("page".into())));
+        for (output, edge, owner) in [
+            ("DP-2", Edge::Right, "a"),
+            ("DP-1", Edge::Left, "a"),
+            ("DP-1", Edge::Right, "b"),
+        ] {
+            assert_eq!(
+                registry.mount("page", output, edge, owner, 9),
+                Err(PageError::Duplicate("page".into()))
+            );
             assert_eq!(registry.seat("page").unwrap().accepted_at, 1);
         }
         registry.mount("page", "DP-1", Edge::Right, "a", 2).unwrap();
         assert_eq!(registry.seat("page").unwrap().accepted_at, 2);
-        assert_eq!(registry.mount(" ", "DP-1", Edge::Right, "a", 1), Err(PageError::EmptyName));
+        assert_eq!(
+            registry.mount(" ", "DP-1", Edge::Right, "a", 1),
+            Err(PageError::EmptyName)
+        );
     }
 
     #[test]
@@ -227,10 +252,19 @@ mod tests {
         slot.register(seat("editor", "scenes")).unwrap();
         assert_eq!(
             slot.register(seat("other", "scenes")),
-            Err(DialogError::Busy { scene: "editor".into(), owner: "scenes".into() })
+            Err(DialogError::Busy {
+                scene: "editor".into(),
+                owner: "scenes".into()
+            })
         );
-        assert_eq!(slot.release("other"), Err(DialogError::Unknown("other".into())));
-        assert_eq!(slot.preempt(seat("other", "x")).unwrap().unwrap().scene, "editor");
+        assert_eq!(
+            slot.release("other"),
+            Err(DialogError::Unknown("other".into()))
+        );
+        assert_eq!(
+            slot.preempt(seat("other", "x")).unwrap().unwrap().scene,
+            "editor"
+        );
         assert_eq!(slot.preempt(seat("other", "x")).unwrap(), None);
         assert_eq!(slot.release("other").unwrap().owner, "x");
         assert!(slot.seat().is_none());

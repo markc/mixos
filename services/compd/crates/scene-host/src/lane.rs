@@ -3,11 +3,10 @@
 //! prepare captured requests on their existing worker and complete them here.
 //! No transport, runtime, receiver, file I/O, timer or redraw loop is owned.
 use settings::{
-    Diagnostic,
+    Diagnostic, Snapshot,
     consumer::{Consumer, Update},
     domains::ChangePlan,
     fallback::PresentationKind,
-    Snapshot,
 };
 pub mod native;
 

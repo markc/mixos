@@ -37,30 +37,43 @@ fn unsupported(path: &str, message: &str) -> Diagnostic {
 /// effective scheme, style, mode and contrast settingsd accepted, framed as
 /// the profile asks.
 fn theme_of(snapshot: &Snapshot) -> Result<Theme, Diagnostic> {
-    let effective = snapshot
-        .effective
-        .get(CONTEXT)
-        .ok_or_else(|| Diagnostic::new("missing_context", "effective", "Snapshot has no desktop context"))?;
+    let effective = snapshot.effective.get(CONTEXT).ok_or_else(|| {
+        Diagnostic::new(
+            "missing_context",
+            "effective",
+            "Snapshot has no desktop context",
+        )
+    })?;
     let decorations = Decorations::from_name(&effective.decorations)
         .ok_or_else(|| unsupported("appearance.decorations", "Unknown decorations"))?;
     let captions = CaptionSide::from_name(&effective.caption_side)
         .ok_or_else(|| unsupported("appearance.caption_side", "Unknown caption side"))?;
     let style = match &effective.style {
         None => None,
-        Some(name) => Some(Style::from_name(name).ok_or_else(|| unsupported("appearance.style", "Unknown style"))?),
+        Some(name) => Some(
+            Style::from_name(name)
+                .ok_or_else(|| unsupported("appearance.style", "Unknown style"))?,
+        ),
     };
     let context = DesignContext {
         scheme: Scheme::from_name(&effective.scheme)
             .ok_or_else(|| unsupported("appearance.scheme", "Unknown scheme"))?,
-        mode: Mode::from_name(&effective.mode).ok_or_else(|| unsupported("appearance.mode", "Unknown mode"))?,
+        mode: Mode::from_name(&effective.mode)
+            .ok_or_else(|| unsupported("appearance.mode", "Unknown mode"))?,
         contrast: Contrast::from_name(&effective.contrast)
             .ok_or_else(|| unsupported("appearance.contrast", "Unknown contrast"))?,
         style,
         ..DesignContext::default()
     };
     let theme = match &snapshot.desktop.appearance.source {
-        Some(source) => Theme::from_source_in("settings:desktop", source, context)
-            .map_err(|error| unsupported("appearance.source", &format!("Design does not compile: {error:?}")))?,
+        Some(source) => {
+            Theme::from_source_in("settings:desktop", source, context).map_err(|error| {
+                unsupported(
+                    "appearance.source",
+                    &format!("Design does not compile: {error:?}"),
+                )
+            })?
+        }
         None => Theme::for_context(context),
     };
     Ok(theme.framed(decorations, captions))
@@ -153,7 +166,10 @@ pub(crate) fn fixture(mode: &str, scale: f64) -> Arc<Look> {
     let effective = settings::resolve(&desktop).unwrap();
     let snapshot = Snapshot {
         schema: settings::SCHEMA,
-        binding: settings::Binding { instance: "desktop".into(), profile: "test".into() },
+        binding: settings::Binding {
+            instance: "desktop".into(),
+            profile: "test".into(),
+        },
         incarnation: "test".into(),
         revision: settings::Revision(1),
         design_revision: settings::Revision(1),
@@ -175,7 +191,11 @@ mod tests {
         assert_eq!(dark.theme.mode(), Mode::Dark);
         assert_eq!(light.theme.mode(), Mode::Light);
         assert_eq!(light.text_scale, 1.5);
-        assert_ne!(dark.palette(false).base, dark.palette(true).base, "an edge page is on the secondary pair");
+        assert_ne!(
+            dark.palette(false).base,
+            dark.palette(true).base,
+            "an edge page is on the secondary pair"
+        );
         let title = light.chrome(ChromeStyle::ALL[0]);
         let unscaled = dark.chrome(ChromeStyle::ALL[0]);
         assert!(title.deco.metrics.title_size_px > unscaled.deco.metrics.title_size_px);
@@ -193,7 +213,10 @@ mod tests {
         let selected = effective.get(CONTEXT).unwrap().clone();
         let snapshot = Snapshot {
             schema: settings::SCHEMA,
-            binding: settings::Binding { instance: "desktop".into(), profile: "test".into() },
+            binding: settings::Binding {
+                instance: "desktop".into(),
+                profile: "test".into(),
+            },
             incarnation: "test".into(),
             revision: settings::Revision(1),
             design_revision: settings::Revision(1),
@@ -203,7 +226,10 @@ mod tests {
         };
         let look = build(&snapshot).unwrap();
         assert_eq!(look.theme.mode(), Mode::from_name(&selected.mode).unwrap());
-        assert_eq!(look.theme.contrast(), Contrast::from_name(&selected.contrast).unwrap());
+        assert_eq!(
+            look.theme.contrast(),
+            Contrast::from_name(&selected.contrast).unwrap()
+        );
         assert_eq!(look.theme.mode(), Mode::Light);
         assert_eq!(look.theme.contrast(), Contrast::from_name("high").unwrap());
     }

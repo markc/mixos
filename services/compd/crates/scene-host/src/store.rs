@@ -24,8 +24,9 @@ use crate::verb::SceneVerb;
 pub const CHANGED_COMMAND: &str = "shell.scene.changed";
 
 /// Every family `describe` answers for, in the contract's order.
-pub const FAMILIES: [&str; 10] =
-    ["window", "column", "row", "text", "field", "button", "toggle", "list", "image", "spacer"];
+pub const FAMILIES: [&str; 10] = [
+    "window", "column", "row", "text", "field", "button", "toggle", "list", "image", "spacer",
+];
 
 /// A renderer's live content for one scene: its surface handle and the
 /// revision it last drew.
@@ -108,16 +109,25 @@ impl SceneEntry {
             return false;
         };
         slot.seat().is_some_and(|seat| {
-            seat.scene == self.tree.name && seat.owner == owner.citizen && seat.accepted_at == owner.accepted_at
+            seat.scene == self.tree.name
+                && seat.owner == owner.citizen
+                && seat.accepted_at == owner.accepted_at
         })
     }
 
     fn is_model_authority(&self, mount: Option<&SceneMount<'_>>) -> bool {
-        self.owner.as_ref().zip(mount).is_some_and(|(owner, caller)| owner.citizen == caller.owner)
+        self.owner
+            .as_ref()
+            .zip(mount)
+            .is_some_and(|(owner, caller)| owner.citizen == caller.owner)
     }
 
     fn diagnostics(&self) -> Value {
-        self.render_error.as_ref().map(|e| &e["diagnostics"]).cloned().unwrap_or_else(|| json!([]))
+        self.render_error
+            .as_ref()
+            .map(|e| &e["diagnostics"])
+            .cloned()
+            .unwrap_or_else(|| json!([]))
     }
 }
 
@@ -168,7 +178,9 @@ impl SceneStore {
     }
 
     pub fn scenes(&self) -> impl Iterator<Item = (&str, &SceneEntry)> {
-        self.scenes.iter().map(|(name, entry)| (name.as_str(), entry))
+        self.scenes
+            .iter()
+            .map(|(name, entry)| (name.as_str(), entry))
     }
 
     pub fn pages(&self) -> &PageRegistry {
@@ -211,7 +223,10 @@ impl SceneStore {
     pub fn apply_offscreen(&mut self, output: &str, drawn: impl Fn(&str) -> bool) {
         let pages = &self.pages;
         for (name, entry) in self.scenes.iter_mut() {
-            if !is_dialog(&entry.tree) && !drawn(name) && entry.matching_seat(pages, output).is_some() {
+            if !is_dialog(&entry.tree)
+                && !drawn(name)
+                && entry.matching_seat(pages, output).is_some()
+            {
                 entry.applied = entry.revision;
             }
         }
@@ -244,7 +259,12 @@ impl SceneStore {
     /// Move the seated dialog to `output`. False when `scene` does not hold
     /// the seat.
     pub fn retarget_dialog(&mut self, scene: &str, output: &str) -> bool {
-        let Some(mut seat) = self.dialog.seat().filter(|seat| seat.scene == scene).cloned() else {
+        let Some(mut seat) = self
+            .dialog
+            .seat()
+            .filter(|seat| seat.scene == scene)
+            .cloned()
+        else {
             return false;
         };
         if seat.output == output {
@@ -301,7 +321,13 @@ impl SceneStore {
 
     /// Transactional Bus ingress: a rejected candidate never replaces
     /// last-good. `Layout` and `List` are the host's, not the store's.
-    pub fn dispatch(&mut self, verb: SceneVerb, body: &str, args: &Value, mount: &mut SceneMount<'_>) -> Dispatched {
+    pub fn dispatch(
+        &mut self,
+        verb: SceneVerb,
+        body: &str,
+        args: &Value,
+        mount: &mut SceneMount<'_>,
+    ) -> Dispatched {
         let result = self.request_mounted(verb, body, args, Some(mount));
         // A pre-empted dialog holder hears before the new holder's own
         // summary, so an owner never sees its successor first.
@@ -311,29 +337,52 @@ impl SceneStore {
                 if let Some(summary) = summary {
                     publish.push(changed_wire(&summary));
                 }
-                Dispatched { rc: 0, body: reply.to_string(), publish }
+                Dispatched {
+                    rc: 0,
+                    body: reply.to_string(),
+                    publish,
+                }
             }
             Err(error) => {
                 let error = refusal(error);
                 if matches!(verb, SceneVerb::Load | SceneVerb::Patch) {
                     let name = error["scene"].as_str().or_else(|| args["scene"].as_str());
-                    let revision = name.and_then(|name| self.revisions.get(name)).copied().unwrap_or(0);
-                    let diagnostics = error.get("diagnostics").cloned().unwrap_or_else(|| json!([error]));
-                    let summary = json!({"scene":name,"revision":revision,"ops":0,"diagnostics":diagnostics});
+                    let revision = name
+                        .and_then(|name| self.revisions.get(name))
+                        .copied()
+                        .unwrap_or(0);
+                    let diagnostics = error
+                        .get("diagnostics")
+                        .cloned()
+                        .unwrap_or_else(|| json!([error]));
+                    let summary =
+                        json!({"scene":name,"revision":revision,"ops":0,"diagnostics":diagnostics});
                     publish.push(changed_wire(&summary));
                 }
-                Dispatched { rc: 10, body: error.to_string(), publish }
+                Dispatched {
+                    rc: 10,
+                    body: error.to_string(),
+                    publish,
+                }
             }
         }
     }
 
     /// The pending notices as wires (owner departures outside a request).
     pub fn take_notices(&mut self) -> Vec<String> {
-        std::mem::take(&mut self.notices).iter().map(changed_wire).collect()
+        std::mem::take(&mut self.notices)
+            .iter()
+            .map(changed_wire)
+            .collect()
     }
 
     #[cfg(test)]
-    pub(crate) fn request(&mut self, verb: SceneVerb, body: &str, args: &Value) -> Result<(Value, Option<Value>), Value> {
+    pub(crate) fn request(
+        &mut self,
+        verb: SceneVerb,
+        body: &str,
+        args: &Value,
+    ) -> Result<(Value, Option<Value>), Value> {
         self.request_mounted(verb, body, args, None)
     }
 
@@ -352,7 +401,10 @@ impl SceneStore {
                 let diagnostics = scene::lint(&document);
                 let tree = scene::resolve(&document).map_err(|d| json!({"diagnostics":d}))?;
                 validate_templates(&tree)?;
-                Ok((json!({"scene":tree.name,"valid":true,"diagnostics":diagnostics}), None))
+                Ok((
+                    json!({"scene":tree.name,"valid":true,"diagnostics":diagnostics}),
+                    None,
+                ))
             }
             SceneVerb::Load => {
                 let managed_generation = if args.get("model_generation").is_some() {
@@ -396,14 +448,22 @@ impl SceneStore {
                 } else {
                     FAMILIES
                         .into_iter()
-                        .map(|family| (family.to_owned(), json!(scene::describe(family).unwrap_or_default())))
+                        .map(|family| {
+                            (
+                                family.to_owned(),
+                                json!(scene::describe(family).unwrap_or_default()),
+                            )
+                        })
                         .collect::<serde_json::Map<_, _>>()
                         .into()
                 };
                 Ok((value, None))
             }
             SceneVerb::Get | SceneVerb::Watch => {
-                let entry = self.scenes.get(name).ok_or_else(|| json!({"error":"unknown scene"}))?;
+                let entry = self
+                    .scenes
+                    .get(name)
+                    .ok_or_else(|| json!({"error":"unknown scene"}))?;
                 let value = if verb == SceneVerb::Watch {
                     json!({"scene":name,"revision":entry.revision,"digest":digest(&entry.tree),
                         "applied_revision":entry.applied,
@@ -411,7 +471,9 @@ impl SceneStore {
                 } else if args["format"] == "source" {
                     json!({"scene":name,"revision":entry.revision,"source":scene::to_source(&entry.document)})
                 } else if let Some(path) = args["path"].as_str() {
-                    let (id, port) = path.split_once('.').ok_or_else(|| json!({"error":"path must be node.port"}))?;
+                    let (id, port) = path
+                        .split_once('.')
+                        .ok_or_else(|| json!({"error":"path must be node.port"}))?;
                     entry
                         .tree
                         .nodes
@@ -425,10 +487,15 @@ impl SceneStore {
                 Ok((value, None))
             }
             SceneVerb::Patch => {
-                let entry = self.scenes.get(name).ok_or_else(|| json!({"error":"unknown scene"}))?;
+                let entry = self
+                    .scenes
+                    .get(name)
+                    .ok_or_else(|| json!({"error":"unknown scene"}))?;
                 let mut document = entry.document.clone();
                 let path = args["path"].as_str().unwrap_or_default();
-                let value = args.get("value").ok_or_else(|| json!({"error":"value is required"}))?;
+                let value = args
+                    .get("value")
+                    .ok_or_else(|| json!({"error":"value is required"}))?;
                 if path == "model" || path.starts_with("model.") {
                     if let Some(generation) = entry.model_generation
                         && (!entry.is_model_authority(mount.as_deref())
@@ -437,15 +504,17 @@ impl SceneStore {
                     {
                         return Err(model_authority_refusal(name));
                     }
-                    let result = scene::bindings::reevaluate(&entry.tree, &entry.bindings, path, value)
-                        .map_err(|d| json!({"scene":name,"diagnostics":d}))?;
+                    let result =
+                        scene::bindings::reevaluate(&entry.tree, &entry.bindings, path, value)
+                            .map_err(|d| json!({"scene":name,"diagnostics":d}))?;
                     document.model = Some(result.tree.model.clone());
                     check_size(&document)?;
                     let prepared = validate_templates(&result.tree)?;
                     if page_id(&result.tree) != page_id(&entry.tree)
                         || scene_edge(&result.tree) != scene_edge(&entry.tree)
                         || is_dialog(&result.tree) != is_dialog(&entry.tree)
-                        || (is_dialog(&entry.tree) && dialog_geometry(&result.tree) != dialog_geometry(&entry.tree))
+                        || (is_dialog(&entry.tree)
+                            && dialog_geometry(&result.tree) != dialog_geometry(&entry.tree))
                     {
                         return Err(json!({"scene":name,"error_code":"SUBPANEL_COLLISION",
                             "message":"model patch cannot move a scene mount; unload before moving it"}));
@@ -463,12 +532,18 @@ impl SceneStore {
                     entry.tree = result.tree;
                     entry.prepared = prepared;
                     entry.render_error = None;
-                    let reply = json!({"scene":name,"revision":revision,"digest":digest(&entry.tree)});
+                    let reply =
+                        json!({"scene":name,"revision":revision,"digest":digest(&entry.tree)});
                     let summary = json!({"scene":name,"revision":revision,"ops":result.changed.len(),"diagnostics":result.diagnostics});
                     return Ok((reply, Some(summary)));
                 }
-                let (id, port) = path.split_once('.').ok_or_else(|| json!({"error":"path must be node.port"}))?;
-                let node = document.nodes.get_mut(id).ok_or_else(|| json!({"error":"unknown node"}))?;
+                let (id, port) = path
+                    .split_once('.')
+                    .ok_or_else(|| json!({"error":"path must be node.port"}))?;
+                let node = document
+                    .nodes
+                    .get_mut(id)
+                    .ok_or_else(|| json!({"error":"unknown node"}))?;
                 if !scene::describe(&node.widget)
                     .is_some_and(|ports| ports.iter().any(|description| description.path == port))
                 {
@@ -483,7 +558,10 @@ impl SceneStore {
                 self.accept(document, mount, false, false)
             }
             SceneVerb::Unload => {
-                let entry = self.scenes.remove(name).ok_or_else(|| json!({"error":"unknown scene"}))?;
+                let entry = self
+                    .scenes
+                    .remove(name)
+                    .ok_or_else(|| json!({"error":"unknown scene"}))?;
                 if is_dialog(&entry.tree) {
                     // Only this scene's own seat; a pre-empting successor's
                     // seat is not ours to free.
@@ -523,7 +601,12 @@ impl SceneStore {
     pub fn scenes_owned_by(&self, citizen: &str) -> Vec<String> {
         self.scenes
             .values()
-            .filter(|entry| entry.owner.as_ref().is_some_and(|owner| owner.citizen == citizen))
+            .filter(|entry| {
+                entry
+                    .owner
+                    .as_ref()
+                    .is_some_and(|owner| owner.citizen == citizen)
+            })
             .map(|entry| entry.tree.name.clone())
             .collect()
     }
@@ -554,7 +637,10 @@ impl SceneStore {
             .scenes
             .values()
             .filter(|entry| {
-                entry.owner.as_ref().is_some_and(|owner| owner.citizen == citizen && owner.accepted_at < before)
+                entry
+                    .owner
+                    .as_ref()
+                    .is_some_and(|owner| owner.citizen == citizen && owner.accepted_at < before)
             })
             .map(|entry| entry.tree.name.clone())
             .collect();
@@ -605,21 +691,33 @@ impl SceneStore {
         let page = page_id(&tree);
         let dialog = is_dialog(&tree);
         if !dialog
-            && self.scenes.iter().filter(|(_, entry)| !is_dialog(&entry.tree)).any(|(name, entry)| {
-                (name != &tree.name && page_id(&entry.tree) == page)
-                    || (name == &tree.name && page_id(&entry.tree) != page)
-            })
+            && self
+                .scenes
+                .iter()
+                .filter(|(_, entry)| !is_dialog(&entry.tree))
+                .any(|(name, entry)| {
+                    (name != &tree.name && page_id(&entry.tree) == page)
+                        || (name == &tree.name && page_id(&entry.tree) != page)
+                })
         {
-            return Err(json!({"scene": tree.name, "error_code": "SUBPANEL_COLLISION",
-                "error": "scene mount address is occupied or changed; unload before renaming"}));
+            return Err(
+                json!({"scene": tree.name, "error_code": "SUBPANEL_COLLISION",
+                "error": "scene mount address is occupied or changed; unload before renaming"}),
+            );
         }
         // A live scene cannot switch between dialog and edge. A pre-empting
         // dialog load displaces a same-name edge scene instead, so an edge
         // scene named `editor` cannot brick safe mode either.
-        if self.scenes.get(&tree.name).is_some_and(|old| is_dialog(&old.tree) != dialog) {
+        if self
+            .scenes
+            .get(&tree.name)
+            .is_some_and(|old| is_dialog(&old.tree) != dialog)
+        {
             let Some(caller) = mount.as_deref().filter(|_| dialog && preempt) else {
-                return Err(json!({"scene": tree.name, "error_code": "SUBPANEL_COLLISION",
-                    "error": "a loaded scene cannot switch between dialog and edge; unload it first"}));
+                return Err(
+                    json!({"scene": tree.name, "error_code": "SUBPANEL_COLLISION",
+                    "error": "a loaded scene cannot switch between dialog and edge; unload it first"}),
+                );
             };
             let by_owner = caller.owner.to_owned();
             if let Some(old) = self.scenes.remove(&tree.name) {
@@ -637,13 +735,23 @@ impl SceneStore {
                 }));
             }
         }
-        let old_owner = self.scenes.get(&tree.name).and_then(|entry| entry.owner.clone());
+        let old_owner = self
+            .scenes
+            .get(&tree.name)
+            .and_then(|entry| entry.owner.clone());
         let owner = if let Some(mount) = mount {
             // Patching content is mesh-open but does not take ownership or
             // refresh another citizen's lifetime. Loads are owner
             // registrations.
-            let fresh = || SceneOwner { citizen: mount.owner.to_owned(), accepted_at: mount.accepted_at };
-            let owner = if loading { fresh() } else { old_owner.unwrap_or_else(fresh) };
+            let fresh = || SceneOwner {
+                citizen: mount.owner.to_owned(),
+                accepted_at: mount.accepted_at,
+            };
+            let owner = if loading {
+                fresh()
+            } else {
+                old_owner.unwrap_or_else(fresh)
+            };
             if dialog {
                 self.seat_dialog(&tree, &owner, mount.output, preempt)?;
             } else {
@@ -657,12 +765,16 @@ impl SceneStore {
         } else {
             old_owner
         };
-        let ops = self.scenes.get(&tree.name).map_or(tree.nodes.len(), |old| scene::diff(&old.tree, &tree).len());
+        let ops = self
+            .scenes
+            .get(&tree.name)
+            .map_or(tree.nodes.len(), |old| scene::diff(&old.tree, &tree).len());
         let revision = self.revisions.entry(tree.name.clone()).or_default();
         *revision += 1;
         let revision = *revision;
         let reply = json!({"scene":tree.name,"revision":revision,"digest":digest(&tree)});
-        let summary = json!({"scene":tree.name,"revision":revision,"ops":ops,"diagnostics":diagnostics});
+        let summary =
+            json!({"scene":tree.name,"revision":revision,"ops":ops,"diagnostics":diagnostics});
         let old = self.scenes.remove(&tree.name);
         let model_generation = old.as_ref().and_then(|old| old.model_generation);
         let visible = old.as_ref().is_some_and(|old| old.visible);
@@ -692,7 +804,13 @@ impl SceneStore {
     /// displaced scene is unloaded here and its notice queued. Last in
     /// `accept`: nothing after it can refuse, so a refused load leaves the
     /// incumbent untouched.
-    fn seat_dialog(&mut self, tree: &ResolvedScene, owner: &SceneOwner, output: &str, preempt: bool) -> Result<(), Value> {
+    fn seat_dialog(
+        &mut self,
+        tree: &ResolvedScene,
+        owner: &SceneOwner,
+        output: &str,
+        preempt: bool,
+    ) -> Result<(), Value> {
         let (w, h, title, chrome) = dialog_geometry(tree);
         let seat = DialogSeat {
             scene: tree.name.clone(),
@@ -753,10 +871,12 @@ pub fn digest(tree: &ResolvedScene) -> String {
 
 fn check_size(document: &SceneDocument) -> Result<(), Value> {
     if scene::to_source(document).len() > scene::MAX_DOCUMENT_BYTES {
-        return Err(json!({"scene":document.name,"error_code":"DOCUMENT_TOO_LARGE",
+        return Err(
+            json!({"scene":document.name,"error_code":"DOCUMENT_TOO_LARGE",
             "message":"aggregate document and model exceeds 256 KiB",
             "diagnostics":[{"severity":"Error","code":"document-too-large","line":1,
-                "message":"aggregate document and model exceeds 256 KiB"}]}));
+                "message":"aggregate document and model exceeds 256 KiB"}]}),
+        );
     }
     Ok(())
 }
@@ -768,7 +888,10 @@ pub fn refusal(mut error: Value) -> Value {
         error["error_code"] = json!("SCENE_REFUSED");
     }
     if error.get("message").is_none() {
-        error["message"] = error.get("error").cloned().unwrap_or_else(|| json!("scene validation failed"));
+        error["message"] = error
+            .get("error")
+            .cloned()
+            .unwrap_or_else(|| json!("scene validation failed"));
     }
     error
 }

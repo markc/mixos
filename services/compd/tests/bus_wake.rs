@@ -7,19 +7,19 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use comp_service::{CompEngine, LongReply, PortService};
 use comp_model::observation::PanelRequest;
 use comp_model::reply::ControlReply;
 use comp_model::request::{InputOp, LongOp, WindowOp, WorkspaceIndex};
 use comp_model::snapshot::{CompSnapshot, ReadScopes};
+use comp_service::{CompEngine, LongReply, PortService};
 use dispatcher::state::state::{Dispatch, RedrawReason};
 use policy::workspaces::{DefaultOutput, WorkspaceState, service_switch};
-use surfaces::Registry;
 use protocols::tearing::gate::gate::{self, Gate};
 use serde_json::Value;
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::calloop::ping::make_ping;
 use smithay::reexports::wayland_server::Display;
+use surfaces::Registry;
 
 struct Engine {
     dispatch: Dispatch,
@@ -223,7 +223,10 @@ fn bus_and_ui_wakes_schedule_frames_without_input_even_when_paced() {
         .dispatch(Duration::from_secs(1), &mut data)
         .unwrap();
     worker.join().unwrap();
-    assert!(runtime.has_queued(), "the repaint is pending for the next pass");
+    assert!(
+        runtime.has_queued(),
+        "the repaint is pending for the next pass"
+    );
     event_loop
         .dispatch(Duration::from_secs(1), &mut data)
         .unwrap();

@@ -38,7 +38,9 @@ pub fn apply(priority: &str) {
 /// `MakeThreadRealtime`: that would hand back the SCHED_RR this failure just
 /// established the machine will not grant directly.
 fn realtime() {
-    let param = libc::sched_param { sched_priority: RR_PRIORITY };
+    let param = libc::sched_param {
+        sched_priority: RR_PRIORITY,
+    };
     if unsafe { libc::sched_setscheduler(0, libc::SCHED_RR, &param) } == 0 {
         info!("priority: SCHED_RR {RR_PRIORITY} applied via sched_setscheduler (direct)");
         return;

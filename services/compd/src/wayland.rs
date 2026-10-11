@@ -1,3 +1,4 @@
+use protocols::wayland::connection::record::record::WaylandClientSession;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{EventLoop, Interest, Mode, PostAction};
 use smithay::reexports::wayland_server::Display;
@@ -6,7 +7,6 @@ use smithay::wayland::socket::ListeningSocketSource;
 use std::ffi::OsString;
 use std::sync::Arc;
 use world::state::Loop;
-use protocols::wayland::connection::record::record::WaylandClientSession;
 
 pub struct Socket {
     pub name: OsString,

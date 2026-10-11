@@ -31,9 +31,13 @@ fn arm_reset_on_fork() {
         return warn!("priority: sched_getscheduler failed; SCHED_RESET_ON_FORK not armed");
     }
     if unsafe { libc::sched_setscheduler(0, policy | libc::SCHED_RESET_ON_FORK, &param) } == 0 {
-        info!("priority: SCHED_RESET_ON_FORK armed — new threads/children start at default scheduling");
+        info!(
+            "priority: SCHED_RESET_ON_FORK armed — new threads/children start at default scheduling"
+        );
     } else {
         let err = std::io::Error::last_os_error();
-        warn!("priority: could not arm SCHED_RESET_ON_FORK ({err}); children will inherit the boost");
+        warn!(
+            "priority: could not arm SCHED_RESET_ON_FORK ({err}); children will inherit the boost"
+        );
     }
 }

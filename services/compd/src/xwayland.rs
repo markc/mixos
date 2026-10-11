@@ -20,22 +20,22 @@ use std::os::fd::AsFd;
 use std::process::Stdio;
 use std::time::Duration;
 
+use dispatcher::state::deferred::deferred::Deferred;
+use dispatcher::state::state::Dispatch;
+use dispatcher::wire::trait_::wire_trait::WireTrait;
+use model::{error, info, warn};
+use protocols::window::find::find::Shell;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{EventLoop, Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::wayland_server::DisplayHandle;
-use smithay::xwayland::{X11Wm, XWayland, XWaylandEvent};
-use model::{error, info, warn};
-use world::state::Loop;
-use world::state::state::StatusSession;
-use world::environment::interface::lifecycle::lifecycle;
-use dispatcher::state::state::Dispatch;
-use x11_wm::display::display;
-use protocols::window::find::find::Shell;
-use dispatcher::state::deferred::deferred::Deferred;
 use smithay::reexports::wayland_server::Resource;
 use smithay::xwayland::X11Surface;
-use dispatcher::wire::trait_::wire_trait::WireTrait;
+use smithay::xwayland::{X11Wm, XWayland, XWaylandEvent};
+use world::environment::interface::lifecycle::lifecycle;
+use world::state::Loop;
+use world::state::state::StatusSession;
+use x11_wm::display::display;
 
 /// Spawn the X server and wire both of its sources into `event_loop`.
 ///
@@ -114,25 +114,22 @@ fn start<'l>(dh: DisplayHandle, handle: LoopHandle<'l, Loop>) {
             // Acting on it is not optional. The pump is `Mode::Level`, so a permanently
             // errored nested loop stays readable and would be re-dispatched forever —
             // a busy loop at 100% CPU rather than a degraded session.
-            let client_gone = state
-                .state
-                .xwayland
-                .client
-                .as_ref()
-                .is_some_and(|id| {
-                    state
-                        .state
-                        .output
-                        .display_handle
-                        .backend_handle()
-                        .get_client_data(id.clone())
-                        .is_err()
-                });
+            let client_gone = state.state.xwayland.client.as_ref().is_some_and(|id| {
+                state
+                    .state
+                    .output
+                    .display_handle
+                    .backend_handle()
+                    .get_client_data(id.clone())
+                    .is_err()
+            });
             if let Err(err) = &dispatched {
                 warn!("X11 event loop dispatch failed: {err:?}");
             }
             let disconnected = state.state.xwayland.disconnected;
-            if state.state.xwayland.xwm.is_some() && (dispatched.is_err() || client_gone || disconnected) {
+            if state.state.xwayland.xwm.is_some()
+                && (dispatched.is_err() || client_gone || disconnected)
+            {
                 died(state);
                 after_failure(&pump_dh, &pump_handle);
                 // Removing drops this closure, and with it the nested loop and every
@@ -321,7 +318,9 @@ fn after_failure<'l>(dh: &DisplayHandle, handle: &LoopHandle<'l, Loop>) {
     let failures = policy_host::xwayland::failures();
     match decision {
         XwaylandRetryDecision::Retry => {
-            error!("XWayland failed ({failures} this session); restarting it once in {XWAYLAND_RETRY_DELAY_SECS} s");
+            error!(
+                "XWayland failed ({failures} this session); restarting it once in {XWAYLAND_RETRY_DELAY_SECS} s"
+            );
             let (retry_dh, retry_handle) = (dh.clone(), handle.clone());
             let armed = handle.insert_source(
                 Timer::from_duration(Duration::from_secs(XWAYLAND_RETRY_DELAY_SECS)),
@@ -331,12 +330,16 @@ fn after_failure<'l>(dh: &DisplayHandle, handle: &LoopHandle<'l, Loop>) {
                 },
             );
             if let Err(err) = armed {
-                error!("XWayland: could not arm the restart: {err}; X11 stays down until compd restarts");
+                error!(
+                    "XWayland: could not arm the restart: {err}; X11 stays down until compd restarts"
+                );
                 policy_host::xwayland::note_gave_up();
             }
         }
         XwaylandRetryDecision::StayFailed => {
-            error!("XWayland failed again ({failures} this session); X11 stays down until compd restarts");
+            error!(
+                "XWayland failed again ({failures} this session); X11 stays down until compd restarts"
+            );
         }
     }
 }
@@ -453,5 +456,7 @@ fn died(state: &mut Loop) {
     // user is actually using, whose own server is fine — this is the destructive
     // direction of the per-user clobber, and the one worth being careful about.
     lifecycle::push_session_env_if_active(publishes_shared_env(state), &[("DISPLAY", "")]);
-    info!("XWayland teardown complete; {count} X11 window(s) retired, {withdrawn} withdrawn record(s) cleared");
+    info!(
+        "XWayland teardown complete; {count} X11 window(s) retired, {withdrawn} withdrawn record(s) cleared"
+    );
 }

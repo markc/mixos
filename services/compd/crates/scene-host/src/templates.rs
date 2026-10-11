@@ -55,11 +55,22 @@ fn prepare_lists(tree: &ResolvedScene) -> Result<PreparedLists, Diagnostic> {
         if templates.contains(id) {
             return Err(nested_list(node.line));
         }
-        let mut data = ListData { node: id.clone(), instances: BTreeMap::new() };
+        let mut data = ListData {
+            node: id.clone(),
+            instances: BTreeMap::new(),
+        };
         for item in rows(node) {
             let mut nodes = BTreeMap::new();
-            template_node(tree, text(node, "row"), item, &set, &mut evaluation, &mut nodes)?;
-            data.instances.insert(item["id"].as_str().unwrap_or_default().into(), nodes);
+            template_node(
+                tree,
+                text(node, "row"),
+                item,
+                &set,
+                &mut evaluation,
+                &mut nodes,
+            )?;
+            data.instances
+                .insert(item["id"].as_str().unwrap_or_default().into(), nodes);
         }
         lists.insert(id.clone(), data);
     }
@@ -160,11 +171,17 @@ pub fn children(node: &Node) -> impl Iterator<Item = &str> {
 }
 
 pub fn rows(node: &Node) -> &[Value] {
-    node.ports.get("rows").and_then(Value::as_array).map_or(&[], Vec::as_slice)
+    node.ports
+        .get("rows")
+        .and_then(Value::as_array)
+        .map_or(&[], Vec::as_slice)
 }
 
 pub fn text<'a>(node: &'a Node, port: &str) -> &'a str {
-    node.ports.get(port).and_then(Value::as_str).unwrap_or_default()
+    node.ports
+        .get(port)
+        .and_then(Value::as_str)
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -175,7 +192,10 @@ mod tests {
     fn cells_substitute_and_unresolvable_tokens_stay_literal() {
         let cells = json!(["a", "b", 3]);
         assert_eq!(substitute_cells("{cells[0]}-{cells[1]}", &cells), "a-b");
-        assert_eq!(substitute_cells("{cells[2]}|{cells[9]}|{cells[x]}", &cells), "{cells[2]}|{cells[9]}|{cells[x]}");
+        assert_eq!(
+            substitute_cells("{cells[2]}|{cells[9]}|{cells[x]}", &cells),
+            "{cells[2]}|{cells[9]}|{cells[x]}"
+        );
         assert_eq!(substitute_cells("open {cells[0]", &cells), "open {cells[0]");
     }
 
@@ -184,7 +204,9 @@ mod tests {
         let source = "---\nscene: 1\nname: nested\ncitizen: c\n---\n```mix\nroot: {widget: \"list\", rows: [{id: \"1\", cells: [\"x\"]}], row: \"t\"}\nt: {widget: \"row\", children: [\"inner\"]}\ninner: {widget: \"list\", rows: [], row: \"leaf\"}\nleaf: {widget: \"text\", text: \"x\"}\n```\n";
         // Refused somewhere before acceptance; when scene core lets it
         // through, this preflight is what refuses it.
-        let tree = scene::parse(source).ok().and_then(|document| scene::resolve(&document).ok());
+        let tree = scene::parse(source)
+            .ok()
+            .and_then(|document| scene::resolve(&document).ok());
         if let Some(tree) = tree {
             let error = validate_templates(&tree).unwrap_err();
             assert_eq!(error["diagnostics"][0]["code"], "invalid-template");

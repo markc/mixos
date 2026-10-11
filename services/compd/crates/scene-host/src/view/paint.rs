@@ -7,7 +7,9 @@
 use std::sync::Arc;
 
 use design::InteractionState;
-use egui::{Align2, Color32, FontFamily, FontId, Id, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
+use egui::{
+    Align2, Color32, FontFamily, FontId, Id, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2,
+};
 use scene::Node;
 
 use super::flex::{Placed, Source};
@@ -37,7 +39,13 @@ fn node_of<'a>(scene: &'a SceneUi, placed: &Placed) -> Option<&'a Node> {
             if placed.cell {
                 scene.content.tree.nodes.get(list)
             } else {
-                scene.content.lists.get(list)?.instances.get(item)?.get(&placed.id)
+                scene
+                    .content
+                    .lists
+                    .get(list)?
+                    .instances
+                    .get(item)?
+                    .get(&placed.id)
             }
         }
     }
@@ -64,7 +72,12 @@ fn route_of(scene: &SceneUi, placed: &Placed, node: &Node) -> Arc<Route> {
 /// `text` shortened in the middle with an ellipsis until it fits `width`.
 fn elide_middle(ui: &Ui, text: &str, font: &FontId, width: f32) -> String {
     let fits = |s: &str| {
-        ui.fonts_mut(|fonts| fonts.layout_no_wrap(s.to_owned(), font.clone(), Color32::WHITE).size().x) <= width
+        ui.fonts_mut(|fonts| {
+            fonts
+                .layout_no_wrap(s.to_owned(), font.clone(), Color32::WHITE)
+                .size()
+                .x
+        }) <= width
     };
     if fits(text) {
         return text.to_owned();
@@ -121,10 +134,16 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
     // frees them, and the painter retires them a pass later).
     let mut drawn = std::collections::BTreeSet::new();
     for item in &placed {
-        let Some(node) = node_of(scene, item) else { continue };
+        let Some(node) = node_of(scene, item) else {
+            continue;
+        };
         let node = node.clone();
         // A row of a scrolling list moves with its scroll and stays in its box.
-        let (rect, clip) = match item.in_list.as_ref().and_then(|list| scene.layout.lists.get(list).map(|b| (list, b))) {
+        let (rect, clip) = match item
+            .in_list
+            .as_ref()
+            .and_then(|list| scene.layout.lists.get(list).map(|b| (list, b)))
+        {
             Some((list, boxed)) => {
                 let offset = scene.scrolled(list);
                 (item.rect.translate(vec2(0.0, -offset)), boxed.rect)
@@ -152,7 +171,15 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                 let radius = number(&node, "radius").unwrap_or(0.0);
                 let clickable = node.ports.contains_key("on_click") || item.source != Source::Tree;
                 let hovered = if clickable || hover != normal {
-                    let response = ui.interact(visible, id, if clickable { Sense::click() } else { Sense::hover() });
+                    let response = ui.interact(
+                        visible,
+                        id,
+                        if clickable {
+                            Sense::click()
+                        } else {
+                            Sense::hover()
+                        },
+                    );
                     if clickable && response.clicked() {
                         emit.push(SceneMessage::Click(route_of(scene, item, &node)));
                     }
@@ -196,7 +223,12 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                 let radius = cell.radius as f32;
                 painter.rect_filled(rect, radius, linear(cell.pair.surface));
                 if let Some(border) = cell.border {
-                    painter.rect_stroke(rect, radius, Stroke::new(cell.border_width as f32, linear(border)), StrokeKind::Inside);
+                    painter.rect_stroke(
+                        rect,
+                        radius,
+                        Stroke::new(cell.border_width as f32, linear(border)),
+                        StrokeKind::Inside,
+                    );
                 }
                 painter.text(
                     rect.center(),
@@ -211,7 +243,11 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
             }
             "field" => {
                 let key = item.key.clone();
-                let value = scene.edits.get(&key).cloned().unwrap_or_else(|| port_text(&node, "value").to_owned());
+                let value = scene
+                    .edits
+                    .get(&key)
+                    .cloned()
+                    .unwrap_or_else(|| port_text(&node, "value").to_owned());
                 let mut text = value.clone();
                 let field = if item.source == Source::Tree {
                     field_id(&item.id)
@@ -234,21 +270,42 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                 if response.changed() {
                     emit.push(SceneMessage::Input(Arc::clone(&route), key, text.clone()));
                 }
-                if response.lost_focus() && ui.ctx().input(|input| input.key_pressed(egui::Key::Enter)) {
+                if response.lost_focus()
+                    && ui.ctx().input(|input| input.key_pressed(egui::Key::Enter))
+                {
                     emit.push(SceneMessage::Submit(route, text));
                 }
             }
             "toggle" => {
                 let key = item.key.clone();
-                let value = scene.toggles.get(&key).copied().unwrap_or(flag(&node, "value"));
+                let value = scene
+                    .toggles
+                    .get(&key)
+                    .copied()
+                    .unwrap_or(flag(&node, "value"));
                 let response = ui.interact(visible, id, Sense::click());
                 let h = styles.ui.line(styles.ui.size).min(rect.height());
-                let switch = Rect::from_min_size(pos2(rect.left(), rect.center().y - h / 2.0), vec2(h * 1.8, h));
+                let switch = Rect::from_min_size(
+                    pos2(rect.left(), rect.center().y - h / 2.0),
+                    vec2(h * 1.8, h),
+                );
                 let visuals = ui.visuals();
-                let track = if value { visuals.selection.bg_fill } else { visuals.widgets.inactive.bg_fill };
+                let track = if value {
+                    visuals.selection.bg_fill
+                } else {
+                    visuals.widgets.inactive.bg_fill
+                };
                 painter.rect_filled(switch, h / 2.0, track);
-                let knob_x = if value { switch.right() - h / 2.0 } else { switch.left() + h / 2.0 };
-                painter.circle_filled(pos2(knob_x, switch.center().y), h / 2.0 - 2.0, visuals.widgets.active.fg_stroke.color);
+                let knob_x = if value {
+                    switch.right() - h / 2.0
+                } else {
+                    switch.left() + h / 2.0
+                };
+                painter.circle_filled(
+                    pos2(knob_x, switch.center().y),
+                    h / 2.0 - 2.0,
+                    visuals.widgets.active.fg_stroke.color,
+                );
                 let label = port_text(&node, "label");
                 if !label.is_empty() {
                     painter.text(
@@ -260,7 +317,11 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                     );
                 }
                 if response.clicked() {
-                    emit.push(SceneMessage::Toggle(route_of(scene, item, &node), key, !value));
+                    emit.push(SceneMessage::Toggle(
+                        route_of(scene, item, &node),
+                        key,
+                        !value,
+                    ));
                 }
             }
             "image" => drawn.extend(paint_image(scene, ui, &painter, item, &node, rect, ink)),
@@ -269,17 +330,28 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
     }
     scene.textures.retain(|key, _| drawn.contains(key));
     if framed {
-        ui.painter()
-            .rect_stroke(full, 0.0, Stroke::new(1.0, colour(palette.border)), StrokeKind::Inside);
+        ui.painter().rect_stroke(
+            full,
+            0.0,
+            Stroke::new(1.0, colour(palette.border)),
+            StrokeKind::Inside,
+        );
     }
 }
 
-fn paint_frame(scene: &SceneUi, ui: &mut Ui, full: Rect, title: &str, emit: &mut Vec<SceneMessage>) {
+fn paint_frame(
+    scene: &SceneUi,
+    ui: &mut Ui,
+    full: Rect,
+    title: &str,
+    emit: &mut Vec<SceneMessage>,
+) {
     let bar = scene.palette().secondary;
     let rect = Rect::from_min_size(full.min, vec2(full.width(), TITLEBAR));
     ui.painter().rect_filled(rect, 0.0, colour(bar.surface));
     let theme = scene.theme();
-    let display = design::active_typography(Some(theme.typography()), design::TypographyRole::UiDisplay);
+    let display =
+        design::active_typography(Some(theme.typography()), design::TypographyRole::UiDisplay);
     let size = display.font_size as f32 * scene.text_scale();
     ui.painter().text(
         pos2(rect.left() + 12.0, rect.center().y),
@@ -288,14 +360,29 @@ fn paint_frame(scene: &SceneUi, ui: &mut Ui, full: Rect, title: &str, emit: &mut
         font(size, false, display.weight >= 600),
         colour(bar.foreground),
     );
-    let Some(close) = scene.layout.close.map(|close| close.translate(full.min.to_vec2())) else {
+    let Some(close) = scene
+        .layout
+        .close
+        .map(|close| close.translate(full.min.to_vec2()))
+    else {
         return;
     };
-    let response = ui.interact(close, Id::new(("scene-node", super::CLOSE_ID)), Sense::click());
+    let response = ui.interact(
+        close,
+        Id::new(("scene-node", super::CLOSE_ID)),
+        Sense::click(),
+    );
     if response.hovered() {
-        ui.painter().rect_filled(close, 4.0, ui.visuals().widgets.hovered.weak_bg_fill);
+        ui.painter()
+            .rect_filled(close, 4.0, ui.visuals().widgets.hovered.weak_bg_fill);
     }
-    ui.painter().text(close.center(), Align2::CENTER_CENTER, "×", font(16.0, false, false), colour(bar.foreground));
+    ui.painter().text(
+        close.center(),
+        Align2::CENTER_CENTER,
+        "×",
+        font(16.0, false, false),
+        colour(bar.foreground),
+    );
     if response.clicked() {
         emit.push(SceneMessage::Close);
     }
@@ -317,18 +404,33 @@ fn paint_image(
     let Some(asset) = scene.images.get(&key).cloned() else {
         // Always visible, in the design foreground, even when no icon theme
         // or application icon is installed.
-        let size = number(node, "w").unwrap_or(16.0).min(number(node, "h").unwrap_or(16.0));
-        painter.text(rect.center(), Align2::CENTER_CENTER, "▧", font(size, false, false), ink);
+        let size = number(node, "w")
+            .unwrap_or(16.0)
+            .min(number(node, "h").unwrap_or(16.0));
+        painter.text(
+            rect.center(),
+            Align2::CENTER_CENTER,
+            "▧",
+            font(size, false, false),
+            ink,
+        );
         return None;
     };
     let ppp = ui.ctx().pixels_per_point();
-    let (pw, ph) = ((rect.width() * ppp).ceil().max(1.0) as u32, (rect.height() * ppp).ceil().max(1.0) as u32);
+    let (pw, ph) = (
+        (rect.width() * ppp).ceil().max(1.0) as u32,
+        (rect.height() * ppp).ceil().max(1.0) as u32,
+    );
     let (cache, texture, tint) = match &asset {
         crate::images::Asset::Raster(raster) => {
             let cache = (raster.id, 0, 0);
             let texture = scene.textures.entry(cache).or_insert_with(|| {
                 let image = egui::ColorImage::from_rgba_unmultiplied(raster.size, &raster.rgba);
-                ui.ctx().load_texture(format!("scene-image-{}", raster.id), image, egui::TextureOptions::LINEAR)
+                ui.ctx().load_texture(
+                    format!("scene-image-{}", raster.id),
+                    image,
+                    egui::TextureOptions::LINEAR,
+                )
             });
             (cache, texture.id(), Color32::WHITE)
         }
@@ -337,7 +439,9 @@ fn paint_image(
             let texture = match scene.textures.get(&cache) {
                 Some(texture) => texture.id(),
                 None => {
-                    let Some(image) = crate::images::rasterise(svg, pw, ph) else { return None };
+                    let Some(image) = crate::images::rasterise(svg, pw, ph) else {
+                        return None;
+                    };
                     let handle = ui.ctx().load_texture(
                         format!("scene-svg-{}-{pw}x{ph}", svg.id),
                         image,
@@ -348,7 +452,11 @@ fn paint_image(
                     id
                 }
             };
-            let tint = if svg.symbolic { hex(port_text(node, "color")).unwrap_or(ink) } else { Color32::WHITE };
+            let tint = if svg.symbolic {
+                hex(port_text(node, "color")).unwrap_or(ink)
+            } else {
+                Color32::WHITE
+            };
             (cache, texture, tint)
         }
     };

@@ -1,15 +1,17 @@
 use std::os::fd::OwnedFd;
 
-use smithay::reexports::calloop::channel::{channel, Channel, Event};
+use smithay::reexports::calloop::channel::{Channel, Event, channel};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 
-use world::state::Loop;
-use slots::launch::policy::policy::{LaunchBackend, LaunchDispatch, LAUNCH_BACKEND, LAUNCH_DISPATCH};
+use crate::execution::driver::executor::executor::{BaseEnv, EXECUTOR, Executor};
 use slots::launch::dispatch::dispatch::LaunchWorker;
+use slots::launch::policy::policy::{
+    LAUNCH_BACKEND, LAUNCH_DISPATCH, LaunchBackend, LaunchDispatch,
+};
 use slots::launch::types::types::LaunchOutcome;
-use crate::execution::driver::executor::executor::{BaseEnv, Executor, EXECUTOR};
 use slots::library::process::child::pidfd::pidfd;
+use world::state::Loop;
 
 /// Build the Executor driver, store it in kernel storage, and wire its calloop
 /// sources. After this the rim reads `EXECUTOR` to launch apps.
@@ -34,7 +36,10 @@ pub fn install(state: &mut Loop, handle: &LoopHandle<'static, Loop>) {
         .then(|| LaunchWorker::spawn(tx.clone(), scope));
     // Register the driver slot (insert — the slot doesn't exist yet; get_mut would
     // panic on an unregistered slot, like the other driver slots in Orchestrator::new).
-    state.inner.kernel.insert(&EXECUTOR, Some(Executor::new(worker, tx, base_env, scope)));
+    state
+        .inner
+        .kernel
+        .insert(&EXECUTOR, Some(Executor::new(worker, tx, base_env, scope)));
 
     // Outcome receiver → orchestration broadcasts the general Executed event.
     handle
@@ -66,7 +71,12 @@ fn systemd_booted() -> bool {
 /// lifetime (the listening socket is created once, before this runs). Anything
 /// that could differ between launches is read inside the closure.
 fn base_env(state: &Loop) -> BaseEnv {
-    let wayland_display = state.inner.loader.socket_name.to_string_lossy().into_owned();
+    let wayland_display = state
+        .inner
+        .loader
+        .socket_name
+        .to_string_lossy()
+        .into_owned();
     Box::new(move || {
         let desktop = world::environment::type_::base::Get().DesktopName;
         vec![

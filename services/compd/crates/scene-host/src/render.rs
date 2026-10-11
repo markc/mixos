@@ -297,9 +297,7 @@ fn viewport_ready(
     wanted: Size<i32, Physical>,
     factor: f32,
 ) -> bool {
-    actual.0 == wanted.w.max(1) as u32
-        && actual.1 == wanted.h.max(1) as u32
-        && scale == factor
+    actual.0 == wanted.w.max(1) as u32 && actual.1 == wanted.h.max(1) as u32 && scale == factor
 }
 
 /// A scene's live UI surface.
@@ -735,8 +733,7 @@ pub(crate) fn reconcile(
             grab_edge_keyboard(state, name, handle);
             if let Some(registry) = state.inner.surface_mut().registry.as_mut() {
                 registry.set_keyboard_focus(Some(handle));
-                if let Some(instance) =
-                    registry.instance_mut(UiHandle::<SceneUi>::from_id(handle))
+                if let Some(instance) = registry.instance_mut(UiHandle::<SceneUi>::from_id(handle))
                 {
                     // Apply a Replace/Focused queued in this pass before
                     // visiting ids, so the operation targets the current tree.
@@ -1074,8 +1071,7 @@ pub(crate) fn layout(
     let Some(registry) = state.inner.surface_mut().registry.as_mut() else {
         return Ok(reply);
     };
-    let Some(instance) = registry.instance_mut(UiHandle::<SceneUi>::from_id(surface.handle))
-    else {
+    let Some(instance) = registry.instance_mut(UiHandle::<SceneUi>::from_id(surface.handle)) else {
         return Ok(reply);
     };
     let applied = instance.ui().revision();
@@ -1129,24 +1125,9 @@ mod tests {
     #[test]
     fn autofocus_waits_for_physical_viewport_and_output_scale() {
         let wanted = Size::from((1100, 2030));
-        assert!(!viewport_ready(
-            (440, 812),
-            1.0,
-            wanted,
-            2.5
-        ));
-        assert!(!viewport_ready(
-            (1100, 2030),
-            1.0,
-            wanted,
-            2.5
-        ));
-        assert!(viewport_ready(
-            (1100, 2030),
-            2.5,
-            wanted,
-            2.5
-        ));
+        assert!(!viewport_ready((440, 812), 1.0, wanted, 2.5));
+        assert!(!viewport_ready((1100, 2030), 1.0, wanted, 2.5));
+        assert!(viewport_ready((1100, 2030), 2.5, wanted, 2.5));
     }
     use crate::store::SceneMount;
     use crate::verb::SceneVerb;

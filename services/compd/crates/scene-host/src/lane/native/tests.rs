@@ -284,7 +284,7 @@ fn fallback_attempt_is_fenced_and_does_not_retry_a_failed_resource_in_a_loop() {
 }
 #[tokio::test]
 async fn superseded_blocking_jobs_are_physically_serial_and_keep_only_latest() {
-        let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
     let (release_tx, release_rx) = std::sync::mpsc::channel();
     let release_rx = std::sync::Mutex::new(release_rx);
     let mut worker = Worker::offline(move |snapshot| {

@@ -41,9 +41,16 @@ impl Found {
             close: layout.close,
         };
         for (list, items) in &layout.instances {
-            let offset = if layout.lists.contains_key(list) { ui.scrolled(list) } else { 0.0 };
+            let offset = if layout.lists.contains_key(list) {
+                ui.scrolled(list)
+            } else {
+                0.0
+            };
             for (item, rect) in items {
-                found.rows.insert((list.clone(), item.clone()), rect.translate(egui::vec2(0.0, -offset)));
+                found.rows.insert(
+                    (list.clone(), item.clone()),
+                    rect.translate(egui::vec2(0.0, -offset)),
+                );
             }
         }
         found
@@ -103,7 +110,11 @@ pub fn measured(
     if let Some(rect) = &found.close {
         chrome.insert("close".into(), rect_json(rect, factor, None));
     }
-    (Value::Object(nodes), Value::Object(instances), Value::Object(chrome))
+    (
+        Value::Object(nodes),
+        Value::Object(instances),
+        Value::Object(chrome),
+    )
 }
 
 #[cfg(test)]
@@ -118,22 +129,44 @@ mod tests {
     fn rects_report_drawn_nodes_hidden_ones_and_rows() {
         let tree = scene::resolve(&scene::parse(scene::fixtures::CLIPPANEL).unwrap()).unwrap();
         let mut found = Found::default();
-        found.nodes.insert("root".into(), rect(0.0, 32.0, 720.0, 488.0));
+        found
+            .nodes
+            .insert("root".into(), rect(0.0, 32.0, 720.0, 488.0));
         // A scrolled row is reported where it is drawn.
-        found.rows.insert(("table".into(), "e1".into()), rect(14.0, 90.0, 692.0, 38.0));
+        found
+            .rows
+            .insert(("table".into(), "e1".into()), rect(14.0, 90.0, 692.0, 38.0));
         found.close = Some(rect(681.0, 5.0, 28.0, 24.0));
         let (nodes, instances, chrome) = measured(&tree, &found, 1.0, None);
-        assert_eq!(nodes["root"], json!({"x":0.0,"y":32.0,"w":720.0,"h":488.0,"hidden":false}));
-        assert_eq!(nodes["remote_title"]["hidden"], true, "a node not drawn is reported hidden");
-        assert!(nodes.get("entry_row").is_none(), "templates are rows, not nodes");
-        assert_eq!(instances["table"]["e1"], json!({"x":14.0,"y":90.0,"w":692.0,"h":38.0}));
-        assert_eq!(chrome["close"], json!({"x":681.0,"y":5.0,"w":28.0,"h":24.0}));
+        assert_eq!(
+            nodes["root"],
+            json!({"x":0.0,"y":32.0,"w":720.0,"h":488.0,"hidden":false})
+        );
+        assert_eq!(
+            nodes["remote_title"]["hidden"], true,
+            "a node not drawn is reported hidden"
+        );
+        assert!(
+            nodes.get("entry_row").is_none(),
+            "templates are rows, not nodes"
+        );
+        assert_eq!(
+            instances["table"]["e1"],
+            json!({"x":14.0,"y":90.0,"w":692.0,"h":38.0})
+        );
+        assert_eq!(
+            chrome["close"],
+            json!({"x":681.0,"y":5.0,"w":28.0,"h":24.0})
+        );
         // Narrowed to one node.
         let (nodes, instances, _) = measured(&tree, &found, 1.0, Some("root"));
         assert_eq!(nodes.as_object().unwrap().len(), 1);
         assert!(instances.as_object().unwrap().is_empty());
         // The factor converts the instance's px to the document's.
         let (nodes, _, _) = measured(&tree, &found, 0.5, Some("root"));
-        assert_eq!(nodes["root"], json!({"x":0.0,"y":16.0,"w":360.0,"h":244.0,"hidden":false}));
+        assert_eq!(
+            nodes["root"],
+            json!({"x":0.0,"y":16.0,"w":360.0,"h":244.0,"hidden":false})
+        );
     }
 }

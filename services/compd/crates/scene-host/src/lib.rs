@@ -44,7 +44,6 @@ pub mod templates;
 pub mod verb;
 pub mod view;
 
-
 pub use host::{Host, SceneHost, SceneSurface, Serviced, scene_surface_id};
 pub use port::{DEFAULT_SERVICE, HostConfig, Waker};
 pub use store::{Mounted, SceneStore};

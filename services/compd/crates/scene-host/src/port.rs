@@ -1147,10 +1147,7 @@ mod tests {
             .unwrap()
             .content()
             .clone();
-        assert_ne!(
-            after.palette(true),
-            before.palette(true)
-        );
+        assert_ne!(after.palette(true), before.palette(true));
         for style in decor::ChromeStyle::ALL {
             assert_eq!(
                 after.chrome(style).deco.metrics.title_size_px,

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Shared UI scheduling and jobs multiplexed by an existing host worker. No
 //! connection, runtime, receiver or loop is created here.
-use super::*;
 use super::Once;
+use super::*;
 use settings::{
     Snapshot,
     consumer::Work,
@@ -37,12 +37,12 @@ pub enum Event<T> {
     Rpc(Work, Result<Option<Snapshot>, Diagnostic>),
     Prepared(Completion<T>),
     Fallback(settings::fallback::Request, Box<FallbackResult<T>>),
-        Saved(
+    Saved(
         settings::cache::Save,
         Result<settings::cache::WriteOutcome, Diagnostic>,
     ),
     /// Explicit retry of the latest activated cache capture; no retry timer.
-        RetryCache,
+    RetryCache,
 }
 
 /// One desired job set, sent through the host's existing worker command lane.
@@ -56,9 +56,9 @@ pub struct Jobs {
     fallback: Option<settings::fallback::Request>,
     valid: Option<settings::consumer::Update>,
     valid_fallback: Option<settings::fallback::Request>,
-        target: settings::cache::Target,
-        save: Option<settings::cache::Save>,
-        retry_save: u64,
+    target: settings::cache::Target,
+    save: Option<settings::cache::Save>,
+    retry_save: u64,
 }
 
 pub struct Session<T> {
@@ -68,10 +68,10 @@ pub struct Session<T> {
     fallback_attempted: bool,
     prepare: Option<Request>,
     fallback_diagnostics: Vec<Diagnostic>,
-        cache_fault: Option<Diagnostic>,
-        cache_persisted: Option<settings::consumer::SnapshotIdentity>,
-        cache_configuration: Option<Diagnostic>,
-        retry_save: u64,
+    cache_fault: Option<Diagnostic>,
+    cache_persisted: Option<settings::consumer::SnapshotIdentity>,
+    cache_configuration: Option<Diagnostic>,
+    retry_save: u64,
 }
 
 /// Shared cache readback for application and shell property surfaces. A
@@ -94,10 +94,10 @@ impl<T> Session<T> {
             fallback_attempted: false,
             prepare: None,
             fallback_diagnostics: Vec::new(),
-                        cache_fault: None,
-                        cache_persisted: None,
-                        cache_configuration: None,
-                        retry_save: 0,
+            cache_fault: None,
+            cache_persisted: None,
+            cache_configuration: None,
+            retry_save: 0,
         }
     }
     pub fn host(&self) -> &Host<T> {
@@ -108,13 +108,13 @@ impl<T> Session<T> {
         &self.fallback_diagnostics
     }
 
-        pub fn cache_fault(&self) -> Option<&Diagnostic> {
+    pub fn cache_fault(&self) -> Option<&Diagnostic> {
         self.cache_fault.as_ref()
     }
-        pub fn cache_persisted(&self) -> Option<&settings::consumer::SnapshotIdentity> {
+    pub fn cache_persisted(&self) -> Option<&settings::consumer::SnapshotIdentity> {
         self.cache_persisted.as_ref()
     }
-        pub fn cache_evidence(&self) -> CacheEvidence<'_> {
+    pub fn cache_evidence(&self) -> CacheEvidence<'_> {
         CacheEvidence {
             configuration: self.cache_configuration.as_ref(),
             persisted: self.cache_persisted(),
@@ -189,7 +189,7 @@ impl<T> Session<T> {
                         .complete_fallback(&request, Err(faults));
                 }
             },
-                        Event::Saved(save, result) => {
+            Event::Saved(save, result) => {
                 if self
                     .host
                     .consumer()
@@ -207,7 +207,7 @@ impl<T> Session<T> {
                     self.cache_fault = result.err();
                 }
             }
-                        Event::RetryCache => self.retry_save = self.retry_save.wrapping_add(1),
+            Event::RetryCache => self.retry_save = self.retry_save.wrapping_add(1),
         }
         let now = Instant::now();
         if self
@@ -268,9 +268,9 @@ impl<T> Session<T> {
             fallback: self.fallback.clone(),
             valid: self.host.consumer().pending().cloned(),
             valid_fallback: self.fallback.clone(),
-                        target: self.host.consumer().cache_target(),
-                        save: self.host.consumer().cache_save(),
-                        retry_save: self.retry_save,
+            target: self.host.consumer().cache_target(),
+            save: self.host.consumer().cache_save(),
+            retry_save: self.retry_save,
         };
         (changed, jobs)
     }
@@ -310,7 +310,7 @@ enum Running<T> {
         task: tokio::task::JoinHandle<Event<T>>,
         cancel: Arc<AtomicBool>,
     },
-        Save {
+    Save {
         save: settings::cache::Save,
         target: settings::cache::Target,
         task: tokio::task::JoinHandle<cache::Result>,
@@ -318,7 +318,7 @@ enum Running<T> {
 }
 enum Done<T> {
     Resource(Box<Result<Event<T>, tokio::task::JoinError>>),
-        Save(Box<Result<cache::Result, tokio::task::JoinError>>),
+    Save(Box<Result<cache::Result, tokio::task::JoinError>>),
 }
 fn valid(resource: &Resource, jobs: &Jobs) -> bool {
     match resource {
@@ -346,7 +346,7 @@ pub struct Worker<T> {
     running: Option<Running<T>>,
     build: Builder<T>,
     offered: Option<Resource>,
-        cache: Option<cache::Lane>,
+    cache: Option<cache::Lane>,
 }
 impl<T: Send + 'static> Worker<T> {
     pub fn new(
@@ -371,7 +371,7 @@ impl<T: Send + 'static> Worker<T> {
             running: None,
             build: Arc::new(build),
             offered: None,
-                        cache: None,
+            cache: None,
         }
     }
     /// Attach the host's already established connection, then resend its
@@ -382,7 +382,7 @@ impl<T: Send + 'static> Worker<T> {
         self.rpc = None;
     }
     /// Construction-only cache root. All I/O shares the blocking resource lane.
-        pub fn offline_with_cache(
+    pub fn offline_with_cache(
         directory: std::path::PathBuf,
         build: impl Fn(&Snapshot) -> Result<T, Diagnostic> + Send + Sync + 'static,
     ) -> Self {
@@ -412,7 +412,7 @@ impl<T: Send + 'static> Worker<T> {
         {
             cancel.store(true, Ordering::Release);
         }
-                if let Some(cache) = &mut self.cache {
+        if let Some(cache) = &mut self.cache {
             cache.replace(&jobs.target, jobs.save.as_ref(), jobs.retry_save);
         }
         if self.work != jobs.work {
@@ -450,7 +450,7 @@ impl<T: Send + 'static> Worker<T> {
             return;
         }
         let Some(resource) = self.queued.take() else {
-                        if let Some(cache) = &mut self.cache {
+            if let Some(cache) = &mut self.cache {
                 self.running = cache.start();
             }
             return;
@@ -462,7 +462,7 @@ impl<T: Send + 'static> Worker<T> {
         let build = Arc::clone(&self.build);
         let cancel = Arc::new(AtomicBool::new(false));
         let cancelled = Arc::clone(&cancel);
-                let cache = self.cache.as_ref().and_then(cache::Lane::loader);
+        let cache = self.cache.as_ref().and_then(cache::Lane::loader);
         let task = tokio::task::spawn_blocking(move || match resource {
             Resource::Prepare(request) => {
                 let snapshot = request.update().snapshot();
@@ -477,7 +477,7 @@ impl<T: Send + 'static> Worker<T> {
                 let mut presentation = None;
                 let prepared = request.prepare_with_cache(
                     || {
-                                                if let Some((directory, target)) = cache {
+                        if let Some((directory, target)) = cache {
                             return settings::cache::load_for(&directory, &target).map(Some);
                         }
                         Ok(None)
@@ -556,7 +556,7 @@ impl<T: Send + 'static> Worker<T> {
     /// are cancelled cooperatively; the UI never waits here. A timeout does
     /// not cancel a filesystem operation that has already started. Persistence
     /// is established only by a successful save/drain receipt.
-        pub async fn flush_cache(&mut self, deadline: Instant) -> Result<(), Diagnostic> {
+    pub async fn flush_cache(&mut self, deadline: Instant) -> Result<(), Diagnostic> {
         self.rpc = None;
         self.wake = None;
         self.queued = None;

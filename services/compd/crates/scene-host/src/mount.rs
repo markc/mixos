@@ -30,7 +30,11 @@ pub fn page_id(tree: &ResolvedScene) -> String {
 
 /// The authored edge; right when absent or unknown.
 pub fn scene_edge(tree: &ResolvedScene) -> Edge {
-    match mount_config(tree).as_ref().and_then(|w| w["edge"].as_str()).unwrap_or("right") {
+    match mount_config(tree)
+        .as_ref()
+        .and_then(|w| w["edge"].as_str())
+        .unwrap_or("right")
+    {
         "left" => Edge::Left,
         "top" => Edge::Top,
         "bottom" => Edge::Bottom,

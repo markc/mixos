@@ -24,9 +24,9 @@ use std::time::Instant;
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 
-use comp_service::LongReply;
 use comp_model::reply::ControlReply;
 use comp_model::request::LongOp;
+use comp_service::LongReply;
 use policy::agent::{SEQUENCE_YIELD_EVENTS, SequenceNext, SequenceRun};
 use world::state::Loop;
 
@@ -71,7 +71,14 @@ impl Sequences {
         let run = SequenceRun::new(op).expect("a sequence op");
         let id = self.next;
         self.next = self.next.wrapping_add(1);
-        self.runs.insert(id, Run { run, reply, started: admitted });
+        self.runs.insert(
+            id,
+            Run {
+                run,
+                reply,
+                started: admitted,
+            },
+        );
         self.advance(lp, handle, id);
         None
     }
@@ -111,7 +118,9 @@ impl Sequences {
         let events_at_start = lp.inner.comp.injection.events;
         let mut steps = 0_u64;
         loop {
-            let Some(entry) = self.runs.get_mut(&id) else { return };
+            let Some(entry) = self.runs.get_mut(&id) else {
+                return;
+            };
             if entry.reply.is_closed() {
                 // The caller stopped waiting: stop driving the seat for nobody.
                 self.runs.remove(&id);
@@ -127,16 +136,19 @@ impl Sequences {
             match entry.run.next_action() {
                 SequenceNext::Done => {
                     let entry = self.runs.remove(&id).expect("the run is present");
-                    let elapsed_ms = u64::try_from(entry.started.elapsed().as_millis()).unwrap_or(u64::MAX);
+                    let elapsed_ms =
+                        u64::try_from(entry.started.elapsed().as_millis()).unwrap_or(u64::MAX);
                     entry.reply.send(entry.run.finish(elapsed_ms));
                     return;
                 }
                 SequenceNext::Wait(delay) => {
                     let ready = Rc::clone(&self.ready);
-                    if let Err(error) = handle.insert_source(Timer::from_duration(delay), move |_, _, _| {
-                        ready.borrow_mut().push_back((id, true));
-                        TimeoutAction::Drop
-                    }) {
+                    if let Err(error) =
+                        handle.insert_source(Timer::from_duration(delay), move |_, _, _| {
+                            ready.borrow_mut().push_back((id, true));
+                            TimeoutAction::Drop
+                        })
+                    {
                         model::warn!("comp.input.sequence: no delay timer: {error}");
                         let entry = self.runs.remove(&id).expect("the run is present");
                         policy_host::input::release_run(lp, id);
@@ -147,8 +159,12 @@ impl Sequences {
                 SequenceNext::Run { index, mut step } => {
                     let mut coalesced = 1_usize;
                     while steps + (coalesced as u64) < SEQUENCE_YIELD_EVENTS {
-                        let Some(next) = entry.run.peek_undelayed() else { break };
-                        let Some(combined) = policy_host::input::coalesce_agent_motion(lp, &step.op, &next.op) else {
+                        let Some(next) = entry.run.peek_undelayed() else {
+                            break;
+                        };
+                        let Some(combined) =
+                            policy_host::input::coalesce_agent_motion(lp, &step.op, &next.op)
+                        else {
                             break;
                         };
                         step.op = combined;
@@ -157,7 +173,9 @@ impl Sequences {
                     }
                     steps += coalesced as u64;
                     let reply = policy_host::input::run_step(lp, id, &step.op);
-                    let Some(entry) = self.runs.get_mut(&id) else { return };
+                    let Some(entry) = self.runs.get_mut(&id) else {
+                        return;
+                    };
                     if let Some(failed) = entry.run.record(index, step.verb, reply, coalesced) {
                         let entry = self.runs.remove(&id).expect("the run is present");
                         policy_host::input::release_run(lp, id);

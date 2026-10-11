@@ -20,7 +20,7 @@ async fn next(worker: &mut Worker<u64>) -> Event<u64> {
         .unwrap()
 }
 fn cache_worker(directory: &std::path::Path) -> Worker<u64> {
-        Worker::offline_with_cache(directory.to_owned(), |snapshot| Ok(snapshot.revision.0))
+    Worker::offline_with_cache(directory.to_owned(), |snapshot| Ok(snapshot.revision.0))
 }
 fn cache_path(directory: &std::path::Path) -> std::path::PathBuf {
     directory.join(format!(
@@ -97,7 +97,7 @@ async fn unavailable_cached_resources_fall_through_to_prepared_embedded() {
         .write(&state.host.consumer().cache_save().unwrap())
         .unwrap();
     drop(writer);
-        let mut worker = Worker::offline_with_cache(dir.path().to_owned(), |snapshot| {
+    let mut worker = Worker::offline_with_cache(dir.path().to_owned(), |snapshot| {
         if snapshot.revision == Revision(1) {
             Err(Diagnostic::new(
                 "fixture_missing_resource",

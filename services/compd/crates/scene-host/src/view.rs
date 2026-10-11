@@ -68,7 +68,12 @@ pub struct Route {
 
 impl Route {
     pub(crate) fn new(tree: &ResolvedScene, id: &str, node: &Node) -> Route {
-        let port = |name: &str| node.ports.get(name).and_then(Value::as_str).map(str::to_owned);
+        let port = |name: &str| {
+            node.ports
+                .get(name)
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        };
         Route {
             scene: tree.name.clone(),
             citizen: tree.citizen.clone(),
@@ -120,7 +125,8 @@ pub(crate) fn colour(c: Srgba) -> Color32 {
 }
 
 pub(crate) fn linear(c: LinearRgba) -> Color32 {
-    egui::Rgba::from_rgba_unmultiplied(c.red as f32, c.green as f32, c.blue as f32, c.alpha as f32).into()
+    egui::Rgba::from_rgba_unmultiplied(c.red as f32, c.green as f32, c.blue as f32, c.alpha as f32)
+        .into()
 }
 
 /// `#rgb`, `#rgba`, `#rrggbb` or `#rrggbbaa`, as Quoin parses scene colours.
@@ -129,7 +135,11 @@ pub fn hex(value: &str) -> Option<Color32> {
     if !digits.is_ascii() {
         return None;
     }
-    let nibble = |i: usize| u8::from_str_radix(&digits[i..i + 1], 16).ok().map(|v| v * 17);
+    let nibble = |i: usize| {
+        u8::from_str_radix(&digits[i..i + 1], 16)
+            .ok()
+            .map(|v| v * 17)
+    };
     let byte = |i: usize| u8::from_str_radix(digits.get(i..i + 2)?, 16).ok();
     let (r, g, b, a) = match digits.len() {
         3 => (nibble(0)?, nibble(1)?, nibble(2)?, 255),
@@ -148,17 +158,26 @@ pub fn hex_of(c: Color32) -> String {
 }
 
 pub(crate) fn number(node: &Node, port: &str) -> Option<f32> {
-    node.ports.get(port).and_then(Value::as_f64).map(|v| v as f32)
+    node.ports
+        .get(port)
+        .and_then(Value::as_f64)
+        .map(|v| v as f32)
 }
 
 pub(crate) fn flag(node: &Node, port: &str) -> bool {
-    node.ports.get(port).and_then(Value::as_bool).unwrap_or(false)
+    node.ports
+        .get(port)
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
 }
 
 /// The rows a vertical list shows before it scrolls: Quoin's
 /// `min(rows, max_rows (8)).max(1) * (row_height + gap)`.
 pub fn list_height(node: &Node) -> f32 {
-    let shown = rows(node).len().min(number(node, "max_rows").unwrap_or(8.0) as usize).max(1);
+    let shown = rows(node)
+        .len()
+        .min(number(node, "max_rows").unwrap_or(8.0) as usize)
+        .max(1);
     shown as f32 * (number(node, "row_height").unwrap_or(24.0) + number(node, "gap").unwrap_or(0.0))
 }
 
@@ -188,7 +207,12 @@ pub(crate) fn button_key(node: &Node, interaction: InteractionState) -> ButtonCe
         "danger" => ButtonVariant::Destructive,
         _ => ButtonVariant::default(),
     };
-    ButtonCellKey { variant, size: ButtonSize::default(), interaction, focus_visible: false }
+    ButtonCellKey {
+        variant,
+        size: ButtonSize::default(),
+        interaction,
+        focus_visible: false,
+    }
 }
 
 /// Optional host metadata: `window: { ..., "autofocus": "search" }` opts an
@@ -200,7 +224,9 @@ pub fn autofocus(tree: &ResolvedScene) -> Option<&str> {
         if depth > tree.nodes.len() {
             return false;
         }
-        let Some(node) = tree.nodes.get(id) else { return false };
+        let Some(node) = tree.nodes.get(id) else {
+            return false;
+        };
         !flag(node, "hidden")
             && ((id == target && node.family == "field")
                 || children(node).any(|child| visible(tree, child, target, depth + 1)))
@@ -317,11 +343,18 @@ impl SceneUi {
         let role = |role| {
             let record = design::active_typography(Some(theme.typography()), role);
             flex::TextStyle {
-                size: if record.font_size > 0.0 { record.font_size as f32 * scale } else { TEXT_SIZE * scale },
+                size: if record.font_size > 0.0 {
+                    record.font_size as f32 * scale
+                } else {
+                    TEXT_SIZE * scale
+                },
                 line_height: record.line_height.map(|h| h as f32 * scale),
             }
         };
-        flex::TextStyles { ui: role(design::TypographyRole::Ui), mono: role(design::TypographyRole::Mono) }
+        flex::TextStyles {
+            ui: role(design::TypographyRole::Ui),
+            mono: role(design::TypographyRole::Mono),
+        }
     }
 
     /// The revision this UI last applied (`applied_revision`).
@@ -343,7 +376,12 @@ impl SceneUi {
     /// pass applies it. Whether the field was there.
     pub fn focus_field(&self, ctx: &egui::Context, id: &str) -> bool {
         let drawn = self.layout.nodes.contains_key(id)
-            && self.content.tree.nodes.get(id).is_some_and(|node| node.family == "field");
+            && self
+                .content
+                .tree
+                .nodes
+                .get(id)
+                .is_some_and(|node| node.family == "field");
         if drawn {
             ctx.memory_mut(|memory| memory.request_focus(field_id(id)));
         }
@@ -360,8 +398,10 @@ impl SceneUi {
         };
         let node_of = |key: &str| key.rsplit('/').next().unwrap_or_default().to_owned();
         let row_changed = |key: &str| key.contains('#');
-        self.edits.retain(|key, _| !row_changed(key) && !changed(&node_of(key)));
-        self.toggles.retain(|key, _| !row_changed(key) && !changed(&node_of(key)));
+        self.edits
+            .retain(|key, _| !row_changed(key) && !changed(&node_of(key)));
+        self.toggles
+            .retain(|key, _| !row_changed(key) && !changed(&node_of(key)));
     }
 }
 
@@ -371,21 +411,31 @@ impl ui::UiProgram for SceneUi {
     fn setup(&mut self, ctx: &egui::Context) {
         // Before the first pass: egui binds new fonts from the next pass on,
         // and the first pass already measures text in the named families.
-        let identity = self.look.as_ref().map_or(0, |look| Arc::as_ptr(look) as usize);
+        let identity = self
+            .look
+            .as_ref()
+            .map_or(0, |look| Arc::as_ptr(look) as usize);
         crate::appearance::install(ctx, &self.theme(), self.text_scale(), self.content.dialog);
         self.installed = Some((identity, self.content.dialog));
     }
 
     fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<SceneMessage>) {
         let ctx = ui.ctx().clone();
-        let identity = self.look.as_ref().map_or(0, |look| Arc::as_ptr(look) as usize);
+        let identity = self
+            .look
+            .as_ref()
+            .map_or(0, |look| Arc::as_ptr(look) as usize);
         if self.installed != Some((identity, self.content.dialog)) {
             crate::appearance::install(&ctx, &self.theme(), self.text_scale(), self.content.dialog);
             self.installed = Some((identity, self.content.dialog));
         }
         // Escape: a dialog hides (Quoin's chrome::dialog), an edge reports it.
         if ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
-            emit.push(if self.content.dialog { SceneMessage::Close } else { SceneMessage::EscapeEdge });
+            emit.push(if self.content.dialog {
+                SceneMessage::Close
+            } else {
+                SceneMessage::EscapeEdge
+            });
         }
         if !self.content.dialog {
             let focused = ctx.input(|input| input.focused);
@@ -398,9 +448,19 @@ impl ui::UiProgram for SceneUi {
         let measure_ctx = ctx.clone();
         let measure = move |text: &str, size: f32, mono: bool, bold: bool| -> egui::Vec2 {
             let font = paint::font(size, mono, bold);
-            measure_ctx.fonts_mut(|fonts| fonts.layout_no_wrap(text.to_owned(), font, Color32::WHITE).size())
+            measure_ctx.fonts_mut(|fonts| {
+                fonts
+                    .layout_no_wrap(text.to_owned(), font, Color32::WHITE)
+                    .size()
+            })
         };
-        self.layout = flex::layout(&self.content, ui.max_rect().size(), styles, &self.images, &measure);
+        self.layout = flex::layout(
+            &self.content,
+            ui.max_rect().size(),
+            styles,
+            &self.images,
+            &measure,
+        );
         paint::paint(self, ui, emit);
     }
 

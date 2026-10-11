@@ -43,7 +43,10 @@ pub enum SceneVerb {
     /// `shell.panel.{show,hide,toggle,pin,unpin,dock} {edge}`, or with
     /// `corner` set `shell.corner.{show,hide,toggle,pin,unpin} {corner}` on
     /// the edge the corner summons (Quoin: top-left → left, …).
-    Panel { verb: crate::panels::PanelVerb, corner: bool },
+    Panel {
+        verb: crate::panels::PanelVerb,
+        corner: bool,
+    },
     /// A Quoin shell verb this host does not serve yet (the settings verbs):
     /// answered `not_served`, never a
     /// silent no-op, and never listed by `shell.info`.
@@ -82,17 +85,50 @@ impl SceneVerb {
             "corner.menu.open" => Self::MenuOpen,
             "corner.menu.choose" => Self::MenuChoose,
             "corner.menu.close" => Self::MenuClose,
-            "panel.show" => Self::Panel { verb: PanelVerb::Show, corner: false },
-            "panel.hide" => Self::Panel { verb: PanelVerb::Hide, corner: false },
-            "panel.toggle" => Self::Panel { verb: PanelVerb::Toggle, corner: false },
-            "panel.pin" => Self::Panel { verb: PanelVerb::Pin, corner: false },
-            "panel.unpin" => Self::Panel { verb: PanelVerb::Unpin, corner: false },
-            "panel.dock" => Self::Panel { verb: PanelVerb::Dock, corner: false },
-            "corner.show" => Self::Panel { verb: PanelVerb::Show, corner: true },
-            "corner.hide" => Self::Panel { verb: PanelVerb::Hide, corner: true },
-            "corner.toggle" => Self::Panel { verb: PanelVerb::Toggle, corner: true },
-            "corner.pin" => Self::Panel { verb: PanelVerb::Pin, corner: true },
-            "corner.unpin" => Self::Panel { verb: PanelVerb::Unpin, corner: true },
+            "panel.show" => Self::Panel {
+                verb: PanelVerb::Show,
+                corner: false,
+            },
+            "panel.hide" => Self::Panel {
+                verb: PanelVerb::Hide,
+                corner: false,
+            },
+            "panel.toggle" => Self::Panel {
+                verb: PanelVerb::Toggle,
+                corner: false,
+            },
+            "panel.pin" => Self::Panel {
+                verb: PanelVerb::Pin,
+                corner: false,
+            },
+            "panel.unpin" => Self::Panel {
+                verb: PanelVerb::Unpin,
+                corner: false,
+            },
+            "panel.dock" => Self::Panel {
+                verb: PanelVerb::Dock,
+                corner: false,
+            },
+            "corner.show" => Self::Panel {
+                verb: PanelVerb::Show,
+                corner: true,
+            },
+            "corner.hide" => Self::Panel {
+                verb: PanelVerb::Hide,
+                corner: true,
+            },
+            "corner.toggle" => Self::Panel {
+                verb: PanelVerb::Toggle,
+                corner: true,
+            },
+            "corner.pin" => Self::Panel {
+                verb: PanelVerb::Pin,
+                corner: true,
+            },
+            "corner.unpin" => Self::Panel {
+                verb: PanelVerb::Unpin,
+                corner: true,
+            },
             settings if settings.starts_with("settings.") => Self::NotServed,
             _ => return None,
         })
@@ -121,13 +157,39 @@ impl SceneVerb {
     /// Every verb name under `service`, for HELP and the tests.
     pub fn names(service: &str) -> Vec<String> {
         [
-            "scene.load", "scene.validate", "scene.patch", "scene.get", "scene.describe",
-            "scene.unload", "scene.watch", "scene.layout", "scenes.list", "dialog.show", "dialog.hide",
-            "ping", "info", "props.get", "panel.state", "panel.mode", "panel.page.set",
-            "panel.order", "panel.resize", "panel.show", "panel.hide", "panel.toggle", "panel.pin",
-            "panel.unpin", "panel.dock", "corner.show", "corner.hide", "corner.toggle", "corner.pin",
+            "scene.load",
+            "scene.validate",
+            "scene.patch",
+            "scene.get",
+            "scene.describe",
+            "scene.unload",
+            "scene.watch",
+            "scene.layout",
+            "scenes.list",
+            "dialog.show",
+            "dialog.hide",
+            "ping",
+            "info",
+            "props.get",
+            "panel.state",
+            "panel.mode",
+            "panel.page.set",
+            "panel.order",
+            "panel.resize",
+            "panel.show",
+            "panel.hide",
+            "panel.toggle",
+            "panel.pin",
+            "panel.unpin",
+            "panel.dock",
+            "corner.show",
+            "corner.hide",
+            "corner.toggle",
+            "corner.pin",
             "corner.unpin",
-            "corner.menu.open", "corner.menu.choose", "corner.menu.close",
+            "corner.menu.open",
+            "corner.menu.choose",
+            "corner.menu.close",
         ]
         .into_iter()
         .map(|verb| format!("{service}.{verb}"))
@@ -152,17 +214,35 @@ mod tests {
         assert_eq!(SceneVerb::parse("shell", "shellx.scene.load"), None);
         assert_eq!(SceneVerb::parse("shell", "shell.panel.nope"), None);
         for verb in ["shell.settings.get", "shell.settings.scheme"] {
-            assert_eq!(SceneVerb::parse("shell", verb), Some(SceneVerb::NotServed), "{verb}");
+            assert_eq!(
+                SceneVerb::parse("shell", verb),
+                Some(SceneVerb::NotServed),
+                "{verb}"
+            );
         }
-        assert_eq!(SceneVerb::parse("shell", "shell.panel.order"), Some(SceneVerb::PanelOrder));
+        assert_eq!(
+            SceneVerb::parse("shell", "shell.panel.order"),
+            Some(SceneVerb::PanelOrder)
+        );
         assert_eq!(
             SceneVerb::parse("shell", "shell.corner.show"),
-            Some(SceneVerb::Panel { verb: PanelVerb::Show, corner: true })
+            Some(SceneVerb::Panel {
+                verb: PanelVerb::Show,
+                corner: true
+            })
         );
         assert_eq!(
             SceneVerb::parse("shell", "shell.panel.unpin"),
-            Some(SceneVerb::Panel { verb: PanelVerb::Unpin, corner: false })
+            Some(SceneVerb::Panel {
+                verb: PanelVerb::Unpin,
+                corner: false
+            })
         );
-        assert!(!SceneVerb::names("shell").iter().any(|name| name.contains("settings")), "shell.info lists only what is served");
+        assert!(
+            !SceneVerb::names("shell")
+                .iter()
+                .any(|name| name.contains("settings")),
+            "shell.info lists only what is served"
+        );
     }
 }

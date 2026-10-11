@@ -27,7 +27,11 @@ pub(crate) struct Raster {
 
 impl Raster {
     pub fn from_rgba(width: usize, height: usize, rgba: Vec<u8>) -> Self {
-        Self { id: next_id(), size: [width, height], rgba: rgba.into() }
+        Self {
+            id: next_id(),
+            size: [width, height],
+            rgba: rgba.into(),
+        }
     }
 }
 
@@ -77,8 +81,14 @@ pub(crate) type Prepared = BTreeMap<(String, String, String), Asset>;
 type AssetCache = BTreeMap<(String, u32, Option<String>), Asset>;
 
 pub(crate) fn key(id: &str, row: Option<&crate::view::Route>) -> (String, String, String) {
-    (row.map_or("", |r| r.node.as_str()).into(),
-        row.and_then(|r| r.item.as_ref()).and_then(|item| item["id"].as_str()).unwrap_or_default().into(), id.into())
+    (
+        row.map_or("", |r| r.node.as_str()).into(),
+        row.and_then(|r| r.item.as_ref())
+            .and_then(|item| item["id"].as_str())
+            .unwrap_or_default()
+            .into(),
+        id.into(),
+    )
 }
 
 // The panel behaviour publishes an empty src and hides the image when apps
@@ -99,17 +109,28 @@ pub(crate) fn panel_fallback(id: &str) -> Option<&'static str> {
 
 pub(crate) fn fallback_image(id: &str) -> Option<&'static str> {
     match id {
-        "st_notes_f" => Some("st_notes_i"), "st_vol_f" => Some("st_vol_i"),
-        "st_net_f" => Some("st_net_i"), "peek_f" => Some("peek_i"),
-        "launcher_text" => Some("launcher_icon"), _ => None,
+        "st_notes_f" => Some("st_notes_i"),
+        "st_vol_f" => Some("st_vol_i"),
+        "st_net_f" => Some("st_net_i"),
+        "peek_f" => Some("peek_i"),
+        "launcher_text" => Some("launcher_icon"),
+        _ => None,
     }
 }
 
-pub(crate) fn prepare(tree: &scene::ResolvedScene, lists: &crate::templates::PreparedLists) -> Prepared {
+pub(crate) fn prepare(
+    tree: &scene::ResolvedScene,
+    lists: &crate::templates::PreparedLists,
+) -> Prepared {
     // Only the fixed production resolver shares this cache. Injected resolvers
     // must use their own cache so they cannot consume or replace its assets.
     static CACHE: OnceLock<Mutex<AssetCache>> = OnceLock::new();
-    prepare_with(tree, lists, CACHE.get_or_init(Mutex::default), crate::icons::resolve)
+    prepare_with(
+        tree,
+        lists,
+        CACHE.get_or_init(Mutex::default),
+        crate::icons::resolve,
+    )
 }
 
 fn prepare_with(
@@ -120,28 +141,53 @@ fn prepare_with(
 ) -> Prepared {
     let mut prepared = Prepared::new();
     let mut insert = |key, id: &str, node: &scene::Node, app: Option<&str>| {
-        if node.family != "image" { return; }
+        if node.family != "image" {
+            return;
+        }
         let source = crate::templates::text(node, "src");
         let source = if source.is_empty() && tree.name == "panel" {
             panel_fallback(id).unwrap_or(source)
-        } else { source };
+        } else {
+            source
+        };
         // Launcher services can leave src empty or return an obsolete path.
         // Keep the desktop ID available so local theme lookup can recover it.
-        if source.is_empty() && app.is_none() { return; }
-        let size = ["w", "h"].map(|p| node.ports.get(p).and_then(serde_json::Value::as_f64).unwrap_or(16.0));
+        if source.is_empty() && app.is_none() {
+            return;
+        }
+        let size = ["w", "h"].map(|p| {
+            node.ports
+                .get(p)
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(16.0)
+        });
         let size = size[0].max(size[1]).ceil() as u32;
         let cache_key = (source.to_owned(), size, app.map(str::to_owned));
-        if let Some(asset) = cache.lock().ok().and_then(|cache| cache.get(&cache_key).cloned()) {
+        if let Some(asset) = cache
+            .lock()
+            .ok()
+            .and_then(|cache| cache.get(&cache_key).cloned())
+        {
             prepared.insert(key, asset);
             return;
         }
         if let Some(path) = resolve(source, size, app) {
             let asset = if crate::icons::is_svg(&path) {
                 // Keep bytes and identity alive through layout/page switches.
-                std::fs::read(&path).ok().map(|bytes| Asset::Svg(Svg { id: next_id(), bytes: bytes.into(), symbolic: theme_glyph(&path) }))
-            } else { raster(&path).map(Asset::Raster) };
+                std::fs::read(&path).ok().map(|bytes| {
+                    Asset::Svg(Svg {
+                        id: next_id(),
+                        bytes: bytes.into(),
+                        symbolic: theme_glyph(&path),
+                    })
+                })
+            } else {
+                raster(&path).map(Asset::Raster)
+            };
             if let Some(asset) = asset {
-                if let Ok(mut cache) = cache.lock() && cache.len() < 512 {
+                if let Ok(mut cache) = cache.lock()
+                    && cache.len() < 512
+                {
                     cache.insert(cache_key, asset.clone());
                 }
                 prepared.insert(key, asset);
@@ -150,13 +196,24 @@ fn prepare_with(
     };
     let templates = crate::templates::template_ids(tree);
     for (id, node) in &tree.nodes {
-        if !templates.contains(id) { insert(key(id, None), id, node, None); }
+        if !templates.contains(id) {
+            insert(key(id, None), id, node, None);
+        }
     }
     for (list, data) in lists {
         for (item, nodes) in &data.instances {
-            let app = tree.nodes.get(list).and_then(|node| crate::templates::rows(node).iter().find(|row| row["id"].as_str() == Some(item.as_str())))
+            let app = tree
+                .nodes
+                .get(list)
+                .and_then(|node| {
+                    crate::templates::rows(node)
+                        .iter()
+                        .find(|row| row["id"].as_str() == Some(item.as_str()))
+                })
                 .and_then(|row| row["app_id"].as_str().or_else(|| row["id"].as_str()));
-            for (id, node) in nodes { insert((list.clone(), item.clone(), id.clone()), id, node, app); }
+            for (id, node) in nodes {
+                insert((list.clone(), item.clone(), id.clone()), id, node, app);
+            }
         }
     }
     prepared
@@ -175,13 +232,18 @@ fn raster_with_cache(path: &Path, cache: &Mutex<RasterCache>) -> Option<Raster> 
     // Keep lookup, decoding and insertion atomic: concurrent misses must not
     // create different IDs for the same unchanged file.
     let mut cache = cache.lock().ok()?;
-    if let Some((_, _, handle)) = cache.get(path)
+    if let Some((_, _, handle)) = cache
+        .get(path)
         .filter(|(modified, len, _)| (*modified, *len) == stamp)
     {
         return Some(handle.clone());
     }
     let pixels = image::open(path).ok()?.into_rgba8();
-    let handle = Raster::from_rgba(pixels.width() as usize, pixels.height() as usize, pixels.into_raw());
+    let handle = Raster::from_rgba(
+        pixels.width() as usize,
+        pixels.height() as usize,
+        pixels.into_raw(),
+    );
     if cache.len() >= 512 {
         // A live handle shares its pixel buffer with the cache. Only discard
         // unused entries, allowing the limit to grow while scenes hold icons.
@@ -231,9 +293,9 @@ app: {widget: "row", children: ["icon"]}
 icon: {widget: "image", src: "", w: 31, h: 31}
 ```
 "#,
-        ).expect("empty-source launcher scene must parse");
-        let tree = scene::resolve(&document)
-            .expect("empty-source launcher scene must resolve");
+        )
+        .expect("empty-source launcher scene must parse");
+        let tree = scene::resolve(&document).expect("empty-source launcher scene must resolve");
         let lists = crate::templates::validate_templates(&tree)
             .expect("empty-source launcher row templates must validate");
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/icon.png");
@@ -241,12 +303,27 @@ icon: {widget: "image", src: "", w: 31, h: 31}
         let cache = Mutex::new(AssetCache::new());
         let images = prepare_with(&tree, &lists, &cache, |source, _, app| {
             assert!(source.is_empty());
-            seen.borrow_mut().push(app.expect("launcher image must retain its desktop ID").to_owned());
+            seen.borrow_mut().push(
+                app.expect("launcher image must retain its desktop ID")
+                    .to_owned(),
+            );
             Some(path.clone())
         });
-        assert_eq!(seen.borrow().len(), 4, "empty sources must not bypass recovery");
-        for id in ["dev.mixos.media.desktop", "bssh.desktop", "bvnc.desktop", "avahi-discover.desktop"] {
-            assert!(matches!(images.get(&("apps".into(), id.into(), "icon".into())), Some(Asset::Raster(_))));
+        assert_eq!(
+            seen.borrow().len(),
+            4,
+            "empty sources must not bypass recovery"
+        );
+        for id in [
+            "dev.mixos.media.desktop",
+            "bssh.desktop",
+            "bvnc.desktop",
+            "avahi-discover.desktop",
+        ] {
+            assert!(matches!(
+                images.get(&("apps".into(), id.into(), "icon".into())),
+                Some(Asset::Raster(_))
+            ));
         }
     }
 
@@ -260,12 +337,30 @@ icon: {widget: "image", src: "", w: 31, h: 31}
         let root = std::env::temp_dir().join(format!("compd-launcher-{}", std::process::id()));
         let mark = root.join("icons/mixos/symbolic/apps/dev.mixos.svg");
         std::fs::create_dir_all(mark.parent().unwrap()).unwrap();
-        std::fs::copy(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/embedded-icon.svg"), &mark).unwrap();
-        let images = prepare_with(&tree, &lists, &Mutex::new(AssetCache::new()), |name, _, _| {
-            assert_eq!(name, "dev.mixos");
-            Some(mark.clone())
-        });
-        assert!(matches!(images.get(&key("launcher_icon", None)), Some(Asset::Svg(Svg { symbolic: false, .. }))), "the cyclops keeps its colours (its eye is red)");
+        std::fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/embedded-icon.svg"),
+            &mark,
+        )
+        .unwrap();
+        let images = prepare_with(
+            &tree,
+            &lists,
+            &Mutex::new(AssetCache::new()),
+            |name, _, _| {
+                assert_eq!(name, "dev.mixos");
+                Some(mark.clone())
+            },
+        );
+        assert!(
+            matches!(
+                images.get(&key("launcher_icon", None)),
+                Some(Asset::Svg(Svg {
+                    symbolic: false,
+                    ..
+                }))
+            ),
+            "the cyclops keeps its colours (its eye is red)"
+        );
         assert_eq!(fallback_image("launcher_text"), Some("launcher_icon"));
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -280,13 +375,21 @@ icon: {widget: "image", src: "", w: 31, h: 31}
         let raster_cache = Mutex::new(AssetCache::new());
         let svg_cache = Mutex::new(AssetCache::new());
         let root = key("root", None);
-        let rasters = prepare_with(&tree, &lists, &raster_cache, |_, _, _| Some(fixtures.join("icon.png")));
-        let svgs = prepare_with(&tree, &lists, &svg_cache, |_, _, _| Some(fixtures.join("embedded-icon.svg")));
+        let rasters = prepare_with(&tree, &lists, &raster_cache, |_, _, _| {
+            Some(fixtures.join("icon.png"))
+        });
+        let svgs = prepare_with(&tree, &lists, &svg_cache, |_, _, _| {
+            Some(fixtures.join("embedded-icon.svg"))
+        });
         assert!(matches!(rasters.get(&root), Some(Asset::Raster(_))));
         assert!(matches!(svgs.get(&root), Some(Asset::Svg(_))));
         // Reusing a cache bypasses resolution and keeps the same decoded handle.
-        let cached = prepare_with(&tree, &lists, &raster_cache, |_, _, _| panic!("cached asset must bypass lookup"));
-        let (Some(Asset::Raster(first)), Some(Asset::Raster(second))) = (rasters.get(&root), cached.get(&root)) else {
+        let cached = prepare_with(&tree, &lists, &raster_cache, |_, _, _| {
+            panic!("cached asset must bypass lookup")
+        });
+        let (Some(Asset::Raster(first)), Some(Asset::Raster(second))) =
+            (rasters.get(&root), cached.get(&root))
+        else {
             panic!("expected cached raster handles")
         };
         assert_eq!(first.id, second.id);
@@ -318,8 +421,13 @@ icon: {widget: "image", src: "", w: 31, h: 31}
                 let mut entries = cache.lock().unwrap();
                 for index in 0..511 {
                     let handle = Raster::from_rgba(1, 1, vec![0; 4]);
-                    if keep_live { live.push(handle.clone()); }
-                    entries.insert(PathBuf::from(format!("unused-{index}.png")), (None, 0, handle));
+                    if keep_live {
+                        live.push(handle.clone());
+                    }
+                    entries.insert(
+                        PathBuf::from(format!("unused-{index}.png")),
+                        (None, 0, handle),
+                    );
                 }
                 assert_eq!(entries.len(), 512);
             }
@@ -337,11 +445,18 @@ icon: {widget: "image", src: "", w: 31, h: 31}
         let cache = Mutex::new(RasterCache::new());
         let start = std::sync::Barrier::new(8);
         let handles = std::thread::scope(|scope| {
-            let threads: Vec<_> = (0..8).map(|_| scope.spawn(|| {
-                start.wait();
-                raster_with_cache(&path, &cache).unwrap()
-            })).collect();
-            threads.into_iter().map(|thread| thread.join().unwrap()).collect::<Vec<_>>()
+            let threads: Vec<_> = (0..8)
+                .map(|_| {
+                    scope.spawn(|| {
+                        start.wait();
+                        raster_with_cache(&path, &cache).unwrap()
+                    })
+                })
+                .collect();
+            threads
+                .into_iter()
+                .map(|thread| thread.join().unwrap())
+                .collect::<Vec<_>>()
         });
         assert!(handles.iter().all(|handle| handle.id == handles[0].id));
         assert_eq!(cache.lock().unwrap().len(), 1);
@@ -352,7 +467,13 @@ icon: {widget: "image", src: "", w: 31, h: 31}
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/icon.png");
         let raster = raster(&path).expect("PNG must be decoded before drawing");
         assert_eq!((raster.size, raster.rgba.len()), ([1, 1], 4));
-        assert!(raster.rgba.chunks_exact(4).any(|pixel| pixel[0] > 0 && pixel[3] > 0), "blank decoded PNG");
+        assert!(
+            raster
+                .rgba
+                .chunks_exact(4)
+                .any(|pixel| pixel[0] > 0 && pixel[3] > 0),
+            "blank decoded PNG"
+        );
     }
 
     #[test]
@@ -360,14 +481,35 @@ icon: {widget: "image", src: "", w: 31, h: 31}
         // The draw-time rasteriser, raster images embedded in SVG included.
         let svg = Svg {
             id: next_id(),
-            bytes: include_bytes!("../tests/fixtures/embedded-icon.svg").as_slice().into(),
+            bytes: include_bytes!("../tests/fixtures/embedded-icon.svg")
+                .as_slice()
+                .into(),
             symbolic: false,
         };
         let image = rasterise(&svg, 8, 8).expect("rasterised");
         assert_eq!(image.size, [8, 8]);
-        assert!(image.pixels.iter().any(|pixel| pixel.r() > 0 && pixel.a() > 0), "blank embedded PNG");
+        assert!(
+            image
+                .pixels
+                .iter()
+                .any(|pixel| pixel.r() > 0 && pixel.a() > 0),
+            "blank embedded PNG"
+        );
         // A symbolic icon comes out white at its coverage, ready to tint.
-        let symbolic = rasterise(&Svg { symbolic: true, ..svg }, 8, 8).expect("rasterised");
-        assert!(symbolic.pixels.iter().all(|pixel| pixel.r() == pixel.a() && pixel.g() == pixel.a()));
+        let symbolic = rasterise(
+            &Svg {
+                symbolic: true,
+                ..svg
+            },
+            8,
+            8,
+        )
+        .expect("rasterised");
+        assert!(
+            symbolic
+                .pixels
+                .iter()
+                .all(|pixel| pixel.r() == pixel.a() && pixel.g() == pixel.a())
+        );
     }
 }

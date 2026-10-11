@@ -549,7 +549,13 @@ mod tests {
             "the physical key releases once: {events:?}"
         );
         assert!(
-            matches!(releases[0], egui::Event::Key { key: egui::Key::A, .. }),
+            matches!(
+                releases[0],
+                egui::Event::Key {
+                    key: egui::Key::A,
+                    ..
+                }
+            ),
             "as the key it pressed: {events:?}"
         );
     }
@@ -565,11 +571,19 @@ mod tests {
             egui::Event::ModifiersChanged(egui::Modifiers::NONE)
         );
         assert_eq!(events[2], egui::Event::WindowFocused(false));
-        let events = run(vec![key(38, 0x0061, Some("a"), true, false), Input::Focused(false)]);
+        let events = run(vec![
+            key(38, 0x0061, Some("a"), true, false),
+            Input::Focused(false),
+        ]);
         assert!(
-            events
-                .iter()
-                .any(|event| matches!(event, egui::Event::Key { key: egui::Key::A, pressed: false, .. })),
+            events.iter().any(|event| matches!(
+                event,
+                egui::Event::Key {
+                    key: egui::Key::A,
+                    pressed: false,
+                    ..
+                }
+            )),
             "a key held when focus goes is released: {events:?}"
         );
     }

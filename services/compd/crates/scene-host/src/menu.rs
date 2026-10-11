@@ -293,7 +293,11 @@ struct MenuUi {
 
 impl MenuUi {
     fn new(menu: Menu) -> Self {
-        Self { menu, look: None, installed: None }
+        Self {
+            menu,
+            look: None,
+            installed: None,
+        }
     }
 
     fn theme(&self) -> Arc<toolkit::theme::Theme> {
@@ -316,7 +320,10 @@ impl UiProgram for MenuUi {
 
     fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<Message>) {
         let ctx = ui.ctx().clone();
-        let identity = self.look.as_ref().map_or(0, |look| Arc::as_ptr(look) as usize);
+        let identity = self
+            .look
+            .as_ref()
+            .map_or(0, |look| Arc::as_ptr(look) as usize);
         let scale = self.look.as_ref().map_or(1.0, |look| look.text_scale);
         let theme = self.theme();
         if self.installed != Some(identity) {
@@ -326,8 +333,16 @@ impl UiProgram for MenuUi {
         let serial = self.menu.serial;
         let keys = ctx.input(|input| {
             [
-                (input.key_pressed(egui::Key::ArrowUp) || input.key_pressed(egui::Key::ArrowLeft), Input::Move(-1)),
-                (input.key_pressed(egui::Key::ArrowDown) || input.key_pressed(egui::Key::ArrowRight), Input::Move(1)),
+                (
+                    input.key_pressed(egui::Key::ArrowUp)
+                        || input.key_pressed(egui::Key::ArrowLeft),
+                    Input::Move(-1),
+                ),
+                (
+                    input.key_pressed(egui::Key::ArrowDown)
+                        || input.key_pressed(egui::Key::ArrowRight),
+                    Input::Move(1),
+                ),
                 (input.key_pressed(egui::Key::Enter), Input::Activate),
                 (input.key_pressed(egui::Key::Escape), Input::Close),
             ]
@@ -343,10 +358,20 @@ impl UiProgram for MenuUi {
         let border = crate::view::colour(palette.border);
         let full = ui.max_rect();
         ui.painter().rect_filled(full, 0.0, base);
-        ui.painter().rect_stroke(full, 0.0, egui::Stroke::new(1.0, border), egui::StrokeKind::Inside);
-        let size = design::active_typography(Some(theme.typography()), design::TypographyRole::Ui).font_size as f32
+        ui.painter().rect_stroke(
+            full,
+            0.0,
+            egui::Stroke::new(1.0, border),
+            egui::StrokeKind::Inside,
+        );
+        let size = design::active_typography(Some(theme.typography()), design::TypographyRole::Ui)
+            .font_size as f32
             * scale;
-        let size = if size > 0.0 { size } else { crate::view::TEXT_SIZE * scale };
+        let size = if size > 0.0 {
+            size
+        } else {
+            crate::view::TEXT_SIZE * scale
+        };
         let inner = full.shrink(PADDING);
         egui::ScrollArea::vertical().show_viewport(ui, |ui, _viewport| {
             let (rows, _) = ui.allocate_exact_size(
@@ -362,19 +387,36 @@ impl UiProgram for MenuUi {
                 let response = ui.interact(
                     rect,
                     egui::Id::new(("corner-menu", index)),
-                    if enabled { egui::Sense::click() } else { egui::Sense::hover() },
+                    if enabled {
+                        egui::Sense::click()
+                    } else {
+                        egui::Sense::hover()
+                    },
                 );
                 let lit = enabled && (self.menu.selected == index || response.hovered());
                 let pair = if lit { palette.primary } else { palette.base };
-                ui.painter().rect_filled(rect, 0.0, crate::view::colour(pair.surface));
-                let label = if item.checked { format!("✓  {}", item.label) } else { format!("    {}", item.label) };
-                let colour = if lit { crate::view::colour(pair.foreground) } else { ink };
+                ui.painter()
+                    .rect_filled(rect, 0.0, crate::view::colour(pair.surface));
+                let label = if item.checked {
+                    format!("✓  {}", item.label)
+                } else {
+                    format!("    {}", item.label)
+                };
+                let colour = if lit {
+                    crate::view::colour(pair.foreground)
+                } else {
+                    ink
+                };
                 ui.painter().text(
                     egui::pos2(rect.left() + 8.0, rect.center().y),
                     egui::Align2::LEFT_CENTER,
                     label,
                     egui::FontId::proportional(size),
-                    if enabled { colour } else { colour.gamma_multiply(0.5) },
+                    if enabled {
+                        colour
+                    } else {
+                        colour.gamma_multiply(0.5)
+                    },
                 );
                 if response.clicked() {
                     emit.push(Message::Input(serial, Input::Choose(index)));
@@ -599,7 +641,9 @@ mod tests {
         let mut ui = MenuUi::new(menu);
         ui.update(Message::Input(42, Input::Move(1)));
         let old = ui.menu.clone();
-        ui.update(Message::Appearance(crate::appearance::fixture("light", 1.0)));
+        ui.update(Message::Appearance(crate::appearance::fixture(
+            "light", 1.0,
+        )));
         let light = crate::appearance::page(&ui.theme(), true).base;
         ui.update(Message::Appearance(crate::appearance::fixture("dark", 1.5)));
         assert_eq!(ui.menu, old, "a new look keeps the menu and its selection");
