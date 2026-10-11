@@ -1031,10 +1031,6 @@ every settings read and publication already passes through the broker.
    (settingsd starts after noded is reachable, and the session target
    upholds it), one Bus hop per read, and changes that touch both, such as
    a new reserved topic, ship together.
-4. **The exception:** a future single-binary image may host the settings
-   authority in-process, as the same library behind the same verbs and
-   topics. That needs its own decision; it is not a merge into noded's
-   code.
 
 ## Consequences
 
