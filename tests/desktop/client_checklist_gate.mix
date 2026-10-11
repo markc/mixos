@@ -318,17 +318,47 @@ try
     $src = wait_new_window($before, "testkit-dnd-source", 30)
     if check("D0 the drag source (testkit-dnd-source) mapped", $src != nil, "no testkit-dnd-source window in 30 s") then
       -- Side by side: the source on the left, the fixture on the right.
-      $ps = call("comp.window.place", {id: $src.id, generation: $src.generation, x: 20, y: 60, width: 600, height: 500})
-      $pt2 = call("comp.window.place", {id: $ff.id, generation: $ff.generation, x: 700, y: 60, width: 800, height: 600})
-      sleep(1)
-      $rows = {}
-      for each $w in window_rows()
-        $rows[to_string($w.id)] = $w
+      $want_s = {x: 20, y: 60, width: 600, height: 500}
+      $want_d = {x: 700, y: 60, width: 800, height: 600}
+      $ps = call("comp.window.place", merge({id: $src.id, generation: $src.generation}, $want_s))
+      $pt2 = call("comp.window.place", merge({id: $ff.id, generation: $ff.generation}, $want_d))
+      fn settled($row, $want)
+        return $row != nil and abs($row.x - $want.x) <= 2 and abs($row.y - $want.y) <= 2 and abs($row.width - $want.width) <= 2 and abs($row.height - $want.height) <= 2
       end
-      $s = $rows[to_string($src.id)]
-      $d = $rows[to_string($ff.id)]
+      $s = nil
+      $d = nil
+      $i = 0
+      while not (settled($s, $want_s) and settled($d, $want_d)) and $i < 40
+        sleep(0.25)
+        $i = $i + 1
+        $rows = {}
+        for each $w in window_rows()
+          $rows[to_string($w.id)] = $w
+        end
+        $s = $rows[to_string($src.id)]
+        $d = $rows[to_string($ff.id)]
+      end
+      check("D0 both windows placed side by side", $ps.rc == 0 and $pt2.rc == 0 and settled($s, $want_s) and settled($d, $want_d),
+        json_encode([$ps, $pt2, $s, $d]))
       fn source_saw($line)
         return exists($srclog) and contains(read_file($srclog), $line)
+      end
+      -- The target's title and the source's dropped/finished arrive on
+      -- separate paths: wait for all three, bounded. `$n` counts the drags so
+      -- far (each prints its own dropped/finished).
+      fn await_drop($want, $n, $secs)
+        $title = ""
+        $i = 0
+        while $i < $secs * 4
+          $title = title_of($ff.id)
+          $log = exists($srclog) ? read_file($srclog) : ""
+          if contains($title, $want) and len(split($log, "PROBE dropped")) > $n and len(split($log, "PROBE finished")) > $n then
+            return {ok: true, title: $title}
+          end
+          sleep(0.25)
+          $i = $i + 1
+        end
+        return {ok: false, title: $title}
       end
       -- Press on the source (it starts the drag), move across in steps,
       -- hover, release on the target.
@@ -351,17 +381,15 @@ try
       $tx = $d.x + $d.width / 2
       $ty = $d.y + $d.height * 0.6
       drag($s.x + $s.width * 0.25, $cy, $tx, $ty)
-      $td1 = await_title($ff.id, "CK:DROP-TEXT:" .. $needle_dnd, 15)
-      sleep(0.5)
+      $r1 = await_drop("CK:DROP-TEXT:" .. $needle_dnd, 1, 15)
       check("D1 text drag-and-drop: the fixture received the other client's text, the source saw it finish",
-        contains($td1, "CK:DROP-TEXT:" .. $needle_dnd) and source_saw("PROBE dropped") and source_saw("PROBE finished"),
-        json_encode([$ps.rc, $pt2.rc, $td1, exists($srclog) ? read_file($srclog) : ""]))
+        $r1.ok, json_encode([$r1.title, exists($srclog) ? read_file($srclog) : ""]))
       $name = basename($dropped)
       drag($s.x + $s.width * 0.75, $cy, $tx, $ty)
-      $td2 = await_title($ff.id, $name, 15)
-      check("D2 file drag-and-drop: the fixture received the other client's file (" .. json_encode($td2) .. ")",
-        contains($td2, "CK:DROP-FILE:" .. $name) or contains($td2, "CK:DROP-URI:" .. $name),
-        json_encode([$td2, exists($srclog) ? read_file($srclog) : ""]))
+      $r2 = await_drop($name, 2, 15)
+      check("D2 file drag-and-drop: the fixture received the other client's file (" .. json_encode($r2.title) .. "), the source saw it finish",
+        $r2.ok and (contains($r2.title, "CK:DROP-FILE:" .. $name) or contains($r2.title, "CK:DROP-URI:" .. $name)),
+        json_encode([$r2.title, exists($srclog) ? read_file($srclog) : ""]))
       close_gone($src, $sp, 10)
     end
 
