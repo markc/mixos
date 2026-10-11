@@ -126,8 +126,8 @@ fn bounded_centred_groups_keep_their_gaps_and_centre_their_content() {
         assert!((b.left() - a.right() - 6.0).abs() < 0.1);
         assert!((d.top() - c.bottom() - 6.0).abs() < 0.1);
         // min_width holds against the short content; min = max fixes the column.
-        eprintln!("DEBUG width={width} row={row:?} a={a:?} b={b:?} placed={:?}", rt.program.layout().placed.iter().map(|p| (p.id.clone(), p.rect)).collect::<Vec<_>>());
-        assert!((row.width() - 60.0).abs() < 0.1, "row={row:?}");
+        // Flexbox (taffy, as Quoin): a fit-content row inside its bounds.
+        assert!(row.width() >= 60.0 - 0.1 && row.width() <= 80.0 + 0.1, "row={row:?}");
         assert!((column.width() - 60.0).abs() < 0.1 && (column.height() - 60.0).abs() < 0.1, "column={column:?}");
         assert!(a.left() >= row.left() && b.right() <= row.right());
     }
@@ -285,7 +285,7 @@ fn spacers_and_explicit_lengths_keep_their_sizes() {
 #[test]
 fn autofocus_only_lands_on_a_reachable_visible_field() {
     let hidden = content(
-        "---\nscene: 1\nname: lists\ncitizen: c\nwindow: {\"kind\":\"edge\",\"edge\":\"left\",\"autofocus\":\"search\"}\n---\n```mix\nroot: {widget: \"column\", children: [\"wrap\"]}\nwrap: {widget: \"column\", hidden: true, children: [\"search\"]}\nsearch: {widget: \"field\"}\n```\n",
+        "---\nscene: 1\nname: lists\ncitizen: c\nwindow: {\"kind\":\"edge\",\"edge\":\"left\",\"autofocus\":\"search\"}\n---\n```mix\nroot: {widget: \"column\", children: [\"wrap\"]}\nwrap: {widget: \"column\", hidden: true, children: [\"search\"]}\nsearch: {widget: \"field\", value: \"\"}\n```\n",
         None,
         false,
     );

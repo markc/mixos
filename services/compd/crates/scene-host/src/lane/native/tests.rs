@@ -12,9 +12,8 @@ fn binding() -> Binding {
 }
 fn snapshot(revision: u64, dark: bool) -> Snapshot {
     let mut desktop = Desktop::default();
-    if dark {
-        desktop.appearance.mode = "dark".into();
-    }
+    // Explicit both ways: the embedded default is itself dark.
+    desktop.appearance.mode = if dark { "dark" } else { "light" }.into();
     Snapshot {
         schema: 1,
         binding: binding(),
