@@ -327,16 +327,27 @@ try
       fn settled($row, $want)
         if $row == nil then return false end
         $m = 40
-        return $row.x <= $want.x + 2 and $row.y <= $want.y + 2 and $row.x >= $want.x - $m and $row.y >= $want.y - $m and $row.x + $row.width >= $want.x + $want.width - 2 and $row.y + $row.height >= $want.y + $want.height - 2 and $row.width <= $want.width + 2 * $m and $row.height <= $want.height + 2 * $m
+        $right = $row.x + $row.width
+        $bottom = $row.y + $row.height
+        $wr = $want.x + $want.width
+        $wb = $want.y + $want.height
+        return $row.x <= $want.x + 2 and $row.x >= $want.x - $m and $row.y <= $want.y + 2 and $row.y >= $want.y - $m and $right >= $wr - 2 and $right <= $wr + $m and $bottom >= $wb - 2 and $bottom <= $wb + $m
       end
       $s = nil
       $d = nil
-      $i = 0
-      while not (settled($s, $want_s) and settled($d, $want_d)) and $i < 40
+      -- Rows read within one elapsed deadline (each read capped to what is left).
+      fn rows_within($deadline)
+        $r = $n.call_within($svc, "comp.windows.list", {}, $deadline - monotonic())
+        if $r.rc != 0 or type($r.result) != "map" or type($r.result.windows) != "list" then
+          return []
+        end
+        return $r.result.windows
+      end
+      $deadline = monotonic() + 10
+      while not (settled($s, $want_s) and settled($d, $want_d)) and monotonic() < $deadline
         sleep(0.25)
-        $i = $i + 1
         $rows = {}
-        for each $w in window_rows()
+        for each $w in rows_within($deadline)
           $rows[to_string($w.id)] = $w
         end
         $s = $rows[to_string($src.id)]
@@ -350,17 +361,21 @@ try
       -- The target's title and the source's dropped/finished arrive on
       -- separate paths: wait for all three, bounded. `$n` counts the drags so
       -- far (each prints its own dropped/finished).
-      fn await_drop($want, $n, $secs)
+      fn await_drop($want, $count, $secs)
         $title = ""
-        $i = 0
-        while $i < $secs * 4
-          $title = title_of($ff.id)
+        $deadline = monotonic() + $secs
+        while monotonic() < $deadline
+          $title = ""
+          for each $w in rows_within($deadline)
+            if $w.id == $ff.id then
+              $title = to_string($w.title ?? "")
+            end
+          end
           $log = exists($srclog) ? read_file($srclog) : ""
-          if contains($title, $want) and len(split($log, "PROBE dropped")) > $n and len(split($log, "PROBE finished")) > $n then
+          if contains($title, $want) and len(split($log, "PROBE dropped")) > $count and len(split($log, "PROBE finished")) > $count then
             return {ok: true, title: $title}
           end
           sleep(0.25)
-          $i = $i + 1
         end
         return {ok: false, title: $title}
       end
