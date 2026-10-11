@@ -434,6 +434,7 @@ mod tests {
                         scheme,
                         mode,
                         contrast: Contrast::default(),
+                        style: None,
                         app: None,
                     },
                 ) else {
