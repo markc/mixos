@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Status: accepted authority contract, version 0.3.0 (0.2.0 added the summary topic and read view, decision; 0.3.0 adds snapshot schema 2, decision). Full…">
+    <meta name="description" content="Status: accepted authority contract, version 0.4.0 (0.2.0 added the summary topic and read view, decision; 0.3.0 added snapshot schema 2, decision; 0.4.0 adds…">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=c34fdc68c4" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/web/favicon.svg?v=51993ccf9f">
@@ -218,6 +218,7 @@
                         <a href="#served-verbs">Served verbs</a>
                         <a href="#initial-data-and-resolution">Initial data and resolution</a>
                         <a href="#shell-panel-preferences">Shell panel preferences</a>
+                        <a href="#key-bindings">Key bindings</a>
                         <a href="#topics-and-storage">Topics and storage</a>
                         <a href="#validation-and-remaining-scope">Validation and remaining scope</a>
                     </nav>
@@ -245,9 +246,10 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="desktop-settings-contract">Desktop settings contract</h1>
-<p>Status: accepted authority contract, version 0.3.0 (0.2.0 added the summary
+<p>Status: accepted authority contract, version 0.4.0 (0.2.0 added the summary
 topic and read view, <a href="/decisions/2026-10-11-settings-summary-reads/">decision</a>;
-0.3.0 adds snapshot schema 2, <a href="/decisions/2026-10-11-settings-snapshot-schema-2/">decision</a>). Full desktop consumer
+0.3.0 added snapshot schema 2, <a href="/decisions/2026-10-11-settings-snapshot-schema-2/">decision</a>;
+0.4.0 adds key bindings, <a href="/decisions/2026-10-11-keymaps-in-settings/">decision</a>). Full desktop consumer
 integration remains in development. No frozen ABP wire bytes change.</p>
 <p><code>settingsd</code> serves one explicitly initialised profile in the initial slice.
 <code>settings</code> provides shared headless types, resolver, consumer and snapshot reducer;
@@ -260,7 +262,7 @@ responses preserve ordinary ABP rc conventions: 0 for handled results and 10 for
 refusal, invalid input or unknown verbs. Domain status is structured in the body.</p>
 <table><thead><tr><th>Verb</th><th>Input and result</th></tr></thead><tbody>
 <tr><td><code>settings.describe</code></td><td>No mutation; version, fields, ranges, defaults, limits and implemented/deferred capabilities</td></tr>
-<tr><td><code>settings.get</code></td><td><code>{binding:{instance,profile}, view?, schema?}</code>; <code>view</code> <code>full</code> (default): complete accepted snapshot under <code>snapshot</code>, in <code>schema</code> 1 (default) or 2 (each distinct design projection once under <code>designs</code>, contexts naming it by digest; other schemas refused with <code>unsupported_schema</code>); <code>summary</code>: the profile's <code>Summary</code> (schema, binding, incarnation, revision, design revision, source digest, appearance names, <code>custom_source</code>; never projections or a source) under <code>summary</code>; both with publication/recovery status</td></tr>
+<tr><td><code>settings.get</code></td><td><code>{binding:{instance,profile}, view?, schema?}</code>; <code>view</code> <code>full</code> (default): complete accepted snapshot under <code>snapshot</code>, in <code>schema</code> 1 (default) or 2 (each distinct design projection once under <code>designs</code>, contexts naming it by digest; other schemas refused with <code>unsupported_schema</code>); <code>summary</code>: the profile's <code>Summary</code> (schema, binding, incarnation, revision, design revision, source digest, appearance names, <code>custom_source</code>, and <code>keymaps</code> when any are set; never projections or a source) under <code>summary</code>; both with publication/recovery status</td></tr>
 <tr><td><code>settings.appearance.get</code></td><td><code>{binding:{instance,profile}, schema?}</code>; read-only appearance projection (<code>mode</code>, <code>contrast</code>, sRGB <code>accent</code>) tagged with incarnation and revisions; the reply also includes the atomic <code>snapshot</code> (in <code>schema</code> 1 or 2, as for <code>settings.get</code>) for shared Consumer validation; <code>wrong_target</code> on a foreign binding</td></tr>
 <tr><td><code>settings.validate</code></td><td>Fenced apply-shaped body; resolve/compile candidate without a write or receipt; valid with current base identity or diagnostics/conflict</td></tr>
 <tr><td><code>settings.apply</code></td><td>Fenced batch described below; durable changed/unchanged receipt</td></tr>
@@ -476,6 +478,26 @@ rendered settings-to-frame behaviour. Persistent tiling, new maximise intent
 with no outputs, native window/input/frame evidence and VT latency acceptance
 remain outstanding. Current text scale changes the title font, while decoration
 extents continue to come from the selected style's fixed height and border.</p>
+<h2 id="key-bindings">Key bindings</h2>
+<p>The profile's <code>keymaps</code> holds the person's key bindings: per application
+id, per action id, the chords chosen. An empty list unbinds the action; an
+action not listed keeps the application's own default, which ships with the
+application. The field is omitted while empty, so profiles written before it
+keep their seals, and it does not affect the resolved design.</p>
+<ul>
+<li><strong>Apply:</strong> <code>keymaps.&lt;app&gt;</code> takes the whole map (null drops every change
+for that app); <code>keymaps.&lt;app&gt;.&lt;action&gt;</code> takes a list of chords (null
+returns the action to its default). Action ids are dotted: everything
+after the app id is the action id.</li>
+<li><strong>Chords:</strong> <code>Ctrl</code>, <code>Alt</code> and <code>Shift</code>, each at most once and in any
+order, then one key: a name of ASCII letters and digits (<code>ArrowLeft</code>,
+<code>F6</code>, <code>PageDown</code>, <code>B</code>, <code>1</code>) or <code>=</code>, <code>-</code>, <code>/</code>. settingsd checks this
+grammar; the application checks that it knows the key.</li>
+<li><strong>Limits:</strong> 16 applications, 256 actions each, 4 distinct chords per
+action, 32 bytes per chord, 64 bytes per action id.</li>
+<li><strong>Followers:</strong> the summary carries <code>keymaps</code>, and each application applies
+its own entry when the revision changes (<code>toolkit::Registry::rebind</code>).</li>
+</ul>
 <h2 id="topics-and-storage">Topics and storage</h2>
 <p>Publish retained <code>settingsd.desktop.changed.&lt;profile&gt;</code> (the snapshot in schema
 1), then retained <code>settingsd.desktop.compact.&lt;profile&gt;</code> (schema 2), then

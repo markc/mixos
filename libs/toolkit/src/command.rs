@@ -284,6 +284,26 @@ impl<S> Registry<S> {
             .collect()
     }
 
+    /// Every command with a chord, as a grid of its label and its chords,
+    /// for a Keyboard Shortcuts dialog: it shows the bindings in force.
+    pub fn shortcut_grid(&self, ui: &mut egui::Ui, strings: &Strings) {
+        let ctx = ui.ctx().clone();
+        egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+            egui::Grid::new("shortcut-grid").show(ui, |ui| {
+                for command in &self.commands {
+                    let all = self.shortcuts_of(command.id);
+                    if all.is_empty() {
+                        continue;
+                    }
+                    let keys: Vec<String> = all.iter().map(|s| ctx.format_shortcut(s)).collect();
+                    ui.label(label_text(strings, command.label));
+                    ui.label(egui::RichText::new(keys.join(", ")).weak());
+                    ui.end_row();
+                }
+            });
+        });
+    }
+
     /// Apply one app's bindings from the desktop profile, starting from the
     /// chords the registry was built with (so applying an empty map restores
     /// them):
