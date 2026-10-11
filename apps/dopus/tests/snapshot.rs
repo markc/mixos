@@ -78,14 +78,18 @@ fn home() -> &'static Path {
     })
 }
 
-/// Feed the core every event until none arrives for a while.
+/// Tick the core (it starts work such as the selection's metadata there)
+/// and feed it every event until none arrives for a while; twice, so work
+/// a reply starts is done too.
 fn settle(app: &mut App, events: &std::sync::mpsc::Receiver<dopus_core::CoreEvent>) {
-    while let Ok(event) = events.recv_timeout(Duration::from_millis(400)) {
-        let derived = app.core.on_event(event);
+    for _ in 0..2 {
+        let derived = app.core.tick(Instant::now());
         app.absorb(derived);
+        while let Ok(event) = events.recv_timeout(Duration::from_millis(400)) {
+            let derived = app.core.on_event(event);
+            app.absorb(derived);
+        }
     }
-    let derived = app.core.tick(Instant::now());
-    app.absorb(derived);
 }
 
 /// The app over the fixture: left in the home with Documents expanded and
@@ -100,7 +104,8 @@ fn app(sidebars: bool) -> App {
     let (core, events) = DopusCore::new(config, None);
     let mut app = App::new(core);
     settle(&mut app, &events);
-    app.core.toggle_expand(PaneId::Left, &home.join("Documents"));
+    app.core
+        .toggle_expand(PaneId::Left, &home.join("Documents"));
     settle(&mut app, &events);
     app.core
         .select_modified(PaneId::Left, home.join("notes.md"), false, false);
