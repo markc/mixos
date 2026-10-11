@@ -28,7 +28,8 @@
 //!   its `w` x `h` (16 by default), a sized `spacer` at its size.
 //! - A vertical `list` is a column of `row_height` cells, `max_rows` (8)
 //!   tall unless sized, scrolling past that; a horizontal list is a row of
-//!   cells. Each cell holds one instance of the row template.
+//!   cells that shrink when the row is crowded (an `elide` text in them
+//!   gives up its width). Each cell holds one instance of the row template.
 //! - Hidden nodes and their subtrees are left out (reported hidden, zero
 //!   size). The panel's recovered glyphs are the one exception (see
 //!   `crate::images::panel_fallback`).
@@ -549,7 +550,17 @@ impl<'a> Builder<'a> {
                 flex_shrink: 0.0,
                 ..Style::default()
             };
-            if !horizontal {
+            if horizontal {
+                // A crowded horizontal list (the panel's tasks) shrinks its
+                // cells rather than running off its row: the cell and its
+                // instance may go below their content width, and an `elide`
+                // text inside gives the width up.
+                cell_style.flex_shrink = 1.0;
+                cell_style.min_size.width = lpa(0.0);
+                let mut inner_style = self.tree.style(content).ok()?.clone();
+                inner_style.min_size.width = lpa(0.0);
+                self.tree.set_style(content, inner_style).ok()?;
+            } else {
                 cell_style.size.height = len(row_height);
             }
             let cell = self.tree.new_with_children(cell_style, &[content]).ok()?;
@@ -580,6 +591,9 @@ impl<'a> Builder<'a> {
                 "end" => AlignItems::FLEX_END,
                 _ => AlignItems::FLEX_START,
             });
+            if !node.ports.contains_key("min_width") {
+                style.min_size.width = lpa(0.0);
+            }
         } else {
             style.flex_direction = FlexDirection::Column;
             style.gap = Size {

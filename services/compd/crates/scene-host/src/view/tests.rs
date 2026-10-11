@@ -134,6 +134,23 @@ fn panel_has_square_pager_two_clock_lines_and_full_task_hit_targets() {
     assert_eq!((peek.width(), peek.height()), (20.0, 20.0));
 }
 
+/// A panel too narrow for its tasks shrinks them (their titles elide) and
+/// keeps everything on the edge, instead of pushing the right end off it.
+#[test]
+fn a_crowded_panel_shrinks_its_tasks_and_stays_on_screen() {
+    let width = 600.0;
+    let rt = runtime(
+        include_str!("../../tests/fixtures/panel-render.scene.mix"),
+        (width as u32, 52),
+    );
+    let task = row_of(&rt, "tasks", "task");
+    assert!(task.width() < 218.0, "the task gave way: {task:?}");
+    for (id, rect) in &rt.program.layout().nodes {
+        assert!(rect.right() <= width + 0.5, "{id} runs off the edge: {rect:?}");
+    }
+    assert_eq!(rect_of(&rt, "peek").right(), width - 4.0, "peek ends at the padding");
+}
+
 #[test]
 fn panel_pager_digits_sit_at_the_centre_of_their_hit_targets() {
     let rt = runtime(
