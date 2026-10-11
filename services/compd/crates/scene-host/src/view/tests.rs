@@ -169,17 +169,29 @@ fn crowded_horizontal_cells_keep_their_floors_and_never_overlap() {
         )
     };
     for (template, floor) in [
-        ("{widget: \"row\", height: 30, justify: \"center\", padding: 8, children: [\"label\"]}", 30.0),
-        ("{widget: \"row\", min_width: 60, max_width: 60, children: [\"label\"]}", 60.0),
+        (
+            "{widget: \"row\", height: 30, justify: \"center\", padding: 8, children: [\"label\"]}",
+            30.0,
+        ),
+        (
+            "{widget: \"row\", min_width: 60, max_width: 60, children: [\"label\"]}",
+            60.0,
+        ),
     ] {
         let rt = runtime(&source(template), (80, 40));
-        let mut cells: Vec<egui::Rect> = ["a", "b", "c", "d"].iter().map(|id| row_of(&rt, "list", id)).collect();
+        let mut cells: Vec<egui::Rect> = ["a", "b", "c", "d"]
+            .iter()
+            .map(|id| row_of(&rt, "list", id))
+            .collect();
         cells.sort_by(|x, y| x.left().total_cmp(&y.left()));
         for cell in &cells {
             assert!(cell.width() >= floor - 0.5, "{template}: {cell:?}");
         }
         for pair in cells.windows(2) {
-            assert!(pair[1].left() >= pair[0].right() - 0.5, "{template}: overlap {pair:?}");
+            assert!(
+                pair[1].left() >= pair[0].right() - 0.5,
+                "{template}: overlap {pair:?}"
+            );
         }
     }
 }

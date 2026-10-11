@@ -152,8 +152,14 @@ fn a_press_and_release_queued_together_still_click() {
     rt.tick();
     rt.queue_input(crate::input::Input::PointerMoved { x: 50.0, y: 50.0 });
     rt.tick();
-    rt.queue_input(crate::input::Input::Button { code: 0x110, pressed: true });
-    rt.queue_input(crate::input::Input::Button { code: 0x110, pressed: false });
+    rt.queue_input(crate::input::Input::Button {
+        code: 0x110,
+        pressed: true,
+    });
+    rt.queue_input(crate::input::Input::Button {
+        code: 0x110,
+        pressed: false,
+    });
     for _ in 0..4 {
         rt.tick();
     }
