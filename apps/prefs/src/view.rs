@@ -8,8 +8,7 @@
 //! Applications editor is a panel group with the followed apps as a table,
 //! a second group with the selected app's actions and release notes, and a
 //! confirmation dialog before anything is removed. The Appearance editor
-//! sets the session's look through settingsd; the window itself previews
-//! the edits until they are applied or reverted.
+//! sets the session's look through settingsd, each change at once.
 use crate::{label, label_with};
 use design::{CaptionSide, Contrast, Decorations, Mode, Scheme, Style};
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
@@ -363,32 +362,17 @@ fn appearance(
     let title = label("look-title");
     panel::group(ui, "appearance", &[title.as_str()], |ui, _| {
         ui.horizontal(|ui| {
-            command_button(
-                ui,
-                engine,
-                commands,
-                strings,
-                "appearance.apply",
-                true,
-                events,
-            );
-            command_button(
-                ui,
-                engine,
-                commands,
-                strings,
-                "appearance.revert",
-                false,
-                events,
-            );
-            // Shown only when they apply: a conflict to reconcile, an
-            // uncertain apply to check.
-            for (id, shown) in [
-                ("appearance.keep", !engine.look.conflicts.is_empty()),
-                ("appearance.recheck", engine.look.uncertain.is_some()),
+            // Changes apply as they are made; these appear only when an
+            // edit waits for the person: a refused apply (Apply tries
+            // again), a conflict to reconcile, an uncertain apply to check.
+            for (id, primary, shown) in [
+                ("appearance.apply", true, engine.look.hold),
+                ("appearance.keep", true, !engine.look.conflicts.is_empty()),
+                ("appearance.revert", false, engine.look.waiting()),
+                ("appearance.recheck", false, engine.look.uncertain.is_some()),
             ] {
                 if shown {
-                    command_button(ui, engine, commands, strings, id, false, events);
+                    command_button(ui, engine, commands, strings, id, primary, events);
                 }
             }
             if let Some(revision) = engine.look.revision() {
@@ -440,8 +424,8 @@ fn appearance(
                 }
                 note(
                     ui,
-                    if engine.look.draft.is_some() {
-                        "look-draft"
+                    if engine.look.hold {
+                        "look-held"
                     } else {
                         "look-current"
                     },

@@ -1302,15 +1302,19 @@ Appearance sets the session's look through the settings service
 dark**, **contrast**, and the **window frame**: a title bar drawn by the app
 or by the system, and which side the app's window buttons sit on.
 
-Every change shows in Prefs' own window first. Nothing is saved until
-**Apply** (Ctrl+S), which writes all your changes in one step; **Revert**
-drops them. Only the settings you changed are written.
+Each change applies to the whole session as you make it, as in GNOME's
+settings: the apps that follow the session look (Prefs itself, BusViewer,
+and the portal's clients) change with it. Only the setting you changed is
+written. Changes made quickly one after another are sent in turn, never
+lost.
 
-If the appearance is changed elsewhere while you edit (another window, or an
-agent), Prefs follows it on every setting you did not touch. If it changed
-one you did, Prefs names it and applies nothing until you choose **Keep my
-changes** or **Revert**. Apply is checked against the revision you were
-shown, so it never lands on a change you have not seen. If its answer is
+If settingsd refuses a change, Prefs keeps it and says so: **Apply**
+(Ctrl+S) tries again and **Revert** drops it. If the appearance is changed
+elsewhere at the same moment (another window, or an agent), Prefs follows
+it on every setting you did not touch. If it changed one you did, Prefs
+names it and applies nothing until you choose **Keep my changes** or
+**Revert**. Every change is checked against the revision you were shown, so
+it never lands on a change you have not seen. If its answer is
 lost, Prefs asks settingsd for the change's receipt before anything else is
 applied (**Check again** asks now); if settingsd no longer holds one, the
 session's current state decides what the status line says.
@@ -1319,8 +1323,9 @@ session's current state decides what the status line says.
 
 Prefs answers on the Bus as `prefs`. `prefs.info` reports the whole state;
 `prefs.apps` the rows, selection and notes; `prefs.appearance` the session
-look, the unapplied draft and the revision read; `prefs.appearance.set`
-edits the draft (`scheme`, `style` with `own` for the scheme's own, `mode`,
+look, the expected look while a change settles, any held or conflicting
+edits and the revision read; `prefs.appearance.set`
+changes it at once (`scheme`, `style` with `own` for the scheme's own, `mode`,
 `contrast`, `decorations`, `caption_side`); `prefs.select {app}` and
 `prefs.panel {name}` select; `prefs.execute {id}` runs any command a button
 or menu would (`apps.check`, `apps.install`, `appearance.apply`,

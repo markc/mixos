@@ -277,22 +277,27 @@ empty list. You follow apps by listing them in
 <strong>style</strong> (the scheme's own, or Plain, Pro, Studio or Classic), <strong>light or
 dark</strong>, <strong>contrast</strong>, and the <strong>window frame</strong>: a title bar drawn by the app
 or by the system, and which side the app's window buttons sit on.</p>
-<p>Every change shows in Prefs' own window first. Nothing is saved until
-<strong>Apply</strong> (Ctrl+S), which writes all your changes in one step; <strong>Revert</strong>
-drops them. Only the settings you changed are written.</p>
-<p>If the appearance is changed elsewhere while you edit (another window, or an
-agent), Prefs follows it on every setting you did not touch. If it changed
-one you did, Prefs names it and applies nothing until you choose <strong>Keep my
-changes</strong> or <strong>Revert</strong>. Apply is checked against the revision you were
-shown, so it never lands on a change you have not seen. If its answer is
+<p>Each change applies to the whole session as you make it, as in GNOME's
+settings: the apps that follow the session look (Prefs itself, BusViewer,
+and the portal's clients) change with it. Only the setting you changed is
+written. Changes made quickly one after another are sent in turn, never
+lost.</p>
+<p>If settingsd refuses a change, Prefs keeps it and says so: <strong>Apply</strong>
+(Ctrl+S) tries again and <strong>Revert</strong> drops it. If the appearance is changed
+elsewhere at the same moment (another window, or an agent), Prefs follows
+it on every setting you did not touch. If it changed one you did, Prefs
+names it and applies nothing until you choose <strong>Keep my changes</strong> or
+<strong>Revert</strong>. Every change is checked against the revision you were shown, so
+it never lands on a change you have not seen. If its answer is
 lost, Prefs asks settingsd for the change's receipt before anything else is
 applied (<strong>Check again</strong> asks now); if settingsd no longer holds one, the
 session's current state decides what the status line says.</p>
 <h2 id="for-agents">For agents</h2>
 <p>Prefs answers on the Bus as <code>prefs</code>. <code>prefs.info</code> reports the whole state;
 <code>prefs.apps</code> the rows, selection and notes; <code>prefs.appearance</code> the session
-look, the unapplied draft and the revision read; <code>prefs.appearance.set</code>
-edits the draft (<code>scheme</code>, <code>style</code> with <code>own</code> for the scheme's own, <code>mode</code>,
+look, the expected look while a change settles, any held or conflicting
+edits and the revision read; <code>prefs.appearance.set</code>
+changes it at once (<code>scheme</code>, <code>style</code> with <code>own</code> for the scheme's own, <code>mode</code>,
 <code>contrast</code>, <code>decorations</code>, <code>caption_side</code>); <code>prefs.select {app}</code> and
 <code>prefs.panel {name}</code> select; <code>prefs.execute {id}</code> runs any command a button
 or menu would (<code>apps.check</code>, <code>apps.install</code>, <code>appearance.apply</code>,

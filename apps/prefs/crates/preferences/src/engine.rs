@@ -471,6 +471,7 @@ impl Engine {
         if let Some(Dialog::Remove(app)) = self.ui.dialog.clone() {
             self.ui.dialog = None;
             self.start(Op::Remove(app));
+            self.pump_look();
         }
     }
 
@@ -482,6 +483,8 @@ impl Engine {
 
     pub fn close_dialog(&mut self) {
         self.ui.dialog = None;
+        // Appearance edits accepted before the dialog may be waiting.
+        self.pump_look();
     }
 
     pub fn set_panel(&mut self, panel: Panel) {
@@ -549,11 +552,15 @@ impl Engine {
     /// Close now, or as soon as the work in flight finishes.
     pub fn quit(&mut self) {
         self.quitting = true;
+        // A second close after one stopped for unapplied edits drops them.
+        self.discard_look_on_quit();
         // A lost apply is settled by its receipt first (a bounded number of
         // lookups); the fence keeps any later apply from landing over it.
         if self.look.uncertain.is_some() && self.look.job.is_none() {
             self.read_look();
         }
+        // Accepted Appearance edits still queued go out before closing.
+        self.drain_look();
         // An uncertain change is settled first: one listing, then close.
         if self.uncertain.is_some() && self.job.is_none() {
             self.start_with(Op::List, true);
@@ -561,7 +568,7 @@ impl Engine {
         if self.busy() {
             self.status = self.label("quitting", &[]);
         } else {
-            self.effects.push(Effect::Exit);
+            self.close_now();
         }
     }
 
@@ -646,7 +653,7 @@ impl Engine {
             }
         }
         if self.quitting && !self.busy() {
-            self.effects.push(Effect::Exit);
+            self.close_now();
         }
     }
 
@@ -959,7 +966,7 @@ impl Engine {
             }
         }
         if self.quitting && !self.busy() {
-            self.effects.push(Effect::Exit);
+            self.close_now();
         }
     }
 }

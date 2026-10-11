@@ -149,10 +149,11 @@ fn appearance_studio_dark() {
     );
 }
 
-/// An unapplied draft (Forest, Pro style, light, captions left): the window
-/// previews it, Apply and Revert are enabled.
+/// A change being applied (Forest, Pro style, light, captions left): it
+/// applies at once, so the window and the panel show it straight away, with
+/// no Apply or Revert to press.
 #[test]
-fn appearance_draft_forest_pro_light() {
+fn appearance_applying_forest_pro_light() {
     let mut engine = appearance_engine();
     let draft = Look {
         scheme: Scheme::Forest,
@@ -162,29 +163,43 @@ fn appearance_draft_forest_pro_light() {
         ..engine.look.current.expect("read")
     };
     engine.edit_look(draft);
-    // As the shell installs it: the draft over the embedded design.
+    assert_eq!(engine.look.shown(), Some(draft));
+    // As the shell installs it: the expected look over the embedded design.
     let theme = Theme::for_context(draft.context()).framed(draft.decorations, draft.captions);
-    draw(theme, "appearance_draft_forest_pro_light", engine);
+    draw(theme, "appearance_applying_forest_pro_light", engine);
 }
 
-/// The scheme was edited to Forest while another writer changed it to
-/// Ocean: the panel names the conflict, offers Keep my changes, and Apply
-/// waits.
+/// The scheme was changed to Forest while another writer changed it to
+/// Ocean: the panel names the conflict and offers Keep my changes and
+/// Revert; nothing applies until one is chosen.
 #[test]
 fn appearance_conflict_studio_dark() {
     let mut engine = appearance_engine();
     let mut draft = engine.look.current.expect("read");
     draft.scheme = Scheme::Forest;
     engine.edit_look(draft);
-    engine.read_look();
-    let ticket = engine
-        .take_effects()
-        .into_iter()
-        .find_map(|x| match x {
-            Effect::Settings { ticket, .. } => Some(ticket),
-            _ => None,
-        })
-        .expect("a re-read");
+    // Another writer was first: the apply is refused with a conflict, and
+    // the read shows the scheme changed to Ocean.
+    let settings_ticket = |engine: &mut Engine| {
+        engine
+            .take_effects()
+            .into_iter()
+            .find_map(|x| match x {
+                Effect::Settings { ticket, .. } => Some(ticket),
+                _ => None,
+            })
+            .expect("a settings call")
+    };
+    let apply = settings_ticket(&mut engine);
+    engine.settled(
+        apply,
+        Ok(Reply {
+            rc: 10,
+            body: json!({"status":"conflict","incarnation":"inc-1","revision":"13"}).to_string(),
+            error: None,
+        }),
+    );
+    let ticket = settings_ticket(&mut engine);
     let ocean = json!({"status":"current","snapshot":{"incarnation":"inc-1","revision":"13",
         "desktop":{"appearance":{"scheme":"ocean","mode":"dark","contrast":"normal","source":null}}}});
     engine.settled(

@@ -2,9 +2,13 @@
 //! The Appearance panel over settingsd (docs/spec/settings/): the session's
 //! colour scheme, style, mode, contrast and window framing.
 //!
-//! The panel reads the desktop profile (`settings.get`), keeps the person's
-//! edits as a draft beside it, and writes the draft in one fenced
-//! `settings.apply`. Another writer's change arrives as a hint on the
+//! The panel reads the desktop profile (`settings.get`) and applies each
+//! edit at once in a fenced `settings.apply`, as GNOME's settings do. An
+//! edit made while an apply is in flight or settling waits as a draft,
+//! measured against the expected look (settingsd's with the apply laid
+//! over it), and goes out once it settles. A refused apply returns its
+//! edits to the draft and holds them for the person (Apply tries again,
+//! Revert drops them) instead of retrying in a loop. Another writer's change arrives as a hint on the
 //! profile's topic and is re-read over the authenticated call; a draft
 //! survives it: the draft is the axes the person edited, and it follows
 //! settingsd on every other axis. An edited axis another writer changed to
@@ -300,6 +304,11 @@ pub struct Appearance {
     fence: Option<(String, Revision)>,
     /// The person's edits, until applied or reverted.
     pub draft: Option<Draft>,
+    /// Draft axes an unsettled apply touched when a close stopped: whether
+    /// the session took it is unknown, so the draft's value there is the
+    /// person's intent even where it equals `current`. Only the read that
+    /// decides (`syncing` holds every apply until then) clears them.
+    pinned: Vec<Axis>,
     /// Edited axes another writer changed too, to something else: nothing
     /// is applied until the person keeps their edits or reverts.
     pub conflicts: Vec<Axis>,
@@ -309,9 +318,20 @@ pub struct Appearance {
     /// An apply settingsd holds no receipt for (evicted, or never
     /// accepted): the next read tells whether the session shows it.
     confirm: Option<Submitted>,
-    /// An apply succeeded and the read that shows its result has not: the
-    /// panel's look is stale until it does.
+    /// A valid read must come before the next apply: an apply succeeded
+    /// and the read that shows its result has not, or a conflict refused
+    /// the fence. Only a good read clears it.
     syncing: bool,
+    /// The latest apply until a read shows the session after it. Edits are
+    /// applied at once: an edit leaves the draft when it is sent, and the
+    /// panel shows the expected look (settingsd's with this laid over it).
+    pub sent: Option<Submitted>,
+    /// The last apply was refused or could not be sent: its edits are back
+    /// in the draft and wait for the person (Try again, Revert or an edit),
+    /// rather than being retried in a loop.
+    pub hold: bool,
+    /// A close stopped for unapplied edits: the next one discards them.
+    discard_on_quit: bool,
     pub(crate) job: Option<(u64, Call)>,
     reread: bool,
     applies: u64,
@@ -331,10 +351,14 @@ impl Default for Appearance {
             custom_source: false,
             fence: None,
             draft: None,
+            pinned: Vec::new(),
             conflicts: Vec::new(),
             uncertain: None,
             confirm: None,
             syncing: false,
+            sent: None,
+            hold: false,
+            discard_on_quit: false,
             job: None,
             reread: false,
             applies: 0,
@@ -344,9 +368,68 @@ impl Default for Appearance {
 }
 
 impl Appearance {
-    /// The look the panel and the window show: the draft, else settingsd's.
+    /// The look the panel and the window show: the draft, else the
+    /// expected look.
     pub fn shown(&self) -> Option<Look> {
-        self.draft.map(|d| d.look).or(self.current)
+        self.draft.map(|d| d.look).or_else(|| self.expected())
+    }
+
+    /// settingsd's look with the apply in flight (or awaiting its read)
+    /// laid over it: what the session is about to be.
+    pub fn expected(&self) -> Option<Look> {
+        let mut look = self.current?;
+        if let Some(sent) = &self.sent {
+            for axis in &sent.axes {
+                axis.copy(&mut look, &sent.look);
+            }
+        }
+        Some(look)
+    }
+
+    /// The person's edits wait for them: a held refusal or a conflict.
+    pub fn waiting(&self) -> bool {
+        self.draft.is_some() && (self.hold || !self.conflicts.is_empty())
+    }
+
+    /// An apply did not happen (refused, not sent, or not shown by the
+    /// session after a lost reply): its axes go back into the draft, under
+    /// any newer edit of the same axis.
+    fn unsend(&mut self) {
+        self.return_sent(false);
+    }
+
+    /// An apply still unsettled when a close stopped: its axes go back into
+    /// the draft like [`Self::unsend`], but `current` may be stale there, so
+    /// they stay pinned until the deciding read. A reversal (Studio, Forest
+    /// lost, Studio again) is kept rather than dropped as no change.
+    fn unsend_unsettled(&mut self) {
+        self.return_sent(true);
+    }
+
+    fn return_sent(&mut self, pin: bool) {
+        let (Some(sent), Some(current)) = (self.sent.take(), self.current) else {
+            return;
+        };
+        let mut draft = self.draft.unwrap_or(Draft {
+            base: current,
+            look: current,
+        });
+        for axis in &sent.axes {
+            let reedited = axis.differs(&draft.look, &draft.base);
+            axis.copy(&mut draft.base, &current);
+            if !reedited {
+                axis.copy(&mut draft.look, &sent.look);
+            }
+            if pin && !self.pinned.contains(axis) {
+                self.pinned.push(*axis);
+            }
+        }
+        self.draft = self.kept(draft);
+    }
+
+    /// `draft`, unless it holds nothing: no edit and no pinned axis.
+    fn kept(&self, draft: Draft) -> Option<Draft> {
+        (draft.base != draft.look || !self.pinned.is_empty()).then_some(draft)
     }
 
     /// A settingsd call is in flight.
@@ -367,13 +450,28 @@ impl Appearance {
     /// settingsd's new look: the draft follows it on every axis the person
     /// did not edit. An edited axis another writer changed to something
     /// else is a conflict; one changed to the person's value is no longer
-    /// an edit.
-    fn rebase(&mut self, current: Look) {
+    /// an edit. A pinned axis is the person's intent over an apply of their
+    /// own, never a conflict: it stays an edit unless the session shows it.
+    /// Only a deciding read (`decides`) retires the pins; until then a pinned
+    /// axis is kept even where it equals `current`.
+    fn rebase(&mut self, current: Look, decides: bool) {
+        let pinned = if decides {
+            std::mem::take(&mut self.pinned)
+        } else {
+            self.pinned.clone()
+        };
         let Some(draft) = self.draft else {
             return;
         };
-        for axis in draft.edits() {
-            if axis.differs(&current, &draft.base)
+        let mut edits = draft.edits();
+        for axis in &pinned {
+            if !edits.contains(axis) {
+                edits.push(*axis);
+            }
+        }
+        for &axis in &edits {
+            if !pinned.contains(&axis)
+                && axis.differs(&current, &draft.base)
                 && axis.differs(&current, &draft.look)
                 && !self.conflicts.contains(&axis)
             {
@@ -381,31 +479,15 @@ impl Appearance {
             }
         }
         let mut look = current;
-        for axis in draft.edits() {
+        for axis in &edits {
             axis.copy(&mut look, &draft.look);
         }
-        self.draft = (look != current).then_some(Draft {
+        self.draft = self.kept(Draft {
             base: current,
             look,
         });
         self.conflicts
             .retain(|a| self.draft.is_some_and(|d| a.differs(&d.base, &d.look)));
-    }
-
-    /// The submitted axes are settingsd's now: they stop being edits.
-    fn retire(&mut self, submitted: &Submitted) {
-        let Some(mut draft) = self.draft else {
-            return;
-        };
-        for axis in &submitted.axes {
-            if !axis.differs(&draft.look, &submitted.look) {
-                axis.copy(&mut draft.look, &draft.base);
-                axis.copy(&mut draft.base, &submitted.look);
-                axis.copy(&mut draft.look, &submitted.look);
-            }
-        }
-        self.draft = (draft.base != draft.look).then_some(draft);
-        self.conflicts.retain(|a| !submitted.axes.contains(a));
     }
 }
 
@@ -507,7 +589,8 @@ impl Engine {
 
     /// Read the profile again (a hint arrived, the Bus reconnected, Refresh),
     /// or, with an apply still uncertain, ask for its receipt first. While
-    /// quitting only a receipt is asked for, a bounded number of times.
+    /// quitting only a receipt is asked for (a bounded number of times), or
+    /// the read that lets accepted edits drain.
     pub fn read_look(&mut self) {
         if self.look.job.is_some() {
             self.look.reread = true;
@@ -526,7 +609,13 @@ impl Engine {
                 }
                 self.call_settings(Call::Receipt(submitted));
             }
-            None if !self.quitting => self.call_settings(Call::Read),
+            // While quitting, only the read that lets accepted edits drain.
+            None if !self.quitting
+                || self.look.confirm.is_some()
+                || (self.look.syncing && self.draining_look()) =>
+            {
+                self.call_settings(Call::Read);
+            }
             None => {}
         }
     }
@@ -569,49 +658,140 @@ impl Engine {
         self.effects.push(Effect::Settings { ticket, verb, body });
     }
 
-    /// The panel takes edits: read, not applying, no dialog, not quitting.
-    /// No edits while an apply is in flight, uncertain, or applied but not
-    /// yet read back: an edit measured against a base that apply changed
-    /// could be lost or misread. A failed read-back keeps them waiting
-    /// (Refresh reads again).
+    /// The panel takes edits: read, no dialog, not quitting. An edit made
+    /// while an apply is in flight or settling is measured against the
+    /// expected look and applied once it settles.
     pub fn can_edit_look(&self) -> bool {
-        self.look.current.is_some()
-            && !self.look.applying()
-            && self.look.uncertain.is_none()
-            && self.look.confirm.is_none()
-            && !self.look.syncing
-            && self.ui.dialog.is_none()
-            && !self.quitting
+        self.look.current.is_some() && self.ui.dialog.is_none() && !self.quitting
     }
 
-    /// Edit the draft: the panel's controls and `prefs.appearance.set`.
-    /// `look` is the whole look the person now wants; it is measured
-    /// against settingsd's, so a look equal to it is no draft.
+    /// Edit, and apply at once: the panel's controls and
+    /// `prefs.appearance.set`. `look` is the whole look the person now
+    /// wants; only the axes where it differs from what was shown are edits.
     pub fn edit_look(&mut self, look: Look) {
         if !self.can_edit_look() {
             return;
         }
-        let Some(current) = self.look.current else {
+        let Some(expected) = self.look.expected() else {
             return;
         };
-        let base = self.look.draft.map_or(current, |d| d.base);
-        self.look.draft = (look != base).then_some(Draft { base, look });
+        let base = self.look.draft.map_or(expected, |d| d.base);
+        self.look.draft = self.look.kept(Draft { base, look });
         let draft = self.look.draft;
         self.look
             .conflicts
             .retain(|a| draft.is_some_and(|d| a.differs(&d.base, &d.look)));
+        self.settle_if_retired(self.look.hold);
+        self.look.hold = false;
+        self.look.discard_on_quit = false;
+        self.pump_look();
     }
 
-    pub fn can_apply_look(&self) -> bool {
+    /// A held draft (a refusal, or a close that stopped) has just come to
+    /// nothing: the session already shows the person's choice. The hold and
+    /// its failure status no longer describe anything, so they go.
+    fn settle_if_retired(&mut self, held: bool) {
+        if held && self.look.draft.is_none() {
+            self.look.hold = false;
+            self.look.discard_on_quit = false;
+            self.status = self.label("settled-look", &[]);
+            self.failed = false;
+        }
+    }
+
+    /// Send accepted edits now if settingsd can take them. Edits were
+    /// accepted before any dialog opened or quitting began, so neither
+    /// holds them back: they drain (quitting waits for them).
+    pub(crate) fn pump_look(&mut self) {
+        if !self.look.hold && self.may_send_look() {
+            self.send_look();
+        }
+    }
+
+    /// Edits are queued and settingsd can take them: read and idle on a
+    /// fresh fence (the last apply read back, no refused conflict pending a
+    /// read), no conflict, no uncertainty.
+    fn may_send_look(&self) -> bool {
         self.look.draft.is_some()
             && self.look.conflicts.is_empty()
             && self.look.fence.is_some()
             && self.look.job.is_none()
             && self.look.uncertain.is_none()
+            && self.look.confirm.is_none()
+            && !self.look.syncing
             && self.look.settings == Availability::Available
             && self.connected
-            && self.ui.dialog.is_none()
-            && !self.quitting
+    }
+
+    /// Accepted edits still to go out, which quitting waits for: queued and
+    /// not held by the person (a refusal or a conflict).
+    pub(crate) fn draining_look(&self) -> bool {
+        self.look.draft.is_some() && !self.look.hold && self.look.conflicts.is_empty()
+    }
+
+    /// Close, unless accepted Appearance edits would be lost: the first
+    /// close then stops, keeps them (held: Apply tries again, Revert drops
+    /// them) and says so; a second close discards them.
+    pub(crate) fn close_now(&mut self) {
+        // An apply still unsettled (uncertain, or awaiting the read that
+        // decides) counts too: its edits return to the draft, pinned, and
+        // the read that decides runs now. Until it answers nothing is
+        // applied; then they are applied again (fenced, so never twice) or
+        // dropped.
+        let unsettled = self.look.uncertain.is_some() || self.look.confirm.is_some();
+        if (self.look.draft.is_some() || unsettled) && !self.look.discard_on_quit {
+            self.quitting = false;
+            if unsettled {
+                self.look.uncertain = None;
+                self.look.confirm = None;
+                self.look.unsend_unsettled();
+                self.look.syncing = true;
+                self.read_look();
+            }
+            self.look.discard_on_quit = true;
+            self.look.hold = true;
+            self.status = self.label("look-kept-open", &[]);
+            self.failed = true;
+            return;
+        }
+        self.effects.push(Effect::Exit);
+    }
+
+    /// A close after one that stopped for unapplied edits: drop them.
+    pub(crate) fn discard_look_on_quit(&mut self) {
+        if self.look.discard_on_quit {
+            self.look.uncertain = None;
+            self.look.confirm = None;
+            self.look.sent = None;
+            self.look.draft = None;
+            self.look.pinned.clear();
+            self.look.conflicts.clear();
+            self.look.hold = false;
+            // The read deciding the dropped edits no longer matters: the
+            // close does not wait for it (its late reply is ignored).
+            if matches!(self.look.job, Some((_, Call::Read))) {
+                self.look.job = None;
+                self.look.reread = false;
+            }
+        }
+    }
+
+    /// Quitting: start sending accepted edits still queued (a read first
+    /// when the fence is stale); the quit waits for the calls.
+    pub(crate) fn drain_look(&mut self) {
+        if self.draining_look() && self.look.job.is_none() {
+            if self.look.syncing {
+                self.read_look();
+            } else {
+                self.pump_look();
+            }
+        }
+    }
+
+    /// Apply (Try again) is available: the person's command, so not under
+    /// a dialog nor while quitting.
+    pub fn can_apply_look(&self) -> bool {
+        self.may_send_look() && self.ui.dialog.is_none() && !self.quitting
     }
 
     pub fn can_revert_look(&self) -> bool {
@@ -619,7 +799,7 @@ impl Engine {
     }
 
     /// The edits stand over another writer's change: the conflict is
-    /// acknowledged and Apply is allowed again.
+    /// acknowledged and they are applied.
     pub fn can_keep_look(&self) -> bool {
         !self.look.conflicts.is_empty() && self.can_edit_look()
     }
@@ -629,12 +809,18 @@ impl Engine {
         self.look.uncertain.is_some() && self.look.job.is_none() && self.connected
     }
 
-    /// Write the edited axes to settingsd, fenced on the revision read.
+    /// Write the edited axes to settingsd, fenced on the revision read
+    /// (Try again, after a held refusal). They leave the draft as they go:
+    /// the panel shows them as the expected look.
     pub fn apply_look(&mut self) {
-        if !self.can_apply_look() {
-            return;
+        if self.can_apply_look() {
+            self.send_look();
         }
-        let Some(draft) = self.look.draft else {
+    }
+
+    fn send_look(&mut self) {
+        self.look.hold = false;
+        let Some(draft) = self.look.draft.take() else {
             return;
         };
         self.look.applies += 1;
@@ -648,11 +834,13 @@ impl Engine {
         );
         self.status = self.label("applying-look", &[]);
         self.failed = false;
-        self.call_settings(Call::Apply(Submitted {
+        let submitted = Submitted {
             operation,
             look: draft.look,
             axes: draft.edits(),
-        }));
+        };
+        self.look.sent = Some(submitted.clone());
+        self.call_settings(Call::Apply(submitted));
     }
 
     /// Drop the draft: the window shows settingsd's look again.
@@ -661,17 +849,21 @@ impl Engine {
             return;
         }
         self.look.draft = None;
+        self.look.pinned.clear();
         self.look.conflicts.clear();
+        self.look.hold = false;
         self.status = self.label("reverted-look", &[]);
         self.failed = false;
     }
 
-    /// Keep the edits over the other writer's change (then Apply).
+    /// Keep the edits over the other writer's change, and apply them.
     pub fn keep_look(&mut self) {
         if self.can_keep_look() {
             self.look.conflicts.clear();
+            self.look.hold = false;
             self.status = self.label("kept-look", &[]);
             self.failed = false;
+            self.pump_look();
         }
     }
 
@@ -698,6 +890,10 @@ impl Engine {
                 self.status = self.label("settings-missing", &[]);
                 self.failed = true;
             }
+            if matches!(call, Call::Apply(_)) {
+                self.look.unsend();
+                self.look.hold = true;
+            }
         } else {
             match call {
                 Call::Read => self.read_answered(answer),
@@ -709,8 +905,10 @@ impl Engine {
             self.look.reread = false;
             self.read_look();
         }
+        // Edits made meanwhile go out once this settled.
+        self.pump_look();
         if self.quitting && !self.busy() {
-            self.effects.push(Effect::Exit);
+            self.close_now();
         }
     }
 
@@ -722,18 +920,31 @@ impl Engine {
                     self.look.fence = Some((incarnation, revision));
                     self.look.current = Some(look);
                     self.look.custom_source = custom;
-                    self.look.syncing = false;
-                    self.look.rebase(look);
+                    // A recovering settingsd may not show a write it has
+                    // already taken: it cannot decide pinned axes, and
+                    // nothing is applied until a read that can (its change
+                    // hint, or Refresh, reads again).
+                    let decides = value["recovering"] != true;
+                    self.look.syncing = !decides && !self.look.pinned.is_empty();
+                    // A lost apply settingsd holds no receipt for: the
+                    // session decides. Not shown, its edits return held.
                     if let Some(submitted) = self.look.confirm.take() {
                         if submitted.shown_in(&look) {
-                            self.look.retire(&submitted);
                             self.status = self.label("applied-look", &[]);
                             self.failed = false;
                         } else {
+                            self.look.unsend();
+                            self.look.hold = true;
                             self.status = self.label("look-unconfirmed", &[]);
                             self.failed = true;
                         }
                     }
+                    // The session after the last apply is read: nothing is
+                    // in flight any more.
+                    self.look.sent = None;
+                    let held = self.look.hold;
+                    self.look.rebase(look, decides);
+                    self.settle_if_retired(held);
                 }
                 Err(message) => self.look_failed(&message),
             },
@@ -760,13 +971,19 @@ impl Engine {
     fn apply_answered(&mut self, submitted: Submitted, answer: Answer) {
         match answer {
             Answer::Ok(_) => {
-                self.look.retire(&submitted);
                 self.look.syncing = true;
                 self.status = self.label("applied-look", &[]);
                 self.failed = false;
                 self.look.reread = true;
             }
+            // Another writer was first: the edits return to the draft and
+            // the read decides (a conflict, or applied again on the new fence).
             Answer::Refused(value) if value["status"] == "conflict" => {
+                self.look.unsend();
+                // The fence was refused: nothing more goes out until a
+                // valid read gives a new one (a failed read keeps waiting;
+                // Refresh reads again).
+                self.look.syncing = true;
                 self.status = self.label("look-conflict", &[]);
                 self.failed = true;
                 self.look.reread = true;
@@ -775,8 +992,17 @@ impl Engine {
                 self.uncertain_apply(submitted, &refusal(&value));
             }
             Answer::Lost(message) => self.uncertain_apply(submitted, &message),
-            Answer::Refused(value) => self.look_failed(&refusal(&value)),
-            Answer::NotSent(message) => self.look_failed(&message),
+            // Refused or not sent: nothing happened; the edits wait, held.
+            Answer::Refused(value) => {
+                self.look.unsend();
+                self.look.hold = true;
+                self.look_failed(&refusal(&value));
+            }
+            Answer::NotSent(message) => {
+                self.look.unsend();
+                self.look.hold = true;
+                self.look_failed(&message);
+            }
             Answer::Missing => {}
         }
     }
@@ -797,7 +1023,6 @@ impl Engine {
                     && value["receipt"]["operation_id"] == operation.as_str() =>
             {
                 self.look.uncertain = None;
-                self.look.retire(&submitted);
                 self.look.syncing = true;
                 self.status = self.label("applied-look", &[]);
                 self.failed = false;
@@ -810,6 +1035,8 @@ impl Engine {
                 if value["status"] == "unknown_operation" && value["recovering"] != true =>
             {
                 self.look.uncertain = None;
+                // A read must decide, even while quitting.
+                self.look.syncing = true;
                 self.look.confirm = Some(submitted);
                 self.look.reread = true;
             }
@@ -841,6 +1068,8 @@ impl Engine {
             "current":self.look.current,"draft":self.look.draft.map(|d| d.look),
             "edits":self.look.draft.map(|d| d.edits()).unwrap_or_default(),
             "conflicts":self.look.conflicts,"shown":self.look.shown(),
+            "expected":self.look.expected(),"sent":self.look.sent.as_ref().map(|s| &s.axes),
+            "hold":self.look.hold,
             "custom_source":self.look.custom_source,
             "uncertain":self.look.uncertain.as_ref().map(|s| &s.operation),
             "working":self.look.job.as_ref().map(|(_, c)| c.verb()),
@@ -848,7 +1077,7 @@ impl Engine {
             "can_keep":self.can_keep_look(),"can_recheck":self.can_recheck_look()})
     }
 
-    /// `prefs.appearance.set`: edit the draft from what is shown.
+    /// `prefs.appearance.set`: change the shown look, applied at once.
     pub(crate) fn set_look(&mut self, args: &Value) -> Result<Value, (&'static str, String)> {
         let Some(base) = self.look.shown() else {
             return Err(("NOT_READY", self.label("look-not-ready", &[])));
@@ -914,6 +1143,10 @@ mod tests {
         )
     }
 
+    fn changed() -> Value {
+        json!({"status":"changed","receipt":{}})
+    }
+
     fn settings_calls(e: &mut Engine) -> Vec<(u64, &'static str, Value)> {
         e.take_effects()
             .into_iter()
@@ -925,11 +1158,9 @@ mod tests {
     }
 
     /// An engine whose panel has read revision 7 (studio, the scheme's own
-    /// style, dark).
+    /// style, dark), with nothing else in flight.
     fn read() -> Engine {
         let mut e = Engine::new(label);
-        // The Applications panel's first listing, answered so nothing else
-        // is in flight.
         let listing = e
             .take_effects()
             .into_iter()
@@ -954,10 +1185,16 @@ mod tests {
         e.edit_look(look);
     }
 
+    /// The one settings call now queued.
+    fn next(e: &mut Engine) -> (u64, &'static str, Value) {
+        let calls = settings_calls(e);
+        assert_eq!(calls.len(), 1, "{calls:?}");
+        calls[0].clone()
+    }
+
     /// Answer the next settings call with `body`.
     fn answer_next(e: &mut Engine, rc: u8, body: Value) -> (&'static str, Value) {
-        let calls = settings_calls(e);
-        let (ticket, verb, sent) = calls[0].clone();
+        let (ticket, verb, sent) = next(e);
         e.settled(ticket, reply(rc, body));
         (verb, sent)
     }
@@ -981,10 +1218,10 @@ mod tests {
             10,
             json!({"status":"wrong_target","binding":{"instance":"real","profile":"default"}}),
         );
-        let second = settings_calls(&mut e);
-        assert_eq!(second[0].2["binding"]["instance"], "real");
+        let (ticket, _, body) = next(&mut e);
+        assert_eq!(body["binding"]["instance"], "real");
         e.settled(
-            second[0].0,
+            ticket,
             reply(
                 10,
                 json!({"status":"wrong_target","binding":{"instance":"other","profile":"default"}}),
@@ -1012,24 +1249,13 @@ mod tests {
     }
 
     #[test]
-    fn an_edit_back_to_the_current_look_is_no_draft() {
-        let mut e = read();
-        edit(&mut e, json!({"scheme":"forest"}));
-        assert!(e.can_apply_look() && e.can_revert_look());
-        edit(&mut e, json!({"scheme":"studio"}));
-        assert!(e.look.draft.is_none());
-    }
-
-    #[test]
-    fn apply_sends_only_the_edited_axes_fenced_and_retires_them() {
+    fn an_edit_applies_at_once_fenced_with_only_its_axes() {
         let mut e = read();
         edit(
             &mut e,
             json!({"scheme":"forest","style":"pro","decorations":"ssd"}),
         );
-        e.apply_look();
-        let calls = settings_calls(&mut e);
-        let (ticket, verb, body) = calls[0].clone();
+        let (ticket, verb, body) = next(&mut e);
         assert_eq!(verb, "settings.apply");
         assert_eq!(body["expected_incarnation"], "inc-1");
         assert_eq!(body["expected_revision"], "7");
@@ -1044,23 +1270,57 @@ mod tests {
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || c == '-')
         );
-        assert!(
-            !e.can_apply_look() && !e.can_edit_look(),
-            "one apply at a time, no edits under it"
+        // The panel already shows it; nothing is waiting for the person.
+        assert!(e.look.draft.is_none() && !e.look.waiting());
+        assert_eq!(e.look.shown().unwrap().scheme, Scheme::Forest);
+        e.settled(ticket, reply(0, changed()));
+        assert_eq!(
+            e.look.shown().unwrap().scheme,
+            Scheme::Forest,
+            "no flicker back"
         );
-        e.settled(ticket, reply(0, json!({"status":"changed","receipt":{}})));
-        assert!(e.look.draft.is_none(), "applied edits retire on the answer");
-        // Another writer changes the mode before the read: it shows as is.
-        answer_next(
-            &mut e,
-            0,
-            snapshot_with(
-                "9",
-                json!({"scheme":"forest","style":"pro","mode":"light","contrast":"normal","decorations":"ssd","source":null}),
-            ),
+        let mut stored = snapshot_body("8", "forest", "dark");
+        stored["snapshot"]["desktop"]["appearance"]["style"] = json!("pro");
+        stored["snapshot"]["desktop"]["appearance"]["decorations"] = json!("ssd");
+        answer_next(&mut e, 0, stored);
+        assert!(e.look.draft.is_none() && e.look.sent.is_none());
+        assert_eq!(e.look.revision(), Some(8));
+        assert!(settings_calls(&mut e).is_empty());
+    }
+
+    #[test]
+    fn edits_while_an_apply_settles_queue_and_go_out_after_it() {
+        let mut e = read();
+        edit(&mut e, json!({"scheme":"forest"}));
+        let (apply, _, _) = next(&mut e);
+        // Two more edits while it is in flight: the second wins.
+        edit(&mut e, json!({"scheme":"ocean"}));
+        edit(&mut e, json!({"mode":"light"}));
+        assert!(settings_calls(&mut e).is_empty(), "one apply at a time");
+        assert_eq!(e.look.shown().unwrap().scheme, Scheme::Ocean);
+        e.settled(apply, reply(0, changed()));
+        // The read-back first, then the queued edits, on its fence.
+        answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
+        let (_, verb, body) = next(&mut e);
+        assert_eq!(verb, "settings.apply");
+        assert_eq!(body["expected_revision"], "8");
+        assert_eq!(
+            body["changes"],
+            json!({"appearance.scheme":"ocean","appearance.mode":"light"})
         );
-        assert!(e.look.draft.is_none() && e.look.conflicts.is_empty());
-        assert_eq!(e.look.shown().unwrap().mode, Mode::Light);
+        assert!(e.look.conflicts.is_empty(), "its own write is no conflict");
+    }
+
+    #[test]
+    fn going_back_to_the_old_value_while_applying_is_an_edit() {
+        let mut e = read();
+        edit(&mut e, json!({"scheme":"forest"}));
+        let (apply, _, _) = next(&mut e);
+        edit(&mut e, json!({"scheme":"studio"}));
+        e.settled(apply, reply(0, changed()));
+        answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
+        let (_, _, body) = next(&mut e);
+        assert_eq!(body["changes"], json!({"appearance.scheme":"studio"}));
     }
 
     #[test]
@@ -1074,10 +1334,35 @@ mod tests {
     }
 
     #[test]
+    fn a_refusal_holds_the_edit_instead_of_retrying() {
+        let mut e = read();
+        edit(&mut e, json!({"scheme":"forest"}));
+        answer_next(
+            &mut e,
+            10,
+            json!({"status":"validation_failed","message":"no"}),
+        );
+        assert!(e.look.hold && e.look.waiting() && e.failed);
+        assert_eq!(e.look.draft.unwrap().look.scheme, Scheme::Forest);
+        assert!(settings_calls(&mut e).is_empty(), "not retried in a loop");
+        assert!(e.can_apply_look() && e.can_revert_look());
+        // Apply tries again; an edit would too; Revert drops it.
+        e.apply_look();
+        assert_eq!(next(&mut e).1, "settings.apply");
+        let mut e = read();
+        edit(&mut e, json!({"scheme":"forest"}));
+        answer_next(&mut e, 10, json!({"status":"validation_failed"}));
+        e.revert_look();
+        assert!(e.look.draft.is_none() && !e.look.hold);
+        assert_eq!(e.look.shown().unwrap().scheme, Scheme::Studio);
+    }
+
+    #[test]
     fn another_writer_on_an_untouched_axis_is_followed_not_undone() {
         let mut e = read();
+        // A refusal holds the mode edit; meanwhile the scheme changes elsewhere.
         edit(&mut e, json!({"mode":"light"}));
-        // A hint: the scheme changed elsewhere.
+        answer_next(&mut e, 10, json!({"status":"validation_failed"}));
         e.read_look();
         answer_next(&mut e, 0, snapshot_body("8", "ocean", "dark"));
         let draft = e.look.draft.unwrap();
@@ -1087,70 +1372,217 @@ mod tests {
             "the untouched axis follows"
         );
         assert_eq!(draft.look.mode, Mode::Light, "the edit stays");
-        assert!(e.look.conflicts.is_empty() && e.can_apply_look());
         e.apply_look();
-        let (_, _, body) = settings_calls(&mut e)[0].clone();
+        let (_, _, body) = next(&mut e);
         assert_eq!(body["changes"], json!({"appearance.mode":"light"}));
         assert_eq!(body["expected_revision"], "8");
     }
 
     #[test]
-    fn another_writer_on_an_edited_axis_must_be_reconciled() {
-        let mut e = read();
-        edit(&mut e, json!({"scheme":"forest"}));
-        e.read_look();
-        answer_next(&mut e, 0, snapshot_body("8", "ocean", "dark"));
-        assert_eq!(e.look.conflicts, vec![Axis::Scheme]);
-        assert!(
-            !e.can_apply_look(),
-            "nothing is applied over an unseen change"
-        );
-        assert!(e.can_keep_look() && e.can_revert_look());
-        e.keep_look();
-        assert!(e.can_apply_look());
-        e.apply_look();
-        let (_, _, body) = settings_calls(&mut e)[0].clone();
-        assert_eq!(body["changes"], json!({"appearance.scheme":"forest"}));
-    }
-
-    #[test]
-    fn another_writer_agreeing_with_an_edit_retires_it() {
-        let mut e = read();
-        edit(&mut e, json!({"scheme":"forest"}));
-        e.read_look();
-        answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
-        assert!(e.look.draft.is_none() && e.look.conflicts.is_empty());
-    }
-
-    #[test]
-    fn a_refused_conflict_rereads_and_keeps_the_edits() {
+    fn a_conflict_refusal_rereads_and_reapplies_when_nothing_clashed() {
         let mut e = read();
         edit(&mut e, json!({"mode":"light"}));
-        e.apply_look();
         answer_next(
             &mut e,
             10,
             json!({"status":"conflict","incarnation":"inc-1","revision":"9"}),
         );
-        assert!(e.failed);
+        // Another writer changed the scheme only: re-applied on the new fence.
         answer_next(&mut e, 0, snapshot_body("9", "ocean", "dark"));
-        let draft = e.look.draft.unwrap();
-        assert_eq!(
-            (draft.look.scheme, draft.look.mode),
-            (Scheme::Ocean, Mode::Light)
+        let (_, verb, body) = next(&mut e);
+        assert_eq!(verb, "settings.apply");
+        assert_eq!(body["expected_revision"], "9");
+        assert_eq!(body["changes"], json!({"appearance.mode":"light"}));
+    }
+
+    #[test]
+    fn a_failed_read_after_a_conflict_never_reapplies_on_the_refused_fence() {
+        let mut e = read();
+        edit(&mut e, json!({"mode":"light"}));
+        answer_next(
+            &mut e,
+            10,
+            json!({"status":"conflict","incarnation":"inc-1","revision":"9"}),
         );
-        assert!(e.can_apply_look());
+        let (read_after, verb, _) = next(&mut e);
+        assert_eq!(verb, "settings.get");
+        e.settled(read_after, lost());
+        assert!(
+            settings_calls(&mut e).is_empty(),
+            "no apply on the refused fence"
+        );
+        assert!(!e.can_apply_look());
+        assert_eq!(
+            e.look.draft.unwrap().look.mode,
+            Mode::Light,
+            "the edit is kept"
+        );
+        e.ui.panel = crate::Panel::Appearance;
+        e.refresh();
+        answer_next(&mut e, 0, snapshot_body("9", "studio", "dark"));
+        let (_, verb, body) = next(&mut e);
+        assert_eq!(
+            (verb, &body["expected_revision"]),
+            ("settings.apply", &json!("9"))
+        );
+    }
+
+    #[test]
+    fn edits_queued_under_a_dialog_go_out_when_it_closes() {
+        let mut e = read();
+        edit(&mut e, json!({"scheme":"forest"}));
+        let (apply, _, _) = next(&mut e);
+        edit(&mut e, json!({"mode":"light"}));
+        e.open(crate::Dialog::Shortcuts);
+        e.settled(apply, reply(0, changed()));
+        answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
+        // Accepted before the dialog: it drains regardless.
+        let (_, verb, body) = next(&mut e);
+        assert_eq!(
+            (verb, &body["changes"]),
+            ("settings.apply", &json!({"appearance.mode":"light"}))
+        );
+        // And if it had waited, closing the dialog sends it.
+        let mut e = read();
+        edit(&mut e, json!({"scheme":"forest"}));
+        answer_next(
+            &mut e,
+            10,
+            json!({"status":"conflict","incarnation":"inc-1","revision":"8"}),
+        );
+        e.open(crate::Dialog::About);
+        let (read_after, _, _) = next(&mut e);
+        e.settled(read_after, lost());
+        e.ui.panel = crate::Panel::Appearance;
+        e.close_dialog();
+        assert!(settings_calls(&mut e).is_empty(), "still no fresh fence");
+    }
+
+    #[test]
+    fn quitting_drains_accepted_edits_before_closing() {
+        let mut e = read();
+        edit(&mut e, json!({"scheme":"forest"}));
+        let (apply, _, _) = next(&mut e);
+        edit(&mut e, json!({"mode":"light"}));
+        e.quit();
+        assert!(!e.take_effects().contains(&Effect::Exit));
+        e.settled(apply, reply(0, changed()));
+        let (read_back, verb, _) = next(&mut e);
+        assert_eq!(verb, "settings.get", "the read-back the queued edit needs");
+        e.settled(read_back, reply(0, snapshot_body("8", "forest", "dark")));
+        let calls: Vec<_> = e
+            .take_effects()
+            .into_iter()
+            .filter_map(|x| match x {
+                Effect::Settings { ticket, verb, body } => Some((ticket, verb, body)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].1, "settings.apply");
+        assert_eq!(calls[0].2["changes"], json!({"appearance.mode":"light"}));
+        e.settled(calls[0].0, reply(0, changed()));
+        assert!(
+            e.take_effects().contains(&Effect::Exit),
+            "nothing left: close"
+        );
+    }
+
+    #[test]
+    fn quitting_through_an_unknown_operation_still_drains_the_queued_edit() {
+        let mut e = read();
+        edit(&mut e, json!({"scheme":"forest"}));
+        let (apply, _, _) = next(&mut e);
+        edit(&mut e, json!({"mode":"light"}));
+        e.quit();
+        e.settled(apply, lost());
+        answer_next(
+            &mut e,
+            0,
+            json!({"status":"unknown_operation","receipt":null,"recovering":false}),
+        );
+        // The read that decides runs although quitting.
+        let (verb, _) = answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
+        assert_eq!(verb, "settings.get");
+        let (apply2, verb, body) = next(&mut e);
+        assert_eq!(
+            (verb, &body["changes"]),
+            ("settings.apply", &json!({"appearance.mode":"light"}))
+        );
+        e.settled(apply2, reply(0, changed()));
+        assert!(e.take_effects().contains(&Effect::Exit));
+    }
+
+    #[test]
+    fn a_failed_drain_read_keeps_prefs_open_and_a_second_close_discards() {
+        let mut e = read();
+        edit(&mut e, json!({"scheme":"forest"}));
+        let (apply, _, _) = next(&mut e);
+        edit(&mut e, json!({"mode":"light"}));
+        e.quit();
+        e.settled(apply, reply(0, changed()));
+        let (read_back, _, _) = next(&mut e);
+        e.settled(read_back, lost());
+        assert!(
+            !e.take_effects().contains(&Effect::Exit),
+            "the edit is not dropped silently"
+        );
+        assert!(!e.quitting && e.look.hold && e.failed);
+        assert_eq!(e.status, "look-kept-open");
+        assert_eq!(e.look.draft.unwrap().look.mode, Mode::Light);
+        e.quit();
+        assert!(
+            e.take_effects().contains(&Effect::Exit),
+            "closing again discards it"
+        );
+    }
+
+    #[test]
+    fn a_clash_on_an_edited_axis_waits_for_keep_or_revert() {
+        let mut e = read();
+        edit(&mut e, json!({"scheme":"forest"}));
+        answer_next(
+            &mut e,
+            10,
+            json!({"status":"conflict","incarnation":"inc-1","revision":"9"}),
+        );
+        answer_next(&mut e, 0, snapshot_body("9", "ocean", "dark"));
+        assert_eq!(e.look.conflicts, vec![Axis::Scheme]);
+        assert!(settings_calls(&mut e).is_empty() && !e.can_apply_look());
+        assert!(e.look.waiting() && e.can_keep_look() && e.can_revert_look());
+        e.keep_look();
+        let (_, _, body) = next(&mut e);
+        assert_eq!(body["changes"], json!({"appearance.scheme":"forest"}));
+    }
+
+    #[test]
+    fn another_writer_agreeing_with_a_held_edit_retires_it() {
+        let mut e = read();
+        edit(&mut e, json!({"scheme":"forest"}));
+        answer_next(&mut e, 10, json!({"status":"validation_failed"}));
+        e.read_look();
+        answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
+        assert!(e.look.draft.is_none() && e.look.conflicts.is_empty());
+        assert!(!e.look.hold && !e.failed && e.status == "settled-look");
+        // A no-op edit that empties a held draft settles it too.
+        let mut e = read();
+        edit(&mut e, json!({"scheme":"forest"}));
+        answer_next(&mut e, 10, json!({"status":"validation_failed"}));
+        edit(&mut e, json!({"scheme":"studio"}));
+        assert!(e.look.draft.is_none() && !e.look.hold && !e.failed);
+        assert_eq!(e.status, "settled-look");
     }
 
     #[test]
     fn a_lost_apply_is_settled_by_its_receipt_before_anything_else() {
         let mut e = read();
         edit(&mut e, json!({"scheme":"forest"}));
-        e.apply_look();
-        let calls = settings_calls(&mut e);
-        let operation = calls[0].2["operation_id"].as_str().unwrap().to_owned();
-        e.settled(calls[0].0, lost());
+        let (apply, _, body) = next(&mut e);
+        let operation = body["operation_id"].as_str().unwrap().to_owned();
+        e.settled(apply, lost());
         assert!(e.look.uncertain.is_some() && !e.can_apply_look());
+        // Edits queue meanwhile and go out only after the receipt and read.
+        edit(&mut e, json!({"mode":"light"}));
         let (verb, sent) = answer_next(
             &mut e,
             0,
@@ -1160,9 +1592,12 @@ mod tests {
             (verb, sent["operation_id"].as_str()),
             ("settings.status", Some(operation.as_str()))
         );
-        assert!(e.look.uncertain.is_none() && e.look.draft.is_none());
+        assert!(e.look.uncertain.is_none());
         assert_eq!(e.status, "applied-look");
-        assert_eq!(settings_calls(&mut e)[0].1, "settings.get");
+        answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
+        let (_, verb, body) = next(&mut e);
+        assert_eq!(verb, "settings.apply");
+        assert_eq!(body["changes"], json!({"appearance.mode":"light"}));
     }
 
     #[test]
@@ -1170,7 +1605,6 @@ mod tests {
         for (shows, status) in [(true, "applied-look"), (false, "look-unconfirmed")] {
             let mut e = read();
             edit(&mut e, json!({"scheme":"forest"}));
-            e.apply_look();
             answer_next(
                 &mut e,
                 10,
@@ -1187,10 +1621,11 @@ mod tests {
             assert_eq!(verb, "settings.get");
             assert_eq!(e.status, status);
             assert_eq!(
-                e.look.draft.is_some(),
-                !shows,
-                "kept unless the session shows it"
+                e.look.hold, !shows,
+                "not shown: the edit returns, held for the person"
             );
+            assert_eq!(e.look.draft.is_some(), !shows);
+            assert!(settings_calls(&mut e).is_empty());
         }
     }
 
@@ -1198,9 +1633,8 @@ mod tests {
     fn a_recovering_settingsd_keeps_the_apply_uncertain_and_check_again_asks_again() {
         let mut e = read();
         edit(&mut e, json!({"scheme":"forest"}));
-        e.apply_look();
-        let calls = settings_calls(&mut e);
-        e.settled(calls[0].0, lost());
+        let (apply, _, _) = next(&mut e);
+        e.settled(apply, lost());
         answer_next(
             &mut e,
             0,
@@ -1210,85 +1644,57 @@ mod tests {
         assert!(settings_calls(&mut e).is_empty());
         assert!(e.can_recheck_look());
         e.recheck_look();
-        assert_eq!(settings_calls(&mut e)[0].1, "settings.status");
-    }
-
-    #[test]
-    fn no_edit_is_taken_while_an_apply_is_unsettled() {
-        let mut e = read();
-        edit(&mut e, json!({"scheme":"forest"}));
-        e.apply_look();
-        let calls = settings_calls(&mut e);
-        let operation = calls[0].2["operation_id"].as_str().unwrap().to_owned();
-        e.settled(calls[0].0, lost());
-        assert!(!e.can_edit_look() && !e.can_revert_look());
-        // Selecting Studio again during the receipt lookup is refused, not
-        // silently folded into the old base.
-        edit(&mut e, json!({"scheme":"studio"}));
-        assert_eq!(e.look.draft.unwrap().look.scheme, Scheme::Forest);
-        answer_next(
-            &mut e,
-            0,
-            json!({"status":"current","receipt":{"operation_id":operation},"recovering":false}),
-        );
-        answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
-        assert!(e.can_edit_look());
-        edit(&mut e, json!({"scheme":"studio"}));
-        assert_eq!(
-            e.look.draft.unwrap().look.scheme,
-            Scheme::Studio,
-            "settled: going back is an edit"
-        );
-    }
-
-    #[test]
-    fn edits_wait_for_the_read_after_a_successful_apply() {
-        let mut e = read();
-        edit(&mut e, json!({"scheme":"forest"}));
-        e.apply_look();
-        answer_next(&mut e, 0, json!({"status":"changed","receipt":{}}));
-        assert!(!e.can_edit_look(), "applied, not yet read back");
-        assert!(e.set_look(&json!({"scheme":"studio"})).is_err());
-        // The read-back fails: still waiting; Refresh reads again.
-        let calls = settings_calls(&mut e);
-        e.settled(calls[0].0, lost());
-        assert!(!e.can_edit_look());
-        e.ui.panel = crate::Panel::Appearance;
-        assert!(e.can_refresh());
-        e.refresh();
-        answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
-        assert!(e.can_edit_look());
-        edit(&mut e, json!({"scheme":"ocean"}));
-        assert!(e.look.conflicts.is_empty(), "its own write is no conflict");
-        assert_eq!(e.look.draft.unwrap().look.scheme, Scheme::Ocean);
+        assert_eq!(next(&mut e).1, "settings.status");
     }
 
     #[test]
     fn a_failed_receipt_lookup_can_be_checked_again() {
         let mut e = read();
         edit(&mut e, json!({"scheme":"forest"}));
-        e.apply_look();
-        let calls = settings_calls(&mut e);
-        e.settled(calls[0].0, lost());
-        let receipt = settings_calls(&mut e);
-        e.settled(receipt[0].0, lost());
+        let (apply, _, _) = next(&mut e);
+        e.settled(apply, lost());
+        let (receipt, _, _) = next(&mut e);
+        e.settled(receipt, lost());
         assert!(e.look.uncertain.is_some());
         e.recheck_look();
-        assert_eq!(settings_calls(&mut e)[0].1, "settings.status");
+        assert_eq!(next(&mut e).1, "settings.status");
+    }
+
+    #[test]
+    fn a_failed_read_back_waits_and_refresh_reads_again() {
+        let mut e = read();
+        edit(&mut e, json!({"scheme":"forest"}));
+        let (apply, _, _) = next(&mut e);
+        e.settled(apply, reply(0, changed()));
+        edit(&mut e, json!({"mode":"light"}));
+        let (read_back, _, _) = next(&mut e);
+        e.settled(read_back, lost());
+        assert!(
+            settings_calls(&mut e).is_empty(),
+            "no apply on a stale fence"
+        );
+        e.ui.panel = crate::Panel::Appearance;
+        assert!(e.can_refresh());
+        e.refresh();
+        answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
+        let (_, verb, body) = next(&mut e);
+        assert_eq!(
+            (verb, &body["changes"]),
+            ("settings.apply", &json!({"appearance.mode":"light"}))
+        );
     }
 
     #[test]
     fn quitting_settles_a_lost_apply_by_receipt_a_bounded_number_of_times() {
         let mut e = read();
         edit(&mut e, json!({"scheme":"forest"}));
-        e.apply_look();
-        let apply = settings_calls(&mut e);
+        let (apply, _, _) = next(&mut e);
         e.quit();
         assert!(
             !e.take_effects().contains(&Effect::Exit),
             "waits for the apply"
         );
-        e.settled(apply[0].0, lost());
+        e.settled(apply, lost());
         for _ in 0..QUIT_RECEIPT_TRIES {
             let calls: Vec<_> = e
                 .take_effects()
@@ -1302,18 +1708,215 @@ mod tests {
             assert_eq!(calls[0].1, "settings.status");
             e.settled(calls[0].0, lost());
         }
+        // Still unknown: the edit is kept and Prefs stays open once.
+        assert!(!e.take_effects().contains(&Effect::Exit));
+        assert_eq!(e.status, "look-kept-open");
+        assert_eq!(e.look.draft.unwrap().look.scheme, Scheme::Forest);
+        e.quit();
         assert!(e.take_effects().contains(&Effect::Exit));
+    }
+
+    #[test]
+    fn quitting_with_a_lone_unconfirmed_edit_reads_before_deciding() {
+        for (shows, exits) in [(true, true), (false, false)] {
+            let mut e = read();
+            edit(&mut e, json!({"scheme":"forest"}));
+            let (apply, _, _) = next(&mut e);
+            e.quit();
+            e.settled(apply, lost());
+            answer_next(
+                &mut e,
+                0,
+                json!({"status":"unknown_operation","receipt":null,"recovering":false}),
+            );
+            let scheme = if shows { "forest" } else { "studio" };
+            let (ticket, verb, _) = next(&mut e);
+            assert_eq!(
+                verb, "settings.get",
+                "the deciding read runs while quitting"
+            );
+            e.settled(ticket, reply(0, snapshot_body("8", scheme, "dark")));
+            assert_eq!(e.take_effects().contains(&Effect::Exit), exits);
+            if !exits {
+                assert_eq!(e.look.draft.unwrap().look.scheme, Scheme::Forest);
+            }
+        }
+        // And a failed deciding read keeps the edit and Prefs open.
+        let mut e = read();
+        edit(&mut e, json!({"scheme":"forest"}));
+        let (apply, _, _) = next(&mut e);
+        e.quit();
+        e.settled(apply, lost());
+        answer_next(
+            &mut e,
+            0,
+            json!({"status":"unknown_operation","receipt":null,"recovering":false}),
+        );
+        let (ticket, _, _) = next(&mut e);
+        e.settled(ticket, lost());
+        assert!(!e.take_effects().contains(&Effect::Exit));
+        assert_eq!(e.look.draft.unwrap().look.scheme, Scheme::Forest);
+    }
+
+    /// Studio, Forest (its reply lost), then Studio again, queued; the
+    /// close waits out the receipts: Prefs stays open with the reversal.
+    fn reversal_kept_open_after_exhausted_receipts() -> Engine {
+        let mut e = read();
+        edit(&mut e, json!({"scheme":"forest"}));
+        let (apply, _, _) = next(&mut e);
+        edit(&mut e, json!({"scheme":"studio"}));
+        e.quit();
+        e.settled(apply, lost());
+        for _ in 0..QUIT_RECEIPT_TRIES {
+            let (ticket, verb, _) = next(&mut e);
+            assert_eq!(verb, "settings.status");
+            e.settled(ticket, lost());
+        }
+        let effects = e.take_effects();
+        assert!(!effects.contains(&Effect::Exit));
+        assert_eq!(e.status, "look-kept-open");
+        assert_eq!(e.look.shown().unwrap().scheme, Scheme::Studio);
+        assert!(e.look.draft.is_some(), "the reversal is not dropped");
+        // The read that decides goes out at once; nothing is applied first.
+        let reads: Vec<_> = effects
+            .into_iter()
+            .filter_map(|x| match x {
+                Effect::Settings { ticket, verb, .. } => Some((ticket, verb)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(reads.len(), 1);
+        assert_eq!(reads[0].1, "settings.get");
+        assert!(!e.can_apply_look(), "no apply before the read decides");
+        assert_eq!(e.look.job.as_ref().map(|j| j.0), Some(reads[0].0));
+        e
+    }
+
+    #[test]
+    fn a_reversal_behind_exhausted_receipts_survives_when_the_apply_landed() {
+        let mut e = reversal_kept_open_after_exhausted_receipts();
+        let (ticket, _) = e.look.job.clone().unwrap();
+        // Forest did land: the reversal is an edit of the person's own,
+        // held for Try again, not a conflict.
+        e.settled(ticket, reply(0, snapshot_body("8", "forest", "dark")));
+        assert!(settings_calls(&mut e).is_empty(), "held, not retried");
+        let draft = e.look.draft.unwrap();
+        assert_eq!(
+            (draft.base.scheme, draft.look.scheme),
+            (Scheme::Forest, Scheme::Studio)
+        );
+        assert!(e.look.conflicts.is_empty() && e.look.hold);
+        e.apply_look();
+        let (_, verb, body) = next(&mut e);
+        assert_eq!(verb, "settings.apply");
+        assert_eq!(body["expected_revision"], "8");
+        assert_eq!(body["changes"], json!({"appearance.scheme":"studio"}));
+    }
+
+    #[test]
+    fn a_reversal_behind_exhausted_receipts_retires_when_the_apply_did_not_land() {
+        let mut e = reversal_kept_open_after_exhausted_receipts();
+        let (ticket, _) = e.look.job.clone().unwrap();
+        e.settled(ticket, reply(0, snapshot_body("7", "studio", "dark")));
+        assert!(e.look.draft.is_none() && settings_calls(&mut e).is_empty());
+        // Nothing is held any more: no "not applied" text over nothing.
+        assert!(!e.look.hold && !e.failed);
+        assert_eq!(e.status, "settled-look");
+        e.quit();
+        assert!(e.take_effects().contains(&Effect::Exit));
+    }
+
+    #[test]
+    fn a_recovering_read_does_not_decide_a_pinned_reversal() {
+        for (landed, kept) in [("forest", true), ("studio", false)] {
+            let mut e = reversal_kept_open_after_exhausted_receipts();
+            let (ticket, _) = e.look.job.clone().unwrap();
+            // settingsd still shows Studio from memory while it recovers a
+            // Forest write it may already have taken.
+            let mut recovering = snapshot_body("7", "studio", "dark");
+            recovering["recovering"] = json!(true);
+            e.settled(ticket, reply(0, recovering));
+            assert!(
+                e.look.draft.is_some(),
+                "a recovering read keeps the reversal"
+            );
+            assert_eq!(e.look.shown().unwrap().scheme, Scheme::Studio);
+            assert!(settings_calls(&mut e).is_empty() && !e.can_apply_look());
+            // Its change hint reads again: recovered, that read decides.
+            e.read_look();
+            answer_next(&mut e, 0, snapshot_body("8", landed, "dark"));
+            assert_eq!(e.look.draft.is_some(), kept, "{landed}");
+            if kept {
+                let draft = e.look.draft.unwrap();
+                assert_eq!(
+                    (draft.base.scheme, draft.look.scheme),
+                    (Scheme::Forest, Scheme::Studio)
+                );
+                assert!(e.can_apply_look() && e.look.conflicts.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn a_second_close_does_not_wait_for_the_deciding_read() {
+        let mut e = reversal_kept_open_after_exhausted_receipts();
+        let (ticket, _) = e.look.job.clone().unwrap();
+        e.quit();
+        assert!(
+            e.take_effects().contains(&Effect::Exit),
+            "closing again discards at once"
+        );
+        // The abandoned read's late reply changes nothing.
+        e.settled(ticket, reply(0, snapshot_body("8", "forest", "dark")));
+        assert!(e.look.draft.is_none());
+    }
+
+    #[test]
+    fn a_reversal_behind_a_failed_deciding_read_survives() {
+        let mut e = read();
+        edit(&mut e, json!({"scheme":"forest"}));
+        let (apply, _, _) = next(&mut e);
+        edit(&mut e, json!({"scheme":"studio"}));
+        e.quit();
+        e.settled(apply, lost());
+        answer_next(
+            &mut e,
+            0,
+            json!({"status":"unknown_operation","receipt":null,"recovering":false}),
+        );
+        // The deciding read fails: Prefs stays open with the reversal, and
+        // reads again rather than trusting the stale look.
+        let (ticket, verb, _) = next(&mut e);
+        assert_eq!(verb, "settings.get");
+        e.settled(ticket, lost());
+        let (again, verb, _) = next(&mut e);
+        assert_eq!(verb, "settings.get");
+        assert_eq!(e.status, "look-kept-open");
+        assert_eq!(e.look.shown().unwrap().scheme, Scheme::Studio);
+        // That fails too: still kept, nothing applied, Refresh reads again.
+        e.settled(again, lost());
+        assert!(settings_calls(&mut e).is_empty() && !e.can_apply_look());
+        assert_eq!(e.look.shown().unwrap().scheme, Scheme::Studio);
+        e.ui.panel = crate::Panel::Appearance;
+        e.refresh();
+        answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
+        let draft = e.look.draft.unwrap();
+        assert_eq!(
+            (draft.base.scheme, draft.look.scheme),
+            (Scheme::Forest, Scheme::Studio)
+        );
+        assert!(e.look.conflicts.is_empty());
     }
 
     #[test]
     fn a_hint_while_busy_rereads_once_afterwards() {
         let mut e = read();
         e.read_look();
-        let first = settings_calls(&mut e);
+        let (first, _, _) = next(&mut e);
         e.read_look();
         e.read_look();
         assert!(settings_calls(&mut e).is_empty());
-        e.settled(first[0].0, reply(0, snapshot_body("7", "studio", "dark")));
+        e.settled(first, reply(0, snapshot_body("7", "studio", "dark")));
         assert_eq!(settings_calls(&mut e).len(), 1);
     }
 
@@ -1321,11 +1924,8 @@ mod tests {
     fn a_late_reply_is_ignored() {
         let mut e = read();
         e.read_look();
-        let calls = settings_calls(&mut e);
-        e.settled(
-            calls[0].0 + 100,
-            reply(0, snapshot_body("99", "ocean", "dark")),
-        );
+        let (ticket, _, _) = next(&mut e);
+        e.settled(ticket + 100, reply(0, snapshot_body("99", "ocean", "dark")));
         assert_eq!(e.look.revision(), Some(7));
     }
 
@@ -1334,9 +1934,9 @@ mod tests {
         let mut e = Engine::new(label);
         e.take_effects();
         e.start_appearance("example");
-        let calls = settings_calls(&mut e);
+        let (ticket, _, _) = next(&mut e);
         e.settled(
-            calls[0].0,
+            ticket,
             Ok(Reply {
                 rc: 10,
                 body: String::new(),
@@ -1347,18 +1947,18 @@ mod tests {
     }
 
     #[test]
-    fn set_checks_every_axis_first() {
+    fn set_checks_every_axis_first_then_applies() {
         let mut e = read();
         assert!(
             e.set_look(&json!({"scheme":"forest","mode":"dim"}))
                 .is_err()
         );
-        assert!(e.look.draft.is_none());
+        assert!(settings_calls(&mut e).is_empty());
         let view = e
             .set_look(&json!({"scheme":"forest","caption_side":"left"}))
             .unwrap();
-        assert_eq!(view["draft"]["scheme"], "forest");
-        assert_eq!(view["draft"]["caption_side"], "left");
-        assert_eq!(view["edits"], json!(["scheme", "caption_side"]));
+        assert_eq!(view["shown"]["scheme"], "forest");
+        assert_eq!(view["sent"], json!(["scheme", "caption_side"]));
+        assert_eq!(next(&mut e).1, "settings.apply");
     }
 }
