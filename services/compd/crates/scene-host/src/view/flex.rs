@@ -197,8 +197,10 @@ fn width_floor(node: &Node) -> f32 {
     let square = matches!(port_text(node, "width"), "height" | "square") || flag(node, "square");
     let elides = node.family == "text" && flag(node, "elide");
     if let Some(min) = number(node, "min_width") {
-        min
-    } else if elides {
+        // An explicit minimum wins over a maximum, as in flexbox.
+        return min;
+    }
+    let fixed = if elides {
         // An eliding text may always shrink below its width.
         0.0
     } else if let Some(width) = number(node, "width") {
@@ -212,7 +214,9 @@ fn width_floor(node: &Node) -> f32 {
         h
     } else {
         0.0
-    }
+    };
+    // Never above what the node's maximum lets it be.
+    number(node, "max_width").map_or(fixed, |max| fixed.min(max))
 }
 
 impl<'a> Builder<'a> {

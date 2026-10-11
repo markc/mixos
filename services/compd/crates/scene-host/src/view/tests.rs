@@ -197,6 +197,15 @@ fn crowded_horizontal_cells_keep_their_floors_and_never_overlap() {
             );
         }
     }
+    // A fixed width above its maximum is held to the maximum, crowded or not.
+    let bounded = "{widget: \"row\", width: 100, max_width: 60, children: [\"label\"]}";
+    for surface in [80, 400] {
+        let rt = runtime(&source(bounded), (surface, 40));
+        for id in ["a", "b", "c", "d"] {
+            let cell = row_of(&rt, "list", id);
+            assert!(cell.width() <= 60.5, "{surface}: {id} {cell:?}");
+        }
+    }
 }
 
 #[test]
