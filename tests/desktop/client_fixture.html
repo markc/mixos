@@ -18,6 +18,22 @@
   const mirror = () => { document.title = "CK:" + t.value; };
   t.addEventListener("input", mirror);
   window.addEventListener("load", () => { t.focus(); mirror(); });
+  // A drop from another client is reported in the title too: a file (as
+  // dataTransfer.files, or a file:// text/uri-list) or text.
+  window.addEventListener("dragover", (e) => { e.preventDefault(); }, true);
+  window.addEventListener("drop", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const d = e.dataTransfer;
+    const uris = (d.getData("text/uri-list") || "").split(/\r?\n/).filter((u) => u && !u.startsWith("#"));
+    if (d.files && d.files.length > 0) {
+      document.title = "CK:DROP-FILE:" + d.files[0].name;
+    } else if (uris.length > 0 && uris[0].startsWith("file://")) {
+      document.title = "CK:DROP-URI:" + uris[0].split("/").pop();
+    } else {
+      document.title = "CK:DROP-TEXT:" + d.getData("text/plain");
+    }
+  }, true);
 </script>
 </body>
 </html>
