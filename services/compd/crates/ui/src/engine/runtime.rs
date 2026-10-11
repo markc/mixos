@@ -117,7 +117,12 @@ impl<P: UiProgram> UiRuntime<P> {
         Self::with_wake(program, size_px, scale, RuntimeWake::new())
     }
 
-    pub(crate) fn with_wake(program: P, size_px: (u32, u32), scale: f32, wake: RuntimeWake) -> Self {
+    pub(crate) fn with_wake(
+        program: P,
+        size_px: (u32, u32),
+        scale: f32,
+        wake: RuntimeWake,
+    ) -> Self {
         let ctx = Context::default();
         let remote = wake.clone();
         ctx.set_request_repaint_callback(move |info| remote.request(info.delay));
@@ -259,10 +264,14 @@ impl<P: UiProgram> UiRuntime<P> {
         if self.needs_pass || self.last.is_none() || self.wake.take() {
             self.run_pass();
         }
-        let painter = self.painter.get_or_insert_with(|| Painter::new(device, format));
+        let painter = self
+            .painter
+            .get_or_insert_with(|| Painter::new(device, format));
         self.max_texture_side = Some(device.limits().max_texture_dimension_2d as usize);
         let Some(pass) = &self.last else { return };
-        let primitives = self.ctx.tessellate(pass.shapes.clone(), pass.pixels_per_point);
+        let primitives = self
+            .ctx
+            .tessellate(pass.shapes.clone(), pass.pixels_per_point);
         let textures = std::mem::take(&mut self.textures);
         painter.paint(
             device,

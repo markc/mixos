@@ -7209,6 +7209,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ui"
+version = "0.1.1"
+dependencies = [
+ "egui",
+ "egui-wgpu",
+ "graphics",
+ "model",
+ "png 0.18.1",
+ "render-gles",
+ "smithay",
+ "thiserror 2.0.20",
+ "toolkit",
+ "wgpu",
+]
+
+[[package]]
 name = "unarray"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

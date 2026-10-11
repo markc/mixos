@@ -4,9 +4,9 @@
 
 use std::sync::{Arc, Mutex};
 
+use super::program::UiProgram;
 use super::runtime::UiRuntime;
 use super::wake::RuntimeWake;
-use super::program::UiProgram;
 
 #[derive(Default)]
 struct Probe {
@@ -76,7 +76,10 @@ fn the_first_tick_draws_and_an_idle_one_does_not() {
 #[test]
 fn the_program_sees_points_at_the_runtime_scale() {
     let seen = Arc::new(Mutex::new(Seen::default()));
-    let mut rt = runtime(Probe { seen: seen.clone(), ..Probe::default() });
+    let mut rt = runtime(Probe {
+        seen: seen.clone(),
+        ..Probe::default()
+    });
     rt.tick();
     let first = seen.lock().unwrap().clone();
     assert_eq!(first.pixels_per_point, 2.0);
@@ -91,7 +94,10 @@ fn the_program_sees_points_at_the_runtime_scale() {
 #[test]
 fn pointer_input_runs_a_pass_that_sees_it() {
     let seen = Arc::new(Mutex::new(Seen::default()));
-    let mut rt = runtime(Probe { seen: seen.clone(), ..Probe::default() });
+    let mut rt = runtime(Probe {
+        seen: seen.clone(),
+        ..Probe::default()
+    });
     rt.tick();
     rt.acknowledge_frame();
     rt.queue_event(egui::Event::PointerMoved(egui::pos2(12.0, 34.0)));
@@ -106,7 +112,10 @@ fn pointer_input_runs_a_pass_that_sees_it() {
 #[test]
 fn messages_apply_in_order_with_follow_ups_and_the_handler_sees_them() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut rt = runtime(Probe { emit_once: Some(10), ..Probe::default() });
+    let mut rt = runtime(Probe {
+        emit_once: Some(10),
+        ..Probe::default()
+    });
     let sink = log.clone();
     rt.set_message_handler(move |message: &u32| sink.lock().unwrap().push(*message));
     rt.queue_message(1);
