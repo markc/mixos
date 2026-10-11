@@ -4,11 +4,12 @@
 //! The [`crate::consumer::Consumer`] serves shells that hold the raw native
 //! connection and its owner-stamped deliveries. An app on a plain Bus
 //! connection has less: a hint that the profile changed (a delivery on
-//! [`crate::topic`]) and the ability to call `settings.get`. A [`Follower`]
-//! turns that into the profile's [`Appearance`]:
+//! [`crate::summary_topic`]) and the ability to call `settings.get`. A
+//! [`Follower`] turns that into the profile's [`Appearance`]:
 //!
-//! - every hint, reconnection or start asks for one [`Read`]; while one is
-//!   in flight, further hints fold into a single read after it;
+//! - every hint, reconnection or start asks for one [`Read`] of the
+//!   [`crate::Summary`] view; while one is in flight, further hints fold
+//!   into a single read after it;
 //! - a hint is never trusted: the look comes only from `settings.get`'s
 //!   answer, and an answer older than one already seen (a lower revision in
 //!   the same incarnation) is ignored;
@@ -17,7 +18,7 @@
 //!
 //! The app performs each [`Read`] on its connection and reports the reply
 //! with [`Follower::answered`].
-use crate::model::{Appearance, Binding, Revision};
+use crate::model::{Appearance, Binding, Revision, Summary};
 use serde_json::{Value, json};
 use std::time::Duration;
 
@@ -38,9 +39,12 @@ pub struct Read {
 /// What an answer meant.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Followed {
-    /// The profile's appearance, at `revision`, new to this follower.
+    /// The profile's appearance, at `revision`, new to this follower. Its
+    /// `source` is always `None`; `custom_source` says the profile names a
+    /// design source of its own (an app keeps its theme file then).
     Look {
         appearance: Appearance,
+        custom_source: bool,
         revision: u64,
     },
     /// The same revision as before: nothing to do.
@@ -110,9 +114,10 @@ impl Follower {
         }
     }
 
-    /// The topic whose deliveries are hints for this follower.
+    /// The topic whose deliveries are hints for this follower: the
+    /// profile's summary topic, a few hundred bytes per change.
     pub fn topic(&self) -> String {
-        crate::topic(&self.binding.profile)
+        crate::summary_topic(&self.binding.profile)
     }
 
     pub fn binding(&self) -> &Binding {
@@ -154,7 +159,7 @@ impl Follower {
             ticket: self.next_ticket,
             service: SERVICE,
             verb: "settings.get",
-            body: json!({"binding":self.binding}),
+            body: json!({"binding":self.binding,"view":"summary"}),
         }
     }
 
@@ -235,19 +240,11 @@ impl Follower {
                 false,
             );
         }
-        let snapshot = &value["snapshot"];
-        let Some(incarnation) = snapshot["incarnation"].as_str() else {
-            return Followed::fault("the snapshot has no incarnation", false);
+        let summary: Summary = match serde_json::from_value(value["summary"].clone()) {
+            Ok(summary) => summary,
+            Err(e) => return Followed::fault(format!("summary: {e}"), false),
         };
-        let revision: Revision = match serde_json::from_value(snapshot["revision"].clone()) {
-            Ok(revision) => revision,
-            Err(e) => return Followed::fault(format!("revision: {e}"), false),
-        };
-        let appearance: Appearance =
-            match serde_json::from_value(snapshot["desktop"]["appearance"].clone()) {
-                Ok(appearance) => appearance,
-                Err(e) => return Followed::fault(format!("appearance: {e}"), false),
-            };
+        let (incarnation, revision) = (summary.incarnation.as_str(), summary.revision);
         // Older is never the look; the same revision is, once settingsd was
         // missing and came back.
         if let Some((seen_incarnation, seen)) = &self.seen
@@ -258,7 +255,8 @@ impl Follower {
         }
         self.seen = Some((incarnation.to_owned(), revision));
         Followed::Look {
-            appearance,
+            appearance: summary.appearance,
+            custom_source: summary.custom_source,
             revision: revision.0,
         }
     }
@@ -276,9 +274,36 @@ mod tests {
     use super::*;
 
     fn snapshot(incarnation: &str, revision: &str, scheme: &str) -> String {
-        json!({"status":"current","snapshot":{"incarnation":incarnation,"revision":revision,
-            "desktop":{"appearance":{"scheme":scheme,"mode":"dark","contrast":"normal","source":null}}}})
+        json!({"status":"current","summary":{"schema":1,
+            "binding":{"instance":"example","profile":"default"},
+            "incarnation":incarnation,"revision":revision,"design_revision":revision,
+            "source_digest":"d","custom_source":false,
+            "appearance":{"scheme":scheme,"mode":"dark","contrast":"normal","source":null}}})
         .to_string()
+    }
+
+    #[test]
+    fn it_follows_the_summary_topic_and_reads_the_summary_view() {
+        let mut f = Follower::new("example");
+        assert_eq!(f.topic(), "settingsd.desktop.summary.default");
+        assert_eq!(f.read().unwrap().body["view"], "summary");
+    }
+
+    #[test]
+    fn a_custom_source_is_reported_not_carried() {
+        let mut f = Follower::new("example");
+        let read = f.read().unwrap();
+        let mut body: Value = serde_json::from_str(&snapshot("i", "7", "forest")).unwrap();
+        body["summary"]["custom_source"] = json!(true);
+        let (followed, _) = f.answered(read.ticket, Some((0, &body.to_string(), None)));
+        match followed {
+            Some(Followed::Look {
+                appearance,
+                custom_source,
+                ..
+            }) => assert!(custom_source && appearance.source.is_none()),
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]
@@ -294,6 +319,7 @@ mod tests {
             Some(Followed::Look {
                 appearance,
                 revision,
+                ..
             }) => {
                 assert_eq!((appearance.scheme.as_str(), revision), ("forest", 7));
             }

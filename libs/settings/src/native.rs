@@ -68,6 +68,7 @@ pub async fn execute_until(
             WorkKind::Read => {
                 let body = serde_json::to_value(ReadRequest {
                     binding: work.binding().clone(),
+                    view: View::Full,
                 })
                 .map_err(|e| fault("invalid_request", e.to_string()))?;
                 let value = match client

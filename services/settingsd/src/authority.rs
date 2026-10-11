@@ -35,9 +35,15 @@ impl Authority {
     }
     pub fn read(&self, request: ReadRequest) -> Result<Value, Value> {
         self.target(&request.binding)?;
-        Ok(
-            json!({"status":"current","snapshot":self.snapshot,"publication_pending":self.published != Some(self.accepted.revision),"recovering":self.store.recovering,"restored_from_backup":self.store.restored}),
-        )
+        let pending = self.published != Some(self.accepted.revision);
+        Ok(match request.view {
+            settings::View::Full => {
+                json!({"status":"current","snapshot":self.snapshot,"publication_pending":pending,"recovering":self.store.recovering,"restored_from_backup":self.store.restored})
+            }
+            settings::View::Summary => {
+                json!({"status":"current","summary":settings::Summary::of(&self.snapshot),"publication_pending":pending,"recovering":self.store.recovering,"restored_from_backup":self.store.restored})
+            }
+        })
     }
     /// Headless appearance for portal consumers: the desktop context's mode,
     /// contrast and accent, tagged with the snapshot identity.

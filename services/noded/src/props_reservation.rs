@@ -79,10 +79,20 @@ pub(crate) fn publisher_owner(name: &str) -> Option<&str> {
         })
 }
 
+/// settingsd's retained profile topics: the complete snapshot
+/// (`settingsd.desktop.changed[.<profile>]`) and its summary
+/// (`settingsd.desktop.summary[.<profile>]`).
 fn settings_topic(name: &str) -> bool {
-    name == "settingsd.desktop.changed"
+    ["settingsd.desktop.changed", "settingsd.desktop.summary"]
+        .iter()
+        .any(|base| settings_topic_under(name, base))
+}
+
+fn settings_topic_under(name: &str, base: &str) -> bool {
+    name == base
         || name
-            .strip_prefix("settingsd.desktop.changed.")
+            .strip_prefix(base)
+            .and_then(|rest| rest.strip_prefix('.'))
             .is_some_and(|profile| {
                 !profile.is_empty()
                     && profile.len() <= 64
@@ -187,6 +197,28 @@ mod tests {
         assert_eq!(safe.get("command"), Some(topic));
         assert_eq!(safe.get("from"), None);
         assert_eq!(safe.get("to"), None);
+    }
+
+    #[test]
+    fn the_settings_summary_topic_is_owned_by_settingsd_too() {
+        for topic in [
+            "settingsd.desktop.summary",
+            "settingsd.desktop.summary.default",
+        ] {
+            assert_eq!(publisher_owner(topic), Some("settingsd"), "{topic}");
+            assert!(may_publish(topic, "settingsd"));
+            assert!(!may_publish(topic, "operator"));
+            assert!(!may_clear(topic, "operator"));
+            assert!(may_subscribe(topic));
+        }
+        // Lookalikes are not reserved by this rule.
+        for topic in [
+            "settingsd.desktop.summaryx",
+            "settingsd.desktop.summary.",
+            "settingsd.desktop.summary.a/b",
+        ] {
+            assert_ne!(publisher_owner(topic), Some("settingsd"), "{topic}");
+        }
     }
 
     #[test]

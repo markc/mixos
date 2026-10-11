@@ -34,9 +34,10 @@ pub const SETTINGS: &str = "settingsd";
 /// The desktop profile the panel edits.
 pub const PROFILE: &str = "default";
 
-/// The topic settingsd announces the profile's changes on.
+/// The topic settingsd announces the profile's changes on: its summary,
+/// a hint a few hundred bytes long.
 pub fn topic() -> String {
-    settings::topic(PROFILE)
+    settings::summary_topic(PROFILE)
 }
 
 /// One appearance, as the panel shows and edits it.
@@ -558,19 +559,17 @@ fn refusal(value: &Value) -> String {
         .map_or_else(|| value.to_string(), str::to_owned)
 }
 
-/// The fence and look in a `settings.get` reply.
+/// The fence and look in a `settings.get` reply (its `summary` view).
 fn snapshot(value: &Value) -> Result<(String, Revision, Look, bool), String> {
-    let snapshot = &value["snapshot"];
-    let incarnation = snapshot["incarnation"]
-        .as_str()
-        .ok_or("the snapshot has no incarnation")?
-        .to_owned();
-    let revision: Revision = serde_json::from_value(snapshot["revision"].clone())
-        .map_err(|e| format!("revision: {e}"))?;
-    let stored: Stored = serde_json::from_value(snapshot["desktop"]["appearance"].clone())
-        .map_err(|e| format!("appearance: {e}"))?;
-    let look = Look::from_stored(&stored)?;
-    Ok((incarnation, revision, look, stored.source.is_some()))
+    let summary: settings::Summary =
+        serde_json::from_value(value["summary"].clone()).map_err(|e| format!("summary: {e}"))?;
+    let look = Look::from_stored(&summary.appearance)?;
+    Ok((
+        summary.incarnation,
+        summary.revision,
+        look,
+        summary.custom_source,
+    ))
 }
 
 impl Engine {
@@ -623,7 +622,7 @@ impl Engine {
     fn call_settings(&mut self, call: Call) {
         let ticket = self.next();
         let body = match &call {
-            Call::Read => json!({"binding":self.look.binding}),
+            Call::Read => json!({"binding":self.look.binding,"view":"summary"}),
             Call::Receipt(submitted) => {
                 json!({"binding":self.look.binding,"operation_id":submitted.operation})
             }
@@ -1131,9 +1130,16 @@ mod tests {
         })
     }
 
-    fn snapshot_with(revision: &str, appearance: Value) -> Value {
-        json!({"status":"current","snapshot":{"incarnation":"inc-1","revision":revision,
-            "desktop":{"appearance":appearance}},"publication_pending":false,"recovering":false})
+    /// A `settings.get` summary-view reply, as settingsd builds it: the
+    /// source never travels, `custom_source` says whether there is one.
+    fn snapshot_with(revision: &str, mut appearance: Value) -> Value {
+        let custom_source = !appearance["source"].is_null();
+        appearance["source"] = Value::Null;
+        json!({"status":"current","summary":{"schema":1,
+            "binding":{"instance":"example","profile":"default"},
+            "incarnation":"inc-1","revision":revision,"design_revision":revision,
+            "source_digest":"d","appearance":appearance,"custom_source":custom_source},
+            "publication_pending":false,"recovering":false})
     }
 
     fn snapshot_body(revision: &str, scheme: &str, mode: &str) -> Value {
@@ -1280,8 +1286,8 @@ mod tests {
             "no flicker back"
         );
         let mut stored = snapshot_body("8", "forest", "dark");
-        stored["snapshot"]["desktop"]["appearance"]["style"] = json!("pro");
-        stored["snapshot"]["desktop"]["appearance"]["decorations"] = json!("ssd");
+        stored["summary"]["appearance"]["style"] = json!("pro");
+        stored["summary"]["appearance"]["decorations"] = json!("ssd");
         answer_next(&mut e, 0, stored);
         assert!(e.look.draft.is_none() && e.look.sent.is_none());
         assert_eq!(e.look.revision(), Some(8));

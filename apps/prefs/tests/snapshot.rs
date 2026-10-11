@@ -13,6 +13,14 @@ use prefs::{commands, label_with, strings, view::view};
 use serde_json::json;
 use toolkit::{Theme, icons};
 
+/// A `settings.get` reply in the summary view Prefs reads.
+fn summary_reply(revision: &str, appearance: serde_json::Value) -> serde_json::Value {
+    json!({"status":"current","summary":{"schema":1,
+        "binding":{"instance":"example","profile":"default"},
+        "incarnation":"inc-1","revision":revision,"design_revision":revision,
+        "source_digest":"d","appearance":appearance,"custom_source":false}})
+}
+
 fn answer(e: &mut Engine, body: serde_json::Value) {
     let ticket = e
         .take_effects()
@@ -80,8 +88,10 @@ fn appearance_engine() -> Engine {
             _ => None,
         })
         .expect("a settings read");
-    let snapshot = json!({"status":"current","snapshot":{"incarnation":"inc-1","revision":"12",
-        "desktop":{"appearance":{"scheme":"studio","mode":"dark","contrast":"normal","source":null}}}});
+    let snapshot = summary_reply(
+        "12",
+        json!({"scheme":"studio","mode":"dark","contrast":"normal","source":null}),
+    );
     e.settled(
         ticket,
         Ok(Reply {
@@ -200,8 +210,10 @@ fn appearance_conflict_studio_dark() {
         }),
     );
     let ticket = settings_ticket(&mut engine);
-    let ocean = json!({"status":"current","snapshot":{"incarnation":"inc-1","revision":"13",
-        "desktop":{"appearance":{"scheme":"ocean","mode":"dark","contrast":"normal","source":null}}}});
+    let ocean = summary_reply(
+        "13",
+        json!({"scheme":"ocean","mode":"dark","contrast":"normal","source":null}),
+    );
     engine.settled(
         ticket,
         Ok(Reply {

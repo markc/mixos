@@ -186,6 +186,64 @@ impl Diagnostic {
 #[serde(deny_unknown_fields)]
 pub struct ReadRequest {
     pub binding: Binding,
+    /// What `settings.get` answers with. Omitted (and never sent) at its
+    /// default, so a request reads as it did before the field existed.
+    #[serde(default, skip_serializing_if = "View::is_full")]
+    pub view: View,
+}
+
+/// `settings.get`'s answer: the complete [`Snapshot`], or the [`Summary`]
+/// a plain follower needs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum View {
+    #[default]
+    Full,
+    Summary,
+}
+
+impl View {
+    pub fn is_full(&self) -> bool {
+        *self == View::Full
+    }
+}
+
+/// A profile's identity, revisions and appearance names: what a plain
+/// follower (an app taking the session look) needs, without the effective
+/// design projections or a custom design source. It is the payload of
+/// [`crate::summary_topic`] and `settings.get`'s `summary` view.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Summary {
+    pub schema: u32,
+    pub binding: Binding,
+    pub incarnation: String,
+    pub revision: Revision,
+    pub design_revision: Revision,
+    pub source_digest: String,
+    /// The profile's appearance, with `source` always `None`: whether the
+    /// profile names a design source of its own is `custom_source`.
+    pub appearance: Appearance,
+    pub custom_source: bool,
+}
+
+/// The summary schema; independent of the snapshot's [`crate::SCHEMA`].
+pub const SUMMARY_SCHEMA: u32 = 1;
+
+impl Summary {
+    pub fn of(snapshot: &Snapshot) -> Self {
+        let mut appearance = snapshot.desktop.appearance.clone();
+        let custom_source = appearance.source.take().is_some();
+        Self {
+            schema: SUMMARY_SCHEMA,
+            binding: snapshot.binding.clone(),
+            incarnation: snapshot.incarnation.clone(),
+            revision: snapshot.revision,
+            design_revision: snapshot.design_revision,
+            source_digest: snapshot.source_digest.clone(),
+            appearance,
+            custom_source,
+        }
+    }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

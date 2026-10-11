@@ -27,7 +27,7 @@ pub fn manifest() -> Vec<bus::VerbDescriptor> {
         bus::VerbDescriptor::new(
             verb,
             &["body"],
-            "Desktop settings contract 0.1.0",
+            &format!("Desktop settings contract {}", settings::CONTRACT_VERSION),
             !matches!(*verb, "settings.apply" | "settings.reset"),
         )
     }))
@@ -72,18 +72,41 @@ pub fn dispatch(authority: &mut Authority, verb: &str, body: &str) -> Result<Val
         _ => Err(json!({"status":"not_served","verb":verb})),
     }
 }
+/// Publish the retained snapshot (native consumers) and then the retained
+/// summary (plain followers). A revision is published once both are; a
+/// failure retries both.
 async fn publish(authority: &mut Authority, client: &SupervisedClient) -> anyhow::Result<()> {
-    let topic = settings::topic(&authority.accepted.binding.profile);
+    let profile = &authority.accepted.binding.profile;
+    publish_retained(
+        client,
+        settings::topic(profile),
+        serde_json::to_string(&authority.snapshot)?,
+    )
+    .await?;
+    publish_retained(
+        client,
+        settings::summary_topic(profile),
+        serde_json::to_string(&settings::Summary::of(&authority.snapshot))?,
+    )
+    .await?;
+    authority.published = Some(authority.accepted.revision);
+    Ok(())
+}
+
+async fn publish_retained(
+    client: &SupervisedClient,
+    topic: String,
+    body: String,
+) -> anyhow::Result<()> {
     let mut inner = bus::wire::BusMessage::new();
     inner.set("command", &topic);
-    inner.body = serde_json::to_string(&authority.snapshot)?;
+    inner.body = body;
     let headers = BTreeMap::from([("name".into(), topic), ("retain".into(), "true".into())]);
     tokio::time::timeout(
         Duration::from_secs(3),
         client.call_with_headers("noded", "topic.publish", &headers, &inner.to_wire()),
     )
     .await??;
-    authority.published = Some(authority.accepted.revision);
     Ok(())
 }
 

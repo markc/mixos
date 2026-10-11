@@ -1,5 +1,25 @@
 # settings contract changes
 
+## 0.4.0
+
+Authority verbs 0.2.0 (additive), snapshot schema still 1
+([decision](../../docs/decisions/2026-10-11-settings-summary-reads.md)):
+
+- `Summary` (schema 1): binding, incarnation, revision, design revision,
+  source digest, appearance names and `custom_source`; never projections or
+  a custom source. `summary_topic(profile)` /
+  `SUMMARY_TOPIC_PREFIX` name its retained topic,
+  `settingsd.desktop.summary.<profile>`, published beside the snapshot topic.
+- `ReadRequest.view` (`View::Full`, the default and never serialised, or
+  `View::Summary`) selects `settings.get`'s answer.
+- `follow::Follower` subscribes to the summary topic and reads the summary
+  view. **Breaking:** `Followed::Look` gains `custom_source`, and its
+  `appearance.source` is always `None`.
+- `describe()` lists the read views and both topics.
+
+The cache interpretation includes the library version, so caches written by
+0.3.x fall back visibly once.
+
 ## 0.3.5
 
 Add the appearance keys `appearance.style` (null, the default, takes the

@@ -27,6 +27,9 @@ pub fn describe() -> Value {
             "apps.<id>": {"type":"app_override", "fields":["scheme","mode","contrast","text_scale"]}
         }, "reset":"remove explicit app values or restore field package default",
         "defaults": Desktop::default(), "native_apps": APPS,
+        "read_views": {"full":"the complete snapshot (default)",
+            "summary":"identity, revisions and appearance names; no projections or source"},
+        "topics": {"snapshot": TOPIC_PREFIX, "summary": SUMMARY_TOPIC_PREFIX},
         "deferred":["renderer application","output overrides","font registration","artifacts","preview","replication","compatibility","policy"]})
 }
 

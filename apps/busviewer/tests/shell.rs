@@ -697,8 +697,11 @@ fn look_reply(
 ) -> Result<inspector::bus::Reply, inspector::bus::CallError> {
     Ok(inspector::bus::Reply {
         rc: 0,
-        body: json!({"status":"current","snapshot":{"incarnation":"i","revision":revision,
-            "desktop":{"appearance":{"scheme":scheme,"mode":"dark","contrast":"normal","source":null}}}})
+        body: json!({"status":"current","summary":{"schema":1,
+            "binding":{"instance":"host","profile":"default"},
+            "incarnation":"i","revision":revision,"design_revision":revision,
+            "source_digest":"d","custom_source":false,
+            "appearance":{"scheme":scheme,"mode":"dark","contrast":"normal","source":null}}})
         .to_string(),
         error: None,
     })

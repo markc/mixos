@@ -219,6 +219,47 @@ fn public_machine_fixtures_exercise_dispatch_and_restartable_float_settings() {
     assert_eq!(serde_json::to_value(restored.snapshot).unwrap(), snapshot);
 }
 #[test]
+fn the_summary_view_carries_identity_and_appearance_names_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    let read = |state: &mut Authority, body: serde_json::Value| {
+        settingsd::service::dispatch(state, "settings.get", &body.to_string()).unwrap()
+    };
+    let full = read(&mut state, json!({"binding":binding()}));
+    let explicit = read(&mut state, json!({"binding":binding(),"view":"full"}));
+    assert_eq!(full, explicit, "full is the default view");
+    let summary = read(&mut state, json!({"binding":binding(),"view":"summary"}));
+    assert!(summary.get("snapshot").is_none());
+    let s = &summary["summary"];
+    let snapshot = &full["snapshot"];
+    for key in [
+        "incarnation",
+        "revision",
+        "design_revision",
+        "source_digest",
+        "binding",
+    ] {
+        assert_eq!(s[key], snapshot[key], "{key}");
+    }
+    assert_eq!(s["appearance"], snapshot["desktop"]["appearance"]);
+    assert_eq!(s["custom_source"], false);
+    assert!(
+        summary.to_string().len() * 50 < full.to_string().len(),
+        "the summary is small: {} vs {} bytes",
+        summary.to_string().len(),
+        full.to_string().len()
+    );
+    // An unknown view is refused, as any unknown field is.
+    assert!(
+        settingsd::service::dispatch(
+            &mut state,
+            "settings.get",
+            &json!({"binding":binding(),"view":"deltas"}).to_string()
+        )
+        .is_err()
+    );
+}
+#[test]
 fn lost_reply_and_later_edit_return_original_receipt_before_revision_conflict() {
     let dir = tempfile::tempdir().unwrap();
     let mut authority = authority(dir.path());

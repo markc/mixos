@@ -49,7 +49,7 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Settings, String> {
 
 fn run(settings: &Settings) -> Result<(), String> {
     // The desktop profile's change hints: the session look (shell.rs).
-    let topics = [::settings::topic(::settings::follow::PROFILE)];
+    let topics = [::settings::summary_topic(::settings::follow::PROFILE)];
     let (handle, deliveries) = bus::start(&settings.service, &settings.url, &topics)?;
     let theme = toolkit::Theme::load();
     let options = eframe::NativeOptions {

@@ -19,7 +19,7 @@ pub use resolve::{
     Accents, describe, resolve, resolve_with_embedded, resolve_with_embedded_and_accents,
 };
 
-pub const CONTRACT_VERSION: &str = "0.1.0";
+pub const CONTRACT_VERSION: &str = "0.2.0";
 pub const SCHEMA: u32 = 1;
 pub const MAX_SOURCE_BYTES: usize = 256 * 1024;
 pub const MAX_SNAPSHOT_BYTES: usize = 1024 * 1024 - 64 * 1024;
@@ -31,6 +31,15 @@ pub const TOPIC_PREFIX: &str = "settingsd.desktop.changed.";
 
 pub fn topic(profile: &str) -> String {
     format!("{TOPIC_PREFIX}{profile}")
+}
+
+/// The profile's [`Summary`] topic: retained, owned by settingsd like
+/// [`topic`], and a few hundred bytes where that one carries the complete
+/// snapshot. Plain followers subscribe here.
+pub const SUMMARY_TOPIC_PREFIX: &str = "settingsd.desktop.summary.";
+
+pub fn summary_topic(profile: &str) -> String {
+    format!("{SUMMARY_TOPIC_PREFIX}{profile}")
 }
 
 pub fn digest<T: serde::Serialize>(value: &T) -> Result<String, serde_json::Error> {

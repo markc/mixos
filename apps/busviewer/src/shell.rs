@@ -476,8 +476,14 @@ impl Shell {
             .map(|r| (r.rc, r.body.as_str(), r.error.as_deref()));
         let (followed, next) = self.follower.answered(ticket, answer);
         match followed {
-            Some(settings::follow::Followed::Look { appearance, .. }) => {
-                self.set_look(Some(appearance));
+            // A profile naming its own design source keeps the theme file,
+            // as `session_look` does for one it cannot draw.
+            Some(settings::follow::Followed::Look {
+                appearance,
+                custom_source,
+                ..
+            }) => {
+                self.set_look((!custom_source).then_some(appearance));
             }
             Some(settings::follow::Followed::Missing) if self.look.is_some() => {
                 self.set_look(None);
