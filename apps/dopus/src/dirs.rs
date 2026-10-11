@@ -29,7 +29,6 @@ impl AppDirs {
     pub fn config_dir(&self) -> PathBuf {
         self.config()
     }
-
 }
 
 /// Expand a leading `~` (or `~/…`) to the user's home: the location bar and

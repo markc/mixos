@@ -172,9 +172,15 @@ mod tests {
     fn further_chords_run_the_action_too() {
         let r = registry();
         let chord = |t| toolkit::keymap::parse_chord(t).unwrap();
-        assert_eq!(r.shortcuts_of("file.rename"), [chord("F2"), chord("Ctrl+E")]);
+        assert_eq!(
+            r.shortcuts_of("file.rename"),
+            [chord("F2"), chord("Ctrl+E")]
+        );
         assert_eq!(r.get("file.rename").unwrap().shortcut, Some(chord("F2")));
-        assert_eq!(r.shortcuts_of("nav.switch-pane"), [chord("F6"), chord("Tab")]);
+        assert_eq!(
+            r.shortcuts_of("nav.switch-pane"),
+            [chord("F6"), chord("Tab")]
+        );
         assert!(r.get("file.rename#2").is_none(), "no alias commands");
     }
 
@@ -188,7 +194,10 @@ mod tests {
         ]);
         assert!(r.rebind(&overrides).is_empty());
         assert_eq!(r.shortcuts_of("nav.home"), [chord("Ctrl+B")]);
-        assert!(r.shortcuts_of("view.toggle-places").is_empty(), "Ctrl+B moved");
+        assert!(
+            r.shortcuts_of("view.toggle-places").is_empty(),
+            "Ctrl+B moved"
+        );
         assert!(r.shortcuts_of("file.delete").is_empty(), "unbound");
         r.rebind(&Default::default());
         assert_eq!(r.shortcuts_of("view.toggle-places"), [chord("Ctrl+B")]);

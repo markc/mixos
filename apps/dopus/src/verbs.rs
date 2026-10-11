@@ -22,7 +22,6 @@ use std::path::{Path, PathBuf};
 use dopus_core::{DopusCore, PaneId};
 use serde::{Deserialize, Serialize};
 
-
 pub const SERVICE: &str = "dopus";
 pub const SCHEMA: &str = "dopus.v1";
 
