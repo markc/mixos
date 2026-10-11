@@ -14,7 +14,7 @@ use crate::menu::{self, Entry, Menu, Row};
 use crate::strings::Strings;
 use egui::{KeyboardShortcut, ModifierNames};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 
 /// The message `key` from the app's catalogue, else from the toolkit's own
@@ -81,6 +81,9 @@ pub struct Described {
     pub label: String,
     pub menu: Option<String>,
     pub shortcut: Option<String>,
+    /// Further chords that run it too, outside the menus.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub more: Vec<String>,
     pub enabled: bool,
     /// A choice command's tick; `None` for an ordinary command.
     pub checked: Option<bool>,
@@ -88,6 +91,9 @@ pub struct Described {
 
 /// Runs a choice command: a closure, so it can carry its choice.
 type ChoiceRun<S> = Box<dyn Fn(&mut S)>;
+
+/// A command's chords: its own shortcut and the further ones.
+type Bound = (Option<KeyboardShortcut>, Vec<KeyboardShortcut>);
 
 /// Whether a choice command is the current choice.
 type ChoiceChecked<S> = Box<dyn Fn(&S) -> bool>;
@@ -101,6 +107,12 @@ pub struct Registry<S> {
     /// by command id. Their [`Command`] entries carry everything else.
     choice_runs: HashMap<&'static str, ChoiceRun<S>>,
     choice_checks: HashMap<&'static str, ChoiceChecked<S>>,
+    /// Each command's chords after its own `shortcut`: they run it too,
+    /// outside the menus.
+    extras: HashMap<&'static str, Vec<KeyboardShortcut>>,
+    /// Every command's chords as built, kept by the first
+    /// [`Registry::rebind`] so each later one starts from them.
+    defaults: Option<HashMap<&'static str, Bound>>,
 }
 
 impl<S> Default for Registry<S> {
@@ -110,6 +122,8 @@ impl<S> Default for Registry<S> {
             search_menu: None,
             choice_runs: HashMap::new(),
             choice_checks: HashMap::new(),
+            extras: HashMap::new(),
+            defaults: None,
         }
     }
 }
@@ -146,7 +160,7 @@ impl<S> Registry<S> {
         );
         if let Some(shortcut) = command.shortcut {
             assert!(
-                !self.commands.iter().any(|c| c.shortcut == Some(shortcut)),
+                !self.taken(shortcut),
                 "duplicate shortcut on {:?}",
                 command.id
             );
@@ -228,6 +242,122 @@ impl<S> Registry<S> {
         self.commands.iter()
     }
 
+    /// Whether any command already has `shortcut`, as its own or a further
+    /// chord.
+    fn taken(&self, shortcut: KeyboardShortcut) -> bool {
+        self.commands.iter().any(|c| c.shortcut == Some(shortcut))
+            || self.extras.values().flatten().any(|s| *s == shortcut)
+    }
+
+    /// Give command `id` further chords that run it too, outside the menus.
+    /// A chord another command already has is skipped, so the first command
+    /// to claim a chord keeps it.
+    ///
+    /// # Panics
+    /// When there is no command `id`.
+    pub fn add_shortcuts(
+        &mut self,
+        id: &str,
+        shortcuts: impl IntoIterator<Item = KeyboardShortcut>,
+    ) -> &mut Self {
+        let id = self
+            .get(id)
+            .unwrap_or_else(|| panic!("no command {id:?}"))
+            .id;
+        for shortcut in shortcuts {
+            if !self.taken(shortcut) {
+                self.extras.entry(id).or_default().push(shortcut);
+            }
+        }
+        self
+    }
+
+    /// Every chord of command `id`: its own shortcut first, then the rest.
+    pub fn shortcuts_of(&self, id: &str) -> Vec<KeyboardShortcut> {
+        let Some(command) = self.get(id) else {
+            return Vec::new();
+        };
+        command
+            .shortcut
+            .into_iter()
+            .chain(self.extras.get(command.id).into_iter().flatten().copied())
+            .collect()
+    }
+
+    /// Apply one app's bindings from the desktop profile, starting from the
+    /// chords the registry was built with (so applying an empty map restores
+    /// them):
+    ///
+    /// - each listed command takes exactly its listed chords, the first as
+    ///   its menu accelerator; an empty list unbinds it;
+    /// - a chord the person bound is taken from any command that had it by
+    ///   default; two listed commands claiming one chord leave it with the
+    ///   first, by id;
+    /// - an unknown command or a chord that is not a key is skipped.
+    ///
+    /// Returns a note for each thing skipped, for the app's log.
+    pub fn rebind(&mut self, overrides: &crate::keymap::Overrides) -> Vec<String> {
+        if self.defaults.is_none() {
+            let built = self
+                .commands
+                .iter()
+                .map(|c| {
+                    let more = self.extras.get(c.id).cloned().unwrap_or_default();
+                    (c.id, (c.shortcut, more))
+                })
+                .collect();
+            self.defaults = Some(built);
+        }
+        let defaults = self.defaults.clone().unwrap_or_default();
+        let mut notes = Vec::new();
+        let mut chosen: Vec<(&'static str, Bound)> = Vec::new();
+        let mut claimed = BTreeSet::new();
+        for (action, chords) in overrides {
+            let Some(id) = self.get(action).map(|c| c.id) else {
+                notes.push(format!("{action}: no such command"));
+                continue;
+            };
+            let mut list = Vec::new();
+            for text in chords {
+                match crate::keymap::parse_chord(text) {
+                    None => notes.push(format!("{action}: {text:?} is not a key")),
+                    Some(s) if !claimed.insert(crate::keymap::chord_text(&s)) => {
+                        notes.push(format!("{action}: {text:?} is bound to another command"));
+                    }
+                    Some(s) => list.push(s),
+                }
+            }
+            let mut list = list.into_iter();
+            chosen.push((id, (list.next(), list.collect())));
+        }
+        let listed: BTreeSet<&str> = chosen.iter().map(|(id, _)| *id).collect();
+        let free = |s: &KeyboardShortcut| !claimed.contains(&crate::keymap::chord_text(s));
+        // A default that lost its accelerator promotes its next chord.
+        let mut bound: HashMap<&'static str, Bound> = defaults
+            .into_iter()
+            .filter(|(id, _)| !listed.contains(id))
+            .map(|(id, (own, mut more))| {
+                more.retain(free);
+                let own = match own {
+                    Some(s) if free(&s) => Some(s),
+                    Some(_) if !more.is_empty() => Some(more.remove(0)),
+                    _ => None,
+                };
+                (id, (own, more))
+            })
+            .collect();
+        bound.extend(chosen);
+        self.extras.clear();
+        for command in &mut self.commands {
+            let (own, more) = bound.remove(command.id).unwrap_or_default();
+            command.shortcut = own;
+            if !more.is_empty() {
+                self.extras.insert(command.id, more);
+            }
+        }
+        notes
+    }
+
     /// Run the command `id` against `state`: the one dispatch path for the
     /// UI, the command line and the Bus.
     pub fn execute(&self, id: &str, state: &mut S) -> Result<(), CommandError> {
@@ -253,6 +383,13 @@ impl<S> Registry<S> {
                 label: label_text(strings, c.label),
                 menu: c.menu.map(|m| label_text(strings, m)),
                 shortcut: c.shortcut.map(|s| s.format(&ModifierNames::NAMES, false)),
+                more: self
+                    .extras
+                    .get(c.id)
+                    .into_iter()
+                    .flatten()
+                    .map(|s| s.format(&ModifierNames::NAMES, false))
+                    .collect(),
                 enabled: (c.enabled)(state),
                 checked: self.checked(c.id, state),
             })
@@ -301,9 +438,11 @@ impl<S> Registry<S> {
         else {
             return None;
         };
+        let pressed =
+            |s: &KeyboardShortcut| s.logical_key == *key && modifiers.matches_exact(s.modifiers);
         self.commands.iter().find(|c| {
-            c.shortcut
-                .is_some_and(|s| s.logical_key == *key && modifiers.matches_exact(s.modifiers))
+            c.shortcut.as_ref().is_some_and(pressed)
+                || self.extras.get(c.id).is_some_and(|more| more.iter().any(pressed))
         })
     }
 
@@ -420,6 +559,7 @@ impl<S> Registry<S> {
 mod tests {
     use super::*;
     use egui::{Key, Modifiers};
+    use std::collections::BTreeMap;
 
     #[derive(Default)]
     struct Counter {
@@ -649,6 +789,77 @@ mod tests {
             )
             .is_empty()
         );
+    }
+
+    #[test]
+    fn rebinding_takes_moves_unbinds_and_restores() {
+        let ctrl = |key| KeyboardShortcut::new(Modifiers::COMMAND, key);
+        let mut r = registry();
+        r.add_shortcuts("count.bump", [ctrl(Key::U), ctrl(Key::B)]);
+        assert_eq!(
+            r.shortcuts_of("count.bump"),
+            [ctrl(Key::B), ctrl(Key::U)],
+            "a chord already bound is skipped"
+        );
+        let s = Counter::default();
+        assert_eq!(
+            fired_key(&r, &s, ctrl(Key::U)),
+            ["count.bump"],
+            "a further chord runs it"
+        );
+        let overrides = |pairs: &[(&str, &[&str])]| {
+            pairs
+                .iter()
+                .map(|(id, chords)| {
+                    (
+                        (*id).to_owned(),
+                        chords.iter().map(|c| (*c).to_owned()).collect(),
+                    )
+                })
+                .collect::<crate::keymap::Overrides>()
+        };
+        // Reset takes Ctrl+B; Bump keeps Ctrl+U, promoted to its accelerator.
+        let notes = r.rebind(&overrides(&[("count.reset", &["Ctrl+B", "F9"])]));
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(r.shortcuts_of("count.reset"), [ctrl(Key::B), KeyboardShortcut::new(Modifiers::NONE, Key::F9)]);
+        assert_eq!(r.get("count.bump").unwrap().shortcut, Some(ctrl(Key::U)));
+        assert_eq!(fired_key(&r, &s, ctrl(Key::B)), ["count.reset"]);
+        let d = r.describe(&s, &Strings::new(FTL));
+        assert_eq!(d[1].more.len(), 1, "F9 is reported");
+        // Unbinding, unknown commands and keys, a chord claimed twice.
+        let notes = r.rebind(&overrides(&[
+            ("count.bump", &[]),
+            ("count.reset", &["Ctrl+Nope", "Ctrl+B"]),
+            ("nope", &["F1"]),
+            ("count.zzz", &["F2"]),
+        ]));
+        assert_eq!(notes.len(), 3, "{notes:?}");
+        assert!(r.shortcuts_of("count.bump").is_empty());
+        assert_eq!(r.shortcuts_of("count.reset"), [ctrl(Key::B)]);
+        // An empty profile entry restores the built chords.
+        assert!(r.rebind(&BTreeMap::new()).is_empty());
+        assert_eq!(r.shortcuts_of("count.bump"), [ctrl(Key::B), ctrl(Key::U)]);
+        assert!(r.shortcuts_of("count.reset").is_empty());
+    }
+
+    fn fired_key(r: &Registry<Counter>, s: &Counter, shortcut: KeyboardShortcut) -> Vec<&'static str> {
+        let ctx = egui::Context::default();
+        let mut out = Vec::new();
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: shortcut.logical_key,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: shortcut.modifiers,
+                }],
+                ..Default::default()
+            },
+            |ui| out = r.shortcuts(ui.ctx(), s),
+        );
+        output.textures_delta.clear();
+        out
     }
 
     #[test]

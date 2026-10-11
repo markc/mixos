@@ -46,6 +46,9 @@ pub enum Followed {
         appearance: Appearance,
         custom_source: bool,
         revision: u64,
+        /// The person's key bindings, per application
+        /// ([`crate::keymap`]); each app applies its own entry.
+        keymaps: crate::keymap::Keymaps,
     },
     /// The same revision as before: nothing to do.
     Unchanged,
@@ -258,6 +261,7 @@ impl Follower {
             appearance: summary.appearance,
             custom_source: summary.custom_source,
             revision: revision.0,
+            keymaps: summary.keymaps,
         }
     }
 }
@@ -287,6 +291,26 @@ mod tests {
         let mut f = Follower::new("example");
         assert_eq!(f.topic(), "settingsd.desktop.summary.default");
         assert_eq!(f.read().unwrap().body["view"], "summary");
+    }
+
+    #[test]
+    fn the_look_carries_the_key_bindings() {
+        let mut f = Follower::new("example");
+        let read = f.read().unwrap();
+        let mut body: Value = serde_json::from_str(&snapshot("i", "3", "studio")).unwrap();
+        body["summary"]["keymaps"] = json!({"dopus":{"nav.parent":["Ctrl+U"]}});
+        match f.answered(read.ticket, Some((0, &body.to_string(), None))).0 {
+            Some(Followed::Look { keymaps, .. }) => {
+                assert_eq!(keymaps["dopus"]["nav.parent"], ["Ctrl+U"]);
+            }
+            other => panic!("{other:?}"),
+        }
+        // A summary without them (an older settingsd) reads as none.
+        let read = f.read().unwrap();
+        match f.answered(read.ticket, Some((0, &snapshot("i", "4", "studio"), None))).0 {
+            Some(Followed::Look { keymaps, .. }) => assert!(keymaps.is_empty()),
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]

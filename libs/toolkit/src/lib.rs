@@ -48,6 +48,7 @@ pub mod drive;
 pub mod field;
 pub mod fonts;
 pub mod icons;
+pub mod keymap;
 pub mod menu;
 pub mod panel;
 pub mod session_look;

@@ -9,6 +9,7 @@ pub mod consumer;
 pub mod domains;
 pub mod fallback;
 pub mod follow;
+pub mod keymap;
 pub mod model;
 #[cfg(feature = "native")]
 pub mod native;
@@ -21,7 +22,7 @@ pub use resolve::{
     Accents, describe, resolve, resolve_with_embedded, resolve_with_embedded_and_accents,
 };
 
-pub const CONTRACT_VERSION: &str = "0.3.0";
+pub const CONTRACT_VERSION: &str = "0.4.0";
 pub const SCHEMA: u32 = 1;
 pub const MAX_SOURCE_BYTES: usize = 256 * 1024;
 pub const MAX_SNAPSHOT_BYTES: usize = 1024 * 1024 - 64 * 1024;

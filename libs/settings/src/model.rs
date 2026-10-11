@@ -163,6 +163,10 @@ pub struct Desktop {
     pub ui: CommonUi,
     pub shell: Shell,
     pub apps: BTreeMap<String, AppOverride>,
+    /// The person's key bindings ([`crate::keymap`]). Omitted while empty,
+    /// so a profile written before it re-serialises as it was written.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub keymaps: crate::keymap::Keymaps,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -236,6 +240,9 @@ pub struct Summary {
     /// profile names a design source of its own is `custom_source`.
     pub appearance: Appearance,
     pub custom_source: bool,
+    /// The person's key bindings, per application; omitted while empty.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub keymaps: crate::keymap::Keymaps,
 }
 
 /// The summary schema; independent of the snapshot's [`crate::SCHEMA`].
@@ -254,6 +261,7 @@ impl Summary {
             source_digest: snapshot.source_digest.clone(),
             appearance,
             custom_source,
+            keymaps: snapshot.desktop.keymaps.clone(),
         }
     }
 }
