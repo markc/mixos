@@ -322,8 +322,12 @@ try
       $want_d = {x: 700, y: 60, width: 800, height: 600}
       $ps = call("comp.window.place", merge({id: $src.id, generation: $src.generation}, $want_s))
       $pt2 = call("comp.window.place", merge({id: $ff.id, generation: $ff.generation}, $want_d))
+      -- Placed: the requested rectangle lies inside the row, which may add a
+      -- client-side shadow margin (Firefox draws one; rows report the surface).
       fn settled($row, $want)
-        return $row != nil and abs($row.x - $want.x) <= 2 and abs($row.y - $want.y) <= 2 and abs($row.width - $want.width) <= 2 and abs($row.height - $want.height) <= 2
+        if $row == nil then return false end
+        $m = 40
+        return $row.x <= $want.x + 2 and $row.y <= $want.y + 2 and $row.x >= $want.x - $m and $row.y >= $want.y - $m and $row.x + $row.width >= $want.x + $want.width - 2 and $row.y + $row.height >= $want.y + $want.height - 2 and $row.width <= $want.width + 2 * $m and $row.height <= $want.height + 2 * $m
       end
       $s = nil
       $d = nil
