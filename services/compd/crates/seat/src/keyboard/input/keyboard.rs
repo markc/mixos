@@ -447,24 +447,16 @@ fn ui_handle(state: &mut Loop, keysym: Keysym, key_state: KeyState) -> Option<bo
         let pressed = matches!(key_state, KeyState::Pressed);
 
         // If this key is a modifier itself, update tracked state and stop.
-        if let Some(mod_bit) = ui::input::keysym_to_ui_modifier(keysym_raw)
-        {
+        if let Some(mod_bit) = ui::input::keysym_modifier(keysym_raw) {
             registry.modifier_changed(mod_bit, pressed);
             return Some(true);
         };
 
-        // Non-modifier key: route to UI with effective modifier state.
+        // Non-modifier key: route to the focused UI. Its modifier state already
+        // travelled through `modifier_changed`.
         if let Some(focused) = registry.keyboard_focus() {
-            let effective = registry.effective_modifiers();
-            if let Some(e) = ui::registry::translate_keyboard(
-                keysym_raw,
-                utf8.as_deref(),
-                key_state,
-                effective,
-                false,
-            ) {
-                let _ = registry.dispatch_event(focused, e);
-            }
+            let input = ui::registry::translate_keyboard(keysym_raw, utf8.as_deref(), key_state, false);
+            let _ = registry.dispatch_input(focused, input);
             return Some(true);
         }
     }
