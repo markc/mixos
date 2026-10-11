@@ -822,7 +822,7 @@ pub fn serve_command(
                     id,
                     code::FORBIDDEN,
                     format!(
-                        "{} is keyboard-only: the Bus never changes the filesystem through a \
+                        "{} is keyboard-only — the Bus never mutates the filesystem through a \
                          file manager",
                         req.id
                     ),
