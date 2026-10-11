@@ -62,7 +62,11 @@ fn window() -> Harness<'static, Window> {
                 let mut effects = settle(&mut w.engine, &registry, &strings);
                 let fired = registry.shortcuts(ui.ctx(), &w.engine);
                 let mut events = view(ui, &w.engine, &registry, &strings, stroke);
-                events.extend(fired.into_iter().map(UiEvent::Command));
+                events.extend(
+                    fired
+                        .into_iter()
+                        .map(|id| UiEvent::Command(id, toolkit::command::Origin::Shortcut)),
+                );
                 apply_ui(&mut w.engine, &registry, events);
                 effects.extend(settle(&mut w.engine, &registry, &strings));
                 for effect in effects {

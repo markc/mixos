@@ -9,6 +9,8 @@
 //! work that leaves the process (a Bus call, a file) is queued on the state
 //! for the application's effect loop, never performed inside the handler.
 
+use crate::executed::Executed;
+pub use crate::executed::Origin;
 use crate::icons::Icon;
 use crate::menu::{self, Entry, Menu, Row};
 use crate::strings::Strings;
@@ -113,6 +115,8 @@ pub struct Registry<S> {
     /// Every command's chords as built, kept by the first
     /// [`Registry::rebind`] so each later one starts from them.
     defaults: Option<HashMap<&'static str, Bound>>,
+    /// The runs waiting to be published on `<app>.command.executed`.
+    journal: std::cell::RefCell<crate::executed::Journal>,
 }
 
 impl<S> Default for Registry<S> {
@@ -124,6 +128,7 @@ impl<S> Default for Registry<S> {
             choice_checks: HashMap::new(),
             extras: HashMap::new(),
             defaults: None,
+            journal: std::cell::RefCell::new(crate::executed::Journal::default()),
         }
     }
 }
@@ -382,8 +387,10 @@ impl<S> Registry<S> {
     }
 
     /// Run the command `id` against `state`: the one dispatch path for the
-    /// UI, the command line and the Bus.
-    pub fn execute(&self, id: &str, state: &mut S) -> Result<(), CommandError> {
+    /// UI, the command line and the Bus. `origin` says how it was reached;
+    /// an accepted run is recorded for `<app>.command.executed` once the
+    /// handler returns, and a refused one is not.
+    pub fn execute(&self, id: &str, state: &mut S, origin: Origin) -> Result<(), CommandError> {
         let command = self
             .get(id)
             .ok_or_else(|| CommandError::Unknown(id.to_owned()))?;
@@ -394,7 +401,23 @@ impl<S> Registry<S> {
             Some(run) => run(state),
             None => (command.run)(state),
         }
+        self.journal.borrow_mut().record(command.id, origin);
         Ok(())
+    }
+
+    /// Record a run of `id` that the application performed itself instead
+    /// of through [`Registry::execute`] (a toggle that needs the frame's
+    /// state, an action the editor or the Bus ran), so it is published like
+    /// any other. Record only an accepted run, once.
+    pub fn note(&self, id: &str, origin: Origin) {
+        self.journal.borrow_mut().record(id, origin);
+    }
+
+    /// The runs recorded since the last call, oldest first, and how many
+    /// were dropped before them, for the application's Bus connection to
+    /// publish ([`crate::executed`]).
+    pub fn take_executed(&self) -> (Vec<Executed>, u64) {
+        self.journal.borrow_mut().take()
     }
 
     /// Every command with its current enablement, for `<app>.commands`.
@@ -473,8 +496,14 @@ impl<S> Registry<S> {
     }
 
     /// A menu bar of its own, for an app without the title bar
-    /// ([`crate::titlebar`]). Returns the ids of the commands clicked.
-    pub fn menu_bar(&self, ui: &mut egui::Ui, state: &S, strings: &Strings) -> Vec<&'static str> {
+    /// ([`crate::titlebar`]). Returns the commands chosen, each with how
+    /// (a menu row, or Help search).
+    pub fn menu_bar(
+        &self,
+        ui: &mut egui::Ui,
+        state: &S,
+        strings: &Strings,
+    ) -> Vec<(&'static str, Origin)> {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             self.menus(ui, state, strings)
@@ -483,8 +512,14 @@ impl<S> Registry<S> {
     }
 
     /// The menus ([`menu::bar`]) drawn into the current left-to-right row.
-    /// Returns the ids chosen this frame.
-    pub fn menus(&self, ui: &mut egui::Ui, state: &S, strings: &Strings) -> Vec<&'static str> {
+    /// Returns the commands chosen this frame: from a menu row
+    /// ([`Origin::Menu`]) or from Help search's results ([`Origin::Palette`]).
+    pub fn menus(
+        &self,
+        ui: &mut egui::Ui,
+        state: &S,
+        strings: &Strings,
+    ) -> Vec<(&'static str, Origin)> {
         let model = self.model(ui.ctx(), state, strings);
         let search = self.search_menu.and_then(|key| {
             let title = label_text(strings, key);
@@ -495,7 +530,15 @@ impl<S> Registry<S> {
                 empty: crate::strings::own("no-matching-commands"),
             })
         });
-        menu::bar_with(ui, &model, search.as_ref())
+        menu::bar_picked(ui, &model, search.as_ref())
+            .map(|(id, searched)| {
+                let origin = if searched {
+                    Origin::Palette
+                } else {
+                    Origin::Menu
+                };
+                (id, origin)
+            })
             .into_iter()
             .collect()
     }
@@ -623,21 +666,50 @@ mod tests {
     }
 
     #[test]
+    fn accepted_runs_are_recorded_in_order_and_refusals_are_not() {
+        let r = registry();
+        let mut s = Counter::default();
+        r.execute("count.bump", &mut s, Origin::Menu).unwrap();
+        assert!(r.execute("nope", &mut s, Origin::Bus).is_err());
+        s.locked = true;
+        assert!(r.execute("count.bump", &mut s, Origin::Bus).is_err());
+        r.execute("count.reset", &mut s, Origin::Bus).unwrap();
+        r.note("view.mode", Origin::Ui);
+        let (runs, lost) = r.take_executed();
+        let got: Vec<(&str, Origin, u64)> = runs
+            .iter()
+            .map(|e| (e.id.as_str(), e.origin, e.seq))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("count.bump", Origin::Menu, 1),
+                ("count.reset", Origin::Bus, 2),
+                ("view.mode", Origin::Ui, 3)
+            ]
+        );
+        assert_eq!(lost, 0);
+        assert_eq!(r.take_executed(), (Vec::new(), 0));
+    }
+
+    #[test]
     fn execute_dispatches_by_id_and_honours_enablement() {
         let r = registry();
         let mut s = Counter::default();
-        r.execute("count.bump", &mut s).unwrap();
+        r.execute("count.bump", &mut s, crate::command::Origin::Bus)
+            .unwrap();
         assert_eq!(s.n, 1);
         s.locked = true;
         assert_eq!(
-            r.execute("count.bump", &mut s),
+            r.execute("count.bump", &mut s, crate::command::Origin::Bus),
             Err(CommandError::Disabled("count.bump"))
         );
         assert_eq!(
-            r.execute("nope", &mut s),
+            r.execute("nope", &mut s, crate::command::Origin::Bus),
             Err(CommandError::Unknown("nope".into()))
         );
-        r.execute("count.reset", &mut s).unwrap();
+        r.execute("count.reset", &mut s, crate::command::Origin::Bus)
+            .unwrap();
         assert_eq!(s.n, 0);
     }
 

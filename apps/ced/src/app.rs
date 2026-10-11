@@ -34,9 +34,10 @@ use documents::editor::{EditorMsg, LayoutReport};
 use documents::verbs::{Refusal, code};
 use editor::{View, Wrap};
 use editor_model::mirror::Phase;
-use editor_model::types::{Intent, Level, Notice, TabId};
+use editor_model::types::{Intent, Invoker, Level, Notice, TabId};
 use serde::Serialize;
 use serde_json::{Value, json};
+use toolkit::command::Origin;
 
 /// The Mono size when nothing sets it, in points.
 pub const DEFAULT_FONT_PX: u16 = 13;
@@ -183,6 +184,11 @@ pub struct App {
     pub editor_held: bool,
     /// Give the find field keyboard focus on the next frame.
     pub focus_find: bool,
+    /// Commands run outside the registry (by the Bus, the editor, the find
+    /// bar), waiting for the shell to record them, in order.
+    pub noted: Vec<(String, Origin)>,
+    /// Whether the last window action answered with a refusal.
+    refused: bool,
 }
 
 impl App {
@@ -203,6 +209,8 @@ impl App {
             editor_id: None,
             editor_held: false,
             focus_find: false,
+            noted: Vec::new(),
+            refused: false,
         }
     }
 
@@ -301,10 +309,18 @@ impl App {
                     intent,
                     token,
                 } => {
+                    // The Bus asked and the window ran it: one run, unless
+                    // the window refused it (no document, say).
+                    let bus = matches!(intent.by, Invoker::Bus { .. });
+                    self.refused = false;
                     let more = self.window_action(tab, action, args, intent, token);
+                    if bus && !self.refused {
+                        self.noted.push((action.id(), Origin::Bus));
+                    }
                     work.extend(more);
                 }
                 Effect::Notice { tab, notice } => self.notice(tab, notice),
+                Effect::Executed { id } => self.noted.push((id, Origin::Bus)),
                 other => self.effects.push(other),
             }
         }
@@ -405,6 +421,7 @@ impl App {
     }
 
     fn done(&mut self, token: u64, result: Result<Value, Refusal>) -> Vec<Effect> {
+        self.refused = result.is_err();
         self.ctl.ui_done(token, result)
     }
 
@@ -483,9 +500,13 @@ impl App {
                 }
                 if !bar.pattern.is_empty() && !matches!(action, SearchFind | SearchReplace) {
                     // The bar already holds a pattern: run the search with it.
+                    // The controller refuses a search with no document: that
+                    // is not a run to record (the reply is unchanged).
+                    let refused = tab.filter(|t| self.tab_exists(*t)).is_none();
                     let args = self.find_args();
                     let mut fx = self.ctl.on_action_args(tab, action, Some(args), intent);
                     fx.extend(self.done(token, ok()));
+                    self.refused = refused;
                     return fx;
                 }
                 self.done(token, ok())
@@ -574,9 +595,13 @@ impl App {
     }
 
     /// Run a find-bar button.
-    pub fn find(&mut self, action: ActionId) {
+    pub fn find(&mut self, action: ActionId, origin: Origin) {
         if self.ui.find.as_ref().is_some_and(|b| !b.pattern.is_empty()) {
             let args = self.find_args();
+            // With no document the controller refuses it: no run.
+            if self.active().is_some() {
+                self.noted.push((action.id(), origin));
+            }
             self.action_args(self.active(), action, args);
         }
     }
@@ -765,11 +790,29 @@ impl App {
                 visible_rows: r.visible_rows,
                 caret: r.caret,
             }),
-            editor::Event::Undo => return self.action(ActionId::EditUndo),
-            editor::Event::Redo => return self.action(ActionId::EditRedo),
+            editor::Event::Undo => return self.editor_key(ActionId::EditUndo),
+            editor::Event::Redo => return self.editor_key(ActionId::EditRedo),
+            editor::Event::Clipboard(kind) => {
+                let action = match kind {
+                    editor::Clipboard::Copy => ActionId::EditCopy,
+                    editor::Clipboard::Cut => ActionId::EditCut,
+                    editor::Clipboard::Paste => ActionId::EditPaste,
+                };
+                // The widget did the work; this records it.
+                self.noted.push((action.id(), Origin::Shortcut));
+                return;
+            }
         };
         let fx = self.ctl.on_editor(tab, msg);
         self.absorb(fx);
+    }
+
+    /// A key the editor widget passed on (Undo, Redo): run and record it.
+    fn editor_key(&mut self, action: ActionId) {
+        if self.enabled(action) {
+            self.noted.push((action.id(), Origin::Shortcut));
+        }
+        self.action(action);
     }
 
     /// The editor's view options for `tab`: prose wraps, code scrolls.
@@ -818,6 +861,36 @@ mod tests {
             Controller::new(Config::default(), 1, false),
             Config::default(),
         )
+    }
+
+    /// A search refused because no document is open is not recorded,
+    /// whether the find bar or the Bus asked for it.
+    #[test]
+    fn refused_searches_are_not_recorded() {
+        let mut a = app();
+        a.ui.find = Some(FindBar {
+            pattern: "x".into(),
+            ..FindBar::default()
+        });
+        a.find(ActionId::SearchFindNext, Origin::Shortcut);
+        assert!(a.noted.is_empty(), "{:?}", a.noted);
+        a.absorb(vec![Effect::UiAction {
+            tab: None,
+            action: ActionId::SearchFindNext,
+            args: None,
+            intent: Intent::bus(0, "local:test"),
+            token: 7,
+        }]);
+        assert!(a.noted.is_empty(), "{:?}", a.noted);
+        // An accepted window action is recorded.
+        a.absorb(vec![Effect::UiAction {
+            tab: None,
+            action: ActionId::ViewZoomIn,
+            args: None,
+            intent: Intent::bus(0, "local:test"),
+            token: 8,
+        }]);
+        assert_eq!(a.noted, vec![("view.zoom_in".to_owned(), Origin::Bus)]);
     }
 
     #[test]

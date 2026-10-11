@@ -13,6 +13,7 @@ use crate::{label, label_with};
 use egui::{Align, Layout, RichText, ScrollArea, TextEdit, Ui};
 use inspector::{Dialog, Engine, Row, RowKind};
 use toolkit::button::PushButton;
+use toolkit::command::Origin;
 use toolkit::dialog::{self, Choice};
 use toolkit::titlebar::{self, Control};
 use toolkit::{Icon, Registry, Strings, bars, field, icons, panel, tooltip};
@@ -20,7 +21,7 @@ use toolkit::{Icon, Registry, Strings, bars, field, icons, panel, tooltip};
 /// One interaction from this frame.
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiEvent {
-    Command(&'static str),
+    Command(&'static str, Origin),
     Filter(String),
     Toggle(String),
     Select(Row),
@@ -76,9 +77,10 @@ pub fn view(
     // The toggle goes to the mode opposite the one this frame drew, so a
     // click reported twice cannot flip it back.
     let mut mode_set = false;
-    for id in fired {
+    for (id, origin) in fired {
         if id == "view.mode" {
             if !mode_set {
+                commands.note(id, origin);
                 let shown = engine.effective_theme().1;
                 let target = if shown == design::Mode::Dark {
                     design::Mode::Light
@@ -89,7 +91,7 @@ pub fn view(
                 mode_set = true;
             }
         } else {
-            events.push(UiEvent::Command(id));
+            events.push(UiEvent::Command(id, origin));
         }
     }
     bars::status(ui, |ui| {
@@ -312,7 +314,7 @@ fn details(
                         .on_hover_text(tooltip::for_command(ui.ctx(), command, strings))
                         .clicked()
                     {
-                        events.push(UiEvent::Command(command.id));
+                        events.push(UiEvent::Command(command.id, Origin::Ui));
                     }
                 }
             });

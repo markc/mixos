@@ -190,9 +190,16 @@ mod tests {
     fn view_theme_style_and_framing_choices_set_the_window_choice() {
         let r = registry();
         let mut e = Engine::new(crate::label);
-        r.execute("view.style.classic", &mut e).unwrap();
-        r.execute("view.decorations.ssd", &mut e).unwrap();
-        r.execute("view.captions.left", &mut e).unwrap();
+        r.execute("view.style.classic", &mut e, toolkit::command::Origin::Bus)
+            .unwrap();
+        r.execute(
+            "view.decorations.ssd",
+            &mut e,
+            toolkit::command::Origin::Bus,
+        )
+        .unwrap();
+        r.execute("view.captions.left", &mut e, toolkit::command::Origin::Bus)
+            .unwrap();
         assert_eq!(e.ui.theme_style, Some(Some(design::Style::Classic)));
         assert_eq!(
             (e.ui.theme_decorations, e.ui.theme_captions),
@@ -203,7 +210,8 @@ mod tests {
         );
         assert_eq!(r.checked("view.style.classic", &e), Some(true));
         assert_eq!(r.checked("view.style.own", &e), Some(false));
-        r.execute("view.style.own", &mut e).unwrap();
+        r.execute("view.style.own", &mut e, toolkit::command::Origin::Bus)
+            .unwrap();
         assert_eq!(e.ui.theme_style, Some(None));
         assert_eq!(r.checked("view.style.own", &e), Some(true));
     }
@@ -212,8 +220,10 @@ mod tests {
     fn view_theme_choices_set_the_window_theme_and_tick_it() {
         let r = registry();
         let mut e = Engine::new(crate::label);
-        r.execute("view.theme.forest", &mut e).unwrap();
-        r.execute("view.mode.dark", &mut e).unwrap();
+        r.execute("view.theme.forest", &mut e, toolkit::command::Origin::Bus)
+            .unwrap();
+        r.execute("view.mode.dark", &mut e, toolkit::command::Origin::Bus)
+            .unwrap();
         assert_eq!(
             (e.ui.theme_scheme, e.ui.theme_mode),
             (Some(design::Scheme::Forest), Some(design::Mode::Dark))
@@ -229,7 +239,8 @@ mod tests {
             (forest.menu.as_deref(), forest.checked),
             (Some("View"), Some(true))
         );
-        r.execute("view.mode.session", &mut e).unwrap();
+        r.execute("view.mode.session", &mut e, toolkit::command::Origin::Bus)
+            .unwrap();
         assert_eq!(e.ui.theme_mode, None);
     }
 
@@ -246,7 +257,8 @@ mod tests {
             "help.about",
         ] {
             assert!(
-                r.execute(id, &mut e).is_err(),
+                r.execute(id, &mut e, toolkit::command::Origin::Bus)
+                    .is_err(),
                 "{id} must be disabled under a dialog"
             );
         }

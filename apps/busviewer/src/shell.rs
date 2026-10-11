@@ -20,7 +20,7 @@ use serde_json::{Value, json};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, mpsc};
 use std::task::Poll;
-use toolkit::command::CommandError;
+use toolkit::command::{CommandError, Origin};
 use toolkit::{Registry, Strings, Theme, drive, icons};
 
 /// What finished off the UI thread.
@@ -52,11 +52,11 @@ pub fn apply_event(engine: &mut Engine, event: Event) {
 pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<UiEvent>) {
     let (fired, edits): (Vec<_>, Vec<_>) = events
         .into_iter()
-        .partition(|e| matches!(e, UiEvent::Command(_)));
+        .partition(|e| matches!(e, UiEvent::Command(..)));
     for event in edits.into_iter().chain(fired) {
         match event {
-            UiEvent::Command(id) => {
-                let _ = commands.execute(id, engine);
+            UiEvent::Command(id, origin) => {
+                let _ = commands.execute(id, engine, origin);
             }
             UiEvent::Filter(filter) => engine.set_filter(filter),
             UiEvent::Toggle(key) => engine.toggle(&key),
@@ -101,7 +101,7 @@ pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &String
                     out.push(Effect::Reply { id, rc: 0, body });
                 }
                 Effect::Execute { id, command } => {
-                    let (rc, body) = match commands.execute(&command, engine) {
+                    let (rc, body) = match commands.execute(&command, engine, Origin::Bus) {
                         Ok(()) => (0, json!({ "executed": command })),
                         Err(CommandError::Unknown(_)) => (
                             10,
@@ -354,6 +354,19 @@ impl Shell {
         for effect in settle(&mut self.engine, &self.commands, &self.strings) {
             self.perform(effect);
         }
+        self.publish_executed();
+    }
+
+    /// Publish the commands run since the last call on
+    /// `<service>.command.executed`.
+    fn publish_executed(&self) {
+        let (runs, lost) = self.commands.take_executed();
+        if runs.is_empty() && lost == 0 {
+            return;
+        }
+        let topic = toolkit::executed::topic(self.bus.service());
+        let bodies = runs.iter().map(toolkit::executed::Executed::body).collect();
+        self.bus.publish(&topic, bodies, lost);
     }
 
     fn perform(&mut self, effect: Effect) {
@@ -585,7 +598,11 @@ impl Shell {
         let fired = self.commands.shortcuts(ui.ctx(), &self.engine);
         let stroke = icons::stroke_width(&self.theme);
         let mut events = view(ui, &self.engine, &self.commands, &self.strings, stroke);
-        events.extend(fired.into_iter().map(UiEvent::Command));
+        events.extend(
+            fired
+                .into_iter()
+                .map(|id| UiEvent::Command(id, Origin::Shortcut)),
+        );
         apply_ui(&mut self.engine, &self.commands, events);
         self.settle();
         // A command this frame may have been the last thing holding others.
@@ -687,7 +704,7 @@ mod tests {
         e.ui.selected = Some(target("a"));
         e.set_body("{\"old\":1}".into());
         let frame = vec![
-            UiEvent::Command("bus.call"),
+            UiEvent::Command("bus.call", Origin::Ui),
             UiEvent::Body("{\"new\":2}".into()),
         ];
         apply_ui(&mut e, &commands, frame);
@@ -741,7 +758,7 @@ mod tests {
         let frame = vec![
             UiEvent::Select(row),
             UiEvent::Body("{\"n\":1}".into()),
-            UiEvent::Command("bus.call"),
+            UiEvent::Command("bus.call", Origin::Ui),
         ];
         apply_ui(&mut ui, &commands, frame);
         let by_hand = settle(&mut ui, &commands, &strings);

@@ -62,6 +62,15 @@ pub trait Transport {
     /// Stop: answer what is queued, flush `session`, then deliver
     /// [`Delivery::Stopped`].
     fn shutdown(&mut self, session: Option<SessionWriter>);
+    /// Queue `bodies` for publishing on `topic`, oldest first; `lost`
+    /// events were lost before them. A transport with no Bus drops them.
+    fn publish(&mut self, topic: &str, bodies: Vec<Value>, lost: u64) {
+        let _ = (topic, bodies, lost);
+    }
+    /// The Bus service name ced registered.
+    fn service(&self) -> &str {
+        APP
+    }
 }
 
 /// The Bus thread as a transport.
@@ -88,6 +97,12 @@ impl Transport for Bus {
     }
     fn shutdown(&mut self, session: Option<SessionWriter>) {
         self.handle.shutdown(session);
+    }
+    fn publish(&mut self, topic: &str, bodies: Vec<Value>, lost: u64) {
+        self.handle.publish(topic, bodies, lost);
+    }
+    fn service(&self) -> &str {
+        self.handle.service()
     }
 }
 
@@ -294,6 +309,7 @@ impl Shell {
                 None => {
                     let fx = self.app.ctl.on_bus_command(cmd);
                     self.app.absorb(fx);
+                    crate::view::record_noted(&mut self.app, &self.commands);
                     self.perform();
                 }
             }
@@ -572,6 +588,8 @@ impl Shell {
             self.app.action(documents::actions::ActionId::FileExit);
             self.perform();
         }
+        // Runs the Bus made while the window may be hidden (no ui pass).
+        self.publish_executed();
         // The status line fades without input.
         if let Some((_, until)) = self.app.status
             && until > self.app.now
@@ -632,7 +650,10 @@ impl Shell {
         if !typing_elsewhere {
             self.split_input(ui.ctx());
             let fired = self.commands.shortcuts(ui.ctx(), &self.app);
-            let events = fired.into_iter().map(UiEvent::Command).collect();
+            let events = fired
+                .into_iter()
+                .map(|id| UiEvent::Command(id, toolkit::command::Origin::Shortcut))
+                .collect();
             crate::view::apply(&mut self.app, &self.commands, events);
             self.perform();
         }
@@ -650,6 +671,20 @@ impl Shell {
         crate::view::apply(&mut self.app, &self.commands, events);
         self.perform();
         self.release();
+        self.publish_executed();
+    }
+
+    /// Publish the commands run since the last call on
+    /// `<service>.command.executed`.
+    fn publish_executed(&mut self) {
+        crate::view::record_noted(&mut self.app, &self.commands);
+        let (runs, lost) = self.commands.take_executed();
+        if runs.is_empty() && lost == 0 {
+            return;
+        }
+        let topic = toolkit::executed::topic(self.transport.service());
+        let bodies = runs.iter().map(toolkit::executed::Executed::body).collect();
+        self.transport.publish(&topic, bodies, lost);
     }
 }
 

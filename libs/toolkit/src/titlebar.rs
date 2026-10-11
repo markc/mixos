@@ -33,7 +33,7 @@
 
 use crate::button::{ICON_BUTTON, IconButton, Link};
 use crate::chrome::{CLOSE_PRESSED_ALPHA, Chrome};
-use crate::command::Registry;
+use crate::command::{Origin, Registry};
 use crate::icons::{self, Icon};
 use crate::strings::Strings;
 use design::{CaptionSide, Decorations};
@@ -173,7 +173,7 @@ pub fn show<S>(
     registry: &Registry<S>,
     state: &S,
     strings: &Strings,
-) -> Vec<&'static str> {
+) -> Vec<(&'static str, Origin)> {
     show_with(ui, title, icon, stroke, registry, state, strings, &mut [])
 }
 
@@ -192,7 +192,7 @@ pub fn show_with<S>(
     state: &S,
     strings: &Strings,
     controls: &mut [Control<'_>],
-) -> Vec<&'static str> {
+) -> Vec<(&'static str, Origin)> {
     let chrome = Chrome::of(ui.ctx());
     let (p, m) = (chrome.palette, chrome.metrics);
     let server = chrome.decorations == Decorations::Server;
@@ -317,7 +317,7 @@ fn menus<S>(
     registry: &Registry<S>,
     state: &S,
     strings: &Strings,
-    fired: &mut Vec<&'static str>,
+    fired: &mut Vec<(&'static str, Origin)>,
 ) -> f32 {
     let mut row = ui.new_child(
         UiBuilder::new()
@@ -356,7 +356,7 @@ fn right_group<S>(
     strings: &Strings,
     left: f32,
     right: f32,
-    fired: &mut Vec<&'static str>,
+    fired: &mut Vec<(&'static str, Origin)>,
 ) -> f32 {
     if controls.is_empty() {
         return right;
@@ -420,7 +420,7 @@ fn right_group<S>(
             }),
         };
         if let Some((command, true)) = command {
-            fired.push(command.id);
+            fired.push((command.id, Origin::Ui));
         }
         x -= width + CONTROL_SPACING;
     }

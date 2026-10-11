@@ -181,7 +181,11 @@ pub fn harness(builder: HarnessBuilder<Fixture>, theme: &Theme) -> Harness<'stat
     let workspaces: Vec<String> = WORKSPACES.iter().map(|w| (*w).to_owned()).collect();
     let mut harness = builder.build_ui_state(
         move |ui, state: &mut Fixture| {
-            let mut fired = registry.shortcuts(ui.ctx(), state);
+            let mut fired: Vec<_> = registry
+                .shortcuts(ui.ctx(), state)
+                .into_iter()
+                .map(|id| (id, toolkit::command::Origin::Shortcut))
+                .collect();
             let mut workspace = state.workspace;
             let mut controls = [
                 Control::Combo {
@@ -230,8 +234,8 @@ pub fn harness(builder: HarnessBuilder<Fixture>, theme: &Theme) -> Harness<'stat
                 state.dialog = shown.chosen.is_none();
             }
             titlebar::edges(ui);
-            for id in fired {
-                let _ = registry.execute(id, state);
+            for (id, origin) in fired {
+                let _ = registry.execute(id, state, origin);
             }
         },
         Fixture::default(),

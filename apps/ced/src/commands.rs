@@ -48,41 +48,25 @@ fn editor_owned(action: ActionId) -> bool {
     )
 }
 
-/// Every chord of every action after its first becomes a command of its
-/// own, outside the menus, running the same action: Ctrl+PageDown for Next
-/// Tab, Ctrl+Shift+Z for Redo. Its id is the action id with `#2`, `#3`….
+/// Every chord of every action after its first runs that action's
+/// command too, outside the menus: Ctrl+PageDown for Next Tab,
+/// Ctrl+Shift+Z for Redo. They join the command itself, so a run through
+/// any of them is published under the action's own id.
 fn aliases(r: &mut Registry<App>) {
     for action in ActionId::all() {
         if editor_owned(action) {
             continue;
         }
-        let chords = keymap::chords_for(action);
-        for (n, chord) in chords.iter().enumerate().skip(1) {
-            let Some(shortcut) = keymap::parse_chord(chord).and_then(|c| shortcut(&c)) else {
-                continue;
-            };
-            if r.iter().any(|c| c.shortcut == Some(shortcut)) {
-                continue;
-            }
-            // Built once at start-up; the registry keeps ids for the
-            // process's lifetime.
-            let id: &'static str = Box::leak(format!("{}#{}", action.id(), n + 1).into_boxed_str());
-            let Some(primary) = r.get(&action.id()) else {
-                continue;
-            };
-            let alias = Command {
-                id,
-                label: primary.label,
-                menu: None,
-                submenu: None,
-                group: 0,
-                shortcut: Some(shortcut),
-                icon: None,
-                enabled: primary.enabled,
-                run: primary.run,
-            };
-            r.add(alias);
+        let id = action.id();
+        if r.get(&id).is_none() {
+            continue;
         }
+        let extra: Vec<KeyboardShortcut> = keymap::chords_for(action)
+            .iter()
+            .skip(1)
+            .filter_map(|chord| keymap::parse_chord(chord).and_then(|c| shortcut(&c)))
+            .collect();
+        r.add_shortcuts(&id, extra);
     }
 }
 
@@ -241,14 +225,14 @@ mod tests {
     }
 
     #[test]
-    fn extra_chords_are_aliases_and_toggles_keep_shortcuts() {
+    fn extra_chords_join_their_command_and_toggles_keep_shortcuts() {
         let r = registry();
-        let alias = r.get("tabs.next#2").expect("Ctrl+PageDown alias");
-        assert_eq!(
-            alias.shortcut,
-            Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::PageDown))
+        assert!(
+            r.shortcuts_of("tabs.next")
+                .contains(&KeyboardShortcut::new(Modifiers::COMMAND, Key::PageDown)),
+            "Ctrl+PageDown runs Next Tab"
         );
-        assert!(alias.menu.is_none(), "aliases stay out of the menus");
+        assert!(r.iter().all(|c| !c.id.contains('#')), "no alias commands");
         let problems = r.get("view.problems").unwrap();
         assert!(problems.shortcut.is_some(), "Problems keeps Ctrl+Shift+M");
     }

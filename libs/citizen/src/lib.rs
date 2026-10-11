@@ -11,6 +11,8 @@
 //! that the app's name (`busviewer`, `prefs`) is a parameter: it names the
 //! worker thread, the closing refusal and the `<app>.ping` / `<app>.show`
 //! verbs used for single-instance activation.
+pub mod outbox;
+
 use ::bus::native_client::{
     BoundedIncomingEvent, ConnState, IncomingCommand, NodedClient, SupervisedClient,
     SupervisedError,
@@ -61,6 +63,7 @@ enum Effect {
         oneshot::Sender<Result<Reply, CallError>>,
     ),
 }
+
 #[derive(Debug, Clone)]
 pub struct CallError {
     pub message: String,
@@ -113,6 +116,10 @@ pub struct Handle {
     tx: tokio::sync::mpsc::Sender<Effect>,
     control: tokio::sync::mpsc::UnboundedSender<Control>,
     done: Arc<(Mutex<bool>, Condvar)>,
+    /// Topic events waiting to be published.
+    outbox: Arc<outbox::Outbox>,
+    /// The Bus service name this handle registered.
+    service: Arc<str>,
     /// What this handle was asked to do, in order (tests only).
     #[cfg(any(test, feature = "testing"))]
     log: Arc<Mutex<Vec<Logged>>>,
@@ -130,6 +137,10 @@ pub enum Logged {
     Reply {
         id: u64,
         rc: u8,
+        body: Value,
+    },
+    Publish {
+        topic: String,
         body: Value,
     },
     Quit,
@@ -180,6 +191,25 @@ impl Handle {
         // A closed receiver means the native connection has already ended.
         let _ = self.control.send(Control::Reply(id, rc, body));
     }
+    /// Queue `bodies` for publishing on `topic`, oldest first, without
+    /// waiting; `lost` events were lost before them. The publisher writes
+    /// each body's `dropped` as it sends it ([`outbox`]).
+    pub fn publish(&self, topic: &str, bodies: Vec<Value>, lost: u64) {
+        #[cfg(any(test, feature = "testing"))]
+        for body in &bodies {
+            self.log.lock().unwrap().push(Logged::Publish {
+                topic: topic.into(),
+                body: body.clone(),
+            });
+        }
+        self.outbox.push(topic, bodies, lost);
+    }
+
+    /// The Bus service name this handle registered.
+    pub fn service(&self) -> &str {
+        &self.service
+    }
+
     pub fn quit(&self) {
         #[cfg(any(test, feature = "testing"))]
         self.log.lock().unwrap().push(Logged::Quit);
@@ -211,6 +241,8 @@ impl Handle {
             tx,
             control,
             done: Arc::new((Mutex::new(true), Condvar::new())),
+            outbox: Arc::new(outbox::Outbox::default()),
+            service: Arc::from("sink"),
             log: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -268,6 +300,9 @@ pub fn start_with_topics(
     let (ready_send, ready_receive) = std::sync::mpsc::channel();
     let done = Arc::new((Mutex::new(false), Condvar::new()));
     let finished = done.clone();
+    let outbox = Arc::new(outbox::Outbox::default());
+    let worker_outbox = outbox.clone();
+    let registered: Arc<str> = Arc::from(service);
     let service = service.to_owned();
     let url = url.to_owned();
     let closing = closing(app);
@@ -280,7 +315,15 @@ pub fn start_with_topics(
                 .build();
             match runtime {
                 Ok(runtime) => runtime.block_on(worker(
-                    service, url, topics, closing, send, rx, controls, ready_send,
+                    service,
+                    url,
+                    topics,
+                    closing,
+                    send,
+                    rx,
+                    controls,
+                    ready_send,
+                    worker_outbox,
                 )),
                 Err(error) => {
                     let _ = ready_send.send(Err(format!("Bus runtime: {error}")));
@@ -296,6 +339,8 @@ pub fn start_with_topics(
             tx,
             control,
             done,
+            outbox,
+            service: registered,
             #[cfg(any(test, feature = "testing"))]
             log: Arc::new(Mutex::new(Vec::new())),
         },
@@ -318,6 +363,7 @@ async fn worker(
     mut effects: tokio::sync::mpsc::Receiver<Effect>,
     mut controls: tokio::sync::mpsc::UnboundedReceiver<Control>,
     ready: std::sync::mpsc::Sender<Result<(), String>>,
+    outbox: Arc<outbox::Outbox>,
 ) {
     let connect = SupervisedClient::connect_options(&service, &url)
         .bounded_incoming(64)
@@ -351,6 +397,7 @@ async fn worker(
         }
     }
     let _ = ready.send(Ok(()));
+    outbox::spawn_publisher(client.clone(), outbox);
     let mut pending: HashMap<u64, IncomingCommand> = HashMap::new();
     let mut next_id = 0;
     let permits = Arc::new(tokio::sync::Semaphore::new(16));

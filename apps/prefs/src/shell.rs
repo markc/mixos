@@ -23,7 +23,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, mpsc};
 use std::task::Poll;
 use std::time::Duration;
-use toolkit::command::CommandError;
+use toolkit::command::{CommandError, Origin};
 use toolkit::{Registry, Strings, Theme, drive, icons};
 
 /// What finished off the UI thread.
@@ -49,11 +49,11 @@ pub fn apply_event(engine: &mut Engine, event: Event) {
 pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<UiEvent>) {
     let (fired, edits): (Vec<_>, Vec<_>) = events
         .into_iter()
-        .partition(|e| matches!(e, UiEvent::Command(_)));
+        .partition(|e| matches!(e, UiEvent::Command(..)));
     for event in edits.into_iter().chain(fired) {
         match event {
-            UiEvent::Command(id) => {
-                let _ = commands.execute(id, engine);
+            UiEvent::Command(id, origin) => {
+                let _ = commands.execute(id, engine, origin);
             }
             UiEvent::Select(app) => engine.select(&app),
             UiEvent::CloseDialog => engine.close_dialog(),
@@ -118,7 +118,7 @@ pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &String
                     out.push(Effect::Reply { id, rc: 0, body });
                 }
                 Effect::Execute { id, command } => {
-                    let (rc, body) = match commands.execute(&command, engine) {
+                    let (rc, body) = match commands.execute(&command, engine, Origin::Bus) {
                         Ok(()) => (0, json!({ "executed": command })),
                         Err(CommandError::Unknown(_)) => (
                             10,
@@ -327,6 +327,19 @@ impl Shell {
         for effect in settle(&mut self.engine, &self.commands, &self.strings) {
             self.perform(effect);
         }
+        self.publish_executed();
+    }
+
+    /// Publish the commands run since the last call on
+    /// `<service>.command.executed`.
+    fn publish_executed(&self) {
+        let (runs, lost) = self.commands.take_executed();
+        if runs.is_empty() && lost == 0 {
+            return;
+        }
+        let topic = toolkit::executed::topic(self.bus.service());
+        let bodies = runs.iter().map(toolkit::executed::Executed::body).collect();
+        self.bus.publish(&topic, bodies, lost);
     }
 
     fn perform(&mut self, effect: Effect) {
@@ -452,7 +465,11 @@ impl Shell {
         let fired = self.commands.shortcuts(ui.ctx(), &self.engine);
         let stroke = icons::stroke_width(&self.theme);
         let mut events = view(ui, &self.engine, &self.commands, &self.strings, stroke);
-        events.extend(fired.into_iter().map(UiEvent::Command));
+        events.extend(
+            fired
+                .into_iter()
+                .map(|id| UiEvent::Command(id, Origin::Shortcut)),
+        );
         apply_ui(&mut self.engine, &self.commands, events);
         self.settle();
         self.release();
@@ -546,6 +563,40 @@ mod tests {
         }
     }
 
+    /// A command run from the window and one run over the Bus are recorded
+    /// with their origins, for `prefs.command.executed`.
+    #[test]
+    fn runs_are_recorded_with_their_origin() {
+        let (commands, strings) = (crate::commands::registry(), crate::strings());
+        let mut e = engine();
+        apply_ui(
+            &mut e,
+            &commands,
+            vec![UiEvent::Command("help.shortcuts", Origin::Ui)],
+        );
+        let _ = settle(&mut e, &commands, &strings);
+        e.close_dialog();
+        e.command(
+            1,
+            "prefs.execute",
+            &json!({"id": "help.shortcuts"}).to_string(),
+        );
+        let _ = settle(&mut e, &commands, &strings);
+        let runs: Vec<_> = commands
+            .take_executed()
+            .0
+            .into_iter()
+            .map(|r| (r.id, r.origin, r.seq))
+            .collect();
+        assert_eq!(
+            runs,
+            vec![
+                ("help.shortcuts".to_owned(), Origin::Ui, 1),
+                ("help.shortcuts".to_owned(), Origin::Bus, 2)
+            ]
+        );
+    }
+
     /// A same-frame selection reaches the command fired with it: Install
     /// acts on the row clicked in the same frame.
     #[test]
@@ -553,7 +604,7 @@ mod tests {
         let (commands, strings) = (crate::commands::registry(), crate::strings());
         let mut e = engine();
         let frame = vec![
-            UiEvent::Command("apps.install"),
+            UiEvent::Command("apps.install", Origin::Ui),
             UiEvent::Select("demo".into()),
         ];
         apply_ui(&mut e, &commands, frame);

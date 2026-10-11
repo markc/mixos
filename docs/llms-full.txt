@@ -1038,6 +1038,12 @@ Status: accepted 2026-10-11. Amends [egui applications](2026-10-09-egui-applicat
     service (and node) together with `run`; `run` is opaque.
   - **Reconnects.** Events that could not be published while the Bus was
     away count as dropped.
+  - **Unknown outcomes.** A publish whose outcome is unknown (the
+    connection failed after the frame went out, or no answer came) may have
+    reached subscribers, so it is assumed delivered and not counted. If it
+    was in fact lost, a subscriber sees a gap that `dropped` does not
+    explain, the same as its own missed deliveries. Exact accounting there
+    would need a broker receipt per event.
   - **Subscriber loss.** A subscriber that misses deliveries detects it from
     `seq` gaps that `dropped` does not explain.
 - **`origin` is the mechanism that reached the registry**, not an earlier

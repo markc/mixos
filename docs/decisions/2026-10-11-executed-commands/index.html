@@ -290,6 +290,12 @@ can move.</li>
 service (and node) together with <code>run</code>; <code>run</code> is opaque.</li>
 <li><strong>Reconnects.</strong> Events that could not be published while the Bus was
 away count as dropped.</li>
+<li><strong>Unknown outcomes.</strong> A publish whose outcome is unknown (the
+connection failed after the frame went out, or no answer came) may have
+reached subscribers, so it is assumed delivered and not counted. If it
+was in fact lost, a subscriber sees a gap that <code>dropped</code> does not
+explain, the same as its own missed deliveries. Exact accounting there
+would need a broker receipt per event.</li>
 <li><strong>Subscriber loss.</strong> A subscriber that misses deliveries detects it from
 <code>seq</code> gaps that <code>dropped</code> does not explain.</li>
 </ul>

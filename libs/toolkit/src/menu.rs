@@ -609,6 +609,16 @@ pub fn search_field_id() -> Id {
 /// highlighted result, else the first enabled one; Escape closes. A click
 /// inside that menu never closes it.
 pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<&'static str> {
+    bar_picked(ui, menus, search).map(|(id, _)| id)
+}
+
+/// [`bar_with`], also saying whether the command was picked from the
+/// search results (true) or from a menu (false).
+pub fn bar_picked(
+    ui: &mut Ui,
+    menus: &[Menu],
+    search: Option<&Search>,
+) -> Option<(&'static str, bool)> {
     let ctx = ui.ctx().clone();
     let chrome = Chrome::of(&ctx);
     let mut st: State = ctx.data(|d| d.get_temp(state_id())).unwrap_or_default();
@@ -638,6 +648,11 @@ pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<
             ctx.request_repaint();
         }
     }
+    // Whether a pick is one of Help search's results: the search menu is
+    // still the open one (navigation may move within the frame) and a
+    // query was showing results when the frame began.
+    let results = !st.query.trim().is_empty();
+    let in_results = |st: &State| results && searching(st).is_some();
     let view: Vec<Menu>;
     let menus = match searching(&st) {
         Some(s) if !st.query.trim().is_empty() => {
@@ -703,11 +718,14 @@ pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<
                             .and_then(|r| r.id)
                     });
                     if let Some(id) = first {
-                        fired = Some(id);
+                        fired = Some((id, in_results(&st)));
                         st.nav.close();
                     }
-                } else if let Outcome::Run(id) = st.nav.key(nav, menus) {
-                    fired = Some(id);
+                } else {
+                    let from_results = in_results(&st);
+                    if let Outcome::Run(id) = st.nav.key(nav, menus) {
+                        fired = Some((id, from_results));
+                    }
                 }
                 false
             });
@@ -880,7 +898,7 @@ pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<
                     ..
                 }) = entries[index].row()
             {
-                fired = Some(*id);
+                fired = Some((*id, in_results(&st)));
                 st.nav.close();
                 break;
             }
@@ -960,7 +978,7 @@ pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<
                     ..
                 },
             )) if st.nav.open.is_some() => {
-                fired = Some(*id);
+                fired = Some((*id, in_results(&st)));
                 st.nav.close();
             }
             Some((level, index, row)) if row.enabled && row.is_submenu() => {

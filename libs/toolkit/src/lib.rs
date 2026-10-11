@@ -45,6 +45,7 @@ pub mod combo;
 pub mod command;
 pub mod dialog;
 pub mod drive;
+pub mod executed;
 pub mod field;
 pub mod fonts;
 pub mod icons;

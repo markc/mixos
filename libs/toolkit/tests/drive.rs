@@ -80,7 +80,11 @@ fn window_with(builder: egui_kittest::HarnessBuilder<App>) -> Harness<'static, A
             if std::mem::take(&mut app.finish) {
                 app.answers.extend(drive::finish(ui.ctx()));
             }
-            let mut fired = registry.shortcuts(ui.ctx(), &app.fixture);
+            let mut fired: Vec<_> = registry
+                .shortcuts(ui.ctx(), &app.fixture)
+                .into_iter()
+                .map(|id| (id, toolkit::command::Origin::Shortcut))
+                .collect();
             fired.extend(titlebar::show(
                 ui,
                 fixture::TITLE,
@@ -110,8 +114,8 @@ fn window_with(builder: egui_kittest::HarnessBuilder<App>) -> Harness<'static, A
                     });
             });
             titlebar::edges(ui);
-            for id in fired {
-                let _ = registry.execute(id, &mut app.fixture);
+            for (id, origin) in fired {
+                let _ = registry.execute(id, &mut app.fixture, origin);
             }
         },
         App::default(),

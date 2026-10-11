@@ -111,6 +111,10 @@ pub type Wake = Arc<dyn Fn() + Send + Sync>;
 pub struct BusHandle {
     tx: tokio::sync::mpsc::UnboundedSender<WorkerCommand>,
     client: Arc<SupervisedClient>,
+    /// Topic events waiting to be published.
+    outbox: Arc<citizen::outbox::Outbox>,
+    /// The Bus service name this handle registered.
+    service: String,
 }
 
 impl BusHandle {
@@ -122,6 +126,18 @@ impl BusHandle {
     /// [`Delivery::Stopped`] follows.
     pub fn shutdown(&self, session: Option<SessionWriter>) {
         let _ = self.tx.send(WorkerCommand::Shutdown(session));
+    }
+
+    /// Queue `bodies` for publishing on `topic`, oldest first, without
+    /// waiting; `lost` events were lost before them
+    /// ([`citizen::outbox`]).
+    pub fn publish(&self, topic: &str, bodies: Vec<serde_json::Value>, lost: u64) {
+        self.outbox.push(topic, bodies, lost);
+    }
+
+    /// The Bus service name this handle registered.
+    pub fn service(&self) -> &str {
+        &self.service
     }
 
     /// Hand a Bus effect to the Bus thread; any other effect is ignored.
@@ -179,7 +195,10 @@ pub fn spawn(
     let (dtx, drx) = unbounded();
     let (etx, erx) = tokio::sync::mpsc::unbounded_channel();
     let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+    let outbox = Arc::new(citizen::outbox::Outbox::default());
+    let worker_outbox = outbox.clone();
     let service = service.to_string();
+    let registered = service.clone();
     let url = url.to_string();
     std::thread::Builder::new()
         .name(format!("{service}-bus"))
@@ -196,12 +215,20 @@ pub fn spawn(
                 }
             };
             let out = Out { tx: dtx, wake };
-            runtime.block_on(run(service, url, out, erx, ready_tx));
+            runtime.block_on(run(service, url, out, erx, ready_tx, worker_outbox));
             runtime.shutdown_timeout(Duration::from_millis(100));
         })
         .map_err(|e| StartError::Unreachable(format!("Bus thread: {e}")))?;
     match ready_rx.recv() {
-        Ok(Ok(client)) => Ok((BusHandle { tx: etx, client }, drx)),
+        Ok(Ok(client)) => Ok((
+            BusHandle {
+                tx: etx,
+                client,
+                outbox,
+                service: registered,
+            },
+            drx,
+        )),
         Ok(Err(e)) => Err(e),
         Err(_) => Err(StartError::Unreachable("the Bus thread exited".into())),
     }
@@ -227,6 +254,7 @@ async fn run(
     out: Out,
     mut erx: tokio::sync::mpsc::UnboundedReceiver<WorkerCommand>,
     ready: std::sync::mpsc::Sender<Result<Arc<SupervisedClient>, StartError>>,
+    outbox: Arc<citizen::outbox::Outbox>,
 ) {
     let options = SupervisedClient::connect_options(&service, &url)
         .fatal_on_registration_rejection(true)
@@ -253,6 +281,7 @@ async fn run(
     };
     let mut state = client.subscribe_state();
     let _ = ready.send(Ok(Arc::clone(&client)));
+    citizen::outbox::spawn_publisher(client.clone(), outbox);
 
     let mut commands: HashMap<u64, IncomingCommand> = HashMap::new();
     let mut replies = tokio::task::JoinSet::new();

@@ -231,7 +231,7 @@ impl Document {
             }
             Event::Undo => self.undo(),
             Event::Redo => self.redo(),
-            Event::Focus(_) | Event::Layout(_) => Ok(()),
+            Event::Focus(_) | Event::Layout(_) | Event::Clipboard(_) => Ok(()),
         };
         if let Err(e) = result {
             self.refusal = Some(e);

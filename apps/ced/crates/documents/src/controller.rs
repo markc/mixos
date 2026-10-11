@@ -77,6 +77,9 @@ pub enum Effect {
     Send { req: u64, out: Outgoing },
     /// Answer a `ced.*` Bus command.
     Respond { id: u64, rc: u8, body: String },
+    /// `ced.action` ran action `id` directly (the window runs the rest):
+    /// the host records it for `<app>.command.executed`.
+    Executed { id: String },
     /// Arm a one-shot timer (`Incoming::Timer{id}` after `ms`).
     Timer { id: u64, ms: u64 },
     /// Subscribe a topic (idempotent).
@@ -2490,6 +2493,7 @@ impl Controller {
                 if action == ActionId::FileClose && !arg("save") {
                     match tab {
                         Some(t) => {
+                            fx.push(Effect::Executed { id: action.id() });
                             self.close(t, arg("force"), Some((id, r.id.clone())), intent, fx)
                         }
                         None => refuse(fx, code::NOT_FOUND, "no tab is open".into(), None),
@@ -2512,6 +2516,9 @@ impl Controller {
                 );
                 self.op_cmd = on_outcome.then(|| (id, r.id.clone()));
                 let result = self.action_args(tab, action, r.args.as_ref(), intent, fx);
+                if result.is_ok() {
+                    fx.push(Effect::Executed { id: action.id() });
+                }
                 let queued = on_outcome && self.op_cmd.take().is_none();
                 match result {
                     Ok(_) if queued => {}

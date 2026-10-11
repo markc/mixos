@@ -6,6 +6,7 @@
 use busviewer::label;
 use busviewer::shell::{APP, Shell};
 use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
 use futures::channel::mpsc;
 use inspector::bus::{Delivery, Handle, Logged};
 use inspector::model::Verb;
@@ -140,6 +141,69 @@ fn wait(rig: &mut Rig, ids: &[u64]) {
     step_until(rig, &format!("replies {ids:?}"), |rig| {
         ids.iter().all(|id| reply(rig, *id).is_some())
     });
+}
+
+/// The `<service>.command.executed` bodies the shell published, in order.
+fn published(rig: &Rig) -> Vec<Value> {
+    rig.bus
+        .log()
+        .into_iter()
+        .filter_map(|l| match l {
+            Logged::Publish { topic, body } if topic == "sink.command.executed" => Some(body),
+            _ => None,
+        })
+        .collect()
+}
+
+/// docs/decisions/2026-10-11-executed-commands.md: a Bus execute, a
+/// shortcut and a menu pick are each published with how they were reached
+/// and consecutive seq; a refused command publishes nothing.
+#[test]
+fn executed_commands_are_published_with_their_origin() {
+    let mut rig = rig();
+    send(&mut rig, 1, "busviewer.execute", json!({"id": "nope"}));
+    send(
+        &mut rig,
+        2,
+        "busviewer.execute",
+        json!({"id": "edit.clear"}),
+    );
+    wait(&mut rig, &[1, 2]);
+    rig.h.key_press(egui::Key::F1);
+    rig.h.run_steps(3);
+    rig.h.key_press(egui::Key::Escape);
+    rig.h.run_steps(3);
+    rig.h.get_by_label("Help").click();
+    rig.h.run_steps(3);
+    rig.h.get_by_label("About BusViewer").click();
+    rig.h.run_steps(3);
+    let got: Vec<(String, String)> = published(&rig)
+        .iter()
+        .map(|b| {
+            (
+                b["id"].as_str().unwrap().into(),
+                b["origin"].as_str().unwrap().into(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            ("edit.clear".into(), "bus".into()),
+            ("help.shortcuts".into(), "shortcut".into()),
+            ("help.about".into(), "menu".into()),
+        ],
+        "{:?}",
+        rig.bus.log()
+    );
+    let bodies = published(&rig);
+    for pair in bodies.windows(2) {
+        assert_eq!(
+            pair[1]["seq"].as_u64(),
+            pair[0]["seq"].as_u64().map(|s| s + 1)
+        );
+        assert_eq!(pair[1]["run"], pair[0]["run"]);
+    }
 }
 
 fn quit_at(rig: &Rig) -> Option<usize> {

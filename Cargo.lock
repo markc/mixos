@@ -854,6 +854,7 @@ version = "0.1.1"
 dependencies = [
  "buildinfo",
  "bus",
+ "citizen",
  "design",
  "documents",
  "edit",
@@ -935,6 +936,7 @@ dependencies = [
  "bus",
  "futures",
  "serde_json",
+ "test-broker",
  "tokio",
 ]
 
@@ -6332,6 +6334,7 @@ dependencies = [
  "serde_json",
  "settings",
  "tempfile",
+ "uuid",
 ]
 
 [[package]]

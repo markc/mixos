@@ -137,6 +137,14 @@ impl View {
     }
 }
 
+/// A clipboard key the widget handled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Clipboard {
+    Copy,
+    Cut,
+    Paste,
+}
+
 /// What the widget asks of the document's owner, in order.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
@@ -152,6 +160,9 @@ pub enum Event {
     /// Undo or Redo was pressed and nothing else claimed the shortcut.
     Undo,
     Redo,
+    /// The widget performed a clipboard key itself (any edit it made
+    /// follows as a [`Event::Command`]), for owners that record commands.
+    Clipboard(Clipboard),
     /// The widget gained or lost keyboard focus.
     Focus(bool),
     /// The geometry changed (for agents driving the view, and tests).

@@ -82,7 +82,10 @@ fn the_body_buttons_run_their_commands_and_name_their_shortcuts() {
     let mut h = harness(engine(None));
     h.get_by_label(&label("call")).click();
     h.run();
-    assert!(h.state().contains(&UiEvent::Command("bus.call")));
+    assert!(
+        h.state()
+            .contains(&UiEvent::Command("bus.call", toolkit::command::Origin::Ui))
+    );
     let at = h.get_by_label(&label("call")).rect().center();
     h.hover_at(at);
     h.run_steps(4);

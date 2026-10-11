@@ -47,6 +47,9 @@ pub fn run(service: &str, url: &str, config: Config, paths: &[String]) -> Result
     }
     let mut quitting = false;
     let mut stopping = false;
+    // ced.action runs, for <service>.command.executed.
+    let mut journal = toolkit::executed::Journal::default();
+    let topic = toolkit::executed::topic(service);
     futures::executor::block_on(async {
         loop {
             // Perform everything pending; the controller may answer an
@@ -61,6 +64,9 @@ pub fn run(service: &str, url: &str, config: Config, paths: &[String]) -> Result
                             eprintln!("ced: tab {tab:?}: {notice:?}");
                         }
                         Effect::Prompt(prompt) => eprintln!("ced: needs a window: {prompt:?}"),
+                        Effect::Executed { id } => {
+                            journal.record(&id, toolkit::command::Origin::Bus);
+                        }
                         Effect::ClipboardRead { intent, .. } => {
                             next.extend(ctl.on_paste(intent, None));
                         }
@@ -72,6 +78,11 @@ pub fn run(service: &str, url: &str, config: Config, paths: &[String]) -> Result
                     }
                 }
                 work = next;
+            }
+            let (runs, lost) = journal.take();
+            if !runs.is_empty() || lost > 0 {
+                let bodies = runs.iter().map(toolkit::executed::Executed::body).collect();
+                bus.publish(&topic, bodies, lost);
             }
             if quitting {
                 // The answers queued above go out before the Bus closes.

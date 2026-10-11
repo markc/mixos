@@ -14,6 +14,7 @@ use editor_model::diag::Severity;
 use editor_model::mirror::{DetachReason, Phase};
 use editor_model::types::{Level, TabId};
 use egui::{Align, Layout, RichText, Ui};
+use toolkit::command::Origin;
 use toolkit::dialog::{self, Choice, Role};
 use toolkit::tabs::DocTab;
 use toolkit::titlebar::{self, Control};
@@ -25,14 +26,14 @@ use crate::{label, label_with};
 /// One interaction from this frame.
 #[derive(Debug, Clone, PartialEq)]
 pub enum UiEvent {
-    Command(&'static str),
+    Command(&'static str, Origin),
     SelectTab(TabId),
     CloseTab(TabId),
     Editor(TabId, editor::Event),
     Answer(Answer),
     DismissNotice(usize),
     /// A find-bar button: find next or previous, replace, replace all.
-    Find(ActionId),
+    Find(ActionId, Origin),
     CloseFind,
     KeepMine(TabId),
     TakeTheirs(TabId),
@@ -70,7 +71,11 @@ pub fn view(
         strings,
         &mut controls,
     );
-    events.extend(fired.into_iter().map(UiEvent::Command));
+    events.extend(
+        fired
+            .into_iter()
+            .map(|(id, origin)| UiEvent::Command(id, origin)),
+    );
     bars::status(ui, |ui| status(ui, app, stroke, connected));
     if app.ui.problems {
         egui::Panel::bottom("problems")
@@ -105,9 +110,23 @@ pub fn view(
 /// Run one frame's events against the app.
 pub fn apply(app: &mut App, commands: &Registry<App>, events: Vec<UiEvent>) {
     for event in events {
+        apply_one(app, commands, event);
+        record_noted(app, commands);
+    }
+}
+
+/// Record the runs the app performed outside the registry, in order.
+pub fn record_noted(app: &mut App, commands: &Registry<App>) {
+    for (id, origin) in std::mem::take(&mut app.noted) {
+        commands.note(&id, origin);
+    }
+}
+
+fn apply_one(app: &mut App, commands: &Registry<App>, event: UiEvent) {
+    {
         match event {
-            UiEvent::Command(id) => {
-                let _ = commands.execute(id, app);
+            UiEvent::Command(id, origin) => {
+                let _ = commands.execute(id, app, origin);
             }
             UiEvent::SelectTab(tab) => {
                 let fx = app.ctl.select_tab(tab);
@@ -116,12 +135,12 @@ pub fn apply(app: &mut App, commands: &Registry<App>, events: Vec<UiEvent>) {
             UiEvent::CloseTab(tab) => {
                 let fx = app.ctl.select_tab(tab);
                 app.absorb(fx);
-                app.action(ActionId::FileClose);
+                let _ = commands.execute("file.close", app, Origin::Ui);
             }
             UiEvent::Editor(tab, event) => app.editor_event(tab, event),
             UiEvent::Answer(answer) => app.answer(answer),
             UiEvent::DismissNotice(i) => app.dismiss_notice(i),
-            UiEvent::Find(action) => app.find(action),
+            UiEvent::Find(action, origin) => app.find(action, origin),
             UiEvent::CloseFind => app.close_find(),
             UiEvent::KeepMine(tab) => {
                 let intent = editor_model::types::Intent::ui(tab);
@@ -135,6 +154,7 @@ pub fn apply(app: &mut App, commands: &Registry<App>, events: Vec<UiEvent>) {
             UiEvent::Reinsert(tab, rev, text) => app.reinsert(tab, rev, text),
             UiEvent::DismissConflict(tab, rev) => app.ctl.dismiss_conflict(tab, rev),
             UiEvent::Goto(tab, line, col) => {
+                app.noted.push((ActionId::SearchGotoLine.id(), Origin::Ui));
                 app.action_args(
                     Some(tab),
                     ActionId::SearchGotoLine,
@@ -298,13 +318,13 @@ fn find_bar(ui: &mut Ui, app: &mut App, events: &mut Vec<UiEvent>) {
                     field.request_focus();
                 }
                 if field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    events.push(UiEvent::Find(ActionId::SearchFindNext));
+                    events.push(UiEvent::Find(ActionId::SearchFindNext, Origin::Shortcut));
                 }
                 if ui.button(label("find-prev")).clicked() {
-                    events.push(UiEvent::Find(ActionId::SearchFindPrev));
+                    events.push(UiEvent::Find(ActionId::SearchFindPrev, Origin::Ui));
                 }
                 if ui.button(label("find-next")).clicked() {
-                    events.push(UiEvent::Find(ActionId::SearchFindNext));
+                    events.push(UiEvent::Find(ActionId::SearchFindNext, Origin::Ui));
                 }
                 ui.checkbox(&mut bar.regex, label("find-regex"));
                 ui.checkbox(&mut bar.case, label("find-case"));
@@ -325,10 +345,10 @@ fn find_bar(ui: &mut Ui, app: &mut App, events: &mut Vec<UiEvent>) {
                         220.0,
                     );
                     if ui.button(label("find-replace")).clicked() {
-                        events.push(UiEvent::Find(ActionId::SearchReplace));
+                        events.push(UiEvent::Find(ActionId::SearchReplace, Origin::Ui));
                     }
                     if ui.button(label("find-replace-all")).clicked() {
-                        events.push(UiEvent::Find(ActionId::SearchReplaceAll));
+                        events.push(UiEvent::Find(ActionId::SearchReplaceAll, Origin::Ui));
                     }
                 });
             }

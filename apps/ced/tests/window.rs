@@ -54,6 +54,7 @@ struct Fake {
     looks: Rc<RefCell<Vec<Read>>>,
     retries: Rc<RefCell<Vec<(Duration, u64)>>>,
     subscribed: Rc<RefCell<Vec<String>>>,
+    published: Rc<RefCell<Vec<(String, Value)>>>,
 }
 
 /// The test's side of the fake: the service, and its clock.
@@ -64,6 +65,7 @@ struct Service {
     looks: Rc<RefCell<Vec<Read>>>,
     retries: Rc<RefCell<Vec<(Duration, u64)>>>,
     subscribed: Rc<RefCell<Vec<String>>>,
+    published: Rc<RefCell<Vec<(String, Value)>>>,
 }
 
 impl Service {
@@ -136,6 +138,11 @@ impl Transport for Fake {
     fn poll(&mut self) -> Option<Delivery> {
         self.queue.borrow_mut().pop_front()
     }
+    fn publish(&mut self, topic: &str, bodies: Vec<Value>, _lost: u64) {
+        for body in bodies {
+            self.published.borrow_mut().push((topic.to_owned(), body));
+        }
+    }
     fn connected(&self) -> bool {
         true
     }
@@ -187,6 +194,7 @@ fn window(
         looks: Rc::default(),
         retries: Rc::default(),
         subscribed: Rc::default(),
+        published: Rc::default(),
     };
     let transport = Box::new(Fake {
         editd: editd.clone(),
@@ -195,6 +203,7 @@ fn window(
         looks: service.looks.clone(),
         retries: service.retries.clone(),
         subscribed: service.subscribed.clone(),
+        published: service.published.clone(),
     });
     let holder = Holder {
         start: Some((theme.clone(), transport, paths)),
@@ -709,4 +718,76 @@ fn the_editor_in_the_session_look() {
         "greet.mix is lexed before the snapshot"
     );
     h.snapshot("session_look_forest_dark");
+}
+
+/// docs/decisions/2026-10-11-executed-commands.md: a shortcut and a menu
+/// pick are published on ced.command.executed with their origin and
+/// consecutive seq.
+#[test]
+fn executed_commands_are_published_with_their_origin() {
+    use documents::controller::BusCommand;
+    use egui_kittest::kittest::Queryable;
+    let (mut h, service) = window(
+        theme(Scheme::Pro, Mode::Light),
+        &[],
+        egui::vec2(820.0, 460.0),
+    );
+    h.run_steps(4);
+    // Refused by the window: there is no document to save.
+    service.deliver(Delivery::Command(BusCommand {
+        id: 9,
+        verb: "ced.action".into(),
+        body: json!({ "id": "file.save_as" }).to_string(),
+        caller_key: "local:test".into(),
+    }));
+    h.run_steps(4);
+    // A shortcut.
+    h.key_press_modifiers(Modifiers::COMMAND, Key::N);
+    h.run_steps(4);
+    // A menu pick, which opens a dialog.
+    h.get_by_label("Help").click();
+    h.run_steps(3);
+    h.get_by_label("About MixOS Editor").click();
+    h.run_steps(3);
+    // Refused: every command is disabled while the dialog is open.
+    h.key_press_modifiers(Modifiers::COMMAND, Key::N);
+    h.run_steps(3);
+    h.key_press(Key::Escape);
+    h.run_steps(3);
+    // The Bus: one action accepted, one unknown.
+    let bus = |id: u64, action: &str| {
+        Delivery::Command(BusCommand {
+            id,
+            verb: "ced.action".into(),
+            body: json!({ "id": action }).to_string(),
+            caller_key: "local:test".into(),
+        })
+    };
+    service.deliver(bus(1, "view.zoom_in"));
+    service.deliver(bus(2, "nope"));
+    h.run_steps(6);
+    let published = service.published.borrow();
+    let bodies: Vec<Value> = published
+        .iter()
+        .filter(|(topic, _)| topic == "ced.command.executed")
+        .map(|(_, body)| body.clone())
+        .collect();
+    let got: Vec<(&str, &str)> = bodies
+        .iter()
+        .map(|b| (b["id"].as_str().unwrap(), b["origin"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            ("file.new", "shortcut"),
+            ("help.about", "menu"),
+            ("view.zoom_in", "bus")
+        ]
+    );
+    for pair in bodies.windows(2) {
+        assert_eq!(
+            pair[1]["seq"].as_u64(),
+            pair[0]["seq"].as_u64().map(|s| s + 1)
+        );
+    }
 }

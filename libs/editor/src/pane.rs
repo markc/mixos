@@ -37,8 +37,8 @@ use crate::layout::{self as geo, CARET_MARGIN_ROWS, Geometry, Metrics, STRIP_W};
 use crate::lines::{self, Checkpoints, LineCells, Version};
 use crate::rows::{Pos, RowStart, Rows};
 use crate::{
-    Doc, EditCommand, Event, HlClass, LayoutReport, Motion, Output, Palette, Scroll, Selection,
-    View, Wrap, ime, input,
+    Clipboard, Doc, EditCommand, Event, HlClass, LayoutReport, Motion, Output, Palette, Scroll,
+    Selection, View, Wrap, ime, input,
 };
 
 /// Change tints last this long, in seconds.
@@ -439,6 +439,11 @@ impl Pane<'_, '_> {
     /// has applied them.
     fn clipboard(&mut self, cut: bool) {
         if let Some(s) = self.selected_text() {
+            // Copy always happens; Cut only where the text can change.
+            if !cut || !self.view.read_only {
+                let kind = if cut { Clipboard::Cut } else { Clipboard::Copy };
+                self.events.push(Event::Clipboard(kind));
+            }
             self.ui.ctx().copy_text(s);
             if cut {
                 self.edit(EditCommand::Delete);
@@ -627,7 +632,12 @@ impl Pane<'_, '_> {
                 }
                 egui::Event::Copy => self.clipboard(false),
                 egui::Event::Cut => self.clipboard(true),
-                egui::Event::Paste(s) if !s.is_empty() => self.edit(EditCommand::Insert(s)),
+                egui::Event::Paste(s) if !s.is_empty() => {
+                    if !self.view.read_only {
+                        self.events.push(Event::Clipboard(Clipboard::Paste));
+                    }
+                    self.edit(EditCommand::Insert(s));
+                }
                 egui::Event::Ime(egui::ImeEvent::Preedit { text, .. }) => {
                     if self.st.ime.preedit(&text) {
                         // The owner anchors a non-empty preedit before the

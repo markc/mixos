@@ -335,7 +335,8 @@ mod tests {
     fn choosing_sets_one_axis_and_the_ticks_follow() {
         let r = registry();
         let mut app = App::default();
-        r.execute("view.theme.forest", &mut app).unwrap();
+        r.execute("view.theme.forest", &mut app, crate::command::Origin::Bus)
+            .unwrap();
         assert_eq!(
             app.choice,
             Choice {
@@ -343,10 +344,18 @@ mod tests {
                 ..Choice::default()
             }
         );
-        r.execute("view.mode.dark", &mut app).unwrap();
-        r.execute("view.style.studio", &mut app).unwrap();
-        r.execute("view.decorations.ssd", &mut app).unwrap();
-        r.execute("view.captions.left", &mut app).unwrap();
+        r.execute("view.mode.dark", &mut app, crate::command::Origin::Bus)
+            .unwrap();
+        r.execute("view.style.studio", &mut app, crate::command::Origin::Bus)
+            .unwrap();
+        r.execute(
+            "view.decorations.ssd",
+            &mut app,
+            crate::command::Origin::Bus,
+        )
+        .unwrap();
+        r.execute("view.captions.left", &mut app, crate::command::Origin::Bus)
+            .unwrap();
         assert_eq!(
             app.choice,
             Choice {
@@ -368,22 +377,26 @@ mod tests {
                 "Captions left"
             ]
         );
-        r.execute(OWN_STYLE, &mut app).unwrap();
+        r.execute(OWN_STYLE, &mut app, crate::command::Origin::Bus)
+            .unwrap();
         assert_eq!(
             app.choice.style,
             Some(None),
             "the scheme's own style, chosen"
         );
         assert_eq!(ticked(&rows(&r, &app))[2], "Scheme's own style");
-        r.execute(SESSION_SCHEME, &mut app).unwrap();
-        r.execute(SESSION_MODE, &mut app).unwrap();
+        r.execute(SESSION_SCHEME, &mut app, crate::command::Origin::Bus)
+            .unwrap();
+        r.execute(SESSION_MODE, &mut app, crate::command::Origin::Bus)
+            .unwrap();
         assert_eq!((app.choice.scheme, app.choice.mode), (None, None));
         assert_eq!(
             app.choice.decorations,
             Some(Decorations::Server),
             "framing stays"
         );
-        r.execute(SESSION_STYLE, &mut app).unwrap();
+        r.execute(SESSION_STYLE, &mut app, crate::command::Origin::Bus)
+            .unwrap();
         assert_eq!(app.choice.style, None, "the session's style again");
     }
 
@@ -412,7 +425,8 @@ mod tests {
             "view.decorations.ssd",
             "view.captions.left",
         ] {
-            r.execute(id, &mut app).unwrap();
+            r.execute(id, &mut app, crate::command::Origin::Bus)
+                .unwrap();
         }
         assert_ne!(
             session.with_choice(&app.choice).dictionary(),
@@ -425,7 +439,8 @@ mod tests {
             "view.decorations.csd",
             "view.captions.right",
         ] {
-            r.execute(id, &mut app).unwrap();
+            r.execute(id, &mut app, crate::command::Origin::Bus)
+                .unwrap();
         }
         assert_eq!(app.choice.style, None);
         let back = session.with_choice(&app.choice);
