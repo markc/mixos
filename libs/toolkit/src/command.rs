@@ -354,7 +354,9 @@ impl<S> Registry<S> {
                 }
             }
             if !chords.is_empty() && parsed.is_empty() {
-                notes.push(format!("{action}: no key it names is known; the defaults stay"));
+                notes.push(format!(
+                    "{action}: no key it names is known; the defaults stay"
+                ));
                 continue;
             }
             let mut list = Vec::new();
@@ -905,6 +907,7 @@ mod tests {
         // An empty profile entry restores the built chords.
         assert!(r.rebind(&BTreeMap::new()).is_empty());
         assert_eq!(r.shortcuts_of("count.bump"), [ctrl(Key::B), ctrl(Key::U)]);
+        assert!(r.shortcuts_of("count.reset").is_empty());
         // A list with no key the app knows (a typo) keeps the defaults; the
         // same chord spelled twice is noted as listed twice.
         let notes = r.rebind(&overrides(&[
@@ -915,7 +918,6 @@ mod tests {
         assert_eq!(r.shortcuts_of("count.reset"), [ctrl(Key::R)]);
         assert_eq!(notes.len(), 3, "{notes:?}");
         assert!(notes[2].contains("listed twice"), "{notes:?}");
-        assert!(r.shortcuts_of("count.reset").is_empty());
     }
 
     /// egui-winit turns Ctrl+C, Ctrl+X and Ctrl+V into clipboard events;
