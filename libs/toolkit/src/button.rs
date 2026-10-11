@@ -415,12 +415,26 @@ pub fn selectable(ui: &mut Ui, selected: bool, text: impl Into<egui::WidgetText>
 mod tests {
     use super::*;
 
-    /// The rect a selectable row takes at rest and while hovered.
-    fn rest_and_hover(add: fn(&mut Ui) -> Response) -> (Rect, Rect) {
+    /// Adds one widget and returns its response.
+    type Add = fn(&mut Ui) -> Response;
+
+    /// A context styled for `context`.
+    fn styled(context: design::DesignContext) -> egui::Context {
         let ctx = egui::Context::default();
-        ctx.set_global_style(chrome::style(&crate::Theme::for_context(
-            design::DesignContext::default(),
-        )));
+        crate::install(&ctx, &crate::Theme::for_context(context));
+        ctx
+    }
+
+    /// The rect a widget takes at rest and while hovered, in the default
+    /// design.
+    fn rest_and_hover(add: Add) -> (Rect, Rect) {
+        rest_and_hover_in(&styled(design::DesignContext::default()), add)
+    }
+
+    /// The rect a widget takes at rest and while hovered in `ctx`. The
+    /// pointer leaves first, so a context can measure one widget after
+    /// another.
+    fn rest_and_hover_in(ctx: &egui::Context, add: Add) -> (Rect, Rect) {
         let frame = |ctx: &egui::Context, input: egui::RawInput| {
             let mut rect = Rect::NOTHING;
             let mut output = ctx.run_ui(input, |ui| {
@@ -429,13 +443,18 @@ mod tests {
             output.textures_delta.clear();
             rect
         };
-        let rest = frame(&ctx, egui::RawInput::default());
+        let away = egui::RawInput {
+            events: vec![egui::Event::PointerGone],
+            ..Default::default()
+        };
+        frame(ctx, away.clone());
+        let rest = frame(ctx, away);
         let hover = egui::RawInput {
             events: vec![egui::Event::PointerMoved(rest.center())],
             ..Default::default()
         };
-        frame(&ctx, hover.clone());
-        let hovered = frame(&ctx, hover);
+        frame(ctx, hover.clone());
+        let hovered = frame(ctx, hover);
         (rest, hovered)
     }
 
@@ -446,6 +465,45 @@ mod tests {
         // Selected rows are framed in every state already.
         let (rest, hovered) = rest_and_hover(|ui| selectable(ui, true, "Applications"));
         assert_eq!(rest, hovered);
+    }
+
+    #[test]
+    fn every_button_keeps_its_place_on_hover() {
+        use design::{DesignContext, Mode, Scheme};
+        let buttons: [(&str, Add); 8] = [
+            ("button", |ui| ui.button("Find next")),
+            ("small_button", |ui| ui.small_button("Dismiss")),
+            ("frameless image", |ui| {
+                let image = icons::image(Icon::Ellipsis, 1.5, 16.0, Color32::PLACEHOLDER);
+                ui.add(egui::Button::image(image).frame(false))
+            }),
+            ("selectable", |ui| selectable(ui, false, "Applications")),
+            ("icon", |ui| ui.add(IconButton::new(Icon::Ellipsis))),
+            ("rail icon", |ui| {
+                ui.add(IconButton::new(Icon::Ellipsis).rail())
+            }),
+            ("primary", |ui| ui.add(PushButton::primary("Apply"))),
+            ("secondary", |ui| ui.add(PushButton::secondary("Cancel"))),
+        ];
+        let mut moved = Vec::new();
+        for scheme in Scheme::ALL {
+            for mode in [Mode::Light, Mode::Dark] {
+                let ctx = styled(DesignContext {
+                    scheme,
+                    mode,
+                    ..DesignContext::default()
+                });
+                for (name, add) in buttons {
+                    let (rest, hovered) = rest_and_hover_in(&ctx, add);
+                    if rest != hovered {
+                        moved.push(format!(
+                            "{name} in {scheme:?} {mode:?}: {rest:?} -> {hovered:?}"
+                        ));
+                    }
+                }
+            }
+        }
+        assert!(moved.is_empty(), "moved on hover:\n{}", moved.join("\n"));
     }
 
     #[test]
