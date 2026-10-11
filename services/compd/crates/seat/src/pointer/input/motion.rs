@@ -251,6 +251,18 @@ fn current_placement(_loop: &mut Loop) -> Option<u64> {
     Some(id)
 }
 
+/// The multiplier a relative delta gets on its way into the physical cursor
+/// accumulator: the user's pointer speed times the output's fractional scale.
+/// A non-finite or non-positive scale counts as 1.
+pub(crate) fn cursor_gain(sensitivity: f64, scale: f64) -> f64 {
+    let scale = if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
+    };
+    sensitivity * scale
+}
+
 pub fn relative<I: InputBackend>(
     event: &<I as InputBackend>::PointerMotionEvent,
     _loop: &mut Loop,
@@ -285,6 +297,13 @@ pub fn relative<I: InputBackend>(
         let t: Transform = (pt, ctx).into();
         t.into_storage_point_f64()
     };
+
+    // The accumulator is in physical pixels, so a raw delta would cross a scale-2.5
+    // output 2.5× slower than a scale-1 one. Multiplying by the output scale makes
+    // `cursor_sensitivity` mean the same logical speed at every scale. Camera zoom
+    // is deliberately not folded in: the cursor moves over the screen, not the
+    // canvas.
+    let sensitivity = cursor_gain(sensitivity, ctx.scale);
 
     // Accumulate the physical delta, scaled by the live cursor sensitivity.
     _loop.inner.pointer_mut().motion.x += dt.x * sensitivity;
@@ -694,4 +713,28 @@ fn warp_screen(
     let _ = (state, ctx);
     world::seat::pointer::publish::publish::set_true_screen(None);
     p
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cursor_gain;
+
+    #[test]
+    fn gain_follows_output_scale() {
+        assert_eq!(cursor_gain(1.0, 1.0), 1.0);
+        assert_eq!(cursor_gain(1.0, 2.5), 2.5);
+        assert_eq!(cursor_gain(1.5, 2.0), 3.0);
+        // The same sensitivity covers the same logical distance per delta:
+        // physical step / scale is constant.
+        for scale in [1.0, 1.25, 2.0, 2.5] {
+            assert_eq!(cursor_gain(1.0, scale) / scale, 1.0);
+        }
+    }
+
+    #[test]
+    fn bad_scale_counts_as_one() {
+        for scale in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(cursor_gain(2.0, scale), 2.0);
+        }
+    }
 }

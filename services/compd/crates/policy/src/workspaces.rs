@@ -36,16 +36,28 @@ pub struct WorkspaceState {
     /// Current workspace per output key (`o_<slug>`); an absent key reads
     /// as 1.
     pub current: BTreeMap<String, u32>,
+    /// Names by 1-based index, only for named workspaces, all within
+    /// `1..=count`. An unnamed workspace shows its number.
+    pub names: BTreeMap<u32, String>,
 }
 
 impl Default for WorkspaceState {
     fn default() -> Self {
         Self {
-            count: 4,
+            count: DEFAULT_WORKSPACE_COUNT,
             current: BTreeMap::new(),
+            names: BTreeMap::new(),
         }
     }
 }
+
+/// The workspace count with no saved preference, and what an out-of-range
+/// saved count falls back to. Keep in step with the preference default
+/// (`model`'s `default_workspaces_count`).
+pub const DEFAULT_WORKSPACE_COUNT: u32 = 4;
+
+/// The longest workspace name, in characters.
+pub const WORKSPACE_NAME_MAX: usize = 64;
 
 /// The default output, by its `o_<slug>` key and its protocol name.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -84,6 +96,9 @@ pub enum WorkspaceRefusal {
     UnknownOutput,
     /// A count outside `1..=WORKSPACE_COUNT_MAX`.
     InvalidCount { max: u32 },
+    /// A name longer than [`WORKSPACE_NAME_MAX`] characters, or with a
+    /// control character.
+    InvalidName,
     /// The record is not a mapped managed toplevel.
     NotAWindow,
 }
@@ -445,10 +460,67 @@ impl WorkspaceState {
                 *current = count;
             }
         }
+        // A workspace that no longer exists takes its name with it.
+        self.names.retain(|index, _| *index <= count);
         effects.push(Effect::ResyncAllX11);
         effects.push(Effect::PublishDesktops);
         effects.push(Effect::Settle { prefer: None });
         Ok(((old, count), effects))
+    }
+
+    /// Name workspace `index`; an empty or all-blank name clears it. The
+    /// name is trimmed. Returns `(previous, new)`.
+    #[allow(clippy::type_complexity)]
+    pub fn rename(
+        &mut self,
+        index: u32,
+        name: &str,
+    ) -> Result<((Option<String>, Option<String>), Vec<Effect>), WorkspaceRefusal> {
+        if index == 0 || index > self.count {
+            return Err(WorkspaceRefusal::InvalidIndex { count: self.count });
+        }
+        let name = valid_name(name)?;
+        let previous = self.names.get(&index).cloned();
+        if previous == name {
+            return Ok(((previous, name), Vec::new()));
+        }
+        match &name {
+            Some(name) => self.names.insert(index, name.clone()),
+            None => self.names.remove(&index),
+        };
+        Ok((
+            (previous, name),
+            vec![Effect::WorkspacesDirty("workspace.rename")],
+        ))
+    }
+
+    /// The name of every workspace in index order, `""` for an unnamed one:
+    /// the saved preference's shape.
+    pub fn names_list(&self) -> Vec<String> {
+        (1..=self.count)
+            .map(|index| self.names.get(&index).cloned().unwrap_or_default())
+            .collect()
+    }
+
+    /// The state a saved preference describes: a count outside
+    /// `1..=WORKSPACE_COUNT_MAX` falls back to the default, and an invalid
+    /// or surplus name is dropped. Nothing is mapped yet, so nothing strands.
+    pub fn from_saved(count: u32, names: &[String]) -> Self {
+        let count = if (1..=WORKSPACE_COUNT_MAX).contains(&count) {
+            count
+        } else {
+            DEFAULT_WORKSPACE_COUNT
+        };
+        let names = names
+            .iter()
+            .zip(1..=count)
+            .filter_map(|(name, index)| Some((index, valid_name(name).ok()??)))
+            .collect();
+        Self {
+            count,
+            current: BTreeMap::new(),
+            names,
+        }
     }
 
     /// Bring a window's workspace on screen before activating it (focus,
@@ -553,6 +625,15 @@ fn relabel<H: Clone + Eq + Hash>(
     effects
 }
 
+/// A workspace name, trimmed; `None` clears it.
+fn valid_name(name: &str) -> Result<Option<String>, WorkspaceRefusal> {
+    let name = name.trim();
+    if name.chars().count() > WORKSPACE_NAME_MAX || name.chars().any(char::is_control) {
+        return Err(WorkspaceRefusal::InvalidName);
+    }
+    Ok((!name.is_empty()).then(|| name.to_string()))
+}
+
 /// `range` for an index refusal, as `1..=<count>`.
 pub fn workspace_index_range(count: u32) -> &'static str {
     const RANGES: [&str; 16] = [
@@ -593,6 +674,13 @@ pub fn workspace_refusal(refusal: WorkspaceRefusal, output: Option<&str>, id: u6
                 path: "count".into(),
                 expected: "unsigned integer",
                 range: "1..=16",
+            })
+        }
+        WorkspaceRefusal::InvalidName => {
+            ControlReply::Validation(SetValidationError::InvalidValue {
+                path: "name".into(),
+                expected: "string",
+                range: "at most 64 characters, no control characters",
             })
         }
         // Unreachable after the `{id, generation}` fence, kept honest.

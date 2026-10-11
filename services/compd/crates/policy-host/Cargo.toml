@@ -25,6 +25,8 @@ comp-model.workspace = true
 decor.workspace = true
 dispatcher.workspace = true
 ledger.workspace = true
+# The saved workspace count and names (preferences.json).
+model.workspace = true
 policy.workspace = true
 surfaces.workspace = true
 screencopy.workspace = true

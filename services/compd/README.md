@@ -72,7 +72,43 @@ compd kms-live --device /dev/dri/card1 --connector HDMI-A-1 --scale 2.5
 compd waits for its own VT to become active and never switches VT itself.
 `--bus-service NAME` and `--scene-service NAME` override the Bus names
 (default `comp`); `compd --help` lists every flag. Settings are read from
-`--config-file`, else `~/.config/compd/settings.json`.
+`--config-file`, else `~/.config/compd/settings.json`. Preferences are read
+from `preferences.json` beside it.
+
+`cursor_sensitivity` in `preferences.json` is a speed multiplier on top of
+the output scale: compd multiplies each relative pointer delta by both, so
+`1.0` moves the cursor at the same logical speed at every scale. Clients
+asking for relative motion get the raw deltas.
+
+## Workspaces
+
+Every output has a current workspace; windows belong to one. Verbs on the
+`comp` service:
+
+| Verb | Arguments | Reply |
+|---|---|---|
+| `comp.workspaces.list` | none | `{count, current, o_<key>: {current}, list: [{index, windows, name}]}`, the same object as `comp.props.get {path: "workspaces"}`; `name` is null when unnamed |
+| `comp.workspace.switch` | `{index, output?, wrap?}` | `{output, from, to}` |
+| `comp.window.send_to_workspace` | `{id, generation, index, follow?}` | the window |
+| `comp.workspaces.set_count` | `{count: 1..=16, persist?}` | `{from, count, persisted?, persist_error?}` |
+| `comp.workspace.rename` | `{index, name, persist?}` | `{index, name, previous, persisted?}` |
+
+`index` is 1-based; switch and send also take `"next"` and `"prev"`.
+Shrinking the count moves every window above it to the last workspace and
+drops the removed workspaces' names. A name is trimmed, at most 64
+characters, with no control characters; `""` clears it. `persist` defaults
+to true: the count and the names are written to `preferences.json`
+(`workspaces_count`, `workspace_names`) and compd starts with them. If the
+file cannot be written, the change still applies and the reply has
+`persisted: false` and `persist_error`. A session lock refuses every
+workspace change and hides the names (and window counts) from readers.
+
+Topic `comp.workspace.changed` (`<service>.workspace.changed`) carries
+`{version: 1, count, current, outputs: {o_<key>: current}, names, event_seq}`
+whenever the count, a current workspace or a name changes. `names` has one
+entry per workspace, null when unnamed. Window counts are not in it;
+`comp.props.changed` on `workspaces.list` carries them. The two topics are
+sequenced separately, so a subscriber may see one before the other.
 
 ## Test
 

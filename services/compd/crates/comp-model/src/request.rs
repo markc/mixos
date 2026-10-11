@@ -19,7 +19,8 @@ use surfaces::SeatKind;
 
 use crate::catalogue::{INPUT_VERBS, READ_VERBS, WINDOW_VERBS};
 use crate::observation::{
-    PanelRequest, SetValidationError, parse_window_leaf_path, validate_set_request,
+    PanelRequest, SetValidationError, WORKSPACE_COUNT_MAX, parse_window_leaf_path,
+    validate_set_request,
 };
 use crate::reply::{ControlReply, error};
 
@@ -112,6 +113,20 @@ pub enum WindowOp {
         generation: u64,
         index: WorkspaceIndex,
         follow: bool,
+    },
+    /// `comp.workspaces.set_count`: the `workspaces.count` set (shrinking
+    /// strands windows onto the last workspace); `persist` (default true)
+    /// also saves it as the count compd starts with.
+    SetWorkspaceCount {
+        count: u32,
+        persist: bool,
+    },
+    /// `comp.workspace.rename`: name workspace `index` (an empty name
+    /// clears it); `persist` (default true) saves the names.
+    RenameWorkspace {
+        index: u32,
+        name: String,
+        persist: bool,
     },
 }
 
@@ -717,6 +732,65 @@ pub fn parse_window_verb(verb: &str, args: &Value) -> Result<WindowVerb, Control
                 index: workspace_index_arg(object)?,
                 output: output_arg(object)?,
                 wrap: bool_arg(object, "wrap", true)?,
+            }))
+        }
+        "comp.workspaces.set_count" => {
+            const ALLOWED: &[&str] = &["count", "persist"];
+            let object = args_object(args, &empty, ALLOWED)?;
+            // 1..=16 is checked here; the compositor checks it again.
+            let count = match present(object, "count") {
+                Some(value) => value
+                    .as_u64()
+                    .filter(|count| (1..=u64::from(WORKSPACE_COUNT_MAX)).contains(count))
+                    .and_then(|count| u32::try_from(count).ok())
+                    .ok_or_else(|| invalid_argument("count", "unsigned integer", "1..=16"))?,
+                None => {
+                    return Err(invalid_argument(
+                        "count",
+                        "unsigned integer",
+                        "required: 1..=16",
+                    ));
+                }
+            };
+            Ok(WindowVerb::Op(WindowOp::SetWorkspaceCount {
+                count,
+                persist: bool_arg(object, "persist", true)?,
+            }))
+        }
+        "comp.workspace.rename" => {
+            const ALLOWED: &[&str] = &["index", "name", "persist"];
+            let object = args_object(args, &empty, ALLOWED)?;
+            // An absolute index only: next/prev name nothing stable.
+            let index = match present(object, "index") {
+                Some(value) => value
+                    .as_u64()
+                    .filter(|index| *index >= 1)
+                    .and_then(|index| u32::try_from(index).ok())
+                    .ok_or_else(|| {
+                        invalid_argument("index", "unsigned integer", "1..=workspaces.count")
+                    })?,
+                None => {
+                    return Err(invalid_argument(
+                        "index",
+                        "unsigned integer",
+                        "required: 1..=workspaces.count",
+                    ));
+                }
+            };
+            let name = match present(object, "name") {
+                // A wire bound only; the 64-character rule is the policy's.
+                Some(Value::String(name)) if name.len() <= 4096 => name.clone(),
+                Some(_) => {
+                    return Err(invalid_argument("name", "string", "at most 4096 bytes"));
+                }
+                None => {
+                    return Err(invalid_argument("name", "string", "required; \"\" clears"));
+                }
+            };
+            Ok(WindowVerb::Op(WindowOp::RenameWorkspace {
+                index,
+                name,
+                persist: bool_arg(object, "persist", true)?,
             }))
         }
         "comp.window.send_to_workspace" => {
@@ -1579,6 +1653,7 @@ pub fn read_scope(verb: &str, args: &Value) -> Option<String> {
     // same-named argument that means something else.
     let key = match verb {
         "comp.info" => return Some("info".to_string()),
+        "comp.workspaces.list" => return Some("workspaces".to_string()),
         "comp.props.list" => "prefix",
         "comp.props.get" | "comp.props.describe" => "path",
         _ => return None,

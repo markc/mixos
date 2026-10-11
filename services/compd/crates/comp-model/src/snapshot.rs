@@ -232,13 +232,15 @@ pub struct OutputWorkspaceSnapshot {
     pub current: u32,
 }
 
-/// One `workspaces.list` entry: the 1-based index and how many mapped
+/// One `workspaces.list` entry: the 1-based index, how many mapped
 /// managed toplevels are on it (X11 windows included: every row with a
-/// non-null `surfaces.s<id>.workspace`, not only the `windows.*` rows).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+/// non-null `surfaces.s<id>.workspace`, not only the `windows.*` rows) and
+/// its name (`null` when unnamed).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct WorkspaceRowSnapshot {
     pub index: u32,
     pub windows: u32,
+    pub name: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -1686,7 +1688,7 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
     descriptor!(
         &[L("workspaces"), L("list")],
         List,
-        "One {index, windows} row per workspace; windows counts the mapped managed toplevels on it (X11 included: the surfaces.* rows with a workspace)"
+        "One {index, windows, name} row per workspace; windows counts the mapped managed toplevels on it (X11 included: the surfaces.* rows with a workspace); name is null when unnamed (comp.workspace.rename)"
     ),
     descriptor!(
         &[L("stack")],
@@ -2310,6 +2312,9 @@ pub fn dispatch_read_with_limit(
     if command == "comp.windows.list" {
         return enforce_reply_limit(windows_list(snapshot, args), limit_bytes);
     }
+    if command == "comp.workspaces.list" {
+        return enforce_reply_limit(workspaces_list(snapshot, args), limit_bytes);
+    }
     if !matches!(
         command,
         "comp.props.get" | "comp.props.list" | "comp.props.describe"
@@ -2339,6 +2344,29 @@ fn list_argument(path: &str, expected: &'static str, range: &'static str) -> (u8
         range,
     })
     .into_wire()
+}
+
+/// `comp.workspaces.list {}`: the whole `workspaces` subtree in one read —
+/// the count, the default output's current, each output's current under its
+/// `o_<key>`, and one `{index, windows, name}` row per workspace.
+fn workspaces_list(snapshot: &CompSnapshot, args: &Value) -> (u8, Arc<str>) {
+    match args {
+        Value::Null => {}
+        Value::Object(object) => {
+            if let Some(field) = object.keys().next() {
+                return ControlReply::InvalidArgs {
+                    field: field.clone(),
+                    allowed: &[],
+                }
+                .into_wire();
+            }
+        }
+        _ => return list_argument("args", "JSON object", "{}"),
+    }
+    match serde_json::to_string(&snapshot.workspaces) {
+        Ok(body) => (0, Arc::from(body)),
+        Err(_) => error("busy"),
+    }
 }
 
 /// `comp.windows.list {app_id?, title?, title_contains?, visible?,

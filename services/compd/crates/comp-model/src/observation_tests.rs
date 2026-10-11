@@ -544,6 +544,35 @@ fn every_topic_uses_the_registered_service_and_an_unprefixed_command() {
 }
 
 #[test]
+fn workspace_changed_wire_carries_count_currents_and_names() {
+    let record = ObservationRecord::WorkspaceChanged {
+        count: 3,
+        current: 2,
+        outputs: [("o_dp_1".to_string(), 2)].into_iter().collect(),
+        names: vec![Some("Web".into()), None, Some("Mail".into())],
+        event_seq: 0,
+    }
+    .with_event_seq(9);
+    assert_eq!(record.event_seq(), 9);
+    assert_eq!(record.topic_suffix(), "workspace.changed");
+    assert!(TOPIC_SUFFIXES.contains(&WORKSPACE_TOPIC_SUFFIX));
+    let wire = record.wire();
+    assert_eq!(wire.get("command"), Some("workspace.changed"));
+    assert_eq!(wire.get("event_seq"), Some("9"));
+    assert_eq!(
+        serde_json::from_str::<Value>(&wire.body).unwrap(),
+        json!({
+            "version": 1,
+            "count": 3,
+            "current": 2,
+            "outputs": {"o_dp_1": 2},
+            "names": ["Web", null, "Mail"],
+            "event_seq": 9
+        })
+    );
+}
+
+#[test]
 fn corner_property_validation_accepts_endpoints_and_rejects_wrong_json_types() {
     for (path, value) in [
         ("input.corners.enabled", json!(false)),

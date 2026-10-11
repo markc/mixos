@@ -1,4 +1,4 @@
-//! The `comp.*` catalogue: 34 verbs in four families and 11 topics.
+//! The `comp.*` catalogue: 37 verbs in four families and 12 topics.
 
 pub use crate::observation::{
     CORNER_CLICKED_TOPIC_SUFFIX, CORNER_CLICKED_V2_TOPIC_SUFFIX, CORNER_ENTERED_TOPIC_SUFFIX,
@@ -25,9 +25,10 @@ pub const READ_VERBS: &[&str] = &[
     "comp.props.list",
     "comp.props.describe",
     "comp.windows.list",
+    "comp.workspaces.list",
 ];
 
-/// The 14 verbs the dispatcher answers directly (not a window or input
+/// The 15 verbs the dispatcher answers directly (not a window or input
 /// family member).
 pub const DIRECT_VERBS: &[&str] = &[
     "comp.capture.frame",
@@ -44,10 +45,11 @@ pub const DIRECT_VERBS: &[&str] = &[
     "comp.props.list",
     "comp.props.describe",
     "comp.windows.list",
+    "comp.workspaces.list",
 ];
 
-/// The 15 window-family verbs (`{id, generation}`-addressed, plus the
-/// workspace switch).
+/// The 17 window-family verbs (`{id, generation}`-addressed, plus the
+/// workspace switch, count and rename).
 pub const WINDOW_VERBS: &[&str] = &[
     "comp.window.maximize",
     "comp.window.unmaximize",
@@ -64,6 +66,8 @@ pub const WINDOW_VERBS: &[&str] = &[
     "comp.window.stats.reset",
     "comp.workspace.switch",
     "comp.window.send_to_workspace",
+    "comp.workspaces.set_count",
+    "comp.workspace.rename",
 ];
 
 /// The 5 single-step input verbs (also the only verbs a sequence step may
@@ -111,21 +115,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_surface_is_34_verbs_and_11_topics() {
-        assert_eq!(DIRECT_VERBS.len(), 14);
-        assert_eq!(WINDOW_VERBS.len(), 15);
+    fn the_surface_is_37_verbs_and_12_topics() {
+        assert_eq!(DIRECT_VERBS.len(), 15);
+        assert_eq!(WINDOW_VERBS.len(), 17);
         assert_eq!(INPUT_VERBS.len(), 5);
         let verbs = all_verbs().collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(verbs.len(), 34, "no verb is in two families");
+        assert_eq!(verbs.len(), 37, "no verb is in two families");
         assert!(verbs.iter().all(|verb| verb.starts_with("comp.")));
         assert!(READ_VERBS.iter().all(|verb| DIRECT_VERBS.contains(verb)));
-        assert_eq!(TOPIC_SUFFIXES.len(), 11);
+        assert_eq!(TOPIC_SUFFIXES.len(), 12);
         assert_eq!(
             TOPIC_SUFFIXES
                 .iter()
                 .collect::<std::collections::BTreeSet<_>>()
                 .len(),
-            11
+            12
         );
         assert_eq!(verb_family("comp.window.focus"), Some(VerbFamily::Window));
         assert_eq!(verb_family("comp.input.key"), Some(VerbFamily::Input));

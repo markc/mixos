@@ -33,6 +33,8 @@ pub const CORNER_CLICKED_V2_TOPIC_SUFFIX: &str = "corner.clicked.v2";
 pub const DISCOVERY_PATH: &str = "input.corners.discovery";
 pub const POINTER_TOPIC_SUFFIX: &str = "pointer.changed";
 pub const PANEL_COMMAND_TOPIC_SUFFIX: &str = "panel.command";
+/// The workspace count, a current workspace or a name changed.
+pub const WORKSPACE_TOPIC_SUFFIX: &str = "workspace.changed";
 /// The `input.corners.holders` leaf. Quoin switches to command-driven
 /// reveal/conceal on this leaf, so it may only be true in a build that also
 /// enforces the conceal on a stalled Quoin (holder tracking, the conceal
@@ -46,7 +48,7 @@ pub const WORKSPACE_COUNT_MAX: u32 = 16;
 
 /// Every topic suffix, in `AffectedTopics` bit order. The service publishes
 /// each as `<service>.<suffix>` ([`topic_name`]).
-pub const TOPIC_SUFFIXES: [&str; 11] = [
+pub const TOPIC_SUFFIXES: [&str; 12] = [
     PROPS_TOPIC_SUFFIX,
     SURFACE_MAPPED_TOPIC_SUFFIX,
     SURFACE_UNMAPPED_TOPIC_SUFFIX,
@@ -58,6 +60,7 @@ pub const TOPIC_SUFFIXES: [&str; 11] = [
     POINTER_TOPIC_SUFFIX,
     CORNER_CLICKED_V2_TOPIC_SUFFIX,
     PANEL_COMMAND_TOPIC_SUFFIX,
+    WORKSPACE_TOPIC_SUFFIX,
 ];
 
 pub fn topic_name(service: &str, suffix: &str) -> String {
@@ -416,6 +419,16 @@ pub enum ObservationRecord {
         row: OutputSnapshot,
         event_seq: u64,
     },
+    /// The workspace model observers see: count, the default output's
+    /// current, each output's current by `o_<key>`, and one name per
+    /// workspace (`None` unnamed).
+    WorkspaceChanged {
+        count: u32,
+        current: u32,
+        outputs: BTreeMap<String, u32>,
+        names: Vec<Option<String>>,
+        event_seq: u64,
+    },
     CornerEntered {
         output: String,
         corner: Corner,
@@ -455,6 +468,7 @@ impl ObservationRecord {
             | Self::SurfaceUnmapped { event_seq, .. }
             | Self::FocusChanged { event_seq, .. }
             | Self::OutputChanged { event_seq, .. }
+            | Self::WorkspaceChanged { event_seq, .. }
             | Self::CornerEntered { event_seq, .. }
             | Self::CornerClicked { event_seq, .. }
             | Self::CornerClickedV2 { event_seq, .. }
@@ -473,6 +487,7 @@ impl ObservationRecord {
             | Self::SurfaceUnmapped { event_seq, .. }
             | Self::FocusChanged { event_seq, .. }
             | Self::OutputChanged { event_seq, .. }
+            | Self::WorkspaceChanged { event_seq, .. }
             | Self::CornerEntered { event_seq, .. }
             | Self::CornerClicked { event_seq, .. }
             | Self::CornerClickedV2 { event_seq, .. }
@@ -490,6 +505,7 @@ impl ObservationRecord {
             Self::SurfaceUnmapped { .. } => SURFACE_UNMAPPED_TOPIC_SUFFIX,
             Self::FocusChanged { .. } => FOCUS_TOPIC_SUFFIX,
             Self::OutputChanged { .. } => OUTPUT_TOPIC_SUFFIX,
+            Self::WorkspaceChanged { .. } => WORKSPACE_TOPIC_SUFFIX,
             Self::CornerEntered { .. } => CORNER_ENTERED_TOPIC_SUFFIX,
             Self::CornerLeft { .. } => CORNER_LEFT_TOPIC_SUFFIX,
             Self::CornerClicked { .. } => CORNER_CLICKED_TOPIC_SUFFIX,
@@ -613,6 +629,21 @@ impl ObservationRecord {
                     "height": row.height,
                 },
                 "usable": row.usable,
+                "event_seq": event_seq,
+            })
+            .to_string(),
+            Self::WorkspaceChanged {
+                count,
+                current,
+                outputs,
+                names,
+                event_seq,
+            } => json!({
+                "version": 1,
+                "count": count,
+                "current": current,
+                "outputs": outputs,
+                "names": names,
                 "event_seq": event_seq,
             })
             .to_string(),

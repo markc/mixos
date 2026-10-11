@@ -152,7 +152,9 @@ pub struct DefaultMode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preference {
-    /// Pointer cursor speed multiplier on relative motion (`1.0` = unscaled).
+    /// Pointer cursor speed multiplier on relative motion (`1.0` = unscaled). The
+    /// same value gives the same logical speed at every output scale (compd
+    /// multiplies the delta by the output's scale as well).
     pub cursor_sensitivity: f64,
     /// Natural scrolling: invert the touchpad finger-axis direction for canvas
     /// pan, window scroll, and multi-finger swipe navigation (wheel unaffected).
@@ -260,13 +262,12 @@ pub struct Preference {
     /// default/preferred output (see `display.base`'s `profiles.first()`).
     pub outputs: Vec<OutputProfile>,
     /// Fallback mode for monitors without a per-output profile (manual only).
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub outputs_default_mode: Option<DefaultMode>,
     /// The cursor-teleport layout: squares placed on the settings Display-tab
     /// canvas. Empty (the default) = single-monitor / no custom teleport, so the
     /// pointer clamps to its output exactly as before. Many-per-identity (unlike
     /// `outputs`, which is one-per-identity), so it is its own list.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub outputs_layout: Vec<LayoutPlacement>,
     /// Cursor-teleport CYCLIC mode: when the pointer exits a layout edge with no
     /// monitor across it, wrap around and re-enter from the opposite side of the
@@ -278,7 +279,6 @@ pub struct Preference {
     /// input power) ONLY to that process group — so identity is the spawned pid, never
     /// a guessed `/proc` match. When unset (or `exec` empty), no input method is
     /// launched — there is no built-in default.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub ime: Option<Ime>,
     /// Keyboard layout (xkb). Applied live on change and at startup. Defaults to
     /// `Env` so an existing `preferences.json` (no `keyboard` key) behaves exactly
@@ -287,7 +287,6 @@ pub struct Preference {
     /// Default background shader for new worlds: a bundle folder name under
     /// `~/.local/share/compd/background/shader/`, or an absolute path. A world may
     /// override it in its own record; unset = the built-in parallax.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub background_shader: Option<String>,
     /// Anti-aliasing / graphics config for the pannable world (edited in the
     /// settings "Graphics" tab). Applied live and pushed to the kernel renderer.
@@ -341,6 +340,22 @@ pub struct Preference {
     /// Read live on every map, so a change takes effect on the next window.
     #[serde(default = "default_session_capture")]
     pub session_capture: String,
+    /// The workspace count compd starts with (`comp.workspaces.set_count`
+    /// with `persist` writes it). Out of range falls back to 4. Read at
+    /// startup.
+    #[serde(default = "default_workspaces_count")]
+    pub workspaces_count: u32,
+    /// Workspace names in index order, `""` for an unnamed one
+    /// (`comp.workspace.rename` with `persist` writes it). Read at startup.
+    #[serde(default)]
+    pub workspace_names: Vec<String>,
+}
+
+/// Default for `workspaces_count`. compd starts with this when the file has
+/// no count; `policy::workspaces::DEFAULT_WORKSPACE_COUNT` (the same 4) only
+/// replaces a saved count that is out of range. Keep the two in step.
+pub fn default_workspaces_count() -> u32 {
+    4
 }
 
 /// Default for `session_capture`: `"on"` — same-world reclaim, which is what the
@@ -673,6 +688,8 @@ impl Default for Preference {
             input_method_restricted: false,
             pen: PenConfig::default(),
             session_capture: default_session_capture(),
+            workspaces_count: default_workspaces_count(),
+            workspace_names: Vec::new(),
         }
     }
 }
@@ -792,16 +809,80 @@ pub fn save(prefs: &Preference) -> Result<(), String> {
     // grow or collapse their ring to match, so even `enabled` applies live here —
     // unlike the background, there is no worker thread whose existence it decides.
     crate::environment::interface::base::set(prefs.interface_triple_buffer.normalized());
-    let p = path();
+    // Every field this build knows (each always serialises, so a cleared one
+    // is written as null or [] and does not resurrect), merged over the file
+    // under the same lock as `save_fields`, so keys it does not know survive.
+    match serde_json::to_value(prefs).map_err(|e| format!("serialize preferences: {e}"))? {
+        serde_json::Value::Object(fields) => save_fields_at(&path(), fields),
+        _ => Err("serialize preferences: not an object".into()),
+    }
+}
+
+/// Write `fields` into `preferences.json`, leaving every other key exactly as
+/// the file has it (keys this build does not know included). A missing file
+/// starts empty; a file that does not parse as a JSON object is refused rather
+/// than replaced. Atomic: written to a temporary file, then renamed.
+pub fn save_fields(fields: serde_json::Map<String, serde_json::Value>) -> Result<(), String> {
+    save_fields_at(&path(), fields)
+}
+
+/// [`save_fields`] against an explicit file.
+///
+/// Writers are serialised across processes by an exclusive lock on a sibling
+/// `<file>.lock` (held for the whole read-modify-write), and each write goes
+/// through its own exclusively created temporary file, so two compd instances
+/// sharing a config directory never interleave or publish each other's
+/// payload.
+pub fn save_fields_at(
+    p: &std::path::Path,
+    fields: serde_json::Map<String, serde_json::Value>,
+) -> Result<(), String> {
     if let Some(dir) = p.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
     }
-    let json =
-        serde_json::to_string_pretty(prefs).map_err(|e| format!("serialize preferences: {e}"))?;
-    let tmp = p.with_extension("json.tmp");
-    std::fs::write(&tmp, json).map_err(|e| format!("write {}: {e}", tmp.display()))?;
-    std::fs::rename(&tmp, &p).map_err(|e| format!("rename {}: {e}", p.display()))?;
-    Ok(())
+    let lock_path = p.with_extension("json.lock");
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+        .map_err(|e| format!("open {}: {e}", lock_path.display()))?;
+    lock.lock()
+        .map_err(|e| format!("lock {}: {e}", lock_path.display()))?;
+    // The lock is released when `lock` drops, after the rename.
+    let mut document = match std::fs::read_to_string(p) {
+        Ok(raw) => match serde_json::from_str::<serde_json::Value>(&raw) {
+            Ok(serde_json::Value::Object(document)) => document,
+            Ok(_) => return Err(format!("{} is not a JSON object", p.display())),
+            Err(e) => return Err(format!("{} does not parse: {e}", p.display())),
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => serde_json::Map::new(),
+        Err(e) => return Err(format!("read {}: {e}", p.display())),
+    };
+    document.extend(fields);
+    let json = serde_json::to_string_pretty(&serde_json::Value::Object(document))
+        .map_err(|e| format!("serialize preferences: {e}"))?;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let tmp = p.with_extension(format!("json.{}.{nanos}.tmp", std::process::id()));
+    let written = (|| {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+            .map_err(|e| format!("create {}: {e}", tmp.display()))?;
+        file.write_all(json.as_bytes())
+            .and_then(|()| file.sync_all())
+            .map_err(|e| format!("write {}: {e}", tmp.display()))?;
+        std::fs::rename(&tmp, p).map_err(|e| format!("rename {}: {e}", p.display()))
+    })();
+    if written.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    drop(lock);
+    written
 }
 
 /// Set the mode for the output profile matching `edid_key`, inserting a new

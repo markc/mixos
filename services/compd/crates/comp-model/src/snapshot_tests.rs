@@ -193,10 +193,12 @@ fn fixture() -> CompSnapshot {
             WorkspaceRowSnapshot {
                 index: 1,
                 windows: 1,
+                name: Some("Web".into()),
             },
             WorkspaceRowSnapshot {
                 index: 2,
                 windows: 0,
+                name: None,
             },
         ],
     };
@@ -409,7 +411,10 @@ fn mutable_descriptors_match_the_writable_leaves() {
     assert_eq!(list["type"], "list");
     assert_eq!(
         snapshot.select(&["workspaces", "list"]),
-        Some(json!([{"index": 1, "windows": 1}, {"index": 2, "windows": 0}]))
+        Some(json!([
+            {"index": 1, "windows": 1, "name": "Web"},
+            {"index": 2, "windows": 0, "name": null}
+        ]))
     );
     assert_eq!(
         snapshot.select(&["workspaces", "o_dp_1", "current"]),
@@ -836,7 +841,41 @@ fn oversized_full_tree_returns_too_large_while_leaf_read_succeeds() {
     assert_eq!(leaf.as_ref(), "\"comp-nested\"");
 }
 
-// The two read verbs, on the model alone.
+/// `comp.workspaces.list`: the whole `workspaces` subtree in one read; any
+/// argument is refused by name.
+#[test]
+fn workspaces_list_is_the_workspaces_subtree() {
+    let snapshot = fixture();
+    for args in [Value::Null, json!({})] {
+        let (rc, body) = dispatch_read(&snapshot, "comp.workspaces.list", &args);
+        assert_eq!(rc, 0);
+        assert_eq!(
+            serde_json::from_str::<Value>(&body).unwrap(),
+            json!({
+                "count": 2,
+                "current": 1,
+                "o_dp_1": {"current": 1},
+                "list": [
+                    {"index": 1, "windows": 1, "name": "Web"},
+                    {"index": 2, "windows": 0, "name": null}
+                ]
+            })
+        );
+        assert_eq!(
+            Some(serde_json::from_str::<Value>(&body).unwrap()),
+            snapshot.select(&["workspaces"])
+        );
+    }
+    let (rc, body) = dispatch_read(&snapshot, "comp.workspaces.list", &json!({"count": 3}));
+    assert_ne!(rc, 0);
+    let body = serde_json::from_str::<Value>(&body).unwrap();
+    assert_eq!(body["error"], "invalid_args");
+    assert_eq!(body["field"], "count");
+    let (rc, _) = dispatch_read(&snapshot, "comp.workspaces.list", &json!([1]));
+    assert_ne!(rc, 0);
+}
+
+// The read verbs, on the model alone.
 #[test]
 fn info_and_windows_list_bodies_are_comps() {
     let snapshot = fixture();

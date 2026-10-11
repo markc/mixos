@@ -221,6 +221,36 @@ fn window_op(lp: &mut Loop, op: &WindowOp) -> Option<ControlReply> {
             execute(lp, effects);
             Some(reply)
         }
+        WindowOp::SetWorkspaceCount { count, persist } => {
+            let comp = &mut lp.inner.comp;
+            match comp.workspaces.set_count(&mut comp.registry, *count) {
+                Ok(((old, new), effects)) => {
+                    execute(lp, effects);
+                    let mut body = serde_json::json!({"from": old, "count": new});
+                    if *persist {
+                        persist_workspaces(lp, &mut body);
+                    }
+                    Some(ControlReply::Body(body))
+                }
+                Err(refusal) => Some(policy::workspaces::workspace_refusal(refusal, None, 0)),
+            }
+        }
+        WindowOp::RenameWorkspace {
+            index,
+            name,
+            persist,
+        } => match lp.inner.comp.workspaces.rename(*index, name) {
+            Ok(((previous, new), effects)) => {
+                execute(lp, effects);
+                let mut body =
+                    serde_json::json!({"index": index, "name": new, "previous": previous});
+                if *persist {
+                    persist_workspaces(lp, &mut body);
+                }
+                Some(ControlReply::Body(body))
+            }
+            Err(refusal) => Some(policy::workspaces::workspace_refusal(refusal, None, 0)),
+        },
         WindowOp::SendToWorkspace {
             id,
             generation,
@@ -1196,6 +1226,29 @@ fn set_workspaces(
             ControlReply::Validation(invalid_value(path, "output key", WORKSPACE_OUTPUT_RANGE))
         }
         Err(_) => ControlReply::Validation(invalid_value(path, "integer", range)),
+    }
+}
+
+/// Save the live workspace count and names as the ones compd starts with,
+/// and the live `preference` copy with them. The reply says whether it
+/// stuck: `persisted`, plus `persist_error` when the file was not written
+/// (the live change stands either way).
+fn persist_workspaces(lp: &mut Loop, body: &mut Value) {
+    let count = lp.inner.comp.workspaces.count;
+    let names = lp.inner.comp.workspaces.names_list();
+    let mut fields = serde_json::Map::new();
+    fields.insert("workspaces_count".into(), serde_json::json!(count));
+    fields.insert("workspace_names".into(), serde_json::json!(names));
+    match model::environment::preference::base::save_fields(fields) {
+        Ok(()) => {
+            lp.inner.preference.workspaces_count = count;
+            lp.inner.preference.workspace_names = names;
+            body["persisted"] = Value::Bool(true);
+        }
+        Err(error) => {
+            body["persisted"] = Value::Bool(false);
+            body["persist_error"] = Value::String(error);
+        }
     }
 }
 

@@ -829,6 +829,106 @@ fn workspace_verbs_parse_and_refuse_by_field() {
     }
 }
 
+/// `comp.workspaces.set_count {count, persist?}` and
+/// `comp.workspace.rename {index, name, persist?}`: `persist` defaults on;
+/// a count outside 1..=16, a relative or zero index, a missing or
+/// non-string name and a typo are refused by field. `comp.workspaces.list`
+/// is a read scoped to `workspaces`.
+#[test]
+fn workspace_count_and_rename_parse_and_refuse_by_field() {
+    assert_eq!(
+        parse_window_verb("comp.workspaces.set_count", &json!({"count": 6})),
+        Ok(WindowVerb::Op(WindowOp::SetWorkspaceCount {
+            count: 6,
+            persist: true,
+        }))
+    );
+    assert_eq!(
+        parse_window_verb(
+            "comp.workspaces.set_count",
+            &json!({"count": 16, "persist": false})
+        ),
+        Ok(WindowVerb::Op(WindowOp::SetWorkspaceCount {
+            count: 16,
+            persist: false,
+        }))
+    );
+    assert_eq!(
+        parse_window_verb(
+            "comp.workspace.rename",
+            &json!({"index": 2, "name": "Mail"})
+        ),
+        Ok(WindowVerb::Op(WindowOp::RenameWorkspace {
+            index: 2,
+            name: "Mail".into(),
+            persist: true,
+        }))
+    );
+    assert_eq!(
+        parse_window_verb(
+            "comp.workspace.rename",
+            &json!({"index": 1, "name": "", "persist": false})
+        ),
+        Ok(WindowVerb::Op(WindowOp::RenameWorkspace {
+            index: 1,
+            name: String::new(),
+            persist: false,
+        }))
+    );
+    for (verb, args, path) in [
+        ("comp.workspaces.set_count", json!({}), "count"),
+        ("comp.workspaces.set_count", json!({"count": 0}), "count"),
+        ("comp.workspaces.set_count", json!({"count": 17}), "count"),
+        ("comp.workspaces.set_count", json!({"count": "4"}), "count"),
+        (
+            "comp.workspaces.set_count",
+            json!({"count": 4, "persist": "yes"}),
+            "persist",
+        ),
+        ("comp.workspace.rename", json!({"name": "x"}), "index"),
+        (
+            "comp.workspace.rename",
+            json!({"index": 0, "name": "x"}),
+            "index",
+        ),
+        (
+            "comp.workspace.rename",
+            json!({"index": "next", "name": "x"}),
+            "index",
+        ),
+        ("comp.workspace.rename", json!({"index": 1}), "name"),
+        (
+            "comp.workspace.rename",
+            json!({"index": 1, "name": 3}),
+            "name",
+        ),
+    ] {
+        let body = refusal(parse_window_verb(verb, &args).expect_err("refused"));
+        assert_eq!(body["error"], "invalid_value", "{verb} {args}: {body}");
+        assert_eq!(body["path"], path, "{verb} {args}: {body}");
+    }
+    for (verb, args, field) in [
+        (
+            "comp.workspaces.set_count",
+            json!({"count": 4, "keep": true}),
+            "keep",
+        ),
+        (
+            "comp.workspace.rename",
+            json!({"index": 1, "name": "x", "label": "y"}),
+            "label",
+        ),
+    ] {
+        let body = refusal(parse_window_verb(verb, &args).expect_err("typo refused"));
+        assert_eq!(body["error"], "invalid_args", "{verb}");
+        assert_eq!(body["field"], field, "{verb}");
+    }
+    assert_eq!(
+        read_scope("comp.workspaces.list", &json!({})),
+        Some("workspaces".to_string())
+    );
+}
+
 #[test]
 fn set_generation_is_accepted_only_on_window_leaves() {
     let (path, value, generation) =

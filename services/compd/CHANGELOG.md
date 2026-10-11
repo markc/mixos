@@ -2,6 +2,16 @@
 
 ## 0.2.0
 
+- Workspaces: `comp.workspaces.list`, `comp.workspaces.set_count {count,
+  persist}` and `comp.workspace.rename {index, name, persist}`, and the
+  `comp.workspace.changed` topic. The count and names persist in
+  `preferences.json` (`workspaces_count`, `workspace_names`) and compd
+  starts with them. `workspaces.list` rows carry `name`.
+- The pointer moves at the same logical speed at every output scale: a
+  relative delta is multiplied by the output scale as well as
+  `cursor_sensitivity`, so a scale-2.5 output no longer needs a sensitivity
+  of 2.5.
+
 - compd's own UI is egui: capture overlays and dialogs, the frame-rate
   overlay, notifications and the Mix Scenes shell are egui programs painted
   with egui-wgpu into textures on compd's own EGL context, on the same MixOS

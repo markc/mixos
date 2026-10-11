@@ -639,3 +639,83 @@ fn workspace_switch_verb_wraps_and_refuses_at_end() {
     assert_eq!(workspace_index_range(0), "1..=1");
     assert_eq!(workspace_index_range(17), "1..=workspaces.count");
 }
+
+#[test]
+fn rename_sets_trims_and_clears() {
+    let mut state = WorkspaceState::default();
+    let ((previous, new), effects) = state.rename(2, "  Mail  ").unwrap();
+    assert_eq!((previous, new.as_deref()), (None, Some("Mail")));
+    assert_eq!(effects, [Effect::WorkspacesDirty("workspace.rename")]);
+    assert_eq!(state.names_list(), ["", "Mail", "", ""]);
+    // The same name again changes nothing.
+    let (_, effects) = state.rename(2, "Mail").unwrap();
+    assert!(effects.is_empty());
+    // Blank clears.
+    let ((previous, new), effects) = state.rename(2, "   ").unwrap();
+    assert_eq!((previous.as_deref(), new), (Some("Mail"), None));
+    assert_eq!(effects.len(), 1);
+    assert!(state.names.is_empty());
+}
+
+#[test]
+fn rename_refusals() {
+    let mut state = WorkspaceState::default();
+    assert_eq!(
+        state.rename(0, "x").map(|_| ()),
+        Err(WorkspaceRefusal::InvalidIndex { count: 4 })
+    );
+    assert_eq!(
+        state.rename(5, "x").map(|_| ()),
+        Err(WorkspaceRefusal::InvalidIndex { count: 4 })
+    );
+    assert_eq!(
+        state
+            .rename(1, &"x".repeat(WORKSPACE_NAME_MAX + 1))
+            .map(|_| ()),
+        Err(WorkspaceRefusal::InvalidName)
+    );
+    assert_eq!(
+        state.rename(1, "a\nb").map(|_| ()),
+        Err(WorkspaceRefusal::InvalidName)
+    );
+    // 64 characters, not bytes.
+    assert!(state.rename(1, &"é".repeat(WORKSPACE_NAME_MAX)).is_ok());
+    assert!(matches!(
+        workspace_refusal(WorkspaceRefusal::InvalidName, None, 0),
+        ControlReply::Validation(_)
+    ));
+}
+
+#[test]
+fn shrinking_drops_the_names_of_removed_workspaces() {
+    let mut registry = Registry::<u32>::new();
+    let mut state = WorkspaceState::default();
+    state.rename(1, "Web").unwrap();
+    state.rename(4, "Music").unwrap();
+    state.set_count(&mut registry, 2).unwrap();
+    assert_eq!(state.names_list(), ["Web", ""]);
+    // Growing again does not bring the old name back.
+    state.set_count(&mut registry, 4).unwrap();
+    assert_eq!(state.names_list(), ["Web", "", "", ""]);
+}
+
+#[test]
+fn saved_state_is_validated() {
+    let names = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    let state = WorkspaceState::from_saved(3, &names(&["Web", "", " Mail ", "Extra"]));
+    assert_eq!(state.count, 3);
+    assert_eq!(state.names_list(), ["Web", "", "Mail"]);
+    assert!(state.current.is_empty());
+    for count in [0, WORKSPACE_COUNT_MAX + 1] {
+        assert_eq!(
+            WorkspaceState::from_saved(count, &[]).count,
+            DEFAULT_WORKSPACE_COUNT
+        );
+    }
+    let bad = WorkspaceState::from_saved(2, &names(&["a\tb", "ok"]));
+    assert_eq!(bad.names_list(), ["", "ok"]);
+    assert_eq!(
+        WorkspaceState::from_saved(4, &[]),
+        WorkspaceState::default()
+    );
+}

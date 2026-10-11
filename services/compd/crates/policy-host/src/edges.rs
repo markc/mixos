@@ -18,6 +18,8 @@
 //!   record per leaf, cause [`CAUSE`].
 //! - `output.changed`: an output's geometry or usable area moved,
 //!   looked at every pass (outputs change without registry traffic).
+//! - `workspace.changed`: the workspace count, a current workspace or a
+//!   name moved, also looked at every pass.
 //! - `corner.entered` / `corner.left` / `corner.clicked` / `corner.clicked.v2`:
 //!   the topics the pointer path earned, drained by
 //!   [`corner_topics`] in the order they happened.
@@ -80,6 +82,41 @@ pub struct Edges {
     /// The output rows observers last heard (`output.changed`); `None` until
     /// the first pass seeds them.
     outputs: Option<BTreeMap<String, OutputSnapshot>>,
+    /// The workspace model observers last heard (`workspace.changed`);
+    /// `None` until the first pass seeds it.
+    workspaces: Option<WorkspaceView>,
+}
+
+/// What `workspace.changed` reports.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct WorkspaceView {
+    count: u32,
+    current: u32,
+    outputs: BTreeMap<String, u32>,
+    names: Vec<Option<String>>,
+}
+
+impl WorkspaceView {
+    fn of(lp: &Loop, rows: &BTreeMap<String, OutputSnapshot>) -> Self {
+        let model = &lp.inner.comp.workspaces;
+        // Names are hidden under a session lock, as in the props tree.
+        let locked = world::comp::session_lock::active(lp);
+        Self {
+            count: model.count,
+            current: lp.inner.comp.current_workspace(),
+            outputs: rows
+                .keys()
+                .map(|key| (key.clone(), model.current_for(Some(key.as_str()))))
+                .collect(),
+            names: (1..=model.count)
+                .map(|index| {
+                    (!locked)
+                        .then(|| model.names.get(&index).cloned())
+                        .flatten()
+                })
+                .collect(),
+        }
+    }
 }
 
 impl Edges {
@@ -107,7 +144,12 @@ impl Edges {
         let mut records = Vec::new();
         // Outputs change without registry traffic (a resize, a scale): looked
         // at every pass, a few rows.
-        self.output_edges(lp, &mut records);
+        let (rows, _, _) = crate::project::project_outputs(lp);
+        // Also every pass: the default output can change without registry
+        // traffic, and with it the current workspace.
+        let workspaces = WorkspaceView::of(lp, &rows);
+        self.output_edges(rows, &mut records);
+        self.workspace_edge(workspaces, &mut records);
         let revision = lp.inner.comp.revision();
         if self.revision == Some(revision) {
             return records;
@@ -142,8 +184,11 @@ impl Edges {
     /// `output.changed`: an
     /// output whose geometry or usable area moved, or a new output, with its
     /// row. The first pass only seeds; a removed output publishes nothing.
-    fn output_edges(&mut self, lp: &Loop, records: &mut Vec<ObservationRecord>) {
-        let (rows, _, _) = crate::project::project_outputs(lp);
+    fn output_edges(
+        &mut self,
+        rows: BTreeMap<String, OutputSnapshot>,
+        records: &mut Vec<ObservationRecord>,
+    ) {
         if let Some(previous) = &self.outputs {
             for (key, row) in &rows {
                 let unchanged = previous.get(key).is_some_and(|old| {
@@ -160,6 +205,22 @@ impl Edges {
             }
         }
         self.outputs = Some(rows);
+    }
+
+    /// `workspace.changed`: the count, a current workspace or a name moved.
+    /// The first pass only seeds. Window counts are not part of it (they
+    /// move with every map; `props.changed` carries them).
+    fn workspace_edge(&mut self, view: WorkspaceView, records: &mut Vec<ObservationRecord>) {
+        if self.workspaces.as_ref().is_some_and(|old| *old != view) {
+            records.push(ObservationRecord::WorkspaceChanged {
+                count: view.count,
+                current: view.current,
+                outputs: view.outputs.clone(),
+                names: view.names.clone(),
+                event_seq: 0,
+            });
+        }
+        self.workspaces = Some(view);
     }
 
     fn surface_edges(&mut self, lp: &Loop, records: &mut Vec<ObservationRecord>) {

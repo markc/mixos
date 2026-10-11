@@ -151,6 +151,12 @@ pub fn project(lp: &Loop, identity: Identity, scopes: &ReadScopes) -> CompSnapsh
             .map(|index| WorkspaceRowSnapshot {
                 index,
                 windows: if locked { 0 } else { workspace_windows(index) },
+                // Hidden under a lock, like the window counts and titles.
+                name: if locked {
+                    None
+                } else {
+                    model.names.get(&index).cloned()
+                },
             })
             .collect(),
     };

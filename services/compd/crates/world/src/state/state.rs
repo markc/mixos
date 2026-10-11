@@ -347,9 +347,17 @@ impl Orchestrator {
             // Seed the live preference object from preferences.json (one disk read
             // at startup; refreshed on each settings-window open). Missing file →
             // sane defaults.
+            // The workspace count and names saved by the workspace verbs.
+            comp: {
+                let mut comp = crate::comp::CompState::default();
+                comp.workspaces = policy::workspaces::WorkspaceState::from_saved(
+                    prefs.workspaces_count,
+                    &prefs.workspace_names,
+                );
+                comp
+            },
             preference: prefs,
             keybinding,
-            comp: Default::default(),
         }
     }
 

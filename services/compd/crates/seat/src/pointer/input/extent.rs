@@ -162,7 +162,7 @@ fn pans(_state: &Loop) -> bool {
 /// because the camera moved.
 ///
 /// The overflow already carries the pointer speed (the accumulator is advanced by
-/// `delta × cursor_sensitivity`), so scaling it here is exactly "a multiplier on top
+/// `delta × cursor_sensitivity × output scale`), so scaling it here is exactly "a multiplier on top
 /// of the pointer speed".
 ///
 /// Routed on the world input bus rather than written straight to the camera slot:
@@ -302,7 +302,7 @@ pub fn hold(
 /// leave the push-only behaviour, i.e. mouse speed and nothing else.
 ///
 /// `push` is this event's accumulator advance in physical px (`delta ×
-/// cursor_sensitivity`), which is what the arrival is measured from — see
+/// cursor_sensitivity × output scale`), which is what the arrival is measured from — see
 /// [`EdgeSeed`]. Only the component driving INTO the extent counts, so sliding fast
 /// along an edge doesn't inflate the speed of the axis pressed against it.
 /// Returns the interval since the previous motion event (seconds, capped), which
