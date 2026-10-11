@@ -300,6 +300,22 @@ try
   $r = $core.call($S, "echo", {blob: repeat("x", $S.cfg.max_line - 100)})
   $S = $r.st
   check("max_line: a request just under max_line is sent", $r.rc == 0 and len($r.result.blob) == $S.cfg.max_line - 100)
+  -- Replies too, even one that arrives whole in a single read: with max_line
+  -- 4096, an 8 KiB reply line is a transport failure (rc 11, dropped).
+  $small = merge($S, {cfg: merge($S.cfg, {max_line: 4096})})
+  $r = $core.call($small, "big_reply", {size: 3000})
+  $small = $r.st
+  check("max_line: a reply under max_line is accepted", $r.rc == 0 and len($r.result) == 3000)
+  $failures = $small.failures
+  $r = $core.call($small, "big_reply", {size: 8192})
+  $small = $r.st
+  check("max_line: a reply over max_line, in one write, is rc 11 (" .. ($r.error ?? "") .. ")", $r.rc == 11 and contains($r.error ?? "", "over max_line"))
+  check("max_line: the connection is dropped and backs off", not $small.connected and $small.failures == $failures + 1 and contains($core.call($small, "engine.commands", {}).error ?? "", "backing off"))
+  sleep(0.4)
+  $S = merge($small, {cfg: $S.cfg})
+  $r = $core.call($S, "engine.commands", {})
+  $S = $r.st
+  check("max_line: a normal call works after the backoff", $r.rc == 0)
 
   -- Writes are bounded by timeout_s (1 s here): tcp_send gets the time left.
   -- The request (12 MiB, under a raised max_line) is far bigger than the

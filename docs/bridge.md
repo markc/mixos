@@ -139,6 +139,11 @@ Read this before bridging an application.
   cannot see them. A Bus that is not on loopback (for example a session
   broker at `ws://<container-ip>:<port>`) needs a drop-in, `systemctl edit
   bridged@<app>`, adding `IPAddressAllow=<broker-ip>` under `[Service]`.
+  The loopback-only IP filter is cgroup BPF: systemd enforces it for this
+  system unit and the serve child on kernels and hosts that support it, and
+  ignores it where they do not (some container managers, for example). The
+  `systemd-analyze security` score is computed from the unit file and does
+  not prove the filter is enforced on a given host.
 - **The name cannot shadow a system service.** The start checks refuse a
   name that a registered verb already starts with, and the Bus itself refuses
   a name that is already registered.

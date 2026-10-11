@@ -309,6 +309,10 @@ fn _read_reply($h, $want, $deadline, $max)
     if $left <= 0 then raise("TIMEOUT", "no reply before the deadline") end
     $line = tcp_recv_line($h, {timeout: $left, max: $max})
     if $line == nil then raise("TIMEOUT", "no reply before the deadline") end
+    -- tcp_recv_line's max bounds what it buffers while looking for a newline;
+    -- a longer line that arrives whole in one read can still come back.
+    -- Hold every line to max_line here, so the bound is exact.
+    if byte_length($line) > $max then raise("REPLY_TOO_LONG", "reply line over max_line (" .. to_string($max) .. " bytes)") end
     $msg = _parse_json($line)
     if type($msg) == "map" then
       if deep_eq($msg.id, $want) then return $msg end

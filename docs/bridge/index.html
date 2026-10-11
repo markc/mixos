@@ -359,7 +359,12 @@ privileges, sees the file system read-only (homes included) with private
 <code>/tmp</code> and <code>/var/tmp</code>, and may send IP traffic to loopback only. So keep
 the config and the token file out of <code>/tmp</code> and <code>/var/tmp</code>, where the unit
 cannot see them. A Bus that is not on loopback (for example a session
-broker at <code>ws://&lt;container-ip&gt;:&lt;port&gt;</code>) needs a drop-in, <code>systemctl edit bridged@&lt;app&gt;</code>, adding <code>IPAddressAllow=&lt;broker-ip&gt;</code> under <code>[Service]</code>.</li>
+broker at <code>ws://&lt;container-ip&gt;:&lt;port&gt;</code>) needs a drop-in, <code>systemctl edit bridged@&lt;app&gt;</code>, adding <code>IPAddressAllow=&lt;broker-ip&gt;</code> under <code>[Service]</code>.
+The loopback-only IP filter is cgroup BPF: systemd enforces it for this
+system unit and the serve child on kernels and hosts that support it, and
+ignores it where they do not (some container managers, for example). The
+<code>systemd-analyze security</code> score is computed from the unit file and does
+not prove the filter is enforced on a given host.</li>
 <li><strong>The name cannot shadow a system service.</strong> The start checks refuse a
 name that a registered verb already starts with, and the Bus itself refuses
 a name that is already registered.</li>
