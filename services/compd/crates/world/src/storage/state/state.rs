@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use slots::storage::token::base::Token;
+use std::collections::HashMap;
 
 /// KernelData token mirroring [`Storage::nested`], so input/draw SYSTEMS (which see
 /// only `cx.kernel`, not the Orchestrator) can read whether the backend is nested
@@ -10,11 +10,8 @@ pub struct Storage {
     pub nested: bool,
     // pub config: Config,
 }
-impl Storage  {
+impl Storage {
     pub fn new(nested: bool) -> Self {
-        return Self {
-            nested
-        }
+        return Self { nested };
     }
 }
-

@@ -15,7 +15,9 @@ pub struct ErrorDialog {
 
 impl ErrorDialog {
     pub fn new(message: impl Into<String>) -> Self {
-        Self { message: message.into() }
+        Self {
+            message: message.into(),
+        }
     }
 }
 
@@ -33,7 +35,11 @@ impl UiProgram for ErrorDialog {
                     .size(20.0)
                     .color(danger),
             );
-            ui.label(egui::RichText::new(message).size(14.0).color(style::weak(ui)));
+            ui.label(
+                egui::RichText::new(message)
+                    .size(14.0)
+                    .color(style::weak(ui)),
+            );
             let accent = style::accent(ui);
             if style::button(ui, strings::text("capture-ok"), Some(accent)).clicked() {
                 emit.push(CaptureMessage::Discard);

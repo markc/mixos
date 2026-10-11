@@ -48,14 +48,14 @@ impl UiProgram for NotifyUi {
         egui::Area::new(egui::Id::new("notify-pill"))
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ui.ctx(), |ui| {
-            egui::Frame::NONE
-                .fill(egui::Color32::from_rgba_unmultiplied(15, 18, 26, 224))
-                .stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(26)))
-                .corner_radius(10.0)
-                .inner_margin(egui::Margin::symmetric(18, 10))
-                .show(ui, |ui| {
-                    ui.label(text);
-                });
-        });
+                egui::Frame::NONE
+                    .fill(egui::Color32::from_rgba_unmultiplied(15, 18, 26, 224))
+                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(26)))
+                    .corner_radius(10.0)
+                    .inner_margin(egui::Margin::symmetric(18, 10))
+                    .show(ui, |ui| {
+                        ui.label(text);
+                    });
+            });
     }
 }

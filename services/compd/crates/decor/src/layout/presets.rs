@@ -44,7 +44,11 @@ pub fn mac(mode: Mode) -> DecoTheme {
         // Hover keeps the fill; the glyph appearing is the hover affordance.
         fill_hover: Srgba::hex(fill),
         fill_pressed: Srgba::hex(fill).with_alpha(0.8),
-        fill_unfocused: if dark { Srgba::hex(0x4A4A4C) } else { Srgba::hex(0xDBDBDB) },
+        fill_unfocused: if dark {
+            Srgba::hex(0x4A4A4C)
+        } else {
+            Srgba::hex(0xDBDBDB)
+        },
         glyph: Srgba::hex(glyph),
         glyph_hover: Srgba::hex(glyph),
     };
@@ -72,21 +76,41 @@ pub fn mac(mode: Mode) -> DecoTheme {
             },
         },
         colors: DecoColors {
-            titlebar_focused: if dark { Srgba::hex(0x2E2E30) } else { Srgba::hex(0xF0EEEC) },
-            titlebar_unfocused: if dark { Srgba::hex(0x252527) } else { Srgba::hex(0xF6F5F4) },
+            titlebar_focused: if dark {
+                Srgba::hex(0x2E2E30)
+            } else {
+                Srgba::hex(0xF0EEEC)
+            },
+            titlebar_unfocused: if dark {
+                Srgba::hex(0x252527)
+            } else {
+                Srgba::hex(0xF6F5F4)
+            },
             titlebar_divider: if dark {
                 Srgba::hex(0x000000).with_alpha(0.35)
             } else {
                 Srgba::hex(0x000000).with_alpha(0.12)
             },
-            title_text_focused: if dark { Srgba::hex(0xE8E8E8) } else { Srgba::hex(0x3A3A3C) },
-            title_text_unfocused: if dark { Srgba::hex(0x7C7C7E) } else { Srgba::hex(0xAAAAAA) },
+            title_text_focused: if dark {
+                Srgba::hex(0xE8E8E8)
+            } else {
+                Srgba::hex(0x3A3A3C)
+            },
+            title_text_unfocused: if dark {
+                Srgba::hex(0x7C7C7E)
+            } else {
+                Srgba::hex(0xAAAAAA)
+            },
             border_focused: Srgba::TRANSPARENT,
             border_unfocused: Srgba::TRANSPARENT,
         },
         buttons: ButtonCluster {
             side: ButtonSide::Left,
-            order: [CaptionButton::Close, CaptionButton::Minimize, CaptionButton::Maximize],
+            order: [
+                CaptionButton::Close,
+                CaptionButton::Minimize,
+                CaptionButton::Maximize,
+            ],
             shape: ButtonShape::Circle { diameter: 12.0 },
             gap: 8.0,
             edge_inset: 12.0,
@@ -112,7 +136,11 @@ pub fn mac(mode: Mode) -> DecoTheme {
 pub fn win11(mode: Mode) -> DecoTheme {
     let dark = mode == Mode::Dark;
 
-    let text = if dark { Srgba::hex(0xFFFFFF) } else { Srgba::hex(0x1A1A1A) };
+    let text = if dark {
+        Srgba::hex(0xFFFFFF)
+    } else {
+        Srgba::hex(0x1A1A1A)
+    };
     let subtle_hover = if dark {
         Srgba::hex(0xFFFFFF).with_alpha(0.06)
     } else {
@@ -155,18 +183,42 @@ pub fn win11(mode: Mode) -> DecoTheme {
             },
         },
         colors: DecoColors {
-            titlebar_focused: if dark { Srgba::hex(0x202020) } else { Srgba::hex(0xF3F3F3) },
-            titlebar_unfocused: if dark { Srgba::hex(0x272727) } else { Srgba::hex(0xEBEBEB) },
+            titlebar_focused: if dark {
+                Srgba::hex(0x202020)
+            } else {
+                Srgba::hex(0xF3F3F3)
+            },
+            titlebar_unfocused: if dark {
+                Srgba::hex(0x272727)
+            } else {
+                Srgba::hex(0xEBEBEB)
+            },
             titlebar_divider: Srgba::TRANSPARENT,
             title_text_focused: text,
-            title_text_unfocused: if dark { Srgba::hex(0x9B9B9B) } else { Srgba::hex(0x8A8A8A) },
-            border_focused: if dark { Srgba::hex(0x3A3A3A) } else { Srgba::hex(0xD8D8D8) },
-            border_unfocused: if dark { Srgba::hex(0x2E2E2E) } else { Srgba::hex(0xE2E2E2) },
+            title_text_unfocused: if dark {
+                Srgba::hex(0x9B9B9B)
+            } else {
+                Srgba::hex(0x8A8A8A)
+            },
+            border_focused: if dark {
+                Srgba::hex(0x3A3A3A)
+            } else {
+                Srgba::hex(0xD8D8D8)
+            },
+            border_unfocused: if dark {
+                Srgba::hex(0x2E2E2E)
+            } else {
+                Srgba::hex(0xE2E2E2)
+            },
         },
         buttons: ButtonCluster {
             side: ButtonSide::Right,
             // Outermost first: close hugs the corner, then maximize, minimize.
-            order: [CaptionButton::Close, CaptionButton::Maximize, CaptionButton::Minimize],
+            order: [
+                CaptionButton::Close,
+                CaptionButton::Maximize,
+                CaptionButton::Minimize,
+            ],
             shape: ButtonShape::FullHeightRect { width: 38.0 },
             gap: 0.0,
             edge_inset: 0.0,
@@ -207,18 +259,30 @@ pub fn mixos(scheme: Scheme, mode: Mode) -> DecoTheme {
         Scheme::Sunset => (45.0, 0.15),
         Scheme::Mono => (0.0, 0.0),
     };
-    let accent = if dark { oklch(75.0, chroma, hue) } else { oklch(52.0, chroma, hue) };
+    let accent = if dark {
+        oklch(75.0, chroma, hue)
+    } else {
+        oklch(52.0, chroma, hue)
+    };
     let accent_soft = accent.with_alpha(0.20);
     let accent_pressed = accent.with_alpha(0.35);
 
-    let glyph = if dark { Srgba::hex(0xE6E6E6) } else { Srgba::hex(0x2A2A2A) };
+    let glyph = if dark {
+        Srgba::hex(0xE6E6E6)
+    } else {
+        Srgba::hex(0x2A2A2A)
+    };
     let button = |hover_is_danger: bool| ButtonColors {
         fill_idle: if dark {
             Srgba::hex(0xFFFFFF).with_alpha(0.07)
         } else {
             Srgba::hex(0x000000).with_alpha(0.06)
         },
-        fill_hover: if hover_is_danger { oklch(55.0, 0.19, 25.0) } else { accent_soft },
+        fill_hover: if hover_is_danger {
+            oklch(55.0, 0.19, 25.0)
+        } else {
+            accent_soft
+        },
         fill_pressed: if hover_is_danger {
             oklch(48.0, 0.19, 25.0)
         } else {
@@ -230,7 +294,11 @@ pub fn mixos(scheme: Scheme, mode: Mode) -> DecoTheme {
             Srgba::hex(0x000000).with_alpha(0.03)
         },
         glyph,
-        glyph_hover: if hover_is_danger { Srgba::hex(0xFFFFFF) } else { glyph },
+        glyph_hover: if hover_is_danger {
+            Srgba::hex(0xFFFFFF)
+        } else {
+            glyph
+        },
     };
 
     DecoTheme {
@@ -256,22 +324,46 @@ pub fn mixos(scheme: Scheme, mode: Mode) -> DecoTheme {
             },
         },
         colors: DecoColors {
-            titlebar_focused: if dark { Srgba::hex(0x232326) } else { Srgba::hex(0xF2F1F3) },
-            titlebar_unfocused: if dark { Srgba::hex(0x1D1D1F) } else { Srgba::hex(0xF7F6F8) },
+            titlebar_focused: if dark {
+                Srgba::hex(0x232326)
+            } else {
+                Srgba::hex(0xF2F1F3)
+            },
+            titlebar_unfocused: if dark {
+                Srgba::hex(0x1D1D1F)
+            } else {
+                Srgba::hex(0xF7F6F8)
+            },
             titlebar_divider: if dark {
                 Srgba::hex(0x000000).with_alpha(0.3)
             } else {
                 Srgba::hex(0x000000).with_alpha(0.08)
             },
-            title_text_focused: if dark { Srgba::hex(0xEDEDED) } else { Srgba::hex(0x232326) },
-            title_text_unfocused: if dark { Srgba::hex(0x8A8A8E) } else { Srgba::hex(0x9C9CA0) },
+            title_text_focused: if dark {
+                Srgba::hex(0xEDEDED)
+            } else {
+                Srgba::hex(0x232326)
+            },
+            title_text_unfocused: if dark {
+                Srgba::hex(0x8A8A8E)
+            } else {
+                Srgba::hex(0x9C9CA0)
+            },
             // The accent border is the focus signature of this style.
             border_focused: accent,
-            border_unfocused: if dark { Srgba::hex(0x333336) } else { Srgba::hex(0xDCDCDE) },
+            border_unfocused: if dark {
+                Srgba::hex(0x333336)
+            } else {
+                Srgba::hex(0xDCDCDE)
+            },
         },
         buttons: ButtonCluster {
             side: ButtonSide::Right,
-            order: [CaptionButton::Close, CaptionButton::Maximize, CaptionButton::Minimize],
+            order: [
+                CaptionButton::Close,
+                CaptionButton::Maximize,
+                CaptionButton::Minimize,
+            ],
             // 18px: 16 reads as slightly too small, and the 30px titlebar
             // still leaves 6px of breathing room above and below.
             shape: ButtonShape::Circle { diameter: 18.0 },
@@ -331,7 +423,11 @@ mod tests {
         for style in ChromeStyle::ALL {
             let t = resolve(style, Scheme::Ocean, Mode::Dark);
             assert_eq!(t.style, style);
-            assert_eq!(t.scheme, Scheme::Ocean, "{style:?} must record the caller's scheme");
+            assert_eq!(
+                t.scheme,
+                Scheme::Ocean,
+                "{style:?} must record the caller's scheme"
+            );
             assert_eq!(t.mode, Mode::Dark);
         }
     }
@@ -356,7 +452,10 @@ mod tests {
         let hover = t.buttons.close.fill(ButtonState::Hover, Focus::Focused);
         assert!(hover.r > 0.7 && hover.g < 0.3, "expected the signature red");
         // And idle is invisible, like the real thing.
-        assert_eq!(t.buttons.close.fill(ButtonState::Idle, Focus::Focused).a, 0.0);
+        assert_eq!(
+            t.buttons.close.fill(ButtonState::Idle, Focus::Focused).a,
+            0.0
+        );
     }
 
     /// Pins the two button sizes tuned by eye. Both are deliberate
@@ -389,8 +488,12 @@ mod tests {
             ("win11", win11(Mode::Light)),
             ("mixos", mixos(Scheme::Ocean, Mode::Light)),
         ] {
-            let idle_is_invisible =
-                theme.buttons.close.fill(ButtonState::Idle, Focus::Focused).a == 0.0;
+            let idle_is_invisible = theme
+                .buttons
+                .close
+                .fill(ButtonState::Idle, Focus::Focused)
+                .a
+                == 0.0;
             let ratio = theme.buttons.glyph_extent_ratio;
             if idle_is_invisible {
                 assert!(
@@ -432,7 +535,10 @@ mod tests {
         let unfocused = t.buttons.close.fill(ButtonState::Idle, Focus::Unfocused);
         assert_ne!(focused, unfocused);
         // But hover re-lights even without focus.
-        assert_eq!(t.buttons.close.fill(ButtonState::Hover, Focus::Unfocused), focused);
+        assert_eq!(
+            t.buttons.close.fill(ButtonState::Hover, Focus::Unfocused),
+            focused
+        );
     }
 
     #[test]
@@ -441,6 +547,9 @@ mod tests {
         let crimson = mixos(Scheme::Crimson, Mode::Dark).colors.border_focused;
         assert_ne!(ocean, crimson, "schemes must produce distinct accents");
         let mono = mixos(Scheme::Mono, Mode::Dark).colors.border_focused;
-        assert!((mono.r - mono.g).abs() < 1e-3 && (mono.g - mono.b).abs() < 1e-3, "mono stays grey");
+        assert!(
+            (mono.r - mono.g).abs() < 1e-3 && (mono.g - mono.b).abs() < 1e-3,
+            "mono stays grey"
+        );
     }
 }

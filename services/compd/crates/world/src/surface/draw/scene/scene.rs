@@ -1,8 +1,8 @@
-use smithay::backend::renderer::gles::GlesRenderer;
-use dispatcher::state::state::RedrawReason;
-use smithay::utils::{Physical, Point, Size};
 use crate::state::Loop;
 use crate::state::state::CoordinateTrait;
+use dispatcher::state::state::RedrawReason;
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::utils::{Physical, Point, Size};
 use ui::{UiRenderElement, UiSpace};
 
 /// Returns `(world, screen, dim)` UI render-element vecs:

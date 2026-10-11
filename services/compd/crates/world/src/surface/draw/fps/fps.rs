@@ -7,11 +7,11 @@ use smithay::utils::{Physical, Point, Rectangle, Size};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use ui::{HandleId, UiHandle, UiSpace};
-use crate::state::Loop;
 use crate::scene::layer::base::Layer;
-use ui::UiProgram;
+use crate::state::Loop;
 use crate::surface::draw::handle::handle::load;
+use ui::UiProgram;
+use ui::{HandleId, UiHandle, UiSpace};
 
 /// Overlay box size (physical px) and its inset from the top-right corner.
 const W: i32 = 120;

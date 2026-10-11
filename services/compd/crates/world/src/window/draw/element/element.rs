@@ -150,7 +150,8 @@ where
         opaque_regions: &[Rectangle<i32, Physical>],
         cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
-        self.inner.draw(frame, src, dst, damage, opaque_regions, cache)
+        self.inner
+            .draw(frame, src, dst, damage, opaque_regions, cache)
     }
 
     /// Decline DIRECT SCANOUT for an element that spans the whole output.
@@ -274,7 +275,8 @@ where
         opaque_regions: &[Rectangle<i32, Physical>],
         cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
-        self.inner.draw(frame, src, dst, damage, opaque_regions, cache)
+        self.inner
+            .draw(frame, src, dst, damage, opaque_regions, cache)
     }
 
     fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {

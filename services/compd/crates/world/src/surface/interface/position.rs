@@ -1,7 +1,7 @@
-use smithay::desktop::LayerSurface;
-use smithay::utils::{Logical, Point, Size};
 use crate::state::Loop;
 use crate::state::state::CoordinateTrait;
+use smithay::desktop::LayerSurface;
+use smithay::utils::{Logical, Point, Size};
 
 // The pure placement core lives in the Loop-free interface.core crate; re-export
 // so existing `surface_interface_base::position::*` callers are unchanged.
@@ -15,6 +15,12 @@ pub fn layer_surface_position(
     layer: &LayerSurface,
     output_size: Size<i32, Logical>,
 ) -> Point<i32, Logical> {
-    let cursor = _loop.state.seat.seat.get_pointer().unwrap().current_location();
+    let cursor = _loop
+        .state
+        .seat
+        .seat
+        .get_pointer()
+        .unwrap()
+        .current_location();
     layer_surface_position_core(cursor, _loop.size_ctx_all(), layer, output_size)
 }

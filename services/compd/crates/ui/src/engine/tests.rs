@@ -51,7 +51,13 @@ impl UiProgram for Probe {
 }
 
 fn runtime(program: Probe) -> UiRuntime<Probe> {
-    UiRuntime::build(program, (400, 200), 2.0, None, RuntimeWake::with_waker(|| {}))
+    UiRuntime::build(
+        program,
+        (400, 200),
+        2.0,
+        None,
+        RuntimeWake::with_waker(|| {}),
+    )
 }
 
 #[test]
@@ -157,7 +163,10 @@ fn a_hidden_animation_stops_asking_for_frames_until_it_is_shown() {
     });
     let mut rt = UiRuntime::build(Spinner { passes: 0 }, (100, 100), 1.0, None, wake);
     rt.tick();
-    assert!(rt.has_queued(), "visible, the animation wants the next frame");
+    assert!(
+        rt.has_queued(),
+        "visible, the animation wants the next frame"
+    );
     // Off screen: the registry acknowledges and suspends.
     rt.acknowledge_frame();
     rt.set_suspended(true);
@@ -169,8 +178,15 @@ fn a_hidden_animation_stops_asking_for_frames_until_it_is_shown() {
         rt.tick();
         rt.acknowledge_frame();
     }
-    assert_eq!(wakes.load(Ordering::Relaxed), woken, "suspended: no loop wakeups");
-    assert_eq!(rt.program.passes, passes, "suspended: no passes without input");
+    assert_eq!(
+        wakes.load(Ordering::Relaxed),
+        woken,
+        "suspended: no loop wakeups"
+    );
+    assert_eq!(
+        rt.program.passes, passes,
+        "suspended: no passes without input"
+    );
     assert!(!rt.is_dirty() && !rt.has_queued());
     // Input still runs a pass while hidden.
     rt.queue_input(crate::input::Input::PointerMoved { x: 1.0, y: 1.0 });

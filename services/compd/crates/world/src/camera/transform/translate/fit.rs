@@ -135,14 +135,26 @@ pub fn window_fit(
         // the slot minus the content, which it already paints — take the remainder. A surface that
         // OVERSHOOTS is untouched: `s <= 1.0` there, and cropping the margin is the point.
         let short = (slot.w - ref_size.w).max(slot.h - ref_size.h);
-        let s = if s > 1.0 && short <= QUANTIZE_SLACK { 1.0 } else { s };
+        let s = if s > 1.0 && short <= QUANTIZE_SLACK {
+            1.0
+        } else {
+            s
+        };
         if s.is_finite() && s > 0.0 { s } else { 1.0 }
     };
     let fit_surf = (
-        elem_loc.x as f64 + (slot.w as f64 - ref_size.w as f64 * fit_s) / 2.0 - ref_loc.x as f64 * fit_s,
-        elem_loc.y as f64 + (slot.h as f64 - ref_size.h as f64 * fit_s) / 2.0 - ref_loc.y as f64 * fit_s,
+        elem_loc.x as f64 + (slot.w as f64 - ref_size.w as f64 * fit_s) / 2.0
+            - ref_loc.x as f64 * fit_s,
+        elem_loc.y as f64 + (slot.h as f64 - ref_size.h as f64 * fit_s) / 2.0
+            - ref_loc.y as f64 * fit_s,
     );
-    WindowFit { fit_sx: fit_s, fit_sy: fit_s, fit_surf, ref_size, cover }
+    WindowFit {
+        fit_sx: fit_s,
+        fit_sy: fit_s,
+        fit_surf,
+        ref_size,
+        cover,
+    }
 }
 
 /// Where a popup's surface ORIGIN sits, in the parent's main-surface-local frame, under
@@ -278,7 +290,13 @@ impl Fit {
         let ch = (content.h.max(1)) as f64;
         if b.size.w < 1.0 || b.size.h < 1.0 {
             let loc = (b.loc.x, b.loc.y);
-            return Fit { scale: 1.0, content_loc: (0.0, 0.0), fit_loc: loc, render_origin: loc, active: false };
+            return Fit {
+                scale: 1.0,
+                content_loc: (0.0, 0.0),
+                fit_loc: loc,
+                render_origin: loc,
+                active: false,
+            };
         }
         let s = (b.size.w / cw).min(b.size.h / ch);
         let s = if s.is_finite() && s > 0.0 { s } else { 1.0 };
@@ -290,7 +308,13 @@ impl Fit {
         let active = (s - 1.0).abs() > 1e-3
             || (fit_w - b.size.w).abs() > 0.5
             || (fit_h - b.size.h).abs() > 0.5;
-        Fit { scale: s, content_loc: (0.0, 0.0), fit_loc, render_origin: fit_loc, active }
+        Fit {
+            scale: s,
+            content_loc: (0.0, 0.0),
+            fit_loc,
+            render_origin: fit_loc,
+            active,
+        }
     }
 
     /// Map a world point (in the displayed / recognized space, e.g. the cursor) into the

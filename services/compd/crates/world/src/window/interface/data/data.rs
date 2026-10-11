@@ -1,6 +1,6 @@
+use dispatcher::wayland::xdg::activation::dispatch::wire::ActivationDetails;
 use smithay::utils::{Logical, Point, Size};
 use uuid::Uuid;
-use dispatcher::wayland::xdg::activation::dispatch::wire::ActivationDetails;
 
 pub struct WindowData {
     pub UUID: Uuid,

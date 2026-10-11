@@ -18,11 +18,28 @@ pub struct Modifiers {
 }
 
 impl Modifiers {
-    pub const NONE: Self = Self { shift: false, ctrl: false, alt: false, logo: false };
-    pub const SHIFT: Self = Self { shift: true, ..Self::NONE };
-    pub const CTRL: Self = Self { ctrl: true, ..Self::NONE };
-    pub const ALT: Self = Self { alt: true, ..Self::NONE };
-    pub const LOGO: Self = Self { logo: true, ..Self::NONE };
+    pub const NONE: Self = Self {
+        shift: false,
+        ctrl: false,
+        alt: false,
+        logo: false,
+    };
+    pub const SHIFT: Self = Self {
+        shift: true,
+        ..Self::NONE
+    };
+    pub const CTRL: Self = Self {
+        ctrl: true,
+        ..Self::NONE
+    };
+    pub const ALT: Self = Self {
+        alt: true,
+        ..Self::NONE
+    };
+    pub const LOGO: Self = Self {
+        logo: true,
+        ..Self::NONE
+    };
 
     pub fn is_empty(self) -> bool {
         self == Self::NONE
@@ -73,10 +90,16 @@ pub struct KeyInput {
 /// (physical pixels divided by the instance's scale).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Input {
-    PointerMoved { x: f32, y: f32 },
+    PointerMoved {
+        x: f32,
+        y: f32,
+    },
     PointerLeft,
     /// A Linux input-event code (`BTN_LEFT` is 0x110).
-    Button { code: u32, pressed: bool },
+    Button {
+        code: u32,
+        pressed: bool,
+    },
     Scroll(ScrollDelta),
     Key(KeyInput),
     Modifiers(Modifiers),
@@ -106,17 +129,30 @@ pub fn keysym_modifier(keysym: u32) -> Option<Modifiers> {
 
 /// A key event from smithay's keyboard handler.
 pub fn key(keysym: u32, utf8: Option<&str>, pressed: bool, repeat: bool) -> Input {
-    let text = utf8.filter(|text| pressed && !text.is_empty()).map(str::to_owned);
-    Input::Key(KeyInput { keysym, text, pressed, repeat })
+    let text = utf8
+        .filter(|text| pressed && !text.is_empty())
+        .map(str::to_owned);
+    Input::Key(KeyInput {
+        keysym,
+        text,
+        pressed,
+        repeat,
+    })
 }
 
 /// A scroll event: `discrete_*` are wheel ticks, `pixel_*` continuous
 /// deltas (touchpad). Ticks win when present; `None` when both are zero.
 pub fn wheel(discrete_x: i32, discrete_y: i32, pixel_x: f64, pixel_y: f64) -> Option<Input> {
     if discrete_x != 0 || discrete_y != 0 {
-        Some(Input::Scroll(ScrollDelta::Lines { x: discrete_x as f32, y: discrete_y as f32 }))
+        Some(Input::Scroll(ScrollDelta::Lines {
+            x: discrete_x as f32,
+            y: discrete_y as f32,
+        }))
     } else if pixel_x != 0.0 || pixel_y != 0.0 {
-        Some(Input::Scroll(ScrollDelta::Pixels { x: pixel_x as f32, y: pixel_y as f32 }))
+        Some(Input::Scroll(ScrollDelta::Pixels {
+            x: pixel_x as f32,
+            y: pixel_y as f32,
+        }))
     } else {
         None
     }
@@ -145,8 +181,18 @@ fn egui_key(keysym: u32, text: Option<&str>) -> Option<egui::Key> {
         0x0020 => Key::Space,
         n if (XK_F1..=XK_F12).contains(&n) => {
             const F: [Key; 12] = [
-                Key::F1, Key::F2, Key::F3, Key::F4, Key::F5, Key::F6, Key::F7, Key::F8,
-                Key::F9, Key::F10, Key::F11, Key::F12,
+                Key::F1,
+                Key::F2,
+                Key::F3,
+                Key::F4,
+                Key::F5,
+                Key::F6,
+                Key::F7,
+                Key::F8,
+                Key::F9,
+                Key::F10,
+                Key::F11,
+                Key::F12,
             ];
             F[(n - XK_F1) as usize]
         }
@@ -202,26 +248,40 @@ impl Translator {
                 out.push(egui::Event::PointerGone);
             }
             Input::Button { code, pressed } => {
-                let Some(button) = egui_button(code) else { return };
+                let Some(button) = egui_button(code) else {
+                    return;
+                };
                 if pressed {
                     // A press with no pointer over the surface has no position.
                     let Some(pos) = self.pointer else { return };
                     if !self.buttons.contains(&button) {
                         self.buttons.push(button);
                     }
-                    out.push(egui::Event::PointerButton { pos, button, pressed, modifiers });
+                    out.push(egui::Event::PointerButton {
+                        pos,
+                        button,
+                        pressed,
+                        modifiers,
+                    });
                 } else if let Some(at) = self.buttons.iter().position(|held| *held == button) {
                     // Every press gets its release, wherever the pointer is.
                     self.buttons.remove(at);
                     let pos = self.pointer.or(self.last).unwrap_or(egui::Pos2::ZERO);
-                    out.push(egui::Event::PointerButton { pos, button, pressed, modifiers });
+                    out.push(egui::Event::PointerButton {
+                        pos,
+                        button,
+                        pressed,
+                        modifiers,
+                    });
                 }
             }
             Input::Scroll(delta) => {
                 // egui's wheel is positive up and left: the opposite of Wayland's.
                 let (unit, delta) = match delta {
                     ScrollDelta::Lines { x, y } => (egui::MouseWheelUnit::Line, egui::vec2(-x, -y)),
-                    ScrollDelta::Pixels { x, y } => (egui::MouseWheelUnit::Point, egui::vec2(-x, -y)),
+                    ScrollDelta::Pixels { x, y } => {
+                        (egui::MouseWheelUnit::Point, egui::vec2(-x, -y))
+                    }
                 };
                 out.push(egui::Event::MouseWheel {
                     unit,
@@ -259,9 +319,10 @@ impl Translator {
                 }
                 // Typed text, unless a command chord is held.
                 let chord = self.modifiers.ctrl || self.modifiers.alt || self.modifiers.logo;
-                if let Some(text) = key.text.filter(|text| {
-                    key.pressed && !chord && !text.chars().all(char::is_control)
-                }) {
+                if let Some(text) = key
+                    .text
+                    .filter(|text| key.pressed && !chord && !text.chars().all(char::is_control))
+                {
                     out.push(egui::Event::Text(text));
                 }
             }
@@ -300,9 +361,18 @@ mod tests {
         let events = run(vec![
             key(XK_SHIFT_L, None, true, false),
             Input::PointerMoved { x: 10.0, y: 20.0 },
-            Input::Button { code: 0x110, pressed: true },
+            Input::Button {
+                code: 0x110,
+                pressed: true,
+            },
         ]);
-        let Some(egui::Event::PointerButton { pos, button, pressed, modifiers }) = events.last() else {
+        let Some(egui::Event::PointerButton {
+            pos,
+            button,
+            pressed,
+            modifiers,
+        }) = events.last()
+        else {
             panic!("{events:?}");
         };
         assert_eq!(*pos, egui::pos2(10.0, 20.0));
@@ -313,17 +383,37 @@ mod tests {
 
     #[test]
     fn a_button_with_no_pointer_is_dropped() {
-        let events = run(vec![Input::PointerLeft, Input::Button { code: 0x110, pressed: true }]);
+        let events = run(vec![
+            Input::PointerLeft,
+            Input::Button {
+                code: 0x110,
+                pressed: true,
+            },
+        ]);
         assert_eq!(events, vec![egui::Event::PointerGone]);
     }
 
     #[test]
     fn typing_yields_a_key_and_its_text_but_a_chord_only_the_key() {
         let events = run(vec![key(0x0061, Some("a"), true, false)]);
-        assert!(matches!(events[0], egui::Event::Key { key: egui::Key::A, pressed: true, .. }));
+        assert!(matches!(
+            events[0],
+            egui::Event::Key {
+                key: egui::Key::A,
+                pressed: true,
+                ..
+            }
+        ));
         assert_eq!(events[1], egui::Event::Text("a".into()));
-        let events = run(vec![key(XK_CONTROL_L, None, true, false), key(0x0061, Some("a"), true, false)]);
-        assert!(events.iter().all(|event| !matches!(event, egui::Event::Text(_))));
+        let events = run(vec![
+            key(XK_CONTROL_L, None, true, false),
+            key(0x0061, Some("a"), true, false),
+        ]);
+        assert!(
+            events
+                .iter()
+                .all(|event| !matches!(event, egui::Event::Text(_)))
+        );
         assert!(events.iter().any(|event| matches!(
             event,
             egui::Event::Key { key: egui::Key::A, modifiers, .. } if modifiers.ctrl
@@ -332,9 +422,26 @@ mod tests {
 
     #[test]
     fn named_keys_and_releases() {
-        let events = run(vec![key(0xff1b, None, true, false), key(0xff1b, None, false, false)]);
-        assert!(matches!(events[0], egui::Event::Key { key: egui::Key::Escape, pressed: true, .. }));
-        assert!(matches!(events[1], egui::Event::Key { key: egui::Key::Escape, pressed: false, .. }));
+        let events = run(vec![
+            key(0xff1b, None, true, false),
+            key(0xff1b, None, false, false),
+        ]);
+        assert!(matches!(
+            events[0],
+            egui::Event::Key {
+                key: egui::Key::Escape,
+                pressed: true,
+                ..
+            }
+        ));
+        assert!(matches!(
+            events[1],
+            egui::Event::Key {
+                key: egui::Key::Escape,
+                pressed: false,
+                ..
+            }
+        ));
         assert_eq!(events.len(), 2, "Escape types nothing");
         // A release with no press behind it is not invented.
         assert!(run(vec![key(0xff1b, None, false, false)]).is_empty());
@@ -342,7 +449,9 @@ mod tests {
 
     #[test]
     fn wheel_ticks_win_and_flip_to_egui_sign() {
-        let Some(Input::Scroll(delta)) = wheel(0, 2, 0.0, 30.0) else { panic!() };
+        let Some(Input::Scroll(delta)) = wheel(0, 2, 0.0, 30.0) else {
+            panic!()
+        };
         assert_eq!(delta, ScrollDelta::Lines { x: 0.0, y: 2.0 });
         let events = run(vec![Input::Scroll(delta)]);
         assert!(matches!(
@@ -356,24 +465,45 @@ mod tests {
     fn a_release_after_the_pointer_left_still_releases() {
         let events = run(vec![
             Input::PointerMoved { x: 5.0, y: 5.0 },
-            Input::Button { code: 0x110, pressed: true },
+            Input::Button {
+                code: 0x110,
+                pressed: true,
+            },
             Input::PointerLeft,
-            Input::Button { code: 0x110, pressed: false },
+            Input::Button {
+                code: 0x110,
+                pressed: false,
+            },
         ]);
-        assert!(matches!(
-            events.last(),
-            Some(egui::Event::PointerButton { pressed: false, button: egui::PointerButton::Primary, pos, .. })
-                if *pos == egui::pos2(5.0, 5.0)
-        ), "{events:?}");
+        assert!(
+            matches!(
+                events.last(),
+                Some(egui::Event::PointerButton { pressed: false, button: egui::PointerButton::Primary, pos, .. })
+                    if *pos == egui::pos2(5.0, 5.0)
+            ),
+            "{events:?}"
+        );
         // A release with no press behind it is not invented.
-        let events = run(vec![Input::PointerMoved { x: 1.0, y: 1.0 }, Input::Button { code: 0x110, pressed: false }]);
+        let events = run(vec![
+            Input::PointerMoved { x: 1.0, y: 1.0 },
+            Input::Button {
+                code: 0x110,
+                pressed: false,
+            },
+        ]);
         assert_eq!(events.len(), 1);
     }
 
     #[test]
     fn punctuation_presses_and_releases_the_same_key() {
-        for (keysym, text, expected) in [(0x002d, "-", egui::Key::Minus), (0x002f, "/", egui::Key::Slash)] {
-            let events = run(vec![key(keysym, Some(text), true, false), key(keysym, Some(text), false, false)]);
+        for (keysym, text, expected) in [
+            (0x002d, "-", egui::Key::Minus),
+            (0x002f, "/", egui::Key::Slash),
+        ] {
+            let events = run(vec![
+                key(keysym, Some(text), true, false),
+                key(keysym, Some(text), false, false),
+            ]);
             let keys: Vec<_> = events
                 .iter()
                 .filter_map(|event| match event {
@@ -397,13 +527,23 @@ mod tests {
             .iter()
             .filter(|event| matches!(event, egui::Event::Key { pressed: false, .. }))
             .collect();
-        assert_eq!(releases.len(), 1, "only the held keysym releases: {events:?}");
+        assert_eq!(
+            releases.len(),
+            1,
+            "only the held keysym releases: {events:?}"
+        );
     }
 
     #[test]
     fn losing_focus_releases_held_modifiers() {
-        let events = run(vec![key(XK_CONTROL_L, None, true, false), Input::Focused(false)]);
-        assert_eq!(events[1], egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+        let events = run(vec![
+            key(XK_CONTROL_L, None, true, false),
+            Input::Focused(false),
+        ]);
+        assert_eq!(
+            events[1],
+            egui::Event::ModifiersChanged(egui::Modifiers::NONE)
+        );
         assert_eq!(events[2], egui::Event::WindowFocused(false));
     }
 }

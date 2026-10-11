@@ -15,12 +15,19 @@ fn the_slot_tracks_buttons_and_stamps_only_the_edge_it_saw() {
     // answer "yes, at start-up", which is right by luck for a decay and wrong for
     // anything that branches on it.
     let fresh = p::packed(NEVER);
-    assert_eq!(fresh[1][0], NEVER, "a press that never happened is not time zero");
+    assert_eq!(
+        fresh[1][0], NEVER,
+        "a press that never happened is not time zero"
+    );
     assert_eq!(fresh[1][1], NEVER);
 
     p::set_position(0.25, 0.75);
     let at = p::packed(NEVER)[0];
-    assert_eq!((at[0], at[1]), (0.25, 0.75), "position is screen UV, unscaled");
+    assert_eq!(
+        (at[0], at[1]),
+        (0.25, 0.75),
+        "position is screen UV, unscaled"
+    );
 
     // Buttons accumulate and clear INDEPENDENTLY: holding left and clicking right
     // must not release left, which is what a plain boolean would have done.
@@ -28,7 +35,11 @@ fn the_slot_tracks_buttons_and_stamps_only_the_edge_it_saw() {
     p::note_button(0x111, true, 11.0); // BTN_RIGHT
     assert_eq!(p::packed(NEVER)[0][2] as u32, p::LEFT | p::RIGHT);
     p::note_button(0x111, false, 12.0);
-    assert_eq!(p::packed(NEVER)[0][2] as u32, p::LEFT, "releasing one must not release the other");
+    assert_eq!(
+        p::packed(NEVER)[0][2] as u32,
+        p::LEFT,
+        "releasing one must not release the other"
+    );
 
     // …and the two moments are the two edges, not one "last event".
     let m = p::packed(NEVER)[1];
@@ -39,8 +50,16 @@ fn the_slot_tracks_buttons_and_stamps_only_the_edge_it_saw() {
     // through to LEFT (a bundle keying on "held" would fire on a thumb button)
     // and must not stamp a moment.
     p::note_button(0x116, true, 99.0); // BTN_SIDE, unreported
-    assert_eq!(p::packed(NEVER)[0][2] as u32, p::LEFT, "an unreported button changed the set");
-    assert_eq!(p::packed(NEVER)[1][0], 11.0, "an unreported button stamped a moment");
+    assert_eq!(
+        p::packed(NEVER)[0][2] as u32,
+        p::LEFT,
+        "an unreported button changed the set"
+    );
+    assert_eq!(
+        p::packed(NEVER)[1][0],
+        11.0,
+        "an unreported button stamped a moment"
+    );
     assert!(p::bit_of(0x116).is_none());
 
     p::note_button(0x110, false, 13.0);
@@ -50,5 +69,8 @@ fn the_slot_tracks_buttons_and_stamps_only_the_edge_it_saw() {
     // for a new button to be wrong is to repeat a shift.
     let each = [p::LEFT, p::RIGHT, p::MIDDLE];
     assert_eq!(each.iter().fold(0, |a, b| a | b), p::ANY);
-    assert_eq!(each.iter().map(|b| b.count_ones()).sum::<u32>(), p::ANY.count_ones());
+    assert_eq!(
+        each.iter().map(|b| b.count_ones()).sum::<u32>(),
+        p::ANY.count_ones()
+    );
 }

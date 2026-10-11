@@ -64,14 +64,18 @@ pub fn window_is_live(
     let Some(handle) = SurfaceHandle::of_window(window) else {
         return false;
     };
-    let Some(record) = comp.registry.id_for_handle(&handle).and_then(|id| comp.registry.get(id))
+    let Some(record) = comp
+        .registry
+        .id_for_handle(&handle)
+        .and_then(|id| comp.registry.get(id))
     else {
         return false;
     };
     if let Some(x11) = window.x11_surface() {
-        return record.role() == SurfaceRole::X11 {
-            override_redirect: x11.is_override_redirect(),
-        };
+        return record.role()
+            == SurfaceRole::X11 {
+                override_redirect: x11.is_override_redirect(),
+            };
     }
     record.role() == SurfaceRole::Toplevel && window.toplevel().is_some()
 }
@@ -100,8 +104,10 @@ pub fn initial_map_is_live(
         && (window.x11_surface().is_some()
             || window.toplevel().is_some_and(|toplevel| {
                 smithay::backend::renderer::utils::with_renderer_surface_state(
-                    toplevel.wl_surface(), |state| state.buffer().is_some(),
-                ).unwrap_or(false)
+                    toplevel.wl_surface(),
+                    |state| state.buffer().is_some(),
+                )
+                .unwrap_or(false)
             }))
 }
 

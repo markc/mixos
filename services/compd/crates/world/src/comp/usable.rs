@@ -25,7 +25,11 @@ impl Reserved {
     /// is ignored), rounded up to whole logical px so a fractional panel never
     /// overlaps a window by a sub-pixel.
     pub fn add(&mut self, edge: &str, px: f32) {
-        let px = if px.is_finite() && px > 0.0 { px.ceil() as i32 } else { 0 };
+        let px = if px.is_finite() && px > 0.0 {
+            px.ceil() as i32
+        } else {
+            0
+        };
         let slot = match edge {
             "top" => &mut self.top,
             "bottom" => &mut self.bottom,
@@ -39,16 +43,33 @@ impl Reserved {
     /// `area` less these edges, stacked inside what the layer zones already
     /// left (never a negative size).
     pub fn shrink(&self, area: Rectangle<i32, Logical>) -> Rectangle<i32, Logical> {
-        let w = area.size.w.saturating_sub(self.left).saturating_sub(self.right).max(0);
-        let h = area.size.h.saturating_sub(self.top).saturating_sub(self.bottom).max(0);
-        Rectangle::new((area.loc.x + self.left, area.loc.y + self.top).into(), (w, h).into())
+        let w = area
+            .size
+            .w
+            .saturating_sub(self.left)
+            .saturating_sub(self.right)
+            .max(0);
+        let h = area
+            .size
+            .h
+            .saturating_sub(self.top)
+            .saturating_sub(self.bottom)
+            .max(0);
+        Rectangle::new(
+            (area.loc.x + self.left, area.loc.y + self.top).into(),
+            (w, h).into(),
+        )
     }
 }
 
 /// `at` (a window's world position) moved so a window of `size` lies inside
 /// the default output's usable area; unchanged when the area is not known
 /// yet. A window larger than the area opens at its top-left.
-pub fn inside_usable(lp: &crate::state::Loop, at: (f64, f64), size: Size<i32, Logical>) -> (f64, f64) {
+pub fn inside_usable(
+    lp: &crate::state::Loop,
+    at: (f64, f64),
+    size: Size<i32, Logical>,
+) -> (f64, f64) {
     let Some(area) = lp.inner.comp.default_usable() else {
         return at;
     };
@@ -78,18 +99,35 @@ mod tests {
         let whole = Rectangle::<i32, Logical>::new((0, 0).into(), (1280, 800).into());
         let mut bottom = Reserved::default();
         bottom.add("bottom", 80.0);
-        assert_eq!(bottom.shrink(whole), Rectangle::<i32, Logical>::new((0, 0).into(), (1280, 720).into()));
+        assert_eq!(
+            bottom.shrink(whole),
+            Rectangle::<i32, Logical>::new((0, 0).into(), (1280, 720).into())
+        );
         let mut sides = Reserved::default();
         sides.add("left", 47.2);
         sides.add("top", 30.0);
         sides.add("sideways", 9.0);
         sides.add("right", f32::NAN);
-        assert_eq!(sides, Reserved { top: 30, bottom: 0, left: 48, right: 0 });
+        assert_eq!(
+            sides,
+            Reserved {
+                top: 30,
+                bottom: 0,
+                left: 48,
+                right: 0
+            }
+        );
         let layered = Rectangle::<i32, Logical>::new((0, 24).into(), (1280, 776).into());
-        assert_eq!(sides.shrink(layered), Rectangle::<i32, Logical>::new((48, 54).into(), (1232, 746).into()));
+        assert_eq!(
+            sides.shrink(layered),
+            Rectangle::<i32, Logical>::new((48, 54).into(), (1232, 746).into())
+        );
         let mut huge = Reserved::default();
         huge.add("top", 900.0);
-        assert_eq!(huge.shrink(whole).size, Size::<i32, Logical>::from((1280, 0)));
+        assert_eq!(
+            huge.shrink(whole).size,
+            Size::<i32, Logical>::from((1280, 0))
+        );
         assert_eq!(Reserved::default().shrink(whole), whole);
     }
 }

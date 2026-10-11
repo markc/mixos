@@ -8,20 +8,20 @@
 //! callers are unchanged. interface.base keeps `orchestration_core` (for these
 //! `&Loop` wrappers + the bbox path, which still reads `_loop.inner` directly).
 
+use crate::camera::transform::translate::transform::{Context as XformCtx, Transform as Xform};
+use crate::state::Loop;
+use crate::state::state::CoordinateTrait;
+use protocols::window::ident::ident;
 use smithay::desktop::{Window, layer_map_for_output};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
 use smithay::wayland::shell::wlr_layer::Layer;
-use crate::camera::transform::translate::transform::{Context as XformCtx, Transform as Xform};
-use crate::state::Loop;
-use crate::state::state::CoordinateTrait;
-use ui::{HandleId, UiSpace, Transform as UiTransform};
-use protocols::window::ident::ident;
+use ui::{HandleId, Transform as UiTransform, UiSpace};
 
 // The hit type, filter, context, and the `_cx` hit-test entry come from the
 // Loop-free core; re-export so callers keep using `surface_interface_base::hit::*`.
 pub use crate::surface::interface::core::hit::{
-    HitCx, HitFilter, SurfaceHit, ui_camera_hcx, pass_all, surface_under_filtered_cx,
+    HitCx, HitFilter, SurfaceHit, pass_all, surface_under_filtered_cx, ui_camera_hcx,
 };
 
 /// Rim `&Loop` wrapper: feeds the spatial world's storage to the Loop-free core.
@@ -125,12 +125,14 @@ where
     // ── 2-7. Per-output layers + windows + UI world ───────────────
 
     let relevant_outputs: Vec<_> = _loop
-        .inner.space_state()
+        .inner
+        .space_state()
         .state
         .outputs()
         .filter(|o| {
             _loop
-                .inner.space_state()
+                .inner
+                .space_state()
                 .state
                 .output_geometry(o)
                 .map(|g| g.to_f64().overlaps(bbox_screen_logical))
@@ -165,8 +167,7 @@ where
                     continue;
                 };
                 let popups = layer_surface.bbox_with_popups();
-                let geom =
-                    Rectangle::from_loc_and_size(geo.loc + popups.loc, popups.size).to_f64();
+                let geom = Rectangle::from_loc_and_size(geo.loc + popups.loc, popups.size).to_f64();
 
                 if callback(output_relative_bbox, geom) {
                     let s = layer_surface.wl_surface().clone();
@@ -189,7 +190,8 @@ where
         // Windows — world directly.
         for window in _loop.inner.space_state().state.elements() {
             let Some(window_geom) = _loop
-                .inner.space_state()
+                .inner
+                .space_state()
                 .state
                 .element_geometry(window)
                 .map(|g| g.to_f64())
@@ -204,7 +206,8 @@ where
                 continue;
             };
             let location = _loop
-                .inner.space_state()
+                .inner
+                .space_state()
                 .state
                 .element_location(window)
                 .unwrap_or_default();

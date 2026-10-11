@@ -81,7 +81,12 @@ thread_local! {
 }
 
 impl Record {
-    fn record(&mut self, key: (String, Option<u64>), votes: HashMap<Uuid, bool>, live: &HashSet<Uuid>) {
+    fn record(
+        &mut self,
+        key: (String, Option<u64>),
+        votes: HashMap<Uuid, bool>,
+        live: &HashSet<Uuid>,
+    ) {
         self.votes.insert(key, votes);
         self.votes.retain(|_, pane| {
             pane.retain(|uuid, _| live.contains(uuid));
@@ -103,9 +108,13 @@ impl Record {
         for uuid in live {
             let decision = next.get(uuid).copied().unwrap_or_default();
             if decision == Decision::Unknown {
-                self.counters.conservative_fallbacks = self.counters.conservative_fallbacks.saturating_add(1);
+                self.counters.conservative_fallbacks =
+                    self.counters.conservative_fallbacks.saturating_add(1);
             }
-            let previous = self.decisions.get(uuid).map_or(Decision::Unknown, |(d, _)| *d);
+            let previous = self
+                .decisions
+                .get(uuid)
+                .map_or(Decision::Unknown, |(d, _)| *d);
             if previous != decision {
                 if previous == Decision::Occluded && decision == Decision::Exposed {
                     self.counters.resumes = self.counters.resumes.saturating_add(1);
@@ -127,7 +136,12 @@ impl Record {
 
 /// One pane's render: the windows it noted (drawn, and on the pane) for
 /// output `output` and pane `slot`, against the windows that exist now.
-pub fn record(output: &str, slot: Option<u64>, visible: &Visible, live: impl IntoIterator<Item = Uuid>) {
+pub fn record(
+    output: &str,
+    slot: Option<u64>,
+    visible: &Visible,
+    live: impl IntoIterator<Item = Uuid>,
+) {
     let mut votes = HashMap::new();
     for window in &visible.on_pane {
         if let Some(uuid) = window.uuid() {
@@ -147,13 +161,22 @@ pub fn record(output: &str, slot: Option<u64>, visible: &Visible, live: impl Int
 pub fn props(uuid: &Uuid) -> Props {
     RECORD.with_borrow(|record| {
         let (decision, revision) = record.decisions.get(uuid).copied().unwrap_or_default();
-        Props { occluded: decision == Decision::Occluded, reason: decision.reason(), revision }
+        Props {
+            occluded: decision == Decision::Occluded,
+            reason: decision.reason(),
+            revision,
+        }
     })
 }
 
 pub fn decision(window: &Window) -> Decision {
     window.uuid().map_or(Decision::Unknown, |uuid| {
-        RECORD.with_borrow(|record| record.decisions.get(&uuid).map_or(Decision::Unknown, |(d, _)| *d))
+        RECORD.with_borrow(|record| {
+            record
+                .decisions
+                .get(&uuid)
+                .map_or(Decision::Unknown, |(d, _)| *d)
+        })
     })
 }
 
@@ -178,7 +201,12 @@ pub fn occluded() -> Vec<(Uuid, Vec<String>)> {
         let mut out: HashMap<Uuid, Vec<String>> = HashMap::new();
         for ((output, _), pane) in &record.votes {
             for (uuid, drawn) in pane {
-                if !drawn && record.decisions.get(uuid).is_some_and(|(d, _)| *d == Decision::Occluded) {
+                if !drawn
+                    && record
+                        .decisions
+                        .get(uuid)
+                        .is_some_and(|(d, _)| *d == Decision::Occluded)
+                {
                     let outputs = out.entry(*uuid).or_default();
                     if !outputs.contains(output) {
                         outputs.push(output.clone());
@@ -193,7 +221,10 @@ pub fn occluded() -> Vec<(Uuid, Vec<String>)> {
 /// A frame-callback pulse withheld callbacks from `n` occluded windows.
 pub fn note_withheld(n: usize) {
     RECORD.with_borrow_mut(|record| {
-        record.counters.withheld_opportunities = record.counters.withheld_opportunities.saturating_add(n as u64);
+        record.counters.withheld_opportunities = record
+            .counters
+            .withheld_opportunities
+            .saturating_add(n as u64);
     });
 }
 
@@ -216,7 +247,10 @@ mod tests {
         r.record(("A".into(), None), pane(&[(1, true), (2, false)]), &live);
         assert_eq!(r.decisions[&id(1)].0, Decision::Exposed);
         assert_eq!(r.decisions[&id(2)].0, Decision::Occluded);
-        assert!(r.decisions.get(&id(3)).is_none(), "never evaluated: unknown, not stored");
+        assert!(
+            r.decisions.get(&id(3)).is_none(),
+            "never evaluated: unknown, not stored"
+        );
         let rev = r.revision;
         assert_eq!(r.counters.conservative_fallbacks, 1);
         // Same votes again: nothing changes, the revision holds.

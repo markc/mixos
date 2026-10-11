@@ -25,4 +25,3 @@ pub struct Camera {
     /// the glide would visibly outrun the drag it continues.
     pub pan_from_touch: bool,
 }
-

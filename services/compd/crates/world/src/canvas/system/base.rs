@@ -1,11 +1,11 @@
+use crate::canvas::state::state::CanvasState;
+use crate::surface::system::base::announce_ui_button;
+use dispatcher::state::state::Dispatch;
 use slots::define_buffer;
 use slots::input::event::base::{InputEvent, InputFlow};
 use slots::input::layer::base as input_layer;
 use slots::storage::token::base::{Token, TokenMut};
 use slots::trait_::system::base::{BufferCx, System, SystemCx, WorldBuilder};
-use dispatcher::state::state::Dispatch;
-use crate::canvas::state::state::CanvasState;
-use crate::surface::system::base::announce_ui_button;
 use smithay::backend::input::ButtonState;
 use smithay::input::pointer::ButtonEvent;
 use smithay::utils::SERIAL_COUNTER;
@@ -40,12 +40,21 @@ impl System for CanvasSystem {
         builder.storage.insert(&CANVAS, CanvasState::new());
         // Generic teleport-suppression lock (refcount) lives in world storage so any
         // system can acquire/release it; seeded to 0 here (canvas is its first client).
-        builder.storage.insert(&drivers::output::base::TELEPORT_SUPPRESS, 0u32);
+        builder
+            .storage
+            .insert(&drivers::output::base::TELEPORT_SUPPRESS, 0u32);
         builder.input(input_layer::WORLD);
     }
 
     fn input(&mut self, cx: &mut SystemCx, event: &InputEvent) -> InputFlow {
-        let InputEvent::PointerButton { button, pressed, x, y, modality } = event else {
+        let InputEvent::PointerButton {
+            button,
+            pressed,
+            x,
+            y,
+            modality,
+        } = event
+        else {
             return InputFlow::Pass;
         };
         if *pressed {
@@ -60,12 +69,20 @@ impl System for CanvasSystem {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as u32)
             .unwrap_or(0);
-        if let Some(dispatch) = cx.seat.as_deref_mut().and_then(|s| s.downcast_mut::<Dispatch>())
+        if let Some(dispatch) = cx
+            .seat
+            .as_deref_mut()
+            .and_then(|s| s.downcast_mut::<Dispatch>())
             && let Some(pointer) = dispatch.seat.seat.get_pointer()
         {
             pointer.button(
                 dispatch,
-                &ButtonEvent { button: *button, state: ButtonState::Released, serial, time },
+                &ButtonEvent {
+                    button: *button,
+                    state: ButtonState::Released,
+                    serial,
+                    time,
+                },
             );
             pointer.frame(dispatch);
         }
@@ -88,8 +105,14 @@ impl System for CanvasSystem {
                 // the unconditional PanUpdating(false) on every button release doesn't
                 // decrement another system's lock when no pan was active.
                 if value != was {
-                    let lock = cx.storage.get_mut(&drivers::output::base::TELEPORT_SUPPRESS_MUT);
-                    *lock = if value { lock.saturating_add(1) } else { lock.saturating_sub(1) };
+                    let lock = cx
+                        .storage
+                        .get_mut(&drivers::output::base::TELEPORT_SUPPRESS_MUT);
+                    *lock = if value {
+                        lock.saturating_add(1)
+                    } else {
+                        lock.saturating_sub(1)
+                    };
                 }
             }
         }

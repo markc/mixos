@@ -75,7 +75,10 @@ impl SetupOverlay {
     }
 
     fn is_region(&self) -> bool {
-        matches!(self.kind, TargetKind::WorldRegion | TargetKind::ScreenRegion)
+        matches!(
+            self.kind,
+            TargetKind::WorldRegion | TargetKind::ScreenRegion
+        )
     }
 
     /// The hole to clear in the mask for the current selection.
@@ -178,8 +181,12 @@ impl UiProgram for SetupOverlay {
         if released && self.dragging {
             emit.push(CaptureMessage::DragEnd);
         }
-        let (escape, enter) =
-            ui.ctx().input(|input| (input.key_pressed(egui::Key::Escape), input.key_pressed(egui::Key::Enter)));
+        let (escape, enter) = ui.ctx().input(|input| {
+            (
+                input.key_pressed(egui::Key::Escape),
+                input.key_pressed(egui::Key::Enter),
+            )
+        });
         if escape {
             emit.push(CaptureMessage::Cancel);
         } else if enter {
@@ -218,7 +225,8 @@ impl SetupOverlay {
                             ("capture-media-screenshot", CaptureMedia::Screenshot),
                             ("capture-media-video", CaptureMedia::Video),
                         ] {
-                            if style::choice(ui, strings::text(key), self.media == media).clicked() {
+                            if style::choice(ui, strings::text(key), self.media == media).clicked()
+                            {
                                 emit.push(CaptureMessage::SelectMedia(media));
                             }
                         }
@@ -226,7 +234,10 @@ impl SetupOverlay {
                     // Transparent-background toggle (window/world only).
                     if self.supports_no_background() {
                         let mut on = self.no_background;
-                        if ui.checkbox(&mut on, strings::text("capture-transparent")).changed() {
+                        if ui
+                            .checkbox(&mut on, strings::text("capture-transparent"))
+                            .changed()
+                        {
                             emit.push(CaptureMessage::SetNoBackground(on));
                         }
                     }
@@ -236,9 +247,15 @@ impl SetupOverlay {
                         TargetKind::ScreenRegion => "capture-hint-screen",
                         TargetKind::FullScreen => "capture-hint-full",
                     };
-                    ui.label(egui::RichText::new(strings::text(hint)).size(13.0).color(style::weak(ui)));
+                    ui.label(
+                        egui::RichText::new(strings::text(hint))
+                            .size(13.0)
+                            .color(style::weak(ui)),
+                    );
                     ui.horizontal(|ui| {
-                        if style::button(ui, strings::text("capture-confirm"), Some(accent)).clicked() {
+                        if style::button(ui, strings::text("capture-confirm"), Some(accent))
+                            .clicked()
+                        {
                             emit.push(CaptureMessage::Confirm);
                         }
                         if style::button(ui, strings::text("capture-cancel"), None).clicked() {

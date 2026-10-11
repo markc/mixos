@@ -15,10 +15,10 @@ use smithay::backend::renderer::utils::RendererSurfaceStateUserData;
 use smithay::desktop::{Space, Window};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Size};
-use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::compositor::{
-    get_parent, with_states, with_surface_tree_downward, SubsurfaceCachedState, TraversalAction,
+    SubsurfaceCachedState, TraversalAction, get_parent, with_states, with_surface_tree_downward,
 };
+use smithay::wayland::seat::WaylandFocus;
 
 use crate::camera::transform::translate::fit::window_fit;
 use crate::camera::transform::translate::slot;
@@ -85,7 +85,14 @@ pub fn surface_map(space: &Space<Window>, surface: &WlSurface) -> Option<Surface
 
     let (fit_surf, fit_sx, fit_sy) = match slot_size {
         // No slot decided: native placement, the surface origin at `elem_loc - geom.loc`.
-        None => (((elem_loc.x - geom.loc.x) as f64, (elem_loc.y - geom.loc.y) as f64), 1.0, 1.0),
+        None => (
+            (
+                (elem_loc.x - geom.loc.x) as f64,
+                (elem_loc.y - geom.loc.y) as f64,
+            ),
+            1.0,
+            1.0,
+        ),
         Some(slot_size) => {
             let dst = view_dst(&root).unwrap_or(geom.size);
             let stretch = slot::resize_stretching(&window, geom.size);
@@ -105,7 +112,12 @@ pub fn surface_map(space: &Space<Window>, surface: &WlSurface) -> Option<Surface
                 let loc = if *s == root {
                     *parent_loc
                 } else {
-                    *parent_loc + states.cached_state.get::<SubsurfaceCachedState>().current().location
+                    *parent_loc
+                        + states
+                            .cached_state
+                            .get::<SubsurfaceCachedState>()
+                            .current()
+                            .location
                 };
                 if s == surface {
                     offset = loc;
@@ -118,5 +130,12 @@ pub fn surface_map(space: &Space<Window>, surface: &WlSurface) -> Option<Surface
     }
 
     let extent = view_dst(surface).unwrap_or(geom.size);
-    Some(SurfaceMap { window, fit_surf, fit_sx, fit_sy, offset, extent })
+    Some(SurfaceMap {
+        window,
+        fit_surf,
+        fit_sx,
+        fit_sy,
+        offset,
+        extent,
+    })
 }

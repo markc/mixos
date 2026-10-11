@@ -54,7 +54,12 @@ pub struct Srgba {
 }
 
 impl Srgba {
-    pub const TRANSPARENT: Srgba = Srgba { r: 0.0, g: 0.0, b: 0.0, a: 0.0 };
+    pub const TRANSPARENT: Srgba = Srgba {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 0.0,
+    };
 
     pub const fn new(r: f32, g: f32, b: f32, a: f32) -> Srgba {
         Srgba { r, g, b, a }
@@ -97,7 +102,11 @@ pub fn oklch(l: f32, c: f32, h: f32) -> Srgba {
     ];
     let enc = |v: f32| {
         let v = v.clamp(0.0, 1.0);
-        if v <= 0.003_130_8 { 12.92 * v } else { 1.055 * v.powf(1.0 / 2.4) - 0.055 }
+        if v <= 0.003_130_8 {
+            12.92 * v
+        } else {
+            1.055 * v.powf(1.0 / 2.4) - 0.055
+        }
     };
     Srgba::new(enc(lin[0]), enc(lin[1]), enc(lin[2]), 1.0)
 }

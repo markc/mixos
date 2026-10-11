@@ -41,7 +41,10 @@ pub fn announce_session(wayland_socket: &str, desktop_name: &str) {
         ("XDG_CURRENT_DESKTOP", desktop_name),
         ("XDG_SESSION_TYPE", "wayland"),
     ]) {
-        Ok(()) => info!("session environment ready (activation adapters enabled: {})", cfg!(feature = "desktop-dbus")),
+        Ok(()) => info!(
+            "session environment ready (activation adapters enabled: {})",
+            cfg!(feature = "desktop-dbus")
+        ),
         Err(err) => warn!("could not propagate the session environment: {err}"),
     }
 }
@@ -172,7 +175,11 @@ pub fn push_session_env_if_active(active: bool, pairs: &[(&str, &str)]) {
 /// Clearing is an empty value, since neither publisher has an unset verb. Pairs with an
 /// empty value are skipped: there is nothing to own and nothing to retract.
 pub fn retract_session_env(active: bool, owned: &[(&str, &str)]) {
-    let published: Vec<(&str, &str)> = owned.iter().copied().filter(|(_, v)| !v.is_empty()).collect();
+    let published: Vec<(&str, &str)> = owned
+        .iter()
+        .copied()
+        .filter(|(_, v)| !v.is_empty())
+        .collect();
     if published.is_empty() {
         return;
     }
@@ -184,7 +191,9 @@ pub fn retract_session_env(active: bool, owned: &[(&str, &str)]) {
             .collect(),
         None => {
             if !active {
-                info!("cannot read the shared environment and this session is not active; leaving {published:?}");
+                info!(
+                    "cannot read the shared environment and this session is not active; leaving {published:?}"
+                );
                 return;
             }
             published.iter().map(|(key, _)| (*key, "")).collect()
@@ -227,7 +236,8 @@ fn show_environment() -> Option<String> {
 /// characters, which none of ours do — a socket name and a display number — so a quoted
 /// line simply fails to match and the value is left alone, which is the safe direction.
 fn still_ours(shared: &str, key: &str, value: &str) -> bool {
-    shared
-        .lines()
-        .any(|line| line.split_once('=').is_some_and(|(k, v)| k == key && v == value))
+    shared.lines().any(|line| {
+        line.split_once('=')
+            .is_some_and(|(k, v)| k == key && v == value)
+    })
 }

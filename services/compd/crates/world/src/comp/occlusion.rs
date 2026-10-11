@@ -19,8 +19,10 @@ pub fn service(lp: &mut Loop) {
         return;
     }
     let comp = &mut lp.inner.comp;
-    let windows: std::collections::HashSet<SurfaceId> =
-        changed.into_iter().filter_map(|uuid| comp.registry.id_for_uuid(uuid)).collect();
+    let windows: std::collections::HashSet<SurfaceId> = changed
+        .into_iter()
+        .filter_map(|uuid| comp.registry.id_for_uuid(uuid))
+        .collect();
     // The window's popups and subsurfaces share its decision (the
     // projection walks `parent`), so their rows changed with it.
     let ids: Vec<u64> = comp
@@ -54,9 +56,19 @@ mod tests {
         assert_eq!(comp.revision(), revision, "nothing changed");
         comp.occlusion_changed(&[5]);
         assert_ne!(comp.revision(), revision);
-        assert_eq!(comp.content_revision(), content, "truth carries no occlusion");
-        assert_eq!(comp.causes.resolve("surfaces.s5.occluded"), Some("wayland.occlusion"));
-        assert_eq!(comp.causes.resolve("windows.s5.occlusion_reason"), Some("wayland.occlusion"));
+        assert_eq!(
+            comp.content_revision(),
+            content,
+            "truth carries no occlusion"
+        );
+        assert_eq!(
+            comp.causes.resolve("surfaces.s5.occluded"),
+            Some("wayland.occlusion")
+        );
+        assert_eq!(
+            comp.causes.resolve("windows.s5.occlusion_reason"),
+            Some("wayland.occlusion")
+        );
         assert_eq!(comp.causes.resolve("surfaces.s6.occluded"), None);
     }
 }

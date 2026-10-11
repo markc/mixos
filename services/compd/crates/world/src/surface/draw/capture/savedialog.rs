@@ -20,7 +20,11 @@ pub struct SaveDialog {
 
 impl SaveDialog {
     pub fn new(kind_label: &'static str, show_optimize: bool) -> Self {
-        Self { kind_label, show_optimize, optimized: false }
+        Self {
+            kind_label,
+            show_optimize,
+            optimized: false,
+        }
     }
 
     /// Whether the user ticked "Optimized encoding".
@@ -44,7 +48,11 @@ impl UiProgram for SaveDialog {
 
     fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<CaptureMessage>) {
         let accent = style::accent(ui);
-        let title = if self.is_video() { "capture-saved-video" } else { "capture-saved-screenshot" };
+        let title = if self.is_video() {
+            "capture-saved-video"
+        } else {
+            "capture-saved-screenshot"
+        };
         // The optimized-encode checkbox only applies to video, and only when
         // the background re-encode isn't already automatic.
         let offer_optimize = self.show_optimize && self.is_video();
@@ -57,7 +65,9 @@ impl UiProgram for SaveDialog {
                     .color(style::weak(ui)),
             );
             if offer_optimize
-                && ui.checkbox(&mut optimized, strings::text("capture-optimized")).changed()
+                && ui
+                    .checkbox(&mut optimized, strings::text("capture-optimized"))
+                    .changed()
             {
                 emit.push(CaptureMessage::ToggleOptimized(optimized));
             }

@@ -1,14 +1,12 @@
-use smithay::desktop::Window;
 use crate::window::lifecycle::event::event::WindowLifecycleEvent;
+use smithay::desktop::Window;
 
-pub struct WindowLifecycle{
-    pub incoming: Vec<WindowLifecycleEvent>
+pub struct WindowLifecycle {
+    pub incoming: Vec<WindowLifecycleEvent>,
 }
 
 impl WindowLifecycle {
     pub fn new() -> Self {
-        return Self {
-            incoming: vec!(),
-        }
+        return Self { incoming: vec![] };
     }
 }

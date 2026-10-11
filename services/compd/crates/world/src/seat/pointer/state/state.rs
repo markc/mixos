@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use smithay::input::pointer::CursorIcon;
-use smithay::utils::{Logical, Point};
 use crate::seat::pointer::element::element::PointerElement;
 use crate::seat::pointer::texture::pointer_load::CursorThemeCache;
+use smithay::input::pointer::CursorIcon;
+use smithay::utils::{Logical, Point};
 
 pub struct PointerState {
     pub motion: Point<f64, Logical>,
@@ -82,7 +82,9 @@ fn shared_theme() -> Arc<CursorThemeCache> {
     THEME
         .get_or_init(|| {
             let name = std::env::var("XCURSOR_THEME").unwrap_or_else(|_| "Adwaita".into());
-            let size = std::env::var("XCURSOR_SIZE").ok().and_then(|s| s.parse().ok());
+            let size = std::env::var("XCURSOR_SIZE")
+                .ok()
+                .and_then(|s| s.parse().ok());
             Arc::new(CursorThemeCache::new(&name, size.unwrap_or(24)))
         })
         .clone()

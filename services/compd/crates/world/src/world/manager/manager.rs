@@ -35,7 +35,13 @@ impl WorldManager {
         let id = main.id;
         let mut index = HashMap::new();
         index.insert(id, 0);
-        Self { worlds: vec![main], index, kernel: host, active: id, spawn_target: id }
+        Self {
+            worlds: vec![main],
+            index,
+            kernel: host,
+            active: id,
+            spawn_target: id,
+        }
     }
 
     /// The kernel system host — ticked every frame, whatever world is active.
@@ -48,7 +54,10 @@ impl WorldManager {
     }
 
     fn idx(&self, id: Uuid) -> usize {
-        *self.index.get(&id).unwrap_or_else(|| panic!("unknown world {id}"))
+        *self
+            .index
+            .get(&id)
+            .unwrap_or_else(|| panic!("unknown world {id}"))
     }
 
     /// The spatial world new toplevels map into (the space-hosting world).
@@ -60,7 +69,10 @@ impl WorldManager {
     /// Returns `true` if the target actually changed (the space the foreign mirror
     /// advertises is the spawn-target's — see `Orchestrator::space_state`).
     pub fn set_spawn_target(&mut self, id: Uuid) -> bool {
-        assert!(self.index.contains_key(&id), "spawn-target to unknown world {id}");
+        assert!(
+            self.index.contains_key(&id),
+            "spawn-target to unknown world {id}"
+        );
         if self.spawn_target == id {
             return false;
         }
@@ -80,7 +92,9 @@ impl WorldManager {
         self.active
     }
     /// Every world id (insertion order); the loader prewarms each at startup.
-    pub fn ids(&self) -> Vec<Uuid> { self.worlds.iter().map(|w| w.id).collect() }
+    pub fn ids(&self) -> Vec<Uuid> {
+        self.worlds.iter().map(|w| w.id).collect()
+    }
 
     /// Every world's storage, including parked worlds, for owner-independent GC.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut World> {

@@ -1,6 +1,6 @@
+use crate::window::lifecycle::state::lifecycle::WindowLifecycle;
 use slots::storage::token::base::{Token, TokenMut};
 use slots::trait_::system::base::{System, WorldBuilder};
-use crate::window::lifecycle::state::lifecycle::WindowLifecycle;
 
 pub static WINDOW_LIFECYCLE: Token<WindowLifecycle> = Token::new();
 /// TRANSITIONAL pub: the wire glue and lifecycle interface still write the
@@ -17,6 +17,8 @@ impl System for WindowSystem {
     }
 
     fn register(&mut self, builder: &mut WorldBuilder) {
-        builder.storage.insert(&WINDOW_LIFECYCLE, WindowLifecycle::new());
+        builder
+            .storage
+            .insert(&WINDOW_LIFECYCLE, WindowLifecycle::new());
     }
 }

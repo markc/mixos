@@ -1,13 +1,13 @@
 use crate::window::interface::data::data::{WindowData, WindowFullscreen};
-use std::cell::RefCell;
+use dispatcher::wayland::xdg::activation::dispatch::wire::ActivationDetails;
+use protocols::window::ident::ident;
 use smithay::desktop::{Space, Window};
 use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::seat::WaylandFocus;
-use uuid::Uuid;
-use dispatcher::wayland::xdg::activation::dispatch::wire::ActivationDetails;
-use protocols::window::ident::ident;
 use smithay::wayland::xdg_activation::{XdgActivationToken, XdgActivationTokenData};
+use std::cell::RefCell;
+use uuid::Uuid;
 
 pub trait LoopWindow {
     fn window_data(&self) -> Option<&WindowData>;
@@ -68,10 +68,15 @@ impl LoopWindow for Window {
             // No `XdgActivationTokenData` was ever created for it — the client did not
             // go through `xdg_activation_v1` — so the correlation token is the whole
             // payload, which is all any caller reads.
-            return vec![ActivationDetails { token, token_data: XdgActivationTokenData::default() }];
+            return vec![ActivationDetails {
+                token,
+                token_data: XdgActivationTokenData::default(),
+            }];
         }
         // CHECK: See WindowData re-insertion logic which explains how surface may outlive window and be created with new window.
-        let Some(surface) = ident::xdg_surface(self) else { return vec![] };
+        let Some(surface) = ident::xdg_surface(self) else {
+            return vec![];
+        };
         dispatcher::wayland::xdg::activation::dispatch::wire::activations(&surface)
     }
 }

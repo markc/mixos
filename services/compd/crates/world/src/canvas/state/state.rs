@@ -68,6 +68,9 @@ impl CanvasState {
     /// The extent just pins the cursor for this grab — see the seat's
     /// `pointer.input/extent`.
     pub fn select_box(&self) -> bool {
-        matches!(self.Grab, CanvasGrab::Active(ActiveOption::SelectBox { .. }))
+        matches!(
+            self.Grab,
+            CanvasGrab::Active(ActiveOption::SelectBox { .. })
+        )
     }
 }

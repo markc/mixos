@@ -1,7 +1,7 @@
-use smithay::desktop::LayerSurface;
-use smithay::utils::{Logical, Physical, Point, Size};
 use dispatcher::wayland::layershell::dispatch::dispatch::OverlayPlacement;
 pub use dispatcher::wayland::layershell::dispatch::dispatch::*;
+use smithay::desktop::LayerSurface;
+use smithay::utils::{Logical, Physical, Point, Size};
 
 /// Pure placement core. `cursor_world` is only consulted by `FollowCursor`; it is
 /// the same point the rim reads from the seat and the hit-test is already probing.

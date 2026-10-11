@@ -14,13 +14,13 @@
 
 use std::any::Any;
 
+use crate::notify::present::base::{self as present, NotifyFrame};
+use crate::notify::present::registry::registry::Presenter;
+use crate::notify::state::base::{NOTIFY, NOTIFY_MUT, NOTIFY_REQUEST, NotifyState};
 use crate::scene::platform::platform::Platform;
 use slots::define_buffer;
 use slots::trait_::system::base::{BufferCx, System, SystemCx, WorldBuilder};
 use slots::world::frame::base::{self as layer, FramePlan, FrameTick};
-use crate::notify::present::base::{self as present, NotifyFrame};
-use crate::notify::present::registry::registry::Presenter;
-use crate::notify::state::base::{NotifyState, NOTIFY, NOTIFY_MUT, NOTIFY_REQUEST};
 
 enum NotifyCmd {
     Queue(String),
@@ -47,7 +47,10 @@ impl System for NotifySystem {
     }
 
     fn update(&mut self, cx: &mut SystemCx, _tick: &FrameTick) {
-        let screen = cx.kernel.get(&crate::smithay_glue::data::data::SCREEN).clone();
+        let screen = cx
+            .kernel
+            .get(&crate::smithay_glue::data::data::SCREEN)
+            .clone();
         let next = cx.storage.get(&NOTIFY).queue.front().cloned();
         let (kernel, presenter) = (cx.kernel, &mut self.presenter);
         let (frame, taken) = cx
@@ -56,7 +59,8 @@ impl System for NotifySystem {
             .and_then(|p| p.downcast_mut::<Platform>())
             .map(|p| {
                 let node = p.render_node().to_owned();
-                p.renderer().map(|r| present::tick(presenter, next, kernel, r, &node, &screen))
+                p.renderer()
+                    .map(|r| present::tick(presenter, next, kernel, r, &node, &screen))
             })
             .flatten()
             .unwrap_or((None, false));
@@ -76,7 +80,9 @@ impl System for NotifySystem {
         let queue = &mut cx.storage.get_mut(&NOTIFY_MUT).queue;
         match *message.downcast::<NotifyCmd>().expect("notify buffer type") {
             NotifyCmd::Queue(m) => queue.push_back(m),
-            NotifyCmd::Taken => { queue.pop_front(); }
+            NotifyCmd::Taken => {
+                queue.pop_front();
+            }
         }
     }
 }

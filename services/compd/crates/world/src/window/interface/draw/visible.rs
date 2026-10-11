@@ -1,6 +1,6 @@
-use smithay::desktop::Window;
-use dispatcher::wire::trait_::surface_event::SurfaceHandle;
 use crate::state::Loop;
+use dispatcher::wire::trait_::surface_event::SurfaceHandle;
+use smithay::desktop::Window;
 
 pub trait DrawWindow {
     fn visible(&self, _loop: &Loop) -> bool;

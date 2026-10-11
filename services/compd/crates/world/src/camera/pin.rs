@@ -29,12 +29,20 @@ pub fn pin(inner: &mut Orchestrator) -> bool {
         .outputs()
         .filter_map(|output| {
             let mode = output.current_mode()?;
-            Some((output_key(output), (mode.size.w, mode.size.h), output.current_scale().fractional_scale()))
+            Some((
+                output_key(output),
+                (mode.size.w, mode.size.h),
+                output.current_scale().fractional_scale(),
+            ))
         })
         .collect();
     let mut moved = false;
     for (key, (width, height), scale) in outputs {
-        let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
+        let scale = if scale.is_finite() && scale > 0.0 {
+            scale
+        } else {
+            1.0
+        };
         let views = inner.output_views_mut();
         views.ensure(&key);
         let viewports = views.views_mut(&key);
@@ -54,7 +62,9 @@ pub fn pin(inner: &mut Orchestrator) -> bool {
             })
             .collect();
         for (slot, (x, y)) in centres {
-            let Some(camera) = viewports.camera_of_mut(slot) else { continue };
+            let Some(camera) = viewports.camera_of_mut(slot) else {
+                continue;
+            };
             let transform = &mut camera.transform;
             if transform.position.x != x || transform.position.y != y || transform.zoom != 1.0 {
                 transform.position = Point::from((x, y));
@@ -78,12 +88,19 @@ pub fn centre_pointer_once(lp: &mut crate::state::Loop) {
         return;
     }
     let space = &lp.inner.space_state().state;
-    let Some(output) = space.outputs().next().cloned() else { return };
-    let (Some(mode), Some(geometry)) = (output.current_mode(), space.output_geometry(&output)) else {
+    let Some(output) = space.outputs().next().cloned() else {
+        return;
+    };
+    let (Some(mode), Some(geometry)) = (output.current_mode(), space.output_geometry(&output))
+    else {
         return;
     };
     let scale = output.current_scale().fractional_scale();
-    let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
+    let scale = if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
+    };
     let physical = (f64::from(mode.size.w) / 2.0, f64::from(mode.size.h) / 2.0);
     let location = Point::from((
         f64::from(geometry.loc.x) + physical.0 / scale,
@@ -93,9 +110,18 @@ pub fn centre_pointer_once(lp: &mut crate::state::Loop) {
     lp.inner.pointer_mut().motion.y = physical.1;
     if let Some(pointer) = lp.state.seat.seat.get_pointer() {
         let time = lp.inner.start_time.elapsed().as_millis() as u32;
-        pointer.motion(&mut lp.state, None, &MotionEvent { location, serial: SERIAL_COUNTER.next_serial(), time });
+        pointer.motion(
+            &mut lp.state,
+            None,
+            &MotionEvent {
+                location,
+                serial: SERIAL_COUNTER.next_serial(),
+                time,
+            },
+        );
         pointer.frame(&mut lp.state);
     }
     lp.inner.comp.pointer_placed = true;
-    lp.state.schedule_redraw(dispatcher::state::state::RedrawReason::Cursor);
+    lp.state
+        .schedule_redraw(dispatcher::state::state::RedrawReason::Cursor);
 }

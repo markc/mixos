@@ -47,7 +47,10 @@ impl Bindings {
     /// Build the table for `profile` once (`bindings.profile`).
     pub fn ensure(&mut self, profile: &str) {
         if self.state.is_none() {
-            self.state = Some(BindingState::for_profile(BindingProfile::from_name(profile), true));
+            self.state = Some(BindingState::for_profile(
+                BindingProfile::from_name(profile),
+                true,
+            ));
         }
     }
 
@@ -65,7 +68,13 @@ impl Bindings {
 /// (`raw_latin_sym_or_raw_current_sym`); `modifiers` the shortcut view
 /// (nested: Right Ctrl stands in for Super). Returns whether compd took the
 /// key (the client must not see it).
-pub fn key(lp: &mut Loop, keycode: u32, pressed: bool, keysym: Option<u32>, modifiers: &ModifiersState) -> bool {
+pub fn key(
+    lp: &mut Loop,
+    keycode: u32,
+    pressed: bool,
+    keysym: Option<u32>,
+    modifiers: &ModifiersState,
+) -> bool {
     let modifiers = Modifiers {
         ctrl: modifiers.ctrl,
         alt: modifiers.alt,
@@ -76,7 +85,8 @@ pub fn key(lp: &mut Loop, keycode: u32, pressed: bool, keysym: Option<u32>, modi
         caps_lock: modifiers.caps_lock,
         num_lock: modifiers.num_lock,
     };
-    let modifier = keysym.is_some_and(|sym| smithay::input::keyboard::Keysym::new(sym).is_modifier_key());
+    let modifier =
+        keysym.is_some_and(|sym| smithay::input::keyboard::Keysym::new(sym).is_modifier_key());
     // Under a session lock only the VT switch stays a binding, and a key no
     // lock surface holds the
     // keyboard for goes nowhere: not to the engine's shortcuts, the compositor's UI
@@ -91,7 +101,10 @@ pub fn key(lp: &mut Loop, keycode: u32, pressed: bool, keysym: Option<u32>, modi
             .and_then(|keyboard| keyboard.current_focus())
             .is_some_and(|surface| super::session_lock::is_lock_surface(lp, &surface));
     let bindings = &mut lp.inner.comp.bindings;
-    bindings.last_edge = Some(KeyEdge { took: false, modifier });
+    bindings.last_edge = Some(KeyEdge {
+        took: false,
+        modifier,
+    });
     let Some(state) = bindings.state.as_mut() else {
         return unheld;
     };
@@ -103,12 +116,18 @@ pub fn key(lp: &mut Loop, keycode: u32, pressed: bool, keysym: Option<u32>, modi
     let action = match disposition {
         KeyDisposition::Forward => return unheld,
         KeyDisposition::SwallowRelease => {
-            bindings.last_edge = Some(KeyEdge { took: true, modifier });
+            bindings.last_edge = Some(KeyEdge {
+                took: true,
+                modifier,
+            });
             return true;
         }
         KeyDisposition::Act(action) => action,
     };
-    bindings.last_edge = Some(KeyEdge { took: true, modifier });
+    bindings.last_edge = Some(KeyEdge {
+        took: true,
+        modifier,
+    });
     bindings.fired = bindings.fired.saturating_add(1);
     bindings.last = Some(action.name());
     match action {

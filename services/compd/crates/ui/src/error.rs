@@ -1,7 +1,7 @@
 //! Errors raised by the integration layer.
 
-use thiserror;
 use graphics::surface::SurfaceError;
+use thiserror;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CreateError {

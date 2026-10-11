@@ -1,7 +1,7 @@
+use crate::scene::identity::identity::SolidBank;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
-use crate::scene::identity::identity::SolidBank;
 
 /// Per-window slot bank for the four border edges. A NEWTYPE, not a bare
 /// `SolidBank`: `UserDataMap` is keyed by type, so storing the unwrapped bank
@@ -9,13 +9,13 @@ use crate::scene::identity::identity::SolidBank;
 /// same window (the letterbox bars in `window.draw/draw.frame` do exactly that).
 #[derive(Default)]
 struct Border(SolidBank);
-use smithay::desktop::Window;
-use smithay::utils::{Physical, Point, Rectangle, Size};
 use crate::camera::transform::translate::transform::Transform;
 use crate::state::Loop;
 use crate::state::state::CoordinateTrait;
 use crate::window::interface::draw::bound::CalculateBoundResult;
 use crate::window::interface::record::window::LoopWindow;
+use smithay::desktop::Window;
+use smithay::utils::{Physical, Point, Rectangle, Size};
 
 pub fn scene<R>(
     state: &mut Loop,
@@ -93,8 +93,14 @@ where
     // content is letterboxed into and the rect other interfaces key off, so the border must
     // match it exactly regardless of how the client misbehaves.
     let render_with: Rectangle<i32, Physical> = Rectangle::new(
-        Point::from((bound.Screen.Left.round() as i32, bound.Screen.Top.round() as i32)),
-        Size::from((bound.Screen.Width.round() as i32, bound.Screen.Height.round() as i32)),
+        Point::from((
+            bound.Screen.Left.round() as i32,
+            bound.Screen.Top.round() as i32,
+        )),
+        Size::from((
+            bound.Screen.Width.round() as i32,
+            bound.Screen.Height.round() as i32,
+        )),
     );
 
     let bw_screen = bw_logical * ctx.scale;
@@ -149,8 +155,14 @@ where
     // physical rect so they don't bleed past it (full-output render → no clip).
     let pane = state.inner.render_target.map(|rt| {
         Rectangle::new(
-            Point::from(((rt.origin_logical.0 * ctx.scale).round() as i32, (rt.origin_logical.1 * ctx.scale).round() as i32)),
-            Size::from((rt.size_physical.0.round() as i32, rt.size_physical.1.round() as i32)),
+            Point::from((
+                (rt.origin_logical.0 * ctx.scale).round() as i32,
+                (rt.origin_logical.1 * ctx.scale).round() as i32,
+            )),
+            Size::from((
+                rt.size_physical.0.round() as i32,
+                rt.size_physical.1.round() as i32,
+            )),
         )
     });
 
@@ -162,7 +174,10 @@ where
     // to mean "the left edge" every frame, and an edge clipped fully out of the
     // pane `continue`s, which would otherwise shift every later edge's slot.
     let borders = window.user_data().get_or_insert(Border::default);
-    for (slot, rect) in [top_rect, left_rect, right_rect, bottom_rect].into_iter().enumerate() {
+    for (slot, rect) in [top_rect, left_rect, right_rect, bottom_rect]
+        .into_iter()
+        .enumerate()
+    {
         let rect = match pane {
             Some(p) => match rect.intersection(p) {
                 Some(clipped) => clipped,

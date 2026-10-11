@@ -58,7 +58,11 @@ pub fn choice(ui: &mut Ui, label: String, selected: bool) -> Response {
 fn contrast(fill: Color32) -> Color32 {
     let [r, g, b, _] = fill.to_array();
     let luma = 0.299 * f32::from(r) + 0.587 * f32::from(g) + 0.114 * f32::from(b);
-    if luma > 150.0 { Color32::BLACK } else { Color32::WHITE }
+    if luma > 150.0 {
+        Color32::BLACK
+    } else {
+        Color32::WHITE
+    }
 }
 
 /// A dialog panel centred on the surface, outlined in `border`.

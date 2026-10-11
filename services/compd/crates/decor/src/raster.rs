@@ -7,7 +7,9 @@
 //! This is the frame shader's maths run once per state change instead of once
 //! per frame: chrome repaints only when what it shows changes.
 
-use crate::layout::{ButtonShape, CaptionButton, ChromeLayout, DecoTheme, GlyphPolicy, Rect, Srgba};
+use crate::layout::{
+    ButtonShape, CaptionButton, ChromeLayout, DecoTheme, GlyphPolicy, Rect, Srgba,
+};
 
 use crate::state::ChromeState;
 use crate::text::TextMask;

@@ -35,9 +35,12 @@ impl UiProgram for ContinueDialog {
         style::centred_dialog(ui, "capture-continue", accent, |ui| {
             ui.label(egui::RichText::new(strings::text("capture-continue-title")).size(20.0));
             ui.label(
-                egui::RichText::new(strings::with("capture-continue-body", &[("seconds", &seconds)]))
-                    .size(14.0)
-                    .color(style::weak(ui)),
+                egui::RichText::new(strings::with(
+                    "capture-continue-body",
+                    &[("seconds", &seconds)],
+                ))
+                .size(14.0)
+                .color(style::weak(ui)),
             );
             ui.horizontal(|ui| {
                 if style::button(ui, strings::text("capture-continue"), Some(accent)).clicked() {

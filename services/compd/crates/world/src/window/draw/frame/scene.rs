@@ -16,33 +16,33 @@
 //! and `physical = world*scale*zoom + (center - cam*zoom*scale)`. Input (`hit.rs`) inverts the
 //! same fit. See `slot`/`Fit` and the authoritative-sizing plan.
 
-use smithay::backend::renderer::element::surface::{
-    WaylandSurfaceRenderElement, render_elements_from_surface_tree,
-};
-use smithay::backend::renderer::element::utils::{
-    CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
-};
-use smithay::backend::renderer::element::Kind;
-use smithay::backend::renderer::utils::{RendererSurfaceStateUserData, SurfaceView};
-use smithay::backend::renderer::element::solid::SolidColorRenderElement;
-use smithay::backend::renderer::{ImportAll, ImportMem, Renderer, Texture};
-use smithay::desktop::{PopupKind, PopupManager, Window};
-use smithay::desktop::utils::bbox_from_surface_tree;
-use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size};
-use smithay::wayland::compositor::{SurfaceData, with_states};
-use smithay::wayland::seat::WaylandFocus;
-use crate::camera::transform::translate::slot;
 use crate::camera::transform::translate::fit::{WindowFit, window_fit};
+use crate::camera::transform::translate::slot;
 use crate::camera::transform::translate::transform::{Context as XformCtx, Transform};
+use crate::scene::identity::identity::SolidBank;
 use crate::state::Loop;
 use crate::state::state::CoordinateTrait;
 use crate::window::draw::element::element::{ClampOpaque, Element, ElementWindowSurface};
 use crate::window::draw::occlude::occlude::{Drawn, Occluders};
 use crate::window::interface::draw::visible::DrawWindow;
 use crate::window::interface::record::window::LoopWindow;
-use crate::scene::identity::identity::SolidBank;
 use protocols::window::shell::shell;
+use smithay::backend::renderer::element::Kind;
+use smithay::backend::renderer::element::solid::SolidColorRenderElement;
+use smithay::backend::renderer::element::surface::{
+    WaylandSurfaceRenderElement, render_elements_from_surface_tree,
+};
+use smithay::backend::renderer::element::utils::{
+    CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
+};
+use smithay::backend::renderer::utils::{RendererSurfaceStateUserData, SurfaceView};
+use smithay::backend::renderer::{ImportAll, ImportMem, Renderer, Texture};
+use smithay::desktop::utils::bbox_from_surface_tree;
+use smithay::desktop::{PopupKind, PopupManager, Window};
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size};
+use smithay::wayland::compositor::{SurfaceData, with_states};
+use smithay::wayland::seat::WaylandFocus;
 
 /// Per-window slot bank for the letterbox bars. A NEWTYPE, not a bare
 /// `SolidBank`: `UserDataMap` is keyed by type, and the decoration crate stores
@@ -92,7 +92,10 @@ fn pane_rect(state: &Loop, ctx: XformCtx, size: Size<i32, Physical>) -> Rectangl
                     (rt.origin_logical.0 * ctx.scale).round() as i32,
                     (rt.origin_logical.1 * ctx.scale).round() as i32,
                 )),
-                Size::from((rt.size_physical.0.round() as i32, rt.size_physical.1.round() as i32)),
+                Size::from((
+                    rt.size_physical.0.round() as i32,
+                    rt.size_physical.1.round() as i32,
+                )),
             )
         })
         .unwrap_or(Rectangle::new(Point::from((0, 0)), size))
@@ -120,7 +123,10 @@ enum Placed {
     /// server-side chrome on each side, `slot` the slot alone, both re-clipped
     /// to the pane (the re-clip is what still lets a pane-filling window be
     /// occluded at all).
-    On { reach: Rectangle<i32, Physical>, slot: Rectangle<i32, Physical> },
+    On {
+        reach: Rectangle<i32, Physical>,
+        slot: Rectangle<i32, Physical>,
+    },
     /// Degenerate size — nothing committed yet. Draw it; there is no rect to
     /// cull against or to occlude with.
     Unsized,
@@ -178,8 +184,9 @@ fn placed_on(state: &mut Loop, window: &Window, size: Size<i32, Physical>) -> Pl
     // mean a covered window could never be found covered by an occluder of its
     // own size, since an opaque window deposits only its content rect.
     let side = |v: f32| (v as f64 * ctx.scale).ceil() as i32;
-    let (left, top, right, bottom) = decor::window::extents(window)
-        .map_or((0, 0, 0, 0), |e| (side(e.left), side(e.top), side(e.right), side(e.bottom)));
+    let (left, top, right, bottom) = decor::window::extents(window).map_or((0, 0, 0, 0), |e| {
+        (side(e.left), side(e.top), side(e.right), side(e.bottom))
+    });
     let grown = Rectangle::new(
         Point::from((rect.loc.x - left, rect.loc.y - top)),
         Size::from((rect.size.w + left + right, rect.size.h + top + bottom)),
@@ -191,9 +198,11 @@ fn placed_on(state: &mut Loop, window: &Window, size: Size<i32, Physical>) -> Pl
 }
 
 fn has_popup(window: &Window) -> bool {
-    window
-        .wl_surface()
-        .is_some_and(|s| PopupManager::popups_for_surface(s.as_ref()).next().is_some())
+    window.wl_surface().is_some_and(|s| {
+        PopupManager::popups_for_surface(s.as_ref())
+            .next()
+            .is_some()
+    })
 }
 
 /// True when the root surface is opaque over its whole `dst` — an alpha-free
@@ -202,21 +211,25 @@ fn has_popup(window: &Window) -> bool {
 fn surface_opaque(surface: &WlSurface) -> bool {
     with_states(surface, |s| {
         let Some(view) = view_of(s) else { return false };
-        let Some(m) = s.data_map.get::<RendererSurfaceStateUserData>() else { return false };
+        let Some(m) = s.data_map.get::<RendererSurfaceStateUserData>() else {
+            return false;
+        };
         let Ok(g) = m.lock() else { return false };
         // An alpha-free buffer (XRGB shm, an opaque dmabuf fourcc) is opaque over
         // everything it draws, region or none: most clients declare no opaque
         // region (weston-simple-shm, XRGB, does not), so the format counts.
         // `buffer_has_alpha` never answers `false` for a format with alpha;
         // `None` (unknown type) falls through to the region test.
-        if g.buffer().is_some_and(|buffer| smithay::backend::renderer::buffer_has_alpha(buffer) == Some(false)) {
+        if g.buffer().is_some_and(|buffer| {
+            smithay::backend::renderer::buffer_has_alpha(buffer) == Some(false)
+        }) {
             return true;
         }
         let dst = Rectangle::from_size(view.dst);
-        g.opaque_regions().is_some_and(|r| r.iter().any(|o| o.contains_rect(dst)))
+        g.opaque_regions()
+            .is_some_and(|r| r.iter().any(|o| o.contains_rect(dst)))
     })
 }
-
 
 /// Apply the fit transform to a native surface element: force a fixed geometry (so the result
 /// is independent of the scale the render path queries with), rescale about origin, relocate,
@@ -236,11 +249,19 @@ where
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Texture + Clone + Send + 'static,
 {
-    let forced = ElementWindowSurface { inner, zoom: force_scale, bundle_owned };
+    let forced = ElementWindowSurface {
+        inner,
+        zoom: force_scale,
+        bundle_owned,
+    };
     let r = RescaleRenderElement::from_element(forced, Point::from((0, 0)), rescale);
     let l = RelocateRenderElement::from_element(r, reloc, Relocate::Relative);
     let c = CropRenderElement::from_element(l, Scale::from(force_scale), crop)?;
-    Some(Element::WindowFit(ClampOpaque { inner: c, screen, bundle_owned }))
+    Some(Element::WindowFit(ClampOpaque {
+        inner: c,
+        screen,
+        bundle_owned,
+    }))
 }
 
 pub fn scene<R>(
@@ -264,14 +285,26 @@ where
     // force-set overrides every visibility gate below.
     let force_capture = window
         .uuid()
-        .map(|id| state.inner.kernel.get(&crate::driver::capture::base::CAPTURE).force_set.contains(&id))
+        .map(|id| {
+            state
+                .inner
+                .kernel
+                .get(&crate::driver::capture::base::CAPTURE)
+                .force_set
+                .contains(&id)
+        })
         .unwrap_or(false);
 
     // Skip drawing windows with their groups collapsed.
     if !force_capture && !window.visible(state) {
         return (vec![], Drawn::default());
     }
-    let mut drawn = Drawn { on_pane: true, visible: true, on_pane_awake: true, opaque: Vec::new() };
+    let mut drawn = Drawn {
+        on_pane: true,
+        visible: true,
+        on_pane_awake: true,
+        opaque: Vec::new(),
+    };
     if !force_capture {
         match placed_on(state, window, size) {
             // Frustum cull: a window whose slot projects outside the pane being
@@ -282,7 +315,13 @@ where
             // just stops the window being told to suspend while it sits a nudge off
             // the edge.
             Placed::Off { near } => {
-                return (vec![], Drawn { on_pane_awake: near, ..Drawn::default() });
+                return (
+                    vec![],
+                    Drawn {
+                        on_pane_awake: near,
+                        ..Drawn::default()
+                    },
+                );
             }
             Placed::Unsized => {}
             // Occlusion cull: fully covered by opaque windows already drawn in
@@ -305,7 +344,11 @@ where
                 // contributed no pixels, so it is occluded for frame callbacks,
                 // presentation and the occlusion report, which are decided on
                 // the content alone.
-                if reach != slot && occluders.hidden(slot) && !occluders.hidden(reach) && !has_popup(window) {
+                if reach != slot
+                    && occluders.hidden(slot)
+                    && !occluders.hidden(reach)
+                    && !has_popup(window)
+                {
                     drawn.visible = false;
                 }
                 if occluders.hidden(reach) && !has_popup(window) {
@@ -322,19 +365,24 @@ where
                     // render, then commit before it can show anything.
                     return (
                         vec![],
-                        Drawn { on_pane: true, visible: false, on_pane_awake: true, opaque: Vec::new() },
+                        Drawn {
+                            on_pane: true,
+                            visible: false,
+                            on_pane_awake: true,
+                            opaque: Vec::new(),
+                        },
                     );
                 }
             }
         }
     }
-    let bound = crate::window::interface::draw::bound::calculate(
-        state, renderer, size, window, context,
-    );
+    let bound =
+        crate::window::interface::draw::bound::calculate(state, renderer, size, window, context);
 
     let ctx = state.viewport_context();
     let elem_loc = state
-        .inner.space_state()
+        .inner
+        .space_state()
         .state
         .element_location(window)
         .unwrap_or_default();
@@ -343,8 +391,14 @@ where
         state, renderer, size, window, context, &bound,
     );
     let (elements, opaque) = window_elements(
-        renderer, size, window, ctx, elem_loc, slot_size_of(window),
-        pane_rect(state, ctx, size), decoration,
+        renderer,
+        size,
+        window,
+        ctx,
+        elem_loc,
+        slot_size_of(window),
+        pane_rect(state, ctx, size),
+        decoration,
     );
     drawn.opaque = opaque;
     (elements, drawn)
@@ -381,7 +435,10 @@ where
         return (elements, Vec::new());
     };
 
-    let render_native = |renderer: &mut R, out: &mut Vec<Element<R>>, surface: &WlSurface, loc: Point<i32, Physical>| {
+    let render_native = |renderer: &mut R,
+                         out: &mut Vec<Element<R>>,
+                         surface: &WlSurface,
+                         loc: Point<i32, Physical>| {
         let native: Vec<WaylandSurfaceRenderElement<R>> = render_elements_from_surface_tree(
             renderer,
             surface,
@@ -392,7 +449,11 @@ where
         );
         out.extend(native.into_iter().map(|inner| {
             Element::Window(ClampOpaque {
-                inner: ElementWindowSurface { inner, zoom: output_scale, bundle_owned },
+                inner: ElementWindowSurface {
+                    inner,
+                    zoom: output_scale,
+                    bundle_owned,
+                },
                 screen: size,
                 bundle_owned,
             })
@@ -401,7 +462,11 @@ where
 
     let Some(slot_size) = slot_size.filter(|s| s.w > 0 && s.h > 0) else {
         // Native fallback: toplevel + popups at the standard render location, no fit.
-        let render_at = project_point(ctx, (elem_loc.x - gloc.x) as f64, (elem_loc.y - gloc.y) as f64);
+        let render_at = project_point(
+            ctx,
+            (elem_loc.x - gloc.x) as f64,
+            (elem_loc.y - gloc.y) as f64,
+        );
         for (popup, location) in PopupManager::popups_for_surface(&root_surface) {
             let pg = popup.geometry().loc;
             let mut pl = project_point(
@@ -428,7 +493,11 @@ where
                 );
                 elements.extend(native.into_iter().map(|inner| {
                     Element::Window(ClampOpaque {
-                        inner: ElementWindowSurface { inner, zoom: ctx.scale, bundle_owned },
+                        inner: ElementWindowSurface {
+                            inner,
+                            zoom: ctx.scale,
+                            bundle_owned,
+                        },
                         screen: size,
                         bundle_owned,
                     })
@@ -454,12 +523,24 @@ where
         slot_size,
         stretch,
     );
-    let WindowFit { fit_sx, fit_sy, fit_surf, ref_size, cover: _ } = fit;
+    let WindowFit {
+        fit_sx,
+        fit_sy,
+        fit_surf,
+        ref_size,
+        cover: _,
+    } = fit;
     let (fit_surf_x, fit_surf_y) = fit_surf;
 
     let rescale = Scale::from((fit_sx * zoom, fit_sy * zoom));
     let reloc = project_point(ctx, fit_surf_x, fit_surf_y);
-    let crop_slot = project_rect(ctx, elem_loc.x as f64, elem_loc.y as f64, slot_size.w as f64, slot_size.h as f64);
+    let crop_slot = project_rect(
+        ctx,
+        elem_loc.x as f64,
+        elem_loc.y as f64,
+        slot_size.w as f64,
+        slot_size.h as f64,
+    );
     // When rendering a split/floating viewport pane, clamp content + popups to the
     // pane's physical rect so a window near the pane edge can't bleed into the
     // neighbour pane. Full-output render (no render target) → the whole output.
@@ -505,7 +586,15 @@ where
                 Kind::Unspecified,
             );
             for inner in native {
-                if let Some(e) = fit_wrap(inner, ctx.scale, bundle_owned, Scale::from((1.0, 1.0)), anchor, crop_output, size) {
+                if let Some(e) = fit_wrap(
+                    inner,
+                    ctx.scale,
+                    bundle_owned,
+                    Scale::from((1.0, 1.0)),
+                    anchor,
+                    crop_output,
+                    size,
+                ) {
                     elements.push(e);
                 }
             }
@@ -520,7 +609,15 @@ where
             Kind::Unspecified,
         );
         for inner in native {
-            if let Some(e) = fit_wrap(inner, ctx.scale, bundle_owned, rescale, reloc, crop_output, size) {
+            if let Some(e) = fit_wrap(
+                inner,
+                ctx.scale,
+                bundle_owned,
+                rescale,
+                reloc,
+                crop_output,
+                size,
+            ) {
                 elements.push(e);
             }
         }
@@ -536,7 +633,13 @@ where
     let chrome = decor::render::elements(
         renderer,
         window,
-        project_rect(ctx, elem_loc.x as f64, elem_loc.y as f64, slot_size.w as f64, slot_size.h as f64),
+        project_rect(
+            ctx,
+            elem_loc.x as f64,
+            elem_loc.y as f64,
+            slot_size.w as f64,
+            slot_size.h as f64,
+        ),
         slot_size,
         output_scale,
         crop_output,
@@ -558,11 +661,19 @@ where
     let clip = chrome.clip;
     let clip_program = clip.and_then(|_| decor::clip::program(renderer));
     for inner in native {
-        if let Some(e) = fit_wrap(inner, ctx.scale, bundle_owned, rescale, reloc, crop_slot, size) {
+        if let Some(e) = fit_wrap(
+            inner,
+            ctx.scale,
+            bundle_owned,
+            rescale,
+            reloc,
+            crop_slot,
+            size,
+        ) {
             elements.push(match (e, clip) {
-                (Element::WindowFit(fit), Some(clip)) => {
-                    Element::WindowFitClipped(decor::clip::Clipped::new(fit, clip_program.clone(), clip))
-                }
+                (Element::WindowFit(fit), Some(clip)) => Element::WindowFitClipped(
+                    decor::clip::Clipped::new(fit, clip_program.clone(), clip),
+                ),
                 (e, _) => e,
             });
         }
@@ -610,7 +721,11 @@ where
     // frame of extra damage rather than every frame of it.
     let letterbox = window.user_data().get_or_insert(LetterboxBars::default);
     for (slot, rect) in bars.iter().enumerate() {
-        elements.push(Element::SolidBox(letterbox.0.solid(slot, *rect, [0.0, 0.0, 0.0, 1.0])));
+        elements.push(Element::SolidBox(letterbox.0.solid(
+            slot,
+            *rect,
+            [0.0, 0.0, 0.0, 1.0],
+        )));
     }
 
     // Deposit exactly what is opaque — no slack, because the bars are literally
@@ -644,11 +759,22 @@ where
 }
 
 /// Fence a queued capture against the live registry just like comp.window.*.
-pub fn capture_window(state: &Loop, id: u64, generation: u64) -> Result<Window, surfaces::WindowTargetError> {
+pub fn capture_window(
+    state: &Loop,
+    id: u64,
+    generation: u64,
+) -> Result<Window, surfaces::WindowTargetError> {
     use dispatcher::wire::trait_::surface_event::SurfaceHandle;
     use dispatcher::wire::trait_::wire_trait::WireTrait;
-    let record = state.inner.comp.registry.resolve_window_target(id, Some(generation))?;
-    state.inner.all_world_spaces().iter()
+    let record = state
+        .inner
+        .comp
+        .registry
+        .resolve_window_target(id, Some(generation))?;
+    state
+        .inner
+        .all_world_spaces()
+        .iter()
         .flat_map(|space| space.state.elements())
         .find(|window| SurfaceHandle::of_window(window).as_ref() == Some(record.handle()))
         .cloned()
@@ -658,7 +784,11 @@ pub fn capture_window(state: &Loop, id: u64, generation: u64) -> Result<Window, 
 /// A single window at output scale, independent of its viewport and occlusion.
 /// The content slot, server-side frame and owned popup trees define its physical
 /// extent; an outlying popup is included without fitting the window to a monitor.
-pub fn capture<R>(renderer: &mut R, window: &Window, scale: f64) -> Result<(Vec<Element<R>>, Size<i32, Physical>), String>
+pub fn capture<R>(
+    renderer: &mut R,
+    window: &Window,
+    scale: f64,
+) -> Result<(Vec<Element<R>>, Size<i32, Physical>), String>
 where
     R: Renderer + ImportAll + ImportMem + dispatcher::frame::frame::SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
@@ -668,7 +798,8 @@ where
     }
     let surface = window.wl_surface().ok_or("window has no surface")?;
     let view = with_states(surface.as_ref(), view_of).ok_or("window has no committed surface")?;
-    let content = slot_size_of(window).filter(|s| s.w > 0 && s.h > 0)
+    let content = slot_size_of(window)
+        .filter(|s| s.w > 0 && s.h > 0)
         .unwrap_or(window.geometry().size);
     if content.w <= 0 || content.h <= 0 {
         return Err("window capture has no usable size".into());
@@ -676,10 +807,13 @@ where
     let ctx = XformCtx::new((0.0, 0.0), 1.0, (0.0, 0.0), scale);
     let slot = project_rect(ctx, 0.0, 0.0, content.w as f64, content.h as f64);
     let side = |v: f32| (v as f64 * scale).ceil() as i32;
-    let (left, top, right, bottom) = decor::window::extents(window)
-        .map_or((0, 0, 0, 0), |e| (side(e.left), side(e.top), side(e.right), side(e.bottom)));
-    let mut bounds = Rectangle::new((-left, -top).into(),
-        (slot.size.w + left + right, slot.size.h + top + bottom).into());
+    let (left, top, right, bottom) = decor::window::extents(window).map_or((0, 0, 0, 0), |e| {
+        (side(e.left), side(e.top), side(e.right), side(e.bottom))
+    });
+    let mut bounds = Rectangle::new(
+        (-left, -top).into(),
+        (slot.size.w + left + right, slot.size.h + top + bottom).into(),
+    );
     if decor::window::decorated(window)
         && let Some(theme) = decor::window::installed()
     {
@@ -691,11 +825,19 @@ where
             (bounds.size.w + soft * 2, bounds.size.h + soft * 2).into(),
         ));
     }
-    let fit = window_fit((0, 0).into(), window.geometry(), view.dst, content,
-        slot::resize_stretching(window, window.geometry().size));
+    let fit = window_fit(
+        (0, 0).into(),
+        window.geometry(),
+        view.dst,
+        content,
+        slot::resize_stretching(window, window.geometry().size),
+    );
     for (popup, location) in PopupManager::popups_for_surface(surface.as_ref()) {
         let offset = crate::camera::transform::translate::fit::popup_offset(
-            &fit, window.geometry(), location, popup.geometry().loc,
+            &fit,
+            window.geometry(),
+            location,
+            popup.geometry().loc,
         );
         let bbox = bbox_from_surface_tree(popup.wl_surface(), (0, 0));
         let (sx, sy) = if matches!(&popup, PopupKind::InputMethod(_)) {
@@ -707,8 +849,14 @@ where
         let y = (fit.fit_surf.1 + offset.y * fit.fit_sy + bbox.loc.y as f64 * sy) * scale;
         let end_x = x + bbox.size.w as f64 * sx * scale;
         let end_y = y + bbox.size.h as f64 * sy * scale;
-        let popup_bounds = Rectangle::new((x.floor() as i32, y.floor() as i32).into(),
-            ((end_x.ceil() - x.floor()) as i32, (end_y.ceil() - y.floor()) as i32).into());
+        let popup_bounds = Rectangle::new(
+            (x.floor() as i32, y.floor() as i32).into(),
+            (
+                (end_x.ceil() - x.floor()) as i32,
+                (end_y.ceil() - y.floor()) as i32,
+            )
+                .into(),
+        );
         bounds = bounds.merge(popup_bounds);
     }
     let size = bounds.size;
@@ -716,11 +864,23 @@ where
         return Err("window capture has no usable physical size".into());
     }
     let ctx = XformCtx::new(
-        ((bounds.loc.x as f64 + size.w as f64 / 2.0) / scale,
-         (bounds.loc.y as f64 + size.h as f64 / 2.0) / scale),
-        1.0, (size.w as f64, size.h as f64), scale,
+        (
+            (bounds.loc.x as f64 + size.w as f64 / 2.0) / scale,
+            (bounds.loc.y as f64 + size.h as f64 / 2.0) / scale,
+        ),
+        1.0,
+        (size.w as f64, size.h as f64),
+        scale,
     );
-    let (elements, _) = window_elements(renderer, size, window, ctx, (0, 0).into(),
-        Some(content), Rectangle::from_size(size), Vec::new());
+    let (elements, _) = window_elements(
+        renderer,
+        size,
+        window,
+        ctx,
+        (0, 0).into(),
+        Some(content),
+        Rectangle::from_size(size),
+        Vec::new(),
+    );
     Ok((elements, size))
 }

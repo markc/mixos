@@ -19,11 +19,11 @@ use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use policy::panel::{PanelHolders, PopupRestore};
-use surfaces::SurfaceId;
 use smithay::reexports::wayland_server::backend::ClientId;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::Serial;
 use smithay::wayland::compositor::with_states;
+use surfaces::SurfaceId;
 
 /// One edge's holders, keyed `(output name, edge)`.
 pub type Holders = PanelHolders<ClientId, Serial>;

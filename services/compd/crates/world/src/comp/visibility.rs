@@ -38,7 +38,8 @@ pub fn sync_hidden(lp: &Loop) -> bool {
     let mut changed = false;
     for space in lp.inner.all_world_spaces() {
         for window in space.state.elements() {
-            let hidden = SurfaceHandle::of_window(window).is_some_and(|handle| comp.hidden(&handle));
+            let hidden =
+                SurfaceHandle::of_window(window).is_some_and(|handle| comp.hidden(&handle));
             changed |= ident::set_hidden(window, hidden);
         }
     }

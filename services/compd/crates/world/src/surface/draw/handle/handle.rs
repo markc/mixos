@@ -1,7 +1,7 @@
+use crate::state::Loop;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
 use std::sync::{Arc, mpsc};
-use crate::state::Loop;
 use ui::{UiHandle, UiRegistry};
 
 use ui::{UiProgram, UiSnapshot};
@@ -22,7 +22,9 @@ pub fn load_snapshot<T: UiSnapshot>(
 ) -> UiHandle<T> {
     let gpu = state.inner.environment.GPU.clone();
     let handle = {
-        let registry = state.inner.surface_mut()
+        let registry = state
+            .inner
+            .surface_mut()
             .registry
             .as_mut()
             .unwrap_or_else(|| abort!("registry to be created"));
@@ -51,7 +53,9 @@ fn register<T: UiProgram>(state: &mut Loop, handle: UiHandle<T>, space: UiSpace,
         } else {
             crate::order::track::base::DrawLayer::CONTENT
         };
-        state.inner.register_drawable(uuid::Uuid::from_u128(handle.id.0 as u128), tier);
+        state
+            .inner
+            .register_drawable(uuid::Uuid::from_u128(handle.id.0 as u128), tier);
     }
 }
 
@@ -65,31 +69,19 @@ pub fn load<T: UiProgram>(
 ) -> UiHandle<T> {
     // Hoist GPU before the surface-registry borrow (surface_mut borrows all of inner).
     let gpu = state.inner.environment.GPU.clone();
-    let registry = state.inner.surface_mut()
+    let registry = state
+        .inner
+        .surface_mut()
         .registry
         .as_mut()
         .unwrap_or_else(|| abort!("registry to be created"));
 
     let handle = match space {
         UiSpace::World => registry
-            .create(
-                &gpu.as_str(),
-                t,
-                gles,
-                rect.loc,
-                rect.size,
-                layer,
-            )
+            .create(&gpu.as_str(), t, gles, rect.loc, rect.size, layer)
             .unwrap(),
         UiSpace::Screen => registry
-            .create_screen(
-                &gpu.as_str(),
-                t,
-                gles,
-                rect.loc,
-                rect.size,
-                layer,
-            )
+            .create_screen(&gpu.as_str(), t, gles, rect.loc, rect.size, layer)
             .unwrap(),
     };
 

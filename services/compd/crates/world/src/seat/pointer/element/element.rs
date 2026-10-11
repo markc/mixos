@@ -1,5 +1,6 @@
 use std::sync::Mutex;
 
+use crate::seat::pointer::texture::pointer_load::{Cursor, CursorThemeCache};
 use smithay::backend::renderer::element::memory::{
     MemoryRenderBuffer, MemoryRenderBufferRenderElement,
 };
@@ -10,7 +11,6 @@ use smithay::input::pointer::CursorImageStatus;
 use smithay::render_elements;
 use smithay::utils::{Physical, Point, Scale};
 use std::time::{Duration, Instant};
-use crate::seat::pointer::texture::pointer_load::{Cursor, CursorThemeCache};
 
 use std::sync::Arc;
 
@@ -148,7 +148,9 @@ where
                 let frame = &cursor.frames[frame_idx];
                 let ratio = f64::from(self.theme.base_size()) / f64::from(cursor.nominal.max(1));
                 let pixels = (f64::from(cursor.size.w), f64::from(cursor.size.h));
-                let src = smithay::utils::Rectangle::<f64, smithay::utils::Logical>::from_size(pixels.into());
+                let src = smithay::utils::Rectangle::<f64, smithay::utils::Logical>::from_size(
+                    pixels.into(),
+                );
                 let logical = smithay::utils::Size::<i32, smithay::utils::Logical>::from((
                     (pixels.0 * ratio).round().max(1.0) as i32,
                     (pixels.1 * ratio).round().max(1.0) as i32,

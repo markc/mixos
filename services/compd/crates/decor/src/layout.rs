@@ -50,11 +50,19 @@ pub struct DecoExtents {
 impl DecoExtents {
     pub fn of(theme: &DecoTheme) -> DecoExtents {
         let b = theme.metrics.border_thickness;
-        DecoExtents { left: b, right: b, top: theme.metrics.titlebar_height + b, bottom: b }
+        DecoExtents {
+            left: b,
+            right: b,
+            top: theme.metrics.titlebar_height + b,
+            bottom: b,
+        }
     }
 
     pub fn window_size_for_content(&self, content: Vec2) -> Vec2 {
-        vec2(content.x + self.left + self.right, content.y + self.top + self.bottom)
+        vec2(
+            content.x + self.left + self.right,
+            content.y + self.top + self.bottom,
+        )
     }
 }
 
@@ -162,8 +170,14 @@ impl ChromeLayout {
             };
             buttons[i] = (kind, rect(bx, by, bw, bh));
         }
-        let cluster_left = buttons.iter().map(|(_, b)| b.x).fold(f32::INFINITY, f32::min);
-        let cluster_top = buttons.iter().map(|(_, b)| b.y).fold(f32::INFINITY, f32::min);
+        let cluster_left = buttons
+            .iter()
+            .map(|(_, b)| b.x)
+            .fold(f32::INFINITY, f32::min);
+        let cluster_top = buttons
+            .iter()
+            .map(|(_, b)| b.y)
+            .fold(f32::INFINITY, f32::min);
         let cluster_right = buttons
             .iter()
             .map(|(_, b)| b.x + b.w)
@@ -254,7 +268,10 @@ impl ChromeLayout {
             // the minimum size, titlebar and content tile the window and this
             // is unreachable.
             let (near_l, near_r) = (p.x < self.content.x, p.x >= self.content.x + self.content.w);
-            let (near_t, near_b) = (p.y < self.titlebar.y, p.y >= self.content.y + self.content.h);
+            let (near_t, near_b) = (
+                p.y < self.titlebar.y,
+                p.y >= self.content.y + self.content.h,
+            );
             let edge = match (near_l, near_r, near_t, near_b) {
                 (true, _, true, _) => ResizeEdge::TopLeft,
                 (_, true, true, _) => ResizeEdge::TopRight,
@@ -327,7 +344,11 @@ mod tests {
         for theme in themes() {
             let l = ChromeLayout::compute(&theme, vec2(640.0, 480.0));
             for (kind, r) in l.buttons {
-                assert!(r.x >= l.titlebar.x - 0.01, "{:?} {kind:?} left", theme.style);
+                assert!(
+                    r.x >= l.titlebar.x - 0.01,
+                    "{:?} {kind:?} left",
+                    theme.style
+                );
                 assert!(
                     r.x + r.w <= l.titlebar.x + l.titlebar.w + 0.01,
                     "{:?} {kind:?} right",
@@ -368,10 +389,16 @@ mod tests {
         for pair in layout.buttons.windows(2) {
             let left = pair[0].1;
             let right = pair[1].1;
-            let gap = vec2((left.x + left.w + right.x) / 2.0, layout.button_cluster.center().y);
+            let gap = vec2(
+                (left.x + left.w + right.x) / 2.0,
+                layout.button_cluster.center().y,
+            );
             assert!(layout.button_cluster.contains(gap));
             assert!(
-                layout.buttons.iter().all(|(_, button)| !button.contains(gap)),
+                layout
+                    .buttons
+                    .iter()
+                    .all(|(_, button)| !button.contains(gap)),
                 "probe must exercise a cluster gap"
             );
         }
@@ -383,8 +410,16 @@ mod tests {
             let ext = DecoExtents::of(&theme);
             let content = vec2(800.0, 600.0);
             let l = ChromeLayout::compute(&theme, content);
-            assert_eq!(ext.window_size_for_content(content), vec2(l.window.w, l.window.h));
-            assert_eq!(l.content_offset(), vec2(ext.left, ext.top), "{:?}", theme.style);
+            assert_eq!(
+                ext.window_size_for_content(content),
+                vec2(l.window.w, l.window.h)
+            );
+            assert_eq!(
+                l.content_offset(),
+                vec2(ext.left, ext.top),
+                "{:?}",
+                theme.style
+            );
         }
     }
 
@@ -394,7 +429,12 @@ mod tests {
             let l = ChromeLayout::compute(&theme, vec2(640.0, 480.0));
             // Every button centre hits that button.
             for (kind, r) in l.buttons {
-                assert_eq!(l.hit_test(r.center()), ChromePart::Button(kind), "{:?}", theme.style);
+                assert_eq!(
+                    l.hit_test(r.center()),
+                    ChromePart::Button(kind),
+                    "{:?}",
+                    theme.style
+                );
             }
             // Titlebar midpoint (clear of buttons for a 640px window) drags.
             assert_eq!(l.hit_test(l.titlebar.center()), ChromePart::TitlebarDrag);
@@ -402,17 +442,26 @@ mod tests {
             assert_eq!(l.hit_test(l.content.center()), ChromePart::Content);
             // Just outside each edge resizes.
             let m = 2.0;
-            assert_eq!(l.hit_test(vec2(l.window.w / 2.0, -m)), ChromePart::Resize(ResizeEdge::Top));
+            assert_eq!(
+                l.hit_test(vec2(l.window.w / 2.0, -m)),
+                ChromePart::Resize(ResizeEdge::Top)
+            );
             assert_eq!(
                 l.hit_test(vec2(l.window.w / 2.0, l.window.h + m)),
                 ChromePart::Resize(ResizeEdge::Bottom)
             );
-            assert_eq!(l.hit_test(vec2(-m, l.window.h / 2.0)), ChromePart::Resize(ResizeEdge::Left));
+            assert_eq!(
+                l.hit_test(vec2(-m, l.window.h / 2.0)),
+                ChromePart::Resize(ResizeEdge::Left)
+            );
             assert_eq!(
                 l.hit_test(vec2(l.window.w + m, l.window.h / 2.0)),
                 ChromePart::Resize(ResizeEdge::Right)
             );
-            assert_eq!(l.hit_test(vec2(-m, -m)), ChromePart::Resize(ResizeEdge::TopLeft));
+            assert_eq!(
+                l.hit_test(vec2(-m, -m)),
+                ChromePart::Resize(ResizeEdge::TopLeft)
+            );
             assert_eq!(
                 l.hit_test(vec2(l.window.w + m, l.window.h + m)),
                 ChromePart::Resize(ResizeEdge::BottomRight)
@@ -434,7 +483,12 @@ mod tests {
                     "{:?}: {kind:?} outside the window",
                     theme.style
                 );
-                assert_eq!(l.hit_test(r.center()), ChromePart::Button(kind), "{:?}", theme.style);
+                assert_eq!(
+                    l.hit_test(r.center()),
+                    ChromePart::Button(kind),
+                    "{:?}",
+                    theme.style
+                );
             }
         }
     }
@@ -449,9 +503,16 @@ mod tests {
             assert_eq!((l.content.w, l.content.h), (10.0, 5.0), "{:?}", theme.style);
             // ...and interior the buffer does not cover is never Content.
             let in_gap = vec2(ext.left + 10.0 + 5.0, ext.top + 2.0);
-            assert!(l.window.contains(in_gap), "{:?}: probe point escaped the window", theme.style);
             assert!(
-                matches!(l.hit_test(in_gap), ChromePart::Resize(_) | ChromePart::Button(_)),
+                l.window.contains(in_gap),
+                "{:?}: probe point escaped the window",
+                theme.style
+            );
+            assert!(
+                matches!(
+                    l.hit_test(in_gap),
+                    ChromePart::Resize(_) | ChromePart::Button(_)
+                ),
                 "{:?}: uncovered interior forwarded to the client",
                 theme.style
             );
@@ -462,14 +523,26 @@ mod tests {
     fn frame_border_resizes_instead_of_forwarding_to_client() {
         let t = presets::win11(Mode::Light); // 1px visible border
         let l = ChromeLayout::compute(&t, vec2(800.0, 600.0));
-        assert_eq!(l.hit_test(vec2(0.5, 100.0)), ChromePart::Resize(ResizeEdge::Left));
-        assert_eq!(l.hit_test(vec2(l.window.w - 0.5, 100.0)), ChromePart::Resize(ResizeEdge::Right));
-        assert_eq!(l.hit_test(vec2(400.0, l.window.h - 0.5)), ChromePart::Resize(ResizeEdge::Bottom));
+        assert_eq!(
+            l.hit_test(vec2(0.5, 100.0)),
+            ChromePart::Resize(ResizeEdge::Left)
+        );
+        assert_eq!(
+            l.hit_test(vec2(l.window.w - 0.5, 100.0)),
+            ChromePart::Resize(ResizeEdge::Right)
+        );
+        assert_eq!(
+            l.hit_test(vec2(400.0, l.window.h - 0.5)),
+            ChromePart::Resize(ResizeEdge::Bottom)
+        );
         assert_eq!(
             l.hit_test(vec2(l.window.w - 0.5, l.window.h - 0.5)),
             ChromePart::Resize(ResizeEdge::BottomRight)
         );
-        assert_eq!(l.hit_test(vec2(0.5, 0.5)), ChromePart::Resize(ResizeEdge::TopLeft));
+        assert_eq!(
+            l.hit_test(vec2(0.5, 0.5)),
+            ChromePart::Resize(ResizeEdge::TopLeft)
+        );
     }
 
     #[test]

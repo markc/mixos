@@ -5,12 +5,12 @@ use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::time::Instant;
 
-use smithay::utils::{Logical, Physical, Point, Rectangle};
-use uuid::Uuid;
 use graphics::capture::encode::{AsyncReadback, Frame, ReencodeJob};
 use graphics::capture::registry::CaptureHandle;
 use graphics::capture::vaapi::CaptureEncoder;
+use smithay::utils::{Logical, Physical, Point, Rectangle};
 use ui::HandleId;
+use uuid::Uuid;
 
 use crate::capture::session::message::{CaptureMedia, TargetKind};
 

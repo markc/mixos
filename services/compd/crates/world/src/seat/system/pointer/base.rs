@@ -1,6 +1,6 @@
+use crate::seat::pointer::state::state::PointerState;
 use slots::storage::token::base::{Token, TokenMut};
 use slots::trait_::system::base::{System, WorldBuilder};
-use crate::seat::pointer::state::state::PointerState;
 
 pub static POINTER: Token<PointerState> = Token::new();
 /// TRANSITIONAL pub: legacy call sites still write this slot directly until

@@ -1,10 +1,10 @@
+use crate::canvas::draw::context::context::Context;
+use crate::scene::identity::identity::SolidBank;
+use crate::state::state::CoordinateTrait;
+use crate::state::{Loop, Transform};
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
 use smithay::utils::{Physical, Point, Rectangle, Size};
-use crate::scene::identity::identity::SolidBank;
-use crate::canvas::draw::context::context::Context;
-use crate::state::{Loop, Transform};
-use crate::state::state::CoordinateTrait;
 
 thread_local! {
     /// One canvas cursor exists, so it gets one identity that outlives the frame.
@@ -35,7 +35,12 @@ where
     let viewport = state.viewport_context();
     let at = context.cursor.position;
     let rect: Transform = (
-        (at.x - CURSOR_SIZE / 2.0, at.y - CURSOR_SIZE / 2.0, CURSOR_SIZE, CURSOR_SIZE),
+        (
+            at.x - CURSOR_SIZE / 2.0,
+            at.y - CURSOR_SIZE / 2.0,
+            CURSOR_SIZE,
+            CURSOR_SIZE,
+        ),
         viewport,
     )
         .into();

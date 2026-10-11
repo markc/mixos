@@ -52,34 +52,71 @@ fn walk(vp: &Viewport, bounds: Rectangle<i32, Physical>, out: &mut Computed) {
 }
 
 fn divide(axis: Axis, slots: &[Slot], bounds: Rectangle<i32, Physical>, out: &mut Computed) {
-    let total = slots.iter().map(|s| s.weight.max(0.0)).sum::<f64>().max(f64::MIN_POSITIVE);
+    let total = slots
+        .iter()
+        .map(|s| s.weight.max(0.0))
+        .sum::<f64>()
+        .max(f64::MIN_POSITIVE);
     // A *vertical* split places panes side by side (a vertical divider) → divide x.
     let horizontal = matches!(axis, Axis::Vertical);
-    let span = if horizontal { bounds.size.w } else { bounds.size.h };
+    let span = if horizontal {
+        bounds.size.w
+    } else {
+        bounds.size.h
+    };
     let gaps = SEPARATOR * (slots.len() as i32 - 1).max(0);
     let usable = (span - gaps).max(0) as f64;
 
-    let lens: Vec<i32> = slots.iter().map(|s| ((s.weight.max(0.0) / total) * usable).round() as i32).collect();
-    let mut cursor = if horizontal { bounds.loc.x } else { bounds.loc.y };
+    let lens: Vec<i32> = slots
+        .iter()
+        .map(|s| ((s.weight.max(0.0) / total) * usable).round() as i32)
+        .collect();
+    let mut cursor = if horizontal {
+        bounds.loc.x
+    } else {
+        bounds.loc.y
+    };
     for (i, slot) in slots.iter().enumerate() {
         let len = lens[i];
         let rect = if horizontal {
-            Rectangle::new(Point::from((cursor, bounds.loc.y)), Size::from((len, bounds.size.h)))
+            Rectangle::new(
+                Point::from((cursor, bounds.loc.y)),
+                Size::from((len, bounds.size.h)),
+            )
         } else {
-            Rectangle::new(Point::from((bounds.loc.x, cursor)), Size::from((bounds.size.w, len)))
+            Rectangle::new(
+                Point::from((bounds.loc.x, cursor)),
+                Size::from((bounds.size.w, len)),
+            )
         };
         match &slot.content {
             Some(inner) => walk(inner, rect, out),
-            None => out.regions.push(Region { slot: slot.id, rect }),
+            None => out.regions.push(Region {
+                slot: slot.id,
+                rect,
+            }),
         }
         cursor += len;
         if i + 1 < slots.len() {
             let rect = if horizontal {
-                Rectangle::new(Point::from((cursor, bounds.loc.y)), Size::from((SEPARATOR, bounds.size.h)))
+                Rectangle::new(
+                    Point::from((cursor, bounds.loc.y)),
+                    Size::from((SEPARATOR, bounds.size.h)),
+                )
             } else {
-                Rectangle::new(Point::from((bounds.loc.x, cursor)), Size::from((bounds.size.w, SEPARATOR)))
+                Rectangle::new(
+                    Point::from((bounds.loc.x, cursor)),
+                    Size::from((bounds.size.w, SEPARATOR)),
+                )
             };
-            out.separators.push(Separator { rect, axis, a: slot.id, b: slots[i + 1].id, a_len: lens[i], b_len: lens[i + 1] });
+            out.separators.push(Separator {
+                rect,
+                axis,
+                a: slot.id,
+                b: slots[i + 1].id,
+                a_len: lens[i],
+                b_len: lens[i + 1],
+            });
             cursor += SEPARATOR;
         }
     }
@@ -87,8 +124,16 @@ fn divide(axis: Axis, slots: &[Slot], bounds: Rectangle<i32, Physical>, out: &mu
 
 /// The leaf slot whose region contains `point` (topmost-first: floating, then
 /// root). `None` on a separator / outside every leaf.
-pub fn slot_at(computed: &Computed, point: Point<i32, Physical>) -> Option<(SlotId, Rectangle<i32, Physical>)> {
-    computed.regions.iter().rev().find(|r| r.rect.contains(point)).map(|r| (r.slot, r.rect))
+pub fn slot_at(
+    computed: &Computed,
+    point: Point<i32, Physical>,
+) -> Option<(SlotId, Rectangle<i32, Physical>)> {
+    computed
+        .regions
+        .iter()
+        .rev()
+        .find(|r| r.rect.contains(point))
+        .map(|r| (r.slot, r.rect))
 }
 
 /// The separator bar under `point`, if any (for separator-drag hit testing).

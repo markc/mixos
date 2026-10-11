@@ -11,13 +11,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
-use ui::{UiHandle, UiRegistry};
-use crate::scene::layer::base::Layer;
-use slots::storage::slot::base::Storage;
 use crate::notify::view::NotifyUi;
+use crate::scene::layer::base::Layer;
 use crate::surface::system::base::UI_CONTEXT;
+use slots::storage::slot::base::Storage;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Physical, Point, Size};
+use ui::{UiHandle, UiRegistry};
 
 /// Pill height. Width is estimated, not measured: UI lays out INSIDE the
 /// surface, so it only has to avoid clipping — overshoot is invisible behind
@@ -63,14 +63,24 @@ pub fn pill<'p>(
     renderer: &mut GlesRenderer,
     node: &str,
 ) -> Option<&'p Pill> {
-    let Presenter { registry, pills, .. } = p;
+    let Presenter {
+        registry, pills, ..
+    } = p;
     if !pills.contains_key(output) {
-        let width = ((message.len() as i32 * CHAR_W) + PAD_W).clamp(MIN_W, (size.w - 40).max(MIN_W));
+        let width =
+            ((message.len() as i32 * CHAR_W) + PAD_W).clamp(MIN_W, (size.w - 40).max(MIN_W));
         // Fully below the edge, so frame one starts off-screen not mid-slide.
         let start = Point::from(((size.w - width) / 2, size.h));
         let reg = registry.as_mut()?;
         let handle = reg
-            .create_screen(node, NotifyUi::new(message.to_owned()), renderer, start, Size::from((width, HEIGHT)), Layer::GLOBAL_SCREEN.bits())
+            .create_screen(
+                node,
+                NotifyUi::new(message.to_owned()),
+                renderer,
+                start,
+                Size::from((width, HEIGHT)),
+                Layer::GLOBAL_SCREEN.bits(),
+            )
             .ok()?;
         reg.set_output_affinity_by_id(handle.id, Some(output.to_string()));
         pills.insert(Arc::clone(output), Pill { handle, width });
@@ -85,7 +95,9 @@ pub fn ensure_registry(p: &mut Presenter, kernel: &Storage) -> bool {
     if p.registry.is_some() {
         return true;
     }
-    let Some(wgpu) = kernel.try_get(&UI_CONTEXT).and_then(Clone::clone) else { return false };
+    let Some(wgpu) = kernel.try_get(&UI_CONTEXT).and_then(Clone::clone) else {
+        return false;
+    };
     p.registry = Some(UiRegistry::new(wgpu));
     true
 }

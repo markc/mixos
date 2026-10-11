@@ -16,18 +16,18 @@ use std::time::Instant;
 
 use std::sync::Arc;
 
+use crate::engine::{UiProgram, UiRuntime};
 use crate::input::Input;
+use graphics::bridge::publish::attempt::attempt::Attempt;
+use graphics::surface::{SurfaceError, UiSurface, WgpuGlContext};
 use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::utils::CommitCounter;
 use smithay::utils::{Physical, Point, Rectangle, Size};
-use crate::engine::{UiRuntime, UiProgram};
-use graphics::bridge::publish::attempt::attempt::Attempt;
-use graphics::surface::{UiSurface, SurfaceError, WgpuGlContext};
 
 use crate::element::UiRenderElement;
 use crate::handle::HandleId;
-use crate::space::{UiSpace, Transform};
+use crate::space::{Transform, UiSpace};
 
 // ── Concrete instance ──────────────────────────────────────────────────
 
@@ -211,7 +211,8 @@ impl<U: UiProgram> UiInstanceAny for UiInstance<U> {
         if let Some(view) = self.surface.begin_render_view() {
             self.runtime.render_into(&view);
             crate::frame_trace::rendered(self.id.0);
-            self.surface.submitted(model::environment::interface::base::get().pipeline);
+            self.surface
+                .submitted(model::environment::interface::base::get().pipeline);
         }
         // `submitted` publishes inline when the ring cannot defer, so this is
         // what carries the commit bump on the non-pipelined path.
@@ -262,7 +263,10 @@ impl<U: UiProgram> UiInstanceAny for UiInstance<U> {
         if new_size == self.surface.size && scale_factor == self.scale_factor {
             return Ok(false);
         }
-        trace!("resize handle={:?} old={:?} new={new_size:?}", self.id, self.surface.size);
+        trace!(
+            "resize handle={:?} old={:?} new={new_size:?}",
+            self.id, self.surface.size
+        );
 
         self.surface.resize(render_node, wgpu_ctx, gles, new_size)?;
 
@@ -553,7 +557,10 @@ impl UiItem {
         transform: &Transform,
         output_size: Size<f64, Physical>,
     ) -> Rectangle<i32, Physical> {
-        Rectangle::new(self.screen_location(transform, output_size), self.screen_size(transform))
+        Rectangle::new(
+            self.screen_location(transform, output_size),
+            self.screen_size(transform),
+        )
     }
 
     /// True if the given screen point falls inside this item's current
@@ -751,9 +758,11 @@ impl UiItem {
             }
             Err(e) => {
                 if self.backing_failed.failed(request) {
-                    warn!("UI backing alloc failed handle={:?} at {request:?}: {e:?}; \
+                    warn!(
+                        "UI backing alloc failed handle={:?} at {request:?}: {e:?}; \
                            not retried until the surface is resized",
-                          self.inner.handle_id());
+                        self.inner.handle_id()
+                    );
                 }
                 false
             }
@@ -776,9 +785,11 @@ impl UiItem {
             Ok(()) => self.depth_failed.succeeded(),
             Err(e) => {
                 if self.depth_failed.failed(request) {
-                    warn!("UI ring resize failed handle={:?} to {request:?}: {e:?}; \
+                    warn!(
+                        "UI ring resize failed handle={:?} to {request:?}: {e:?}; \
                            not retried until the depth or size changes",
-                          self.inner.handle_id());
+                        self.inner.handle_id()
+                    );
                 }
             }
         }
@@ -797,7 +808,8 @@ impl UiItem {
             return false;
         }
         let rect = self.screen_rect(transform, output_size);
-        let viewport = Rectangle::from_size(Size::from((output_size.w as i32, output_size.h as i32)));
+        let viewport =
+            Rectangle::from_size(Size::from((output_size.w as i32, output_size.h as i32)));
         rect.overlaps(viewport)
     }
 
@@ -844,7 +856,9 @@ impl UiItem {
         wgpu_ctx: &WgpuGlContext,
         gles: &mut GlesRenderer,
     ) -> Result<bool, SurfaceError> {
-        let resized = self.inner.apply_pending_resize(render_node, wgpu_ctx, gles)?;
+        let resized = self
+            .inner
+            .apply_pending_resize(render_node, wgpu_ctx, gles)?;
         if resized {
             self.render_stale = true;
         }

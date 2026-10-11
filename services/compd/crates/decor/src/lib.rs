@@ -33,9 +33,9 @@ pub mod text;
 pub mod theme;
 pub mod window;
 
+pub use input::{Clicks, Intent};
 pub use layout::{
     CaptionButton, ChromeLayout, ChromePart, ChromeStyle, DecoExtents, ResizeEdge, Srgba,
 };
-pub use input::{Clicks, Intent};
 pub use state::{Chrome, ChromeState};
 pub use theme::{ChromeTheme, Pair, Palette, TokenSource};

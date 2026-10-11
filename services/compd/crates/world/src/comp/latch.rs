@@ -16,12 +16,12 @@
 
 use dispatcher::wire::trait_::surface_event::SurfaceHandle;
 use dispatcher::wire::trait_::wire_trait::WireTrait;
-use surfaces::SurfaceId;
 use smithay::desktop::layer_map_for_output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::wlr_layer::{KeyboardInteractivity, Layer};
+use surfaces::SurfaceId;
 
 use crate::state::Loop;
 
@@ -87,11 +87,19 @@ fn fallback(lp: &Loop) -> Option<WlSurface> {
 
 /// One loop pass (beside `session_lock::service`): latch, hold or release.
 pub fn service(lp: &mut Loop) {
-    let target = if super::session_lock::active(lp) { None } else { candidate(lp) };
-    let id = target.as_ref().and_then(|surface| lp.inner.comp.id_for_surface(surface));
+    let target = if super::session_lock::active(lp) {
+        None
+    } else {
+        candidate(lp)
+    };
+    let id = target
+        .as_ref()
+        .and_then(|surface| lp.inner.comp.id_for_surface(surface));
     let was = lp.inner.comp.latch.layer;
     lp.state.exclusive_latch = target.clone();
-    let Some(keyboard) = lp.state.seat.seat.get_keyboard() else { return };
+    let Some(keyboard) = lp.state.seat.seat.get_keyboard() else {
+        return;
+    };
     match target {
         Some(surface) => {
             if keyboard.current_focus().as_ref() != Some(&surface) {

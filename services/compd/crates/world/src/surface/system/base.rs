@@ -1,14 +1,14 @@
-use slots::define_buffer;
-use slots::define_channel;
-use slots::storage::token::base::{Token, TokenMut};
-use slots::storage::slot::base::Storage;
-use slots::trait_::system::base::{BufferCx, System, SystemCx, WorldBuilder};
 use crate::surface::state::state::SurfaceState;
 use graphics::surface::WgpuGlContext;
-use ui::{HandleId, UiRegistry};
+use slots::define_buffer;
+use slots::define_channel;
+use slots::storage::slot::base::Storage;
+use slots::storage::token::base::{Token, TokenMut};
+use slots::trait_::system::base::{BufferCx, System, SystemCx, WorldBuilder};
 use smithay::utils::{Physical, Point, Size};
 use std::any::Any;
 use std::sync::Arc;
+use ui::{HandleId, UiRegistry};
 
 /// An UI pointer-button event routed to the surface registry. Input systems
 /// can't touch the registry (it's this system's slot), so they announce this and
@@ -73,13 +73,24 @@ pub fn announce_placeholder_geometry(
     position: Option<Point<i32, Physical>>,
     size: Option<Size<i32, Physical>>,
 ) {
-    channels.send(&PLACEHOLDER_GEOMETRY_TX, PlaceholderGeometry { handle, position, size });
+    channels.send(
+        &PLACEHOLDER_GEOMETRY_TX,
+        PlaceholderGeometry {
+            handle,
+            position,
+            size,
+        },
+    );
 }
 
 enum SurfaceCmd {
     Button(u32, bool),
     Focus(Option<HandleId>),
-    PlaceholderGeometry(HandleId, Option<Point<i32, Physical>>, Option<Size<i32, Physical>>),
+    PlaceholderGeometry(
+        HandleId,
+        Option<Point<i32, Physical>>,
+        Option<Size<i32, Physical>>,
+    ),
 }
 define_buffer!(SURF_BUF: SurfaceCmd);
 
@@ -136,7 +147,10 @@ impl System for SurfaceSystem {
     }
 
     fn buffer(&mut self, cx: &mut BufferCx, message: Box<dyn Any>) {
-        match *message.downcast::<SurfaceCmd>().expect("surface buffer type") {
+        match *message
+            .downcast::<SurfaceCmd>()
+            .expect("surface buffer type")
+        {
             SurfaceCmd::Button(button, pressed) => {
                 if let Some(reg) = cx.storage.get_mut(&SURFACE_MUT).registry.as_mut() {
                     reg.dispatch_button(None, button, pressed);
@@ -179,6 +193,9 @@ impl SurfaceSystem {
     /// Announced by the placeholder system during an interactive placeholder
     /// move/scale; routed to the UI registry via the buffer.
     fn on_placeholder_geometry(&mut self, cx: &mut SystemCx, ev: &PlaceholderGeometry) {
-        cx.write(&SURF_BUF, SurfaceCmd::PlaceholderGeometry(ev.handle, ev.position, ev.size));
+        cx.write(
+            &SURF_BUF,
+            SurfaceCmd::PlaceholderGeometry(ev.handle, ev.position, ev.size),
+        );
     }
 }

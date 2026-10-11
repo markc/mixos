@@ -33,7 +33,9 @@ impl Causes {
         let under = |prefix: &str| {
             prefix.is_empty()
                 || path == prefix
-                || path.strip_prefix(prefix).is_some_and(|rest| rest.starts_with('.'))
+                || path
+                    .strip_prefix(prefix)
+                    .is_some_and(|rest| rest.starts_with('.'))
         };
         self.entries
             .iter()
@@ -60,7 +62,10 @@ mod tests {
         causes.note("focus", "wayland.focus");
         assert_eq!(causes.resolve("windows.s3.visible"), Some("wayland.map"));
         assert_eq!(causes.resolve("surfaces.s3"), Some("wayland.map"));
-        assert_eq!(causes.resolve("surfaces.s30.visible"), Some("workspace.switch"));
+        assert_eq!(
+            causes.resolve("surfaces.s30.visible"),
+            Some("workspace.switch")
+        );
         assert_eq!(causes.resolve("focus.keyboard"), Some("wayland.focus"));
         causes.note_window(3, "comp.window");
         assert_eq!(causes.resolve("windows.s3.maximized"), Some("comp.window"));

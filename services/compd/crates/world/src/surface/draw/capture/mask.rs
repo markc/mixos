@@ -12,7 +12,10 @@ use egui::{Color32, Painter, Rect, Stroke, StrokeKind, pos2};
 use crate::capture::session::message::OverlayRect;
 
 fn rect(x: i32, y: i32, w: i32, h: i32) -> Rect {
-    Rect::from_min_size(pos2(x as f32, y as f32), egui::vec2(w.max(0) as f32, h.max(0) as f32))
+    Rect::from_min_size(
+        pos2(x as f32, y as f32),
+        egui::vec2(w.max(0) as f32, h.max(0) as f32),
+    )
 }
 
 /// Paint a `screen_w` × `screen_h` mask of `mask`. With `hole = Some(r)` the

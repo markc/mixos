@@ -1,5 +1,5 @@
+use crate::viewport::state::state::{OUTPUT_VIEWS, OutputViews};
 use slots::trait_::system::base::{System, WorldBuilder};
-use crate::viewport::state::state::{OutputViews, OUTPUT_VIEWS};
 
 // The camera is pinned to identity (`camera::pin`): nothing here moves it (no
 // eased navigation, no scroll/pinch zoom, no touchpad momentum, edge or
@@ -17,6 +17,8 @@ impl System for CameraSystem {
     }
 
     fn register(&mut self, builder: &mut WorldBuilder) {
-        builder.storage.insert(&OUTPUT_VIEWS, OutputViews::default());
+        builder
+            .storage
+            .insert(&OUTPUT_VIEWS, OutputViews::default());
     }
 }

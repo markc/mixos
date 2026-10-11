@@ -36,7 +36,10 @@ pub struct DrawOrder {
 
 impl DrawOrder {
     pub fn new() -> Self {
-        Self { entries: Vec::new(), next: 1.0 }
+        Self {
+            entries: Vec::new(),
+            next: 1.0,
+        }
     }
 
     /// Insert `id` at the top of `layer` (re-insert re-raises AND updates tier).
@@ -65,7 +68,9 @@ impl DrawOrder {
     /// its z-position — a restored window appears WHERE THE PLACEHOLDER SAT,
     /// not popped to the top. Drops stale `new` first; `false` if `old` is absent.
     pub fn reassign(&mut self, old: ComponentId, new: ComponentId) -> bool {
-        if old == new { return self.key(old).is_some(); }
+        if old == new {
+            return self.key(old).is_some();
+        }
         self.entries.retain(|(c, _, _)| *c != new);
         let Some(entry) = self.entries.iter_mut().find(|(c, _, _)| *c == old) else {
             return false;
@@ -89,7 +94,10 @@ impl DrawOrder {
     }
 
     pub fn key(&self, id: ComponentId) -> Option<OrderKey> {
-        self.entries.iter().find(|(c, _, _)| *c == id).map(|(_, _, k)| *k)
+        self.entries
+            .iter()
+            .find(|(c, _, _)| *c == id)
+            .map(|(_, _, k)| *k)
     }
 
     /// Components back-to-front: by tier ascending, then `OrderKey`. Reverse for

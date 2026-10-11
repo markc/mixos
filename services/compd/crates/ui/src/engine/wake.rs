@@ -193,10 +193,16 @@ mod tests {
         assert!(!wake.set_suspended(true));
         wake.request(Duration::ZERO);
         wake.request(Duration::from_millis(5));
-        assert!(!woken.load(Ordering::Acquire), "an off-screen animation does not wake the loop");
+        assert!(
+            !woken.load(Ordering::Acquire),
+            "an off-screen animation does not wake the loop"
+        );
         assert!(!wake.pending());
         assert_eq!(wake.deadline(), None);
-        assert!(wake.set_suspended(false), "resuming reports the missed request");
+        assert!(
+            wake.set_suspended(false),
+            "resuming reports the missed request"
+        );
         assert!(!wake.set_suspended(false), "once");
     }
 

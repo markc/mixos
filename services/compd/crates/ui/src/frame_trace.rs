@@ -17,7 +17,9 @@ pub struct Frame(Option<ledger::frame_trace::Span>);
 /// Covers layout/tick and rasterisation of every compd-owned UI surface.
 /// detail = surfaces rasterised, aux = clean surfaces reused without drawing.
 pub fn frame(subject: u64) -> Frame {
-    if !ledger::frame_trace::enabled() { return Frame(None); }
+    if !ledger::frame_trace::enabled() {
+        return Frame(None);
+    }
     COUNTS.with_borrow_mut(|counts| *counts = Some(Counts::default()));
     Frame(Some(ledger::frame_trace::span("kms_ui_render", subject)))
 }
@@ -33,7 +35,9 @@ pub(crate) fn rendered(id: u64) {
 
 pub(crate) fn unchanged(id: u64) {
     COUNTS.with_borrow_mut(|counts| {
-        if let Some(counts) = counts && !counts.rendered.contains(&id) {
+        if let Some(counts) = counts
+            && !counts.rendered.contains(&id)
+        {
             counts.unchanged.insert(id);
         }
     });

@@ -37,6 +37,7 @@ layering gate.
 | [toolkit](https://github.com/markc/mixos/blob/main/libs/toolkit/Cargo.toml) | toolkit | lib | desktop | none | 0.1.1 |
 | [comp-model](https://github.com/markc/mixos/blob/main/services/compd/crates/comp-model/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [comp-service](https://github.com/markc/mixos/blob/main/services/compd/crates/comp-service/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [decor](https://github.com/markc/mixos/blob/main/services/compd/crates/decor/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [dispatcher](https://github.com/markc/mixos/blob/main/services/compd/crates/dispatcher/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [drivers](https://github.com/markc/mixos/blob/main/services/compd/crates/drivers/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [edges](https://github.com/markc/mixos/blob/main/services/compd/crates/edges/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
@@ -52,6 +53,7 @@ layering gate.
 | [slots](https://github.com/markc/mixos/blob/main/services/compd/crates/slots/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [surfaces](https://github.com/markc/mixos/blob/main/services/compd/crates/surfaces/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [ui](https://github.com/markc/mixos/blob/main/services/compd/crates/ui/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [world](https://github.com/markc/mixos/blob/main/services/compd/crates/world/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [x11-wm](https://github.com/markc/mixos/blob/main/services/compd/crates/x11-wm/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [editd](https://github.com/markc/mixos/blob/main/services/editd/Cargo.toml) | editd | service | core | public | 0.2.0 |
 | [noded](https://github.com/markc/mixos/blob/main/services/noded/Cargo.toml) | noded | service | core | public | 0.18.3 |

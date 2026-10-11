@@ -15,9 +15,9 @@
 
 use dispatcher::wayland::sessionlock::Phase;
 use dispatcher::wire::trait_::wire_trait::WireTrait;
+use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
-use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::utils::CommitCounter;
 use smithay::desktop::WindowSurfaceType;
 use smithay::desktop::utils::{send_frames_surface_tree, under_from_surface_tree};
@@ -83,8 +83,18 @@ pub fn service(lp: &mut Loop) {
         return;
     }
     keep_keyboard_on_lock(lp);
-    let outputs: Vec<String> = lp.inner.space_state().state.outputs().map(Output::name).collect();
-    if lp.state.session_lock.confirm_if_presented(outputs.iter().map(String::as_str)) {
+    let outputs: Vec<String> = lp
+        .inner
+        .space_state()
+        .state
+        .outputs()
+        .map(Output::name)
+        .collect();
+    if lp
+        .state
+        .session_lock
+        .confirm_if_presented(outputs.iter().map(String::as_str))
+    {
         lp.inner.comp.lock.seen = Phase::Locked;
         lp.inner.comp.settings_changed("", "session.lock");
     }
@@ -118,7 +128,9 @@ fn enter(lp: &mut Loop) {
         roots.extend(map.layers().map(|layer| layer.wl_surface().clone()));
     }
     for root in &roots {
-        let popups: Vec<_> = smithay::desktop::PopupManager::popups_for_surface(root).map(|(popup, _)| popup).collect();
+        let popups: Vec<_> = smithay::desktop::PopupManager::popups_for_surface(root)
+            .map(|(popup, _)| popup)
+            .collect();
         for popup in popups {
             let _ = smithay::desktop::PopupManager::dismiss_popup(root, &popup);
         }
@@ -126,7 +138,15 @@ fn enter(lp: &mut Loop) {
     if let Some(pointer) = seat.get_pointer() {
         pointer.unset_grab(&mut lp.state, serial, time);
         let location = pointer.current_location();
-        pointer.motion(&mut lp.state, None, &MotionEvent { location, serial, time });
+        pointer.motion(
+            &mut lp.state,
+            None,
+            &MotionEvent {
+                location,
+                serial,
+                time,
+            },
+        );
         pointer.frame(&mut lp.state);
     }
 }
@@ -135,7 +155,9 @@ fn enter(lp: &mut Loop) {
 /// was, if that surface is still there and is not a lock surface.
 fn leave(lp: &mut Loop) {
     let prior = lp.inner.comp.lock.prior_focus.take();
-    let Some(keyboard) = lp.state.seat.seat.get_keyboard() else { return };
+    let Some(keyboard) = lp.state.seat.seat.get_keyboard() else {
+        return;
+    };
     let focus = prior.filter(|surface| {
         use smithay::reexports::wayland_server::Resource;
         surface.is_alive()
@@ -146,12 +168,22 @@ fn leave(lp: &mut Loop) {
 /// Locked keyboard arbitration: the keyboard is on a lock
 /// surface (the first output's that has one) or on nothing.
 fn keep_keyboard_on_lock(lp: &mut Loop) {
-    let Some(keyboard) = lp.state.seat.seat.get_keyboard() else { return };
+    let Some(keyboard) = lp.state.seat.seat.get_keyboard() else {
+        return;
+    };
     let current = keyboard.current_focus();
-    if current.as_ref().is_some_and(|surface| is_lock_surface(lp, surface)) {
+    if current
+        .as_ref()
+        .is_some_and(|surface| is_lock_surface(lp, surface))
+    {
         return;
     }
-    let target = lp.state.session_lock.surfaces().next().map(|(_, lock)| lock.wl_surface().clone());
+    let target = lp
+        .state
+        .session_lock
+        .surfaces()
+        .next()
+        .map(|(_, lock)| lock.wl_surface().clone());
     if current == target {
         return;
     }
@@ -216,7 +248,9 @@ pub fn presented(lp: &Loop, output: &Output) -> bool {
     lock.mark_presented(&output.name());
     if let Some(surface) = lock.surface_for(&output.name()) {
         let time = lp.inner.start_time.elapsed();
-        send_frames_surface_tree(surface.wl_surface(), output, time, None, |_, _| Some(output.clone()));
+        send_frames_surface_tree(surface.wl_surface(), output, time, None, |_, _| {
+            Some(output.clone())
+        });
     }
     true
 }
@@ -236,7 +270,8 @@ pub fn hit(lp: &Loop, position_world: Point<f64, Logical>) -> Option<Option<Surf
         }
         let lock = lp.state.session_lock.surface_for(&output.name())?;
         let local = position_world - geometry.loc.to_f64();
-        let (surface, origin) = under_from_surface_tree(lock.wl_surface(), local, (0, 0), WindowSurfaceType::ALL)?;
+        let (surface, origin) =
+            under_from_surface_tree(lock.wl_surface(), local, (0, 0), WindowSurfaceType::ALL)?;
         Some(SurfaceHit::Layer {
             Ice: Some(true),
             layer: Layer::Overlay,

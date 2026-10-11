@@ -1,6 +1,6 @@
+use crate::state::Loop;
 use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
 use smithay::utils::{Logical, Physical, Point, Size};
-use crate::state::Loop;
 
 pub fn context<R>(
     state: &mut Loop,

@@ -1,12 +1,12 @@
-use smithay::backend::input::{InputBackend, KeyState};
-use smithay::backend::session::Session;
-use smithay::input::keyboard::{Keysym, ModifiersState};
+use model::environment::keybinding::base::{KeyBindings, KeyRow};
+use slots::library::input::keyboard::format::format;
 use slots::library::input::keyboard::keyboard::combo::KeyCombo;
 use slots::library::input::keyboard::keyboard::handler::ShortcutHandler;
 use slots::library::input::keyboard::keyboard::key::Key;
 use slots::library::input::keyboard::shortcut;
-use slots::library::input::keyboard::format::format;
-use model::environment::keybinding::base::{KeyBindings, KeyRow};
+use smithay::backend::input::{InputBackend, KeyState};
+use smithay::backend::session::Session;
+use smithay::input::keyboard::{Keysym, ModifiersState};
 
 use crate::state::Loop;
 
@@ -28,8 +28,7 @@ pub fn input_received<I: InputBackend>(
     }
 
     // Build the handler vector, applying the user's keybinding.json overrides.
-    let handlers: Vec<ShortcutHandler<Loop>> =
-        inline_shortcut_handlers(&state.inner.keybinding);
+    let handlers: Vec<ShortcutHandler<Loop>> = inline_shortcut_handlers(&state.inner.keybinding);
 
     for handler in handlers {
         if handler.combo.matches(modifiers, key) {
@@ -69,7 +68,16 @@ fn bindings() -> Vec<Bind> {
         // Diagnostic: queues a numbered test notification on the kernel host —
         // an OVERLAY shortcut, where the pill must draw. Each press queues one
         // more; a burst shows the FIFO.
-        Bind { id: "notify_test", label: "Queue a test notification", default: shortcut!(Super + Alt + Shift + N), hidden: true, action: Box::new(|s| { notify_test(s); true }) },
+        Bind {
+            id: "notify_test",
+            label: "Queue a test notification",
+            default: shortcut!(Super + Alt + Shift + N),
+            hidden: true,
+            action: Box::new(|s| {
+                notify_test(s);
+                true
+            }),
+        },
         // (Settings has no global shortcut — reachable only via the overview Settings tab.)
         // No VT-switch or sink/media shortcuts here: deactivated AND not listed.
     ]
@@ -82,8 +90,14 @@ pub fn inline_shortcut_handlers(overrides: &KeyBindings) -> Vec<ShortcutHandler<
         .filter_map(|b| match overrides.combo_for(b.id) {
             // Empty override string = explicitly disabled: no handler at all.
             Some("") => None,
-            Some(s) => Some(ShortcutHandler { combo: format::parse_combo(s).unwrap_or(b.default), action: b.action }),
-            None => Some(ShortcutHandler { combo: b.default, action: b.action }),
+            Some(s) => Some(ShortcutHandler {
+                combo: format::parse_combo(s).unwrap_or(b.default),
+                action: b.action,
+            }),
+            None => Some(ShortcutHandler {
+                combo: b.default,
+                action: b.action,
+            }),
         })
         .collect();
 
@@ -110,45 +124,103 @@ fn fixed_handlers() -> Vec<ShortcutHandler<Loop>> {
         })
     }
     vec![
-        ShortcutHandler { combo: shortcut!(Ctrl + Alt + SwitchVt1), action: vt(1) },
-        ShortcutHandler { combo: shortcut!(Ctrl + Alt + SwitchVt2), action: vt(2) },
-        ShortcutHandler { combo: shortcut!(Ctrl + Alt + SwitchVt3), action: vt(3) },
-        ShortcutHandler { combo: shortcut!(Ctrl + Alt + SwitchVt4), action: vt(4) },
-        ShortcutHandler { combo: shortcut!(Ctrl + Alt + SwitchVt5), action: vt(5) },
-        ShortcutHandler { combo: shortcut!(Ctrl + Alt + SwitchVt6), action: vt(6) },
+        ShortcutHandler {
+            combo: shortcut!(Ctrl + Alt + SwitchVt1),
+            action: vt(1),
+        },
+        ShortcutHandler {
+            combo: shortcut!(Ctrl + Alt + SwitchVt2),
+            action: vt(2),
+        },
+        ShortcutHandler {
+            combo: shortcut!(Ctrl + Alt + SwitchVt3),
+            action: vt(3),
+        },
+        ShortcutHandler {
+            combo: shortcut!(Ctrl + Alt + SwitchVt4),
+            action: vt(4),
+        },
+        ShortcutHandler {
+            combo: shortcut!(Ctrl + Alt + SwitchVt5),
+            action: vt(5),
+        },
+        ShortcutHandler {
+            combo: shortcut!(Ctrl + Alt + SwitchVt6),
+            action: vt(6),
+        },
         // Hardware media/volume keys — functional but not user-configurable.
-        ShortcutHandler { combo: shortcut!(AudioRaiseVolume), action: Box::new(|s| {
-            if let Some(a) = s.inner.kernel.get_mut(&drivers::audio::base::AUDIO_MUT) { let _ = a.adjust_volume(VOLUME_STEP); }
-            true
-        }) },
-        ShortcutHandler { combo: shortcut!(AudioLowerVolume), action: Box::new(|s| {
-            if let Some(a) = s.inner.kernel.get_mut(&drivers::audio::base::AUDIO_MUT) { let _ = a.adjust_volume(-VOLUME_STEP); }
-            true
-        }) },
-        ShortcutHandler { combo: shortcut!(AudioMute), action: Box::new(|s| {
-            if let Some(a) = s.inner.kernel.get_mut(&drivers::audio::base::AUDIO_MUT) { let _ = a.toggle_mute(); }
-            true
-        }) },
-        ShortcutHandler { combo: shortcut!(AudioPlay), action: Box::new(|s| {
-            if let Some(m) = s.inner.kernel.get_mut(&drivers::audio::base::MEDIA_MUT) { let _ = m.play_pause(); }
-            true
-        }) },
-        ShortcutHandler { combo: shortcut!(AudioPause), action: Box::new(|s| {
-            if let Some(m) = s.inner.kernel.get_mut(&drivers::audio::base::MEDIA_MUT) { let _ = m.pause(); }
-            true
-        }) },
-        ShortcutHandler { combo: shortcut!(AudioStop), action: Box::new(|s| {
-            if let Some(m) = s.inner.kernel.get_mut(&drivers::audio::base::MEDIA_MUT) { let _ = m.stop(); }
-            true
-        }) },
-        ShortcutHandler { combo: shortcut!(AudioNext), action: Box::new(|s| {
-            if let Some(m) = s.inner.kernel.get_mut(&drivers::audio::base::MEDIA_MUT) { let _ = m.next(); }
-            true
-        }) },
-        ShortcutHandler { combo: shortcut!(AudioPrev), action: Box::new(|s| {
-            if let Some(m) = s.inner.kernel.get_mut(&drivers::audio::base::MEDIA_MUT) { let _ = m.previous(); }
-            true
-        }) },
+        ShortcutHandler {
+            combo: shortcut!(AudioRaiseVolume),
+            action: Box::new(|s| {
+                if let Some(a) = s.inner.kernel.get_mut(&drivers::audio::base::AUDIO_MUT) {
+                    let _ = a.adjust_volume(VOLUME_STEP);
+                }
+                true
+            }),
+        },
+        ShortcutHandler {
+            combo: shortcut!(AudioLowerVolume),
+            action: Box::new(|s| {
+                if let Some(a) = s.inner.kernel.get_mut(&drivers::audio::base::AUDIO_MUT) {
+                    let _ = a.adjust_volume(-VOLUME_STEP);
+                }
+                true
+            }),
+        },
+        ShortcutHandler {
+            combo: shortcut!(AudioMute),
+            action: Box::new(|s| {
+                if let Some(a) = s.inner.kernel.get_mut(&drivers::audio::base::AUDIO_MUT) {
+                    let _ = a.toggle_mute();
+                }
+                true
+            }),
+        },
+        ShortcutHandler {
+            combo: shortcut!(AudioPlay),
+            action: Box::new(|s| {
+                if let Some(m) = s.inner.kernel.get_mut(&drivers::audio::base::MEDIA_MUT) {
+                    let _ = m.play_pause();
+                }
+                true
+            }),
+        },
+        ShortcutHandler {
+            combo: shortcut!(AudioPause),
+            action: Box::new(|s| {
+                if let Some(m) = s.inner.kernel.get_mut(&drivers::audio::base::MEDIA_MUT) {
+                    let _ = m.pause();
+                }
+                true
+            }),
+        },
+        ShortcutHandler {
+            combo: shortcut!(AudioStop),
+            action: Box::new(|s| {
+                if let Some(m) = s.inner.kernel.get_mut(&drivers::audio::base::MEDIA_MUT) {
+                    let _ = m.stop();
+                }
+                true
+            }),
+        },
+        ShortcutHandler {
+            combo: shortcut!(AudioNext),
+            action: Box::new(|s| {
+                if let Some(m) = s.inner.kernel.get_mut(&drivers::audio::base::MEDIA_MUT) {
+                    let _ = m.next();
+                }
+                true
+            }),
+        },
+        ShortcutHandler {
+            combo: shortcut!(AudioPrev),
+            action: Box::new(|s| {
+                if let Some(m) = s.inner.kernel.get_mut(&drivers::audio::base::MEDIA_MUT) {
+                    let _ = m.previous();
+                }
+                true
+            }),
+        },
     ]
 }
 
@@ -188,8 +260,17 @@ pub fn registry(overrides: &KeyBindings) -> Vec<KeyRow> {
         .filter(|b| !b.hidden)
         .map(|b| {
             let default = format::combo_string(&b.default);
-            let combo = overrides.combo_for(b.id).map(str::to_string).unwrap_or_else(|| default.clone());
-            KeyRow { id: b.id.to_string(), label: b.label.to_string(), default, combo, editable: true }
+            let combo = overrides
+                .combo_for(b.id)
+                .map(str::to_string)
+                .unwrap_or_else(|| default.clone());
+            KeyRow {
+                id: b.id.to_string(),
+                label: b.label.to_string(),
+                default,
+                combo,
+                editable: true,
+            }
         })
         .collect()
 }
@@ -198,9 +279,7 @@ fn tty(state: &mut Loop, num: u32) {
     error!("VT switch to {:?}", num);
     state.loop_handle.insert_idle(move |state| {
         // Do not perform the action again when paused.
-        if let crate::state::state::StatusSession::Paused =
-            state.inner.status_session
-        {
+        if let crate::state::state::StatusSession::Paused = state.inner.status_session {
             error!("VT already paused");
             return;
         }
@@ -215,6 +294,8 @@ fn tty(state: &mut Loop, num: u32) {
 fn notify_test(state: &mut Loop) {
     static COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
     let n = COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    crate::notify::state::base::announce(state.inner.kernel_channels(), format!("Test notification #{n}"));
+    crate::notify::state::base::announce(
+        state.inner.kernel_channels(),
+        format!("Test notification #{n}"),
+    );
 }
-

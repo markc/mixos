@@ -23,7 +23,11 @@ pub struct Platform {
 impl Platform {
     /// Build from live borrows. SAFETY: the borrows must outlive this `Platform`
     /// (the driver scopes it to a single system-dispatch call — see module docs).
-    pub unsafe fn new(renderer: Option<&mut GlesRenderer>, space: &mut Space<Window>, render_node: &str) -> Self {
+    pub unsafe fn new(
+        renderer: Option<&mut GlesRenderer>,
+        space: &mut Space<Window>,
+        render_node: &str,
+    ) -> Self {
         Self {
             renderer: renderer.map_or(std::ptr::null_mut(), |r| r as *mut GlesRenderer),
             space: space as *mut Space<Window>,

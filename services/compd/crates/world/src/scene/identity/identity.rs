@@ -49,7 +49,11 @@ impl SolidBank {
     fn with_slot<T>(&self, index: usize, f: impl FnOnce(&mut Slot) -> T) -> T {
         let mut slots = self.slots.borrow_mut();
         while slots.len() <= index {
-            slots.push(Slot { id: Id::new(), commit: CommitCounter::default(), last: None });
+            slots.push(Slot {
+                id: Id::new(),
+                commit: CommitCounter::default(),
+                last: None,
+            });
         }
         f(&mut slots[index])
     }
@@ -57,13 +61,24 @@ impl SolidBank {
     /// A solid-colour element for logical slot `index`, keeping the same [`Id`]
     /// across frames and advancing the commit counter only when the rect or the
     /// colour actually changed.
-    pub fn solid(&self, index: usize, rect: Rectangle<i32, Physical>, color: [f32; 4]) -> SolidColorRenderElement {
+    pub fn solid(
+        &self,
+        index: usize,
+        rect: Rectangle<i32, Physical>,
+        color: [f32; 4],
+    ) -> SolidColorRenderElement {
         self.with_slot(index, |slot| {
             if slot.last != Some((rect, color)) {
                 slot.last = Some((rect, color));
                 slot.commit.increment();
             }
-            SolidColorRenderElement::new(slot.id.clone(), rect, slot.commit, color, Kind::Unspecified)
+            SolidColorRenderElement::new(
+                slot.id.clone(),
+                rect,
+                slot.commit,
+                color,
+                Kind::Unspecified,
+            )
         })
     }
 

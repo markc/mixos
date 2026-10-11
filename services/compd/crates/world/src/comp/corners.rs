@@ -24,7 +24,8 @@
 use std::time::Instant;
 
 use policy::corner::{
-    Corner, CornerConfig, CornerDetector, CornerEvent, CornerEvents, CornerPresses, CornerTopic, PressFacts,
+    Corner, CornerConfig, CornerDetector, CornerEvent, CornerEvents, CornerPresses, CornerTopic,
+    PressFacts,
 };
 use smithay::utils::{Physical, Point};
 use smithay::wayland::pointer_constraints::with_pointer_constraint;
@@ -235,7 +236,8 @@ impl Corners {
                 CornerEvent::Entered { .. } => {}
             }
         }
-        self.topics.extend(CornerTopic::from_events(&output, events));
+        self.topics
+            .extend(CornerTopic::from_events(&output, events));
     }
 }
 
@@ -243,7 +245,12 @@ impl Corners {
 /// screen space of the output it is on (`screen`, that output's physical
 /// size), `attempted` the physical motion it tried to make. Returns whether
 /// the pointer is in a corner hotspot.
-pub fn sample(lp: &mut Loop, position: Point<f64, Physical>, screen: (f64, f64), attempted: (f64, f64)) -> bool {
+pub fn sample(
+    lp: &mut Loop,
+    position: Point<f64, Physical>,
+    screen: (f64, f64),
+    attempted: (f64, f64),
+) -> bool {
     if lp.inner.comp.corners.suppressed {
         lp.inner.comp.corners.reset();
         return false;
@@ -252,7 +259,11 @@ pub fn sample(lp: &mut Loop, position: Point<f64, Physical>, screen: (f64, f64),
         lp.inner.comp.corners.reset();
         return false;
     };
-    let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
+    let scale = if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
+    };
     let locked = super::session_lock::active(lp);
     let was_engaged = lp.inner.comp.corners.engaged().is_some();
     let hot = lp.inner.comp.corners.sample(
@@ -277,8 +288,12 @@ pub fn sample(lp: &mut Loop, position: Point<f64, Physical>, screen: (f64, f64),
 /// The human pointer's focused
 /// surface's ACTIVE constraint is deactivated (the corner wins).
 fn break_constraint(lp: &mut Loop) {
-    let Some(pointer) = lp.state.seat.seat.get_pointer() else { return };
-    let Some(surface) = pointer.current_focus() else { return };
+    let Some(pointer) = lp.state.seat.seat.get_pointer() else {
+        return;
+    };
+    let Some(surface) = pointer.current_focus() else {
+        return;
+    };
     // The engine's own deactivate (vendored smithay's takes the state, the
     // surface and the pointer), which also routes the unlock hint as every
     // other deactivation does. A no-op without an active constraint.
@@ -293,8 +308,12 @@ fn activate_pending_constraint(lp: &mut Loop) {
     if lp.state.seat.constraints_suspended {
         return;
     }
-    let Some(pointer) = lp.state.seat.seat.get_pointer() else { return };
-    let Some(surface) = pointer.current_focus() else { return };
+    let Some(pointer) = lp.state.seat.seat.get_pointer() else {
+        return;
+    };
+    let Some(surface) = pointer.current_focus() else {
+        return;
+    };
     if !lp.state.seat.is_keyboard_focused(&surface) {
         return;
     }
@@ -365,7 +384,10 @@ mod tests {
     #[test]
     fn outward_push_engages_and_a_click_is_owned() {
         let mut corners = Corners::default();
-        assert!(corners.sample("DP-1", SIZE, (5.0, 5.0), (0.0, 0.0), false), "in the hotspot");
+        assert!(
+            corners.sample("DP-1", SIZE, (5.0, 5.0), (0.0, 0.0), false),
+            "in the hotspot"
+        );
         assert!(corners.engaged().is_none(), "not dwelled yet");
         assert!(corners.next_deadline().is_some(), "a dwell is pending");
         // Same position, a later sample with an outward push: early engage.
@@ -374,11 +396,20 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(2));
         corners.sample("DP-1", SIZE, (5.0, 5.0), (-3.0, 0.0), false);
         assert_eq!(corners.engaged(), Some(Corner::TopLeft));
-        assert_eq!(entered(&corners.take_topics()), [("DP-1".to_string(), Corner::TopLeft)]);
-        assert!(corners.press(0x110, Vec::new(), false), "an engaged press is consumed");
+        assert_eq!(
+            entered(&corners.take_topics()),
+            [("DP-1".to_string(), Corner::TopLeft)]
+        );
+        assert!(
+            corners.press(0x110, Vec::new(), false),
+            "an engaged press is consumed"
+        );
         assert!(corners.release(0x110));
         let topics = corners.take_topics();
-        assert!(matches!(topics.as_slice(), [CornerTopic::Clicked { .. }, CornerTopic::ClickedV2 { .. }]));
+        assert!(matches!(
+            topics.as_slice(),
+            [CornerTopic::Clicked { .. }, CornerTopic::ClickedV2 { .. }]
+        ));
         assert!(!corners.release(0x110), "not owned any more");
     }
 
@@ -394,15 +425,27 @@ mod tests {
         assert!(corners.press(0x110, Vec::new(), false));
         assert!(!corners.sample("DP-1", SIZE, (500.0, 400.0), (0.0, 0.0), false));
         let topics = corners.take_topics();
-        assert!(topics.iter().any(|topic| matches!(topic, CornerTopic::Left { corner: Corner::BottomRight, .. })));
+        assert!(topics.iter().any(|topic| matches!(
+            topic,
+            CornerTopic::Left {
+                corner: Corner::BottomRight,
+                ..
+            }
+        )));
         assert!(corners.release(0x110), "still owned");
-        assert!(corners.take_topics().is_empty(), "but the click was cancelled");
+        assert!(
+            corners.take_topics().is_empty(),
+            "but the click was cancelled"
+        );
     }
 
     #[test]
     fn config_changes_count_and_the_first_entry_ends_discovery() {
         let mut corners = Corners::default();
-        let config = CornerConfig { discovery: true, ..CornerConfig::default() };
+        let config = CornerConfig {
+            discovery: true,
+            ..CornerConfig::default()
+        };
         corners.set_config(config);
         corners.set_config(config);
         assert_eq!(corners.changes(), 1, "an unchanged set is not a change");

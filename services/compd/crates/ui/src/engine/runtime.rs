@@ -342,7 +342,9 @@ impl<P: UiProgram> UiRuntime<P> {
         let painter = self
             .painter
             .get_or_insert_with(|| Painter::new(&gpu.device, gpu.format));
-        let primitives = self.ctx.tessellate(pass.shapes.clone(), pass.pixels_per_point);
+        let primitives = self
+            .ctx
+            .tessellate(pass.shapes.clone(), pass.pixels_per_point);
         painter.paint(
             &gpu.device,
             &gpu.queue,
@@ -424,11 +426,18 @@ mod merge_tests {
     use egui::epaint::{ColorImage, ImageDelta, TextureId, textures::TextureOptions};
 
     fn whole() -> ImageDelta {
-        ImageDelta::full(ColorImage::filled([4, 4], egui::Color32::RED), TextureOptions::LINEAR)
+        ImageDelta::full(
+            ColorImage::filled([4, 4], egui::Color32::RED),
+            TextureOptions::LINEAR,
+        )
     }
 
     fn partial() -> ImageDelta {
-        ImageDelta::partial([1, 1], ColorImage::filled([2, 2], egui::Color32::BLUE), TextureOptions::LINEAR)
+        ImageDelta::partial(
+            [1, 1],
+            ColorImage::filled([2, 2], egui::Color32::BLUE),
+            TextureOptions::LINEAR,
+        )
     }
 
     #[test]
@@ -443,7 +452,10 @@ mod merge_tests {
         b.push(id, partial());
         b.free(id);
         merge(&mut pending, b);
-        assert!(!pending.set.contains_key(&id), "no partial update aimed at a freed texture");
+        assert!(
+            !pending.set.contains_key(&id),
+            "no partial update aimed at a freed texture"
+        );
         assert!(pending.free.contains(&id));
         pending.clear();
     }

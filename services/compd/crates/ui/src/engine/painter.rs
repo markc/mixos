@@ -56,14 +56,21 @@ impl Painter {
                 predictable_texture_filtering: false,
             },
         );
-        Self { renderer, retired: Vec::new() }
+        Self {
+            renderer,
+            retired: Vec::new(),
+        }
     }
-
 
     /// Apply a new pass's texture changes as it runs: the previous pass's
     /// retired textures go (that pass is superseded now), this pass's uploads
     /// land, and this pass's frees wait for the pass after it.
-    pub fn apply(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, mut textures: TexturesDelta) {
+    pub fn apply(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        mut textures: TexturesDelta,
+    ) {
         for id in self.retired.drain(..) {
             self.renderer.free_texture(&id);
         }

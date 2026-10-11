@@ -5,7 +5,7 @@ use crate::capture::session::message::CaptureMessage;
 #[derive(Debug)]
 pub struct SurfaceMessage {
     // SurfaceID // <-- by HandlerID is available just in case its needed
-    pub message: SurfaceMessageType
+    pub message: SurfaceMessageType,
 }
 
 #[derive(Debug)]

@@ -20,14 +20,16 @@
 //! commit counter on every world-space item so smithay damages their
 //! old and new screen rects correctly.
 
+use crate::UiSpace;
+use dispatcher::frame::frame::SceneDispatch;
+use smithay::backend::renderer::RendererSuper;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement};
 use smithay::backend::renderer::gles::GlesTexture;
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
-use smithay::backend::renderer::RendererSuper;
-use dispatcher::frame::frame::SceneDispatch;
 use smithay::utils::user_data::UserDataMap;
-use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform as SmithayTransform};
-use crate::UiSpace;
+use smithay::utils::{
+    Buffer, Physical, Point, Rectangle, Scale, Size, Transform as SmithayTransform,
+};
 
 #[derive(Clone)]
 pub struct UiRenderElement {

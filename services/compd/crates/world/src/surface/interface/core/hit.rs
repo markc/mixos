@@ -53,7 +53,7 @@ pub(crate) fn root_dst(surface: &WlSurface) -> Option<smithay::utils::Size<i32, 
 }
 use protocols::window::shell::shell;
 use slots::storage::slot::base::Storage;
-use ui::{HandleId, UiSpace, Transform as UiTransform};
+use ui::{HandleId, Transform as UiTransform, UiSpace};
 
 // ─── Hit context ────────────────────────────────────────────────────
 //
@@ -615,14 +615,9 @@ impl Drawable {
     ) -> Option<SurfaceHit> {
         match self {
             Drawable::Window(w) => hit_window(hcx, w, position_world, filter),
-            Drawable::UiWorld(h) => hit_ui_one(
-                hcx,
-                *h,
-                cursor_phys,
-                ui_transform,
-                ui_output_size,
-                filter,
-            ),
+            Drawable::UiWorld(h) => {
+                hit_ui_one(hcx, *h, cursor_phys, ui_transform, ui_output_size, filter)
+            }
         }
     }
 }

@@ -1,14 +1,14 @@
-use smithay::desktop::Window;
-use dispatcher::state::state::RedrawReason;
-use dispatcher::wire::trait_::wire_trait::WireTrait;
-use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
-use smithay::utils::{Logical, Point, Size};
 use crate::camera::transform::translate::slot;
 use crate::state::Loop;
 use crate::window::interface::record::data::WindowFullscreen;
 use crate::window::interface::record::window::LoopWindow;
+use dispatcher::state::state::RedrawReason;
+use dispatcher::wire::trait_::wire_trait::WireTrait;
 use protocols::window::find::find;
 use protocols::window::shell::shell;
+use smithay::desktop::Window;
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
+use smithay::utils::{Logical, Point, Size};
 
 /// Apply (or clear) fullscreen on a window.
 ///
@@ -25,15 +25,26 @@ use protocols::window::shell::shell;
 /// and captures input within its bounds. Pre-fullscreen geometry is stored so
 /// it can be restored on un-fullscreen.
 pub fn fullscreen_set(_loop: &mut Loop, window: Window, fullscreen: bool) {
-    if crate::comp::live_window_space(
-        &_loop.inner.comp, _loop.inner.all_world_spaces(), &window,
-    ).is_none() || window.is_fullscreen() == fullscreen { return }
-    let owner_world = _loop.inner.world_of_window(&window)
+    if crate::comp::live_window_space(&_loop.inner.comp, _loop.inner.all_world_spaces(), &window)
+        .is_none()
+        || window.is_fullscreen() == fullscreen
+    {
+        return;
+    }
+    let owner_world = _loop
+        .inner
+        .world_of_window(&window)
         .expect("a live window has an owning world");
     let activate = owner_world == _loop.inner.worlds.spawn_target();
-    let target = fullscreen.then(|| crate::comp::fullscreen::target(_loop, &window)).flatten();
+    let target = fullscreen
+        .then(|| crate::comp::fullscreen::target(_loop, &window))
+        .flatten();
     if !fullscreen_set_in_space(
-        &mut _loop.inner.space_of_mut(owner_world).state, &window, fullscreen, target, activate,
+        &mut _loop.inner.space_of_mut(owner_world).state,
+        &window,
+        fullscreen,
+        target,
+        activate,
     ) {
         return;
     }
@@ -53,7 +64,9 @@ pub fn fullscreen_set_in_space(
     target: Option<(Point<i32, Logical>, Size<i32, Logical>)>,
     activate: bool,
 ) -> bool {
-    let Some(current_loc) = space.element_location(window) else { return false };
+    let Some(current_loc) = space.element_location(window) else {
+        return false;
+    };
     if fullscreen {
         if window.is_fullscreen() {
             return false;
@@ -65,8 +78,7 @@ pub fn fullscreen_set_in_space(
 
         // Fullscreen covers an output's whole geometry, since world
         // coordinates are output-logical.
-        let (target_loc, target_size) = target
-            .unwrap_or((current_loc, current_size));
+        let (target_loc, target_size) = target.unwrap_or((current_loc, current_size));
 
         window.set_fullscreen(Some(WindowFullscreen {
             restore_loc: current_loc,
@@ -132,7 +144,8 @@ fn focused_window(_loop: &Loop) -> Option<Window> {
         .and_then(|kb| kb.current_focus())?;
 
     _loop
-        .inner.space_state()
+        .inner
+        .space_state()
         .state
         .elements()
         .find(|w| find::is_surface(w, &focus))

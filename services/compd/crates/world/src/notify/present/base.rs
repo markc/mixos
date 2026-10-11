@@ -13,13 +13,13 @@
 
 use std::time::{Duration, Instant};
 
-use ui::{UiRenderElement, Transform};
+use crate::notify::present::registry::registry::{self as registry, Presenter};
 use crate::scene::layer::base::Layer;
 use crate::smithay_glue::data::data::ScreenContext;
 use slots::storage::slot::base::Storage;
-use crate::notify::present::registry::registry::{self as registry, Presenter};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::Point;
+use ui::{Transform, UiRenderElement};
 
 /// How long a message rests on screen, and the slide in/out duration.
 pub const TTL: Duration = Duration::from_secs(5);
@@ -58,29 +58,63 @@ pub fn tick(
     screen: &ScreenContext,
 ) -> (Option<NotifyFrame>, bool) {
     let ttl = TTL.as_secs_f32();
-    if p.current.as_ref().is_some_and(|(_, raised)| raised.elapsed().as_secs_f32() > ttl + SLIDE) {
+    if p.current
+        .as_ref()
+        .is_some_and(|(_, raised)| raised.elapsed().as_secs_f32() > ttl + SLIDE)
+    {
         p.retire();
     }
     let mut taken = false;
     if p.current.is_none() {
         // Registry before the message: a failed build must not eat the queue.
-        let Some(message) = next.filter(|_| registry::ensure_registry(p, kernel)) else { return (None, false) };
+        let Some(message) = next.filter(|_| registry::ensure_registry(p, kernel)) else {
+            return (None, false);
+        };
         p.current = Some((message, Instant::now()));
         taken = true;
     }
     let (message, raised) = p.current.clone().expect("raised above");
-    let Some(pill) = registry::pill(p, &message, &screen.output, screen.size, renderer, render_node) else { return (None, taken) };
+    let Some(pill) = registry::pill(
+        p,
+        &message,
+        &screen.output,
+        screen.size,
+        renderer,
+        render_node,
+    ) else {
+        return (None, taken);
+    };
     let (handle, width) = (pill.handle, pill.width);
     let size = screen.size;
     let travel = (registry::HEIGHT + MARGIN) as f32 * shown(raised.elapsed().as_secs_f32(), ttl);
-    let Some(reg) = p.registry.as_mut() else { return (None, taken) };
-    reg.set_location(handle, Point::from(((size.w - width) / 2, size.h - travel.round() as i32)));
+    let Some(reg) = p.registry.as_mut() else {
+        return (None, taken);
+    };
+    reg.set_location(
+        handle,
+        Point::from(((size.w - width) / 2, size.h - travel.round() as i32)),
+    );
     // Every pill renders (the registry is one), but only THIS output's is handed back.
     let elements = reg
-        .render_all(render_node, renderer, Transform { zoom: 1.0, position: Point::new(0.0, 0.0) }, size.to_f64(), Layer::GLOBAL_SCREEN.bits())
+        .render_all(
+            render_node,
+            renderer,
+            Transform {
+                zoom: 1.0,
+                position: Point::new(0.0, 0.0),
+            },
+            size.to_f64(),
+            Layer::GLOBAL_SCREEN.bits(),
+        )
         .unwrap_or_default()
         .into_iter()
         .filter(|e| e.output.as_deref() == Some(&*screen.output))
         .collect();
-    (Some(NotifyFrame { elements, animating: true }), taken)
+    (
+        Some(NotifyFrame {
+            elements,
+            animating: true,
+        }),
+        taken,
+    )
 }

@@ -11,33 +11,37 @@
 //! old rim handler returned `true`, and `InputFlow::Pass` when it returned
 //! `false` (so the rim's `native_press` runs against the window beneath).
 
-use slots::input::event::base::{InputFlow, Modality};
-use slots::trait_::system::base::SystemCx;
-use dispatcher::state::state::Dispatch;
 use crate::surface::interface::core::hit::surface_under_filtered_cx;
 use crate::surface::system::base::{announce_ui_button, announce_ui_focus};
+use dispatcher::state::state::Dispatch;
+use protocols::window::shell::shell;
+use slots::input::event::base::{InputFlow, Modality};
+use slots::trait_::system::base::SystemCx;
 use smithay::backend::input::{ButtonState, KeyState};
 use smithay::input::keyboard::Keycode;
 use smithay::input::pointer::ButtonEvent;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, SERIAL_COUNTER};
 use std::time::{SystemTime, UNIX_EPOCH};
-use protocols::window::shell::shell;
 
-pub(crate) fn press(cx: &mut SystemCx, button: u32, x: f64, y: f64, _modality: Modality) -> InputFlow {
+pub(crate) fn press(
+    cx: &mut SystemCx,
+    button: u32,
+    x: f64,
+    y: f64,
+    _modality: Modality,
+) -> InputFlow {
     let cursor = Point::<f64, Logical>::from((x, y));
 
     let over_surface = surface_under_filtered_cx(cx.storage, cursor, &|_hit| true);
     // "Over ice" = over any UI surface (registry `UI` hits, or a layer-shell
     // surface flagged ice).
-    let over_ice =
-        matches!(&over_surface, Some(hit) if hit.ice().is_some() || hit.is_ui());
+    let over_ice = matches!(&over_surface, Some(hit) if hit.ice().is_some() || hit.is_ui());
 
     let mut temporary_passthrough = false;
     if let Some(ice_layer) = over_surface.as_ref().and_then(|w| w.ui_layer()) {
-        temporary_passthrough = (ice_layer
-            & crate::scene::layer::base::Layer::SCENE_SURFACE_GROUP.bits())
-            != 0;
+        temporary_passthrough =
+            (ice_layer & crate::scene::layer::base::Layer::SCENE_SURFACE_GROUP.bits()) != 0;
     }
 
     // Over a window (or anything hit-testable): Pass so the rim's native_press
@@ -75,7 +79,11 @@ fn finalize_non_hand(cx: &mut SystemCx, button: u32) {
         }
     }
 
-    if let Some(dispatch) = cx.seat.as_deref_mut().and_then(|s| s.downcast_mut::<Dispatch>()) {
+    if let Some(dispatch) = cx
+        .seat
+        .as_deref_mut()
+        .and_then(|s| s.downcast_mut::<Dispatch>())
+    {
         // Release held (non-modifier) keys before dropping focus so clients that
         // track their own keyboard state don't get stuck key-down on re-focus.
         release_held_keys(dispatch);
@@ -87,7 +95,12 @@ fn finalize_non_hand(cx: &mut SystemCx, button: u32) {
         if let Some(pointer) = dispatch.seat.seat.get_pointer() {
             pointer.button(
                 dispatch,
-                &ButtonEvent { button, state: ButtonState::Pressed, serial, time },
+                &ButtonEvent {
+                    button,
+                    state: ButtonState::Pressed,
+                    serial,
+                    time,
+                },
             );
             pointer.frame(dispatch);
         }
@@ -119,9 +132,14 @@ fn release_held_keys(dispatch: &mut Dispatch) {
     let time = now_msec();
     for key in to_release {
         let serial = SERIAL_COUNTER.next_serial();
-        let _ = keyboard.input::<(), _>(dispatch, key, KeyState::Released, serial, time, |_, _, _| {
-            smithay::input::keyboard::FilterResult::Forward
-        });
+        let _ = keyboard.input::<(), _>(
+            dispatch,
+            key,
+            KeyState::Released,
+            serial,
+            time,
+            |_, _, _| smithay::input::keyboard::FilterResult::Forward,
+        );
     }
 }
 

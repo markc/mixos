@@ -1233,7 +1233,10 @@ impl Orchestrator {
     ) {
         let owner = event
             .pending_queue(self.worlds.ids().into_iter().filter_map(|id| {
-                let lifecycle = self.worlds.get(id).storage()
+                let lifecycle = self
+                    .worlds
+                    .get(id)
+                    .storage()
                     .try_get(&crate::window::system::base::WINDOW_LIFECYCLE)?;
                 Some((id, lifecycle.incoming.as_slice()))
             }))
@@ -1317,8 +1320,11 @@ impl Orchestrator {
         // worlds, rather than removing from whichever world activation left up.
         crate::order::track::base::DrawOrder::remove_from_all(
             crate::order::track::base::ComponentId(uuid),
-            self.worlds.iter_mut().filter_map(|world| world.storage_mut()
-                .try_get_mut(&crate::order::track::base::DRAW_ORDER_MUT)),
+            self.worlds.iter_mut().filter_map(|world| {
+                world
+                    .storage_mut()
+                    .try_get_mut(&crate::order::track::base::DRAW_ORDER_MUT)
+            }),
         );
     }
 

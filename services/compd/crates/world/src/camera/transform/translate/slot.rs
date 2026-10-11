@@ -9,9 +9,9 @@
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use protocols::window::shell::shell;
 use smithay::desktop::{Space, Window};
 use smithay::utils::{Logical, Rectangle, Size};
-use protocols::window::shell::shell;
 
 /// A window's slot state.
 #[derive(Debug, Clone, Copy)]
@@ -135,7 +135,9 @@ pub fn decided_size(window: &Window) -> Option<Size<i32, Logical>> {
 /// compositor makes its first explicit sizing decision (`set_expected_size`). Used at initial
 /// map — accept the client's size while it settles, without freezing the stale first frame.
 pub fn set_expected_auto(window: &Window) {
-    window.user_data().insert_if_missing_threadsafe(ExpectedSize::default);
+    window
+        .user_data()
+        .insert_if_missing_threadsafe(ExpectedSize::default);
     if let Some(e) = window.user_data().get::<ExpectedSize>() {
         *e.0.lock().unwrap() = Some(Slot::Auto);
     }
@@ -144,7 +146,9 @@ pub fn set_expected_auto(window: &Window) {
 /// Record the compositor-decided size for `window` — freezes the slot to `Decided` and enforces
 /// it from now on (the window is no longer in `Auto` / client-follows mode).
 pub fn set_expected_size(window: &Window, size: Size<i32, Logical>) {
-    window.user_data().insert_if_missing_threadsafe(ExpectedSize::default);
+    window
+        .user_data()
+        .insert_if_missing_threadsafe(ExpectedSize::default);
     if let Some(e) = window.user_data().get::<ExpectedSize>() {
         *e.0.lock().unwrap() = Some(Slot::Decided(size));
     }
@@ -158,8 +162,12 @@ pub fn set_expected_size(window: &Window, size: Size<i32, Logical>) {
 /// resize); the caller sends and need not call again until the throttle passes. The deadline is
 /// (re)armed each call, so the stretch stays live for the whole drag.
 pub fn note_resize(window: &Window, target: Size<i32, Logical>) -> bool {
-    window.user_data().insert_if_missing_threadsafe(ResizeState::default);
-    let Some(rs) = window.user_data().get::<ResizeState>() else { return true };
+    window
+        .user_data()
+        .insert_if_missing_threadsafe(ResizeState::default);
+    let Some(rs) = window.user_data().get::<ResizeState>() else {
+        return true;
+    };
     let now = Instant::now();
     let mut guard = rs.0.lock().unwrap();
     let due = match guard.as_ref() {
@@ -226,11 +234,15 @@ pub fn mark_resize_settling(window: &Window) {
 /// lands, which self-adapts to the app's commit lag. The `RESIZE_PENDING_TIMEOUT` deadline is only
 /// a frozen-client safety net. Lazily clears (render + input both call this) so they converge.
 pub fn resize_stretching(window: &Window, content: Size<i32, Logical>) -> bool {
-    let Some(rs) = window.user_data().get::<ResizeState>() else { return false };
+    let Some(rs) = window.user_data().get::<ResizeState>() else {
+        return false;
+    };
     let mut guard = rs.0.lock().unwrap();
     let now = Instant::now();
     let clear = {
-        let Some(p) = guard.as_mut() else { return false };
+        let Some(p) = guard.as_mut() else {
+            return false;
+        };
         // Track content (geometry) changes.
         if (content.w - p.last_content.w).abs() > 2 || (content.h - p.last_content.h).abs() > 2 {
             p.last_content = content;
@@ -252,8 +264,8 @@ pub fn resize_stretching(window: &Window, content: Size<i32, Logical>) -> bool {
                     // the target, or a size the client committed *after* the gesture ended (clamp);
                     // a merely-slow client whose old buffer never changed keeps waiting.
                     let stable = now.duration_since(p.last_content_change) >= RESIZE_SETTLE_STABLE;
-                    let matched_target = (content.w - p.target.w).abs() <= 2
-                        && (content.h - p.target.h).abs() <= 2;
+                    let matched_target =
+                        (content.w - p.target.w).abs() <= 2 && (content.h - p.target.h).abs() <= 2;
                     stable && (matched_target || p.last_content_change > settle_at)
                 }
             }

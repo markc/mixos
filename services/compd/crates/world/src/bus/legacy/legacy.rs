@@ -16,7 +16,10 @@ pub struct LegacyBus<L> {
 
 impl<L> Default for LegacyBus<L> {
     fn default() -> Self {
-        Self { router: ChannelRouter::new(), handlers: Vec::new() }
+        Self {
+            router: ChannelRouter::new(),
+            handlers: Vec::new(),
+        }
     }
 }
 
@@ -35,9 +38,9 @@ impl<L: 'static> LegacyBus<L> {
         self.handlers.push((
             channel.ensure_id(),
             Rc::new(move |l: &mut L, message: &dyn Any| {
-                let message = message
-                    .downcast_ref::<M>()
-                    .unwrap_or_else(|| panic!("message type mismatch on <{}>", std::any::type_name::<M>()));
+                let message = message.downcast_ref::<M>().unwrap_or_else(|| {
+                    panic!("message type mismatch on <{}>", std::any::type_name::<M>())
+                });
                 handler(l, message);
             }),
         ));
@@ -48,10 +51,16 @@ impl<L: 'static> LegacyBus<L> {
 /// with the full `&mut L`. Pop-then-call keeps the borrows disjoint.
 pub fn drain<L>(l: &mut L, get: fn(&mut L) -> &mut LegacyBus<L>) {
     loop {
-        let Some((id, message)) = get(l).router.pop() else { return };
+        let Some((id, message)) = get(l).router.pop() else {
+            return;
+        };
         // Fan-out: clone the matching handlers first to end the bus borrow.
-        let handlers: Vec<_> =
-            get(l).handlers.iter().filter(|(h, _)| *h == id).map(|(_, f)| f.clone()).collect();
+        let handlers: Vec<_> = get(l)
+            .handlers
+            .iter()
+            .filter(|(h, _)| *h == id)
+            .map(|(_, f)| f.clone())
+            .collect();
         for handler in handlers {
             handler(l, message.as_ref());
         }

@@ -1,7 +1,7 @@
 //! Multi-finger touch session state (Orchestrator `inner.touch`); contacts held in
 //! physical pixels so gesture deltas match the trackpad's libinput units.
-use smithay::utils::{Physical, Point};
 use slots::input::event::base::Modality;
+use smithay::utils::{Physical, Point};
 
 #[derive(Clone, Copy)]
 pub struct Contact {
@@ -141,7 +141,10 @@ impl TouchTracker {
     /// Mean of all contact positions.
     pub fn centroid(&self) -> Point<f64, Physical> {
         let n = self.contacts.len().max(1) as f64;
-        let (sx, sy) = self.contacts.iter().fold((0.0, 0.0), |(x, y), c| (x + c.pos.x, y + c.pos.y));
+        let (sx, sy) = self
+            .contacts
+            .iter()
+            .fold((0.0, 0.0), |(x, y), c| (x + c.pos.x, y + c.pos.y));
         Point::from((sx / n, sy / n))
     }
 
@@ -149,7 +152,11 @@ impl TouchTracker {
     pub fn spread(&self) -> f64 {
         let c = self.centroid();
         let n = self.contacts.len().max(1) as f64;
-        self.contacts.iter().map(|k| (k.pos.x - c.x).hypot(k.pos.y - c.y)).sum::<f64>() / n
+        self.contacts
+            .iter()
+            .map(|k| (k.pos.x - c.x).hypot(k.pos.y - c.y))
+            .sum::<f64>()
+            / n
     }
 
     /// Clear everything back to Idle (all fingers lifted / cancelled).
@@ -191,9 +198,14 @@ pub fn classify<I: smithay::backend::input::InputBackend>(
         })
     }
     match event {
-        TouchDown { .. } | TouchMotion { .. } | TouchUp { .. } | TouchCancel { .. }
+        TouchDown { .. }
+        | TouchMotion { .. }
+        | TouchUp { .. }
+        | TouchCancel { .. }
         | TouchFrame { .. } => Some(Modality::Touch),
-        TabletToolProximity { .. } | TabletToolAxis { .. } | TabletToolTip { .. }
+        TabletToolProximity { .. }
+        | TabletToolAxis { .. }
+        | TabletToolTip { .. }
         | TabletToolButton { .. } => Some(Modality::Pen),
         PointerMotion { event, .. } => pointer::<I>(event.device()),
         PointerMotionAbsolute { event, .. } => pointer::<I>(event.device()),

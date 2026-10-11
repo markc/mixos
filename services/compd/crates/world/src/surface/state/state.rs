@@ -10,14 +10,16 @@ pub struct SurfaceState {
     pub test_example_done: bool,
 
     pub surface_message_buffer: Vec<crate::surface::protocol::protocol::SurfaceMessage>,
-    pub surface_message_buffer_channel: (mpsc::Sender<crate::surface::protocol::protocol::SurfaceMessage>, mpsc::Receiver<crate::surface::protocol::protocol::SurfaceMessage>)
+    pub surface_message_buffer_channel: (
+        mpsc::Sender<crate::surface::protocol::protocol::SurfaceMessage>,
+        mpsc::Receiver<crate::surface::protocol::protocol::SurfaceMessage>,
+    ),
 }
-
 
 impl SurfaceState {
     pub fn new() -> Self {
         return Self {
-            surface_message_buffer: vec!(),
+            surface_message_buffer: vec![],
             surface_message_buffer_channel: mpsc::channel(),
             registry: None,
             test_dmabuf_done: false,

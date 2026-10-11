@@ -15,10 +15,10 @@ use std::collections::HashMap;
 
 use dispatcher::wire::trait_::surface_event::SurfaceHandle;
 use dispatcher::wire::trait_::wire_trait::WireTrait;
-use surfaces::{StackBand, SurfaceId};
 use smithay::desktop::Window;
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Size};
+use surfaces::{StackBand, SurfaceId};
 
 use crate::state::Loop;
 use crate::window::interface::record::window::LoopWindow;
@@ -69,9 +69,8 @@ impl FullscreenOutputs {
 /// The output window `window` goes fullscreen on: the selected one, else the
 /// one it overlaps, else the first.
 fn output_for(lp: &Loop, window: &Window) -> Option<Output> {
-    let space = &crate::comp::live_window_space(
-        &lp.inner.comp, lp.inner.all_world_spaces(), window,
-    )?.state;
+    let space =
+        &crate::comp::live_window_space(&lp.inner.comp, lp.inner.all_world_spaces(), window)?.state;
     let selected = SurfaceHandle::of_window(window)
         .and_then(|handle| lp.inner.comp.registry.id_for_handle(&handle))
         .and_then(|id| lp.inner.comp.fullscreen.selected(id).map(str::to_string));
@@ -104,9 +103,10 @@ pub fn target(lp: &mut Loop, window: &Window) -> Option<(Point<i32, Logical>, Si
         }
     }
     let output = output_for(lp, window)?;
-    let geometry = crate::comp::live_window_space(
-        &lp.inner.comp, lp.inner.all_world_spaces(), window,
-    )?.state.output_geometry(&output)?;
+    let geometry =
+        crate::comp::live_window_space(&lp.inner.comp, lp.inner.all_world_spaces(), window)?
+            .state
+            .output_geometry(&output)?;
     Some((geometry.loc, geometry.size))
 }
 
@@ -129,7 +129,12 @@ pub fn service(lp: &mut Loop) {
         .collect();
     for (id, band) in left {
         lp.inner.comp.fullscreen.restore_band.remove(&id);
-        let alive = lp.inner.comp.registry.get(id).is_some_and(|record| record.mapped());
+        let alive = lp
+            .inner
+            .comp
+            .registry
+            .get(id)
+            .is_some_and(|record| record.mapped());
         if alive && band != StackBand::Normal {
             super::band::apply(lp, id, band, "comp.window");
         }
@@ -141,12 +146,20 @@ pub fn service(lp: &mut Loop) {
 /// The engine's `fullscreen_set` returns early for an already-fullscreen window, so
 /// the move is made here.
 pub fn retarget(lp: &mut Loop, window: &Window) {
-    let Some(output) = output_for(lp, window) else { return };
-    let Some(owner) = crate::comp::live_window_space(
-        &lp.inner.comp, lp.inner.all_world_spaces(), window,
-    ) else { return };
-    let Some(geometry) = owner.state.output_geometry(&output) else { return };
-    let Some(owner_world) = lp.inner.world_of_window(window) else { return };
+    let Some(output) = output_for(lp, window) else {
+        return;
+    };
+    let Some(owner) =
+        crate::comp::live_window_space(&lp.inner.comp, lp.inner.all_world_spaces(), window)
+    else {
+        return;
+    };
+    let Some(geometry) = owner.state.output_geometry(&output) else {
+        return;
+    };
+    let Some(owner_world) = lp.inner.world_of_window(window) else {
+        return;
+    };
     let activate = owner_world == lp.inner.worlds.spawn_target();
     lp.inner
         .space_of_mut(owner_world)
@@ -155,7 +168,8 @@ pub fn retarget(lp: &mut Loop, window: &Window) {
     crate::camera::transform::translate::slot::set_expected_size(window, geometry.size);
     protocols::window::shell::shell::stage(window, geometry.size, false);
     protocols::window::shell::shell::send(window);
-    lp.state.schedule_redraw(dispatcher::state::state::RedrawReason::WindowState);
+    lp.state
+        .schedule_redraw(dispatcher::state::state::RedrawReason::WindowState);
 }
 
 /// The window of record `id`, if one is in a world Space.
@@ -170,5 +184,6 @@ fn window_of(lp: &Loop, id: SurfaceId) -> Option<Window> {
 }
 
 fn record_id(lp: &Loop, window: &Window) -> Option<SurfaceId> {
-    SurfaceHandle::of_window(window).and_then(|handle| lp.inner.comp.registry.id_for_handle(&handle))
+    SurfaceHandle::of_window(window)
+        .and_then(|handle| lp.inner.comp.registry.id_for_handle(&handle))
 }

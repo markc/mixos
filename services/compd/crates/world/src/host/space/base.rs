@@ -1,6 +1,6 @@
+use crate::host::window::base::WindowHost;
 use protocols::space::state::SpaceState;
 use slots::storage::token::base::{Token, TokenMut};
-use crate::host::window::base::WindowHost;
 use smithay::desktop::{Space, Window};
 
 /// The spatial world's window-host slice: it OWNS the `Space<Window>` and

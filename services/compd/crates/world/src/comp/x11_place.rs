@@ -18,7 +18,10 @@ use crate::state::Loop;
 /// The content origin and size a newly mapped managed X11 `window` takes
 /// (host Space, logical), or `None` for anything else (xdg, override-redirect,
 /// no usable area yet), which keeps the engine's own placement.
-pub fn initial(lp: &mut Loop, window: &Window) -> Option<(Point<i32, Logical>, Size<i32, Logical>)> {
+pub fn initial(
+    lp: &mut Loop,
+    window: &Window,
+) -> Option<(Point<i32, Logical>, Size<i32, Logical>)> {
     let x11 = window.x11_surface()?;
     if x11.is_override_redirect() {
         return None;

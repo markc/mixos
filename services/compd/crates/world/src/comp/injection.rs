@@ -24,8 +24,10 @@
 use std::collections::BTreeSet;
 
 use policy::agent::Holds;
+use smithay::backend::input::{
+    ButtonState, InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerButtonEvent,
+};
 use surfaces::SeatKind;
-use smithay::backend::input::{ButtonState, InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerButtonEvent};
 
 use crate::state::Loop;
 
@@ -152,7 +154,9 @@ impl Injection {
 
 /// Monotonic microseconds (`CLOCK_MONOTONIC`).
 pub fn monotonic_us() -> u64 {
-    smithay::utils::Clock::<smithay::utils::Monotonic>::new().now().as_micros()
+    smithay::utils::Clock::<smithay::utils::Monotonic>::new()
+        .now()
+        .as_micros()
 }
 
 /// A human button or key press reached a client (the pointer's focus for a
@@ -165,11 +169,15 @@ pub fn note_press(lp: &mut Loop, button: bool) {
     }
     let seat = &lp.state.seat.seat;
     let surface = if button {
-        seat.get_pointer().and_then(|pointer| pointer.current_focus())
+        seat.get_pointer()
+            .and_then(|pointer| pointer.current_focus())
     } else {
-        seat.get_keyboard().and_then(|keyboard| keyboard.current_focus())
+        seat.get_keyboard()
+            .and_then(|keyboard| keyboard.current_focus())
     };
-    let client = surface.and_then(|surface| surface.client()).map(|client| client.id());
+    let client = surface
+        .and_then(|surface| surface.client())
+        .map(|client| client.id());
     lp.inner.comp.panels.user_input.push(client);
 }
 
@@ -204,8 +212,12 @@ pub fn human_input<I: InputBackend>(lp: &mut Loop, event: &InputEvent<I>) -> boo
         note_human_activity(lp);
     }
     match event {
-        InputEvent::PointerButton { event } if event.state() == ButtonState::Pressed => note_press(lp, true),
-        InputEvent::Keyboard { event } if event.state() == KeyState::Pressed => note_press(lp, false),
+        InputEvent::PointerButton { event } if event.state() == ButtonState::Pressed => {
+            note_press(lp, true)
+        }
+        InputEvent::Keyboard { event } if event.state() == KeyState::Pressed => {
+            note_press(lp, false)
+        }
         _ => {}
     }
     true

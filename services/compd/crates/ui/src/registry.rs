@@ -34,18 +34,18 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::utils::{Physical, Point, Rectangle, Size};
 use crate::engine::UiProgram;
 use crate::input::{Input, Modifiers};
 use graphics::surface::{UiSurface, WgpuGlContext};
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::utils::{Physical, Point, Rectangle, Size};
 
 use crate::element::UiRenderElement;
+use crate::engine::UiSnapshot;
 use crate::error::{CreateError, DispatchError, ResizeError};
 use crate::handle::{HandleId, UiHandle};
 use crate::instance::{UiInstance, UiItem, build_instance};
-use crate::space::{UiSpace, Transform};
-use crate::engine::UiSnapshot;
+use crate::space::{Transform, UiSpace};
 
 /// How long a surface must stay continuously hidden (off-screen or occluded)
 /// before its GPU backing is released. Re-allocation is immediate on reveal, so
@@ -118,16 +118,28 @@ fn subtract_rect(
     let (ix0, iy0) = (inter.loc.x, inter.loc.y);
     let (ix1, iy1) = (inter.loc.x + inter.size.w, inter.loc.y + inter.size.h);
     if iy0 > fy0 {
-        out.push(Rectangle::new((fx0, fy0).into(), (fx1 - fx0, iy0 - fy0).into()));
+        out.push(Rectangle::new(
+            (fx0, fy0).into(),
+            (fx1 - fx0, iy0 - fy0).into(),
+        ));
     }
     if iy1 < fy1 {
-        out.push(Rectangle::new((fx0, iy1).into(), (fx1 - fx0, fy1 - iy1).into()));
+        out.push(Rectangle::new(
+            (fx0, iy1).into(),
+            (fx1 - fx0, fy1 - iy1).into(),
+        ));
     }
     if ix0 > fx0 {
-        out.push(Rectangle::new((fx0, iy0).into(), (ix0 - fx0, iy1 - iy0).into()));
+        out.push(Rectangle::new(
+            (fx0, iy0).into(),
+            (ix0 - fx0, iy1 - iy0).into(),
+        ));
     }
     if ix1 < fx1 {
-        out.push(Rectangle::new((ix1, iy0).into(), (fx1 - ix1, iy1 - iy0).into()));
+        out.push(Rectangle::new(
+            (ix1, iy0).into(),
+            (fx1 - ix1, iy1 - iy0).into(),
+        ));
     }
 }
 
@@ -175,7 +187,6 @@ pub struct UiRegistry {
     /// (`RELEASE_MAX` since `batch_first`) — see `manage_backings`.
     batch_first: Option<Instant>,
     batch_touch: Option<Instant>,
-
     // No off-thread host. With wgpu on the GL backend over the
     // compositor's own context every instance renders inline, on the compositor
     // thread; see `runtime.surface/wgpu_context` for where a shared-context
@@ -297,15 +308,7 @@ impl UiRegistry {
         size: Size<i32, Physical>,
         layer: u64,
     ) -> Result<UiHandle<U>, CreateError> {
-        self.create_in_space(
-            render_node,
-            ui,
-            gles,
-            location,
-            size,
-            UiSpace::World,
-            layer,
-        )
+        self.create_in_space(render_node, ui, gles, location, size, UiSpace::World, layer)
     }
 
     pub fn create_screen<U: UiProgram>(
@@ -384,7 +387,9 @@ impl UiRegistry {
             self.instance_scale,
         );
 
-        trace!("created UI instance handle={id:?} location={location:?} size={size:?} space={space:?}");
+        trace!(
+            "created UI instance handle={id:?} location={location:?} size={size:?} space={space:?}"
+        );
 
         let item = UiItem::new(instance, space, layer);
         let idx = self.items.len();
@@ -641,7 +646,10 @@ impl UiRegistry {
             let t = *transform;
             if let Some(item) = self.get_mut(grab) {
                 let local = item.local_coords_unclamped(screen_point, &t, output_size);
-                item.queue_input(Input::PointerMoved { x: local.0, y: local.1 });
+                item.queue_input(Input::PointerMoved {
+                    x: local.0,
+                    y: local.1,
+                });
             }
             return;
         }
@@ -657,7 +665,10 @@ impl UiRegistry {
                 if let Some(item) = self.get_mut(now)
                     && let Some(local) = item.local_coords(screen_point, &t, output_size)
                 {
-                    item.queue_input(Input::PointerMoved { x: local.0, y: local.1 });
+                    item.queue_input(Input::PointerMoved {
+                        x: local.0,
+                        y: local.1,
+                    });
                 }
             }
             self.pointer_inside = target;
@@ -667,7 +678,10 @@ impl UiRegistry {
             if let Some(item) = self.get_mut(now)
                 && let Some(local) = item.local_coords(screen_point, &t, output_size)
             {
-                item.queue_input(Input::PointerMoved { x: local.0, y: local.1 });
+                item.queue_input(Input::PointerMoved {
+                    x: local.0,
+                    y: local.1,
+                });
             }
         }
     }
@@ -804,7 +818,13 @@ impl UiRegistry {
         };
 
         if let Some(handle) = resolved_target {
-            let _ = self.dispatch_input(handle, Input::Button { code: button_code, pressed });
+            let _ = self.dispatch_input(
+                handle,
+                Input::Button {
+                    code: button_code,
+                    pressed,
+                },
+            );
         }
 
         // Update grab state.
@@ -891,7 +911,9 @@ impl UiRegistry {
                 item.poll_publish();
                 let due = item.tick();
                 if !item.is_visible() {
-                    if due { item.skip_render(); }
+                    if due {
+                        item.skip_render();
+                    }
                     continue;
                 }
                 if !item.ensure_backing(render_node, &wgpu, gles) {
@@ -1247,9 +1269,14 @@ impl UiRegistry {
     /// Keep a carousel page's allocation warm without rasterising while hidden.
     /// Dirty hidden content is marked stale and drawn once on reveal.
     pub fn retain_backing_by_id(&mut self, id: HandleId, retain: bool) -> bool {
-        if !self.contains(id) { return false; }
-        if retain { self.retained_backings.insert(id); }
-        else { self.retained_backings.remove(&id); }
+        if !self.contains(id) {
+            return false;
+        }
+        if retain {
+            self.retained_backings.insert(id);
+        } else {
+            self.retained_backings.remove(&id);
+        }
         true
     }
 
@@ -1304,7 +1331,9 @@ impl UiRegistry {
 
     /// Whether a press on this surface should leave keyboard focus untouched.
     pub fn is_keyboard_transparent(&self, id: HandleId) -> bool {
-        self.get(id).map(|i| i.is_keyboard_transparent()).unwrap_or(false)
+        self.get(id)
+            .map(|i| i.is_keyboard_transparent())
+            .unwrap_or(false)
     }
 
     /// Mark a surface keyboard-transparent: it still receives pointer buttons, but a

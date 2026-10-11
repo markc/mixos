@@ -1,6 +1,6 @@
+use model::environment::preference::base::{KeyBind, PenBindTarget};
 use slots::storage::token::base::{Token, TokenMut};
 use ui::HandleId;
-use model::environment::preference::base::{KeyBind, PenBindTarget};
 
 /// What the settings Pen tab is currently waiting to capture (click-to-bind). Read by
 /// the keyboard handler (Key) and the libinput pad handler (Pad); armed/cleared via

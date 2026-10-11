@@ -16,7 +16,11 @@ pub struct RegionBorder {
 
 impl RegionBorder {
     pub fn new(screen_w: i32, screen_h: i32, rect: OverlayRect) -> Self {
-        Self { screen_w, screen_h, rect }
+        Self {
+            screen_w,
+            screen_h,
+            rect,
+        }
     }
 }
 
@@ -40,6 +44,13 @@ impl UiProgram for RegionBorder {
             h: self.rect.h + 2 * bw,
         };
         let painter = ui.painter();
-        mask::region_border(painter, self.screen_w, self.screen_h, outer, style::accent(ui), bw);
+        mask::region_border(
+            painter,
+            self.screen_w,
+            self.screen_h,
+            outer,
+            style::accent(ui),
+            bw,
+        );
     }
 }

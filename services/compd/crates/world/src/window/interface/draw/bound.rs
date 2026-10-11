@@ -1,11 +1,11 @@
-use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
-use smithay::desktop::Window;
-use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
 use crate::camera::transform::translate::slot;
 use crate::camera::transform::translate::transform::Transform;
 use crate::state::Loop;
 use crate::state::state::CoordinateTrait;
 use protocols::window::shell::shell;
+use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
+use smithay::desktop::Window;
+use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
 
 #[derive(Debug)]
 pub struct Bound {
@@ -48,7 +48,8 @@ where
     // slot logic. Falls back to element_geometry when no size is decided (0x0 defer).
     let cfg = model::environment::config::base::get();
     let elem_loc = state
-        .inner.space_state()
+        .inner
+        .space_state()
         .state
         .element_location(window)
         .unwrap_or_default();
@@ -56,7 +57,8 @@ where
     let geom = match slot_size.filter(|s| s.w > 0 && s.h > 0) {
         Some(size) => smithay::utils::Rectangle::new(elem_loc, size),
         None => state
-            .inner.space_state()
+            .inner
+            .space_state()
             .state
             .element_geometry(window)
             .unwrap_or_default(),
