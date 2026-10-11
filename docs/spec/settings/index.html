@@ -483,6 +483,15 @@ Failed publication starts a single pending retry job, with exponential backoff
 from 250 ms capped at 30 seconds. Success removes the job and every timer.
 Reconnection or a new revision restarts the backoff. There is no idle heartbeat;
 publication_pending remains visible throughout a failed pending job.</p>
+<p><strong>Following from an app.</strong> An app on a plain Bus connection (no owner
+stamps) treats a delivery on the profile's topic only as a hint, and reads
+the look with <code>settings.get</code>: <code>settings::follow::Follower</code> keeps one read in
+flight (hints during it fold into one more), ignores an answer older than one
+already seen (same incarnation, lower or equal revision), adopts the instance
+from <code>wrong_target</code> once (never the profile), and reports settingsd missing so
+the app keeps its theme file. <code>toolkit::session_look</code> turns the profile's
+appearance into the app's session theme; an appearance naming its own design
+package (<code>source</code>) or a name the app does not know keeps the theme file's.</p>
 <p>Default root: resolved MixOS Etc directory / <code>settings/&lt;profile&gt;/</code>. Explicit
 test roots are supported. One retained writer.lock inode provides a process
 flock; it is never removed on normal exit. The root must be an owned directory

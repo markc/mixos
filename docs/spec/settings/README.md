@@ -266,6 +266,16 @@ from 250 ms capped at 30 seconds. Success removes the job and every timer.
 Reconnection or a new revision restarts the backoff. There is no idle heartbeat;
 publication_pending remains visible throughout a failed pending job.
 
+**Following from an app.** An app on a plain Bus connection (no owner
+stamps) treats a delivery on the profile's topic only as a hint, and reads
+the look with `settings.get`: `settings::follow::Follower` keeps one read in
+flight (hints during it fold into one more), ignores an answer older than one
+already seen (same incarnation, lower or equal revision), adopts the instance
+from `wrong_target` once (never the profile), and reports settingsd missing so
+the app keeps its theme file. `toolkit::session_look` turns the profile's
+appearance into the app's session theme; an appearance naming its own design
+package (`source`) or a name the app does not know keeps the theme file's.
+
 Default root: resolved MixOS Etc directory / `settings/<profile>/`. Explicit
 test roots are supported. One retained writer.lock inode provides a process
 flock; it is never removed on normal exit. The root must be an owned directory

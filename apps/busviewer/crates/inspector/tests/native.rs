@@ -42,7 +42,7 @@ fn native_discovery_calls_topics_and_singleton_registration() {
                 }
             });clients.push(client);
         }
-        let (handle,mut events)=viewer::start("viewer-test",&url).unwrap();
+        let (handle,mut events)=viewer::start("viewer-test",&url,&[]).unwrap();
         let changed=Arc::new(tokio::sync::Notify::new());
         let disconnected=Arc::new(tokio::sync::Notify::new());
         let connected=Arc::new(tokio::sync::Notify::new());
@@ -60,7 +60,7 @@ fn native_discovery_calls_topics_and_singleton_registration() {
                 }
             }
         });
-        assert!(viewer::start("viewer-test",&url).is_err(),"duplicate identity must refuse registration");
+        assert!(viewer::start("viewer-test",&url,&[]).is_err(),"duplicate identity must refuse registration");
         let snapshot=viewer::discover(handle.clone()).await;
         assert!(snapshot.error.is_none(),"{:?}",snapshot.error);
         assert!(snapshot.services.contains_key("noded"));

@@ -6,6 +6,7 @@ pub mod cache;
 pub mod consumer;
 pub mod domains;
 pub mod fallback;
+pub mod follow;
 pub mod model;
 #[cfg(feature = "native")]
 pub mod native;

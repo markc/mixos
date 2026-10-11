@@ -11,12 +11,14 @@ use serde_json::Value;
 /// `busviewer.ping` / `busviewer.show` activation verbs.
 const APP: &str = "busviewer";
 
-/// Register as `service` on the broker at `url`.
+/// Register as `service` on the broker at `url`, also subscribed to
+/// `topics` (the settings profile's change hints).
 pub fn start(
     service: &str,
     url: &str,
+    topics: &[String],
 ) -> Result<(Handle, futures::channel::mpsc::Receiver<Delivery>), String> {
-    citizen::start(APP, service, url)
+    citizen::start_with_topics(APP, service, url, topics)
 }
 
 /// Is a BusViewer already registered as `service`?

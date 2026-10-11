@@ -28,6 +28,8 @@ fluent-bundle.workspace = true
 png.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# The settings contract's data types only (no features: no Bus): session_look.
+settings.workspace = true
 
 [dev-dependencies]
 egui_kittest.workspace = true

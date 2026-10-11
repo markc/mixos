@@ -29,6 +29,10 @@ pub enum Event {
     Discovered(u64, Snapshot),
     Completed(u64, Result<Reply, CallError>),
     Shown(u64, Option<u64>, Result<Value, String>),
+    /// A read of the session look (settingsd), for the shell.
+    Look(u64, Result<Reply, CallError>),
+    /// A retry of the session look after a transient fault (its generation).
+    LookRetry(u64),
 }
 
 /// Apply one finished event to the engine.
@@ -38,6 +42,8 @@ pub fn apply_event(engine: &mut Engine, event: Event) {
         Event::Discovered(ticket, snapshot) => engine.discovered(ticket, snapshot),
         Event::Completed(ticket, result) => engine.completed(ticket, result),
         Event::Shown(ticket, reply, result) => engine.shown(ticket, reply, result),
+        // The session look is the shell's (see `Shell::looked`).
+        Event::Look(..) | Event::LookRetry(_) => {}
     }
 }
 
@@ -143,7 +149,26 @@ pub struct Shell {
     inbox: Arc<Mutex<Deliveries>>,
     /// The theme choice installed last.
     installed: toolkit::theme_menu::Choice,
+    /// The theme file's session theme: the fallback while settingsd is
+    /// absent, or holds a look this build cannot draw.
+    file_theme: Theme,
+    /// The session look settingsd holds, once read.
+    look: Option<settings::Appearance>,
+    follower: settings::follow::Follower,
+    /// The latest look retry; an older one firing is void.
+    look_retry: u64,
 }
+
+/// This host's name: the settingsd instance to try first (settingsd runs
+/// as `--instance %H`; the follower adopts the right one from its answer).
+fn hostname() -> String {
+    std::fs::read_to_string("/proc/sys/kernel/hostname")
+        .map(|name| name.trim().to_owned())
+        .unwrap_or_default()
+}
+
+/// How long one settings read may take.
+const LOOK_BUDGET: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// What the engine shows for an unchosen axis: the session theme's.
 fn session_of(theme: &Theme) -> inspector::Session {
@@ -214,6 +239,7 @@ impl Shell {
             engine: Engine::new(label),
             commands: crate::commands::registry(),
             strings: strings(),
+            file_theme: theme.clone(),
             theme,
             bus,
             comp,
@@ -225,9 +251,13 @@ impl Shell {
             held: VecDeque::new(),
             inbox,
             installed: toolkit::theme_menu::Choice::default(),
+            look: None,
+            follower: settings::follow::Follower::new(&hostname()),
+            look_retry: 0,
         };
         shell.engine.session = session_of(&shell.theme);
         shell.settle();
+        shell.read_look();
         Ok(shell)
     }
 
@@ -257,9 +287,30 @@ impl Shell {
     fn pump(&mut self) {
         while let Ok(event) = self.rx.try_recv() {
             if let Event::Delivery(Delivery::Theme) = event {
-                self.theme = Theme::load();
+                self.file_theme = Theme::load();
+                self.theme = self.session_theme();
                 self.install_theme();
                 continue;
+            }
+            if let Event::Look(ticket, result) = event {
+                self.looked(ticket, result);
+                continue;
+            }
+            if let Event::LookRetry(generation) = event {
+                if generation == self.look_retry && !self.exiting {
+                    self.read_look();
+                }
+                continue;
+            }
+            if let Event::Delivery(Delivery::Topic(topic)) = &event {
+                if *topic == self.follower.topic() {
+                    self.read_look();
+                }
+                continue;
+            }
+            // settingsd may have come (or come back): read the look again.
+            if let Event::Delivery(Delivery::Connected | Delivery::Changed) = event {
+                self.read_look();
             }
             if let Event::Delivery(Delivery::Command { id, .. }) = event
                 && self.exiting
@@ -375,14 +426,99 @@ impl Shell {
         }
     }
 
+    /// The session theme: settingsd's look when this build can draw it,
+    /// else the theme file's.
+    fn session_theme(&self) -> Theme {
+        self.look
+            .as_ref()
+            .and_then(toolkit::session_look::theme)
+            .unwrap_or_else(|| self.file_theme.clone())
+    }
+
+    /// Show the session look `look` (settingsd's), or the theme file's with
+    /// `None`; the window's own choice stays on top. `busviewer.theme`
+    /// reports it as the effective session at once.
+    pub fn set_look(&mut self, look: Option<settings::Appearance>) {
+        self.look = look;
+        self.theme = self.session_theme();
+        self.install_theme();
+        self.ctx.request_repaint();
+    }
+
+    /// Read the session look (start, a settingsd hint, a reconnection).
+    fn read_look(&mut self) {
+        if let Some(read) = self.follower.read() {
+            self.perform_read(read);
+        }
+    }
+
+    fn perform_read(&self, read: settings::follow::Read) {
+        let bus = self.bus.clone();
+        self.spawn(async move {
+            let result = bus
+                .raw_within(read.service, read.verb, read.body.to_string(), LOOK_BUDGET)
+                .await;
+            Event::Look(read.ticket, result)
+        });
+    }
+
+    /// A look read answered: a new look is installed at once (under the
+    /// window's own choice); without settingsd the theme file stands; a
+    /// transient fault is retried with backoff, the last look standing.
+    pub fn looked(&mut self, ticket: u64, result: Result<Reply, CallError>) {
+        // Closing: nothing more to draw.
+        if self.exiting {
+            return;
+        }
+        let reply = result.ok();
+        let answer = reply
+            .as_ref()
+            .map(|r| (r.rc, r.body.as_str(), r.error.as_deref()));
+        let (followed, next) = self.follower.answered(ticket, answer);
+        match followed {
+            Some(settings::follow::Followed::Look { appearance, .. }) => {
+                self.set_look(Some(appearance));
+            }
+            Some(settings::follow::Followed::Missing) if self.look.is_some() => {
+                self.set_look(None);
+            }
+            _ => {}
+        }
+        // Any answer voids a pending retry; a transient fault schedules one
+        // (backing off), unless another read is already on its way.
+        self.look_retry += 1;
+        match next {
+            Some(read) => self.perform_read(read),
+            None => {
+                if let Some(delay) = self.follower.retry_delay() {
+                    let generation = self.look_retry;
+                    self.spawn(async move {
+                        tokio::time::sleep(delay).await;
+                        Event::LookRetry(generation)
+                    });
+                }
+            }
+        }
+    }
+
+    /// The session look follower (tests read its retry state).
+    pub fn follower(&self) -> &settings::follow::Follower {
+        &self.follower
+    }
+
+    /// Ask for the session look again now (a hint, as from settingsd).
+    pub fn hint_look(&mut self) {
+        self.read_look();
+    }
+
     /// The window's theme choice (View › Theme, the title bar's switch,
     /// `busviewer.theme`).
     fn choice(&self) -> toolkit::theme_menu::Choice {
         crate::commands::choice(&self.engine)
     }
 
-    /// Install the session theme with the window's choice over it. The
-    /// session's theme file is never written.
+    /// Install the session theme (settingsd's look, else the theme file's)
+    /// with the window's choice over it. Neither is ever written.
     fn install_theme(&mut self) {
         let choice = self.choice();
         toolkit::install(&self.ctx, &self.theme.with_choice(&choice));

@@ -50,6 +50,7 @@ pub mod fonts;
 pub mod icons;
 pub mod menu;
 pub mod panel;
+pub mod session_look;
 pub mod slider;
 pub mod strings;
 pub mod style;

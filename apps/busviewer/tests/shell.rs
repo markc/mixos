@@ -632,6 +632,130 @@ fn the_theme_verb_installs_its_choice() {
     assert_eq!(reply(&rig, 3).unwrap().2["error_code"], "ARGUMENT");
 }
 
+/// The session look settingsd holds becomes the session theme: the window
+/// draws it and busviewer.theme reports it as effective; without it the
+/// theme file's session theme comes back. The window's own choice stays on
+/// top of either.
+#[test]
+fn the_settingsd_look_is_the_session_theme() {
+    use design::{Mode, Scheme};
+    let mut rig = live_rig();
+    let forest = settings::Appearance {
+        scheme: "forest".into(),
+        mode: "dark".into(),
+        ..settings::Appearance::default()
+    };
+    rig.h.state_mut().as_mut().unwrap().set_look(Some(forest));
+    rig.h.run_steps(5);
+    assert_eq!(
+        rig.h.ctx.global_style().visuals.panel_fill,
+        panel_of(Scheme::Forest, Mode::Dark)
+    );
+    send(&mut rig, 1, "busviewer.theme", json!({}));
+    wait(&mut rig, &[1]);
+    let (_, _, body) = reply(&rig, 1).unwrap();
+    assert_eq!(
+        (&body["effective"]["scheme"], &body["effective"]["mode"]),
+        (&json!("forest"), &json!("dark")),
+        "{body}"
+    );
+    // The window's own mode still lays over the session look.
+    send(&mut rig, 2, "busviewer.theme", json!({"mode":"light"}));
+    wait(&mut rig, &[2]);
+    rig.h.run_steps(5);
+    assert_eq!(
+        rig.h.ctx.global_style().visuals.panel_fill,
+        panel_of(Scheme::Forest, Mode::Light)
+    );
+    send(&mut rig, 3, "busviewer.theme", json!({"mode":null}));
+    wait(&mut rig, &[3]);
+    rig.h.state_mut().as_mut().unwrap().set_look(None);
+    rig.h.run_steps(5);
+    send(&mut rig, 4, "busviewer.theme", json!({}));
+    wait(&mut rig, &[4]);
+    let (_, _, body) = reply(&rig, 4).unwrap();
+    assert_eq!(
+        (&body["effective"]["scheme"], &body["effective"]["mode"]),
+        (&json!("pro"), &json!("light")),
+        "back to the theme file's session theme: {body}"
+    );
+}
+
+/// Answer the shell's look read in flight with `reply` (issuing one first,
+/// as a settingsd hint would). The sink's own failure for that read arrives
+/// later and is ignored as stale.
+fn answer_look(rig: &mut Rig, reply: Result<inspector::bus::Reply, inspector::bus::CallError>) {
+    let shell = rig.h.state_mut().as_mut().unwrap();
+    shell.hint_look();
+    let ticket = shell.follower().pending().expect("a look read in flight");
+    shell.looked(ticket, reply);
+}
+
+fn look_reply(
+    revision: &str,
+    scheme: &str,
+) -> Result<inspector::bus::Reply, inspector::bus::CallError> {
+    Ok(inspector::bus::Reply {
+        rc: 0,
+        body: json!({"status":"current","snapshot":{"incarnation":"i","revision":revision,
+            "desktop":{"appearance":{"scheme":scheme,"mode":"dark","contrast":"normal","source":null}}}})
+        .to_string(),
+        error: None,
+    })
+}
+
+fn effective_scheme(rig: &mut Rig, id: u64) -> Value {
+    send(rig, id, "busviewer.theme", json!({}));
+    wait(rig, &[id]);
+    reply(rig, id).unwrap().2["effective"]["scheme"].clone()
+}
+
+/// Through the follower: a read installs the look; settingsd going missing
+/// falls back to the theme file; its return at the same revision (a
+/// restart) brings the look back; a lost read keeps the look and is retried.
+#[test]
+fn the_session_look_follows_settingsd_through_restarts_and_faults() {
+    let mut rig = live_rig();
+    answer_look(&mut rig, look_reply("7", "forest"));
+    assert_eq!(effective_scheme(&mut rig, 1), json!("forest"));
+    answer_look(
+        &mut rig,
+        Ok(inspector::bus::Reply {
+            rc: 10,
+            body: String::new(),
+            error: Some("Service 'settingsd' not found".into()),
+        }),
+    );
+    assert_eq!(
+        effective_scheme(&mut rig, 2),
+        json!("pro"),
+        "the theme file's"
+    );
+    answer_look(&mut rig, look_reply("7", "forest"));
+    assert_eq!(
+        effective_scheme(&mut rig, 3),
+        json!("forest"),
+        "a restart keeps the revision; the look comes back"
+    );
+    answer_look(
+        &mut rig,
+        Err(inspector::bus::CallError {
+            message: "timed out".into(),
+            outcome_unknown: true,
+        }),
+    );
+    assert_eq!(
+        effective_scheme(&mut rig, 4),
+        json!("forest"),
+        "the last look stands"
+    );
+    let shell = rig.h.state().as_ref().unwrap();
+    assert!(
+        shell.follower().retry_delay().is_some() || shell.follower().pending().is_some(),
+        "a retry is scheduled or already on its way"
+    );
+}
+
 /// The one link named `name` exactly.
 fn control_link(rig: &mut Rig, id: u64, name: &str) -> String {
     let nodes = tree(rig, id, json!({"label":name,"exact":true,"role":"Link"}));

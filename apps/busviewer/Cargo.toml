@@ -28,6 +28,7 @@ egui.workspace = true
 futures.workspace = true
 inspector = { path = "crates/inspector" }
 serde_json.workspace = true
+settings.workspace = true
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "sync", "time"] }
 toolkit.workspace = true
 
