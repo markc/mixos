@@ -86,13 +86,23 @@ mimedb = { path = "libs/mimedb" }
 toolkit = { path = "libs/toolkit" }
 citizen = { path = "libs/citizen" }
 
+# The compositor (services/compd): smithay with compd's hooks and patches
+# (vendor/smithay/PATCHES.md), and wgpu on the GL backend only, sharing
+# smithay's EGL context.
+smithay = { path = "vendor/smithay", version = "0.7.0", default-features = false, features = ["backend_drm", "backend_egl", "backend_gbm", "backend_libinput", "backend_session_libseat", "backend_udev", "backend_winit", "desktop", "drm", "gbm", "renderer_gl", "renderer_multi", "renderer_pixman", "use_system_lib", "wayland-egl", "wayland_frontend", "xwayland"] }
+wgpu = { version = "=30.0.1", default-features = false, features = ["gles", "parking_lot", "std", "wgsl"] }
+egui-wgpu = { version = "=0.36.2", default-features = false }
+
 # noded private crates (services/noded/crates/).
 mesh = { path = "services/noded/crates/mesh" }
 mesh-trust = { path = "services/noded/crates/mesh-trust" }
 
 [patch.crates-io]
-# dirs-sys without option-ext; see vendor/README.md.
+# dirs-sys without option-ext; calloop with composed-channel idle wakeups;
+# input-rs with the tablet-pad DIAL event. See vendor/README.md.
 dirs-sys = { path = "vendor/dirs-sys" }
+calloop = { path = "vendor/calloop" }
+input = { path = "vendor/input" }
 
 [profile.release]
 codegen-units = 1
