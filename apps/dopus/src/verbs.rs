@@ -838,11 +838,7 @@ pub fn serve_command(
                 }
             };
             if req.id.starts_with("file.") {
-                return vec![Served::error(
-                    id,
-                    code::FORBIDDEN,
-                    keyboard_only(&req.id),
-                )];
+                return vec![Served::error(id, code::FORBIDDEN, keyboard_only(&req.id))];
             }
             let pane = req.pane.resolve(core);
             match apply_action_in(&req.id, core, pane) {

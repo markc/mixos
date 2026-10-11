@@ -592,9 +592,16 @@ mod tests {
         a.driven = true;
         a.action("file.new-folder");
         assert!(a.dialog.is_none());
-        assert!(a.status.as_deref().is_some_and(|s| s.contains("keyboard-only")));
+        assert!(
+            a.status
+                .as_deref()
+                .is_some_and(|s| s.contains("keyboard-only"))
+        );
         a.action("view.toggle-hidden");
-        assert!(a.core.pane(a.core.active()).show_hidden, "other actions run");
+        assert!(
+            a.core.pane(a.core.active()).show_hidden,
+            "other actions run"
+        );
         for dialog in [
             Dialog::Confirm {
                 token: 7,

@@ -436,13 +436,14 @@ impl<S> Registry<S> {
         let clipboard = !ctx.egui_wants_keyboard_input();
         ctx.input_mut(|i| {
             let held = i.modifiers;
-            i.events.retain(|event| match self.hit(event, held, clipboard) {
-                Some(command) if (command.enabled)(state) => {
-                    fired.push(command.id);
-                    false
-                }
-                _ => true,
-            });
+            i.events
+                .retain(|event| match self.hit(event, held, clipboard) {
+                    Some(command) if (command.enabled)(state) => {
+                        fired.push(command.id);
+                        false
+                    }
+                    _ => true,
+                });
         });
         fired
     }
@@ -907,8 +908,11 @@ mod tests {
             enabled: always,
             run: |_| {},
         };
-        r.add(bind("copy", Modifiers::COMMAND, Key::C))
-            .add(bind("cut.more", Modifiers::COMMAND | Modifiers::SHIFT, Key::X));
+        r.add(bind("copy", Modifiers::COMMAND, Key::C)).add(bind(
+            "cut.more",
+            Modifiers::COMMAND | Modifiers::SHIFT,
+            Key::X,
+        ));
         let fire = |held: Modifiers, event: egui::Event| {
             let ctx = egui::Context::default();
             let mut out = Vec::new();
