@@ -37,7 +37,7 @@ pub fn begin(state: &mut Loop, renderer: &mut GlesRenderer) {
         );
     } else {
         build(state, renderer);
-        info!("wgpu-gl: context, shared UI renderer, capture registry and UI registries created");
+        info!("wgpu-gl: context, capture registry and UI registries created");
     }
     // wgpu's vertex array, which `end` unbound last frame (graphics
     // `WgpuGlContext::acquire_gl_state`): without it every wgpu draw is refused.
@@ -46,7 +46,7 @@ pub fn begin(state: &mut Loop, renderer: &mut GlesRenderer) {
     }
 }
 
-/// Build the wgpu-gl context, the shared UI renderer and the registries
+/// Build the wgpu-gl context and the registries
 /// now, outside any frame (backend wiring calls it once the renderer and the
 /// format roles exist), so the first frame does not carry ~50 ms of setup.
 /// Idempotent: `begin` on a later frame finds the context and only ensures
@@ -84,10 +84,6 @@ fn build(state: &mut Loop, renderer: &mut GlesRenderer) {
         .inner
         .kernel
         .get_mut(&world::surface::system::base::UI_CONTEXT_MUT) = Some(ctx.clone());
-
-    // BEFORE the registries: every world's registry takes a clone of this one
-    // renderer, so it has to exist first.
-    world::surface::system::base::ensure_engine(&mut state.inner.kernel);
 
     // Capture registry — kernel driver data shared by every backend.
     *state
