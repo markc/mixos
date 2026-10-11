@@ -215,7 +215,11 @@ fn crowded_horizontal_cells_keep_their_floors_and_never_overlap() {
 fn shrink_basis_and_align_self_follow_flexbox() {
     let source = "---\nscene: 1\nname: items\ncitizen: c\n---\n```mix\nroot: {widget: \"row\", height: 40, children: [\"keep\", \"give\", \"low\"]}\nkeep: {widget: \"column\", basis: 80, shrink: 0, min_width: 0, children: []}\ngive: {widget: \"column\", basis: 80, min_width: 0, children: []}\nlow: {widget: \"column\", min_width: 10, max_width: 10, min_height: 10, max_height: 10, align_self: \"end\", children: []}\n```\n";
     let rt = runtime(source, (120, 40));
-    assert_eq!(rect_of(&rt, "keep").width(), 80.0, "shrink 0 keeps its basis");
+    assert_eq!(
+        rect_of(&rt, "keep").width(),
+        80.0,
+        "shrink 0 keeps its basis"
+    );
     assert!(rect_of(&rt, "give").width() < 80.0, "the other gives way");
     assert_eq!(rect_of(&rt, "low").bottom(), 40.0, "align_self end");
 }
