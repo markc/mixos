@@ -150,11 +150,11 @@ fn egui_key(keysym: u32, text: Option<&str>) -> Option<egui::Key> {
             ];
             F[(n - XK_F1) as usize]
         }
-        // Latin letters and digits by keysym, so Ctrl+A is A whatever it types.
+        // Latin letters by keysym, so Ctrl+A is A whatever it types.
         n @ 0x0061..=0x007a => return Key::from_name(&char::from(n as u8 - 32).to_string()),
-        n @ (0x0041..=0x005a | 0x0030..=0x0039) => {
-            return Key::from_name(&char::from(n as u8).to_string());
-        }
+        // Digits and punctuation by keysym too: a release carries no text, so
+        // a key resolved from text alone would never be released.
+        n @ 0x0021..=0x007e => return Key::from_name(&char::from(n as u8).to_string()),
         _ => return text.and_then(Key::from_name),
     };
     Some(named)
@@ -171,10 +171,18 @@ fn egui_button(code: u32) -> Option<egui::PointerButton> {
     }
 }
 
-/// One runtime's input state: where the pointer is, which modifiers are held.
+/// One runtime's input state: where the pointer is, which modifiers,
+/// buttons and keys are held.
 #[derive(Debug, Default)]
 pub(crate) struct Translator {
     pointer: Option<egui::Pos2>,
+    /// Where the pointer last was, kept after it leaves: a button released
+    /// off the surface still releases there.
+    last: Option<egui::Pos2>,
+    buttons: Vec<egui::PointerButton>,
+    /// The key each held keysym pressed, so its release is the same key
+    /// whatever the text or modifiers say by then.
+    keys: Vec<(u32, egui::Key)>,
     modifiers: Modifiers,
 }
 
@@ -186,6 +194,7 @@ impl Translator {
             Input::PointerMoved { x, y } => {
                 let pos = egui::pos2(x, y);
                 self.pointer = Some(pos);
+                self.last = Some(pos);
                 out.push(egui::Event::PointerMoved(pos));
             }
             Input::PointerLeft => {
@@ -193,8 +202,18 @@ impl Translator {
                 out.push(egui::Event::PointerGone);
             }
             Input::Button { code, pressed } => {
-                // A button with no pointer over the surface has no position.
-                if let (Some(pos), Some(button)) = (self.pointer, egui_button(code)) {
+                let Some(button) = egui_button(code) else { return };
+                if pressed {
+                    // A press with no pointer over the surface has no position.
+                    let Some(pos) = self.pointer else { return };
+                    if !self.buttons.contains(&button) {
+                        self.buttons.push(button);
+                    }
+                    out.push(egui::Event::PointerButton { pos, button, pressed, modifiers });
+                } else if let Some(at) = self.buttons.iter().position(|held| *held == button) {
+                    // Every press gets its release, wherever the pointer is.
+                    self.buttons.remove(at);
+                    let pos = self.pointer.or(self.last).unwrap_or(egui::Pos2::ZERO);
                     out.push(egui::Event::PointerButton { pos, button, pressed, modifiers });
                 }
             }
@@ -217,7 +236,19 @@ impl Translator {
                     out.push(egui::Event::ModifiersChanged(self.modifiers.egui()));
                     return;
                 }
-                if let Some(logical) = egui_key(key.keysym, key.text.as_deref()) {
+                let logical = if key.pressed {
+                    let logical = egui_key(key.keysym, key.text.as_deref());
+                    if let Some(logical) = logical
+                        && !self.keys.iter().any(|(sym, _)| *sym == key.keysym)
+                    {
+                        self.keys.push((key.keysym, logical));
+                    }
+                    logical
+                } else {
+                    let at = self.keys.iter().position(|(sym, _)| *sym == key.keysym);
+                    at.map(|at| self.keys.remove(at).1)
+                };
+                if let Some(logical) = logical {
                     out.push(egui::Event::Key {
                         key: logical,
                         physical_key: None,
@@ -316,6 +347,54 @@ mod tests {
             egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta, .. } if delta == egui::vec2(0.0, -2.0)
         ));
         assert_eq!(wheel(0, 0, 0.0, 0.0), None);
+    }
+
+    #[test]
+    fn a_release_after_the_pointer_left_still_releases() {
+        let events = run(vec![
+            Input::PointerMoved { x: 5.0, y: 5.0 },
+            Input::Button { code: 0x110, pressed: true },
+            Input::PointerLeft,
+            Input::Button { code: 0x110, pressed: false },
+        ]);
+        assert!(matches!(
+            events.last(),
+            Some(egui::Event::PointerButton { pressed: false, button: egui::PointerButton::Primary, pos, .. })
+                if *pos == egui::pos2(5.0, 5.0)
+        ), "{events:?}");
+        // A release with no press behind it is not invented.
+        let events = run(vec![Input::PointerMoved { x: 1.0, y: 1.0 }, Input::Button { code: 0x110, pressed: false }]);
+        assert_eq!(events.len(), 1);
+    }
+
+    #[test]
+    fn punctuation_presses_and_releases_the_same_key() {
+        for (keysym, text, expected) in [(0x002d, "-", egui::Key::Minus), (0x002f, "/", egui::Key::Slash)] {
+            let events = run(vec![key(keysym, Some(text), true, false), key(keysym, Some(text), false, false)]);
+            let keys: Vec<_> = events
+                .iter()
+                .filter_map(|event| match event {
+                    egui::Event::Key { key, pressed, .. } => Some((*key, *pressed)),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(keys, vec![(expected, true), (expected, false)], "{text}");
+        }
+    }
+
+    #[test]
+    fn a_held_key_releases_as_pressed_whatever_the_modifiers_became() {
+        let events = run(vec![
+            key(0x0061, Some("a"), true, false),
+            key(XK_SHIFT_L, None, true, false),
+            key(0x0041, Some("A"), false, false),
+            key(0x0061, None, false, false),
+        ]);
+        let releases: Vec<_> = events
+            .iter()
+            .filter(|event| matches!(event, egui::Event::Key { pressed: false, .. }))
+            .collect();
+        assert_eq!(releases.len(), 1, "only the held keysym releases: {events:?}");
     }
 
     #[test]

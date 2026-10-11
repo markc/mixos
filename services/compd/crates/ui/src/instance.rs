@@ -588,6 +588,18 @@ impl UiItem {
         if !r_f.contains(screen_point) {
             return None;
         }
+        Some(self.local_coords_unclamped(screen_point, transform, output_size))
+    }
+
+    /// [`Self::local_coords`] for any screen point, inside the rect or not: a
+    /// pointer grab follows the pointer off the surface.
+    pub fn local_coords_unclamped(
+        &self,
+        screen_point: Point<f64, Physical>,
+        transform: &Transform,
+        output_size: Size<f64, Physical>,
+    ) -> (f32, f32) {
+        let r = self.screen_rect(transform, output_size);
         let local = (
             screen_point.x - r.loc.x as f64,
             screen_point.y - r.loc.y as f64,
@@ -604,7 +616,7 @@ impl UiItem {
         // Dividing by the camera zoom ALONE mis-mapped a zoomed-out counter-
         // scaled surface — the selection toolbar took clicks at the wrong spot.
         let divisor = self.world_zoom(transform) * self.inner.scale_factor() as f64;
-        Some(((local.0 / divisor) as f32, (local.1 / divisor) as f32))
+        ((local.0 / divisor) as f32, (local.1 / divisor) as f32)
     }
 
     // ── Untyped passthrough ───────────────────────────────────────

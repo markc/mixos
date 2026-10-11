@@ -635,6 +635,16 @@ impl UiRegistry {
         transform: &Transform,
         output_size: Size<f64, Physical>,
     ) {
+        // A press holds the pointer: motion goes to the item it began on,
+        // inside its rect or not, until the release (`dispatch_button`).
+        if let Some(grab) = self.pointer_grab {
+            let t = *transform;
+            if let Some(item) = self.get_mut(grab) {
+                let local = item.local_coords_unclamped(screen_point, &t, output_size);
+                item.queue_input(Input::PointerMoved { x: local.0, y: local.1 });
+            }
+            return;
+        }
         // Enter/Leave transitions.
         if self.pointer_inside != target {
             if let Some(prev) = self.pointer_inside

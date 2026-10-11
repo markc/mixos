@@ -29,6 +29,11 @@ fn clear_colour() -> wgpu::Color {
 
 pub struct Painter {
     renderer: egui_wgpu::Renderer,
+    /// Textures the latest pass retired. Its own shapes may still draw them
+    /// (egui frees a texture whose last handle dropped during the pass), and
+    /// the runtime replays that pass after a backing release, so they go only
+    /// when the next pass supersedes it.
+    retired: Vec<egui::TextureId>,
 }
 
 impl std::fmt::Debug for Painter {
@@ -51,23 +56,23 @@ impl Painter {
                 predictable_texture_filtering: false,
             },
         );
-        Self { renderer }
+        Self { renderer, retired: Vec::new() }
     }
 
 
-    /// Apply one pass's texture changes: uploads (whole or partial), then
-    /// frees. Called as each pass runs, so nothing waits on a paint: the
-    /// shapes the runtime keeps for its next paint are always the latest
-    /// pass's, and those reference exactly the textures this leaves alive.
+    /// Apply a new pass's texture changes as it runs: the previous pass's
+    /// retired textures go (that pass is superseded now), this pass's uploads
+    /// land, and this pass's frees wait for the pass after it.
     pub fn apply(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, mut textures: TexturesDelta) {
+        for id in self.retired.drain(..) {
+            self.renderer.free_texture(&id);
+        }
         for (id, deltas) in &textures.set {
             for delta in deltas {
                 self.renderer.update_texture(device, queue, *id, delta);
             }
         }
-        for id in &textures.free {
-            self.renderer.free_texture(id);
-        }
+        self.retired.extend(textures.free.iter().copied());
         // Applied: epaint asserts a delta is never dropped unapplied.
         textures.clear();
     }

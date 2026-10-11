@@ -50,6 +50,12 @@ pub fn inter_face(weight: u16) -> (&'static str, &'static [u8]) {
     }
 }
 
+/// The embedded monospace face (JetBrains Mono Regular), for consumers that
+/// shape text themselves, such as the compositor's window titles.
+pub fn mono_face() -> (&'static str, &'static [u8]) {
+    ("JetBrainsMono-Regular", JETBRAINS_MONO)
+}
+
 /// The font definitions for `theme`.
 pub fn definitions(theme: &Theme) -> FontDefinitions {
     let typography = theme.typography();

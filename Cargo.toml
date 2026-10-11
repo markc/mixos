@@ -103,6 +103,8 @@ glow = "=0.17.0"
 image = { version = "=0.25.10", default-features = false, features = ["png"] }
 pkg-config = "=0.3.34"
 pollster = "=1.0.1"
+# Window-title shaping in decor (embedded faces only, so no fontconfig).
+cosmic-text = { version = "=0.19.0", default-features = false, features = ["std", "swash"] }
 libpulse-binding = "=2.30.1"
 mpris = "=2.1.0"
 wayland-backend = "=0.3.17"
@@ -111,6 +113,7 @@ wayland-scanner = "=0.31.11"
 # compd private crates (services/compd/crates/).
 comp-model = { path = "services/compd/crates/comp-model" }
 comp-service = { path = "services/compd/crates/comp-service" }
+decor = { path = "services/compd/crates/decor" }
 dispatcher = { path = "services/compd/crates/dispatcher" }
 drivers = { path = "services/compd/crates/drivers" }
 effects = { path = "services/compd/crates/effects" }
