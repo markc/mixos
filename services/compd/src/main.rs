@@ -720,6 +720,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if !parked && state.inner.surface().registry.as_ref().is_some_and(|registry| registry.has_queued()) {
             state.state.schedule_redraw(dispatcher::state::state::RedrawReason::Ui);
         }
+        // Parked, no frame will tick the UIs: run what their input owes now,
+        // so a Bus-driven click on a panel still clicks. Painting waits for
+        // the VT to come back.
+        if parked
+            && let Some(registry) = state.inner.surface_mut().registry.as_mut()
+            && registry.has_input()
+        {
+            registry.tick_queued();
+        }
         // Last, flush what this iteration queued for clients (configures, acks,
         // releases). The present path flushes too, but a compositor that only
         // draws when owed would otherwise hold a new client's initial configure

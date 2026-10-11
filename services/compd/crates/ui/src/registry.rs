@@ -1424,6 +1424,35 @@ impl UiRegistry {
         self.items.iter().any(|i| i.has_queued())
     }
 
+    /// Whether any instance holds input or messages (not merely a repaint
+    /// request).
+    pub fn has_input(&self) -> bool {
+        self.items.iter().any(|i| i.has_input())
+    }
+
+    /// Run the passes queued input or messages owe, outside a frame. While
+    /// compd is parked (its VT in the background) no frame runs
+    /// `process_frame`, yet input from the Bus (an agent's click on a panel)
+    /// must still take effect. Only input and messages run a pass here, never
+    /// a repaint request, so an animating UI cannot spin a parked compd. A
+    /// pass that holds the rest of its input back (a click's release,
+    /// `UiRuntime::take_events`) is followed by another until the input is
+    /// drained; every pass takes at least one event, and the cap only guards
+    /// that. The GPU is not touched: texture changes wait for the next frame
+    /// (`UiRuntime::tick_offscreen`), which paints the latest pass.
+    pub fn tick_queued(&mut self) {
+        for _ in 0..64 {
+            let mut ran = false;
+            for item in self.items.iter_mut().filter(|item| item.has_input()) {
+                item.tick_offscreen();
+                ran = true;
+            }
+            if !ran {
+                break;
+            }
+        }
+    }
+
     /// The earliest future instant any instance asked to be redrawn at.
     pub fn next_deadline(&self) -> Option<Instant> {
         self.items.iter().filter_map(|i| i.deadline()).min()

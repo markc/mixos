@@ -205,6 +205,55 @@ impl UiProgram for Spinner {
     fn setup(&mut self, _ctx: &egui::Context) {}
 }
 
+/// Outside a frame (compd parked) queued input still runs: a click queued
+/// whole is drained by offscreen ticks and clicks once.
+#[test]
+fn offscreen_ticks_drain_a_queued_click() {
+    let mut rt = UiRuntime::build(
+        Clicker::default(),
+        (200, 100),
+        1.0,
+        None,
+        RuntimeWake::with_waker(|| {}),
+    );
+    rt.tick();
+    rt.queue_input(crate::input::Input::PointerMoved { x: 50.0, y: 50.0 });
+    rt.queue_input(crate::input::Input::Button {
+        code: 0x110,
+        pressed: true,
+    });
+    rt.queue_input(crate::input::Input::Button {
+        code: 0x110,
+        pressed: false,
+    });
+    let mut rounds = 0;
+    while rt.has_input() && rounds < 8 {
+        rt.tick_offscreen();
+        rounds += 1;
+    }
+    assert_eq!(rt.program.clicks, 1);
+    assert_eq!(rounds, 2, "the press pass, then the release pass");
+}
+
+/// A repaint request alone runs no offscreen pass, so an animating UI
+/// cannot keep a parked compd busy.
+#[test]
+fn an_animation_runs_no_offscreen_pass() {
+    let mut rt = UiRuntime::build(
+        Spinner { passes: 0 },
+        (200, 100),
+        1.0,
+        None,
+        RuntimeWake::with_waker(|| {}),
+    );
+    rt.tick();
+    let passes = rt.program.passes;
+    assert!(rt.has_queued(), "it asked for a repaint");
+    assert!(!rt.has_input());
+    rt.tick_offscreen();
+    assert_eq!(rt.program.passes, passes);
+}
+
 #[test]
 fn a_hidden_animation_stops_asking_for_frames_until_it_is_shown() {
     use std::sync::atomic::{AtomicU32, Ordering};
