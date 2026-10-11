@@ -4,7 +4,7 @@ use std::sync::{Arc, mpsc};
 use crate::state::Loop;
 use ui::{UiHandle, UiRegistry};
 
-use ui::engine::{EngineSettings, UiSnapshot, UiProgram, SharedEngine};
+use ui::{UiProgram, UiSnapshot};
 
 pub use ui::UiSpace;
 

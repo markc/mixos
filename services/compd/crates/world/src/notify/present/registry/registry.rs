@@ -15,7 +15,7 @@ use ui::{UiHandle, UiRegistry};
 use crate::scene::layer::base::Layer;
 use slots::storage::slot::base::Storage;
 use crate::notify::view::NotifyUi;
-use crate::surface::system::base::{UI_CONTEXT, UI_ENGINE};
+use crate::surface::system::base::UI_CONTEXT;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Physical, Point, Size};
 
@@ -78,16 +78,14 @@ pub fn pill<'p>(
     pills.get(output)
 }
 
-/// The presenter's registry, built on first use from the shared kernel engine —
-/// a clone of the one renderer, exactly as every world's registry is. `false`
-/// while the engine has not landed yet.
+/// The presenter's registry, built on first use from the shared GL context,
+/// exactly as every world's registry is. `false` while the context has not
+/// landed yet.
 pub fn ensure_registry(p: &mut Presenter, kernel: &Storage) -> bool {
     if p.registry.is_some() {
         return true;
     }
-    let wgpu = kernel.try_get(&UI_CONTEXT).and_then(Clone::clone);
-    let engine = kernel.try_get(&UI_ENGINE).and_then(Clone::clone);
-    let (Some(wgpu), Some(engine)) = (wgpu, engine) else { return false };
-    p.registry = Some(UiRegistry::new(engine, wgpu));
+    let Some(wgpu) = kernel.try_get(&UI_CONTEXT).and_then(Clone::clone) else { return false };
+    p.registry = Some(UiRegistry::new(wgpu));
     true
 }

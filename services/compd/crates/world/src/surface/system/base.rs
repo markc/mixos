@@ -3,7 +3,6 @@ use slots::define_channel;
 use slots::storage::token::base::{Token, TokenMut};
 use slots::storage::slot::base::Storage;
 use slots::trait_::system::base::{BufferCx, System, SystemCx, WorldBuilder};
-use ui::engine::{EngineSettings, SharedEngine};
 use crate::surface::state::state::SurfaceState;
 use graphics::surface::WgpuGlContext;
 use ui::{HandleId, UiRegistry};
@@ -101,52 +100,6 @@ pub static SURFACE_MUT: TokenMut<SurfaceState> = TokenMut::new(&SURFACE);
 pub static UI_CONTEXT: Token<Option<Arc<WgpuGlContext>>> = Token::new();
 pub static UI_CONTEXT_MUT: TokenMut<Option<Arc<WgpuGlContext>>> = TokenMut::new(&UI_CONTEXT);
 
-/// The ONE UI renderer, shared by every world's registry — kernel driver data
-/// like the context above, and for the same reason.
-///
-/// `SharedEngine` owns the `ui_wgpu` `Renderer`, and the renderer owns the
-/// image atlas and the glyph atlas. Those are keyed by image content and glyph,
-/// never by world, so a per-world copy shares nothing and duplicates everything.
-/// Building one per world cost 40 live `ui_wgpu::image texture atlas`
-/// allocations totalling 547 MiB in a 17-world session, and an atlas is never
-/// returned: `Atlas::grow` allocates a larger texture and copies, but nothing
-/// ever truncates its layers, and a registry is created once and never dropped.
-///
-/// The type was always meant to be shared — it is `Clone` over an
-/// `Arc<RefCell<Renderer>>`, and the clone is what every world now takes. That
-/// `RefCell` is also why this is sound: it is `!Send`, so every registry holding
-/// a clone is on the compositor thread by construction, and the borrows are
-/// scoped to a single `with_renderer` / `renderer_borrow` call.
-pub static UI_ENGINE: Token<Option<SharedEngine>> = Token::new();
-pub static UI_ENGINE_MUT: TokenMut<Option<SharedEngine>> = TokenMut::new(&UI_ENGINE);
-
-/// Build the shared renderer, once, as soon as the wgpu context lands. Called
-/// right after `UI_CONTEXT` is set and before any `ensure_registry`, so every
-/// registry finds it present.
-pub fn ensure_engine(kernel: &mut Storage) {
-    if kernel.try_get(&UI_ENGINE).is_some_and(Option::is_some) {
-        return;
-    }
-    let Some(wgpu) = kernel.try_get(&UI_CONTEXT).and_then(|c| c.clone()) else {
-        return;
-    };
-    // `try_get_mut`, not `get_mut`: an unregistered slot is a wiring mistake in
-    // the loader, and the cost of getting it wrong should be a log plus the
-    // inline path — not a panic before the compositor can draw anything.
-    let Some(engine) = kernel.try_get_mut(&UI_ENGINE_MUT) else {
-        error!("UI: UI_ENGINE slot not registered; every world stays engine-less");
-        return;
-    };
-    info!("UI: building the shared renderer (one for all worlds)");
-    *engine = Some(SharedEngine::new(
-        &wgpu.adapter,
-        Arc::new(wgpu.device.clone()),
-        Arc::new(wgpu.queue.clone()),
-        graphics::surface::texture_format(&wgpu.formats),
-        EngineSettings::default(),
-    ));
-}
-
 /// Build THIS world's UI registry from the shared kernel context, off the
 /// render path. No-op if the world doesn't run `SurfaceSystem` (no `SURFACE`
 /// slot — e.g. an overlay world), already has a registry, or the context hasn't
@@ -162,16 +115,8 @@ pub fn ensure_registry(storage: &mut Storage, kernel: &Storage) {
     let Some(wgpu) = kernel.try_get(&UI_CONTEXT).and_then(|c| c.clone()) else {
         return;
     };
-    // A CLONE of the one renderer (see `UI_ENGINE`), not a new one. If it is
-    // absent the world gets no registry rather than a private engine: silently
-    // falling back to per-world is exactly the bug this replaced, and it would
-    // reappear invisibly the first time the build order changed.
-    let Some(engine) = kernel.try_get(&UI_ENGINE).and_then(Clone::clone) else {
-        error!("UI registry: shared engine absent — `ensure_engine` must run first");
-        return;
-    };
-    info!("UI: build per-world UI registry (shared renderer)");
-    surface.registry = Some(UiRegistry::new(engine, wgpu));
+    info!("UI: build per-world UI registry");
+    surface.registry = Some(UiRegistry::new(wgpu));
 }
 
 /// Owns the surface slot.
