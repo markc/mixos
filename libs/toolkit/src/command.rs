@@ -191,6 +191,23 @@ impl<S> Registry<S> {
         self
     }
 
+    /// Add `command`, ticked in its menu while `checked` holds: an on/off
+    /// setting that keeps its own shortcut and enablement (a choice command
+    /// has neither).
+    ///
+    /// # Panics
+    /// On a duplicate id or shortcut, as [`Registry::add`].
+    pub fn add_toggle(
+        &mut self,
+        command: Command<S>,
+        checked: impl Fn(&S) -> bool + 'static,
+    ) -> &mut Self {
+        let id = command.id;
+        self.add(command);
+        self.choice_checks.insert(id, Box::new(checked));
+        self
+    }
+
     /// Whether command `id` is a choice, and if so whether it is ticked.
     pub fn checked(&self, id: &str, state: &S) -> Option<bool> {
         self.choice_checks.get(id).map(|checked| checked(state))
@@ -255,31 +272,39 @@ impl<S> Registry<S> {
             return fired;
         }
         ctx.input_mut(|i| {
-            i.events.retain(|event| {
-                let egui::Event::Key {
-                    key,
-                    pressed: true,
-                    modifiers,
-                    ..
-                } = event
-                else {
-                    return true;
-                };
-                let hit = self.commands.iter().find(|c| {
-                    c.shortcut.is_some_and(|s| {
-                        s.logical_key == *key && modifiers.matches_exact(s.modifiers)
-                    })
-                });
-                match hit {
-                    Some(command) if (command.enabled)(state) => {
-                        fired.push(command.id);
-                        false
-                    }
-                    _ => true,
+            i.events.retain(|event| match self.hit(event) {
+                Some(command) if (command.enabled)(state) => {
+                    fired.push(command.id);
+                    false
                 }
+                _ => true,
             });
         });
         fired
+    }
+
+    /// Whether [`Self::shortcuts`] takes `event` (with no menu open): a
+    /// press of an enabled command's shortcut. An app that orders its own
+    /// input around the shortcuts asks this.
+    pub fn takes(&self, event: &egui::Event, state: &S) -> bool {
+        self.hit(event).is_some_and(|c| (c.enabled)(state))
+    }
+
+    /// The command whose shortcut `event` presses, modifiers exactly.
+    fn hit(&self, event: &egui::Event) -> Option<&Command<S>> {
+        let egui::Event::Key {
+            key,
+            pressed: true,
+            modifiers,
+            ..
+        } = event
+        else {
+            return None;
+        };
+        self.commands.iter().find(|c| {
+            c.shortcut
+                .is_some_and(|s| s.logical_key == *key && modifiers.matches_exact(s.modifiers))
+        })
     }
 
     /// A menu bar of its own, for an app without the title bar

@@ -61,6 +61,7 @@ icons! {
     Copy => "copy",
     Download => "download",
     Ellipsis => "ellipsis",
+    FileText => "file-text",
     Info => "info",
     Keyboard => "keyboard",
     LoaderCircle => "loader-circle",

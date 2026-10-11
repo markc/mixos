@@ -178,4 +178,8 @@ pub struct LayoutReport {
 pub struct Output {
     pub response: egui::Response,
     pub events: Vec<Event>,
+    /// Input the editor holds for its next frame, until its owner has
+    /// applied this frame's events (a Copy after an edit). An owner that
+    /// orders other input after the editor's waits while this is set.
+    pub held: bool,
 }

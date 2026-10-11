@@ -190,7 +190,12 @@ pub fn show(
     if !events.is_empty() {
         response.ctx.request_repaint();
     }
-    Output { response, events }
+    let held = !guard.pending.is_empty();
+    Output {
+        response,
+        events,
+        held,
+    }
 }
 
 struct Pane<'u, 'a> {
