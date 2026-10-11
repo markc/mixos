@@ -218,8 +218,14 @@ fn offscreen_ticks_drain_a_queued_click() {
     );
     rt.tick();
     rt.queue_input(crate::input::Input::PointerMoved { x: 50.0, y: 50.0 });
-    rt.queue_input(crate::input::Input::Button { code: 0x110, pressed: true });
-    rt.queue_input(crate::input::Input::Button { code: 0x110, pressed: false });
+    rt.queue_input(crate::input::Input::Button {
+        code: 0x110,
+        pressed: true,
+    });
+    rt.queue_input(crate::input::Input::Button {
+        code: 0x110,
+        pressed: false,
+    });
     let mut rounds = 0;
     while rt.has_input() && rounds < 8 {
         rt.tick_offscreen();
@@ -234,7 +240,7 @@ fn offscreen_ticks_drain_a_queued_click() {
 #[test]
 fn an_animation_runs_no_offscreen_pass() {
     let mut rt = UiRuntime::build(
-        Spinner::default(),
+        Spinner { passes: 0 },
         (200, 100),
         1.0,
         None,
