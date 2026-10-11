@@ -35,3 +35,31 @@ Restart=on-failure
 RestartSec=2
 # Exit 2 is a refused start: restarting cannot fix it.
 RestartPreventExitStatus=2
+
+# Sandbox. The bridge reads its config, token file and the verb registry,
+# talks TCP to the app on loopback and to the Bus, and writes nothing.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+# Read-only, not hidden: a token file may live in a home directory.
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+DevicePolicy=closed
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+UMask=0077
+# IP traffic to loopback only: the app is on loopback by contract, and so is
+# a local Bus. A Bus endpoint elsewhere (for example a session broker at
+# ws://<container-ip>:<port>) needs a drop-in that adds its address:
+#   systemctl edit bridged@<app>   ->   [Service]
+#                                       IPAddressAllow=<broker-ip>
+IPAddressAllow=localhost
+IPAddressDeny=any

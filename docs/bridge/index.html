@@ -308,7 +308,7 @@ send fakeapp fakeapp.call body='{"method":"echo","params":{"a":1}}'
 <tr><td>0</td><td>The app did it; the body is its result as JSON.</td></tr>
 <tr><td>10</td><td>The app refused; the body is its error text.</td></tr>
 <tr><td>11</td><td>The app could not be reached: connect, auth, transport or timeout, or the bridge is backing off after one.</td></tr>
-<tr><td>12</td><td>The request was wrong: a missing field, or a body that is not a JSON object.</td></tr>
+<tr><td>12</td><td>The request was wrong: a missing field, a body that is not a JSON object, or a request longer than <code>max_line</code> (1 MiB by default).</td></tr>
 </tbody></table>
 <p>The bridge keeps one connection open. If the application goes away, calls
 answer rc 11, the bridge waits <code>backoff_s</code> (default 2 seconds), then
@@ -342,10 +342,24 @@ unit's user (<code>mixos</code>).</li>
 <code>localhost</code>, and connects to <code>127.0.0.1</code> for either.
 An <code>auth: "none"</code> port is open to every local process while the
 application runs, Bus or no Bus; open it only for applications you bridge.</li>
+<li><strong>A local process can squat the port.</strong> If the application dies, any
+local process that binds its port before it comes back receives the
+token on the bridge's next reconnect, and can then pass itself off as the
+application to the bridge, and use the token against the real application
+once it returns. Loopback TCP has no way to prove who is listening; a
+unix-socket control channel, checked by owner, would close this, and is a
+possible future protocol option. Until then, bridge applications only on
+machines whose local users you trust.</li>
 <li><strong>The unit's environment is the administrator's.</strong> Keep
 <code>/etc/mixos/bridge/&lt;app&gt;.env</code> and the config writable only by root:
 whoever can change them (<code>BRIDGED_MIX</code> in particular) picks the code that
 runs as <code>mixos</code>.</li>
+<li><strong>The unit is sandboxed.</strong> It runs without capabilities or new
+privileges, sees the file system read-only (homes included) with private
+<code>/tmp</code> and <code>/var/tmp</code>, and may send IP traffic to loopback only. So keep
+the config and the token file out of <code>/tmp</code> and <code>/var/tmp</code>, where the unit
+cannot see them. A Bus that is not on loopback (for example a session
+broker at <code>ws://&lt;container-ip&gt;:&lt;port&gt;</code>) needs a drop-in, <code>systemctl edit bridged@&lt;app&gt;</code>, adding <code>IPAddressAllow=&lt;broker-ip&gt;</code> under <code>[Service]</code>.</li>
 <li><strong>The name cannot shadow a system service.</strong> The start checks refuse a
 name that a registered verb already starts with, and the Bus itself refuses
 a name that is already registered.</li>

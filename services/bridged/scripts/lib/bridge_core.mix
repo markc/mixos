@@ -353,11 +353,12 @@ fn _drop($st, $err)
   return merge($st, {handle: nil, connected: false, failures: $st.failures + 1, last_error: $err, next_try: time() + $st.cfg.backoff_s})
 end
 
--- One request/reply on an open handle. Returns {reply, err}.
-fn _exchange($h, $id, $method, $params, $deadline, $max)
+-- One request/reply on an open handle; $line is the encoded request with
+-- its newline. Returns {reply, err}.
+fn _exchange($h, $id, $line, $deadline, $max)
   $out = {reply: nil, err: nil}
   try
-    _send($h, json_encode({id: $id, method: $method, params: $params}) .. "\n", $deadline)
+    _send($h, $line, $deadline)
     $out = {reply: _read_reply($h, $id, $deadline, $max), err: nil}
   catch $m, $e
     $out = {reply: nil, err: "transport: " .. _why($m, $e)}
@@ -390,6 +391,20 @@ fn call($st, $method, $params)
   $st = merge($st, {calls: $st.calls + 1})
   if type($method) != "string" then return _finish($st, $t0, 12, "method must be a string", nil) end
   if $method == "" then return _finish($st, $t0, 12, "method must not be empty", nil) end
+  -- Encode before touching the connection: a request that cannot be encoded,
+  -- or is longer than max_line (the bound replies already have), is the
+  -- caller's error and never reaches the app.
+  $id = $st.next_id
+  $line = nil
+  try
+    $line = json_encode({id: $id, method: $method, params: $params}) .. "\n"
+  catch $m
+    return _finish($st, $t0, 12, "request cannot be encoded as JSON: " .. $m, nil)
+  end
+  $size = byte_length($line) - 1
+  if $size > $st.cfg.max_line then
+    return _finish($st, $t0, 12, "request is " .. to_string($size) .. " bytes, over max_line (" .. to_string($st.cfg.max_line) .. ")", nil)
+  end
   if $st.handle == nil then
     if time() < $st.next_try then
       return _finish($st, $t0, 11, "not connected; backing off after: " .. ($st.last_error ?? "no error recorded"), nil)
@@ -401,9 +416,8 @@ fn call($st, $method, $params)
       return _finish($st, $t0, 11, $o.err, nil)
     end
   end
-  $id = $st.next_id
   $st = merge($st, {next_id: $id + 1})
-  $r = _exchange($st.handle, $id, $method, $params, $deadline, $st.cfg.max_line)
+  $r = _exchange($st.handle, $id, $line, $deadline, $st.cfg.max_line)
   if $r.err != nil then
     $st = _drop($st, $r.err)
     return _finish($st, $t0, 11, $r.err, nil)

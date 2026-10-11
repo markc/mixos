@@ -36,6 +36,16 @@ auth, transport or timeout) or 12 (a bad request).
   and scheduling cannot be interrupted and can run past it. Requires Mix >=
   0.112.1; an older Mix is refused at start
   (`RUNTIME`).
+- Requests are bounded by `max_line` like replies: an encoded request over it
+  is refused with rc 12 before the connection is touched.
+- The unit is sandboxed (no capabilities or new privileges, read-only file
+  system with private `/tmp`, loopback-only IP by `IPAddressAllow=localhost`
+  and `IPAddressDeny=any`; a non-loopback Bus needs a drop-in).
+  `systemd-analyze security` exposure 4.0 (OK).
+- Documented residuals: loopback port squatting after the app dies (a
+  unix-socket channel would close it), a direct `mix --serve` briefly holding
+  a refused name, and the reverse name collision being the verb-registry
+  gate's to refuse.
 - Verb registration in `docs/spec/bus/verbs.conf.mix` is pending the registry
   gate's instance-family mapping.
 
