@@ -186,7 +186,7 @@ pub fn describe() -> Value {
         {"name":"busviewer.ping","description":"Probe BusViewer","read_only":true},
         {"name":"busviewer.info","description":"Inspect discovery, selection, reply and UI state","read_only":true},
         {"name":"busviewer.show","description":"Restore and focus the existing window","read_only":false},
-        {"name":"busviewer.refresh","description":"Refetch services and descriptions","read_only":true},
+        {"name":"busviewer.refresh","description":"Refetch services and descriptions","read_only":false},
         {"name":"busviewer.select","args":{"service":"string","verb":"string"},"description":"Select an advertised verb","read_only":false},
         {"name":"busviewer.call","args":{"service":"optional string","verb":"optional string","body":"optional JSON text"},"description":"Call exactly once; target's safety is unchanged","read_only":false},
         {"name":"busviewer.commands","description":"List the app's commands with labels, shortcuts and enablement","read_only":true},

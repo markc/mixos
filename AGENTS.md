@@ -193,9 +193,11 @@ services/releasesd/
    - the shell is `mix`;
    - units are named after their binary (`maild.service`).
    Binary names are checked against the major distributions' file lists
-   before first use (`mix` vs Elixir is the one accepted collision; MixOS
-   installs to `/opt/mixos/bin`, which comes first in its PATH, and units call
-   `/opt/mixos/bin/mix` by absolute path).
+   before first use. The accepted collisions are `mix` (Elixir) and `rec`
+   and `play` (sox,
+   [decision](docs/decisions/2026-10-11-rec-and-play.md)). MixOS installs
+   to `/opt/mixos/bin`, which comes first in its PATH, and units and scripts
+   call these binaries by absolute path.
 5. **Never reuse a name.** Retired package, binary, app and Bus verb names
    are recorded in `docs/spec/names/retired.conf.mix` and stay reserved
    forever. A gate refuses reuse.
@@ -252,6 +254,9 @@ applies to every GUI app and to the desktop furniture.
 - **Every action is a command** with an id, label, menu path, optional
   shortcut, enablement rule and handler. Menus, shortcuts and the palette are
   generated from the registry; the UI, the CLI and Bus verbs dispatch by id.
+- **Every executed command is published** on `<app>.command.executed`, with
+  how it was reached
+  ([decision](docs/decisions/2026-10-11-executed-commands.md)).
 - **UI state is one serialisable struct,** readable and drivable over the Bus.
 - **Tests and offscreen snapshots** gate UI changes. Look at the image.
 - **Measure before optimising.** Record the workload, environment and
@@ -273,8 +278,14 @@ applies to every GUI app and to the desktop furniture.
   A breaking change needs a deprecation period with both behaviours
   working, and a migration where data is involved.
 - **Bus verbs are wire contracts.** Every verb is registered in
-  `docs/spec/bus/verbs.conf.mix` (owner, version, status). A gate refuses an
-  unregistered, duplicate or retired verb.
+  `docs/spec/bus/verbs.conf.mix` (owner, version, status, and its class:
+  intent, query, input or system,
+  [decision](docs/decisions/2026-10-11-verb-classes.md)). The registry gate
+  (`tools/verb_registry.mix`) refuses a malformed, duplicate or unclassified
+  entry. A component's registry test (`apps/<app>/tests/registry.rs`) checks
+  that the verbs it describes are exactly the ones it registers; every new
+  component adds one. Retired verb names join the retired-names registry
+  (§3.5) when it lands.
 - **Specs** live in `docs/spec/<topic>/`. That means prose plus
   machine-checkable `*.spec.mix` fixtures that the `tests/` gates consume.
   Each spec states its status (draft, accepted, superseded). Moving a spec

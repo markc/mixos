@@ -35,3 +35,31 @@ fn every_described_verb_is_registered_and_nothing_else() {
     assert!(!described.is_empty());
     assert_eq!(registered("prefs"), described);
 }
+
+/// The registry's class for `name`, from its one-entry-per-line form.
+fn class_of(name: &str) -> Option<&'static str> {
+    let key = format!("name:\"{name}\"");
+    REGISTRY
+        .lines()
+        .find(|line| line.contains(&key))?
+        .split("class:\"")
+        .nth(1)?
+        .split('"')
+        .next()
+}
+
+/// A verb the app describes as read-only is a query
+/// (docs/decisions/2026-10-11-verb-classes.md).
+#[test]
+fn read_only_verbs_are_queries() {
+    let verbs = describe();
+    for verb in verbs["verbs"].as_array().unwrap() {
+        let name = verb["name"].as_str().unwrap();
+        if matches!(name, "HELP" | "app.describe") {
+            continue;
+        }
+        if verb["read_only"].as_bool() == Some(true) {
+            assert_eq!(class_of(name), Some("query"), "{name}");
+        }
+    }
+}

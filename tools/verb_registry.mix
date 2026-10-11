@@ -1,0 +1,153 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.3.0
+-- The Bus verb registry gate (AGENTS.md §5) for docs/spec/bus/verbs.conf.mix:
+--
+-- - schema 2;
+-- - every entry is a map of exactly name, owner, version, status and class,
+--   all strings;
+-- - names are unique and well formed, owners are component names, versions
+--   are release versions (MAJOR.MINOR.PATCH, no leading zeros), statuses and
+--   classes come from their fixed sets
+--   (classes: docs/decisions/2026-10-11-verb-classes.md);
+-- - the file is in canonical form: inside `verbs: [ … ]` every line is
+--   blank or exactly one entry, its fields in the order name, owner,
+--   version, status, class, each written key:"value" with ", " between
+--   them, braces round it and a trailing comma except on the last, in the
+--   same order as the parsed entries. No comments inside the block, and no
+--   line anywhere else may contain the text name:" at all. The
+--   applications' registry tests read the file line by line, so this is
+--   what keeps them honest.
+--
+--   mix tools/verb_registry.mix [FILE]    exit 1 and list every problem
+$root = dirname(dirname(realpath($0)))
+$path = $root .. "/docs/spec/bus/verbs.conf.mix"
+if len(args()) == 1 then
+  $path = args()[0]
+elif len(args()) > 1 then
+  raise("USAGE", "verb_registry.mix [FILE]")
+end
+
+$fields = ["name", "owner", "version", "status", "class"]
+$classes = ["intent", "query", "input", "system"]
+$statuses = ["accepted", "draft", "deprecated"]
+$problems = []
+
+$registry = load_data($path)
+if type($registry) != "map" or not has_key($registry, "schema") or $registry.schema != 2 then
+  push($problems, "schema must be 2")
+end
+$verbs = []
+if type($registry) == "map" and has_key($registry, "verbs") and type($registry.verbs) == "list" then
+  $verbs = $registry.verbs
+else
+  push($problems, "verbs must be a list")
+end
+
+$seen = {}
+$index = 0
+for each $verb in $verbs
+  $index = $index + 1
+  $where = "entry " .. to_string($index)
+  if type($verb) != "map" then
+    push($problems, $where .. ": not a map")
+  else
+    for each $key in keys($verb)
+      if not contains($fields, $key) then
+        push($problems, $where .. ": unknown field " .. $key)
+      end
+    end
+    $ok = true
+    for each $key in $fields
+      if not has_key($verb, $key) or type($verb[$key]) != "string" then
+        push($problems, $where .. ": " .. $key .. " must be a string")
+        $ok = false
+      end
+    end
+    if $ok then
+      $name = $verb.name
+      $where = $name
+      if not re_match($name, "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_]*)+$") then
+        push($problems, $where .. ": malformed name")
+      end
+      if has_key($seen, $name) then
+        push($problems, $where .. ": duplicate")
+      end
+      $seen[$name] = true
+      if not re_match($verb.owner, "^[a-z][a-z0-9-]*$") then
+        push($problems, $where .. ": owner must be a component name")
+      end
+      if not re_match($verb.version, "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$") then
+        push($problems, $where .. ": version must be MAJOR.MINOR.PATCH without leading zeros")
+      end
+      if not contains($statuses, $verb.status) then
+        push($problems, $where .. ": status " .. $verb.status .. " is not one of " .. join($statuses, ", "))
+      end
+      if not contains($classes, $verb.class) then
+        push($problems, $where .. ": class " .. $verb.class .. " is not one of " .. join($classes, ", "))
+      end
+    end
+  end
+end
+
+-- Canonical form, compared line by line with the parsed entries.
+$lines = split(read_file($path), "\n")
+$start = -1
+$end_at = -1
+$i = 0
+while $i < len($lines)
+  if $start < 0 and trim($lines[$i]) == "verbs: [" then
+    $start = $i
+  elif $start >= 0 and $end_at < 0 and trim($lines[$i]) == "]" then
+    $end_at = $i
+  end
+  $i = $i + 1
+end
+if $start < 0 or $end_at < 0 then
+  push($problems, "no `verbs: [` … `]` block on lines of their own")
+else
+  $entry_lines = []
+  $i = $start + 1
+  while $i < $end_at
+    $line = $lines[$i]
+    $t = trim($line)
+    if $t != "" then
+      push($entry_lines, $line)
+    end
+    $i = $i + 1
+  end
+  if len($entry_lines) != len($verbs) then
+    push($problems, "canonical form: " .. to_string(len($entry_lines)) .. " entry lines for " .. to_string(len($verbs)) .. " entries")
+  else
+    $i = 0
+    while $i < len($verbs)
+      $verb = $verbs[$i]
+      if type($verb) == "map" and has_key($verb, "name") then
+        $expected = "    {name:\"" .. to_string($verb.name) .. "\", owner:\"" .. to_string($verb.owner) .. "\", version:\"" .. to_string($verb.version) .. "\", status:\"" .. to_string($verb.status) .. "\", class:\"" .. to_string($verb.class) .. "\"}"
+        if $i < len($verbs) - 1 then
+          $expected = $expected .. ","
+        end
+        if $entry_lines[$i] != $expected then
+          push($problems, "canonical form: line for " .. to_string($verb.name) .. " should read: " .. trim($expected))
+        end
+      end
+      $i = $i + 1
+    end
+  end
+end
+
+-- Outside the entry lines, nothing may look like an entry to a line reader.
+$i = 0
+while $i < len($lines)
+  if ($start < 0 or $i <= $start or $i >= $end_at) and contains($lines[$i], "name:" .. "\"") then
+    push($problems, "line " .. to_string($i + 1) .. ": name:" .. "\"" .. " outside an entry line")
+  end
+  $i = $i + 1
+end
+
+if len($problems) > 0 then
+  for each $p in $problems
+    print("verb_registry: " .. $p)
+  end
+  exit(1)
+end
+print("verb_registry: " .. to_string(len($verbs)) .. " verbs, schema 2, canonical, ok")

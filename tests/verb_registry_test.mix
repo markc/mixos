@@ -1,0 +1,71 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- verb_registry_test: tools/verb_registry.mix against throwaway registries.
+-- The real registry passes; a good minimal file passes; and each way a file
+-- could pass a loose check yet mislead the line-by-line readers fails: an
+-- entry split across lines, two entries on one line, spaced fields, a
+-- comment in the list or naming a verb anywhere, a nil owner, a leading-zero
+-- version, an unknown class, a duplicate, a missing comma and an old schema.
+-- Run from the checkout root: mix tests/verb_registry_test.mix
+
+$tool = realpath(dirname(realpath($0)) .. "/../tools/verb_registry.mix")
+$tmp = "/var/tmp/verb-registry-test." .. uuid()
+mkdir($tmp, {parents: true})
+$results = []
+
+fn check($name, $ok)
+  push($results, {name: $name, ok: $ok})
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+
+fn gate($file)
+  $argv = ["/opt/mixos/bin/mix", $tool]
+  if $file != nil then
+    push($argv, $file)
+  end
+  return run_argv($argv, {timeout: 30, stderr: "stdout"})
+end
+
+$a = "    {name:\"demo.ping\", owner:\"demo\", version:\"0.1.0\", status:\"accepted\", class:\"query\"}"
+$b = "    {name:\"demo.open\", owner:\"demo\", version:\"0.1.0\", status:\"accepted\", class:\"intent\"}"
+
+fn registry($body, $schema)
+  return "-- test\n{\n  schema: " .. to_string($schema) .. ",\n  verbs: [\n" .. $body .. "\n  ]\n}\n"
+end
+
+fn expect($name, $text, $pass)
+  $file = $tmp .. "/" .. $name .. ".conf.mix"
+  write_file($file, $text)
+  $r = gate($file)
+  check($name, ($r.exit_code == 0) == $pass)
+  if ($r.exit_code == 0) != $pass then
+    print($r.stdout)
+  end
+end
+
+check("the real registry", gate(nil).exit_code == 0)
+expect("good", registry($a .. ",\n" .. $b, 2), true)
+expect("blank lines are allowed", registry($a .. ",\n\n" .. $b, 2), true)
+expect("a comment inside the list", registry("    -- pings\n" .. $a .. ",\n" .. $b, 2), false)
+expect("a hash comment inside the list", registry("    # pings\n" .. $a .. ",\n" .. $b, 2), false)
+expect("a comment naming a verb", "-- name:\"demo.ping\" class:\"intent\"\n" .. registry($a .. ",\n" .. $b, 2), false)
+expect("split across lines", registry("    {name: \"demo.ping\",\n      owner:\"demo\", version:\"0.1.0\", status:\"accepted\", class:\"query\"},\n" .. $b, 2), false)
+expect("two on one line", registry(trim($a) .. ", " .. trim($b), 2), false)
+expect("spaced fields", registry("    {name:\"demo.ping\", owner: \"demo\", version:\"0.1.0\", status:\"accepted\", class:\"query\"},\n" .. $b, 2), false)
+expect("nil owner", registry("    {name:\"demo.ping\", owner:nil, version:\"0.1.0\", status:\"accepted\", class:\"query\"},\n" .. $b, 2), false)
+expect("leading zero version", registry("    {name:\"demo.ping\", owner:\"demo\", version:\"01.0.0\", status:\"accepted\", class:\"query\"},\n" .. $b, 2), false)
+expect("unknown class", registry("    {name:\"demo.ping\", owner:\"demo\", version:\"0.1.0\", status:\"accepted\", class:\"read\"},\n" .. $b, 2), false)
+expect("duplicate", registry($a .. ",\n" .. $a, 2), false)
+expect("schema 1", registry($a .. ",\n" .. $b, 1), false)
+expect("missing comma", registry($a .. "\n" .. $b, 2), false)
+
+remove_dir($tmp)
+$failed = 0
+for each $r in $results
+  if not $r.ok then
+    $failed = $failed + 1
+  end
+end
+print("verb_registry_test: " .. to_string(len($results) - $failed) .. "/" .. to_string(len($results)) .. " passed")
+if $failed > 0 then
+  exit(1)
+end
