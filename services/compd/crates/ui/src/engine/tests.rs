@@ -115,6 +115,52 @@ fn pointer_input_runs_a_pass_that_sees_it() {
     assert_eq!(seen.lock().unwrap().hover, None);
 }
 
+/// A button filling the surface that counts its clicks.
+#[derive(Default)]
+struct Clicker {
+    clicks: u32,
+}
+
+impl UiProgram for Clicker {
+    type Message = ();
+
+    fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<()>) {
+        let rect = ui.max_rect();
+        if ui.put(rect, egui::Button::new("go")).clicked() {
+            emit.push(());
+        }
+    }
+
+    fn update(&mut self, _message: ()) {
+        self.clicks += 1;
+    }
+
+    fn setup(&mut self, _ctx: &egui::Context) {}
+}
+
+/// A press and its release queued before one pass (a fast tap, or an
+/// injected click) still click: the release waits for the next pass.
+#[test]
+fn a_press_and_release_queued_together_still_click() {
+    let mut rt = UiRuntime::build(
+        Clicker::default(),
+        (200, 100),
+        1.0,
+        None,
+        RuntimeWake::with_waker(|| {}),
+    );
+    rt.tick();
+    rt.queue_input(crate::input::Input::PointerMoved { x: 50.0, y: 50.0 });
+    rt.tick();
+    rt.queue_input(crate::input::Input::Button { code: 0x110, pressed: true });
+    rt.queue_input(crate::input::Input::Button { code: 0x110, pressed: false });
+    for _ in 0..4 {
+        rt.tick();
+    }
+    assert_eq!(rt.program.clicks, 1);
+    assert!(!rt.has_queued(), "the held-back release ran");
+}
+
 #[test]
 fn messages_apply_in_order_with_follow_ups_and_the_handler_sees_them() {
     let log = Arc::new(Mutex::new(Vec::new()));

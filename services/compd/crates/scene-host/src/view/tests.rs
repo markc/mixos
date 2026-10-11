@@ -158,6 +158,32 @@ fn a_crowded_panel_shrinks_its_tasks_and_stays_on_screen() {
     );
 }
 
+/// Crowding never shrinks a cell below its instance's floor: square
+/// fixed-height cells and equal width bounds keep their width, and cells
+/// never overlap.
+#[test]
+fn crowded_horizontal_cells_keep_their_floors_and_never_overlap() {
+    let source = |template: &str| {
+        format!(
+            "---\nscene: 1\nname: crowd\ncitizen: c\n---\n```mix\nroot: {{widget: \"row\", children: [\"list\"]}}\nlist: {{widget: \"list\", flow: \"horizontal\", row: \"cell\", gap: 4, rows: [{{id: \"a\", cells: [\"1\"]}}, {{id: \"b\", cells: [\"2\"]}}, {{id: \"c\", cells: [\"3\"]}}, {{id: \"d\", cells: [\"4\"]}}]}}\ncell: {template}\nlabel: {{widget: \"text\", text: \"{{0}}\"}}\n```\n"
+        )
+    };
+    for (template, floor) in [
+        ("{widget: \"row\", height: 30, justify: \"center\", padding: 8, children: [\"label\"]}", 30.0),
+        ("{widget: \"row\", min_width: 60, max_width: 60, children: [\"label\"]}", 60.0),
+    ] {
+        let rt = runtime(&source(template), (80, 40));
+        let mut cells: Vec<egui::Rect> = ["a", "b", "c", "d"].iter().map(|id| row_of(&rt, "list", id)).collect();
+        cells.sort_by(|x, y| x.left().total_cmp(&y.left()));
+        for cell in &cells {
+            assert!(cell.width() >= floor - 0.5, "{template}: {cell:?}");
+        }
+        for pair in cells.windows(2) {
+            assert!(pair[1].left() >= pair[0].right() - 0.5, "{template}: overlap {pair:?}");
+        }
+    }
+}
+
 #[test]
 fn panel_pager_digits_sit_at_the_centre_of_their_hit_targets() {
     let rt = runtime(
