@@ -1,10 +1,10 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `RegionBorder` — the bright outline around the captured region. Drawn above
 //! everything (screen-space, top layer). Fully transparent except the outline,
 //! and click-through (the interface adds the passthrough layer bit).
 
-use ui_core::{Color, Element, Theme};
 use crate::capture::session::message::{CaptureMessage, OverlayRect};
-use ui::engine::{UiProgram, Renderer};
+use ui::UiProgram;
 
 use crate::surface::draw::capture::{mask, style};
 
@@ -16,11 +16,7 @@ pub struct RegionBorder {
 
 impl RegionBorder {
     pub fn new(screen_w: i32, screen_h: i32, rect: OverlayRect) -> Self {
-        Self {
-            screen_w,
-            screen_h,
-            rect,
-        }
+        Self { screen_w, screen_h, rect }
     }
 }
 
@@ -33,11 +29,9 @@ impl UiProgram for RegionBorder {
         }
     }
 
-    fn view(&self) -> Element<'_, Self::Message, Theme, Renderer> {
-        // Inflate by the border width so the stroke lands entirely OUTSIDE the
-        // captured region (otherwise the border pixels show up in the capture).
-        // `region_border` draws the four edges independently and crops any edge
-        // that pans off-screen — on every side, not just bottom/right.
+    fn show(&mut self, ui: &mut egui::Ui, _emit: &mut Vec<CaptureMessage>) {
+        // Inflated by the border width, so the stroke lands entirely OUTSIDE
+        // the captured region (otherwise its pixels show up in the capture).
         let bw = style::BORDER_WIDTH as i32;
         let outer = OverlayRect {
             x: self.rect.x - bw,
@@ -45,6 +39,7 @@ impl UiProgram for RegionBorder {
             w: self.rect.w + 2 * bw,
             h: self.rect.h + 2 * bw,
         };
-        mask::region_border(self.screen_w, self.screen_h, outer, style::ACCENT, bw)
+        let painter = ui.painter();
+        mask::region_border(painter, self.screen_w, self.screen_h, outer, style::accent(ui), bw);
     }
 }

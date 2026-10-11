@@ -1,10 +1,10 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `RegionDim` — the dark backdrop with a clear hole over the captured region.
 //! Drawn BELOW windows (its own `CAPTURE_DIM` layer) so windows in the region
 //! stay bright while everything else is dimmed. Click-through.
 
-use ui_core::{Element, Theme};
 use crate::capture::session::message::{CaptureMessage, OverlayRect};
-use ui::engine::{UiProgram, Renderer};
+use ui::UiProgram;
 
 use crate::surface::draw::capture::{mask, style};
 
@@ -16,11 +16,7 @@ pub struct RegionDim {
 
 impl RegionDim {
     pub fn new(screen_w: i32, screen_h: i32, rect: OverlayRect) -> Self {
-        Self {
-            screen_w,
-            screen_h,
-            rect,
-        }
+        Self { screen_w, screen_h, rect }
     }
 }
 
@@ -33,13 +29,14 @@ impl UiProgram for RegionDim {
         }
     }
 
-    fn view(&self) -> Element<'_, Self::Message, Theme, Renderer> {
+    fn show(&mut self, ui: &mut egui::Ui, _emit: &mut Vec<CaptureMessage>) {
         mask::mask_with_hole(
+            ui.painter(),
             self.screen_w,
             self.screen_h,
             Some(self.rect),
             style::DIM_MASK,
             None,
-        )
+        );
     }
 }

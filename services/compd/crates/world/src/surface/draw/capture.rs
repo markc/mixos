@@ -1,8 +1,9 @@
-//! UI overlay UIs for window capture.
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! The capture overlays and dialogs, egui programs on the MixOS look.
 //!
 //! All are screen-space instances driven by the capture interface:
-//! - [`setup::SetupOverlay`]   — the black mask + passthrough hole + target/
-//!   media chooser + region drag (the "ice screen" setup phase).
+//! - [`setup::SetupOverlay`]   — the dim mask + passthrough hole + target/
+//!   media chooser + region drag (the setup phase).
 //! - [`border::RegionBorder`]  — the bright outline around the captured region
 //!   (drawn above everything).
 //! - [`dim::RegionDim`]        — the dark backdrop with a clear hole (drawn
@@ -12,9 +13,6 @@
 //!
 //! Every UI's `UiProgram::Message` is
 //! [`crate::capture::session::message::CaptureMessage`].
-
-// Developer logging: bring error!/warn!/info!/trace!/abort! into scope for every module in
-// this crate. (Drop this line if the crate genuinely never logs.)
 
 pub mod border;
 pub mod dialog;

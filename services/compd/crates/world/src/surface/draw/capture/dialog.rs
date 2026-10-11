@@ -1,11 +1,11 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `ContinueDialog` — the 5-minute keep-alive dialog for video captures. Shows
 //! a countdown; the user must click Continue within the window or the capture
 //! stops. Its own small centered screen-space instance.
 
-use ui_core::{Alignment, Background, Border, Element, Length, Shadow, Theme};
-use ui_widget::{button, column, container, row, text};
 use crate::capture::session::message::CaptureMessage;
-use ui::engine::{UiProgram, Renderer};
+use crate::strings;
+use ui::UiProgram;
 
 use crate::surface::draw::capture::style;
 
@@ -29,50 +29,25 @@ impl UiProgram for ContinueDialog {
         }
     }
 
-    fn view(&self) -> Element<'_, Self::Message, Theme, Renderer> {
-        let title = text("Still capturing?").size(20).color(style::TEXT);
-        let sub = text(format!(
-            "Continue within {}s or the capture will stop.",
-            self.seconds
-        ))
-        .size(14)
-        .color(style::TEXT_DIM);
-
-        let buttons = row![
-            button(text("Continue").size(15).color(style::TEXT))
-                .padding([8, 18])
-                .on_press(CaptureMessage::ContinueCapture)
-                .style(style::button_with(style::ACCENT)),
-            button(text("Stop").size(15).color(style::TEXT))
-                .padding([8, 18])
-                .on_press(CaptureMessage::StopFromDialog)
-                .style(style::button_with(style::STOP_BG)),
-        ]
-        .spacing(12);
-
-        let panel = container(
-            column![title, sub, buttons]
-                .spacing(14)
-                .align_x(Alignment::Center),
-        )
-        .padding(24)
-        .style(|_t| container::Style {
-            background: Some(Background::Color(style::PANEL_BG)),
-            text_color: Some(style::TEXT),
-            border: Border {
-                color: style::ACCENT,
-                width: 1.0,
-                radius: style::RADIUS.into(),
-            },
-            shadow: Shadow::default(),
-            snap: true,
+    fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<CaptureMessage>) {
+        let accent = style::accent(ui);
+        let seconds = self.seconds.to_string();
+        style::centred_dialog(ui, "capture-continue", accent, |ui| {
+            ui.label(egui::RichText::new(strings::text("capture-continue-title")).size(20.0));
+            ui.label(
+                egui::RichText::new(strings::with("capture-continue-body", &[("seconds", &seconds)]))
+                    .size(14.0)
+                    .color(style::weak(ui)),
+            );
+            ui.horizontal(|ui| {
+                if style::button(ui, strings::text("capture-continue"), Some(accent)).clicked() {
+                    emit.push(CaptureMessage::ContinueCapture);
+                }
+                let danger = style::danger(ui);
+                if style::button(ui, strings::text("capture-stop-now"), Some(danger)).clicked() {
+                    emit.push(CaptureMessage::StopFromDialog);
+                }
+            });
         });
-
-        container(panel)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(Alignment::Center)
-            .align_y(Alignment::Center)
-            .into()
     }
 }

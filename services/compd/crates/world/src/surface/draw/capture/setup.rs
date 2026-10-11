@@ -1,5 +1,6 @@
-//! `SetupOverlay` — the "ice screen" setup phase. A full-screen screen-space
-//! instance: opaque black mask with a clear hole over the prospective capture
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! `SetupOverlay` — the capture setup phase. A full-screen screen-space
+//! instance: a dim mask with a clear hole over the prospective capture
 //! target, plus a chooser (target kind + media + Confirm/Cancel). For the two
 //! region kinds the hole is drawn by dragging; for Windows it mirrors the
 //! pre-selected canvas windows' bbox; for FullScreen it's the whole output.
@@ -8,13 +9,11 @@
 //! reads them off the instance on Confirm (it reads the live canvas selection
 //! itself for the Windows case).
 
-use ui_core::{Alignment, Background, Border, Element, Length, Shadow, Theme};
-use ui_widget::{button, column, container, mouse_area, row, text};
 use crate::capture::session::message::{
     CaptureMedia, CaptureMessage, OverlayPoint, OverlayRect, TargetKind,
 };
-use ui::engine::ui::EventFlags;
-use ui::engine::{UiEvent, UiProgram, Renderer};
+use crate::strings;
+use ui::UiProgram;
 
 use crate::surface::draw::capture::{mask, style};
 
@@ -140,176 +139,115 @@ impl UiProgram for SetupOverlay {
         }
     }
 
-    fn subscribe(&self) -> EventFlags {
-        EventFlags::KEYBOARD
-    }
-
-    fn event_process(&self, event: &UiEvent) -> Vec<Self::Message> {
-        use ui_core::keyboard::{self, Key, key::Named};
-        if let UiEvent::Keyboard(keyboard::Event::KeyPressed { key, .. }) = event {
-            match key {
-                Key::Named(Named::Escape) => return vec![CaptureMessage::Cancel],
-                Key::Named(Named::Enter) => return vec![CaptureMessage::Confirm],
-                _ => {}
-            }
-        }
-        Vec::new()
-    }
-
-    fn view(&self) -> Element<'_, Self::Message, Theme, Renderer> {
-        // Bottom layer: the mask with a clear hole, wrapped so the whole area
-        // drives the region drag. The chooser (top layer) intercepts its own
-        // clicks first, so dragging only starts on empty/masked area.
-        let mask_layer = mouse_area(mask::mask_with_hole(
+    fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<CaptureMessage>) {
+        let accent = style::accent(ui);
+        // Bottom layer: the mask with a clear hole, painted first.
+        mask::mask_with_hole(
+            ui.painter(),
             self.screen_w,
             self.screen_h,
             self.hole(),
             style::SETUP_MASK,
-            Some((style::ACCENT, style::BORDER_WIDTH)),
-        ))
-        .on_press(CaptureMessage::DragStart)
-        .on_release(CaptureMessage::DragEnd)
-        .on_move(|p| CaptureMessage::DragMove(OverlayPoint { x: p.x, y: p.y }));
-
-        let controls = container(self.chooser())
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(Alignment::Center)
-            .padding(28);
-
-        ui_widget::stack![mask_layer, controls].into()
+            Some((accent, style::BORDER_WIDTH)),
+        );
+        // The whole area drives the region drag. The chooser is an area above
+        // it, so it takes its own clicks first and a drag only starts on the
+        // masked or clear background.
+        let background = ui.interact(
+            ui.max_rect(),
+            egui::Id::new("capture-setup-background"),
+            egui::Sense::click_and_drag(),
+        );
+        let (pointer, pressed, released) = ui.ctx().input(|input| {
+            (
+                input.pointer.hover_pos(),
+                input.pointer.primary_pressed(),
+                input.pointer.primary_released(),
+            )
+        });
+        // Report motion only when it moved: `update` stores it, so the next
+        // pass sees no change and emits nothing (no message loop).
+        if let Some(at) = pointer
+            && (at.x as i32, at.y as i32) != self.cursor
+        {
+            emit.push(CaptureMessage::DragMove(OverlayPoint { x: at.x, y: at.y }));
+        }
+        if pressed && background.hovered() {
+            emit.push(CaptureMessage::DragStart);
+        }
+        if released && self.dragging {
+            emit.push(CaptureMessage::DragEnd);
+        }
+        let (escape, enter) =
+            ui.ctx().input(|input| (input.key_pressed(egui::Key::Escape), input.key_pressed(egui::Key::Enter)));
+        if escape {
+            emit.push(CaptureMessage::Cancel);
+        } else if enter {
+            emit.push(CaptureMessage::Confirm);
+        }
+        egui::Area::new(egui::Id::new("capture-setup-chooser"))
+            .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 28.0))
+            .order(egui::Order::Foreground)
+            .show(ui.ctx(), |ui| self.chooser(ui, accent, emit));
     }
 }
 
 impl SetupOverlay {
-    fn chooser(&self) -> Element<'_, CaptureMessage, Theme, Renderer> {
-        let kinds = row![
-            kind_button("Windows", TargetKind::Windows, self.kind),
-            kind_button("World region", TargetKind::WorldRegion, self.kind),
-            kind_button("Screen region", TargetKind::ScreenRegion, self.kind),
-            kind_button("Full screen", TargetKind::FullScreen, self.kind),
-        ]
-        .spacing(8);
-
-        let media = row![
-            media_button("Screenshot", CaptureMedia::Screenshot, self.media),
-            media_button("Video", CaptureMedia::Video, self.media),
-        ]
-        .spacing(8);
-
-        // Transparent-background toggle (window/world only).
-        let options: Element<'_, CaptureMessage, Theme, Renderer> = if self.supports_no_background() {
-            row![toggle_button(
-                "Transparent background",
-                self.no_background,
-                CaptureMessage::SetNoBackground(!self.no_background),
-            )]
-            .spacing(8)
-            .into()
-        } else {
-            ui_widget::Space::new().into()
-        };
-
-        let actions = row![
-            button(text("Confirm").size(15).color(style::TEXT))
-                .padding([8, 18])
-                .on_press(CaptureMessage::Confirm)
-                .style(style::button_with(style::ACCENT)),
-            button(text("Cancel").size(15).color(style::TEXT))
-                .padding([8, 18])
-                .on_press(CaptureMessage::Cancel)
-                .style(style::button_with(style::BUTTON_BG)),
-        ]
-        .spacing(8);
-
-        let hint = text(match self.kind {
-            TargetKind::Windows => "Capturing the selected windows.",
-            TargetKind::WorldRegion => "Drag to draw a region (moves with the world).",
-            TargetKind::ScreenRegion => "Drag to draw a region (fixed on screen).",
-            TargetKind::FullScreen => "Capturing the whole screen.",
-        })
-        .size(13)
-        .color(style::TEXT_DIM);
-
-        let panel = column![
-            text("Capture setup").size(18).color(style::TEXT),
-            kinds,
-            media,
-            options,
-            hint,
-            actions,
-        ]
-        .spacing(12)
-        .align_x(Alignment::Center);
-
-        container(panel)
-            .padding(20)
-            .style(|_t| container::Style {
-                background: Some(Background::Color(style::PANEL_BG)),
-                text_color: Some(style::TEXT),
-                border: Border {
-                    color: style::ACCENT,
-                    width: 1.0,
-                    radius: style::RADIUS.into(),
-                },
-                shadow: Shadow::default(),
-                snap: true,
-            })
-            .into()
+    fn chooser(&self, ui: &mut egui::Ui, accent: egui::Color32, emit: &mut Vec<CaptureMessage>) {
+        egui::Frame::popup(ui.style())
+            .inner_margin(20.0)
+            .stroke(egui::Stroke::new(1.0, accent))
+            .show(ui, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.spacing_mut().item_spacing = egui::vec2(8.0, 12.0);
+                    ui.label(egui::RichText::new(strings::text("capture-setup-title")).size(18.0));
+                    ui.horizontal(|ui| {
+                        for (key, kind) in [
+                            ("capture-kind-windows", TargetKind::Windows),
+                            ("capture-kind-world", TargetKind::WorldRegion),
+                            ("capture-kind-screen", TargetKind::ScreenRegion),
+                            ("capture-kind-full", TargetKind::FullScreen),
+                        ] {
+                            if style::choice(ui, strings::text(key), self.kind == kind).clicked() {
+                                emit.push(CaptureMessage::SelectKind(kind));
+                            }
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        for (key, media) in [
+                            ("capture-media-screenshot", CaptureMedia::Screenshot),
+                            ("capture-media-video", CaptureMedia::Video),
+                        ] {
+                            if style::choice(ui, strings::text(key), self.media == media).clicked() {
+                                emit.push(CaptureMessage::SelectMedia(media));
+                            }
+                        }
+                    });
+                    // Transparent-background toggle (window/world only).
+                    if self.supports_no_background() {
+                        let mut on = self.no_background;
+                        if ui.checkbox(&mut on, strings::text("capture-transparent")).changed() {
+                            emit.push(CaptureMessage::SetNoBackground(on));
+                        }
+                    }
+                    let hint = match self.kind {
+                        TargetKind::Windows => "capture-hint-windows",
+                        TargetKind::WorldRegion => "capture-hint-world",
+                        TargetKind::ScreenRegion => "capture-hint-screen",
+                        TargetKind::FullScreen => "capture-hint-full",
+                    };
+                    ui.label(egui::RichText::new(strings::text(hint)).size(13.0).color(style::weak(ui)));
+                    ui.horizontal(|ui| {
+                        if style::button(ui, strings::text("capture-confirm"), Some(accent)).clicked() {
+                            emit.push(CaptureMessage::Confirm);
+                        }
+                        if style::button(ui, strings::text("capture-cancel"), None).clicked() {
+                            emit.push(CaptureMessage::Cancel);
+                        }
+                    });
+                });
+            });
     }
-}
-
-fn kind_button<'a>(
-    label: &'a str,
-    kind: TargetKind,
-    selected: TargetKind,
-) -> Element<'a, CaptureMessage, Theme, Renderer> {
-    let bg = if kind == selected {
-        style::ACCENT
-    } else {
-        style::BUTTON_BG
-    };
-    button(text(label).size(14).color(style::TEXT))
-        .padding([7, 12])
-        .on_press(CaptureMessage::SelectKind(kind))
-        .style(style::button_with(bg))
-        .into()
-}
-
-fn media_button<'a>(
-    label: &'a str,
-    media: CaptureMedia,
-    selected: CaptureMedia,
-) -> Element<'a, CaptureMessage, Theme, Renderer> {
-    let bg = if media == selected {
-        style::ACCENT
-    } else {
-        style::BUTTON_BG
-    };
-    button(text(label).size(14).color(style::TEXT))
-        .padding([7, 12])
-        .on_press(CaptureMessage::SelectMedia(media))
-        .style(style::button_with(bg))
-        .into()
-}
-
-/// A checkbox-style toggle button (accent when on).
-fn toggle_button<'a>(
-    label: &'a str,
-    on: bool,
-    msg: CaptureMessage,
-) -> Element<'a, CaptureMessage, Theme, Renderer> {
-    let bg = if on { style::ACCENT } else { style::BUTTON_BG };
-    let mark = if on { "☑" } else { "☐" };
-    button(
-        text(format!("{mark}  {label}"))
-            .size(14)
-            .color(style::TEXT),
-    )
-    .padding([7, 12])
-    .on_press(msg)
-    .style(style::button_with(bg))
-    .into()
 }
 
 /// What the capture driver reads off this overlay when the user commits.
@@ -324,7 +262,7 @@ pub struct SetupSnapshot {
 /// These fields only move on a click, which has already been through a full
 /// update+render cycle by the time the driver reads them, so the one frame of
 /// staleness an off-thread snapshot carries is not observable.
-impl ui::engine::UiSnapshot for SetupOverlay {
+impl ui::UiSnapshot for SetupOverlay {
     type Snapshot = SetupSnapshot;
     fn snapshot(&self) -> SetupSnapshot {
         SetupSnapshot {

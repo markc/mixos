@@ -1,5 +1,7 @@
-use ui_core::{alignment, Background, Color, Element, Length, Theme};
-use ui_widget::{column, container, text};
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! The frame-rate overlay: each output's present rate, top right, while the
+//! `show_fps` preference is on.
+
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Physical, Point, Rectangle, Size};
 use std::cell::RefCell;
@@ -8,7 +10,7 @@ use std::collections::HashMap;
 use ui::{HandleId, UiHandle, UiSpace};
 use crate::state::Loop;
 use crate::scene::layer::base::Layer;
-use ui::engine::{UiProgram, Renderer};
+use ui::UiProgram;
 use crate::surface::draw::handle::handle::load;
 
 /// Overlay box size (physical px) and its inset from the top-right corner.
@@ -16,7 +18,7 @@ const W: i32 = 120;
 const H: i32 = 44;
 const MARGIN: i32 = 12;
 
-/// The overlay's UI UI: the last measured FPS.
+/// The overlay's program: the last measured rate.
 #[derive(Default)]
 pub struct FpsUi {
     fps: u32,
@@ -35,19 +37,19 @@ impl UiProgram for FpsUi {
         self.fps = fps;
     }
 
-    fn view(&self) -> Element<'_, FpsMessage, Theme, Renderer> {
-        let body = column![text(format!("{} FPS", self.fps)).size(24).color(Color::WHITE)];
-        container(body)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .padding(8)
-            .align_x(alignment::Horizontal::Left)
-            .align_y(alignment::Vertical::Center)
-            .style(|_t| container::Style {
-                background: Some(Background::Color(Color::BLACK)),
-                ..Default::default()
-            })
-            .into()
+    fn show(&mut self, ui: &mut egui::Ui, _emit: &mut Vec<FpsMessage>) {
+        // A plain readout over a solid box, whatever the theme: it measures,
+        // it does not decorate.
+        let rect = ui.max_rect();
+        ui.painter().rect_filled(rect, 0.0, egui::Color32::BLACK);
+        let label = crate::strings::with("fps-value", &[("fps", &self.fps.to_string())]);
+        ui.painter().text(
+            egui::pos2(rect.left() + 8.0, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            label,
+            egui::FontId::proportional(24.0),
+            egui::Color32::WHITE,
+        );
     }
 }
 

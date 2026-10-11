@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The notification pill: one line of text on a dark rounded pill, centred in
 //! its surface.
 //!
@@ -10,9 +11,7 @@
 //! by moving the whole surface (`registry.set_location`) once per frame, one
 //! integer write, where animating inside the UI would re-render the text every
 //! frame for the same result.
-use ui::engine::{UiProgram, Renderer};
-use ui_core::{Background, Border, Color, Element, Length, Theme};
-use ui_widget::{container, text};
+use ui::UiProgram;
 
 /// Compositor → surface. One variant: the text to show.
 #[derive(Clone, Debug)]
@@ -40,24 +39,23 @@ impl UiProgram for NotifyUi {
         }
     }
 
-    fn view(&self) -> Element<'_, Self::Message, Theme, Renderer> {
-        container(
-            text(self.message.clone())
-                .size(14)
-                .color(Color::from_rgba(0.94, 0.96, 1.0, 0.96)),
-        )
-        .padding([10, 18])
-        .center_x(Length::Shrink)
-        .center_y(Length::Shrink)
-        .style(|_t: &Theme| container::Style {
-            background: Some(Background::Color(Color::from_rgba(0.06, 0.07, 0.10, 0.88))),
-            border: Border {
-                radius: 10.0.into(),
-                width: 1.0,
-                color: Color::from_rgba(1.0, 1.0, 1.0, 0.10),
-            },
-            ..Default::default()
-        })
-        .into()
+    fn show(&mut self, ui: &mut egui::Ui, _emit: &mut Vec<NotifyMessage>) {
+        // A dark rounded pill, centred: notifications read over any desktop,
+        // so this keeps its own contrast rather than the theme's.
+        let text = egui::RichText::new(self.message.clone())
+            .size(14.0)
+            .color(egui::Color32::from_rgba_unmultiplied(240, 245, 255, 245));
+        egui::Area::new(egui::Id::new("notify-pill"))
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ui.ctx(), |ui| {
+            egui::Frame::NONE
+                .fill(egui::Color32::from_rgba_unmultiplied(15, 18, 26, 224))
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(26)))
+                .corner_radius(10.0)
+                .inner_margin(egui::Margin::symmetric(18, 10))
+                .show(ui, |ui| {
+                    ui.label(text);
+                });
+        });
     }
 }

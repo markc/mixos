@@ -1,12 +1,12 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `EncodingDialog` — shown while the optimized (software) re-encode runs in the
 //! manual "Optimized encoding" path. A title + a progress bar updated each frame
 //! by the interface via [`CaptureMessage::SetEncodeProgress`]. Own small centered
 //! screen-space instance (replaces the save dialog during encoding).
 
-use ui_core::{Alignment, Background, Border, Element, Length, Shadow, Theme};
-use ui_widget::{column, container, progress_bar, text};
 use crate::capture::session::message::CaptureMessage;
-use ui::engine::{UiProgram, Renderer};
+use crate::strings;
+use ui::UiProgram;
 
 use crate::surface::draw::capture::style;
 
@@ -36,38 +36,25 @@ impl UiProgram for EncodingDialog {
         }
     }
 
-    fn view(&self) -> Element<'_, Self::Message, Theme, Renderer> {
-        let title = text("Optimizing recording…").size(20).color(style::TEXT);
-        let sub = text(format!("Encoding a smaller file — {}%", self.percent))
-            .size(14)
-            .color(style::TEXT_DIM);
-        let bar = progress_bar(0.0..=100.0, self.percent as f32)
-            .length(Length::Fixed(320.0))
-            .girth(Length::Fixed(10.0));
-
-        let panel = container(
-            column![title, sub, bar]
-                .spacing(14)
-                .align_x(Alignment::Center),
-        )
-        .padding(24)
-        .style(|_t| container::Style {
-            background: Some(Background::Color(style::PANEL_BG)),
-            text_color: Some(style::TEXT),
-            border: Border {
-                color: style::ACCENT,
-                width: 1.0,
-                radius: style::RADIUS.into(),
-            },
-            shadow: Shadow::default(),
-            snap: true,
+    fn show(&mut self, ui: &mut egui::Ui, _emit: &mut Vec<CaptureMessage>) {
+        let accent = style::accent(ui);
+        let percent = self.percent;
+        style::centred_dialog(ui, "capture-encoding", accent, |ui| {
+            ui.label(egui::RichText::new(strings::text("capture-encoding-title")).size(20.0));
+            ui.label(
+                egui::RichText::new(strings::with(
+                    "capture-encoding-body",
+                    &[("percent", &percent.to_string())],
+                ))
+                .size(14.0)
+                .color(style::weak(ui)),
+            );
+            ui.add(
+                egui::ProgressBar::new(percent as f32 / 100.0)
+                    .desired_width(320.0)
+                    .desired_height(10.0)
+                    .fill(accent),
+            );
         });
-
-        container(panel)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(Alignment::Center)
-            .align_y(Alignment::Center)
-            .into()
     }
 }

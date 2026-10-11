@@ -1,11 +1,11 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `ErrorDialog` — a small centered modal shown when a capture can't proceed
 //! (e.g. no working hardware video encoder). A message + a single OK button that
 //! emits [`CaptureMessage::Discard`] (the interface tears the capture down).
 
-use ui_core::{Alignment, Background, Border, Element, Length, Shadow, Theme};
-use ui_widget::{button, column, container, text};
 use crate::capture::session::message::CaptureMessage;
-use ui::engine::{UiProgram, Renderer};
+use crate::strings;
+use ui::UiProgram;
 
 use crate::surface::draw::capture::style;
 
@@ -15,9 +15,7 @@ pub struct ErrorDialog {
 
 impl ErrorDialog {
     pub fn new(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-        }
+        Self { message: message.into() }
     }
 }
 
@@ -26,37 +24,20 @@ impl UiProgram for ErrorDialog {
 
     fn update(&mut self, _message: Self::Message) {}
 
-    fn view(&self) -> Element<'_, Self::Message, Theme, Renderer> {
-        let title = text("Capture error").size(20).color(style::STOP_BG);
-        let msg = text(self.message.clone()).size(14).color(style::TEXT_DIM);
-        let ok = button(text("OK").size(15).color(style::TEXT))
-            .padding([8, 18])
-            .on_press(CaptureMessage::Discard)
-            .style(style::button_with(style::ACCENT));
-
-        let panel = container(
-            column![title, msg, ok]
-                .spacing(14)
-                .align_x(Alignment::Center),
-        )
-        .padding(24)
-        .style(|_t| container::Style {
-            background: Some(Background::Color(style::PANEL_BG)),
-            text_color: Some(style::TEXT),
-            border: Border {
-                color: style::STOP_BG,
-                width: 1.0,
-                radius: style::RADIUS.into(),
-            },
-            shadow: Shadow::default(),
-            snap: true,
+    fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<CaptureMessage>) {
+        let danger = style::danger(ui);
+        let message = self.message.clone();
+        style::centred_dialog(ui, "capture-error", danger, |ui| {
+            ui.label(
+                egui::RichText::new(strings::text("capture-error-title"))
+                    .size(20.0)
+                    .color(danger),
+            );
+            ui.label(egui::RichText::new(message).size(14.0).color(style::weak(ui)));
+            let accent = style::accent(ui);
+            if style::button(ui, strings::text("capture-ok"), Some(accent)).clicked() {
+                emit.push(CaptureMessage::Discard);
+            }
         });
-
-        container(panel)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(Alignment::Center)
-            .align_y(Alignment::Center)
-            .into()
     }
 }

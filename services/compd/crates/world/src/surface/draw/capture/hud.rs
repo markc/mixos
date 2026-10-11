@@ -1,11 +1,11 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `StopHud` — the top-right Stop button shown while a capture is active. Its
 //! own small screen-space instance (positioned by the interface) so it only
 //! intercepts clicks where the button is.
 
-use ui_core::{Element, Length, Theme};
-use ui_widget::{button, container, text};
 use crate::capture::session::message::CaptureMessage;
-use ui::engine::{UiProgram, Renderer};
+use crate::strings;
+use ui::UiProgram;
 
 use crate::surface::draw::capture::style;
 
@@ -16,16 +16,12 @@ impl UiProgram for StopHud {
 
     fn update(&mut self, _message: Self::Message) {}
 
-    fn view(&self) -> Element<'_, Self::Message, Theme, Renderer> {
-        let btn = button(text("\u{23F9} Stop").size(15).color(style::TEXT))
-            .padding([8, 16])
-            .on_press(CaptureMessage::Stop)
-            .style(style::button_with(style::STOP_BG));
-
-        container(btn)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .padding(10)
-            .into()
+    fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<CaptureMessage>) {
+        egui::Frame::NONE.inner_margin(10.0).show(ui, |ui| {
+            let danger = style::danger(ui);
+            if style::button(ui, strings::text("capture-stop"), Some(danger)).clicked() {
+                emit.push(CaptureMessage::Stop);
+            }
+        });
     }
 }
