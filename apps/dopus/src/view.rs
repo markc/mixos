@@ -698,7 +698,7 @@ fn row(
     let icon_colour = if selected {
         text_colour
     } else if entry.is_dir {
-        visuals.selection.bg_fill
+        visuals.hyperlink_color
     } else {
         visuals.weak_text_color()
     };
