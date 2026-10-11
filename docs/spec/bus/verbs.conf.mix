@@ -4,7 +4,8 @@
 --
 -- The toolkit drive verbs (docs/drive.md) are one family that every egui
 -- app answers under its own prefix: <app>.ui.tree, .ui.click, .ui.pointer,
--- .ui.scroll, .ui.key, .ui.type, .ui.menu, .ui.capture, <app>.window and
+-- .ui.scroll, .ui.key, .ui.type, .ui.menu, .ui.menu.list, .ui.menu.open,
+-- .ui.menu.close, .ui.capture, <app>.window and
 -- <app>.window.state. This schema has no family entries, so each app
 -- registers its concrete names, owned by the app that answers them.
 -- HELP and app.describe are protocol verbs every service answers; they are
@@ -45,6 +46,9 @@
     {name:"busviewer.ui.key", owner:"busviewer", version:"0.1.1", status:"accepted"},
     {name:"busviewer.ui.type", owner:"busviewer", version:"0.1.1", status:"accepted"},
     {name:"busviewer.ui.menu", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.ui.menu.list", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.ui.menu.open", owner:"busviewer", version:"0.1.1", status:"accepted"},
+    {name:"busviewer.ui.menu.close", owner:"busviewer", version:"0.1.1", status:"accepted"},
     {name:"busviewer.ui.capture", owner:"busviewer", version:"0.1.1", status:"accepted"},
     {name:"busviewer.window", owner:"busviewer", version:"0.1.1", status:"accepted"},
     {name:"busviewer.window.state", owner:"busviewer", version:"0.1.1", status:"accepted"},
@@ -77,6 +81,9 @@
     {name:"prefs.ui.key", owner:"prefs", version:"0.1.0", status:"accepted"},
     {name:"prefs.ui.type", owner:"prefs", version:"0.1.0", status:"accepted"},
     {name:"prefs.ui.menu", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.ui.menu.list", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.ui.menu.open", owner:"prefs", version:"0.1.0", status:"accepted"},
+    {name:"prefs.ui.menu.close", owner:"prefs", version:"0.1.0", status:"accepted"},
     {name:"prefs.ui.capture", owner:"prefs", version:"0.1.0", status:"accepted"},
     {name:"prefs.window", owner:"prefs", version:"0.1.0", status:"accepted"},
     {name:"prefs.window.state", owner:"prefs", version:"0.1.0", status:"accepted"},
@@ -104,8 +111,33 @@
     {name:"ced.ui.key", owner:"ced", version:"0.1.0", status:"accepted"},
     {name:"ced.ui.type", owner:"ced", version:"0.1.0", status:"accepted"},
     {name:"ced.ui.menu", owner:"ced", version:"0.1.0", status:"accepted"},
+    {name:"ced.ui.menu.list", owner:"ced", version:"0.1.0", status:"accepted"},
+    {name:"ced.ui.menu.open", owner:"ced", version:"0.1.0", status:"accepted"},
+    {name:"ced.ui.menu.close", owner:"ced", version:"0.1.0", status:"accepted"},
     {name:"ced.ui.capture", owner:"ced", version:"0.1.0", status:"accepted"},
     {name:"ced.window", owner:"ced", version:"0.1.0", status:"accepted"},
-    {name:"ced.window.state", owner:"ced", version:"0.1.0", status:"accepted"}
+    {name:"ced.window.state", owner:"ced", version:"0.1.0", status:"accepted"},
+    {name:"dopus.ping", owner:"dopus", version:"0.1.1", status:"accepted"},
+    {name:"dopus.describe", owner:"dopus", version:"0.1.1", status:"accepted"},
+    {name:"dopus.info", owner:"dopus", version:"0.1.1", status:"accepted"},
+    {name:"dopus.state", owner:"dopus", version:"0.1.1", status:"accepted"},
+    {name:"dopus.action", owner:"dopus", version:"0.1.1", status:"accepted"},
+    {name:"dopus.actions.list", owner:"dopus", version:"0.1.1", status:"accepted"},
+    {name:"dopus.theme.set", owner:"dopus", version:"0.1.1", status:"accepted"},
+    {name:"dopus.open", owner:"dopus", version:"0.1.1", status:"accepted"},
+    {name:"dopus.quit", owner:"dopus", version:"0.1.1", status:"accepted"},
+    {name:"dopus.ui.tree", owner:"dopus", version:"0.1.1", status:"accepted"},
+    {name:"dopus.ui.click", owner:"dopus", version:"0.1.1", status:"accepted"},
+    {name:"dopus.ui.pointer", owner:"dopus", version:"0.1.1", status:"accepted"},
+    {name:"dopus.ui.scroll", owner:"dopus", version:"0.1.1", status:"accepted"},
+    {name:"dopus.ui.key", owner:"dopus", version:"0.1.1", status:"accepted"},
+    {name:"dopus.ui.type", owner:"dopus", version:"0.1.1", status:"accepted"},
+    {name:"dopus.ui.menu", owner:"dopus", version:"0.1.1", status:"accepted"},
+    {name:"dopus.ui.menu.list", owner:"dopus", version:"0.1.1", status:"accepted"},
+    {name:"dopus.ui.menu.open", owner:"dopus", version:"0.1.1", status:"accepted"},
+    {name:"dopus.ui.menu.close", owner:"dopus", version:"0.1.1", status:"accepted"},
+    {name:"dopus.ui.capture", owner:"dopus", version:"0.1.1", status:"accepted"},
+    {name:"dopus.window", owner:"dopus", version:"0.1.1", status:"accepted"},
+    {name:"dopus.window.state", owner:"dopus", version:"0.1.1", status:"accepted"}
   ]
 }
