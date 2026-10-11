@@ -332,9 +332,12 @@ mod tests {
 
     #[test]
     fn named_keys_and_releases() {
-        let events = run(vec![key(0xff1b, None, false, false)]);
-        assert!(matches!(events[0], egui::Event::Key { key: egui::Key::Escape, pressed: false, .. }));
-        assert_eq!(events.len(), 1, "a release types nothing");
+        let events = run(vec![key(0xff1b, None, true, false), key(0xff1b, None, false, false)]);
+        assert!(matches!(events[0], egui::Event::Key { key: egui::Key::Escape, pressed: true, .. }));
+        assert!(matches!(events[1], egui::Event::Key { key: egui::Key::Escape, pressed: false, .. }));
+        assert_eq!(events.len(), 2, "Escape types nothing");
+        // A release with no press behind it is not invented.
+        assert!(run(vec![key(0xff1b, None, false, false)]).is_empty());
     }
 
     #[test]
