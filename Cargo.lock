@@ -849,6 +849,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "ced"
+version = "0.1.1"
+dependencies = [
+ "buildinfo",
+ "bus",
+ "design",
+ "documents",
+ "edit",
+ "editor",
+ "editor-model",
+ "eframe",
+ "egui",
+ "egui_kittest",
+ "futures",
+ "mix",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toolkit",
+ "tracing",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1394,6 +1417,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61"
 dependencies = [
  "litrs",
+]
+
+[[package]]
+name = "documents"
+version = "0.1.1"
+dependencies = [
+ "blake3",
+ "buildinfo",
+ "config",
+ "edit",
+ "editor-model",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "tracing",
 ]
 
 [[package]]
