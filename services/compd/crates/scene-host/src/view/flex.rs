@@ -270,6 +270,20 @@ impl<'a> Builder<'a> {
             style.flex_grow = grow.unwrap_or(1.0);
             style.flex_basis = len(0.0);
         }
+        // The schema's remaining flex-item ports, as CSS has them.
+        if let Some(shrink) = number(node, "shrink").filter(|s| *s >= 0.0) {
+            style.flex_shrink = shrink;
+        }
+        if let Some(basis) = number(node, "basis") {
+            style.flex_basis = len(basis);
+        }
+        style.align_self = match port_text(node, "align_self") {
+            "start" => Some(AlignSelf::FLEX_START),
+            "center" => Some(AlignSelf::CENTER),
+            "end" => Some(AlignSelf::FLEX_END),
+            "stretch" => Some(AlignSelf::STRETCH),
+            _ => style.align_self,
+        };
         if let Some(w) = number(node, "width") {
             style.size.width = len(w);
         }
