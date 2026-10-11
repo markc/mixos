@@ -3,8 +3,7 @@
 //!
 //! Input arrives as [`crate::input::Input`] (or raw egui events); frames go
 //! into a caller-supplied `wgpu::TextureView`. The lifecycle the registry
-//! drives, all inside the scene's GPU phase (context current, wgpu GL state
-//! held):
+//! drives inside the scene's GPU phase (context current, wgpu GL state held):
 //!
 //! 1. `queue_input` / `queue_message` as input arrives;
 //! 2. `tick` runs an egui pass when one is owed (input, messages, a due
@@ -13,10 +12,16 @@
 //!    surface is off screen, with `set_suspended(true)` so its animations
 //!    stop waking the loop until it is shown again.
 //!
+//! Outside that phase only `tick_offscreen` runs (compd parked, its VT in
+//! the background): queued input and messages get their pass, the GPU is
+//! not touched, and the pass's texture changes wait for the next pass or
+//! paint inside a frame.
+//!
 //! A pass's texture changes are applied to the painter as the pass runs, not
 //! when it is painted: the shapes kept for the next paint are always the
 //! latest pass's, and they reference exactly the textures that leaves alive.
-//! A runtime without a GPU (unit tests) merges them instead.
+//! A runtime without a GPU (unit tests) merges them instead, and so does a
+//! pass outside a frame until the next one inside it.
 
 use std::time::{Duration, Instant};
 
@@ -29,7 +34,9 @@ use super::wake::RuntimeWake;
 
 /// Observes every message a runtime applies, before `update` runs. The
 /// compositor uses it to act on what the user did without owning the
-/// program's state.
+/// program's state. It may run outside a frame (`UiRuntime::tick_offscreen`,
+/// compd parked): a handler sends or records, and never needs the renderer,
+/// the seat or anything else only a frame provides.
 pub trait MessageHandler<M>: Send + 'static {
     fn handle(&mut self, message: &M);
 }
