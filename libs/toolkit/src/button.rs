@@ -468,9 +468,9 @@ mod tests {
     }
 
     #[test]
-    fn every_button_keeps_its_place_on_hover() {
+    fn every_widget_keeps_its_place_on_hover() {
         use design::{DesignContext, Mode, Scheme};
-        let buttons: [(&str, Add); 8] = [
+        let widgets: [(&str, Add); 12] = [
             ("button", |ui| ui.button("Find next")),
             ("small_button", |ui| ui.small_button("Dismiss")),
             ("frameless image", |ui| {
@@ -484,6 +484,17 @@ mod tests {
             }),
             ("primary", |ui| ui.add(PushButton::primary("Apply"))),
             ("secondary", |ui| ui.add(PushButton::secondary("Cancel"))),
+            ("label", |ui| ui.label("Published")),
+            ("weak wrapped label", |ui| {
+                ui.add(egui::Label::new(egui::RichText::new("Select an app").weak()).wrap())
+            }),
+            ("label with a tooltip", |ui| {
+                ui.label("Update")
+                    .on_hover_text("A newer release is published")
+            }),
+            ("section label", |ui| {
+                crate::panel::section_label(ui, "Scheme")
+            }),
         ];
         let mut moved = Vec::new();
         for scheme in Scheme::ALL {
@@ -493,7 +504,7 @@ mod tests {
                     mode,
                     ..DesignContext::default()
                 });
-                for (name, add) in buttons {
+                for (name, add) in widgets {
                     let (rest, hovered) = rest_and_hover_in(&ctx, add);
                     if rest != hovered {
                         moved.push(format!(
