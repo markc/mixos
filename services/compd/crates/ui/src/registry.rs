@@ -1424,6 +1424,26 @@ impl UiRegistry {
         self.items.iter().any(|i| i.has_queued())
     }
 
+    /// Run the passes queued input or messages owe, without painting. While
+    /// compd is parked (its VT in the background) no frame runs
+    /// `process_frame`, yet input from the Bus (an agent's click on a panel)
+    /// must still take effect. A pass that holds the rest of its input back
+    /// (a click's release, `UiRuntime::take_events`) is followed by another,
+    /// a few at most. The passes' textures are applied as usual; nothing is
+    /// drawn until a frame paints the latest pass.
+    pub fn tick_queued(&mut self) {
+        for _ in 0..4 {
+            let mut ran = false;
+            for item in self.items.iter_mut().filter(|item| item.has_queued()) {
+                item.tick();
+                ran = true;
+            }
+            if !ran {
+                break;
+            }
+        }
+    }
+
     /// The earliest future instant any instance asked to be redrawn at.
     pub fn next_deadline(&self) -> Option<Instant> {
         self.items.iter().filter_map(|i| i.deadline()).min()
