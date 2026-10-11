@@ -5377,6 +5377,7 @@ dependencies = [
  "decor",
  "dispatcher",
  "ledger",
+ "model",
  "policy",
  "protocols",
  "screencopy",
