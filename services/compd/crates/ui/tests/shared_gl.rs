@@ -321,3 +321,65 @@ fn two_painters_alternate_with_smithay_draws() {
         close(pixel(&pixels, 224, 64), b.to_array(), &format!("round {round} right"));
     }
 }
+
+/// Loads a texture, draws it and drops the handle, all in one pass: egui frees
+/// it at the end of that very pass, and its shapes still draw it.
+struct Transient;
+
+impl UiProgram for Transient {
+    type Message = ();
+
+    fn show(&mut self, ui: &mut egui::Ui, _emit: &mut Vec<()>) {
+        let image = egui::ColorImage::filled([4, 4], egui::Color32::from_rgb(200, 100, 50));
+        let texture = ui.ctx().load_texture("transient", image, egui::TextureOptions::NEAREST);
+        let rect = ui.ctx().content_rect();
+        let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+        ui.ctx()
+            .layer_painter(egui::LayerId::background())
+            .image(texture.id(), rect, uv, egui::Color32::WHITE);
+    }
+
+    fn update(&mut self, _message: ()) {}
+
+    fn setup(&mut self, _ctx: &egui::Context) {}
+}
+
+#[test]
+#[ignore = "needs a GPU render node"]
+fn a_texture_dropped_in_its_own_pass_still_draws() {
+    let node = std::env::var("COMPD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
+    let file = std::fs::OpenOptions::new().read(true).write(true).open(&node).expect("render node");
+    let gbm = GbmDevice::new(DeviceFd::from(OwnedFd::from(file))).expect("gbm device");
+    let display = unsafe { EGLDisplay::new(gbm) }.expect("EGL display");
+    let context = EGLContext::new(&display).expect("EGL context");
+    let mut gles = unsafe { GlesRenderer::new(context) }.expect("GLES renderer");
+    let registrar = render_gles::format::registrar::registrar::Registrar::new();
+    let wgpu = graphics::surface::create_wgpu_gl_context(&registrar, &mut gles).expect("wgpu");
+    let size: Size<i32, Physical> = (W, H).into();
+    let gpu = ui::engine::Gpu {
+        device: wgpu.device.clone(),
+        queue: wgpu.queue.clone(),
+        format: graphics::surface::FORMAT,
+    };
+    let mut runtime = UiRuntime::new(Transient, (W as u32, H as u32), 1.0, gpu);
+    let mut surface = graphics::surface::UiSurface::allocate(&node, &wgpu, &mut gles, size).expect("surface");
+    // Two passes: the second supersedes the first, whose texture is freed then.
+    for round in 0..2 {
+        runtime.request_redraw();
+        runtime.tick();
+        graphics::surface::make_current(&mut gles);
+        wgpu.acquire_gl_state();
+        let view = surface.begin_render_view().expect("view");
+        runtime.render_into(&view);
+        surface.submitted(false);
+        let _ = wgpu.device.poll(wgpu::PollType::wait_indefinitely());
+        wgpu.release_gl_state();
+        surface.poll();
+        let texture = surface.gles_texture().expect("published").clone();
+        let mapping = gles
+            .copy_texture(&texture, Rectangle::from_size((W, H).into()), Fourcc::Abgr8888)
+            .expect("copy");
+        let pixels = gles.map_texture(&mapping).expect("map").to_vec();
+        close(pixel(&pixels, 100, 60), [200, 100, 50, 255], &format!("round {round}: the transient texture drew"));
+    }
+}
