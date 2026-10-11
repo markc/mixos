@@ -14,9 +14,11 @@
 pub trait UiProgram: Send + 'static {
     type Message: Clone + Send + std::fmt::Debug + 'static;
 
-    /// Draw the UI for this pass. Messages pushed onto `emit` are applied
-    /// after the pass, in order, through [`Self::update`].
-    fn show(&mut self, ctx: &egui::Context, emit: &mut Vec<Self::Message>);
+    /// Draw the UI for this pass into `ui`, the root covering the whole
+    /// surface (no margin, no background; `ui.ctx()` reaches the context).
+    /// Messages pushed onto `emit` are applied after the pass, in order,
+    /// through [`Self::update`].
+    fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<Self::Message>);
 
     /// Apply one message to the program's state.
     fn update(&mut self, message: Self::Message);

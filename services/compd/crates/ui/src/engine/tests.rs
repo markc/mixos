@@ -26,7 +26,8 @@ struct Seen {
 impl UiProgram for Probe {
     type Message = u32;
 
-    fn show(&mut self, ctx: &egui::Context, emit: &mut Vec<u32>) {
+    fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<u32>) {
+        let ctx = ui.ctx().clone();
         self.passes += 1;
         let mut seen = self.seen.lock().unwrap();
         seen.pixels_per_point = ctx.pixels_per_point();

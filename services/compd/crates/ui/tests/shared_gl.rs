@@ -37,8 +37,8 @@ struct Bars;
 impl UiProgram for Bars {
     type Message = ();
 
-    fn show(&mut self, ctx: &egui::Context, _emit: &mut Vec<()>) {
-        let painter = ctx.layer_painter(egui::LayerId::background());
+    fn show(&mut self, ui: &mut egui::Ui, _emit: &mut Vec<()>) {
+        let painter = ui.ctx().layer_painter(egui::LayerId::background());
         // Points: the surface is 128 x 64 points at scale 2.
         let quarter = |i: f32| egui::Rect::from_min_size(egui::pos2(32.0 * i, 0.0), egui::vec2(32.0, 32.0));
         painter.rect_filled(quarter(0.0), 0.0, egui::Color32::from_rgb(255, 0, 0));

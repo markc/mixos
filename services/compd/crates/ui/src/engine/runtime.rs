@@ -17,7 +17,7 @@
 use std::time::{Duration, Instant};
 
 use egui::epaint::{ClippedShape, textures::TexturesDelta};
-use egui::{Context, Event, Modifiers, Pos2, RawInput, Rect, Vec2, ViewportId};
+use egui::{Context, Event, Pos2, RawInput, Rect, Vec2, ViewportId};
 
 use super::painter::Painter;
 use super::program::UiProgram;
@@ -73,7 +73,6 @@ pub struct UiRuntime<P: UiProgram> {
     scale: f32,
     events: Vec<Event>,
     messages: Vec<P::Message>,
-    modifiers: Modifiers,
     focused: bool,
     handler: Option<Box<dyn MessageHandler<P::Message>>>,
     /// A pass is owed: new instance, resize, applied messages or input.
@@ -121,7 +120,6 @@ impl<P: UiProgram> UiRuntime<P> {
             scale: if scale > 0.0 { scale } else { 1.0 },
             events: Vec::new(),
             messages: Vec::new(),
-            modifiers: Modifiers::default(),
             focused: true,
             handler: None,
             // The first frame draws even if no input ever arrives.
@@ -155,20 +153,11 @@ impl<P: UiProgram> UiRuntime<P> {
 
     /// Queue a translated input event for the next pass.
     pub fn queue_event(&mut self, event: Event) {
-        match &event {
-            Event::Key { modifiers, .. } | Event::PointerButton { modifiers, .. } => {
-                self.modifiers = *modifiers;
-            }
-            Event::WindowFocused(focused) => self.focused = *focused,
-            _ => {}
+        if let Event::WindowFocused(focused) = &event {
+            self.focused = *focused;
         }
         self.events.push(event);
         self.needs_pass = true;
-    }
-
-    /// Set the modifier state the next pass reports.
-    pub fn set_modifiers(&mut self, modifiers: Modifiers) {
-        self.modifiers = modifiers;
     }
 
     /// The pointer left the surface.
@@ -208,7 +197,6 @@ impl<P: UiProgram> UiRuntime<P> {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
             max_texture_side: self.max_texture_side,
             time: Some(self.started.elapsed().as_secs_f64()),
-            modifiers: self.modifiers,
             events: std::mem::take(&mut self.events),
             focused: self.focused,
             ..RawInput::default()
@@ -233,7 +221,7 @@ impl<P: UiProgram> UiRuntime<P> {
         let ctx = self.ctx.clone();
         let mut emitted = Vec::new();
         let program = &mut self.program;
-        let output = ctx.run(raw, |ctx| program.show(ctx, &mut emitted));
+        let output = ctx.run_ui(raw, |ui| program.show(ui, &mut emitted));
         self.textures.append(output.textures_delta);
         self.last = Some(Pass {
             shapes: output.shapes,

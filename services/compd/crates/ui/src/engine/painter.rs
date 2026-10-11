@@ -68,8 +68,10 @@ impl Painter {
         primitives: &[ClippedPrimitive],
         textures: &TexturesDelta,
     ) {
-        for (id, delta) in &textures.set {
-            self.renderer.update_texture(device, queue, *id, delta);
+        for (id, deltas) in &textures.set {
+            for delta in deltas {
+                self.renderer.update_texture(device, queue, *id, delta);
+            }
         }
         let screen = egui_wgpu::ScreenDescriptor {
             size_in_pixels: size_px,
