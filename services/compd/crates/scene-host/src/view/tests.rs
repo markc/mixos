@@ -138,7 +138,7 @@ fn panel_has_square_pager_two_clock_lines_and_full_task_hit_targets() {
 /// keeps everything on the edge, instead of pushing the right end off it.
 #[test]
 fn a_crowded_panel_shrinks_its_tasks_and_stays_on_screen() {
-    let width = 600.0;
+    let width = 450.0;
     let rt = runtime(
         include_str!("../../tests/fixtures/panel-render.scene.mix"),
         (width as u32, 52),
