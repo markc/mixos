@@ -24,7 +24,10 @@ pub fn describe() -> Value {
             "ui.reduced_motion": {"type":"boolean"},
             "shell.panels.<id>": {"type":"panel", "edge":["top","bottom","left","right"], "mode":["dock","overlay","hidden"], "thickness_range":[16,256]},
             "shell.page_order": {"type":"list", "max_items":64},
-            "apps.<id>": {"type":"app_override", "fields":["scheme","mode","contrast","text_scale"]}
+            "apps.<id>": {"type":"app_override", "fields":["scheme","mode","contrast","text_scale"]},
+            "keymaps.<app>": {"type":"map", "of":"action id to a list of chords", "max_items":crate::keymap::MAX_ACTIONS, "null":"every action back to the app's defaults"},
+            "keymaps.<app>.<action>": {"type":"list", "of":"chord", "max_items":crate::keymap::MAX_CHORDS, "empty":"unbound", "null":"the app's default",
+                "chord":"Ctrl, Alt, Shift (any order) then one key, joined by +", "max_bytes":crate::keymap::MAX_CHORD_BYTES}
         }, "reset":"remove explicit app values or restore field package default",
         "defaults": Desktop::default(), "native_apps": APPS,
         "read_views": {"full":"the complete snapshot (default)",
@@ -217,6 +220,7 @@ pub fn resolve_with_embedded_and_accents(
                 bounded(scale, 0.5, 3.0, &format!("apps.{app}.text_scale"))?;
             }
         }
+        crate::keymap::validate(&desktop.keymaps, key)?;
         if design::Decorations::from_name(&desktop.appearance.decorations).is_none() {
             return Err(error("appearance.decorations", "Unknown decorations"));
         }
@@ -434,6 +438,45 @@ fn set(desktop: &mut Desktop, path: &str, value: Option<Value>) -> Result<(), Di
                         desktop.apps.insert((*id).into(), typed(path, value)?);
                     } else {
                         desktop.apps.remove(*id);
+                    }
+                }
+                ["keymaps", app] => {
+                    key(app, path)?;
+                    match value {
+                        Some(value) => {
+                            let map: crate::keymap::AppKeymap = typed(path, value)?;
+                            if map.is_empty() {
+                                desktop.keymaps.remove(*app);
+                            } else {
+                                desktop.keymaps.insert((*app).into(), map);
+                            }
+                        }
+                        None => {
+                            desktop.keymaps.remove(*app);
+                        }
+                    }
+                }
+                // Action ids are dotted: everything after the app is the id.
+                ["keymaps", app, action @ ..] => {
+                    key(app, path)?;
+                    let action = action.join(".");
+                    match value {
+                        Some(value) => {
+                            let chords: Vec<String> = typed(path, value)?;
+                            desktop
+                                .keymaps
+                                .entry((*app).into())
+                                .or_default()
+                                .insert(action, chords);
+                        }
+                        None => {
+                            if let Some(map) = desktop.keymaps.get_mut(*app) {
+                                map.remove(&action);
+                                if map.is_empty() {
+                                    desktop.keymaps.remove(*app);
+                                }
+                            }
+                        }
                     }
                 }
                 _ => return Err(error(path, "Unknown field or scope")),
@@ -719,5 +762,66 @@ mod tests {
             (old.appearance.style, old.appearance.decorations.as_str()),
             (None, "csd")
         );
+    }
+
+    #[test]
+    fn keymaps_apply_per_action_reset_and_leave_the_design_alone() {
+        let current = Desktop::default();
+        assert!(
+            !serde_json::to_string(&current).unwrap().contains("keymaps"),
+            "omitted while empty"
+        );
+        let next = patch(
+            &current,
+            &BTreeMap::from([
+                ("keymaps.dopus.nav.parent".into(), json!(["Ctrl+U"])),
+                ("keymaps.dopus.file.delete".into(), json!([])),
+                ("keymaps.ced.file.save".into(), json!(["Ctrl+S", "F12"])),
+            ]),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(next.keymaps["dopus"]["nav.parent"], ["Ctrl+U"]);
+        assert!(next.keymaps["dopus"]["file.delete"].is_empty(), "unbound");
+        assert_eq!(
+            crate::digest(&resolve(&next).unwrap()).unwrap(),
+            crate::digest(&resolve(&current).unwrap()).unwrap(),
+            "bindings do not touch the effective design"
+        );
+        // Reset one action, then the rest of the app: the map empties away.
+        let one = patch(&next, &BTreeMap::new(), &["keymaps.ced.file.save".into()]).unwrap();
+        assert!(!one.keymaps.contains_key("ced"));
+        let none = patch(&one, &BTreeMap::new(), &["keymaps.dopus".into()]).unwrap();
+        assert_eq!(none, current);
+        // The grammar is checked before acceptance.
+        let bad = patch(
+            &current,
+            &BTreeMap::from([("keymaps.dopus.nav.back".into(), json!(["Hyper+X"]))]),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(resolve(&bad).unwrap_err()[0].path, "keymaps.dopus.nav.back");
+        for (path, value) in [
+            ("keymaps.dopus.nav.back", json!("Ctrl+U")),
+            ("keymaps.bad app.nav.back", json!(["F1"])),
+        ] {
+            assert!(patch(&current, &BTreeMap::from([(path.into(), value)]), &[]).is_err());
+        }
+        // The summary carries them.
+        let summary = serde_json::to_value(Summary::of(&Snapshot {
+            schema: SCHEMA,
+            binding: Binding {
+                instance: "i".into(),
+                profile: "default".into(),
+            },
+            incarnation: "i".into(),
+            revision: Revision(1),
+            design_revision: Revision(1),
+            source_digest: String::new(),
+            desktop: next.clone(),
+            effective: BTreeMap::new(),
+        }))
+        .unwrap();
+        assert_eq!(summary["keymaps"]["dopus"]["nav.parent"], json!(["Ctrl+U"]));
     }
 }
