@@ -165,7 +165,7 @@ fn a_crowded_panel_shrinks_its_tasks_and_stays_on_screen() {
 fn crowded_horizontal_cells_keep_their_floors_and_never_overlap() {
     let source = |template: &str| {
         format!(
-            "---\nscene: 1\nname: crowd\ncitizen: c\n---\n```mix\nroot: {{widget: \"row\", children: [\"list\"]}}\nlist: {{widget: \"list\", flow: \"horizontal\", row: \"cell\", gap: 4, rows: [{{id: \"a\", cells: [\"1\"]}}, {{id: \"b\", cells: [\"2\"]}}, {{id: \"c\", cells: [\"3\"]}}, {{id: \"d\", cells: [\"4\"]}}]}}\ncell: {template}\nlabel: {{widget: \"text\", text: \"{{0}}\"}}\n```\n"
+            "---\nscene: 1\nname: crowd\ncitizen: c\n---\n```mix\nroot: {{widget: \"row\", children: [\"list\"]}}\nlist: {{widget: \"list\", flow: \"horizontal\", row: \"cell\", row_height: 30, gap: 4, rows: [{{id: \"a\", cells: [\"1\"]}}, {{id: \"b\", cells: [\"2\"]}}, {{id: \"c\", cells: [\"3\"]}}, {{id: \"d\", cells: [\"4\"]}}]}}\ncell: {template}\nlabel: {{widget: \"text\", text: \"{{0}}\"}}\n```\n"
         )
     };
     for (template, floor) in [
