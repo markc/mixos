@@ -209,6 +209,8 @@ fn compile(source: &str) -> Option<UnstampedResolvedDesign> {
             .map(design::Mode::from_name)
             .unwrap_or(Some(design::Mode::default()))?,
         contrast: Contrast::default(),
+        // The style the design binds to the scheme.
+        style: None,
         app: None,
     };
     match design::compile_design(&document, context) {
