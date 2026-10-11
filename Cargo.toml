@@ -122,6 +122,15 @@ protocols = { path = "services/compd/crates/protocols" }
 screencopy = { path = "services/compd/crates/screencopy" }
 x11-wm = { path = "services/compd/crates/x11-wm" }
 edges = { path = "services/compd/crates/edges" }
+frames = { path = "services/compd/crates/frames" }
+native = { path = "services/compd/crates/native" }
+nested = { path = "services/compd/crates/nested" }
+outputs = { path = "services/compd/crates/outputs" }
+policy-host = { path = "services/compd/crates/policy-host" }
+recorder = { path = "services/compd/crates/recorder" }
+scenegraph = { path = "services/compd/crates/scenegraph" }
+seat = { path = "services/compd/crates/seat" }
+testkit = { path = "services/compd/crates/testkit" }
 graphics = { path = "services/compd/crates/graphics" }
 kms = { path = "services/compd/crates/kms" }
 ledger = { path = "services/compd/crates/ledger" }
