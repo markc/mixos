@@ -1,4 +1,4 @@
-//! Where each scene draws, and keeping its iced surface in step.
+//! Where each scene draws, and keeping its UI surface in step.
 //!
 //! Placement:
 //! - an EDGE scene is a strip on its page seat's output, docked to its edge,
@@ -11,9 +11,9 @@
 //!   (title bar included, as Quoin's frozen layout measures it), and only
 //!   while shown (`shell.dialog.show`, until `hide` or its close button).
 //!
-//! Each placed scene is one screen-space iced surface in the world surface
+//! Each placed scene is one screen-space UI surface in the world surface
 //! registry, so pointer and keyboard reach it the way they reach every
-//! compositor-owned iced surface. A surface changes only when its scene's
+//! compositor-owned UI surface. A surface changes only when its scene's
 //! revision, frame or rectangle does: a static scene costs no frames.
 
 use std::collections::BTreeMap;
@@ -23,10 +23,10 @@ use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Physical, Point, Rectangle, Size};
-use ui::{HandleId, IcedHandle};
+use ui::{HandleId, UiHandle};
 use world::scene::layer::base::Layer;
 use world::state::Loop;
-use world::surface::draw::handle::handle::{IcedSpace, load};
+use world::surface::draw::handle::handle::{UiSpace, load};
 
 use crate::mount::{dialog_geometry, is_dialog, page_id, scene_edge};
 use crate::seat::Edge;
@@ -292,17 +292,17 @@ fn first_field(tree: &scene::ResolvedScene) -> Option<&str> {
 }
 
 fn viewport_ready(
-    actual: iced_core::Size<u32>,
+    actual: (u32, u32),
     scale: f32,
     wanted: Size<i32, Physical>,
     factor: f32,
 ) -> bool {
-    actual.width == wanted.w.max(1) as u32
-        && actual.height == wanted.h.max(1) as u32
+    actual.0 == wanted.w.max(1) as u32
+        && actual.1 == wanted.h.max(1) as u32
         && scale == factor
 }
 
-/// A scene's live iced surface.
+/// A scene's live UI surface.
 pub(crate) struct Surface {
     handle: HandleId,
     /// The world whose registry holds it (the registry is per world).
@@ -311,7 +311,7 @@ pub(crate) struct Surface {
     revision: u64,
     frame: Option<Frame>,
     rect: Rectangle<i32, Physical>,
-    /// The iced scale factor it lays out at: the output scale, so the UI is
+    /// The UI scale factor it lays out at: the output scale, so the UI is
     /// laid out in logical px and rasterised at physical.
     factor: f32,
     autofocus_done: bool,
@@ -430,8 +430,8 @@ pub(crate) fn reconcile(
     panels: &mut crate::panels::Panels,
     surfaces: &mut BTreeMap<String, Surface>,
     placed: &mut BTreeMap<String, (f32, f32, f32, f32)>,
-    palette: decor::Palette,
-    prepared: Option<Arc<::appearance::settings::Prepared>>,
+    _palette: decor::Palette,
+    prepared: Option<Arc<crate::appearance::Look>>,
     appearance_generation: u64,
     wiring: &Wiring,
     state: &mut Loop,
@@ -605,10 +605,10 @@ pub(crate) fn reconcile(
                         let message =
                             SceneMessage::Replace(content(entry, frame.clone(), dialog, marks));
                         let _ = registry
-                            .dispatch_message(IcedHandle::<SceneUi>::from_id(handle), message);
+                            .dispatch_message(UiHandle::<SceneUi>::from_id(handle), message);
                         registry
                             .set_keyboard_transparent_by_id(handle, !takes_keyboard(entry.tree()));
-                        // The whole surface redraws for new content; iced renders
+                        // The whole surface redraws for new content; UI renders
                         // on the GPU, so nothing is uploaded.
                         ui::source::cost(&source_id(name), 0, area(rect));
                     }
@@ -616,7 +616,7 @@ pub(crate) fn reconcile(
                         && let Some(prepared) = &prepared
                     {
                         let _ = registry.dispatch_message(
-                            IcedHandle::<SceneUi>::from_id(handle),
+                            UiHandle::<SceneUi>::from_id(handle),
                             SceneMessage::Appearance(Arc::clone(prepared)),
                         );
                     }
@@ -627,15 +627,15 @@ pub(crate) fn reconcile(
                 restack |= !dialog;
                 let content = content(entry, frame.clone(), dialog, marks);
                 let ui = prepared.as_ref().map_or_else(
-                    || SceneUi::new(Arc::clone(&content), palette),
-                    |prepared| SceneUi::from_prepared(Arc::clone(&content), Arc::clone(prepared)),
+                    || SceneUi::new(Arc::clone(&content)),
+                    |look| SceneUi::with_look(Arc::clone(&content), Arc::clone(look)),
                 );
                 let handle = load(
                     state,
                     renderer,
                     ui,
                     rect,
-                    IcedSpace::Screen,
+                    UiSpace::Screen,
                     Layer::SCENE.bits(),
                 );
                 if let Some(registry) = state.inner.surface_mut().registry.as_mut() {
@@ -693,7 +693,7 @@ pub(crate) fn reconcile(
         let requested = panels.focus_requested(&target.output) == Some(edge);
         let field = crate::view::autofocus(entry.tree())
             .or_else(|| requested.then(|| first_field(entry.tree())).flatten());
-        // A pending resize invalidates iced's widget cache (and its focus).
+        // A pending resize invalidates UI's widget cache (and its focus).
         // Wait until the instance has applied the final viewport, then focus.
         let ready = state
             .inner
@@ -707,7 +707,7 @@ pub(crate) fn reconcile(
                 {
                     return None;
                 }
-                registry.instance_mut(IcedHandle::<SceneUi>::from_id(handle))
+                registry.instance_mut(UiHandle::<SceneUi>::from_id(handle))
             })
             .is_some_and(|instance| {
                 viewport_ready(
@@ -736,15 +736,14 @@ pub(crate) fn reconcile(
             if let Some(registry) = state.inner.surface_mut().registry.as_mut() {
                 registry.set_keyboard_focus(Some(handle));
                 if let Some(instance) =
-                    registry.instance_mut(IcedHandle::<SceneUi>::from_id(handle))
+                    registry.instance_mut(UiHandle::<SceneUi>::from_id(handle))
                 {
                     // Apply a Replace/Focused queued in this pass before
                     // visiting ids, so the operation targets the current tree.
                     instance.runtime_mut().tick();
                     autofocus_done = if let Some(id) = field {
-                        let mut focus = crate::view::FocusField::new(id);
-                        instance.runtime_mut().operate(&mut focus);
-                        focus.found
+                        let ctx = instance.runtime().context().clone();
+                        instance.ui().focus_field(&ctx, id)
                     } else {
                         true
                     };
@@ -795,7 +794,7 @@ pub(crate) fn reconcile(
     // the docked pages' Top), so a page created after it — an edge docked
     // while the dialog is up — neither covers it nor takes its clicks (the
     // registry hit-tests and draws last-on-top). Raised only when a page was
-    // created, so it never climbs over compositor iced (capture overlays)
+    // created, so it never climbs over compositor UI (capture overlays)
     // opened since.
     let dialogs: Vec<HandleId> = surfaces
         .iter()
@@ -851,7 +850,7 @@ thread_local! {
 struct EdgePrior {
     scene: String,
     handle: HandleId,
-    iced: Option<HandleId>,
+    UI: Option<HandleId>,
     client: Option<WlSurface>,
 }
 
@@ -860,7 +859,7 @@ thread_local! {
 }
 
 fn grab_edge_keyboard(state: &mut Loop, scene: &str, handle: HandleId) {
-    let iced = state
+    let UI = state
         .inner
         .surface()
         .registry
@@ -872,14 +871,14 @@ fn grab_edge_keyboard(state: &mut Loop, scene: &str, handle: HandleId) {
         .and_then(|keyboard| keyboard.current_focus());
     EDGE_PRIOR.with_borrow_mut(|prior| {
         // Moving between edge pages while held preserves the original client.
-        if let Some(prior) = prior.as_mut().filter(|prior| iced == Some(prior.handle)) {
+        if let Some(prior) = prior.as_mut().filter(|prior| UI == Some(prior.handle)) {
             prior.scene = scene.into();
             prior.handle = handle;
         } else {
             *prior = Some(EdgePrior {
                 scene: scene.into(),
                 handle,
-                iced: iced.filter(|id| *id != handle),
+                UI: UI.filter(|id| *id != handle),
                 client,
             });
         }
@@ -912,9 +911,9 @@ pub(crate) fn release_edge_keyboard(state: &mut Loop, scene: &str) {
     {
         return;
     }
-    let iced = prior.iced.filter(|id| registry.contains(*id));
-    registry.set_keyboard_focus(iced);
-    if iced.is_none()
+    let UI = prior.UI.filter(|id| registry.contains(*id));
+    registry.set_keyboard_focus(UI);
+    if UI.is_none()
         && let Some(keyboard) = state.state.seat.seat.get_keyboard()
         && keyboard.current_focus().is_none()
         && let Some(client) = prior.client.filter(|client| client.is_alive())
@@ -928,12 +927,12 @@ pub(crate) fn release_edge_keyboard(state: &mut Loop, scene: &str) {
 }
 
 /// The dialog takes the PRIMARY seat's keyboard off the focused window, as a
-/// click on compositor iced does (native_press focuses `None`) and as a
-/// layer-surface dialog does (the window gets `leave`). The iced registry
+/// click on compositor UI does (native_press focuses `None`) and as a
+/// layer-surface dialog does (the window gets `leave`). The UI registry
 /// focus is set separately; with the seat's focus empty, every later focus
 /// of a window (a click, comp.window.focus, an activation, focus-on-map) is
 /// a real change, and that change clears the registry focus (world
-/// `surface_event`), so a stale iced focus never keeps a window's keys.
+/// `surface_event`), so a stale UI focus never keeps a window's keys.
 fn grab_seat_keyboard(state: &mut Loop, scene: &str) {
     let Some(keyboard) = state.state.seat.seat.get_keyboard() else {
         return;
@@ -1075,16 +1074,15 @@ pub(crate) fn layout(
     let Some(registry) = state.inner.surface_mut().registry.as_mut() else {
         return Ok(reply);
     };
-    let Some(instance) = registry.instance_mut(IcedHandle::<SceneUi>::from_id(surface.handle))
+    let Some(instance) = registry.instance_mut(UiHandle::<SceneUi>::from_id(surface.handle))
     else {
         return Ok(reply);
     };
     let applied = instance.ui().revision();
     let page = crate::view::hex_of(instance.ui().page());
     let factor = instance.runtime().scale_factor() / scale;
-    let mut measure = crate::layout::Measure::default();
-    instance.runtime_mut().operate(&mut measure);
-    let (nodes, instances, chrome) = crate::layout::measured(tree, &measure.found, factor, node);
+    let found = crate::layout::Found::of(instance.ui());
+    let (nodes, instances, chrome) = crate::layout::measured(tree, &found, factor, node);
     reply["visible"] = json!(true);
     reply["applied_revision"] = json!(applied);
     reply["page"] = json!(page);
@@ -1132,19 +1130,19 @@ mod tests {
     fn autofocus_waits_for_physical_viewport_and_output_scale() {
         let wanted = Size::from((1100, 2030));
         assert!(!viewport_ready(
-            iced_core::Size::new(440, 812),
+            (440, 812),
             1.0,
             wanted,
             2.5
         ));
         assert!(!viewport_ready(
-            iced_core::Size::new(1100, 2030),
+            (1100, 2030),
             1.0,
             wanted,
             2.5
         ));
         assert!(viewport_ready(
-            iced_core::Size::new(1100, 2030),
+            (1100, 2030),
             2.5,
             wanted,
             2.5

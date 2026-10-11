@@ -53,7 +53,7 @@ fn ready(request: Request) -> Completion<u64> {
     request.prepare(
         |_, _| {
             Ok(FontSelection {
-                font: crate::iced::Font::DEFAULT,
+                font: crate::UI::Font::DEFAULT,
                 choice: FontChoice::Declared,
             })
         },
@@ -162,7 +162,7 @@ fn current_embedded_fallback_runs_activation_hook_once() {
         .prepare(None, |snapshot, context, _| {
             let appearance = Projection::new(&snapshot.effective[context])?.prepare(|_, _| {
                 Ok(FontSelection {
-                    font: crate::iced::Font::DEFAULT,
+                    font: crate::UI::Font::DEFAULT,
                     choice: FontChoice::Declared,
                 })
             })?;
@@ -200,7 +200,7 @@ fn live_stage_fences_a_ready_fallback_on_the_same_connection() {
         .prepare(None, |snapshot, context, _| {
             let appearance = Projection::new(&snapshot.effective[context])?.prepare(|_, _| {
                 Ok(FontSelection {
-                    font: crate::iced::Font::DEFAULT,
+                    font: crate::UI::Font::DEFAULT,
                     choice: FontChoice::Declared,
                 })
             })?;

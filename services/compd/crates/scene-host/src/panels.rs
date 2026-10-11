@@ -690,7 +690,7 @@ impl Panels {
                     menu.contains(&pointer.output, p.x, p.y)
                 });
                 if inside {
-                    // The menu's iced buttons own this complete click.
+                    // The menu's UI buttons own this complete click.
                     return false;
                 }
                 self.close_menu_at(now);
@@ -849,7 +849,7 @@ impl Panels {
         }
     }
 
-    /// Human and Bus choices share this path. A serial fences queued iced
+    /// Human and Bus choices share this path. A serial fences queued UI
     /// events and agent choices against a dismissed/replaced menu.
     pub fn menu_input(
         &mut self,

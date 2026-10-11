@@ -132,7 +132,7 @@ impl Host {
         output: &str,
         live_generation: Option<u64>,
         settings: Option<&settings::consumer::Evidence>,
-        cache: Option<application::presentation::native::CacheEvidence<'_>>,
+        cache: Option<crate::lane::native::CacheEvidence<'_>>,
         layout: &mut Layout<'_>,
     ) -> Answer {
         if let Err(error) = verify_caller_provenance(request) {
@@ -636,7 +636,7 @@ pub struct SceneHost {
     wiring: Wiring,
     actions: Receiver<Action>,
     menu_surface: Option<crate::menu::Surface>,
-    settings: application::presentation::native::Ui<crate::appearance::Look>,
+    settings: crate::lane::native::Ui<crate::appearance::Look>,
     appearance_generation: u64,
     input_geometry: Option<InputGeometry>,
 }
@@ -1169,7 +1169,7 @@ fn number_argument(args: &Value, name: &str) -> Option<f64> {
 
 /// One scene surface, shaped as comp.props reports a layer surface. Quoin
 /// draws scenes on layer surfaces, so its `surfaces` rows and
-/// `focus.keyboard` name them; compd draws them as screen iced surfaces,
+/// `focus.keyboard` name them; compd draws them as screen UI surfaces,
 /// and without these rows an agent reading comp.props would not see them
 /// at all, and would read the keyboard as still on the window under a
 /// dialog that holds it.

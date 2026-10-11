@@ -1,5 +1,6 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Mix Scenes for compd: the host side of the Mix Scenes contract (Quoin's
-//! `shell.scene.*` verbs), drawn with iced.
+//! `shell.scene.*` verbs), drawn with egui.
 //!
 //! - [`store`]: the transactional verb semantics (revisions, model
 //!   authority, the page registry and the one dialog seat, notices, digest,
@@ -8,7 +9,7 @@
 //!   attestation, receipts, the stale-connection fence, the departure sweep);
 //! - [`port`]: the host's own Bus registration (`shell`) on a
 //!   worker thread;
-//! - [`render`] and [`view`]: placement and the iced surfaces.
+//! - [`render`] and [`view`]: placement and the UI surfaces.
 //!
 //! Opt-in: compd starts the host only when the `scene_host`
 //! preference is on. The engine drives it through four calls, all on the
@@ -22,11 +23,13 @@ use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Physical, Point, Size};
 use world::state::Loop;
 
-mod appearance;
+pub mod appearance;
 pub mod conf;
+mod freedesktop;
 pub mod host;
 mod icons;
 mod images;
+mod lane;
 pub mod layout;
 pub mod menu;
 pub mod mount;
@@ -41,8 +44,6 @@ pub mod templates;
 pub mod verb;
 pub mod view;
 
-#[cfg(test)]
-mod test_renderer;
 
 pub use host::{Host, SceneHost, SceneSurface, Serviced, scene_surface_id};
 pub use port::{DEFAULT_SERVICE, HostConfig, Waker};
@@ -235,7 +236,7 @@ pub fn surfaces(output: &str) -> Vec<SceneSurface> {
 }
 
 /// The comp.props id (`scene:<name>`) of the scene holding the keyboard: the
-/// iced keyboard focus is one of its surfaces, so keys go to it and not to
+/// UI keyboard focus is one of its surfaces, so keys go to it and not to
 /// the window the seat last focused. `None` otherwise; comp.props
 /// `focus.keyboard` reports this ahead of the seat's surface.
 pub fn focused_scene(state: &Loop) -> Option<String> {

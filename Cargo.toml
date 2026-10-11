@@ -5,7 +5,7 @@
 [workspace]
 resolver = "3"
 members = ["libs/*", "services/noded", "services/noded/crates/*", "cli/mix-shell", "services/editd", "services/settingsd", "services/portald", "apps/busviewer", "apps/busviewer/crates/*", "apps/prefs", "apps/prefs/crates/*", "apps/ced", "apps/ced/crates/*", "services/compd/crates/*"]
-exclude = ["vendor", "vendor/msedit/lsh", "vendor/msedit/stdext", "services/compd/crates/scene-host"]
+exclude = ["vendor", "vendor/msedit/lsh", "vendor/msedit/stdext"]
 
 [workspace.package]
 version = "0.1.1"
@@ -133,6 +133,7 @@ outputs = { path = "services/compd/crates/outputs" }
 policy-host = { path = "services/compd/crates/policy-host" }
 recorder = { path = "services/compd/crates/recorder" }
 scenegraph = { path = "services/compd/crates/scenegraph" }
+scene-host = { path = "services/compd/crates/scene-host" }
 seat = { path = "services/compd/crates/seat" }
 testkit = { path = "services/compd/crates/testkit" }
 graphics = { path = "services/compd/crates/graphics" }

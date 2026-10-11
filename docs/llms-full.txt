@@ -1642,6 +1642,7 @@ layering gate.
 | [protocols](https://github.com/markc/mixos/blob/main/services/compd/crates/protocols/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [recorder](https://github.com/markc/mixos/blob/main/services/compd/crates/recorder/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [render-gles](https://github.com/markc/mixos/blob/main/services/compd/crates/render-gles/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [scene-host](https://github.com/markc/mixos/blob/main/services/compd/crates/scene-host/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [scenegraph](https://github.com/markc/mixos/blob/main/services/compd/crates/scenegraph/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [screencopy](https://github.com/markc/mixos/blob/main/services/compd/crates/screencopy/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [seat](https://github.com/markc/mixos/blob/main/services/compd/crates/seat/Cargo.toml) | compd | service | desktop | none | 0.1.1 |

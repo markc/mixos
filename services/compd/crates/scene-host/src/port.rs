@@ -20,7 +20,7 @@ use std::thread;
 use std::time::Duration;
 
 use crate::appearance::Look;
-use application::presentation::native::{
+use crate::lane::native::{
     Event as SettingsEvent, Lane as SettingsLane, Progress, Session, Ui as SettingsUi,
     Worker as SettingsWorker, bridge,
 };
@@ -289,7 +289,7 @@ impl Port {
         self.sink.emit(citizen, verb, body)
     }
 
-    /// A sender for scene events that any thread may hold (the iced
+    /// A sender for scene events that any thread may hold (the UI
     /// surfaces' message handlers).
     pub fn event_sink(&self) -> EventSink {
         self.sink.clone()
@@ -945,17 +945,7 @@ mod tests {
     use super::*;
 
     fn install_settings_fonts() {
-        static FONTS: std::sync::Once = std::sync::Once::new();
-        FONTS.call_once(|| {
-            toolkit::fonts::install(
-                toolkit::fonts::FontSet::new().sans(
-                    include_bytes!("../../../../../vendor/font/Inter-VariableFont_opsz,wght.ttf")
-                        .as_slice(),
-                ),
-                None,
-            )
-            .unwrap();
-        });
+        // egui contexts carry their own fonts; nothing is installed process-wide.
     }
 
     fn settings_drive(

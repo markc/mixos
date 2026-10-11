@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Compositor-owned corner menu. Mode choices use the panel core's SetMode;
 //! extras use the host's existing Bus worker, never a separate transport.
 
@@ -5,20 +6,16 @@ use std::path::Path;
 use std::sync::Arc;
 
 use config::{Value as MixValue, parse as parse_mix_data};
-use decor::{Palette, Srgba};
 use edges::{Corner, PanelMode};
-use iced_core::{Background, Border, Color, Element, Length, Theme};
-use iced_widget::{Column, button, container};
 use serde_json::{Value, json};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::reexports::wayland_server::{Resource, protocol::wl_surface::WlSurface};
 use smithay::utils::{Physical, Rectangle};
-use ui::engine::ui::EventFlags;
-use ui::engine::{IcedUi, Renderer};
-use ui::{HandleId, IcedHandle};
+use ui::UiProgram;
+use ui::{HandleId, UiHandle};
 use world::scene::layer::base::Layer;
 use world::state::Loop;
-use world::surface::draw::handle::handle::{IcedSpace, load};
+use world::surface::draw::handle::handle::{UiSpace, load};
 
 /// Underscores are outside the authored scene-name grammar: no id collision.
 pub const SCENE: &str = "__corner_menu";
@@ -283,173 +280,118 @@ pub enum Input {
 #[derive(Clone, Debug)]
 pub enum Message {
     Replace(Menu),
-    Appearance(Arc<::appearance::settings::Prepared>),
+    Appearance(Arc<crate::appearance::Look>),
     Input(u64, Input),
 }
 
 struct MenuUi {
     menu: Menu,
-    palette: Palette,
-    theme: Theme,
-    prepared: Option<Arc<::appearance::settings::Prepared>>,
-}
-
-fn color(c: Srgba) -> Color {
-    Color::from_rgba(c.r, c.g, c.b, c.a)
+    look: Option<Arc<crate::appearance::Look>>,
+    /// The look installed on the context (its identity).
+    installed: Option<usize>,
 }
 
 impl MenuUi {
-    fn new(menu: Menu, palette: Palette) -> Self {
-        let seed = iced_core::theme::palette::Seed {
-            background: color(palette.base.surface),
-            text: color(palette.base.foreground),
-            primary: color(palette.primary.surface),
-            success: color(palette.primary.surface),
-            warning: color(palette.destructive.surface),
-            danger: color(palette.destructive.surface),
-        };
-        Self {
-            menu,
-            palette,
-            theme: Theme::custom("design", seed),
-            prepared: None,
+    fn new(menu: Menu) -> Self {
+        Self { menu, look: None, installed: None }
+    }
+
+    fn theme(&self) -> Arc<toolkit::theme::Theme> {
+        match &self.look {
+            Some(look) => look.theme.clone(),
+            None => Arc::new(toolkit::theme::Theme::embedded()),
         }
     }
 
-    fn apply_appearance(&mut self, prepared: Arc<::appearance::settings::Prepared>) {
-        (self.palette, self.theme) = crate::appearance::page(&prepared, true);
-        self.prepared = Some(prepared);
+    fn apply_appearance(&mut self, look: Arc<crate::appearance::Look>) {
+        self.look = Some(look);
+        self.installed = None;
     }
 }
 
-impl IcedUi for MenuUi {
+impl UiProgram for MenuUi {
     type Message = Message;
 
-    fn view(&self) -> Element<'_, Message, Theme, Renderer> {
-        let mut rows = Column::new().width(Length::Fill);
-        for (index, item) in self.menu.items.iter().enumerate() {
-            let label = if item.checked {
-                format!("✓  {}", item.label)
-            } else {
-                format!("    {}", item.label)
-            };
-            let selected = self.menu.selected == index && item.enabled();
-            let palette = self.palette;
-            let enabled = item.enabled();
-            let label = self
-                .prepared
-                .as_ref()
-                .and_then(|prepared| prepared.typography().get("ui"))
-                .unwrap_or(toolkit::typography::TextStyle {
-                    font: iced_core::Font::DEFAULT,
-                    size: 13.0,
-                    line_height: None,
-                })
-                .text(label);
-            let mut row = button(label)
-                .width(Length::Fill)
-                .height(ROW_HEIGHT)
-                .padding([4, 8])
-                .style(move |_: &Theme, status| {
-                    let pair = if enabled
-                        && (selected
-                            || matches!(status, button::Status::Hovered | button::Status::Pressed))
-                    {
-                        palette.primary
-                    } else {
-                        palette.base
-                    };
-                    button::Style {
-                        background: Some(Background::Color(color(pair.surface))),
-                        text_color: color(pair.foreground),
-                        ..button::Style::default()
-                    }
-                });
-            if enabled {
-                row = row.on_press(Message::Input(self.menu.serial, Input::Choose(index)));
-            }
-            rows = rows.push(row);
+    fn setup(&mut self, _ctx: &egui::Context) {}
+
+    fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<Message>) {
+        let ctx = ui.ctx().clone();
+        let identity = self.look.as_ref().map_or(0, |look| Arc::as_ptr(look) as usize);
+        let scale = self.look.as_ref().map_or(1.0, |look| look.text_scale);
+        let theme = self.theme();
+        if self.installed != Some(identity) {
+            crate::appearance::install(&ctx, &theme, scale, true);
+            self.installed = Some(identity);
         }
-        let palette = self.palette;
-        let scroll = iced_widget::scrollable(rows).style(move |_: &Theme, _| {
-            use iced_widget::scrollable::{AutoScroll, Rail, Scroller, Style};
-            let border = Border {
-                color: color(palette.border),
-                width: 1.0,
-                ..Border::default()
-            };
-            let rail = Rail {
-                background: Some(Background::Color(color(palette.base.surface))),
-                border,
-                scroller: Scroller {
-                    background: Background::Color(color(palette.secondary.surface)),
-                    border,
-                },
-            };
-            Style {
-                container: container::Style::default(),
-                vertical_rail: rail,
-                horizontal_rail: rail,
-                gap: None,
-                auto_scroll: AutoScroll {
-                    background: Background::Color(color(palette.secondary.surface)),
-                    border,
-                    shadow: iced_core::Shadow::default(),
-                    icon: color(palette.secondary.foreground),
-                },
+        let serial = self.menu.serial;
+        let keys = ctx.input(|input| {
+            [
+                (input.key_pressed(egui::Key::ArrowUp) || input.key_pressed(egui::Key::ArrowLeft), Input::Move(-1)),
+                (input.key_pressed(egui::Key::ArrowDown) || input.key_pressed(egui::Key::ArrowRight), Input::Move(1)),
+                (input.key_pressed(egui::Key::Enter), Input::Activate),
+                (input.key_pressed(egui::Key::Escape), Input::Close),
+            ]
+        });
+        for (pressed, input) in keys {
+            if pressed {
+                emit.push(Message::Input(serial, input));
+            }
+        }
+        let palette = crate::appearance::page(&theme, true);
+        let base = crate::view::colour(palette.base.surface);
+        let ink = crate::view::colour(palette.base.foreground);
+        let border = crate::view::colour(palette.border);
+        let full = ui.max_rect();
+        ui.painter().rect_filled(full, 0.0, base);
+        ui.painter().rect_stroke(full, 0.0, egui::Stroke::new(1.0, border), egui::StrokeKind::Inside);
+        let size = design::active_typography(Some(theme.typography()), design::TypographyRole::Ui).font_size as f32
+            * scale;
+        let size = if size > 0.0 { size } else { crate::view::TEXT_SIZE * scale };
+        let inner = full.shrink(PADDING);
+        egui::ScrollArea::vertical().show_viewport(ui, |ui, _viewport| {
+            let (rows, _) = ui.allocate_exact_size(
+                egui::vec2(inner.width(), ROW_HEIGHT * self.menu.items.len() as f32),
+                egui::Sense::hover(),
+            );
+            for (index, item) in self.menu.items.iter().enumerate() {
+                let rect = egui::Rect::from_min_size(
+                    egui::pos2(rows.left(), rows.top() + index as f32 * ROW_HEIGHT),
+                    egui::vec2(rows.width(), ROW_HEIGHT),
+                );
+                let enabled = item.enabled();
+                let response = ui.interact(
+                    rect,
+                    egui::Id::new(("corner-menu", index)),
+                    if enabled { egui::Sense::click() } else { egui::Sense::hover() },
+                );
+                let lit = enabled && (self.menu.selected == index || response.hovered());
+                let pair = if lit { palette.primary } else { palette.base };
+                ui.painter().rect_filled(rect, 0.0, crate::view::colour(pair.surface));
+                let label = if item.checked { format!("✓  {}", item.label) } else { format!("    {}", item.label) };
+                let colour = if lit { crate::view::colour(pair.foreground) } else { ink };
+                ui.painter().text(
+                    egui::pos2(rect.left() + 8.0, rect.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    label,
+                    egui::FontId::proportional(size),
+                    if enabled { colour } else { colour.gamma_multiply(0.5) },
+                );
+                if response.clicked() {
+                    emit.push(Message::Input(serial, Input::Choose(index)));
+                }
             }
         });
-        container(scroll)
-            .padding(PADDING)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(move |_: &Theme| container::Style {
-                background: Some(Background::Color(color(palette.base.surface))),
-                text_color: Some(color(palette.base.foreground)),
-                border: Border {
-                    color: color(palette.border),
-                    width: 1.0,
-                    ..Border::default()
-                },
-                ..container::Style::default()
-            })
-            .into()
     }
 
     fn update(&mut self, message: Message) {
         match message {
             Message::Replace(menu) => self.menu = menu,
-            Message::Appearance(prepared) => self.apply_appearance(prepared),
+            Message::Appearance(look) => self.apply_appearance(look),
             Message::Input(serial, Input::Move(direction)) if serial == self.menu.serial => {
                 self.menu.navigate(direction.signum())
             }
             _ => {}
         }
-    }
-
-    fn theme(&self) -> Theme {
-        self.theme.clone()
-    }
-    fn subscribe(&self) -> EventFlags {
-        EventFlags::KEYBOARD
-    }
-    fn event_process(&self, event: &iced_core::Event) -> Vec<Message> {
-        use iced_core::keyboard::{Event, Key, key::Named};
-        let iced_core::Event::Keyboard(Event::KeyPressed {
-            key: Key::Named(key),
-            ..
-        }) = event
-        else {
-            return Vec::new();
-        };
-        let input = match key {
-            Named::ArrowUp | Named::ArrowLeft => Input::Move(-1),
-            Named::ArrowDown | Named::ArrowRight => Input::Move(1),
-            Named::Enter => Input::Activate,
-            Named::Escape => Input::Close,
-            _ => return Vec::new(),
-        };
-        vec![Message::Input(self.menu.serial, input)]
     }
 }
 
@@ -459,7 +401,7 @@ pub(crate) struct Surface {
     menu: Menu,
     rect: Rectangle<i32, Physical>,
     factor: f32,
-    prior_iced: Option<HandleId>,
+    prior_ui: Option<HandleId>,
     prior_client: Option<WlSurface>,
     appearance_generation: u64,
 }
@@ -475,8 +417,8 @@ impl Surface {
 pub(crate) fn reconcile(
     panels: &mut crate::panels::Panels,
     live: &mut Option<Surface>,
-    palette: Palette,
-    prepared: Option<Arc<::appearance::settings::Prepared>>,
+    _palette: decor::Palette,
+    prepared: Option<Arc<crate::appearance::Look>>,
     appearance_generation: u64,
     wiring: &crate::render::Wiring,
     state: &mut Loop,
@@ -517,7 +459,7 @@ pub(crate) fn reconcile(
                 let held = registry.keyboard_focus() == Some(surface.handle);
                 registry.destroy_by_id(surface.handle);
                 if held {
-                    let prior = surface.prior_iced.filter(|id| registry.contains(*id));
+                    let prior = surface.prior_ui.filter(|id| registry.contains(*id));
                     registry.set_keyboard_focus(prior);
                     if prior.is_none()
                         && let Some(keyboard) = state.state.seat.seat.get_keyboard()
@@ -560,7 +502,7 @@ pub(crate) fn reconcile(
         }
         if surface.menu != menu {
             let _ = registry.dispatch_message(
-                IcedHandle::<MenuUi>::from_id(surface.handle),
+                UiHandle::<MenuUi>::from_id(surface.handle),
                 Message::Replace(menu.clone()),
             );
         }
@@ -568,7 +510,7 @@ pub(crate) fn reconcile(
             && let Some(prepared) = &prepared
         {
             let _ = registry.dispatch_message(
-                IcedHandle::<MenuUi>::from_id(surface.handle),
+                UiHandle::<MenuUi>::from_id(surface.handle),
                 Message::Appearance(Arc::clone(prepared)),
             );
             surface.appearance_generation = appearance_generation;
@@ -583,7 +525,7 @@ pub(crate) fn reconcile(
         surface.factor = factor;
         return;
     }
-    let prior_iced = state
+    let prior_ui = state
         .inner
         .surface()
         .registry
@@ -605,14 +547,14 @@ pub(crate) fn reconcile(
         state,
         renderer,
         {
-            let mut ui = MenuUi::new(menu.clone(), palette);
+            let mut ui = MenuUi::new(menu.clone());
             if let Some(prepared) = &prepared {
                 ui.apply_appearance(Arc::clone(prepared));
             }
             ui
         },
         rect,
-        IcedSpace::Screen,
+        UiSpace::Screen,
         Layer::SCENE.bits(),
     );
     if let Some(registry) = state.inner.surface_mut().registry.as_mut() {
@@ -633,7 +575,7 @@ pub(crate) fn reconcile(
         menu,
         rect,
         factor,
-        prior_iced,
+        prior_ui,
         prior_client,
         appearance_generation,
     });
@@ -654,36 +596,15 @@ mod tests {
             (800.0, 600.0),
             4.0,
         );
-        let mut ui = MenuUi::new(
-            menu,
-            decor::ChromeTheme::from_source(decor::ChromeStyle::Mac, None).palette,
-        );
+        let mut ui = MenuUi::new(menu);
         ui.update(Message::Input(42, Input::Move(1)));
         let old = ui.menu.clone();
-        ui.update(Message::Appearance(crate::appearance::fixture(
-            "light", 1.0,
-        )));
-        let page = ui.palette.base;
-        let identity = ui.theme.to_string();
+        ui.update(Message::Appearance(crate::appearance::fixture("light", 1.0)));
+        let light = crate::appearance::page(&ui.theme(), true).base;
         ui.update(Message::Appearance(crate::appearance::fixture("dark", 1.5)));
-        assert_eq!(ui.menu, old);
-        assert_ne!(ui.palette.base, page);
-        assert_ne!(ui.theme.to_string(), identity);
-        assert_eq!(
-            ui.prepared
-                .as_ref()
-                .unwrap()
-                .typography()
-                .get("ui")
-                .unwrap()
-                .size,
-            crate::appearance::fixture("light", 1.0)
-                .typography()
-                .get("ui")
-                .unwrap()
-                .size
-                * 1.5
-        );
+        assert_eq!(ui.menu, old, "a new look keeps the menu and its selection");
+        assert_ne!(crate::appearance::page(&ui.theme(), true).base, light);
+        assert_eq!(ui.look.as_ref().unwrap().text_scale, 1.5);
     }
 
     #[test]
