@@ -19,9 +19,10 @@ rule and the Bus verbs.
 | Transport | TCP on the loopback interface, one port per application. The bridge keeps one connection open and reuses it. |
 | Framing | One JSON object per line, UTF-8, `\n`-terminated (a trailing `\r` is ignored). A line is at most `max_line` bytes. |
 | Auth (`auth: "token"`) | The first line on every connection is `{"id":"auth","method":"auth","params":{"token":"<64 hex>"}}`. The application replies `{"id":"auth","ok":true,...}` or refuses and closes. The bridge sends nothing else until that reply is ok. |
-| No auth (`auth: "none"`) | Requests start at once. An application that receives an `auth` line it does not expect should refuse it and close. |
+| No auth (`auth: "none"`) | Requests start at once. An application that receives an `auth` line it does not expect should refuse it and close. Any local process can use such a port while it is open. |
 | Request | `{"id":N,"method":"<name>","params":{...}}`, `N` a number the bridge increments per request. |
 | Reply | `{"id":N,"ok":true,"result":<any JSON>}` or `{"id":N,"ok":false,"error":"<text>"}`, matched to the request by `id`. Lines that are not JSON or carry another `id` are skipped. A reply without a boolean `ok` is a transport failure. |
+| Port squatting (residual) | Loopback TCP cannot prove who listens. If the application dies, a local process that binds its port before it returns receives the token on the bridge's next reconnect, and can then impersonate the application to the bridge and use the token on the real one. A unix-socket control channel checked by owner would close this; it is a possible future protocol option. |
 | Methods the named verbs use | `engine.commands`, `engine.execute` (`{command, params}`), `ui.inspect`, `ui.screenshot` (`{path?, focus?}`). An application without one of them answers `ok:false`; `<app>.call` reaches any other method. |
 
 ## Bus verbs
@@ -45,7 +46,7 @@ the token.
 | 0 | The app replied `ok:true` | its `result` as JSON |
 | 10 | The app replied `ok:false` | its `error` text |
 | 11 | Connect, auth, transport or timeout failure, or backing off after one | text saying which |
-| 12 | A bad request from the caller (missing field, body not a JSON object) | text naming the field |
+| 12 | A bad request from the caller (missing field, body not a JSON object, an encoded request over `max_line`) | text naming the problem |
 
 Every call has one transport deadline, `timeout_s`, starting when the call
 does. Connect, the auth line and its reply, and the request and its reply
@@ -99,7 +100,7 @@ timeout_s: 20
 | `timeout_s` | number | 5 | (0, 300]: the whole-call deadline |
 | `connect_timeout_s` | number | 2 | (0, 300]: the connect step, within the deadline |
 | `backoff_s` | number | 2 | [0, 300]: the pause after a transport failure |
-| `max_line` | integer | 1048576 | 64–16777216 bytes per reply line |
+| `max_line` | integer | 1048576 | 64–16777216 bytes per line, both ways: a longer reply is a transport failure (rc 11); a longer request is refused before it is sent (rc 12) |
 | `instance` | string | — | 1–64 of `[A-Za-z0-9_-]`; echoed by `status` so a launcher can recognise its own bridge |
 
 Unknown keys are refused, so a typo never falls back to a default. The token
@@ -152,6 +153,21 @@ systemd signals both processes, and Mix records the SIGTERM the parent gets
 and exits 143 whatever the child returned, so the unit lists
 `SuccessExitStatus=143`. `$BRIDGED_MIX` overrides the mix binary the child
 runs under (default `/opt/mixos/bin/mix`); it exists for tests.
+
+Starting `mix --serve bridged.mix --name <app>` directly, not through
+`--start`, registers the name on the Bus before the checks run, so a
+refused name holds a free Bus name for a moment before the process exits.
+`--start` (the unit) is the supported path. The reverse collision, a verb
+registered later whose first segment is an instance already running, is
+the verb-registry gate's to refuse, not the bridge's: the bridge checks only
+at start.
+
+The unit is sandboxed: no capabilities or new privileges, the file system
+read-only with private `/tmp` and `/var/tmp` (config and token files must
+live elsewhere), address families limited to IPv4, IPv6 and unix sockets,
+and IP traffic to loopback only (`IPAddressAllow=localhost`,
+`IPAddressDeny=any`). A Bus endpoint off loopback needs a drop-in adding its
+address to `IPAddressAllow`.
 
 `--start` outside systemd has no parent-death protection: killing the
 `--start` process alone can orphan the serve child. Run it under the unit,

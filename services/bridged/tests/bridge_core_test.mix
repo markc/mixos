@@ -290,10 +290,22 @@ try
   $S = $r.st
   check("no ok: a fresh connection after backoff", $r.rc == 0 and $S.connects == 4)
 
+  -- Requests are bounded by max_line, like replies: an oversize one is the
+  -- caller's error (rc 12) and never touches the connection.
+  $connects = $S.connects
+  $r = $core.call($S, "echo", {blob: repeat("x", $S.cfg.max_line)})
+  $S = $r.st
+  check("max_line: a request over max_line is rc 12 (" .. ($r.error ?? "") .. ")", $r.rc == 12 and contains($r.error ?? "", "over max_line"))
+  check("max_line: the connection is untouched", $S.connected and $S.connects == $connects)
+  $r = $core.call($S, "echo", {blob: repeat("x", $S.cfg.max_line - 100)})
+  $S = $r.st
+  check("max_line: a request just under max_line is sent", $r.rc == 0 and len($r.result.blob) == $S.cfg.max_line - 100)
+
   -- Writes are bounded by timeout_s (1 s here): tcp_send gets the time left.
-  -- The request is far bigger than the loopback socket buffers, so it can only
-  -- finish if the app reads it.
-  $big = {blob: repeat("x", 32 * 1048576)}
+  -- The request (12 MiB, under a raised max_line) is far bigger than the
+  -- loopback socket buffers, so it can only finish if the app reads it.
+  $S = merge($S, {cfg: merge($S.cfg, {max_line: 16777216})})
+  $big = {blob: repeat("x", 12 * 1048576)}
   for each $reader in ["stall", "trickle"]
     $r = $core.call($S, $reader, {})
     $S = $r.st
@@ -311,7 +323,7 @@ try
     $S = $r.st
     check($reader .. ": a normal call works after the backoff, on a new connection", $r.rc == 0 and $S.connects == $connects + 1)
   end
-  -- A budget spent on local work (encoding 32 MiB) before the write: refused
+  -- A budget spent on local work (encoding 12 MiB) before the write: refused
   -- without writing, the connection dropped.
   $tiny = merge($S, {cfg: merge($S.cfg, {timeout_s: 0.001})})
   $r = $core.call($tiny, "echo", $big)

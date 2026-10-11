@@ -84,7 +84,7 @@ send fakeapp fakeapp.call body='{"method":"echo","params":{"a":1}}'
 | 0 | The app did it; the body is its result as JSON. |
 | 10 | The app refused; the body is its error text. |
 | 11 | The app could not be reached: connect, auth, transport or timeout, or the bridge is backing off after one. |
-| 12 | The request was wrong: a missing field, or a body that is not a JSON object. |
+| 12 | The request was wrong: a missing field, a body that is not a JSON object, or a request longer than `max_line` (1 MiB by default). |
 
 The bridge keeps one connection open. If the application goes away, calls
 answer rc 11, the bridge waits `backoff_s` (default 2 seconds), then
@@ -120,10 +120,25 @@ Read this before bridging an application.
   `localhost`, and connects to `127.0.0.1` for either.
   An `auth: "none"` port is open to every local process while the
   application runs, Bus or no Bus; open it only for applications you bridge.
+- **A local process can squat the port.** If the application dies, any
+  local process that binds its port before it comes back receives the
+  token on the bridge's next reconnect, and can then pass itself off as the
+  application to the bridge, and use the token against the real application
+  once it returns. Loopback TCP has no way to prove who is listening; a
+  unix-socket control channel, checked by owner, would close this, and is a
+  possible future protocol option. Until then, bridge applications only on
+  machines whose local users you trust.
 - **The unit's environment is the administrator's.** Keep
   `/etc/mixos/bridge/<app>.env` and the config writable only by root:
   whoever can change them (`BRIDGED_MIX` in particular) picks the code that
   runs as `mixos`.
+- **The unit is sandboxed.** It runs without capabilities or new
+  privileges, sees the file system read-only (homes included) with private
+  `/tmp` and `/var/tmp`, and may send IP traffic to loopback only. So keep
+  the config and the token file out of `/tmp` and `/var/tmp`, where the unit
+  cannot see them. A Bus that is not on loopback (for example a session
+  broker at `ws://<container-ip>:<port>`) needs a drop-in, `systemctl edit
+  bridged@<app>`, adding `IPAddressAllow=<broker-ip>` under `[Service]`.
 - **The name cannot shadow a system service.** The start checks refuse a
   name that a registered verb already starts with, and the Bus itself refuses
   a name that is already registered.

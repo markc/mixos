@@ -260,9 +260,10 @@ rule and the Bus verbs.</p>
 <tr><td>Transport</td><td>TCP on the loopback interface, one port per application. The bridge keeps one connection open and reuses it.</td></tr>
 <tr><td>Framing</td><td>One JSON object per line, UTF-8, <code>\n</code>-terminated (a trailing <code>\r</code> is ignored). A line is at most <code>max_line</code> bytes.</td></tr>
 <tr><td>Auth (<code>auth: "token"</code>)</td><td>The first line on every connection is <code>{"id":"auth","method":"auth","params":{"token":"&lt;64 hex&gt;"}}</code>. The application replies <code>{"id":"auth","ok":true,...}</code> or refuses and closes. The bridge sends nothing else until that reply is ok.</td></tr>
-<tr><td>No auth (<code>auth: "none"</code>)</td><td>Requests start at once. An application that receives an <code>auth</code> line it does not expect should refuse it and close.</td></tr>
+<tr><td>No auth (<code>auth: "none"</code>)</td><td>Requests start at once. An application that receives an <code>auth</code> line it does not expect should refuse it and close. Any local process can use such a port while it is open.</td></tr>
 <tr><td>Request</td><td><code>{"id":N,"method":"&lt;name&gt;","params":{...}}</code>, <code>N</code> a number the bridge increments per request.</td></tr>
 <tr><td>Reply</td><td><code>{"id":N,"ok":true,"result":&lt;any JSON&gt;}</code> or <code>{"id":N,"ok":false,"error":"&lt;text&gt;"}</code>, matched to the request by <code>id</code>. Lines that are not JSON or carry another <code>id</code> are skipped. A reply without a boolean <code>ok</code> is a transport failure.</td></tr>
+<tr><td>Port squatting (residual)</td><td>Loopback TCP cannot prove who listens. If the application dies, a local process that binds its port before it returns receives the token on the bridge's next reconnect, and can then impersonate the application to the bridge and use the token on the real one. A unix-socket control channel checked by owner would close this; it is a possible future protocol option.</td></tr>
 <tr><td>Methods the named verbs use</td><td><code>engine.commands</code>, <code>engine.execute</code> (<code>{command, params}</code>), <code>ui.inspect</code>, <code>ui.screenshot</code> (<code>{path?, focus?}</code>). An application without one of them answers <code>ok:false</code>; <code>&lt;app&gt;.call</code> reaches any other method.</td></tr>
 </tbody></table>
 <h2 id="bus-verbs">Bus verbs</h2>
@@ -281,7 +282,7 @@ the token.</p>
 <tr><td>0</td><td>The app replied <code>ok:true</code></td><td>its <code>result</code> as JSON</td></tr>
 <tr><td>10</td><td>The app replied <code>ok:false</code></td><td>its <code>error</code> text</td></tr>
 <tr><td>11</td><td>Connect, auth, transport or timeout failure, or backing off after one</td><td>text saying which</td></tr>
-<tr><td>12</td><td>A bad request from the caller (missing field, body not a JSON object)</td><td>text naming the field</td></tr>
+<tr><td>12</td><td>A bad request from the caller (missing field, body not a JSON object, an encoded request over <code>max_line</code>)</td><td>text naming the problem</td></tr>
 </tbody></table>
 <p>Every call has one transport deadline, <code>timeout_s</code>, starting when the call
 does. Connect, the auth line and its reply, and the request and its reply
@@ -324,7 +325,7 @@ timeout_s: 20
 <tr><td><code>timeout_s</code></td><td>number</td><td>5</td><td>(0, 300]: the whole-call deadline</td></tr>
 <tr><td><code>connect_timeout_s</code></td><td>number</td><td>2</td><td>(0, 300]: the connect step, within the deadline</td></tr>
 <tr><td><code>backoff_s</code></td><td>number</td><td>2</td><td>[0, 300]: the pause after a transport failure</td></tr>
-<tr><td><code>max_line</code></td><td>integer</td><td>1048576</td><td>64–16777216 bytes per reply line</td></tr>
+<tr><td><code>max_line</code></td><td>integer</td><td>1048576</td><td>64–16777216 bytes per line, both ways: a longer reply is a transport failure (rc 11); a longer request is refused before it is sent (rc 12)</td></tr>
 <tr><td><code>instance</code></td><td>string</td><td>—</td><td>1–64 of <code>[A-Za-z0-9_-]</code>; echoed by <code>status</code> so a launcher can recognise its own bridge</td></tr>
 </tbody></table>
 <p>Unknown keys are refused, so a typo never falls back to a default. The token
@@ -370,6 +371,19 @@ systemd signals both processes, and Mix records the SIGTERM the parent gets
 and exits 143 whatever the child returned, so the unit lists
 <code>SuccessExitStatus=143</code>. <code>$BRIDGED_MIX</code> overrides the mix binary the child
 runs under (default <code>/opt/mixos/bin/mix</code>); it exists for tests.</p>
+<p>Starting <code>mix --serve bridged.mix --name &lt;app&gt;</code> directly, not through
+<code>--start</code>, registers the name on the Bus before the checks run, so a
+refused name holds a free Bus name for a moment before the process exits.
+<code>--start</code> (the unit) is the supported path. The reverse collision, a verb
+registered later whose first segment is an instance already running, is
+the verb-registry gate's to refuse, not the bridge's: the bridge checks only
+at start.</p>
+<p>The unit is sandboxed: no capabilities or new privileges, the file system
+read-only with private <code>/tmp</code> and <code>/var/tmp</code> (config and token files must
+live elsewhere), address families limited to IPv4, IPv6 and unix sockets,
+and IP traffic to loopback only (<code>IPAddressAllow=localhost</code>,
+<code>IPAddressDeny=any</code>). A Bus endpoint off loopback needs a drop-in adding its
+address to <code>IPAddressAllow</code>.</p>
 <p><code>--start</code> outside systemd has no parent-death protection: killing the
 <code>--start</code> process alone can orphan the serve child. Run it under the unit,
 whose control group holds both. <code>BRIDGED_MIX</code> and the instance's <code>.env</code> file
