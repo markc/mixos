@@ -442,7 +442,10 @@ impl<S> Registry<S> {
             |s: &KeyboardShortcut| s.logical_key == *key && modifiers.matches_exact(s.modifiers);
         self.commands.iter().find(|c| {
             c.shortcut.as_ref().is_some_and(pressed)
-                || self.extras.get(c.id).is_some_and(|more| more.iter().any(pressed))
+                || self
+                    .extras
+                    .get(c.id)
+                    .is_some_and(|more| more.iter().any(pressed))
         })
     }
 
@@ -821,7 +824,13 @@ mod tests {
         // Reset takes Ctrl+B; Bump keeps Ctrl+U, promoted to its accelerator.
         let notes = r.rebind(&overrides(&[("count.reset", &["Ctrl+B", "F9"])]));
         assert!(notes.is_empty(), "{notes:?}");
-        assert_eq!(r.shortcuts_of("count.reset"), [ctrl(Key::B), KeyboardShortcut::new(Modifiers::NONE, Key::F9)]);
+        assert_eq!(
+            r.shortcuts_of("count.reset"),
+            [
+                ctrl(Key::B),
+                KeyboardShortcut::new(Modifiers::NONE, Key::F9)
+            ]
+        );
         assert_eq!(r.get("count.bump").unwrap().shortcut, Some(ctrl(Key::U)));
         assert_eq!(fired_key(&r, &s, ctrl(Key::B)), ["count.reset"]);
         let d = r.describe(&s, &Strings::new(FTL));
@@ -842,7 +851,11 @@ mod tests {
         assert!(r.shortcuts_of("count.reset").is_empty());
     }
 
-    fn fired_key(r: &Registry<Counter>, s: &Counter, shortcut: KeyboardShortcut) -> Vec<&'static str> {
+    fn fired_key(
+        r: &Registry<Counter>,
+        s: &Counter,
+        shortcut: KeyboardShortcut,
+    ) -> Vec<&'static str> {
         let ctx = egui::Context::default();
         let mut out = Vec::new();
         let mut output = ctx.run_ui(
