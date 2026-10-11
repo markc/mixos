@@ -204,18 +204,29 @@ fn bus_and_ui_wakes_schedule_frames_without_input_even_when_paced() {
         data.engine.dispatch.schedule_redraw(RedrawReason::Ui);
     })
     .unwrap();
-    let flags = ui::engine::DirtyFlags::new();
-    let worker_flags = flags.clone();
-    let worker = std::thread::spawn(move || worker_flags.request_redraw());
+    // A UI runtime asked for a repaint from another thread (an image decoded,
+    // a timer fired) wakes the loop through that source.
+    struct Idle;
+    impl ui::UiProgram for Idle {
+        type Message = ();
+        fn show(&mut self, _ui: &mut egui::Ui, _emit: &mut Vec<()>) {}
+        fn update(&mut self, _message: ()) {}
+        fn setup(&mut self, _ctx: &egui::Context) {}
+    }
+    let mut runtime = ui::UiRuntime::headless(Idle, (64, 64), 1.0);
+    runtime.tick();
+    runtime.acknowledge_frame();
+    let remote = runtime.context().clone();
+    let worker = std::thread::spawn(move || remote.request_repaint());
     let frames = data.engine.frames;
     event_loop
         .dispatch(Duration::from_secs(1), &mut data)
         .unwrap();
-    assert!(flags.redraw_pending());
+    worker.join().unwrap();
+    assert!(runtime.has_queued(), "the repaint is pending for the next pass");
     event_loop
         .dispatch(Duration::from_secs(1), &mut data)
         .unwrap();
-    worker.join().unwrap();
     assert_eq!(data.engine.frames, frames + 1);
 
     // A page rasterised into a pipelined UI texture may still owe publication

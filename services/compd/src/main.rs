@@ -129,12 +129,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
          environment/patches/README.md"
     );
 
-    // Install the UI fonts (the pinned asset set, else the embedded Inter) into
-    // UI's lazy global font system while it is still untouched — before any
-    // engine/surface exists — so the generic families resolve to the set's
-    // faces even on systems with no fonts.
-    ui::font::default::base::install();
-
     // Arm the persistence engine (spawn its writer thread) before any world flushes.
     slots::persist::engine::base::init();
     info!(
@@ -242,13 +236,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // here so the slot exists. wgpu runs on GL over the renderer's own EGL
     // context, which only exists with that context current, so the scene's GLES
     // phase fills this slot on the first frame (`scene.frame` `gpu::ensure_gpu`)
-    // along with the engine, the capture registry and every world's UI
+    // along with the capture registry and every world's UI
     // registry.
     kernel_data.insert(&world::surface::system::base::UI_CONTEXT, None);
-    // The one UI renderer, filled by `ensure_engine` in the same pass that
-    // fills the context above. Seeded here for the same reason: a slot must exist
-    // before it can be written.
-    kernel_data.insert(&world::surface::system::base::UI_ENGINE, None);
     // The effects host. `NullEffects` by default: the scene asks
     // it for elements every output frame and gets none. An effects crate (Bevy, or
     // anything else) installs its own host here instead.
