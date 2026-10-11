@@ -20,8 +20,9 @@
 //! A pass's texture changes are applied to the painter as the pass runs, not
 //! when it is painted: the shapes kept for the next paint are always the
 //! latest pass's, and they reference exactly the textures that leaves alive.
-//! A runtime without a GPU (unit tests) merges them instead, and so does a
-//! pass outside a frame until the next one inside it.
+//! A runtime without a GPU (unit tests) merges them instead; a pass outside
+//! a frame keeps its changes, whole and in order, for the next pass or
+//! paint inside one.
 
 use std::time::{Duration, Instant};
 
@@ -122,11 +123,15 @@ pub struct UiRuntime<P: UiProgram> {
     last: Option<Pass>,
     gpu: Option<Gpu>,
     painter: Option<Painter>,
-    /// Texture changes not yet on the GPU, merged in order: a runtime with
-    /// no GPU (tests) keeps them, one that ran a pass outside a frame
-    /// (`tick_offscreen`) applies them in its next pass inside one.
+    /// Texture changes of a runtime with no GPU (tests), merged.
     unapplied: TexturesDelta,
-    /// A pass is running outside a frame: textures wait in `unapplied`.
+    /// Each pass's texture changes from passes run outside a frame
+    /// (`tick_offscreen`), kept whole and in order, so the next pass or
+    /// paint inside a frame applies them one by one exactly as if each pass
+    /// had run there: a texture a pass uploads and frees (frees come after
+    /// painting) is still there for that pass's paint.
+    held: Vec<TexturesDelta>,
+    /// A pass is running outside a frame: its textures wait in `held`.
     offscreen: bool,
     wake: RuntimeWake,
     started: Instant,
@@ -137,6 +142,9 @@ impl<P: UiProgram> Drop for UiRuntime<P> {
     fn drop(&mut self) {
         // epaint asserts a delta is not dropped unapplied.
         self.unapplied.clear();
+        for delta in &mut self.held {
+            delta.clear();
+        }
     }
 }
 
@@ -192,6 +200,7 @@ impl<P: UiProgram> UiRuntime<P> {
             gpu,
             painter: None,
             unapplied: TexturesDelta::default(),
+            held: Vec::new(),
             offscreen: false,
             wake,
             started: Instant::now(),
@@ -326,9 +335,8 @@ impl<P: UiProgram> UiRuntime<P> {
         if self.offscreen || self.gpu.is_none() {
             return;
         }
-        let held = std::mem::take(&mut self.unapplied);
-        if !held.set.is_empty() || !held.free.is_empty() {
-            self.apply_textures(held);
+        for delta in std::mem::take(&mut self.held) {
+            self.apply_textures(delta);
         }
     }
 
@@ -387,7 +395,7 @@ impl<P: UiProgram> UiRuntime<P> {
 
     fn apply_textures(&mut self, textures: TexturesDelta) {
         match &self.gpu {
-            Some(_) if self.offscreen => merge(&mut self.unapplied, textures),
+            Some(_) if self.offscreen => self.held.push(textures),
             Some(gpu) => {
                 let painter = self
                     .painter
