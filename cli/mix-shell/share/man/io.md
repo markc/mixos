@@ -1056,6 +1056,54 @@ for each $p in walk("/srv")
 end
 ```
 
+## File types — `mime_type` (v0.113.0)
+
+```
+mime_type(path[, {content}]) -> {mime, by, uncertain, exists, parents}
+```
+
+The type the desktop gives a file, from the freedesktop shared-mime-info
+database (`globs2`, `magic`, `aliases` and `subclasses` under each
+`$XDG_DATA_HOME` and `$XDG_DATA_DIRS` `mime` directory), decided by GLib's
+rules, so it agrees with the file manager and `gio info`:
+
+1. a directory or other non-regular file is its `inode/*` type, and an empty
+   file is `application/x-zerosize`;
+2. one glob match is the answer;
+3. otherwise the content decides: a magic rule, or `text/plain` when it reads
+   as text;
+4. among several glob matches, a magic match of priority 80 or more wins,
+   else the first glob type that is a subtype of the sniffed one.
+
+- `by` says which: `stat`, `glob`, `magic`, `content` (empty, or text) or
+  `fallback` (`application/octet-stream`).
+- `parents` lists every supertype, nearest first, ending `text/plain` for
+  `text/*` and `application/octet-stream` for anything but `inode/*`. Ask
+  `contains($r.parents, "text/plain")` to know whether a type is text.
+- `{content: false}` never opens the file: names only.
+- A missing path is typed by its name, with `exists: false`; so is a file the
+  script may not read, with `uncertain: true`.
+- Symlinks are followed. The database is read once and again whenever one of
+  its directories changes, so a newly installed application's types appear
+  without a restart.
+
+```mix
+$r = mime_type("/etc/hosts")
+print($r.mime .. " by " .. $r.by)
+if contains($r.parents, "text/plain") then
+  print("text")
+end
+```
+
+One known limit: a database pattern using POSIX bracket classes (such as
+`[[:alpha:]]`) is matched with Unicode's character predicates, not the
+locale's tables, so a rare character can be typed differently from GIO. The
+stock freedesktop database uses only plain ASCII ranges.
+
+Not `xdg-mime query filetype`: outside GNOME and KDE that asks libmagic's
+`file`, which names many types differently (a Markdown file is
+`text/plain` there and `text/markdown` here).
+
 ## Path-string helpers (pure, no filesystem)
 
 These operate purely on the path *string* — they never touch disk, so they work

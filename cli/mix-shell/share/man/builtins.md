@@ -1,8 +1,8 @@
 # Builtin index
 
-Every Mix builtin grouped by category, generated from `mix builtins` (mix 0.112.1). See the linked topical page for prose and examples; `mix what NAME` prints a one-line description of any single builtin (or keyword), and `mix help` prints the compact names-only summary of the same ten categories.
+Every Mix builtin grouped by category, generated from `mix builtins` (mix 0.113.0). See the linked topical page for prose and examples; `mix what NAME` prints a one-line description of any single builtin (or keyword), and `mix help` prints the compact names-only summary of the same ten categories.
 
-Some builtins are feature-gated on the `mixos-lib-mix` crate (`json`, `regex`, `toml`, `yaml`, `datetime`, `url`, `crypto`, `http`, `sqlite`, `dkim`, `markdown`, `datastar`, `xml`) so embedders can pull only what they need — the `mix` binary turns them all on.
+Some builtins are feature-gated on the `mixos-lib-mix` crate (`json`, `regex`, `toml`, `yaml`, `datetime`, `url`, `crypto`, `http`, `sqlite`, `dkim`, `markdown`, `datastar`, `xml`, `mime`) so embedders can pull only what they need — the `mix` binary turns them all on.
 
 ## Machine-readable discovery (metadata_schema 1)
 
@@ -229,6 +229,7 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
   remove_dir      Recursively remove a directory and its contents: remove_dir(path) (rm -rf). No-op if already gone (v0.22.0).
   chmod           Set file/directory permissions. chmod(path, 0o755) — mode as a VALUE (use an octal literal) or an octal string "0755" (v0.11.0: a number is now the value, not its decimal digits read as octal)
   chown           Set file owner/group by numeric uid/gid: chown(path, 1000, 1000). Follows symlinks. Numeric only (no name resolution) (v0.17.1)
+  mime_type       The type of a file from the freedesktop shared-mime-info database, as the desktop names it (requires mime feature): mime_type(path[, {content}]) -> {mime, by, uncertain, exists, parents}. Globs first, magic to settle a missing or ambiguous glob, then a text check (the GLib order). by is stat|glob|magic|content|fallback; parents lists every supertype nearest first, ending text/plain (for text/*) and application/octet-stream. {content:false} never opens the file. A missing path is typed by name with exists:false; an unreadable file by name, uncertain. Follows symlinks (v0.113.0)
   stat            Stat a path → map {uid, gid, nlink, size, mode, perm, ino, dev, ctime, mtime, atime, ctime_nsec, mtime_nsec, atime_nsec, is_file, is_dir, is_symlink}. ino/dev are STRINGS (u64, exceed f64 exact range); mode is full st_mode, perm = mode & 0o7777; *time are epoch seconds (f64) and *_nsec the sub-second part 0..=999999999 (v0.44.0) — compare the PAIR to see a same-second rewrite. Follows symlinks by default; stat(path, {follow_symlinks:false}) is lstat (v0.17.1)
   line_count      Count lines in a file by streaming — never loads the whole file (byte-oriented, so it works on non-UTF-8 files too) (streams since v0.28.1)
   head            First N lines of a file as a list (default 10) — streams and stops after N lines, never reads the rest (the no-slurp twin of take(read_lines(p), n)) (v0.28.1)

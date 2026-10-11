@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.113.0
+
+### Added
+
+- Built on mix 0.113.0 with the `mime` feature: `mime_type()` names a
+  file's type as the desktop does. `mix man io` documents it.
+
 ## 0.112.1
 
 ### Fixed

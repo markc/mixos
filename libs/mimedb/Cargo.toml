@@ -1,0 +1,22 @@
+[package]
+name = "mimedb"
+description = "The freedesktop shared-mime-info database: a file's type from its name and content, as the desktop names it"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "mimedb"
+kind = "lib"
+layer = "mix"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+# O_NONBLOCK, so a FIFO in a database directory is never waited on.
+libc.workspace = true

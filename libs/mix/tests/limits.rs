@@ -322,6 +322,7 @@ fn sensitive_builtins_stay_categorized() {
         ("head", FsRead),
         ("tail", FsRead),
         ("stat", FsRead),
+        ("mime_type", FsRead),
         ("hash_file", FsRead),
         // FsWrite
         ("write_file", FsWrite),

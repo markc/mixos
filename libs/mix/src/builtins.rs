@@ -279,6 +279,7 @@ builtin_table! {
     ("remove_dir", CapabilityClass::FsWrite,      "io",      "Recursively remove a directory and its contents: remove_dir(path) (rm -rf). No-op if already gone (v0.22.0).", contract!((path: string) -> nil; failure[raises])),
     ("chmod", CapabilityClass::FsWrite,           "io",      "Set file/directory permissions. chmod(path, 0o755) — mode as a VALUE (use an octal literal) or an octal string \"0755\" (v0.11.0: a number is now the value, not its decimal digits read as octal)", contract!((path: string, mode: any_of(number, string)) -> nil; failure[raises])),
     ("chown", CapabilityClass::FsWrite,           "io",      "Set file owner/group by numeric uid/gid: chown(path, 1000, 1000). Follows symlinks. Numeric only (no name resolution) (v0.17.1)", contract!((path: string, uid: number, gid: number) -> nil; failure[raises])),
+    ("mime_type", CapabilityClass::FsRead,       "io",      "The type of a file from the freedesktop shared-mime-info database, as the desktop names it (requires mime feature): mime_type(path[, {content}]) -> {mime, by, uncertain, exists, parents}. Globs first, magic to settle a missing or ambiguous glob, then a text check (the GLib order). by is stat|glob|magic|content|fallback; parents lists every supertype nearest first, ending text/plain (for text/*) and application/octet-stream. {content:false} never opens the file. A missing path is typed by name with exists:false; an unreadable file by name, uncertain. Follows symlinks (v0.113.0)", contract!((path: string, opts?: any_of(map("mime_type_options", {content: bool}), nil)) -> map("mime_type", {mime: string, by: string, uncertain: bool, exists: bool, parents: list(string)}); failure[raises])),
     ("stat", CapabilityClass::FsRead,            "io",      "Stat a path → map {uid, gid, nlink, size, mode, perm, ino, dev, ctime, mtime, atime, ctime_nsec, mtime_nsec, atime_nsec, is_file, is_dir, is_symlink}. ino/dev are STRINGS (u64, exceed f64 exact range); mode is full st_mode, perm = mode & 0o7777; *time are epoch seconds (f64) and *_nsec the sub-second part 0..=999999999 (v0.44.0) — compare the PAIR to see a same-second rewrite. Follows symlinks by default; stat(path, {follow_symlinks:false}) is lstat (v0.17.1)", contract!((path: string, opts?: any_of(map("stat_options", {follow_symlinks: bool}), nil)) -> map("stat", {uid: number, gid: number, nlink: number, size: number, mode: number, perm: number, ino: string, dev: string, ctime: number, mtime: number, atime: number, ctime_nsec: number, mtime_nsec: number, atime_nsec: number, is_file: bool, is_dir: bool, is_symlink: bool}); failure[raises])),
     ("line_count", CapabilityClass::FsRead,      "io",      "Count lines in a file by streaming — never loads the whole file (byte-oriented, so it works on non-UTF-8 files too) (streams since v0.28.1)", contract!((path: string) -> number; failure[raises])),
     ("head", CapabilityClass::FsRead,            "io",      "First N lines of a file as a list (default 10) — streams and stops after N lines, never reads the rest (the no-slurp twin of take(read_lines(p), n)) (v0.28.1)", contract!((path: string, n?: number) -> list(string); failure[raises])),
@@ -644,6 +645,13 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         "chmod" => builtin_chmod(args),
         "chown" => builtin_chown(args),
         "stat" => builtin_stat(args),
+        #[cfg(feature = "mime")]
+        "mime_type" => builtin_mime_type(args),
+        #[cfg(not(feature = "mime"))]
+        "mime_type" => Err(MixError::RuntimeError {
+            span: None,
+            msg: "mime_type() requires the `mime` feature (mimedb)".to_string(),
+        }),
         // Strict-data serializer pair — core (no feature gate): both
         // `Value::to_mix_data_string` and `parse_data` are unconditional.
         "data_encode" => builtin_data_encode(args),
@@ -1018,6 +1026,7 @@ pub fn compiled_features() -> Vec<&'static str> {
     feat!("xml");
     feat!("yaml");
     feat!("ws");
+    feat!("mime");
     f
 }
 
@@ -14615,6 +14624,93 @@ fn builtin_stat(args: Vec<Value>) -> MixResult<Option<Value>> {
     map.insert("is_dir".to_string(), Value::Bool(meta.is_dir()));
     map.insert("is_symlink".to_string(), Value::Bool(is_symlink));
     Ok(Some(Value::map(map)))
+}
+
+/// `mime_type(path[, {content}])` — the file's type from the freedesktop
+/// shared-mime-info database, decided as the desktop decides it (the
+/// `mimedb` crate). Returns `{mime, by, uncertain, exists, parents}`:
+///
+/// - `by`: `stat` (a directory or other non-regular file), `glob`, `magic`,
+///   `content` (an empty file, or the text check) or `fallback`
+///   (`application/octet-stream`);
+/// - `parents`: every supertype, nearest first, ending `text/plain` (for
+///   `text/*`) and `application/octet-stream`.
+///
+/// `{content: false}` never opens the file: names only. A path that does
+/// not exist is typed by its name alone, with `exists: false`, and so is a
+/// file this process may not read, with `uncertain: true`. Symlinks are
+/// followed. The database is loaded once per thread and reloaded when one
+/// of its directories changes or the XDG data directories do.
+#[cfg(feature = "mime")]
+fn builtin_mime_type(args: Vec<Value>) -> MixResult<Option<Value>> {
+    if args.is_empty() || args.len() > 2 {
+        return Err(MixError::RuntimeError {
+            span: None,
+            msg: format!("mime_type() expects 1 or 2 args, got {}", args.len()),
+        });
+    }
+    let path = args[0].to_mix_string();
+    let mut content = true;
+    if let Some(opts) = args.get(1) {
+        match opts {
+            Value::Nil => {}
+            Value::Map(m) => {
+                for key in m.keys() {
+                    if key != "content" {
+                        return Err(MixError::structured(
+                            "OPTION_INVALID",
+                            format!("mime_type(): unknown option '{key}'"),
+                        ));
+                    }
+                }
+                if let Some(b) = bool_option("mime_type()", "content", m.get("content"))? {
+                    content = b;
+                }
+            }
+            other => {
+                return Err(MixError::structured(
+                    "TYPE_MISMATCH",
+                    format!(
+                        "mime_type(): options must be a map or nil, got {}",
+                        other.type_name()
+                    ),
+                ));
+            }
+        }
+    }
+    let (found, parents) = MIME_DB.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        let dirs = mimedb::xdg_mime_dirs();
+        if slot
+            .as_ref()
+            .is_none_or(|db| db.is_stale() || db.dirs() != dirs)
+        {
+            *slot = Some(mimedb::Database::load());
+        }
+        let db = slot.as_ref().expect("the database was just loaded");
+        let found = db.for_path(std::path::Path::new(&path), content);
+        let parents = db.parents(&found.guess.mime);
+        (found, parents)
+    });
+    let mut map = indexmap::IndexMap::new();
+    map.insert("mime".to_string(), Value::String(found.guess.mime));
+    map.insert(
+        "by".to_string(),
+        Value::String(found.guess.by.as_str().to_string()),
+    );
+    map.insert("uncertain".to_string(), Value::Bool(found.guess.uncertain));
+    map.insert("exists".to_string(), Value::Bool(found.exists));
+    map.insert(
+        "parents".to_string(),
+        Value::list(parents.into_iter().map(Value::String).collect()),
+    );
+    Ok(Some(Value::map(map)))
+}
+
+#[cfg(feature = "mime")]
+thread_local! {
+    static MIME_DB: std::cell::RefCell<Option<mimedb::Database>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// `write_new(path, content, mode)` — atomically create a new file at
@@ -38532,7 +38628,7 @@ mod compiled_features_tests {
         // real optional feature name and each appears at most once.
         const KNOWN: &[&str] = &[
             "json", "regex", "markdown", "toml", "serde", "datetime", "url", "crypto", "http",
-            "sqlite", "dkim", "datastar", "xml", "yaml", "ws",
+            "sqlite", "dkim", "datastar", "xml", "yaml", "ws", "mime",
         ];
         let f = compiled_features();
         for name in &f {
@@ -38553,7 +38649,7 @@ mod compiled_features_tests {
     fn every_cargo_feature_is_reported_or_deliberately_skipped() {
         const KNOWN: &[&str] = &[
             "json", "regex", "markdown", "toml", "serde", "datetime", "url", "crypto", "http",
-            "sqlite", "dkim", "datastar", "xml", "yaml", "ws",
+            "sqlite", "dkim", "datastar", "xml", "yaml", "ws", "mime",
         ];
         const SKIP: &[&str] = &["default", "tokio-sleep"];
         let manifest = include_str!("../Cargo.toml");

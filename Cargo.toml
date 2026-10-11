@@ -82,6 +82,7 @@ syntax = { path = "libs/syntax" }
 props = { path = "libs/props" }
 settings = { path = "libs/settings" }
 strict = { path = "libs/strict" }
+mimedb = { path = "libs/mimedb" }
 toolkit = { path = "libs/toolkit" }
 citizen = { path = "libs/citizen" }
 

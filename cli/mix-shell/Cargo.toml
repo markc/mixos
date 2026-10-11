@@ -1,6 +1,6 @@
 [package]
 name = "mix-shell"
-version = "0.112.1"
+version = "0.113.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -21,7 +21,7 @@ path = "src/main.rs"
 [dependencies]
 # cosmix-lib-mix is a sibling crate within the mix repo — relative
 # path stays one level up.
-mix = { workspace = true, features = ["json", "regex", "toml", "datetime", "url", "crypto", "http", "sqlite", "tokio-sleep", "dkim", "serde", "markdown", "datastar", "xml", "yaml", "ws"] }
+mix = { workspace = true, features = ["json", "regex", "toml", "datetime", "url", "crypto", "http", "sqlite", "tokio-sleep", "dkim", "serde", "markdown", "datastar", "xml", "yaml", "ws", "mime"] }
 # Explicit Rust dependency names, shared by the legacy Bus runtime and native
 # bootstrap. Both packages are siblings in this workspace (bus <- mix).
 bus = { workspace = true, features = ["native"] }

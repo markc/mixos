@@ -3586,6 +3586,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 
 [[package]]
+name = "mimedb"
+version = "0.1.1"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3619,7 +3626,7 @@ dependencies = [
 
 [[package]]
 name = "mix"
-version = "0.112.1"
+version = "0.113.0"
 dependencies = [
  "base64",
  "bcrypt",
@@ -3634,6 +3641,7 @@ dependencies = [
  "libc",
  "mail-auth",
  "md-5",
+ "mimedb",
  "mix",
  "notify",
  "proptest",
@@ -3668,7 +3676,7 @@ dependencies = [
 
 [[package]]
 name = "mix-shell"
-version = "0.112.1"
+version = "0.113.0"
 dependencies = [
  "blake3",
  "buildinfo",

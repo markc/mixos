@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.113.0
+
+### Added
+
+- `mime_type(path[, {content}])`: a file's type from the freedesktop
+  shared-mime-info database, decided by GLib's rules, so it agrees with
+  `gio info` and the file manager (checked against GIO on 5,047 files).
+  Returns `{mime, by, uncertain, exists, parents}`. Behind the new `mime`
+  feature, through the new `mimedb` crate. `mix man io` documents it.
+
 ## 0.112.1
 
 ### Added

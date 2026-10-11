@@ -1,0 +1,125 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Compare mime_type() with GIO (`gio info -a standard::content-type`), which
+-- reads the same freedesktop shared-mime-info database through GLib's
+-- xdgmime. Not `xdg-mime query filetype`: outside GNOME and KDE that falls
+-- back to libmagic's `file`, a different database.
+--
+--   mix tools/mime_oracle.mix [--per-glob N] [ROOT...]
+--
+-- Samples up to N files (default 3) per extension under each ROOT (default
+-- /usr/share and /usr/bin), adds synthetic edge cases (no extension, wrong
+-- extension, empty, binary, directory, symlink), and exits 1 listing every
+-- disagreement.
+$per = 3
+$roots = []
+$argv = args()
+$i = 0
+while $i < len($argv)
+  if $argv[$i] == "--per-glob" then
+    if $i + 1 >= len($argv) then
+      print("usage: mix tools/mime_oracle.mix [--per-glob N] [ROOT...]")
+      exit(2)
+    end
+    $per = to_number($argv[$i + 1])
+    $i = $i + 2
+  else
+    push($roots, $argv[$i])
+    $i = $i + 1
+  end
+end
+if len($roots) == 0 then
+  $roots = ["/usr/share", "/usr/bin"]
+end
+if len(run_argv(["which", "gio"]).stdout) == 0 then
+  print("ERROR: gio not installed; it is the oracle")
+  exit(2)
+end
+
+fn gio_type($path)
+  $r = run_argv(["gio", "info", "-a", "standard::content-type", $path], {timeout: 10})
+  for each $line in split($r.stdout, "\n")
+    if contains($line, "standard::content-type:") then
+      return trim(split($line, "standard::content-type:")[1])
+    end
+  end
+  return "ERROR: " .. trim($r.stderr)
+end
+
+-- A sample per extension, bounded.
+$files = []
+$counts = {}
+for each $root in $roots
+  $walked = run_argv(["find", $root, "-maxdepth", "6", "-type", "f", "-size", "-20M"], {timeout: 120, max_output: 64000000}).stdout
+  for each $path in split($walked, "\n")
+    if $path != "" then
+      $base = basename($path)
+      $ext = "(none)"
+      if contains($base, ".") then
+        $parts = split($base, ".")
+        $ext = lower($parts[len($parts) - 1])
+      end
+      $n = 0
+      if has_key($counts, $ext) then
+        $n = $counts[$ext]
+      end
+      if $n < $per then
+        $counts[$ext] = $n + 1
+        push($files, $path)
+      end
+    end
+  end
+end
+
+-- Synthetic edge cases.
+$tmp = trim(run_argv(["mktemp", "-d"]).stdout)
+$png = ""
+for each $f in $files
+  if $png == "" and ends_with($f, ".png") then
+    $png = $f
+  end
+end
+write_file($tmp .. "/notes", "plain words\nmore words\n")
+write_file($tmp .. "/empty", "")
+write_file($tmp .. "/empty.txt", "")
+write_file($tmp .. "/page.html", "<!doctype html><title>x</title>\n")
+write_file($tmp .. "/data.json", "{\"a\": 1}\n")
+write_file($tmp .. "/script", "#!/bin/sh\necho hi\n")
+write_file($tmp .. "/README.md", "# Title\n")
+write_file($tmp .. "/readme", "lower-case readme\n")
+write_file($tmp .. "/README.Sun", "a readme with a sun suffix\n")
+write_file($tmp .. "/upper.C", "int main(void) { return 0; }\n")
+write_file($tmp .. "/lower.c", "int main(void) { return 0; }\n")
+write_file($tmp .. "/SHOUT.TXT", "upper-case name\n")
+write_file($tmp .. "/Makefile.am", "all:\n")
+write_file($tmp .. "/types.d.ts", "export type A = number;\n")
+write_file($tmp .. "/archive.tar.gz", "not really an archive\n")
+if $png != "" then
+  copy($png, $tmp .. "/picture")
+  copy($png, $tmp .. "/picture.txt")
+end
+mkdir($tmp .. "/folder")
+symlink($tmp .. "/README.md", $tmp .. "/link.md")
+for each $f in glob($tmp .. "/*")
+  push($files, $f)
+end
+
+$agree = 0
+$differ = []
+for each $path in $files
+  $ours = mime_type($path).mime
+  $theirs = gio_type($path)
+  if $ours == $theirs then
+    $agree = $agree + 1
+  else
+    push($differ, $path .. "\n    mime_type: " .. $ours .. "\n    gio:       " .. $theirs)
+  end
+end
+remove_dir($tmp)
+for each $d in $differ
+  print("DIFFER " .. $d)
+end
+print("mime_oracle: " .. to_string($agree) .. " agree, " .. to_string(len($differ)) .. " differ, of " .. to_string(len($files)))
+if len($differ) > 0 then
+  exit(1)
+end

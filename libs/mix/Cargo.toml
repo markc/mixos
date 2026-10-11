@@ -1,6 +1,6 @@
 [package]
 name = "mix"
-version = "0.112.1"
+version = "0.113.0"
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
@@ -72,6 +72,10 @@ xml = ["dep:quick-xml"]
 # YAML 1.2 implementation (saphyr lineage); no serde bridge needed — the
 # builtins build the Value tree directly, mirroring json_decode/json_encode.
 yaml = ["dep:yaml-rust2"]
+# `mime_type()` builtin (0.113.0): a file's type from the freedesktop
+# shared-mime-info database (globs, magic, text check), as the desktop names
+# it, through the in-tree mimedb crate (GLib's rules over the same files).
+mime = ["dep:mimedb"]
 # `ws_connect`/`ws_send`/`ws_recv`/`ws_close` (0.74.0) — a synchronous
 # websocket CLIENT with recv-driven control flow, which is what a stateful
 # request/response protocol (LG SSAP, Home Assistant, Grafana live) needs
@@ -166,6 +170,7 @@ uuid = { version = "1", features = ["v4"], optional = true }
 # cosmix-maild-auth so the workspace builds one mail-auth version.
 mail-auth = { version = "0.7", optional = true, default-features = false, features = ["ring", "generate"] }
 quick-xml = { version = "0.41.0", optional = true }
+mimedb = { workspace = true, optional = true }
 
 [dev-dependencies]
 # `derive` lives here, not on the `serde` feature: the crate's own
@@ -175,7 +180,7 @@ quick-xml = { version = "0.41.0", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt", "macros", "sync", "time", "test-util", "net", "io-util"] }
-mix = { path = ".", features = ["json", "regex", "toml", "datetime", "url", "crypto", "http", "sqlite", "tokio-sleep", "datastar", "xml", "yaml", "ws"] }
+mix = { path = ".", features = ["json", "regex", "toml", "datetime", "url", "crypto", "http", "sqlite", "tokio-sleep", "datastar", "xml", "yaml", "ws", "mime"] }
 # Property-based testing for the lexer/parser (P1 of the mix tokenizer
 # fuzz/property corpus — _doc/planned/mix-tokenizer-fuzz-corpus.md in the cosmix
 # hub). Test-only; never linked into the shipped library.
