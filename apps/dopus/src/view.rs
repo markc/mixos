@@ -90,8 +90,8 @@ struct Dragged {
 
 const ICON: f32 = 16.0;
 const INDENT: f32 = 14.0;
-const SIZE_W: f32 = 76.0;
-const MODIFIED_W: f32 = 118.0;
+const SIZE_W: f32 = 64.0;
+const MODIFIED_W: f32 = 96.0;
 /// The Name column's narrowest before Modified, then Size, hide.
 const NAME_MIN: f32 = 140.0;
 const DIVIDER: f32 = 6.0;
