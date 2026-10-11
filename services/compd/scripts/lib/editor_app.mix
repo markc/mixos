@@ -1,0 +1,236 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- The native Scene Editor's boundary. Files, validation, recovery and scene
+-- ownership remain in the loader; the app supplies only its selection.
+
+fn selection($args)
+  $v = ($args ?? {}).selection ?? {}
+  if type($v) != "map" then raise("SCENES_ARGUMENT", "selection must be a map") end
+  $ui = {view:$v.view ?? "gallery", template:$v.template, scene:$v.scene, page:$v.page,
+    armed:nil, message:"", seq:nil}
+  if not contains(["gallery", "installed", "arrange"], $ui.view) then raise("SCENES_ARGUMENT", "unknown editor view") end
+  for each $name in [$ui.template, $ui.scene]
+    if $name != nil and (type($name) != "string" or not re_match($name, "^[a-z0-9][a-z0-9_-]{0,63}$")) then
+      raise("SCENES_ARGUMENT", "invalid selection name")
+    end
+  end
+  if $ui.page != nil then
+    if (type($ui.page) != "map" or not contains(["top", "bottom", "left", "right"], $ui.page.edge) or
+      type($ui.page.page) != "string" or len($ui.page.page) == 0 or len($ui.page.page) > 256) then
+      raise("SCENES_ARGUMENT", "invalid page selection")
+    end
+  end
+  return $ui
+end
+
+fn data($s, $loader)
+  $props = nil
+  $problem = nil
+  try
+    $props = $s.io.rpc($s.host, "shell.props.get", {})
+  catch $message, $error
+    $problem = {error_code:$error.code, message:$message}
+  end
+  return {list:$loader.inventory($s), templates:$loader.templates_list($s), props:$props,
+    host_problem:$problem, services:$s.services ?? [],
+    svc:{loader:$s.me, host:$s.host, ced:env("CED_SERVICE", "ced"), apps:env("APPS_SERVICE", "apps")}}
+end
+
+fn envelope($data, $ui, $helpers)
+  $token = hash_sha256(json_encode({inventory:$data.list, templates:$data.templates, panels:($data.props ?? {}).panels ?? {}}))
+  return {schema:"scene-editor.snapshot.v1", state_token:$token, selection:$ui, model:$helpers.build($data, $ui),
+    inventory:$data.list, templates:$data.templates, panels:($data.props ?? {}).panels ?? {}, host_problem:$data.host_problem}
+end
+
+-- This is an action-specific adapter, not a caller-selected RPC relay.
+fn command($args)
+  $action = $args.action
+  $simple = {install:["editor.template.install", "btn_install"],
+    "install-enable":["editor.template.install", "btn_install_enable"],
+    recommended:["editor.recommended", "btn_recommended"],
+    toggle:["editor.scene.action", "btn_toggle"], reload:["editor.scene.action", "btn_reload"],
+    reset:["editor.scene.action", "btn_reset"], remove:["editor.scene.remove", "btn_remove"],
+    fork:["editor.scene.fork", "btn_fork"], promote:["editor.scene.promote", "btn_promote"],
+    "edit-scene":["editor.scene.edit", "btn_edit_scene"],
+    "edit-behaviour":["editor.scene.edit", "btn_edit_behaviour"]}
+  if type($action) != "string" then raise("SCENES_ARGUMENT", "action must be a string") end
+  if has_key($simple, $action) then
+    if contains(["remove", "reset", "promote"], $action) and $args.confirmed != true then
+      raise("SCENES_CONFIRM", "this action needs confirmed:true")
+    end
+    return {verb:$simple[$action][0], args:{node:$simple[$action][1]}}
+  end
+  $edge = $args.edge
+  if not contains(["top", "bottom", "left", "right"], $edge ?? "") then raise("SCENES_ARGUMENT", "unknown edge") end
+  if $action == "move" then return {verb:"editor.scene.move", args:{node:"move_" .. $edge}} end
+  if $action == "mode" and contains(["hidden", "pinned", "docked"], $args.mode ?? "") then
+    return {verb:"editor.edge.mode", args:{node:"mode_" .. $edge .. "_" .. $args.mode}}
+  end
+  if $action == "size" and contains(["minus", "plus"], $args.direction ?? "") then
+    return {verb:"editor.edge.size", args:{node:"size_" .. $edge .. "_" .. $args.direction}}
+  end
+  if $action == "order" and contains(["up", "down"], $args.direction ?? "") then
+    return {verb:"editor.edge.order", args:{node:"order_" .. $edge .. "_" .. $args.direction}}
+  end
+  raise("SCENES_ARGUMENT", "unknown editor action")
+end
+
+fn request($s, $kind, $args, $loader)
+  $s.rc = 0
+  try
+    if type($args) != "map" then raise("SCENES_ARGUMENT", "arguments must be a map") end
+    $ui = selection($args)
+    $helpers = require($s.templates .. "/editor/lib.mix")
+    if $kind == "action" then
+      -- Drain disk changes even when this request beats the watcher event.
+      -- The token must describe current files before a destructive plan.
+      $s = $loader.rescan($s, false)
+      $s = $loader.changed($s)
+    end
+    $data = data($s, $loader)
+    if $kind == "snapshot" then
+      $s.response = envelope($data, $ui, $helpers)
+      return $s
+    end
+    $cmd = command($args)
+    $current = envelope($data, $ui, $helpers)
+    if type($args.state_token) != "string" or $args.state_token != $current.state_token then
+      $s.rc = 10
+      $current.failure = {code:"SCENES_STALE", message:"Scene state changed; review the current snapshot and try again"}
+      $s.response = $current
+      return $s
+    end
+    if not contains(["edit-scene", "edit-behaviour"], $args.action) then $loader.require_state($s) end
+    if contains(["toggle", "reload", "reset", "remove", "fork", "promote", "edit-scene", "edit-behaviour", "move"], $args.action) and $helpers.row($data.list, $ui.scene) == nil then
+      raise("SCENES_NOT_FOUND", "select an installed scene")
+    end
+    if contains(["install", "install-enable"], $args.action) and $helpers.template_of($data.templates, $ui.template) == nil then
+      raise("SCENES_NOT_FOUND", "select a shipped template")
+    end
+    -- Arm removal only for the explicitly confirmed, named scene.
+    if $args.action == "remove" then $ui.armed = $ui.scene end
+    $plan = $helpers.plan_click($cmd.verb, $cmd.args, $ui, $data)
+    if contains(["edit-scene", "edit-behaviour"], $args.action) then
+      $selected = $helpers.row($data.list, $ui.scene)
+      $path = $selected.files[$args.action == "edit-behaviour" ? "behaviour" : "scene"]
+      if type($path) == "string" then
+        $pending = $s.editor_pending_diagnostics ?? []
+        if not contains($pending, $path) then push($pending, $path) end
+        $s.editor_pending_diagnostics = $pending
+      end
+    end
+    -- Source editing keeps the normal app open. The old scene editor's hide
+    -- step would recursively ask this app to quit while it awaits this plan.
+    $plan.steps = filter($plan.steps, fn($step) = $step.verb != "scenes.editor.close")
+    $plan.done = len($plan.steps) == 0
+    while not $plan.done
+      $step = $helpers.next_step($plan)
+      $out = nil
+      if $step.target == $s.me then
+        $s = $loader.request($s, substr($step.verb, 7), $step.args)
+        $out = {ok:$s.rc == 0, rc:$s.rc, value:if $s.rc == 0 then $s.response else
+          {error_code:"upstream_refused", context:{reply:$s.response}} end}
+      else
+        try
+          $value = $s.io.rpc($step.target, $step.verb, $step.args)
+          $out = {ok:true, rc:0, value:$value}
+        catch $message, $error
+          $out = {ok:false, rc:10, value:{error_code:"upstream_refused",
+            context:{reply:($error.details ?? {}).upstream ?? {error_code:$error.code, message:$message}}}}
+        end
+      end
+      $plan = $helpers.advance($plan, $out)
+    end
+    $finish = $helpers.finish($plan)
+    $s = $loader.changed($s)
+    $s.response = envelope(data($s, $loader), $finish.ui, $helpers)
+    $s.response.failure = $plan.failed
+    $s.response.warnings = $plan.warnings
+    $s.rc = $plan.failed != nil ? 10 : 0
+  catch $message, $error
+    $s.rc = 10
+    $s.response = {error_code:$error.code, message:$message, context:$error.details}
+  end
+  return $s
+end
+
+-- Preserve the legacy editor's live Ced verdicts with the same pure diff.
+-- This runs in one loader-local task, woken by inventory/registry events.
+fn diagnostics($s, $loader)
+  $ced = env("CED_SERVICE", "ced")
+  if not contains($s.services ?? [], $ced) then return $s end
+  $helpers = require($s.templates .. "/editor/lib.mix")
+  $current = $helpers.file_problems($loader.inventory($s))
+  $seen = $s.editor_seen_diagnostics ?? {}
+  $diff = $helpers.diag_diff($seen, $current)
+  $sends = $diff.changed
+  for each $path in $s.editor_pending_diagnostics ?? []
+    push($sends, $helpers.ced_request($path, $current[$path]))
+  end
+  if len($sends) == 0 then $s.editor_seen_diagnostics = $diff.seen; return $s end
+  $tabs = $s.io.rpc($ced, "ced.tabs", {})
+  $open = $helpers.open_paths($tabs)
+  $pending = []
+  for each $req in $sends
+    if not contains($open, $req.path) then
+      if not has_key($current, $req.path) then continue end
+      if not contains($pending, $req.path) then push($pending, $req.path) end
+      if has_key($seen, $req.path) then $diff.seen[$req.path] = $seen[$req.path]
+      else $diff.seen = delete($diff.seen, $req.path) end
+      continue
+    end
+    try
+      $_ = $s.io.rpc($ced, "ced.diagnostics", $req)
+    catch $message
+      push($pending, $req.path)
+      if has_key($seen, $req.path) then $diff.seen[$req.path] = $seen[$req.path]
+      else $diff.seen = delete($diff.seen, $req.path) end
+    end
+  end
+  $s.editor_seen_diagnostics = $diff.seen
+  $s.editor_pending_diagnostics = $pending
+  return $s
+end
+
+fn open($s, $args)
+  $service = env("SCENE_EDITOR_SERVICE", "scene-editor")
+  $apps = env("APPS_SERVICE", "apps")
+  if contains($s.services ?? [], $service) then
+    $s.response = $s.io.rpc($service, "scene-editor.show", $args)
+    if $args.first_run == true then
+      $s.scenes.editor.dismissed = true
+      $s.editor_first_run_pending = false
+    end
+  else
+    $view = $args.view ?? ($args.scene != nil ? "installed" : "gallery")
+    $uri = "mixos-scene-editor:" .. $view .. "/" .. ($args.scene ?? "")
+    $receipt = $s.io.rpc($apps, "apps.launch", {id:"dev.mixos.scene-editor", uris:[$uri]})
+    $s.response = {name:"editor", source:"application", service:$service, pending:true, launch:$receipt}
+    if $args.first_run == true then $s.editor_first_run_pending = true end
+  end
+  if $args.first_run != true then
+    $s.editor_first_run_pending = false
+    $s.editor_activation_failed = false
+    $s.editor_activation_armed = false
+    $s.editor_activation_seq = ($s.editor_activation_seq ?? 0) + 1
+  end
+  -- Dismissal follows confirmed activation, never a spawn-only receipt.
+  -- A pending launch is completed on the service's registration event.
+  return $s
+end
+
+fn activation_failed($s, $message)
+  $s.editor_first_run_pending = false
+  $s.editor_activation_failed = true
+  $s.scenes.editor.diagnostic = {error_code:"SCENES_EDITOR_START_FAILED", message:$message}
+  return $s
+end
+
+fn close($s, $args)
+  $service = env("SCENE_EDITOR_SERVICE", "scene-editor")
+  if contains($s.services ?? [], $service) then
+    $s.response = $s.io.rpc($service, "scene-editor.quit", {})
+  else
+    $s.response = {name:"editor", source:"application", closed:true}
+  end
+  return $s
+end
