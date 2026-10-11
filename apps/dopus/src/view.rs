@@ -946,17 +946,18 @@ fn dialogs(
                         .id(id.with("field"))
                         .desired_width(f32::INFINITY);
                     let response = ui.add(field);
-                    if !response.has_focus() && ui.memory(|m| m.focused().is_none()) {
-                        response.request_focus();
-                    }
-                    if response.changed() {
-                        events.push(UiEvent::PromptText(value.clone()));
-                    }
+                    // Before taking the keyboard back: losing it to Enter is the submit.
                     if response.lost_focus()
                         && ui.input(|i| i.key_pressed(egui::Key::Enter))
                         && dopus_core::validate_filename(&value).is_ok()
                     {
                         submitted = true;
+                    }
+                    if !response.has_focus() && ui.memory(|m| m.focused().is_none()) {
+                        response.request_focus();
+                    }
+                    if response.changed() {
+                        events.push(UiEvent::PromptText(value.clone()));
                     }
                     if let Err(problem) = &check {
                         ui.label(
