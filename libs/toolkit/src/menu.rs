@@ -557,12 +557,7 @@ pub fn model(ctx: &Context) -> Vec<Menu> {
 /// Whether two labels name the same menu or row: case and a trailing
 /// ellipsis aside.
 fn same_label(a: &str, b: &str) -> bool {
-    let plain = |s: &str| {
-        s.trim()
-            .trim_end_matches(['…', '.'])
-            .trim()
-            .to_lowercase()
-    };
+    let plain = |s: &str| s.trim().trim_end_matches(['…', '.']).trim().to_lowercase();
     plain(a) == plain(b)
 }
 

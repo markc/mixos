@@ -363,7 +363,10 @@ fn menus_list_open_and_close_by_verb() {
     // The keyboard acts in the open submenu: Enter runs the highlighted row.
     h.run();
     ok(&mut h, "ui.key", json!({"key":"Enter"}));
-    assert_eq!(h.state().fixture.ran.last().copied(), Some("file.clear-recent"));
+    assert_eq!(
+        h.state().fixture.ran.last().copied(),
+        Some("file.clear-recent")
+    );
 
     ok(&mut h, "ui.menu.open", json!({"path":["File"]}));
     let closed = ok(&mut h, "ui.menu.close", json!({}));

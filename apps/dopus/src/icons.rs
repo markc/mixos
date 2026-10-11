@@ -48,7 +48,11 @@ pub fn file_icon(path: &Path, is_dir: bool, expanded: bool) -> Icon {
     if is_dir {
         let home = dopus_core::home_directory();
         let known = (path.parent() == Some(home.as_path()))
-            .then(|| path.file_name().and_then(|n| n.to_str()).and_then(known_folder))
+            .then(|| {
+                path.file_name()
+                    .and_then(|n| n.to_str())
+                    .and_then(known_folder)
+            })
             .flatten();
         return match (known, expanded) {
             (Some(icon), _) => icon,
@@ -117,8 +121,21 @@ pub fn mime_icon(mime: &str) -> Icon {
         _ if has(&["spreadsheet", "excel", "csv"]) => Icon::FileSpreadsheet,
         _ if has(&["presentation", "powerpoint"]) => Icon::Presentation,
         _ if has(&[
-            "zip", "tar", "gzip", "bzip", "xz", "7z", "rar", "zstd", "lzma", "lz4", "compress",
-            "archive", "cpio", "rpm", "debian-binary",
+            "zip",
+            "tar",
+            "gzip",
+            "bzip",
+            "xz",
+            "7z",
+            "rar",
+            "zstd",
+            "lzma",
+            "lz4",
+            "compress",
+            "archive",
+            "cpio",
+            "rpm",
+            "debian.binary",
         ]) =>
         {
             Icon::FileArchive
@@ -129,13 +146,30 @@ pub fn mime_icon(mime: &str) -> Icon {
         "text" if has(&["markdown", "plain", "rtf"]) => Icon::FileText,
         "text" => Icon::FileCode,
         _ if has(&[
-            "json", "xml", "javascript", "toml", "yaml", "sql", "x-python", "x-perl", "x-php",
-            "x-ruby", "wasm",
+            "json",
+            "xml",
+            "javascript",
+            "toml",
+            "yaml",
+            "sql",
+            "x-python",
+            "x-perl",
+            "x-php",
+            "x-ruby",
+            "wasm",
         ]) =>
         {
             Icon::FileCode
         }
-        _ if has(&["pdf", "document", "word", "opendocument.text", "epub", "postscript"]) => {
+        _ if has(&[
+            "pdf",
+            "document",
+            "word",
+            "opendocument.text",
+            "epub",
+            "postscript",
+        ]) =>
+        {
             Icon::FileText
         }
         _ => Icon::File,
@@ -206,8 +240,14 @@ mod tests {
             ("application/x-bzip2", Icon::FileArchive),
             ("application/zstd", Icon::FileArchive),
             ("application/vnd.debian.binary-package", Icon::FileArchive),
-            ("application/vnd.oasis.opendocument.spreadsheet", Icon::FileSpreadsheet),
-            ("application/vnd.oasis.opendocument.presentation", Icon::Presentation),
+            (
+                "application/vnd.oasis.opendocument.spreadsheet",
+                Icon::FileSpreadsheet,
+            ),
+            (
+                "application/vnd.oasis.opendocument.presentation",
+                Icon::Presentation,
+            ),
             ("application/vnd.oasis.opendocument.text", Icon::FileText),
             ("application/vnd.efi.iso", Icon::Disc),
             ("application/x-executable", Icon::FileCog),
