@@ -28,8 +28,8 @@ use egui::{
     UiBuilder, pos2, vec2,
 };
 use toolkit::button::IconButton;
-use toolkit::dialog::{self, Choice, Role};
 use toolkit::command::Origin;
+use toolkit::dialog::{self, Choice, Role};
 use toolkit::{Icon, Registry, Strings, bars, icons, tooltip};
 
 use crate::app::{Answer, App, Dialog};
@@ -127,7 +127,11 @@ pub fn view(
         app,
         strings,
     );
-    events.extend(fired.into_iter().map(|(id, origin)| UiEvent::Command(id, origin)));
+    events.extend(
+        fired
+            .into_iter()
+            .map(|(id, origin)| UiEvent::Command(id, origin)),
+    );
     bars::status(ui, |ui| {
         ui.small(app.info());
     });

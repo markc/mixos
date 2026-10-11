@@ -339,6 +339,10 @@ never creates, renames, moves, copies, deletes or opens files through it.</p>
 <p>The window is drivable like every MixOS app, including its menus: see
 <a href="/drive/">driving an app</a> (<code>dopus.ui.*</code>, <code>dopus.window</code>). The verbs are
 registered in <code>docs/spec/bus/verbs.conf.mix</code>.</p>
+<p>Each command run from a menu, a key or a sidebar button is published on
+<code>dopus.command.executed</code>, with how it was reached
+(<a href="/decisions/2026-10-11-executed-commands/">executed commands</a>). Actions
+run through <code>dopus.action</code> are not published yet.</p>
 <p><code>dopus --headless</code> runs the core and the Bus port without a window, for
 tests: the same verbs, minus those that need a window.</p>
         </article>
