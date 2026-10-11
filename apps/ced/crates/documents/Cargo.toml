@@ -1,0 +1,36 @@
+[package]
+name = "documents"
+description = "ced's engine: open documents over the edit service, actions, ced.* verbs, sessions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "ced"
+kind = "app"
+layer = "core"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+blake3.workspace = true
+buildinfo.workspace = true
+config.workspace = true
+edit.workspace = true
+editor-model = { workspace = true, features = ["mix"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+editor-model = { workspace = true, features = ["mix", "fake"] }
+tempfile.workspace = true
+
+[build-dependencies]
+buildinfo.workspace = true

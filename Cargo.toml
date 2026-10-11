@@ -4,7 +4,7 @@
 
 [workspace]
 resolver = "3"
-members = ["libs/*", "services/noded", "services/noded/crates/*", "cli/mix-shell", "services/editd", "services/settingsd", "services/portald", "apps/busviewer", "apps/busviewer/crates/*", "apps/prefs", "apps/prefs/crates/*"]
+members = ["libs/*", "services/noded", "services/noded/crates/*", "cli/mix-shell", "services/editd", "services/settingsd", "services/portald", "apps/busviewer", "apps/busviewer/crates/*", "apps/prefs", "apps/prefs/crates/*", "apps/ced", "apps/ced/crates/*"]
 exclude = ["vendor", "vendor/msedit/lsh", "vendor/msedit/stdext"]
 
 [workspace.package]
