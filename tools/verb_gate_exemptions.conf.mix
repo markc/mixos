@@ -16,6 +16,16 @@
 --           numbers are not part of an entry, so a site moves with its code;
 --   reason  why the comparison is safe. It is read by the reviewer, not the gate.
 --
+-- The optional trusted_macros list (round 29) names the macros a file may invoke at item or
+-- statement position and still resolve its constants. Each entry has two keys:
+--   name    the macro's name, a plain identifier (println, info); the path prefix must be one
+--           of std::, core::, alloc::, tracing::, log:: or none (the gate reads the prefix);
+--   reason  why the macro declares no item and cannot hide a constant. Read by the reviewer.
+-- An invocation of any other macro, a macro_rules! definition, a #[macro_use], or a use that
+-- can rebind one of these names makes its file's constants unreadable (fail closed). Adding an
+-- entry is a reviewer decision: the gate reports the unreadable sites, and the list is not
+-- widened to make a tree pass.
+--
 -- The optional test_doubles list names a fake service, a file compiled only for tests. Each
 -- entry has two keys (round 21):
 --   file    the path, relative to the repo root, as the gate reports it;
@@ -66,5 +76,34 @@
     {file:"libs/editor-model/src/mirror.rs", "fn":"Mirror::server_body", text:"match verb {", verbs:["edit.insert", "edit.delete"], reason:"editor-model mirror client: builds outgoing edit.* request bodies; editd answers"},
     {file:"libs/editor-model/src/mirror.rs", "fn":"Mirror::server_body", text:'("edit.save", body)', verbs:["edit.save"], reason:"editor-model mirror client: builds outgoing edit.* request bodies; editd answers"},
     {file:"apps/prefs/src/shell.rs", "fn":"budget", text:"match verb {", verbs:["releases.list", "releases.notes", "releases.status", "releases.check"], reason:"Prefs releases call budget: a timeout per releases.* verb it sends; releasesd answers"}
+  ],
+  trusted_macros: [
+    {name:"println", reason:"std: prints to stdout; expands to an expression, declares no item"},
+    {name:"print", reason:"std: prints to stdout; expands to an expression, declares no item"},
+    {name:"eprintln", reason:"std: prints to stderr; expands to an expression, declares no item"},
+    {name:"eprint", reason:"std: prints to stderr; expands to an expression, declares no item"},
+    {name:"format", reason:"std: builds a String; expands to an expression, declares no item"},
+    {name:"format_args", reason:"std: builds fmt::Arguments; expands to an expression, declares no item"},
+    {name:"write", reason:"std: writes formatted text to a writer; expands to an expression, declares no item"},
+    {name:"writeln", reason:"std: writes formatted text and a newline to a writer; expands to an expression, declares no item"},
+    {name:"vec", reason:"std: builds a Vec; expands to an expression, declares no item"},
+    {name:"assert", reason:"std: panics when its condition is false; expands to a statement, declares no item"},
+    {name:"assert_eq", reason:"std: panics when two values differ; expands to a statement, declares no item"},
+    {name:"assert_ne", reason:"std: panics when two values are equal; expands to a statement, declares no item"},
+    {name:"debug_assert", reason:"std: assert in debug builds; expands to a statement, declares no item"},
+    {name:"debug_assert_eq", reason:"std: assert_eq in debug builds; expands to a statement, declares no item"},
+    {name:"debug_assert_ne", reason:"std: assert_ne in debug builds; expands to a statement, declares no item"},
+    {name:"panic", reason:"std: diverges with a message; expands to an expression, declares no item"},
+    {name:"unreachable", reason:"std: diverges; expands to an expression, declares no item"},
+    {name:"todo", reason:"std: diverges; expands to an expression, declares no item"},
+    {name:"unimplemented", reason:"std: diverges; expands to an expression, declares no item"},
+    {name:"matches", reason:"std: tests a value against a pattern; expands to an expression, declares no item"},
+    {name:"dbg", reason:"std: prints and returns its value; expands to an expression, declares no item"},
+    {name:"error", reason:"tracing or log: an error-level log call; expands to a statement, declares no item"},
+    {name:"warn", reason:"tracing or log: a warn-level log call; expands to a statement, declares no item"},
+    {name:"info", reason:"tracing or log: an info-level log call; expands to a statement, declares no item"},
+    {name:"debug", reason:"tracing or log: a debug-level log call; expands to a statement, declares no item"},
+    {name:"trace", reason:"tracing or log: a trace-level log call; expands to a statement, declares no item"},
+    {name:"log", reason:"log crate: a generic log call; expands to a statement, declares no item"}
   ]
 }

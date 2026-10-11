@@ -1,5 +1,35 @@
 -- Fixture exemptions: none reviewed. Every value comparison in a tree is unreviewed.
+-- The trusted_macros list is the real one (round 29), so the macro fixtures read the same names.
 {
   schema: 1,
-  exemptions: []
+  exemptions: [],
+  trusted_macros: [
+    {name:"println", reason:"std: prints to stdout; expands to an expression, declares no item"},
+    {name:"print", reason:"std: prints to stdout; expands to an expression, declares no item"},
+    {name:"eprintln", reason:"std: prints to stderr; expands to an expression, declares no item"},
+    {name:"eprint", reason:"std: prints to stderr; expands to an expression, declares no item"},
+    {name:"format", reason:"std: builds a String; expands to an expression, declares no item"},
+    {name:"format_args", reason:"std: builds fmt::Arguments; expands to an expression, declares no item"},
+    {name:"write", reason:"std: writes formatted text to a writer; expands to an expression, declares no item"},
+    {name:"writeln", reason:"std: writes formatted text and a newline to a writer; expands to an expression, declares no item"},
+    {name:"vec", reason:"std: builds a Vec; expands to an expression, declares no item"},
+    {name:"assert", reason:"std: panics when its condition is false; expands to a statement, declares no item"},
+    {name:"assert_eq", reason:"std: panics when two values differ; expands to a statement, declares no item"},
+    {name:"assert_ne", reason:"std: panics when two values are equal; expands to a statement, declares no item"},
+    {name:"debug_assert", reason:"std: assert in debug builds; expands to a statement, declares no item"},
+    {name:"debug_assert_eq", reason:"std: assert_eq in debug builds; expands to a statement, declares no item"},
+    {name:"debug_assert_ne", reason:"std: assert_ne in debug builds; expands to a statement, declares no item"},
+    {name:"panic", reason:"std: diverges with a message; expands to an expression, declares no item"},
+    {name:"unreachable", reason:"std: diverges; expands to an expression, declares no item"},
+    {name:"todo", reason:"std: diverges; expands to an expression, declares no item"},
+    {name:"unimplemented", reason:"std: diverges; expands to an expression, declares no item"},
+    {name:"matches", reason:"std: tests a value against a pattern; expands to an expression, declares no item"},
+    {name:"dbg", reason:"std: prints and returns its value; expands to an expression, declares no item"},
+    {name:"error", reason:"tracing or log: an error-level log call; expands to a statement, declares no item"},
+    {name:"warn", reason:"tracing or log: a warn-level log call; expands to a statement, declares no item"},
+    {name:"info", reason:"tracing or log: an info-level log call; expands to a statement, declares no item"},
+    {name:"debug", reason:"tracing or log: a debug-level log call; expands to a statement, declares no item"},
+    {name:"trace", reason:"tracing or log: a trace-level log call; expands to a statement, declares no item"},
+    {name:"log", reason:"log crate: a generic log call; expands to a statement, declares no item"}
+  ]
 }

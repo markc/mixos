@@ -127,6 +127,77 @@ Exit codes:
 | 1 | Violations. One line per finding, then a summary line. |
 | 2 | Could not check. Fails closed: an unreadable or unlistable file or directory, a missing source root, a missing suffix table, no registrations found, an unloadable registry, a `#[cfg(test)]` module that never closes before end of file, a file that ends inside a block comment or string literal, or bad arguments. |
 
+## Scope, threat model and known limits (round 29)
+
+**What the gate is for.** It checks that the code and the Bus registry agree for honest code: every
+registered verb is answered by code, every answer is registered, each answer is by its registered
+owner, and each name is well formed. It catches drift: a verb renamed in one place only, an answer
+added without a registry row, a row whose owner moved, a misspelt literal.
+
+**Threat model.** The adversary is a careless or rushed change, not a determined author. The gate
+fails closed: when it meets a construct it cannot resolve, it reports the site as `unreadable`
+(exit 1) and never treats it as a pass. It does not expand macros, evaluate `cfg`, or model full
+Rust name resolution. Deliberately obfuscated dispatch (a verb name assembled at run time, a
+dispatch table built dynamically, generated code) is out of scope. Code review is the backstop for
+that, and the gate says so rather than pretending to see it.
+
+**Macros (round 29).** A Rust file whose macro use the gate cannot vouch for resolves no constant
+at all, so every bare, `Self::`, `Type::` and `crate::` name in it is unreadable. Only live code is
+read: lines inside a `#[cfg(test)]` body are skipped, as const resolution skips them, because a
+test module cannot change what production code resolves to. The file is unsafe when its live code
+has:
+
+- a `macro_rules!` definition (its name can shadow a trusted macro);
+- a `#[macro_use]` attribute;
+- a macro invocation at item or statement position whose path is not trusted. A path is trusted
+  when its prefix is empty, `std::`, `core::`, `alloc::`, `tracing::` or `log::`, and its name is in
+  the reviewed `trusted_macros` list (`tools/verb_gate_exemptions.conf.mix`). Each name has a
+  reason. Adding a name is a reviewer decision, made after the real-tree check shows what is
+  unreadable;
+- a `use` whose first segment is not `std`, `core`, `alloc`, `tracing` or `log`, and which names a
+  trusted macro word (`use some_crate::thing as println`). That is always unsafe: the import rebinds
+  the name outright;
+- a glob `use` (`use crate::names::*;`) with such an untrusted first segment, but only when the live
+  code of the same file invokes a trusted-name macro, in any position (expression position too,
+  since the name is only looked up). Why: a glob can import a macro with the same name as a prelude
+  macro, and a glob shadows the prelude. So a glob could replace the `println!` the file calls. A
+  file that invokes no trusted macro has nothing a glob could shadow, so its constants still
+  resolve (round-24 behaviour). Test bodies are not read for this rule, so a glob `use super::*;`
+  in a `#[cfg(test)]` module never fires it;
+- an `extern crate` naming a trusted macro word.
+
+**Known limits, in one place.**
+
+1. Macros are read by name, not expanded. A trusted macro is trusted by its name in the reviewed
+   list, not by its expansion.
+2. Macro invocations in expression position (`let v = m!(z);`) are not read. A macro can expand to an
+   item inside a block expression, and the gate will not see it. Pinned by `rs-macro-expr-position`.
+3. `cfg` is not evaluated. Every `cfg` branch is read as if compiled.
+4. Name resolution is partial. A constant resolves through the file's own items, its `use` lines,
+   `crate::` paths into module files, and the impl block of `Self::` or `Type::`. Anything else is
+   unreadable (fail closed), not followed. `super::` and other crates' paths are not followed.
+5. Trait defaults are not resolved. `Self::NAME` and `Type::NAME` read impl-level definitions only.
+6. An inherent impl of the same type in another file is not read.
+7. A glob import (`use x::*`) makes the bare names of its file unreadable unless the file defines
+   them locally.
+8. `include!`, `include_str!`, `build.rs` output and any generated file are not read.
+9. A comparison with a runtime value is reviewed by hand (the exemptions file); the gate cannot key
+   it to a verb.
+10. The suffixes that `libs/props` `dispatch_props` answers (`get`, `list`, `describe`) are not
+    enumerated statically (see the code-check notes above).
+11. Over-matching is a cost, not a hole. A `]` or `}` before a name and `!(` can read a non-statement
+    as a statement-position invocation, which makes its file unsafe. A trusted word such as `error`,
+    `debug`, `info`, `write`, `format` or `log` that appears in a `use` of an untrusted path makes
+    its file fail closed. A trusted word followed by `!` anywhere in live code (`log !=` included)
+    arms the glob clause, so a file with an untrusted glob and such a word fails closed too. None of
+    this reads test bodies. All of it shows as `unreadable`, resolved by a reviewer, not by widening
+    the list.
+12. Caveats of the glob rule. The trusted-word check is textual: a trusted word followed by `!` in
+    live text (a string literal such as `"log !"`, or `log != x`) arms it too. That only ever fails
+    closed. Not modelled: a glob that brings in a macro under a trusted name from a module the gate
+    cannot see. A macro defined in another file is seen only through its `use` line, which is
+    checked like any other `use`.
+
 ## verb_registry_gate_test.mix
 
 Runs the gate against `fixtures/verb_gate/` and asserts each case's exit code,

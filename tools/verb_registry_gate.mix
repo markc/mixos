@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.10.0
+-- version: 0.11.0
 -- Verb registry gate (AGENTS.md §5). Every Bus verb in code is registered in
 -- docs/spec/bus/verbs.conf.mix, every registration is backed by code, and the
 -- component that answers a verb is its registered owner.
@@ -11,6 +11,16 @@
 --   --exemptions FILE   the reviewed value comparisons (default
 --                       verb_gate_exemptions.conf.mix beside this gate)
 -- Regression fixtures: mix tools/verb_registry_gate_test.mix
+--
+-- Scope and threat model (round 29). The gate checks that code and registry agree for honest
+-- code. It fails closed: a construct it cannot resolve is an `unreadable` violation (exit 1),
+-- never a pass. It does not expand macros, evaluate cfg or model full Rust name resolution, and
+-- deliberately obfuscated dispatch is out of scope (code review is the backstop). Macros: in a
+-- file's live code (test bodies are not read), an invocation at item or statement position that
+-- is not a trusted_macros name with a trusted path, a macro_rules!, a #[macro_use], a use that
+-- rebinds a trusted macro name, or a glob import in a file that invokes a trusted macro (the glob
+-- could shadow it) makes that file's constants unreadable. The known limits are listed in one
+-- place in tools/README.md.
 --
 -- Exit: 0 clean, 1 violations, 2 could not check (fails closed: an unreadable
 -- or unlistable file, a missing anchor, a failed scan or an unloadable registry
@@ -286,6 +296,21 @@ $EXTERN_CRATE_RE = "\\bextern\\s+crate\\s+([^;]*);"
 $OTHER_DECL_RE = "\\b(?:trait|mod)\\s+([A-Za-z_][A-Za-z0-9_]*)"
 $GENERIC_BIND_RE = "[<,]\\s*(?:const\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*(?:[,>=]|:[^:])"
 $WORD_RE = "\\b[A-Za-z_][A-Za-z0-9_]*\\b"
+-- Round 29, macros (macro_unsafe). A macro invocation at item or statement position: its boundary
+-- (start of file, `;`, `{`, `}` or `]`), its path prefix (`std :: tracing::`, possibly spaced) and
+-- its name, then `!` and an opening bracket. Run on the joined code view.
+$MACRO_INVOKE_RE = "(^|[;{}\\]])\\s*(?:::\\s*)?((?:[A-Za-z_][A-Za-z0-9_]*\\s*::\\s*)*)([A-Za-z_][A-Za-z0-9_]*)\\s*!\\s*[\\(\\[\\{]"
+$MACRO_RULES_RE = "\\bmacro_rules\\s*!"
+$MACRO_USE_RE = "#\\s*!?\\s*\\[\\s*macro_use\\b"
+-- The first segment of a use body (after an optional leading `::`).
+$USE_HEAD_RE = "^\\s*(?:::\\s*)?([A-Za-z_][A-Za-z0-9_]*)"
+-- The identifiers of a path prefix, read from its spaced text.
+$IDENT_RE = "[A-Za-z_][A-Za-z0-9_]*"
+-- The path prefixes a trusted macro may carry (round 29): the bare name, and the std, core,
+-- alloc, tracing and log crates. A use whose first segment is one of the heads below is read as
+-- trusted; any other head is not.
+$TRUSTED_PREFIXES = ["", "std::", "core::", "alloc::", "tracing::", "log::"]
+$TRUSTED_USE_HEADS = ["std", "core", "alloc", "tracing", "log"]
 $PUB_USE_RE = "\\bpub(?:\\s*\\([^)]*\\))?\\s+use\\s+([^;]*);"
 -- The bodies of a `use` statement (whitespace already joined): a plain `crate::a::b::NAME`, and
 -- the same with `as ALIAS` (groups: path, original name, alias).
@@ -1470,6 +1495,117 @@ fn unreadable_prefix($chead, $claimed, $rel, $n)
   end
 end
 
+-- ----------------------------------------------------------- macros (round 29)
+
+-- The identifiers of a macro's path prefix, each followed by `::`: `std :: tracing::` reads
+-- `std::tracing::`, and a bare name reads "". Spaces are dropped, so the prefix compares exactly.
+fn macro_prefix($raw)
+  $out = ""
+  for each $m in re_find($raw, $IDENT_RE)
+    $out = $out .. $m.match .. "::"
+  end
+  return $out
+end
+
+-- Whether a macro invocation is one the gate vouches for: its prefix is one of TRUSTED_PREFIXES
+-- and its name is in TRUSTED_MACRO_NAMES, the reviewed list in the exemptions file.
+fn macro_trusted($prefix, $name)
+  if not contains($TRUSTED_PREFIXES, $prefix) then
+    return false
+  end
+  return contains($TRUSTED_MACRO_NAMES, $name)
+end
+
+-- Whether a use or extern crate body names a trusted macro word (`info`, `println`, ...), as
+-- a whole word: an import of that name from anywhere can rebind the macro the file invokes.
+fn names_trusted($body)
+  for each $w in re_find($body, $WORD_RE)
+    if contains($TRUSTED_MACRO_NAMES, $w.match) then
+      return true
+    end
+  end
+  return false
+end
+
+-- Whether a use body can rebind a trusted macro the gate cannot read (round 29, ruling (c)). Its
+-- first segment must be an untrusted head (a trusted head, std, core, alloc, tracing or log, is
+-- read as trusted). Then:
+--   - it names a trusted macro word (`use some_crate::thing as println;`): always unsafe, since the
+--     import rebinds that name outright;
+--   - it is a glob (`use crate::names::*;`): unsafe only when the file invokes a trusted macro
+--     ($trusted_seen). A glob can import a macro with the same name as a prelude macro, and a glob
+--     shadows the prelude, so it could replace the println! the file calls. A file that calls no
+--     trusted macro has nothing a glob could shadow, and its constants still resolve.
+fn use_untrusted($body, $trusted_seen)
+  $head = ""
+  for each $h in re_find($body, $USE_HEAD_RE)
+    $head = $h.groups[0]
+  end
+  if contains($TRUSTED_USE_HEADS, $head) then
+    return false
+  end
+  if names_trusted($body) then
+    return true
+  end
+  if re_match($body, "\\*") then
+    return $trusted_seen
+  end
+  return false
+end
+
+-- Whether a Rust file holds a macro the gate cannot vouch for, so that its constant resolution
+-- fails closed (the `macros` flag of const_index). Round 29, rulings (b) and (c):
+--   (b) only LIVE code counts: the lines outside test bodies (test_mask), the same scope as
+--       const resolution, which already ignores #[cfg(test)] modules. A macro or glob in a test
+--       module cannot change what production code resolves to.
+--   It is unsafe when the live code has a macro_rules! definition (a local macro can shadow a
+--   trusted one); a #[macro_use] attribute (it brings a crate's macros in by name); a macro
+--   invocation at item or statement position that is not macro_trusted; a use that names a
+--   trusted macro word; a glob use with an untrusted head, when the file also invokes a trusted
+--   macro (use_untrusted, ruling (c)); or an extern crate that names a trusted macro word.
+-- An invocation in expression position is not read (tools/README.md, known limits).
+fn macro_unsafe($code, $tmask)
+  $live = []
+  $i = 0
+  while $i < len($code)
+    if not $tmask[$i] then
+      push($live, $code[$i])
+    end
+    $i = $i + 1
+  end
+  $joined = join($live, "\n")
+  if re_match($joined, $MACRO_RULES_RE) then
+    return true
+  end
+  if re_match($joined, $MACRO_USE_RE) then
+    return true
+  end
+  for each $m in re_find($joined, $MACRO_INVOKE_RE)
+    if not macro_trusted(macro_prefix($m.groups[1]), $m.groups[2]) then
+      return true
+    end
+  end
+  -- A trusted name invoked in ANY position of live code (expression position included, which
+  -- MACRO_INVOKE_RE does not read): the glob check below needs only that the name is used here.
+  $trusted_seen = false
+  if len($TRUSTED_MACRO_NAMES) > 0 then
+    if re_match($joined, "\\b(?:" .. join($TRUSTED_MACRO_NAMES, "|") .. ")\\s*!") then
+      $trusted_seen = true
+    end
+  end
+  for each $m in re_find($joined, $USE_STMT_RE)
+    if use_untrusted($m.groups[0], $trusted_seen) then
+      return true
+    end
+  end
+  for each $m in re_find($joined, $EXTERN_CRATE_RE)
+    if names_trusted($m.groups[0]) then
+      return true
+    end
+  end
+  return false
+end
+
 -- The constant index of a Rust code view (round 24), read at any position and scope. Every
 -- `const NAME` outside test bodies is a candidate, mid-line or at line start, file level, fn
 -- body or impl block; every `use` that brings NAME in is an import of it (use_imports). A
@@ -1518,7 +1654,9 @@ fn const_index($code, $keep, $raws, $tmask, $fs)
   end
   $ui = use_imports($code, $tmask)
   $ti = type_index($code, $fs)
-  return {defs: $defs, unknown: $unknown, imps: $ui.imps, glob: $ui.glob, pub_uses: $ui.pub_uses, types: $ti.types, tunknown: $ti.tunknown, binds: $ti.binds, tglob: $ti.tglob, heads: $fs.heads}
+  -- macros (round 29): a file with a macro the gate cannot vouch for resolves no constant
+  $macros = macro_unsafe($code, $tmask)
+  return {defs: $defs, unknown: $unknown, macros: $macros, imps: $ui.imps, glob: $ui.glob, pub_uses: $ui.pub_uses, types: $ti.types, tunknown: $ti.tunknown, binds: $ti.binds, tglob: $ti.tglob, heads: $fs.heads}
 end
 
 -- The type declarations of a code view (round 27): name -> list of {ctx}, the item kind at each
@@ -1678,7 +1816,7 @@ end
 -- local definition or explicit import the name is unreadable; a local item shadows a glob, as
 -- in Rust, so a single local definition still resolves.
 fn bare_const($name, $ix, $rel)
-  if $ix.unknown then
+  if $ix.unknown or $ix.macros then
     return {found: true, amb: false, lit: nil}
   end
   $defs = defs_of($ix, $name)
@@ -1723,7 +1861,7 @@ fn self_const($name, $ix, $site)
   if $site.id == 0 or $site.tname == "" then
     return {found: false, amb: false, lit: nil}
   end
-  if $ix.unknown then
+  if $ix.unknown or $ix.macros then
     return {found: true, amb: false, lit: nil}
   end
   $own = []
@@ -1760,7 +1898,7 @@ end
 -- definition, an impl header whose Type is not read, a type keyword split over lines) fails closed.
 -- A qualified path/Type::NAME is never read (resolve_const).
 fn type_const($name, $ix, $ty)
-  if $ix.unknown or $ix.tunknown or $ix.tglob then
+  if $ix.unknown or $ix.tunknown or $ix.tglob or $ix.macros then
     return {found: true, amb: false, lit: nil}
   end
   for each $d in defs_of($ix, $name)
@@ -1805,7 +1943,7 @@ end
 -- definition too the names clash (ambiguous) or the own definition shadows the glob, and with
 -- no own definition the path is unreadable. An associated constant is not reachable.
 fn module_item($name, $ix, $inline)
-  if $ix.unknown then
+  if $ix.unknown or $ix.macros then
     return {found: true, amb: false, lit: nil}
   end
   -- the item kind a qualified path reads: the file's own top level, or the top level of the
@@ -2980,7 +3118,7 @@ fn scan_rs($lines, $rel, $owner, $is_suffix, $dispatch_ok, $is_parse)
   end
   -- The constants this file can resolve (const_index): every `const NAME` and every `use` of
   -- NAME, at any position and scope, counted for the whole file. A parse file resolves none.
-  $ix = {defs: {}, unknown: false, imps: {}, glob: false}
+  $ix = {defs: {}, unknown: false, macros: false, imps: {}, glob: false}
   if not $is_parse then
     $ix = const_index($code, $keep, $raws, $tmask, $fs)
   end
@@ -3309,6 +3447,31 @@ end
 
 -- ----------------------------------------------------------- exemptions
 
+-- Why a trusted_macros entry is malformed, or "" when it is well formed: a map whose keys are
+-- exactly name and reason, each a non-empty string, and a name that is a plain identifier.
+fn trusted_problem($t)
+  if type($t) != "map" then
+    return "a trusted macro is not a map"
+  end
+  for each $k in keys($t)
+    if not contains(["name", "reason"], $k) then
+      return "a trusted macro has an unknown key '" .. $k .. "'"
+    end
+  end
+  for each $k in ["name", "reason"]
+    if not has_key($t, $k) then
+      return "a trusted macro has no '" .. $k .. "'"
+    end
+    if type($t[$k]) != "string" or trim($t[$k]) == "" then
+      return "a trusted macro's '" .. $k .. "' is not a non-empty string"
+    end
+  end
+  if not re_match($t.name, "^[A-Za-z_][A-Za-z0-9_]*$") then
+    return "a trusted macro's name '" .. $t.name .. "' is not a plain identifier"
+  end
+  return ""
+end
+
 -- The reviewed value comparisons. A malformed entry is a violation and is not used; a
 -- file that cannot be read or has the wrong schema is a cannot-check. Read before the
 -- walk.
@@ -3373,6 +3536,28 @@ if has_key($exdata, "request_builders") then
       violate("request-builder", $bp)
     else
       push($BUILDERS, {file: $rb.file, text: $rb.text, verbs: $rb.verbs, reason: $rb.reason, scope: plain_fn($rb["fn"]), idx: len($BUILDERS)})
+    end
+  end
+end
+
+-- Trusted macros (round 29): the names a macro invocation may use and still be read (macro_unsafe).
+-- The key is optional; absent means none, so every macro invocation makes its file fail closed. A
+-- malformed entry is a violation and is not used; a duplicate name is a violation too.
+$TRUSTED_MACRO_NAMES = []
+if has_key($exdata, "trusted_macros") then
+  if type($exdata.trusted_macros) != "list" then
+    cannot("exemptions", $EXEMPTIONS .. ": trusted_macros is not a list")
+  end
+  for each $tm in $exdata.trusted_macros
+    $tmp = trusted_problem($tm)
+    if $tmp != "" then
+      violate("trusted-macro", $tmp)
+    else
+      if contains($TRUSTED_MACRO_NAMES, $tm.name) then
+        violate("trusted-macro", "trusted macro '" .. $tm.name .. "' is listed twice")
+      else
+        push($TRUSTED_MACRO_NAMES, $tm.name)
+      end
     end
   end
 end
