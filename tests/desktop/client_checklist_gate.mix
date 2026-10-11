@@ -1,6 +1,6 @@
 #!/usr/bin/env mix
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.2.0
+-- version: 0.3.0
 -- client_checklist_gate.mix — the real-client checklist as a nested gate:
 -- real Firefox and Thunderbird, native Wayland, on a PRIVATE nested compd
 -- (nested_host_lib).
@@ -22,10 +22,18 @@
 --   F6 polite close: the window is gone
 -- Thunderbird (a fresh private profile, first-run wizard):
 --   T1 maps a NEW toplevel, T2 takes focus, T3 polite close
--- Drag-and-drop (text and file) is reported SKIP: an injected pointer drag
--- between two real clients cannot be observed from the Bus or the client
--- without instrumenting the client, so those two steps stay on the checklist
--- run with a person at the screen.
+-- Drag-and-drop between two clients, through compd's data device: the
+-- source is testkit-dnd-source, which starts a real wl_data_device drag on a
+-- left press (left half: a text needle; right half: a local file as a
+-- file:// text/uri-list, as file managers offer one). A synthetic gesture
+-- does not start Firefox's own content drags (its drag start is an async
+-- content-process round trip), so Firefox is the receiving client: the two
+-- windows are placed side by side and the human seat presses on the source,
+-- moves across in steps and releases on the fixture, whose drop handler
+-- writes what arrived into its title (CK:DROP-TEXT:<text>,
+-- CK:DROP-FILE:<name> or CK:DROP-URI:<name>). The source must also see the
+-- drop performed and finished.
+--   D1 text drag-and-drop, D2 file drag-and-drop.
 --
 -- Needs firefox, thunderbird (unless --no-thunderbird), wl-copy and wl-paste
 -- (wl-clipboard). The fixture is tests/desktop/client_fixture.html under the
@@ -86,6 +94,7 @@ if $THUNDERBIRD then
   $thunderbird = tool("thunderbird")
 end
 $fixture = $n.harness_file("client_fixture.html")
+$dnd_source = $n.require_probe("testkit-dnd-source", nil, $comp)
 if $fixture == "" then
   print("  ERROR: no client_fixture.html (tests/desktop/ under the working directory, or beside this script)")
   exit(2)
@@ -297,8 +306,64 @@ try
     end
     check("F5 copy OUT: another client pastes firefox's text", $got == $want_out, json_encode([$t5, $got]))
 
-    skip("text drag-and-drop", "not observable from the Bus without instrumenting a client; on the checklist run with a person at the screen")
-    skip("file drag-and-drop", "not observable from the Bus without instrumenting a client; on the checklist run with a person at the screen")
+    -- D1/D2: drag-and-drop from a second Firefox process into the fixture.
+    $dropped = $run .. "/dnd-file-" .. to_string(pid()) .. ".txt"
+    write_file($dropped, "dropped\n")
+    $needle_dnd = "dragged" .. to_string(pid())
+    $before = known_ids()
+    $srclog = $run .. "/dnd-source.log"
+    $sp = spawn([$dnd_source, "--text", $needle_dnd, "--uri", "file://" .. $dropped], {env: client_env(),
+      stdout: {file: $srclog}, stderr: "stdout", detach: true})
+    $PIDS["dnd-source"] = $sp
+    $src = wait_new_window($before, "testkit-dnd-source", 30)
+    if check("D0 the drag source (testkit-dnd-source) mapped", $src != nil, "no testkit-dnd-source window in 30 s") then
+      -- Side by side: the source on the left, the fixture on the right.
+      $ps = call("comp.window.place", {id: $src.id, generation: $src.generation, x: 20, y: 60, width: 600, height: 500})
+      $pt2 = call("comp.window.place", {id: $ff.id, generation: $ff.generation, x: 700, y: 60, width: 800, height: 600})
+      sleep(1)
+      $rows = {}
+      for each $w in window_rows()
+        $rows[to_string($w.id)] = $w
+      end
+      $s = $rows[to_string($src.id)]
+      $d = $rows[to_string($ff.id)]
+      fn source_saw($line)
+        return exists($srclog) and contains(read_file($srclog), $line)
+      end
+      -- Press on the source (it starts the drag), move across in steps,
+      -- hover, release on the target.
+      fn drag($from_x, $from_y, $to_x, $to_y)
+        call("comp.input.pointer.move", {seat: "human", x: $from_x, y: $from_y})
+        sleep(0.3)
+        call("comp.input.pointer.button", {seat: "human", button: "left", action: "press"})
+        sleep(0.3)
+        $steps = 16
+        $i = 1
+        while $i <= $steps
+          call("comp.input.pointer.move", {seat: "human", x: $from_x + ($to_x - $from_x) * $i / $steps, y: $from_y + ($to_y - $from_y) * $i / $steps})
+          sleep(0.05)
+          $i = $i + 1
+        end
+        sleep(0.5)
+        call("comp.input.pointer.button", {seat: "human", button: "left", action: "release"})
+      end
+      $cy = $s.y + $s.height / 2
+      $tx = $d.x + $d.width / 2
+      $ty = $d.y + $d.height * 0.6
+      drag($s.x + $s.width * 0.25, $cy, $tx, $ty)
+      $td1 = await_title($ff.id, "CK:DROP-TEXT:" .. $needle_dnd, 15)
+      sleep(0.5)
+      check("D1 text drag-and-drop: the fixture received the other client's text, the source saw it finish",
+        contains($td1, "CK:DROP-TEXT:" .. $needle_dnd) and source_saw("PROBE dropped") and source_saw("PROBE finished"),
+        json_encode([$ps.rc, $pt2.rc, $td1, exists($srclog) ? read_file($srclog) : ""]))
+      $name = basename($dropped)
+      drag($s.x + $s.width * 0.75, $cy, $tx, $ty)
+      $td2 = await_title($ff.id, $name, 15)
+      check("D2 file drag-and-drop: the fixture received the other client's file (" .. json_encode($td2) .. ")",
+        contains($td2, "CK:DROP-FILE:" .. $name) or contains($td2, "CK:DROP-URI:" .. $name),
+        json_encode([$td2, exists($srclog) ? read_file($srclog) : ""]))
+      close_gone($src, $sp, 10)
+    end
 
     $cg = close_gone($ff, $PIDS["firefox"], 20)
     check("F6 a polite close removes firefox's window", $cg.ok, $cg.detail)
