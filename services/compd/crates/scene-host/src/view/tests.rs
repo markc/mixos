@@ -146,9 +146,16 @@ fn a_crowded_panel_shrinks_its_tasks_and_stays_on_screen() {
     let task = row_of(&rt, "tasks", "task");
     assert!(task.width() < 218.0, "the task gave way: {task:?}");
     for (id, rect) in &rt.program.layout().nodes {
-        assert!(rect.right() <= width + 0.5, "{id} runs off the edge: {rect:?}");
+        assert!(
+            rect.right() <= width + 0.5,
+            "{id} runs off the edge: {rect:?}"
+        );
     }
-    assert_eq!(rect_of(&rt, "peek").right(), width - 4.0, "peek ends at the padding");
+    assert_eq!(
+        rect_of(&rt, "peek").right(),
+        width - 4.0,
+        "peek ends at the padding"
+    );
 }
 
 #[test]
