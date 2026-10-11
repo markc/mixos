@@ -328,9 +328,11 @@ configuration it would use.</p>
 <tr><td><code>dopus.quit</code></td><td></td><td>closes the window</td></tr>
 </tbody></table>
 <p><strong>File operations are keyboard-only.</strong> <code>dopus.action</code> refuses every <code>file.*</code>
-action (<code>FORBIDDEN</code>): an agent reads, navigates, sorts and selects through
-DOpus, but never creates, renames, moves, copies or deletes files through
-it.</p>
+action (<code>FORBIDDEN</code>). Input played through the drive verbs (<code>dopus.ui.*</code>)
+is held to the same rule: while it runs, file actions and opening files are
+refused, and a delete, name or drop dialog can be dismissed but not
+accepted. An agent reads, navigates, sorts and selects through DOpus, but
+never creates, renames, moves, copies, deletes or opens files through it.</p>
 <p>The window is drivable like every MixOS app, including its menus: see
 <a href="/drive/">driving an app</a> (<code>dopus.ui.*</code>, <code>dopus.window</code>). The verbs are
 registered in <code>docs/spec/bus/verbs.conf.mix</code>.</p>

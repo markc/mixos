@@ -622,6 +622,12 @@ pub fn apply_availability(
     }
 }
 
+/// Why `what` was refused to the Bus, whether asked by `dopus.action` or by
+/// drive input (`dopus.ui.*`).
+pub fn keyboard_only(what: &str) -> String {
+    format!("{what} is keyboard-only — the Bus never mutates the filesystem through a file manager")
+}
+
 /// `dopus.actions.list`'s table: the actions with the chords `keys` gives
 /// each (the effective ones in the window, the defaults headless).
 pub fn action_table(keys: impl Fn(&str) -> Vec<String>) -> Vec<ActionRow> {
@@ -636,10 +642,29 @@ pub fn action_table(keys: impl Fn(&str) -> Vec<String>) -> Vec<ActionRow> {
         .collect()
 }
 
+/// How long navigation waits on the stat that tells a file from a folder.
+const STAT_WAIT: std::time::Duration = std::time::Duration::from_millis(250);
+
 /// A file path navigated as a pane directory lands on its parent:
 /// `/etc/passwd` opens `/etc`.
+///
+/// The stat runs off the calling (UI) thread and is waited on for at most
+/// [`STAT_WAIT`]: a path on a stalled mount must not freeze the window.
+/// Past that the path is taken as given, and the listing worker reports
+/// what it is. A stat that never returns leaves its thread behind.
 pub fn navigable(path: PathBuf) -> PathBuf {
-    if path.exists() && !path.is_dir() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let probe = path.clone();
+    let spawned = std::thread::Builder::new()
+        .name("dopus-stat".into())
+        .spawn(move || {
+            let _ = tx.send(std::fs::metadata(&probe).map(|m| m.is_dir()).ok());
+        });
+    let is_dir = match spawned {
+        Ok(_) => rx.recv_timeout(STAT_WAIT).ok().flatten(),
+        Err(_) => None,
+    };
+    if is_dir == Some(false) {
         return path.parent().map(Path::to_path_buf).unwrap_or(path);
     }
     path
@@ -816,11 +841,7 @@ pub fn serve_command(
                 return vec![Served::error(
                     id,
                     code::FORBIDDEN,
-                    format!(
-                        "{} is keyboard-only — the Bus never mutates the filesystem through a \
-                         file manager",
-                        req.id
-                    ),
+                    keyboard_only(&req.id),
                 )];
             }
             let pane = req.pane.resolve(core);

@@ -931,6 +931,10 @@ fn dialogs(
                 dopus_core::PromptKind::Rename => "rename",
             };
             let check = dopus_core::validate_filename(text);
+            // Enter in the field submits a valid name: the field gives up
+            // focus on Enter, so the dialog's own default-button Enter never
+            // sees it.
+            let mut submitted = false;
             let shown = dialog::Dialog::new(id, label(title))
                 .buttons(vec![
                     Choice::new(label("ok"), Role::Default).enabled(check.is_ok()),
@@ -946,7 +950,13 @@ fn dialogs(
                         response.request_focus();
                     }
                     if response.changed() {
-                        events.push(UiEvent::PromptText(value));
+                        events.push(UiEvent::PromptText(value.clone()));
+                    }
+                    if response.lost_focus()
+                        && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                        && dopus_core::validate_filename(&value).is_ok()
+                    {
+                        submitted = true;
                     }
                     if let Err(problem) = &check {
                         ui.label(
@@ -956,11 +966,15 @@ fn dialogs(
                         );
                     }
                 });
-            answered(
-                shown.chosen,
-                shown.dismissed,
-                &[Answer::Accept, Answer::Cancel],
-            )
+            if submitted && !shown.dismissed {
+                Some(Answer::Accept)
+            } else {
+                answered(
+                    shown.chosen,
+                    shown.dismissed,
+                    &[Answer::Accept, Answer::Cancel],
+                )
+            }
         }
         Dialog::Drop {
             paths, destination, ..

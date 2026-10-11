@@ -108,6 +108,11 @@ pub struct App {
     /// Work for the shell.
     pub effects: Vec<Effect>,
     pub quitting: bool,
+    /// Bus drive input (`dopus.ui.*`) is playing this frame. File actions,
+    /// accepting a dialog that changes files, and opening files are refused
+    /// then, as `dopus.action` refuses `file.*`: the Bus never changes the
+    /// filesystem through dopus.
+    pub driven: bool,
 }
 
 impl App {
@@ -124,6 +129,7 @@ impl App {
             theme: toolkit::theme_menu::Choice::default(),
             effects: Vec::new(),
             quitting: false,
+            driven: false,
         }
     }
 
@@ -180,6 +186,10 @@ impl App {
     /// activates its pane first).
     pub fn action_in(&mut self, action: &str, pane: PaneId) {
         if self.dialog.is_some() || self.quitting {
+            return;
+        }
+        if self.driven && action.starts_with("file.") {
+            self.status = Some(verbs::keyboard_only(action));
             return;
         }
         match verbs::apply_action_in(action, &mut self.core, pane) {
@@ -330,6 +340,15 @@ impl App {
         let Some(dialog) = self.dialog.clone() else {
             return;
         };
+        // Drive input may dismiss a dialog, never accept one that changes files.
+        let changes_files = matches!(
+            dialog,
+            Dialog::Confirm { .. } | Dialog::Prompt { .. } | Dialog::Drop { .. }
+        );
+        if self.driven && changes_files && answer != Answer::Cancel {
+            self.status = Some(verbs::keyboard_only("a file dialog"));
+            return;
+        }
         match (dialog, answer) {
             (Dialog::Confirm { token, .. }, Answer::Accept) => {
                 self.core.confirm(token, ConfirmAnswer::Yes);
@@ -563,5 +582,35 @@ mod tests {
             &a.effects[..],
             [Effect::Reply { id: 9, rc: 0, .. }]
         ));
+    }
+
+    /// Drive input (`dopus.ui.*`) runs no file action and accepts no dialog
+    /// that changes files; it may still dismiss one.
+    #[test]
+    fn drive_input_never_changes_files() {
+        let (_dir, mut a) = app();
+        a.driven = true;
+        a.action("file.new-folder");
+        assert!(a.dialog.is_none());
+        assert!(a.status.as_deref().is_some_and(|s| s.contains("keyboard-only")));
+        a.action("view.toggle-hidden");
+        assert!(a.core.pane(a.core.active()).show_hidden, "other actions run");
+        for dialog in [
+            Dialog::Confirm {
+                token: 7,
+                message: "Delete?".into(),
+            },
+            Dialog::Prompt {
+                token: 8,
+                kind: dopus_core::PromptKind::NewFolder,
+                text: "x".into(),
+            },
+        ] {
+            a.open(dialog);
+            a.answer(Answer::Accept);
+            assert!(a.dialog.is_some(), "not accepted under drive input");
+            a.answer(Answer::Cancel);
+            assert!(a.dialog.is_none(), "dismissed");
+        }
     }
 }

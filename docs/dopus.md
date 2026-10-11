@@ -100,9 +100,11 @@ DOpus answers on the Bus as `dopus` (schema `dopus.v1`).
 | `dopus.quit` | | closes the window |
 
 **File operations are keyboard-only.** `dopus.action` refuses every `file.*`
-action (`FORBIDDEN`): an agent reads, navigates, sorts and selects through
-DOpus, but never creates, renames, moves, copies or deletes files through
-it.
+action (`FORBIDDEN`). Input played through the drive verbs (`dopus.ui.*`)
+is held to the same rule: while it runs, file actions and opening files are
+refused, and a delete, name or drop dialog can be dismissed but not
+accepted. An agent reads, navigates, sorts and selects through DOpus, but
+never creates, renames, moves, copies, deletes or opens files through it.
 
 The window is drivable like every MixOS app, including its menus: see
 [driving an app](drive.md) (`dopus.ui.*`, `dopus.window`). The verbs are

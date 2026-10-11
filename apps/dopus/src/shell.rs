@@ -86,6 +86,9 @@ pub struct Shell {
     config_path: Option<String>,
     /// Bus commands waiting behind drive input accepted before them.
     held: VecDeque<Command>,
+    /// Input after a shortcut that followed a click in the same frame,
+    /// waiting for the next frame ([`Shell::split_input`]).
+    deferred: Vec<egui::Event>,
     exiting: bool,
     /// The window title last sent.
     title: String,
@@ -139,6 +142,7 @@ impl Shell {
             service,
             config_path,
             held: VecDeque::new(),
+            deferred: Vec::new(),
             exiting: false,
             title: String::new(),
         };
@@ -520,6 +524,12 @@ impl Shell {
 
     /// One frame's logic; it runs even while the window is hidden.
     pub fn logic(&mut self, ctx: &egui::Context) {
+        if !self.deferred.is_empty() {
+            let held = std::mem::take(&mut self.deferred);
+            ctx.input_mut(|i| {
+                i.events.splice(0..0, held);
+            });
+        }
         for answer in drive::logic(ctx) {
             self.respond(answer.id, answer.rc, answer.body.to_string());
         }
@@ -539,13 +549,48 @@ impl Shell {
         }
     }
 
+    /// Keep a frame's clicks and shortcuts in the order they came.
+    /// Shortcuts run before the view applies the frame's clicks, so a
+    /// shortcut after a click (select B, then Delete) waits, with everything
+    /// after it, for the next frame, when the click has been applied: it
+    /// acts on B, never on the row selected before.
+    fn split_input(&mut self, ctx: &egui::Context) {
+        let (commands, app) = (&self.commands, &self.app);
+        // The presses `Registry::shortcuts` may take; clipboard events stand
+        // for Ctrl+X, Ctrl+C and Ctrl+V.
+        let is_shortcut = |e: &egui::Event| {
+            commands.takes(e, app)
+                || matches!(
+                    e,
+                    egui::Event::Cut | egui::Event::Copy | egui::Event::Paste(_)
+                )
+        };
+        let rest = ctx.input_mut(|i| {
+            let mut clicked = false;
+            let at = i.events.iter().position(|e| {
+                if is_shortcut(e) {
+                    return clicked;
+                }
+                clicked |= matches!(e, egui::Event::PointerButton { pressed: true, .. });
+                false
+            });
+            at.map(|n| i.events.split_off(n))
+        });
+        if let Some(rest) = rest {
+            self.deferred = rest;
+            ctx.request_repaint();
+        }
+    }
+
     /// One frame's drawing and interaction.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
+        self.app.driven = drive::pending(ui.ctx());
         // Shortcuts are off while a text field (the location bar, a prompt)
         // has the keyboard, a menu is open, or a dialog is up.
         let typing =
             ui.ctx().memory(|m| m.focused().is_some()) && ui.ctx().egui_wants_keyboard_input();
         if !typing && !toolkit::menu::is_open(ui.ctx()) && self.app.dialog.is_none() {
+            self.split_input(ui.ctx());
             let fired = self.commands.shortcuts(ui.ctx(), &self.app);
             let events = fired
                 .into_iter()
