@@ -914,8 +914,7 @@ mod tests {
             let mut out = Vec::new();
             let mut output = ctx.run_ui(
                 egui::RawInput {
-                    modifiers: held,
-                    events: vec![event],
+                    events: vec![egui::Event::ModifiersChanged(held), event],
                     ..Default::default()
                 },
                 |ui| out = r.shortcuts(ui.ctx(), &Counter::default()),
