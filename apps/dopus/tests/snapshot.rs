@@ -16,7 +16,7 @@ use std::time::{Duration, Instant, SystemTime};
 use design::{DesignContext, Mode, Scheme};
 use dopus::app::{App, Dialog};
 use dopus::{commands, strings, view::view};
-use dopus_core::{DOpusConfig, DopusCore, PaneId, PromptKind};
+use dopus_core::{CoreEvent, DOpusConfig, DopusCore, PaneId, PromptKind};
 use egui_kittest::Harness;
 use toolkit::{Theme, icons};
 
@@ -81,11 +81,24 @@ fn home() -> &'static Path {
 /// Tick the core (it starts work such as the selection's metadata there)
 /// and feed it every event until none arrives for a while; twice, so work
 /// a reply starts is done too.
-fn settle(app: &mut App, events: &std::sync::mpsc::Receiver<dopus_core::CoreEvent>) {
+///
+/// A file's birth time cannot be set, and its access time and owner depend
+/// on the machine, so the metadata reply has them pinned on its way in.
+fn settle(app: &mut App, events: &std::sync::mpsc::Receiver<CoreEvent>) {
     for _ in 0..2 {
         let derived = app.core.tick(Instant::now());
         app.absorb(derived);
-        while let Ok(event) = events.recv_timeout(Duration::from_millis(400)) {
+        while let Ok(mut event) = events.recv_timeout(Duration::from_millis(400)) {
+            if let CoreEvent::PropertiesArrived {
+                result: Ok(metadata),
+                ..
+            } = &mut event
+            {
+                let when = SystemTime::UNIX_EPOCH + Duration::from_secs(WHEN);
+                metadata.created = Some(when);
+                metadata.accessed = Some(when);
+                metadata.owner_group = "user:user".into();
+            }
             let derived = app.core.on_event(event);
             app.absorb(derived);
         }
