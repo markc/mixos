@@ -126,6 +126,7 @@ policy = { path = "services/compd/crates/policy" }
 render-gles = { path = "services/compd/crates/render-gles" }
 slots = { path = "services/compd/crates/slots" }
 surfaces = { path = "services/compd/crates/surfaces" }
+ui = { path = "services/compd/crates/ui" }
 
 # noded private crates (services/noded/crates/).
 mesh = { path = "services/noded/crates/mesh" }

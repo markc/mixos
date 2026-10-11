@@ -1,0 +1,35 @@
+[package]
+name = "ui"
+description = "The compositor's own UI: egui instances painted with egui-wgpu into textures on compd's GL context"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "compd"
+kind = "service"
+layer = "desktop"
+contract = "none"
+
+[lints.rust]
+warnings = "allow"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+egui = { workspace = true }
+egui-wgpu = { workspace = true }
+graphics = { workspace = true }
+model = { workspace = true }
+smithay = { workspace = true }
+thiserror = { workspace = true }
+# The MixOS look (fonts, style, chrome), the same one the apps install.
+toolkit = { workspace = true }
+wgpu = { workspace = true }
+
+[dev-dependencies]
+png = { workspace = true }
+render-gles = { workspace = true }
