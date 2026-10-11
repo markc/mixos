@@ -866,6 +866,7 @@ dependencies = [
  "mix",
  "serde",
  "serde_json",
+ "settings",
  "tokio",
  "toolkit",
  "tracing",

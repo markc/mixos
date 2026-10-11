@@ -5,9 +5,11 @@
 //! requests, arms one-shot timers and deadlines, subscribes topics
 //! (`edit.changed`, `theme.changed`, `noded.props.changed`) with their
 //! bodies, forwards connection edges, and hands `ced.*` commands to the
-//! controller. Deliveries reach the host through an unbounded channel, and
-//! a wake callback (the window's repaint request) runs after each one, so
-//! nothing polls.
+//! controller. It also performs the window's own session-look reads
+//! (`settings.get`, see `shell.rs`) and their retry timers, which never
+//! reach the controller. Deliveries reach the host through an unbounded
+//! channel, and a wake callback (the window's repaint request) runs after
+//! each one, so nothing polls.
 //!
 //! Every wait here is an event: a Bus frame, an effect from the host, a
 //! connection-state edge, or a timer the controller armed. Requests go out
@@ -36,6 +38,21 @@ use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 pub enum Delivery {
     Incoming(Incoming),
     Command(BusCommand),
+    /// The answer to session-look read `ticket`: `rc`, the body and the
+    /// broker's error header, or `None` when the call failed or timed out.
+    Look {
+        ticket: u64,
+        reply: Option<(u8, String, Option<String>)>,
+    },
+    /// A look retry armed with [`BusHandle::retry_look`] is due.
+    LookRetry {
+        generation: u64,
+    },
+    /// A `Subscribe` effect landed: deliveries on `topic` now arrive, so a
+    /// read made from here on cannot miss a change.
+    Subscribed {
+        topic: String,
+    },
     /// The Bus thread finished; anything it could not do cleanly.
     Stopped {
         faults: Vec<String>,
@@ -44,6 +61,8 @@ pub enum Delivery {
 
 enum WorkerCommand {
     Effect(Effect),
+    Look(settings::follow::Read),
+    LookRetry { delay: Duration, generation: u64 },
     Shutdown(Option<SessionWriter>),
 }
 
@@ -81,6 +100,8 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const PROBE_TIMEOUT: Duration = Duration::from_millis(500);
 /// Shutdown drains replies and the session within this budget.
 const DRAIN: Duration = Duration::from_secs(2);
+/// How long one session-look read may take.
+const LOOK_BUDGET: Duration = Duration::from_secs(30);
 
 /// Wakes the host after each delivery (the window's repaint request).
 pub type Wake = Arc<dyn Fn() + Send + Sync>;
@@ -108,6 +129,16 @@ impl BusHandle {
         if is_bus(effect) {
             let _ = self.tx.send(WorkerCommand::Effect(effect.clone()));
         }
+    }
+
+    /// Perform a session-look read; [`Delivery::Look`] answers it.
+    pub fn read_look(&self, read: settings::follow::Read) {
+        let _ = self.tx.send(WorkerCommand::Look(read));
+    }
+
+    /// Deliver [`Delivery::LookRetry`] with `generation` after `delay`.
+    pub fn retry_look(&self, delay: Duration, generation: u64) {
+        let _ = self.tx.send(WorkerCommand::LookRetry { delay, generation });
     }
 }
 
@@ -273,6 +304,28 @@ async fn run(
                         session = writer;
                         break;
                     }
+                    Some(WorkerCommand::Look(read)) => {
+                        let (c, o) = (client.clone(), out.clone());
+                        tokio::spawn(async move {
+                            let headers = BTreeMap::new();
+                            let body = read.body.to_string();
+                            let call = c.call_with_headers_raw(read.service, read.verb, &headers, &body);
+                            let reply = match tokio::time::timeout(LOOK_BUDGET, call).await {
+                                Ok(Ok(answer)) => Some(answer),
+                                _ => None,
+                            };
+                            o.send(Delivery::Look { ticket: read.ticket, reply });
+                        });
+                        continue;
+                    }
+                    Some(WorkerCommand::LookRetry { delay, generation }) => {
+                        let o = out.clone();
+                        tokio::spawn(async move {
+                            tokio::time::sleep(delay).await;
+                            o.send(Delivery::LookRetry { generation });
+                        });
+                        continue;
+                    }
                     Some(WorkerCommand::Effect(effect)) => effect,
                 };
                 match effect {
@@ -354,6 +407,7 @@ async fn run(
                             if failed {
                                 o.send(Delivery::Incoming(Incoming::Connection { up: true }));
                             }
+                            o.send(Delivery::Subscribed { topic });
                         });
                     }
                     Effect::Quit => break,

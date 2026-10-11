@@ -297,9 +297,7 @@ impl Shell {
                 continue;
             }
             if let Event::LookRetry(generation) = event {
-                if generation == self.look_retry && !self.exiting {
-                    self.read_look();
-                }
+                self.look_retry_due(generation);
                 continue;
             }
             if let Event::Delivery(Delivery::Topic(topic)) = &event {
@@ -445,14 +443,19 @@ impl Shell {
         self.ctx.request_repaint();
     }
 
-    /// Read the session look (start, a settingsd hint, a reconnection).
+    /// Read the session look (start, a settingsd hint, a reconnection). A
+    /// read going out voids any armed retry; closing reads nothing.
     fn read_look(&mut self) {
+        if self.exiting {
+            return;
+        }
         if let Some(read) = self.follower.read() {
             self.perform_read(read);
         }
     }
 
-    fn perform_read(&self, read: settings::follow::Read) {
+    fn perform_read(&mut self, read: settings::follow::Read) {
+        self.look_retry += 1;
         let bus = self.bus.clone();
         self.spawn(async move {
             let result = bus
@@ -466,8 +469,9 @@ impl Shell {
     /// window's own choice); without settingsd the theme file stands; a
     /// transient fault is retried with backoff, the last look standing.
     pub fn looked(&mut self, ticket: u64, result: Result<Reply, CallError>) {
-        // Closing: nothing more to draw.
-        if self.exiting {
+        // Closing: nothing more to draw. A superseded read's answer changes
+        // nothing, retries included.
+        if self.exiting || self.follower.pending() != Some(ticket) {
             return;
         }
         let reply = result.ok();
@@ -490,13 +494,13 @@ impl Shell {
             }
             _ => {}
         }
-        // Any answer voids a pending retry; a transient fault schedules one
-        // (backing off), unless another read is already on its way.
-        self.look_retry += 1;
+        // A follow-up read goes out at once (voiding any retry); else a
+        // transient fault arms one retry, backing off.
         match next {
             Some(read) => self.perform_read(read),
             None => {
                 if let Some(delay) = self.follower.retry_delay() {
+                    self.look_retry += 1;
                     let generation = self.look_retry;
                     self.spawn(async move {
                         tokio::time::sleep(delay).await;
@@ -515,6 +519,19 @@ impl Shell {
     /// Ask for the session look again now (a hint, as from settingsd).
     pub fn hint_look(&mut self) {
         self.read_look();
+    }
+
+    /// The look retry armed last; a retry of any other generation is void.
+    pub fn look_generation(&self) -> u64 {
+        self.look_retry
+    }
+
+    /// The retry armed as `generation` is due: it reads, unless a newer
+    /// read voided it or the window is closing.
+    pub fn look_retry_due(&mut self, generation: u64) {
+        if generation == self.look_retry && !self.exiting {
+            self.read_look();
+        }
     }
 
     /// The window's theme choice (View › Theme, the title bar's switch,

@@ -17,10 +17,18 @@
 //! - Quitting finishes the effect batch it came in, so its own answer goes
 //!   out, then answers every open dialog, held command and drive request
 //!   before the Bus stops.
+//!
+//! The session theme is the look settingsd holds for the desktop profile,
+//! followed through a [`settings::follow::Follower`]: a read at start, on
+//! each hint on the profile's summary topic, on a reconnection and when
+//! services register. Without settingsd, or with a look this build cannot
+//! draw, the theme file's session theme stands (and follows
+//! `theme.changed`). The window's own choice lays over either.
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::mpsc;
+use std::time::Duration;
 
 use documents::controller::{BusCommand, Effect};
 use documents::session::SessionWriter;
@@ -47,6 +55,10 @@ pub trait Transport {
     /// The next delivery, if one has arrived.
     fn poll(&mut self) -> Option<Delivery>;
     fn connected(&self) -> bool;
+    /// Perform a session-look read; [`Delivery::Look`] answers it.
+    fn read_look(&mut self, read: settings::follow::Read);
+    /// Deliver [`Delivery::LookRetry`] with `generation` after `delay`.
+    fn retry_look(&mut self, delay: Duration, generation: u64);
     /// Stop: answer what is queued, flush `session`, then deliver
     /// [`Delivery::Stopped`].
     fn shutdown(&mut self, session: Option<SessionWriter>);
@@ -68,9 +80,31 @@ impl Transport for Bus {
     fn connected(&self) -> bool {
         self.handle.connected()
     }
+    fn read_look(&mut self, read: settings::follow::Read) {
+        self.handle.read_look(read);
+    }
+    fn retry_look(&mut self, delay: Duration, generation: u64) {
+        self.handle.retry_look(delay, generation);
+    }
     fn shutdown(&mut self, session: Option<SessionWriter>) {
         self.handle.shutdown(session);
     }
+}
+
+/// This host's name: the settingsd instance to try first (settingsd runs
+/// as `--instance %H`; the follower adopts the right one from its answer).
+fn hostname() -> String {
+    std::fs::read_to_string("/proc/sys/kernel/hostname")
+        .map(|name| name.trim().to_owned())
+        .unwrap_or_default()
+}
+
+/// Whether a `noded.props.changed` body may mean a service (settingsd)
+/// came or went: a `services.registered` change, or one that cannot be read.
+fn services_changed(body: &str) -> bool {
+    serde_json::from_str::<Value>(body)
+        .ok()
+        .is_none_or(|b| b["path"] == "services.registered")
 }
 
 type Relexed = (
@@ -83,9 +117,21 @@ pub struct Shell {
     pub app: App,
     commands: Registry<App>,
     strings: Strings,
-    /// The session's theme, and the window's choice over it as installed.
+    /// The session's theme (settingsd's look, else the theme file's), and
+    /// the window's choice over it as installed.
     base: Theme,
     theme: Theme,
+    /// The theme file's session theme: the fallback while settingsd is
+    /// absent, or holds a look this build cannot draw.
+    file_theme: Theme,
+    /// The session look settingsd holds, once read.
+    look: Option<settings::Appearance>,
+    follower: settings::follow::Follower,
+    /// The follower's hint topic (the profile's summary topic; a
+    /// retarget changes only the instance, never the profile).
+    look_topic: String,
+    /// The latest look retry; an older one firing is void.
+    look_retry: u64,
     installed: Option<toolkit::theme_menu::Choice>,
     palette: editor::Palette,
     transport: Box<dyn Transport>,
@@ -123,7 +169,12 @@ impl Shell {
             commands: crate::commands::registry(),
             strings: crate::strings(),
             base: theme.clone(),
+            file_theme: theme.clone(),
             theme,
+            look: None,
+            follower: settings::follow::Follower::new(&hostname()),
+            look_topic: settings::summary_topic(settings::follow::PROFILE),
+            look_retry: 0,
             installed: None,
             palette,
             transport,
@@ -139,6 +190,11 @@ impl Shell {
             exiting: false,
         };
         shell.perform();
+        // Hints arrive only once the subscription lands; the read then
+        // (`Delivery::Subscribed`) catches any change an earlier read (a
+        // reconnection, a registration) could have missed.
+        let topic = shell.look_topic.clone();
+        shell.transport.perform(&Effect::Subscribe { topic });
         shell
     }
 
@@ -154,16 +210,41 @@ impl Shell {
     fn pump(&mut self) {
         while let Some(delivery) = self.transport.poll() {
             match delivery {
+                Delivery::Incoming(Incoming::Topic { topic, .. }) if topic == self.look_topic => {
+                    // A hint, never trusted: the look comes from the read.
+                    // The window's own topic: the controller never sees it.
+                    self.read_look();
+                }
                 Delivery::Incoming(incoming) => {
-                    if matches!(&incoming, Incoming::Topic { topic, .. } if topic == "theme.changed")
-                    {
-                        // The session theme changed: the window follows it,
-                        // under its own choice.
-                        self.base = Theme::load();
-                        self.installed = None;
+                    match &incoming {
+                        Incoming::Topic { topic, .. } if topic == "theme.changed" => {
+                            // The theme file changed: it is the session
+                            // theme while settingsd's look is not drawn.
+                            self.file_theme = Theme::load();
+                            self.set_base();
+                        }
+                        // settingsd may have come (or come back).
+                        Incoming::Topic { topic, body }
+                            if topic == "noded.props.changed" && services_changed(body) =>
+                        {
+                            self.read_look();
+                        }
+                        Incoming::Connection { up: true } => self.read_look(),
+                        _ => {}
                     }
                     let fx = self.app.ctl.on_incoming(incoming);
                     self.app.absorb(fx);
+                }
+                Delivery::Subscribed { topic } => {
+                    if topic == self.look_topic {
+                        self.read_look();
+                    }
+                }
+                Delivery::Look { ticket, reply } => self.looked(ticket, reply),
+                Delivery::LookRetry { generation } => {
+                    if generation == self.look_retry && !self.exiting {
+                        self.read_look();
+                    }
                 }
                 Delivery::Command(cmd) => {
                     if self.exiting {
@@ -363,6 +444,96 @@ impl Shell {
         }
         self.save_session();
         self.transport.shutdown(self.writer.take());
+    }
+
+    /// The session theme again: settingsd's look when this build can draw
+    /// it, else the theme file's. The next frame installs it under the
+    /// window's choice.
+    fn set_base(&mut self) {
+        self.base = self
+            .look
+            .as_ref()
+            .and_then(toolkit::session_look::theme)
+            .unwrap_or_else(|| self.file_theme.clone());
+        self.installed = None;
+        self.ctx.request_repaint();
+    }
+
+    /// Show the session look `look` (settingsd's), or the theme file's with
+    /// `None`; the window's own choice stays on top.
+    pub fn set_look(&mut self, look: Option<settings::Appearance>) {
+        self.look = look;
+        self.set_base();
+    }
+
+    /// Read the session look (start, a settingsd hint, a reconnection). A
+    /// read going out voids any armed retry; closing reads nothing.
+    fn read_look(&mut self) {
+        if self.exiting {
+            return;
+        }
+        if let Some(read) = self.follower.read() {
+            self.issue_look(read);
+        }
+    }
+
+    fn issue_look(&mut self, read: settings::follow::Read) {
+        self.look_retry += 1;
+        self.transport.read_look(read);
+    }
+
+    /// Ask for the session look again now (a hint, as from settingsd).
+    pub fn hint_look(&mut self) {
+        self.read_look();
+    }
+
+    /// The session look follower (tests read its tickets and retry state).
+    pub fn follower(&self) -> &settings::follow::Follower {
+        &self.follower
+    }
+
+    /// The look retry generation now; a retry of any other one is void.
+    pub fn look_generation(&self) -> u64 {
+        self.look_retry
+    }
+
+    /// A look read answered: a new look is installed at once (under the
+    /// window's own choice); without settingsd the theme file stands; a
+    /// transient fault is retried with backoff, the last look standing.
+    pub fn looked(&mut self, ticket: u64, reply: Option<(u8, String, Option<String>)>) {
+        // Closing: nothing more to draw. A superseded read's answer changes
+        // nothing, retries included.
+        if self.exiting || self.follower.pending() != Some(ticket) {
+            return;
+        }
+        let answer = reply
+            .as_ref()
+            .map(|(rc, body, error)| (*rc, body.as_str(), error.as_deref()));
+        let (followed, next) = self.follower.answered(ticket, answer);
+        match followed {
+            // A profile naming its own design source keeps the theme file,
+            // as `session_look` does for one it cannot draw.
+            Some(settings::follow::Followed::Look {
+                appearance,
+                custom_source,
+                ..
+            }) => self.set_look((!custom_source).then_some(appearance)),
+            Some(settings::follow::Followed::Missing) if self.look.is_some() => {
+                self.set_look(None);
+            }
+            _ => {}
+        }
+        // A follow-up read goes out at once (voiding any retry); else a
+        // transient fault arms one retry, backing off.
+        match next {
+            Some(read) => self.issue_look(read),
+            None => {
+                if let Some(delay) = self.follower.retry_delay() {
+                    self.look_retry += 1;
+                    self.transport.retry_look(delay, self.look_retry);
+                }
+            }
+        }
     }
 
     fn follow_theme(&mut self) {

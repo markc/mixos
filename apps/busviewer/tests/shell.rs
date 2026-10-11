@@ -759,6 +759,59 @@ fn the_session_look_follows_settingsd_through_restarts_and_faults() {
     );
 }
 
+/// A lost read arms a retry; a newer read voids it, so the retry coming due
+/// while that read is unanswered reads nothing (and folds no follow-up read
+/// in). An answer to a superseded read changes nothing, retries included.
+/// Driven directly, so the sink's own failures are never pumped in.
+#[test]
+fn a_newer_look_read_voids_an_armed_retry() {
+    let lost = || {
+        Err(inspector::bus::CallError {
+            message: "timed out".into(),
+            outcome_unknown: true,
+        })
+    };
+    let mut rig = live_rig();
+    answer_look(&mut rig, look_reply("7", "forest"));
+    let shell = rig.h.state_mut().as_mut().unwrap();
+    shell.hint_look();
+    let lost_read = shell.follower().pending().expect("a read in flight");
+    shell.looked(lost_read, lost());
+    assert_eq!(
+        shell.follower().retry_delay(),
+        Some(settings::follow::RETRY_FIRST)
+    );
+    let armed = shell.look_generation();
+
+    shell.hint_look();
+    let newer = shell.follower().pending().expect("a newer read");
+    assert_ne!(shell.look_generation(), armed, "the newer read voids it");
+    shell.look_retry_due(armed);
+    assert_eq!(
+        shell.follower().pending(),
+        Some(newer),
+        "the voided retry read nothing"
+    );
+
+    // The superseded read answering late changes nothing.
+    let generation = shell.look_generation();
+    shell.looked(lost_read, look_reply("9", "ocean"));
+    assert_eq!(
+        shell.look_generation(),
+        generation,
+        "no retry from a stale answer"
+    );
+    assert_eq!(shell.follower().pending(), Some(newer));
+
+    shell.looked(newer, look_reply("8", "ocean"));
+    assert_eq!(
+        shell.follower().pending(),
+        None,
+        "no follow-up read folded in"
+    );
+    assert_eq!(effective_scheme(&mut rig, 1), json!("ocean"));
+}
+
 /// The one link named `name` exactly.
 fn control_link(rig: &mut Rig, id: u64, name: &str) -> String {
     let nodes = tree(rig, id, json!({"label":name,"exact":true,"role":"Link"}));

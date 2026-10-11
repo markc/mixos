@@ -32,6 +32,7 @@ futures.workspace = true
 mix.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+settings.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }
 toolkit.workspace = true
 tracing.workspace = true
