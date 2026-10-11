@@ -1468,16 +1468,25 @@ impl DopusCore {
     /// caller independently; a settled core needs no periodic tick.
     pub fn next_deadline(&self) -> Option<Instant> {
         let config = self.config_dirty_since.map(|since| since + CONFIG_SETTLE);
-        let metadata = [PaneId::Left, PaneId::Right].into_iter().filter_map(|pane| {
-            let model = self.pane(pane);
-            let path = model.selected.as_ref()?;
-            let slot = &self.properties[pane.index()];
-            if slot.cached.as_ref().is_some_and(|(g, p, _)| *g == model.generation && p == path) {
-                return None;
-            }
-            slot.in_flight.iter().find(|(g, p, _)| *g == model.generation && p == path)
-                .map(|(_, _, started)| *started + Duration::from_secs(5))
-        }).min();
+        let metadata = [PaneId::Left, PaneId::Right]
+            .into_iter()
+            .filter_map(|pane| {
+                let model = self.pane(pane);
+                let path = model.selected.as_ref()?;
+                let slot = &self.properties[pane.index()];
+                if slot
+                    .cached
+                    .as_ref()
+                    .is_some_and(|(g, p, _)| *g == model.generation && p == path)
+                {
+                    return None;
+                }
+                slot.in_flight
+                    .iter()
+                    .find(|(g, p, _)| *g == model.generation && p == path)
+                    .map(|(_, _, started)| *started + Duration::from_secs(5))
+            })
+            .min();
         config.into_iter().chain(metadata).min()
     }
 
@@ -1541,7 +1550,6 @@ impl DopusCore {
             self.set_status(None, &error);
         }
     }
-
 
     // -- internals ----------------------------------------------------------
 
@@ -3682,12 +3690,17 @@ mod tests {
         assert_eq!(core.next_deadline(), None);
         core.set_split_ratio(0.7);
         core.tick(start + Duration::from_secs(1));
-        assert_eq!(core.next_deadline(), Some(start + Duration::from_secs(1) + CONFIG_SETTLE));
+        assert_eq!(
+            core.next_deadline(),
+            Some(start + Duration::from_secs(1) + CONFIG_SETTLE)
+        );
         core.set_split_ratio(0.8);
         core.tick(start + Duration::from_millis(1100));
         let due = start + Duration::from_millis(1100) + CONFIG_SETTLE;
         assert_eq!(core.next_deadline(), Some(due));
-        assert!(core.tick(due).iter().any(|event| matches!(event, CoreEvent::ConfigSettled(config) if config.split_ratio == 0.8)));
+        assert!(core.tick(due).iter().any(
+            |event| matches!(event, CoreEvent::ConfigSettled(config) if config.split_ratio == 0.8)
+        ));
         assert_eq!(core.next_deadline(), None);
     }
 
