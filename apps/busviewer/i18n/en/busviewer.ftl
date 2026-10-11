@@ -43,7 +43,6 @@ transport-error = Transport error; the call was not retried and its outcome may 
 rc = Return code
 truncated = [Reply truncated at 1,000,000 bytes]
 quitting = Finishing the accepted operation before closing…
-shortcut-body = Ctrl+R: refresh services. Ctrl+Enter: call selected verb. Ctrl+Shift+F: format JSON. Ctrl+F: search services. Ctrl+Q: quit. F1: shortcuts. Escape: close dialogue.
 details = Details
 search-services = Search services
 expand = Expand { $name }

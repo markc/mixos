@@ -160,6 +160,8 @@ pub fn base_look(engine: &Engine) -> Option<Look> {
 pub struct Shell {
     engine: Engine,
     commands: Registry<Engine>,
+    /// The profile's bindings for Prefs, as last applied.
+    keymap: toolkit::keymap::Overrides,
     strings: Strings,
     theme: Theme,
     bus: Handle,
@@ -234,6 +236,7 @@ impl Shell {
         let mut shell = Self {
             engine: Engine::new(crate::label_with),
             commands: crate::commands::registry(),
+            keymap: toolkit::keymap::Overrides::new(),
             strings: strings(),
             theme,
             bus,
@@ -460,8 +463,21 @@ impl Shell {
         }
     }
 
+    /// Apply the profile's bindings for Prefs when they change.
+    fn follow_keymap(&mut self) {
+        let mine = self.engine.look.keymaps.get(APP);
+        if mine == Some(&self.keymap) || (mine.is_none() && self.keymap.is_empty()) {
+            return;
+        }
+        self.keymap = mine.cloned().unwrap_or_default();
+        for note in self.commands.rebind(&self.keymap) {
+            eprintln!("prefs: keymap: {note}");
+        }
+    }
+
     /// One frame's drawing and interaction.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
+        self.follow_keymap();
         let fired = self.commands.shortcuts(ui.ctx(), &self.engine);
         let stroke = icons::stroke_width(&self.theme);
         let mut events = view(ui, &self.engine, &self.commands, &self.strings, stroke);

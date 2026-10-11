@@ -8,7 +8,7 @@
 use crate::actions::ActionId;
 
 /// A parsed chord: modifiers + one key (lower-case letter/digit, or a named
-/// key such as `F3`, `Tab`, `PageUp`, `Up`, `Backspace`, `Delete`, `Insert`,
+/// key such as `F3`, `Tab`, `PageUp`, `ArrowUp`, `Backspace`, `Delete`, `Insert`,
 /// `=`, `-`, `/`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Chord {
@@ -38,6 +38,10 @@ const NAMED: &[&str] = &[
     "Down",
     "Left",
     "Right",
+    "ArrowUp",
+    "ArrowDown",
+    "ArrowLeft",
+    "ArrowRight",
     "Home",
     "End",
     "Backspace",
@@ -106,8 +110,8 @@ pub const DEFAULT: &[(&str, ActionId)] = &[
     ("Ctrl+A", ActionId::EditSelectAll),
     ("Ctrl+D", ActionId::EditDuplicateLine),
     ("Ctrl+Shift+L", ActionId::EditDeleteLine),
-    ("Ctrl+Shift+Up", ActionId::EditMoveLineUp),
-    ("Ctrl+Shift+Down", ActionId::EditMoveLineDown),
+    ("Ctrl+Shift+ArrowUp", ActionId::EditMoveLineUp),
+    ("Ctrl+Shift+ArrowDown", ActionId::EditMoveLineDown),
     ("Ctrl+/", ActionId::EditToggleComment),
     ("Ctrl+Backspace", ActionId::EditDeleteWordLeft),
     ("Ctrl+Delete", ActionId::EditDeleteWordRight),

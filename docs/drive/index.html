@@ -224,6 +224,9 @@
                         <a href="#appuikey" class="toc-h3">&lt;app&gt;.ui.key</a>
                         <a href="#appuitype" class="toc-h3">&lt;app&gt;.ui.type</a>
                         <a href="#appuimenu" class="toc-h3">&lt;app&gt;.ui.menu</a>
+                        <a href="#appuimenulist" class="toc-h3">&lt;app&gt;.ui.menu.list</a>
+                        <a href="#appuimenuopen" class="toc-h3">&lt;app&gt;.ui.menu.open</a>
+                        <a href="#appuimenuclose" class="toc-h3">&lt;app&gt;.ui.menu.close</a>
                         <a href="#appuicapture" class="toc-h3">&lt;app&gt;.ui.capture</a>
                         <a href="#appwindow" class="toc-h3">&lt;app&gt;.window</a>
                         <a href="#appwindowstate" class="toc-h3">&lt;app&gt;.window.state</a>
@@ -397,6 +400,24 @@ is open.</p>
 is highlighted.</li>
 <li><code>depth</code>: the level the keyboard acts on.</li>
 </ul>
+<h3 id="appuimenulist"><code>&lt;app&gt;.ui.menu.list</code></h3>
+<p>Every menu, as the menu bar draws it: <code>{menus: [{title, rows}]}</code>. A row is
+<code>{label, id, shortcut, enabled, checked}</code>, with <code>submenu</code> holding the rows
+of a submenu row (whose <code>id</code> is null), or <code>{separator: true}</code>.</p>
+<h3 id="appuimenuopen"><code>&lt;app&gt;.ui.menu.open</code></h3>
+<p>Opens a menu, and submenus within it, by label.</p>
+<ul>
+<li><strong>Arguments:</strong> <code>path</code>, a list: a menu title, then the label of a row at
+each level below it. Every row but the last must open a submenu. Or
+<code>menu</code>, a title alone. Case and a trailing "…" don't matter.</li>
+<li><strong>Answer:</strong> the open menu, as <code>ui.menu</code> reports it. The last row named is
+highlighted, and the keyboard acts on the deepest open level, so a
+<code>ui.key</code> Enter then runs that row.</li>
+<li><strong>Refused</strong> (<code>ARGUMENT</code>): no path, a title or label the menus don't
+have, a disabled row, or a row before the last that opens no submenu.</li>
+</ul>
+<h3 id="appuimenuclose"><code>&lt;app&gt;.ui.menu.close</code></h3>
+<p>Closes every open menu. Answers <code>{closed}</code>: whether one was open.</p>
 <h3 id="appuicapture"><code>&lt;app&gt;.ui.capture</code></h3>
 <p>A screenshot of the window, written to a new PNG file.</p>
 <ul>
@@ -492,7 +513,7 @@ a JSON body. Everything in its window is also a Bus verb.</p>
 <tr><td><code>busviewer.info</code></td><td></td><td>the whole state: connection, discovery snapshot, selection, body, last reply, status, and the arranged UI (<code>ui</code>)</td></tr>
 <tr><td><code>busviewer.tree</code></td><td></td><td><code>{rows}</code>: the rows the tree shows, depth first, each with <code>key</code>, <code>kind</code>, <code>label</code>, <code>depth</code>, <code>expanded</code>, <code>selected</code> and its child count; verb rows add <code>selection</code>, error rows <code>error</code></td></tr>
 <tr><td><code>busviewer.reply</code></td><td></td><td><code>{text, value}</code>: the reply panel and the last reply</td></tr>
-<tr><td><code>busviewer.commands</code></td><td></td><td>every menu command with its label, shortcut and whether it is enabled now</td></tr>
+<tr><td><code>busviewer.commands</code></td><td></td><td>every menu command with its label, shortcut, further chords (<code>more</code>, when it has any) and whether it is enabled now. The shortcuts are those in force: the desktop profile can rebind them (<code>settings.apply</code> <code>keymaps.busviewer.&lt;id&gt;</code>)</td></tr>
 <tr><td><code>HELP</code>, <code>app.describe</code></td><td></td><td>every verb, with arguments</td></tr>
 </tbody></table>
 <p>A row's <code>kind</code> is <code>service</code>, <code>verb</code>, <code>error</code>, <code>peers</code>, <code>peer</code> or

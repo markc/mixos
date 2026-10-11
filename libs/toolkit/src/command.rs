@@ -321,7 +321,8 @@ impl<S> Registry<S> {
     /// - a chord the person bound is taken from any command that had it by
     ///   default; two listed commands claiming one chord leave it with the
     ///   first, by id;
-    /// - an unknown command or a chord that is not a key is skipped.
+    /// - an unknown command or a chord that is not a key is skipped; a
+    ///   list in which no chord is a key keeps the command's defaults.
     ///
     /// Returns a note for each thing skipped, for the app's log.
     pub fn rebind(&mut self, overrides: &crate::keymap::Overrides) -> Vec<String> {
@@ -345,14 +346,31 @@ impl<S> Registry<S> {
                 notes.push(format!("{action}: no such command"));
                 continue;
             };
-            let mut list = Vec::new();
+            // Parse first: a list with no key the app knows (a typo) keeps
+            // the defaults; only an empty list unbinds.
+            let mut parsed: Vec<KeyboardShortcut> = Vec::new();
             for text in chords {
                 match crate::keymap::parse_chord(text) {
                     None => notes.push(format!("{action}: {text:?} is not a key")),
-                    Some(s) if !claimed.insert(crate::keymap::chord_text(&s)) => {
-                        notes.push(format!("{action}: {text:?} is bound to another command"));
+                    Some(s) if parsed.contains(&s) => {
+                        notes.push(format!("{action}: {text:?} is listed twice"));
                     }
-                    Some(s) => list.push(s),
+                    Some(s) => parsed.push(s),
+                }
+            }
+            if !chords.is_empty() && parsed.is_empty() {
+                notes.push(format!(
+                    "{action}: no key it names is known; the defaults stay"
+                ));
+                continue;
+            }
+            let mut list = Vec::new();
+            for s in parsed {
+                if claimed.insert(crate::keymap::chord_text(&s)) {
+                    list.push(s);
+                } else {
+                    let text = crate::keymap::chord_text(&s);
+                    notes.push(format!("{action}: {text:?} is bound to another command"));
                 }
             }
             let mut list = list.into_iter();
@@ -454,14 +472,19 @@ impl<S> Registry<S> {
         if menu::is_open(ctx) {
             return fired;
         }
+        // With no text field taking the keyboard, the clipboard events the
+        // platform makes of Ctrl+X, Ctrl+C and Ctrl+V are those key presses.
+        let clipboard = !ctx.egui_wants_keyboard_input();
         ctx.input_mut(|i| {
-            i.events.retain(|event| match self.hit(event) {
-                Some(command) if (command.enabled)(state) => {
-                    fired.push(command.id);
-                    false
-                }
-                _ => true,
-            });
+            let held = i.modifiers;
+            i.events
+                .retain(|event| match self.hit(event, held, clipboard) {
+                    Some(command) if (command.enabled)(state) => {
+                        fired.push(command.id);
+                        false
+                    }
+                    _ => true,
+                });
         });
         fired
     }
@@ -470,22 +493,35 @@ impl<S> Registry<S> {
     /// press of an enabled command's shortcut. An app that orders its own
     /// input around the shortcuts asks this.
     pub fn takes(&self, event: &egui::Event, state: &S) -> bool {
-        self.hit(event).is_some_and(|c| (c.enabled)(state))
+        self.hit(event, egui::Modifiers::NONE, false)
+            .is_some_and(|c| (c.enabled)(state))
     }
 
     /// The command whose shortcut `event` presses, modifiers exactly.
-    fn hit(&self, event: &egui::Event) -> Option<&Command<S>> {
-        let egui::Event::Key {
-            key,
-            pressed: true,
-            modifiers,
-            ..
-        } = event
-        else {
-            return None;
+    ///
+    /// egui-winit sends no key press for Ctrl+X, Ctrl+C or Ctrl+V (with any
+    /// other modifiers): it sends `Cut`, `Copy` or `Paste` instead. With
+    /// `clipboard`, those count as the key with the modifiers `held`.
+    fn hit(
+        &self,
+        event: &egui::Event,
+        held: egui::Modifiers,
+        clipboard: bool,
+    ) -> Option<&Command<S>> {
+        let (key, modifiers) = match event {
+            egui::Event::Key {
+                key,
+                pressed: true,
+                modifiers,
+                ..
+            } => (*key, *modifiers),
+            egui::Event::Cut if clipboard => (egui::Key::X, held),
+            egui::Event::Copy if clipboard => (egui::Key::C, held),
+            egui::Event::Paste(_) if clipboard => (egui::Key::V, held),
+            _ => return None,
         };
         let pressed =
-            |s: &KeyboardShortcut| s.logical_key == *key && modifiers.matches_exact(s.modifiers);
+            |s: &KeyboardShortcut| s.logical_key == key && modifiers.matches_exact(s.modifiers);
         self.commands.iter().find(|c| {
             c.shortcut.as_ref().is_some_and(pressed)
                 || self
@@ -944,6 +980,59 @@ mod tests {
         assert!(r.rebind(&BTreeMap::new()).is_empty());
         assert_eq!(r.shortcuts_of("count.bump"), [ctrl(Key::B), ctrl(Key::U)]);
         assert!(r.shortcuts_of("count.reset").is_empty());
+        // A list with no key the app knows (a typo) keeps the defaults; the
+        // same chord spelled twice is noted as listed twice.
+        let notes = r.rebind(&overrides(&[
+            ("count.bump", &["Nope"]),
+            ("count.reset", &["Ctrl+R", "Ctrl+r"]),
+        ]));
+        assert_eq!(r.shortcuts_of("count.bump"), [ctrl(Key::B), ctrl(Key::U)]);
+        assert_eq!(r.shortcuts_of("count.reset"), [ctrl(Key::R)]);
+        assert_eq!(notes.len(), 3, "{notes:?}");
+        assert!(notes[2].contains("listed twice"), "{notes:?}");
+    }
+
+    /// egui-winit turns Ctrl+C, Ctrl+X and Ctrl+V into clipboard events;
+    /// with no text field focused they run what those keys are bound to.
+    #[test]
+    fn clipboard_events_run_their_key_bindings() {
+        let mut r: Registry<Counter> = Registry::new();
+        let bind = |id, modifiers, key| Command {
+            id,
+            label: "x",
+            menu: None,
+            submenu: None,
+            group: 0,
+            shortcut: Some(KeyboardShortcut::new(modifiers, key)),
+            icon: None,
+            enabled: always,
+            run: |_| {},
+        };
+        r.add(bind("copy", Modifiers::COMMAND, Key::C)).add(bind(
+            "cut.more",
+            Modifiers::COMMAND | Modifiers::SHIFT,
+            Key::X,
+        ));
+        let fire = |held: Modifiers, event: egui::Event| {
+            let ctx = egui::Context::default();
+            let mut out = Vec::new();
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    events: vec![egui::Event::ModifiersChanged(held), event],
+                    ..Default::default()
+                },
+                |ui| out = r.shortcuts(ui.ctx(), &Counter::default()),
+            );
+            output.textures_delta.clear();
+            out
+        };
+        assert_eq!(fire(Modifiers::COMMAND, egui::Event::Copy), ["copy"]);
+        assert_eq!(
+            fire(Modifiers::COMMAND | Modifiers::SHIFT, egui::Event::Cut),
+            ["cut.more"]
+        );
+        assert!(fire(Modifiers::COMMAND, egui::Event::Cut).is_empty());
+        assert!(fire(Modifiers::COMMAND, egui::Event::Paste("p".into())).is_empty());
     }
 
     fn fired_key(

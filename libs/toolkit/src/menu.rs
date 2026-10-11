@@ -508,6 +508,9 @@ struct State {
     deferred: Vec<egui::Event>,
     /// The menu those keys were typed in.
     deferred_menu: Option<usize>,
+    /// The menus drawn last frame (the whole model, not a search view), for
+    /// the drive verbs that list, open and close them.
+    menus: Vec<Menu>,
 }
 
 fn state_id() -> Id {
@@ -524,6 +527,107 @@ pub fn is_open(ctx: &Context) -> bool {
 pub fn current(ctx: &Context) -> Option<Current> {
     ctx.data(|d| d.get_temp::<State>(state_id()))
         .and_then(|s| s.current)
+}
+
+/// The open menu and its highlight as labels.
+fn current_of(nav: &Nav, menus: &[Menu]) -> Option<Current> {
+    nav.open.map(|m| Current {
+        menu: menus[m].title.clone(),
+        path: (0..nav.levels())
+            .map(|level| {
+                let index = nav.highlight().get(level).copied().flatten()?;
+                nav.level(menus, level)?
+                    .get(index)?
+                    .row()
+                    .map(|r| r.label.clone())
+            })
+            .collect(),
+        depth: nav.depth,
+    })
+}
+
+/// The menus the bar drew last frame: every title, row, shortcut, tick and
+/// submenu, as the drive's `ui.menu.list` reports them.
+pub fn model(ctx: &Context) -> Vec<Menu> {
+    ctx.data(|d| d.get_temp::<State>(state_id()))
+        .map(|s| s.menus)
+        .unwrap_or_default()
+}
+
+/// Whether two labels name the same menu or row: case and a trailing
+/// ellipsis aside.
+fn same_label(a: &str, b: &str) -> bool {
+    let plain = |s: &str| s.trim().trim_end_matches(['…', '.']).trim().to_lowercase();
+    plain(a) == plain(b)
+}
+
+/// The entry of `entries` labelled `label`: an exact label first, so `New`
+/// and `New…` side by side stay distinct; else the lenient [`same_label`].
+fn find_label(entries: &[Entry], label: &str) -> Option<usize> {
+    let row = |e: &Entry| e.row().map(|r| r.label.clone());
+    entries
+        .iter()
+        .position(|e| row(e).as_deref() == Some(label))
+        .or_else(|| {
+            entries
+                .iter()
+                .position(|e| row(e).is_some_and(|l| same_label(&l, label)))
+        })
+}
+
+/// Open the menu `path` names: a top-level title, then the label of a row
+/// at each level below it. A submenu row opens its submenu; the last row
+/// named is highlighted, and the keyboard acts on the deepest open level.
+/// Answers what is open, as [`current`] will report it.
+///
+/// # Errors
+/// An empty path, a title or label no menu has, a disabled row, or a row
+/// before the last that opens no submenu.
+pub fn open_path(ctx: &Context, path: &[String]) -> Result<Current, String> {
+    let mut st: State = ctx.data(|d| d.get_temp(state_id())).unwrap_or_default();
+    let menus = st.menus.clone();
+    let (title, rows) = path.split_first().ok_or("the path names no menu")?;
+    let menu = menus
+        .iter()
+        .position(|m| m.title == *title)
+        .or_else(|| menus.iter().position(|m| same_label(&m.title, title)))
+        .ok_or_else(|| format!("no menu {title:?}"))?;
+    // A search typed into an open menu would show results, not the rows
+    // named here: opening by path starts without one, as a click does.
+    st.query.clear();
+    st.nav.open(menu);
+    for (level, label) in rows.iter().enumerate() {
+        let entries = st
+            .nav
+            .level(&menus, level)
+            .ok_or_else(|| format!("{label:?}: no submenu is open above it"))?;
+        let index = find_label(entries, label).ok_or_else(|| format!("no row {label:?}"))?;
+        let row = entries[index].row().expect("a row");
+        if !row.enabled {
+            return Err(format!("{label:?} is disabled"));
+        }
+        if level + 1 < rows.len() && !row.is_submenu() {
+            return Err(format!("{label:?} opens no submenu"));
+        }
+        st.nav.hover(level, index, &menus);
+    }
+    st.nav.depth = st.nav.levels().saturating_sub(1);
+    let current = current_of(&st.nav, &menus).expect("a menu is open");
+    st.current = Some(current.clone());
+    ctx.data_mut(|d| d.insert_temp(state_id(), st));
+    ctx.request_repaint();
+    Ok(current)
+}
+
+/// Close every open menu. Answers whether one was open.
+pub fn close(ctx: &Context) -> bool {
+    let mut st: State = ctx.data(|d| d.get_temp(state_id())).unwrap_or_default();
+    let was = st.nav.open.is_some();
+    st.nav.close();
+    st.current = None;
+    ctx.data_mut(|d| d.insert_temp(state_id(), st));
+    ctx.request_repaint();
+    was
 }
 
 const KEYS: [(Key, NavKey); 7] = [
@@ -621,6 +725,7 @@ pub fn bar_picked(
 ) -> Option<(&'static str, bool)> {
     let ctx = ui.ctx().clone();
     let chrome = Chrome::of(&ctx);
+    let model = menus.to_vec();
     let mut st: State = ctx.data(|d| d.get_temp(state_id())).unwrap_or_default();
     // While a query is typed, the search menu lists its results instead of
     // its rows; navigation and drawing work on that view of the model.
@@ -1000,20 +1105,8 @@ pub fn bar_picked(
         st.scroll_press = false;
     }
 
-    st.current = st.nav.open.map(|m| Current {
-        menu: menus[m].title.clone(),
-        path: (0..st.nav.levels())
-            .map(|level| {
-                let index = st.nav.highlight().get(level).copied().flatten()?;
-                st.nav
-                    .level(menus, level)?
-                    .get(index)?
-                    .row()
-                    .map(|r| r.label.clone())
-            })
-            .collect(),
-        depth: st.nav.depth,
-    });
+    st.current = current_of(&st.nav, menus);
+    st.menus = model;
     st.frames = frames;
     if st.nav.open.is_none() {
         st.query.clear();

@@ -160,6 +160,29 @@ is open.
   is highlighted.
 - `depth`: the level the keyboard acts on.
 
+### `<app>.ui.menu.list`
+
+Every menu, as the menu bar draws it: `{menus: [{title, rows}]}`. A row is
+`{label, id, shortcut, enabled, checked}`, with `submenu` holding the rows
+of a submenu row (whose `id` is null), or `{separator: true}`.
+
+### `<app>.ui.menu.open`
+
+Opens a menu, and submenus within it, by label.
+
+- **Arguments:** `path`, a list: a menu title, then the label of a row at
+  each level below it. Every row but the last must open a submenu. Or
+  `menu`, a title alone. Case and a trailing "…" don't matter.
+- **Answer:** the open menu, as `ui.menu` reports it. The last row named is
+  highlighted, and the keyboard acts on the deepest open level, so a
+  `ui.key` Enter then runs that row.
+- **Refused** (`ARGUMENT`): no path, a title or label the menus don't
+  have, a disabled row, or a row before the last that opens no submenu.
+
+### `<app>.ui.menu.close`
+
+Closes every open menu. Answers `{closed}`: whether one was open.
+
 ### `<app>.ui.capture`
 
 A screenshot of the window, written to a new PNG file.
@@ -251,7 +274,7 @@ a JSON body. Everything in its window is also a Bus verb.
 | `busviewer.info` | | the whole state: connection, discovery snapshot, selection, body, last reply, status, and the arranged UI (`ui`) |
 | `busviewer.tree` | | `{rows}`: the rows the tree shows, depth first, each with `key`, `kind`, `label`, `depth`, `expanded`, `selected` and its child count; verb rows add `selection`, error rows `error` |
 | `busviewer.reply` | | `{text, value}`: the reply panel and the last reply |
-| `busviewer.commands` | | every menu command with its label, shortcut and whether it is enabled now |
+| `busviewer.commands` | | every menu command with its label, shortcut, further chords (`more`, when it has any) and whether it is enabled now. The shortcuts are those in force: the desktop profile can rebind them (`settings.apply` `keymaps.busviewer.<id>`) |
 | `HELP`, `app.describe` | | every verb, with arguments |
 
 A row's `kind` is `service`, `verb`, `error`, `peers`, `peer` or

@@ -321,6 +321,9 @@ pub struct Controller {
     op_cmd: Option<(u64, String)>,
     /// `ced.diagnostics` sets per `(path, source)`.
     external: external::Store,
+    /// The keys in force per action id, when the window has applied the
+    /// person's bindings; `ced.actions` reports the defaults otherwise.
+    keys: Option<HashMap<String, Vec<String>>>,
 }
 
 fn refusal(code: &str, message: impl Into<String>, reason: Option<&str>) -> String {
@@ -528,7 +531,13 @@ impl Controller {
             op_waits: HashMap::new(),
             op_cmd: None,
             external: external::Store::default(),
+            keys: None,
         }
+    }
+
+    /// The keys in force per action id, for `ced.actions`.
+    pub fn set_keys(&mut self, keys: HashMap<String, Vec<String>>) {
+        self.keys = Some(keys);
     }
 
     /// Tabs to reopen at [`Controller::start`] (the host loads session.json).
@@ -2543,10 +2552,13 @@ impl Controller {
                         id: a.id(),
                         label: a.label(),
                         menu: a.menu().label().to_string(),
-                        keys: crate::keymap::chords_for(a)
-                            .into_iter()
-                            .map(str::to_string)
-                            .collect(),
+                        keys: match self.keys.as_ref().and_then(|k| k.get(&a.id())) {
+                            Some(keys) => keys.clone(),
+                            None => crate::keymap::chords_for(a)
+                                .into_iter()
+                                .map(str::to_string)
+                                .collect(),
+                        },
                         enabled: true,
                     })
                     .collect();

@@ -117,14 +117,20 @@ pub fn view(
         .frame(bars::dock_frame(ui.ctx()))
         .show(ui, |ui| details(ui, engine, commands, strings, &mut events));
     if let Some(dialog) = engine.ui.dialog {
-        let (title, body) = match dialog {
-            Dialog::About => ("about", "about-body"),
-            Dialog::Shortcuts => ("shortcuts", "shortcut-body"),
+        let title = match dialog {
+            Dialog::About => "about",
+            Dialog::Shortcuts => "shortcuts",
         };
         let id = egui::Id::new("dialog").with(title);
+        // The shortcuts in force, from the registry: the profile can rebind them.
         let shown = dialog::Dialog::new(id, label(title))
             .buttons(vec![Choice::new(label("done"), dialog::Role::Default)])
-            .show(ui.ctx(), |ui| ui.add(egui::Label::new(label(body)).wrap()));
+            .show(ui.ctx(), |ui| match dialog {
+                Dialog::About => {
+                    ui.add(egui::Label::new(label("about-body")).wrap());
+                }
+                Dialog::Shortcuts => commands.shortcut_grid(ui, strings),
+            });
         if shown.chosen.is_some() || shown.dismissed {
             // Each opening starts centred again.
             dialog::Dialog::reset(ui.ctx(), id);

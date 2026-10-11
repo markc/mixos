@@ -120,7 +120,7 @@ pub fn view(
             Panel::Applications => applications(ui, engine, commands, strings, &mut events),
             Panel::Appearance => appearance(ui, engine, commands, strings, &mut events),
         });
-    dialogs(ui, engine, &mut events);
+    dialogs(ui, engine, commands, strings, &mut events);
     toolkit::titlebar::edges(ui);
     events
 }
@@ -643,21 +643,31 @@ fn release_notes(ui: &mut Ui, text: &str) {
     }
 }
 
-fn dialogs(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
+fn dialogs(
+    ui: &mut Ui,
+    engine: &Engine,
+    commands: &Registry<Engine>,
+    strings: &Strings,
+    events: &mut Vec<UiEvent>,
+) {
     let Some(dialog) = &engine.ui.dialog else {
         return;
     };
     match dialog {
         Dialog::About | Dialog::Shortcuts => {
-            let (title, body) = if *dialog == Dialog::About {
-                ("about", "about-body")
-            } else {
-                ("shortcuts", "shortcut-body")
-            };
+            let about = *dialog == Dialog::About;
+            let title = if about { "about" } else { "shortcuts" };
             let id = egui::Id::new("dialog").with(title);
+            // The shortcuts in force, from the registry: the profile can rebind them.
             let shown = dialog::Dialog::new(id, label(title))
                 .buttons(vec![Choice::new(label("done"), dialog::Role::Default)])
-                .show(ui.ctx(), |ui| ui.add(egui::Label::new(label(body)).wrap()));
+                .show(ui.ctx(), |ui| {
+                    if about {
+                        ui.add(egui::Label::new(label("about-body")).wrap());
+                    } else {
+                        commands.shortcut_grid(ui, strings);
+                    }
+                });
             if shown.chosen.is_some() || shown.dismissed {
                 // Each opening starts centred again.
                 dialog::Dialog::reset(ui.ctx(), id);
