@@ -1,0 +1,23 @@
+[package]
+name = "effects"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "compd"
+kind = "service"
+layer = "desktop"
+contract = "none"
+
+[lints.rust]
+warnings = "allow"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+slots = { workspace = true }
+smithay = { workspace = true }
