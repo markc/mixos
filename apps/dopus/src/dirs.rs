@@ -30,10 +30,6 @@ impl AppDirs {
         self.config()
     }
 
-    /// The user's keymap overlay over the default chords ([`crate::keymap`]).
-    pub fn keymap_file(&self) -> PathBuf {
-        self.config().join("keymap.conf.mix")
-    }
 }
 
 /// Expand a leading `~` (or `~/…`) to the user's home: the location bar and
@@ -84,8 +80,8 @@ mod tests {
         let d = AppDirs::resolve_with("dopus", env(one)).unwrap();
         assert_eq!(d.root(), Path::new("/h/.local/state/mixos/apps/dopus"));
         assert_eq!(
-            d.keymap_file(),
-            Path::new("/h/.local/state/mixos/apps/dopus/config/keymap.conf.mix")
+            d.config_dir(),
+            Path::new("/h/.local/state/mixos/apps/dopus/config")
         );
     }
 

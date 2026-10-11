@@ -274,7 +274,7 @@ a JSON body. Everything in its window is also a Bus verb.
 | `busviewer.info` | | the whole state: connection, discovery snapshot, selection, body, last reply, status, and the arranged UI (`ui`) |
 | `busviewer.tree` | | `{rows}`: the rows the tree shows, depth first, each with `key`, `kind`, `label`, `depth`, `expanded`, `selected` and its child count; verb rows add `selection`, error rows `error` |
 | `busviewer.reply` | | `{text, value}`: the reply panel and the last reply |
-| `busviewer.commands` | | every menu command with its label, shortcut and whether it is enabled now |
+| `busviewer.commands` | | every menu command with its label, shortcut, further chords (`more`, when it has any) and whether it is enabled now. The shortcuts are those in force: the desktop profile can rebind them (`settings.apply` `keymaps.busviewer.<id>`) |
 | `HELP`, `app.describe` | | every verb, with arguments |
 
 A row's `kind` is `service`, `verb`, `error`, `peers`, `peer` or

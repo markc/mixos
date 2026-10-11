@@ -2,43 +2,21 @@
 //! ced's commands: one per action of the action table, so the menu bar, the
 //! shortcuts, the toolkit's Bus drive and `ced.action` all reach the same
 //! controller path. Ids are the action ids; labels come from the catalogue;
-//! shortcuts are the keymap's first chord for the action.
+//! shortcuts are the default chords for the action (its first as the
+//! accelerator, the rest as further chords); the person's bindings are
+//! applied over them by `Registry::rebind`. Chord text follows
+//! [`toolkit::keymap`].
 //!
 //! Cut, Copy and Paste carry no shortcut here: the editor widget takes those
 //! keys itself (egui delivers them as clipboard events, not key presses).
 //! Their menu rows run through the controller like every other action.
 
 use documents::actions::ActionId;
-use documents::keymap::{self, Chord};
-use egui::{Key, KeyboardShortcut, Modifiers};
+use documents::keymap;
+use egui::KeyboardShortcut;
 use toolkit::{Command, Registry};
 
 use crate::app::App;
-
-/// An egui shortcut for a keymap chord, when egui has the key.
-pub fn shortcut(chord: &Chord) -> Option<KeyboardShortcut> {
-    let mut modifiers = Modifiers::NONE;
-    if chord.ctrl {
-        modifiers = modifiers.plus(Modifiers::COMMAND);
-    }
-    if chord.alt {
-        modifiers = modifiers.plus(Modifiers::ALT);
-    }
-    if chord.shift {
-        modifiers = modifiers.plus(Modifiers::SHIFT);
-    }
-    let key = match chord.key.as_str() {
-        "=" => Key::Equals,
-        "-" => Key::Minus,
-        "/" => Key::Slash,
-        "Up" => Key::ArrowUp,
-        "Down" => Key::ArrowDown,
-        "Left" => Key::ArrowLeft,
-        "Right" => Key::ArrowRight,
-        other => Key::from_name(&other.to_ascii_uppercase()).or_else(|| Key::from_name(other))?,
-    };
-    Some(KeyboardShortcut::new(modifiers, key))
-}
 
 /// The keys the editor widget handles itself: never bound here.
 fn editor_owned(action: ActionId) -> bool {
@@ -48,53 +26,42 @@ fn editor_owned(action: ActionId) -> bool {
     )
 }
 
-/// Every chord of every action after its first becomes a command of its
-/// own, outside the menus, running the same action: Ctrl+PageDown for Next
-/// Tab, Ctrl+Shift+Z for Redo. Its id is the action id with `#2`, `#3`….
-fn aliases(r: &mut Registry<App>) {
-    for action in ActionId::all() {
-        if editor_owned(action) {
-            continue;
-        }
-        let chords = keymap::chords_for(action);
-        for (n, chord) in chords.iter().enumerate().skip(1) {
-            let Some(shortcut) = keymap::parse_chord(chord).and_then(|c| shortcut(&c)) else {
-                continue;
-            };
-            if r.iter().any(|c| c.shortcut == Some(shortcut)) {
-                continue;
-            }
-            // Built once at start-up; the registry keeps ids for the
-            // process's lifetime.
-            let id: &'static str = Box::leak(format!("{}#{}", action.id(), n + 1).into_boxed_str());
-            let Some(primary) = r.get(&action.id()) else {
-                continue;
-            };
-            let alias = Command {
-                id,
-                label: primary.label,
-                menu: None,
-                submenu: None,
-                group: 0,
-                shortcut: Some(shortcut),
-                icon: None,
-                enabled: primary.enabled,
-                run: primary.run,
-            };
-            r.add(alias);
-        }
+/// `action`'s default chords as shortcuts, none when the editor owns the key.
+fn defaults_for(action: ActionId) -> Vec<KeyboardShortcut> {
+    if editor_owned(action) {
+        return Vec::new();
     }
+    keymap::chords_for(action)
+        .into_iter()
+        .filter_map(toolkit::keymap::parse_chord)
+        .collect()
+}
+
+/// The keys in force for every action, for `ced.actions`: the registry's,
+/// except the editor's own keys (Cut, Copy, Paste), which keep the defaults.
+pub fn keys_in_force(r: &Registry<App>) -> std::collections::HashMap<String, Vec<String>> {
+    ActionId::all()
+        .into_iter()
+        .map(|action| {
+            let keys = if editor_owned(action) {
+                keymap::chords_for(action)
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect()
+            } else {
+                r.shortcuts_of(&action.id())
+                    .iter()
+                    .map(toolkit::keymap::chord_text)
+                    .collect()
+            };
+            (action.id(), keys)
+        })
+        .collect()
 }
 
 /// The first chord bound to `action`, unless the editor owns that key.
 fn shortcut_for(action: ActionId) -> Option<KeyboardShortcut> {
-    if editor_owned(action) {
-        return None;
-    }
-    keymap::chords_for(action)
-        .first()
-        .and_then(|c| keymap::parse_chord(c))
-        .and_then(|c| shortcut(&c))
+    defaults_for(action).into_iter().next()
 }
 
 macro_rules! commands {
@@ -206,7 +173,11 @@ pub fn registry() -> Registry<App> {
         ViewProblems => "view.problems", "view-problems", "view", 2;
         ViewOutput => "view.output", "view-output", "view", 2;
     }
-    aliases(&mut r);
+    for action in ActionId::all() {
+        if r.get(&action.id()).is_some() {
+            r.add_shortcuts(&action.id(), defaults_for(action).into_iter().skip(1));
+        }
+    }
     goto! { r;
         1 => "tabs.goto.1", "tabs-goto-1";
         2 => "tabs.goto.2", "tabs-goto-2";
@@ -241,44 +212,48 @@ mod tests {
     }
 
     #[test]
-    fn extra_chords_are_aliases_and_toggles_keep_shortcuts() {
+    fn further_chords_run_the_action_and_toggles_keep_shortcuts() {
         let r = registry();
-        let alias = r.get("tabs.next#2").expect("Ctrl+PageDown alias");
+        let chord = |t| toolkit::keymap::parse_chord(t).unwrap();
         assert_eq!(
-            alias.shortcut,
-            Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::PageDown))
+            r.shortcuts_of("tabs.next"),
+            [chord("Ctrl+Tab"), chord("Ctrl+PageDown")]
         );
-        assert!(alias.menu.is_none(), "aliases stay out of the menus");
+        assert!(r.get("tabs.next#2").is_none(), "no alias commands");
         let problems = r.get("view.problems").unwrap();
         assert!(problems.shortcut.is_some(), "Problems keeps Ctrl+Shift+M");
     }
 
     #[test]
-    fn chords_become_shortcuts() {
-        let chord = |s| keymap::parse_chord(s).unwrap();
-        assert_eq!(
-            shortcut(&chord("Ctrl+Shift+S")),
-            Some(KeyboardShortcut::new(
-                Modifiers::COMMAND.plus(Modifiers::SHIFT),
-                Key::S
-            ))
-        );
-        assert_eq!(
-            shortcut(&chord("Ctrl+=")),
-            Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Equals))
-        );
-        assert_eq!(
-            shortcut(&chord("Shift+F3")),
-            Some(KeyboardShortcut::new(Modifiers::SHIFT, Key::F3))
-        );
-        assert_eq!(
-            shortcut(&chord("Ctrl+PageDown")),
-            Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::PageDown))
-        );
+    fn every_default_chord_is_a_key_and_the_editor_keeps_its_own() {
+        for (text, action) in keymap::DEFAULT {
+            assert!(
+                toolkit::keymap::parse_chord(text).is_some(),
+                "{text} ({action:?}) is not a key"
+            );
+        }
         assert_eq!(
             shortcut_for(ActionId::EditCopy),
             None,
             "the editor owns Ctrl+C"
         );
+        let chord = |t| toolkit::keymap::parse_chord(t).unwrap();
+        assert_eq!(shortcut_for(ActionId::ViewZoomIn), Some(chord("Ctrl+=")));
+        assert_eq!(
+            shortcut_for(ActionId::EditMoveLineUp),
+            Some(chord("Ctrl+Shift+ArrowUp"))
+        );
+    }
+
+    #[test]
+    fn the_profile_rebinds_over_the_defaults() {
+        let mut r = registry();
+        let chord = |t| toolkit::keymap::parse_chord(t).unwrap();
+        let overrides =
+            toolkit::keymap::Overrides::from([("file.save".to_owned(), vec!["F12".to_owned()])]);
+        assert!(r.rebind(&overrides).is_empty());
+        assert_eq!(r.shortcuts_of("file.save"), [chord("F12")]);
+        r.rebind(&Default::default());
+        assert_eq!(r.shortcuts_of("file.save"), [chord("Ctrl+S")]);
     }
 }

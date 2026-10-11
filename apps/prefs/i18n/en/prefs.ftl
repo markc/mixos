@@ -107,4 +107,3 @@ all-apps = the installed applications
 unknown-command = Unknown Prefs command
 command-disabled = That command is not available right now
 about-body = Prefs holds MixOS's preference editors, in the spirit of the AmigaOS Prefs drawer. Applications follows upstream releases through the releases service: installs are per user, verified against their published checksums, and the previous version is kept for rolling back. Appearance sets the session's colour scheme, style, mode, contrast and window frame through the settings service; each change applies to the whole session as you make it.
-shortcut-body = Ctrl+1: Applications. Ctrl+2: Appearance (changes apply at once; Ctrl+S retries one that was refused). Ctrl+R: refresh the list. Ctrl+Shift+R: check for updates. Ctrl+I: install or update the selected application. Ctrl+Q: quit. F1: shortcuts. Escape: close dialogue.

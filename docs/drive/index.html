@@ -513,7 +513,7 @@ a JSON body. Everything in its window is also a Bus verb.</p>
 <tr><td><code>busviewer.info</code></td><td></td><td>the whole state: connection, discovery snapshot, selection, body, last reply, status, and the arranged UI (<code>ui</code>)</td></tr>
 <tr><td><code>busviewer.tree</code></td><td></td><td><code>{rows}</code>: the rows the tree shows, depth first, each with <code>key</code>, <code>kind</code>, <code>label</code>, <code>depth</code>, <code>expanded</code>, <code>selected</code> and its child count; verb rows add <code>selection</code>, error rows <code>error</code></td></tr>
 <tr><td><code>busviewer.reply</code></td><td></td><td><code>{text, value}</code>: the reply panel and the last reply</td></tr>
-<tr><td><code>busviewer.commands</code></td><td></td><td>every menu command with its label, shortcut and whether it is enabled now</td></tr>
+<tr><td><code>busviewer.commands</code></td><td></td><td>every menu command with its label, shortcut, further chords (<code>more</code>, when it has any) and whether it is enabled now. The shortcuts are those in force: the desktop profile can rebind them (<code>settings.apply</code> <code>keymaps.busviewer.&lt;id&gt;</code>)</td></tr>
 <tr><td><code>HELP</code>, <code>app.describe</code></td><td></td><td>every verb, with arguments</td></tr>
 </tbody></table>
 <p>A row's <code>kind</code> is <code>service</code>, <code>verb</code>, <code>error</code>, <code>peers</code>, <code>peer</code> or

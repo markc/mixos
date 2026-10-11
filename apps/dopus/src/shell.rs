@@ -73,6 +73,8 @@ pub struct Shell {
     theme: Theme,
     file_theme: Theme,
     look: Option<settings::Appearance>,
+    /// The profile's bindings for dopus, as last applied.
+    keymap: toolkit::keymap::Overrides,
     follower: settings::follow::Follower,
     look_topic: String,
     look_retry: u64,
@@ -117,7 +119,7 @@ impl Shell {
         if let Err(error) = pumped {
             eprintln!("dopus: core event pump: {error}");
         }
-        let commands = crate::commands::registry(&app.keymap);
+        let commands = crate::commands::registry();
         let shell = Self {
             app,
             commands,
@@ -126,6 +128,7 @@ impl Shell {
             file_theme: theme.clone(),
             theme,
             look: None,
+            keymap: toolkit::keymap::Overrides::new(),
             follower: settings::follow::Follower::new(&hostname()),
             look_topic: settings::summary_topic(settings::follow::PROFILE),
             look_retry: 0,
@@ -149,9 +152,6 @@ impl Shell {
             ] {
                 bus.handle.subscribe(topic);
             }
-        }
-        for note in shell.app.keymap.notes.clone() {
-            eprintln!("dopus: keymap: {note}");
         }
         shell
     }
@@ -430,6 +430,26 @@ impl Shell {
 
     /// Show the session look `look` (settingsd's), or the theme file's with
     /// `None`; the window's own choice stays on top.
+    /// Apply the profile's bindings for dopus over the default chords, and
+    /// report the effective chords in `dopus.actions.list`.
+    pub fn set_keymap(&mut self, keymap: toolkit::keymap::Overrides) {
+        if keymap == self.keymap {
+            return;
+        }
+        for note in self.commands.rebind(&keymap) {
+            eprintln!("dopus: keymap: {note}");
+        }
+        self.keymap = keymap;
+        let commands = &self.commands;
+        self.app.actions = verbs::action_table(|action| {
+            commands
+                .shortcuts_of(action)
+                .iter()
+                .map(toolkit::keymap::chord_text)
+                .collect()
+        });
+    }
+
     pub fn set_look(&mut self, look: Option<settings::Appearance>) {
         self.look = look;
         self.set_base();
@@ -465,8 +485,12 @@ impl Shell {
             Some(settings::follow::Followed::Look {
                 appearance,
                 custom_source,
+                keymaps,
                 ..
-            }) => self.set_look((!custom_source).then_some(appearance)),
+            }) => {
+                self.set_look((!custom_source).then_some(appearance));
+                self.set_keymap(keymaps.get(APP).cloned().unwrap_or_default());
+            }
             Some(settings::follow::Followed::Missing) if self.look.is_some() => {
                 self.set_look(None);
             }

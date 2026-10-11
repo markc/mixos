@@ -154,6 +154,8 @@ pub struct Shell {
     file_theme: Theme,
     /// The session look settingsd holds, once read.
     look: Option<settings::Appearance>,
+    /// The profile's bindings for BusViewer, as last applied.
+    keymap: toolkit::keymap::Overrides,
     follower: settings::follow::Follower,
     /// The latest look retry; an older one firing is void.
     look_retry: u64,
@@ -252,6 +254,7 @@ impl Shell {
             inbox,
             installed: toolkit::theme_menu::Choice::default(),
             look: None,
+            keymap: toolkit::keymap::Overrides::new(),
             follower: settings::follow::Follower::new(&hostname()),
             look_retry: 0,
         };
@@ -436,6 +439,17 @@ impl Shell {
     /// Show the session look `look` (settingsd's), or the theme file's with
     /// `None`; the window's own choice stays on top. `busviewer.theme`
     /// reports it as the effective session at once.
+    /// Apply the profile's bindings for BusViewer over the built chords.
+    pub fn set_keymap(&mut self, keymap: toolkit::keymap::Overrides) {
+        if keymap == self.keymap {
+            return;
+        }
+        for note in self.commands.rebind(&keymap) {
+            eprintln!("busviewer: keymap: {note}");
+        }
+        self.keymap = keymap;
+    }
+
     pub fn set_look(&mut self, look: Option<settings::Appearance>) {
         self.look = look;
         self.theme = self.session_theme();
@@ -485,9 +499,11 @@ impl Shell {
             Some(settings::follow::Followed::Look {
                 appearance,
                 custom_source,
+                keymaps,
                 ..
             }) => {
                 self.set_look((!custom_source).then_some(appearance));
+                self.set_keymap(keymaps.get(APP).cloned().unwrap_or_default());
             }
             Some(settings::follow::Followed::Missing) if self.look.is_some() => {
                 self.set_look(None);

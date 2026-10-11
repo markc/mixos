@@ -2,21 +2,22 @@
 //! dopus's commands: one per action in the action table, so the menu bar,
 //! the shortcuts, the toolbar, the context menu and the toolkit's Bus drive
 //! reach the same path as `dopus.action`. Ids are the action ids; labels
-//! come from the catalogue; shortcuts come from the effective keymap (an
-//! action's first chord, and each further chord as an alias outside the
-//! menus).
+//! come from the catalogue; shortcuts are the default chords
+//! ([`crate::keymap`]): an action's first as its accelerator, the rest as
+//! further chords. The person's bindings are applied over them by
+//! `Registry::rebind`.
 
 use egui::KeyboardShortcut;
 use toolkit::{Command, Registry};
 
 use crate::app::{App, Dialog};
-use crate::keymap::Keymap;
+use crate::keymap::defaults_for;
 
 /// `(id, label, menu, group)` for every action, in menu order.
 type Row = (&'static str, &'static str, Option<&'static str>, u8);
 
 macro_rules! actions {
-    ($r:ident, $k:ident, $used:ident; $( $id:literal, $label:literal, $menu:expr, $group:literal; )*) => {
+    ($r:ident, $used:ident; $( $id:literal, $label:literal, $menu:expr, $group:literal; )*) => {
         $(
             {
                 let row: Row = ($id, $label, $menu, $group);
@@ -26,7 +27,7 @@ macro_rules! actions {
                     menu: row.2,
                     submenu: None,
                     group: row.3,
-                    shortcut: first_free($k, $id, &mut $used),
+                    shortcut: first_free($id, &mut $used),
                     icon: None,
                     enabled: |a: &App| a.enabled($id),
                     run: |a: &mut App| a.action($id),
@@ -54,62 +55,23 @@ fn toggle(id: &str) -> Option<fn(&App) -> bool> {
     })
 }
 
-/// `action`'s first chord not already taken.
-fn first_free(
-    keymap: &Keymap,
-    action: &str,
-    used: &mut Vec<KeyboardShortcut>,
-) -> Option<KeyboardShortcut> {
-    let shortcut = keymap
-        .chords_for(action)
+/// `action`'s first default chord not already taken.
+fn first_free(action: &str, used: &mut Vec<KeyboardShortcut>) -> Option<KeyboardShortcut> {
+    let shortcut = defaults_for(action)
         .into_iter()
-        .map(|c| c.shortcut())
         .find(|s| !used.contains(s))?;
     used.push(shortcut);
     Some(shortcut)
 }
 
-/// Every further chord of every action becomes a command of its own,
-/// outside the menus, running the same action. Its id is the action id
-/// with `#2`, `#3`….
-fn aliases(r: &mut Registry<App>, keymap: &Keymap, used: &mut Vec<KeyboardShortcut>) {
-    for (action, _) in crate::verbs::ACTIONS {
-        let Some(primary) = r.get(action) else {
-            continue;
-        };
-        let (label, enabled, run) = (primary.label, primary.enabled, primary.run);
-        for (n, chord) in keymap.chords_for(action).into_iter().enumerate().skip(1) {
-            let shortcut = chord.shortcut();
-            if used.contains(&shortcut) {
-                continue;
-            }
-            used.push(shortcut);
-            // Built once at start-up; ids live for the process.
-            let id: &'static str = Box::leak(format!("{action}#{}", n + 1).into_boxed_str());
-            r.add(Command {
-                id,
-                label,
-                menu: None,
-                submenu: None,
-                group: 0,
-                shortcut: Some(shortcut),
-                icon: None,
-                enabled,
-                run,
-            });
-        }
-    }
-}
-
-/// The registry, with `keymap`'s chords as shortcuts.
-pub fn registry(keymap: &Keymap) -> Registry<App> {
+/// The registry, with the default chords as shortcuts.
+pub fn registry() -> Registry<App> {
     let mut r = Registry::new();
     let mut used = Vec::new();
-    let k = keymap;
     let file = Some("file");
     let view = Some("view");
     let go = Some("go");
-    actions! { r, k, used;
+    actions! { r, used;
         "file.open", "file-open", file, 0;
         "file.new-folder", "file-new-folder", file, 0;
         "file.rename", "file-rename", file, 1;
@@ -142,7 +104,14 @@ pub fn registry(keymap: &Keymap) -> Registry<App> {
         "theme.scheme-sunset", "theme-sunset", None, 0;
         "theme.scheme-mono", "theme-mono", None, 0;
     }
-    aliases(&mut r, keymap, &mut used);
+    for (action, _) in crate::verbs::ACTIONS {
+        r.add_shortcuts(action, defaults_for(action).into_iter().skip(1));
+    }
+    used.extend(
+        crate::verbs::ACTIONS
+            .iter()
+            .flat_map(|(action, _)| r.shortcuts_of(action)),
+    );
     // View › Theme: any scheme, style, mode and framing, in this window only.
     r.theme_menu("view", |a: &App| a.theme, |a: &mut App, c| a.theme = c);
     r.add(Command {
@@ -178,7 +147,7 @@ mod tests {
 
     #[test]
     fn every_action_is_a_command_and_every_label_is_in_the_catalogue() {
-        let r = registry(&Keymap::default());
+        let r = registry();
         let strings = crate::strings();
         for (action, _) in crate::verbs::ACTIONS {
             assert!(r.get(action).is_some(), "{action} has no command");
@@ -200,26 +169,28 @@ mod tests {
     }
 
     #[test]
-    fn extra_chords_are_aliases() {
-        let r = registry(&Keymap::default());
-        let alias = r.get("file.rename#2").expect("Ctrl+E alias");
-        assert_eq!(
-            alias.shortcut,
-            Some(KeyboardShortcut::new(
-                egui::Modifiers::COMMAND,
-                egui::Key::E
-            ))
-        );
-        assert!(alias.menu.is_none());
-        assert!(r.get("nav.switch-pane#2").is_some(), "Tab");
+    fn further_chords_run_the_action_too() {
+        let r = registry();
+        let chord = |t| toolkit::keymap::parse_chord(t).unwrap();
+        assert_eq!(r.shortcuts_of("file.rename"), [chord("F2"), chord("Ctrl+E")]);
+        assert_eq!(r.get("file.rename").unwrap().shortcut, Some(chord("F2")));
+        assert_eq!(r.shortcuts_of("nav.switch-pane"), [chord("F6"), chord("Tab")]);
+        assert!(r.get("file.rename#2").is_none(), "no alias commands");
     }
 
     #[test]
-    fn a_doubled_overlay_chord_does_not_panic() {
-        let mut k = Keymap::default();
-        let chord = crate::keymap::parse_chord("Ctrl+B").unwrap();
-        k.bindings.push((chord, "nav.home".into()));
-        let r = registry(&k);
-        assert!(r.get("nav.home").is_some());
+    fn the_profile_rebinds_over_the_defaults() {
+        let mut r = registry();
+        let chord = |t| toolkit::keymap::parse_chord(t).unwrap();
+        let overrides = toolkit::keymap::Overrides::from([
+            ("nav.home".to_owned(), vec!["Ctrl+B".to_owned()]),
+            ("file.delete".to_owned(), vec![]),
+        ]);
+        assert!(r.rebind(&overrides).is_empty());
+        assert_eq!(r.shortcuts_of("nav.home"), [chord("Ctrl+B")]);
+        assert!(r.shortcuts_of("view.toggle-places").is_empty(), "Ctrl+B moved");
+        assert!(r.shortcuts_of("file.delete").is_empty(), "unbound");
+        r.rebind(&Default::default());
+        assert_eq!(r.shortcuts_of("view.toggle-places"), [chord("Ctrl+B")]);
     }
 }

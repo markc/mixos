@@ -18,7 +18,6 @@ use std::path::PathBuf;
 use dopus_core::config::Sidebar;
 use dopus_core::{ConfirmAnswer, CoreEvent, DopusCore, DropAction, PaneId, PromptKind};
 
-use crate::keymap::Keymap;
 use crate::verbs::{self, ActionReply, Applied, Refusal, Served, ServerMeta, ThemeAction};
 
 /// A modal dialog.
@@ -94,7 +93,6 @@ pub enum Effect {
 
 pub struct App {
     pub core: DopusCore,
-    pub keymap: Keymap,
     /// `dopus.actions.list`'s table.
     pub actions: Vec<verbs::ActionRow>,
     pub dialog: Option<Dialog>,
@@ -113,11 +111,10 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(core: DopusCore, keymap: Keymap) -> Self {
-        let actions = verbs::action_table(&keymap);
+    pub fn new(core: DopusCore) -> Self {
+        let actions = verbs::action_table(crate::keymap::default_keys);
         Self {
             core,
-            keymap,
             actions,
             dialog: None,
             queued: VecDeque::new(),
@@ -463,7 +460,7 @@ mod tests {
         config.left.path = dir.path().to_owned();
         config.right.path = dir.path().to_owned();
         let (core, _rx) = DopusCore::new(config, None);
-        (dir, App::new(core, Keymap::default()))
+        (dir, App::new(core))
     }
 
     #[test]

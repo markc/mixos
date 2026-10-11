@@ -24,7 +24,8 @@
 //! Modules:
 //! - [`bus`]: the Bus thread (`dopus.*` commands, topics, the session look);
 //! - [`verbs`]: the `dopus.v1` Bus surface, shared by window and headless;
-//! - [`keymap`]: the default chords and the user's `keymap.conf.mix`;
+//! - [`keymap`]: the default chords (the person's own come from the desktop
+//!   profile);
 //! - [`app`]: the window's state around the core; [`commands`]: the
 //!   registry every action goes through; [`view`]: the drawing;
 //!   [`shell`]: the running window.

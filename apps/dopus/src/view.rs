@@ -990,22 +990,7 @@ fn dialogs(
         Dialog::Shortcuts => {
             let shown = dialog::Dialog::new(id, label("shortcuts"))
                 .buttons(vec![Choice::new(label("done"), Role::Default)])
-                .show(ctx, |ui| {
-                    ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
-                        egui::Grid::new("shortcut-grid")
-                            .striped(false)
-                            .show(ui, |ui| {
-                                for command in commands.iter() {
-                                    let Some(shortcut) = command.shortcut else {
-                                        continue;
-                                    };
-                                    ui.label(toolkit::command::label_text(strings, command.label));
-                                    ui.label(RichText::new(ctx.format_shortcut(&shortcut)).weak());
-                                    ui.end_row();
-                                }
-                            });
-                    });
-                });
+                .show(ctx, |ui| commands.shortcut_grid(ui, strings));
             answered(shown.chosen, shown.dismissed, &[Answer::Accept])
         }
         Dialog::About => {

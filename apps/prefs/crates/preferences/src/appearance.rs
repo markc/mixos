@@ -301,6 +301,8 @@ pub struct Appearance {
     /// The profile names a design package of its own (`appearance.source`):
     /// the window keeps the session theme rather than the embedded design.
     pub custom_source: bool,
+    /// The profile's key bindings, per application, from the same read.
+    pub keymaps: settings::keymap::Keymaps,
     /// The fence for the next apply: settingsd's incarnation and revision.
     fence: Option<(String, Revision)>,
     /// The person's edits, until applied or reverted.
@@ -350,6 +352,7 @@ impl Default for Appearance {
             settings: Availability::Unknown,
             current: None,
             custom_source: false,
+            keymaps: Default::default(),
             fence: None,
             draft: None,
             pinned: Vec::new(),
@@ -560,7 +563,9 @@ fn refusal(value: &Value) -> String {
 }
 
 /// The fence and look in a `settings.get` reply (its `summary` view).
-fn snapshot(value: &Value) -> Result<(String, Revision, Look, bool), String> {
+fn snapshot(
+    value: &Value,
+) -> Result<(String, Revision, Look, bool, settings::keymap::Keymaps), String> {
     let summary: settings::Summary =
         serde_json::from_value(value["summary"].clone()).map_err(|e| format!("summary: {e}"))?;
     let look = Look::from_stored(&summary.appearance)?;
@@ -569,6 +574,7 @@ fn snapshot(value: &Value) -> Result<(String, Revision, Look, bool), String> {
         summary.revision,
         look,
         summary.custom_source,
+        summary.keymaps,
     ))
 }
 
@@ -914,8 +920,9 @@ impl Engine {
     fn read_answered(&mut self, answer: Answer) {
         match answer {
             Answer::Ok(value) => match snapshot(&value) {
-                Ok((incarnation, revision, look, custom)) => {
+                Ok((incarnation, revision, look, custom, keymaps)) => {
                     self.look.settings = Availability::Available;
+                    self.look.keymaps = keymaps;
                     self.look.fence = Some((incarnation, revision));
                     self.look.current = Some(look);
                     self.look.custom_source = custom;

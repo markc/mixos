@@ -22,7 +22,6 @@ use std::path::{Path, PathBuf};
 use dopus_core::{DopusCore, PaneId};
 use serde::{Deserialize, Serialize};
 
-use crate::keymap::{Keymap, chord_text};
 
 pub const SERVICE: &str = "dopus";
 pub const SCHEMA: &str = "dopus.v1";
@@ -624,18 +623,15 @@ pub fn apply_availability(
     }
 }
 
-/// `dopus.actions.list`'s table: the actions with their effective chords.
-pub fn action_table(keymap: &Keymap) -> Vec<ActionRow> {
+/// `dopus.actions.list`'s table: the actions with the chords `keys` gives
+/// each (the effective ones in the window, the defaults headless).
+pub fn action_table(keys: impl Fn(&str) -> Vec<String>) -> Vec<ActionRow> {
     ACTIONS
         .iter()
         .map(|(action, label)| ActionRow {
             id: (*action).to_owned(),
             label: (*label).to_owned(),
-            keys: keymap
-                .chords_for(action)
-                .into_iter()
-                .map(chord_text)
-                .collect(),
+            keys: keys(action),
             enabled: true,
         })
         .collect()
@@ -975,7 +971,7 @@ mod tests {
             theme_scheme: String::new(),
             theme_mode: String::new(),
             appearance: AppearanceState::default(),
-            actions: action_table(&Keymap::default()),
+            actions: action_table(crate::keymap::default_keys),
             extra_verbs: Vec::new(),
         }
     }
@@ -1132,7 +1128,7 @@ mod tests {
 
     #[test]
     fn the_table_carries_chords_and_availability() {
-        let table = action_table(&Keymap::default());
+        let table = action_table(crate::keymap::default_keys);
         let rename = table.iter().find(|r| r.id == "file.rename").unwrap();
         assert_eq!(rename.keys, ["F2", "Ctrl+E"]);
         assert!(ACTIONS.iter().all(|(id, _)| is_action(id)));

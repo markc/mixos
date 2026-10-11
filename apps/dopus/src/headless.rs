@@ -54,7 +54,6 @@ pub fn run(
     noded_url: &str,
     paths: &[String],
 ) -> Result<(), String> {
-    let keymap = crate::keymap::load(dirs.as_ref().map(AppDirs::keymap_file).as_deref())?;
     let meta = ServerMeta {
         service: service.to_owned(),
         headless: true,
@@ -65,7 +64,7 @@ pub fn run(
         theme_scheme: String::new(),
         theme_mode: String::new(),
         appearance: Default::default(),
-        actions: verbs::action_table(&keymap),
+        actions: verbs::action_table(crate::keymap::default_keys),
         extra_verbs: Vec::new(),
     };
     let (mut core, receiver) = DopusCore::new(config, config_file);

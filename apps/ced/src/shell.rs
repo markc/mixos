@@ -126,6 +126,8 @@ pub struct Shell {
     file_theme: Theme,
     /// The session look settingsd holds, once read.
     look: Option<settings::Appearance>,
+    /// The profile's bindings for ced, as last applied.
+    keymap: toolkit::keymap::Overrides,
     follower: settings::follow::Follower,
     /// The follower's hint topic (the profile's summary topic; a
     /// retarget changes only the instance, never the profile).
@@ -172,6 +174,7 @@ impl Shell {
             file_theme: theme.clone(),
             theme,
             look: None,
+            keymap: toolkit::keymap::Overrides::new(),
             follower: settings::follow::Follower::new(&hostname()),
             look_topic: settings::summary_topic(settings::follow::PROFILE),
             look_retry: 0,
@@ -461,6 +464,20 @@ impl Shell {
 
     /// Show the session look `look` (settingsd's), or the theme file's with
     /// `None`; the window's own choice stays on top.
+    /// Apply the profile's bindings for ced over the default chords, and
+    /// report the keys in force in `ced.actions`.
+    pub fn set_keymap(&mut self, keymap: toolkit::keymap::Overrides) {
+        if keymap == self.keymap {
+            return;
+        }
+        for note in self.commands.rebind(&keymap) {
+            eprintln!("ced: keymap: {note}");
+        }
+        self.keymap = keymap;
+        let keys = crate::commands::keys_in_force(&self.commands);
+        self.app.ctl.set_keys(keys);
+    }
+
     pub fn set_look(&mut self, look: Option<settings::Appearance>) {
         self.look = look;
         self.set_base();
@@ -516,8 +533,12 @@ impl Shell {
             Some(settings::follow::Followed::Look {
                 appearance,
                 custom_source,
+                keymaps,
                 ..
-            }) => self.set_look((!custom_source).then_some(appearance)),
+            }) => {
+                self.set_look((!custom_source).then_some(appearance));
+                self.set_keymap(keymaps.get(APP).cloned().unwrap_or_default());
+            }
             Some(settings::follow::Followed::Missing) if self.look.is_some() => {
                 self.set_look(None);
             }

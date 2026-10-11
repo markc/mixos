@@ -111,11 +111,6 @@ fn window(args: &Args, dirs: Option<AppDirs>, paths: Vec<String>) -> Result<(), 
         }
         Err(error) => return Err(error.to_string()),
     };
-    let keymap_path = dirs.as_ref().map(AppDirs::keymap_file);
-    let keymap = dopus::keymap::load(keymap_path.as_deref()).unwrap_or_else(|error| {
-        eprintln!("dopus: {error}; using the default keys");
-        dopus::keymap::Keymap::default()
-    });
     let (config, file) = dopus::config::load(dirs.as_ref().map(AppDirs::config_dir).as_deref());
     let config_path = file.as_ref().map(|f| f.path.display().to_string());
     let (mut core, core_events) = DopusCore::new(config, file);
@@ -135,7 +130,7 @@ fn window(args: &Args, dirs: Option<AppDirs>, paths: Vec<String>) -> Result<(), 
         Box::new(move |cc| {
             toolkit::install(&cc.egui_ctx, &theme);
             let _ = cell.set(cc.egui_ctx.clone());
-            let app = App::new(core, keymap);
+            let app = App::new(core);
             let shell = Shell::new(
                 cc.egui_ctx.clone(),
                 theme,

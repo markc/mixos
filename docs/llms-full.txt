@@ -367,7 +367,7 @@ a JSON body. Everything in its window is also a Bus verb.
 | `busviewer.info` | | the whole state: connection, discovery snapshot, selection, body, last reply, status, and the arranged UI (`ui`) |
 | `busviewer.tree` | | `{rows}`: the rows the tree shows, depth first, each with `key`, `kind`, `label`, `depth`, `expanded`, `selected` and its child count; verb rows add `selection`, error rows `error` |
 | `busviewer.reply` | | `{text, value}`: the reply panel and the last reply |
-| `busviewer.commands` | | every menu command with its label, shortcut and whether it is enabled now |
+| `busviewer.commands` | | every menu command with its label, shortcut, further chords (`more`, when it has any) and whether it is enabled now. The shortcuts are those in force: the desktop profile can rebind them (`settings.apply` `keymaps.busviewer.<id>`) |
 | `HELP`, `app.describe` | | every verb, with arguments |
 
 A row's `kind` is `service`, `verb`, `error`, `peers`, `peer` or
@@ -2246,9 +2246,10 @@ The token is sent only to `https://api.github.com`.
 
 # Desktop settings contract
 
-Status: accepted authority contract, version 0.3.0 (0.2.0 added the summary
+Status: accepted authority contract, version 0.4.0 (0.2.0 added the summary
 topic and read view, [decision](../../decisions/2026-10-11-settings-summary-reads.md);
-0.3.0 adds snapshot schema 2, [decision](../../decisions/2026-10-11-settings-snapshot-schema-2.md)). Full desktop consumer
+0.3.0 added snapshot schema 2, [decision](../../decisions/2026-10-11-settings-snapshot-schema-2.md);
+0.4.0 adds key bindings, [decision](../../decisions/2026-10-11-keymaps-in-settings.md)). Full desktop consumer
 integration remains in development. No frozen ABP wire bytes change.
 
 `settingsd` serves one explicitly initialised profile in the initial slice.
@@ -2266,7 +2267,7 @@ refusal, invalid input or unknown verbs. Domain status is structured in the body
 | Verb | Input and result |
 | --- | --- |
 | `settings.describe` | No mutation; version, fields, ranges, defaults, limits and implemented/deferred capabilities |
-| `settings.get` | `{binding:{instance,profile}, view?, schema?}`; `view` `full` (default): complete accepted snapshot under `snapshot`, in `schema` 1 (default) or 2 (each distinct design projection once under `designs`, contexts naming it by digest; other schemas refused with `unsupported_schema`); `summary`: the profile's `Summary` (schema, binding, incarnation, revision, design revision, source digest, appearance names, `custom_source`; never projections or a source) under `summary`; both with publication/recovery status |
+| `settings.get` | `{binding:{instance,profile}, view?, schema?}`; `view` `full` (default): complete accepted snapshot under `snapshot`, in `schema` 1 (default) or 2 (each distinct design projection once under `designs`, contexts naming it by digest; other schemas refused with `unsupported_schema`); `summary`: the profile's `Summary` (schema, binding, incarnation, revision, design revision, source digest, appearance names, `custom_source`, and `keymaps` when any are set; never projections or a source) under `summary`; both with publication/recovery status |
 | `settings.appearance.get` | `{binding:{instance,profile}, schema?}`; read-only appearance projection (`mode`, `contrast`, sRGB `accent`) tagged with incarnation and revisions; the reply also includes the atomic `snapshot` (in `schema` 1 or 2, as for `settings.get`) for shared Consumer validation; `wrong_target` on a foreign binding |
 | `settings.validate` | Fenced apply-shaped body; resolve/compile candidate without a write or receipt; valid with current base identity or diagnostics/conflict |
 | `settings.apply` | Fenced batch described below; durable changed/unchanged receipt |
@@ -2502,6 +2503,27 @@ rendered settings-to-frame behaviour. Persistent tiling, new maximise intent
 with no outputs, native window/input/frame evidence and VT latency acceptance
 remain outstanding. Current text scale changes the title font, while decoration
 extents continue to come from the selected style's fixed height and border.
+
+## Key bindings
+
+The profile's `keymaps` holds the person's key bindings: per application
+id, per action id, the chords chosen. An empty list unbinds the action; an
+action not listed keeps the application's own default, which ships with the
+application. The field is omitted while empty, so profiles written before it
+keep their seals, and it does not affect the resolved design.
+
+- **Apply:** `keymaps.<app>` takes the whole map (null drops every change
+  for that app); `keymaps.<app>.<action>` takes a list of chords (null
+  returns the action to its default). Action ids are dotted: everything
+  after the app id is the action id.
+- **Chords:** `Ctrl`, `Alt` and `Shift`, each at most once and in any
+  order, then one key: a name of ASCII letters and digits (`ArrowLeft`,
+  `F6`, `PageDown`, `B`, `1`) or `=`, `-`, `/`. settingsd checks this
+  grammar; the application checks that it knows the key.
+- **Limits:** 16 applications, 256 actions each, 4 distinct chords per
+  action, 32 bytes per chord, 64 bytes per action id.
+- **Followers:** the summary carries `keymaps`, and each application applies
+  its own entry when the revision changes (`toolkit::Registry::rebind`).
 
 ## Topics and storage
 
