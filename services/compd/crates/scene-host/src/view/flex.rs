@@ -29,7 +29,9 @@
 //! - A vertical `list` is a column of `row_height` cells, `max_rows` (8)
 //!   tall unless sized, scrolling past that; a horizontal list is a row of
 //!   cells that shrink when the row is crowded (an `elide` text in them
-//!   gives up its width). Each cell holds one instance of the row template.
+//!   gives up its width), each down to its instance's floor: an explicit
+//!   `min_width` or a fixed width keeps its width. Each cell holds one
+//!   instance of the row template.
 //! - Hidden nodes and their subtrees are left out (reported hidden, zero
 //!   size). The panel's recovered glyphs are the one exception (see
 //!   `crate::images::panel_fallback`).
@@ -193,8 +195,12 @@ fn lpa(v: f32) -> LengthPercentageAuto {
 fn width_floor(node: &Node) -> f32 {
     let height = number(node, "height");
     let square = matches!(port_text(node, "width"), "height" | "square") || flag(node, "square");
+    let elides = node.family == "text" && flag(node, "elide");
     if let Some(min) = number(node, "min_width") {
         min
+    } else if elides {
+        // An eliding text may always shrink below its width.
+        0.0
     } else if let Some(width) = number(node, "width") {
         width
     } else if let (true, Some(h)) = (square, height) {

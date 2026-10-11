@@ -145,10 +145,13 @@ fn a_crowded_panel_shrinks_its_tasks_and_stays_on_screen() {
     );
     let task = row_of(&rt, "tasks", "task");
     assert!(task.width() < 218.0, "the task gave way: {task:?}");
-    for (id, rect) in &rt.program.layout().nodes {
+    // Every drawn rectangle, the task cells and their contents included.
+    for placed in &rt.program.layout().placed {
         assert!(
-            rect.right() <= width + 0.5,
-            "{id} runs off the edge: {rect:?}"
+            placed.rect.right() <= width + 0.5,
+            "{} runs off the edge: {:?}",
+            placed.key,
+            placed.rect
         );
     }
     assert_eq!(
