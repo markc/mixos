@@ -54,6 +54,11 @@ pub enum UiEvent {
         pane: PaneId,
         path: PathBuf,
     },
+    /// A double-click on a file: select it and open it.
+    OpenFile {
+        pane: PaneId,
+        path: PathBuf,
+    },
     Sort {
         pane: PaneId,
         column: SortColumn,
