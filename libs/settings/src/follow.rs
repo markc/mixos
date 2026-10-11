@@ -266,7 +266,9 @@ impl Follower {
     }
 }
 
-/// What one answer meant inside the follower.
+/// What one answer meant inside the follower. Made once per answer and
+/// consumed at once, so its size does not matter.
+#[allow(clippy::large_enum_variant)]
 enum Meaning {
     Followed(Followed),
     /// The instance was adopted: the read is repeated at once.
@@ -299,7 +301,10 @@ mod tests {
         let read = f.read().unwrap();
         let mut body: Value = serde_json::from_str(&snapshot("i", "3", "studio")).unwrap();
         body["summary"]["keymaps"] = json!({"dopus":{"nav.parent":["Ctrl+U"]}});
-        match f.answered(read.ticket, Some((0, &body.to_string(), None))).0 {
+        match f
+            .answered(read.ticket, Some((0, &body.to_string(), None)))
+            .0
+        {
             Some(Followed::Look { keymaps, .. }) => {
                 assert_eq!(keymaps["dopus"]["nav.parent"], ["Ctrl+U"]);
             }
@@ -307,7 +312,10 @@ mod tests {
         }
         // A summary without them (an older settingsd) reads as none.
         let read = f.read().unwrap();
-        match f.answered(read.ticket, Some((0, &snapshot("i", "4", "studio"), None))).0 {
+        match f
+            .answered(read.ticket, Some((0, &snapshot("i", "4", "studio"), None)))
+            .0
+        {
             Some(Followed::Look { keymaps, .. }) => assert!(keymaps.is_empty()),
             other => panic!("{other:?}"),
         }
