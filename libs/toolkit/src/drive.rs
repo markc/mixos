@@ -28,7 +28,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 /// The drive verbs, after the app's prefix.
-pub const VERBS: [&str; 10] = [
+pub const VERBS: [&str; 13] = [
     "ui.tree",
     "ui.click",
     "ui.pointer",
@@ -36,6 +36,9 @@ pub const VERBS: [&str; 10] = [
     "ui.key",
     "ui.type",
     "ui.menu",
+    "ui.menu.list",
+    "ui.menu.open",
+    "ui.menu.close",
     "ui.capture",
     "window",
     "window.state",
@@ -109,6 +112,24 @@ pub fn describe(app: &str) -> Vec<Value> {
             Value::Null,
             "The open menu and its highlighted path",
             true,
+        ),
+        (
+            "ui.menu.list",
+            Value::Null,
+            "Every menu: titles, then rows with command id, label, shortcut, enabled, tick and submenu rows",
+            true,
+        ),
+        (
+            "ui.menu.open",
+            json!({"path":"[menu title, submenu row, …]: opens the menu and each submenu named; the last row named is highlighted","menu":"or a menu title alone"}),
+            "Open a menu, and submenus within it, by label; answers the open menu and path",
+            false,
+        ),
+        (
+            "ui.menu.close",
+            Value::Null,
+            "Close every open menu; answers whether one was open",
+            false,
         ),
         (
             "ui.capture",
@@ -419,6 +440,28 @@ impl Drive {
         let job = match verb {
             "ui.tree" => return Some(self.tree_answer(id, args)),
             "ui.menu" => return Some(ok(id, json!({"menu":menu_state(ctx)}))),
+            "ui.menu.list" => {
+                let menus: Vec<Value> = menu::model(ctx).iter().map(menu_json).collect();
+                return Some(ok(id, json!({"menus":menus})));
+            }
+            "ui.menu.open" => {
+                let path: Vec<String> = match (args.get("path"), args.get("menu")) {
+                    (Some(Value::Array(path)), _) => path
+                        .iter()
+                        .filter_map(|v| v.as_str().map(str::to_owned))
+                        .collect(),
+                    (None, Some(Value::String(menu))) => vec![menu.clone()],
+                    _ => Vec::new(),
+                };
+                if path.is_empty() {
+                    return Some(refusal(id, "ARGUMENT", "give path: [menu, row, …] or menu"));
+                }
+                return Some(match menu::open_path(ctx, &path) {
+                    Ok(_) => ok(id, json!({"menu":menu_state(ctx)})),
+                    Err(message) => refusal(id, "ARGUMENT", &message),
+                });
+            }
+            "ui.menu.close" => return Some(ok(id, json!({"closed":menu::close(ctx)}))),
             "window.state" => return Some(ok(id, window_state(ctx))),
             "window" => return self.window(ctx, id, args),
             "ui.click" => click(args),
@@ -1083,6 +1126,28 @@ fn label(node: &Node) -> Option<&str> {
             None
         }
     })
+}
+
+/// One menu as `ui.menu.list` reports it.
+fn menu_json(menu: &menu::Menu) -> Value {
+    json!({"title":menu.title,"rows":entries_json(&menu.entries)})
+}
+
+fn entries_json(entries: &[menu::Entry]) -> Vec<Value> {
+    entries
+        .iter()
+        .map(|entry| match entry {
+            menu::Entry::Separator => json!({"separator":true}),
+            menu::Entry::Row(row) => {
+                let mut out = json!({"label":row.label,"id":row.id,"shortcut":row.shortcut,
+                    "enabled":row.enabled,"checked":row.checked});
+                if row.is_submenu() {
+                    out["submenu"] = Value::Array(entries_json(&row.children));
+                }
+                out
+            }
+        })
+        .collect()
 }
 
 fn menu_state(ctx: &Context) -> Value {

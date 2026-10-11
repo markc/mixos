@@ -331,6 +331,60 @@ fn a_click_on_a_menu_title_opens_it_and_keys_navigate() {
 }
 
 #[test]
+fn menus_list_open_and_close_by_verb() {
+    let mut h = window();
+    let list = ok(&mut h, "ui.menu.list", json!({}));
+    let file = &list["menus"][0];
+    assert_eq!(file["title"], "File", "{list}");
+    let recent = file["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["label"] == "Open Recent")
+        .expect("the submenu row");
+    assert!(recent["id"].is_null());
+    assert!(recent["submenu"].as_array().is_some_and(|s| !s.is_empty()));
+    let new = &file["rows"][0];
+    assert_eq!(new["id"], "file.new");
+    assert!(new["shortcut"].is_string() && new["enabled"] == true);
+
+    let opened = ok(&mut h, "ui.menu.open", json!({"menu":"file"}));
+    assert_eq!(opened["menu"]["menu"], "File", "{opened}");
+    let nested = ok(
+        &mut h,
+        "ui.menu.open",
+        json!({"path":["File","Open Recent","Clear Recent Files"]}),
+    );
+    assert_eq!(
+        nested["menu"]["path"],
+        json!(["Open Recent", "Clear Recent Files"]),
+        "{nested}"
+    );
+    // The open submenu is drawn, and the keyboard acts in it: Enter runs
+    // the highlighted row.
+    h.run();
+    assert!(h.query_by_label("Clear Recent Files").is_some());
+    ok(&mut h, "ui.key", json!({"key":"Enter"}));
+    assert_eq!(h.state().fixture.ran.last().copied(), Some("file.clear-recent"));
+
+    ok(&mut h, "ui.menu.open", json!({"path":["File"]}));
+    let closed = ok(&mut h, "ui.menu.close", json!({}));
+    assert_eq!(closed["closed"], true);
+    assert!(menu::current(&h.ctx).is_none());
+    let again = ok(&mut h, "ui.menu.close", json!({}));
+    assert_eq!(again["closed"], false);
+
+    for args in [
+        json!({}),
+        json!({"menu":"Nope"}),
+        json!({"path":["File","Nope"]}),
+        json!({"path":["File","New…","More"]}),
+    ] {
+        refused(&mut h, "ui.menu.open", args);
+    }
+}
+
+#[test]
 fn a_shortcut_with_modifiers_runs_its_command() {
     let mut h = window();
     ok(&mut h, "ui.key", json!({"key":"O","modifiers":["ctrl"]}));

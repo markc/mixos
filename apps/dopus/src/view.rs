@@ -240,11 +240,7 @@ fn places_panel(ui: &mut Ui, app: &App, stroke: f32, events: &mut Vec<UiEvent>) 
     ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
         for (name, path) in app.core.places() {
             ui.horizontal(|ui| {
-                let icon = match *name {
-                    "Home" => Icon::House,
-                    "Filesystem" => Icon::HardDrive,
-                    _ => Icon::Folder,
-                };
+                let icon = crate::icons::place_icon(name);
                 let colour = ui.visuals().weak_text_color();
                 ui.add(icons::image(icon, stroke, ICON, colour));
                 let width = ui.available_width();
