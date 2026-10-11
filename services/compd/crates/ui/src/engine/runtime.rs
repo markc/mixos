@@ -115,8 +115,12 @@ pub struct UiRuntime<P: UiProgram> {
     last: Option<Pass>,
     gpu: Option<Gpu>,
     painter: Option<Painter>,
-    /// Texture changes of a runtime with no GPU (tests), merged.
+    /// Texture changes not yet on the GPU, merged in order: a runtime with
+    /// no GPU (tests) keeps them, one that ran a pass outside a frame
+    /// (`tick_offscreen`) applies them in its next pass inside one.
     unapplied: TexturesDelta,
+    /// A pass is running outside a frame: textures wait in `unapplied`.
+    offscreen: bool,
     wake: RuntimeWake,
     started: Instant,
     set_up: bool,
@@ -181,6 +185,7 @@ impl<P: UiProgram> UiRuntime<P> {
             gpu,
             painter: None,
             unapplied: TexturesDelta::default(),
+            offscreen: false,
             wake,
             started: Instant::now(),
             set_up: false,
@@ -249,7 +254,27 @@ impl<P: UiProgram> UiRuntime<P> {
     /// Input, messages or a repaint request wait for the next pass. Only a
     /// frame ticks the runtime, so the host owes one while this is true.
     pub fn has_queued(&self) -> bool {
-        self.wake.pending() || !self.events.is_empty() || !self.messages.is_empty()
+        self.wake.pending() || self.has_input()
+    }
+
+    /// Input or messages (not a repaint request) wait for the next pass.
+    pub fn has_input(&self) -> bool {
+        !self.events.is_empty() || !self.messages.is_empty()
+    }
+
+    /// Run the pass queued input or messages owe, outside a frame (compd
+    /// parked): the program sees the input and its messages dispatch, but
+    /// the GPU is not touched. The pass's texture changes wait, in order, for
+    /// the next pass that runs inside a frame (`run_pass`), where the
+    /// compositor's GL context is current. A repaint request alone runs
+    /// nothing here.
+    pub fn tick_offscreen(&mut self) {
+        if !self.has_input() {
+            return;
+        }
+        self.offscreen = true;
+        self.run_pass();
+        self.offscreen = false;
     }
 
     // ── Tick ────────────────────────────────────────────────────────────
@@ -287,7 +312,21 @@ impl<P: UiProgram> UiRuntime<P> {
         raw
     }
 
+    /// Apply the texture changes passes outside a frame held back, in
+    /// order, before anything newer. Only inside a frame, and only with a
+    /// GPU (a headless runtime keeps them for its tests).
+    fn apply_held(&mut self) {
+        if self.offscreen || self.gpu.is_none() {
+            return;
+        }
+        let held = std::mem::take(&mut self.unapplied);
+        if !held.set.is_empty() || !held.free.is_empty() {
+            self.apply_textures(held);
+        }
+    }
+
     fn run_pass(&mut self) {
+        self.apply_held();
         if !self.set_up {
             self.program.setup(&self.ctx);
             self.set_up = true;
@@ -341,6 +380,7 @@ impl<P: UiProgram> UiRuntime<P> {
 
     fn apply_textures(&mut self, textures: TexturesDelta) {
         match &self.gpu {
+            Some(_) if self.offscreen => merge(&mut self.unapplied, textures),
             Some(gpu) => {
                 let painter = self
                     .painter
@@ -361,6 +401,8 @@ impl<P: UiProgram> UiRuntime<P> {
         if self.needs_pass || self.last.is_none() || self.wake.take() {
             self.run_pass();
         }
+        // The latest pass may have run outside a frame.
+        self.apply_held();
         let (Some(gpu), Some(pass)) = (&self.gpu, &self.last) else {
             return;
         };

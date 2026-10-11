@@ -725,7 +725,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // the VT to come back.
         if parked
             && let Some(registry) = state.inner.surface_mut().registry.as_mut()
-            && registry.has_queued()
+            && registry.has_input()
         {
             registry.tick_queued();
         }

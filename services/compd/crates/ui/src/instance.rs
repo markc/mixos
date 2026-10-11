@@ -88,7 +88,13 @@ pub(crate) trait UiInstanceAny: Any {
     fn queue_input(&mut self, input: Input);
     /// Events or messages wait for the next tick (`UiRuntime::has_queued`).
     fn has_queued(&self) -> bool;
+    /// Input or messages wait (`UiRuntime::has_input`); a repaint request
+    /// alone does not count.
+    fn has_input(&self) -> bool;
     fn tick(&mut self) -> bool;
+    /// Run what queued input owes outside a frame, GPU untouched
+    /// (`UiRuntime::tick_offscreen`).
+    fn tick_offscreen(&mut self);
     /// Advance frame bookkeeping WITHOUT rasterizing: clears the runtime's dirty
     /// flag so an off-screen surface stops pinning the redraw loop, while its
     /// animation/message driving (in `tick`) continues untouched. Paired with a
@@ -181,6 +187,12 @@ impl<U: UiProgram> UiInstanceAny for UiInstance<U> {
     }
     fn has_queued(&self) -> bool {
         self.runtime.has_queued()
+    }
+    fn has_input(&self) -> bool {
+        self.runtime.has_input()
+    }
+    fn tick_offscreen(&mut self) {
+        self.runtime.tick_offscreen();
     }
     fn tick(&mut self) -> bool {
         let changed = self.runtime.tick();
@@ -633,6 +645,12 @@ impl UiItem {
     }
     pub fn has_queued(&self) -> bool {
         self.inner.has_queued()
+    }
+    pub fn has_input(&self) -> bool {
+        self.inner.has_input()
+    }
+    pub(crate) fn tick_offscreen(&mut self) {
+        self.inner.tick_offscreen();
     }
     pub fn pointer_leave(&mut self) {
         self.inner.pointer_leave();
