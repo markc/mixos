@@ -436,9 +436,6 @@ impl Shell {
             .unwrap_or_else(|| self.file_theme.clone())
     }
 
-    /// Show the session look `look` (settingsd's), or the theme file's with
-    /// `None`; the window's own choice stays on top. `busviewer.theme`
-    /// reports it as the effective session at once.
     /// Apply the profile's bindings for BusViewer over the built chords.
     pub fn set_keymap(&mut self, keymap: toolkit::keymap::Overrides) {
         if keymap == self.keymap {
@@ -450,6 +447,9 @@ impl Shell {
         self.keymap = keymap;
     }
 
+    /// Show the session look `look` (settingsd's), or the theme file's with
+    /// `None`; the window's own choice stays on top. `busviewer.theme`
+    /// reports it as the effective session at once.
     pub fn set_look(&mut self, look: Option<settings::Appearance>) {
         self.look = look;
         self.theme = self.session_theme();
@@ -505,6 +505,8 @@ impl Shell {
                 self.set_look((!custom_source).then_some(appearance));
                 self.set_keymap(keymaps.get(APP).cloned().unwrap_or_default());
             }
+            // settingsd gone: the look falls back to the theme file, but the
+            // person's bindings stay in force until a profile changes them.
             Some(settings::follow::Followed::Missing) if self.look.is_some() => {
                 self.set_look(None);
             }

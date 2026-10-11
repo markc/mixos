@@ -37,22 +37,22 @@ fn defaults_for(action: ActionId) -> Vec<KeyboardShortcut> {
         .collect()
 }
 
-/// The keys in force for every action, for `ced.actions`: the registry's,
-/// except the editor's own keys (Cut, Copy, Paste), which keep the defaults.
+/// The keys in force for every action, for `ced.actions`: the registry's.
+/// The editor's own actions (Cut, Copy, Paste) have no registry key unless
+/// the profile binds one; until then their defaults are reported, which the
+/// editor handles itself.
 pub fn keys_in_force(r: &Registry<App>) -> std::collections::HashMap<String, Vec<String>> {
     ActionId::all()
         .into_iter()
         .map(|action| {
-            let keys = if editor_owned(action) {
+            let bound = r.shortcuts_of(&action.id());
+            let keys = if editor_owned(action) && bound.is_empty() {
                 keymap::chords_for(action)
                     .into_iter()
                     .map(str::to_owned)
                     .collect()
             } else {
-                r.shortcuts_of(&action.id())
-                    .iter()
-                    .map(toolkit::keymap::chord_text)
-                    .collect()
+                bound.iter().map(toolkit::keymap::chord_text).collect()
             };
             (action.id(), keys)
         })
@@ -226,11 +226,11 @@ mod tests {
 
     #[test]
     fn every_default_chord_is_a_key_and_the_editor_keeps_its_own() {
+        // Each default is spelled as ced.actions reports it once rebound.
         for (text, action) in keymap::DEFAULT {
-            assert!(
-                toolkit::keymap::parse_chord(text).is_some(),
-                "{text} ({action:?}) is not a key"
-            );
+            let chord = toolkit::keymap::parse_chord(text)
+                .unwrap_or_else(|| panic!("{text} ({action:?}) is not a key"));
+            assert_eq!(&toolkit::keymap::chord_text(&chord), text, "{action:?}");
         }
         assert_eq!(
             shortcut_for(ActionId::EditCopy),

@@ -1406,8 +1406,10 @@ status line says how they ended.
 
 ## Menus and keys
 
-Every action is in the menus, and Help › Keyboard Shortcuts lists the keys
-in force.
+The menus hold every action except moving the selection (the arrow keys,
+Home and End) and the quick theme keys (Ctrl+Alt+D for light or dark,
+Ctrl+Alt+1 to 6 for a scheme; View › Theme has the full choice). Help ›
+Keyboard Shortcuts lists every key in force.
 
 | Menu | Action | Keys |
 |---|---|---|
@@ -1463,7 +1465,8 @@ DOpus answers on the Bus as `dopus` (schema `dopus.v1`).
 action (`FORBIDDEN`). Input played through the drive verbs (`dopus.ui.*`)
 is held to the same rule: while it runs, file actions and opening files are
 refused, and a delete, name or drop dialog can be dismissed but not
-accepted. An agent reads, navigates, sorts and selects through DOpus, but
+accepted. The rule holds for the whole time drive input runs, so a key you
+press yourself in that moment is refused too; press it again after. An agent reads, navigates, sorts and selects through DOpus, but
 never creates, renames, moves, copies, deletes or opens files through it.
 
 The window is drivable like every MixOS app, including its menus: see

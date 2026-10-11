@@ -282,8 +282,10 @@ there.</li>
 anything happens. Copies, moves and deletes run in the background, and the
 status line says how they ended.</p>
 <h2 id="menus-and-keys">Menus and keys</h2>
-<p>Every action is in the menus, and Help › Keyboard Shortcuts lists the keys
-in force.</p>
+<p>The menus hold every action except moving the selection (the arrow keys,
+Home and End) and the quick theme keys (Ctrl+Alt+D for light or dark,
+Ctrl+Alt+1 to 6 for a scheme; View › Theme has the full choice). Help ›
+Keyboard Shortcuts lists every key in force.</p>
 <table><thead><tr><th>Menu</th><th>Action</th><th>Keys</th></tr></thead><tbody>
 <tr><td>File</td><td>Open</td><td>Enter</td></tr>
 <tr><td></td><td>New Folder</td><td>Ctrl+Shift+N</td></tr>
@@ -331,7 +333,8 @@ configuration it would use.</p>
 action (<code>FORBIDDEN</code>). Input played through the drive verbs (<code>dopus.ui.*</code>)
 is held to the same rule: while it runs, file actions and opening files are
 refused, and a delete, name or drop dialog can be dismissed but not
-accepted. An agent reads, navigates, sorts and selects through DOpus, but
+accepted. The rule holds for the whole time drive input runs, so a key you
+press yourself in that moment is refused too; press it again after. An agent reads, navigates, sorts and selects through DOpus, but
 never creates, renames, moves, copies, deletes or opens files through it.</p>
 <p>The window is drivable like every MixOS app, including its menus: see
 <a href="/drive/">driving an app</a> (<code>dopus.ui.*</code>, <code>dopus.window</code>). The verbs are

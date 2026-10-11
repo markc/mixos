@@ -118,7 +118,9 @@ impl Follower {
     }
 
     /// The topic whose deliveries are hints for this follower: the
-    /// profile's summary topic, a few hundred bytes per change.
+    /// profile's summary topic, a few hundred bytes per change plus the
+    /// person's key bindings when there are any (bounded by
+    /// [`crate::keymap`]'s limits).
     pub fn topic(&self) -> String {
         crate::summary_topic(&self.binding.profile)
     }

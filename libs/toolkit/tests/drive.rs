@@ -380,6 +380,8 @@ fn menus_list_open_and_close_by_verb() {
         json!({"menu":"Nope"}),
         json!({"path":["File","Nope"]}),
         json!({"path":["File","New…","More"]}),
+        // Not a shorter path: a path with a non-label is refused whole.
+        json!({"path":["File",42]}),
     ] {
         refused(&mut h, "ui.menu.open", args);
     }

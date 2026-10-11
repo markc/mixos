@@ -446,10 +446,22 @@ impl Drive {
             }
             "ui.menu.open" => {
                 let path: Vec<String> = match (args.get("path"), args.get("menu")) {
-                    (Some(Value::Array(path)), _) => path
+                    // Every element a label: a path with anything else is refused,
+                    // never opened as a shorter path.
+                    (Some(Value::Array(path)), _) => match path
                         .iter()
-                        .filter_map(|v| v.as_str().map(str::to_owned))
-                        .collect(),
+                        .map(|v| v.as_str().map(str::to_owned))
+                        .collect::<Option<Vec<String>>>()
+                    {
+                        Some(path) => path,
+                        None => {
+                            return Some(refusal(
+                                id,
+                                "ARGUMENT",
+                                "path: every element is a label (a string)",
+                            ));
+                        }
+                    },
                     (None, Some(Value::String(menu))) => vec![menu.clone()],
                     _ => Vec::new(),
                 };

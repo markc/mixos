@@ -462,8 +462,6 @@ impl Shell {
         self.ctx.request_repaint();
     }
 
-    /// Show the session look `look` (settingsd's), or the theme file's with
-    /// `None`; the window's own choice stays on top.
     /// Apply the profile's bindings for ced over the default chords, and
     /// report the keys in force in `ced.actions`.
     pub fn set_keymap(&mut self, keymap: toolkit::keymap::Overrides) {
@@ -478,6 +476,8 @@ impl Shell {
         self.app.ctl.set_keys(keys);
     }
 
+    /// Show the session look `look` (settingsd's), or the theme file's with
+    /// `None`; the window's own choice stays on top.
     pub fn set_look(&mut self, look: Option<settings::Appearance>) {
         self.look = look;
         self.set_base();
@@ -539,6 +539,8 @@ impl Shell {
                 self.set_look((!custom_source).then_some(appearance));
                 self.set_keymap(keymaps.get(APP).cloned().unwrap_or_default());
             }
+            // settingsd gone: the look falls back to the theme file, but the
+            // person's bindings stay in force until a profile changes them.
             Some(settings::follow::Followed::Missing) if self.look.is_some() => {
                 self.set_look(None);
             }

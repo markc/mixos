@@ -450,7 +450,6 @@ impl Shell {
         }
     }
 
-    /// One frame's drawing and interaction.
     /// Apply the profile's bindings for Prefs when they change.
     fn follow_keymap(&mut self) {
         let mine = self.engine.look.keymaps.get(APP);
@@ -463,6 +462,7 @@ impl Shell {
         }
     }
 
+    /// One frame's drawing and interaction.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         self.follow_keymap();
         let fired = self.commands.shortcuts(ui.ctx(), &self.engine);

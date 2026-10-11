@@ -561,6 +561,20 @@ fn same_label(a: &str, b: &str) -> bool {
     plain(a) == plain(b)
 }
 
+/// The entry of `entries` labelled `label`: an exact label first, so `New`
+/// and `New…` side by side stay distinct; else the lenient [`same_label`].
+fn find_label(entries: &[Entry], label: &str) -> Option<usize> {
+    let row = |e: &Entry| e.row().map(|r| r.label.clone());
+    entries
+        .iter()
+        .position(|e| row(e).as_deref() == Some(label))
+        .or_else(|| {
+            entries
+                .iter()
+                .position(|e| row(e).is_some_and(|l| same_label(&l, label)))
+        })
+}
+
 /// Open the menu `path` names: a top-level title, then the label of a row
 /// at each level below it. A submenu row opens its submenu; the last row
 /// named is highlighted, and the keyboard acts on the deepest open level.
@@ -575,18 +589,19 @@ pub fn open_path(ctx: &Context, path: &[String]) -> Result<Current, String> {
     let (title, rows) = path.split_first().ok_or("the path names no menu")?;
     let menu = menus
         .iter()
-        .position(|m| same_label(&m.title, title))
+        .position(|m| m.title == *title)
+        .or_else(|| menus.iter().position(|m| same_label(&m.title, title)))
         .ok_or_else(|| format!("no menu {title:?}"))?;
+    // A search typed into an open menu would show results, not the rows
+    // named here: opening by path starts without one, as a click does.
+    st.query.clear();
     st.nav.open(menu);
     for (level, label) in rows.iter().enumerate() {
         let entries = st
             .nav
             .level(&menus, level)
             .ok_or_else(|| format!("{label:?}: no submenu is open above it"))?;
-        let index = entries
-            .iter()
-            .position(|e| e.row().is_some_and(|r| same_label(&r.label, label)))
-            .ok_or_else(|| format!("no row {label:?}"))?;
+        let index = find_label(entries, label).ok_or_else(|| format!("no row {label:?}"))?;
         let row = entries[index].row().expect("a row");
         if !row.enabled {
             return Err(format!("{label:?} is disabled"));

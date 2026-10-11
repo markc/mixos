@@ -316,7 +316,8 @@ impl<S> Registry<S> {
     /// - a chord the person bound is taken from any command that had it by
     ///   default; two listed commands claiming one chord leave it with the
     ///   first, by id;
-    /// - an unknown command or a chord that is not a key is skipped.
+    /// - an unknown command or a chord that is not a key is skipped; a
+    ///   list in which no chord is a key keeps the command's defaults.
     ///
     /// Returns a note for each thing skipped, for the app's log.
     pub fn rebind(&mut self, overrides: &crate::keymap::Overrides) -> Vec<String> {
@@ -340,14 +341,29 @@ impl<S> Registry<S> {
                 notes.push(format!("{action}: no such command"));
                 continue;
             };
-            let mut list = Vec::new();
+            // Parse first: a list with no key the app knows (a typo) keeps
+            // the defaults; only an empty list unbinds.
+            let mut parsed: Vec<KeyboardShortcut> = Vec::new();
             for text in chords {
                 match crate::keymap::parse_chord(text) {
                     None => notes.push(format!("{action}: {text:?} is not a key")),
-                    Some(s) if !claimed.insert(crate::keymap::chord_text(&s)) => {
-                        notes.push(format!("{action}: {text:?} is bound to another command"));
+                    Some(s) if parsed.contains(&s) => {
+                        notes.push(format!("{action}: {text:?} is listed twice"));
                     }
-                    Some(s) => list.push(s),
+                    Some(s) => parsed.push(s),
+                }
+            }
+            if !chords.is_empty() && parsed.is_empty() {
+                notes.push(format!("{action}: no key it names is known; the defaults stay"));
+                continue;
+            }
+            let mut list = Vec::new();
+            for s in parsed {
+                if claimed.insert(crate::keymap::chord_text(&s)) {
+                    list.push(s);
+                } else {
+                    let text = crate::keymap::chord_text(&s);
+                    notes.push(format!("{action}: {text:?} is bound to another command"));
                 }
             }
             let mut list = list.into_iter();
@@ -889,6 +905,16 @@ mod tests {
         // An empty profile entry restores the built chords.
         assert!(r.rebind(&BTreeMap::new()).is_empty());
         assert_eq!(r.shortcuts_of("count.bump"), [ctrl(Key::B), ctrl(Key::U)]);
+        // A list with no key the app knows (a typo) keeps the defaults; the
+        // same chord spelled twice is noted as listed twice.
+        let notes = r.rebind(&overrides(&[
+            ("count.bump", &["Nope"]),
+            ("count.reset", &["Ctrl+R", "Ctrl+r"]),
+        ]));
+        assert_eq!(r.shortcuts_of("count.bump"), [ctrl(Key::B), ctrl(Key::U)]);
+        assert_eq!(r.shortcuts_of("count.reset"), [ctrl(Key::R)]);
+        assert_eq!(notes.len(), 3, "{notes:?}");
+        assert!(notes[2].contains("listed twice"), "{notes:?}");
         assert!(r.shortcuts_of("count.reset").is_empty());
     }
 

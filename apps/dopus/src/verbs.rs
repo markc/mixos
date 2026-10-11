@@ -644,6 +644,8 @@ pub fn action_table(keys: impl Fn(&str) -> Vec<String>) -> Vec<ActionRow> {
 
 /// How long navigation waits on the stat that tells a file from a folder.
 const STAT_WAIT: std::time::Duration = std::time::Duration::from_millis(250);
+/// The most of those stats outstanding at once.
+const MAX_STATS: usize = 4;
 
 /// A file path navigated as a pane directory lands on its parent:
 /// `/etc/passwd` opens `/etc`.
@@ -651,18 +653,30 @@ const STAT_WAIT: std::time::Duration = std::time::Duration::from_millis(250);
 /// The stat runs off the calling (UI) thread and is waited on for at most
 /// [`STAT_WAIT`]: a path on a stalled mount must not freeze the window.
 /// Past that the path is taken as given, and the listing worker reports
-/// what it is. A stat that never returns leaves its thread behind.
+/// what it is. A stat that never returns keeps its thread; at most
+/// [`MAX_STATS`] are outstanding, and past that the path is taken as given
+/// at once, so repeated opens of a stalled mount cannot pile up threads.
 pub fn navigable(path: PathBuf) -> PathBuf {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static STATS: AtomicUsize = AtomicUsize::new(0);
+    if STATS.fetch_add(1, Ordering::SeqCst) >= MAX_STATS {
+        STATS.fetch_sub(1, Ordering::SeqCst);
+        return path;
+    }
     let (tx, rx) = std::sync::mpsc::channel();
     let probe = path.clone();
     let spawned = std::thread::Builder::new()
         .name("dopus-stat".into())
         .spawn(move || {
             let _ = tx.send(std::fs::metadata(&probe).map(|m| m.is_dir()).ok());
+            STATS.fetch_sub(1, Ordering::SeqCst);
         });
     let is_dir = match spawned {
         Ok(_) => rx.recv_timeout(STAT_WAIT).ok().flatten(),
-        Err(_) => None,
+        Err(_) => {
+            STATS.fetch_sub(1, Ordering::SeqCst);
+            None
+        }
     };
     if is_dir == Some(false) {
         return path.parent().map(Path::to_path_buf).unwrap_or(path);
