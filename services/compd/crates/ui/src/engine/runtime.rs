@@ -1,18 +1,22 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! `UiRuntime<P>`: one egui UI instance, with no window system.
 //!
-//! Input arrives as `egui::Event`s the compositor translated; frames go into a
-//! caller-supplied `wgpu::TextureView`. The lifecycle the registry drives:
+//! Input arrives as [`crate::input::Input`] (or raw egui events); frames go
+//! into a caller-supplied `wgpu::TextureView`. The lifecycle the registry
+//! drives, all inside the scene's GPU phase (context current, wgpu GL state
+//! held):
 //!
-//! 1. `queue_event` / `queue_message` as input arrives;
-//! 2. `tick` runs an egui pass when something wants one (input, messages,
-//!    a due repaint request, a resize) and reports whether pixels changed;
-//! 3. `render_into` paints the latest pass (running one first if a pass is
-//!    still owed), or `acknowledge_frame` when the surface is off screen.
+//! 1. `queue_input` / `queue_message` as input arrives;
+//! 2. `tick` runs an egui pass when one is owed (input, messages, a due
+//!    repaint request, a resize) and reports whether pixels changed;
+//! 3. `render_into` paints the latest pass, or `acknowledge_frame` when the
+//!    surface is off screen, with `set_suspended(true)` so its animations
+//!    stop waking the loop until it is shown again.
 //!
-//! A pass's texture uploads are kept until a paint consumes them, so passes
-//! that are never painted (an off-screen surface) lose no font-atlas or image
-//! updates.
+//! A pass's texture changes are applied to the painter as the pass runs, not
+//! when it is painted: the shapes kept for the next paint are always the
+//! latest pass's, and they reference exactly the textures that leaves alive.
+//! A runtime without a GPU (unit tests) merges them instead.
 
 use std::time::{Duration, Instant};
 
@@ -39,6 +43,14 @@ where
     }
 }
 
+/// The wgpu device a runtime paints with: the one sharing compd's GL context.
+#[derive(Clone, Debug)]
+pub struct Gpu {
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    pub format: wgpu::TextureFormat,
+}
+
 fn dispatch<P: UiProgram>(
     program: &mut P,
     handler: &mut Option<Box<dyn MessageHandler<P::Message>>>,
@@ -54,6 +66,26 @@ fn dispatch<P: UiProgram>(
         queue.extend(program.process(&message));
     }
     applied
+}
+
+/// Merge `newer` into `older` for a runtime with no painter. A texture
+/// `newer` frees is gone at the end of its pass, so neither its earlier
+/// uploads nor `newer`'s own updates to it may survive: a partial update
+/// left behind would target a texture that was never allocated.
+fn merge(older: &mut TexturesDelta, mut newer: TexturesDelta) {
+    for id in &newer.free {
+        older.set.remove(id);
+    }
+    let freed = newer.free.clone();
+    for (id, deltas) in newer.set.drain() {
+        if freed.contains(&id) {
+            continue;
+        }
+        for delta in deltas {
+            older.push(id, delta);
+        }
+    }
+    older.free.extend(std::mem::take(&mut newer.free));
 }
 
 /// The shapes of the latest pass, kept so a surface that was released and
@@ -72,6 +104,7 @@ pub struct UiRuntime<P: UiProgram> {
     size_px: (u32, u32),
     scale: f32,
     events: Vec<Event>,
+    translator: crate::input::Translator,
     messages: Vec<P::Message>,
     focused: bool,
     handler: Option<Box<dyn MessageHandler<P::Message>>>,
@@ -80,10 +113,10 @@ pub struct UiRuntime<P: UiProgram> {
     /// Pixels changed since the last paint (or acknowledgement).
     dirty: bool,
     last: Option<Pass>,
-    /// Texture uploads and frees not yet painted, oldest first.
-    textures: TexturesDelta,
+    gpu: Option<Gpu>,
     painter: Option<Painter>,
-    max_texture_side: Option<usize>,
+    /// Texture changes of a runtime with no GPU (tests), merged.
+    unapplied: TexturesDelta,
     wake: RuntimeWake,
     started: Instant,
     set_up: bool,
@@ -91,9 +124,8 @@ pub struct UiRuntime<P: UiProgram> {
 
 impl<P: UiProgram> Drop for UiRuntime<P> {
     fn drop(&mut self) {
-        // Uploads a surface never painted go with it; epaint asserts a delta
-        // is not dropped unapplied.
-        self.textures.clear();
+        // epaint asserts a delta is not dropped unapplied.
+        self.unapplied.clear();
     }
 }
 
@@ -111,16 +143,22 @@ impl<P: UiProgram> std::fmt::Debug for UiRuntime<P> {
 }
 
 impl<P: UiProgram> UiRuntime<P> {
-    /// A runtime for `program` at `size_px` physical pixels. `scale` is
-    /// physical pixels per egui point.
-    pub fn new(program: P, size_px: (u32, u32), scale: f32) -> Self {
-        Self::with_wake(program, size_px, scale, RuntimeWake::new())
+    /// A runtime for `program` at `size_px` physical pixels, `scale`
+    /// physical pixels per egui point, painting with `gpu`.
+    pub fn new(program: P, size_px: (u32, u32), scale: f32, gpu: Gpu) -> Self {
+        Self::build(program, size_px, scale, Some(gpu), RuntimeWake::new())
     }
 
-    pub(crate) fn with_wake(
+    /// A runtime with no GPU: passes run, nothing is painted (tests).
+    pub fn headless(program: P, size_px: (u32, u32), scale: f32) -> Self {
+        Self::build(program, size_px, scale, None, RuntimeWake::new())
+    }
+
+    pub(crate) fn build(
         program: P,
         size_px: (u32, u32),
         scale: f32,
+        gpu: Option<Gpu>,
         wake: RuntimeWake,
     ) -> Self {
         let ctx = Context::default();
@@ -132,6 +170,7 @@ impl<P: UiProgram> UiRuntime<P> {
             size_px: (size_px.0.max(1), size_px.1.max(1)),
             scale: if scale > 0.0 { scale } else { 1.0 },
             events: Vec::new(),
+            translator: crate::input::Translator::default(),
             messages: Vec::new(),
             focused: true,
             handler: None,
@@ -139,9 +178,9 @@ impl<P: UiProgram> UiRuntime<P> {
             needs_pass: true,
             dirty: true,
             last: None,
-            textures: TexturesDelta::default(),
+            gpu,
             painter: None,
-            max_texture_side: None,
+            unapplied: TexturesDelta::default(),
             wake,
             started: Instant::now(),
             set_up: false,
@@ -164,7 +203,30 @@ impl<P: UiProgram> UiRuntime<P> {
 
     // ── Ingest ──────────────────────────────────────────────────────────
 
-    /// Queue a translated input event for the next pass.
+    /// Queue compositor input for the next pass.
+    pub fn queue_input(&mut self, input: crate::input::Input) {
+        let before = self.events.len();
+        self.translator.translate(input, &mut self.events);
+        if self.events[before..]
+            .iter()
+            .any(|event| matches!(event, Event::WindowFocused(_)))
+        {
+            self.focused = self
+                .events
+                .iter()
+                .rev()
+                .find_map(|event| match event {
+                    Event::WindowFocused(focused) => Some(*focused),
+                    _ => None,
+                })
+                .unwrap_or(self.focused);
+        }
+        if self.events.len() > before {
+            self.needs_pass = true;
+        }
+    }
+
+    /// Queue an egui event as it is, for the next pass.
     pub fn queue_event(&mut self, event: Event) {
         if let Event::WindowFocused(focused) = &event {
             self.focused = *focused;
@@ -175,7 +237,7 @@ impl<P: UiProgram> UiRuntime<P> {
 
     /// The pointer left the surface.
     pub fn pointer_leave(&mut self) {
-        self.queue_event(Event::PointerGone);
+        self.queue_input(crate::input::Input::PointerLeft);
     }
 
     /// Queue a message for the next pass (applied before it draws).
@@ -206,9 +268,13 @@ impl<P: UiProgram> UiRuntime<P> {
             self.size_px.0 as f32 / self.scale,
             self.size_px.1 as f32 / self.scale,
         );
+        let max_texture_side = self
+            .gpu
+            .as_ref()
+            .map(|gpu| gpu.device.limits().max_texture_dimension_2d as usize);
         let mut raw = RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
-            max_texture_side: self.max_texture_side,
+            max_texture_side,
             time: Some(self.started.elapsed().as_secs_f64()),
             events: std::mem::take(&mut self.events),
             focused: self.focused,
@@ -235,7 +301,7 @@ impl<P: UiProgram> UiRuntime<P> {
         let mut emitted = Vec::new();
         let program = &mut self.program;
         let output = ctx.run_ui(raw, |ui| program.show(ui, &mut emitted));
-        self.textures.append(output.textures_delta);
+        self.apply_textures(output.textures_delta);
         self.last = Some(Pass {
             shapes: output.shapes,
             pixels_per_point: output.pixels_per_point,
@@ -248,39 +314,42 @@ impl<P: UiProgram> UiRuntime<P> {
         }
     }
 
+    fn apply_textures(&mut self, textures: TexturesDelta) {
+        match &self.gpu {
+            Some(gpu) => {
+                let painter = self
+                    .painter
+                    .get_or_insert_with(|| Painter::new(&gpu.device, gpu.format));
+                painter.apply(&gpu.device, &gpu.queue, textures);
+            }
+            None => merge(&mut self.unapplied, textures),
+        }
+    }
+
     // ── Render ──────────────────────────────────────────────────────────
 
-    /// Paint the latest pass into `view`, running a pass first if one is
-    /// owed. `view`'s texture is `size_px` physical pixels in `format`
-    /// (`graphics::surface::FORMAT`). The GL context must be current with
-    /// the wgpu GL state acquired.
-    pub fn render_into(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        format: wgpu::TextureFormat,
-        view: &wgpu::TextureView,
-    ) {
+    /// Paint the latest pass into `view` (a texture of `size_px` physical
+    /// pixels in the GPU's format), running a pass first if one is owed. A
+    /// runtime with no GPU paints nothing.
+    pub fn render_into(&mut self, view: &wgpu::TextureView) {
+        self.set_suspended(false);
         if self.needs_pass || self.last.is_none() || self.wake.take() {
             self.run_pass();
         }
+        let (Some(gpu), Some(pass)) = (&self.gpu, &self.last) else {
+            return;
+        };
         let painter = self
             .painter
-            .get_or_insert_with(|| Painter::new(device, format));
-        self.max_texture_side = Some(device.limits().max_texture_dimension_2d as usize);
-        let Some(pass) = &self.last else { return };
-        let primitives = self
-            .ctx
-            .tessellate(pass.shapes.clone(), pass.pixels_per_point);
-        let textures = std::mem::take(&mut self.textures);
+            .get_or_insert_with(|| Painter::new(&gpu.device, gpu.format));
+        let primitives = self.ctx.tessellate(pass.shapes.clone(), pass.pixels_per_point);
         painter.paint(
-            device,
-            queue,
+            &gpu.device,
+            &gpu.queue,
             view,
             [self.size_px.0, self.size_px.1],
             pass.pixels_per_point,
             &primitives,
-            textures,
         );
         self.dirty = false;
     }
@@ -309,9 +378,19 @@ impl<P: UiProgram> UiRuntime<P> {
     }
 
     /// Acknowledge a frame without painting: an off-screen surface stops
-    /// asking for frames. Its texture uploads wait for the next paint.
+    /// asking for frames.
     pub fn acknowledge_frame(&mut self) {
         self.dirty = false;
+    }
+
+    /// Suspend (off screen) or resume. Suspended, repaint requests do not wake
+    /// the loop or count as pending, so an animation nobody can see costs
+    /// nothing; input and messages still run passes. Resuming owes a pass if
+    /// any request arrived meanwhile.
+    pub fn set_suspended(&mut self, suspended: bool) {
+        if self.wake.set_suspended(suspended) {
+            self.needs_pass = true;
+        }
     }
 
     /// Change the size (physical pixels) and scale (pixels per point).
@@ -329,5 +408,57 @@ impl<P: UiProgram> UiRuntime<P> {
 
     pub fn scale_factor(&self) -> f32 {
         self.scale
+    }
+
+    /// Texture changes a headless runtime has not applied (tests).
+    #[cfg(test)]
+    pub(crate) fn unapplied(&self) -> &TexturesDelta {
+        &self.unapplied
+    }
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::merge;
+    use egui::epaint::textures::TexturesDelta;
+    use egui::epaint::{ColorImage, ImageDelta, TextureId, textures::TextureOptions};
+
+    fn whole() -> ImageDelta {
+        ImageDelta::full(ColorImage::filled([4, 4], egui::Color32::RED), TextureOptions::LINEAR)
+    }
+
+    fn partial() -> ImageDelta {
+        ImageDelta::partial([1, 1], ColorImage::filled([2, 2], egui::Color32::BLUE), TextureOptions::LINEAR)
+    }
+
+    #[test]
+    fn a_texture_freed_later_takes_its_pending_updates_with_it() {
+        let id = TextureId::Managed(7);
+        let mut pending = TexturesDelta::default();
+        let mut a = TexturesDelta::default();
+        a.push(id, whole());
+        merge(&mut pending, a);
+        // Pass B updates part of it, then drops it.
+        let mut b = TexturesDelta::default();
+        b.push(id, partial());
+        b.free(id);
+        merge(&mut pending, b);
+        assert!(!pending.set.contains_key(&id), "no partial update aimed at a freed texture");
+        assert!(pending.free.contains(&id));
+        pending.clear();
+    }
+
+    #[test]
+    fn a_partial_update_of_a_live_texture_survives() {
+        let id = TextureId::Managed(3);
+        let mut pending = TexturesDelta::default();
+        let mut a = TexturesDelta::default();
+        a.push(id, whole());
+        merge(&mut pending, a);
+        let mut b = TexturesDelta::default();
+        b.push(id, partial());
+        merge(&mut pending, b);
+        assert_eq!(pending.set[&id].len(), 2);
+        pending.clear();
     }
 }

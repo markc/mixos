@@ -54,10 +54,26 @@ impl Painter {
         Self { renderer }
     }
 
-    /// Upload `textures`, paint `primitives` over a cleared target, submit,
-    /// then free the textures the pass retired. `size_px` is the target's
-    /// size in physical pixels.
-    #[allow(clippy::too_many_arguments)]
+
+    /// Apply one pass's texture changes: uploads (whole or partial), then
+    /// frees. Called as each pass runs, so nothing waits on a paint: the
+    /// shapes the runtime keeps for its next paint are always the latest
+    /// pass's, and those reference exactly the textures this leaves alive.
+    pub fn apply(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, mut textures: TexturesDelta) {
+        for (id, deltas) in &textures.set {
+            for delta in deltas {
+                self.renderer.update_texture(device, queue, *id, delta);
+            }
+        }
+        for id in &textures.free {
+            self.renderer.free_texture(id);
+        }
+        // Applied: epaint asserts a delta is never dropped unapplied.
+        textures.clear();
+    }
+
+    /// Paint `primitives` over a cleared target and submit. `size_px` is the
+    /// target's size in physical pixels.
     pub fn paint(
         &mut self,
         device: &wgpu::Device,
@@ -66,13 +82,7 @@ impl Painter {
         size_px: [u32; 2],
         pixels_per_point: f32,
         primitives: &[ClippedPrimitive],
-        mut textures: TexturesDelta,
     ) {
-        for (id, deltas) in &textures.set {
-            for delta in deltas {
-                self.renderer.update_texture(device, queue, *id, delta);
-            }
-        }
         let screen = egui_wgpu::ScreenDescriptor {
             size_in_pixels: size_px,
             pixels_per_point,
@@ -102,10 +112,5 @@ impl Painter {
         }
         buffers.push(encoder.finish());
         queue.submit(buffers);
-        for id in &textures.free {
-            self.renderer.free_texture(id);
-        }
-        // Applied: epaint asserts a delta is never dropped unapplied.
-        textures.clear();
     }
 }

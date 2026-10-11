@@ -116,12 +116,17 @@ fn egui_paints_into_the_shared_context_and_smithay_composites_it() {
         graphics::surface::UiSurface::allocate(&node, &wgpu, &mut gles, size).expect("UI surface");
 
     // ── egui paints into the surface ────────────────────────────────────
-    let mut runtime = UiRuntime::new(Bars, (W as u32, H as u32), SCALE);
+    let gpu = ui::engine::Gpu {
+        device: wgpu.device.clone(),
+        queue: wgpu.queue.clone(),
+        format: graphics::surface::FORMAT,
+    };
+    let mut runtime = UiRuntime::new(Bars, (W as u32, H as u32), SCALE, gpu);
     assert!(runtime.tick());
     graphics::surface::make_current(&mut gles);
     wgpu.acquire_gl_state();
     let view = surface.begin_render_view().expect("resident surface");
-    runtime.render_into(&wgpu.device, &wgpu.queue, graphics::surface::FORMAT, &view);
+    runtime.render_into(&view);
     surface.submitted(false);
     let _ = wgpu.device.poll(wgpu::PollType::wait_indefinitely());
     wgpu.release_gl_state();

@@ -20,7 +20,10 @@ warnings = "allow"
 mod_module_files = "deny"
 
 [dependencies]
+dispatcher = { workspace = true }
 egui = { workspace = true }
+# FrameSource: the per-frame report content sources (src/source.rs) hand the presentation ledger.
+ledger = { workspace = true }
 egui-wgpu = { workspace = true }
 graphics = { workspace = true }
 model = { workspace = true }

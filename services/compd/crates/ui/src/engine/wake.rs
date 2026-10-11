@@ -49,10 +49,17 @@ pub(crate) fn notify() {
 }
 
 /// One runtime's repaint requests.
+///
+/// A suspended runtime (its surface is off screen) still records requests,
+/// but they neither wake the loop nor count as pending: an animation nobody
+/// can see must not keep the compositor drawing. Resuming reports whether any
+/// arrived, so the runtime catches up with one pass.
 #[derive(Clone)]
 pub(crate) struct RuntimeWake {
     pending: Arc<AtomicBool>,
     at: Arc<Mutex<Option<Instant>>>,
+    suspended: Arc<AtomicBool>,
+    deferred: Arc<AtomicBool>,
     wake: Arc<dyn Fn() + Send + Sync>,
 }
 
@@ -65,19 +72,29 @@ impl RuntimeWake {
         Self {
             pending: Arc::new(AtomicBool::new(false)),
             at: Arc::new(Mutex::new(None)),
+            suspended: Arc::new(AtomicBool::new(false)),
+            deferred: Arc::new(AtomicBool::new(false)),
             wake: Arc::new(wake),
         }
     }
 
     /// Record a repaint request `delay` from now and wake the loop.
     pub fn request(&self, delay: Duration) {
+        if delay == Duration::MAX {
+            // egui's "no repaint wanted".
+            return;
+        }
+        if self.suspended.load(Ordering::Acquire) {
+            self.deferred.store(true, Ordering::Release);
+            return;
+        }
         if delay.is_zero() {
             self.pending.store(true, Ordering::Release);
         } else if let Some(at) = Instant::now().checked_add(delay) {
             let mut slot = self.at.lock().unwrap_or_else(|error| error.into_inner());
             *slot = Some(slot.map_or(at, |earlier| earlier.min(at)));
         } else {
-            // Duration::MAX: egui's "no repaint wanted".
+            // Too far away to represent: as good as never.
             return;
         }
         (self.wake)();
@@ -86,7 +103,15 @@ impl RuntimeWake {
     /// A repaint is wanted now: requested immediately, or a delayed request
     /// whose instant has arrived.
     pub fn pending(&self) -> bool {
-        self.pending.load(Ordering::Acquire) || self.due(Instant::now())
+        !self.suspended.load(Ordering::Acquire)
+            && (self.pending.load(Ordering::Acquire) || self.due(Instant::now()))
+    }
+
+    /// Suspend or resume. Resuming returns whether a repaint was asked for
+    /// while suspended.
+    pub fn set_suspended(&self, suspended: bool) -> bool {
+        self.suspended.store(suspended, Ordering::Release);
+        !suspended && self.deferred.swap(false, Ordering::AcqRel)
     }
 
     /// Consume the request this pass answers.
@@ -103,6 +128,9 @@ impl RuntimeWake {
 
     /// The future instant a delayed request is waiting for.
     pub fn deadline(&self) -> Option<Instant> {
+        if self.suspended.load(Ordering::Acquire) {
+            return None;
+        }
         let slot = self.at.lock().unwrap_or_else(|error| error.into_inner());
         slot.filter(|at| *at > Instant::now())
     }
@@ -155,6 +183,21 @@ mod tests {
         assert!(wake.pending());
         assert!(wake.take());
         assert_eq!(wake.deadline(), None);
+    }
+
+    #[test]
+    fn a_suspended_runtime_is_not_woken_and_catches_up_on_resume() {
+        let woken = Arc::new(AtomicBool::new(false));
+        let flag = woken.clone();
+        let wake = RuntimeWake::with_waker(move || flag.store(true, Ordering::Release));
+        assert!(!wake.set_suspended(true));
+        wake.request(Duration::ZERO);
+        wake.request(Duration::from_millis(5));
+        assert!(!woken.load(Ordering::Acquire), "an off-screen animation does not wake the loop");
+        assert!(!wake.pending());
+        assert_eq!(wake.deadline(), None);
+        assert!(wake.set_suspended(false), "resuming reports the missed request");
+        assert!(!wake.set_suspended(false), "once");
     }
 
     #[test]

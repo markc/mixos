@@ -17,7 +17,7 @@ pub mod wake;
 
 pub use painter::Painter;
 pub use program::{UiProgram, UiSnapshot};
-pub use runtime::{MessageHandler, UiRuntime};
+pub use runtime::{Gpu, MessageHandler, UiRuntime};
 pub use wake::register as register_wake;
 
 #[cfg(test)]

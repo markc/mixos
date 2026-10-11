@@ -51,7 +51,7 @@ impl UiProgram for Probe {
 }
 
 fn runtime(program: Probe) -> UiRuntime<Probe> {
-    UiRuntime::with_wake(program, (400, 200), 2.0, RuntimeWake::with_waker(|| {}))
+    UiRuntime::build(program, (400, 200), 2.0, None, RuntimeWake::with_waker(|| {}))
 }
 
 #[test]
@@ -127,4 +127,57 @@ fn messages_apply_in_order_with_follow_ups_and_the_handler_sees_them() {
     let before = rt.program.passes;
     rt.tick();
     assert_eq!(rt.program.passes, before + 1);
+}
+
+/// An animation egui keeps asking frames for: a repaint every pass.
+struct Spinner {
+    passes: u32,
+}
+
+impl UiProgram for Spinner {
+    type Message = ();
+
+    fn show(&mut self, ui: &mut egui::Ui, _emit: &mut Vec<()>) {
+        self.passes += 1;
+        ui.ctx().request_repaint();
+    }
+
+    fn update(&mut self, _message: ()) {}
+
+    fn setup(&mut self, _ctx: &egui::Context) {}
+}
+
+#[test]
+fn a_hidden_animation_stops_asking_for_frames_until_it_is_shown() {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    let wakes = Arc::new(AtomicU32::new(0));
+    let counter = wakes.clone();
+    let wake = RuntimeWake::with_waker(move || {
+        counter.fetch_add(1, Ordering::Relaxed);
+    });
+    let mut rt = UiRuntime::build(Spinner { passes: 0 }, (100, 100), 1.0, None, wake);
+    rt.tick();
+    assert!(rt.has_queued(), "visible, the animation wants the next frame");
+    // Off screen: the registry acknowledges and suspends.
+    rt.acknowledge_frame();
+    rt.set_suspended(true);
+    rt.tick();
+    rt.acknowledge_frame();
+    let woken = wakes.load(Ordering::Relaxed);
+    let passes = rt.program.passes;
+    for _ in 0..5 {
+        rt.tick();
+        rt.acknowledge_frame();
+    }
+    assert_eq!(wakes.load(Ordering::Relaxed), woken, "suspended: no loop wakeups");
+    assert_eq!(rt.program.passes, passes, "suspended: no passes without input");
+    assert!(!rt.is_dirty() && !rt.has_queued());
+    // Input still runs a pass while hidden.
+    rt.queue_input(crate::input::Input::PointerMoved { x: 1.0, y: 1.0 });
+    rt.tick();
+    assert_eq!(rt.program.passes, passes + 1);
+    rt.acknowledge_frame();
+    // Shown again: the missed repaint owes a pass.
+    rt.set_suspended(false);
+    assert!(rt.is_dirty());
 }
