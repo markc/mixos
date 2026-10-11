@@ -304,8 +304,10 @@ fn two_painters_alternate_with_smithay_draws() {
             let half = Rectangle::new((0, 0).into(), (W / 2, H).into());
             let other = Rectangle::new((W / 2, 0).into(), (W / 2, H).into());
             let src = Rectangle::from_size(((W / 2) as f64, H as f64).into());
-            Frame::render_texture_from_to(&mut frame, &left_texture, src, half, &[half], &[], Transform::Normal, 1.0).expect("left draw");
-            Frame::render_texture_from_to(&mut frame, &right_texture, src, other, &[other], &[], Transform::Normal, 1.0).expect("right draw");
+            // Damage is relative to the destination rectangle.
+            let local = Rectangle::from_size(half.size);
+            Frame::render_texture_from_to(&mut frame, &left_texture, src, half, &[local], &[], Transform::Normal, 1.0).expect("left draw");
+            Frame::render_texture_from_to(&mut frame, &right_texture, src, other, &[local], &[], Transform::Normal, 1.0).expect("right draw");
             frame.finish().expect("finish");
         }
         let framebuffer = gles.bind(&mut target).expect("rebind");
