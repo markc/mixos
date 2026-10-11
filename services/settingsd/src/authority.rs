@@ -38,7 +38,8 @@ impl Authority {
         let pending = self.published != Some(self.accepted.revision);
         Ok(match request.view {
             settings::View::Full => {
-                json!({"status":"current","snapshot":self.snapshot,"publication_pending":pending,"recovering":self.store.recovering,"restored_from_backup":self.store.restored})
+                let snapshot = self.snapshot_in(request.schema)?;
+                json!({"status":"current","snapshot":snapshot,"publication_pending":pending,"recovering":self.store.recovering,"restored_from_backup":self.store.restored})
             }
             settings::View::Summary => {
                 json!({"status":"current","summary":settings::Summary::of(&self.snapshot),"publication_pending":pending,"recovering":self.store.recovering,"restored_from_backup":self.store.restored})
@@ -65,7 +66,24 @@ impl Authority {
                 .map_err(diagnostic)?;
         // One atomic read supplies both the shared Consumer's authority evidence
         // and the portal projection, including the private accent source.
-        Ok(json!({"status":"current","appearance":projection,"snapshot":self.snapshot}))
+        let snapshot = self.snapshot_in(request.schema)?;
+        Ok(json!({"status":"current","appearance":projection,"snapshot":snapshot}))
+    }
+    /// The accepted snapshot in the schema a read asked for: 1 (complete) or
+    /// 2 (each distinct design once, [`settings::compact`]).
+    pub fn snapshot_in(&self, schema: u32) -> Result<Value, Value> {
+        let encoded = match schema {
+            settings::SCHEMA => serde_json::to_value(&self.snapshot),
+            settings::compact::COMPACT_SCHEMA => {
+                settings::compact::encode(&self.snapshot).and_then(serde_json::to_value)
+            }
+            other => {
+                return Err(
+                    json!({"status":"unsupported_schema","schema":other,"supported":[settings::SCHEMA, settings::compact::COMPACT_SCHEMA]}),
+                );
+            }
+        };
+        encoded.map_err(|e| json!({"status":"validation_failed","message":e.to_string()}))
     }
     pub fn status(&self, binding: &Binding, operation: Option<&str>) -> Result<Value, Value> {
         self.target(binding)?;
@@ -259,6 +277,12 @@ pub(crate) fn snapshot(
     let bytes = result.encoded_len()?;
     if bytes > MAX_SNAPSHOT_BYTES {
         return Err(SnapshotTooLarge { bytes }.into());
+    }
+    // The compact form is published too, and native consumers hold it to
+    // the budget plus its bounded overhead: refuse what they would refuse.
+    let compact = serde_json::to_vec(&settings::compact::encode(&result)?)?.len();
+    if compact > MAX_SNAPSHOT_BYTES + settings::compact::MAX_OVERHEAD_BYTES {
+        return Err(SnapshotTooLarge { bytes: compact }.into());
     }
     Ok(result)
 }

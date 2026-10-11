@@ -3,6 +3,8 @@
 pub mod appearance;
 #[cfg(feature = "cache")]
 pub mod cache;
+pub mod compact;
+pub use compact::{COMPACT_TOPIC_PREFIX, compact_topic};
 pub mod consumer;
 pub mod domains;
 pub mod fallback;
@@ -19,7 +21,7 @@ pub use resolve::{
     Accents, describe, resolve, resolve_with_embedded, resolve_with_embedded_and_accents,
 };
 
-pub const CONTRACT_VERSION: &str = "0.2.0";
+pub const CONTRACT_VERSION: &str = "0.3.0";
 pub const SCHEMA: u32 = 1;
 pub const MAX_SOURCE_BYTES: usize = 256 * 1024;
 pub const MAX_SNAPSHOT_BYTES: usize = 1024 * 1024 - 64 * 1024;

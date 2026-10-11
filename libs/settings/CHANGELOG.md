@@ -1,5 +1,25 @@
 # settings contract changes
 
+## 0.5.0
+
+Authority verbs 0.3.0 (additive): snapshot schema 2
+([decision](../../docs/decisions/2026-10-11-settings-snapshot-schema-2.md)).
+
+- `compact`: `CompactSnapshot` (schema 2) sends each distinct design
+  projection once under `designs`, keyed by digest; each context's `design`
+  names one. `encode` builds it; `decode` reads schema 1 or 2 into the same
+  in-memory `Snapshot`, so consumers, reducer, cache and effective digests
+  are unchanged. A dangling or unnamed design is refused.
+- `compact_topic(profile)` / `COMPACT_TOPIC_PREFIX`: the retained schema 2
+  topic, `settingsd.desktop.compact.<profile>`, published between the
+  schema 1 topic and the summary.
+- **Breaking:** `ReadRequest.schema` (1 by default and never serialised;
+  2 for the compact form) on `settings.get` and `settings.appearance.get`.
+  Another schema is refused with `unsupported_schema`.
+- `native` follows the compact topic and reads schema 2. Consumers on the
+  schema 1 topic are not affected.
+- `describe()` lists the snapshot schemas and the compact topic.
+
 ## 0.4.0
 
 Authority verbs 0.2.0 (additive), snapshot schema still 1

@@ -60,7 +60,7 @@ pub async fn execute_until(
         match work.kind() {
             WorkKind::Subscribe => {
                 client
-                    .subscribe_topic(&topic(&work.binding().profile))
+                    .subscribe_topic(&compact_topic(&work.binding().profile))
                     .await
                     .map_err(|e| fault("subscribe_failed", e.to_string()))?;
                 Ok(None)
@@ -69,6 +69,7 @@ pub async fn execute_until(
                 let body = serde_json::to_value(ReadRequest {
                     binding: work.binding().clone(),
                     view: View::Full,
+                    schema: compact::COMPACT_SCHEMA,
                 })
                 .map_err(|e| fault("invalid_request", e.to_string()))?;
                 let value = match client
@@ -114,14 +115,14 @@ pub async fn execute_until(
                         "Authority did not return current state",
                     ));
                 }
-                serde_json::from_value(
+                compact::decode(
                     value
                         .get("snapshot")
                         .cloned()
                         .ok_or_else(|| fault("invalid_read", "Missing snapshot"))?,
                 )
                 .map(Some)
-                .map_err(|e| fault("invalid_snapshot", e.to_string()))
+                .map_err(|e| fault("invalid_snapshot", e))
             }
         }
     })
@@ -192,7 +193,7 @@ impl Decoded {
         // path under a peer's flood, and it must not allocate.
         let on_our_topic = command
             .topic()
-            .and_then(|topic| topic.strip_prefix(crate::TOPIC_PREFIX))
+            .and_then(|topic| topic.strip_prefix(crate::COMPACT_TOPIC_PREFIX))
             == Some(binding.profile.as_str());
         if !on_our_topic {
             return Admission::Other;
@@ -214,21 +215,27 @@ impl Decoded {
     }
 
     fn decode(binding: &Binding, command: &IncomingCommand) -> Self {
-        let result = if command.body.len() > MAX_SNAPSHOT_BYTES {
+        // A compact body may run a little over the inline budget when no
+        // design is shared; the expanded snapshot is held to the budget by
+        // the consumer's validation.
+        let limit = MAX_SNAPSHOT_BYTES + compact::MAX_OVERHEAD_BYTES;
+        let result = if command.body.len() > limit {
             Err(Diagnostic::new(
                 "invalid_delivery",
                 "snapshot",
                 "Canonical delivery exceeds inline budget",
             ))
         } else {
-            serde_json::from_str::<Snapshot>(&command.body)
-                .map_err(|error| Diagnostic::new("invalid_delivery", "snapshot", error.to_string()))
+            serde_json::from_str::<serde_json::Value>(&command.body)
+                .map_err(|error| error.to_string())
+                .and_then(compact::decode)
+                .map_err(|error| Diagnostic::new("invalid_delivery", "snapshot", error))
         };
         Self {
             binding: binding.clone(),
             generation: command.generation,
             result,
-            fingerprint: (command.body.len() <= MAX_SNAPSHOT_BYTES)
+            fingerprint: (command.body.len() <= limit)
                 .then(|| *blake3::hash(command.body.as_bytes()).as_bytes()),
         }
     }
@@ -267,7 +274,7 @@ mod tests {
         IncomingCommand {
             generation: 1,
             from: "noded".into(),
-            command: topic("default"),
+            command: compact_topic("default"),
             id: None,
             args: serde_json::Value::Null,
             body: "{}".into(),
@@ -282,7 +289,7 @@ mod tests {
     fn an_unstamped_frame_on_our_topic_is_refused_with_a_reason() {
         // A noded older than the settings reservation delivers the topic
         // without broker_service. Admission must say so, not return None.
-        let frame = delivery(&[("topic", &topic("default"))]);
+        let frame = delivery(&[("topic", &compact_topic("default"))]);
         assert!(matches!(
             Decoded::admit(&binding(), &frame),
             Admission::Refused(REFUSED_MISSING_OWNER)
@@ -292,7 +299,10 @@ mod tests {
 
     #[test]
     fn a_frame_stamped_by_another_owner_is_refused_with_a_reason() {
-        let frame = delivery(&[("topic", &topic("default")), ("broker_service", "operator")]);
+        let frame = delivery(&[
+            ("topic", &compact_topic("default")),
+            ("broker_service", "operator"),
+        ]);
         assert!(matches!(
             Decoded::admit(&binding(), &frame),
             Admission::Refused(REFUSED_WRONG_OWNER)
@@ -302,7 +312,7 @@ mod tests {
     #[test]
     fn a_settingsd_stamped_frame_on_our_topic_is_admitted() {
         let frame = delivery(&[
-            ("topic", &topic("default")),
+            ("topic", &compact_topic("default")),
             ("broker_service", "settingsd"),
         ]);
         assert!(matches!(
@@ -312,9 +322,50 @@ mod tests {
         assert!(Decoded::from_command(&binding(), &frame).is_some());
     }
 
+    /// A compact body over the inline budget but within its bounded
+    /// overhead decodes; one past that is refused before parsing.
+    #[test]
+    fn a_compact_delivery_may_use_its_bounded_overhead() {
+        let desktop = Desktop::default();
+        let snapshot = Snapshot {
+            schema: SCHEMA,
+            binding: binding(),
+            incarnation: "inc".into(),
+            revision: Revision(1),
+            design_revision: Revision(1),
+            source_digest: "d".into(),
+            effective: crate::resolve(&desktop).unwrap(),
+            desktop,
+        };
+        let body = serde_json::to_string(&compact::encode(&snapshot).unwrap()).unwrap();
+        let padded = |len: usize| {
+            let mut frame = delivery(&[
+                ("topic", &compact_topic("default")),
+                ("broker_service", "settingsd"),
+            ]);
+            frame.body = format!("{body}{}", " ".repeat(len - body.len()));
+            frame
+        };
+        let within = padded(MAX_SNAPSHOT_BYTES + 100);
+        let decoded = Decoded::from_command(&binding(), &within).unwrap();
+        assert_eq!(decoded.result.unwrap(), snapshot);
+        let beyond = padded(MAX_SNAPSHOT_BYTES + compact::MAX_OVERHEAD_BYTES + 1);
+        let decoded = Decoded::from_command(&binding(), &beyond).unwrap();
+        assert_eq!(decoded.result.unwrap_err().code, "invalid_delivery");
+    }
+
     #[test]
     fn other_topics_are_not_judged_and_stay_silent() {
-        let frame = delivery(&[("topic", "settingsd.desktop.changed.other")]);
+        let frame = delivery(&[("topic", "settingsd.desktop.compact.other")]);
+        assert!(matches!(
+            Decoded::admit(&binding(), &frame),
+            Admission::Other
+        ));
+        // The schema 1 topic is for consumers not yet on schema 2.
+        let frame = delivery(&[
+            ("topic", &topic("default")),
+            ("broker_service", "settingsd"),
+        ]);
         assert!(matches!(
             Decoded::admit(&binding(), &frame),
             Admission::Other

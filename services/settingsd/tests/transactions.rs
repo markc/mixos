@@ -260,6 +260,37 @@ fn the_summary_view_carries_identity_and_appearance_names_only() {
     );
 }
 #[test]
+fn schema_2_reads_expand_to_the_schema_1_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    let mut read = |verb: &str, body: serde_json::Value| {
+        settingsd::service::dispatch(&mut state, verb, &body.to_string())
+    };
+    for verb in ["settings.get", "settings.appearance.get"] {
+        let one = read(verb, json!({"binding":binding()})).unwrap();
+        let two = read(verb, json!({"binding":binding(),"schema":2})).unwrap();
+        assert_eq!(two["snapshot"]["schema"], 2, "{verb}");
+        assert_eq!(
+            two["snapshot"]["designs"].as_object().unwrap().len(),
+            1,
+            "{verb}: the default contexts share one design"
+        );
+        let expanded = settings::compact::decode(two["snapshot"].clone()).unwrap();
+        let original: Snapshot = serde_json::from_value(one["snapshot"].clone()).unwrap();
+        assert_eq!(expanded, original, "{verb}");
+        assert!(
+            two.to_string().len() * 4 < one.to_string().len(),
+            "{verb}: {} vs {} bytes",
+            two.to_string().len(),
+            one.to_string().len()
+        );
+        assert_eq!(
+            read(verb, json!({"binding":binding(),"schema":3})).unwrap_err()["status"],
+            "unsupported_schema"
+        );
+    }
+}
+#[test]
 fn lost_reply_and_later_edit_return_original_receipt_before_revision_conflict() {
     let dir = tempfile::tempdir().unwrap();
     let mut authority = authority(dir.path());

@@ -79,13 +79,18 @@ pub(crate) fn publisher_owner(name: &str) -> Option<&str> {
         })
 }
 
-/// settingsd's retained profile topics: the complete snapshot
-/// (`settingsd.desktop.changed[.<profile>]`) and its summary
+/// settingsd's retained profile topics: the snapshot in schema 1
+/// (`settingsd.desktop.changed[.<profile>]`) and schema 2
+/// (`settingsd.desktop.compact[.<profile>]`), and its summary
 /// (`settingsd.desktop.summary[.<profile>]`).
 fn settings_topic(name: &str) -> bool {
-    ["settingsd.desktop.changed", "settingsd.desktop.summary"]
-        .iter()
-        .any(|base| settings_topic_under(name, base))
+    [
+        "settingsd.desktop.changed",
+        "settingsd.desktop.compact",
+        "settingsd.desktop.summary",
+    ]
+    .iter()
+    .any(|base| settings_topic_under(name, base))
 }
 
 fn settings_topic_under(name: &str, base: &str) -> bool {
@@ -200,10 +205,12 @@ mod tests {
     }
 
     #[test]
-    fn the_settings_summary_topic_is_owned_by_settingsd_too() {
+    fn the_settings_summary_and_compact_topics_are_owned_by_settingsd_too() {
         for topic in [
             "settingsd.desktop.summary",
             "settingsd.desktop.summary.default",
+            "settingsd.desktop.compact",
+            "settingsd.desktop.compact.default",
         ] {
             assert_eq!(publisher_owner(topic), Some("settingsd"), "{topic}");
             assert!(may_publish(topic, "settingsd"));

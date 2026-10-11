@@ -131,10 +131,13 @@ async fn serve(
         permit.forget();
         let appearance =
             AppearanceProjection::from_snapshot(&snapshot, STUDIO_DARK_ACCENT).unwrap();
+        // As settingsd: the snapshot in the schema the read asked for.
+        let asked: serde_json::Value = serde_json::from_str(&command.body).unwrap_or_default();
+        assert_eq!(asked["schema"], 2, "portald reads schema 2");
         let body = json!({
             "status": "current",
             "appearance": appearance,
-            "snapshot": snapshot,
+            "snapshot": settings::compact::encode(&snapshot).unwrap(),
         })
         .to_string();
         let _ = client.respond(&command, 0, &body).await;
@@ -143,7 +146,7 @@ async fn serve(
 
 /// An unstamped topic frame, as an old noded delivers one.
 fn hint() -> IncomingCommand {
-    let topic = settings::topic("default");
+    let topic = settings::compact_topic("default");
     IncomingCommand {
         generation: 0,
         from: "noded".into(),
@@ -396,8 +399,10 @@ impl Harness {
 
     /// Publishes the authority's current state as a stamped settingsd frame.
     async fn publish_stamped(&self) -> anyhow::Result<()> {
-        let topic = settings::topic("default");
-        let body = serde_json::to_string(&*self.authority.state.lock().unwrap())?;
+        let topic = settings::compact_topic("default");
+        let body = serde_json::to_string(&settings::compact::encode(
+            &self.authority.state.lock().unwrap(),
+        )?)?;
         let mut inner = bus::wire::BusMessage::new();
         inner.set("command", &topic);
         inner.body = body;

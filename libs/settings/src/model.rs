@@ -190,6 +190,18 @@ pub struct ReadRequest {
     /// default, so a request reads as it did before the field existed.
     #[serde(default, skip_serializing_if = "View::is_full")]
     pub view: View,
+    /// The snapshot schema of a `full` answer: 1 (the default, never sent)
+    /// or 2 ([`crate::compact`]). Other schemas are refused.
+    #[serde(default = "schema_one", skip_serializing_if = "is_schema_one")]
+    pub schema: u32,
+}
+
+fn schema_one() -> u32 {
+    crate::SCHEMA
+}
+
+fn is_schema_one(schema: &u32) -> bool {
+    *schema == crate::SCHEMA
 }
 
 /// `settings.get`'s answer: the complete [`Snapshot`], or the [`Summary`]
@@ -306,16 +318,16 @@ pub struct Effective {
     pub design: design::DesignReadProjection,
     pub provenance: BTreeMap<String, String>,
 }
-fn default_decorations() -> String {
+pub(crate) fn default_decorations() -> String {
     Appearance::default().decorations
 }
-fn default_caption_side() -> String {
+pub(crate) fn default_caption_side() -> String {
     Appearance::default().caption_side
 }
-fn is_default_decorations(value: &str) -> bool {
+pub(crate) fn is_default_decorations(value: &str) -> bool {
     value == "csd"
 }
-fn is_default_caption_side(value: &str) -> bool {
+pub(crate) fn is_default_caption_side(value: &str) -> bool {
     value == "right"
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

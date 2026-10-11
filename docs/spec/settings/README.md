@@ -1,7 +1,8 @@
 # Desktop settings contract
 
-Status: accepted authority contract, version 0.2.0 (0.2.0 adds the summary
-topic and read view; [decision](../../decisions/2026-10-11-settings-summary-reads.md)). Full desktop consumer
+Status: accepted authority contract, version 0.3.0 (0.2.0 added the summary
+topic and read view, [decision](../../decisions/2026-10-11-settings-summary-reads.md);
+0.3.0 adds snapshot schema 2, [decision](../../decisions/2026-10-11-settings-snapshot-schema-2.md)). Full desktop consumer
 integration remains in development. No frozen ABP wire bytes change.
 
 `settingsd` serves one explicitly initialised profile in the initial slice.
@@ -19,8 +20,8 @@ refusal, invalid input or unknown verbs. Domain status is structured in the body
 | Verb | Input and result |
 | --- | --- |
 | `settings.describe` | No mutation; version, fields, ranges, defaults, limits and implemented/deferred capabilities |
-| `settings.get` | `{binding:{instance,profile}, view?}`; `view` `full` (default): complete accepted snapshot under `snapshot`; `summary`: the profile's `Summary` (schema, binding, incarnation, revision, design revision, source digest, appearance names, `custom_source`; never projections or a source) under `summary`; both with publication/recovery status |
-| `settings.appearance.get` | `{binding:{instance,profile}}`; read-only appearance projection (`mode`, `contrast`, sRGB `accent`) tagged with incarnation and revisions; the reply also includes the atomic `snapshot` for shared Consumer validation; `wrong_target` on a foreign binding |
+| `settings.get` | `{binding:{instance,profile}, view?, schema?}`; `view` `full` (default): complete accepted snapshot under `snapshot`, in `schema` 1 (default) or 2 (each distinct design projection once under `designs`, contexts naming it by digest; other schemas refused with `unsupported_schema`); `summary`: the profile's `Summary` (schema, binding, incarnation, revision, design revision, source digest, appearance names, `custom_source`; never projections or a source) under `summary`; both with publication/recovery status |
+| `settings.appearance.get` | `{binding:{instance,profile}, schema?}`; read-only appearance projection (`mode`, `contrast`, sRGB `accent`) tagged with incarnation and revisions; the reply also includes the atomic `snapshot` (in `schema` 1 or 2, as for `settings.get`) for shared Consumer validation; `wrong_target` on a foreign binding |
 | `settings.validate` | Fenced apply-shaped body; resolve/compile candidate without a write or receipt; valid with current base identity or diagnostics/conflict |
 | `settings.apply` | Fenced batch described below; durable changed/unchanged receipt |
 | `settings.reset` | Apply-shaped body with empty changes and explicit reset paths; same transaction semantics |
@@ -119,8 +120,11 @@ Fresh decoded topic deliveries use Reducer.observe. Captured tickets are for
 asynchronous completions; a new delivery can advance the state while an older
 bound read is pending, and that read cannot roll the revision back.
 
-The settings library API is now 0.4.0; authority verbs are 0.2.0 and the
-snapshot schema remains 1. The shared consumer performs subscribe-before-get over the host's
+The settings library API is now 0.5.0; authority verbs are 0.3.0. Snapshot
+schema 1 is the default; schema 2 is its compact wire form, decoded into the
+same in-memory snapshot. The shared native consumer follows the compact topic
+and reads schema 2; consumers on their own library copy stay on schema 1 until
+ported. The shared consumer performs subscribe-before-get over the host's
 existing supervised Bus connection through its optional native executor. It
 owns no transport/task/incoming receiver. Hosts feed connection generations,
 deliveries and explicit queue loss, execute at most one current action, and
@@ -255,11 +259,11 @@ extents continue to come from the selected style's fixed height and border.
 
 ## Topics and storage
 
-Publish retained `settingsd.desktop.changed.<profile>` (the complete snapshot)
-and then retained `settingsd.desktop.summary.<profile>` (its `Summary`), both
-owned by the registered `settingsd` service. Both unscoped base names are
-reserved too. A revision is published once both topics are; a failure
-retries both. All clients may
+Publish retained `settingsd.desktop.changed.<profile>` (the snapshot in schema
+1), then retained `settingsd.desktop.compact.<profile>` (schema 2), then
+retained `settingsd.desktop.summary.<profile>` (its `Summary`), all owned by
+the registered `settingsd` service. The unscoped base names are reserved too.
+A revision is published once all three topics are; a failure retries all three. All clients may
 subscribe; ordinary publishers/clearers cannot replace its canonical state.
 Noded strips inner routing headers and stamps broker_service independently of
 caller input. The publisher repopulates retained state at startup and reconnect,

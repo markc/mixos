@@ -72,15 +72,22 @@ pub fn dispatch(authority: &mut Authority, verb: &str, body: &str) -> Result<Val
         _ => Err(json!({"status":"not_served","verb":verb})),
     }
 }
-/// Publish the retained snapshot (native consumers) and then the retained
-/// summary (plain followers). A revision is published once both are; a
-/// failure retries both.
+/// Publish the retained snapshot in schema 1 (consumers not yet on schema 2)
+/// and schema 2 (native consumers), then the retained summary (plain
+/// followers). A revision is published once all three are; a failure
+/// retries all three.
 async fn publish(authority: &mut Authority, client: &SupervisedClient) -> anyhow::Result<()> {
     let profile = &authority.accepted.binding.profile;
     publish_retained(
         client,
         settings::topic(profile),
         serde_json::to_string(&authority.snapshot)?,
+    )
+    .await?;
+    publish_retained(
+        client,
+        settings::compact_topic(profile),
+        serde_json::to_string(&settings::compact::encode(&authority.snapshot)?)?,
     )
     .await?;
     publish_retained(

@@ -13,8 +13,8 @@
   schema: 1,
   verbs: [
     {name:"settings.describe", owner:"settingsd", version:"0.1.0", status:"accepted"},
-    {name:"settings.get", owner:"settingsd", version:"0.2.0", status:"accepted"},
-    {name:"settings.appearance.get", owner:"settingsd", version:"0.1.0", status:"accepted"},
+    {name:"settings.get", owner:"settingsd", version:"0.3.0", status:"accepted"},
+    {name:"settings.appearance.get", owner:"settingsd", version:"0.2.0", status:"accepted"},
     {name:"settings.validate", owner:"settingsd", version:"0.1.0", status:"accepted"},
     {name:"settings.apply", owner:"settingsd", version:"0.1.0", status:"accepted"},
     {name:"settings.reset", owner:"settingsd", version:"0.1.0", status:"accepted"},

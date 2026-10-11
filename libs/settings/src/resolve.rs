@@ -29,7 +29,10 @@ pub fn describe() -> Value {
         "defaults": Desktop::default(), "native_apps": APPS,
         "read_views": {"full":"the complete snapshot (default)",
             "summary":"identity, revisions and appearance names; no projections or source"},
-        "topics": {"snapshot": TOPIC_PREFIX, "summary": SUMMARY_TOPIC_PREFIX},
+        "snapshot_schemas": {"1":"every context carries its design projection (default)",
+            "2":"each distinct design projection once, by digest; read with schema: 2"},
+        "topics": {"snapshot": TOPIC_PREFIX, "compact": crate::COMPACT_TOPIC_PREFIX,
+            "summary": SUMMARY_TOPIC_PREFIX},
         "deferred":["renderer application","output overrides","font registration","artifacts","preview","replication","compatibility","policy"]})
 }
 

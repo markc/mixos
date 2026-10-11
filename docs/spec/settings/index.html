@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Status: accepted authority contract, version 0.2.0 (0.2.0 adds the summary topic and read view; decision). Full desktop consumer integration remains in…">
+    <meta name="description" content="Status: accepted authority contract, version 0.3.0 (0.2.0 added the summary topic and read view, decision; 0.3.0 adds snapshot schema 2, decision). Full…">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=c34fdc68c4" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/web/favicon.svg?v=51993ccf9f">
@@ -245,8 +245,9 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="desktop-settings-contract">Desktop settings contract</h1>
-<p>Status: accepted authority contract, version 0.2.0 (0.2.0 adds the summary
-topic and read view; <a href="/decisions/2026-10-11-settings-summary-reads/">decision</a>). Full desktop consumer
+<p>Status: accepted authority contract, version 0.3.0 (0.2.0 added the summary
+topic and read view, <a href="/decisions/2026-10-11-settings-summary-reads/">decision</a>;
+0.3.0 adds snapshot schema 2, <a href="/decisions/2026-10-11-settings-snapshot-schema-2/">decision</a>). Full desktop consumer
 integration remains in development. No frozen ABP wire bytes change.</p>
 <p><code>settingsd</code> serves one explicitly initialised profile in the initial slice.
 <code>settings</code> provides shared headless types, resolver, consumer and snapshot reducer;
@@ -259,8 +260,8 @@ responses preserve ordinary ABP rc conventions: 0 for handled results and 10 for
 refusal, invalid input or unknown verbs. Domain status is structured in the body.</p>
 <table><thead><tr><th>Verb</th><th>Input and result</th></tr></thead><tbody>
 <tr><td><code>settings.describe</code></td><td>No mutation; version, fields, ranges, defaults, limits and implemented/deferred capabilities</td></tr>
-<tr><td><code>settings.get</code></td><td><code>{binding:{instance,profile}, view?}</code>; <code>view</code> <code>full</code> (default): complete accepted snapshot under <code>snapshot</code>; <code>summary</code>: the profile's <code>Summary</code> (schema, binding, incarnation, revision, design revision, source digest, appearance names, <code>custom_source</code>; never projections or a source) under <code>summary</code>; both with publication/recovery status</td></tr>
-<tr><td><code>settings.appearance.get</code></td><td><code>{binding:{instance,profile}}</code>; read-only appearance projection (<code>mode</code>, <code>contrast</code>, sRGB <code>accent</code>) tagged with incarnation and revisions; the reply also includes the atomic <code>snapshot</code> for shared Consumer validation; <code>wrong_target</code> on a foreign binding</td></tr>
+<tr><td><code>settings.get</code></td><td><code>{binding:{instance,profile}, view?, schema?}</code>; <code>view</code> <code>full</code> (default): complete accepted snapshot under <code>snapshot</code>, in <code>schema</code> 1 (default) or 2 (each distinct design projection once under <code>designs</code>, contexts naming it by digest; other schemas refused with <code>unsupported_schema</code>); <code>summary</code>: the profile's <code>Summary</code> (schema, binding, incarnation, revision, design revision, source digest, appearance names, <code>custom_source</code>; never projections or a source) under <code>summary</code>; both with publication/recovery status</td></tr>
+<tr><td><code>settings.appearance.get</code></td><td><code>{binding:{instance,profile}, schema?}</code>; read-only appearance projection (<code>mode</code>, <code>contrast</code>, sRGB <code>accent</code>) tagged with incarnation and revisions; the reply also includes the atomic <code>snapshot</code> (in <code>schema</code> 1 or 2, as for <code>settings.get</code>) for shared Consumer validation; <code>wrong_target</code> on a foreign binding</td></tr>
 <tr><td><code>settings.validate</code></td><td>Fenced apply-shaped body; resolve/compile candidate without a write or receipt; valid with current base identity or diagnostics/conflict</td></tr>
 <tr><td><code>settings.apply</code></td><td>Fenced batch described below; durable changed/unchanged receipt</td></tr>
 <tr><td><code>settings.reset</code></td><td>Apply-shaped body with empty changes and explicit reset paths; same transaction semantics</td></tr>
@@ -349,8 +350,11 @@ installed values rather than enter an endless readback loop.
 Fresh decoded topic deliveries use Reducer.observe. Captured tickets are for
 asynchronous completions; a new delivery can advance the state while an older
 bound read is pending, and that read cannot roll the revision back.</p>
-<p>The settings library API is now 0.4.0; authority verbs are 0.2.0 and the
-snapshot schema remains 1. The shared consumer performs subscribe-before-get over the host's
+<p>The settings library API is now 0.5.0; authority verbs are 0.3.0. Snapshot
+schema 1 is the default; schema 2 is its compact wire form, decoded into the
+same in-memory snapshot. The shared native consumer follows the compact topic
+and reads schema 2; consumers on their own library copy stay on schema 1 until
+ported. The shared consumer performs subscribe-before-get over the host's
 existing supervised Bus connection through its optional native executor. It
 owns no transport/task/incoming receiver. Hosts feed connection generations,
 deliveries and explicit queue loss, execute at most one current action, and
@@ -473,11 +477,11 @@ with no outputs, native window/input/frame evidence and VT latency acceptance
 remain outstanding. Current text scale changes the title font, while decoration
 extents continue to come from the selected style's fixed height and border.</p>
 <h2 id="topics-and-storage">Topics and storage</h2>
-<p>Publish retained <code>settingsd.desktop.changed.&lt;profile&gt;</code> (the complete snapshot)
-and then retained <code>settingsd.desktop.summary.&lt;profile&gt;</code> (its <code>Summary</code>), both
-owned by the registered <code>settingsd</code> service. Both unscoped base names are
-reserved too. A revision is published once both topics are; a failure
-retries both. All clients may
+<p>Publish retained <code>settingsd.desktop.changed.&lt;profile&gt;</code> (the snapshot in schema
+1), then retained <code>settingsd.desktop.compact.&lt;profile&gt;</code> (schema 2), then
+retained <code>settingsd.desktop.summary.&lt;profile&gt;</code> (its <code>Summary</code>), all owned by
+the registered <code>settingsd</code> service. The unscoped base names are reserved too.
+A revision is published once all three topics are; a failure retries all three. All clients may
 subscribe; ordinary publishers/clearers cannot replace its canonical state.
 Noded strips inner routing headers and stamps broker_service independently of
 caller input. The publisher repopulates retained state at startup and reconnect,

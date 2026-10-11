@@ -53,7 +53,11 @@ struct Read {
 /// binding and snapshot identity, and the Consumer validates the snapshot.
 async fn fetch(client: &SupervisedClient, binding: &Binding) -> Result<Read, Diagnostic> {
     let reply = client
-        .call_typed(SOURCE, FETCH_VERB, json!({ "binding": binding }))
+        .call_typed(
+            SOURCE,
+            FETCH_VERB,
+            json!({ "binding": binding, "schema": settings::compact::COMPACT_SCHEMA }),
+        )
         .await
         .map_err(|error| fault(error.to_string()))?;
     let value = match reply {
@@ -81,13 +85,13 @@ async fn fetch(client: &SupervisedClient, binding: &Binding) -> Result<Read, Dia
     )
     .map_err(|error| fault(error.to_string()))?;
     appearance.validate()?;
-    let snapshot: Snapshot = serde_json::from_value(
+    let snapshot: Snapshot = settings::compact::decode(
         value
             .get("snapshot")
             .cloned()
             .ok_or_else(|| fault("Missing snapshot evidence"))?,
     )
-    .map_err(|error| fault(error.to_string()))?;
+    .map_err(fault)?;
     if &appearance.binding != binding || &snapshot.binding != binding {
         return Err(Diagnostic::new(
             "wrong_target",
