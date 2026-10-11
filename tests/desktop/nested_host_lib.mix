@@ -159,18 +159,24 @@ end
 -- globals (a send in a fn would clobber them). Returns {rc, result}: rc 0 on
 -- success, >= 10 for a peer refusal, -9 when the child itself failed.
 fn call($service, $verb, $args)
-  return call_within($service, $verb, $args, 30)
+  return bus_child($service, $verb, $args, 30, 60)
 end
 
--- `call` with the request bounded by `secs` (at least 1): for loops that
--- keep an elapsed deadline.
+-- `call` with the whole request (the child process included) bounded by
+-- `secs`, at least 2: for loops that keep an elapsed deadline.
 fn call_within($service, $verb, $args, $secs)
-  $secs = max(1, ceil($secs))
+  $secs = max(2, ceil($secs))
+  return bus_child($service, $verb, $args, $secs - 1, $secs)
+end
+
+-- One child `mix` that sends the request: `send_secs` for the Bus reply,
+-- `proc_secs` for the whole child.
+fn bus_child($service, $verb, $args, $send_secs, $proc_secs)
   $body = json_encode($args)
   $script = "$b = " .. json_encode($body) .. "\nsend " .. json_encode($service) ..
-    " " .. $verb .. " body=$b timeout=" .. to_string($secs) .. "\nprint($rc)\nprint(json_encode($result))\n"
+    " " .. $verb .. " body=$b timeout=" .. to_string($send_secs) .. "\nprint($rc)\nprint(json_encode($result))\n"
   $mix = env("MIXOS_TEST_MIX", "/opt/mixos/bin/mix")
-  $r = run_argv([$mix, "-c", $script], {timeout: $secs + 30})
+  $r = run_argv([$mix, "-c", $script], {timeout: $proc_secs})
   $lines = split(trim($r.stdout), "\n")
   if len($lines) < 2 then
     return {rc: -9, result: trim($r.stdout .. " " .. $r.stderr)}
