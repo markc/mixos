@@ -155,8 +155,8 @@ fn egui_paints_into_the_shared_context_and_smithay_composites_it() {
         frame
             .clear(Color32F::new(0.0, 0.0, 0.0, 1.0), &[full])
             .expect("clear");
-        frame
-            .render_texture_from_to(
+        Frame::render_texture_from_to(
+                &mut frame,
                 &texture,
                 Rectangle::from_size((W as f64, H as f64).into()),
                 full,
