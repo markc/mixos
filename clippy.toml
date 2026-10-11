@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Workspace clippy configuration.
+disallowed-methods = [
+    # They draw no frame at rest but keep the stroke-reduced padding, so a
+    # row grows by the stroke and its text moves on hover. Use
+    # toolkit::selectable.
+    { path = "egui::Ui::selectable_label", reason = "shifts on hover under the chrome's 1 pt stroke; use toolkit::selectable" },
+    { path = "egui::Ui::selectable_value", reason = "shifts on hover under the chrome's 1 pt stroke; use toolkit::selectable" },
+]

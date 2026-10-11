@@ -384,9 +384,77 @@ impl Widget for Link {
     }
 }
 
+/// A selectable label (list rows, chips, tabs, combo items) that keeps its
+/// place on hover. Use it instead of `Ui::selectable_label`.
+///
+/// egui lays out a frame's stroke inside its margin, and `button_style`
+/// takes the stroke width back off the padding so a framed widget is the
+/// same size in every state. `selectable_label` draws no frame while it is
+/// inactive and unselected, though, and keeps the reduced padding: with
+/// the chrome's 1 pt stroke at rest, every such row grew by the stroke on
+/// hover and its text moved right and down. Here the frame is always laid
+/// out, with a transparent fill and a transparent 1 pt border at rest, so
+/// hover only changes colours.
+pub fn selectable(ui: &mut Ui, selected: bool, text: impl Into<egui::WidgetText>) -> Response {
+    let button = egui::Button::selectable(selected, text).frame_when_inactive(true);
+    if selected {
+        return ui.add(button);
+    }
+    let rest = ui.visuals().widgets.inactive;
+    {
+        let inactive = &mut ui.visuals_mut().widgets.inactive;
+        inactive.weak_bg_fill = Color32::TRANSPARENT;
+        inactive.bg_stroke.color = Color32::TRANSPARENT;
+    }
+    let response = ui.add(button);
+    ui.visuals_mut().widgets.inactive = rest;
+    response
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The rect a selectable row takes at rest and while hovered.
+    fn rest_and_hover(add: fn(&mut Ui) -> Response) -> (Rect, Rect) {
+        let ctx = egui::Context::default();
+        ctx.set_global_style(chrome::style(&crate::Theme::for_context(
+            design::DesignContext::default(),
+        )));
+        let frame = |ctx: &egui::Context, input: egui::RawInput| {
+            let mut rect = Rect::NOTHING;
+            let mut output = ctx.run_ui(input, |ui| {
+                ui.horizontal(|ui| rect = add(ui).rect);
+            });
+            output.textures_delta.clear();
+            rect
+        };
+        let rest = frame(&ctx, egui::RawInput::default());
+        let hover = egui::RawInput {
+            events: vec![egui::Event::PointerMoved(rest.center())],
+            ..Default::default()
+        };
+        frame(&ctx, hover.clone());
+        let hovered = frame(&ctx, hover);
+        (rest, hovered)
+    }
+
+    #[test]
+    fn a_selectable_keeps_its_place_on_hover() {
+        let (rest, hovered) = rest_and_hover(|ui| selectable(ui, false, "Applications"));
+        assert_eq!(rest, hovered);
+        // Selected rows are framed in every state already.
+        let (rest, hovered) = rest_and_hover(|ui| selectable(ui, true, "Applications"));
+        assert_eq!(rest, hovered);
+    }
+
+    #[test]
+    #[allow(clippy::disallowed_methods)]
+    fn egui_s_selectable_label_moves_on_hover_under_the_chrome() {
+        // Why `selectable` exists: if egui ever stops doing this, it can go.
+        let (rest, hovered) = rest_and_hover(|ui| ui.selectable_label(false, "Applications"));
+        assert_ne!(rest, hovered);
+    }
 
     #[test]
     fn push_buttons_follow_the_style() {

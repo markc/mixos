@@ -110,7 +110,7 @@ fn contents(ui: &mut egui::Ui, strings: &Strings, stroke: f32) {
         });
         ui.horizontal(|ui| {
             let _ = ui.button(strings.get("cmd-refresh"));
-            let _ = ui.selectable_label(true, strings.get("menu-bus"));
+            let _ = toolkit::selectable(ui, true, strings.get("menu-bus"));
             let mut text = String::from("bus.call");
             ui.text_edit_singleline(&mut text);
         });

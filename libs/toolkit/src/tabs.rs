@@ -206,7 +206,7 @@ pub fn chevron(ui: &mut Ui, id: Id, rect: Rect, hidden: &[(usize, String)]) -> O
     Popup::menu(&response).show(|ui| {
         ui.set_min_width(CHEVRON_MENU_WIDTH);
         for (index, name) in hidden {
-            if ui.selectable_label(false, name).clicked() {
+            if crate::selectable(ui, false, name).clicked() {
                 chosen = Some(*index);
             }
         }

@@ -61,6 +61,7 @@ pub mod titlebar;
 pub mod toggle;
 pub mod tooltip;
 
+pub use button::selectable;
 pub use command::{Command, Registry};
 pub use icons::Icon;
 pub use strings::Strings;

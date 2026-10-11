@@ -208,7 +208,7 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, stroke: f32, events: &mut V
             ));
         }
         let selected = engine.ui.row_key.as_deref() == Some(row.key.as_str());
-        if ui.selectable_label(selected, text).clicked() {
+        if toolkit::selectable(ui, selected, text).clicked() {
             events.push(UiEvent::Select(row.clone()));
         }
     });

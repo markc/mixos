@@ -151,7 +151,7 @@ fn editors(
                 let colour = ui.visuals().text_color();
                 ui.add(icons::image(icon, stroke, ICON, colour));
                 let selected = engine.ui.panel == panel;
-                let row = ui.add_enabled_ui(enabled, |ui| ui.selectable_label(selected, text));
+                let row = ui.add_enabled_ui(enabled, |ui| toolkit::selectable(ui, selected, text));
                 if row.inner.clicked() {
                     events.push(UiEvent::Command(command));
                 }
@@ -342,7 +342,7 @@ fn choices<T: Copy + PartialEq>(ui: &mut Ui, current: T, options: &[(T, String)]
     let mut picked = None;
     ui.horizontal_wrapped(|ui| {
         for (value, text) in options {
-            if ui.selectable_label(*value == current, text).clicked() && *value != current {
+            if toolkit::selectable(ui, *value == current, text).clicked() && *value != current {
                 picked = Some(*value);
             }
         }
@@ -475,7 +475,7 @@ fn look_controls(
                                     strings,
                                     &format!("toolkit-theme-{}", scheme.name()),
                                 );
-                                if ui.selectable_label(look.scheme == scheme, name).clicked()
+                                if toolkit::selectable(ui, look.scheme == scheme, name).clicked()
                                     && look.scheme != scheme
                                 {
                                     events.push(UiEvent::Look(Look { scheme, ..look }));
@@ -568,7 +568,7 @@ fn table(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
             ui.end_row();
             for row in &engine.apps {
                 let selected = engine.ui.selected.as_deref() == Some(row.app.as_str());
-                if ui.selectable_label(selected, &row.app).clicked() {
+                if toolkit::selectable(ui, selected, &row.app).clicked() {
                     events.push(UiEvent::Select(row.app.clone()));
                 }
                 let dash = || "—".to_owned();

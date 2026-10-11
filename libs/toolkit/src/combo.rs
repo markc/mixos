@@ -99,10 +99,7 @@ pub fn show<T: AsRef<str>>(
     let mut response = combo
         .show_ui(ui, |ui| {
             for (index, option) in options.iter().enumerate() {
-                if ui
-                    .selectable_label(index == *selected, option.as_ref())
-                    .clicked()
-                {
+                if crate::selectable(ui, index == *selected, option.as_ref()).clicked() {
                     changed |= index != *selected;
                     *selected = index;
                 }
