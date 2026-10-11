@@ -1437,6 +1437,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "dopus-core"
+version = "0.1.1"
+dependencies = [
+ "chrono",
+ "config",
+ "files",
+ "nix",
+ "serde",
+ "tempfile",
+]
+
+[[package]]
 name = "downcast-rs"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1942,6 +1954,20 @@ name = "fiat-crypto"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28dea519a9695b9977216879a3ebfddf92f1c08c05d984f8996aecd6ecdc811d"
+
+[[package]]
+name = "files"
+version = "0.1.1"
+dependencies = [
+ "blake3",
+ "bus",
+ "libc",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "uuid",
+]
 
 [[package]]
 name = "filetime"
