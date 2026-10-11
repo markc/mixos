@@ -118,7 +118,7 @@ impl Shell {
             eprintln!("dopus: core event pump: {error}");
         }
         let commands = crate::commands::registry(&app.keymap);
-        let mut shell = Self {
+        let shell = Self {
             app,
             commands,
             strings: crate::strings(),

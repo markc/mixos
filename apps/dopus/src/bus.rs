@@ -277,8 +277,8 @@ async fn run(
                     Some(Work::Look(read)) => {
                         let (c, o) = (client.clone(), out.clone());
                         tokio::spawn(async move {
-                            let body = read.body.to_string();
-                            let call = c.call_with_headers_raw(read.service, read.verb, &BTreeMap::new(), &body);
+                            let (body, headers) = (read.body.to_string(), BTreeMap::new());
+                            let call = c.call_with_headers_raw(read.service, read.verb, &headers, &body);
                             let reply = match tokio::time::timeout(LOOK_BUDGET, call).await {
                                 Ok(Ok(answer)) => Some(answer),
                                 _ => None,

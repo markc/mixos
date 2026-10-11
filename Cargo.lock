@@ -1437,6 +1437,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "dopus"
+version = "0.1.1"
+dependencies = [
+ "buildinfo",
+ "bus",
+ "config",
+ "design",
+ "dopus-core",
+ "eframe",
+ "egui",
+ "egui_kittest",
+ "futures",
+ "serde",
+ "serde_json",
+ "settings",
+ "tempfile",
+ "tokio",
+ "toolkit",
+ "tracing",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "dopus-core"
 version = "0.1.1"
 dependencies = [
