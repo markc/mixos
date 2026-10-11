@@ -13,12 +13,7 @@ use crate::app::{App, Dialog};
 use crate::keymap::Keymap;
 
 /// `(id, label, menu, group)` for every action, in menu order.
-type Row = (
-    &'static str,
-    &'static str,
-    Option<&'static str>,
-    u8,
-);
+type Row = (&'static str, &'static str, Option<&'static str>, u8);
 
 macro_rules! actions {
     ($r:ident, $k:ident, $used:ident; $( $id:literal, $label:literal, $menu:expr, $group:literal; )*) => {
