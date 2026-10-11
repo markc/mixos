@@ -66,7 +66,7 @@ impl Painter {
         size_px: [u32; 2],
         pixels_per_point: f32,
         primitives: &[ClippedPrimitive],
-        textures: &TexturesDelta,
+        mut textures: TexturesDelta,
     ) {
         for (id, deltas) in &textures.set {
             for delta in deltas {
@@ -105,5 +105,7 @@ impl Painter {
         for id in &textures.free {
             self.renderer.free_texture(id);
         }
+        // Applied: epaint asserts a delta is never dropped unapplied.
+        textures.clear();
     }
 }

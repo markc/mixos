@@ -89,6 +89,14 @@ pub struct UiRuntime<P: UiProgram> {
     set_up: bool,
 }
 
+impl<P: UiProgram> Drop for UiRuntime<P> {
+    fn drop(&mut self) {
+        // Uploads a surface never painted go with it; epaint asserts a delta
+        // is not dropped unapplied.
+        self.textures.clear();
+    }
+}
+
 impl<P: UiProgram> std::fmt::Debug for UiRuntime<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("UiRuntime")
@@ -263,7 +271,7 @@ impl<P: UiProgram> UiRuntime<P> {
             [self.size_px.0, self.size_px.1],
             pass.pixels_per_point,
             &primitives,
-            &textures,
+            textures,
         );
         self.dirty = false;
     }
