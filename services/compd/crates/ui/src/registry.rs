@@ -1434,11 +1434,12 @@ use smithay::backend::input::KeyState as SmithayKeyState;
 /// Translate a smithay keyboard event into UI input. Modifier state travels
 /// separately (`UiRegistry::modifier_changed`).
 pub fn translate_keyboard(
+    code: u32,
     keysym_raw: u32,
     utf8: Option<&str>,
     key_state: SmithayKeyState,
     is_repeat: bool,
 ) -> Input {
     let pressed = matches!(key_state, SmithayKeyState::Pressed);
-    crate::input::key(keysym_raw, utf8, pressed, is_repeat)
+    crate::input::key(code, keysym_raw, utf8, pressed, is_repeat)
 }

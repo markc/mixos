@@ -98,20 +98,28 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
     if let Some(frame) = scene.content.frame.clone() {
         paint_frame(scene, ui, full, &frame.title, emit);
     }
-    // Scroll the lists under the pointer.
+    // Scroll the lists under the pointer, and keep every offset inside its
+    // list's current content (rows removed, box grown) or drop it with the
+    // list.
     let pointer = ui.ctx().input(|input| input.pointer.hover_pos());
     let wheel = ui.ctx().input(|input| input.smooth_scroll_delta.y);
-    if wheel != 0.0 {
-        for (id, list) in &scene.layout.lists {
-            if pointer.is_some_and(|at| list.rect.contains(at)) {
-                let most = (list.content_height - list.rect.height()).max(0.0);
-                let offset = scene.scroll.entry(id.clone()).or_insert(0.0);
-                *offset = (*offset - wheel).clamp(0.0, most);
-            }
+    let lists = &scene.layout.lists;
+    scene.scroll.retain(|id, _| lists.contains_key(id));
+    for (id, list) in lists {
+        let most = (list.content_height - list.rect.height()).max(0.0);
+        if wheel != 0.0 && pointer.is_some_and(|at| list.rect.contains(at)) {
+            let offset = scene.scroll.entry(id.clone()).or_insert(0.0);
+            *offset -= wheel;
+        }
+        if let Some(offset) = scene.scroll.get_mut(id) {
+            *offset = offset.clamp(0.0, most);
         }
     }
     let placed = scene.layout.placed.clone();
     let styles = scene.text_styles();
+    // The textures this pass draws; the rest are dropped after it (egui
+    // frees them, and the painter retires them a pass later).
+    let mut drawn = std::collections::BTreeSet::new();
     for item in &placed {
         let Some(node) = node_of(scene, item) else { continue };
         let node = node.clone();
@@ -216,7 +224,12 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                     .password(flag(&node, "password"))
                     .font(font(styles.ui.size, false, false))
                     .margin(egui::Margin::symmetric(7, 4));
-                let response = ui.put(rect, edit);
+                // In a child clipped like the other nodes, so a field half
+                // scrolled out of its list neither paints nor takes input
+                // outside the list's box.
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+                child.set_clip_rect(clip.intersect(ui.clip_rect()));
+                let response = child.put(rect, edit);
                 let route = route_of(scene, item, &node);
                 if response.changed() {
                     emit.push(SceneMessage::Input(Arc::clone(&route), key, text.clone()));
@@ -250,10 +263,11 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                     emit.push(SceneMessage::Toggle(route_of(scene, item, &node), key, !value));
                 }
             }
-            "image" => paint_image(scene, ui, &painter, item, &node, rect, ink),
+            "image" => drawn.extend(paint_image(scene, ui, &painter, item, &node, rect, ink)),
             _ => {}
         }
     }
+    scene.textures.retain(|key, _| drawn.contains(key));
     if framed {
         ui.painter()
             .rect_stroke(full, 0.0, Stroke::new(1.0, colour(palette.border)), StrokeKind::Inside);
@@ -295,7 +309,7 @@ fn paint_image(
     node: &Node,
     rect: Rect,
     ink: Color32,
-) {
+) -> Option<(u64, u32, u32)> {
     let key = match &item.source {
         Source::Tree => (String::new(), String::new(), item.id.clone()),
         Source::Row { list, item: row } => (list.clone(), row.clone(), item.id.clone()),
@@ -305,25 +319,25 @@ fn paint_image(
         // or application icon is installed.
         let size = number(node, "w").unwrap_or(16.0).min(number(node, "h").unwrap_or(16.0));
         painter.text(rect.center(), Align2::CENTER_CENTER, "▧", font(size, false, false), ink);
-        return;
+        return None;
     };
     let ppp = ui.ctx().pixels_per_point();
     let (pw, ph) = ((rect.width() * ppp).ceil().max(1.0) as u32, (rect.height() * ppp).ceil().max(1.0) as u32);
-    let (texture, tint) = match &asset {
+    let (cache, texture, tint) = match &asset {
         crate::images::Asset::Raster(raster) => {
             let cache = (raster.id, 0, 0);
             let texture = scene.textures.entry(cache).or_insert_with(|| {
                 let image = egui::ColorImage::from_rgba_unmultiplied(raster.size, &raster.rgba);
                 ui.ctx().load_texture(format!("scene-image-{}", raster.id), image, egui::TextureOptions::LINEAR)
             });
-            (texture.id(), Color32::WHITE)
+            (cache, texture.id(), Color32::WHITE)
         }
         crate::images::Asset::Svg(svg) => {
             let cache = (svg.id, pw, ph);
             let texture = match scene.textures.get(&cache) {
                 Some(texture) => texture.id(),
                 None => {
-                    let Some(image) = crate::images::rasterise(svg, pw, ph) else { return };
+                    let Some(image) = crate::images::rasterise(svg, pw, ph) else { return None };
                     let handle = ui.ctx().load_texture(
                         format!("scene-svg-{}-{pw}x{ph}", svg.id),
                         image,
@@ -335,9 +349,10 @@ fn paint_image(
                 }
             };
             let tint = if svg.symbolic { hex(port_text(node, "color")).unwrap_or(ink) } else { Color32::WHITE };
-            (texture, tint)
+            (cache, texture, tint)
         }
     };
     let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
     painter.image(texture, rect, uv, tint);
+    Some(cache)
 }

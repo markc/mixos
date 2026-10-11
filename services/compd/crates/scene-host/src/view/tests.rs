@@ -150,8 +150,8 @@ fn autofocus_targets_the_field_and_typing_emits_filter() {
     });
     rt.tick();
     rt.queue_input(Input::Focused(true));
-    rt.queue_input(key(0x0066, Some("f"), true, false));
-    rt.queue_input(key(0x0066, Some("f"), false, false));
+    rt.queue_input(key(41, 0x0066, Some("f"), true, false));
+    rt.queue_input(key(41, 0x0066, Some("f"), false, false));
     for _ in 0..3 {
         rt.tick();
     }
@@ -261,7 +261,7 @@ fn escape_routes_to_the_dialog_or_the_edge() {
             sink.lock().unwrap().push(name);
         });
         rt.tick();
-        rt.queue_input(key(0xff1b, None, true, false));
+        rt.queue_input(key(9, 0xff1b, None, true, false));
         rt.tick();
         assert_eq!(*seen.lock().unwrap(), vec![expected], "dialog={dialog}");
     }
@@ -312,6 +312,31 @@ fn a_list_shows_at_most_max_rows_before_it_scrolls() {
     assert!(boxed.content_height >= 240.0, "twelve rows to scroll through: {}", boxed.content_height);
     assert_eq!(row_of(&rt, "list", "r0").height(), 20.0);
     assert!(row_of(&rt, "list", "r11").top() > list.bottom(), "past the box, until scrolled");
+}
+
+/// A scrolled list that shrinks keeps its surviving rows in view: the
+/// offset is clamped to the new content on the next pass, without a wheel.
+#[test]
+fn a_shrunk_list_pulls_its_scroll_back_into_its_content() {
+    let source = |count: usize| {
+        let rows: Vec<String> = (0..count).map(|i| format!("{{id: \"r{i}\", cells: [\"row {i}\"]}}")).collect();
+        format!(
+            "---\nscene: 1\nname: lists\ncitizen: c\n---\n```mix\nroot: {{widget: \"column\", children: [\"list\"]}}\nlist: {{widget: \"list\", row: \"item\", row_height: 20, max_rows: 5, rows: [{}]}}\nitem: {{widget: \"row\", children: [\"label\"]}}\nlabel: {{widget: \"text\", text: \"{{0}}\"}}\n```\n",
+            rows.join(", ")
+        )
+    };
+    let mut rt = runtime(&source(12), (300, 600));
+    rt.program.scroll.insert("list".into(), 140.0);
+    rt.request_redraw();
+    rt.tick();
+    assert_eq!(rt.program.scrolled("list"), 140.0, "inside twelve rows");
+    rt.queue_message(SceneMessage::Replace(content(&source(1), None, false)));
+    rt.tick();
+    assert_eq!(rt.program.scrolled("list"), 0.0, "one row cannot scroll");
+    rt.program.scroll.insert("gone".into(), 10.0);
+    rt.request_redraw();
+    rt.tick();
+    assert!(!rt.program.scroll.contains_key("gone"), "a list's offset leaves with it");
 }
 
 #[test]

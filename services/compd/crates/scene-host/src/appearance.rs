@@ -33,8 +33,9 @@ fn unsupported(path: &str, message: &str) -> Diagnostic {
 }
 
 /// The theme an accepted snapshot describes: its own design source when the
-/// profile carries one, otherwise the embedded design at the effective
-/// scheme, style, mode and contrast, framed as the profile asks.
+/// profile carries one, otherwise the embedded design, either way at the
+/// effective scheme, style, mode and contrast settingsd accepted, framed as
+/// the profile asks.
 fn theme_of(snapshot: &Snapshot) -> Result<Theme, Diagnostic> {
     let effective = snapshot
         .effective
@@ -44,11 +45,6 @@ fn theme_of(snapshot: &Snapshot) -> Result<Theme, Diagnostic> {
         .ok_or_else(|| unsupported("appearance.decorations", "Unknown decorations"))?;
     let captions = CaptionSide::from_name(&effective.caption_side)
         .ok_or_else(|| unsupported("appearance.caption_side", "Unknown caption side"))?;
-    if let Some(source) = &snapshot.desktop.appearance.source {
-        let theme = Theme::from_source("settings:desktop", source)
-            .map_err(|error| unsupported("appearance.source", &format!("Design does not compile: {error:?}")))?;
-        return Ok(theme.framed(decorations, captions));
-    }
     let style = match &effective.style {
         None => None,
         Some(name) => Some(Style::from_name(name).ok_or_else(|| unsupported("appearance.style", "Unknown style"))?),
@@ -62,7 +58,12 @@ fn theme_of(snapshot: &Snapshot) -> Result<Theme, Diagnostic> {
         style,
         ..DesignContext::default()
     };
-    Ok(Theme::for_context(context).framed(decorations, captions))
+    let theme = match &snapshot.desktop.appearance.source {
+        Some(source) => Theme::from_source_in("settings:desktop", source, context)
+            .map_err(|error| unsupported("appearance.source", &format!("Design does not compile: {error:?}")))?,
+        None => Theme::for_context(context),
+    };
+    Ok(theme.framed(decorations, captions))
 }
 
 /// Build the whole look from an accepted snapshot (on the worker).
@@ -178,5 +179,32 @@ mod tests {
         let title = light.chrome(ChromeStyle::ALL[0]);
         let unscaled = dark.chrome(ChromeStyle::ALL[0]);
         assert!(title.deco.metrics.title_size_px > unscaled.deco.metrics.title_size_px);
+    }
+
+    /// A profile's own design source is drawn at the selection settingsd
+    /// accepted, not at the defaults the source document names.
+    #[test]
+    fn a_custom_source_follows_the_accepted_selection() {
+        let mut desktop = settings::Desktop::default();
+        desktop.appearance.mode = "light".into();
+        desktop.appearance.contrast = "high".into();
+        desktop.appearance.source = Some(settings::EMBEDDED_DEFAULT_SOURCE.into());
+        let effective = settings::resolve(&desktop).unwrap();
+        let selected = effective.get(CONTEXT).unwrap().clone();
+        let snapshot = Snapshot {
+            schema: settings::SCHEMA,
+            binding: settings::Binding { instance: "desktop".into(), profile: "test".into() },
+            incarnation: "test".into(),
+            revision: settings::Revision(1),
+            design_revision: settings::Revision(1),
+            source_digest: settings::source_digest(settings::EMBEDDED_DEFAULT_SOURCE),
+            desktop,
+            effective,
+        };
+        let look = build(&snapshot).unwrap();
+        assert_eq!(look.theme.mode(), Mode::from_name(&selected.mode).unwrap());
+        assert_eq!(look.theme.contrast(), Contrast::from_name(&selected.contrast).unwrap());
+        assert_eq!(look.theme.mode(), Mode::Light);
+        assert_eq!(look.theme.contrast(), Contrast::from_name("high").unwrap());
     }
 }
