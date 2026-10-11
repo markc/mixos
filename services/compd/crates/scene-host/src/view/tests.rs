@@ -216,16 +216,19 @@ fn scene_colours_parse_as_quoin_parses_them() {
 fn events_carry_the_quoin_payload_and_only_bound_handlers_fire() {
     let tree = scene::resolve(&scene::parse(scene::fixtures::CONFORMANCE).unwrap()).unwrap();
     let button = Arc::new(Route::new(&tree, "button", &tree.nodes["button"]));
-    let (citizen, handler, body) = event_of(&SceneMessage::Click(Arc::clone(&button))).unwrap();
+    let click = SceneMessage::Click(Arc::clone(&button));
+    let (citizen, handler, body) = event_of(&click).unwrap();
     assert_eq!((citizen, handler), ("conformance-citizen", "go"));
     assert_eq!(body, json!({"scene":"conformance","node":"button","kind":"click"}));
     assert!(event_of(&SceneMessage::Toggle(button, "k".into(), true)).is_none());
     let field = Arc::new(Route::new(&tree, "field", &tree.nodes["field"]));
-    let (_, handler, body) = event_of(&SceneMessage::Submit(Arc::clone(&field), "typed".into())).unwrap();
+    let submit = SceneMessage::Submit(Arc::clone(&field), "typed".into());
+    let (_, handler, body) = event_of(&submit).unwrap();
     assert_eq!((handler, body["value"].as_str()), ("submit", Some("typed")));
     let mut row = Route::new(&tree, "list", &tree.nodes["list"]);
     row.item = Some(json!({"id":"1","cells":["one"]}));
-    let (_, handler, body) = event_of(&SceneMessage::Click(Arc::new(row))).unwrap();
+    let row_click = SceneMessage::Click(Arc::new(row));
+    let (_, handler, body) = event_of(&row_click).unwrap();
     assert_eq!(handler, "select");
     assert_eq!(body, json!({"scene":"conformance","node":"list","kind":"click","item":{"id":"1","cells":["one"]}}));
 }
