@@ -6,8 +6,10 @@
 //! The window, top to bottom: the toolkit title bar with the menus (every
 //! action is there, with its shortcut), the body, and the status bar. The
 //! body is the Places sidebar, the two panes with a divider between them,
-//! and the Properties sidebar. Each sidebar has its toggle and title on its
-//! top row; a closed one leaves a slim strip with the toggle. Each pane has its location bar (click to edit), the column
+//! and the Properties sidebar, each titled at its top. Each pane's top row
+//! is its path in a text field; the Places toggle sits left of the left
+//! pane's path, the Properties toggle right of the right pane's. Each
+//! pane has its location field, the column
 //! headers (click to sort), the file list and a summary footer.
 //!
 //! The file list is virtualised: only the rows on screen are laid out.
@@ -135,7 +137,7 @@ pub fn view(
             .default_size(total * places.width)
             .frame(bars::dock_frame(ui.ctx()))
             .show(ui, |ui| {
-                panel_header(ui, app, commands, strings, Side::Left, &mut events);
+                toolkit::panel::section_label(ui, &Side::Left.title());
                 places_panel(ui, app, stroke, &mut events);
             });
         sidebar_width(
@@ -145,8 +147,6 @@ pub fn view(
             places.width,
             &mut events,
         );
-    } else {
-        collapsed(ui, app, commands, strings, Side::Left, &mut events);
     }
     let properties = app.core.sidebar(Sidebar::Properties);
     if properties.open {
@@ -155,7 +155,7 @@ pub fn view(
             .default_size(total * properties.width)
             .frame(bars::dock_frame(ui.ctx()))
             .show(ui, |ui| {
-                panel_header(ui, app, commands, strings, Side::Right, &mut events);
+                toolkit::panel::section_label(ui, &Side::Right.title());
                 properties_panel(ui, app);
             });
         sidebar_width(
@@ -165,8 +165,6 @@ pub fn view(
             properties.width,
             &mut events,
         );
-    } else {
-        collapsed(ui, app, commands, strings, Side::Right, &mut events);
     }
     egui::CentralPanel::default()
         .frame(bars::dock_frame(ui.ctx()))
@@ -234,52 +232,6 @@ fn toggle_button(
     if ui.add_enabled((command.enabled)(app), button).clicked() {
         events.push(UiEvent::Command(command.id));
     }
-}
-
-/// An open sidebar's top row: its toggle on the window's edge, then its
-/// title.
-fn panel_header(
-    ui: &mut Ui,
-    app: &App,
-    commands: &Registry<App>,
-    strings: &Strings,
-    side: Side,
-    events: &mut Vec<UiEvent>,
-) {
-    let layout = match side {
-        Side::Left => Layout::left_to_right(Align::Center),
-        Side::Right => Layout::right_to_left(Align::Center),
-    };
-    let height = toolkit::button::ICON_BUTTON;
-    ui.allocate_ui_with_layout(vec2(ui.available_width(), height), layout, |ui| {
-        toggle_button(ui, app, commands, strings, side, events);
-        ui.label(RichText::new(side.title()).strong());
-    });
-    ui.add_space(4.0);
-}
-
-/// A closed sidebar: a slim strip that keeps its toggle.
-fn collapsed(
-    ui: &mut Ui,
-    app: &App,
-    commands: &Registry<App>,
-    strings: &Strings,
-    side: Side,
-    events: &mut Vec<UiEvent>,
-) {
-    let panel = match side {
-        Side::Left => egui::Panel::left("places-closed"),
-        Side::Right => egui::Panel::right("properties-closed"),
-    };
-    panel
-        .exact_size(toolkit::button::ICON_BUTTON + 8.0)
-        .resizable(false)
-        .frame(bars::dock_frame(ui.ctx()))
-        .show(ui, |ui| {
-            ui.vertical_centered(|ui| {
-                toggle_button(ui, app, commands, strings, side, events);
-            });
-        });
 }
 
 fn places_panel(ui: &mut Ui, app: &App, stroke: f32, events: &mut Vec<UiEvent>) {
@@ -430,7 +382,7 @@ fn pane_view(
         );
     }
     ui.add_space(2.0);
-    location_bar(ui, app, pane, active, events);
+    location_bar(ui, app, commands, strings, pane, active, events);
     let width = ui.available_width();
     let (show_size, show_modified) = (
         width >= NAME_MIN + SIZE_W,
@@ -484,30 +436,54 @@ fn pane_view(
     });
 }
 
-fn location_bar(ui: &mut Ui, app: &App, pane: PaneId, active: bool, events: &mut Vec<UiEvent>) {
-    let height = ui.spacing().interact_size.y + 4.0;
+/// A pane's top row: the path in a text field, with the sidebar toggle on
+/// the window's side (Places left of the left pane's path, Properties right
+/// of the right pane's). Focusing the field starts an edit with the whole
+/// path selected; Enter goes there, Esc or a click away puts it back.
+fn location_bar(
+    ui: &mut Ui,
+    app: &App,
+    commands: &Registry<App>,
+    strings: &Strings,
+    pane: PaneId,
+    active: bool,
+    events: &mut Vec<UiEvent>,
+) {
+    let height = toolkit::button::ICON_BUTTON.max(ui.spacing().interact_size.y + 4.0);
+    let side = match pane {
+        PaneId::Left => Side::Left,
+        PaneId::Right => Side::Right,
+    };
     ui.allocate_ui_with_layout(
         vec2(ui.available_width(), height),
         Layout::left_to_right(Align::Center),
         |ui| {
-            ui.add_space(6.0);
+            ui.add_space(4.0);
+            if side == Side::Left {
+                toggle_button(ui, app, commands, strings, side, events);
+            }
+            let reserve = if side == Side::Right {
+                toolkit::button::ICON_BUTTON + ui.spacing().item_spacing.x + 4.0
+            } else {
+                4.0
+            };
+            let width = (ui.available_width() - reserve).max(40.0);
+            let id = Id::new(("location", pane.index()));
             match &app.editing {
                 Some((editing, text)) if *editing == pane => {
                     let mut text = text.clone();
-                    let field = egui::TextEdit::singleline(&mut text)
-                        .id(Id::new(("location", pane.index())))
-                        .desired_width(ui.available_width() - 6.0);
-                    let response = ui.add(field);
+                    let response =
+                        ui.add(egui::TextEdit::singleline(&mut text).id(id).desired_width(width));
                     if app.focus_location {
                         // The whole path selected, so typing replaces it.
                         response.request_focus();
-                        if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), response.id) {
+                        if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), id) {
                             let all = egui::text::CCursorRange::two(
                                 egui::text::CCursor::new(0),
                                 egui::text::CCursor::new(text.chars().count()),
                             );
                             state.cursor.set_char_range(Some(all));
-                            state.store(ui.ctx(), response.id);
+                            state.store(ui.ctx(), id);
                         }
                         events.push(UiEvent::LocationFocused);
                     }
@@ -523,21 +499,27 @@ fn location_bar(ui: &mut Ui, app: &App, pane: PaneId, active: bool, events: &mut
                     }
                 }
                 _ => {
-                    let path = dopus_core::sanitise_display_path(&app.core.pane(pane).path);
-                    let font = TextStyle::Body.resolve(ui.style());
-                    let shown = crate::elide::fit(ui, &path, &font, ui.available_width() - 12.0);
-                    let text = if active {
-                        RichText::new(shown).strong()
+                    // The path as a field at rest; taking the keyboard
+                    // starts the edit (the same id, so focus carries over).
+                    let mut path = dopus_core::sanitise_display_path(&app.core.pane(pane).path);
+                    let colour = if active {
+                        ui.visuals().text_color()
                     } else {
-                        RichText::new(shown).weak()
+                        ui.visuals().weak_text_color()
                     };
-                    let response = ui
-                        .add(egui::Label::new(text).sense(Sense::click()).truncate())
-                        .on_hover_text(label("location-edit"));
-                    if response.clicked() {
+                    let response = ui.add(
+                        egui::TextEdit::singleline(&mut path)
+                            .id(id)
+                            .desired_width(width)
+                            .text_color(colour),
+                    );
+                    if response.gained_focus() || response.clicked() {
                         events.push(UiEvent::EditLocation(pane));
                     }
                 }
+            }
+            if side == Side::Right {
+                toggle_button(ui, app, commands, strings, side, events);
             }
         },
     );
