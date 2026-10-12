@@ -606,6 +606,7 @@ check($net_lib.popup_open({}, "network") == nil and $net_lib.popup_open("x", "ne
 $net_behaviour = read_file($net_dir .. "/behaviour.mix")
 check(contains($net_behaviour, "subscribe(\"scenes.changed\")") and contains($net_behaviour, "$n.popup_open("), "the behaviour re-reads on open")
 
+
 $net_snap = {
   links: [{ifname: "lo", index: 1, loopback: true, up: true, wireless: false},
     {ifname: "eth0", index: 2, loopback: false, up: true, wireless: false},
@@ -621,7 +622,8 @@ $net = $models.network($net_snap)
 check($net.summary == "Connected via wlan0 (Wireless)" and $net.count == "3 interfaces", "summary: the default-route link and the non-loopback count")
 check(deep_eq(map($net.rows, function ($row) = $row.name), ["wlan0", "eth0", "wg0"]), "default route first, then up, then down; loopback left out")
 check(deep_eq($net.rows[0], {id: "if_wlan0", cells: [], name: "wlan0", sub: "Wireless · up · Example Net",
-  addresses: "192.0.2.10/24  2001:db8::10/64", detail: "default route · networkd: configured · DNS 192.0.2.1", has_detail: true, dot: "#27ae60"}), "a full row: kind, SSID, link-local dropped, networkd and DNS")
+  addresses: "192.0.2.10/24  2001:db8::10/64", detail: "default route · networkd: configured · DNS 192.0.2.1", has_detail: true, dot: "#27ae60",
+  editable: false, cta: "", background: "#2a2e32"}), "a full row: kind, SSID, link-local dropped, networkd and DNS")
 check($net.rows[2].sub == "WireGuard · down" and $net.rows[2].addresses == "No addresses" and $net.rows[2].dot == "#6e7680", "a down link")
 check($net.gateway == "192.0.2.254 on wlan0" and $net.dns == "192.0.2.1" and not $net.has_note, "route and the default link's DNS")
 $bare = $net_snap
@@ -636,4 +638,83 @@ $down.links = [$net_snap.links[0], {ifname: "eth0", index: 2, loopback: false, u
 check($models.network($down).summary == "Offline", "nothing up is offline")
 $fresh = $models.network(nil)
 check($fresh.empty and not $fresh.has_note and $fresh.summary == "Offline", "before the first snapshot: empty, no networkd note")
+-- ── the network popup's write path (hostd) ──────────────────────────────
+$hostd = require($root .. "/share/scenes/lib/hostd.mix")
+check(deep_eq($hostd.items(" 192.0.2.10/24,198.51.100.2/24  2001:db8::1/64 ,"), ["192.0.2.10/24", "198.51.100.2/24", "2001:db8::1/64"]), "typed lists split on commas and spaces")
+check(deep_eq($hostd.link_request("hd0", {mode: "dhcp", dns: ""}).request, {link: "hd0", config: {mode: "dhcp"}, window_s: 20}), "DHCP: mode only, no empty dns")
+check(deep_eq($hostd.link_request("hd0", {mode: "static", addresses: "192.0.2.10/24", gateway: " 192.0.2.1 ", dns: "192.0.2.53"}, 30).request,
+  {link: "hd0", config: {mode: "static", addresses: ["192.0.2.10/24"], gateway: "192.0.2.1", dns: ["192.0.2.53"]}, window_s: 30}), "static: addresses, gateway trimmed, dns, window")
+check($hostd.link_request("hd0", {mode: "static", addresses: "  "}).error == "net_need_address", "static with no address is caught before hostd")
+check($hostd.link_request("hd0", {mode: "static", addresses: "192.0.2.10"}).error == "net_need_prefix", "an address without a prefix is caught")
+check($hostd.link_request("hd0", {mode: "bridge"}).error == "net_bad_mode", "only dhcp or static")
+check($hostd.link_request("hd0", {mode: "static", addresses: "192.0.2.10/24", gateway: ""}).request.config.gateway == nil, "no gateway key when none is typed")
+
+-- Grants, as hostd.status held_grants reports them: only those covering
+-- net.link.apply count, and their links limit (none = any link).
+$held = [{name: "widget", verbs: ["net.link.apply", "hostd.freeze"], limits: {links: ["eth0", "hd0"]}},
+  {name: "freeze-only", verbs: ["hostd.freeze"]}, {name: "family", verbs: ["net.*"], limits: {links: ["hd0", "wg0"]}}]
+check(deep_eq($hostd.link_grants($held), ["widget", "family"]), "grants covering net.link.apply, by name or family")
+check(deep_eq($hostd.grant_links($held), ["eth0", "hd0", "wg0"]), "the union of their links")
+check($hostd.grant_links([{name: "any", verbs: ["net.link.apply"], limits: {}}]) == nil, "no links limit means any link")
+check($hostd.verb_covers("net.link.*", "net.link.apply") and $hostd.verb_covers("net.*", "net.link.apply") and $hostd.verb_covers("net.link.apply", "net.link.apply"), "exact names and prefix families, as hostd matches them")
+check($hostd.uncertain({ok: false, status: "timeout"}) and $hostd.uncertain({ok: false, status: "unavailable", sent: true}), "hostd's timeout and an unanswered sent request are unknown outcomes")
+check(not $hostd.uncertain({ok: false, status: "unavailable", sent: false}) and not $hostd.uncertain({ok: false, status: "rolled_back"}) and not $hostd.uncertain({ok: true}), "a failed connect, a rollback and a success are known")
+check($hostd.call("hostd.status", {}, 1).sent == false or $hostd.call("hostd.status", {}, 1).ok, "no hostd socket here: a failed connect reports nothing sent")
+check(not $hostd.verb_covers("net.wifi.*", "net.link.apply") and not $hostd.verb_covers("net.link", "net.link.apply") and not $hostd.verb_covers("*", "net.link.apply"), "other families, a bare prefix and a lone star do not")
+check(deep_eq($hostd.link_grants([{name: "narrow", verbs: ["net.link.*"]}]), ["narrow"]), "a narrower family counts as a grant")
+check(deep_eq($hostd.grant_links(nil), []) and deep_eq($hostd.link_grants("x"), []), "no held grants")
+$limited = {access: {available: true, frozen: false, grants: ["widget"], links: ["eth0"]}}
+$lim = $models.network($net_snap, $limited)
+check(not $lim.rows[0].editable and $lim.rows[1].editable and $lim.rows[1].name == "eth0" and $lim.rows[0].cta == "", "Configure only on the grant's links")
+
+-- Rows offer Configure only with a live, unfrozen grant.
+$granted = {access: {available: true, frozen: false, grants: ["vt4-network-widget"], links: nil}, edit: nil}
+$wr = $models.network($net_snap, $granted)
+check($wr.rows[0].editable and $wr.rows[0].cta == "Configure" and not $wr.has_hostd_note and not $wr.edit.shown, "a grant makes rows configurable, with no read-only note")
+$frozen_ui = {access: {available: true, frozen: true, grants: ["vt4-network-widget"]}}
+check(not $models.network($net_snap, $frozen_ui).rows[0].editable and $models.network($net_snap, $frozen_ui).hostd_note == "hostd is frozen: changes are off until root on the host thaws it.", "frozen: read only, and it says why")
+check($models.network($net_snap, {access: {available: true, frozen: false, grants: []}}).hostd_note == "No hostd grant for this panel: read only.", "no grant: read only, and it says why")
+check(not $models.network($net_snap).rows[0].editable and not $models.network($net_snap).has_hostd_note, "no hostd at all: read only, silently")
+
+-- The editor: prefill from the snapshot, then its model.
+$pre = $models.edit_prefill($net_snap, "wlan0")
+check(deep_eq($pre, {link: "wlan0", mode: "static", addresses: "192.0.2.10/24, 2001:db8::10/64", gateway: "192.0.2.254", dns: "192.0.2.1", note: "", busy: false, receipt: nil}), "prefill: own addresses (no link-local), IPv4 gateway, DNS")
+check($models.edit_prefill($net_snap, "wg0").mode == "dhcp" and $models.edit_prefill($net_snap, "wg0").addresses == "", "a link with no address starts as DHCP")
+$granted.edit = $pre
+$ed = $models.network($net_snap, $granted)
+check($ed.edit.shown and $ed.edit.title == "Configure wlan0" and $ed.edit.is_static and $ed.edit.addresses == "192.0.2.10/24, 2001:db8::10/64", "the editor shows the prefill")
+check($ed.rows[0].background != $ed.rows[1].background, "the edited link's row is highlighted")
+check(not $ed.edit.has_undo, "no undo before a change")
+$pre.receipt = "r-1"
+$pre.busy = true
+$granted.edit = $pre
+check(not $models.network($net_snap, $granted).edit.has_undo and $models.network($net_snap, $granted).edit.apply_label == "Applying…", "busy: no undo, Apply says Applying")
+$pre.busy = false
+$granted.edit = $pre
+check($models.network($net_snap, $granted).edit.has_undo, "an applied change can be undone")
+check(deep_eq(sort(keys($models.editor(nil))), sort(keys($models.editor($pre)))), "the closed editor declares every key the open one has")
+
+-- Refusals in words.
+check($models.net_refusal("outside_grant", "host0", {}) == "host0 is outside this panel's hostd grant.", "outside_grant")
+check($models.net_refusal("foreign_config", "host0", {status: "foreign_config"}) == "Another networkd file configures host0, so hostd will not change it.", "foreign_config")
+check($models.net_refusal("rolled_back", "hd0", {status: "rolled_back", detail: {reason: "not routable"}}) == "hd0 did not come up, so hostd put the old configuration back (not routable)", "rolled_back carries the reason")
+check($models.net_refusal("rolled_back", "hd0", {status: "rolled_back", detail: {outcome: "abandoned", reason: "file changed"}}) == "hd0 did not come up, and its file changed meanwhile, so hostd left it as it found it (file changed)", "an abandoned rollback does not claim restoration")
+check($models.net_refusal("bad_request", "hd0", {message: "bad address"}) == "hostd refused the request: bad address", "bad_request carries hostd's message")
+check($models.net_refusal("something_new", "hd0", nil) == "hostd refused the change (something_new).", "an unknown status still reads")
+
+-- The scene wires the editor to the behaviour, and only the scene host's
+-- clicks may write.
+check($net_nodes.n_list.on_click == "net_row" and $net_nodes.e_apply.on_click == "net_apply" and $net_nodes.e_undo.on_click == "net_undo", "row, Apply and Undo are wired")
+check($net_nodes.e_addr.widget == "field" and $net_nodes.e_addr.on_change == "net_edit_addr" and $net_nodes.e_gw.on_change == "net_edit_gw" and $net_nodes.e_dns.on_change == "net_edit_dns", "fields report edits")
+for each $verb in ["net_row", "net_mode_dhcp", "net_mode_static", "net_close", "net_apply", "net_undo"]
+  $body = before(after($net_behaviour, "on " .. $verb), "\nend\n")
+  check(contains($body, "if not from_ui($event) then $r.respond(ui_only()); return end"), "a write-path handler refuses non-UI senders: " .. $verb)
+end
+check(contains($net_behaviour, "return type($event.headers) == \"map\" and $event.headers.from == $ctx.host"), "UI clicks are the scene host's; no headers is not a click")
+$apply_body = before(after($net_behaviour, "on net_apply\n"), "\nend\n")
+$task_body = before(after($net_behaviour, "on net.write async\n"), "\nend\n")
+check(not contains($apply_body, "$h.call(") and contains($apply_body, "start_write("), "a click is answered at once; hostd runs in the task")
+check(starts_with(trim($task_body), "if len(keys($event.headers)) != 0 then return end"), "the write task refuses any event with headers (every Bus event has them)")
+check(contains($task_body, "$state.inflight != $link") and contains($task_body, "contains([\"net.link.apply\", \"hostd.undo\"], $verb)"), "the task only runs the write its click started, and only the two write verbs")
+check(contains($net_behaviour, "$state.receipts[$link] = $out.body.receipt") and contains($net_behaviour, "$edit.receipt = $state.receipts[$edit.link]"), "the newest receipt is kept per link, outside the editor")
 print("scene-template-test: exact captures, models, caps, payloads and capabilities OK")

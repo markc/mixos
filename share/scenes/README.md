@@ -55,10 +55,14 @@ The six shipped templates are the Recommended set: `panel` (order 10,
 requires `comp` and `apps`), `launcher` (20, `apps`), `calendar` (30),
 `notes` (40, `notify`), `network` (45) and `settings` (50).
 
-`network` is read-only: links and addresses from rtnetlink, plus
-systemd-networkd, systemd-resolved and the default routes when their tools
-answer (`networkctl`, `resolvectl`, `ip -j`). A missing daemon degrades to
-the kernel's view; the popup never changes network state.
+`network` shows links and addresses from rtnetlink, plus systemd-networkd,
+systemd-resolved and the default routes when their tools answer
+(`networkctl`, `resolvectl`, `ip -j`). A missing daemon degrades to the
+kernel's view. Where hostd runs and grants this panel's scene loader,
+a link can be configured (DHCP or static) through hostd's `net.link.apply`,
+which keeps a change only if the link comes up, and the last change undone
+(`lib/hostd.mix`, `docs/hostd.md`). Those handlers act only on clicks the
+scene host relays, never on a Bus caller.
 
 ## The editor helpers and legacy template
 

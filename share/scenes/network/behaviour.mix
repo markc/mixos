@@ -1,5 +1,10 @@
--- version: 0.1.0
--- The network popup: links, addresses, default route and DNS, read-only.
+-- version: 0.2.0
+-- The network popup: links, addresses, default route and DNS. With a hostd
+-- grant (lib/hostd.mix) a link can be configured (DHCP or static) through
+-- hostd's net.link.apply, which keeps a change only if the link comes up,
+-- and the last change undone. Writes act only on clicks the scene host
+-- relays: the Bus can reach these handlers, and hostd itself never takes a
+-- write from the Bus, so neither does this panel on hostd's behalf.
 -- rtnetlink link and address events (net_watch) re-read the whole snapshot
 -- (events are hints, state is truth); networkd, resolved and the route table
 -- are read with their own tools on each batch. There is no polling fallback.
@@ -7,9 +12,47 @@ $LIB = env("SCENES_LIB", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") ..
 $r = require($LIB .. "/runtime.mix")
 $m = require($LIB .. "/models.mix")
 $n = require($LIB .. "/network.mix")
+$h = require($LIB .. "/hostd.mix")
 $ctx = $r.scene_context("network")
 $state = {ready: false, queued: false, sequence: 0, model: $m.network(nil),
-  watch: nil, started: 0, retry: 5, retrying: false, open: false}
+  watch: nil, started: 0, retry: 5, retrying: false, open: false,
+  snap: nil, access: {available: false, frozen: false, grants: [], links: []}, edit: nil,
+  receipts: {}, inflight: nil}
+-- How long a link gets to come up before hostd rolls the change back.
+$WINDOW_S = 20
+-- How long to wait for hostd's answer to a write: up to 15 s queued behind
+-- another change, the window, networkd's reconfigure and a rollback; hostd
+-- itself allows about 90 s. Past this the outcome is unknown, not failed.
+$WRITE_WAIT_S = 100
+
+-- The editor as the model sees it: its link's newest receipt (for Undo)
+-- and whether a change to that link is in flight.
+fn ui()
+  $edit = $state.edit
+  if $edit != nil then
+    $edit.receipt = $state.receipts[$edit.link]
+    $edit.busy = $state.inflight == $edit.link
+  end
+  return {access: $state.access, edit: $edit}
+end
+
+-- Re-publish from the last snapshot (editor changes need no re-read).
+fn republish()
+  if not $state.ready then return $r.failure("scene_not_ready", "Waiting for loader readiness") end
+  $state.model = $m.network($state.snap, ui())
+  return $r.publish_model($ctx, $state.model)
+end
+
+-- A click relayed by the scene host; the broker sets `from` to the
+-- sender's authenticated name. Anything else is refused for writes.
+fn from_ui($event)
+  return type($event.headers) == "map" and $event.headers.from == $ctx.host
+end
+
+fn ui_only()
+  return $r.failure("ui_only", $m.text("hostd_ui_only"))
+end
+
 
 fn schedule()
   $state.sequence = $state.sequence + 1
@@ -27,9 +70,11 @@ fn refresh()
   catch $message
     return $r.failure("net_state_failed", to_string($message))
   end
+  $access = $h.grant_state()
   if not $state.ready or $sequence != $state.sequence then return $r.failure("superseded", "A newer network event replaced this snapshot") end
-  $state.model = $m.network($snap)
-  return $r.publish_model($ctx, $state.model)
+  $state.snap = $snap
+  $state.access = $access
+  return republish()
 end
 
 -- Only an I/O failure is retried (a local backoff); any other refusal (the
@@ -107,6 +152,138 @@ on scenes.changed
   $open = $n.popup_open($r.event_args($event), $ctx.name) ?? false
   if $open and not $state.open then schedule() end
   $state.open = $open
+end
+
+-- ── configure a link through hostd ──────────────────────────────────────
+
+-- A click on a link row opens the editor for it, prefilled from the
+-- snapshot. Allowed while a change is in flight: its result lands in
+-- $state.receipts, not in the editor, so nothing is lost by moving on.
+on net_row
+  if not from_ui($event) then $r.respond(ui_only()); return end
+  $id = $r.item_id($event)
+  if $id == nil or not starts_with($id, "if_") then $r.respond($r.failure("invalid_args", "item.id must be a link row")); return end
+  $link = slice($id, 3, length($id))
+  if not $m.link_writable($state.access, $link) then reply(0, "{}"); return end
+  if $state.edit == nil or $state.edit.link != $link then $state.edit = $m.edit_prefill($state.snap, $link) end
+  $r.respond(republish())
+end
+on net_mode_dhcp
+  if not from_ui($event) then $r.respond(ui_only()); return end
+  if $state.edit != nil and $state.inflight != $state.edit.link then $state.edit.mode = "dhcp" end
+  $r.respond(republish())
+end
+on net_mode_static
+  if not from_ui($event) then $r.respond(ui_only()); return end
+  if $state.edit != nil and $state.inflight != $state.edit.link then $state.edit.mode = "static" end
+  $r.respond(republish())
+end
+-- Typed text is kept, not re-published, so the caret stays put; a later
+-- publish carries it in the model.
+on net_edit_addr
+  $v = $r.event_args($event).value
+  if from_ui($event) and $state.edit != nil and type($v) == "string" then $state.edit.addresses = $v end
+  reply(0, "{}")
+end
+on net_edit_gw
+  $v = $r.event_args($event).value
+  if from_ui($event) and $state.edit != nil and type($v) == "string" then $state.edit.gateway = $v end
+  reply(0, "{}")
+end
+on net_edit_dns
+  $v = $r.event_args($event).value
+  if from_ui($event) and $state.edit != nil and type($v) == "string" then $state.edit.dns = $v end
+  reply(0, "{}")
+end
+on net_close
+  if not from_ui($event) then $r.respond(ui_only()); return end
+  $state.edit = nil
+  $r.respond(republish())
+end
+
+-- A note for $link's editor, if the editor is (still) on that link.
+fn note_for($link, $text)
+  if $state.edit != nil and $state.edit.link == $link then $state.edit.note = $text end
+end
+
+-- One hostd write at a time from this panel; hostd serialises host-wide
+-- anyway. The click is answered at once and the write runs as an internal
+-- task (net.write), so the scene host never waits on hostd. The result is
+-- kept per link (the newest receipt), so the editor may close or move to
+-- another link while the write runs.
+fn start_write($link, $verb, $body, $done_key)
+  $state.inflight = $link
+  try
+    task_start("net.write", json_encode({link: $link, verb: $verb, body: $body, done: $done_key}))
+  catch $message
+    $state.inflight = nil
+    note_for($link, $m.text("hostd_refused", {status: "task: " .. to_string($message)}))
+  end
+end
+
+-- The write itself. An internal task carries no headers, which is also what
+-- keeps a Bus caller (whose events always carry `from`) out of it.
+on net.write async
+  if len(keys($event.headers)) != 0 then return end
+  $a = type($event.args) == "map" ? $event.args : {}
+  $link = to_string($a.link)
+  $verb = $a.verb
+  if $state.inflight != $link or not contains(["net.link.apply", "hostd.undo"], $verb) then return end
+  try
+    $out = $h.call($verb, $a.body, $WRITE_WAIT_S)
+  finally
+    $state.inflight = nil
+  end
+  if $out.ok then
+    if $verb == "net.link.apply" then $state.receipts[$link] = $out.body.receipt else $state.receipts = delete($state.receipts, $link) end
+    note_for($link, $m.text($a.done, {link: $link}))
+  elif $h.uncertain($out) then
+    -- No answer to a request that left, or hostd's own timeout: hostd may
+    -- still finish the change (it runs to the end even when the caller
+    -- hangs up), so the old receipt can no longer be trusted to be newest.
+    $state.receipts = delete($state.receipts, $link)
+    note_for($link, $m.text("net_no_answer", {link: $link}))
+  else
+    -- A refusal or a rollback leaves the previous newest change in force,
+    -- so its receipt stays (undo checks the file's content itself).
+    note_for($link, $m.net_refusal($out.status, $link, $out.body))
+  end
+  schedule()
+  republish()
+end
+
+-- Apply: one net.link.apply. hostd keeps it only if the link comes up within
+-- the window, else rolls it back.
+on net_apply
+  if not from_ui($event) then $r.respond(ui_only()); return end
+  $e = $state.edit
+  if $e == nil then reply(0, "{}"); return end
+  if $state.inflight != nil then
+    note_for($e.link, $m.text("hostd_busy"))
+    $r.respond(republish()); return
+  end
+  $req = $h.link_request($e.link, $e, $WINDOW_S)
+  if $req.error != nil then
+    note_for($e.link, $m.text($req.error))
+    $r.respond(republish()); return
+  end
+  note_for($e.link, $m.text("net_applying", {link: $e.link, n: $WINDOW_S}))
+  start_write($e.link, "net.link.apply", $req.request, "net_applied")
+  $r.respond(republish())
+end
+
+-- Undo the newest change this panel applied to the editor's link.
+on net_undo
+  if not from_ui($event) then $r.respond(ui_only()); return end
+  $e = $state.edit
+  if $e == nil or $state.receipts[$e.link] == nil then reply(0, "{}"); return end
+  if $state.inflight != nil then
+    note_for($e.link, $m.text("hostd_busy"))
+    $r.respond(republish()); return
+  end
+  note_for($e.link, "")
+  start_write($e.link, "hostd.undo", {receipt: $state.receipts[$e.link]}, "net_undone")
+  $r.respond(republish())
 end
 
 on network.open

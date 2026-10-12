@@ -1,0 +1,137 @@
+-- hostd client for scene behaviours: one request per connection over the
+-- local socket (NUL-terminated JSON frames, docs/hostd.md). Writes go only
+-- this way, never over the Bus. Every answer is a map:
+--   {ok: true, body}                  rc 0
+--   {ok: false, status, body}         hostd refused (rc 10; status from body)
+--   {ok: false, status: "unavailable", message, sent}   no socket, no
+--                                     unix_connect, or the connection failed;
+--                                     sent says whether the request may have
+--                                     reached hostd (then its outcome is unknown)
+$SOCKET = env("HOSTD_SOCKET", "/run/hostd/hostd.sock")
+-- net.state on a host with many links passes 64 KiB.
+$MAX_REPLY = 1048576
+
+fn unavailable($message, $sent = false)
+  return {ok: false, status: "unavailable", message: to_string($message), sent: $sent}
+end
+
+-- One call. $wait_s bounds the reply (a write's window plus hostd's own
+-- slack: up to 15 s queued behind another change, then the window).
+fn call($verb, $body, $wait_s = 10)
+  if not has_builtin("unix_connect") then return unavailable("this mix has no unix_connect (needs 0.115.0)") end
+  try
+    $h = unix_connect($SOCKET, {frame: "nul", timeout: 5})
+  catch $message, $error
+    return unavailable($error.code)
+  end
+  -- From the first send on, the request may have reached hostd.
+  try
+    tcp_send($h, json_encode({verb: $verb, body: $body ?? {}}) .. chr(0))
+    $line = tcp_recv_line($h, {timeout: $wait_s, max: $MAX_REPLY})
+  catch $message
+    try
+      tcp_close($h)
+    catch $e
+    end
+    return unavailable($message, true)
+  end
+  try
+    tcp_close($h)
+  catch $e
+  end
+  if $line == nil then return unavailable("no reply within " .. to_string($wait_s) .. " s", true) end
+  try
+    $reply = json_parse($line)
+  catch $message
+    return unavailable("unreadable reply", true)
+  end
+  if type($reply) != "map" then return unavailable("unreadable reply", true) end
+  $body = $reply.body ?? {}
+  if $reply.rc == 0 then return {ok: true, body: $body} end
+  return {ok: false, status: type($body) == "map" ? to_string($body.status ?? "refused") : "refused", body: $body}
+end
+
+-- Is a failed write's outcome unknown? hostd's own timeout (the change
+-- runs on), or no answer to a request that may have reached it. A connect
+-- that failed before sending is a plain failure: nothing changed.
+fn uncertain($out)
+  if $out.ok then return false end
+  return $out.status == "timeout" or ($out.status == "unavailable" and $out.sent == true)
+end
+
+-- What the widget may do, from hostd.status: {available, frozen, grants,
+-- links}. grants names the held grants that cover net.link.apply; links is
+-- the links they allow: nil when one of them lists no `links` limit (a key
+-- a grant doesn't list is unrestricted), else the union of their lists.
+fn grant_state()
+  $out = call("hostd.status", {})
+  if not $out.ok then return {available: $out.status != "unavailable", frozen: false, grants: [], links: []} end
+  return {available: true, frozen: $out.body.frozen != nil,
+    grants: link_grants($out.body.held_grants), links: grant_links($out.body.held_grants)}
+end
+
+-- Does a grant verb cover $verb? hostd's rule: an exact name, or a
+-- family `prefix.*` covering every verb that starts with `prefix.`.
+fn verb_covers($pattern, $verb)
+  $p = to_string($pattern)
+  if $p == $verb then return true end
+  return ends_with($p, ".*") and starts_with($verb, slice($p, 0, length($p) - 1))
+end
+
+-- Does a held grant cover net.link.apply?
+fn covers_apply($g)
+  if type($g) != "map" or type($g.verbs) != "list" then return false end
+  for each $v in $g.verbs
+    if verb_covers($v, "net.link.apply") then return true end
+  end
+  return false
+end
+
+fn link_grants($held)
+  $out = []
+  for each $g in type($held) == "list" ? $held : []
+    if covers_apply($g) then push($out, to_string($g.name)) end
+  end
+  return $out
+end
+
+fn grant_links($held)
+  $links = []
+  for each $g in type($held) == "list" ? $held : []
+    if not covers_apply($g) then continue end
+    $limits = type($g.limits) == "map" ? $g.limits : {}
+    if $limits.links == nil then return nil end
+    for each $l in type($limits.links) == "list" ? $limits.links : []
+      if not contains($links, $l) then push($links, $l) end
+    end
+  end
+  return $links
+end
+
+-- Split a typed list ("a, b c") into its non-empty items.
+fn items($text)
+  $out = []
+  for each $part in split(replace(to_string($text ?? ""), ",", " "), " ")
+    if trim($part) != "" then push($out, trim($part)) end
+  end
+  return $out
+end
+
+-- The net.link.apply body for an editor state, or {error} for input the
+-- widget can see is wrong before asking. hostd validates everything again.
+fn link_request($link, $edit, $window_s = 20)
+  $config = {mode: $edit.mode}
+  if $edit.mode == "static" then
+    $config.addresses = items($edit.addresses)
+    if length($config.addresses) == 0 then return {error: "net_need_address"} end
+    for each $a in $config.addresses
+      if not contains($a, "/") then return {error: "net_need_prefix"} end
+    end
+    if trim(to_string($edit.gateway ?? "")) != "" then $config.gateway = trim($edit.gateway) end
+  elif $edit.mode != "dhcp" then
+    return {error: "net_bad_mode"}
+  end
+  $dns = items($edit.dns)
+  if length($dns) > 0 then $config.dns = $dns end
+  return {request: {link: $link, config: $config, window_s: $window_s}}
+end

@@ -111,6 +111,37 @@ $TEXT = {
   net_managed: "networkd: {state}", net_unmanaged: "not managed by networkd",
   kind_ether: "Wired", kind_wlan: "Wireless", kind_bridge: "Bridge", kind_bond: "Bond",
   kind_wireguard: "WireGuard", kind_vlan: "VLAN", kind_virtual: "Virtual", kind_unknown: "Interface",
+  net_configure: "Configure", net_edit_title: "Configure {link}", net_dhcp: "DHCP", net_static: "Static",
+  net_addresses: "Addresses", net_addresses_hint: "192.0.2.10/24, …", net_gateway: "Gateway",
+  net_dns_servers: "DNS servers", net_optional: "optional", net_apply: "Apply", net_applying_short: "Applying…",
+  net_undo: "Undo last change", net_close: "Close",
+  net_applying: "Applying… hostd keeps it only if {link} comes up within {n} s.",
+  net_applied: "Applied: {link} came up and hostd kept the change.",
+  net_undone: "Undone: {link} has its previous configuration again.",
+  net_need_address: "Static needs at least one address.",
+  net_need_prefix: "Each address needs a prefix length, such as /24.", net_bad_mode: "Choose DHCP or Static.",
+  net_hostd_frozen: "hostd is frozen: changes are off until root on the host thaws it.",
+  net_hostd_no_grant: "No hostd grant for this panel: read only.",
+  hostd_no_grant: "This panel has no hostd grant for that change.",
+  hostd_outside_grant: "{link} is outside this panel's hostd grant.",
+  hostd_foreign_config: "Another networkd file configures {link}, so hostd will not change it.",
+  hostd_unmanaged_configured: "{link} has addresses networkd did not set, so hostd will not take it over.",
+  hostd_no_such_link: "{link} no longer exists.",
+  hostd_rolled_back: "{link} did not come up, so hostd put the old configuration back",
+  hostd_abandoned: "{link} did not come up, and its file changed meanwhile, so hostd left it as it found it",
+  net_no_answer: "hostd did not answer in time. The change to {link} may still finish; reopen the popup to see the link as it is.",
+  hostd_frozen: "hostd is frozen: changes are off until root on the host thaws it.",
+  hostd_grant_suspended: "Two failed changes in a row suspended this panel's grant until root thaws hostd.",
+  hostd_recovery_pending: "hostd is finishing an earlier change. Try again shortly.",
+  hostd_busy: "hostd is busy with another change. Try again.",
+  hostd_timeout: "hostd did not finish in time. Try again.",
+  hostd_rate_limited: "Too many changes in a short time. Wait a few minutes.",
+  hostd_superseded: "Undo refused: {link} has changed since that change.",
+  hostd_not_applied: "Nothing to undo: that change is no longer in force.",
+  hostd_unavailable: "hostd is not reachable.",
+  hostd_caller_unverified: "hostd could not verify this panel as the caller.",
+  hostd_ui_only: "Changes come only from clicks in the panel.",
+  hostd_bad_request: "hostd refused the request: {message}", hostd_refused: "hostd refused the change ({status}).",
   peek_title: "Peek at Desktop", peek_restore: "Restore the windows", peek_minimise: "Minimise this workspace's windows",
   zone: "UTC{offset}", calendar_hint: "Click for the calendar",
   rename_prompt: "Name for workspace {n}", rename_hint: "Workspace {n}",
@@ -309,6 +340,9 @@ end
 -- $snap: lib/network.mix snapshot(), or nil before the first one. Loopback
 -- links and link-local IPv6 addresses are left out. The default-route link
 -- sorts first, then links that are up, then by name.
+-- $ui (optional): {access: lib/hostd.mix grant_state(), edit: the open editor or
+-- nil}. With a hostd grant, each link offers Configure; the editor applies
+-- through hostd (net.link.apply) and can undo its last change.
 $MAX_LINKS = 32
 
 -- A link kind (sysfs DEVTYPE or networkd Kind) in words.
@@ -317,8 +351,11 @@ fn kind_text($kind)
   return $TEXT[$key] != nil ? text($key) : text("kind_unknown")
 end
 
-fn network($snap)
+fn network($snap, $ui = nil)
   $known = $snap != nil
+  $ui = $ui ?? {}
+  $access = $ui.access ?? {available: false, frozen: false, grants: [], links: []}
+  $edit = $ui.edit
   $snap = $snap ?? {}
   $kinds = $snap.kinds ?? {}
   $nd = $snap.networkd
@@ -362,7 +399,9 @@ fn network($snap)
     push($rows, {id: "if_" .. $l.ifname, cells: [], name: $l.ifname, sub: join($sub, " · "),
       addresses: length($shown) > 0 ? join($shown, "  ") : text("net_no_addresses"),
       detail: join($detail, " · "), has_detail: length($detail) > 0,
-      dot: $l.up == true ? $C.ok : $C.faint})
+      dot: $l.up == true ? $C.ok : $C.faint,
+      editable: link_writable($access, $l.ifname), cta: link_writable($access, $l.ifname) ? text("net_configure") : "",
+      background: ($edit != nil and $edit.link == $l.ifname) ? $C.accent_bg : $C.card})
   end
 
   $summary = text("offline")
@@ -391,7 +430,87 @@ fn network($snap)
     rows: $rows, empty: length($rows) == 0, empty_text: text("net_interfaces_none"),
     route_label: text("net_route"), gateway: $gateway, has_gateway: $gateway != "",
     dns_label: text("net_dns"), dns: join($servers, ", "), has_dns: length($servers) > 0,
-    note: $note, has_note: $note != ""}
+    note: $note, has_note: $note != "",
+    hostd_note: hostd_note($access), has_hostd_note: hostd_note($access) != "",
+    edit: editor($edit)}
+end
+
+-- May this panel configure $link? A live, unfrozen grant whose links
+-- allow it (nil links: any link).
+fn link_writable($access, $link)
+  if not $access.available or $access.frozen or length($access.grants ?? []) == 0 then return false end
+  return $access.links == nil or contains($access.links, $link)
+end
+
+-- One line about hostd under the summary: why the popup is read only, or
+-- nothing when it may change links (or hostd is not on this host at all).
+fn hostd_note($access)
+  if not $access.available then return "" end
+  if $access.frozen then return text("net_hostd_frozen") end
+  if length($access.grants ?? []) == 0 then return text("net_hostd_no_grant") end
+  return ""
+end
+
+-- The editor's model; every key is always present so the scene's default
+-- model declares them all. $edit: {link, mode, addresses, gateway, dns,
+-- note, busy, receipt} or nil (closed).
+fn editor($edit)
+  $on = $edit != nil
+  $e = $edit ?? {}
+  $static = ($e.mode ?? "dhcp") == "static"
+  $busy = $e.busy == true
+  $note = to_string($e.note ?? "")
+  return {shown: $on, title: $on ? text("net_edit_title", {link: $e.link}) : "",
+    dhcp_label: text("net_dhcp"), static_label: text("net_static"),
+    dhcp_bg: $static ? $C.task_bg : $C.accent, static_bg: $static ? $C.accent : $C.task_bg,
+    dhcp_color: $static ? $C.fg : "#0b1f2b", static_color: $static ? "#0b1f2b" : $C.fg,
+    is_static: $static,
+    addresses_label: text("net_addresses"), addresses_hint: text("net_addresses_hint"), addresses: to_string($e.addresses ?? ""),
+    gateway_label: text("net_gateway"), gateway_hint: text("net_optional"), gateway: to_string($e.gateway ?? ""),
+    dns_label: text("net_dns_servers"), dns_hint: text("net_optional"), dns: to_string($e.dns ?? ""),
+    apply_label: $busy ? text("net_applying_short") : text("net_apply"), busy: $busy,
+    undo_label: text("net_undo"), has_undo: $on and $e.receipt != nil and not $busy,
+    close_label: text("net_close"), note: $note, has_note: $note != ""}
+end
+
+-- The editor's starting values for a link, from the snapshot: its own
+-- addresses (link-local left out), its IPv4 gateway and its DNS servers.
+-- Static when it has an address, else DHCP; the user switches either way.
+fn edit_prefill($snap, $link)
+  $snap = $snap ?? {}
+  $addrs = []
+  for each $a in $snap.addresses ?? []
+    if $a.ifname != $link then continue end
+    if $a.family == "inet6" and starts_with(lower($a.address), "fe80:") then continue end
+    push($addrs, $a.address .. "/" .. to_string($a.prefix))
+  end
+  $gateway = ""
+  for each $r in $snap.routes ?? []
+    if $gateway == "" and $r.dev == $link and $r.gateway != "" and not contains($r.gateway, ":") then $gateway = $r.gateway end
+  end
+  $dns = []
+  if $snap.resolved != nil then $dns = $snap.resolved.links[$link] ?? [] end
+  return {link: $link, mode: length($addrs) > 0 ? "static" : "dhcp", addresses: join($addrs, ", "),
+    gateway: $gateway, dns: join($dns, ", "), note: "", busy: false, receipt: nil}
+end
+
+-- A hostd refusal in words, for the editor's note. $body is hostd's reply
+-- body (rolled_back carries detail.reason, bad_request a message).
+fn net_refusal($status, $link, $body)
+  $body = type($body) == "map" ? $body : {}
+  $key = "hostd_" .. to_string($status)
+  if $status == "rolled_back" then
+    $why = type($body.detail) == "map" ? to_string($body.detail.reason ?? "") : ""
+    -- abandoned: the file changed under hostd during the window, so it left
+    -- the file as found rather than restore over someone else's change.
+    if type($body.detail) == "map" and $body.detail.outcome == "abandoned" then
+      return text("hostd_abandoned", {link: $link}) .. ($why != "" ? " (" .. $why .. ")" : "")
+    end
+    return text("hostd_rolled_back", {link: $link}) .. ($why != "" ? " (" .. $why .. ")" : "")
+  end
+  if $status == "bad_request" then return text("hostd_bad_request", {message: to_string($body.message ?? "")}) end
+  if $TEXT[$key] != nil then return text($key, {link: $link}) end
+  return text("hostd_refused", {status: to_string($status)})
 end
 
 -- Settings/Appearance from Quoin's shell.settings.get snapshot (or the
