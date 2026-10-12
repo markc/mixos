@@ -20,10 +20,28 @@ use annotation::library::Saved;
 use annotation::{Crop, Document, Kind, Point, Shape};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Localises a catalogue key; the shell supplies it.
 pub type Label = fn(&str) -> String;
+
+/// `path` as the status line and tips show it: under the home folder it
+/// reads `~/…`.
+pub fn shown_path(path: &Path) -> String {
+    shown_path_in(path, std::env::var_os("HOME").as_deref().map(Path::new))
+}
+
+/// [`shown_path`] with `home` given.
+pub fn shown_path_in(path: &Path, home: Option<&Path>) -> String {
+    match home
+        .filter(|h| h.is_absolute() && h.parent().is_some())
+        .and_then(|h| path.strip_prefix(h).ok())
+    {
+        Some(rest) if rest.as_os_str().is_empty() => "~".into(),
+        Some(rest) => format!("~/{}", rest.display()),
+        None => path.display().to_string(),
+    }
+}
 
 /// What a press on the picture does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -582,7 +600,13 @@ impl App {
         self.supersede();
         let focus = !self.headless && reply.is_none();
         let ticket = self.start(JobKind::Capture, reply);
-        self.status = self.label("capturing");
+        // A region waits on the person: say what to do before the window
+        // hides (compd's selection overlay carries no text).
+        self.status = self.label(if request.mode == Mode::Region {
+            "region-hint"
+        } else {
+            "capturing"
+        });
         self.effects.push(Effect::Capture {
             ticket,
             request,
@@ -618,7 +642,7 @@ impl App {
             return;
         }
         if !self.unsaved() {
-            let path = self.saved.as_ref().map(|s| s.path.display().to_string());
+            let path = self.saved.as_ref().map(|s| shown_path(&s.path));
             self.status =
                 crate::label_with("already-saved", &[("path", &path.unwrap_or_default())]);
             return;
@@ -1076,7 +1100,13 @@ impl App {
                 Err((code::CANCELLED, error))
             }
             Err(error) => {
-                self.fail(&error);
+                // The selection's own endings read as what happened; the
+                // Bus answer keeps compd's words.
+                match crate::capture::selection_ending(&error) {
+                    Some("timeout") => self.status = self.label("nothing-selected"),
+                    Some("cancelled") => self.status = self.label("cancelled"),
+                    _ => self.fail(&error),
+                }
                 Err((code::FAILED, error))
             }
         };
@@ -1132,8 +1162,9 @@ impl App {
                 }
                 // The pixels are kept in the saved file now.
                 self.release_capture();
-                self.status =
-                    crate::label_with("saved-to", &[("path", &saved.path.display().to_string())]);
+                // The status line names the file, so the person sees where
+                // it went.
+                self.status = crate::label_with("saved-to", &[("path", &shown_path(&saved.path))]);
                 let body = serde_json::to_value(&saved).unwrap_or(Value::Null);
                 self.effects.push(Effect::Publish {
                     suffix: "saved",
@@ -2460,6 +2491,83 @@ mod tests {
             !Request::default().cursor,
             "the pointer is off unless asked"
         );
+    }
+
+    #[test]
+    fn a_persons_capture_comes_back_focused_by_every_route() {
+        let focused = |effects: Vec<Effect>| {
+            effects
+                .iter()
+                .any(|e| matches!(e, Effect::Capture { focus: true, hide: true, .. }))
+        };
+        // The Take button and Ctrl+N.
+        let commands = crate::commands::registry();
+        let mut a = app();
+        commands
+            .execute("capture.take", &mut a, toolkit::command::Origin::Ui)
+            .unwrap();
+        assert!(focused(a.take_effects()), "the Take button");
+        // Print Screen forwarded to a running window.
+        let mut a = app();
+        a.command(1, "screenshot.take", r#"{"mode":"region"}"#);
+        assert!(focused(a.take_effects()), "Print Screen");
+        // `--capture` at launch.
+        let mut a = app();
+        a.take(Some(Mode::Screen));
+        assert!(focused(a.take_effects()), "--capture");
+    }
+
+    #[test]
+    fn a_region_capture_says_what_to_do_and_a_timeout_says_nothing_was_selected() {
+        let mut a = app();
+        a.take(Some(Mode::Region));
+        let ticket = ticket_of(&a.take_effects());
+        assert_eq!(a.status, crate::label("region-hint"));
+        a.captured_job(ticket, Err("selection timeout".into()), false, false);
+        assert_eq!(a.status, crate::label("nothing-selected"));
+        a.take(Some(Mode::Region));
+        let ticket = ticket_of(&a.take_effects());
+        a.captured_job(ticket, Err("selection cancelled".into()), false, false);
+        assert_eq!(a.status, crate::label("cancelled"));
+        // Any other failure still says what went wrong.
+        a.take(Some(Mode::Screen));
+        let ticket = ticket_of(&a.take_effects());
+        assert_eq!(a.status, crate::label("capturing"));
+        a.captured_job(ticket, Err("Bus down".into()), false, false);
+        assert!(a.status.ends_with("Bus down"), "{}", a.status);
+    }
+
+    #[test]
+    fn a_save_names_the_file_it_wrote() {
+        let mut a = with_doc();
+        a.save();
+        let ticket = ticket_of(&a.take_effects());
+        let path = PathBuf::from("/home/user/Pictures/Screenshots/Screenshot 2026-10-13 09-00-00.png");
+        a.saved(
+            ticket,
+            Ok(Saved {
+                path: path.clone(),
+                width: 100,
+                height: 80,
+                annotated: false,
+                saved_at: "2026-10-13T09:00:00+10:00".into(),
+            }),
+        );
+        assert_eq!(
+            a.status,
+            crate::label_with("saved-to", &[("path", &shown_path(&path))])
+        );
+        assert!(a.status.ends_with("Screenshot 2026-10-13 09-00-00.png"));
+        assert_eq!(
+            shown_path_in(&path, Some(Path::new("/home/user"))),
+            "~/Pictures/Screenshots/Screenshot 2026-10-13 09-00-00.png"
+        );
+        assert_eq!(
+            shown_path_in(&path, Some(Path::new("/home/other"))),
+            path.display().to_string()
+        );
+        assert_eq!(shown_path_in(&path, Some(Path::new("/"))), path.display().to_string());
+        assert_eq!(shown_path_in(&path, None), path.display().to_string());
     }
 
     #[test]

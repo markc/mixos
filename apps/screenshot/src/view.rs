@@ -6,7 +6,7 @@
 //!
 //! The window: the title bar with the menus; the options bar (Take, the
 //! capture mode, the window to capture, then the ink, width and text
-//! controls); the tool bar of annotation tools at the left; the picture on
+//! controls, and Save and Copy at its right end); the tool bar of annotation tools at the left; the picture on
 //! the canvas surround; the status bar. The picture is the painter's own
 //! render (what is saved is what is shown); only a gesture in progress and
 //! the selection are drawn over it here.
@@ -299,6 +299,33 @@ fn options(
             events.push(UiEvent::Text(text));
         }
     }
+    // Save and Copy at the right end, through their commands (enablement
+    // and shortcuts stay in the registry). Save's tip names the folder.
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        if let Some(save) = commands.get("file.save") {
+            let shortcut = save.shortcut.map(|s| ui.ctx().format_shortcut(&s));
+            let tip = tooltip::text(
+                &label_with("save-tip", &[("folder", screenshots_folder())]),
+                shortcut.as_deref(),
+            );
+            let button = IconButton::new(Icon::Save).tooltip(tip);
+            if ui.add_enabled((save.enabled)(app), button).clicked() {
+                events.push(UiEvent::Command("file.save", Origin::Ui));
+            }
+        }
+        command_button(ui, app, commands, strings, "file.copy", false, events);
+    });
+}
+
+/// The screenshots folder as Save's tip names it (read once: drawing never
+/// touches the disk each frame).
+fn screenshots_folder() -> &'static str {
+    static FOLDER: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    FOLDER.get_or_init(|| {
+        annotation::library::screenshots_dir()
+            .map(|folder| crate::app::shown_path(&folder))
+            .unwrap_or_default()
+    })
 }
 
 fn tools(

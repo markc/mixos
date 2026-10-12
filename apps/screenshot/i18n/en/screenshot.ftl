@@ -20,6 +20,7 @@ text-size = Text size
 # File.
 open = Open…
 save = Save
+save-tip = Save to { $folder }
 save-as = Save As…
 copy = Copy image
 quit = Quit
@@ -90,6 +91,8 @@ done = Done
 ready = Ready
 empty = Take a screenshot (Ctrl+N) or open an image (Ctrl+O).
 capturing = Taking a screenshot…
+region-hint = Drag to select an area · Esc to cancel
+nothing-selected = Nothing was selected
 capture-complete = Screenshot ready
 cancelling = Cancelling…
 cancelled = Screenshot cancelled

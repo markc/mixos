@@ -222,7 +222,18 @@ impl Comp for CompBus {
 
 const STEP: Duration = Duration::from_secs(5);
 /// A region selection waits on the person; compd bounds it itself.
-const SELECTION: Duration = Duration::from_secs(70);
+const SELECTION_LIMIT: Duration = Duration::from_secs(70);
+/// How a selection that ended without a region begins its error:
+/// `selection <compd's status>`.
+const SELECTION: &str = "selection ";
+
+/// compd's status for a selection that ended without a region (`timeout`,
+/// `cancelled`, …), read from the capture's error; `None` for any other
+/// failure.
+pub fn selection_ending(error: &str) -> Option<&str> {
+    let rest = error.strip_prefix(SELECTION)?;
+    Some(rest.split(';').next().unwrap_or(rest).trim())
+}
 const FRAME: Duration = Duration::from_secs(8);
 
 /// This process's window, once it is mapped: `comp.window.wait` until it
@@ -331,9 +342,9 @@ pub struct Taken {
 /// Run `request`. With `hide` (this app's id), the app's own window is
 /// minimised first and restored afterwards whatever happened, retrying
 /// with backoff; a restore that still fails is reported with the capture's
-/// own outcome. With `focus` a successful capture also brings the window
-/// forward (a person asked for it; an agent's capture leaves the focus
-/// where it is). The raw frame is made private (0600), and deleted again
+/// own outcome. With `focus` the window is restored activated and raised,
+/// whether the capture succeeded or not (a person asked for it); without
+/// it the restore leaves the focus where it is (an agent's capture). The raw frame is made private (0600), and deleted again
 /// when the capture does not complete.
 pub async fn take(
     comp: Arc<dyn Comp>,
@@ -410,12 +421,12 @@ pub async fn take_job(
                         .output
                         .as_ref()
                         .map_or(json!({}), |o| json!({"output": o})),
-                    SELECTION,
+                    SELECTION_LIMIT,
                 )
                 .await?;
             if selection["status"] != "selected" {
                 return Err(format!(
-                    "selection {}",
+                    "{SELECTION}{}",
                     selection["status"].as_str().unwrap_or("failed")
                 ));
             }
@@ -459,7 +470,11 @@ pub async fn take_job(
     if let Some(target) = hidden {
         match restore(comp.as_ref(), target, focus).await {
             Ok(Restored::Shown) => {
-                if focus && result.is_ok() {
+                // A person's capture ends with the window on top and
+                // focused, whatever happened (a timed-out or cancelled
+                // selection too): the restore activates it, and this raise
+                // covers a window compd no longer had minimised.
+                if focus {
                     // Best effort: compd may refuse focus (an exclusive layer).
                     let raise =
                         json!({"id": target.id, "generation": target.generation, "raise": true});
@@ -624,6 +639,66 @@ pub(crate) mod tests {
         assert_eq!(frame["output"], "DP-1");
         assert_eq!(frame["output_generation"], 3);
         assert_eq!(frame["region"]["width"], 30);
+        // A person's capture: restored activated, then raised and focused.
+        assert_eq!(
+            calls[5].1,
+            json!({"id":4,"generation":9,"activate":true})
+        );
+        assert_eq!(calls[6].1, json!({"id":4,"generation":9,"raise":true}));
+    }
+
+    #[tokio::test]
+    async fn a_timed_out_selection_still_brings_a_persons_window_forward() {
+        let mut answers = own();
+        answers.extend([
+            Ok(json!({"minimized":true})),
+            Ok(json!({"version":1,"status":"timeout"})),
+            Ok(json!({"minimized":false})),
+            Ok(json!({"focused":true})),
+        ]);
+        let script = Script::new(answers);
+        let (_tx, rx) = channel();
+        let taken = take_job(
+            script.clone(),
+            Request {
+                mode: Mode::Region,
+                ..Request::default()
+            },
+            Some(crate::APP_ID),
+            true,
+            "/tmp".into(),
+            rx,
+        )
+        .await;
+        let error = taken.result.unwrap_err();
+        assert_eq!(selection_ending(&error), Some("timeout"));
+        assert!(!taken.cancelled && taken.unrestored.is_none());
+        let calls = script.calls.lock().unwrap();
+        let tail: Vec<_> = calls[calls.len() - 2..].to_vec();
+        assert_eq!(
+            tail,
+            [
+                (
+                    "comp.window.restore".to_owned(),
+                    json!({"id":4,"generation":9,"activate":true})
+                ),
+                (
+                    "comp.window.focus".to_owned(),
+                    json!({"id":4,"generation":9,"raise":true})
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn selection_endings_are_read_from_the_error() {
+        assert_eq!(selection_ending("selection timeout"), Some("timeout"));
+        assert_eq!(
+            selection_ending("selection cancelled; restoring the window failed: Bus down"),
+            Some("cancelled")
+        );
+        assert_eq!(selection_ending("cancelled"), None);
+        assert_eq!(selection_ending("Bus down"), None);
     }
 
     #[tokio::test]

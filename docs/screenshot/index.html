@@ -269,6 +269,13 @@ the windows again. With more than one display, the same place offers the
 <strong>output</strong>: the one under the pointer, or a named one (also
 <strong>Capture › Output</strong>). The <strong>Capture</strong> menu also has a delay (3, 5 or 10
 seconds) and <strong>Include pointer</strong>, which is off unless you turn it on.
+For a region, the status line says "Drag to select an area · Esc to
+cancel" as the window hides; compd then outlines the screen until you
+drag. A left drag selects, Escape or the right button cancels, and a click
+without a drag keeps the selection waiting. If you select nothing before
+compd's limit, the window comes back saying "Nothing was selected".
+Whatever happens, a shot you asked for brings the window back on top and
+focused.
 Escape or <strong>Capture › Cancel</strong> stops a shot that is waiting out its delay.
 A second Print while a shot is being taken is answered "already being
 taken" in the window's status line.</p>
@@ -297,12 +304,15 @@ it. Undo is Ctrl+Z and
 Redo is Ctrl+Shift+Z or Ctrl+Y. Ctrl with + and − zooms, Ctrl+0 fits the
 picture to the window, the wheel scrolls, and a middle-button drag pans.</p>
 <h2 id="saving">Saving</h2>
+<p>Once there is a picture, <strong>Save</strong> and <strong>Copy image</strong> sit at the right end
+of the bar at the top; Save's tip names the folder it saves to.</p>
 <ul>
 <li><strong>Save</strong> (Ctrl+S) writes the picture straight into
 <strong>Pictures/Screenshots</strong>, no questions asked, as
 <code>Screenshot 2026-10-12 14-03-22.png</code> (the date and time you saved). If
 that name is taken, the new file gets <code> (2)</code>, <code> (3)</code> and so on.
-Screenshot never overwrites a file.</li>
+Screenshot never overwrites a file. The status line then says
+"Saved to ~/Pictures/Screenshots/…" with the file's name.</li>
 <li><strong>Save As…</strong> (Ctrl+Shift+S) asks for a path, proposing one in
 Pictures/Screenshots (created if missing). It refuses one that already
 exists.</li>
