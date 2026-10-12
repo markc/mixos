@@ -7,10 +7,10 @@
   under the pointer, answering exactly as a drag from corner to corner does;
   a click used to re-arm the selection. A drag stays a drag even if it
   returns to its start. The overlay dims the output (clear inside a drag),
-  outlines the selection in the theme's focus-ring colour and shows a hint ("Drag to
-  select an area · Click or Enter for the whole screen · Esc to cancel"),
-  only on the selected output; a selected reply waits for a frame of that
-  output without the overlay.
+  outlines the selection in the theme's focus-ring colour and shows a hint
+  ("Drag to select an area · Click or Enter for the whole screen · Esc to
+  cancel"), only on the selected output; a selected reply waits for a frame
+  of that output without the overlay.
 - Workspaces: `comp.workspaces.list`, `comp.workspaces.set_count {count,
   persist}` and `comp.workspace.rename {index, name, persist}`, and the
   `comp.workspace.changed` topic. The count and names persist in
