@@ -1361,6 +1361,186 @@ fn destination_pixel(rgb: [u8; 3]) -> [u8; 4] {
     [rgb[0], rgb[1], rgb[2], 255]
 }
 
+/// What one cell draws over its background, as an atlas key: two cells with
+/// the same key draw the same pixels, whatever their colours. A GPU frontend
+/// rasterises each key once through [`Raster::glyph_layers`].
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum GlyphKey {
+    /// An ASCII scalar on the primary face's fast path.
+    Scalar(char, bool),
+    /// Anything else: a cluster, a non-ASCII scalar or a wide cell, with the
+    /// number of cells it spans (1 or 2).
+    Cluster(Box<str>, u8),
+}
+
+/// One glyph layer clipped to its cell span, in span-local physical pixels.
+///
+/// A mask layer holds one coverage byte per pixel and is drawn in the cell's
+/// foreground colour: `fg * a + dst * (255 - a)`. A colour layer holds RGBA
+/// with premultiplied RGB: `rgb + dst * (255 - a)`. These are the blends the
+/// CPU painter performs, so a frontend that applies them in order over the
+/// cell's background reproduces it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GlyphLayer {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+    pub colour: bool,
+    pub pixels: Vec<u8>,
+}
+
+impl GlyphKey {
+    /// The key for `cells[col]` of one screen row, or `None` when the cell
+    /// draws only its background (blank, or the second half of a wide pair).
+    pub fn for_cell(screen: &Screen, cells: &[Cell], col: usize) -> Option<Self> {
+        let cell = cells[col];
+        if matches!(cell.width, CellWidth::Spacer | CellWidth::LeadingSpacer) {
+            return None;
+        }
+        if cell.extra != 0 || !cell.c.is_ascii() || cell.width == CellWidth::Wide {
+            let mut scalar = [0; 4];
+            let text = if cell.extra == 0 {
+                cell.c.encode_utf8(&mut scalar)
+            } else {
+                screen.clusters.get(cell.extra).unwrap_or("")
+            };
+            return Some(Self::Cluster(text.into(), cell_span(cells, col) as u8));
+        }
+        if cell.c == ' ' || cell.c == '\0' {
+            return None;
+        }
+        Some(Self::Scalar(cell.c, cell.bold))
+    }
+
+    /// Cells the key's pixels cover, starting at its own column.
+    pub fn span(&self) -> usize {
+        match self {
+            Self::Scalar(..) => 1,
+            Self::Cluster(_, span) => usize::from(*span),
+        }
+    }
+}
+
+impl Raster {
+    /// Cell size in physical pixels.
+    pub fn cell(&self) -> (u32, u32) {
+        (self.width, self.height)
+    }
+
+    /// The configured cursor shape.
+    pub fn cursor(&self) -> crate::config::Cursor {
+        self.cursor
+    }
+
+    /// True when `other` is this raster or one sharing its glyph cache state:
+    /// the same font, size and scale. A frontend's glyph atlas is valid for
+    /// exactly one raster identity.
+    pub fn same_identity(&self, other: &Arc<()>) -> bool {
+        Arc::ptr_eq(&self.identity, other)
+    }
+
+    /// The identity token [`Raster::same_identity`] compares against.
+    pub fn identity(&self) -> Arc<()> {
+        self.identity.clone()
+    }
+
+    /// The layers `key` draws, clipped to its span exactly as the CPU
+    /// painter clips them. Empty when the font has nothing to draw.
+    pub fn glyph_layers(&mut self, key: &GlyphKey) -> Vec<GlyphLayer> {
+        let span_width = i64::from(self.width) * key.span() as i64;
+        let cell_height = i64::from(self.height);
+        let clip = move |x: i64, y: i64, width: u32, height: u32| {
+            let x0 = (-x).max(0);
+            let y0 = (-y).max(0);
+            let x1 = (span_width - x).min(i64::from(width));
+            let y1 = (cell_height - y).min(i64::from(height));
+            (x0 < x1 && y0 < y1).then_some((x0, y0, x1, y1))
+        };
+        match key {
+            GlyphKey::Scalar(c, bold) => {
+                let cache_key = (*c, *bold);
+                if !self.cache.contains_key(&cache_key) {
+                    if self.cache.len() >= 4096 {
+                        self.cache.clear();
+                    }
+                    let font = self.unicode.fonts.primary.font();
+                    let mut scaler = self.context.builder(font).size(self.px).hint(true).build();
+                    let glyph = Render::new(&[Source::Outline])
+                        .format(Format::Alpha)
+                        .render(&mut scaler, font.charmap().map(*c));
+                    self.cache.insert(cache_key, glyph);
+                }
+                let Some(glyph) = &self.cache[&cache_key] else {
+                    return Vec::new();
+                };
+                let p = glyph.placement;
+                let left = i64::from(p.left);
+                let top = i64::from(self.baseline) - i64::from(p.top);
+                let Some((x0, y0, x1, y1)) = clip(left, top, p.width, p.height) else {
+                    return Vec::new();
+                };
+                let mut pixels = Vec::with_capacity(((x1 - x0) * (y1 - y0)) as usize);
+                for gy in y0..y1 {
+                    let start = (gy * i64::from(p.width) + x0) as usize;
+                    pixels.extend_from_slice(&glyph.data[start..start + (x1 - x0) as usize]);
+                }
+                vec![GlyphLayer {
+                    x: (left + x0) as u32,
+                    y: (top + y0) as u32,
+                    width: (x1 - x0) as u32,
+                    height: (y1 - y0) as u32,
+                    colour: false,
+                    pixels,
+                }]
+            }
+            GlyphKey::Cluster(text, span) => {
+                let span = usize::from(*span);
+                let cell = (self.width, self.height);
+                if self
+                    .unicode
+                    .get(text, span, self.px, cell, self.baseline)
+                    .is_none()
+                {
+                    self.unicode
+                        .image(text, span, self.px, cell, self.baseline);
+                }
+                let Some(image) = self.unicode.get(text, span, self.px, cell, self.baseline)
+                else {
+                    return Vec::new();
+                };
+                let mut out = Vec::with_capacity(image.layers.len());
+                for layer in &image.layers {
+                    let left = i64::from(layer.x);
+                    let top = i64::from(layer.y);
+                    let Some((x0, y0, x1, y1)) = clip(left, top, layer.width, layer.height) else {
+                        continue;
+                    };
+                    let (colour, bytes, data) = match &layer.pixels {
+                        Pixels::Mask(mask) => (false, 1, &mask[..]),
+                        Pixels::Color(data) => (true, 4, &data[..]),
+                    };
+                    let row = (x1 - x0) as usize * bytes;
+                    let mut pixels = Vec::with_capacity(row * (y1 - y0) as usize);
+                    for sy in y0..y1 {
+                        let start = (sy as usize * layer.width as usize + x0 as usize) * bytes;
+                        pixels.extend_from_slice(&data[start..start + row]);
+                    }
+                    out.push(GlyphLayer {
+                        x: (left + x0) as u32,
+                        y: (top + y0) as u32,
+                        width: (x1 - x0) as u32,
+                        height: (y1 - y0) as u32,
+                        colour,
+                        pixels,
+                    });
+                }
+                out
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

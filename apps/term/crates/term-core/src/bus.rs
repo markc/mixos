@@ -2927,7 +2927,7 @@ mod tests {
         let rendered = help("altterm");
         for (at, _) in rendered.match_indices("term.") {
             assert!(
-                at > 0 && rendered.as_bytes()[at - 1] == b'b',
+                rendered[..at].ends_with("alt"),
                 "HELP still advertises a bare `term.` verb at byte {at}: {:?}",
                 &rendered[at.saturating_sub(40)..(at + 20).min(rendered.len())]
             );
