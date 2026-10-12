@@ -935,11 +935,7 @@ impl App {
     /// chosen width as it shows on screen at the current view scale, so a
     /// stroke looks the same whatever the image's size.
     pub fn stroke_width(&self) -> f32 {
-        to_image(
-            self.ui.width,
-            self.view_scale,
-            &annotation::document::WIDTH,
-        )
+        to_image(self.ui.width, self.view_scale, &annotation::document::WIDTH)
     }
 
     /// The text size a new text box or marker takes, in image pixels (as
@@ -2196,7 +2192,10 @@ mod tests {
             a.set_view_scale(vp.scale);
             for (_, _, width) in WIDTHS {
                 a.set_width(width);
-                assert!((a.stroke_width() * vp.scale - width).abs() < 1e-3, "{w}x{h}");
+                assert!(
+                    (a.stroke_width() * vp.scale - width).abs() < 1e-3,
+                    "{w}x{h}"
+                );
             }
             for (_, _, size) in SIZES {
                 a.set_text_size(size);
@@ -2241,7 +2240,14 @@ mod tests {
         text.kind = Kind::Text;
         a.add_shape(text);
         let note = a.ui.selected.unwrap();
-        let size = a.document.as_ref().unwrap().object(note).unwrap().shape.size;
+        let size = a
+            .document
+            .as_ref()
+            .unwrap()
+            .object(note)
+            .unwrap()
+            .shape
+            .size;
         assert_eq!(size, Some(48.0), "medium text (24) at half scale");
         // Zooming in changes nothing already drawn, and a new ink keeps
         // the selection's width.
