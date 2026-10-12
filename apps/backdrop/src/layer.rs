@@ -194,13 +194,12 @@ fn gpu(conn: &Connection, layer: &LayerSurface) -> Result<Gpu, String> {
         })
     }
     .map_err(|e| format!("wgpu surface: {e}"))?;
-    let adapter = futures::executor::block_on(instance.request_adapter(
-        &wgpu::RequestAdapterOptions {
+    let adapter =
+        futures::executor::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             compatible_surface: Some(&surface),
             ..Default::default()
-        },
-    ))
-    .map_err(|e| format!("adapter: {e}"))?;
+        }))
+        .map_err(|e| format!("adapter: {e}"))?;
     let (device, queue) =
         futures::executor::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
             .map_err(|e| format!("device: {e}"))?;
@@ -239,7 +238,7 @@ fn gpu(conn: &Connection, layer: &LayerSurface) -> Result<Gpu, String> {
     })
 }
 
-impl<P: Program> State<P> {
+impl<P: Program + 'static> State<P> {
     /// The surface's size in buffer pixels.
     fn size_px(&self) -> (u32, u32) {
         let scale = self.scale.max(1) as u32;
@@ -437,8 +436,7 @@ impl<P: Program + 'static> OutputHandler for State<P> {
     }
     fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
     fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
-    fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {
-    }
+    fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
 }
 
 impl<P: Program + 'static> LayerShellHandler for State<P> {
@@ -533,7 +531,8 @@ impl<P: Program + 'static> PointerHandler for State<P> {
                 PointerEventKind::Leave { .. } => {
                     self.events.push(egui::Event::PointerGone);
                 }
-                PointerEventKind::Press { button, .. } | PointerEventKind::Release { button, .. } => {
+                PointerEventKind::Press { button, .. }
+                | PointerEventKind::Release { button, .. } => {
                     if let Some(button) = egui_button(button) {
                         self.events.push(egui::Event::PointerButton {
                             pos,
