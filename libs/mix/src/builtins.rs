@@ -22505,13 +22505,49 @@ fn builtin_tcp_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
     Ok(Some(Value::Number(id as f64)))
 }
 
+/// The payload of a tcp_send call, taken without a copy where the value
+/// allows one: a string's bytes move, a bytes value is shared. Only a
+/// buffer, which the caller can still change, is snapshotted. A copy here
+/// would run before the send's deadline starts, outside its bound: under
+/// memory pressure a 64 MiB copy has taken a minute.
+#[cfg(feature = "ws")]
+pub(crate) enum SendPayload {
+    Owned(Vec<u8>),
+    Shared(std::rc::Rc<Vec<u8>>),
+}
+
+#[cfg(feature = "ws")]
+impl SendPayload {
+    pub(crate) fn as_slice(&self) -> &[u8] {
+        match self {
+            SendPayload::Owned(v) => v,
+            SendPayload::Shared(b) => b,
+        }
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.as_slice().len()
+    }
+
+    /// The bytes as a Vec of their own, for a send that crosses to the
+    /// subscription's owner thread; a shared value is copied only if it is
+    /// still referenced elsewhere.
+    pub(crate) fn into_vec(self) -> Vec<u8> {
+        match self {
+            SendPayload::Owned(v) => v,
+            SendPayload::Shared(b) => std::rc::Rc::try_unwrap(b).unwrap_or_else(|b| (*b).clone()),
+        }
+    }
+}
+
 /// The payload of a tcp_send call: string, bytes or buffer, verbatim.
 #[cfg(feature = "ws")]
-pub(crate) fn tcp_send_payload(v: &Value) -> MixResult<Vec<u8>> {
-    match v {
-        Value::String(s) => Ok(s.as_bytes().to_vec()),
-        Value::Bytes(b) => Ok(b.to_vec()),
-        Value::Buffer(b) => Ok(b.borrow().clone()),
+pub(crate) fn tcp_send_payload(mut v: Value) -> MixResult<SendPayload> {
+    // Value implements Drop, so its fields are taken, not moved out.
+    match &mut v {
+        Value::String(s) => Ok(SendPayload::Owned(std::mem::take(s).into_bytes())),
+        Value::Bytes(b) => Ok(SendPayload::Shared(b.clone())),
+        Value::Buffer(b) => Ok(SendPayload::Owned(b.borrow().clone())),
         other => Err(tcp_err(
             "tcp_send()",
             format!(
@@ -22519,6 +22555,29 @@ pub(crate) fn tcp_send_payload(v: &Value) -> MixResult<Vec<u8>> {
                 other.type_name()
             ),
         )),
+    }
+}
+
+#[cfg(all(test, feature = "ws"))]
+mod tcp_send_payload_tests {
+    use super::{SendPayload, tcp_send_payload};
+    use crate::value::Value;
+
+    #[test]
+    fn a_string_payload_moves_and_a_bytes_payload_is_shared() {
+        let s = "x".repeat(1 << 20);
+        let at = s.as_ptr();
+        let SendPayload::Owned(v) = tcp_send_payload(Value::String(s)).unwrap() else {
+            panic!("a string payload is owned");
+        };
+        assert_eq!(v.as_ptr(), at, "the string's bytes were copied");
+
+        let b = std::rc::Rc::new(vec![7u8; 1 << 20]);
+        let SendPayload::Shared(shared) = tcp_send_payload(Value::Bytes(b.clone())).unwrap() else {
+            panic!("a bytes payload is shared");
+        };
+        assert!(std::rc::Rc::ptr_eq(&shared, &b), "the bytes were copied");
+        assert_eq!(SendPayload::Shared(shared).into_vec(), *b);
     }
 }
 
@@ -22788,16 +22847,16 @@ pub(crate) fn tcp_send_receipt(
 /// and blocks for the completion receipt, its deadline the caller's
 /// timeout when given (0 keeps the source's 30 s bound).
 #[cfg(feature = "ws")]
-fn builtin_tcp_send(args: Vec<Value>) -> MixResult<Option<Value>> {
+fn builtin_tcp_send(mut args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args_between("tcp_send", &args, 2, 3)?;
     let id = tcp_id_arg("tcp_send", &args)?;
-    let payload = tcp_send_payload(&args[1])?;
+    let payload = tcp_send_payload(std::mem::replace(&mut args[1], Value::Nil))?;
     let timeout = tcp_send_timeout(args.get(2))?;
     if crate::builtins::socket_sources::is_subscribed(
         crate::builtins::socket_sources::ClientKey::tcp(id),
     ) {
         let total = payload.len();
-        let rx = crate::builtins::socket_sources::send_tcp(id, payload, timeout)?;
+        let rx = crate::builtins::socket_sources::send_tcp(id, payload.into_vec(), timeout)?;
         return tcp_send_receipt(rx.blocking_recv(), timeout.is_some(), total).map(Some);
     }
     let mut conn = tcp_client::MAP
@@ -22806,9 +22865,9 @@ fn builtin_tcp_send(args: Vec<Value>) -> MixResult<Option<Value>> {
         .remove(&id)
         .ok_or_else(|| tcp_unknown("tcp_send", id))?;
     if let Some(t) = timeout {
-        return tcp_send_deadline(conn, id, &payload, t);
+        return tcp_send_deadline(conn, id, payload.as_slice(), t);
     }
-    match conn.write_all(&payload) {
+    match conn.write_all(payload.as_slice()) {
         Ok(()) => {
             let n = payload.len();
             tcp_client::MAP.lock().unwrap().insert(id, conn);
@@ -24692,12 +24751,13 @@ pub(crate) mod socket_sources {
     #[cfg(unix)]
     pub(crate) async fn pull_send(
         mut guard: PullGuard,
-        payload: Vec<u8>,
+        payload: super::SendPayload,
         timeout_seconds: f64,
         interruptible: bool,
     ) -> MixResult<Value> {
         use tokio::io::Interest;
         use tokio::io::unix::AsyncFd;
+        let payload = payload.as_slice();
         let dup = guard
             .tcp()
             .try_clone()
@@ -24727,7 +24787,7 @@ pub(crate) mod socket_sources {
             let Some(PullWire::Tcp(conn)) = guard.wire.as_mut() else {
                 return Err(refusal("SOCKET_PULL", "tcp_send: not a tcp connection"));
             };
-            let step = super::send_step(conn, &payload, &mut off);
+            let step = super::send_step(conn, payload, &mut off);
             if off > 0 {
                 guard.retire_on_drop = true;
             }
@@ -25175,11 +25235,21 @@ pub(crate) mod socket_sources {
             /// Consume the outgoing and answer its receipt. If the caller
             /// (a cancelled Class C task) dropped the receiver, the send
             /// simply reports nowhere — the write itself is unaffected.
-            /// Consuming drops the permits: the reservation releases here.
+            /// The reservation releases here, BEFORE the receipt answers: a
+            /// caller woken by its receipt may admit again at once and must
+            /// find the permits back. (Moving only the receipt out would
+            /// drop the permits at the end of this function, after the
+            /// caller had already been woken.)
             fn answer(self, result: SendReceipt) {
-                let receipt = match self {
-                    Outgoing::Tcp { receipt, .. } | Outgoing::Ws { receipt, .. } => receipt,
+                let (receipt, permits) = match self {
+                    Outgoing::Tcp {
+                        receipt, _permits, ..
+                    }
+                    | Outgoing::Ws {
+                        receipt, _permits, ..
+                    } => (receipt, _permits),
                 };
+                drop(permits);
                 let _ = receipt.send(result);
             }
         }
@@ -26262,9 +26332,14 @@ pub(crate) mod socket_sources {
         async fn ws_subscription_orders_frames_then_one_terminal_and_retires() {
             let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             let port = listener.local_addr().unwrap().port();
+            // The peer waits for `go`: a peer that sends and closes at once
+            // lets the reader retire the source, unmarking the handle by
+            // design, before the test has looked at the mark.
+            let (go_tx, go_rx) = std::sync::mpsc::channel::<()>();
             let server = std::thread::spawn(move || {
                 let (stream, _) = listener.accept().unwrap();
                 let mut conn = tungstenite::accept(stream).unwrap();
+                go_rx.recv().unwrap();
                 for n in 0..5 {
                     conn.send(tungstenite::Message::text(format!("msg{n}")))
                         .unwrap();
@@ -26284,6 +26359,7 @@ pub(crate) mod socket_sources {
                 is_subscribed(ClientKey::ws(id)),
                 "the moved numeric handle is marked subscribed"
             );
+            go_tx.send(()).unwrap();
             let q = ne.queue.clone();
             for n in 0..5 {
                 let rec = match q.next_socket(&h, KIND_WS, usize::MAX).await.unwrap() {
@@ -27450,14 +27526,23 @@ pub(crate) mod socket_sources {
                 (MAX_SEND_OPS - 1, MAX_SEND_BYTES)
             );
             drop(empty);
-            assert_eq!(
-                send_tcp(id, Vec::new(), None)
-                    .unwrap()
-                    .await
-                    .unwrap()
-                    .unwrap(),
-                0
-            );
+            // A receipt answers only after its reservation is released: the
+            // woken caller finds every permit back at once, every time.
+            for _ in 0..100 {
+                assert_eq!(
+                    send_tcp(id, Vec::new(), None)
+                        .unwrap()
+                        .await
+                        .unwrap()
+                        .unwrap(),
+                    0
+                );
+                assert_eq!(
+                    endpoint.available_permits(),
+                    (MAX_SEND_OPS, MAX_SEND_BYTES),
+                    "the receipt answered before its permits were released"
+                );
+            }
             // Ops bound: 64 reservations, the 65th refuses.
             let mut manual = Vec::new();
             for _ in 0..MAX_SEND_OPS {
