@@ -10598,7 +10598,7 @@ impl Evaluator {
                     // the global scope here, at a statement boundary, rather
                     // than at the first dispatch, which may come from inside
                     // a function (`task_start` in a top-level helper).
-                    // PROMOTE_PLACEHOLDER
+                    self.scope.promote_shared_at_boundary();
                     Ok(Value::Nil)
                 }
 
