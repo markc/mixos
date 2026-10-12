@@ -7208,6 +7208,7 @@ dependencies = [
  "smithay-clipboard",
  "term-core",
  "term-render",
+ "test-broker",
  "tokio",
  "toolkit",
  "wgpu",
