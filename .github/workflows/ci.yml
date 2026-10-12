@@ -57,24 +57,30 @@ jobs:
         with:
           cache-on-failure: true
 
+      # A Format failure still builds and tests: every failure in one run.
       - name: Build
+        id: build
+        if: ${{ !cancelled() }}
         run: cargo build --workspace --all-targets --locked
 
       # The crates own their lint levels ([lints] in each Cargo.toml): every
       # clippy lint they deny, and clippy's deny-by-default correctness set,
       # fails the run. Warn-level lints stay allowed with the rest of warnings.
       - name: Clippy
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: cargo clippy --workspace --all-targets --locked
 
       # Every failure in one run, not just the first test binary's. The
       # editd latency ceiling (1 s to open 64 MiB) is for our build hosts; a
       # debug build on a 4-vCPU runner takes about 3 s.
       - name: Test
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: cargo test --workspace --locked --no-fail-fast -- --skip large_file_open_edit_get_latency
 
       # The gates are Mix: the bootstrap above built the mix that runs them
       # (AGENTS.md §9).
       - name: Gates
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
           mix=target/debug/mix
           $mix tools/closure_gate.mix --locked
@@ -87,6 +93,7 @@ jobs:
       # are not run here). Some still name /opt/mixos/bin directly, so the
       # fresh binaries go there first.
       - name: Mix tests
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
           sudo install -D -m 0755 -t /opt/mixos/bin target/debug/mix target/debug/noded target/debug/editd target/debug/dopus
           target/debug/mix tools/mix_tests.mix --bin target/debug
