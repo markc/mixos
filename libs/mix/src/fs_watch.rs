@@ -432,6 +432,40 @@ mod linux {
         }
     }
 
+    /// notify reports a rename it can pair (a MOVED_TO whose cookie matches
+    /// the last MOVED_FROM) as `To` and then, straight after in the same
+    /// read, `Both`, which names the same endpoint with its origin. The `To`
+    /// half is redundant. Delivered on its own it let the evaluator take one
+    /// batch between the two, so a duplicate "moved" stayed pending and
+    /// swallowed the next "modified" for that path (an in-place write after
+    /// an atomic save went unreported). This mirrors notify's own pairing
+    /// rule, which is all it can know about a coming `Both`.
+    #[derive(Default)]
+    struct RenamePairs {
+        last_from: Option<usize>,
+    }
+
+    impl RenamePairs {
+        fn redundant(&mut self, event: &notify::Event) -> bool {
+            match event.kind {
+                // Only MOVED_FROM carries a cookie; MOVE_SELF's From does not.
+                EventKind::Modify(ModifyKind::Name(RenameMode::From)) => {
+                    if let Some(t) = event.tracker() {
+                        self.last_from = Some(t);
+                    }
+                    false
+                }
+                EventKind::Modify(ModifyKind::Name(RenameMode::To))
+                    if event.tracker().is_some() && event.tracker() == self.last_from =>
+                {
+                    self.last_from = None;
+                    true
+                }
+                _ => false,
+            }
+        }
+    }
+
     impl Registry {
         pub fn new(queue: Arc<Queue>) -> MixResult<Self> {
             let (tx, rx) = mpsc::sync_channel(256);
@@ -439,8 +473,14 @@ mod linux {
             let callback_tx = tx.clone();
             let callback_lost = lost.clone();
             let callback_queue = queue.clone();
+            let mut pairs = RenamePairs::default();
             let watcher = notify::INotifyWatcher::new(
                 move |e: notify::Result<notify::Event>| {
+                    if let Ok(event) = &e
+                        && pairs.redundant(event)
+                    {
+                        return;
+                    }
                     // Enumeration produces open/read-close notices. They are
                     // not changes and must not fill the bounded queue while
                     // recovery enumerates a large tree (a feedback loop).
@@ -563,6 +603,42 @@ mod linux {
             if let Some(worker) = self.worker.take() {
                 let _ = worker.join();
             }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn name(mode: RenameMode, tracker: Option<usize>, path: &str) -> notify::Event {
+            let e =
+                notify::Event::new(EventKind::Modify(ModifyKind::Name(mode))).add_path(path.into());
+            match tracker {
+                Some(t) => e.set_tracker(t),
+                None => e,
+            }
+        }
+
+        #[test]
+        fn a_paired_rename_drops_only_the_to_half() {
+            let mut p = RenamePairs::default();
+            assert!(!p.redundant(&name(RenameMode::From, Some(7), "/d/save")));
+            assert!(p.redundant(&name(RenameMode::To, Some(7), "/d/file")));
+            assert!(!p.redundant(&name(RenameMode::Both, Some(7), "/d/file")));
+            // The pair is spent: a To reusing the cookie stands alone.
+            assert!(!p.redundant(&name(RenameMode::To, Some(7), "/d/file")));
+        }
+
+        #[test]
+        fn an_unpaired_to_is_kept() {
+            let mut p = RenamePairs::default();
+            // Moved in from an unwatched directory: no From, no Both follows.
+            assert!(!p.redundant(&name(RenameMode::To, Some(3), "/d/in")));
+            assert!(!p.redundant(&name(RenameMode::From, Some(4), "/d/a")));
+            assert!(!p.redundant(&name(RenameMode::To, Some(5), "/d/b")));
+            // MOVE_SELF reports a From without a cookie; it pairs nothing.
+            assert!(!p.redundant(&name(RenameMode::From, None, "/d")));
+            assert!(!p.redundant(&name(RenameMode::To, None, "/e")));
         }
     }
 }
