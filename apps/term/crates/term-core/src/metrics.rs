@@ -54,6 +54,12 @@ pub struct Metrics {
     pub uploads: u64,
     pub last_read: Option<Instant>,
     pub vt_updated: Option<Instant>,
+    /// When a frontend last handed this pane's grid to its renderer.
+    pub last_frame: Option<Instant>,
+    /// The frontend draws on the GPU: `vt_rgba` is the VT notification to
+    /// the snapshot handed to the renderer, and `raster_paint` the
+    /// renderer's prepare (instances and uploads, CPU side).
+    pub gpu: bool,
 }
 impl Metrics {
     pub fn summary(&self) -> String {
@@ -70,15 +76,64 @@ impl Metrics {
             self.key_write.summary("key_to_actual_PTY_write"),
             self.read_vt_bound
                 .summary("PTY_last_read_to_damage_notification_upper_bound"),
-            self.vt_rgba.summary("VT_notification_to_RGBA"),
-            self.raster_paint.summary("raster_paint_into_texture"),
+            if self.gpu {
+                self.vt_rgba.summary("VT_notification_to_GPU_snapshot")
+            } else {
+                self.vt_rgba.summary("VT_notification_to_RGBA")
+            },
+            if self.gpu {
+                self.raster_paint.summary("gpu_prepare_cpu_side")
+            } else {
+                self.raster_paint.summary("raster_paint_into_texture")
+            },
             self.frame.summary("process_frame_interval")
         )
     }
+    /// A GPU frontend handed this pane's snapshot to its renderer now.
+    /// `prepare` is how long the renderer's prepare of the PREVIOUS
+    /// snapshot took (known only once it has drawn).
+    pub fn gpu_frame(&mut self, prepare: Option<Duration>) {
+        let now = Instant::now();
+        self.gpu = true;
+        self.frames += 1;
+        if let Some(updated) = self.vt_updated.take() {
+            self.vt_rgba.add(now.saturating_duration_since(updated));
+        }
+        if let Some(last) = self.last_frame.replace(now) {
+            self.frame.add(now.saturating_duration_since(last));
+        }
+        if let Some(prepare) = prepare {
+            self.uploads += 1;
+            self.raster_paint.add(prepare);
+        }
+    }
+
     pub fn parsed_boundary(&mut self) {
         if let Some(read) = self.last_read.take() {
             self.read_vt_bound.add(read.elapsed());
             self.vt_updated = Some(Instant::now());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gpu_frames_fill_the_frame_samples_under_gpu_labels() {
+        let mut metrics = Metrics::default();
+        assert!(metrics.summary().contains("VT_notification_to_RGBA:n=0"));
+        metrics.vt_updated = Some(Instant::now());
+        metrics.gpu_frame(None);
+        metrics.gpu_frame(Some(Duration::from_micros(80)));
+        let summary = metrics.summary();
+        assert!(summary.contains("frames=2"), "{summary}");
+        assert!(
+            summary.contains("VT_notification_to_GPU_snapshot:n=1"),
+            "{summary}"
+        );
+        assert!(summary.contains("gpu_prepare_cpu_side:n=1"), "{summary}");
+        assert!(summary.contains("process_frame_interval:n=1"), "{summary}");
     }
 }

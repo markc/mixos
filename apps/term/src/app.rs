@@ -16,10 +16,10 @@ use crate::ime::Composition;
 use crate::input::{self, Action, Wheel};
 use crate::layout::{self, Shape};
 use egui::{Key, Modifiers, Pos2};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use term_core::font::FontSize;
 use term_core::panes::Geometry;
 use term_core::raster::Raster;
@@ -69,6 +69,8 @@ pub struct App {
     /// handed (a pane leaving the screen drops its grid).
     pub panes: HashMap<u64, term_render::Pane>,
     pub painted: HashMap<u64, u64>,
+    /// Panes handed a snapshot whose prepare has not been read back yet.
+    prepared: HashSet<u64>,
     /// Each visible pane's caret at its last snapshot, for the input method.
     cursors: HashMap<u64, Option<(usize, usize)>>,
     /// The physical size of each visible pane's last snapshot: the size
@@ -130,6 +132,7 @@ impl App {
             cell,
             panes: HashMap::new(),
             painted: HashMap::new(),
+            prepared: HashSet::new(),
             cursors: HashMap::new(),
             targets: HashMap::new(),
             modifiers: Modifiers::NONE,
@@ -223,6 +226,7 @@ impl App {
         let visible = shape.visible();
         self.panes.retain(|id, _| visible.contains(id));
         self.painted.retain(|id, _| visible.contains(id));
+        self.prepared.retain(|id| visible.contains(id));
         self.cursors.retain(|id, _| visible.contains(id));
         self.targets.retain(|id, _| visible.contains(id));
         self.grids.retain(|id, _| visible.contains(id));
@@ -315,15 +319,33 @@ impl App {
                 .collect()
         };
         for (id, terminal) in terminals {
+            // The renderer has drawn the snapshot handed over last time:
+            // its prepare cost is known now.
+            let prepare = self
+                .prepared
+                .remove(&id)
+                .then(|| self.panes.get(&id))
+                .flatten()
+                .map(|pane| Duration::from_nanos(pane.stats().prepare_ns));
             let terminal = terminal.lock().expect("terminal");
             // Consume before capture: a write racing capture is either in
             // this snapshot, or wakes the window again.
             let dirty = terminal.take_damage();
             if !dirty && !self.force_paint && self.panes.contains_key(&id) {
+                if let Some(prepare) = prepare {
+                    let mut stats = terminal.stats.lock().expect("metrics");
+                    stats.gpu = true;
+                    stats.uploads += 1;
+                    stats.raster_paint.add(prepare);
+                }
                 continue;
             }
             let snapshot = terminal.grid_snapshot();
+            // term.snapshot's DIAGNOSTIC lines: VT notification to this
+            // hand-over, the interval between hand-overs, the prepare.
+            terminal.stats.lock().expect("metrics").gpu_frame(prepare);
             drop(terminal);
+            self.prepared.insert(id);
             let screen = snapshot.screen;
             let target = self.raster.lock().expect("raster").target_size(&screen);
             self.targets.insert(id, target);

@@ -833,6 +833,29 @@ fn chords_drive_the_tab_set() {
     assert!(tabs.is_empty());
 }
 
+/// Each hand-over to the GPU grid feeds the pane's term.snapshot
+/// DIAGNOSTIC lines, under their GPU names.
+#[test]
+fn painting_feeds_the_snapshot_frame_metrics() {
+    let (mut app, reaper) = test_app();
+    let id = app.shape.active_pane;
+    let (terminal, _) = fixture(&mut app, id, 8, 3, b"x");
+    app.zoom(|font| font.step_by(1));
+    app.paint();
+    app.zoom(|font| font.step_by(1));
+    app.paint();
+    let summary = terminal.lock().unwrap().stats.lock().unwrap().summary();
+    assert!(summary.contains("frames=2"), "{summary}");
+    assert!(summary.contains("process_frame_interval:n=1"), "{summary}");
+    assert!(summary.contains("gpu_prepare_cpu_side:n=1"), "{summary}");
+    assert!(
+        summary.contains("VT_notification_to_GPU_snapshot"),
+        "{summary}"
+    );
+    drop(terminal);
+    finish(app, reaper);
+}
+
 /// Quit queues the window's close, and the closed tab set syncs to Exit.
 #[test]
 fn quit_closes_the_window() {
