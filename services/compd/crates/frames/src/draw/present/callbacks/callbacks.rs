@@ -112,7 +112,10 @@ fn thumbnail_targets(state: &Loop) -> Vec<(Window, Output)> {
         return Vec::new();
     }
     let space = &state.inner.space_state().state;
-    let live: Vec<String> = space.outputs().map(world::state::state::output_key).collect();
+    let live: Vec<String> = space
+        .outputs()
+        .map(world::state::state::output_key)
+        .collect();
     world::window::draw::thumbnail::retain_outputs(&live);
     world::window::draw::thumbnail::paced()
         .into_iter()
