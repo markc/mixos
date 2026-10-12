@@ -59,8 +59,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { arch: x86_64, runner: ubuntu-24.04 }
-          - { arch: aarch64, runner: ubuntu-24.04-arm }
+          - { arch: x86_64, runner: ubuntu-24.04, jobs: 4 }
+          - { arch: aarch64, runner: ubuntu-24.04-arm, jobs: 2 }
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -81,8 +81,24 @@ jobs:
         with:
           key: release-linux-${{ matrix.arch }}
 
-      - name: Build
+      # Fat LTO with one codegen unit is memory-hungry: the arm runner's build
+      # was killed (exit 143) part-way through twice at four parallel jobs.
+      # Swap there plus a per-arch job cap keeps it alive; free -m every minute
+      # shows the pressure if it still dies.
+      - name: Swap
+        if: matrix.arch == 'aarch64'
         run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 8G /mnt/build.swap || sudo fallocate -l 8G /build.swap
+          f=$(ls /mnt/build.swap /build.swap 2>/dev/null | head -1)
+          sudo chmod 600 "$f" && sudo mkswap "$f" && sudo swapon "$f"
+          free -m
+
+      - name: Build
+        env:
+          CARGO_BUILD_JOBS: ${{ matrix.jobs }}
+        run: |
+          ( while sleep 60; do free -m | sed -n 2,3p; done ) &
           cargo build --release --locked \
             -p mix-shell -p noded -p editd -p settingsd -p portald \
             -p compd -p ced -p dopus -p prefs -p busviewer -p screenshot
