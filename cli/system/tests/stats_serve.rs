@@ -3,7 +3,7 @@
 //! `noded` broker (test-broker): each generation's counters land once, on
 //! RELOAD (the retiring generation) and on SIGTERM (the live one).
 //!
-//! Run: `cargo test -p mix-shell --test stats_serve`
+//! Run: `cargo test -p system --test stats_serve`
 #![cfg(target_os = "linux")]
 
 use std::fs::File;

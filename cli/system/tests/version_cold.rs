@@ -76,7 +76,7 @@ fn version_reports_the_version_and_the_build_hash() {
         .strip_prefix("mix ")
         .and_then(|s| s.split_once(" ("))
         .unwrap_or_else(|| panic!("expected `mix X.Y.Z (sha)`, got {line:?}"));
-    assert_eq!(version, env!("CARGO_PKG_VERSION"));
+    assert_eq!(version, mix_shell::COMPONENT_VERSION);
     let (sha, built) = rest
         .strip_suffix(')')
         .unwrap_or_else(|| panic!("unterminated build hash in {line:?}"))

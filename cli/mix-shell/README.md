@@ -1,9 +1,16 @@
 # mix-shell
 
-The Mix shell binary, interactive line and editor facilities, strict command
+The Mix shell: interactive line and editor facilities, strict command
 classifier, native-session bootstrap and ABP citizen runtime. All application
 calls use noded; the retired per-application socket fast path is omitted.
 The client supervisor is the shared implementation in `bus`.
+
+This package is a library. The `mix` binary is built by
+[`cli/system`](../system/README.md), which runs `mix_shell::main` when started
+as `mix` ([decision](../../docs/decisions/2026-10-12-one-system-binary.md)):
+`cargo build -p system`. The shell's process-level tests live in
+`cli/system/tests` and run that binary (`cargo test -p system`); the unit tests
+and library-only tests stay here.
 
 The bootstrap retains the frozen `COSMIX_SESSION_FD` marker, sealed memfd name
 and native-session transcripts. Ordinary shells initialise no grant owner.

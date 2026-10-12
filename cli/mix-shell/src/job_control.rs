@@ -935,7 +935,9 @@ impl Stage {
         let g = gate_read.as_raw_fd();
         let e = error_write.as_raw_fd();
         let mut command = Command::new(executable);
+        // argv[0] "mix": the system binary picks its personality from argv[0].
         command
+            .arg0("mix")
             .args([STAGE_ARG, &g.to_string(), &e.to_string(), program])
             .args(args);
         unsafe {
@@ -1077,7 +1079,15 @@ pub fn stage_entry() {
         fail(4);
     }
     drop(gate);
-    let err = Command::new(program).args(&args[5..]).exec();
+    let mut command = Command::new(program);
+    // A self-resolved `mix` stage arrives as `/proc/self/exe` (see
+    // `executable`); give it argv[0] "mix" so the system binary runs it as
+    // the shell. A string compare only: this runs between the gate and exec,
+    // where a ^Z can land.
+    if program == "/proc/self/exe" {
+        command.arg0("mix");
+    }
+    let err = command.args(&args[5..]).exec();
     let _ = error.write_all(&err.raw_os_error().unwrap_or(libc::EIO).to_ne_bytes());
     std::process::exit(127);
 }

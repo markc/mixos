@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Mix is the MixOS shell and scripting language. The interpreter lives in the mix library; cli/mix-shell owns the binary, interactive shell and native ABP…">
+    <meta name="description" content="Mix is the MixOS shell and scripting language. The interpreter lives in the mix library; cli/mix-shell owns the interactive shell and native ABP citizen…">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=c34fdc68c4" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/web/favicon.svg?v=51993ccf9f">
@@ -242,9 +242,9 @@
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="mix">Mix</h1>
 <p>Mix is the MixOS shell and scripting language. The interpreter lives in the
-<code>mix</code> library; <code>cli/mix-shell</code> owns the binary, interactive shell and native ABP
-citizen runtime. The current language version is 0.115.0 and the shell source
-version is 0.115.0.</p>
+<code>mix</code> library; <code>cli/mix-shell</code> owns the interactive shell and native ABP
+citizen runtime, and <code>cli/system</code> builds the <code>mix</code> binary. The current language
+version is 0.115.0 and the shell source version is 0.115.0.</p>
 <p>Use <code>mix builtins --names</code> to discover valid builtin names, and <code>mix builtins &lt;name&gt;</code> for their contracts. <code>mix man overview</code> and <code>mix man syntax</code> explain the
 language and command classifier. Discovery should inspect process status rather
 than stop a sequence when a lookup is invalid.</p>

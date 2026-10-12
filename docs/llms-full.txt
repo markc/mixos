@@ -2039,6 +2039,85 @@ before it joins `server`.
 
 ---
 
+<!-- page: https://mixos.dev/decisions/2026-10-12-one-system-binary/ (source: https://mixos.dev/decisions/2026-10-12-one-system-binary.md) -->
+
+# Decision — one system binary
+
+Status: accepted 2026-10-12. Amends [the source layout](2026-10-04-source-layout.md)
+(AGENTS.md §2.3, §3.4, §6 and §9).
+
+## The decision
+
+- **One binary, `mix`, carries the shell and every headless daemon.** It is
+  built by a new host component, `cli/system` (package `system`, kind `cli`).
+  The host's only code is the dispatcher and the global allocator.
+- **A daemon is a personality, chosen by the name the binary was started
+  as.** `noded`, `maild`, `webd` and the rest are symlinks to `mix` in
+  `/opt/mixos/bin`. Each still runs as its own process, under its own unit
+  and journal identity, because the kernel names a process after the name it
+  was executed by. There are no daemon subcommands under `mix`: the shell's
+  first-argument namespace stays the shell's.
+  - `mix --personalities` lists what the binary contains, with each
+    component's version.
+  - An unknown name exits 2 and prints that list.
+  - The shell's self re-execution passes `mix` as its name, so a re-exec from
+    a daemon personality comes back as the shell.
+- **Components keep their identity.** Each daemon keeps its own crate, tests,
+  units, metadata, version and verb registry. Its library exports
+  `pub fn main() -> ExitCode`; its own `[[bin]]` stays for development
+  builds. `cli/mix-shell` becomes a library with no binary.
+- **What goes in:** the shell, `noded`, and every headless base and server
+  daemon as it arrives, including the headless desktop-profile services.
+  **What stays out:** anything with a GUI stack (compd, the applications),
+  and any daemon whose dependencies dwarf the rest. The install-profile
+  gate's closure check enforces the first.
+- **One personality per process.** No setup happens at link or load time.
+  The async runtime, TLS provider, signal masks, panic hook and logger are set
+  up in the personality's own `main`, never in a shared library's
+  initialiser. Each personality passes its own logging identity and records
+  its own build provenance. Every personality uses one allocator, mimalloc.
+  A test starts every personality and checks its identity.
+- **Fleet builds are static.** The shipped binary targets
+  `x86_64-unknown-linux-musl`, fully static, so one file runs on every
+  supported distribution regardless of its C library.
+- **Shell tests test the shipped binary.** The shell's process-level tests
+  live in `cli/system/tests/` and run `mix` as built by the host.
+
+## Why
+
+Every daemon links the same core: the async runtime, serialisation, the Bus,
+the Mix evaluator, logging. Linked separately, each carries its own copy, and
+every release links that core once per daemon. Measured on the first
+two-personality build (the shell and `noded`), the combined binary was 11%
+smaller than the two separate ones and its release link took 40% less time.
+Both gains grow with each personality. A static musl build cost nothing in
+size, startup or evaluator speed, and the same file ran on both
+distributions tested.
+
+One file also means one artifact per architecture, one hash to verify and one
+version on every node. Running daemons keep the old file's inode, so an
+upgrade restarts only the units whose component changed.
+
+Memory is not part of the case: different personalities run different code,
+so they share little.
+
+## Consequences
+
+- AGENTS.md §2.3: `cli/system` builds the `mix` binary. `cli/mix-shell` is
+  the shell's library and builds no binary.
+- AGENTS.md §3.4: a daemon may be installed as a personality, a symlink named
+  after its component; units name the symlink.
+- AGENTS.md §6: `cli/system` is the one package allowed a non-dev dependency
+  on `kind = "cli"` packages.
+- AGENTS.md §9: the bootstrap is `cargo build --profile release-fast -p system`.
+- Build scripts that built `-p mix-shell` to get `mix` build `-p system`.
+- The installer creates each node's personality symlinks from its install
+  profiles, keeps the previous binary for rollback, and restarts only changed
+  units. The release archive's manifest lists each personality with its
+  component version.
+
+---
+
 <!-- page: https://mixos.dev/decisions/2026-10-12-scene-strings/ (source: https://mixos.dev/decisions/2026-10-12-scene-strings.md) -->
 
 # Decision — scene strings until Mix reads Fluent
@@ -2253,6 +2332,7 @@ layering gate.
 | [screenshot](https://github.com/markc/mixos/blob/main/apps/screenshot/Cargo.toml) | screenshot | app | desktop | public | 0.1.1 |
 | [annotation](https://github.com/markc/mixos/blob/main/apps/screenshot/crates/annotation/Cargo.toml) | screenshot | app | core | none | 0.1.1 |
 | [mix-shell](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml) | mix-shell | cli | mix | public | 0.115.0 |
+| [system](https://github.com/markc/mixos/blob/main/cli/system/Cargo.toml) | system | cli | core | none | 0.1.1 |
 | [assets](https://github.com/markc/mixos/blob/main/libs/assets/Cargo.toml) | assets | lib | core | public | 0.1.1 |
 | [buildinfo](https://github.com/markc/mixos/blob/main/libs/buildinfo/Cargo.toml) | buildinfo | lib | core | none | 0.1.1 |
 | [bus](https://github.com/markc/mixos/blob/main/libs/bus/Cargo.toml) | bus | lib | core | none | 0.1.1 |
@@ -2674,9 +2754,9 @@ host itself thaws it, never root inside a container.
 # Mix
 
 Mix is the MixOS shell and scripting language. The interpreter lives in the
-`mix` library; `cli/mix-shell` owns the binary, interactive shell and native ABP
-citizen runtime. The current language version is 0.115.0 and the shell source
-version is 0.115.0.
+`mix` library; `cli/mix-shell` owns the interactive shell and native ABP
+citizen runtime, and `cli/system` builds the `mix` binary. The current language
+version is 0.115.0 and the shell source version is 0.115.0.
 
 Use `mix builtins --names` to discover valid builtin names, and `mix builtins
 <name>` for their contracts. `mix man overview` and `mix man syntax` explain the

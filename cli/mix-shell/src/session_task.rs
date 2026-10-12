@@ -512,6 +512,8 @@ fn supervise_task(
     let mut command = match &spec.mode {
         Mode::Source(source) => {
             let mut command = Command::new(interpreter());
+            // argv[0] "mix": the system binary picks its personality from it.
+            command.arg0("mix");
             // Flags BEFORE -c: `-c` consumes the remainder as script argv, so
             // a trailing --result-fd would be an argument, not a flag.
             command.arg("--result-fd").arg(TASK_RESULT_FD.to_string());

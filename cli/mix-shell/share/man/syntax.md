@@ -3,7 +3,7 @@
 How Mix reads source: what a token is, how statements end, and the one rule that
 trips up everyone coming from bash or Python — **when a line is run as Mix code
 versus dispatched to the shell**. Verified against the live binary (the version
-stamp is checked by `cargo test -p mix-shell --test man_pages`; ask
+stamp is checked by `cargo test -p system --test man_pages`; ask
 `mix --version` for the number).
 
 > Mental model: Mix is a Bus-native shell where every variable carries a `$`

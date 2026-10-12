@@ -31,7 +31,7 @@ use std::process::Command;
 
 fn man_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("share/man")
+        .join("../mix-shell/share/man")
         .canonicalize()
         .expect("docs/mix must exist — it is the manual mix man reads")
 }
@@ -200,7 +200,7 @@ fn keyword_table_matches_the_binary() {
 
 #[test]
 fn no_stale_version_stamps_or_banned_citations() {
-    let this_version = env!("CARGO_PKG_VERSION");
+    let this_version = mix_shell::COMPONENT_VERSION;
     // Precise needles: "github.com/markc/mix" (the archived repo, in link
     // form) rather than the bare "markc/mix" substring, which also occurs
     // in api.github.com/repos/... example URLs.

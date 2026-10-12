@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Phase A lowercase-head env-fallback contract — out-of-process variant.
 //!
-//! This test lives in `mix-shell` (not `mix`) because pinning
+//! This test runs the `mix` binary (not the `mix` library) because pinning
 //! the "all heads, not just uppercase" rule as an executable contract
 //! requires actually exporting an env var the evaluator can read. Doing
 //! that in-process with `std::env::set_var` is unsound under Rust 2024 +
