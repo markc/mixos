@@ -636,3 +636,78 @@ fn cached_ascii_and_emoji_paint_benchmark() {
         );
     }
 }
+
+/// Composite one frame from [`GlyphKey`] and [`Raster::glyph_layers`] alone,
+/// with the blends `GlyphLayer` documents: the contract a GPU frontend's
+/// atlas relies on. Backgrounds first, then each key's layers in order.
+fn composite_from_layers(raster: &mut Raster, screen: &Screen) -> Vec<u8> {
+    let (width, height) = raster.target_size(screen);
+    let (cw, ch) = raster.cell();
+    let (cw, ch) = (cw as usize, ch as usize);
+    let stride = width as usize * 4;
+    let mut out = vec![0; stride * height as usize];
+    let rows = height as usize / ch;
+    for y in 0..rows * ch {
+        for x in 0..screen.cols * cw {
+            let bg = screen.cells[y / ch * screen.cols + x / cw].bg;
+            out[y * stride + x * 4..y * stride + x * 4 + 4]
+                .copy_from_slice(&[bg[0], bg[1], bg[2], 255]);
+        }
+    }
+    for row in 0..rows {
+        let cells = &screen.cells[row * screen.cols..(row + 1) * screen.cols];
+        for col in 0..screen.cols {
+            let Some(key) = GlyphKey::for_cell(screen, cells, col) else {
+                continue;
+            };
+            let fg = cells[col].fg.map(u32::from);
+            for layer in raster.glyph_layers(&key) {
+                for ly in 0..layer.height as usize {
+                    for lx in 0..layer.width as usize {
+                        let x = col * cw + layer.x as usize + lx;
+                        let y = row * ch + layer.y as usize + ly;
+                        let px = &mut out[y * stride + x * 4..y * stride + x * 4 + 4];
+                        let i = ly * layer.width as usize + lx;
+                        if layer.colour {
+                            let src = &layer.pixels[i * 4..i * 4 + 4];
+                            if src[3] == 0 {
+                                continue;
+                            }
+                            let inverse = 255 - u32::from(src[3]);
+                            for c in 0..3 {
+                                px[c] = (u32::from(src[c]) + u32::from(px[c]) * inverse / 255)
+                                    .min(255) as u8;
+                            }
+                        } else {
+                            let a = u32::from(layer.pixels[i]);
+                            for c in 0..3 {
+                                px[c] = ((fg[c] * a + u32::from(px[c]) * (255 - a)) / 255) as u8;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn glyph_layers_composite_to_exactly_the_cpu_painter() {
+    for scale in [1.0, 1.25, 2.5] {
+        let mut raster = raster_with(Cursor::Block).resized(scale, 13.0).unwrap();
+        let text = "Ag|_ q\u{e9}\u{2500}\u{253c}\u{2588} \u{1f469}\u{200d}\u{1f4bb}x\r\n\
+                    \u{c911}a \u{1f44d}\u{1f3fd} e\u{301}!\r\n\u{1f1eb}\u{1f1f7} ~";
+        let mut grid = Terminal::from_test_vt(14, 3, text.as_bytes()).screen(false);
+        grid.cursor_visible = false;
+        for (i, cell) in grid.cells.iter_mut().enumerate() {
+            cell.bg = [(i * 37 % 256) as u8, 29, (i * 11 % 256) as u8];
+            cell.fg = [230, (i * 53 % 256) as u8, 120];
+        }
+        let expected = raster.render(&grid);
+        let actual = composite_from_layers(&mut raster, &grid);
+        assert_eq!(actual.len(), expected.len(), "scale {scale}");
+        let differing = actual.iter().zip(&expected).filter(|(a, b)| a != b).count();
+        assert_eq!(differing, 0, "scale {scale}: {differing} bytes differ");
+    }
+}
