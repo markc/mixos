@@ -1,0 +1,25 @@
+[package]
+name = "davproto"
+description = "CalDAV/CardDAV codecs: JSCalendar<->iCalendar, JSContact<->vCard, ETags (RFC 4791/6352/8984/9553)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "davproto"
+kind = "lib"
+layer = "core"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+serde_json.workspace = true
+chrono.workspace = true
+anyhow.workspace = true
+icalendar = "0.16"
+blake3.workspace = true
