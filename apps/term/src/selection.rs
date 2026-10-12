@@ -424,11 +424,11 @@ impl Selection {
         let serial = seat.serial;
         let content: Rc<[u8]> = Rc::from(text.into_bytes());
         if primary {
-            let (Some(manager), Some(device)) = (&self.primary, seat.primary.clone()) else {
+            let (Some(manager), Some(device)) = (&self.primary, seat.primary.as_ref()) else {
                 return;
             };
             let source = manager.create_selection_source(&self.qh, MIME_TYPES);
-            source.set_selection(&device, serial);
+            source.set_selection(device, serial);
             self.primary_text = content;
             self.primary_sources.push(source);
         } else {
