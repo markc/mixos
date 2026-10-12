@@ -31,7 +31,7 @@ use smithay_client_toolkit::reexports::protocols::wp::viewporter::client::{
 };
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
 use smithay_client_toolkit::seat::keyboard::{
-    KeyEvent, KeyboardHandler, Keysym, Modifiers, RepeatInfo,
+    KeyCode, KeyEvent, KeyboardHandler, Keymap, Keysym, Modifiers, RepeatInfo,
 };
 use smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager;
 use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind, PointerHandler};
@@ -135,6 +135,8 @@ struct State<P> {
     /// and whether it types text.
     repeat_info: Option<(Duration, Duration)>,
     repeating: Option<(u32, RegistrationToken, bool)>,
+    /// The compositor's keymap: which keys repeat (`repeat=no` keys don't).
+    keymap: Option<xkbcommon::xkb::Keymap>,
     /// Pointer buttons held, and where the pointer last was (in points).
     buttons: Vec<egui::PointerButton>,
     last_pos: egui::Pos2,
@@ -196,6 +198,7 @@ pub(super) fn run<P: LayerProgram + 'static>(
         held: Vec::new(),
         repeat_info: Some(REPEAT),
         repeating: None,
+        keymap: None,
         buttons: Vec::new(),
         last_pos: egui::Pos2::ZERO,
         button_target: None,
@@ -845,7 +848,8 @@ impl<P: LayerProgram + 'static> State<P> {
         let over = self.pointer_over.take().map(|(o, _)| o);
         // Releases go where the buttons were pressed, even if the pointer
         // has left that surface since.
-        if let Some(target) = self.button_target.take().or_else(|| over.clone()) {
+        let released_on = self.button_target.take().or_else(|| over.clone());
+        if let Some(target) = released_on.clone() {
             let modifiers = input::modifiers(&self.modifiers);
             for button in held {
                 self.push_to(
@@ -859,8 +863,19 @@ impl<P: LayerProgram + 'static> State<P> {
                 );
             }
         }
-        if let Some(over) = over {
-            self.push_to(&over, egui::Event::PointerGone);
+        // egui takes a release's position as the pointer's: the surface the
+        // releases went to, and the one under the pointer, both see it go.
+        let mut gone: Vec<ObjectId> = Vec::new();
+        if let Some(target) = released_on {
+            gone.push(target);
+        }
+        if let Some(over) = over
+            && !gone.contains(&over)
+        {
+            gone.push(over);
+        }
+        for surface in gone {
+            self.push_to(&surface, egui::Event::PointerGone);
         }
     }
 
@@ -875,6 +890,7 @@ impl<P: LayerProgram + 'static> State<P> {
             return;
         }
         self.stop_repeat();
+        self.keymap = None;
         if let Some((keyboard, _)) = self.keyboard.take() {
             keyboard.release();
         }
@@ -893,6 +909,16 @@ impl<P: LayerProgram + 'static> State<P> {
         // A modifier press leaves a repeat running (it stops on the next
         // modifier change, below); repeat disabled ends it.
         if event.keysym.is_modifier_key() {
+            return;
+        }
+        // A key the keymap marks `repeat=no` never repeats (and, like a
+        // modifier, leaves a running repeat alone). Evdev codes are 8 below
+        // XKB's.
+        if self
+            .keymap
+            .as_ref()
+            .is_some_and(|k| !k.key_repeats(KeyCode::new(event.raw_code + 8)))
+        {
             return;
         }
         self.stop_repeat();
@@ -1095,6 +1121,23 @@ impl<P: LayerProgram + 'static> KeyboardHandler for State<P> {
             self.stop_repeat();
         }
         self.key(&event, false, false);
+    }
+
+    fn update_keymap(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        keymap: Keymap<'_>,
+    ) {
+        use xkbcommon::xkb;
+        let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+        self.keymap = xkb::Keymap::new_from_string(
+            &context,
+            keymap.as_string(),
+            xkb::KEYMAP_FORMAT_TEXT_V1,
+            xkb::KEYMAP_COMPILE_NO_FLAGS,
+        );
     }
 
     fn update_repeat_info(

@@ -48,9 +48,11 @@ raw-window-handle = { version = "0.6", optional = true }
 wgpu = { workspace = true, optional = true }
 egui-wgpu = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
+# layer: per-key repeat from the compositor's keymap (the binding sctk links).
+xkbcommon = { version = "0.7", default-features = false, optional = true }
 
 [features]
-layer = ["dep:smithay-client-toolkit", "dep:wayland-backend", "dep:raw-window-handle", "dep:wgpu", "dep:egui-wgpu", "dep:futures"]
+layer = ["dep:smithay-client-toolkit", "dep:wayland-backend", "dep:raw-window-handle", "dep:wgpu", "dep:egui-wgpu", "dep:futures", "dep:xkbcommon"]
 
 [dev-dependencies]
 egui_kittest.workspace = true
