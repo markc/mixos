@@ -93,6 +93,8 @@ impl LaunchFd {
         if public.len() > 16384 {
             return Err(io::Error::other("launch descriptor exceeds limit"));
         }
+        // The memfd name is a frozen cross-process constant (AGENTS.md §3.7):
+        // Mix checks it before trusting the descriptor, like `MARKER`.
         // SAFETY: static NUL-terminated name, supported Linux flags.
         let raw = unsafe {
             libc::memfd_create(

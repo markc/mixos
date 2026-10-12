@@ -1033,7 +1033,7 @@ impl Raster {
                 }
                 if cell.extra != 0 || !cell.c.is_ascii() || cell.width == CellWidth::Wide {
                     // Out of line and cold: inlining this branch into the
-                    // ASCII loop cost ~0.55 ms per warm full paint (cbc3).
+                    // ASCII loop cost ~0.55 ms per warm full paint (build worker).
                     self.paint_unicode_cell(screen, cells, col, rgba, stride, y, format);
                     continue;
                 }
