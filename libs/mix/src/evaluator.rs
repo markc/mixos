@@ -19496,6 +19496,45 @@ mod local_task_tests {
         });
     }
 
+    /// A top-level helper that starts a task: the first dispatch comes
+    /// from inside a function. The global scope must already be shared
+    /// (promoted when `on` registered), so the dispatch neither promotes
+    /// with the helper's frames live nor loses the helper's view of
+    /// globals afterwards. The scene editor's behaviour does exactly this.
+    #[test]
+    #[ignore = "debug builds panic in Scope::shared_globals_handle: the first dispatch promotes the global scope with this function's frames live (the scene editor behaviour's startup); promoting earlier changes where new top-level globals land, so the fix needs a scope design decision"]
+    fn task_start_from_a_function_shares_globals_with_its_caller() {
+        run(async {
+            let mut eval = Evaluator::new();
+            eval.execute_script_source(
+                r#"
+                $state = {runs: 0, seen: nil}
+                on bump async
+                  $state.runs = $state.runs + 1
+                end
+                fn schedule($tag)
+                  $local = $tag
+                  task_start("bump", "{}")
+                  $state.seen = $local .. ":" .. to_string($state.runs)
+                end
+                schedule("first")
+            "#,
+            )
+            .await
+            .unwrap();
+            settle(&eval).await;
+            eval.execute_script_source(
+                r#"
+                if $state.runs != 1 or not starts_with($state.seen ?? "", "first:") then
+                  raise("TEST", "task or caller lost the shared globals: " .. json_encode($state))
+                end
+            "#,
+            )
+            .await
+            .unwrap();
+        });
+    }
+
     #[test]
     fn local_task_requires_async_handler_and_is_shutdown_visible() {
         run(async {
