@@ -474,4 +474,34 @@ $bad = $snapshot
 $bad.sizes = {top: 1}
 check(not $models.settings_valid($bad), "partial sizes refused")
 check(not $models.settings_valid(nil) and not $models.settings_valid({scheme: "ocean"}), "malformed snapshot refused")
+-- Pager labels: a workspace's name (comp.workspace.rename), else its number;
+-- a long name elides; no ws_names at all keeps the numbers (the captures).
+check($models.workspace_label([], 2) == "2", "unnamed workspace shows its number")
+check($models.workspace_label([nil, "Mail"], 2) == "Mail", "named workspace shows its name")
+check($models.workspace_label([nil, "  "], 2) == "2", "blank name shows the number")
+check($models.workspace_label(["Mail"], 3) == "3", "a name list shorter than the count")
+check($models.workspace_label(["Ünïcode workspace name"], 1) == "Ünïcode works…", "long name elides by characters")
+check($models.workspace_label(["abcdefghijklmn"], 1) == "abcdefghijklmn", "14 characters render whole")
+check($models.workspace_label(["abcdefghijklmno"], 1) == "abcdefghijklm…", "15 characters elide")
+$named = $models.panel({windows: [], ws_count: 3, ws_current: 2, ws_names: [nil, "Mail", "Web"], tray: [], notes_count: 0,
+  net: {up: false, wireless: false}, vol: {ok: false, level: 0, muted: false}, open: {}, peeked: false},
+  {themed: {}, plain: {}, windows: {}}, 0)
+check(deep_eq(map($named.workspaces, fn($w) = $w.label), ["1", "Mail", "Web"]), "panel model labels the pager by name")
+check($named.workspaces[1].current and $named.workspaces[1].index == 2, "a named button keeps its index and current")
+-- The pager's labels share one character budget: a name gets less room as
+-- named workspaces are added, never under 3, never over 14.
+check($models.workspace_label_max(1) == 14 and $models.workspace_label_max(4) == 12, "few workspaces: a long share")
+check($models.workspace_label_max(16) == 3 and $models.workspace_label_max(0) == 14, "many workspaces: at least 3")
+$long = []
+for $i = 1 to 16
+  push($long, "WWWWWWWWWWWWWW")
+end
+$crowded = $models.panel({windows: [], ws_count: 16, ws_current: 1, ws_names: $long, tray: [], notes_count: 0,
+  net: {up: false, wireless: false}, vol: {ok: false, level: 0, muted: false}, open: {}, peeked: false},
+  {themed: {}, plain: {}, windows: {}}, 0)
+$chars = 0
+for each $w in $crowded.workspaces
+  $chars = $chars + len($w.label)
+end
+check(len($crowded.workspaces) == 16 and $crowded.workspaces[0].label == "WW…" and $chars <= 48, "16 long names stay within the budget")
 print("scene-template-test: exact captures, models, caps, payloads and capabilities OK")
