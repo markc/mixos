@@ -732,6 +732,7 @@ impl<P: LayerProgram + 'static> LayerShellHandler for State<P> {
         // gone, so draw now rather than wait out the backoff.
         s.skips = 0;
         s.retry_at = None;
+        s.rescued = false;
         if (width, height) != s.size {
             s.size = (width, height);
             let id = s.id;
@@ -1135,6 +1136,8 @@ impl<P: LayerProgram + 'static> KeyboardHandler for State<P> {
         keymap: Keymap<'_>,
     ) {
         use xkbcommon::xkb;
+        // A running repeat was armed under the old keymap: it stops.
+        self.stop_repeat();
         let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
         self.keymap = xkb::Keymap::new_from_string(
             &context,
