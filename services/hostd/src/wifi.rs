@@ -486,7 +486,10 @@ pub async fn current(host: &Host, receipt: &Receipt) -> anyhow::Result<bool> {
 
 /// Forgets a known network by SSID, wherever iwd lists it (no station
 /// needed). Already forgotten is fine.
-async fn forget(conn: &zbus::Connection, ssid: &str) -> anyhow::Result<()> {
+///
+/// iwd keys a saved network by SSID and security type: only the profile
+/// with both is forgotten, never another saved network with the same name.
+async fn forget(conn: &zbus::Connection, ssid: &str, security: &str) -> anyhow::Result<()> {
     let objects = zbus::fdo::ObjectManagerProxy::builder(conn)
         .destination(IWD)?
         .path("/")?
@@ -498,10 +501,12 @@ async fn forget(conn: &zbus::Connection, ssid: &str) -> anyhow::Result<()> {
         let Some(known) = ifaces.get(KNOWN) else {
             continue;
         };
-        let name = known
-            .get("Name")
-            .and_then(|v| <&str>::try_from(&**v as &zbus::zvariant::Value).ok());
-        if name == Some(ssid) {
+        let text = |key: &str| {
+            known
+                .get(key)
+                .and_then(|v| <&str>::try_from(&**v as &zbus::zvariant::Value).ok())
+        };
+        if text("Name") == Some(ssid) && text("Type") == Some(security) {
             proxy(conn, path.as_str(), KNOWN)
                 .await?
                 .call::<_, _, ()>("Forget", &())
@@ -536,7 +541,9 @@ pub async fn reapply(_host: &Host, receipt: &Receipt) -> anyhow::Result<()> {
     let previous = field(receipt, "previous");
     let conn = iwd(PUT_BACK).await?;
     if !was_known {
-        forget(&conn, ssid).await?;
+        let security = field(receipt, "security")
+            .ok_or_else(|| anyhow::anyhow!("receipt names no security type"))?;
+        forget(&conn, ssid, security).await?;
     }
     let Some(station) = station(&conn, device).await? else {
         return Ok(());
