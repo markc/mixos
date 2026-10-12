@@ -259,6 +259,7 @@ impl<P: Program> State<P> {
             present_mode: wgpu::PresentMode::Fifo,
             desired_maximum_frame_latency: 2,
             alpha_mode: self.gpu.alpha,
+            color_space: wgpu::SurfaceColorSpace::Auto,
             view_formats: Vec::new(),
         };
         self.gpu.surface.configure(&self.gpu.device, &config);
@@ -300,10 +301,12 @@ impl<P: Program> State<P> {
         };
         let program = &mut self.program;
         let output = self.ctx.run_ui(raw, |ui| program.show(ui, info));
-        for (id, delta) in &output.textures_delta.set {
-            self.gpu
-                .renderer
-                .update_texture(&self.gpu.device, &self.gpu.queue, *id, delta);
+        for (id, deltas) in &output.textures_delta.set {
+            for delta in deltas {
+                self.gpu
+                    .renderer
+                    .update_texture(&self.gpu.device, &self.gpu.queue, *id, delta);
+            }
         }
         let primitives = self.ctx.tessellate(output.shapes, output.pixels_per_point);
         let frame = match self.gpu.surface.get_current_texture() {
@@ -374,7 +377,7 @@ impl<P: Program> State<P> {
             self.frame_pending = true;
             self.dirty = true;
         }
-        frame.present();
+        self.gpu.queue.present(frame);
     }
 }
 

@@ -44,7 +44,7 @@ impl Program for Probe {
             self.last = Some(pos);
             emit(serde_json::json!({"event": "click", "x": pos.x, "y": pos.y}));
         }
-        egui::CentralPanel::default().show_inside(ui, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(ui.available_height() / 3.0);
                 ui.heading(self.strings.get("probe-title"));
