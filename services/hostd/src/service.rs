@@ -6,7 +6,7 @@ use crate::{
     freeze, info, link, net,
     policy::{self, Policy, RateLimiter},
     receipt::{self, Outcome, Receipt},
-    txn, wg,
+    txn, wg, wifi,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -72,6 +72,16 @@ pub const VERBS: &[Verb] = &[
     Verb {
         name: "hostd.undo",
         summary: "Put back what an applied write replaced",
+        tier: Tier::Write,
+    },
+    Verb {
+        name: "net.wifi.scan",
+        summary: "Scan for Wi-Fi networks on one device (iwd); drives the radio, so it needs a grant",
+        tier: Tier::Write,
+    },
+    Verb {
+        name: "net.wifi.connect",
+        summary: "Connect a Wi-Fi device to a network (iwd); put back unless connected in time",
         tier: Tier::Write,
     },
     Verb {
@@ -286,6 +296,31 @@ async fn serve(
             )
             .await
         }
+        "net.wifi.scan" => {
+            let request: wifi::ScanRequest = decode(body)?;
+            if !link::valid_link(&request.device) {
+                return Err(json!({"status":"bad_request","message":"device must be 1-15 characters of [A-Za-z0-9._-]"}));
+            }
+            let limits = vec![("links".to_owned(), request.device.clone())];
+            // Nothing durable changes, so no receipt; the writer lock keeps a
+            // scan from overlapping a connect on the same radio.
+            write(host, origin, peer, name, limits, move |_host, _origin, _grant| async move {
+                wifi::scan(&request.device).await
+            })
+            .await
+        }
+        "net.wifi.connect" => {
+            let request: wifi::ConnectRequest = decode(body)?;
+            let window = request.check()?;
+            let limits = vec![
+                ("links".to_owned(), request.device.clone()),
+                ("ssids".to_owned(), request.ssid.clone()),
+            ];
+            write(host, origin, peer, name, limits, move |host, origin, grant| {
+                wifi::connect(host, request, window, grant, origin)
+            })
+            .await
+        }
         "hostd.undo" => undo_verb(host, body, origin, peer).await,
         _ => Err(refuse("not_served", name)),
     }
@@ -396,6 +431,15 @@ async fn undo_verb(
             .and_then(Value::as_str)
             .map(|l| vec![("links".to_owned(), l.to_owned())])
             .unwrap_or_default(),
+        wifi::VERB => {
+            let get = |k: &str| receipt.summary.get(k).and_then(Value::as_str).map(str::to_owned);
+            match (get("link"), get("ssid")) {
+                (Some(device), Some(ssid)) => {
+                    vec![("links".to_owned(), device), ("ssids".to_owned(), ssid)]
+                }
+                _ => return Err(refuse("not_undoable", &receipt.verb)),
+            }
+        }
         _ => return Err(refuse("not_undoable", &receipt.verb)),
     };
     let verb = receipt.verb.clone();
@@ -648,6 +692,8 @@ mod tests {
                 "hostd.thaw",
                 "net.link.apply",
                 "hostd.undo",
+                "net.wifi.scan",
+                "net.wifi.connect",
                 "net.wg.apply"
             ]
         );
@@ -655,7 +701,7 @@ mod tests {
         assert_eq!(
             read_only,
             [
-                true, true, true, true, true, false, false, false, false, false
+                true, true, true, true, true, false, false, false, false, false, false, false
             ]
         );
     }

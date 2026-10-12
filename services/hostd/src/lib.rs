@@ -18,6 +18,7 @@ pub mod txn;
 pub mod varlink;
 pub mod wg;
 pub mod wgnl;
+pub mod wifi;
 
 use service::Host;
 use std::path::PathBuf;

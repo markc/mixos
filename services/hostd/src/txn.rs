@@ -10,7 +10,7 @@ use crate::{
     link,
     receipt::{self, Holds, Outcome, Receipt},
     service::Host,
-    wg,
+    wg, wifi,
 };
 use anyhow::Context;
 use serde_json::{Value, json};
@@ -135,6 +135,10 @@ pub async fn put_back(host: &Host, receipt: &Receipt) -> anyhow::Result<Put> {
     if receipt.verb == wg::VERB && !wg::owns(receipt).await? {
         return Ok(Put::LeftAlone);
     }
+    // A Wi-Fi station someone has since moved to another network is theirs.
+    if receipt.verb == wifi::VERB && !wifi::owns(receipt).await? {
+        return Ok(Put::LeftAlone);
+    }
     for change in &receipt.files {
         if change.holds()? == Holds::Installed {
             receipt::restore(std::slice::from_ref(change))?;
@@ -143,6 +147,7 @@ pub async fn put_back(host: &Host, receipt: &Receipt) -> anyhow::Result<Put> {
     match receipt.verb.as_str() {
         link::VERB => link::reapply(host, receipt).await?,
         wg::VERB => wg::reapply(host, receipt).await?,
+        wifi::VERB => wifi::reapply(host, receipt).await?,
         other => anyhow::bail!(
             "receipt {} is for {other}, which this hostd can't put back",
             receipt.id
@@ -195,6 +200,12 @@ pub async fn undo(host: &Host, receipt: &mut Receipt) -> Result<(), Value> {
                 return Err(json!({"status":"superseded","receipt":receipt.id,
                     "file": change.path}));
             }
+        }
+        // Wi-Fi writes no files: its change is current only while the
+        // station is still on the network it connected.
+        if receipt.verb == wifi::VERB && !wifi::current(receipt).await.map_err(internal)? {
+            return Err(json!({"status":"superseded","receipt":receipt.id,
+                "message":"the station is no longer on this network"}));
         }
         receipt.outcome = Outcome::Undoing;
         // From here a durable `undoing` receipt may exist, whatever fails:
