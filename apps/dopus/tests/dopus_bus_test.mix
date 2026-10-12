@@ -10,7 +10,9 @@
 -- UNKNOWN_VERB, theme.set AND the theme.* actions UNAVAILABLE headless).
 -- The P3 posture is pinned: EVERY `file.*` id (all six) stays FORBIDDEN —
 -- the file operations are keyboard + dialog only in the windowed app; the
--- Bus never mutates the filesystem, permanently. dopus.quit answers rc 0
+-- Bus never mutates the filesystem, permanently. A watcher on
+-- dopus-test.command.executed sees every accepted dopus.action, in order,
+-- with origin bus, and none of the refused ones. dopus.quit answers rc 0
 -- BEFORE the process exits
 -- (reply-then-exit: the client's send would time out otherwise).
 --
@@ -57,6 +59,11 @@ $dopus_pid = nil
 $alpha = $tmp .. "/work/alpha"
 $beta = $tmp .. "/work/beta"
 $gamma = $tmp .. "/work/gamma"
+-- dopus-test.command.executed, one JSON line per delivery, written by a
+-- `mix --serve` watcher; $expected is every accepted dopus.action id, in order.
+$watch_pid = nil
+$watch_out = $tmp .. "/executed.jsonl"
+$expected = []
 
 fn check($condition, $message)
   if not $condition then raise("DOPUS_BUS_TEST", $message) end
@@ -85,7 +92,22 @@ fn refused($line, $a, $code)
   return $r.reply
 end
 fn act($id)
-  return ok('dopus.action id=$a.id', {id: $id})
+  $reply = ok('dopus.action id=$a.id', {id: $id})
+  push($expected, $id)
+  return $reply
+end
+fn act_on($id, $pane)
+  $reply = ok('dopus.action id=$a.id pane=$a.pane', {id: $id, pane: $pane})
+  push($expected, $id)
+  return $reply
+end
+-- The executed runs the watcher has seen so far, minus its readiness probes.
+fn executed()
+  $rows = []
+  for each $line in lines(read_file($watch_out))
+    if $line != "" and not contains($line, $tag) then push($rows, json_parse($line)) end
+  end
+  return $rows
 end
 -- The pane's row in dopus.state (re-fetched each time: state only moves
 -- through verbs, and every verb here answers before the next call).
@@ -146,6 +168,28 @@ try
     and contains(join($desc.verbs, " "), "dopus.state"),
     "dopus.describe: " .. json_encode($desc))
 
+  -- 0. watch dopus-test.command.executed. The `on` line must name the full
+  -- topic, and subscribe() returns before the broker confirms it, so publish
+  -- probes (carrying $tag) until one comes back: then the watcher is live.
+  -- The name is quoted: a bare `on dopus-test.…` parses but never fires.
+  write_file($tmp .. "/watch.mix", "subscribe(\"dopus-test.command.executed\")\nwrite_file(env(\"WATCH_OUT\"), \"\")\n" ..
+    "on \"dopus-test.command.executed\"\n  append_file(env(\"WATCH_OUT\"), json_encode($event.args) .. \"\\n\")\nend\n")
+  write_file($tmp .. "/probe.mix", "publish(\"dopus-test.command.executed\", json_encode({probe: $1}))\nexit(if $rc == 0 then 0 else 1 end)\n")
+  $watch_pid = spawn([$mix, "--serve", $tmp .. "/watch.mix", "--name", "dopus-test-watch"],
+    {detach: true, clear_env: true, env: merge($env, {WATCH_OUT: $watch_out}),
+     stdout: {file: $tmp .. "/watch.log"}, stderr: "stdout"})
+  $watching = false
+  for each $i in range(1, 50)
+    if exists($watch_out) then
+      $_probe = run_argv([$mix, $tmp .. "/probe.mix", $tag], {clear_env: true, env: $env, timeout: 10})
+      sleep(0.2)
+      if contains(read_file($watch_out), $tag) then $watching = true; break end
+    else
+      sleep(0.2)
+    end
+  end
+  check($watching, "the executed-topic watcher never saw its own probe")
+
   -- 1. boot: two panes, both at home, pane 0 active, name ascending
   $info = ok('dopus.info', {})
   check($info.headless and $info.panes == 2, "dopus.info: " .. json_encode($info))
@@ -172,19 +216,19 @@ try
 
   -- 3b. Explicit right-pane navigation while LEFT stays active. Restore
   -- beta before continuing the legacy default-active checks below.
-  ok('dopus.action id="nav.parent" pane="right"', {})
+  act_on("nav.parent", "right")
   pane_is(1, $tmp .. "/work", "targeted parent right")
   $p0 = pane_is(0, $alpha, "targeted parent left untouched")
   check($p0.active and not pane(1).active, "targeted navigation stole focus")
-  ok('dopus.action id="nav.back" pane=1', {})
+  act_on("nav.back", 1)
   pane_is(1, $beta, "targeted back right")
   ok('dopus.open paths=[$a.g] pane="right"', {g: $gamma})
   pane_is(1, $gamma, "targeted open right")
   check(pane_is(0, $alpha, "targeted open left untouched").active, "targeted open stole focus")
   ok('dopus.open paths=[$a.b] pane=1', {b: $beta})
-  ok('dopus.action id="view.sort-size" pane="right"', {})
+  act_on("view.sort-size", "right")
   check(pane(1).sort == "size" and pane(0).sort == "name", "targeted sort leaked")
-  ok('dopus.action id="view.sort-name" pane="right"', {})
+  act_on("view.sort-name", "right")
   refused('dopus.action id="nav.parent" pane="other"', {}, "INVALID_ARGUMENT")
   refused('dopus.open paths=[] pane="right"', {}, "INVALID_ARGUMENT")
   $info = ok('dopus.info', {})
@@ -383,6 +427,29 @@ try
   end
   check($file_rows == 6, "expected 6 file.* rows in actions.list, got " .. to_string($file_rows))
 
+  -- 10c. dopus-test.command.executed carried every accepted dopus.action, in
+  -- order, from the bus, and nothing else: no refused action (unknown id,
+  -- bad pane, headless-unavailable, theme.*, file.*) and no other verb.
+  -- The publisher is async: wait for the count, then a beat for strays.
+  for each $i in range(1, 50)
+    if length(executed()) >= length($expected) then break end
+    sleep(0.1)
+  end
+  sleep(0.5)
+  $runs = executed()
+  $ids = []
+  for each $row in $runs
+    push($ids, $row.id)
+  end
+  check(length($expected) > 10, "only " .. to_string(length($expected)) .. " actions were recorded as accepted")
+  check(deep_eq($ids, $expected),"executed ids " .. json_encode($ids) .. ", wanted " .. json_encode($expected))
+  for each $k in range(0, length($runs) - 1)
+    $row = $runs[$k]
+    check($row.v == 1 and $row.origin == "bus" and $row.seq == $k + 1 and $row.dropped == 0
+      and $row.run == $runs[0].run and $row.run != "" and $row.at_ms > 0,
+      "executed run " .. to_string($k + 1) .. ": " .. json_encode($row))
+  end
+
   -- 11. dopus.quit answers rc 0 BEFORE the process exits (item 6: the reply
   -- arrives on this client's send — an exit-first shape would time out here)
   $q = ok('dopus.quit', {})
@@ -394,7 +461,7 @@ try
   end
   check($exited, "dopus still running 10 s after dopus.quit")
   $dopus_pid = nil
-  print("PASS dopus headless e2e: boot twin-pane state, dopus.open pane routing + extras ignored + tilde, F6, active-pane sort (law 5 toggle)/hidden/nav/selection, refusals (unknown action/verb, theme.set + theme.*), P3 posture (all six file.* FORBIDDEN, state shape unchanged, actions.list availability both ways: empty-dir disabled, selected enabled), single instance, reply-then-exit quit")
+  print("PASS dopus headless e2e: boot twin-pane state, dopus.open pane routing + extras ignored + tilde, F6, active-pane sort (law 5 toggle)/hidden/nav/selection, refusals (unknown action/verb, theme.set + theme.*), P3 posture (all six file.* FORBIDDEN, state shape unchanged, actions.list availability both ways: empty-dir disabled, selected enabled), single instance, executed topic (every accepted action in order, origin bus, seq from 1, refusals absent), reply-then-exit quit")
 catch $err
   for each $log in glob($tmp .. "/*.log")
     print("--- " .. $log .. "\n" .. read_file($log))
@@ -403,7 +470,7 @@ catch $err
 finally
   -- Cleanup raises NOTHING (run_argv, never run_argv_must): a cleanup
   -- failure must never mask the original error raised in the try body.
-  for each $child in [$dopus_pid, $noded_pid]
+  for each $child in [$watch_pid, $dopus_pid, $noded_pid]
     if $child != nil then
       $_kill = run_argv(["kill", "--", to_string($child)], {timeout: 10})
       -- Bounded exit wait before rm -rf: kill(1) returns before the
