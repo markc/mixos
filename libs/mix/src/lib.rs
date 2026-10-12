@@ -10,6 +10,7 @@ pub mod continuation;
 mod desktop_events;
 pub mod error;
 pub mod evaluator;
+pub mod fd_hygiene;
 mod fs_watch;
 pub mod interrupt;
 pub mod lexer;

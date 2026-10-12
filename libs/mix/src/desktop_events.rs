@@ -980,6 +980,7 @@ mod linux {
             // pactl/wpctl messages are translated; the parsers read English.
             .env("LC_ALL", "C")
             .process_group(0);
+        crate::fd_hygiene::seal(&mut command);
         if let Some(dir) = runtime_dir {
             command.env("XDG_RUNTIME_DIR", dir);
         }

@@ -581,26 +581,12 @@ fn supervise_task(
                 }
             }
             // A descriptor the shell itself inherited without close-on-exec
-            // (CI runners and some launchers hand them out) must not reach
-            // the task either. Mark everything above the task's own
-            // descriptors close-on-exec rather than closing it: std's
-            // exec-error pipe is up there and has to stay open until exec.
-            let first = if wants_result { TASK_RESULT_FD + 1 } else { 3 };
-            if libc::syscall(
-                libc::SYS_close_range,
-                first as libc::c_uint,
-                libc::c_uint::MAX,
-                libc::CLOSE_RANGE_CLOEXEC,
-            ) < 0
-            {
-                // Kernels before 5.11: the same, one descriptor at a time.
-                for fd in first..CLOEXEC_SWEEP_LIMIT {
-                    let flags = libc::fcntl(fd, libc::F_GETFD);
-                    if flags >= 0 && flags & libc::FD_CLOEXEC == 0 {
-                        libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC);
-                    }
-                }
-            }
+            // must not reach the task either (mix::fd_hygiene).
+            mix::fd_hygiene::cloexec_from(if wants_result {
+                TASK_RESULT_FD + 1
+            } else {
+                mix::fd_hygiene::FIRST_INHERITED
+            });
             Ok(())
         });
     }
@@ -849,9 +835,6 @@ fn interpreter_from(exe: std::io::Result<std::path::PathBuf>) -> std::path::Path
 /// The descriptor the child sees its result channel on. Above stderr, fixed so
 /// the flag value and the dup2 target cannot disagree.
 const TASK_RESULT_FD: RawFd = 3;
-
-/// How far the pre-5.11 fallback sweeps for inherited descriptors.
-const CLOEXEC_SWEEP_LIMIT: RawFd = 4096;
 
 /// The escalation ladder, driven entirely by events: one blocking wait on the
 /// channel with a deadline. No polling, no `try_wait` loop.

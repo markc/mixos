@@ -4065,6 +4065,8 @@ fn builtin_spawn(args: Vec<Value>) -> MixResult<Option<Value>> {
         .arg("-c")
         .arg(&cmd)
         .stdin(std::process::Stdio::null());
+    #[cfg(unix)]
+    crate::fd_hygiene::seal(&mut command);
 
     let stdout_path = args
         .get(1)
@@ -4414,6 +4416,8 @@ pub(crate) fn spawn_argv_native(
 
     let mut command = std::process::Command::new(&argv[0]);
     command.args(&argv[1..]).stdin(std::process::Stdio::null());
+    #[cfg(unix)]
+    crate::fd_hygiene::seal(&mut command);
     #[cfg(target_os = "linux")]
     if die_with_parent && owned_spawns::hosted_elsewhere() {
         return Err(opt_invalid(
@@ -7719,6 +7723,8 @@ fn builtin_run_stream(args: Vec<Value>) -> MixResult<Option<Value>> {
     // blocks until the child exits (correct for an interactive one-shot).
     let mut cmd = std::process::Command::new(&argv[0]);
     cmd.args(&argv[1..]);
+    #[cfg(unix)]
+    crate::fd_hygiene::seal(&mut cmd);
     // Same order as the captured-runner engine (`run_process`): clear first,
     // then layer the explicit pairs, so {clear_env: true, env: {…}} means
     // "exactly these" rather than "these, minus whatever the clear dropped".
@@ -9542,6 +9548,8 @@ fn run_pipeline_processes(
         let configured = (|| -> MixResult<std::process::Child> {
             let mut command = Command::new(&stage.argv[0]);
             command.args(&stage.argv[1..]);
+            #[cfg(unix)]
+            crate::fd_hygiene::seal(&mut command);
 
             if index == 0 {
                 match &stage.opts.stdin {
@@ -10466,6 +10474,8 @@ fn run_process(spec: &ProcSpec<'_>) -> MixResult<ProcOutcome> {
 
     let mut cmd = Command::new(&argv[0]);
     cmd.args(&argv[1..]);
+    #[cfg(unix)]
+    crate::fd_hygiene::seal(&mut cmd);
 
     let stdin_data = match stdin {
         ProcStdin::Null => {
