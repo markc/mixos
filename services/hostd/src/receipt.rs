@@ -92,7 +92,11 @@ impl FileChange {
                 file.read_to_end(&mut bytes).with_context(context)?;
                 let text = String::from_utf8(bytes)
                     .with_context(|| format!("{} is not UTF-8 text", path.display()))?;
-                (Some(text), meta.mode() & 0o7777, Some((meta.uid(), meta.gid())))
+                (
+                    Some(text),
+                    meta.mode() & 0o7777,
+                    Some((meta.uid(), meta.gid())),
+                )
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => (None, default_mode(), None),
             Err(e) => return Err(e).with_context(context),

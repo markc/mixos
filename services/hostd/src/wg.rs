@@ -14,8 +14,8 @@
 use crate::{
     caller::Origin,
     link::valid_link,
-    net::{OWNED_PREFIX, is_owned_path},
     neigh,
+    net::{OWNED_PREFIX, is_owned_path},
     networkd::{self, Networkd},
     receipt::{self, FileChange, Receipt},
     service::Host,
@@ -393,7 +393,8 @@ async fn handshakes(
         for (key, target) in peers {
             if !done(key, &state) {
                 let (link, target) = (name.to_owned(), *target);
-                let _ = tokio::task::spawn_blocking(move || neigh::nudge(&link, ifindex, target)).await;
+                let _ =
+                    tokio::task::spawn_blocking(move || neigh::nudge(&link, ifindex, target)).await;
             }
         }
         if tokio::time::Instant::now() + Duration::from_millis(500) >= deadline {
@@ -632,7 +633,10 @@ mod tests {
         assert_eq!(p.must_handshake.len(), 1);
         // The handshake probe goes to an address inside the peer's first
         // allowed entry.
-        assert_eq!(p.must_handshake[0].1, "10.99.0.2".parse::<IpAddr>().unwrap());
+        assert_eq!(
+            p.must_handshake[0].1,
+            "10.99.0.2".parse::<IpAddr>().unwrap()
+        );
         // The key never appears in what a caller sees.
         assert!(
             !summary(&p)
