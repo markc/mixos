@@ -7191,12 +7191,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "term"
+version = "0.4.0"
+dependencies = [
+ "buildinfo",
+ "bus",
+ "citizen",
+ "config",
+ "design",
+ "eframe",
+ "egui",
+ "egui-wgpu",
+ "egui_kittest",
+ "serde_json",
+ "settings",
+ "smithay-clipboard",
+ "term-core",
+ "term-render",
+ "tokio",
+ "toolkit",
+ "wgpu",
+]
+
+[[package]]
 name = "term-core"
 version = "0.1.1"
 dependencies = [
  "assets",
  "buildinfo",
  "bus",
+ "citizen",
  "config",
  "design",
  "ed25519-dalek",
