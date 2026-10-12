@@ -31,6 +31,17 @@ pub fn shown_path(path: &Path) -> String {
     shown_path_in(path, std::env::var_os("HOME").as_deref().map(Path::new))
 }
 
+/// `points` on screen, in image pixels at view `scale` (view points per
+/// image pixel), held inside the engine's `limits`.
+pub fn to_image(points: f32, scale: f32, limits: &std::ops::RangeInclusive<f32>) -> f32 {
+    let scale = if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
+    };
+    (points / scale).clamp(*limits.start(), *limits.end())
+}
+
 /// [`shown_path`] with `home` given.
 pub fn shown_path_in(path: &Path, home: Option<&Path>) -> String {
     match home
@@ -341,6 +352,10 @@ pub struct App {
     pub inks: [Ink; 6],
     /// Command ids Bus verbs ran, for `<service>.command.executed`.
     pub ran: Vec<&'static str>,
+    /// View points per image pixel as the picture was last laid out (1
+    /// until it is): a new object's width and text size are converted
+    /// with it.
+    pub view_scale: f32,
     job: Option<Job>,
     pending: Option<Pending>,
     effects: Vec<Effect>,
@@ -384,6 +399,7 @@ impl App {
             comp: "comp".into(),
             inks,
             ran: Vec::new(),
+            view_scale: 1.0,
             job: None,
             pending: None,
             effects: Vec::new(),
@@ -887,22 +903,53 @@ impl App {
         self.effects.push(Effect::Refresh);
     }
 
-    /// The ink `colour` for new objects, and for the selected one.
+    /// The ink `colour` for new objects, and for the selected one (which
+    /// keeps its width).
     pub fn set_colour(&mut self, colour: [u8; 4]) {
         if self.modal() {
             return;
         }
         self.ui.colour = colour;
-        self.restyle();
+        self.restyle(false);
     }
 
-    /// The stroke width for new objects, and for the selected one.
+    /// The stroke width (a preset, in view points) for new objects, and
+    /// for the selected one.
     pub fn set_width(&mut self, width: f32) {
         if self.modal() || !(0.5..=128.0).contains(&width) {
             return;
         }
         self.ui.width = width;
-        self.restyle();
+        self.restyle(true);
+    }
+
+    /// How many view points one image pixel takes on screen now; the view
+    /// reports it as it lays the picture out.
+    pub fn set_view_scale(&mut self, scale: f32) {
+        if scale.is_finite() && scale > 0.0 {
+            self.view_scale = scale;
+        }
+    }
+
+    /// The width a new or restyled object takes, in image pixels: the
+    /// chosen width as it shows on screen at the current view scale, so a
+    /// stroke looks the same whatever the image's size.
+    pub fn stroke_width(&self) -> f32 {
+        to_image(
+            self.ui.width,
+            self.view_scale,
+            &annotation::document::WIDTH,
+        )
+    }
+
+    /// The text size a new text box or marker takes, in image pixels (as
+    /// [`App::stroke_width`]).
+    pub fn text_px(&self) -> f32 {
+        to_image(
+            self.ui.text_size,
+            self.view_scale,
+            &annotation::document::TEXT_SIZE,
+        )
     }
 
     pub fn set_text_size(&mut self, size: f32) {
@@ -923,18 +970,24 @@ impl App {
         }
     }
 
-    fn restyle(&mut self) {
+    /// Give the selected object the ink and, with `width`, the chosen
+    /// width converted as for a new object; otherwise it keeps its own.
+    fn restyle(&mut self, width: bool) {
         if !self.editable() {
             return;
         }
-        let (colour, width) = (self.ui.colour, self.ui.width);
+        let colour = self.ui.colour;
+        let new_width = width.then(|| self.stroke_width());
         if let (Some(id), Some(doc)) = (self.ui.selected, self.document.as_mut())
-            && doc
-                .object(id)
-                .is_some_and(|o| o.shape.colour != colour || o.shape.width != width)
-            && doc.restyle(id, colour, width).is_ok()
+            && let Some((had_colour, had_width)) =
+                doc.object(id).map(|o| (o.shape.colour, o.shape.width))
         {
-            self.changed();
+            let width = new_width.unwrap_or(had_width);
+            if (had_colour != colour || had_width != width)
+                && doc.restyle(id, colour, width).is_ok()
+            {
+                self.changed();
+            }
         }
     }
 
@@ -967,7 +1020,7 @@ impl App {
                     return;
                 }
                 shape.text = Some(self.ui.text.clone());
-                shape.size = Some(self.ui.text_size);
+                shape.size = Some(self.text_px());
             }
             Kind::Number => {
                 shape.number = self.document.as_ref().and_then(Document::next_number);
@@ -975,7 +1028,7 @@ impl App {
                     self.status = self.label("marker-limit");
                     return;
                 }
-                shape.size = Some(self.ui.text_size);
+                shape.size = Some(self.text_px());
             }
             _ => {}
         }
@@ -2130,6 +2183,77 @@ mod tests {
             blue,
             "width undone first"
         );
+    }
+
+    #[test]
+    fn a_width_looks_the_same_on_screen_whatever_the_image_size() {
+        // A 4K shot and a small region in the same canvas: the chosen width
+        // and text size show at the same view-point size on both.
+        for (w, h) in [(3840, 2160), (1513, 1023)] {
+            let mut a = app();
+            a.document = Some(Document::new(RgbaImage::new(w, h)).unwrap());
+            let vp = annotation::Viewport::fit((w, h), (1040.0, 590.0), 1.0, a.ui.pan);
+            a.set_view_scale(vp.scale);
+            for (_, _, width) in WIDTHS {
+                a.set_width(width);
+                assert!((a.stroke_width() * vp.scale - width).abs() < 1e-3, "{w}x{h}");
+            }
+            for (_, _, size) in SIZES {
+                a.set_text_size(size);
+                assert!((a.text_px() * vp.scale - size).abs() < 1e-3, "{w}x{h}");
+            }
+        }
+        // The 4K image needs more than the old 128 / 256 pixel limits.
+        let mut a = app();
+        a.set_view_scale(0.25);
+        a.set_width(WIDTHS[3].2);
+        a.set_text_size(SIZES[3].2);
+        assert_eq!((a.stroke_width(), a.text_px()), (64.0, 256.0));
+        a.set_view_scale(0.1);
+        assert_eq!((a.stroke_width(), a.text_px()), (160.0, 640.0));
+        // Past the engine's limits the value is held inside them.
+        a.set_view_scale(0.001);
+        assert_eq!((a.stroke_width(), a.text_px()), (512.0, 1024.0));
+        a.set_view_scale(100.0);
+        assert_eq!((a.stroke_width(), a.text_px()), (0.5, 8.0));
+        // A nonsense scale is ignored.
+        a.set_view_scale(f32::NAN);
+        a.set_view_scale(0.0);
+        assert_eq!(a.view_scale, 100.0);
+    }
+
+    #[test]
+    fn new_objects_take_the_converted_width_and_old_ones_keep_theirs() {
+        let mut a = with_doc();
+        a.set_view_scale(0.5);
+        a.add_shape(Shape::new(
+            Kind::Rectangle,
+            vec![Point { x: 2.0, y: 2.0 }, Point { x: 20.0, y: 20.0 }],
+            a.ui.colour,
+            a.stroke_width(),
+        ));
+        let first = a.ui.selected.unwrap();
+        let width = |a: &App, id| a.document.as_ref().unwrap().object(id).unwrap().shape.width;
+        assert_eq!(width(&a, first), 8.0, "medium (4) at half scale");
+        // Text takes the converted size.
+        a.set_text("Note".into());
+        let mut text = rect();
+        text.kind = Kind::Text;
+        a.add_shape(text);
+        let note = a.ui.selected.unwrap();
+        let size = a.document.as_ref().unwrap().object(note).unwrap().shape.size;
+        assert_eq!(size, Some(48.0), "medium text (24) at half scale");
+        // Zooming in changes nothing already drawn, and a new ink keeps
+        // the selection's width.
+        a.set_view_scale(2.0);
+        a.select(Some(first));
+        a.set_colour(a.inks[2].rgba);
+        assert_eq!(width(&a, first), 8.0);
+        // A new width restyles the selection converted at today's scale.
+        a.set_width(WIDTHS[3].2);
+        assert_eq!(width(&a, first), 8.0, "heavy (16) at double scale");
+        a.set_width(WIDTHS[0].2);
+        assert_eq!(width(&a, first), 1.0, "thin (2) at double scale");
     }
 
     #[test]

@@ -299,13 +299,19 @@ nothing else held:</p>
 white), the <strong>stroke width</strong>, and for text and markers the <strong>text size</strong>.
 Changing the ink or width while an annotation is selected changes that
 annotation too.</p>
+<p>Widths and text sizes are what you see: a Medium line is the same
+thickness on screen whether the shot is a 4K screen shown scaled down or a
+small region shown full size. Each annotation keeps the size it was drawn
+at in the image's own pixels, so zooming later makes it bigger or smaller
+with the picture, and changing only the ink never changes its width. To
+an agent, <code>width</code> and <code>size</code> are in the image's pixels (up to 512 and 1024).</p>
 <p>Delete or Backspace removes the selected annotation, and Escape deselects
 it. Undo is Ctrl+Z and
 Redo is Ctrl+Shift+Z or Ctrl+Y. Ctrl with + and − zooms, Ctrl+0 fits the
 picture to the window, the wheel scrolls, and a middle-button drag pans.</p>
 <h2 id="saving">Saving</h2>
-<p>Once there is a picture, <strong>Save</strong> and <strong>Copy image</strong> sit at the right end
-of the bar at the top; Save's tip names the folder it saves to.</p>
+<p>Once there is a picture, <strong>Copy</strong> and <strong>Save</strong> buttons sit at the right
+end of the bar at the top; Save's tip names the folder it saves to.</p>
 <ul>
 <li><strong>Save</strong> (Ctrl+S) writes the picture straight into
 <strong>Pictures/Screenshots</strong>, no questions asked, as

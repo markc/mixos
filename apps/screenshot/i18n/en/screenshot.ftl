@@ -23,6 +23,7 @@ save = Save
 save-tip = Save to { $folder }
 save-as = Save As…
 copy = Copy image
+copy-short = Copy
 quit = Quit
 
 # Edit.

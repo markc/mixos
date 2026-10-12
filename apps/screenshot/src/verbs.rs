@@ -70,7 +70,7 @@ pub fn takes_nothing(verb: &str) -> bool {
 
 /// The app's own surface (the window adds the drive verbs).
 pub fn describe() -> Value {
-    let shape = "{kind: arrow|line|rectangle|ellipse|pen|highlighter|redact|text|number, points: [{x,y}…] in original pixels (2, or 2..16384 for pen and highlighter), colour: [r,g,b,a], width: 0.5..128, text?: string (text), size?: 8..256 (text, number), number?: 1..9999 (number)}";
+    let shape = "{kind: arrow|line|rectangle|ellipse|pen|highlighter|redact|text|number, points: [{x,y}…] in original pixels (2, or 2..16384 for pen and highlighter), colour: [r,g,b,a], width: 0.5..512 original pixels, text?: string (text), size?: 8..1024 original pixels (text, number), number?: 1..9999 (number)}";
     json!({"schema": SCHEMA, "app_id": crate::APP_ID, "verbs": [
         {"name":"HELP","description":"List every verb","read_only":true},
         {"name":"app.describe","description":"Describe the app and every verb with its arguments","read_only":true},

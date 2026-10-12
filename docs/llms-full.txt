@@ -3110,6 +3110,13 @@ white), the **stroke width**, and for text and markers the **text size**.
 Changing the ink or width while an annotation is selected changes that
 annotation too.
 
+Widths and text sizes are what you see: a Medium line is the same
+thickness on screen whether the shot is a 4K screen shown scaled down or a
+small region shown full size. Each annotation keeps the size it was drawn
+at in the image's own pixels, so zooming later makes it bigger or smaller
+with the picture, and changing only the ink never changes its width. To
+an agent, `width` and `size` are in the image's pixels (up to 512 and 1024).
+
 Delete or Backspace removes the selected annotation, and Escape deselects
 it. Undo is Ctrl+Z and
 Redo is Ctrl+Shift+Z or Ctrl+Y. Ctrl with + and − zooms, Ctrl+0 fits the
@@ -3117,8 +3124,8 @@ picture to the window, the wheel scrolls, and a middle-button drag pans.
 
 ## Saving
 
-Once there is a picture, **Save** and **Copy image** sit at the right end
-of the bar at the top; Save's tip names the folder it saves to.
+Once there is a picture, **Copy** and **Save** buttons sit at the right
+end of the bar at the top; Save's tip names the folder it saves to.
 
 - **Save** (Ctrl+S) writes the picture straight into
   **Pictures/Screenshots**, no questions asked, as

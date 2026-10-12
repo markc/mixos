@@ -34,6 +34,8 @@ pub enum UiEvent {
     Select(Option<u64>),
     Pan(f32, f32),
     Zoom(f32),
+    /// The picture's view scale (view points per image pixel) changed.
+    Scale(f32),
     Text(String),
     Path(String),
     Window(Option<Target>),
@@ -299,21 +301,30 @@ fn options(
             events.push(UiEvent::Text(text));
         }
     }
-    // Save and Copy at the right end, through their commands (enablement
-    // and shortcuts stay in the registry). Save's tip names the folder.
+    // Save and Copy at the right end, labelled, through their commands
+    // (enablement and shortcuts stay in the registry). Save's tip names
+    // the folder.
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        if let Some(save) = commands.get("file.save") {
-            let shortcut = save.shortcut.map(|s| ui.ctx().format_shortcut(&s));
-            let tip = tooltip::text(
-                &label_with("save-tip", &[("folder", screenshots_folder())]),
-                shortcut.as_deref(),
-            );
-            let button = IconButton::new(Icon::Save).tooltip(tip);
-            if ui.add_enabled((save.enabled)(app), button).clicked() {
-                events.push(UiEvent::Command("file.save", Origin::Ui));
+        for (id, text) in [("file.save", "save"), ("file.copy", "copy-short")] {
+            let Some(command) = commands.get(id) else {
+                continue;
+            };
+            let tip = if id == "file.save" {
+                let shortcut = command.shortcut.map(|s| ui.ctx().format_shortcut(&s));
+                tooltip::text(
+                    &label_with("save-tip", &[("folder", screenshots_folder())]),
+                    shortcut.as_deref(),
+                )
+            } else {
+                tooltip::for_command(ui.ctx(), command, strings)
+            };
+            let response = ui
+                .add_enabled((command.enabled)(app), PushButton::secondary(label(text)))
+                .on_hover_text(tip);
+            if response.clicked() {
+                events.push(UiEvent::Command(id, Origin::Ui));
             }
         }
-        command_button(ui, app, commands, strings, "file.copy", false, events);
     });
 }
 
@@ -425,6 +436,10 @@ fn picture(
         app.ui.zoom,
         app.ui.pan,
     );
+    // New objects take the chosen width as it shows at this scale.
+    if (vp.scale - app.view_scale).abs() > f32::EPSILON * vp.scale.max(1.0) {
+        events.push(UiEvent::Scale(vp.scale));
+    }
     let image_rect = Rect::from_min_size(
         pos2(rect.min.x + vp.origin.x, rect.min.y + vp.origin.y),
         vec2(vp.width, vp.height),
@@ -533,7 +548,7 @@ fn picture(
 
 /// A click: pick with Select; drop a marker or a text box at the point.
 fn click(app: &App, doc: &annotation::Document, p: Point, vp: Viewport, events: &mut Vec<UiEvent>) {
-    let size = app.ui.text_size;
+    let size = app.text_px();
     match app.ui.tool {
         Tool::Select => events.push(UiEvent::Select(doc.hit(p, PICK / vp.scale))),
         Tool::Draw(Kind::Number) => {
@@ -551,7 +566,7 @@ fn click(app: &App, doc: &annotation::Document, p: Point, vp: Viewport, events: 
                     },
                 ],
                 app.ui.colour,
-                app.ui.width,
+                app.stroke_width(),
             )));
         }
         Tool::Draw(Kind::Text) => {
@@ -575,7 +590,7 @@ fn click(app: &App, doc: &annotation::Document, p: Point, vp: Viewport, events: 
                     },
                 ],
                 app.ui.colour,
-                app.ui.width,
+                app.stroke_width(),
             )));
         }
         _ => {}
@@ -619,7 +634,7 @@ fn finish(
                 kind,
                 points,
                 app.ui.colour,
-                app.ui.width,
+                app.stroke_width(),
             )));
         }
     }
@@ -660,7 +675,7 @@ fn guide(
     let b = view(*drag.points.last().expect("two points"));
     let [r, g, bl, al] = app.ui.colour;
     let ink = Color32::from_rgba_unmultiplied(r, g, bl, al);
-    let width = (app.ui.width * vp.scale).max(1.0);
+    let width = (app.stroke_width() * vp.scale).max(1.0);
     let stroke = Stroke::new(width, ink);
     let boxed = Rect::from_two_pos(a, b);
     match app.ui.tool {
@@ -701,7 +716,7 @@ fn guide(
             painter.line_segment([a, b], stroke);
             if app.ui.tool == Tool::Draw(Kind::Arrow) {
                 let angle = (b.y - a.y).atan2(b.x - a.x);
-                let length = (app.ui.width * 4.0).max(12.0) * vp.scale;
+                let length = (app.stroke_width() * 4.0).max(12.0) * vp.scale;
                 for offset in [-0.5_f32, 0.5] {
                     let tip = pos2(
                         b.x - length * (angle + offset).cos(),
@@ -835,6 +850,7 @@ pub fn apply(app: &mut App, commands: &Registry<App>, events: Vec<UiEvent>) {
             UiEvent::Select(id) => app.select(id),
             UiEvent::Pan(dx, dy) => app.pan(dx, dy),
             UiEvent::Zoom(factor) => app.zoom_by(factor),
+            UiEvent::Scale(scale) => app.set_view_scale(scale),
             UiEvent::Text(text) => app.set_text(text),
             UiEvent::Path(path) => app.set_path(path),
             UiEvent::Window(window) => app.choose_window(window),
