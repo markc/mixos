@@ -2581,7 +2581,6 @@ fn p4_a_task_inherits_only_what_it_was_given() {
         for expected in [0, 1, 2] {
             assert!(open.contains(&expected), "fd {expected} missing: {listed}");
         }
-        eprintln!("PROBE task fds: {listed:?}");
         assert!(
             !open.contains(&STRAY_FD),
             "the shell's inherited fd {STRAY_FD} leaked into the task: {listed}"
