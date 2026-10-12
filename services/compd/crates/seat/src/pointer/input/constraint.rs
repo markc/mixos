@@ -54,12 +54,13 @@ pub fn break_constraint(_loop: &mut Loop) {
 fn sync(_loop: &mut Loop) -> bool {
     let hand = hand_active(_loop);
     if hand != _loop.state.seat.constraints_suspended
-        && let Some(pointer) = _loop.state.seat.seat.get_pointer() {
-            match hand {
-                true => _loop.state.suspend_constraints(&pointer),
-                false => _loop.state.resume_constraints(&pointer),
-            }
+        && let Some(pointer) = _loop.state.seat.seat.get_pointer()
+    {
+        match hand {
+            true => _loop.state.suspend_constraints(&pointer),
+            false => _loop.state.resume_constraints(&pointer),
         }
+    }
     hand
 }
 

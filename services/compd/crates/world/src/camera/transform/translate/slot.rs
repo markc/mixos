@@ -219,9 +219,10 @@ pub fn resize_due(window: &Window) -> Option<Size<i32, Logical>> {
 /// clamped size, or the safety timeout).
 pub fn mark_resize_settling(window: &Window) {
     if let Some(rs) = window.user_data().get::<ResizeState>()
-        && let Some(p) = rs.0.lock().unwrap().as_mut() {
-            p.settle_at = Some(Instant::now());
-        }
+        && let Some(p) = rs.0.lock().unwrap().as_mut()
+    {
+        p.settle_at = Some(Instant::now());
+    }
 }
 
 /// Whether `window` should currently render **stretched** to its slot. The stretch references the

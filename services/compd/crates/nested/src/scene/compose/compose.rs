@@ -166,9 +166,9 @@ pub fn draw(state: &mut Loop, context: &mut WinitRenderContext) {
     if offscreen
         && let Err(err) =
             crate::frame::submit::submit::make_surface_current(&mut context.winit_backend)
-        {
-            warn!("winit: window surface not made current after an offscreen render ({err})");
-        }
+    {
+        warn!("winit: window surface not made current after an offscreen render ({err})");
+    }
     match damage {
         Some(damage) => {
             match crate::frame::submit::submit::submit(&mut context.winit_backend, &damage) {

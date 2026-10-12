@@ -17,7 +17,7 @@ pub struct SpaceState {
 impl SpaceState {
     pub fn default_logical(&self) -> Rectangle<i32, Logical> {
         let compositor_output = self.state.outputs().next().unwrap();
-        
+
         self.state.output_geometry(compositor_output).unwrap()
     }
 
@@ -43,18 +43,16 @@ impl SpaceState {
         let compositor_output = self.state.outputs().next().unwrap();
         let compositor_output_geometry = self.state.output_geometry(compositor_output).unwrap();
 
-        
         compositor_output.current_scale()
     }
 
     pub fn default_output(&self) -> &Output {
-        
         (self.state.outputs().next().unwrap()) as _
     }
 
     pub fn default_output_geometry(&self) -> Rectangle<i32, Logical> {
         let compositor_output = self.state.outputs().next().unwrap();
-        
+
         self.state.output_geometry(compositor_output).unwrap()
     }
 

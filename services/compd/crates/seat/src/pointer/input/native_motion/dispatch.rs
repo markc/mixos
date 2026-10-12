@@ -25,9 +25,10 @@ pub fn dispatch(
     let carried = _loop.state.toplevel_drag.carried_surface();
     let under = surface_under_filtered(_loop, position_normalized, &|hit| {
         if let (Some(carried), Some(window)) = (carried.as_ref(), hit.window())
-            && find::is_surface(window, carried) {
-                return false;
-            }
+            && find::is_surface(window, carried)
+        {
+            return false;
+        }
         if let Some(window) = hit.window() {
             return window.visible(_loop);
         };

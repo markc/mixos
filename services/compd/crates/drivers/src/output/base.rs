@@ -302,9 +302,10 @@ impl TeleportLayout {
                 Edge::Top => (q.y < ey).then(|| (ey - (q.y + q.h)).max(0.0)),
             };
             if let Some(d) = dist
-                && best.is_none_or(|(_, bd)| d < bd) {
-                    best = Some((q, d));
-                }
+                && best.is_none_or(|(_, bd)| d < bd)
+            {
+                best = Some((q, d));
+            }
         }
 
         // Cyclic wrap: nothing across that edge → re-enter from the far side of the

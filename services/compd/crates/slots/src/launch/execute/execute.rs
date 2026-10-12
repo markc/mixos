@@ -64,10 +64,13 @@ pub fn execute(req: &LaunchRequest, scope: bool) -> LaunchOutcome {
         Err(e) => return fail(req, format!("spawn failed: {e}")),
     };
 
-    if scope && cfg!(feature = "desktop-dbus") && !super::super::scope::containment::enabled()
-        && let Err(e) = adopt_into_scope(pid, &req.unit) {
-            warn!("scope adoption failed for pid {pid} ({}): {e}", req.unit);
-        }
+    if scope
+        && cfg!(feature = "desktop-dbus")
+        && !super::super::scope::containment::enabled()
+        && let Err(e) = adopt_into_scope(pid, &req.unit)
+    {
+        warn!("scope adoption failed for pid {pid} ({}): {e}", req.unit);
+    }
 
     LaunchOutcome {
         correlation: req.correlation,

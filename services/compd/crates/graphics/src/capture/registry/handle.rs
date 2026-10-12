@@ -175,9 +175,10 @@ impl Drop for HandleInner {
             return;
         }
         if let Some(reg) = self.registry.upgrade()
-            && let Ok(mut reg) = reg.lock() {
-                reg.decref(self.entry_id);
-            }
+            && let Ok(mut reg) = reg.lock()
+        {
+            reg.decref(self.entry_id);
+        }
     }
 }
 

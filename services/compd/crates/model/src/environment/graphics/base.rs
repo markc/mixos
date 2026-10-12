@@ -11,8 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::RwLock;
 
 /// Which anti-aliasing technique the textured (window + UI) arm uses.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum AaMethod {
     /// No AA — the plain composite path.
     #[default]
@@ -47,7 +46,6 @@ impl AaMethod {
         matches!(self, AaMethod::Trilinear | AaMethod::Anisotropic)
     }
 }
-
 
 /// A single tunable knob whose value scales with how far the view is zoomed out:
 /// `value = base + per_zoom · zoom_out`, where `zoom_out = 1/zoom − 1` (clamped).

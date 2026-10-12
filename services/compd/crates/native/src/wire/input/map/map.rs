@@ -66,9 +66,10 @@ pub fn touch_output(state: &Loop, device: &Device) -> Option<String> {
         .find(|p| p.touch_device.as_deref() == Some(id.as_str()))
         .and_then(|p| p.identity.clone());
     if let Some(edid) = claimed
-        && space.state.outputs().any(|o| output_key(o) == edid) {
-            return Some(edid);
-        }
+        && space.state.outputs().any(|o| output_key(o) == edid)
+    {
+        return Some(edid);
+    }
 
     // 1. Explicit libinput output association.
     if let Some(name) = device.output_name()
@@ -77,9 +78,9 @@ pub fn touch_output(state: &Loop, device: &Device) -> Option<String> {
             .outputs()
             .find(|o| o.name().as_str() == name.as_ref())
             .map(output_key)
-        {
-            return Some(k);
-        }
+    {
+        return Some(k);
+    }
 
     // 2. Physical size (mm) within tolerance on both axes.
     if let Some((dw, dh)) = device.size().filter(|&(w, h)| w > 0.0 && h > 0.0)
@@ -94,9 +95,9 @@ pub fn touch_output(state: &Loop, device: &Device) -> Option<String> {
                     && (1.0 - s.h as f64 / dh).abs() <= MAX_SIZE_DIFF
             })
             .map(output_key)
-        {
-            return Some(k);
-        }
+    {
+        return Some(k);
+    }
 
     // 3. EDID identity embedded in the device name (make / model / serial).
     let dname = device.name().to_lowercase();

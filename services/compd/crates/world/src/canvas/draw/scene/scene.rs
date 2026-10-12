@@ -132,9 +132,10 @@ where
             .registry
             .as_ref()
             .and_then(|r| r.space_of(id))
-            && let Some(elem) = world_ui(state, uuid, &ui_transform, size_f64) {
-                content.push(ContentItem::UI(elem));
-            }
+            && let Some(elem) = world_ui(state, uuid, &ui_transform, size_f64)
+        {
+            content.push(ContentItem::UI(elem));
+        }
     }
     // Defensive: any placed window not in the order draws at the bottom.
     let leftovers: Vec<Window> = by_uuid

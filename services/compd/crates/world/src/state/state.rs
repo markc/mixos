@@ -403,10 +403,10 @@ impl Orchestrator {
                     .get_mut(id)
                     .storage_mut()
                     .try_get_mut(&crate::seat::system::pointer::base::POINTER_MUT)
-                {
-                    pointer.motion = motion;
-                    pointer.edge_hold = None;
-                }
+            {
+                pointer.motion = motion;
+                pointer.edge_hold = None;
+            }
             // The outgoing world's off-thread background panes are now nobody's:
             // per-pane targets, a `history` image and a persistent ping-pong pair
             // are the largest thing that feature owns, and without a deterministic

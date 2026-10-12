@@ -80,10 +80,11 @@ impl Executor {
         }
 
         if matches!(LAUNCH_DISPATCH, LaunchDispatch::OffThread)
-            && let Some(worker) = &self.worker {
-                worker.submit(request);
-                return None;
-            }
+            && let Some(worker) = &self.worker
+        {
+            worker.submit(request);
+            return None;
+        }
         let outcome = execute(&request, self.scope);
         let _ = self.outcome_tx.send(outcome.clone());
         Some(outcome)

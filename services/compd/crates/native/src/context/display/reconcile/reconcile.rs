@@ -285,9 +285,10 @@ fn pref_mode(drm: &DrmDevice, info: &connector::Info) -> Option<ModeInfo> {
 /// present, else the first connected — exactly the startup `connector.select` policy.
 fn pick_target(drm: &DrmDevice, connected: &[connector::Info]) -> Option<connector::Info> {
     if let Some(key) = preferred_key()
-        && let Some(c) = connected.iter().find(|c| identity_key(drm, c) == key) {
-            return Some(c.clone());
-        }
+        && let Some(c) = connected.iter().find(|c| identity_key(drm, c) == key)
+    {
+        return Some(c.clone());
+    }
     connected.first().cloned()
 }
 

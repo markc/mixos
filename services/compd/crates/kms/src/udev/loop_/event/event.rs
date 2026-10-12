@@ -13,15 +13,8 @@ pub enum DeviceEvent {
 
 pub fn decode(event: UdevEvent) -> DeviceEvent {
     match event {
-        UdevEvent::Added { device_id, path } => DeviceEvent::Added {
-            device_id,
-            path,
-        },
-        UdevEvent::Changed { device_id } => DeviceEvent::Changed {
-            device_id,
-        },
-        UdevEvent::Removed { device_id } => DeviceEvent::Removed {
-            device_id,
-        },
+        UdevEvent::Added { device_id, path } => DeviceEvent::Added { device_id, path },
+        UdevEvent::Changed { device_id } => DeviceEvent::Changed { device_id },
+        UdevEvent::Removed { device_id } => DeviceEvent::Removed { device_id },
     }
 }

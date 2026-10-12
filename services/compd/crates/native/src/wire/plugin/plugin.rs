@@ -80,9 +80,9 @@ pub fn register(
             if reconcile
                 && let Some(change) =
                     crate::context::display::reconcile::reconcile::reconcile(state, &ctx_rc)
-                {
-                    apply_output_change(state, change);
-                }
+            {
+                apply_output_change(state, change);
+            }
             // Refresh the rim's display snapshot after any topology change so the
             // lid policy sees current external/internal presence.
             let active = ctx_rc.borrow().pipe().connector;

@@ -130,9 +130,10 @@ pub fn resolve(client_pid: i32) -> Option<String> {
     // 1. Activation token. An exact match on a string we generated for one
     //    launch, so a hit cannot be a coincidence.
     if let Some(token) = env_token(pid0)
-        && let Some((_, _, mint)) = live.iter().find(|(_, t, _)| !t.is_empty() && *t == token) {
-            return Some(mint.clone());
-        }
+        && let Some((_, _, mint)) = live.iter().find(|(_, t, _)| !t.is_empty() && *t == token)
+    {
+        return Some(mint.clone());
+    }
 
     // 2. Pid tree. Only claims that HAVE a pid can answer here; a pidless one is
     //    reachable through the token alone, which is the whole reason it is kept.

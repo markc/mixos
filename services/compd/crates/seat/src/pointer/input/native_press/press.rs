@@ -150,9 +150,9 @@ pub fn apply_focus(
             .registry
             .as_ref()
             .is_some_and(|r| r.is_keyboard_transparent(*handle))
-        {
-            return;
-        }
+    {
+        return;
+    }
 
     // A press on an override-redirect X11 window the compositor manages as a
     // window (a menu or tooltip with no popup parent) is not a focus

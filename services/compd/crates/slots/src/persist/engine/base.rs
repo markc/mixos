@@ -57,14 +57,15 @@ pub fn sync(world: Uuid, storage: &Storage, entries: &[&'static PersistEntry]) {
 
     while let Ok(msg) = done.try_recv() {
         if let Some(s) = ledger.get_mut(&(msg.world, msg.key))
-            && s.in_flight == Some(msg.epoch) {
-                s.in_flight = None;
-                if msg.ok {
-                    s.cache = s.pending.take();
-                } else {
-                    s.pending = None;
-                }
+            && s.in_flight == Some(msg.epoch)
+        {
+            s.in_flight = None;
+            if msg.ok {
+                s.cache = s.pending.take();
+            } else {
+                s.pending = None;
             }
+        }
     }
 
     for entry in entries {

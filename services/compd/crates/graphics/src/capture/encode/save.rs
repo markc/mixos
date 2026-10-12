@@ -31,9 +31,10 @@ pub fn default_dir(video: bool) -> PathBuf {
         "XDG_PICTURES_DIR"
     };
     if let Ok(d) = std::env::var(key)
-        && !d.is_empty() {
-            return PathBuf::from(d);
-        }
+        && !d.is_empty()
+    {
+        return PathBuf::from(d);
+    }
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
     PathBuf::from(home).join(if video { "Videos" } else { "Pictures" })
 }

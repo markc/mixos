@@ -146,9 +146,10 @@ pub fn button<I: InputBackend>(event: &<I as InputBackend>::PointerButtonEvent, 
                     _loop.inner.output_views_mut(),
                     cursor_phys,
                     resize,
-                ) {
-                    return;
-                }
+                )
+            {
+                return;
+            }
         }
         ButtonState::Released => {
             if _loop.inner.output_views().separator_drag.is_some() {

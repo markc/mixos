@@ -129,11 +129,12 @@ impl ReencodeJob {
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
                 if let Some(v) = line.strip_prefix("out_time_us=")
                     && total_us > 0
-                        && let Ok(us) = v.trim().parse::<i64>() {
-                            let ppm = ((us.max(0) as i128 * 1_000_000) / total_us as i128)
-                                .clamp(0, 1_000_000) as u32;
-                            shared.store(ppm, Ordering::Relaxed);
-                        }
+                    && let Ok(us) = v.trim().parse::<i64>()
+                {
+                    let ppm = ((us.max(0) as i128 * 1_000_000) / total_us as i128)
+                        .clamp(0, 1_000_000) as u32;
+                    shared.store(ppm, Ordering::Relaxed);
+                }
             }
         });
 

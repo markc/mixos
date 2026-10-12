@@ -826,9 +826,10 @@ pub fn surface_under_filtered_cx(
                 &ui_transform,
                 ui_output_size,
                 filter,
-            ) {
-                return Some(hit);
-            }
+            )
+        {
+            return Some(hit);
+        }
     }
 
     // 6-7. Bottom → Background

@@ -363,7 +363,7 @@ impl AudioController {
                 })
             });
         }
-        
+
         out.borrow().clone()
     }
 
@@ -475,7 +475,7 @@ impl AudioController {
                 })
             });
         }
-        
+
         out.borrow_mut().take().ok_or(AudioError::NoDefaultSink)
     }
 
@@ -493,7 +493,7 @@ impl AudioController {
                 })
             });
         }
-        
+
         out.borrow_mut().take().ok_or(AudioError::NoDefaultSink)
     }
 

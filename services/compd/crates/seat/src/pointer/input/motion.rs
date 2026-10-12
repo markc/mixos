@@ -236,9 +236,10 @@ fn teleport_cross(
 fn current_placement(_loop: &mut Loop) -> Option<u64> {
     use drivers::output::base::{CURSOR_PLACEMENT, CURSOR_PLACEMENT_MUT, TELEPORT_LAYOUT};
     if let Some(id) = *_loop.inner.kernel.get(&CURSOR_PLACEMENT)
-        && _loop.inner.kernel.get(&TELEPORT_LAYOUT).get(id).is_some() {
-            return Some(id);
-        }
+        && _loop.inner.kernel.get(&TELEPORT_LAYOUT).get(id).is_some()
+    {
+        return Some(id);
+    }
     let key = _loop.inner.current_output_key();
     let id = {
         let t = _loop.inner.kernel.get(&TELEPORT_LAYOUT);

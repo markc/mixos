@@ -76,22 +76,23 @@ pub fn register(
             };
             for pipe in ctx.outputs.iter_mut() {
                 if world::state::state::output_key(&pipe.output) == key
-                    && let Some(o) = pipe.drm_output.as_mut() {
-                        if in_flight {
-                            // A lost completion leaves smithay holding the flip as
-                            // pending, and while it does `queue_frame` submits
-                            // nothing. After 2 s the flip almost certainly happened
-                            // and only its event was lost, so complete it the way a
-                            // vblank would: the pending frame becomes current (its
-                            // buffer is the one on screen and must not be reused),
-                            // the old current is released. Its presentation
-                            // feedback is discarded.
-                            if let Err(e) = o.with_compositor(|c| c.frame_submitted()) {
-                                warn!("native: dropping the lost flip on {key} failed: {e}");
-                            }
+                    && let Some(o) = pipe.drm_output.as_mut()
+                {
+                    if in_flight {
+                        // A lost completion leaves smithay holding the flip as
+                        // pending, and while it does `queue_frame` submits
+                        // nothing. After 2 s the flip almost certainly happened
+                        // and only its event was lost, so complete it the way a
+                        // vblank would: the pending frame becomes current (its
+                        // buffer is the one on screen and must not be reused),
+                        // the old current is released. Its presentation
+                        // feedback is discarded.
+                        if let Err(e) = o.with_compositor(|c| c.frame_submitted()) {
+                            warn!("native: dropping the lost flip on {key} failed: {e}");
                         }
-                        o.reset_buffers();
                     }
+                    o.reset_buffers();
+                }
             }
         },
         move |state: &Loop| {

@@ -381,9 +381,10 @@ fn should_forward<I: InputBackend>(
     // way out of a bad (black) mode is to wait for the auto-revert timeout.
     if is_dark(_loop) {
         if output_provisioning(_loop)
-            && let Some(result) = ui_handle(_loop, key_code, keysym, key_state) {
-                return !result;
-            }
+            && let Some(result) = ui_handle(_loop, key_code, keysym, key_state)
+        {
+            return !result;
+        }
         return false; // intercept everything else while dark
     }
 

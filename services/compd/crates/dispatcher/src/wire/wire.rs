@@ -911,16 +911,17 @@ impl<A: WireTrait + 'static> Wire<A> {
         // `is_pointer_over` → `current_focus()` query can't re-lock a held pointer mutex.
         if let Some(surface) = self.state.pending_constraint_activation.take()
             && let Some(pointer) = self.state.seat.seat.get_pointer()
-                && self.state.seat.is_pointer_over(&pointer, &surface)
-                    && !self.state.seat.constraints_suspended
+            && self.state.seat.is_pointer_over(&pointer, &surface)
+            && !self.state.seat.constraints_suspended
+        {
+            with_pointer_constraint(&surface, &pointer, |c| {
+                if let Some(c) = c
+                    && !c.is_active()
                 {
-                    with_pointer_constraint(&surface, &pointer, |c| {
-                        if let Some(c) = c
-                            && !c.is_active() {
-                                c.activate();
-                            }
-                    });
+                    c.activate();
                 }
+            });
+        }
         // Destroyed windows, xdg and X11 in the order they arrived — and BEFORE
         // `foreign_reconcile` below, so the dock mirror publishes this frame's removals
         // rather than last frame's.

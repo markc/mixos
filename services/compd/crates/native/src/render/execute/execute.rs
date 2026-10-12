@@ -54,9 +54,10 @@ fn honor_needs_sync<B, F, E>(
     use smithay::backend::drm::compositor::PrimaryPlaneElement;
     if result.needs_sync()
         && let PrimaryPlaneElement::Swapchain(ref element) = result.primary_element
-            && let Err(err) = element.sync.wait() {
-                warn!("native: render fence wait interrupted before queue_frame: {err:?}");
-            }
+        && let Err(err) = element.sync.wait()
+    {
+        warn!("native: render fence wait interrupted before queue_frame: {err:?}");
+    }
 }
 
 /// What this execute() call did, for the pacing layer.
@@ -501,10 +502,11 @@ pub fn execute(
         // couple its cadence to this one. (All = ping/kickstart/resume: render every
         // idle output.)
         if let RenderScope::Crtc(target) = scope
-            && ctx_ref.outputs[output_idx].crtc != target {
-                let _skip = ledger::frame_trace::span("kms_skip_other_crtc", trace_output);
-                continue;
-            }
+            && ctx_ref.outputs[output_idx].crtc != target
+        {
+            let _skip = ledger::frame_trace::span("kms_skip_other_crtc", trace_output);
+            continue;
+        }
         // Skip a pipe whose page-flip is still in flight: its `queued_frame` slot
         // is occupied and won't scan out until its own vblank. Re-rendering it now
         // (on some OTHER output's vblank) would only overwrite that pending frame

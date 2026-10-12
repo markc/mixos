@@ -84,10 +84,11 @@ pub fn run_tick(
     // elapsed still fires at the next clear interval rather than restarting.
     let mut armed = armed;
     if let Some(c) = cycle
-        && (now >= c.quiet_after || now.duration_since(c.started_at) >= cfg.debounce_max) {
-            armed = true;
-            cycle = None;
-        }
+        && (now >= c.quiet_after || now.duration_since(c.started_at) >= cfg.debounce_max)
+    {
+        armed = true;
+        cycle = None;
+    }
 
     let mut fire = false;
     let mut last_emit_at = last_emit_at;

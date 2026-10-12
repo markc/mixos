@@ -364,10 +364,9 @@ impl ForeignToplevel {
                             h.done();
                         }
                     }
-                    if meta_changed
-                        && let Some(e) = &entry.ext {
-                            e.send_done();
-                        }
+                    if meta_changed && let Some(e) = &entry.ext {
+                        e.send_done();
+                    }
                 }
             }
         }

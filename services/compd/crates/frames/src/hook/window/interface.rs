@@ -40,10 +40,9 @@ fn activate_window(_loop: &mut Loop, window: Window) {
     // Cross-world activation: if the window lives on another world, switch to it FIRST.
     let hosted = _loop.inner.worlds.spawn_target();
     let cross_world = matches!(_loop.inner.world_of_window(&window), Some(w) if w != hosted);
-    if cross_world
-        && let Some(w) = _loop.inner.world_of_window(&window) {
-            _loop.inner.switch_to_world(w);
-        }
+    if cross_world && let Some(w) = _loop.inner.world_of_window(&window) {
+        _loop.inner.switch_to_world(w);
+    }
 
     _loop
         .inner

@@ -82,9 +82,10 @@ impl WireTrait for Orchestrator {
             .find(|w| find::is_surface(w, surface))
             .cloned();
         if let Some(window) = focused
-            && let Some(world) = self.world_of_window(&window) {
-                self.world_focus_memory.insert(world, window);
-            }
+            && let Some(world) = self.world_of_window(&window)
+        {
+            self.world_focus_memory.insert(world, window);
+        }
     }
 
     fn restore_focus_for_current_world(&mut self) -> Option<WlSurface> {

@@ -35,9 +35,10 @@ pub fn index(surface: &WlSurface, window: X11Surface) {
             .data_map
             .insert_if_missing_threadsafe(|| X11Focus(Mutex::new(None)));
         if let Some(slot) = states.data_map.get::<X11Focus>()
-            && let Ok(mut slot) = slot.0.lock() {
-                *slot = Some(window);
-            }
+            && let Ok(mut slot) = slot.0.lock()
+        {
+            *slot = Some(window);
+        }
     });
 }
 

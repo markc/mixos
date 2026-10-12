@@ -88,9 +88,10 @@ impl LaunchWorker {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .take()
-            && thread.join().is_err() {
-                error!("launch worker panicked during shutdown");
-            }
+            && thread.join().is_err()
+        {
+            error!("launch worker panicked during shutdown");
+        }
     }
 }
 
