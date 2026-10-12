@@ -14,3 +14,7 @@
   that suspends a grant after two rollbacks in a row.
 - Local socket: NUL-framed JSON, kernel caller identity read per request,
   per-uid connection cap, connection lifetime, read and write deadlines.
+- `hostd.status` adds `held_grants`: each grant the caller holds, in full.
+- Write verb `net.wg.apply`: networkd-native WireGuard, key made and kept by
+  hostd (0640 root:systemd-network, never returned), the handshake dead-man
+  check. The unit gains `CAP_CHOWN` and `CAP_NET_ADMIN` for it.

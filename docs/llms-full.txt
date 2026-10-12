@@ -2530,6 +2530,7 @@ from the Bus.
 | `hostd.thaw` | control | accept changes again and lift grant suspensions: root on the host only |
 | `net.link.apply` | write | configure one link through networkd, rolled back unless it comes up |
 | `hostd.undo` | write | put back what an applied change replaced; needs no grant of its own (see below) |
+| `net.wg.apply` | write | configure a WireGuard link through networkd, rolled back unless it comes up and its peers complete a handshake |
 
 `host.info` is also published as the retained topic `hostd.info`.
 
@@ -2655,6 +2656,38 @@ whoever holds a grant that covers the original change: its verb and its
 limits (for `net.link.apply`, that link). A grant that may configure `hd0`
 may undo its own changes to `hd0`. Naming `hostd.undo` in a grant adds
 nothing.
+
+## WireGuard links
+
+`net.wg.apply` gives one WireGuard link its networkd configuration:
+
+```text
+{"name": "wg-home", "addresses": ["10.99.0.1/24"], "listen_port": 51820,
+ "peers": [{"public_key": "<base64>", "endpoint": "vpn.example.com:51820",
+            "allowed_ips": ["10.99.0.0/24"], "keepalive_s": 25}],
+ "window_s": 25}
+```
+
+- hostd writes `50-hostd-<name>.netdev`, `50-hostd-<name>.network` and the
+  private key `50-hostd-<name>.key` in `/etc/systemd/network`.
+- **The key never leaves the host.** hostd makes it the first time,
+  readable only by root and group `systemd-network` (mode 0640), and keeps
+  it across later applies. Replies carry only the `public_key`, for the
+  peers' side.
+- **It passes** when the link comes up configured from hostd's file with
+  every address, and **every peer with an endpoint completes a handshake**
+  within the window. A peer that never answers puts the change back.
+- `require_handshake: false` skips the handshake wait. Use it for the first
+  side of a new pair, whose peer doesn't exist yet.
+- A link of that name hostd didn't create is refused (`foreign_config`).
+- A changed `.netdev` takes effect because hostd deletes its own link and
+  networkd creates it again. Peers reconnect within a keepalive.
+- Grants limit WireGuard links by `links`, like other links.
+
+hostd's unit has two capabilities, both for this verb:
+- `CAP_CHOWN`, to give the key file to group `systemd-network`;
+- `CAP_NET_ADMIN`, to read peer handshakes over WireGuard netlink and to
+  delete its own WireGuard link.
 
 ## Stopping it
 

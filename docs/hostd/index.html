@@ -220,6 +220,7 @@
                         <a href="#who-may-change-what">Who may change what</a>
                         <a href="#what-a-change-does">What a change does</a>
                         <a href="#network-links">Network links</a>
+                        <a href="#wireguard-links">WireGuard links</a>
                         <a href="#stopping-it">Stopping it</a>
                         <a href="#refusals">Refusals</a>
                     </nav>
@@ -281,6 +282,7 @@ from the Bus.</p>
 <tr><td><code>hostd.thaw</code></td><td>control</td><td>accept changes again and lift grant suspensions: root on the host only</td></tr>
 <tr><td><code>net.link.apply</code></td><td>write</td><td>configure one link through networkd, rolled back unless it comes up</td></tr>
 <tr><td><code>hostd.undo</code></td><td>write</td><td>put back what an applied change replaced; needs no grant of its own (see below)</td></tr>
+<tr><td><code>net.wg.apply</code></td><td>write</td><td>configure a WireGuard link through networkd, rolled back unless it comes up and its peers complete a handshake</td></tr>
 </tbody></table>
 <p><code>host.info</code> is also published as the retained topic <code>hostd.info</code>.</p>
 <h2 id="who-may-change-what">Who may change what</h2>
@@ -388,6 +390,36 @@ whoever holds a grant that covers the original change: its verb and its
 limits (for <code>net.link.apply</code>, that link). A grant that may configure <code>hd0</code>
 may undo its own changes to <code>hd0</code>. Naming <code>hostd.undo</code> in a grant adds
 nothing.</p>
+<h2 id="wireguard-links">WireGuard links</h2>
+<p><code>net.wg.apply</code> gives one WireGuard link its networkd configuration:</p>
+<pre><code class="language-text">{"name": "wg-home", "addresses": ["10.99.0.1/24"], "listen_port": 51820,
+ "peers": [{"public_key": "&lt;base64&gt;", "endpoint": "vpn.example.com:51820",
+            "allowed_ips": ["10.99.0.0/24"], "keepalive_s": 25}],
+ "window_s": 25}
+</code></pre>
+<ul>
+<li>hostd writes <code>50-hostd-&lt;name&gt;.netdev</code>, <code>50-hostd-&lt;name&gt;.network</code> and the
+private key <code>50-hostd-&lt;name&gt;.key</code> in <code>/etc/systemd/network</code>.</li>
+<li><strong>The key never leaves the host.</strong> hostd makes it the first time,
+readable only by root and group <code>systemd-network</code> (mode 0640), and keeps
+it across later applies. Replies carry only the <code>public_key</code>, for the
+peers' side.</li>
+<li><strong>It passes</strong> when the link comes up configured from hostd's file with
+every address, and <strong>every peer with an endpoint completes a handshake</strong>
+within the window. A peer that never answers puts the change back.</li>
+<li><code>require_handshake: false</code> skips the handshake wait. Use it for the first
+side of a new pair, whose peer doesn't exist yet.</li>
+<li>A link of that name hostd didn't create is refused (<code>foreign_config</code>).</li>
+<li>A changed <code>.netdev</code> takes effect because hostd deletes its own link and
+networkd creates it again. Peers reconnect within a keepalive.</li>
+<li>Grants limit WireGuard links by <code>links</code>, like other links.</li>
+</ul>
+<p>hostd's unit has two capabilities, both for this verb:</p>
+<ul>
+<li><code>CAP_CHOWN</code>, to give the key file to group <code>systemd-network</code>;</li>
+<li><code>CAP_NET_ADMIN</code>, to read peer handshakes over WireGuard netlink and to
+delete its own WireGuard link.</li>
+</ul>
 <h2 id="stopping-it">Stopping it</h2>
 <p><code>hostd.freeze</code> stops every change at once and survives restarts and
 reboots. An unreadable freeze record counts as frozen. Only root on the
