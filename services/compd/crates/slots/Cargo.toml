@@ -36,4 +36,4 @@ serde = { workspace = true }
 
 [[example]]
 name = "containment-probe"
-path = "tests/containment_probe.rs"
+path = "examples/containment_probe.rs"

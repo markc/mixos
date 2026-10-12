@@ -46,7 +46,12 @@ jobs:
 
       # The toolchain comes from rust-toolchain.toml.
       - name: Install Rust
-        run: rustup toolchain install --profile minimal --component clippy
+        run: rustup toolchain install --profile minimal --component clippy --component rustfmt
+
+      # Workspace members only: vendor/ is outside the workspace and keeps its
+      # upstream formatting.
+      - name: Format
+        run: cargo fmt --check
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
@@ -54,6 +59,11 @@ jobs:
 
       - name: Build
         run: cargo build --workspace --all-targets --locked
+
+      # The workspace allows rustc warnings; clippy findings in our own crates
+      # fail the run. vendor/ is a path dependency, so its lints stay its own.
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D clippy::all
 
       # Every failure in one run, not just the first test binary's. The
       # editd latency ceiling (1 s to open 64 MiB) is for our build hosts; a
@@ -71,3 +81,11 @@ jobs:
           $mix tools/verb_registry.mix
           $mix tools/smithay_guards.mix
           $mix tools/component_index.mix --check
+
+      # The Mix test scripts (tools/mix_tests.mix says which, and why the rest
+      # are not run here). Some still name /opt/mixos/bin directly, so the
+      # fresh binaries go there first.
+      - name: Mix tests
+        run: |
+          sudo install -D -m 0755 -t /opt/mixos/bin target/debug/mix target/debug/noded target/debug/editd target/debug/dopus
+          target/debug/mix tools/mix_tests.mix --bin target/debug

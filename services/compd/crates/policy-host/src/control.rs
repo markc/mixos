@@ -1406,16 +1406,16 @@ pub(crate) fn window_of(lp: &Loop, id: SurfaceId) -> Option<Window> {
 /// Raise `id` now: the draw order (hit-testing follows it), the Space, and
 /// an X11 window's X stack.
 fn raise_now(lp: &mut Loop, id: SurfaceId) {
-    if let Some(window) = window_of(lp, id) {
-        if let Some(owner) = lp.inner.world_of_window(&window) {
-            if let Some(uuid) = lp.inner.comp.registry.uuid_for(id) {
-                lp.inner.raise_drawable_of(owner, uuid);
-            }
-            lp.inner
-                .space_of_mut(owner)
-                .state
-                .raise_element(&window, false);
+    if let Some(window) = window_of(lp, id)
+        && let Some(owner) = lp.inner.world_of_window(&window)
+    {
+        if let Some(uuid) = lp.inner.comp.registry.uuid_for(id) {
+            lp.inner.raise_drawable_of(owner, uuid);
         }
+        lp.inner
+            .space_of_mut(owner)
+            .state
+            .raise_element(&window, false);
     }
     crate::x11::sync_stacking(lp);
     lp.state.schedule_redraw(RedrawReason::WindowState);

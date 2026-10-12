@@ -1,0 +1,90 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Runs the Mix test scripts (AGENTS.md §7, the bus and gates tiers) that
+-- need nothing beyond a checkout, its fresh binaries and bsdtar: each one
+-- owns a private broker, private ports and a temp dir, so it can run on a
+-- bare CI runner. Every script runs to the end; exit 1 if any failed.
+--
+--   mix tools/mix_tests.mix [--bin DIR] [NAME...]
+--
+-- --bin is the directory holding the freshly built mix, noded, editd and
+-- dopus (default target/debug). Scripts that still name /opt/mixos/bin
+-- directly need those binaries installed there too; CI does that. NAME
+-- runs only the scripts whose path contains it.
+--
+-- Not run here, and why:
+-- - services/compd/tests/scenes_mesh_test.mix: needs a live mesh route
+--   (SCENES_LOCAL_TARGET, SCENES_REMOTE_TARGET).
+-- - services/portald/tests/restart_recovery_test.mix: needs a systemd
+--   --user manager.
+-- - services/compd/tests/settings_test.mix: runs its own release-fast cargo
+--   build.
+-- - services/compd/tests/desktop_icons_test.mix: stale; it drives
+--   tools/material_icons.mix and share/icons/, neither of which came into
+--   this tree.
+-- - tests/desktop/: nested and on-hardware compositor runs.
+$root = dirname(dirname(realpath($0)))
+$bin = $root .. "/target/debug"
+$only = []
+$argv = args()
+$i = 0
+while $i < len($argv)
+  if $argv[$i] == "--bin" and $i + 1 < len($argv) then
+    $bin = $argv[$i + 1]
+    $i = $i + 2
+  elif starts_with($argv[$i], "-") then
+    raise("USAGE", "mix_tests.mix [--bin DIR] [NAME...]")
+  else
+    push($only, $argv[$i])
+    $i = $i + 1
+  end
+end
+
+$scripts = [
+  "tests/component_install_test.mix",
+  "tests/verb_registry_test.mix",
+  "services/compd/tests/apps_test.mix",
+  "services/compd/tests/apps_bus_test.mix",
+  "services/compd/tests/editor_app_test.mix",
+  "services/compd/tests/editor_app_bus_test.mix",
+  "services/compd/tests/scene_editor_fixtures_test.mix",
+  "services/compd/tests/scene_editor_test.mix",
+  "services/compd/tests/scene_template_test.mix",
+  "services/compd/tests/scenes_test.mix",
+  "services/compd/tests/scene_editor_e2e.mix",
+  "services/editd/tests/edit_bus_test.mix",
+  "services/releasesd/tests/releases_test.mix",
+  "services/releasesd/tests/releasesd_test.mix",
+  "apps/dopus/tests/dopus_bus_test.mix"
+]
+if len($only) > 0 then
+  $scripts = filter($scripts, fn($s) = any($only, fn($n) = contains($s, $n)))
+end
+
+$env = {
+  MIXOS: $root,
+  MIXOS_TEST_MIX: $bin .. "/mix",
+  MIXOS_TEST_NODED: $bin .. "/noded",
+  MIXOS_TEST_EDITD: $bin .. "/editd",
+  MIXOS_TEST_DOPUS: $bin .. "/dopus",
+  TZ: "UTC"
+}
+$failed = []
+for each $s in $scripts
+  $r = run_argv([$bin .. "/mix", $s], {cwd: $root, env: $env, timeout: 900, stderr: "stdout"})
+  $secs = to_string(round($r.duration_ms / 1000))
+  if $r.ok then
+    print("PASS " .. $s .. " (" .. $secs .. " s)")
+  else
+    push($failed, $s)
+    $why = $r.timed_out ? "timed out" : "exit " .. to_string($r.exit_code)
+    print("FAIL " .. $s .. " (" .. $why .. ", " .. $secs .. " s)")
+    $out = lines($r.stdout)
+    for each $l in slice($out, max(len($out) - 80, 0), len($out))
+      print("  | " .. $l)
+    end
+  end
+end
+print(to_string(len($scripts) - len($failed)) .. "/" .. to_string(len($scripts)) .. " Mix test scripts passed")
+if len($failed) > 0 then exit(1) end
+nil
