@@ -12973,10 +12973,10 @@ impl Evaluator {
     fn eval_socket<'a>(
         &'a mut self,
         name: &'a str,
-        args: &'a [Value],
+        args: &'a mut [Value],
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = MixResult<Option<Value>>> + 'a>> {
         Box::pin(async move {
-            if let Some(result) = self.eval_socket_source(name, args).await? {
+            if let Some(result) = self.eval_socket_source(name, &*args).await? {
                 return Ok(Some(result));
             }
             #[cfg(all(feature = "ws", unix))]
@@ -12990,7 +12990,7 @@ impl Evaluator {
     fn eval_numeric_socket<'a>(
         &'a mut self,
         name: &'a str,
-        eval_args: &'a [Value],
+        eval_args: &'a mut [Value],
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = MixResult<Option<Value>>> + 'a>> {
         Box::pin(async move {
             // Class C numeric accept: wait on native readiness with the
@@ -13035,7 +13035,10 @@ impl Evaluator {
             {
                 self.check_capability(name)?;
                 self.check_builtin_arity(name, eval_args.len())?;
-                let payload = crate::builtins::tcp_send_payload(&eval_args[1])?;
+                let payload = crate::builtins::tcp_send_payload(std::mem::replace(
+                    &mut eval_args[1],
+                    Value::Nil,
+                ))?;
                 let guard = crate::builtins::socket_sources::pull_conn(name, id)?;
                 let interruptible = self.ctx.class_c_read_permit.is_none();
                 let fut = Box::pin(crate::builtins::socket_sources::pull_send(
@@ -13349,7 +13352,7 @@ impl Evaluator {
     fn eval_native_source<'a>(
         &'a mut self,
         name: &'a str,
-        eval_args: &'a [Value],
+        eval_args: &'a mut [Value],
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = MixResult<Option<Value>>> + 'a>> {
         Box::pin(async move {
             if matches!(name, "fs_watch" | "fs_unwatch" | "fs_wait") {
@@ -13757,7 +13760,7 @@ impl Evaluator {
                             | "tcp_accept"
                             | "ws_send"
                             | "tcp_send"
-                    ) && let Some(result) = self.eval_native_source(name, &eval_args).await?
+                    ) && let Some(result) = self.eval_native_source(name, &mut eval_args).await?
                     {
                         return Ok(result);
                     }

@@ -50,7 +50,9 @@ $h = tcp_connect("127.0.0.1", $port, {timeout: 5})
 if $subscribe then
   tcp_on($h, "test.frame")
 end
-$payload = repeat("x", $big)
+-- Bytes, so reading $payload shares it: a string is copied on every
+-- read, and that copy is not the send.
+$payload = bytes_from([repeat("x", $big)])
 $t0 = monotonic()
 try
   tcp_send($h, $payload, {timeout: 0.5})
@@ -68,8 +70,13 @@ $elapsed = monotonic() - $t0
     assert_eq!(global(&e, "code"), "TCP_SEND_TIMEOUT");
     assert_eq!(e.get_global("total").and_then(|v| v.to_number()), Some(big));
     let elapsed = e.get_global("elapsed").and_then(|v| v.to_number()).unwrap();
+    // The deadline is checked between syscalls, and the kernel can hold one
+    // syscall: under memory.high throttling a write sleeps up to 2 s before
+    // it returns (reproduced in a memory.high cgroup). So the bound is the deadline plus
+    // one such stall, kept under the peers' 3 s lifetime: a send that
+    // outlived its peer was not stopped by its deadline.
     assert!(
-        (0.4..2.0).contains(&elapsed),
+        (0.4..2.9).contains(&elapsed),
         "the whole send was bounded by 0.5 s, took {elapsed} s"
     );
     if !subscribe {
@@ -165,15 +172,9 @@ async fn a_fast_reader_succeeds_with_a_timeout_set() {
     let port = listener.local_addr().unwrap().port();
     let server = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
-        let mut total = 0usize;
-        let mut buf = vec![0u8; 256 * 1024];
-        loop {
-            match stream.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => total += n,
-            }
-        }
-        total
+        let mut got = Vec::new();
+        let _ = stream.read_to_end(&mut got);
+        got
     });
     let mut e = Evaluator::new();
     e.set_global("port", Value::Number(port as f64));
@@ -194,5 +195,10 @@ $closed = tcp_close($h)
     );
     assert_eq!(e.get_global("more").and_then(|v| v.to_number()), Some(4.0));
     assert_eq!(global(&e, "closed"), "true");
-    assert_eq!(server.join().unwrap(), 8388608 + 4);
+    // Every byte arrives, in order: the payload is sent from the string it
+    // was moved out of, not a copy.
+    let got = server.join().unwrap();
+    assert_eq!(got.len(), 8388608 + 4);
+    assert!(got[..8388608].iter().all(|&b| b == b'y'));
+    assert_eq!(&got[8388608..], b"tail");
 }
