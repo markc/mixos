@@ -83,8 +83,12 @@ struct Surface {
     frame_pending: bool,
     /// When the frame callback being waited for was asked for.
     pending_since: Option<Instant>,
-    /// Frames skipped in a row: the retry backs off with each.
+    /// Frames skipped in a row, and when the next attempt may run: the
+    /// retry backs off with each skip, whatever else wakes the loop.
     skips: u32,
+    retry_at: Option<Instant>,
+    /// The watchdog already redrew once without a callback coming back.
+    rescued: bool,
     /// The earliest delayed repaint a timer is armed for, and that timer.
     deadline: Option<Instant>,
     timer: Option<RegistrationToken>,
@@ -129,12 +133,16 @@ struct State<P> {
     /// Keys held, by raw code, as the logical key their press sent: the
     /// release (which types no text) sends the same one.
     held: Vec<(u32, egui::Key)>,
-    /// Key repeat: (delay, interval), or none; the key repeating and its timer.
+    /// Key repeat: (delay, interval), or none; the key repeating, its timer,
+    /// and whether it types text.
     repeat_info: Option<(Duration, Duration)>,
-    repeating: Option<(u32, RegistrationToken)>,
+    repeating: Option<(u32, RegistrationToken, bool)>,
     /// Pointer buttons held, and where the pointer last was (in points).
     buttons: Vec<egui::PointerButton>,
     last_pos: egui::Pos2,
+    /// The surface the held buttons were pressed on: their releases go
+    /// there, even after the pointer left it.
+    button_target: Option<ObjectId>,
     program: P,
     options: LayerOptions,
     repaint: Sender<Repaint>,
@@ -192,6 +200,7 @@ pub(super) fn run<P: LayerProgram + 'static>(
         repeating: None,
         buttons: Vec::new(),
         last_pos: egui::Pos2::ZERO,
+        button_target: None,
         program,
         options,
         repaint,
@@ -272,6 +281,8 @@ impl<P: LayerProgram + 'static> State<P> {
             frame_pending: false,
             pending_since: None,
             skips: 0,
+            retry_at: None,
+            rescued: false,
             deadline: None,
             timer: None,
             focused: false,
@@ -282,6 +293,26 @@ impl<P: LayerProgram + 'static> State<P> {
 
     /// Drop the surfaces `gone` names, cancelling their timers.
     fn drop_surfaces(&mut self, gone: impl Fn(&Surface) -> bool) {
+        let removed: Vec<ObjectId> = self
+            .surfaces
+            .iter()
+            .filter(|s| gone(s))
+            .map(|s| s.layer.wl_surface().id())
+            .collect();
+        // A surface that goes takes its keyboard focus, key repeat and
+        // pointer state with it: no leave event need follow.
+        if self.keyboard_focus.as_ref().is_some_and(|f| removed.contains(f)) {
+            self.keyboard_focus = None;
+            self.held.clear();
+            self.stop_repeat();
+        }
+        if self.pointer_over.as_ref().is_some_and(|(o, _)| removed.contains(o)) {
+            self.pointer_over = None;
+        }
+        if self.button_target.as_ref().is_some_and(|t| removed.contains(t)) {
+            self.button_target = None;
+            self.buttons.clear();
+        }
         let handle = self.handle.clone();
         self.surfaces.retain_mut(|s| {
             if gone(s) {
@@ -379,9 +410,8 @@ impl<P: LayerProgram + 'static> State<P> {
                 s.pending_since
                     .map(|t| WATCHDOG.saturating_sub(now.duration_since(t)))
             } else if s.configured && s.dirty {
-                // Still due after drawing: its frame was skipped. Back off
-                // (50 ms doubling to 1 s) while it keeps being skipped.
-                Some((RETRY * 2u32.saturating_pow(s.skips.min(5))).min(WATCHDOG))
+                // A skipped frame waits for its retry deadline.
+                s.retry_at.map(|t| t.saturating_duration_since(now))
             } else {
                 None
             };
@@ -403,15 +433,24 @@ impl<P: LayerProgram + 'static> State<P> {
             {
                 s.frame_pending = false;
                 s.pending_since = None;
+                // The present may have failed silently: redraw once. A
+                // compositor that withholds callbacks (a hidden output)
+                // then gets no more until one comes back.
+                if !s.rescued {
+                    s.rescued = true;
+                    s.dirty = true;
+                }
             }
         }
     }
 
     fn draw_due(&mut self, qh: &QueueHandle<Self>) {
+        let now = Instant::now();
         let due: Vec<u64> = self
             .surfaces
             .iter()
             .filter(|s| s.configured && s.dirty && !s.frame_pending)
+            .filter(|s| s.retry_at.is_none_or(|t| t <= now))
             .map(|s| s.id)
             .collect();
         for id in due {
@@ -464,11 +503,15 @@ impl<P: LayerProgram + 'static> State<P> {
                 s.frame_pending = true;
                 s.pending_since = Some(Instant::now());
                 s.skips = 0;
+                s.retry_at = None;
                 self.program.presented(&info);
             }
             Err(Skipped::Reconfigure) => self.reconfigure(id),
             Err(Skipped::Later) => {
+                // Back off: 50 ms doubling to 1 s while it keeps skipping.
                 s.dirty = true;
+                let wait = (RETRY * 2u32.saturating_pow(s.skips.min(5))).min(WATCHDOG);
+                s.retry_at = Some(Instant::now() + wait);
                 s.skips = s.skips.saturating_add(1);
             }
         }
@@ -579,6 +622,7 @@ impl<P: LayerProgram + 'static> CompositorHandler for State<P> {
         if let Some(s) = self.by_wl(&surface.id()) {
             s.frame_pending = false;
             s.pending_since = None;
+            s.rescued = false;
         }
     }
 
@@ -793,11 +837,14 @@ impl<P: LayerProgram + 'static> State<P> {
             pointer.release();
         }
         let held = std::mem::take(&mut self.buttons);
-        if let Some((over, _)) = self.pointer_over.take() {
+        let over = self.pointer_over.take().map(|(o, _)| o);
+        // Releases go where the buttons were pressed, even if the pointer
+        // has left that surface since.
+        if let Some(target) = self.button_target.take().or_else(|| over.clone()) {
             let modifiers = input::modifiers(&self.modifiers);
             for button in held {
                 self.push_to(
-                    &over,
+                    &target,
                     egui::Event::PointerButton {
                         pos: self.last_pos,
                         button,
@@ -806,6 +853,8 @@ impl<P: LayerProgram + 'static> State<P> {
                     },
                 );
             }
+        }
+        if let Some(over) = over {
             self.push_to(&over, egui::Event::PointerGone);
         }
     }
@@ -836,19 +885,22 @@ impl<P: LayerProgram + 'static> State<P> {
 
     /// Repeat `event`'s key while it stays held, at the compositor's rate.
     fn start_repeat(&mut self, event: &KeyEvent) {
+        // A modifier press leaves a repeat running (it stops on the next
+        // modifier change, below); repeat disabled ends it.
+        if event.keysym.is_modifier_key() {
+            return;
+        }
         self.stop_repeat();
         let Some((delay, interval)) = self.repeat_info else {
             return;
         };
-        if event.keysym.is_modifier_key() {
-            return;
-        }
         let code = event.raw_code;
+        let types = event.utf8.as_deref().is_some_and(|t| !t.is_empty());
         let event = event.clone();
         let armed = self
             .handle
             .insert_source(Timer::from_duration(delay), move |_, _, state| {
-                if state.repeating.as_ref().is_some_and(|(c, _)| *c == code) {
+                if state.repeating.as_ref().is_some_and(|(c, _, _)| *c == code) {
                     state.key(&event, true, true);
                     TimeoutAction::ToDuration(interval)
                 } else {
@@ -856,12 +908,12 @@ impl<P: LayerProgram + 'static> State<P> {
                 }
             });
         if let Ok(timer) = armed {
-            self.repeating = Some((code, timer));
+            self.repeating = Some((code, timer, types));
         }
     }
 
     fn stop_repeat(&mut self) {
-        if let Some((_, timer)) = self.repeating.take() {
+        if let Some((_, timer, _)) = self.repeating.take() {
             self.handle.remove(timer);
         }
     }
@@ -908,6 +960,9 @@ impl<P: LayerProgram + 'static> PointerHandler for State<P> {
                         self.buttons.retain(|b| *b != button);
                         if pressed {
                             self.buttons.push(button);
+                            self.button_target = Some(wl.clone());
+                        } else if self.buttons.is_empty() {
+                            self.button_target = None;
                         }
                         let modifiers = input::modifiers(&self.modifiers);
                         self.push_to(
@@ -1025,7 +1080,7 @@ impl<P: LayerProgram + 'static> KeyboardHandler for State<P> {
         if self
             .repeating
             .as_ref()
-            .is_some_and(|(code, _)| *code == event.raw_code)
+            .is_some_and(|(code, _, _)| *code == event.raw_code)
         {
             self.stop_repeat();
         }
@@ -1039,6 +1094,8 @@ impl<P: LayerProgram + 'static> KeyboardHandler for State<P> {
         _: &wl_keyboard::WlKeyboard,
         info: RepeatInfo,
     ) {
+        // New settings apply from the next press; a running repeat stops.
+        self.stop_repeat();
         self.repeat_info = match info {
             RepeatInfo::Repeat { rate, delay } => Some((
                 Duration::from_millis(u64::from(delay)),
@@ -1058,6 +1115,12 @@ impl<P: LayerProgram + 'static> KeyboardHandler for State<P> {
         _: u32,
     ) {
         self.modifiers = modifiers;
+        // A repeating key that types text would keep typing what it typed
+        // under the old modifiers: stop it. Backspace, arrows and the like
+        // repeat on.
+        if self.repeating.as_ref().is_some_and(|(_, _, types)| *types) {
+            self.stop_repeat();
+        }
         if let Some(focus) = self.keyboard_focus.clone() {
             let m = input::modifiers(&modifiers);
             self.push_to(&focus, egui::Event::ModifiersChanged(m));
