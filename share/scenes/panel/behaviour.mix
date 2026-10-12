@@ -454,8 +454,23 @@ on clock.deadline async
 end
 
 -- ── scene handlers ──────────────────────────────────────────────────────
+-- The loader's own error code inside a refused call, or nil.
+fn loader_error($out)
+  $context = type($out.value) == "map" ? $out.value.context : nil
+  if type($context) != "map" or type($context.reply) != "map" then return nil end
+  return $context.reply.error_code
+end
+
 fn toggle_popup($key)
   $out = $r.call($ctx.loader, "scenes.toggle", {name: $POPUPS[$key]})
+  -- A shipped popup that was never installed (a desktop set up before it
+  -- shipped) is installed and enabled on its first click. A disabled one
+  -- (SCENES_DISABLED) stays off: that was the user's choice.
+  if not $out.ok and loader_error($out) == "SCENES_NOT_FOUND" then
+    $add = $r.call($ctx.loader, "scenes.install", {template: $POPUPS[$key], enable: true})
+    if not $add.ok then return $add end
+    $out = $r.call($ctx.loader, "scenes.toggle", {name: $POPUPS[$key]})
+  end
   if $out.ok and type($out.value) == "map" then
     -- The loader keeps one popup open at a time.
     $open = {launcher: false, calendar: false, notes: false, network: false}
