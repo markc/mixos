@@ -101,13 +101,10 @@ end
 
 -- A route, metric or DNS change raises no link or address event (net_watch
 -- has no route source and resolved no watch here yet), so the popup also
--- re-reads each time it opens. An inventory it cannot read re-reads too.
+-- re-reads each time it opens. An inventory it cannot read counts as
+-- closed, so the next readable open re-reads; it never schedules by itself.
 on scenes.changed
-  $open = $n.popup_open($r.event_args($event), $ctx.name)
-  if $open == nil then
-    schedule()
-    return
-  end
+  $open = $n.popup_open($r.event_args($event), $ctx.name) ?? false
   if $open and not $state.open then schedule() end
   $state.open = $open
 end

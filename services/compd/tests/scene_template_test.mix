@@ -602,7 +602,7 @@ check($net_lib.sys_kind("no-such-link", "/nonexistent") == nil, "sysfs kind: a m
 -- Opening the popup re-reads (route and DNS changes raise no net_watch event).
 check($net_lib.popup_open({scenes: [{name: "calendar", open: true}, {name: "network", open: false}]}, "network") == false, "another popup open: not ours")
 check($net_lib.popup_open({scenes: [{name: "network", open: true}]}, "network") == true, "our popup open")
-check($net_lib.popup_open({}, "network") == nil and $net_lib.popup_open("x", "network") == nil, "an unreadable inventory is nil (re-read)")
+check($net_lib.popup_open({}, "network") == nil and $net_lib.popup_open("x", "network") == nil, "an unreadable inventory is nil (treated as closed)")
 $net_behaviour = read_file($net_dir .. "/behaviour.mix")
 check(contains($net_behaviour, "subscribe(\"scenes.changed\")") and contains($net_behaviour, "$n.popup_open("), "the behaviour re-reads on open")
 
