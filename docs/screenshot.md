@@ -63,7 +63,8 @@ nothing else held:
 The bar at the top sets the **ink** (red, amber, green, teal, black or
 white), the **stroke width**, and for text and markers the **text size**.
 Changing the ink or width while an annotation is selected changes that
-annotation too.
+annotation too. In a narrow window, the controls that don't fit are left
+out of the bar; **Annotate** still has them all.
 
 Widths and text sizes are what you see: a Medium line is the same
 thickness on screen whether the shot is a 4K screen shown scaled down or a

@@ -72,6 +72,10 @@ const SWATCH: f32 = 18.0;
 /// The Text tool's field: its full width, and the least it shrinks to.
 const TEXT_MAX: f32 = 220.0;
 const TEXT_MIN: f32 = 80.0;
+/// The width and text size lists' width.
+const COMBO: f32 = 96.0;
+/// The space after the swatches.
+const INKS_GAP: f32 = 6.0;
 
 /// The window title.
 pub fn title(app: &App) -> String {
@@ -242,6 +246,36 @@ fn controls(
     }
     bars::divider(ui, bars::DIVIDER_HEIGHT);
     let editable = !app.modal();
+    // In a narrow window a group that does not fit whole is left out
+    // (Annotate › Colour, Width and Text size still reach it), keeping
+    // room for the Text field rather than cutting a control in half.
+    let gap = ui.spacing().item_spacing.x;
+    let text_tool = app.ui.tool == Tool::Draw(Kind::Text);
+    let reserve = if text_tool { TEXT_MIN + gap } else { 0.0 };
+    let fits = |ui: &Ui, width: f32| ui.available_width() >= width + reserve;
+    let inks_width = app.inks.len() as f32 * (SWATCH + gap) + INKS_GAP;
+    if fits(ui, inks_width) {
+        inks(ui, app, editable, events);
+    }
+    if fits(ui, COMBO + gap) {
+        width_combo(ui, app, editable, events);
+    }
+    if matches!(app.ui.tool, Tool::Draw(Kind::Text | Kind::Number)) && fits(ui, COMBO + gap) {
+        size_combo(ui, app, editable, events);
+    }
+    if text_tool {
+        // The field takes what is left, up to its full width.
+        let width = (ui.available_width() - 2.0).clamp(TEXT_MIN, TEXT_MAX);
+        let mut text = app.ui.text.clone();
+        let response = field::text(ui, &mut text, &label("text-placeholder"), width);
+        if response.changed() {
+            events.push(UiEvent::Text(text));
+        }
+    }
+}
+
+/// The ink swatches.
+fn inks(ui: &mut Ui, app: &App, editable: bool, events: &mut Vec<UiEvent>) {
     for ink in app.inks {
         let selected = app.ui.colour == ink.rgba;
         let (rect, response) = ui.allocate_exact_size(vec2(SWATCH, SWATCH), Sense::click());
@@ -267,7 +301,11 @@ fn controls(
             events.push(UiEvent::Command(ink_id(ink.name), Origin::Ui));
         }
     }
-    ui.add_space(6.0);
+    ui.add_space(INKS_GAP);
+}
+
+/// The stroke width list.
+fn width_combo(ui: &mut Ui, app: &App, editable: bool, events: &mut Vec<UiEvent>) {
     let widths: Vec<String> = WIDTHS.iter().map(|(_, key, _)| label(key)).collect();
     let mut at = WIDTHS
         .iter()
@@ -275,37 +313,30 @@ fn controls(
         .unwrap_or(1);
     let response = ui
         .add_enabled_ui(editable, |ui| {
-            toolkit::combo::show(ui, "screenshot-width", &mut at, &widths, Some(96.0))
+            toolkit::combo::show(ui, "screenshot-width", &mut at, &widths, Some(COMBO))
         })
         .inner
         .on_hover_text(label("width"));
     if response.changed() {
         events.push(UiEvent::Command(width_id(WIDTHS[at].0), Origin::Ui));
     }
-    if matches!(app.ui.tool, Tool::Draw(Kind::Text | Kind::Number)) {
-        let sizes: Vec<String> = SIZES.iter().map(|(_, key, _)| label(key)).collect();
-        let mut at = SIZES
-            .iter()
-            .position(|(_, _, s)| *s == app.ui.text_size)
-            .unwrap_or(1);
-        let response = ui
-            .add_enabled_ui(editable, |ui| {
-                toolkit::combo::show(ui, "screenshot-size", &mut at, &sizes, Some(96.0))
-            })
-            .inner
-            .on_hover_text(label("text-size"));
-        if response.changed() {
-            events.push(UiEvent::Command(size_id(SIZES[at].0), Origin::Ui));
-        }
-    }
-    if app.ui.tool == Tool::Draw(Kind::Text) {
-        // The field takes what is left, up to its full width.
-        let width = (ui.available_width() - 2.0).clamp(TEXT_MIN, TEXT_MAX);
-        let mut text = app.ui.text.clone();
-        let response = field::text(ui, &mut text, &label("text-placeholder"), width);
-        if response.changed() {
-            events.push(UiEvent::Text(text));
-        }
+}
+
+/// The text size list (Text and Number tools).
+fn size_combo(ui: &mut Ui, app: &App, editable: bool, events: &mut Vec<UiEvent>) {
+    let sizes: Vec<String> = SIZES.iter().map(|(_, key, _)| label(key)).collect();
+    let mut at = SIZES
+        .iter()
+        .position(|(_, _, s)| *s == app.ui.text_size)
+        .unwrap_or(1);
+    let response = ui
+        .add_enabled_ui(editable, |ui| {
+            toolkit::combo::show(ui, "screenshot-size", &mut at, &sizes, Some(COMBO))
+        })
+        .inner
+        .on_hover_text(label("text-size"));
+    if response.changed() {
+        events.push(UiEvent::Command(size_id(SIZES[at].0), Origin::Ui));
     }
 }
 
