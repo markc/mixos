@@ -44,9 +44,9 @@ jobs:
             libgl1-mesa-dev libegl-dev libgles-dev libgbm-dev libdrm-dev libinput-dev libudev-dev \
             libseat-dev libpixman-1-dev libpulse-dev libarchive-tools
 
-      # The toolchain comes from rust-toolchain.toml.
+      # The toolchain and its components come from rust-toolchain.toml.
       - name: Install Rust
-        run: rustup toolchain install --profile minimal --component clippy --component rustfmt
+        run: rustup toolchain install --profile minimal
 
       # Workspace members only: vendor/ is outside the workspace and keeps its
       # upstream formatting.
@@ -60,10 +60,11 @@ jobs:
       - name: Build
         run: cargo build --workspace --all-targets --locked
 
-      # The workspace allows rustc warnings; clippy findings in our own crates
-      # fail the run. vendor/ is a path dependency, so its lints stay its own.
+      # The crates own their lint levels ([lints] in each Cargo.toml): every
+      # clippy lint they deny, and clippy's deny-by-default correctness set,
+      # fails the run. Warn-level lints stay allowed with the rest of warnings.
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D clippy::all
+        run: cargo clippy --workspace --all-targets --locked
 
       # Every failure in one run, not just the first test binary's. The
       # editd latency ceiling (1 s to open 64 MiB) is for our build hosts; a
