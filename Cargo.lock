@@ -7483,6 +7483,7 @@ dependencies = [
  "uuid",
  "wayland-backend",
  "wgpu",
+ "xkbcommon 0.7.0",
 ]
 
 [[package]]
