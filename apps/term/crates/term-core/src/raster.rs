@@ -1502,11 +1502,9 @@ impl Raster {
                     .get(text, span, self.px, cell, self.baseline)
                     .is_none()
                 {
-                    self.unicode
-                        .image(text, span, self.px, cell, self.baseline);
+                    self.unicode.image(text, span, self.px, cell, self.baseline);
                 }
-                let Some(image) = self.unicode.get(text, span, self.px, cell, self.baseline)
-                else {
+                let Some(image) = self.unicode.get(text, span, self.px, cell, self.baseline) else {
                     return Vec::new();
                 };
                 let mut out = Vec::with_capacity(image.layers.len());
