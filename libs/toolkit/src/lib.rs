@@ -7,6 +7,8 @@
 //! - [`chrome`]: title-bar and menu colours and geometry, and the whole
 //!   style of the chrome schemes (`pro`, `studio`, `classic`);
 //! - [`menu`]: menu bars and menus with shared pointer/keyboard navigation;
+//! - `layer` (feature `layer`): egui programs on wlr-layer-shell surfaces
+//!   (wallpapers, desktops, docks), one per output;
 //! - [`fonts`]: the embedded Inter and JetBrains Mono faces, chosen by weight;
 //! - [`icons`]: Lucide icons, stroke weight and colour from the theme;
 //! - [`command`]: the command registry menus, shortcuts and Bus verbs come from;
@@ -50,6 +52,8 @@ pub mod field;
 pub mod fonts;
 pub mod icons;
 pub mod keymap;
+#[cfg(feature = "layer")]
+pub mod layer;
 pub mod menu;
 pub mod panel;
 pub mod session_look;

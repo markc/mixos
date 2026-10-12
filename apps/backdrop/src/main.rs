@@ -1,38 +1,36 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! backdrop: the MixOS desktop background.
 //!
-//! This first stage is the probe: one egui surface on compd's Background
-//! layer, drawn in the session theme, that counts pointer clicks. It proves
-//! the layer surface, the GL path and input before the wallpapers and the
-//! folder view are built on it. Each fact a test needs is printed as one
-//! JSON line on stdout: `drawn` after the first painted pass at a size, and
-//! `click` for each primary press.
+//! This first stage is the probe: an egui surface on compd's Background
+//! layer on every output (`toolkit::layer`), drawn in the session theme,
+//! that counts pointer clicks. It proves the layer surfaces, the GL path
+//! and input before the wallpapers and the folder view are built on it.
+//! Each fact a test needs is printed as one JSON line on stdout: `drawn`
+//! after a pass at a new size or scale, and `click` for each primary press.
 
-mod layer;
-
-use layer::{LayerOptions, Program, SurfaceInfo};
-use smithay_client_toolkit::shell::wlr_layer::{KeyboardInteractivity, Layer};
+use toolkit::layer::{LayerOptions, LayerProgram, SurfaceInfo};
 
 const CATALOGUE: &str = include_str!("../i18n/en/backdrop.ftl");
 
 struct Probe {
     strings: toolkit::Strings,
+    theme: toolkit::Theme,
     clicks: u32,
     last: Option<egui::Pos2>,
-    /// The size last reported as drawn.
-    reported: Option<SurfaceInfo>,
+    /// The surfaces last reported as drawn.
+    reported: Vec<SurfaceInfo>,
 }
 
 fn emit(line: serde_json::Value) {
     println!("{line}");
 }
 
-impl Program for Probe {
+impl LayerProgram for Probe {
     fn setup(&mut self, ctx: &egui::Context) {
-        toolkit::install(ctx, &toolkit::Theme::load());
+        toolkit::install(ctx, &self.theme);
     }
 
-    fn show(&mut self, ui: &mut egui::Ui, surface: SurfaceInfo) {
+    fn show(&mut self, ui: &mut egui::Ui, surface: &SurfaceInfo) {
         let pressed = ui.input(|i| {
             i.pointer
                 .button_pressed(egui::PointerButton::Primary)
@@ -42,7 +40,12 @@ impl Program for Probe {
         if let Some(pos) = pressed {
             self.clicks += 1;
             self.last = Some(pos);
-            emit(serde_json::json!({"event": "click", "x": pos.x, "y": pos.y}));
+            emit(serde_json::json!({
+                "event": "click",
+                "x": pos.x,
+                "y": pos.y,
+                "output": surface.output,
+            }));
         }
         egui::CentralPanel::default().show(ui, |ui| {
             ui.vertical_centered(|ui| {
@@ -53,7 +56,7 @@ impl Program for Probe {
                     &[
                         ("width", &surface.width.to_string()),
                         ("height", &surface.height.to_string()),
-                        ("scale", &surface.scale.to_string()),
+                        ("scale", &format!("{:.2}", surface.scale)),
                     ],
                 ));
                 ui.label(match self.last {
@@ -69,10 +72,12 @@ impl Program for Probe {
                 });
             });
         });
-        if self.reported != Some(surface) {
-            self.reported = Some(surface);
+        if !self.reported.contains(surface) {
+            self.reported.retain(|r| r.output != surface.output);
+            self.reported.push(surface.clone());
             emit(serde_json::json!({
                 "event": "drawn",
+                "output": surface.output,
                 "width": surface.width,
                 "height": surface.height,
                 "scale": surface.scale,
@@ -84,16 +89,12 @@ impl Program for Probe {
 fn main() {
     let probe = Probe {
         strings: toolkit::Strings::new(CATALOGUE),
+        theme: toolkit::Theme::load(),
         clicks: 0,
         last: None,
-        reported: None,
+        reported: Vec::new(),
     };
-    let options = LayerOptions {
-        layer: Layer::Background,
-        namespace: "backdrop".into(),
-        keyboard: KeyboardInteractivity::None,
-    };
-    if let Err(error) = layer::run(options, probe) {
+    if let Err(error) = toolkit::layer::run(LayerOptions::background("backdrop"), probe) {
         eprintln!("backdrop: {error}");
         std::process::exit(1);
     }

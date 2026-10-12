@@ -21,14 +21,5 @@ mod_module_files = "deny"
 
 [dependencies]
 egui.workspace = true
-egui-wgpu.workspace = true
-wgpu.workspace = true
-toolkit.workspace = true
-# The layer shell, outputs and seat (the version eframe's winit already uses).
-smithay-client-toolkit = { version = "=0.19.2", default-features = false }
-# The libwayland display pointer wgpu's GL backend needs.
-wayland-backend = { workspace = true, features = ["client_system"] }
-raw-window-handle = "0.6"
-# wgpu's adapter and device requests are futures.
-futures.workspace = true
+toolkit = { workspace = true, features = ["layer"] }
 serde_json.workspace = true
