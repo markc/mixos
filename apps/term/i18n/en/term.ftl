@@ -1,0 +1,37 @@
+title = Terminal
+file = File
+edit = Edit
+view = View
+pane = Pane
+tabs = Tabs
+help = Help
+
+tab-new = New Tab
+tab-close = Close Tab
+app-quit = Quit
+edit-copy = Copy
+edit-paste = Paste
+view-zoom-in = Zoom In
+view-zoom-out = Zoom Out
+view-zoom-reset = Actual Size
+scroll-page-up = Scroll Up a Page
+scroll-page-down = Scroll Down a Page
+scroll-top = Scroll to Top
+scroll-bottom = Scroll to Bottom
+pane-split-right = Split Right
+pane-split-down = Split Down
+pane-close = Close Pane
+pane-next = Next Pane
+pane-prev = Previous Pane
+pane-focus-left = Focus Pane Left
+pane-focus-right = Focus Pane Right
+pane-focus-up = Focus Pane Above
+pane-focus-down = Focus Pane Below
+tab-next = Next Tab
+tab-prev = Previous Tab
+help-keys = Keyboard Shortcuts
+
+keys-title = Keyboard Shortcuts
+close = Close
+unknown-command = Unknown Terminal command
+command-disabled = That command is not available right now
