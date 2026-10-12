@@ -199,7 +199,7 @@ pub const CLICK_SLOP: f64 = 4.0;
 /// non-finite point counts as a drag, so [`normalise`] refuses it.
 pub fn dragged(start: (f64, f64), pointer: (f64, f64)) -> bool {
     let distance = (pointer.0 - start.0).hypot(pointer.1 - start.1);
-    !(distance < CLICK_SLOP)
+    distance.is_nan() || distance >= CLICK_SLOP
 }
 
 /// The whole output, exactly as a drag from corner to corner reports it.
@@ -493,7 +493,8 @@ where
             (x, y, (right - x).max(1), (bottom - y).max(1))
         });
     let (x, y, w, h) = selection.unwrap_or((0, 0, width, height));
-    let rect = |x: i32, y: i32, w: i32, h: i32| Rectangle::new(Point::from((x, y)), Size::from((w, h)));
+    let rect =
+        |x: i32, y: i32, w: i32, h: i32| Rectangle::new(Point::from((x, y)), Size::from((w, h)));
     let edges = [
         rect(x, y, w, line),
         rect(x, y + h - line, w, line),
@@ -520,7 +521,10 @@ where
             )
         };
         let edges = edges.into_iter().zip(&ids[..4]).map(|(edge, id)| {
-            let edge = Rectangle::new(edge.loc, Size::from((edge.size.w.max(1), edge.size.h.max(1))));
+            let edge = Rectangle::new(
+                edge.loc,
+                Size::from((edge.size.w.max(1), edge.size.h.max(1))),
+            );
             solid(id, edge, OUTLINE)
         });
         let dims = dims
@@ -634,8 +638,7 @@ fn hint_image(text: &str, scale: f64, max_width: f64) -> Option<HintImage> {
             let dy = ((y as f32 + 0.5 - half_h).abs() - (half_h - radius)).max(0.0);
             let cover = (0.5 - (dx.hypot(dy) - radius)).clamp(0.0, 1.0);
             let back = HINT_BACK[3] * cover;
-            let ink = if x >= left && y >= top && x - left < mask.width && y - top < mask.height
-            {
+            let ink = if x >= left && y >= top && x - left < mask.width && y - top < mask.height {
                 f32::from(mask.at(x - left, y - top)) / 255.0 * HINT_TEXT[3]
             } else {
                 0.0

@@ -850,7 +850,10 @@ where
             // over the screen UI, the hint in front of the dim and outline.
             let region = world::comp::region::overlay(state, renderer, size);
             plan.extend(REGION_SELECT, region.hint.into_iter().map(DrawNode::Memory));
-            plan.extend(REGION_SELECT, region.solids.into_iter().map(DrawNode::Solid));
+            plan.extend(
+                REGION_SELECT,
+                region.solids.into_iter().map(DrawNode::Solid),
+            );
             cw
         }
     };
