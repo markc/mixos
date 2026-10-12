@@ -24,6 +24,8 @@ pub const CANVAS: Layer = Layer(400);
 pub const LAYER_TOP: Layer = Layer(450);
 pub const LAYER_OVERLAY: Layer = Layer(480);
 pub const UI_SCREEN: Layer = Layer(500);
+/// Live window thumbnails, over the screen UI card that frames them.
+pub const THUMBNAIL: Layer = Layer(510);
 pub const POINTER: Layer = Layer(700);
 // Notifications draw above EVERYTHING — the pointer and the picker/lock fades
 // included: a message the user must see is not part of the scene it interrupts.

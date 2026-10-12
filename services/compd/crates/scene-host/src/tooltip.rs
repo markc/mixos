@@ -163,6 +163,21 @@ impl UiProgram for TooltipUi {
             (size.x, size.y)
         };
         let laid = tip::card(&self.tip, ui_size(self.look.as_deref(), &theme), &measure);
+        // The thumbnail's box: a quiet well the live window is drawn over (by
+        // the scene, `world::window::draw::thumbnail`); a window that cannot
+        // be shown leaves just the well.
+        if let Some((tx, ty, tw, th)) = laid.thumb {
+            let well = egui::Rect::from_min_size(
+                egui::pos2(card.left() + tx, card.top() + ty),
+                egui::vec2(tw, th),
+            );
+            // The theme's secondary surface, rounded like the card's inside.
+            painter.rect_filled(
+                well,
+                RADIUS / 2.0,
+                crate::view::colour(palette.secondary.surface),
+            );
+        }
         for line in &laid.lines {
             painter.text(
                 egui::pos2(
@@ -201,6 +216,7 @@ pub(crate) struct Surface {
 
 /// Hide this world's card, if it shows.
 fn hide(surfaces: &mut Surfaces, world: u128, state: &mut Loop) {
+    world::window::draw::thumbnail::set(Vec::new());
     if let Some(surface) = surfaces.get_mut(&world)
         && surface.visible
         && let Some(registry) = state.inner.surface_mut().registry.as_mut()
@@ -264,9 +280,27 @@ pub(crate) fn reconcile(
         (x - MARGIN, y - MARGIN, w + MARGIN * 2.0, h + MARGIN * 2.0),
         f64::from(factor),
     );
+    // The live preview: the window, fitted into the card's thumbnail box on
+    // this output (drawn by the scene over the card while it shows).
+    let thumb = at
+        .tip
+        .thumbnail
+        .as_ref()
+        .zip(at.thumb)
+        .map(
+            |(t, (tx, ty, tw, th))| world::window::draw::thumbnail::Request {
+                id: t.id,
+                generation: t.generation,
+                rect: crate::render::physical((x + tx, y + ty, tw, th), f64::from(factor)),
+                output: output_key.clone(),
+            },
+        );
+    world::window::draw::thumbnail::set(thumb.iter().cloned().collect());
     let snapshot = json!({
         "scene": scene, "title": at.tip.title, "subtitle": at.tip.subtitle,
         "lines": at.tip.lines, "x": x, "y": y, "width": w, "height": h,
+        "thumbnail": thumb.map(|t| json!({"id": t.id, "generation": t.generation,
+            "x": t.rect.loc.x, "y": t.rect.loc.y, "width": t.rect.size.w, "height": t.rect.size.h})),
     });
     let Some(surface) = surfaces.get_mut(&world) else {
         let mut ui = TooltipUi {
@@ -360,6 +394,7 @@ mod tests {
             },
             anchor,
             size,
+            thumb: None,
         }
     }
 
@@ -372,6 +407,12 @@ mod tests {
             title: "Workspace 2".into(),
             subtitle: "Mail · 2 windows".into(),
             lines: vec!["Inbox".into(), "Drafts".into()],
+            thumbnail: Some(crate::view::tip::Thumbnail {
+                id: 3,
+                generation: 1,
+                w: 1600.0,
+                h: 900.0,
+            }),
         };
         for look in [None, Some(crate::appearance::fixture("dark", 1.25))] {
             let mut rt = ui::UiRuntime::headless(

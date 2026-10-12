@@ -19,6 +19,8 @@ smithay::render_elements! {
     Pointer = PointerRenderElement<R>,
     Texture = PreImported<R>,
     Sentinel = SolidColorRenderElement,
+    /// A live window thumbnail (a hover tip's preview), under its own ids.
+    Thumbnail = world::window::draw::thumbnail::Thumb<R>,
 }
 
 impl<R> SceneElement<R>

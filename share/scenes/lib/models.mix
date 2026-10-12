@@ -176,7 +176,12 @@ fn task_tip($w, $name, $ws_current)
   $lines = []
   if $w.minimized then push($lines, text("minimised")) end
   if $t.elsewhere($w, $ws_current) then push($lines, text("on_workspace", {n: $w.workspace})) end
-  return tip($app, $title != $app ? $title : "", $lines)
+  $out = tip($app, $title != $app ? $title : "", $lines)
+  -- A live preview of the window (drawn by compd over the card).
+  if type($w.width) == "number" and type($w.height) == "number" and $w.width > 0 and $w.height > 0 then
+    $out.thumbnail = {id: $w.id, generation: $w.generation, w: $w.width, h: $w.height}
+  end
+  return $out
 end
 
 -- A tray item's tip: its title, and its own status or tooltip text when

@@ -534,6 +534,15 @@ check(deep_eq($named.tasks[0].tip, {title: "Example Mail", subtitle: "Inbox - Ma
 check(deep_eq($named.tasks[1].tip, {title: "example.term", lines: ["Minimised"]}), "no desktop name: the app id; an untitled window has no subtitle")
 check($named.tasks[0].initial == "E" and $named.tasks[1].initial == "E", "an icon-less task shows its initial")
 check(deep_eq($models.task_tip(window_row(5, 1, 3, "Doc", "example.editor", false, false), "Editor", 2), {title: "Editor", subtitle: "Doc", lines: ["On workspace 3"]}), "a task elsewhere says where")
+-- A window with a size gets a live thumbnail in its tip (compd draws it).
+$sized = window_row(6, 4, 2, "Inbox", "example.mail", false, false)
+$sized.width = 1600
+$sized.height = 900
+check(deep_eq($models.task_tip($sized, "Mail", 2).thumbnail, {id: 6, generation: 4, w: 1600, h: 900}), "a sized window's tip carries its thumbnail fence and size")
+$flat = window_row(7, 1, 2, "Zero", "example.mail", false, false)
+$flat.width = 0
+$flat.height = 900
+check($models.task_tip($flat, "Mail", 2).thumbnail == nil, "no thumbnail for a window with no size")
 check(deep_eq($named.tray[0].tip, {title: "Updates", subtitle: "3 pending"}), "a tray tip: title and the adapter's status")
 check(deep_eq($models.tray_tip({key: "i9"}), {title: "Status item"}), "an untitled tray item still has a tip")
 check($named.notes.tip.subtitle == "2 notifications" and $named.volume.tip.subtitle == "40%" and $named.network.tip.subtitle == "Connected (wireless)", "status tips")

@@ -408,7 +408,7 @@ fn tip_pass(
         });
         (size.x, size.y)
     };
-    let size_of = |tip: &super::tip::Tip| super::tip::card(tip, size, &measure).size;
+    let size_of = |tip: &super::tip::Tip| super::tip::card(tip, size, &measure);
     match scene
         .hover
         .pass(std::time::Instant::now(), candidate, pressed, &size_of)

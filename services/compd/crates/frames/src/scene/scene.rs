@@ -681,7 +681,7 @@ where
 
     // CONTENT band: windows + world UI INTERLEAVED by the DrawOrder authority
     // ("everything interleaves").
-    let canvas_window = {
+    let mut canvas_window = {
         {
             // Region pass: one world, drawn once per leaf viewport (split / floating
             // pane) through that slot's camera into its sub-rect. `render_target`
@@ -860,6 +860,61 @@ where
     for elem in prepared.surfaces_dim {
         if draw_ui(&elem.output) {
             plan.push(layer::CAPTURE_DIM, DrawNode::UI(elem));
+        }
+    }
+    // Live window thumbnails (a hover tip's preview box), over the screen UI,
+    // on the output the tip is on. A previewed window is owed frames (it is in
+    // the presented set) and kept out of `suspended` while it shows, so the
+    // preview is live even for a window on another workspace or minimised.
+    let thumbs = world::window::draw::thumbnail::requests();
+    world::window::draw::thumbnail::retain_ids(&thumbs.iter().map(|t| t.id).collect::<Vec<_>>());
+    for request in thumbs {
+        if render_key
+            .as_deref()
+            .is_some_and(|key| key != request.output.as_str())
+        {
+            continue;
+        }
+        let Ok(window) = world::window::draw::frame::scene::capture_window(
+            state,
+            request.id,
+            request.generation,
+        ) else {
+            continue;
+        };
+        let scale = state.size_ctx_all().scale;
+        let elements = world::window::draw::thumbnail::elements(
+            renderer,
+            &window,
+            request.id,
+            request.rect,
+            scale,
+        );
+        if elements.is_empty() {
+            continue;
+        }
+        plan.extend(
+            layer::THUMBNAIL,
+            elements.into_iter().map(DrawNode::Thumbnail),
+        );
+        // Keep a previewed window awake (not xdg-suspended). Any pane's set
+        // will do: `refresh_suspended` reads the union over every output's
+        // panes, and this output's entries are cleared at the top of the pass,
+        // so the exemption lapses one frame after the tip hides. If that union
+        // ever goes per-pane, this must name the pane.
+        if let Some(uuid) = window.uuid()
+            && let Some(awake) = state
+                .inner
+                .viewports_mut()
+                .on_pane_awake
+                .values_mut()
+                .next()
+            && !awake.contains(&uuid)
+        {
+            awake.push(uuid);
+        }
+        if !canvas_window.contains(&window) {
+            canvas_window.push(window);
         }
     }
     let _ = prepared.surfaces; // world UI now drawn per-id in the content band

@@ -23,6 +23,10 @@ example `{template:"launcher",name:"preview-launcher"}`) to try one beside the
 running panel. See [the loader manual](../../docs/cos/scenes-loader.md) and
 [quoin-panel](../../docs/cos/quoin-panel.md).
 
+The panel's buttons are icon-only; names and details are in their tooltips
+(`lib/models.mix`). A task's tooltip also shows a live thumbnail of its
+window, which compd draws into the card while it is up.
+
 `settings/` is Settings/Appearance. It authors the scene `quoin-settings` on
 Quoin's declared page `settings.appearance`, so `{template:"settings"}`
 installs under that name and keeps the page. Its behaviour does not own any

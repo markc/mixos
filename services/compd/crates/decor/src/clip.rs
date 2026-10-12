@@ -157,7 +157,11 @@ pub fn program<R: SceneDispatch>(renderer: &mut R) -> Option<GlesTexProgram> {
 pub struct Clipped<E> {
     inner: E,
     program: Option<GlesTexProgram>,
+    /// In the inner element's space: the corners `opaque_regions` cuts.
     clip: Clip,
+    /// Where the shader cuts, in the space the frame is drawn in: `clip`,
+    /// unless the element is drawn transformed (see [`Clipped::rescaled`]).
+    drawn: Clip,
 }
 
 impl<E> Clipped<E> {
@@ -166,7 +170,26 @@ impl<E> Clipped<E> {
             inner,
             program,
             clip,
+            drawn: clip,
         }
+    }
+
+    /// The same element drawn `scale` times as large about the origin and
+    /// then moved by `offset` (a thumbnail). The shader's clip, which is in
+    /// output physical px, follows the same transform, radius included. The
+    /// opaque regions stay in the inner element's space, where the wrapping
+    /// rescale and relocate map them.
+    pub fn rescaled(mut self, scale: f64, offset: Point<i32, Physical>) -> Self {
+        let r = self.clip.rect;
+        let x0 = (r.loc.x as f64 * scale).round() as i32 + offset.x;
+        let y0 = (r.loc.y as f64 * scale).round() as i32 + offset.y;
+        let x1 = ((r.loc.x + r.size.w) as f64 * scale).round() as i32 + offset.x;
+        let y1 = ((r.loc.y + r.size.h) as f64 * scale).round() as i32 + offset.y;
+        self.drawn = Clip {
+            rect: Rectangle::new((x0, y0).into(), ((x1 - x0).max(0), (y1 - y0).max(0)).into()),
+            radius: (self.clip.radius as f64 * scale) as f32,
+        };
+        self
     }
 }
 
@@ -206,18 +229,10 @@ impl<E: Element> Element for Clipped<E> {
     /// The inner element's opaque region less the corners the clip cuts: what
     /// shows through a cut corner must still be drawn behind it.
     fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
-        let regions = self.inner.opaque_regions(scale);
         if self.program.is_none() || self.clip.radius <= 0.0 {
-            return regions;
+            return self.inner.opaque_regions(scale);
         }
-        // Element-local, like the regions.
-        let origin = self.inner.geometry(scale).loc;
-        let corners = self
-            .clip
-            .corners()
-            .map(|c| Rectangle::new(c.loc - origin, c.size));
-        let kept = Rectangle::subtract_rects_many(regions.iter().copied(), corners);
-        OpaqueRegions::from_slice(&kept)
+        self.opaque_less_corners(scale)
     }
 
     fn alpha(&self) -> f32 {
@@ -226,6 +241,23 @@ impl<E: Element> Element for Clipped<E> {
 
     fn kind(&self) -> Kind {
         self.inner.kind()
+    }
+}
+
+impl<E: Element> Clipped<E> {
+    /// The inner element's opaque region less the clip's corners, both in the
+    /// inner element's space (never the drawn clip's, which a thumbnail has
+    /// moved: the wrappers around this element map its regions themselves).
+    fn opaque_less_corners(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
+        let regions = self.inner.opaque_regions(scale);
+        // Element-local, like the regions.
+        let origin = self.inner.geometry(scale).loc;
+        let corners = self
+            .clip
+            .corners()
+            .map(|c| Rectangle::new(c.loc - origin, c.size));
+        let kept = Rectangle::subtract_rects_many(regions.iter().copied(), corners);
+        OpaqueRegions::from_slice(&kept)
     }
 }
 
@@ -243,12 +275,12 @@ where
         opaque_regions: &[Rectangle<i32, Physical>],
         cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
-        if self.program.is_none() || self.clip.radius <= 0.0 {
+        if self.program.is_none() || self.drawn.radius <= 0.0 {
             return self
                 .inner
                 .draw(frame, src, dst, damage, opaque_regions, cache);
         }
-        R::push_tex_program(frame, self.program.as_ref(), self.clip.uniforms());
+        R::push_tex_program(frame, self.program.as_ref(), self.drawn.uniforms());
         let drawn = self
             .inner
             .draw(frame, src, dst, damage, opaque_regions, cache);
@@ -266,6 +298,88 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A thumbnail scales the element about the origin, then moves it: the
+    /// clip rect and radius follow exactly (it is output-space uniforms).
+    #[test]
+    fn a_rescaled_clip_follows_the_element() {
+        let clip = Clip {
+            rect: Rectangle::new((100, 50).into(), (800, 600).into()),
+            radius: 12.0,
+        };
+        let c = Clipped::new((), None, clip).rescaled(0.25, Point::from((1000, 700)));
+        // Corners round once, half away from zero, as RescaleRenderElement's
+        // geometry does: y 12.5 -> 13, bottom 162.5 -> 163.
+        assert_eq!(
+            c.drawn.rect,
+            Rectangle::new((1025, 713).into(), (200, 150).into())
+        );
+        assert_eq!(c.drawn.radius, 3.0);
+        // The opacity clip stays in the element's own space.
+        assert_eq!(c.clip, clip);
+        // Identity leaves it alone.
+        let same = Clipped::new((), None, clip).rescaled(1.0, Point::from((0, 0)));
+        assert_eq!(same.drawn, clip);
+    }
+
+    /// A fully opaque element at a fixed place.
+    struct Opaque {
+        id: Id,
+        geometry: Rectangle<i32, Physical>,
+    }
+
+    impl Element for Opaque {
+        fn id(&self) -> &Id {
+            &self.id
+        }
+        fn current_commit(&self) -> CommitCounter {
+            CommitCounter::default()
+        }
+        fn src(&self) -> Rectangle<f64, Buffer> {
+            Rectangle::from_size((1.0, 1.0).into())
+        }
+        fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
+            self.geometry
+        }
+        fn opaque_regions(&self, _scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
+            OpaqueRegions::from_slice(&[Rectangle::from_size(self.geometry.size)])
+        }
+    }
+
+    /// A thumbnail moves only the shader's clip: the corners cut from the
+    /// opaque region stay in the element's own (local) space, where the
+    /// rescale and relocate wrappers map them.
+    #[test]
+    fn a_rescaled_clip_cuts_the_same_opaque_corners() {
+        let geometry = Rectangle::new((100, 50).into(), (800, 600).into());
+        let clip = Clip {
+            rect: geometry,
+            radius: 12.0,
+        };
+        let scale = Scale::from(1.0);
+        let plain = Clipped::new(
+            Opaque {
+                id: Id::new(),
+                geometry,
+            },
+            None,
+            clip,
+        );
+        let before = plain.opaque_less_corners(scale);
+        let moved = plain.rescaled(0.25, Point::from((1000, 700)));
+        let after = moved.opaque_less_corners(scale);
+        assert_eq!(
+            before.iter().collect::<Vec<_>>(),
+            after.iter().collect::<Vec<_>>()
+        );
+        let covers = |p: Point<i32, Physical>| after.iter().any(|r| r.contains(p));
+        // Local corners are cut; the middle and the edges between them stay.
+        assert!(!covers((0, 0).into()));
+        assert!(!covers((799, 599).into()));
+        assert!(covers((400, 300).into()));
+        assert!(covers((12, 0).into()));
+        assert!(covers((0, 12).into()));
+    }
 
     #[test]
     fn the_shader_keeps_smithays_defines_marker() {
