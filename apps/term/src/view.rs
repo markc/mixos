@@ -109,7 +109,13 @@ pub fn panes(ui: &Ui, app: &App) {
                 outer.min + egui::vec2(border, border),
                 egui::vec2(width as f32 / scale, height as f32 / scale),
             );
-            painter.add(pane.callback(rect, app.raster.clone()));
+            // A pane smaller than its smallest grid (two columns, one
+            // row) clips the grid at its own border, never drawing over a
+            // neighbour; the grid keeps its origin.
+            let interior = outer.shrink(border).intersect(painter.clip_rect());
+            painter
+                .with_clip_rect(interior)
+                .add(pane.callback(rect, app.raster.clone()));
         }
     }
     preedit(ui, app, &chrome);
