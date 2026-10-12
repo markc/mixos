@@ -780,7 +780,10 @@ impl<P: LayerProgram + 'static> PointerHandler for State<P> {
                     let (unit, delta) = if horizontal.discrete != 0 || vertical.discrete != 0 {
                         (
                             egui::MouseWheelUnit::Line,
-                            input::wheel(f64::from(horizontal.discrete), f64::from(vertical.discrete)),
+                            input::wheel(
+                                f64::from(horizontal.discrete),
+                                f64::from(vertical.discrete),
+                            ),
                         )
                     } else {
                         (
