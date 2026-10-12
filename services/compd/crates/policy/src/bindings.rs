@@ -30,6 +30,8 @@ pub mod keysym {
     pub const F1: u32 = 0xffbe;
     pub const F9: u32 = 0xffc6;
     pub const F12: u32 = 0xffc9;
+    /// Print Screen.
+    pub const PRINT: u32 = 0xff61;
 }
 
 /// The effective modifier state of one key edge (xkb's, not `depressed`, so
@@ -198,6 +200,75 @@ pub enum BindingAction {
     SwitchVt(u8),
     /// The opt-in F9 Bus key.
     SendBusKey,
+    /// Print Screen: start (or hand to the running) screenshot app.
+    Screenshot(ScreenshotMode),
+}
+
+/// What Print Screen captures, as the screenshot app's `--capture` names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScreenshotMode {
+    /// An interactive region (Print).
+    Region,
+    /// The whole output (Shift+Print).
+    Screen,
+    /// The focused window (Alt+Print).
+    Window,
+}
+
+impl ScreenshotMode {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Region => "region",
+            Self::Screen => "screen",
+            Self::Window => "window",
+        }
+    }
+}
+
+/// One Print Screen press, ready to launch: the mode, and for a window
+/// capture the window that had the keyboard when the key went down (the
+/// screenshot window may take focus before it asks).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScreenshotLaunch {
+    pub mode: ScreenshotMode,
+    /// `(id, generation)` of the focused window.
+    pub window: Option<(u64, u64)>,
+}
+
+impl ScreenshotLaunch {
+    /// The launch for `mode` with `focused` the focused window, if any. A
+    /// window capture with nothing focused takes the whole output instead.
+    pub fn new(mode: ScreenshotMode, focused: Option<(u64, u64)>) -> Self {
+        match (mode, focused) {
+            (ScreenshotMode::Window, Some(window)) => Self {
+                mode,
+                window: Some(window),
+            },
+            (ScreenshotMode::Window, None) => Self {
+                mode: ScreenshotMode::Screen,
+                window: None,
+            },
+            _ => Self { mode, window: None },
+        }
+    }
+
+    /// `program`'s command line for this launch, capturing through the
+    /// compositor registered on the Bus as `comp` (the one that saw the key:
+    /// `comp`, `comp-nested` or its `--bus-service`).
+    pub fn argv(&self, program: &str, comp: &str) -> Vec<String> {
+        let mut argv = vec![
+            program.to_owned(),
+            "--comp".to_owned(),
+            comp.to_owned(),
+            "--capture".to_owned(),
+            self.mode.name().to_owned(),
+        ];
+        if let Some((id, generation)) = self.window {
+            argv.push("--window".to_owned());
+            argv.push(format!("{id}:{generation}"));
+        }
+        argv
+    }
 }
 
 impl BindingAction {
@@ -215,6 +286,9 @@ impl BindingAction {
             Self::ToggleInterception => "ToggleInterception",
             Self::SwitchVt(_) => "SwitchVt",
             Self::SendBusKey => "SendBusKey",
+            Self::Screenshot(ScreenshotMode::Region) => "ScreenshotRegion",
+            Self::Screenshot(ScreenshotMode::Screen) => "ScreenshotScreen",
+            Self::Screenshot(ScreenshotMode::Window) => "ScreenshotWindow",
         }
     }
 }
@@ -387,6 +461,36 @@ fn workspace_bindings() -> impl Iterator<Item = Binding> {
         })
 }
 
+/// Print Screen, in both profiles, as GNOME and KDE place it: Print
+/// selects a region, Shift+Print takes the whole output, Alt+Print the
+/// focused window. The matcher sees the level-0 symbol, so Alt+Print reads
+/// Print (not Sys_Req) here.
+fn screenshot_bindings() -> [Binding; 3] {
+    [
+        binding(
+            "screenshot-region",
+            keysym::PRINT,
+            "Print",
+            ModifierSet::NONE,
+            BindingAction::Screenshot(ScreenshotMode::Region),
+        ),
+        binding(
+            "screenshot-screen",
+            keysym::PRINT,
+            "Print",
+            ModifierSet::NONE.with_shift(),
+            BindingAction::Screenshot(ScreenshotMode::Screen),
+        ),
+        binding(
+            "screenshot-window",
+            keysym::PRINT,
+            "Print",
+            ModifierSet::NONE.with_alt(),
+            BindingAction::Screenshot(ScreenshotMode::Window),
+        ),
+    ]
+}
+
 /// The compiled table.
 #[derive(Clone, Debug)]
 pub struct BindingTable {
@@ -428,6 +532,7 @@ impl BindingTable {
         ];
         bindings.extend(workspace_bindings());
         bindings.extend([workspace_step(false), workspace_step(true)]);
+        bindings.extend(screenshot_bindings());
         Self { bindings }
     }
 
@@ -453,6 +558,7 @@ impl BindingTable {
         bindings.extend([cycle_window(false), cycle_window(true)]);
         bindings.extend(workspace_bindings());
         bindings.extend([workspace_step(false), workspace_step(true)]);
+        bindings.extend(screenshot_bindings());
         Self { bindings }
     }
 

@@ -156,7 +156,10 @@ fn window_verbs_refuse_stale_targets_and_the_lock() {
 
     for op in [
         WindowOp::Minimize { id, generation },
-        WindowOp::Restore { target: None },
+        WindowOp::Restore {
+            target: None,
+            activate: true,
+        },
         WindowOp::Focus {
             id,
             generation,
@@ -486,6 +489,21 @@ fn minimise_and_restore_report_changed_and_the_record() {
     );
     let (reply, _) = set_minimized(&mut registry, id, generation, false).unwrap();
     assert_eq!(body(reply).1["minimized"], false);
+    // A quiet restore unminimises without activating anything.
+    set_minimized(&mut registry, id, generation, true).unwrap();
+    let (reply, effects) = restore(&mut registry, id, generation, false).unwrap();
+    assert_eq!(body(reply).1["minimized"], false);
+    assert!(effects.contains(&Effect::Unminimize(SurfaceId(id))));
+    // Nothing that would move the focus, activate or raise: the host runs
+    // `Unminimize` without settling the focus.
+    assert!(!effects.iter().any(|e| matches!(
+        e,
+        Effect::Restore(_) | Effect::Activate(_) | Effect::Focus(_) | Effect::Raise(_)
+    )));
+    // The default restore still activates.
+    set_minimized(&mut registry, id, generation, true).unwrap();
+    let (_, effects) = restore(&mut registry, id, generation, true).unwrap();
+    assert!(effects.contains(&Effect::Restore(SurfaceId(id))));
     assert_eq!(body(nothing_to_restore(&registry)).1["minimized_count"], 0);
 }
 

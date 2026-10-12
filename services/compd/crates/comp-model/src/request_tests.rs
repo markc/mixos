@@ -326,17 +326,46 @@ fn service_name_validation_matches_abp_grammar() {
 fn window_verb_arguments_parse_with_both_or_neither_target_fields() {
     assert_eq!(
         parse_window_op("comp.window.restore", &Value::Null),
-        Ok(WindowOp::Restore { target: None })
+        Ok(WindowOp::Restore {
+            target: None,
+            activate: true
+        })
     );
     assert_eq!(
         parse_window_op("comp.window.restore", &json!({})),
-        Ok(WindowOp::Restore { target: None })
+        Ok(WindowOp::Restore {
+            target: None,
+            activate: true
+        })
     );
     assert_eq!(
         parse_window_op("comp.window.restore", &json!({"id": 7, "generation": 3})),
         Ok(WindowOp::Restore {
-            target: Some((7, 3))
+            target: Some((7, 3)),
+            activate: true
         })
+    );
+    assert_eq!(
+        parse_window_op(
+            "comp.window.restore",
+            &json!({"id": 7, "generation": 3, "activate": false})
+        ),
+        Ok(WindowOp::Restore {
+            target: Some((7, 3)),
+            activate: false
+        })
+    );
+    assert!(
+        parse_window_op("comp.window.restore", &json!({"activate": "no"})).is_err(),
+        "activate is a bool"
+    );
+    assert!(
+        parse_window_op(
+            "comp.window.minimize",
+            &json!({"id": 7, "generation": 3, "activate": false})
+        )
+        .is_err(),
+        "minimize takes no activate"
     );
     assert_eq!(
         parse_window_op("comp.window.minimize", &json!({"id": 7, "generation": 3})),
@@ -474,7 +503,11 @@ fn window_verb_unknown_fields_are_refused_by_name() {
         assert_eq!(rc, 10);
         assert_eq!(
             serde_json::from_str::<Value>(&body).unwrap(),
-            json!({"error": "invalid_args", "field": "gen", "allowed": ["id", "generation"]}),
+            if verb == "comp.window.restore" {
+                json!({"error": "invalid_args", "field": "gen", "allowed": ["id", "generation", "activate"]})
+            } else {
+                json!({"error": "invalid_args", "field": "gen", "allowed": ["id", "generation"]})
+            },
             "{verb}"
         );
     }

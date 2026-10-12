@@ -193,9 +193,11 @@ services/releasesd/
    - the shell is `mix`;
    - units are named after their binary (`maild.service`).
    Binary names are checked against the major distributions' file lists
-   before first use. The accepted collisions are `mix` (Elixir) and `rec`
+   before first use. The accepted collisions are `mix` (Elixir), `rec`
    and `play` (sox,
-   [decision](docs/decisions/2026-10-11-rec-and-play.md)). MixOS installs
+   [decision](docs/decisions/2026-10-11-rec-and-play.md)) and
+   `screenshot` (nwg-shell,
+   [decision](docs/decisions/2026-10-12-screenshot.md)). MixOS installs
    to `/opt/mixos/bin`, which comes first in its PATH, and units and scripts
    call these binaries by absolute path.
 5. **Never reuse a name.** Retired package, binary, app and Bus verb names

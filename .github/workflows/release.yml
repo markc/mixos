@@ -85,7 +85,7 @@ jobs:
         run: |
           cargo build --release --locked \
             -p mix-shell -p noded -p editd -p settingsd -p portald \
-            -p compd -p ced -p dopus -p prefs -p busviewer
+            -p compd -p ced -p dopus -p prefs -p busviewer -p screenshot
 
       - name: Package
         run: target/release/mix tools/package.mix --release "$VERSION" --arch ${{ matrix.arch }}

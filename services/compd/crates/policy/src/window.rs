@@ -168,6 +168,39 @@ pub fn state_reply<H>(
     ))
 }
 
+/// `comp.window.restore` of one window: [`set_minimized`] (activated by the
+/// host) or, with `activate` false, [`restore_quietly`].
+pub fn restore<H: Clone + Eq + Hash>(
+    registry: &mut Registry<H>,
+    id: u64,
+    generation: u64,
+    activate: bool,
+) -> Result<(ControlReply, Vec<Effect>), ControlReply> {
+    if activate {
+        set_minimized(registry, id, generation, false)
+    } else {
+        restore_quietly(registry, id, generation)
+    }
+}
+
+/// [`set_minimized`] for a restore that must not move the focus: the
+/// window is shown again where it is, and nothing is activated.
+pub fn restore_quietly<H: Clone + Eq + Hash>(
+    registry: &mut Registry<H>,
+    id: u64,
+    generation: u64,
+) -> Result<(ControlReply, Vec<Effect>), ControlReply> {
+    let (reply, effects) = set_minimized(registry, id, generation, false)?;
+    let effects = effects
+        .into_iter()
+        .map(|effect| match effect {
+            Effect::Restore(sid) => Effect::Unminimize(sid),
+            other => other,
+        })
+        .collect();
+    Ok((reply, effects))
+}
+
 /// `comp.window.minimize {id, generation}` / `restore {id, generation}`:
 /// the minimised flag changes in the registry; the engine runs the
 /// visibility funnel. Returns the reply and the effects.

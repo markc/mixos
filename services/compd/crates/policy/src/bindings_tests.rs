@@ -217,6 +217,91 @@ fn the_bus_key_is_opt_in_and_fires_once_until_release() {
     );
 }
 
+const PRINT_CODE: u32 = 107;
+
+#[test]
+fn print_screen_takes_a_region_shift_the_screen_alt_the_window() {
+    for profile in [BindingProfile::Nested, BindingProfile::KmsLive] {
+        let mut state = BindingState::for_profile(profile, true);
+        let alt = Modifiers {
+            alt: true,
+            ..Modifiers::default()
+        };
+        for (modifiers, mode) in [
+            (Modifiers::default(), ScreenshotMode::Region),
+            (mods(false, true, false), ScreenshotMode::Screen),
+            (alt, ScreenshotMode::Window),
+        ] {
+            assert_eq!(
+                state.dispatch(PRINT_CODE, true, Some(keysym::PRINT), &modifiers),
+                KeyDisposition::Act(BindingAction::Screenshot(mode)),
+                "{profile:?} {mode:?}"
+            );
+            assert_eq!(
+                state.dispatch(PRINT_CODE, false, Some(keysym::PRINT), &modifiers),
+                KeyDisposition::SwallowRelease
+            );
+        }
+        // Ctrl+Print stays the client's.
+        assert_eq!(
+            state.dispatch(
+                PRINT_CODE,
+                true,
+                Some(keysym::PRINT),
+                &mods(false, false, true)
+            ),
+            KeyDisposition::Forward
+        );
+    }
+}
+
+#[test]
+fn a_screenshot_launch_names_its_mode_and_window() {
+    let window = ScreenshotLaunch::new(ScreenshotMode::Window, Some((7, 3)));
+    assert_eq!(
+        window.argv("/opt/mixos/bin/screenshot", "comp-nested"),
+        [
+            "/opt/mixos/bin/screenshot",
+            "--comp",
+            "comp-nested",
+            "--capture",
+            "window",
+            "--window",
+            "7:3"
+        ]
+    );
+    // Nothing focused: the whole output instead.
+    let unfocused = ScreenshotLaunch::new(ScreenshotMode::Window, None);
+    assert_eq!(unfocused.mode, ScreenshotMode::Screen);
+    assert_eq!(
+        unfocused.argv("screenshot", "comp"),
+        ["screenshot", "--comp", "comp", "--capture", "screen"]
+    );
+    let region = ScreenshotLaunch::new(ScreenshotMode::Region, Some((7, 3)));
+    assert_eq!(region.window, None, "only a window capture names a window");
+    assert_eq!(
+        region.argv("screenshot", "comp"),
+        ["screenshot", "--comp", "comp", "--capture", "region"]
+    );
+}
+
+/// The person's own keys (bare F1–F12) are never bound by default.
+#[test]
+fn no_default_binds_a_bare_function_key() {
+    for profile in [BindingProfile::Nested, BindingProfile::KmsLive] {
+        let state = BindingState::for_profile(profile, true);
+        for binding in state.table.bindings() {
+            let function_key = (keysym::F1..=keysym::F12).contains(&binding.keysym);
+            assert!(
+                !(function_key && binding.modifiers.required == ModifierSet::NONE),
+                "{} binds bare {}",
+                binding.id,
+                binding.keysym_name
+            );
+        }
+    }
+}
+
 #[test]
 fn chords_and_ids_are_unique_and_spelled_as_comp_spells_them() {
     for profile in [BindingProfile::Nested, BindingProfile::KmsLive] {

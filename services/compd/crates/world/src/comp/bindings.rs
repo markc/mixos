@@ -15,7 +15,9 @@
 //! (`policy_host::control::apply_bindings`), so a chord and its verb share
 //! one primitive.
 
-use policy::bindings::{BindingAction, BindingProfile, BindingState, KeyDisposition, Modifiers};
+use policy::bindings::{
+    BindingAction, BindingProfile, BindingState, KeyDisposition, Modifiers, ScreenshotLaunch,
+};
 use smithay::input::keyboard::ModifiersState;
 
 use crate::state::Loop;
@@ -25,6 +27,8 @@ pub struct Bindings {
     state: Option<BindingState>,
     /// Window/workspace actions waiting for the Bus pass.
     pending: Vec<BindingAction>,
+    /// Print Screen presses waiting for the launcher (compd's executor).
+    launches: Vec<ScreenshotLaunch>,
     /// Actions fired since start, and the last one (`compd.truth`).
     pub fired: u64,
     pub last: Option<&'static str>,
@@ -61,6 +65,16 @@ impl Bindings {
     /// The queued window/workspace actions, oldest first.
     pub fn take_pending(&mut self) -> Vec<BindingAction> {
         std::mem::take(&mut self.pending)
+    }
+
+    /// Queue a Print Screen launch.
+    pub fn launch(&mut self, launch: ScreenshotLaunch) {
+        self.launches.push(launch);
+    }
+
+    /// The queued Print Screen launches, oldest first.
+    pub fn take_launches(&mut self) -> Vec<ScreenshotLaunch> {
+        std::mem::take(&mut self.launches)
     }
 }
 
@@ -145,9 +159,38 @@ pub fn key(
         // The F9 Bus key is opt-in by configuration; compd's table never
         // carries it.
         BindingAction::SendBusKey => {}
+        // Print Screen: the window holding the keyboard is read here, at the
+        // key press, before any later input or queued action can move focus.
+        BindingAction::Screenshot(mode) => {
+            let focused = focused_window(lp);
+            lp.inner
+                .comp
+                .bindings
+                .launch(ScreenshotLaunch::new(mode, focused));
+        }
         action => bindings.pending.push(action),
     }
     true
+}
+
+/// The window holding the human keyboard (its root, for a popup), as
+/// `(id, generation)`, if it is a managed toplevel.
+pub fn focused_window(lp: &Loop) -> Option<(u64, u64)> {
+    use dispatcher::wire::trait_::surface_event::SurfaceHandle;
+    let surface = lp.state.seat.seat.get_keyboard()?.current_focus()?;
+    let registry = &lp.inner.comp.registry;
+    let mut id = registry.id_for_handle(&SurfaceHandle::resolve(&surface))?;
+    for _ in 0..64 {
+        match registry.get(id).and_then(|record| record.parent()) {
+            Some(parent) => id = parent,
+            None => break,
+        }
+    }
+    let record = registry.get(id)?;
+    record
+        .role()
+        .managed_toplevel()
+        .then(|| (record.id().0, record.generation()))
 }
 
 /// Ctrl+Alt+Fn on kms-live: the libseat VT switch, deferred to idle as the

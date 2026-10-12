@@ -91,6 +91,57 @@ impl Executor {
     }
 }
 
+/// This compositor's Bus service name (`comp`, `comp-nested` or its
+/// `--bus-service`), set once at start.
+static COMP_SERVICE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Record the compositor's Bus service name for Print Screen's launches.
+pub fn set_comp_service(name: &str) {
+    let _ = COMP_SERVICE.set(name.to_owned());
+}
+
+/// Print Screen: launch the screenshot app for each press the key bindings
+/// queued (`--capture region|screen|window`, with the window focused at the
+/// press). A screenshot window already running takes the request from the
+/// new process over the Bus, so a press never opens a second window. The
+/// program is `screenshot` beside this compd (MixOS installs every binary
+/// into one directory), else the first on `PATH`.
+pub fn launch_screenshots(state: &mut world::state::Loop) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static LAUNCHES: AtomicU64 = AtomicU64::new(0);
+    let launches = state.inner.comp.bindings.take_launches();
+    if launches.is_empty() {
+        return;
+    }
+    let program = std::env::current_exe()
+        .ok()
+        .map(|exe| exe.with_file_name("screenshot"))
+        .filter(|path| path.is_file())
+        .map_or_else(
+            || "screenshot".to_owned(),
+            |path| path.display().to_string(),
+        );
+    let Some(executor) = state.inner.kernel.get(&EXECUTOR).as_ref() else {
+        warn!("Print Screen: no launch executor; screenshot not started");
+        return;
+    };
+    // The screenshot captures through the compositor that saw the key.
+    let comp = COMP_SERVICE.get().map_or("comp", String::as_str);
+    for launch in launches {
+        let n = LAUNCHES.fetch_add(1, Ordering::Relaxed);
+        executor.launch(LaunchRequest {
+            argv: launch.argv(&program, comp),
+            env: Vec::new(),
+            working_dir: None,
+            token: String::new(),
+            unit: format!("mixos-screenshot-{}-{n}", std::process::id()),
+            correlation: None,
+            container: None,
+            start_container: false,
+        });
+    }
+}
+
 /// Kernel storage slot for the executor (driver data), set by the loader.
 pub static EXECUTOR: Token<Option<Executor>> = Token::new();
 pub static EXECUTOR_MUT: TokenMut<Option<Executor>> = TokenMut::new(&EXECUTOR);

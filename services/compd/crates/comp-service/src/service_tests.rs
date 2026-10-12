@@ -214,7 +214,10 @@ async fn controls_run_in_arrival_order_and_each_admission_gets_its_reply() {
         .request_set_fenced("windows.s7.minimized".into(), json!(true), Some(3))
         .unwrap();
     let window = ingress
-        .request_window(WindowOp::Restore { target: None })
+        .request_window(WindowOp::Restore {
+            target: None,
+            activate: true,
+        })
         .unwrap();
     let input = ingress.request_input(agent_key()).unwrap();
     let mut engine = engine(&wiring.context);
@@ -223,7 +226,7 @@ async fn controls_run_in_arrival_order_and_each_admission_gets_its_reply() {
         engine.inner.calls,
         [
             "set windows.s7.minimized Some(3)".to_string(),
-            "window Restore { target: None }".to_string(),
+            "window Restore { target: None, activate: true }".to_string(),
             format!("input {:?}", agent_key()),
         ]
     );

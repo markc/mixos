@@ -1,0 +1,2508 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! The window's state and rules, with no drawing and no I/O: the document,
+//! the one job at a time (a capture, an open, a save, a copy, an
+//! activation), the dialogs, and every action, from a menu, a shortcut, a
+//! gesture or the Bus. What leaves the process is queued as an [`Effect`]
+//! for the shell (or headless mode) to perform; each job carries a ticket,
+//! and a completion whose ticket is not the running job's is ignored.
+//!
+//! Unsaved work is never discarded without asking: an action that would
+//! replace or close a changed document opens the Discard dialog (Keep,
+//! Save, Discard) in the window; agents' `capture`, `open` and `quit` are
+//! refused instead, and headless mode refuses everything that would ask.
+//!
+//! Ported from Cap's iced reducer (`apps/cap/src/app.rs`, markc/mixos-iced)
+//! with the same rules.
+use crate::capture::{Captured, Mode, Request, Target, Window};
+use crate::ink::Ink;
+use crate::verbs;
+use annotation::library::Saved;
+use annotation::{Crop, Document, Kind, Point, Shape};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use std::path::PathBuf;
+
+/// Localises a catalogue key; the shell supplies it.
+pub type Label = fn(&str) -> String;
+
+/// What a press on the picture does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(into = "String", try_from = "String")]
+pub enum Tool {
+    /// Select, move and delete objects.
+    Select,
+    /// Drag out the part to keep.
+    Crop,
+    /// Draw an object of this kind.
+    Draw(Kind),
+}
+
+impl Tool {
+    /// Every tool, in toolbar order.
+    pub const ALL: [Tool; 11] = [
+        Tool::Select,
+        Tool::Crop,
+        Tool::Draw(Kind::Arrow),
+        Tool::Draw(Kind::Line),
+        Tool::Draw(Kind::Rectangle),
+        Tool::Draw(Kind::Ellipse),
+        Tool::Draw(Kind::Pen),
+        Tool::Draw(Kind::Highlighter),
+        Tool::Draw(Kind::Redact),
+        Tool::Draw(Kind::Text),
+        Tool::Draw(Kind::Number),
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Tool::Select => "select",
+            Tool::Crop => "crop",
+            Tool::Draw(kind) => kind.name(),
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|t| t.name() == name)
+    }
+}
+
+impl From<Tool> for String {
+    fn from(tool: Tool) -> Self {
+        tool.name().to_owned()
+    }
+}
+
+impl TryFrom<String> for Tool {
+    type Error = String;
+    fn try_from(name: String) -> Result<Self, String> {
+        Tool::from_name(&name).ok_or_else(|| format!("unknown tool {name:?}"))
+    }
+}
+
+/// A modal dialog.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Dialog {
+    /// Unsaved annotations: Keep editing, Save, Discard.
+    Discard,
+    /// The path of an image to open.
+    Open,
+    /// The path to save the PNG at.
+    SaveAs,
+    Shortcuts,
+    About,
+}
+
+impl Dialog {
+    pub fn name(self) -> &'static str {
+        match self {
+            Dialog::Discard => "discard",
+            Dialog::Open => "open",
+            Dialog::SaveAs => "save_as",
+            Dialog::Shortcuts => "shortcuts",
+            Dialog::About => "about",
+        }
+    }
+}
+
+/// The Discard dialog's answers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Answer {
+    Keep,
+    Save,
+    Discard,
+}
+
+/// The part of the state a person arranges: readable over the Bus as one
+/// value (`screenshot.info`'s `ui`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UiState {
+    pub tool: Tool,
+    /// The ink new objects take, straight sRGB with alpha.
+    pub colour: [u8; 4],
+    /// Stroke width in image pixels.
+    pub width: f32,
+    /// The text a Text object takes.
+    pub text: String,
+    /// Text and marker size in image pixels.
+    pub text_size: f32,
+    /// Zoom relative to fit, and the pan in view pixels.
+    pub zoom: f32,
+    pub pan: Point,
+    pub mode: Mode,
+    pub delay: u32,
+    /// Include the pointer in screen and region captures.
+    pub cursor: bool,
+    pub output: Option<String>,
+    pub window: Option<Target>,
+    pub dialog: Option<Dialog>,
+    /// The Open or Save As dialog's path field.
+    pub path: String,
+    pub selected: Option<u64>,
+}
+
+/// Stroke widths the Annotate menu offers.
+pub const WIDTHS: [(&str, &str, f32); 4] = [
+    ("thin", "width-thin", 2.0),
+    ("medium", "width-medium", 4.0),
+    ("thick", "width-thick", 8.0),
+    ("heavy", "width-heavy", 16.0),
+];
+
+/// Text sizes the Annotate menu offers.
+pub const SIZES: [(&str, &str, f32); 4] = [
+    ("small", "size-small", 16.0),
+    ("medium", "size-medium", 24.0),
+    ("large", "size-large", 40.0),
+    ("huge", "size-huge", 64.0),
+];
+
+/// Delays the Capture menu offers, in seconds.
+pub const DELAYS: [u32; 4] = [0, 3, 5, 10];
+
+impl UiState {
+    fn new(colour: [u8; 4]) -> Self {
+        Self {
+            tool: Tool::Draw(Kind::Arrow),
+            colour,
+            width: WIDTHS[1].2,
+            text: String::new(),
+            text_size: SIZES[1].2,
+            zoom: 1.0,
+            pan: Point { x: 0.0, y: 0.0 },
+            mode: Mode::Region,
+            delay: 0,
+            cursor: false,
+            output: None,
+            window: None,
+            dialog: None,
+            path: String::new(),
+            selected: None,
+        }
+    }
+}
+
+/// An action that may wait on the Discard dialog or a running job.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Pending {
+    Capture(Request),
+    /// Show the Open dialog.
+    OpenDialog,
+    Open(PathBuf),
+    Quit,
+}
+
+impl Pending {
+    /// Whether it replaces or closes the document.
+    fn discards(&self) -> bool {
+        !matches!(self, Pending::OpenDialog)
+    }
+}
+
+/// The kinds of job; one runs at a time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JobKind {
+    Capture,
+    Open,
+    Save,
+    Copy,
+    Show,
+}
+
+impl JobKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            JobKind::Capture => "capture",
+            JobKind::Open => "open",
+            JobKind::Save => "save",
+            JobKind::Copy => "copy",
+            JobKind::Show => "show",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Job {
+    ticket: u64,
+    kind: JobKind,
+    /// The Bus command waiting on it.
+    reply: Option<u64>,
+}
+
+/// Where a save goes.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SaveTo {
+    /// The screenshots folder, under a timestamped name.
+    Folder,
+    /// Exactly this new file.
+    Path(PathBuf),
+}
+
+/// Work for the shell. Nothing here has happened yet.
+#[derive(Debug)]
+pub enum Effect {
+    /// Answer Bus command `id`.
+    Reply { id: u64, rc: u8, body: Value },
+    /// Publish `body` on `<service>.<suffix>`.
+    Publish { suffix: &'static str, body: Value },
+    /// Run a capture; report [`App::captured`] with `ticket`. With `focus`
+    /// the window comes forward afterwards (a person asked). With `hide`
+    /// the window is hidden around it.
+    Capture {
+        ticket: u64,
+        request: Request,
+        hide: bool,
+        focus: bool,
+    },
+    /// Cancel the running capture.
+    Cancel,
+    /// Decode `path`; report [`App::opened`].
+    Open { ticket: u64, path: PathBuf },
+    /// Render and publish `document`; report [`App::saved`].
+    Save {
+        ticket: u64,
+        document: Box<Document>,
+        to: SaveTo,
+    },
+    /// Render `document` onto the clipboard; report [`App::copied`].
+    Copy {
+        ticket: u64,
+        document: Box<Document>,
+    },
+    /// Restore and focus the window; report [`App::shown`] when `ticket`
+    /// is a job, else only do it.
+    Show { ticket: Option<u64> },
+    /// Read the windows and outputs; report [`App::refreshed`].
+    Refresh,
+    /// Delete a raw capture the document no longer needs.
+    Forget { path: PathBuf },
+    /// Answer `id` with the newest `limit` saves.
+    Recent { id: u64, limit: usize },
+    /// Answer `id` with the command registry's description.
+    Commands { id: u64 },
+    /// Run registry command `command` and answer `id`.
+    Execute { id: u64, command: String },
+    /// Answer `id` with the Bus surface (`HELP`: its verbs only).
+    Describe { id: u64, help: bool },
+    /// Hand window verb `verb` (`ui.click`, `window`, …) to the drive layer.
+    Drive { id: u64, verb: String, args: Value },
+    /// Stop the Bus connection and close.
+    Exit,
+}
+
+/// The window's state and rules.
+pub struct App {
+    pub ui: UiState,
+    /// The window's own theme choice (View › Theme).
+    pub theme: toolkit::theme_menu::Choice,
+    pub document: Option<Document>,
+    /// The file the document came from: a capture or an opened image.
+    pub source: Option<PathBuf>,
+    /// The document's last save.
+    pub saved: Option<Saved>,
+    /// compd's reply for the capture shown.
+    pub capture: Value,
+    pub status: String,
+    pub windows: Vec<Window>,
+    pub outputs: Vec<String>,
+    /// Why the window and output lists could not be read, if they could not.
+    pub windows_error: Option<String>,
+    /// Bumps on every change to the document: the preview follows it.
+    pub revision: u64,
+    /// Bumps when the document is replaced: a render of an older one is
+    /// never shown.
+    pub document_id: u64,
+    /// The raw capture behind the document, deleted once it is saved,
+    /// replaced or closed.
+    pub capture_file: Option<PathBuf>,
+    pub connected: bool,
+    pub quitting: bool,
+    pub headless: bool,
+    /// The compositor this instance captures through (its Bus service).
+    pub comp: String,
+    pub inks: [Ink; 6],
+    /// Command ids Bus verbs ran, for `<service>.command.executed`.
+    pub ran: Vec<&'static str>,
+    job: Option<Job>,
+    pending: Option<Pending>,
+    effects: Vec<Effect>,
+    next_ticket: u64,
+    label: Label,
+}
+
+/// Refusal codes.
+pub mod code {
+    pub const ARGUMENT: &str = "ARGUMENT";
+    pub const BUSY: &str = "BUSY";
+    pub const UNSAVED: &str = "UNSAVED";
+    pub const NO_IMAGE: &str = "NO_IMAGE";
+    pub const DIALOG: &str = "DIALOG";
+    pub const HEADLESS: &str = "HEADLESS";
+    pub const FAILED: &str = "FAILED";
+    pub const COMPOSITOR: &str = "COMPOSITOR";
+    pub const CANCELLED: &str = "CANCELLED";
+    pub const UNKNOWN_VERB: &str = "UNKNOWN_VERB";
+}
+
+impl App {
+    pub fn new(label: Label, inks: [Ink; 6], headless: bool) -> Self {
+        Self {
+            ui: UiState::new(inks[0].rgba),
+            theme: toolkit::theme_menu::Choice::default(),
+            document: None,
+            source: None,
+            saved: None,
+            capture: Value::Null,
+            status: label("ready"),
+            windows: Vec::new(),
+            outputs: Vec::new(),
+            windows_error: None,
+            revision: 0,
+            document_id: 0,
+            capture_file: None,
+            connected: true,
+            quitting: false,
+            headless,
+            comp: "comp".into(),
+            inks,
+            ran: Vec::new(),
+            job: None,
+            pending: None,
+            effects: Vec::new(),
+            next_ticket: 0,
+            label,
+        }
+    }
+
+    /// Whether effects are queued.
+    pub fn has_effects(&self) -> bool {
+        !self.effects.is_empty()
+    }
+
+    /// The effects queued since the last call.
+    pub fn take_effects(&mut self) -> Vec<Effect> {
+        std::mem::take(&mut self.effects)
+    }
+
+    fn label(&self, key: &str) -> String {
+        (self.label)(key)
+    }
+
+    fn fail(&mut self, error: impl std::fmt::Display) {
+        self.status = format!("{}: {error}", self.label("error"));
+    }
+
+    fn next(&mut self) -> u64 {
+        self.next_ticket += 1;
+        self.next_ticket
+    }
+
+    // ---- what can run --------------------------------------------------
+
+    /// A job is running.
+    pub fn busy(&self) -> bool {
+        self.job.is_some()
+    }
+
+    /// The running job.
+    pub fn job(&self) -> Option<JobKind> {
+        self.job.map(|j| j.kind)
+    }
+
+    pub fn capturing(&self) -> bool {
+        self.job() == Some(JobKind::Capture)
+    }
+
+    pub fn modal(&self) -> bool {
+        self.ui.dialog.is_some()
+    }
+
+    /// No job, no dialog, not closing.
+    pub fn idle(&self) -> bool {
+        !self.busy() && !self.modal() && !self.quitting
+    }
+
+    /// There is a document and it can be changed now.
+    pub fn editable(&self) -> bool {
+        self.idle() && self.document.is_some()
+    }
+
+    pub fn dirty(&self) -> bool {
+        self.document.as_ref().is_some_and(Document::dirty)
+    }
+
+    /// The document's export would differ from its last save.
+    pub fn unsaved(&self) -> bool {
+        self.document.is_some() && (self.dirty() || self.saved.is_none())
+    }
+
+    /// The pending action, if any (the Discard dialog's, or after a job).
+    pub fn pending(&self) -> Option<&Pending> {
+        self.pending.as_ref()
+    }
+
+    /// The whole state as `screenshot.info` reports it.
+    pub fn info(&self) -> Value {
+        json!({
+            "schema": verbs::SCHEMA, "app_id": crate::APP_ID,
+            "version": env!("CARGO_PKG_VERSION"), "pid": std::process::id(),
+            "headless": self.headless, "connected": self.connected, "comp": self.comp,
+            "busy": self.busy(), "job": self.job().map(JobKind::name),
+            "status": self.status,
+            "document": self.document.as_ref().map(Document::info),
+            "source": self.source, "saved": self.saved, "capture": self.capture,
+            "windows": self.windows, "outputs": self.outputs,
+            "windows_error": self.windows_error,
+            "ui": self.ui,
+        })
+    }
+
+    // ---- actions ---------------------------------------------------------
+
+    /// The capture the controls describe, in `mode` (else the chosen one).
+    pub fn capture_request(&self, mode: Option<Mode>) -> Request {
+        let mode = mode.unwrap_or(self.ui.mode);
+        Request {
+            mode,
+            output: (mode != Mode::Window)
+                .then(|| self.ui.output.clone())
+                .flatten(),
+            window: (mode == Mode::Window).then_some(self.ui.window).flatten(),
+            cursor: self.ui.cursor,
+            delay: self.ui.delay,
+        }
+    }
+
+    /// Take a screenshot in `mode` (else the chosen one), asking about
+    /// unsaved work first.
+    pub fn take(&mut self, mode: Option<Mode>) {
+        if let Some(mode) = mode {
+            self.ui.mode = mode;
+        }
+        let request = self.capture_request(mode);
+        if let Err(error) = request.validate() {
+            self.fail(error);
+            return;
+        }
+        self.request(Pending::Capture(request));
+    }
+
+    /// Cancel the running capture.
+    pub fn cancel(&mut self) {
+        if self.capturing() {
+            self.effects.push(Effect::Cancel);
+            self.status = self.label("cancelling");
+        }
+    }
+
+    /// Run `action` now, after the Discard dialog, or (quitting) after the
+    /// running job.
+    pub fn request(&mut self, action: Pending) {
+        if self.quitting && action != Pending::Quit {
+            return;
+        }
+        if self.busy() {
+            if action == Pending::Quit {
+                self.pending = Some(action);
+                self.cancel();
+            } else {
+                self.status = self.label("busy");
+            }
+            return;
+        }
+        if self.modal() {
+            return;
+        }
+        if action.discards() && self.dirty() {
+            if self.headless {
+                self.status = self.label("save-first");
+                return;
+            }
+            self.pending = Some(action);
+            self.ui.dialog = Some(Dialog::Discard);
+            return;
+        }
+        self.perform(action);
+    }
+
+    fn perform(&mut self, action: Pending) {
+        match action {
+            Pending::Capture(request) => self.start_capture(request, None),
+            Pending::OpenDialog => {
+                self.ui.path = self.default_directory();
+                self.ui.dialog = Some(Dialog::Open);
+            }
+            Pending::Open(path) => self.start_open(path, None),
+            Pending::Quit => {
+                self.quitting = true;
+                self.release_capture();
+                self.effects.push(Effect::Exit);
+            }
+        }
+    }
+
+    /// New work on the document: an action queued against the old one
+    /// never runs on it (only a Quit, which closes whatever is shown,
+    /// survives).
+    fn supersede(&mut self) {
+        if self.pending != Some(Pending::Quit) {
+            self.pending = None;
+        }
+    }
+
+    /// The raw capture behind the document is no longer needed (it was
+    /// saved, replaced or closed): delete it.
+    fn release_capture(&mut self) {
+        if let Some(path) = self.capture_file.take() {
+            self.effects.push(Effect::Forget { path });
+        }
+    }
+
+    fn start(&mut self, kind: JobKind, reply: Option<u64>) -> u64 {
+        debug_assert!(self.job.is_none(), "a live job is never replaced");
+        let ticket = self.next();
+        self.job = Some(Job {
+            ticket,
+            kind,
+            reply,
+        });
+        ticket
+    }
+
+    fn start_capture(&mut self, request: Request, reply: Option<u64>) {
+        // The window's controls show what is being taken, whoever asked.
+        self.ui.mode = request.mode;
+        self.ui.delay = request.delay;
+        self.ui.cursor = request.cursor;
+        if request.mode == Mode::Window {
+            self.ui.window = request.window;
+        } else {
+            self.ui.output = request.output.clone();
+        }
+        self.supersede();
+        let focus = !self.headless && reply.is_none();
+        let ticket = self.start(JobKind::Capture, reply);
+        self.status = self.label("capturing");
+        self.effects.push(Effect::Capture {
+            ticket,
+            request,
+            hide: !self.headless,
+            focus,
+        });
+    }
+
+    fn start_open(&mut self, path: PathBuf, reply: Option<u64>) {
+        let ticket = self.start(JobKind::Open, reply);
+        self.status = self.label("working");
+        self.effects.push(Effect::Open { ticket, path });
+    }
+
+    fn start_save(&mut self, to: SaveTo, reply: Option<u64>) -> bool {
+        let Some(document) = self.document.as_ref().map(Document::raster_snapshot) else {
+            return false;
+        };
+        let ticket = self.start(JobKind::Save, reply);
+        self.status = self.label("working");
+        self.effects.push(Effect::Save {
+            ticket,
+            document: Box::new(document),
+            to,
+        });
+        true
+    }
+
+    /// Save into the screenshots folder (Ctrl+S). A document already saved
+    /// there unchanged is not saved twice.
+    pub fn save(&mut self) {
+        if !self.editable() {
+            return;
+        }
+        if !self.unsaved() {
+            let path = self.saved.as_ref().map(|s| s.path.display().to_string());
+            self.status =
+                crate::label_with("already-saved", &[("path", &path.unwrap_or_default())]);
+            return;
+        }
+        self.start_save(SaveTo::Folder, None);
+    }
+
+    /// Open the Save As dialog at the screenshots folder.
+    pub fn save_as(&mut self) {
+        if !self.editable() || self.headless {
+            return;
+        }
+        let stem = annotation::library::shot_stem(&annotation::library::now_local().0);
+        let folder = annotation::library::screenshots_dir().unwrap_or_default();
+        self.ui.path = folder.join(format!("{stem}.png")).display().to_string();
+        self.ui.dialog = Some(Dialog::SaveAs);
+    }
+
+    fn default_directory(&self) -> String {
+        let folder = annotation::library::screenshots_dir().unwrap_or_default();
+        let mut text = folder.display().to_string();
+        if !text.ends_with('/') {
+            text.push('/');
+        }
+        text
+    }
+
+    /// Copy the annotated image to the clipboard.
+    pub fn copy(&mut self) {
+        if !self.editable() {
+            return;
+        }
+        let Some(document) = self.document.as_ref().map(Document::raster_snapshot) else {
+            return;
+        };
+        let ticket = self.start(JobKind::Copy, None);
+        self.status = self.label("working");
+        self.effects.push(Effect::Copy {
+            ticket,
+            document: Box::new(document),
+        });
+    }
+
+    pub fn quit(&mut self) {
+        self.request(Pending::Quit);
+    }
+
+    pub fn open_dialog(&mut self) {
+        if self.headless {
+            return;
+        }
+        self.request(Pending::OpenDialog);
+    }
+
+    /// Show a help dialog: not under another, while a job runs (the
+    /// window may be hidden by a capture) or while closing. A dialog may
+    /// still sit on a window the person minimised; Print or
+    /// `screenshot.show` brings it back.
+    pub fn open(&mut self, dialog: Dialog) {
+        if self.idle() && !self.headless {
+            self.ui.dialog = Some(dialog);
+        }
+    }
+
+    /// Close the open dialog as Escape or its close button does: Keep for
+    /// the Discard dialog (its pending action is dropped).
+    pub fn close_dialog(&mut self) {
+        if self.ui.dialog == Some(Dialog::Discard) {
+            self.pending = None;
+        }
+        self.ui.dialog = None;
+        // An action that waited behind the dialog (a Quit asked for during
+        // a job that has since finished) runs now.
+        if !self.busy() {
+            self.followup();
+        }
+    }
+
+    /// The Discard dialog's answer.
+    pub fn answer(&mut self, answer: Answer) {
+        if self.ui.dialog != Some(Dialog::Discard) {
+            return;
+        }
+        // A job runs: its ticket is never replaced; the dialog stays.
+        if self.busy() && answer != Answer::Keep {
+            self.status = self.label("busy");
+            return;
+        }
+        self.ui.dialog = None;
+        match answer {
+            Answer::Keep => self.pending = None,
+            Answer::Discard => {
+                if let Some(action) = self.pending.take() {
+                    self.perform(action);
+                }
+            }
+            // Save into the folder, then carry on.
+            Answer::Save => {
+                if !self.start_save(SaveTo::Folder, None) {
+                    self.pending = None;
+                }
+            }
+        }
+    }
+
+    /// The Open or Save As dialog's path, submitted.
+    pub fn submit_path(&mut self) {
+        let Some(dialog) = self.ui.dialog else { return };
+        if self.busy() {
+            self.status = self.label("busy");
+            return;
+        }
+        let text = self.ui.path.trim().to_owned();
+        let path = match crate::capture::absolute(&expand_home(&text)) {
+            Ok(path) if !text.is_empty() && !text.ends_with('/') => path,
+            _ => {
+                self.status = self.label("choose-file");
+                return;
+            }
+        };
+        match dialog {
+            Dialog::Open => {
+                self.ui.dialog = None;
+                self.request(Pending::Open(path));
+            }
+            Dialog::SaveAs => {
+                if path.exists() || path.is_symlink() {
+                    self.status = self.label("exists");
+                    return;
+                }
+                self.ui.dialog = None;
+                self.start_save(SaveTo::Path(path), None);
+            }
+            _ => {}
+        }
+    }
+
+    pub fn undo(&mut self) {
+        if self.editable() && self.document.as_mut().is_some_and(Document::undo) {
+            self.changed();
+        }
+    }
+
+    pub fn redo(&mut self) {
+        if self.editable() && self.document.as_mut().is_some_and(Document::redo) {
+            self.changed();
+        }
+    }
+
+    pub fn delete_selected(&mut self) {
+        if !self.editable() {
+            return;
+        }
+        if let (Some(id), Some(doc)) = (self.ui.selected, self.document.as_mut())
+            && doc.delete(id).is_ok()
+        {
+            self.ui.selected = None;
+            self.changed();
+        }
+    }
+
+    pub fn uncrop(&mut self) {
+        if self.editable()
+            && let Some(doc) = self.document.as_mut()
+            && doc.crop().is_some()
+            && doc.set_crop(None).is_ok()
+        {
+            self.changed();
+        }
+    }
+
+    pub fn deselect(&mut self) {
+        self.ui.selected = None;
+    }
+
+    /// The document changed: the preview follows, a vanished selection goes.
+    fn changed(&mut self) {
+        self.revision += 1;
+        if let (Some(id), Some(doc)) = (self.ui.selected, &self.document)
+            && doc.object(id).is_none()
+        {
+            self.ui.selected = None;
+        }
+    }
+
+    pub fn set_tool(&mut self, tool: Tool) {
+        if !self.modal() {
+            self.ui.tool = tool;
+            if tool != Tool::Select {
+                self.ui.selected = None;
+            }
+        }
+    }
+
+    pub fn set_mode(&mut self, mode: Mode) {
+        if !self.busy() {
+            self.ui.mode = mode;
+        }
+    }
+
+    pub fn set_delay(&mut self, delay: u32) {
+        if !self.busy() && delay <= crate::capture::MAX_DELAY {
+            self.ui.delay = delay;
+        }
+    }
+
+    pub fn toggle_pointer(&mut self) {
+        if !self.busy() {
+            self.ui.cursor = !self.ui.cursor;
+        }
+    }
+
+    pub fn choose_window(&mut self, window: Option<Target>) {
+        if !self.busy() {
+            self.ui.window = window;
+        }
+    }
+
+    pub fn choose_output(&mut self, output: Option<String>) {
+        if !self.busy() {
+            self.ui.output = output;
+        }
+    }
+
+    /// The next output in compd's list (Capture › Output › Next output),
+    /// wrapping; from "the pointer's", the first.
+    pub fn next_output(&mut self) {
+        if self.busy() || self.outputs.is_empty() {
+            return;
+        }
+        let at = self
+            .ui
+            .output
+            .as_ref()
+            .and_then(|o| self.outputs.iter().position(|n| n == o))
+            .map_or(0, |i| (i + 1) % self.outputs.len());
+        self.ui.output = Some(self.outputs[at].clone());
+    }
+
+    /// Ask compd for its windows and outputs again.
+    pub fn refresh(&mut self) {
+        self.effects.push(Effect::Refresh);
+    }
+
+    /// The ink `colour` for new objects, and for the selected one.
+    pub fn set_colour(&mut self, colour: [u8; 4]) {
+        if self.modal() {
+            return;
+        }
+        self.ui.colour = colour;
+        self.restyle();
+    }
+
+    /// The stroke width for new objects, and for the selected one.
+    pub fn set_width(&mut self, width: f32) {
+        if self.modal() || !(0.5..=128.0).contains(&width) {
+            return;
+        }
+        self.ui.width = width;
+        self.restyle();
+    }
+
+    pub fn set_text_size(&mut self, size: f32) {
+        if !self.modal() && (8.0..=256.0).contains(&size) {
+            self.ui.text_size = size;
+        }
+    }
+
+    pub fn set_text(&mut self, text: String) {
+        if text.len() <= 4096 {
+            self.ui.text = text;
+        }
+    }
+
+    pub fn set_path(&mut self, path: String) {
+        if path.len() <= 4096 {
+            self.ui.path = path;
+        }
+    }
+
+    fn restyle(&mut self) {
+        if !self.editable() {
+            return;
+        }
+        let (colour, width) = (self.ui.colour, self.ui.width);
+        if let (Some(id), Some(doc)) = (self.ui.selected, self.document.as_mut())
+            && doc
+                .object(id)
+                .is_some_and(|o| o.shape.colour != colour || o.shape.width != width)
+            && doc.restyle(id, colour, width).is_ok()
+        {
+            self.changed();
+        }
+    }
+
+    pub fn zoom_by(&mut self, factor: f32) {
+        if self.document.is_some() {
+            self.ui.zoom = (self.ui.zoom * factor).clamp(
+                *annotation::viewport::ZOOM.start(),
+                *annotation::viewport::ZOOM.end(),
+            );
+        }
+    }
+
+    pub fn fit(&mut self) {
+        self.ui.zoom = 1.0;
+        self.ui.pan = Point { x: 0.0, y: 0.0 };
+    }
+
+    // ---- gestures ----------------------------------------------------------
+
+    /// Add `shape` (from a drag): text and markers take the controls' text,
+    /// size and next number. The new object is selected.
+    pub fn add_shape(&mut self, mut shape: Shape) {
+        if !self.editable() {
+            return;
+        }
+        match shape.kind {
+            Kind::Text => {
+                if self.ui.text.trim().is_empty() {
+                    self.status = self.label("text-needed");
+                    return;
+                }
+                shape.text = Some(self.ui.text.clone());
+                shape.size = Some(self.ui.text_size);
+            }
+            Kind::Number => {
+                shape.number = self.document.as_ref().and_then(Document::next_number);
+                if shape.number.is_none() {
+                    self.status = self.label("marker-limit");
+                    return;
+                }
+                shape.size = Some(self.ui.text_size);
+            }
+            _ => {}
+        }
+        let Some(doc) = self.document.as_mut() else {
+            return;
+        };
+        match doc.add(shape) {
+            Ok(id) => {
+                self.ui.selected = Some(id);
+                self.changed();
+            }
+            Err(error) => self.fail(error),
+        }
+    }
+
+    pub fn crop(&mut self, crop: Crop) {
+        if !self.editable() {
+            return;
+        }
+        let result = self.document.as_mut().map(|d| d.set_crop(Some(crop)));
+        match result {
+            Some(Ok(())) => self.changed(),
+            Some(Err(error)) => self.fail(error),
+            None => {}
+        }
+    }
+
+    pub fn move_object(&mut self, id: u64, dx: f32, dy: f32) {
+        if !self.editable() {
+            return;
+        }
+        let result = self.document.as_mut().map(|d| d.move_object(id, dx, dy));
+        match result {
+            Some(Ok(())) => self.changed(),
+            Some(Err(error)) => self.fail(error),
+            None => {}
+        }
+    }
+
+    pub fn select(&mut self, id: Option<u64>) {
+        if self.editable() {
+            self.ui.selected = id;
+        }
+    }
+
+    pub fn pan(&mut self, dx: f32, dy: f32) {
+        if self.document.is_some() && !self.modal() {
+            self.ui.pan.x += dx;
+            self.ui.pan.y += dy;
+        }
+    }
+
+    // ---- completions -------------------------------------------------------
+
+    /// Finish job `ticket` if it is the running one.
+    fn finish(&mut self, ticket: u64) -> Option<Job> {
+        if self.job.is_some_and(|j| j.ticket == ticket) {
+            self.job.take()
+        } else {
+            None
+        }
+    }
+
+    fn reply(&mut self, id: Option<u64>, result: Result<Value, (&str, String)>) {
+        let Some(id) = id else { return };
+        match result {
+            Ok(body) => self.effects.push(Effect::Reply { id, rc: 0, body }),
+            Err((code, message)) => self.error(id, code, &message),
+        }
+    }
+
+    fn error(&mut self, id: u64, code: &str, message: &str) {
+        self.effects.push(Effect::Reply {
+            id,
+            rc: 10,
+            body: json!({"error_code": code, "message": message}),
+        });
+    }
+
+    /// Replace the document (a capture or an open).
+    fn replace(&mut self, document: Document, source: PathBuf, capture: Value) {
+        self.supersede();
+        self.release_capture();
+        self.document_id += 1;
+        self.document = Some(document);
+        self.source = Some(source);
+        self.capture = capture;
+        self.saved = None;
+        self.ui.selected = None;
+        self.fit();
+        self.changed();
+    }
+
+    /// Capture `ticket` finished: whether the window it hid stayed hidden
+    /// after every retry (the shot is kept; the person brings the window
+    /// back with Print, `screenshot.show` or the taskbar), and whether it
+    /// was cancelled (whatever else the error says).
+    pub fn captured_job(
+        &mut self,
+        ticket: u64,
+        result: Result<Captured, String>,
+        restore_failed: bool,
+        cancelled: bool,
+    ) {
+        let Some(job) = self.finish(ticket) else {
+            return;
+        };
+        let reply = match result {
+            Ok(captured) => {
+                let path = captured.path.clone();
+                self.replace(captured.document, captured.path, captured.metadata);
+                self.capture_file = Some(path);
+                self.status = self.label(if restore_failed {
+                    "restore-failed"
+                } else {
+                    "capture-complete"
+                });
+                Ok(self.info())
+            }
+            Err(error) if cancelled => {
+                self.status = self.label("cancelled");
+                Err((code::CANCELLED, error))
+            }
+            Err(error) => {
+                self.fail(&error);
+                Err((code::FAILED, error))
+            }
+        };
+        if restore_failed {
+            self.status = self.label("restore-failed");
+        }
+        // Success or failure, the answer says the window stayed hidden.
+        if let Some(id) = job.reply {
+            let (rc, mut body) = match reply {
+                Ok(info) => (0, info),
+                Err((code, message)) => (10, json!({"error_code": code, "message": message})),
+            };
+            if restore_failed {
+                body["restore_failed"] = json!(true);
+            }
+            self.effects.push(Effect::Reply { id, rc, body });
+        }
+        // Windows come and go: the list is read again after every capture.
+        self.refresh();
+        self.followup();
+    }
+
+    /// Open `ticket` finished.
+    pub fn opened(&mut self, ticket: u64, result: Result<(PathBuf, Document), String>) {
+        let Some(job) = self.finish(ticket) else {
+            return;
+        };
+        let reply = match result {
+            Ok((path, document)) => {
+                self.replace(document, path, Value::Null);
+                self.status = self.label("ready");
+                Ok(self.info())
+            }
+            Err(error) => {
+                self.fail(&error);
+                Err((code::FAILED, error))
+            }
+        };
+        self.reply(job.reply, reply);
+        self.followup();
+    }
+
+    /// Save `ticket` finished: the document is marked saved and the save
+    /// published on `<service>.saved`.
+    pub fn saved(&mut self, ticket: u64, result: Result<Saved, String>) {
+        let Some(job) = self.finish(ticket) else {
+            return;
+        };
+        let reply = match result {
+            Ok(saved) => {
+                if let Some(doc) = self.document.as_mut() {
+                    doc.mark_saved();
+                }
+                // The pixels are kept in the saved file now.
+                self.release_capture();
+                self.status =
+                    crate::label_with("saved-to", &[("path", &saved.path.display().to_string())]);
+                let body = serde_json::to_value(&saved).unwrap_or(Value::Null);
+                self.effects.push(Effect::Publish {
+                    suffix: "saved",
+                    body: body.clone(),
+                });
+                self.saved = Some(saved);
+                let mut info = self.info();
+                info["saved"] = body;
+                Ok(info)
+            }
+            Err(error) => {
+                // A failed save leaves whatever waited on it undone.
+                self.pending = None;
+                self.fail(&error);
+                Err((code::FAILED, error))
+            }
+        };
+        self.reply(job.reply, reply);
+        self.followup();
+    }
+
+    /// Copy `ticket` finished.
+    pub fn copied(&mut self, ticket: u64, result: Result<(), String>) {
+        if self.finish(ticket).is_none() {
+            return;
+        }
+        match result {
+            Ok(()) => self.status = self.label("copied"),
+            Err(error) => self.fail(error),
+        }
+        self.followup();
+    }
+
+    /// Activation `ticket` finished.
+    pub fn shown(&mut self, ticket: u64, result: Result<Value, String>) {
+        let Some(job) = self.finish(ticket) else {
+            return;
+        };
+        let reply = result.map_err(|e| (code::FAILED, e));
+        if let Err((_, error)) = &reply {
+            let error = error.clone();
+            self.fail(error);
+        }
+        self.reply(job.reply, reply);
+        self.followup();
+    }
+
+    /// The window was brought forward outside a job (Print over a
+    /// dialog). A failure is only reported: the dialog stays, and the next
+    /// Print brings it forward again.
+    pub fn raised(&mut self, result: Result<Value, String>) {
+        if let Err(error) = result {
+            self.fail(error);
+        }
+    }
+
+    /// compd's windows and outputs arrived.
+    pub fn refreshed(&mut self, result: Result<(Vec<Window>, Vec<String>), String>) {
+        match result {
+            Ok((windows, outputs)) => {
+                if self
+                    .ui
+                    .window
+                    .is_none_or(|t| !windows.iter().any(|w| w.target == t))
+                {
+                    self.ui.window = windows
+                        .iter()
+                        .find(|w| w.focused)
+                        .or_else(|| windows.first())
+                        .map(|w| w.target);
+                }
+                if self
+                    .ui
+                    .output
+                    .as_ref()
+                    .is_some_and(|o| !outputs.contains(o))
+                {
+                    self.ui.output = None;
+                }
+                // One output: nothing to choose.
+                if let [only] = outputs.as_slice() {
+                    self.ui.output = Some(only.clone());
+                }
+                self.windows = windows;
+                self.outputs = outputs;
+                self.windows_error = None;
+            }
+            // Reported in `screenshot.info`, not the status line: a compd
+            // without the window list still captures screens and regions.
+            Err(error) => self.windows_error = Some(error),
+        }
+    }
+
+    /// After a job: the action that waited on it.
+    fn followup(&mut self) {
+        if self.ui.dialog.is_none()
+            && let Some(action) = self.pending.take()
+        {
+            self.request(action);
+        }
+    }
+
+    /// The Bus connection came or went.
+    pub fn connection(&mut self, connected: bool) {
+        self.connected = connected;
+        if connected {
+            self.refresh();
+        } else {
+            self.status = self.label("disconnected");
+        }
+    }
+
+    // ---- the Bus -------------------------------------------------------------
+
+    /// A command an agent sent over the Bus.
+    pub fn command(&mut self, id: u64, verb: &str, body: &str) {
+        if body.len() > 1024 * 1024 {
+            return self.error(id, code::ARGUMENT, "command exceeds 1 MiB");
+        }
+        let args =
+            match serde_json::from_str::<Value>(if body.trim().is_empty() { "{}" } else { body }) {
+                Ok(args) if args.is_object() => args,
+                _ => return self.error(id, code::ARGUMENT, "arguments must be a JSON object"),
+            };
+        if let Some(window) = verb
+            .strip_prefix("screenshot.")
+            .filter(|v| v.starts_with("ui.") || v.starts_with("window"))
+        {
+            if self.headless {
+                return self.error(id, code::HEADLESS, "a headless instance has no window");
+            }
+            return self.effects.push(Effect::Drive {
+                id,
+                verb: window.to_owned(),
+                args,
+            });
+        }
+        if !verbs::VERBS.contains(&verb) {
+            return self.error(id, code::UNKNOWN_VERB, "unknown screenshot verb");
+        }
+        if verbs::takes_nothing(verb) && args.as_object().is_some_and(|a| !a.is_empty()) {
+            return self.error(id, code::ARGUMENT, "this verb takes an empty object");
+        }
+        match verb {
+            "HELP" => return self.effects.push(Effect::Describe { id, help: true }),
+            "app.describe" => return self.effects.push(Effect::Describe { id, help: false }),
+            "screenshot.ping" => {
+                return self.effects.push(Effect::Reply {
+                    id,
+                    rc: 0,
+                    body: json!({"schema": verbs::SCHEMA, "version": env!("CARGO_PKG_VERSION"), "comp": self.comp, "headless": self.headless}),
+                });
+            }
+            "screenshot.info" => {
+                let body = self.info();
+                return self.effects.push(Effect::Reply { id, rc: 0, body });
+            }
+            "screenshot.recent" => {
+                return match args.get("limit").map(Value::as_u64) {
+                    None => self.effects.push(Effect::Recent { id, limit: 10 }),
+                    Some(Some(n @ 1..=100)) => self.effects.push(Effect::Recent {
+                        id,
+                        limit: n as usize,
+                    }),
+                    Some(_) => self.error(id, code::ARGUMENT, "limit must be 1..100"),
+                };
+            }
+            "screenshot.commands" => return self.effects.push(Effect::Commands { id }),
+            "screenshot.execute" => {
+                return match args.get("id").and_then(Value::as_str) {
+                    Some(command) => self.effects.push(Effect::Execute {
+                        id,
+                        command: command.to_owned(),
+                    }),
+                    None => self.error(id, code::ARGUMENT, "id must be a command id string"),
+                };
+            }
+            "screenshot.cancel" => {
+                let cancelling = self.capturing();
+                self.cancel();
+                if cancelling {
+                    self.ran.push("capture.cancel");
+                }
+                return self.effects.push(Effect::Reply {
+                    id,
+                    rc: 0,
+                    body: json!({"cancelling": cancelling}),
+                });
+            }
+            "screenshot.theme" => return self.theme_verb(id, &args),
+            _ => {}
+        }
+        if self.quitting {
+            let message = self.label("quitting");
+            return self.error(id, code::BUSY, &message);
+        }
+        // Print Screen answers for itself under a dialog or a job.
+        if verb == "screenshot.take" {
+            return self.take_verb(id, &args);
+        }
+        if self.modal() && verb != "screenshot.show" {
+            let message = self.label("dialog-open");
+            return self.error(id, code::DIALOG, &message);
+        }
+        if self.busy() {
+            let message = self.label("busy");
+            return self.error(id, code::BUSY, &message);
+        }
+        if verbs::is_edit(verb) {
+            let result = match self.document.as_mut() {
+                None => Err((code::NO_IMAGE, "no image".to_owned())),
+                Some(doc) => edit(doc, verb, args).map_err(|e| (code::ARGUMENT, e)),
+            };
+            if result.is_ok() {
+                self.changed();
+                match verb {
+                    "screenshot.undo" => self.ran.push("edit.undo"),
+                    "screenshot.redo" => self.ran.push("edit.redo"),
+                    _ => {}
+                }
+            }
+            return self.reply(Some(id), result);
+        }
+        let unsaved = || {
+            (
+                code::UNSAVED,
+                "save, export or undo the unsaved annotations first".to_owned(),
+            )
+        };
+        match verb {
+            "screenshot.capture" => {
+                let request = serde_json::from_value::<Request>(args)
+                    .map_err(|e| e.to_string())
+                    .and_then(|r| r.validate().map(|()| r));
+                match request {
+                    Err(error) => self.error(id, code::ARGUMENT, &error),
+                    Ok(_) if self.dirty() => self.reply(Some(id), Err(unsaved())),
+                    Ok(request) => self.start_capture(request, Some(id)),
+                }
+            }
+            "screenshot.open" => match args.get("path").and_then(Value::as_str) {
+                Some(path) if args.as_object().is_some_and(|a| a.len() == 1) => {
+                    match crate::capture::absolute(path) {
+                        Ok(_) if self.dirty() => self.reply(Some(id), Err(unsaved())),
+                        Ok(path) => self.start_open(path, Some(id)),
+                        Err(error) => self.error(id, code::ARGUMENT, &error),
+                    }
+                }
+                _ => self.error(id, code::ARGUMENT, "expected {path}"),
+            },
+            "screenshot.export" => match args.get("path").and_then(Value::as_str) {
+                Some(path) if args.as_object().is_some_and(|a| a.len() == 1) => {
+                    match crate::capture::absolute(path) {
+                        Ok(path) => {
+                            if !self.start_save(SaveTo::Path(path), Some(id)) {
+                                self.error(id, code::NO_IMAGE, "no image");
+                            }
+                        }
+                        Err(error) => self.error(id, code::ARGUMENT, &error),
+                    }
+                }
+                _ => self.error(id, code::ARGUMENT, "expected {path}"),
+            },
+            "screenshot.save" => {
+                if self.start_save(SaveTo::Folder, Some(id)) {
+                    self.ran.push("file.save");
+                } else {
+                    self.error(id, code::NO_IMAGE, "no image");
+                }
+            }
+            "screenshot.select" => match self.select_verb(&args) {
+                Ok(()) => {
+                    let body = json!({"ui": self.ui});
+                    self.effects.push(Effect::Reply { id, rc: 0, body });
+                }
+                Err(error) => self.error(id, code::ARGUMENT, &error),
+            },
+            "screenshot.show" => {
+                if self.headless {
+                    self.error(id, code::HEADLESS, "a headless instance has no window");
+                } else {
+                    let ticket = self.start(JobKind::Show, Some(id));
+                    self.effects.push(Effect::Show {
+                        ticket: Some(ticket),
+                    });
+                }
+            }
+            "screenshot.quit" => {
+                if self.dirty() {
+                    self.reply(Some(id), Err(unsaved()));
+                } else {
+                    self.effects.push(Effect::Reply {
+                        id,
+                        rc: 0,
+                        body: json!({"quitting": true}),
+                    });
+                    self.ran.push("file.quit");
+                    self.quit();
+                }
+            }
+            _ => self.error(id, code::UNKNOWN_VERB, "unknown screenshot verb"),
+        }
+    }
+
+    /// `screenshot.take`: as Print Screen. Unsaved work brings the window
+    /// forward with the Discard dialog; headless refuses instead.
+    fn take_verb(&mut self, id: u64, args: &Value) {
+        if let Some(key) = args.as_object().and_then(|a| {
+            a.keys()
+                .find(|k| !matches!(k.as_str(), "mode" | "window" | "comp"))
+        }) {
+            return self.error(id, code::ARGUMENT, &format!("unknown argument {key}"));
+        }
+        // A launcher forwarding Print Screen names its compositor: a name
+        // shared through a hash collision never captures the wrong one.
+        match args.get("comp") {
+            None => {}
+            Some(Value::String(comp)) if *comp == self.comp => {}
+            Some(Value::String(comp)) => {
+                let message = format!(
+                    "this instance captures through compositor {:?}, not {comp:?}",
+                    self.comp
+                );
+                return self.error(id, code::COMPOSITOR, &message);
+            }
+            Some(_) => return self.error(id, code::ARGUMENT, "comp must be a string"),
+        }
+        let mode = match args.get("mode") {
+            None => None,
+            Some(Value::String(name)) => match Mode::from_name(name) {
+                Some(mode) => Some(mode),
+                None => {
+                    return self.error(id, code::ARGUMENT, "mode must be screen, window or region");
+                }
+            },
+            Some(_) => return self.error(id, code::ARGUMENT, "mode must be a string"),
+        };
+        let window = match args
+            .get("window")
+            .map(|w| serde_json::from_value::<Target>(w.clone()))
+        {
+            None => None,
+            Some(Ok(target)) => Some(target),
+            Some(Err(error)) => return self.error(id, code::ARGUMENT, &error.to_string()),
+        };
+        let mode = mode.unwrap_or(self.ui.mode);
+        if window.is_some() && mode != Mode::Window {
+            return self.error(id, code::ARGUMENT, "window only applies to window mode");
+        }
+        // Under a dialog the person is being asked something: bring it
+        // forward rather than fail the key press.
+        if self.modal() {
+            self.effects.push(Effect::Show { ticket: None });
+            return self.effects.push(Effect::Reply {
+                id,
+                rc: 0,
+                body: json!({"state": "asking"}),
+            });
+        }
+        // A second Print during a capture: say so, in the answer and the
+        // window's status line.
+        if self.busy() {
+            self.status = self.label(if self.capturing() {
+                "capture-in-progress"
+            } else {
+                "busy"
+            });
+            return self.effects.push(Effect::Reply {
+                id,
+                rc: 0,
+                body: json!({"state": "in_progress", "job": self.job().map(JobKind::name)}),
+            });
+        }
+        if self.quitting {
+            let message = self.label("quitting");
+            return self.error(id, code::BUSY, &message);
+        }
+        if self.headless && self.dirty() {
+            let message = self.label("save-first");
+            return self.error(id, code::UNSAVED, &message);
+        }
+        // Checked whole before anything changes.
+        let mut request = self.capture_request(Some(mode));
+        if window.is_some() {
+            request.window = window;
+        }
+        if let Err(error) = request.validate() {
+            return self.error(id, code::ARGUMENT, &error);
+        }
+        if window.is_some() {
+            self.ui.window = window;
+        }
+        self.take(Some(mode));
+        let state = if self.capturing() {
+            "capturing"
+        } else if self.ui.dialog == Some(Dialog::Discard) {
+            // The person decides in the window: bring it forward.
+            self.effects.push(Effect::Show { ticket: None });
+            "asking"
+        } else {
+            let message = self.status.clone();
+            return self.error(id, code::FAILED, &message);
+        };
+        self.effects.push(Effect::Reply {
+            id,
+            rc: 0,
+            body: json!({"state": state}),
+        });
+    }
+
+    /// `screenshot.select`: every present key is checked before any applies.
+    fn select_verb(&mut self, args: &Value) -> Result<(), String> {
+        let object = args.as_object().ok_or("expected an object")?;
+        if let Some(key) = object
+            .keys()
+            .find(|k| !matches!(k.as_str(), "tool" | "mode" | "window" | "output"))
+        {
+            return Err(format!("unknown argument {key}"));
+        }
+        let tool = match args.get("tool") {
+            None => None,
+            Some(v) => Some(
+                v.as_str()
+                    .and_then(Tool::from_name)
+                    .ok_or("tool must be select, crop or an annotation kind")?,
+            ),
+        };
+        let mode = match args.get("mode") {
+            None => None,
+            Some(v) => Some(
+                v.as_str()
+                    .and_then(Mode::from_name)
+                    .ok_or("mode must be screen, window or region")?,
+            ),
+        };
+        let window = match args.get("window") {
+            None => None,
+            Some(Value::Null) => Some(None),
+            Some(v) => Some(Some(
+                serde_json::from_value::<Target>(v.clone()).map_err(|e| e.to_string())?,
+            )),
+        };
+        let output = match args.get("output") {
+            None => None,
+            Some(Value::Null) => Some(None),
+            Some(Value::String(name)) if !name.is_empty() && name.len() <= 256 => {
+                Some(Some(name.clone()))
+            }
+            Some(_) => return Err("output must be a name or null".into()),
+        };
+        if let Some(tool) = tool {
+            self.set_tool(tool);
+        }
+        if let Some(mode) = mode {
+            self.set_mode(mode);
+        }
+        if let Some(window) = window {
+            self.choose_window(window);
+        }
+        if let Some(output) = output {
+            self.choose_output(output);
+        }
+        Ok(())
+    }
+
+    /// `screenshot.theme`: the window's scheme and mode by name (null
+    /// follows the session).
+    fn theme_verb(&mut self, id: u64, args: &Value) {
+        let scheme = match args.get("scheme") {
+            None => None,
+            Some(Value::Null) => Some(None),
+            Some(Value::String(name)) => match design::Scheme::from_name(name) {
+                Some(s) => Some(Some(s)),
+                None => return self.error(id, code::ARGUMENT, &format!("unknown scheme {name:?}")),
+            },
+            Some(_) => return self.error(id, code::ARGUMENT, "scheme must be a name or null"),
+        };
+        let mode = match args.get("mode") {
+            None => None,
+            Some(Value::Null) => Some(None),
+            Some(Value::String(name)) => match design::Mode::from_name(name) {
+                Some(m) => Some(Some(m)),
+                None => return self.error(id, code::ARGUMENT, &format!("unknown mode {name:?}")),
+            },
+            Some(_) => return self.error(id, code::ARGUMENT, "mode must be a name or null"),
+        };
+        if let Some(scheme) = scheme {
+            self.theme.scheme = scheme;
+        }
+        if let Some(mode) = mode {
+            self.theme.mode = mode;
+        }
+        let body = json!({
+            "scheme": self.theme.scheme.map(design::Scheme::name),
+            "mode": self.theme.mode.map(design::Mode::name),
+        });
+        self.effects.push(Effect::Reply { id, rc: 0, body });
+    }
+}
+
+/// `~/x` as the home directory's `x`.
+fn expand_home(text: &str) -> String {
+    match (text.strip_prefix("~/"), std::env::var("HOME")) {
+        (Some(rest), Ok(home)) => format!("{home}/{rest}"),
+        _ => text.to_owned(),
+    }
+}
+
+/// The document edit verbs.
+fn edit(document: &mut Document, verb: &str, args: Value) -> Result<Value, String> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct IdArg {
+        id: u64,
+    }
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct MoveArg {
+        id: u64,
+        dx: f32,
+        dy: f32,
+    }
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct CropArg {
+        crop: Option<Crop>,
+    }
+    let parse = |e: serde_json::Error| e.to_string();
+    match verb {
+        "screenshot.annotate" => {
+            let shape: Shape = serde_json::from_value(args).map_err(parse)?;
+            let id = document.add(shape)?;
+            let mut info = document.info();
+            info["id"] = json!(id);
+            return Ok(info);
+        }
+        "screenshot.delete" => {
+            let a: IdArg = serde_json::from_value(args).map_err(parse)?;
+            document.delete(a.id)?;
+        }
+        "screenshot.move" => {
+            let a: MoveArg = serde_json::from_value(args).map_err(parse)?;
+            document.move_object(a.id, a.dx, a.dy)?;
+        }
+        "screenshot.crop" => {
+            let a: CropArg = serde_json::from_value(args).map_err(parse)?;
+            document.set_crop(a.crop)?;
+        }
+        "screenshot.undo" => {
+            document.undo();
+        }
+        "screenshot.redo" => {
+            document.redo();
+        }
+        _ => return Err("unknown edit".into()),
+    }
+    Ok(document.info())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::RgbaImage;
+
+    fn app() -> App {
+        App::new(crate::label, crate::ink::inks(), false)
+    }
+
+    fn with_doc() -> App {
+        let mut a = app();
+        a.document = Some(Document::new(RgbaImage::new(100, 80)).unwrap());
+        a
+    }
+
+    fn rect() -> Shape {
+        Shape::new(
+            Kind::Rectangle,
+            vec![Point { x: 2.0, y: 2.0 }, Point { x: 20.0, y: 20.0 }],
+            [255, 0, 0, 255],
+            2.0,
+        )
+    }
+
+    fn replies(effects: &[Effect]) -> Vec<(u64, u8, Value)> {
+        effects
+            .iter()
+            .filter_map(|e| match e {
+                Effect::Reply { id, rc, body } => Some((*id, *rc, body.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn ticket_of(effects: &[Effect]) -> u64 {
+        effects
+            .iter()
+            .find_map(|e| match e {
+                Effect::Capture { ticket, .. }
+                | Effect::Open { ticket, .. }
+                | Effect::Save { ticket, .. }
+                | Effect::Copy { ticket, .. } => Some(*ticket),
+                Effect::Show { ticket } => *ticket,
+                _ => None,
+            })
+            .expect("a job")
+    }
+
+    fn captured(width: u32) -> Captured {
+        Captured {
+            document: Document::new(RgbaImage::new(width, 50)).unwrap(),
+            path: "/tmp/capture.png".into(),
+            metadata: json!({"output":"DP-1"}),
+        }
+    }
+
+    #[test]
+    fn taking_with_unsaved_work_asks_and_discarding_carries_on() {
+        let mut a = with_doc();
+        a.add_shape(rect());
+        assert!(a.dirty());
+        a.take(Some(Mode::Screen));
+        assert_eq!(a.ui.dialog, Some(Dialog::Discard));
+        assert!(!a.busy(), "nothing starts before the answer");
+        a.answer(Answer::Keep);
+        assert!(a.pending().is_none());
+        assert_eq!(a.document.as_ref().unwrap().objects().len(), 1);
+        a.take(Some(Mode::Screen));
+        a.answer(Answer::Discard);
+        let effects = a.take_effects();
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, Effect::Capture { request, hide: true, .. } if request.mode == Mode::Screen)),
+            "{effects:?}"
+        );
+        assert!(a.capturing());
+    }
+
+    #[test]
+    fn save_from_the_discard_dialog_then_captures() {
+        let mut a = with_doc();
+        a.add_shape(rect());
+        a.take(Some(Mode::Region));
+        a.answer(Answer::Save);
+        let effects = a.take_effects();
+        let ticket = ticket_of(&effects);
+        assert!(matches!(
+            effects.last(),
+            Some(Effect::Save {
+                to: SaveTo::Folder,
+                ..
+            })
+        ));
+        a.saved(
+            ticket,
+            Ok(Saved {
+                path: "/home/user/Pictures/Screenshots/Screenshot 2026-10-12 14-03-22.png".into(),
+                width: 100,
+                height: 80,
+                annotated: true,
+                saved_at: "2026-10-12T14:03:22+10:00".into(),
+            }),
+        );
+        let effects = a.take_effects();
+        assert!(effects.iter().any(
+            |e| matches!(e, Effect::Publish { suffix: "saved", body } if body["annotated"] == true)
+        ));
+        assert!(
+            effects.iter().any(|e| matches!(e, Effect::Capture { .. })),
+            "the capture waited on the save: {effects:?}"
+        );
+        assert!(!a.dirty());
+    }
+
+    #[test]
+    fn a_stale_completion_changes_nothing() {
+        let mut a = app();
+        a.take(Some(Mode::Screen));
+        let ticket = ticket_of(&a.take_effects());
+        a.captured_job(ticket + 7, Ok(captured(10)), false, false);
+        assert!(a.document.is_none());
+        assert!(a.capturing());
+        a.captured_job(ticket, Ok(captured(40)), false, false);
+        assert_eq!(a.document.as_ref().unwrap().dimensions(), (40, 50));
+        assert_eq!(a.capture["output"], "DP-1");
+        assert!(!a.busy());
+    }
+
+    #[test]
+    fn agents_are_refused_rather_than_discarding_work() {
+        let mut a = with_doc();
+        a.add_shape(rect());
+        for (verb, body) in [
+            ("screenshot.capture", "{}"),
+            ("screenshot.open", r#"{"path":"/tmp/x.png"}"#),
+            ("screenshot.quit", "{}"),
+        ] {
+            a.command(1, verb, body);
+            let r = replies(&a.take_effects());
+            assert_eq!(r[0].2["error_code"], code::UNSAVED, "{verb}");
+        }
+        assert!(!a.quitting);
+        assert_eq!(a.document.as_ref().unwrap().objects().len(), 1);
+    }
+
+    #[test]
+    fn take_over_the_bus_asks_in_the_window_and_brings_it_forward() {
+        let mut a = with_doc();
+        a.add_shape(rect());
+        a.command(
+            3,
+            "screenshot.take",
+            r#"{"mode":"window","window":{"id":7,"generation":2}}"#,
+        );
+        let effects = a.take_effects();
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, Effect::Show { ticket: None }))
+        );
+        assert_eq!(replies(&effects)[0].2["state"], "asking");
+        assert_eq!(
+            a.ui.window,
+            Some(Target {
+                id: 7,
+                generation: 2
+            })
+        );
+        assert_eq!(a.ui.mode, Mode::Window);
+        // Headless never asks.
+        let mut h = App::new(crate::label, crate::ink::inks(), true);
+        h.document = Some(Document::new(RgbaImage::new(10, 10)).unwrap());
+        h.add_shape(rect());
+        h.command(4, "screenshot.take", "{}");
+        assert_eq!(replies(&h.take_effects())[0].2["error_code"], code::UNSAVED);
+        assert!(h.ui.dialog.is_none());
+    }
+
+    #[test]
+    fn take_without_unsaved_work_starts_at_once() {
+        let mut a = app();
+        a.command(1, "screenshot.take", r#"{"mode":"region"}"#);
+        let effects = a.take_effects();
+        assert_eq!(replies(&effects)[0].2["state"], "capturing");
+        assert!(
+            effects.iter().any(
+                |e| matches!(e, Effect::Capture { request, .. } if request.mode == Mode::Region)
+            )
+        );
+        // One capture at a time: a second Print hears so, and the window
+        // says so.
+        a.command(2, "screenshot.take", "{}");
+        let second = replies(&a.take_effects());
+        assert_eq!(second[0].1, 0);
+        assert_eq!(second[0].2["state"], "in_progress");
+        assert_eq!(second[0].2["job"], "capture");
+        assert_eq!(a.status, crate::label("capture-in-progress"));
+        // A window argument goes with window mode only, and a refused take
+        // changes nothing.
+        let mut c = app();
+        c.command(
+            4,
+            "screenshot.take",
+            r#"{"mode":"screen","window":{"id":7,"generation":2}}"#,
+        );
+        assert_eq!(
+            replies(&c.take_effects())[0].2["error_code"],
+            code::ARGUMENT
+        );
+        assert_eq!(c.ui.window, None);
+        let mut b = app();
+        b.command(3, "screenshot.take", r#"{"mode":"nope"}"#);
+        assert_eq!(
+            replies(&b.take_effects())[0].2["error_code"],
+            code::ARGUMENT
+        );
+    }
+
+    #[test]
+    fn print_screen_over_an_open_dialog_brings_it_forward() {
+        let mut a = with_doc();
+        a.open(Dialog::About);
+        a.command(1, "screenshot.take", r#"{"mode":"region"}"#);
+        let effects = a.take_effects();
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, Effect::Show { ticket: None }))
+        );
+        assert_eq!(replies(&effects)[0].2["state"], "asking");
+        assert!(!a.busy(), "nothing starts under the dialog");
+        assert_eq!(a.ui.dialog, Some(Dialog::About));
+    }
+
+    #[test]
+    fn edits_over_the_bus_share_the_document_and_history() {
+        let mut a = with_doc();
+        a.command(
+            1,
+            "screenshot.annotate",
+            &json!({"kind":"arrow","points":[{"x":1,"y":1},{"x":30,"y":20}],"colour":[0,0,255,255],"width":3}).to_string(),
+        );
+        let r = replies(&a.take_effects());
+        assert_eq!(r[0].1, 0);
+        let id = r[0].2["id"].as_u64().unwrap();
+        a.command(
+            2,
+            "screenshot.move",
+            &json!({"id":id,"dx":5,"dy":0}).to_string(),
+        );
+        a.command(
+            3,
+            "screenshot.crop",
+            r#"{"crop":{"x":0,"y":0,"width":50,"height":40}}"#,
+        );
+        a.command(4, "screenshot.undo", "{}");
+        let r = replies(&a.take_effects());
+        assert!(r.iter().all(|(_, rc, _)| *rc == 0), "{r:?}");
+        assert!(a.document.as_ref().unwrap().crop().is_none());
+        assert_eq!(a.ran, ["edit.undo"]);
+        a.command(5, "screenshot.delete", r#"{"id":999}"#);
+        assert_eq!(
+            replies(&a.take_effects())[0].2["error_code"],
+            code::ARGUMENT
+        );
+        a.command(6, "screenshot.undo", r#"{"x":1}"#);
+        assert_eq!(
+            replies(&a.take_effects())[0].2["error_code"],
+            code::ARGUMENT
+        );
+    }
+
+    #[test]
+    fn a_dialog_or_a_job_refuses_agents_but_reads_still_answer() {
+        let mut a = with_doc();
+        a.open(Dialog::About);
+        a.command(1, "screenshot.undo", "{}");
+        a.command(2, "screenshot.info", "{}");
+        let r = replies(&a.take_effects());
+        assert_eq!(r[0].2["error_code"], code::DIALOG);
+        assert_eq!(r[1].1, 0);
+        assert_eq!(r[1].2["ui"]["dialog"], "about");
+        a.close_dialog();
+        a.copy();
+        a.take_effects();
+        a.command(3, "screenshot.save", "{}");
+        assert_eq!(replies(&a.take_effects())[0].2["error_code"], code::BUSY);
+    }
+
+    #[test]
+    fn quitting_during_a_capture_cancels_it_then_asks() {
+        let mut a = with_doc();
+        a.add_shape(rect());
+        a.document.as_mut().unwrap().mark_saved();
+        a.take(Some(Mode::Screen));
+        let ticket = ticket_of(&a.take_effects());
+        a.document = Some({
+            let mut d = Document::new(RgbaImage::new(10, 10)).unwrap();
+            d.add(rect()).unwrap();
+            d
+        });
+        a.quit();
+        assert!(a.take_effects().iter().any(|e| matches!(e, Effect::Cancel)));
+        a.captured_job(ticket, Err("cancelled".into()), false, true);
+        assert_eq!(a.ui.dialog, Some(Dialog::Discard));
+        assert_eq!(a.pending(), Some(&Pending::Quit));
+        assert!(!a.quitting);
+        a.answer(Answer::Discard);
+        assert!(a.quitting);
+        assert!(a.take_effects().iter().any(|e| matches!(e, Effect::Exit)));
+    }
+
+    #[test]
+    fn quick_save_goes_to_the_folder_once_per_change() {
+        let mut a = with_doc();
+        a.save();
+        let effects = a.take_effects();
+        let ticket = ticket_of(&effects);
+        let saved = Saved {
+            path: "/tmp/a.png".into(),
+            width: 100,
+            height: 80,
+            annotated: false,
+            saved_at: String::new(),
+        };
+        a.saved(ticket, Ok(saved));
+        a.take_effects();
+        a.save();
+        assert!(a.take_effects().is_empty(), "unchanged since its save");
+        assert!(a.status.contains("/tmp/a.png"));
+        a.add_shape(rect());
+        a.save();
+        assert!(matches!(
+            a.take_effects().last(),
+            Some(Effect::Save {
+                to: SaveTo::Folder,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn save_as_refuses_an_existing_file_and_takes_a_new_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let taken = dir.path().join("taken.png");
+        std::fs::write(&taken, b"x").unwrap();
+        let mut a = with_doc();
+        a.save_as();
+        assert_eq!(a.ui.dialog, Some(Dialog::SaveAs));
+        assert!(a.ui.path.ends_with(".png"));
+        a.set_path(taken.display().to_string());
+        a.submit_path();
+        assert_eq!(a.ui.dialog, Some(Dialog::SaveAs), "kept open");
+        let fresh = dir.path().join("fresh.png");
+        a.set_path(fresh.display().to_string());
+        a.submit_path();
+        assert!(a.ui.dialog.is_none());
+        assert!(matches!(
+            a.take_effects().last(),
+            Some(Effect::Save { to: SaveTo::Path(p), .. }) if *p == fresh
+        ));
+    }
+
+    #[test]
+    fn text_needs_text_and_markers_count_up() {
+        let mut a = with_doc();
+        let mut text = rect();
+        text.kind = Kind::Text;
+        a.add_shape(text.clone());
+        assert!(a.document.as_ref().unwrap().objects().is_empty());
+        a.set_text("Look here".into());
+        a.add_shape(text);
+        let mut marker = rect();
+        marker.kind = Kind::Number;
+        a.add_shape(marker.clone());
+        a.add_shape(marker);
+        let objects = a.document.as_ref().unwrap().objects();
+        assert_eq!(objects[0].shape.text.as_deref(), Some("Look here"));
+        assert_eq!(objects[1].shape.number, Some(1));
+        assert_eq!(objects[2].shape.number, Some(2));
+        assert_eq!(a.ui.selected, Some(objects[2].id));
+    }
+
+    #[test]
+    fn ink_and_width_restyle_the_selection_as_one_step() {
+        let mut a = with_doc();
+        a.add_shape(rect());
+        let id = a.ui.selected.unwrap();
+        let blue = a.inks[3].rgba;
+        a.set_colour(blue);
+        a.set_width(8.0);
+        let shape = &a.document.as_ref().unwrap().object(id).unwrap().shape;
+        assert_eq!((shape.colour, shape.width), (blue, 8.0));
+        a.undo();
+        assert_eq!(
+            a.document
+                .as_ref()
+                .unwrap()
+                .object(id)
+                .unwrap()
+                .shape
+                .colour,
+            blue,
+            "width undone first"
+        );
+    }
+
+    #[test]
+    fn the_ui_state_round_trips_and_tools_go_by_name() {
+        let a = app();
+        let text = serde_json::to_string(&a.ui).unwrap();
+        assert!(text.contains("\"tool\":\"arrow\""));
+        let back: UiState = serde_json::from_str(&text).unwrap();
+        assert_eq!(back, a.ui);
+        for tool in Tool::ALL {
+            assert_eq!(Tool::from_name(tool.name()), Some(tool));
+        }
+    }
+
+    #[test]
+    fn select_and_theme_verbs_check_every_key_first() {
+        let mut a = app();
+        a.command(
+            1,
+            "screenshot.select",
+            r#"{"tool":"pen","mode":"screen","output":"DP-1"}"#,
+        );
+        a.command(2, "screenshot.select", r#"{"tool":"pen","bogus":1}"#);
+        a.command(
+            3,
+            "screenshot.select",
+            r#"{"tool":"crayon","mode":"region"}"#,
+        );
+        a.command(
+            4,
+            "screenshot.theme",
+            r#"{"scheme":"forest","mode":"dark"}"#,
+        );
+        a.command(5, "screenshot.theme", r#"{"scheme":"plaid"}"#);
+        let r = replies(&a.take_effects());
+        assert_eq!(r[0].1, 0);
+        assert_eq!(r[1].2["error_code"], code::ARGUMENT);
+        assert_eq!(r[2].2["error_code"], code::ARGUMENT);
+        assert_eq!(a.ui.mode, Mode::Screen, "a refused select changes nothing");
+        assert_eq!(a.ui.tool, Tool::Draw(Kind::Pen));
+        assert_eq!(a.ui.output.as_deref(), Some("DP-1"));
+        assert_eq!(r[3].2["scheme"], "forest");
+        assert_eq!(r[4].2["error_code"], code::ARGUMENT);
+        assert_eq!(a.theme.mode, Some(design::Mode::Dark));
+    }
+
+    #[test]
+    fn refreshed_lists_keep_a_live_choice_and_drop_a_gone_one() {
+        let mut a = app();
+        let window = |id, focused| Window {
+            target: Target { id, generation: 1 },
+            title: format!("w{id}"),
+            app_id: String::new(),
+            focused,
+            minimized: false,
+        };
+        a.refreshed(Ok((
+            vec![window(1, false), window(2, true)],
+            vec!["DP-1".into()],
+        )));
+        assert_eq!(a.ui.window.map(|t| t.id), Some(2), "the focused one");
+        a.choose_window(Some(Target {
+            id: 1,
+            generation: 1,
+        }));
+        a.refreshed(Ok((vec![window(1, false), window(3, true)], vec![])));
+        assert_eq!(a.ui.window.map(|t| t.id), Some(1), "kept");
+        a.refreshed(Ok((vec![window(3, true)], vec![])));
+        assert_eq!(a.ui.window.map(|t| t.id), Some(3), "replaced");
+    }
+
+    fn forgotten(effects: &[Effect]) -> Vec<PathBuf> {
+        effects
+            .iter()
+            .filter_map(|e| match e {
+                Effect::Forget { path } => Some(path.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_raw_capture_goes_once_saved_replaced_or_closed() {
+        let mut a = app();
+        a.take(Some(Mode::Screen));
+        let ticket = ticket_of(&a.take_effects());
+        let first_id = a.document_id;
+        a.captured_job(ticket, Ok(captured(40)), false, false);
+        assert_eq!(
+            a.capture_file.as_deref(),
+            Some(std::path::Path::new("/tmp/capture.png"))
+        );
+        assert_ne!(a.document_id, first_id, "a new document, a new id");
+        let effects = a.take_effects();
+        assert!(
+            effects.iter().any(|e| matches!(e, Effect::Refresh)),
+            "windows re-read"
+        );
+        // Saved: the raw frame is not needed any more.
+        a.save();
+        let ticket = ticket_of(&a.take_effects());
+        a.saved(
+            ticket,
+            Ok(Saved {
+                path: "/tmp/saved.png".into(),
+                width: 40,
+                height: 50,
+                annotated: false,
+                saved_at: String::new(),
+            }),
+        );
+        assert_eq!(
+            forgotten(&a.take_effects()),
+            [PathBuf::from("/tmp/capture.png")]
+        );
+        assert!(a.capture_file.is_none());
+        // Replaced unsaved: the old frame goes with it.
+        a.take(Some(Mode::Screen));
+        let ticket = ticket_of(&a.take_effects());
+        a.captured_job(ticket, Ok(captured(30)), false, false);
+        a.take_effects();
+        a.take(Some(Mode::Screen));
+        let ticket = ticket_of(&a.take_effects());
+        a.captured_job(ticket, Ok(captured(20)), false, false);
+        assert_eq!(
+            forgotten(&a.take_effects()),
+            [PathBuf::from("/tmp/capture.png")]
+        );
+        // Closed: the last one goes too.
+        a.quit();
+        assert_eq!(
+            forgotten(&a.take_effects()),
+            [PathBuf::from("/tmp/capture.png")]
+        );
+    }
+
+    #[test]
+    fn a_capture_that_cannot_bring_the_window_back_says_so() {
+        // The shot is kept; the answer and the status line say so. No
+        // restore is tried later: the person brings the window back.
+        let mut a = app();
+        a.command(1, "screenshot.capture", "{}");
+        let capture = ticket_of(&a.take_effects());
+        a.captured_job(capture, Ok(captured(10)), true, false);
+        let effects = a.take_effects();
+        let r = replies(&effects);
+        assert_eq!(r[0].1, 0);
+        assert_eq!(r[0].2["restore_failed"], true);
+        assert!(a.document.is_some(), "the shot is kept");
+        assert_eq!(a.status, crate::label("restore-failed"));
+        assert!(!a.busy());
+        // A capture that brought the window back says nothing of it.
+        let mut b = app();
+        b.command(1, "screenshot.capture", "{}");
+        let capture = ticket_of(&b.take_effects());
+        b.captured_job(capture, Ok(captured(10)), false, false);
+        assert!(
+            replies(&b.take_effects())[0]
+                .2
+                .get("restore_failed")
+                .is_none()
+        );
+        // A failed capture whose restore also failed still says FAILED,
+        // and a cancelled one CANCELLED.
+        let mut c = app();
+        c.command(1, "screenshot.capture", "{}");
+        let capture = ticket_of(&c.take_effects());
+        c.captured_job(
+            capture,
+            Err("x; restoring the window failed: down".into()),
+            true,
+            false,
+        );
+        let r = replies(&c.take_effects());
+        assert_eq!(r[0].2["error_code"], code::FAILED);
+        assert_eq!(r[0].2["restore_failed"], true);
+        assert_eq!(c.status, crate::label("restore-failed"));
+        let mut d = app();
+        d.command(1, "screenshot.capture", "{}");
+        let capture = ticket_of(&d.take_effects());
+        d.captured_job(
+            capture,
+            Err("cancelled; restoring the window failed: down".into()),
+            true,
+            true,
+        );
+        let r = replies(&d.take_effects());
+        assert_eq!(r[0].2["error_code"], code::CANCELLED);
+        assert_eq!(r[0].2["restore_failed"], true);
+    }
+
+    #[test]
+    fn print_shows_the_window_and_asks_at_once_and_again_after_a_failed_show() {
+        let mut a = with_doc();
+        a.add_shape(rect());
+        a.command(1, "screenshot.take", "{}");
+        let effects = a.take_effects();
+        assert_eq!(a.ui.dialog, Some(Dialog::Discard), "asked at once");
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, Effect::Show { ticket: None }))
+        );
+        assert_eq!(replies(&effects)[0].2, json!({"state": "asking"}));
+        // The show failed: the dialog stays, and the next Print shows again.
+        a.raised(Err("refused".into()));
+        assert_eq!(a.ui.dialog, Some(Dialog::Discard));
+        a.command(2, "screenshot.take", "{}");
+        let effects = a.take_effects();
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, Effect::Show { ticket: None }))
+        );
+        assert_eq!(replies(&effects)[0].2, json!({"state": "asking"}));
+        assert!(matches!(a.pending(), Some(Pending::Capture(_))));
+    }
+
+    #[test]
+    fn dialogs_never_open_beside_a_job_and_answers_keep_their_checks() {
+        // A job running: no help dialog, by hand or by command.
+        let mut j = with_doc();
+        j.copy();
+        j.open(Dialog::About);
+        assert_eq!(j.ui.dialog, None);
+        let r = crate::commands::registry();
+        for id in ["help.about", "help.shortcuts", "file.save_as", "file.open"] {
+            assert!(
+                r.execute(id, &mut j, toolkit::command::Origin::Bus)
+                    .is_err(),
+                "{id} waits for the job"
+            );
+        }
+        // Idle, they open.
+        let mut h = app();
+        assert!(
+            r.execute("help.about", &mut h, toolkit::command::Origin::Bus)
+                .is_ok()
+        );
+        assert_eq!(h.ui.dialog, Some(Dialog::About));
+        // A Discard or Save answered while a job runs is refused; the job
+        // keeps its ticket and the dialog stays.
+        let mut b = with_doc();
+        b.add_shape(rect());
+        b.copy();
+        let copy = ticket_of(&b.take_effects());
+        b.ui.dialog = Some(Dialog::Discard);
+        b.answer(Answer::Discard);
+        b.answer(Answer::Save);
+        assert_eq!(b.ui.dialog, Some(Dialog::Discard));
+        assert!(b.take_effects().is_empty());
+        assert_eq!(b.job(), Some(JobKind::Copy));
+        b.copied(copy, Err("no clipboard".into()));
+    }
+
+    #[test]
+    fn new_work_drops_an_action_queued_against_the_old_document() {
+        // A new capture supersedes it…
+        let mut a = with_doc();
+        a.pending = Some(Pending::OpenDialog);
+        a.command(1, "screenshot.capture", "{}");
+        assert!(a.capturing());
+        assert_eq!(a.pending(), None);
+        // …and so does a replaced document.
+        let capture = ticket_of(&a.take_effects());
+        a.pending = Some(Pending::Open("/tmp/old.png".into()));
+        a.captured_job(capture, Ok(captured(10)), false, false);
+        assert_eq!(a.pending(), None);
+        assert!(
+            !a.take_effects()
+                .iter()
+                .any(|e| matches!(e, Effect::Open { .. }))
+        );
+        // A Quit closes whatever is shown: it survives.
+        let mut q = app();
+        q.command(1, "screenshot.capture", "{}");
+        let capture = ticket_of(&q.take_effects());
+        q.quit();
+        assert_eq!(q.pending(), Some(&Pending::Quit));
+        q.captured_job(capture, Ok(captured(10)), false, false);
+        assert!(q.quitting);
+    }
+
+    #[test]
+    fn take_refuses_another_compositor() {
+        let mut a = app();
+        a.comp = "comp-nested".into();
+        a.command(1, "screenshot.take", r#"{"comp":"comp"}"#);
+        let r = replies(&a.take_effects());
+        assert_eq!(r[0].2["error_code"], code::COMPOSITOR);
+        assert!(r[0].2["message"].as_str().unwrap().contains("comp-nested"));
+        assert!(!a.busy());
+        a.command(2, "screenshot.take", r#"{"comp":"comp-nested"}"#);
+        assert!(a.capturing());
+    }
+
+    #[test]
+    fn ping_and_info_name_the_compositor() {
+        let mut a = app();
+        a.comp = "comp-nested".into();
+        a.command(1, "screenshot.ping", "{}");
+        a.command(2, "screenshot.info", "{}");
+        let r = replies(&a.take_effects());
+        assert_eq!(r[0].2["comp"], "comp-nested");
+        assert_eq!(r[1].2["comp"], "comp-nested");
+    }
+
+    #[test]
+    fn a_quit_held_behind_a_help_dialog_runs_when_it_closes() {
+        let mut a = with_doc();
+        a.copy();
+        let ticket = ticket_of(&a.take_effects());
+        a.quit();
+        a.ui.dialog = Some(Dialog::Shortcuts);
+        a.copied(ticket, Ok(()));
+        assert!(!a.quitting, "the dialog is up");
+        a.close_dialog();
+        assert!(a.quitting);
+        assert!(a.take_effects().iter().any(|e| matches!(e, Effect::Exit)));
+    }
+
+    #[test]
+    fn one_output_is_chosen_and_markers_stop_at_the_cap() {
+        let mut a = with_doc();
+        a.refreshed(Ok((vec![], vec!["DP-1".into()])));
+        assert_eq!(a.ui.output.as_deref(), Some("DP-1"));
+        a.refreshed(Ok((vec![], vec!["DP-1".into(), "HDMI-A-1".into()])));
+        assert_eq!(a.ui.output.as_deref(), Some("DP-1"), "a live choice stays");
+        let mut top = rect();
+        top.kind = Kind::Number;
+        top.number = Some(9999);
+        top.size = Some(20.0);
+        a.document.as_mut().unwrap().add(top).unwrap();
+        let mut marker = rect();
+        marker.kind = Kind::Number;
+        a.add_shape(marker);
+        assert_eq!(a.document.as_ref().unwrap().objects().len(), 1);
+        assert_eq!(a.status, crate::label("marker-limit"));
+    }
+
+    #[test]
+    fn an_agent_capture_shows_in_the_controls() {
+        let mut a = app();
+        a.command(
+            1,
+            "screenshot.capture",
+            r#"{"mode":"screen","output":"HDMI-A-1","delay":3,"cursor":true}"#,
+        );
+        assert_eq!(a.ui.mode, Mode::Screen);
+        assert_eq!(a.ui.output.as_deref(), Some("HDMI-A-1"));
+        assert_eq!((a.ui.delay, a.ui.cursor), (3, true));
+        assert!(
+            a.take_effects()
+                .iter()
+                .any(|e| matches!(e, Effect::Capture { focus: false, .. })),
+            "an agent's capture leaves focus alone"
+        );
+        assert!(
+            !Request::default().cursor,
+            "the pointer is off unless asked"
+        );
+    }
+
+    #[test]
+    fn unknown_verbs_and_window_verbs_headless_are_refused() {
+        let mut h = App::new(crate::label, crate::ink::inks(), true);
+        h.command(1, "screenshot.nope", "{}");
+        h.command(2, "screenshot.ui.click", r#"{"label":"File"}"#);
+        h.command(3, "screenshot.show", "{}");
+        h.command(4, "screenshot.recent", r#"{"limit":0}"#);
+        let r = replies(&h.take_effects());
+        assert_eq!(r[0].2["error_code"], code::UNKNOWN_VERB);
+        assert_eq!(r[1].2["error_code"], code::HEADLESS);
+        assert_eq!(r[2].2["error_code"], code::HEADLESS);
+        assert_eq!(r[3].2["error_code"], code::ARGUMENT);
+        // No dialog ever opens headless: the commands that would open one
+        // are refused as HEADLESS, by hand too; a capture still runs.
+        let registry = crate::commands::registry();
+        let strings = crate::strings();
+        for (n, id) in ["help.about", "help.shortcuts", "file.open", "file.save_as"]
+            .into_iter()
+            .enumerate()
+        {
+            h.document = Some(Document::new(RgbaImage::new(10, 10)).unwrap());
+            h.command(
+                10 + n as u64,
+                "screenshot.execute",
+                &json!({ "id": id }).to_string(),
+            );
+            let effects = crate::jobs::settle(&mut h, &registry, &strings, false);
+            assert_eq!(replies(&effects)[0].2["error_code"], "HEADLESS", "{id}");
+        }
+        h.open(Dialog::About);
+        h.open_dialog();
+        h.save_as();
+        assert_eq!(h.ui.dialog, None);
+        h.document = None;
+        h.command(20, "screenshot.capture", "{}");
+        assert!(h.capturing());
+        let mut a = app();
+        a.command(5, "screenshot.ui.click", r#"{"label":"File"}"#);
+        assert!(matches!(
+            a.take_effects()[..],
+            [Effect::Drive { id: 5, .. }]
+        ));
+    }
+}

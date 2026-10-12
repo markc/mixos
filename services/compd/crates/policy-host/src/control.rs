@@ -189,7 +189,7 @@ fn named_window(op: &WindowOp) -> Option<u64> {
         | WindowOp::Raise { id, .. }
         | WindowOp::Close { id, .. }
         | WindowOp::SendToWorkspace { id, .. } => Some(*id),
-        WindowOp::Restore { target } => target.map(|(id, _)| id),
+        WindowOp::Restore { target, .. } => target.map(|(id, _)| id),
         WindowOp::Place(spec) => Some(spec.id),
         _ => None,
     }
@@ -311,8 +311,12 @@ fn window_op(lp: &mut Loop, op: &WindowOp) -> Option<ControlReply> {
         WindowOp::Minimize { id, generation } => Some(minimized(lp, *id, *generation, true)),
         WindowOp::Restore {
             target: Some((id, generation)),
-        } => Some(minimized(lp, *id, *generation, false)),
-        WindowOp::Restore { target: None } => {
+            activate,
+        } => Some(restore(lp, *id, *generation, *activate)),
+        WindowOp::Restore {
+            target: None,
+            activate,
+        } => {
             let comp = &lp.inner.comp;
             match comp
                 .lifo_restore_candidate()
@@ -320,7 +324,7 @@ fn window_op(lp: &mut Loop, op: &WindowOp) -> Option<ControlReply> {
             {
                 Some(record) => {
                     let (id, generation) = (record.id().0, record.generation());
-                    Some(minimized(lp, id, generation, false))
+                    Some(restore(lp, id, generation, *activate))
                 }
                 None => Some(policy::window::nothing_to_restore(&comp.registry)),
             }
@@ -564,6 +568,18 @@ fn focus_keyboard(lp: &mut Loop, id: SurfaceId) {
 
 /// `minimize` / `restore {id, generation}`: the flag through the policy,
 /// the LIFO and the visibility funnel through the effects.
+/// `comp.window.restore` of one window: activated (the default), or only
+/// unminimised (`activate: false`).
+fn restore(lp: &mut Loop, id: u64, generation: u64, activate: bool) -> ControlReply {
+    match policy::window::restore(&mut lp.inner.comp.registry, id, generation, activate) {
+        Ok((reply, effects)) => {
+            execute(lp, effects);
+            reply
+        }
+        Err(reply) => reply,
+    }
+}
+
 fn minimized(lp: &mut Loop, id: u64, generation: u64, minimized: bool) -> ControlReply {
     match policy::window::set_minimized(&mut lp.inner.comp.registry, id, generation, minimized) {
         Ok((reply, effects)) => {
@@ -1301,6 +1317,13 @@ pub fn execute(lp: &mut Loop, effects: Vec<Effect>) {
                 activate(lp, id);
                 moved = true;
             }
+            // Shown again where it is. The focus is left exactly as it is,
+            // empty included: nothing is activated or raised.
+            Effect::Unminimize(id) => {
+                lp.inner.comp.note_minimized(id, false);
+                crate::x11::sync_window(lp, id);
+                moved = true;
+            }
             Effect::ClosePolite(id) => {
                 if let Some(window) = window_of(lp, id) {
                     shell::close(&window);
@@ -1552,6 +1575,7 @@ pub fn apply_client_requests(lp: &mut Loop) {
                     lp,
                     &WindowOp::Restore {
                         target: Some((window_id, generation)),
+                        activate: true,
                     },
                 );
             }
@@ -1620,7 +1644,13 @@ pub fn apply_bindings(lp: &mut Loop) {
                 }
             }
             BindingAction::RestoreMostRecentlyMinimized => {
-                let _ = window(lp, &WindowOp::Restore { target: None });
+                let _ = window(
+                    lp,
+                    &WindowOp::Restore {
+                        target: None,
+                        activate: true,
+                    },
+                );
             }
             BindingAction::WorkspaceJump(n) => {
                 let index = WorkspaceIndex::Absolute(u32::from(n));
@@ -1668,7 +1698,8 @@ pub fn apply_bindings(lp: &mut Loop) {
             }
             BindingAction::CycleWindow { reverse } => cycle_window(lp, reverse),
             // Run where they were decided (`world::comp::bindings::key`).
-            BindingAction::ToggleInterception
+            BindingAction::Screenshot(_)
+            | BindingAction::ToggleInterception
             | BindingAction::SwitchVt(_)
             | BindingAction::ExitNestedCompositor
             | BindingAction::SendBusKey => {}
@@ -1679,20 +1710,7 @@ pub fn apply_bindings(lp: &mut Loop) {
 /// The window holding the human keyboard (its root, for a popup), as
 /// `{id, generation}`.
 fn focused_window(lp: &Loop) -> Option<(u64, u64)> {
-    let surface = lp.state.seat.seat.get_keyboard()?.current_focus()?;
-    let registry = &lp.inner.comp.registry;
-    let mut id = registry.id_for_handle(&SurfaceHandle::resolve(&surface))?;
-    for _ in 0..64 {
-        match registry.get(id).and_then(|record| record.parent()) {
-            Some(parent) => id = parent,
-            None => break,
-        }
-    }
-    let record = registry.get(id)?;
-    record
-        .role()
-        .managed_toplevel()
-        .then(|| (record.id().0, record.generation()))
+    world::comp::bindings::focused_window(lp)
 }
 
 /// The mapped, unminimised managed windows on the

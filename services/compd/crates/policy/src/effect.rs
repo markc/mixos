@@ -73,6 +73,9 @@ pub enum Effect {
     /// Minimise / restore through the shared visibility funnel.
     Minimize(SurfaceId),
     Restore(SurfaceId),
+    /// Unminimise only: no activation, raise or workspace switch
+    /// (`comp.window.restore {activate: false}`).
+    Unminimize(SurfaceId),
     /// The polite close: xdg `close` / X11 `WM_DELETE_WINDOW`.
     ClosePolite(SurfaceId),
     /// Kill the window's Wayland client.

@@ -554,6 +554,13 @@ fn anonymous(url: &str, service: &str, verb: &str, args: Value) -> Result<Reply,
     })
 }
 
+/// One anonymous call to the instance registered as `service`: a second
+/// launch handing its arguments to the running one (an image to open, a
+/// capture to take). Bounded like the activation it usually precedes.
+pub fn request(url: &str, service: &str, verb: &str, args: Value) -> Result<Reply, String> {
+    anonymous(url, service, verb, args)
+}
+
 /// The broker URL this session's apps use (`MIXOS_NODED_URL`, else the
 /// node configuration's default).
 pub fn noded_url() -> String {

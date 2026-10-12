@@ -804,7 +804,13 @@ async fn mesh_window_verbs_cross_ingress_in_order() {
             generation: 3
         }
     );
-    assert_eq!(second.op, WindowOp::Restore { target: None });
+    assert_eq!(
+        second.op,
+        WindowOp::Restore {
+            target: None,
+            activate: true
+        }
+    );
     assert!(first.order < second.order, "arrival order is kept");
     assert!(matches!(source.try_recv(), Err(mpsc::TryRecvError::Empty)));
     let refused = replies.recv().await.expect("malformed body refused");
