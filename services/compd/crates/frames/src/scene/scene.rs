@@ -868,6 +868,8 @@ where
     // is live even for a window on another workspace or minimised.
     let thumbs = world::window::draw::thumbnail::requests();
     world::window::draw::thumbnail::retain_ids(&thumbs.iter().map(|t| t.id).collect::<Vec<_>>());
+    let in_place = canvas_window.clone();
+    let mut preview_only: Vec<Window> = Vec::new();
     for request in thumbs {
         if render_key
             .as_deref()
@@ -913,10 +915,20 @@ where
         {
             awake.push(uuid);
         }
-        // Not added to the presented set: a window shown only here gets its
-        // frame callbacks paced (`callbacks::pace_thumbnails`), not one per
-        // output frame.
+        // In the presented set, so its presentation feedback is collected;
+        // its frame callbacks are paced (`callbacks::pace_thumbnails`), not
+        // sent once per output frame, unless some output also draws it in
+        // place.
+        if !canvas_window.contains(&window) {
+            preview_only.push(window.clone());
+            canvas_window.push(window);
+        }
     }
+    world::window::draw::thumbnail::note_drawn(
+        render_key.as_deref().unwrap_or_default(),
+        &in_place,
+        preview_only,
+    );
     let _ = prepared.surfaces; // world UI now drawn per-id in the content band
     // The solid background is pushed per-pane in the region loop above.
     let (elements, meta) = plan.lower(renderer);

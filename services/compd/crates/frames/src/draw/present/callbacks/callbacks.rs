@@ -74,7 +74,12 @@ pub fn collect_feedback(
 /// instead ([`trickle`]): one callback at most every [`OCCLUDED_TRICKLE`].
 pub fn send_window_frames(state: &Loop, output: &Output, visible: &[Window]) {
     let frame_time = state.inner.start_time.elapsed();
+    // A window drawn here only as a hover thumbnail is the pacer's.
+    let paced = world::window::draw::thumbnail::paced();
     for window in visible {
+        if paced.iter().any(|(w, _)| w == window) {
+            continue;
+        }
         window.send_frame(output, frame_time, Some(Duration::ZERO), |_, _| {
             Some(output.clone())
         });
@@ -95,26 +100,21 @@ thread_local! {
     static THUMBNAIL_ARMED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// The previewed windows waiting on a frame callback, each with the output
-/// its tip is on. None under a session lock (only the lock surface gets
-/// callbacks then).
+/// The windows only a hover thumbnail shows ([`world::window::draw::thumbnail::paced`])
+/// that wait on a frame callback, each with the output its tip is on. None
+/// under a session lock (only the lock surface gets callbacks then).
 fn thumbnail_targets(state: &Loop) -> Vec<(Window, Output)> {
     if world::comp::session_lock::active(state) {
         return Vec::new();
     }
     let space = &state.inner.space_state().state;
-    world::window::draw::thumbnail::requests()
+    world::window::draw::thumbnail::paced()
         .into_iter()
-        .filter_map(|request| {
-            let window = world::window::draw::frame::scene::capture_window(
-                state,
-                request.id,
-                request.generation,
-            )
-            .ok()?;
+        .filter_map(|(window, key)| {
             let output = space
                 .outputs()
-                .find(|o| world::state::state::output_key(o) == request.output)?
+                .find(|o| world::state::state::output_key(o) == key)
+                .or_else(|| space.outputs().next())?
                 .clone();
             awaits_frame(&window).then_some((window, output))
         })
@@ -124,8 +124,9 @@ fn thumbnail_targets(state: &Loop) -> Vec<(Window, Output)> {
 /// Pace the windows a hover tip previews: a frame callback at most every
 /// [`THUMBNAIL_FRAME`], from a timer, so the preview stays live without the
 /// window joining the presented set (and driving frames at full rate).
-/// Armed from each presented frame while a previewed window waits; re-arms
-/// itself while one still does.
+/// Armed from each presented frame and each main-loop pass (as [`trickle`]
+/// is: a callback-only commit may bring no frame) while a previewed window
+/// waits; re-arms itself while one still does.
 pub fn pace_thumbnails(state: &Loop) {
     if THUMBNAIL_ARMED.get() || thumbnail_targets(state).is_empty() {
         return;
@@ -136,9 +137,9 @@ pub fn pace_thumbnails(state: &Loop) {
             THUMBNAIL_ARMED.set(false);
             let frame_time = state.inner.start_time.elapsed();
             for (window, output) in thumbnail_targets(state) {
-                window.send_frame(&output, frame_time, Some(THUMBNAIL_FRAME), |_, _| {
-                    Some(output.clone())
-                });
+                // No primary output: smithay's throttle then holds each
+                // surface to one callback per THUMBNAIL_FRAME.
+                window.send_frame(&output, frame_time, Some(THUMBNAIL_FRAME), |_, _| None);
             }
             let _ = state.inner.loader.display_handle.flush_clients();
             pace_thumbnails(state);
@@ -218,6 +219,14 @@ pub fn surface_awaits_frame(
 /// this it got no callback at all, and a client that runs its UI loop on
 /// callbacks (egui answering Bus verbs) stalled until it was shown again.
 fn trickle_targets(state: &Loop) -> Vec<(Window, Output)> {
+    // One owner per window: a hover thumbnail's pacer outranks the trickle.
+    let paced = world::window::draw::thumbnail::paced();
+    let mut targets = trickle_candidates(state);
+    targets.retain(|(window, _)| !paced.iter().any(|(w, _)| w == window));
+    targets
+}
+
+fn trickle_candidates(state: &Loop) -> Vec<(Window, Output)> {
     use dispatcher::wire::trait_::surface_event::SurfaceHandle;
     use dispatcher::wire::trait_::wire_trait::WireTrait;
     use world::window::interface::record::window::LoopWindow;

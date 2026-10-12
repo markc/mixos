@@ -703,6 +703,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // pass. A no-op while armed or while nothing hidden or covered waits.
         if !parked {
             frames::draw::present::callbacks::callbacks::trickle(state);
+            // The same for a window only a hover thumbnail shows.
+            frames::draw::present::callbacks::callbacks::pace_thumbnails(state);
         }
         // A delivered release lands in the ACTIVE world's registry, presses and
         // frames use the spawn target's (`surface()`, scene.rs). They are one

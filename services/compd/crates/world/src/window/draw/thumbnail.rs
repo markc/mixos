@@ -44,6 +44,53 @@ thread_local! {
     static REQUESTS: RefCell<Vec<Request>> = const { RefCell::new(Vec::new()) };
     /// Stable ids per (window id, inner element id), kept while drawn.
     static IDS: RefCell<HashMap<(u64, Id), Id>> = RefCell::new(HashMap::new());
+    /// Per output key, from its last scene: the windows drawn in place, and
+    /// those drawn only as a thumbnail.
+    static DRAWN: RefCell<HashMap<String, (Vec<Window>, Vec<Window>)>> =
+        RefCell::new(HashMap::new());
+}
+
+/// Record what output `output`'s scene just drew: `in_place` (the presented
+/// set before thumbnails) and `preview_only` (thumbnailed, not in place).
+/// Kept only while some tip asks for a thumbnail, so no window outlives its
+/// preview here.
+pub fn note_drawn(output: &str, in_place: &[Window], preview_only: Vec<Window>) {
+    let asked = REQUESTS.with_borrow(|r| !r.is_empty());
+    DRAWN.with_borrow_mut(|drawn| {
+        if asked {
+            drawn.insert(output.to_owned(), (in_place.to_vec(), preview_only));
+        } else {
+            drawn.clear();
+        }
+    });
+}
+
+/// The windows whose frame callbacks the thumbnail pacer owns, each with the
+/// output key of a tip showing it: previewed on some output and drawn in
+/// place on none (a window also drawn in place is paced by that output).
+pub fn paced() -> Vec<(Window, String)> {
+    let asked = REQUESTS.with_borrow(|r| !r.is_empty());
+    DRAWN.with_borrow_mut(|drawn| {
+        if !asked {
+            drawn.clear();
+            return Vec::new();
+        }
+        let mut out: Vec<(Window, String)> = Vec::new();
+        for (key, (_, preview)) in drawn.iter() {
+            for window in preview {
+                let in_place = drawn.values().any(|(shown, _)| shown.contains(window));
+                if !in_place && !out.iter().any(|(w, _)| w == window) {
+                    out.push((window.clone(), key.clone()));
+                }
+            }
+        }
+        out
+    })
+}
+
+/// Whether the pacer owns `window`'s frame callbacks ([`paced`]).
+pub fn is_paced(window: &Window) -> bool {
+    paced().iter().any(|(w, _)| w == window)
 }
 
 /// Replace the requested thumbnails (empty: none).
@@ -87,18 +134,18 @@ pub fn place(
     rect: Rectangle<i32, Physical>,
 ) -> Option<(f64, Point<i32, Physical>, Rectangle<i32, Physical>)> {
     let (s, frame_at) = fit(frame.size, rect)?;
+    // Each corner rounded once, as RescaleRenderElement (and the rounded
+    // clip) place the frame: the crop is exactly the frame drawn.
+    let corner = |v: i32| (v as f64 * s).round() as i32;
     let at = Point::from((
-        frame_at.x - (frame.loc.x as f64 * s).round() as i32,
-        frame_at.y - (frame.loc.y as f64 * s).round() as i32,
+        frame_at.x - corner(frame.loc.x),
+        frame_at.y - corner(frame.loc.y),
     ));
-    let shown = Rectangle::new(
-        frame_at,
-        (
-            (frame.size.w as f64 * s).round() as i32,
-            (frame.size.h as f64 * s).round() as i32,
-        )
-            .into(),
-    );
+    let x0 = at.x + corner(frame.loc.x);
+    let y0 = at.y + corner(frame.loc.y);
+    let x1 = at.x + corner(frame.loc.x + frame.size.w);
+    let y1 = at.y + corner(frame.loc.y + frame.size.h);
+    let shown = Rectangle::new((x0, y0).into(), (x1 - x0, y1 - y0).into());
     Some((s, at, shown.intersection(rect)?))
 }
 
@@ -295,6 +342,20 @@ mod tests {
             Rectangle::new(Point::from((500, 320)), Size::from((200, 100)))
         );
         assert_eq!(at, crop.loc);
+    }
+
+    /// The crop is the frame as the rescale draws it, each corner rounded
+    /// once: a 792x634 frame at (22,16) into 187x150 draws 149 rows, and a
+    /// crop of round(634 * s) = 150 would admit a row of shadow.
+    #[test]
+    fn the_crop_follows_the_rounded_corners() {
+        let frame = Rectangle::new(Point::from((22, 16)), Size::from((792, 634)));
+        let rect = Rectangle::new(Point::from((0, 0)), Size::from((187, 150)));
+        let (s, at, crop) = place(frame, rect).unwrap();
+        let corner = |v: i32| (v as f64 * s).round() as i32;
+        assert_eq!(crop.loc.y, at.y + corner(16));
+        assert_eq!(crop.loc.y + crop.size.h, at.y + corner(16 + 634));
+        assert_eq!(crop.size, Size::from((187, 149)));
     }
 
     #[test]
