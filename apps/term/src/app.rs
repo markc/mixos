@@ -613,7 +613,8 @@ impl App {
         let Some(&grid) = self.grids.get(&id) else {
             return;
         };
-        let lines = input::scroll_steps(&mut self.scroll_wheel, wheel, self.logical_cell().1);
+        let cell_height = self.logical_cell().1;
+        let lines = input::scroll_steps(&mut self.scroll_wheel, wheel, cell_height);
         if lines == 0 {
             return;
         }

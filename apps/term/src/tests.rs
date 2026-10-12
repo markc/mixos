@@ -61,13 +61,16 @@ fn fixture(
     cols: u16,
     rows: u16,
     bytes: &[u8],
-) -> (Arc<Mutex<Terminal>>, impl Fn() -> Option<Vec<u8>>) {
+) -> (Arc<Mutex<Terminal>>, Reader) {
     let terminal = app.tabs.lock().unwrap().pane_by_id(id).unwrap();
     *terminal.lock().unwrap() = Terminal::from_test_vt(cols.into(), rows.into(), bytes);
     app.grids.insert(id, (cols, rows));
-    let read = terminal.lock().unwrap().listener.test_input_reader();
+    let read = Box::new(terminal.lock().unwrap().listener.test_input_reader());
     (terminal, read)
 }
+
+/// The bytes a pane's PTY has been sent since the last call.
+type Reader = Box<dyn Fn() -> Option<Vec<u8>>>;
 
 fn active_pane(tabs: &TabSet) -> u64 {
     tabs.active_tab().active_pane
@@ -230,7 +233,7 @@ fn ime_focus_switch_and_owner_close_drop_queued_commit_before_wake() {
             fixture(&mut app, target, 8, 3, b"")
         } else {
             let terminal = app.tabs.lock().unwrap().pane_by_id(target).unwrap();
-            let read = terminal.lock().unwrap().listener.test_input_reader();
+            let read: Reader = Box::new(terminal.lock().unwrap().listener.test_input_reader());
             (terminal, read)
         };
         app.ime(&ImeEvent::Commit("stale".into()));

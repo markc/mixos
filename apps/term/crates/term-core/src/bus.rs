@@ -459,7 +459,9 @@ impl Peer for Arc<SupervisedClient> {
 /// branch is a real event (a command, a completion note, a finished send, the
 /// last tab closing), so an idle terminal never runs a turn — the loop used
 /// to tick a 100 ms sleep purely to re-check `is_empty()`. Returns the number
-/// of turns taken, which is what the idle test counts.
+/// of turns taken, which is what the idle test counts. The lane runs
+/// [`serve_with`]; the tests drive this, its window-less form.
+#[cfg(test)]
 async fn serve(
     service: &str,
     terminal: &Mutex<TabSet>,

@@ -313,7 +313,9 @@ impl App {
                 }
             }
             Some(_) => {}
-            None if !released => terminal.mouse_motion(hit.col, hit.row, 3, mods),
+            None if !released => {
+                terminal.mouse_motion(hit.col, hit.row, 3, mods);
+            }
             None => {}
         }
     }
