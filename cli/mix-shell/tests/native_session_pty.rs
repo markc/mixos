@@ -2696,6 +2696,23 @@ fn p4_termination_is_hard_and_the_outcome_names_the_policy() {
         .expect("a live task resolves");
         assert_eq!(cancelled["outcome"], "requested");
         let started = Instant::now();
+        // Observe `cancelling` positively: between the request and the wait
+        // status there is a real state, and a caller polling through it must
+        // see something other than "running". This child ignores SIGTERM, so
+        // the state holds until the SIGKILL rung; a child that dies on
+        // SIGTERM can be reaped before the first poll answers.
+        let state = execute_call(
+            &mut f.parent,
+            &f.bound,
+            "shell.task.result",
+            operation_request(&f.bound, operation),
+        )
+        .await
+        .expect("a known task always has a state");
+        assert_eq!(
+            state["state"], "cancelling",
+            "the cancelling state was never observable: {state}"
+        );
         let report = task_report(&mut f.parent, &f.bound, operation).await;
         let task = &report["report"];
         assert_eq!(task["outcome"]["kind"], "cancelled", "{task}");
@@ -2731,10 +2748,6 @@ fn p4_termination_is_hard_and_the_outcome_names_the_policy() {
         )
         .await
         .expect("admitted");
-        // Observe `cancelling` positively: between the request and the wait
-        // status there is a real state, and a caller polling through it must
-        // see something other than "running".
-        let mut seen_cancelling = false;
         tokio::time::sleep(Duration::from_millis(700)).await;
         execute_call(
             &mut f.parent,
@@ -2744,27 +2757,9 @@ fn p4_termination_is_hard_and_the_outcome_names_the_policy() {
         )
         .await
         .expect("a live task resolves");
-        for _ in 0..20 {
-            let state = execute_call(
-                &mut f.parent,
-                &f.bound,
-                "shell.task.result",
-                operation_request(&f.bound, operation),
-            )
-            .await
-            .expect("a known task always has a state");
-            if state["state"] == "cancelling" {
-                seen_cancelling = true;
-            }
-            if state["state"] == "settled" {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
         let report = task_report(&mut f.parent, &f.bound, operation).await;
         let task = &report["report"];
         assert_eq!(task["outcome"]["kind"], "cancelled", "{task}");
-        assert!(seen_cancelling, "the cancelling state was never observable");
         // The frame must NOT claim success. Either the interpreter got far
         // enough to write an interrupted-by-signal error, or it was killed
         // before writing at all — never {ok:true}.
