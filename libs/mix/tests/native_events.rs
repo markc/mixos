@@ -169,6 +169,21 @@ async fn serve_atomic_replacement_and_repeated_saves_keep_file_watch_alive() {
         };
         assert!(matches!(m.get("watch"), Some(Value::String(_))));
         assert!(matches!(m.get("overflow"), Some(Value::Bool(_))));
+        // One paired record per save, origin included: a separate unpaired
+        // "moved" left pending would swallow the close-write below.
+        let Some(Value::List(changes)) = m.get("changes") else {
+            panic!("changes")
+        };
+        let moved: Vec<_> = changes
+            .iter()
+            .filter_map(|c| match c {
+                Value::Map(c) if c.get("path").map(|p| p.to_mix_string()).as_deref() == file.to_str() => {
+                    c.get("old_path").map(|p| p.to_mix_string())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(moved, vec![tmp.to_str().unwrap().to_string()]);
         assert_eq!(
             std::fs::read_to_string(&file).unwrap(),
             format!("revision {n}")
