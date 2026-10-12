@@ -65,6 +65,12 @@ pub struct Schedule {
     deferred_wake: bool,
 }
 
+impl Default for Schedule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Schedule {
     /// Epoch 1 with every pipe first seen at 0: the first render is always due.
     pub fn new() -> Self {

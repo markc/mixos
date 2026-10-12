@@ -18,20 +18,20 @@ pub fn create() -> (LibSeatSession, LibSeatSessionNotifier) {
     loop {
         super::super::vt_wait::wait_for_own_vt();
         let (session, notifier) = LibSeatSession::new().expect("libseat session creation failed");
-        if let Some(own) = own_vt {
-            if !session.is_active() {
-                if !matches!(super::super::vt_wait::active_vt(), Some(active) if active != own) {
-                    panic!(
-                        "libseat session opened inactive although VT{own} is active: seatd is bound to a different tty than standard input; check TTYPath/StandardInput"
-                    );
-                }
-                info!(
-                    "libseat session opened inactive after switching away from VT{own}; dropping it and waiting for VT activation before retrying"
+        if let Some(own) = own_vt
+            && !session.is_active()
+        {
+            if !matches!(super::super::vt_wait::active_vt(), Some(active) if active != own) {
+                panic!(
+                    "libseat session opened inactive although VT{own} is active: seatd is bound to a different tty than standard input; check TTYPath/StandardInput"
                 );
-                drop(notifier);
-                drop(session);
-                continue;
             }
+            info!(
+                "libseat session opened inactive after switching away from VT{own}; dropping it and waiting for VT activation before retrying"
+            );
+            drop(notifier);
+            drop(session);
+            continue;
         }
         info!(
             "libseat session created (seat: {}, active: {})",

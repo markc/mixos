@@ -19,31 +19,6 @@ pub fn published(cfg: &FractionalScaleConfig, zoom: f64, output_scale: f64) -> f
     (output_scale * lattice * 120.0).round() / 120.0
 }
 
-#[cfg(test)]
-mod published_tests {
-    use super::*;
-
-    #[test]
-    fn zoom_one_publishes_the_output_scale_and_zoom_sharpens_it() {
-        let cfg = FractionalScaleConfig::default();
-        assert_eq!(published(&cfg, 1.0, 1.0), 1.0);
-        assert_eq!(published(&cfg, 1.0, 2.5), 2.5);
-        assert_eq!(
-            published(&cfg, 0.5, 2.5),
-            2.5,
-            "below zoom 1 the lattice floor holds"
-        );
-        // zoom 2: snap(2.25) / snap(1.25) = 1.8.
-        assert_eq!(published(&cfg, 2.0, 1.0), 1.8);
-        assert_eq!(published(&cfg, 2.0, 2.5), 4.5);
-        // A scale off the 1/120 grid lands on it.
-        let s = published(&cfg, 1.0, 1.3333);
-        assert!(
-            ((s * 120.0).round() - s * 120.0).abs() < 1e-9 && (s - 160.0 / 120.0).abs() < 1e-12
-        );
-    }
-}
-
 /// Whether enough time has passed since the last emit.
 pub fn rate_limit_clear(
     cfg: &FractionalScaleConfig,
@@ -108,11 +83,11 @@ pub fn run_tick(
     // `armed` is sticky once set: a batch that changes again after the cycle
     // elapsed still fires at the next clear interval rather than restarting.
     let mut armed = armed;
-    if let Some(c) = cycle {
-        if now >= c.quiet_after || now.duration_since(c.started_at) >= cfg.debounce_max {
-            armed = true;
-            cycle = None;
-        }
+    if let Some(c) = cycle
+        && (now >= c.quiet_after || now.duration_since(c.started_at) >= cfg.debounce_max)
+    {
+        armed = true;
+        cycle = None;
     }
 
     let mut fire = false;
@@ -129,5 +104,30 @@ pub fn run_tick(
         armed,
         last_emit_at,
         fire,
+    }
+}
+
+#[cfg(test)]
+mod published_tests {
+    use super::*;
+
+    #[test]
+    fn zoom_one_publishes_the_output_scale_and_zoom_sharpens_it() {
+        let cfg = FractionalScaleConfig::default();
+        assert_eq!(published(&cfg, 1.0, 1.0), 1.0);
+        assert_eq!(published(&cfg, 1.0, 2.5), 2.5);
+        assert_eq!(
+            published(&cfg, 0.5, 2.5),
+            2.5,
+            "below zoom 1 the lattice floor holds"
+        );
+        // zoom 2: snap(2.25) / snap(1.25) = 1.8.
+        assert_eq!(published(&cfg, 2.0, 1.0), 1.8);
+        assert_eq!(published(&cfg, 2.0, 2.5), 4.5);
+        // A scale off the 1/120 grid lands on it.
+        let s = published(&cfg, 1.0, 1.3333);
+        assert!(
+            ((s * 120.0).round() - s * 120.0).abs() < 1e-9 && (s - 160.0 / 120.0).abs() < 1e-12
+        );
     }
 }

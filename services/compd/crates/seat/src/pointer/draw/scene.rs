@@ -163,5 +163,5 @@ where
         elements.push(el);
     }
 
-    return elements;
+    elements
 }

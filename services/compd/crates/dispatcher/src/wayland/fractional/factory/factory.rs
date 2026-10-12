@@ -11,15 +11,16 @@ use smithay::wayland::fractional_scale::{
 };
 use smithay::wayland::presentation::{PresentationData, PresentationState};
 
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> Fractional
+pub fn new<I>(display_handle: &DisplayHandle) -> Fractional
 where
+    I: DispatchWire,
     I: GlobalDispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, GlobalData>
         + Dispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, GlobalData>
         + Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, FractionalScaleData>
         + 'static,
     I: FractionalScaleHandler + 'static,
 {
-    let mut fractional_manager_state = FractionalScaleManagerState::new::<I>(&display_handle);
+    let mut fractional_manager_state = FractionalScaleManagerState::new::<I>(display_handle);
     // NOT advertised to Xwayland.
     //
     // `wp_fractional_scale_v1` asks a client to render at a scale the compositor picks.
@@ -49,7 +50,7 @@ where
     // replaces it with the window's own value.
     // 1.0 (zoom 1 publishes the output scale); `update_fractional`
     // raises it to the output's scale on the first frame.
-    return Fractional {
+    Fractional {
         state: fractional_manager_state,
         last_emitted_scale: Some(1.0),
         cfg,
@@ -57,5 +58,5 @@ where
         cycle: None,
         armed: false,
         last_emit_at: None,
-    };
+    }
 }

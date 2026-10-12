@@ -46,7 +46,7 @@ pub fn scene(
         // Requires gles renderer on every frame. Temporary. should store it instead.
         let res = UI
             .render_all(
-                &gpu.as_str(),
+                gpu.as_str(),
                 renderer,
                 transform,
                 size.to_f64(),
@@ -70,7 +70,7 @@ pub fn scene(
         // which sits above them.
         let dim = UI
             .render_all(
-                &gpu.as_str(),
+                gpu.as_str(),
                 renderer,
                 transform,
                 size.to_f64(),
@@ -90,5 +90,5 @@ pub fn scene(
         _loop.schedule_redraw_post_vblank(RedrawReason::Ui);
     }
 
-    return (ui_elements, ui_elements_screen, ui_elements_dim);
+    (ui_elements, ui_elements_screen, ui_elements_dim)
 }

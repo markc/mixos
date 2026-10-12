@@ -8,6 +8,7 @@
 //!     other window / UI overlay, or NOTHING over bare canvas (a plain pen tip must
 //!     not start a canvas pan — that's the Hand tool's job — so a spurious pen-down
 //!     from a bad driver can't pan).
+//!
 //! Mirrors how `touch/session.rs` maps `TouchMode` onto the same canvas mechanisms.
 
 use crate::pointer::input::tablet::{client, coords, cursor, hand_active, select_active};

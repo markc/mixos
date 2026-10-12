@@ -71,6 +71,7 @@ where
 /// - a surface is missing on either side. Xwayland associates a `wl_surface` after the
 ///   window exists, and a popup needs both its own and its parent's, so a caller acting
 ///   too early gets `None` and should try again once the association lands.
+///
 /// `popup_parent` is what makes a chain work: a submenu's parent is the MENU, and a
 /// tracked popup is not a Space element, so `windows` cannot answer for it. Resolving it
 /// is not a placement detail — an unresolvable parent makes this return `None`, and the

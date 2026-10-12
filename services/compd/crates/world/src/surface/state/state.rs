@@ -16,14 +16,20 @@ pub struct SurfaceState {
     ),
 }
 
+impl Default for SurfaceState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SurfaceState {
     pub fn new() -> Self {
-        return Self {
+        Self {
             surface_message_buffer: vec![],
             surface_message_buffer_channel: mpsc::channel(),
             registry: None,
             test_dmabuf_done: false,
             test_example_done: false,
-        };
+        }
     }
 }

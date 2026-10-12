@@ -21,8 +21,12 @@ pub struct Platform {
 }
 
 impl Platform {
-    /// Build from live borrows. SAFETY: the borrows must outlive this `Platform`
-    /// (the driver scopes it to a single system-dispatch call — see module docs).
+    /// Build from live borrows.
+    ///
+    /// # Safety
+    ///
+    /// The borrows must outlive this `Platform` (the driver scopes it to a single
+    /// system-dispatch call — see module docs).
     pub unsafe fn new(
         renderer: Option<&mut GlesRenderer>,
         space: &mut Space<Window>,

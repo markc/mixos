@@ -65,7 +65,6 @@ pub type NativeDrmOutputManager = DrmOutputManager<
 ///
 /// The 8-bit tail keeps `Argb8888` first — that path works today and reordering it
 /// would change a format every producer is hardcoded to.
-
 pub fn manager(
     drm: DrmDevice,
     allocator: GbmAllocator<DrmDeviceFd>,
@@ -79,7 +78,7 @@ pub fn manager(
         allocator,
         exporter,
         gbm,
-        render_gles::format::catalog::catalog::scanout_ladder(ten_bit).into_iter(),
+        render_gles::format::catalog::catalog::scanout_ladder(ten_bit),
         render_formats,
     )
 }
@@ -255,7 +254,7 @@ pub fn activate(manager: &mut NativeDrmOutputManager, force: bool) -> Result<(),
 
 /// DPMS power the surface's connectors on/off without tearing down the pipe
 /// (lid-close blank, idle). Recover an off display with `activate(force=true)`
-/// + `reset`, exactly like the resume path. NOTE: any page-flip while off
+/// and `reset`, exactly like the resume path. NOTE: any page-flip while off
 /// re-powers the connector (legacy DPMS auto-on on commit), so the render loop
 /// must be gated off in tandem.
 pub fn set_dpms(output: &NativeDrmOutput, on: bool) -> Result<(), String> {

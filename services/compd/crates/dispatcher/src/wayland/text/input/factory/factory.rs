@@ -29,8 +29,9 @@ use smithay::{
     },
 };
 
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> TextInput
+pub fn new<I>(display_handle: &DisplayHandle) -> TextInput
 where
+    I: DispatchWire,
     I: GlobalDispatch<ZwpTextInputManagerV3, GlobalData>,
     I: Dispatch<ZwpTextInputManagerV3, GlobalData>,
     I: Dispatch<ZwpTextInputV3, TextInputUserData>,
@@ -52,14 +53,14 @@ where
     let restricted = model::environment::preference::base::load().input_method_restricted;
     let ime_dh = display_handle.clone();
     let input_method_manager_state =
-        InputMethodManagerState::new::<I, _>(&display_handle, move |client| {
+        InputMethodManagerState::new::<I, _>(display_handle, move |client| {
             !restricted || is_authorized(client, &ime_dh)
         });
-    let text_input_manager_state = TextInputManagerState::new::<I>(&display_handle);
+    let text_input_manager_state = TextInputManagerState::new::<I>(display_handle);
 
     let vk_dh = display_handle.clone();
     let virtual_keyboard_manager_state =
-        VirtualKeyboardManagerState::new::<I, _>(&display_handle, move |client| {
+        VirtualKeyboardManagerState::new::<I, _>(display_handle, move |client| {
             !restricted || is_authorized(client, &vk_dh)
         });
 

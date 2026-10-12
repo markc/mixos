@@ -40,10 +40,8 @@ fn activate_window(_loop: &mut Loop, window: Window) {
     // Cross-world activation: if the window lives on another world, switch to it FIRST.
     let hosted = _loop.inner.worlds.spawn_target();
     let cross_world = matches!(_loop.inner.world_of_window(&window), Some(w) if w != hosted);
-    if cross_world {
-        if let Some(w) = _loop.inner.world_of_window(&window) {
-            _loop.inner.switch_to_world(w);
-        }
+    if cross_world && let Some(w) = _loop.inner.world_of_window(&window) {
+        _loop.inner.switch_to_world(w);
     }
 
     _loop
@@ -122,7 +120,7 @@ pub fn drain_lifecycle(_loop: &mut Loop) {
     // generally no-op. _state.inner.window.incoming becomes Vec::default().
     // _loop.inner.window.incoming.clear();
 
-    if process.len() == 0 {
+    if process.is_empty() {
         return;
     }
 
@@ -575,7 +573,7 @@ fn force_window_geometry(
     with_states(&surface, |states| {
         let mut cached = states.cached_state.get::<SurfaceCachedState>();
         let current = cached.current();
-        let Some(mut geom) = current.geometry.clone() else {
+        let Some(mut geom) = current.geometry else {
             return;
         };
 

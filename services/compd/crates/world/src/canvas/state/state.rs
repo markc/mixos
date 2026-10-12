@@ -40,6 +40,12 @@ pub struct CanvasState {
     pub input_modality: Modality,
 }
 
+impl Default for CanvasState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CanvasState {
     pub fn new() -> Self {
         Self {

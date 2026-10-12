@@ -284,10 +284,10 @@ fn pref_mode(drm: &DrmDevice, info: &connector::Info) -> Option<ModeInfo> {
 /// Pick the connector to drive among the connected ones: the preferred monitor if
 /// present, else the first connected — exactly the startup `connector.select` policy.
 fn pick_target(drm: &DrmDevice, connected: &[connector::Info]) -> Option<connector::Info> {
-    if let Some(key) = preferred_key() {
-        if let Some(c) = connected.iter().find(|c| identity_key(drm, c) == key) {
-            return Some(c.clone());
-        }
+    if let Some(key) = preferred_key()
+        && let Some(c) = connected.iter().find(|c| identity_key(drm, c) == key)
+    {
+        return Some(c.clone());
     }
     connected.first().cloned()
 }
@@ -693,7 +693,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                 .iter()
                 .find(|o| live_keys.contains(&world::state::state::output_key(o)))
                 .or_else(|| mapped.first())
-                .map(|o| world::state::state::output_key(o))
+                .map(world::state::state::output_key)
         };
         state.inner.cursor_output = survivor.clone();
         if let Some(key) = survivor {

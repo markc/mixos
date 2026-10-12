@@ -5,5 +5,5 @@ use smithay::desktop::PopupManager;
 pub fn new<I: DispatchWire>() -> PopupState {
     let popup = PopupManager::default();
 
-    return PopupState { state: popup };
+    PopupState { state: popup }
 }

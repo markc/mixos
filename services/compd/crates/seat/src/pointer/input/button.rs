@@ -141,14 +141,14 @@ pub fn button<I: InputBackend>(event: &<I as InputBackend>::PointerButtonEvent, 
                 CanvasGrab::Target(TargetOption::Scale) => Some(true),
                 _ => None,
             };
-            if let Some(resize) = tool {
-                if world::viewport::interaction::interaction::try_begin_floating(
+            if let Some(resize) = tool
+                && world::viewport::interaction::interaction::try_begin_floating(
                     _loop.inner.output_views_mut(),
                     cursor_phys,
                     resize,
-                ) {
-                    return;
-                }
+                )
+            {
+                return;
             }
         }
         ButtonState::Released => {

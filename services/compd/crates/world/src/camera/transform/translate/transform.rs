@@ -239,7 +239,7 @@ impl Transform {
 impl Transform {
     /// Project world rect → screen-logical rect (top-left anchored,
     /// camera applied).
-    fn to_logical(&self) -> (f64, f64, f64, f64) {
+    fn to_logical(self) -> (f64, f64, f64, f64) {
         let zoom = self.ctx.camera_zoom;
         let (cam_x, cam_y) = self.ctx.camera_pos;
         let (half_w, half_h) = self.ctx.screen_half_logical();
@@ -254,7 +254,7 @@ impl Transform {
         (x, y, w, h)
     }
 
-    fn to_physical(&self) -> (f64, f64, f64, f64) {
+    fn to_physical(self) -> (f64, f64, f64, f64) {
         let (x, y, w, h) = self.to_logical();
         let s = self.ctx.scale;
         (x * s, y * s, w * s, h * s)

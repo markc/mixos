@@ -218,10 +218,10 @@ pub fn resize_due(window: &Window) -> Option<Size<i32, Logical>> {
 /// from now the stretch is held only until the client commits the target (or settles stable at a
 /// clamped size, or the safety timeout).
 pub fn mark_resize_settling(window: &Window) {
-    if let Some(rs) = window.user_data().get::<ResizeState>() {
-        if let Some(p) = rs.0.lock().unwrap().as_mut() {
-            p.settle_at = Some(Instant::now());
-        }
+    if let Some(rs) = window.user_data().get::<ResizeState>()
+        && let Some(p) = rs.0.lock().unwrap().as_mut()
+    {
+        p.settle_at = Some(Instant::now());
     }
 }
 

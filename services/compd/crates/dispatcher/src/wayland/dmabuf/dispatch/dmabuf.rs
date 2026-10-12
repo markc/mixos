@@ -12,12 +12,13 @@ pub mod wire {
         &mut dispatch.dmabuf.state
     }
 
-    pub fn dmabuf_imported<WireObject: DispatchWire>(
+    pub fn dmabuf_imported<WireObject>(
         dispatch: &mut Dispatch,
         _global: &DmabufGlobal,
         _dmabuf: Dmabuf,
         notifier: ImportNotifier,
     ) where
+        WireObject: DispatchWire,
         WireObject: smithay::reexports::wayland_server::Dispatch<
                 zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1,
                 DmabufParamsData,
@@ -49,8 +50,9 @@ pub mod dispatch {
         },
     };
 
-    pub fn hook_syncobj<WireObject: DispatchWire>(dispatch: &mut Dispatch, fd: DrmDeviceFd)
+    pub fn hook_syncobj<WireObject>(dispatch: &mut Dispatch, fd: DrmDeviceFd)
     where
+        WireObject: DispatchWire,
         WireObject: GlobalDispatch<WpLinuxDrmSyncobjManagerV1, DrmSyncobjGlobalData>,
         WireObject: 'static,
     {

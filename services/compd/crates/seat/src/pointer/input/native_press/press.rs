@@ -143,16 +143,15 @@ pub fn apply_focus(
     // Keyboard-transparent UI surfaces (the on-screen keyboard) take the pointer
     // press but must NOT move keyboard focus or deactivate the focused window — the
     // text field being typed into has to keep its focus so injected keys reach it.
-    if let SurfaceHit::UI { handle, .. } = hit {
-        if _loop
+    if let SurfaceHit::UI { handle, .. } = hit
+        && _loop
             .inner
             .surface()
             .registry
             .as_ref()
             .is_some_and(|r| r.is_keyboard_transparent(*handle))
-        {
-            return;
-        }
+    {
+        return;
     }
 
     // A press on an override-redirect X11 window the compositor manages as a

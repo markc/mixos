@@ -5,8 +5,14 @@ pub struct WindowLifecycle {
     pub incoming: Vec<WindowLifecycleEvent>,
 }
 
+impl Default for WindowLifecycle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WindowLifecycle {
     pub fn new() -> Self {
-        return Self { incoming: vec![] };
+        Self { incoming: vec![] }
     }
 }

@@ -10,7 +10,7 @@ pub fn input_received_normalized<I: InputBackend>(
     position_normalized: &Point<f64, Logical>,
     position_screen: &Point<f64, Logical>,
 ) {
-    let position_normalized = position_normalized.clone().into();
+    let position_normalized = (*position_normalized);
     let serial = SERIAL_COUNTER.next_serial();
     let pointer = _loop.state.seat.seat.get_pointer().unwrap();
     dispatch::dispatch(

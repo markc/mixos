@@ -88,10 +88,9 @@ impl LaunchWorker {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .take()
+            && thread.join().is_err()
         {
-            if thread.join().is_err() {
-                error!("launch worker panicked during shutdown");
-            }
+            error!("launch worker panicked during shutdown");
         }
     }
 }
@@ -106,9 +105,7 @@ fn run(
         if stopping.load(Ordering::Acquire) {
             break;
         }
-        let req = match job {
-            Job::Launch(req) => req,
-        };
+        let Job::Launch(req) = job;
         // One launch may not take the queue down with it. The interlock closes the
         // spawn/reap race that used to panic this thread — silently disabling every
         // launch for the rest of the session; this keeps ANY future panic in the

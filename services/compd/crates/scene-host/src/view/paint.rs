@@ -520,9 +520,7 @@ fn paint_image(
             let texture = match scene.textures.get(&cache) {
                 Some(texture) => texture.id(),
                 None => {
-                    let Some(image) = crate::images::rasterise(svg, pw, ph) else {
-                        return None;
-                    };
+                    let image = crate::images::rasterise(svg, pw, ph)?;
                     let handle = ui.ctx().load_texture(
                         format!("scene-svg-{}-{pw}x{ph}", svg.id),
                         image,

@@ -21,10 +21,10 @@ pub fn select(
         }
     }
 
-    if let Some(d) = default_heuristic {
-        if surviving.iter().any(|c| *c == d) {
-            return Some(d.clone());
-        }
+    if let Some(d) = default_heuristic
+        && surviving.contains(&d)
+    {
+        return Some(d.clone());
     }
 
     surviving.first().map(|c| (*c).clone())

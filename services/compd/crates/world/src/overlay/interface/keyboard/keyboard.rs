@@ -31,15 +31,13 @@ pub fn input_received<I: InputBackend>(
     let handlers: Vec<ShortcutHandler<Loop>> = inline_shortcut_handlers(&state.inner.keybinding);
 
     for handler in handlers {
-        if handler.combo.matches(modifiers, key) {
-            if (handler.action)(state) {
-                return true;
-            }
+        if handler.combo.matches(modifiers, key) && (handler.action)(state) {
+            return true;
         }
     }
 
     // Add Playback device control, TTY switches.
-    return false;
+    false
 }
 
 const VOLUME_STEP: f64 = 0.05;

@@ -185,9 +185,9 @@ pub fn per_frame(state: &mut Loop, renderer: &mut GlesRenderer, size: Size<i32, 
             })
         })
     });
-    if let Some(id) = push {
-        if let Some(reg) = state.inner.surface_mut().registry.as_mut() {
-            let _ = reg.dispatch_message(UiHandle::<FpsUi>::from_id(id), FpsMessage::Set { fps });
-        }
+    if let Some(id) = push
+        && let Some(reg) = state.inner.surface_mut().registry.as_mut()
+    {
+        let _ = reg.dispatch_message(UiHandle::<FpsUi>::from_id(id), FpsMessage::Set { fps });
     }
 }

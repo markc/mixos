@@ -380,10 +380,10 @@ fn should_forward<I: InputBackend>(
     // feeding keys to UI so the user can confirm/revert blind, otherwise the only
     // way out of a bad (black) mode is to wait for the auto-revert timeout.
     if is_dark(_loop) {
-        if output_provisioning(_loop) {
-            if let Some(result) = ui_handle(_loop, key_code, keysym, key_state) {
-                return !result;
-            }
+        if output_provisioning(_loop)
+            && let Some(result) = ui_handle(_loop, key_code, keysym, key_state)
+        {
+            return !result;
         }
         return false; // intercept everything else while dark
     }

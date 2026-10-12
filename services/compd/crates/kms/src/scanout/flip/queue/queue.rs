@@ -16,10 +16,10 @@ use crate::scanout::surface::output::output::{FrameUserData, NativeDrmOutput};
 fn is_lost_drm_master(err: &(dyn std::error::Error + 'static)) -> bool {
     let mut cur: Option<&(dyn std::error::Error + 'static)> = Some(err);
     while let Some(e) = cur {
-        if let Some(io) = e.downcast_ref::<std::io::Error>() {
-            if io.kind() == std::io::ErrorKind::PermissionDenied {
-                return true;
-            }
+        if let Some(io) = e.downcast_ref::<std::io::Error>()
+            && io.kind() == std::io::ErrorKind::PermissionDenied
+        {
+            return true;
         }
         cur = e.source();
     }

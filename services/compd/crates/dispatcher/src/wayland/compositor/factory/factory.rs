@@ -8,8 +8,9 @@ use smithay::utils::{Clock, Monotonic};
 use smithay::wayland::compositor::CompositorState;
 use smithay::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
 
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> Compositor
+pub fn new<I>(display_handle: &DisplayHandle) -> Compositor
 where
+    I: DispatchWire,
     I: GlobalDispatch<WlCompositor, GlobalData>
         + GlobalDispatch<WlSubcompositor, GlobalData>
         + 'static,
@@ -27,7 +28,7 @@ where
     // Side-effect: Clients will send `commit` requests here when they have new frames.
     // This queues an update that you process during your render loop.
     // was for Loop. Now its WireObject.
-    let compositor_state = CompositorState::new_v6::<I>(&display_handle);
+    let compositor_state = CompositorState::new_v6::<I>(display_handle);
 
     let clock = Clock::<Monotonic>::new();
 

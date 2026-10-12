@@ -6,8 +6,9 @@ use crate::state::state::DispatchWire;
 use protocols::cursor::shape::state::CursorShape;
 use smithay::reexports::wayland_protocols::wp::cursor_shape::v1::server::wp_cursor_shape_manager_v1::WpCursorShapeManagerV1 as CursorShapeManager;
 
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> CursorShape
+pub fn new<I>(display_handle: &DisplayHandle) -> CursorShape
 where
+    I: DispatchWire,
     I: GlobalDispatch<CursorShapeManager, GlobalData>,
     I: Dispatch<CursorShapeManager, GlobalData>,
     I: SeatHandler,
@@ -16,7 +17,7 @@ where
     // Initialize the XDG Shell protocol.
     // Side-effect: Triggers window mapping/unmapping. When a client requests a new Toplevel,
     // it dispatches an event in your XDG delegate to assign the window a position in the `Space`.
-    let cursor_shape_state = CursorShapeManagerState::new::<I>(&display_handle);
+    let cursor_shape_state = CursorShapeManagerState::new::<I>(display_handle);
     CursorShape {
         state: cursor_shape_state,
     }

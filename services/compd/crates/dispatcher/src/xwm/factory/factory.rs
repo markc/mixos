@@ -13,8 +13,9 @@ use smithay::wayland::xwayland_shell::{XWaylandShellState, XWaylandSurfaceUserDa
 /// even if it never starts: smithay filters it to clients carrying
 /// `XWaylandClientData`, so no ordinary client can see it, and Xwayland itself binds
 /// it during its very first roundtrip — after which it is too late to create.
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> Xwayland
+pub fn new<I>(display_handle: &DisplayHandle) -> Xwayland
 where
+    I: DispatchWire,
     I: GlobalDispatch<XwaylandShellV1, GlobalData>
         + Dispatch<XwaylandShellV1, GlobalData>
         + Dispatch<XwaylandSurfaceV1, XWaylandSurfaceUserData>

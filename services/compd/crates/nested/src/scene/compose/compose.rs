@@ -163,12 +163,11 @@ pub fn draw(state: &mut Loop, context: &mut WinitRenderContext) {
     let mut submitted = damage.is_some();
     // A cursorless screencopy render left an offscreen texture current; the swap
     // needs the window surface current again (EGL_BAD_SURFACE otherwise).
-    if offscreen {
-        if let Err(err) =
+    if offscreen
+        && let Err(err) =
             crate::frame::submit::submit::make_surface_current(&mut context.winit_backend)
-        {
-            warn!("winit: window surface not made current after an offscreen render ({err})");
-        }
+    {
+        warn!("winit: window surface not made current after an offscreen render ({err})");
     }
     match damage {
         Some(damage) => {
@@ -601,7 +600,7 @@ fn compose(
                     .get(&world::driver::capture::base::CAPTURE_REGISTRY)
                 {
                     registry.tick(
-                        &state.inner.environment.GPU.as_str(),
+                        state.inner.environment.GPU.as_str(),
                         gles_renderer,
                         capture_output,
                         &gles_framebuffer,

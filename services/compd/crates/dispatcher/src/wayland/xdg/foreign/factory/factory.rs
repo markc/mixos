@@ -5,13 +5,14 @@ use smithay::reexports::wayland_protocols::xdg::foreign::zv2::server::zxdg_impor
 use smithay::reexports::wayland_server::{Dispatch, DisplayHandle, GlobalDispatch};
 use smithay::wayland::GlobalData;
 use smithay::wayland::xdg_foreign::{XdgForeignHandler, XdgForeignState};
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> Foreign
+pub fn new<I>(display_handle: &DisplayHandle) -> Foreign
 where
+    I: DispatchWire,
     I: XdgForeignHandler,
     I: GlobalDispatch<ZxdgExporterV2, GlobalData>,
     I: GlobalDispatch<ZxdgImporterV2, GlobalData>,
 {
-    let xdg_foreign_state = XdgForeignState::new::<I>(&display_handle);
+    let xdg_foreign_state = XdgForeignState::new::<I>(display_handle);
 
     Foreign { xdg_foreign_state }
 }

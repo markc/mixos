@@ -25,10 +25,10 @@ pub fn layershell(
         // ONLY the output being drawn — otherwise every monitor also draws the OTHER
         // monitors' bars (at foreign local coords), the duplicated/mispositioned artifact.
         // `None` = winit / single-output pass → gather all (there is only one).
-        if let Some(key) = render_key {
-            if world::state::state::output_key(output).as_str() != key {
-                continue;
-            }
+        if let Some(key) = render_key
+            && world::state::state::output_key(output).as_str() != key
+        {
+            continue;
         }
         let scale = output.current_scale().fractional_scale();
         let layer_map = layer_map_for_output(output);

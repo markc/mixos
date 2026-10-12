@@ -132,10 +132,9 @@ where
             .registry
             .as_ref()
             .and_then(|r| r.space_of(id))
+            && let Some(elem) = world_ui(state, uuid, &ui_transform, size_f64)
         {
-            if let Some(elem) = world_ui(state, uuid, &ui_transform, size_f64) {
-                content.push(ContentItem::UI(elem));
-            }
+            content.push(ContentItem::UI(elem));
         }
     }
     // Defensive: any placed window not in the order draws at the bottom.
@@ -172,7 +171,7 @@ where
         && state
             .inner
             .render_target
-            .map_or(true, |rt| rt.slot == state.inner.viewports().pointer);
+            .is_none_or(|rt| rt.slot == state.inner.viewports().pointer);
     if cursor_here {
         for e in
             crate::canvas::cursor::element::scene::scene(state, renderer, size, &canvas_context)

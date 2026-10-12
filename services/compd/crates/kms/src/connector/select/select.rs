@@ -69,7 +69,7 @@ pub fn select(
 /// never matches a real preference.
 fn identity_key(drm: &DrmDevice, info: &connector::Info) -> String {
     let raw = parse::read(drm, info);
-    let parsed = raw.as_ref().and_then(|r| parse::parse(r));
+    let parsed = raw.as_ref().and_then(parse::parse);
     identity::identity(
         parsed.as_ref(),
         &format!("{:?}-{}", info.interface(), info.interface_id()),

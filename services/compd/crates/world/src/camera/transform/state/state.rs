@@ -11,10 +11,10 @@ pub struct Transform {
 
 impl Transform {
     pub fn zoom(&self) -> &f64 {
-        return &self.zoom;
+        &self.zoom
     }
     pub fn position(&self) -> &Point<f64, Logical> {
-        return &self.position;
+        &self.position
     }
 }
 

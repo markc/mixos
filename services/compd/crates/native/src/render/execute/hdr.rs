@@ -108,10 +108,10 @@ fn prop_handle(
         .get_properties(conn)
         .map_err(|e| format!("get_properties: {e}"))?;
     for h in set.as_props_and_values().0 {
-        if let Ok(info) = drm.get_property(*h) {
-            if info.name().to_str() == Ok(name) {
-                return Ok(*h);
-            }
+        if let Ok(info) = drm.get_property(*h)
+            && info.name().to_str() == Ok(name)
+        {
+            return Ok(*h);
         }
     }
     Err(format!("connector lacks property {name}"))

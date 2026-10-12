@@ -77,8 +77,9 @@ pub mod protocol {
 /// Only the request plumbing differs — both namespaces resolve against the same
 /// [`SessionStore`] and mint through the same claim registry, so a client on
 /// either one lands in the same placeholder identity.
+///
+/// Server bindings generated from the vendored `xx_` staging XML.
 pub mod legacy {
-    //! Server bindings generated from the vendored `xx_` staging XML.
     #![allow(non_camel_case_types, non_upper_case_globals, non_snake_case)]
     #![allow(dead_code, unused_imports, unused_variables, clippy::all)]
 
@@ -233,7 +234,7 @@ impl SessionLive {
     /// Returns whether an incumbent was displaced — the caller then drops the
     /// incumbent's live toplevel grants (`SessionStore::release_session`).
     pub fn install(&mut self, session_id: &str, claimant: SessionResource) -> bool {
-        let displaced = self.held.get(session_id).is_some();
+        let displaced = self.held.contains_key(session_id);
         if let Some(previous) = self.held.get(session_id) {
             previous.send_replaced();
             info!("session: {session_id} taken over; previous holder sent replaced");
@@ -299,14 +300,14 @@ pub fn dispatch_manager<D>(
     };
 
     let resolved = session_id.filter(|s| store.exists(s));
-    if let Some(existing) = resolved.as_deref() {
-        if live.held_by(existing, client) {
-            manager.post_error(
-                xdg_session_manager_v1::Error::InUse,
-                "session already in use by this client",
-            );
-            return;
-        }
+    if let Some(existing) = resolved.as_deref()
+        && live.held_by(existing, client)
+    {
+        manager.post_error(
+            xdg_session_manager_v1::Error::InUse,
+            "session already in use by this client",
+        );
+        return;
     }
 
     match resolved {
@@ -494,14 +495,14 @@ pub fn dispatch_legacy_manager<D>(
     }
 
     let resolved = session.filter(|s| store.exists(s));
-    if let Some(existing) = resolved.as_deref() {
-        if live.held_by(existing, client) {
-            manager.post_error(
-                xx_session_manager_v1::Error::InUse,
-                "session already in use by this client",
-            );
-            return;
-        }
+    if let Some(existing) = resolved.as_deref()
+        && live.held_by(existing, client)
+    {
+        manager.post_error(
+            xx_session_manager_v1::Error::InUse,
+            "session already in use by this client",
+        );
+        return;
     }
 
     match resolved {

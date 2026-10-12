@@ -74,8 +74,8 @@ pub fn credentials(window: &Window, display_handle: &DisplayHandle) -> Credentia
     match client.get_credentials(display_handle) {
         Ok(creds) => Credentials {
             pid: Some(creds.pid as u32),
-            uid: Some(creds.uid as u32),
-            gid: Some(creds.gid as u32),
+            uid: Some(creds.uid),
+            gid: Some(creds.gid),
         },
         Err(_) => Credentials::default(),
     }

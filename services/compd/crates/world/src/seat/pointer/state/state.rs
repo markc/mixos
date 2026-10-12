@@ -90,6 +90,12 @@ fn shared_theme() -> Arc<CursorThemeCache> {
         .clone()
 }
 
+impl Default for PointerState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PointerState {
     pub fn new() -> PointerState {
         PointerState {

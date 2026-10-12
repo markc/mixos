@@ -4,11 +4,12 @@ use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::server::zwlr_lay
 use smithay::reexports::wayland_server::{DisplayHandle, GlobalDispatch};
 use smithay::wayland::shell::wlr_layer::{WlrLayerShellGlobalData, WlrLayerShellState};
 
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> Layershell
+pub fn new<I>(display_handle: &DisplayHandle) -> Layershell
 where
+    I: DispatchWire,
     I: GlobalDispatch<ZwlrLayerShellV1, WlrLayerShellGlobalData>,
     I: 'static,
 {
-    let wlr = WlrLayerShellState::new::<I>(&display_handle);
-    return Layershell { wlr };
+    let wlr = WlrLayerShellState::new::<I>(display_handle);
+    Layershell { wlr }
 }

@@ -235,10 +235,10 @@ fn teleport_cross(
 /// output's first placement (else the first placement overall).
 fn current_placement(_loop: &mut Loop) -> Option<u64> {
     use drivers::output::base::{CURSOR_PLACEMENT, CURSOR_PLACEMENT_MUT, TELEPORT_LAYOUT};
-    if let Some(id) = *_loop.inner.kernel.get(&CURSOR_PLACEMENT) {
-        if _loop.inner.kernel.get(&TELEPORT_LAYOUT).get(id).is_some() {
-            return Some(id);
-        }
+    if let Some(id) = *_loop.inner.kernel.get(&CURSOR_PLACEMENT)
+        && _loop.inner.kernel.get(&TELEPORT_LAYOUT).get(id).is_some()
+    {
+        return Some(id);
     }
     let key = _loop.inner.current_output_key();
     let id = {
@@ -286,7 +286,7 @@ pub fn relative<I: InputBackend>(
     let sensitivity = _loop.inner.preference.cursor_sensitivity;
 
     // Snapshot previous position in both spaces.
-    let previous_phys = _loop.inner.pointer_mut().motion.clone();
+    let previous_phys = _loop.inner.pointer_mut().motion;
     // Pane under the cursor (records the `pointer` slot); map world through it.
     let ctx = _loop.pointer_context(Point::<f64, Physical>::from((
         previous_phys.x,
@@ -647,7 +647,6 @@ pub fn relative<I: InputBackend>(
         }
     }
 
-    let position_normalized = position_normalized;
     // 6. Dispatch normalize event to your native pointer handler
     // (Using the equivalent handler for PointerMotionEvent as you mentioned)
     native_motion::relative::input_received_normalized::<I>(

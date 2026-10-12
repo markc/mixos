@@ -11,9 +11,10 @@ use serde::{Deserialize, Serialize};
 use std::sync::RwLock;
 
 /// Which anti-aliasing technique the textured (window + UI) arm uses.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum AaMethod {
     /// No AA — the plain composite path.
+    #[default]
     Off,
     /// In-shader N×N supersample (+ optional sharpen). No mip chain.
     Ssaa,
@@ -43,12 +44,6 @@ impl AaMethod {
     /// Samples from a generated mip chain (trilinear/aniso).
     pub fn needs_mips(self) -> bool {
         matches!(self, AaMethod::Trilinear | AaMethod::Anisotropic)
-    }
-}
-
-impl Default for AaMethod {
-    fn default() -> Self {
-        AaMethod::Off
     }
 }
 

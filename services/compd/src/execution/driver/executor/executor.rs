@@ -79,11 +79,11 @@ impl Executor {
             wrap_podman(&mut request, &container, start);
         }
 
-        if matches!(LAUNCH_DISPATCH, LaunchDispatch::OffThread) {
-            if let Some(worker) = &self.worker {
-                worker.submit(request);
-                return None;
-            }
+        if matches!(LAUNCH_DISPATCH, LaunchDispatch::OffThread)
+            && let Some(worker) = &self.worker
+        {
+            worker.submit(request);
+            return None;
         }
         let outcome = execute(&request, self.scope);
         let _ = self.outcome_tx.send(outcome.clone());

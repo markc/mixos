@@ -157,18 +157,17 @@ pub fn wire(
         let cfg = model::environment::config::base::get();
         if let Some(rn) =
             kms::device::node::node::render_node(std::path::Path::new(&cfg.render_node))
+            && rn.dev_id() != display.primary_gpu.dev_id()
         {
-            if rn.dev_id() != display.primary_gpu.dev_id() {
-                warn!(
-                    "render_node {:?} is a DIFFERENT device from the scanout node {:?}. dmabuf \
+            warn!(
+                "render_node {:?} is a DIFFERENT device from the scanout node {:?}. dmabuf \
                      feedback advertises the scanout device (correct — it is what composites), \
                      but the off-thread producers allocate on render_node, so every buffer they \
                      hand over crosses devices and their modifier sets may not intersect at all. \
                      Full multi-GPU is not yet supported; expect linear or implicit allocation.",
-                    rn.dev_path(),
-                    display.primary_gpu.dev_path(),
-                );
-            }
+                rn.dev_path(),
+                display.primary_gpu.dev_path(),
+            );
         }
     }
 

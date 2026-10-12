@@ -20,7 +20,7 @@ pub fn initialize(
     output::register(_loop, output);
 
     // Creates the damage tracker
-    let output_damage_tracker = OutputDamageTracker::from_output(&output);
+    let output_damage_tracker = OutputDamageTracker::from_output(output);
 
     // Allows smithay to render DMABUF imports from clients, and registers the EGL
     // import set with the format layer.

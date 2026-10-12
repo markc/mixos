@@ -248,7 +248,7 @@ mod tests {
         assert_eq!(r.decisions[&id(1)].0, Decision::Exposed);
         assert_eq!(r.decisions[&id(2)].0, Decision::Occluded);
         assert!(
-            r.decisions.get(&id(3)).is_none(),
+            !r.decisions.contains_key(&id(3)),
             "never evaluated: unknown, not stored"
         );
         let rev = r.revision;

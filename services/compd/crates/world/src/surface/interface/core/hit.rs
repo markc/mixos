@@ -261,7 +261,7 @@ impl SurfaceHit {
 
     pub fn ice(&self) -> Option<bool> {
         match self {
-            Self::Layer { Ice, .. } => Ice.clone(),
+            Self::Layer { Ice, .. } => *Ice,
             _ => None,
         }
     }
@@ -632,10 +632,10 @@ impl Drawable {
 
 // ─── surface_under ─────────────────────────────────────────────────
 
-/// Hit-test a world point. Returns the topmost surface at that point.
-///
-/// `position_world` is in world: same units as `space.element_location`,
-/// camera-independent.
+// Hit-test a world point. Returns the topmost surface at that point.
+//
+// `position_world` is in world: same units as `space.element_location`,
+// camera-independent.
 // pub fn surface_under(_loop: &Loop, position_world: Point<f64, Logical>) -> Option<SurfaceHit> {
 //     surface_under_filtered(_loop, position_world, &pass_all)
 // }
@@ -818,17 +818,17 @@ pub fn surface_under_filtered_cx(
         }
     }
     for (u, w) in &by_uuid {
-        if !in_order.contains(u) {
-            if let Some(hit) = Drawable::Window(w.clone()).hit(
+        if !in_order.contains(u)
+            && let Some(hit) = Drawable::Window(w.clone()).hit(
                 &hcx,
                 position_world,
                 cursor_phys_world,
                 &ui_transform,
                 ui_output_size,
                 filter,
-            ) {
-                return Some(hit);
-            }
+            )
+        {
+            return Some(hit);
         }
     }
 

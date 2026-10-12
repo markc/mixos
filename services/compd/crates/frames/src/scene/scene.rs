@@ -605,7 +605,7 @@ where
     // (winit / single-output pass) draws everything.
     let draw_ui = |output: &Option<String>| match output {
         None => draw_screen,
-        Some(tag) => render_key.as_deref().map_or(true, |k| k == tag.as_str()),
+        Some(tag) => render_key.as_deref().is_none_or(|k| k == tag.as_str()),
     };
     // A session lock draws only an opaque blank,
     // this output's lock surface and the pointer; nothing else, and no window

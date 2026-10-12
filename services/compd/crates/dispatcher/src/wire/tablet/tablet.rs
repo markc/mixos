@@ -231,10 +231,10 @@ impl TabletState {
         }
         let mut instances = Vec::new();
         for seat in self.seats.iter().filter_map(|s| s.upgrade().ok()) {
-            if let Ok(client) = dh.get_client(seat.id()) {
-                if let Some(wl) = create_tablet::<D>(&client, dh, &seat, desc) {
-                    instances.push(wl.downgrade());
-                }
+            if let Ok(client) = dh.get_client(seat.id())
+                && let Some(wl) = create_tablet::<D>(&client, dh, &seat, desc)
+            {
+                instances.push(wl.downgrade());
             }
         }
         self.tablets.insert(desc.clone(), instances);
@@ -250,10 +250,10 @@ impl TabletState {
         }
         let mut tool = Tool::default();
         for seat in self.seats.iter().filter_map(|s| s.upgrade().ok()) {
-            if let Ok(client) = dh.get_client(seat.id()) {
-                if let Some(wl) = create_tool::<D>(&client, dh, &seat, desc) {
-                    tool.instances.push(wl.downgrade());
-                }
+            if let Ok(client) = dh.get_client(seat.id())
+                && let Some(wl) = create_tool::<D>(&client, dh, &seat, desc)
+            {
+                tool.instances.push(wl.downgrade());
             }
         }
         self.tools.insert(desc.clone(), tool);
@@ -657,16 +657,15 @@ impl TabletState {
             ..Default::default()
         };
         for seat in self.seats.iter().filter_map(|s| s.upgrade().ok()) {
-            if let Ok(client) = dh.get_client(seat.id()) {
-                if let Some((wl, groups, rings, strips, dials)) =
+            if let Ok(client) = dh.get_client(seat.id())
+                && let Some((wl, groups, rings, strips, dials)) =
                     create_pad::<D>(&client, dh, &seat, &pad.desc)
-                {
-                    pad.pads.push(wl.downgrade());
-                    pad.groups.extend(groups);
-                    pad.rings.extend(rings);
-                    pad.strips.extend(strips);
-                    pad.dials.extend(dials);
-                }
+            {
+                pad.pads.push(wl.downgrade());
+                pad.groups.extend(groups);
+                pad.rings.extend(rings);
+                pad.strips.extend(strips);
+                pad.dials.extend(dials);
             }
         }
         self.pads.insert(key, pad);
@@ -861,27 +860,27 @@ impl Pad {
         if self.focused.as_ref() == focused {
             return;
         }
-        if let Some(old) = self.focused.take() {
-            if let Some(wl) = self.instance_for(&old) {
-                wl.leave(serial.into(), &old);
-            }
+        if let Some(old) = self.focused.take()
+            && let Some(wl) = self.instance_for(&old)
+        {
+            wl.leave(serial.into(), &old);
         }
-        if let (Some(surface), Some(tablet)) = (focused, tablet) {
-            if let Some(wl) = self.instance_for(surface) {
-                wl.enter(serial.into(), tablet, surface);
-                for (g, w) in &self.groups {
-                    let mode = self.group_modes.get(*g).copied().unwrap_or(0);
-                    if mode == 0 {
-                        continue; // 0 is the default; clients assume it on enter.
-                    }
-                    if let Ok(group) = w.upgrade() {
-                        if group.id().same_client_as(&surface.id()) {
-                            group.mode_switch(0, serial.into(), mode);
-                        }
-                    }
+        if let (Some(surface), Some(tablet)) = (focused, tablet)
+            && let Some(wl) = self.instance_for(surface)
+        {
+            wl.enter(serial.into(), tablet, surface);
+            for (g, w) in &self.groups {
+                let mode = self.group_modes.get(*g).copied().unwrap_or(0);
+                if mode == 0 {
+                    continue; // 0 is the default; clients assume it on enter.
                 }
-                self.focused = Some(surface.clone());
+                if let Ok(group) = w.upgrade()
+                    && group.id().same_client_as(&surface.id())
+                {
+                    group.mode_switch(0, serial.into(), mode);
+                }
             }
+            self.focused = Some(surface.clone());
         }
     }
 }
@@ -913,41 +912,39 @@ impl Tool {
     }
 
     fn proximity_out(&mut self, time: u32) {
-        if let Some(focus) = self.focus.clone() {
-            if let Some(wl_tool) = self.instance_for(&focus) {
-                if self.is_down {
-                    wl_tool.pressure(0);
-                    wl_tool.up();
-                    self.is_down = false;
-                }
-                wl_tool.proximity_out();
-                wl_tool.frame(time);
+        if let Some(focus) = self.focus.clone()
+            && let Some(wl_tool) = self.instance_for(&focus)
+        {
+            if self.is_down {
+                wl_tool.pressure(0);
+                wl_tool.up();
+                self.is_down = false;
             }
+            wl_tool.proximity_out();
+            wl_tool.frame(time);
         }
         self.focus = None;
     }
 
     fn tip_down(&mut self, serial: Serial, time: u32) {
-        if let Some(focus) = self.focus.clone() {
-            if let Some(wl_tool) = self.instance_for(&focus) {
-                if !self.is_down {
-                    wl_tool.down(serial.into());
-                    wl_tool.frame(time);
-                }
-            }
+        if let Some(focus) = self.focus.clone()
+            && let Some(wl_tool) = self.instance_for(&focus)
+            && !self.is_down
+        {
+            wl_tool.down(serial.into());
+            wl_tool.frame(time);
         }
         self.is_down = true;
     }
 
     fn tip_up(&mut self, time: u32) {
-        if let Some(focus) = self.focus.clone() {
-            if let Some(wl_tool) = self.instance_for(&focus) {
-                if self.is_down {
-                    wl_tool.pressure(0);
-                    wl_tool.up();
-                    wl_tool.frame(time);
-                }
-            }
+        if let Some(focus) = self.focus.clone()
+            && let Some(wl_tool) = self.instance_for(&focus)
+            && self.is_down
+        {
+            wl_tool.pressure(0);
+            wl_tool.up();
+            wl_tool.frame(time);
         }
         self.is_down = false;
     }
@@ -997,11 +994,11 @@ impl Tool {
     }
 
     fn button(&self, button: u32, state: ButtonState, serial: Serial, time: u32) {
-        if let Some(focus) = self.focus.clone() {
-            if let Some(wl_tool) = self.instance_for(&focus) {
-                wl_tool.button(serial.into(), button, state.into());
-                wl_tool.frame(time);
-            }
+        if let Some(focus) = self.focus.clone()
+            && let Some(wl_tool) = self.instance_for(&focus)
+        {
+            wl_tool.button(serial.into(), button, state.into());
+            wl_tool.frame(time);
         }
     }
 }

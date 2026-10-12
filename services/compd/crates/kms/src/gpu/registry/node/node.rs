@@ -20,10 +20,10 @@ impl NodeRegistry {
 
     pub fn remove(&mut self, dev_id: u64) -> Option<DrmNode> {
         let removed = self.nodes.remove(&dev_id);
-        if let (Some(r), Some(p)) = (removed.as_ref(), self.primary.as_ref()) {
-            if r == p {
-                self.primary = None;
-            }
+        if let (Some(r), Some(p)) = (removed.as_ref(), self.primary.as_ref())
+            && r == p
+        {
+            self.primary = None;
         }
         removed
     }

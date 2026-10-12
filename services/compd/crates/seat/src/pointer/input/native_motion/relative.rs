@@ -15,8 +15,6 @@ pub fn input_received_normalized<I: InputBackend>(
     delta: (Point<f64, Logical>, Point<f64, Logical>),
     was_constrain_locked: bool,
 ) {
-    let position_normalized = position_normalized.clone().into();
-
     let serial = SERIAL_COUNTER.next_serial();
     let pointer = _loop.state.seat.seat.get_pointer().unwrap();
 

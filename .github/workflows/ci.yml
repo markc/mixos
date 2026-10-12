@@ -63,12 +63,20 @@ jobs:
         if: ${{ !cancelled() }}
         run: cargo build --workspace --all-targets --locked
 
-      # The crates own their lint levels ([lints] in each Cargo.toml): every
-      # clippy lint they deny, and clippy's deny-by-default correctness set,
-      # fails the run. Warn-level lints stay allowed with the rest of warnings.
+      # Every clippy::all finding fails the run, past the crates' rustc
+      # `warnings = "allow"`; an in-source #[allow] with its reason still
+      # wins. Allowed here: module_inception (the foo.rs + foo/foo.rs layout
+      # is deliberate), too_many_arguments and type_complexity (API shape,
+      # not defects), large_enum_variant (boxing changes the types) and
+      # mutable_key_type (smithay handles keyed by identity).
       - name: Clippy
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: cargo clippy --workspace --all-targets --locked
+        run: >-
+          cargo clippy --workspace --all-targets --locked --
+          -D clippy::all
+          -A clippy::module_inception -A clippy::too_many_arguments
+          -A clippy::type_complexity -A clippy::large_enum_variant
+          -A clippy::mutable_key_type
 
       # Every failure in one run, not just the first test binary's. The
       # editd latency ceiling (1 s to open 64 MiB) is for our build hosts; a

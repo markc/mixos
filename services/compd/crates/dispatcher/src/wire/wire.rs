@@ -337,7 +337,7 @@ impl<A: WireTrait + 'static> Wire<A> {
         };
         let location = self.inner.reanchor_pointer();
         let serial = SERIAL_COUNTER.next_serial();
-        let time = self.state.compositor.clock.now().as_millis() as u32;
+        let time = self.state.compositor.clock.now().as_millis();
         pointer.motion(
             &mut self.state,
             None,
@@ -375,7 +375,7 @@ impl<A: WireTrait + 'static> Wire<A> {
             return;
         };
         let serial = SERIAL_COUNTER.next_serial();
-        let time = self.state.compositor.clock.now().as_millis() as u32;
+        let time = self.state.compositor.clock.now().as_millis();
         info!("toplevel drag: world switched mid-carry — cancelling the drag");
         // Both of these are recorded BEFORE cancelling, while the carry is still a
         // fact. This path is the mirror of a physical drop: there the inner
@@ -457,7 +457,7 @@ impl<A: WireTrait + 'static> Wire<A> {
                     + hint_surface_local
             });
         let serial = SERIAL_COUNTER.next_serial();
-        let time = self.state.compositor.clock.now().as_millis() as u32;
+        let time = self.state.compositor.clock.now().as_millis();
         // Smithay derives the client's local coordinate as `location - focus_origin`,
         // so hand it the origin that yields exactly the hint (`hit.rs` does the same).
         pointer.motion(
@@ -909,20 +909,18 @@ impl<A: WireTrait + 'static> Wire<A> {
         // Deferred pointer-constraint activate-on-focus (recorded by `focus_changed`).
         // Done here — NOT in the callback — because the pointer is unlocked now, so the
         // `is_pointer_over` → `current_focus()` query can't re-lock a held pointer mutex.
-        if let Some(surface) = self.state.pending_constraint_activation.take() {
-            if let Some(pointer) = self.state.seat.seat.get_pointer() {
-                if self.state.seat.is_pointer_over(&pointer, &surface)
-                    && !self.state.seat.constraints_suspended
+        if let Some(surface) = self.state.pending_constraint_activation.take()
+            && let Some(pointer) = self.state.seat.seat.get_pointer()
+            && self.state.seat.is_pointer_over(&pointer, &surface)
+            && !self.state.seat.constraints_suspended
+        {
+            with_pointer_constraint(&surface, &pointer, |c| {
+                if let Some(c) = c
+                    && !c.is_active()
                 {
-                    with_pointer_constraint(&surface, &pointer, |c| {
-                        if let Some(c) = c {
-                            if !c.is_active() {
-                                c.activate();
-                            }
-                        }
-                    });
+                    c.activate();
                 }
-            }
+            });
         }
         // Destroyed windows, xdg and X11 in the order they arrived — and BEFORE
         // `foreign_reconcile` below, so the dock mirror publishes this frame's removals

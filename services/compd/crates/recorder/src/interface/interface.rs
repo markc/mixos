@@ -5,6 +5,7 @@
 //! Coordinate spaces:
 //! - window geometries are world `Logical`;
 //! - the registry crop + the indicator overlays are screen `Physical`.
+//!
 //! The overlay instances are full-screen screen-space at the output's physical
 //! size (assumed 1:1 with output pixels, i.e. scale 1.0 — the region rect the
 //! user draws is treated as physical directly).
@@ -814,11 +815,12 @@ fn video_frame(state: &mut Loop) {
                 n.send(frame.bgra, frame.width, frame.height, flip, pts);
             }
             // 2. Submit a fresh readback if due and the slot is free.
-            if due && !rb.inflight() {
-                if let Some(tex) = a.capture.wgpu_texture() {
-                    rb.submit(ctx, &tex);
-                    a.last_frame = Some(now);
-                }
+            if due
+                && !rb.inflight()
+                && let Some(tex) = a.capture.wgpu_texture()
+            {
+                rb.submit(ctx, &tex);
+                a.last_frame = Some(now);
             }
         }
         None => {}
@@ -1012,10 +1014,9 @@ fn poll_saveas(state: &mut Loop, renderer: &mut GlesRenderer) {
     {
         *saveas = None;
     }
-    match outcome {
-        Some(path) => commit_save(state, renderer, path),
-        // Portal failed/cancelled: keep the Save dialog up (no-op).
-        None => {}
+    // Portal failed/cancelled (None): keep the Save dialog up.
+    if let Some(path) = outcome {
+        commit_save(state, renderer, path);
     }
 }
 
@@ -1394,19 +1395,18 @@ fn update_crop(state: &mut Loop, renderer: &mut GlesRenderer) {
 
     // Only blit-based (ScreenRegion) entries resize — to the clamped on-screen
     // crop. Render-based entries stay fixed (the per-element render fills them).
-    if matches!(target, CaptureTarget::ScreenRegion(_)) {
-        if let Some(crop) = clamp_rect(indicator, sw, sh) {
-            let gpu = state.inner.environment.GPU.clone();
-            if let Some(reg) = state
-                .inner
-                .kernel
-                .get_mut(&world::driver::capture::base::CAPTURE_REGISTRY_MUT)
-                .as_ref()
-            {
-                if let Err(e) = reg.set_region(&gpu, renderer, entry, crop) {
-                    warn!("capture set_region failed: {e:?}");
-                }
-            }
+    if matches!(target, CaptureTarget::ScreenRegion(_))
+        && let Some(crop) = clamp_rect(indicator, sw, sh)
+    {
+        let gpu = state.inner.environment.GPU.clone();
+        if let Some(reg) = state
+            .inner
+            .kernel
+            .get_mut(&world::driver::capture::base::CAPTURE_REGISTRY_MUT)
+            .as_ref()
+            && let Err(e) = reg.set_region(&gpu, renderer, entry, crop)
+        {
+            warn!("capture set_region failed: {e:?}");
         }
     }
 
