@@ -23,6 +23,7 @@ mod gpu;
 mod input;
 mod scale;
 mod state;
+mod timing;
 
 pub use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
 

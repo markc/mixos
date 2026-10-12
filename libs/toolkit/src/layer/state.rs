@@ -46,18 +46,14 @@ use smithay_client_toolkit::{
 };
 
 use super::gpu::{Gpu, Skipped, Target};
-use super::{LayerOptions, LayerProgram, Outputs, SurfaceInfo, input, scale};
+use super::{LayerOptions, LayerProgram, Outputs, SurfaceInfo, input, scale, timing};
 
 /// A repaint asked for: which surface, and in how long.
 type Repaint = (u64, Duration);
 
-/// How soon a surface whose frame was skipped is drawn again.
-const RETRY: Duration = Duration::from_millis(50);
-
-/// How long a frame callback is waited for before the surface may draw
-/// again anyway: a present that failed (wgpu does not report it) commits
-/// nothing, so its callback never comes. One wake-up, not a poll.
-const WATCHDOG: Duration = Duration::from_secs(1);
+// The retry backoff and the frame-callback watchdog (a present that failed
+// commits nothing, so its callback never comes; wgpu does not report it)
+// are in `timing`, tested there.
 
 /// Key repeat until the compositor says otherwise.
 const REPEAT: (Duration, Duration) = (Duration::from_millis(600), Duration::from_millis(40));
@@ -416,33 +412,23 @@ impl<P: LayerProgram + 'static> State<P> {
     /// frame callback's watchdog runs out; otherwise until an event.
     fn next_wake(&self) -> Option<Duration> {
         let now = Instant::now();
-        let mut wait: Option<Duration> = None;
-        for s in &self.surfaces {
-            let this = if s.frame_pending {
-                s.pending_since
-                    .map(|t| WATCHDOG.saturating_sub(now.duration_since(t)))
+        timing::shortest(self.surfaces.iter().map(|s| {
+            if s.frame_pending {
+                timing::surface_wait(s.pending_since, None, now)
             } else if s.configured && s.dirty {
                 // A skipped frame waits for its retry deadline.
-                s.retry_at.map(|t| t.saturating_duration_since(now))
+                timing::surface_wait(None, s.retry_at, now)
             } else {
                 None
-            };
-            wait = match (wait, this) {
-                (Some(a), Some(b)) => Some(a.min(b)),
-                (a, b) => a.or(b),
-            };
-        }
-        wait
+            }
+        }))
     }
 
     /// Stop waiting on frame callbacks that never came.
     fn expire_frames(&mut self) {
         let now = Instant::now();
         for s in &mut self.surfaces {
-            if s.frame_pending
-                && s.pending_since
-                    .is_some_and(|t| now.duration_since(t) >= WATCHDOG)
-            {
+            if s.frame_pending && s.pending_since.is_some_and(|t| timing::expired(t, now)) {
                 s.frame_pending = false;
                 s.pending_since = None;
                 // The present may have failed silently: redraw once. A
@@ -522,8 +508,7 @@ impl<P: LayerProgram + 'static> State<P> {
             Err(Skipped::Later) => {
                 // Back off: 50 ms doubling to 1 s while it keeps skipping.
                 s.dirty = true;
-                let wait = (RETRY * 2u32.saturating_pow(s.skips.min(5))).min(WATCHDOG);
-                s.retry_at = Some(Instant::now() + wait);
+                s.retry_at = Some(Instant::now() + timing::retry_after(s.skips));
                 s.skips = s.skips.saturating_add(1);
             }
         }
