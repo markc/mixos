@@ -1984,6 +1984,55 @@ port (`TCP_LISTEN_ADDR_IN_USE`): a served listener should bind port `0`
 and publish its port. Handing a fixed port across a reload is not
 supported yet.
 
+## Unix sockets — `unix_connect` (v0.115.0)
+
+```
+unix_connect(path[, {timeout, frame}])  -> handle (tcp_connect's handle space)
+```
+
+A client for a local unix-domain stream socket: systemd's Varlink
+services (`/run/systemd/resolve/io.systemd.Resolve`, networkd's
+`io.systemd.Network`) and other local services that speak a framed
+protocol. The handle is an ordinary connected handle, so `tcp_send`,
+`tcp_recv`, `tcp_recv_line`, `tcp_on` and `tcp_close` work on it unchanged.
+`tcp_local_addr` refuses (`TCP_LOCAL_ADDR`): a unix socket has no TCP
+address.
+
+- `path` is an absolute filesystem path of at most 107 bytes. Abstract
+  sockets are not offered.
+- `timeout` (seconds, default 30) bounds the connect and each write.
+  A listener whose backlog is full fails at once (`UNIX_CONNECT_BUSY`)
+  instead of blocking the evaluator.
+- `frame: "nul"` makes a "line" a NUL-terminated frame. `tcp_recv_line`
+  returns the next frame without its NUL (no CR is stripped), and
+  `tcp_on(h, cmd, {frame: "line"})` delivers one event per frame. Sends
+  are verbatim: end each request with `chr(0)` yourself. The default,
+  `frame: "line"`, keeps LF lines as `tcp_connect` does.
+
+```mix
+-- One Varlink call to systemd-resolved: NUL-framed JSON.
+$h = unix_connect("/run/systemd/resolve/io.systemd.Resolve", {frame: "nul", timeout: 5})
+tcp_send($h, json_encode({method: "io.systemd.Resolve.ResolveHostname",
+  parameters: {name: "example.org"}}) .. chr(0))
+$reply = json_parse(tcp_recv_line($h, {timeout: 5}))
+tcp_close($h)
+print(json_encode($reply.parameters.addresses))
+```
+
+| Code | Raised when |
+|---|---|
+| `UNIX_CONNECT_NOT_FOUND` | no socket file at `path` |
+| `UNIX_CONNECT_PERMISSION` | the socket file's mode refuses this user |
+| `UNIX_CONNECT_REFUSED` | a socket file with nothing listening behind it |
+| `UNIX_CONNECT_BUSY` | the listener's backlog is full |
+| `UNIX_CONNECT_TIMEOUT` | the connect did not finish within `timeout` |
+| `UNIX_CONNECT_ARGUMENT` | a bad path or option |
+| `UNIX_CONNECT` | any other connect failure |
+
+A frame longer than `max` raises and retires the handle, whether or not its
+NUL has arrived; from 0.115.0 an over-long LF line does the same. Ownership is `tcp_connect`'s: the handle lives for
+the process until `tcp_close`.
+
 Both UDP builtins above, all four `ws_*`, and the `tcp_*` family are **Network**-class (below), like `http_*` and `dns_lookup` —
 and like those, the wait happens inline on the evaluator's thread. In a
 `--serve` citizen that means a pending `udp_recv` blocks the whole event pump

@@ -415,15 +415,16 @@ builtin_table! {
     ("tcp_connect", CapabilityClass::Network,     "system",  "Open a raw TCP connection: tcp_connect(host, port[, {timeout, tls, insecure}]) -> numeric handle. tls:true wraps in TLS (ring-pinned, webpki roots); insecure:true skips cert verification. The stream-socket primitive for a line/binary protocol (SMTP/redis/memcached probe, banner grab) UDP/WS/HTTP don't cover (v0.78.0)", contract!((host: string, port: number, opts?: any_of(map, nil)) -> number; effects[blocking]; failure[raises])),
     ("tcp_send", CapabilityClass::Network,        "system",  "Send bytes on a TCP handle: tcp_send(h, payload[, {timeout}]) -> bytes sent (string/bytes/buffer, verbatim; flushed). Without timeout each write is bounded by the socket's 30 s write timeout, as before. With {timeout} (seconds, 0 = wait forever) one deadline bounds the WHOLE send however many partial writes it takes; on expiry it raises TCP_SEND_TIMEOUT (details {written, total}) and retires the handle, and bytes already written stay written. The timed wait honours SIGTERM and Ctrl-C. On a tcp_on handle the timeout is the receipt deadline (0 keeps the 30 s bound) (v0.78.0; timeout v0.112.1)", contract!((handle: number, payload: any_of(string, bytes, buffer), opts?: any_of(map, nil)) -> number; effects[blocking]; failure[raises])),
     ("tcp_recv", CapabilityClass::Network,        "system",  "Read available bytes: tcp_recv(h[, {timeout, max}]) -> bytes (buffered bytes first, then one read of at most 256 KiB — poll again for more even when max is larger) | nil on timeout (poll again). Bytes not string — a stream has no frame boundary. A peer close RAISES and retires the handle. timeout default 30 (0=forever), max default 64 KiB. Numeric Class C recv yields on native readiness. Source-id recv yields outside serve; serve mode refuses SOCKET_RECV_SERVE and consumes frames through handlers. nil on timeout keeps the connection usable; terminal raises SOCKET_CLOSED (v0.78.0)", contract!((handle: any_of(number, string), opts?: any_of(map, nil)) -> any; effects[blocking]; failure[raises])),
-    ("tcp_recv_line", CapabilityClass::Network,   "system",  "Read the next LINE: tcp_recv_line(h[, {timeout, max}]) -> string (LF + one trailing CR stripped) | nil on timeout. Buffers across reads; if `max` bytes accumulate with no newline the handle RAISES and RETIRES (a peer that never terminates a line — broken framing). For line protocols (SMTP/redis) so a caller need not hand-roll a \\r\\n scanner. Numeric Class C recv yields on native readiness. A line-mode source-id recv yields outside serve; serve mode refuses SOCKET_RECV_SERVE and uses event handlers. nil on timeout keeps the connection usable; terminal raises SOCKET_CLOSED (v0.78.0)", contract!((handle: any_of(number, string), opts?: any_of(map, nil)) -> any; effects[blocking]; failure[raises])),
+    ("tcp_recv_line", CapabilityClass::Network,   "system",  "Read the next LINE: tcp_recv_line(h[, {timeout, max}]) -> string (LF + one trailing CR stripped) | nil on timeout. Buffers across reads; if `max` bytes accumulate with no newline the handle RAISES and RETIRES (a peer that never terminates a line — broken framing). For line protocols (SMTP/redis) so a caller need not hand-roll a \\r\\n scanner. On a unix_connect {frame:\"nul\"} handle a line is a NUL-terminated frame (no CR stripping). From v0.115.0 a line longer than max raises even when its terminator has arrived. Numeric Class C recv yields on native readiness. A line-mode source-id recv yields outside serve; serve mode refuses SOCKET_RECV_SERVE and uses event handlers. nil on timeout keeps the connection usable; terminal raises SOCKET_CLOSED (v0.78.0)", contract!((handle: any_of(number, string), opts?: any_of(map, nil)) -> any; effects[blocking]; failure[raises])),
     ("ws_on",   CapabilityClass::Network,         "system",  "Subscribe a ws_connect handle to the event stream: ws_on(handle, command) -> source id (string). The connection MOVES to an evaluator-generation reader thread: ordered frames arrive as `command` events {watch, frame:{kind:\"text\"|\"binary\", data}} (binary data hex-encoded), a peer close as ONE terminal {watch, closed:{reason}} — then the source retires. ws_send on the moved handle routes to the owner and awaits its receipt; numeric ws_recv refuses. Serve handlers receive frames as events. The reader parks in poll(2) when idle (no timer). Overflow hard-closes the socket with exactly one terminal event, never a silent drop. ws_unwatch cancels, joins and emits NO terminal marker (v0.107.0)", contract!((handle: number, command: string) -> string; failure[raises])),
     ("ws_unwatch", CapabilityClass::Network,      "system",  "Cancel a ws_on subscription: ws_unwatch(source) -> nil. Cancels and joins the reader, drops queued frames and wakes a parked ws_recv with SOCKET_WATCH_HANDLE. Emits NO terminal event (explicit close — documented). Unknown or retired sources raise (v0.107.0)", contract!((handle: string) -> nil; failure[raises])),
-    ("tcp_on",   CapabilityClass::Network,        "system",  "Subscribe a tcp_connect handle to the event stream: tcp_on(handle, command[, {frame:\"line\"|\"bytes\", max}]) -> source id (string). frame defaults to \"bytes\": ordered raw chunks of at most 64 KiB; frame:\"line\" splits on LF (one trailing CR stripped) with max capping the line length (default 65536) — a line over max hard-closes with one terminal event. Same ownership, ordering, overflow and retirement rules as ws_on; tcp_recv consumes a bytes source, tcp_recv_line a line source, and a mismatched verb refuses (SOCKET_KIND). A tcp_listen LISTENER subscribes too (no options): each accepted connection arrives as {watch, accepted:{handle, peer:{host, port}}}, handle a plain connected handle; tcp_accept(source) takes the next one outside serve mode (v0.107.0; listeners v0.112.0)", contract!((handle: number, command: string, opts?: map) -> string; failure[raises])),
+    ("tcp_on",   CapabilityClass::Network,        "system",  "Subscribe a tcp_connect handle to the event stream: tcp_on(handle, command[, {frame:\"line\"|\"bytes\", max}]) -> source id (string). frame defaults to \"bytes\": ordered raw chunks of at most 64 KiB; frame:\"line\" splits on LF (one trailing CR stripped) with max capping the line length (default 65536) — a line over max hard-closes with one terminal event. On a unix_connect {frame:\"nul\"} handle, line frames end at NUL; from v0.115.0 a complete line over max also hard-closes. Same ownership, ordering, overflow and retirement rules as ws_on; tcp_recv consumes a bytes source, tcp_recv_line a line source, and a mismatched verb refuses (SOCKET_KIND). A tcp_listen LISTENER subscribes too (no options): each accepted connection arrives as {watch, accepted:{handle, peer:{host, port}}}, handle a plain connected handle; tcp_accept(source) takes the next one outside serve mode (v0.107.0; listeners v0.112.0)", contract!((handle: number, command: string, opts?: map) -> string; failure[raises])),
     ("tcp_unwatch", CapabilityClass::Network,     "system",  "Cancel a tcp_on subscription: tcp_unwatch(source) -> nil. Same contract as ws_unwatch (v0.107.0)", contract!((handle: string) -> nil; failure[raises])),
     ("tcp_close", CapabilityClass::Network,       "system",  "Close a TCP handle or listener: true when live, false when unknown/already closed (never raises for that, like funlock) (v0.78.0)", contract!((handle: number) -> bool; failure[raises])),
     ("tcp_listen", CapabilityClass::Network,      "system",  "Listen for TCP connections: tcp_listen(host, port[, {backlog}]) -> numeric listener handle (tcp_connect's handle space). host is required: \"127.0.0.1\" is the normal choice, and a non-loopback address (\"0.0.0.0\", a LAN IP) must be named explicitly. port 0 binds an ephemeral port (read it with tcp_local_addr); backlog defaults to 128 (1..4096). Owned by the evaluator generation. Raises TCP_LISTEN_ADDR_IN_USE, TCP_LISTEN_PERMISSION, TCP_LISTEN_ADDR_UNAVAILABLE, TCP_LISTEN_ADDRESS, TCP_LISTEN_ARGUMENT, TCP_HANDLE_LIMIT (v0.112.0)", contract!((host: string, port: number, opts?: any_of(map, nil)) -> number; failure[raises])),
     ("tcp_accept", CapabilityClass::Network,      "system",  "Wait for one connection on a tcp_listen listener: tcp_accept(listener[, {timeout}]) -> numeric connected handle (use with tcp_send/tcp_recv/tcp_recv_line/tcp_on/tcp_close) | nil on timeout. timeout seconds default 30, 0 = wait forever. Numeric Class C accept yields on native readiness; a subscribed listener refuses SOCKET_SUBSCRIBED. Source-id accept (a tcp_on listener source) yields outside serve; serve mode refuses SOCKET_RECV_SERVE. Accepted handles belong to the evaluator generation (v0.112.0)", contract!((listener: any_of(number, string), opts?: any_of(map, nil)) -> any; effects[blocking]; failure[raises])),
     ("tcp_local_addr", CapabilityClass::Network,  "system",  "Local address of a TCP listener or connected handle: tcp_local_addr(handle) -> {host, port} — how a script that bound port 0 learns its port (v0.112.0)", contract!((handle: number) -> map; failure[raises])),
+    ("unix_connect", CapabilityClass::Network,    "system",  "Open a unix-domain stream socket: unix_connect(path[, {timeout, frame}]) -> numeric handle in tcp_connect's handle space, so tcp_send, tcp_recv, tcp_recv_line, tcp_on and tcp_close take it (tcp_local_addr refuses: no TCP address). path is an absolute filesystem path (at most 107 bytes; abstract sockets are not offered). timeout (seconds, default 30) bounds the connect and each write; a listener with a full backlog fails at once (UNIX_CONNECT_BUSY) rather than block. frame:\"nul\" makes a line a NUL-terminated frame (Varlink, hostd): tcp_recv_line returns the next frame without its NUL and tcp_on {frame:\"line\"} delivers one per event; send the NUL yourself (tcp_send(h, json .. chr(0))). frame:\"line\" (default) keeps LF lines. Raises UNIX_CONNECT_NOT_FOUND, UNIX_CONNECT_PERMISSION, UNIX_CONNECT_REFUSED, UNIX_CONNECT_BUSY, UNIX_CONNECT_TIMEOUT, UNIX_CONNECT_ARGUMENT, UNIX_CONNECT (v0.115.0)", contract!((path: string, opts?: any_of(map, nil)) -> number; effects[blocking]; failure[raises])),
     ("help", CapabilityClass::Pure,            "system",  "Show Mix builtin help in the REPL", contract!(() -> nil)),
 
     ("fmt", CapabilityClass::Pure,             "format",  "printf-style format string → string. Specs: %s %d %f %.Nf %Nd %-Ns %0Nd %% (v0.2.0; %0Nd zero-pad v0.54.0 — numeric only, use lpad(s,n,\"0\") for strings). Dynamic width `*` takes the width from the next argument: %*s %-*s %*d %0*d %*f (v0.63.0; the width argument must be a non-negative integer). For byte-exact C-printf parity (%e %g %x, flags, glibc float rounding) use sprintf()", contract!((tmpl: string, args: ...any) -> string)),
@@ -910,18 +911,24 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         "tcp_accept" => builtin_tcp_accept(args),
         #[cfg(feature = "ws")]
         "tcp_local_addr" => builtin_tcp_local_addr(args),
+        #[cfg(all(feature = "ws", unix))]
+        "unix_connect" => builtin_unix_connect(args),
+        #[cfg(all(feature = "ws", not(unix)))]
+        "unix_connect" => Err(MixError::RuntimeError {
+            span: None,
+            msg: "unix_connect() needs a unix platform".to_string(),
+        }),
         // Registry lists these unconditionally; a no-ws build refuses
         // loudly rather than falling through to the silent-nil catch-all.
         // (tcp_* share the ws feature's tungstenite/rustls stack.)
         #[cfg(not(feature = "ws"))]
         name @ ("ws_connect" | "ws_send" | "ws_recv" | "ws_close" | "tcp_connect" | "tcp_send"
         | "tcp_recv" | "tcp_recv_line" | "tcp_close" | "ws_on" | "tcp_on"
-        | "ws_unwatch" | "tcp_unwatch" | "tcp_listen" | "tcp_accept" | "tcp_local_addr") => {
-            Err(MixError::RuntimeError {
-                span: None,
-                msg: format!("{name}() requires the `ws` feature (tungstenite/rustls)"),
-            })
-        }
+        | "ws_unwatch" | "tcp_unwatch" | "tcp_listen" | "tcp_accept" | "tcp_local_addr"
+        | "unix_connect") => Err(MixError::RuntimeError {
+            span: None,
+            msg: format!("{name}() requires the `ws` feature (tungstenite/rustls)"),
+        }),
         #[cfg(feature = "sqlite")]
         "sqlopen" => builtin_sqlopen(args),
         #[cfg(feature = "sqlite")]
@@ -22102,6 +22109,94 @@ mod tcp_client {
     pub(super) enum Stream {
         Plain(std::net::TcpStream),
         Tls(Box<rustls::StreamOwned<rustls::ClientConnection, std::net::TcpStream>>),
+        /// A unix_connect stream socket: the same handle space and verbs.
+        #[cfg(unix)]
+        Unix(std::os::unix::net::UnixStream),
+    }
+
+    /// The socket under a connection, where timeouts, blocking mode and
+    /// the fd live: TCP for tcp_connect/tcp_accept (and ws), a unix stream
+    /// for unix_connect.
+    #[derive(Clone, Copy)]
+    pub(super) enum SockRef<'a> {
+        Tcp(&'a std::net::TcpStream),
+        #[cfg(unix)]
+        Unix(&'a std::os::unix::net::UnixStream),
+    }
+
+    impl SockRef<'_> {
+        pub(super) fn read_timeout(self) -> std::io::Result<Option<std::time::Duration>> {
+            match self {
+                Self::Tcp(s) => s.read_timeout(),
+                #[cfg(unix)]
+                Self::Unix(s) => s.read_timeout(),
+            }
+        }
+        pub(super) fn write_timeout(self) -> std::io::Result<Option<std::time::Duration>> {
+            match self {
+                Self::Tcp(s) => s.write_timeout(),
+                #[cfg(unix)]
+                Self::Unix(s) => s.write_timeout(),
+            }
+        }
+        pub(super) fn set_read_timeout(
+            self,
+            d: Option<std::time::Duration>,
+        ) -> std::io::Result<()> {
+            match self {
+                Self::Tcp(s) => s.set_read_timeout(d),
+                #[cfg(unix)]
+                Self::Unix(s) => s.set_read_timeout(d),
+            }
+        }
+        pub(super) fn set_write_timeout(
+            self,
+            d: Option<std::time::Duration>,
+        ) -> std::io::Result<()> {
+            match self {
+                Self::Tcp(s) => s.set_write_timeout(d),
+                #[cfg(unix)]
+                Self::Unix(s) => s.set_write_timeout(d),
+            }
+        }
+        pub(super) fn set_nonblocking(self, on: bool) -> std::io::Result<()> {
+            match self {
+                Self::Tcp(s) => s.set_nonblocking(on),
+                #[cfg(unix)]
+                Self::Unix(s) => s.set_nonblocking(on),
+            }
+        }
+        /// A duplicate fd, for readiness waits only (AsyncFd).
+        #[cfg(unix)]
+        pub(super) fn try_clone(self) -> std::io::Result<std::os::fd::OwnedFd> {
+            use std::os::fd::AsFd;
+            match self {
+                Self::Tcp(s) => s.as_fd().try_clone_to_owned(),
+                #[cfg(unix)]
+                Self::Unix(s) => s.as_fd().try_clone_to_owned(),
+            }
+        }
+        /// A TCP socket's local address; a unix socket has none.
+        pub(super) fn local_addr(self) -> std::io::Result<std::net::SocketAddr> {
+            match self {
+                Self::Tcp(s) => s.local_addr(),
+                #[cfg(unix)]
+                Self::Unix(_) => Err(std::io::Error::other(
+                    "a unix_connect handle has no TCP address",
+                )),
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    impl std::os::fd::AsRawFd for SockRef<'_> {
+        fn as_raw_fd(&self) -> std::os::fd::RawFd {
+            match self {
+                Self::Tcp(s) => s.as_raw_fd(),
+                #[cfg(unix)]
+                Self::Unix(s) => s.as_raw_fd(),
+            }
+        }
     }
 
     /// One connection: the stream plus a read-ahead buffer that
@@ -22113,6 +22208,11 @@ mod tcp_client {
     pub(super) struct Conn {
         pub stream: Stream,
         pub buf: Vec<u8>,
+        /// The byte that ends a "line" (tcp_recv_line, tcp_on frame:"line"):
+        /// LF, or NUL for a unix_connect handle opened with frame:"nul"
+        /// (Varlink and hostd framing). A CR before an LF is stripped; no
+        /// byte is stripped before a NUL.
+        pub delim: u8,
         _permit: Option<TcpPermit>,
         pub ownership: Option<Ownership>,
     }
@@ -22222,9 +22322,16 @@ mod tcp_client {
             Self {
                 stream,
                 buf: Vec::new(),
+                delim: b'\n',
                 _permit: permit,
                 ownership: None,
             }
+        }
+
+        /// Take one delimited frame off the read-ahead buffer (see the
+        /// free function `take_frame`).
+        pub(super) fn take_frame(&mut self, max: usize) -> Frame {
+            take_frame(&mut self.buf, self.delim, max)
         }
 
         pub(super) fn is_tls(&self) -> bool {
@@ -22237,29 +22344,37 @@ mod tcp_client {
             self.ownership.as_ref().is_some_and(Ownership::retired)
         }
 
-        /// The underlying TcpStream — where read/write timeouts live.
-        pub(super) fn tcp(&self) -> &std::net::TcpStream {
+        /// The underlying socket — where read/write timeouts live.
+        pub(super) fn tcp(&self) -> SockRef<'_> {
             match &self.stream {
-                Stream::Plain(s) => s,
-                Stream::Tls(t) => t.get_ref(),
+                Stream::Plain(s) => SockRef::Tcp(s),
+                Stream::Tls(t) => SockRef::Tcp(t.get_ref()),
+                #[cfg(unix)]
+                Stream::Unix(s) => SockRef::Unix(s),
             }
         }
         pub(super) fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
             match &mut self.stream {
                 Stream::Plain(s) => s.read(buf),
                 Stream::Tls(t) => t.read(buf),
+                #[cfg(unix)]
+                Stream::Unix(s) => s.read(buf),
             }
         }
         pub(super) fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
             match &mut self.stream {
                 Stream::Plain(s) => s.write(buf),
                 Stream::Tls(t) => t.write(buf),
+                #[cfg(unix)]
+                Stream::Unix(s) => s.write(buf),
             }
         }
         pub(super) fn flush(&mut self) -> std::io::Result<()> {
             match &mut self.stream {
-                // Plain stream writes go straight to the kernel.
+                // Plain and unix stream writes go straight to the kernel.
                 Stream::Plain(_) => Ok(()),
+                #[cfg(unix)]
+                Stream::Unix(_) => Ok(()),
                 Stream::Tls(t) => t.flush(),
             }
         }
@@ -22267,9 +22382,49 @@ mod tcp_client {
             match &mut self.stream {
                 Stream::Plain(s) => s.write_all(buf).and_then(|_| s.flush()),
                 Stream::Tls(t) => t.write_all(buf).and_then(|_| t.flush()),
+                #[cfg(unix)]
+                Stream::Unix(s) => s.write_all(buf).and_then(|_| s.flush()),
             }
         }
     }
+
+    /// What the read-ahead holds for a line-mode reader.
+    pub(super) enum Frame {
+        /// One whole frame, delimiter (and an LF line's CR) removed.
+        Ready(Vec<u8>),
+        /// No delimiter yet, and within `max`: read more.
+        Pending,
+        /// More than `max` bytes before a delimiter, whether or not the
+        /// delimiter has arrived: the stream's framing is broken.
+        TooLong,
+    }
+
+    /// Take one delimited frame off `buf`. Shared by tcp_recv_line, the
+    /// Class C pull and tcp_on line mode so the three cannot disagree about
+    /// framing or about `max`. The cap holds for a complete frame too, so
+    /// whether an over-long frame is refused never depends on how its bytes
+    /// were split across reads.
+    pub(super) fn take_frame(buf: &mut Vec<u8>, delim: u8, max: usize) -> Frame {
+        match buf.iter().position(|&b| b == delim) {
+            Some(end) if end > max => Frame::TooLong,
+            Some(end) => {
+                let mut frame: Vec<u8> = buf.drain(..=end).collect();
+                frame.pop(); // the delimiter
+                if delim == b'\n' && frame.last() == Some(&b'\r') {
+                    frame.pop();
+                }
+                Frame::Ready(frame)
+            }
+            None if buf.len() > max => Frame::TooLong,
+            None => Frame::Pending,
+        }
+    }
+}
+
+/// How an error names a frame delimiter.
+#[cfg(feature = "ws")]
+pub(crate) fn delim_name(delim: u8) -> &'static str {
+    if delim == 0 { "NUL" } else { "newline" }
 }
 
 #[cfg(feature = "ws")]
@@ -22505,6 +22660,163 @@ fn builtin_tcp_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
     Ok(Some(Value::Number(id as f64)))
 }
 
+/// `unix_connect(path[, {timeout, frame}])` → numeric handle in the
+/// tcp_connect handle space: tcp_send, tcp_recv, tcp_recv_line, tcp_on and
+/// tcp_close all take it. `frame: "nul"` makes a "line" a NUL-terminated
+/// frame (Varlink, hostd); the default "line" keeps LF lines.
+#[cfg(all(feature = "ws", unix))]
+fn builtin_unix_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
+    use crate::native_events::refusal;
+    expect_args_between("unix_connect", &args, 1, 2)?;
+    let Value::String(path) = &args[0] else {
+        return Err(refusal(
+            "UNIX_CONNECT_ARGUMENT",
+            format!(
+                "unix_connect(): path must be a string, got {}",
+                args[0].type_name()
+            ),
+        ));
+    };
+    // A filesystem socket only: an absolute path with no NUL, within
+    // sun_path. Abstract sockets (a leading NUL) are not offered.
+    if !path.starts_with('/') || path.contains('\0') || path.len() > 107 {
+        return Err(refusal(
+            "UNIX_CONNECT_ARGUMENT",
+            "unix_connect(): path must be an absolute filesystem path of at most 107 bytes",
+        ));
+    }
+    let mut timeout_seconds = 30.0;
+    let mut delim = b'\n';
+    match args.get(1) {
+        None | Some(Value::Nil) => {}
+        Some(Value::Map(m)) => {
+            for k in m.keys() {
+                if !matches!(k.as_str(), "timeout" | "frame") {
+                    return Err(refusal(
+                        "UNIX_CONNECT_ARGUMENT",
+                        format!("unix_connect(): unknown option '{k}' (supported: timeout, frame)"),
+                    ));
+                }
+            }
+            if let Some(v) = m.get("timeout") {
+                timeout_seconds = extract_number(v, InputPolicy::NumberOnly).ok_or_else(|| {
+                    refusal(
+                        "UNIX_CONNECT_ARGUMENT",
+                        format!(
+                            "unix_connect(): option 'timeout' must be a number, got {}",
+                            v.type_name()
+                        ),
+                    )
+                })?;
+                // Every bad timeout is an argument refusal: negative, NaN,
+                // infinite, too large, or so small it rounds to no time at
+                // all (a zero write timeout would be refused by the kernel
+                // and leave writes unbounded).
+                let valid = timeout_seconds.is_finite()
+                    && timeout_seconds > 0.0
+                    && as_duration("unix_connect(): option 'timeout'", timeout_seconds).is_ok()
+                    && !std::time::Duration::from_secs_f64(timeout_seconds).is_zero();
+                if !valid {
+                    return Err(refusal(
+                        "UNIX_CONNECT_ARGUMENT",
+                        "unix_connect(): option 'timeout' must be a positive number of seconds",
+                    ));
+                }
+            }
+            match m.get("frame") {
+                None => {}
+                Some(Value::String(s)) if s == "line" => delim = b'\n',
+                Some(Value::String(s)) if s == "nul" => delim = 0,
+                Some(other) => {
+                    return Err(refusal(
+                        "UNIX_CONNECT_ARGUMENT",
+                        format!(
+                            "unix_connect(): option 'frame' must be \"line\" or \"nul\", got {}",
+                            match other {
+                                Value::String(s) => format!("\"{s}\""),
+                                v => v.type_name().to_string(),
+                            }
+                        ),
+                    ));
+                }
+            }
+        }
+        Some(other) => {
+            return Err(refusal(
+                "UNIX_CONNECT_ARGUMENT",
+                format!(
+                    "unix_connect(): options must be a map or nil, got {}",
+                    other.type_name()
+                ),
+            ));
+        }
+    }
+    let timeout = std::time::Duration::from_secs_f64(timeout_seconds);
+    let addr = socket2::SockAddr::unix(path).map_err(|e| {
+        refusal(
+            "UNIX_CONNECT_ARGUMENT",
+            format!("unix_connect('{path}'): {e}"),
+        )
+    })?;
+    let sock = socket2::Socket::new(socket2::Domain::UNIX, socket2::Type::STREAM, None)
+        .map_err(|e| refusal("UNIX_CONNECT", format!("unix_connect('{path}'): {e}")))?;
+    let fail = |e: std::io::Error| {
+        let code = match e.kind() {
+            std::io::ErrorKind::NotFound => "UNIX_CONNECT_NOT_FOUND",
+            std::io::ErrorKind::PermissionDenied => "UNIX_CONNECT_PERMISSION",
+            std::io::ErrorKind::ConnectionRefused => "UNIX_CONNECT_REFUSED",
+            std::io::ErrorKind::WouldBlock => "UNIX_CONNECT_BUSY",
+            std::io::ErrorKind::TimedOut => "UNIX_CONNECT_TIMEOUT",
+            _ => "UNIX_CONNECT",
+        };
+        refusal(code, format!("unix_connect('{path}'): {e}"))
+    };
+    // A non-blocking connect, done here rather than by socket2's
+    // connect_timeout: on AF_UNIX a full backlog answers EAGAIN, which must
+    // fail at once as UNIX_CONNECT_BUSY, not be polled as a pending connect.
+    // Only EINPROGRESS (not seen on Linux AF_UNIX, kept for safety) waits,
+    // bounded by `timeout`.
+    sock.set_nonblocking(true).map_err(fail)?;
+    match sock.connect(&addr) {
+        Ok(()) => {}
+        Err(e) if e.raw_os_error() == Some(libc::EINPROGRESS) => {
+            use std::os::fd::AsRawFd;
+            let mut pfd = libc::pollfd {
+                fd: sock.as_raw_fd(),
+                events: libc::POLLOUT,
+                revents: 0,
+            };
+            let ms = timeout.as_millis().clamp(1, i32::MAX as u128) as i32;
+            // SAFETY: one valid pollfd that outlives the call.
+            let rc = unsafe { libc::poll(&mut pfd, 1, ms) };
+            if rc < 0 {
+                return Err(fail(std::io::Error::last_os_error()));
+            }
+            if rc == 0 {
+                return Err(fail(std::io::Error::from(std::io::ErrorKind::TimedOut)));
+            }
+            if let Some(e) = sock.take_error().map_err(fail)? {
+                return Err(fail(e));
+            }
+        }
+        Err(e) => return Err(fail(e)),
+    }
+    let stream: std::os::unix::net::UnixStream = sock.into();
+    // The tcp_connect defaults: each recv sets its own read timeout, and
+    // `{timeout}` bounds writes as it bounds the connect. A failure here
+    // would leave the stream unbounded, so it refuses rather than continue.
+    stream.set_nonblocking(false).map_err(fail)?;
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(30)))
+        .map_err(fail)?;
+    stream.set_write_timeout(Some(timeout)).map_err(fail)?;
+    let mut conn = tcp_client::Conn::new(tcp_client::Stream::Unix(stream), None);
+    conn.delim = delim;
+    let id = tcp_client::NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    tcp_client::MAP.lock().unwrap().insert(id, conn);
+    Ok(Some(Value::Number(id as f64)))
+}
+
 /// The payload of a tcp_send call, taken without a copy where the value
 /// allows one: a string's bytes move, a bytes value is shared. Only a
 /// buffer, which the caller can still change, is snapshotted. A copy here
@@ -22697,7 +23009,10 @@ fn send_step(conn: &mut tcp_client::Conn, payload: &[u8], off: &mut usize) -> Se
 
 /// Wait until the socket is writable, Ctrl-C arrives or `timeout` passes.
 #[cfg(all(feature = "ws", unix))]
-fn wait_writable(tcp: &std::net::TcpStream, timeout: std::time::Duration) -> std::io::Result<bool> {
+fn wait_writable(
+    tcp: tcp_client::SockRef<'_>,
+    timeout: std::time::Duration,
+) -> std::io::Result<bool> {
     use std::os::fd::AsRawFd;
     let wake = crate::interrupt::wake_fd();
     let mut fds = [
@@ -22727,7 +23042,7 @@ fn wait_writable(tcp: &std::net::TcpStream, timeout: std::time::Duration) -> std
 
 #[cfg(all(feature = "ws", not(unix)))]
 fn wait_writable(
-    _tcp: &std::net::TcpStream,
+    _tcp: tcp_client::SockRef<'_>,
     timeout: std::time::Duration,
 ) -> std::io::Result<bool> {
     std::thread::sleep(timeout.min(std::time::Duration::from_millis(20)));
@@ -22993,21 +23308,22 @@ fn builtin_tcp_recv_line(args: Vec<Value>) -> MixResult<Option<Value>> {
     let deadline = (timeout_seconds > 0.0)
         .then(|| std::time::Instant::now() + std::time::Duration::from_secs_f64(timeout_seconds));
     loop {
-        if let Some(nl) = conn.buf.iter().position(|&b| b == b'\n') {
-            let mut line: Vec<u8> = conn.buf.drain(..=nl).collect();
-            line.pop(); // \n
-            if line.last() == Some(&b'\r') {
-                line.pop();
+        match conn.take_frame(max) {
+            tcp_client::Frame::Ready(line) => {
+                let s = String::from_utf8_lossy(&line).into_owned();
+                tcp_client::MAP.lock().unwrap().insert(id, conn);
+                return Ok(Some(Value::String(s)));
             }
-            let s = String::from_utf8_lossy(&line).into_owned();
-            tcp_client::MAP.lock().unwrap().insert(id, conn);
-            return Ok(Some(Value::String(s)));
-        }
-        if conn.buf.len() > max {
-            return Err(tcp_err(
-                "tcp_recv_line",
-                format!("line exceeds max ({max} bytes) with no newline"),
-            ));
+            tcp_client::Frame::TooLong => {
+                return Err(tcp_err(
+                    "tcp_recv_line",
+                    format!(
+                        "line exceeds max ({max} bytes) before a {}",
+                        delim_name(conn.delim)
+                    ),
+                ));
+            }
+            tcp_client::Frame::Pending => {}
         }
         let left = match deadline {
             None => 0.0, // forever
@@ -24568,7 +24884,7 @@ pub(crate) mod socket_sources {
         LazyLock::new(|| Mutex::new(HashSet::new()));
 
     fn restore_blocking(
-        tcp: &std::net::TcpStream,
+        tcp: tcp_client::SockRef<'_>,
         read: Option<std::time::Duration>,
         write: Option<std::time::Duration>,
     ) {
@@ -24578,9 +24894,11 @@ pub(crate) mod socket_sources {
     }
 
     impl PullGuard {
-        fn tcp(&self) -> &std::net::TcpStream {
+        fn tcp(&self) -> tcp_client::SockRef<'_> {
             match self.wire.as_ref().expect("wire present") {
-                PullWire::Ws(c) => ws_client::tcp_of(c).expect("ws conn has a tcp stream"),
+                PullWire::Ws(c) => tcp_client::SockRef::Tcp(
+                    ws_client::tcp_of(c).expect("ws conn has a tcp stream"),
+                ),
                 PullWire::Tcp(c) => c.tcp(),
             }
         }
@@ -24592,7 +24910,9 @@ pub(crate) mod socket_sources {
                 return;
             };
             let tcp = match &wire {
-                PullWire::Ws(c) => ws_client::tcp_of(c).expect("ws conn has a tcp stream"),
+                PullWire::Ws(c) => tcp_client::SockRef::Tcp(
+                    ws_client::tcp_of(c).expect("ws conn has a tcp stream"),
+                ),
                 PullWire::Tcp(c) => c.tcp(),
             };
             restore_blocking(tcp, self.read_timeout, self.write_timeout);
@@ -24995,30 +25315,31 @@ pub(crate) mod socket_sources {
                 PullWire::Tcp(conn) => {
                     // Buffered bytes first: tcp_recv_line's read-ahead and
                     // tcp_recv's remainder belong to the next read.
-                    if name == "tcp_recv_line"
-                        && let Some(nl) = conn.buf.iter().position(|&b| b == b'\n')
-                    {
-                        let mut line: Vec<u8> = conn.buf.drain(..=nl).collect();
-                        line.pop(); // \n
-                        if line.last() == Some(&b'\r') {
-                            line.pop();
+                    if name == "tcp_recv_line" {
+                        match conn.take_frame(max) {
+                            tcp_client::Frame::Ready(line) => {
+                                let s = String::from_utf8_lossy(&line).into_owned();
+                                guard.finish();
+                                return Ok(Value::String(s));
+                            }
+                            tcp_client::Frame::TooLong => {
+                                let delim = super::delim_name(conn.delim);
+                                guard.retire();
+                                return Err(refusal(
+                                    "SOCKET_CLOSED",
+                                    format!(
+                                        "{name}: line exceeds max ({max} bytes) before a {delim}"
+                                    ),
+                                ));
+                            }
+                            tcp_client::Frame::Pending => {}
                         }
-                        let s = String::from_utf8_lossy(&line).into_owned();
-                        guard.finish();
-                        return Ok(Value::String(s));
                     }
                     if name == "tcp_recv" && !conn.buf.is_empty() {
                         let take = conn.buf.len().min(max);
                         let out: Vec<u8> = conn.buf.drain(..take).collect();
                         guard.finish();
                         return Ok(Value::bytes(out));
-                    }
-                    if name == "tcp_recv_line" && conn.buf.len() > max {
-                        guard.retire();
-                        return Err(refusal(
-                            "SOCKET_CLOSED",
-                            format!("{name}: line exceeds max ({max} bytes) with no newline"),
-                        ));
                     }
                     let mut tmp = vec![0u8; CHUNK];
                     let mut eintr = 0u32;
@@ -25088,7 +25409,7 @@ pub(crate) mod socket_sources {
             let deliverable = match guard.wire.as_ref() {
                 Some(PullWire::Tcp(c)) => match name {
                     "tcp_recv" => !c.buf.is_empty(),
-                    "tcp_recv_line" => c.buf.contains(&b'\n') || c.buf.len() > max,
+                    "tcp_recv_line" => c.buf.contains(&c.delim) || c.buf.len() > max,
                     _ => false,
                 },
                 _ => false,
@@ -25141,6 +25462,17 @@ pub(crate) mod socket_sources {
     enum Wire {
         Ws(Box<ws_client::WsConn>),
         Tcp(tcp_client::Conn),
+    }
+
+    impl Wire {
+        /// The byte that ends a line-mode frame: the connection's own
+        /// (NUL for a unix_connect frame:"nul" handle), else LF.
+        fn delim(&self) -> u8 {
+            match self {
+                Wire::Tcp(c) => c.delim,
+                Wire::Ws(_) => b'\n',
+            }
+        }
     }
 
     enum DrainOutcome {
@@ -25890,7 +26222,7 @@ pub(crate) mod socket_sources {
             {
                 if mode.line {
                     line_buf.extend_from_slice(&buf);
-                    match split_lines(queue, id, line_buf, mode.max) {
+                    match split_lines(queue, id, line_buf, mode.max, wire.delim()) {
                         DrainOutcome::More => {}
                         other => return other,
                     }
@@ -25978,7 +26310,7 @@ pub(crate) mod socket_sources {
                             Ok(n) => {
                                 if mode.line {
                                     line_buf.extend_from_slice(&tmp[..n]);
-                                    match split_lines(queue, id, line_buf, mode.max) {
+                                    match split_lines(queue, id, line_buf, mode.max, conn.delim) {
                                         DrainOutcome::More => continue,
                                         other => return other,
                                     }
@@ -26018,13 +26350,19 @@ pub(crate) mod socket_sources {
             id: &str,
             line_buf: &mut Vec<u8>,
             max: usize,
+            delim: u8,
         ) -> DrainOutcome {
-            while let Some(nl) = line_buf.iter().position(|&b| b == b'\n') {
-                let mut line: Vec<u8> = line_buf.drain(..=nl).collect();
-                line.pop(); // \n
-                if line.last() == Some(&b'\r') {
-                    line.pop();
-                }
+            loop {
+                let line = match tcp_client::take_frame(line_buf, delim, max) {
+                    tcp_client::Frame::Ready(line) => line,
+                    tcp_client::Frame::Pending => return DrainOutcome::More,
+                    tcp_client::Frame::TooLong => {
+                        return DrainOutcome::Terminal(format!(
+                            "line exceeds max ({max} bytes) before a {}",
+                            crate::builtins::delim_name(delim)
+                        ));
+                    }
+                };
                 if !push(
                     queue,
                     id,
@@ -26036,12 +26374,6 @@ pub(crate) mod socket_sources {
                     return DrainOutcome::Overflow;
                 }
             }
-            if line_buf.len() > max {
-                return DrainOutcome::Terminal(format!(
-                    "line exceeds max ({max} bytes) with no newline"
-                ));
-            }
-            DrainOutcome::More
         }
 
         fn push(queue: &Queue, id: &str, record: SocketRecord) -> bool {

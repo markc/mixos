@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.115.0
+
+### Added
+
+- Released with mix 0.115.0: `unix_connect()` opens a local unix-domain
+  stream socket, with NUL-terminated frames for Varlink and hostd
+  (`mix man system`).
+
 ## 0.114.0
 
 ### Changed

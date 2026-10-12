@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.115.0
+
+### Added
+
+- `unix_connect(path[, {timeout, frame}])`: a client for a local
+  unix-domain stream socket, in `tcp_connect`'s handle space, so
+  `tcp_send`, `tcp_recv`, `tcp_recv_line`, `tcp_on` and `tcp_close` take it.
+  The connect is bounded by `timeout` and fails at once on a full backlog
+  (`UNIX_CONNECT_BUSY`). `frame: "nul"` makes a line a NUL-terminated
+  frame, the framing of systemd's Varlink services and of hostd, for
+  `tcp_recv_line` and `tcp_on {frame: "line"}` alike. Refusals carry
+  `UNIX_CONNECT_*` codes. `mix man system` documents it.
+
+### Changed
+
+- One frame splitter serves `tcp_recv_line` (blocking and Class C) and
+  `tcp_on` line mode, keyed to the connection's delimiter. One trailing CR
+  is still stripped from an LF line.
+
+### Fixed
+
+- `max` now caps a complete line too. A line longer than `max` whose
+  terminator arrived in the same read used to be delivered, so whether it
+  was refused depended on packet timing. All three paths (`tcp_recv_line`
+  blocking and Class C, `tcp_on` line mode) now refuse it the same way.
+
 ## 0.114.0
 
 ### Changed
