@@ -7,8 +7,9 @@ use smithay::wayland::shell::xdg::dialog::{XdgDialogHandler, XdgDialogState};
 
 /// Advertise `xdg_wm_dialog_v1`. Until this runs, a client asking whether its
 /// toplevel may be a dialog finds no such global and stays silent about it.
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> Dialog
+pub fn new<I>(display_handle: &DisplayHandle) -> Dialog
 where
+    I: DispatchWire,
     I: XdgDialogHandler,
     I: GlobalDispatch<XdgWmDialogV1, GlobalData>,
     I: Dispatch<XdgWmDialogV1, GlobalData>,

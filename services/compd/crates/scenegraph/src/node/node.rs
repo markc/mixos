@@ -107,7 +107,7 @@ where
         Vec<dispatcher::frame::frame::ElementMeta>,
     ) {
         use dispatcher::frame::frame::ElementMeta;
-        self.nodes.sort_by(|a, b| b.0.cmp(&a.0));
+        self.nodes.sort_by_key(|n| std::cmp::Reverse(n.0));
         let mut elements = Vec::new();
         let mut meta = Vec::new();
         for (_, node) in self.nodes {

@@ -180,11 +180,11 @@ impl CaptureRegistry {
         Ok(())
     }
 
-    /// Tick: blit the framebuffer into every active capture entry for this
-    /// output.
-    ///
-    /// All active entries are unconditionally blitted into each frame. If
-    /// no entries exist for this output, this is a no-op.
+    // Tick: blit the framebuffer into every active capture entry for this
+    // output.
+    //
+    // All active entries are unconditionally blitted into each frame. If
+    // no entries exist for this output, this is a no-op.
     // pub fn tick(
     //     &self,
     //     gles: &mut GlesRenderer,

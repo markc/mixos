@@ -6,8 +6,9 @@ use crate::state::state::DispatchWire;
 use protocols::cursor::shape::state::CursorShape;
 use smithay::reexports::wayland_protocols::wp::cursor_shape::v1::server::wp_cursor_shape_manager_v1::WpCursorShapeManagerV1 as CursorShapeManager;
 
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> CursorShape
+pub fn new<I>(display_handle: &DisplayHandle) -> CursorShape
 where
+    I: DispatchWire,
     I: GlobalDispatch<CursorShapeManager, GlobalData>,
     I: Dispatch<CursorShapeManager, GlobalData>,
     I: SeatHandler,

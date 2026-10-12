@@ -5,8 +5,9 @@ use smithay::reexports::wayland_server::{DisplayHandle, GlobalDispatch};
 use smithay::wayland::GlobalData;
 use smithay::wayland::selection::data_device::{DataDeviceHandler, DataDeviceState};
 
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> Clipboard
+pub fn new<I>(display_handle: &DisplayHandle) -> Clipboard
 where
+    I: DispatchWire,
     I: GlobalDispatch<WlDataDeviceManager, GlobalData> + 'static,
     I: DataDeviceHandler,
 {

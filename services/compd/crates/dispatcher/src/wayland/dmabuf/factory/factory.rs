@@ -14,11 +14,12 @@ use smithay::{
     },
 };
 
-pub fn new<I: DispatchWire>(
+pub fn new<I>(
     display_handle: &DisplayHandle,
     drm_device: Option<DrmDeviceFd>,
 ) -> DMABufState
 where
+    I: DispatchWire,
     I: GlobalDispatch<WpLinuxDrmSyncobjManagerV1, DrmSyncobjGlobalData>,
     I: 'static,
 {

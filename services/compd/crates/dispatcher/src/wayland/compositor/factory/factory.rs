@@ -8,8 +8,9 @@ use smithay::utils::{Clock, Monotonic};
 use smithay::wayland::compositor::CompositorState;
 use smithay::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
 
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> Compositor
+pub fn new<I>(display_handle: &DisplayHandle) -> Compositor
 where
+    I: DispatchWire,
     I: GlobalDispatch<WlCompositor, GlobalData>
         + GlobalDispatch<WlSubcompositor, GlobalData>
         + 'static,

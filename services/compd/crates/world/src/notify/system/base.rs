@@ -87,6 +87,8 @@ impl System for NotifySystem {
 }
 
 impl NotifySystem {
+    // The receive table hands every handler `&T` for its channel type.
+    #[allow(clippy::ptr_arg)]
     fn on_request(&mut self, cx: &mut SystemCx, message: &String) {
         cx.write(&NOTIFY_BUF, NotifyCmd::Queue(message.clone()));
     }

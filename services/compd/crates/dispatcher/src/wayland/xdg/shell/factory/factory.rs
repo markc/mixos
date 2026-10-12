@@ -6,8 +6,9 @@ use smithay::reexports::wayland_server::{DisplayHandle, GlobalDispatch};
 use smithay::wayland::GlobalData;
 use smithay::wayland::shell::xdg::XdgShellState;
 
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> XDGShell
+pub fn new<I>(display_handle: &DisplayHandle) -> XDGShell
 where
+    I: DispatchWire,
     I: GlobalDispatch<XdgWmBase, GlobalData> + 'static,
 {
     // Initialize the XDG Shell protocol.

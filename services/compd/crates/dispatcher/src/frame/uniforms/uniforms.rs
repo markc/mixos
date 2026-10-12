@@ -85,15 +85,15 @@ pub struct NativeShaderPass {
     pub pipeline: Option<std::sync::Arc<dyn std::any::Any + Send + Sync>>,
 }
 
-/// Per-renderer draw seam for scene elements that carry GLES-produced resources
-/// (UI UI, bevy 3D, parallax pixel shader).
-///
-/// The trait is on the **renderer** `R` (a plain bound — `R: SceneDispatch`),
-/// not on `R::Frame`, to avoid the GAT higher-ranked-lifetime limitation
-/// (rust#100013) that a `for<'a,'b> R::Frame<'a,'b>: Trait` bound runs into at
-/// the use site. The methods take the frame as a parameter.
-///
-/// - `GlesRenderer` implements it for real (renders the texture / runs the pixel
+// Per-renderer draw seam for scene elements that carry GLES-produced resources
+// (UI UI, bevy 3D, parallax pixel shader).
+//
+// The trait is on the **renderer** `R` (a plain bound — `R: SceneDispatch`),
+// not on `R::Frame`, to avoid the GAT higher-ranked-lifetime limitation
+// (rust#100013) that a `for<'a,'b> R::Frame<'a,'b>: Trait` bound runs into at
+// the use site. The methods take the frame as a parameter.
+//
+// - `GlesRenderer` implements it for real (renders the texture / runs the pixel
 
 /// GLES body for `SceneDispatch::draw_prerendered_texture` (delegated from the
 /// trait impl in dispatch.frame, which the orphan rule pins to the trait crate).

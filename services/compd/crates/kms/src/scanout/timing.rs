@@ -1,6 +1,6 @@
-#[cfg(any(feature = "timing-predict"))]
+#[cfg(feature = "timing-predict")]
 pub mod predict;
 pub mod sequence;
-#[cfg(any(feature = "timing-throttle"))]
+#[cfg(feature = "timing-throttle")]
 pub mod throttle;
 pub mod vblank;

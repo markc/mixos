@@ -39,11 +39,11 @@ impl std::fmt::Debug for AllocatedDmabuf {
     }
 }
 
-/// Path to the DRM render node we use for allocations.
-///
-/// Exposed as a constant so callers can verify or override. `/dev/dri/renderD129`
-/// is the second render node on systems with multiple GPUs (NVIDIA + iGPU);
-/// adjust for single-GPU systems if you find this wrong.
+// Path to the DRM render node we use for allocations.
+//
+// Exposed as a constant so callers can verify or override. `/dev/dri/renderD129`
+// is the second render node on systems with multiple GPUs (NVIDIA + iGPU);
+// adjust for single-GPU systems if you find this wrong.
 // pub const DEFAULT_RENDER_NODE: &str = GPU_DEVICE;
 
 /// The fourccs a producer's buffer may be allocated with, from the format layer.

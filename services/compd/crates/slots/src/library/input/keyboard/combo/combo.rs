@@ -20,8 +20,8 @@ impl KeyCombo {
         }
 
         if self.key.is_none() {
-            if !key.is_none() {
-                match key.unwrap() {
+            if let Some(key) = key {
+                match key {
                     Key::Super => {
                         if self.modifiers.logo {
                             return true;
@@ -46,13 +46,8 @@ impl KeyCombo {
                 }
                 return false;
             }
-        } else {
-            if key.is_none() {
-                return false;
-            }
-            if self.key.unwrap() != key.unwrap() {
-                return false;
-            }
+        } else if key.is_none() || self.key != key {
+            return false;
         }
 
         true

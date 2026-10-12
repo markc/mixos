@@ -17,8 +17,9 @@ use smithay::wayland::shell::xdg::decoration::{
 /// Note: For this to work, your `Loop` struct must use Smithay's `delegate_xdg_decoration!(Loop);`
 /// macro elsewhere in your codebase to route the Wayland socket events into the
 /// `XdgDecorationHandler` trait implementation below.
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> Decoration
+pub fn new<I>(display_handle: &DisplayHandle) -> Decoration
 where
+    I: DispatchWire,
     I: GlobalDispatch<
             zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
             XdgDecorationManagerGlobalData,

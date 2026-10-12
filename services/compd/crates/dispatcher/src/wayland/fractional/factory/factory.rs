@@ -11,8 +11,9 @@ use smithay::wayland::fractional_scale::{
 };
 use smithay::wayland::presentation::{PresentationData, PresentationState};
 
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> Fractional
+pub fn new<I>(display_handle: &DisplayHandle) -> Fractional
 where
+    I: DispatchWire,
     I: GlobalDispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, GlobalData>
         + Dispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, GlobalData>
         + Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, FractionalScaleData>

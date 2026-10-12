@@ -3,15 +3,14 @@
 //! transparently by PipeWire's `pipewire-pulse`, so the same code drives both.
 //!
 //! Capabilities:
-//!   * On-demand polling          -> [`AudioController::refresh`] / [`AudioController::state`]
-//!   * Change subscriptions        -> [`AudioController::watch`] hands each call site
-//!                                   its own [`AudioWatch`] that is *pinged* on every
-//!                                   change; the owner re-polls and unsubscribes
-//!                                   implicitly when the watch is dropped.
-//!   * Actions                    -> set / adjust volume, set / toggle mute
-//!   * Background watcher          -> started by [`AudioController::new`]; on every
-//!                                   audio-topology change (including edits made
-//!                                   outside this process) it pings all [`AudioWatch`]ers.
+//!   * On-demand polling -> [`AudioController::refresh`] / [`AudioController::state`]
+//!   * Change subscriptions -> [`AudioController::watch`] hands each call site
+//!     its own [`AudioWatch`] that is *pinged* on every change; the owner
+//!     re-polls and unsubscribes implicitly when the watch is dropped.
+//!   * Actions -> set / adjust volume, set / toggle mute
+//!   * Background watcher -> started by [`AudioController::new`]; on every
+//!     audio-topology change (including edits made outside this process) it
+//!     pings all [`AudioWatch`]ers.
 //!
 //! The PulseAudio threaded mainloop *is* the off-thread component, and it lives
 //! entirely inside this module — the caller never spawns a thread. The watcher

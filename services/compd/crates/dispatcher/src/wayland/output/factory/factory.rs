@@ -6,8 +6,9 @@ use smithay::reexports::wayland_server::{DisplayHandle, GlobalDispatch};
 use smithay::wayland::GlobalData;
 use smithay::wayland::output::{OutputManagerState, WlOutputData};
 
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> OutputState
+pub fn new<I>(display_handle: &DisplayHandle) -> OutputState
 where
+    I: DispatchWire,
     I: GlobalDispatch<WlOutput, WlOutputData>,
     I: GlobalDispatch<ZxdgOutputManagerV1, GlobalData>,
     I: 'static,

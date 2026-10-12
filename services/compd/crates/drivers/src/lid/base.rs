@@ -1,14 +1,14 @@
 use slots::storage::token::base::{Token, TokenMut};
 
-/// Lid + display driver channel between the kernel (which owns the DRM topology
-/// and the session/render loop) and the rim (which owns input + policy).
-///
-/// Direction is strictly kernel → orchestration for *crate* dependencies, so the
-/// rim cannot reach the kernel's `Topology` directly. Instead the kernel writes a
-/// primitive `DisplaySnapshot` the rim reads, and the rim writes a
-/// `DisplayRequest` the kernel's loop drains and performs (DPMS / suspend /
-/// output switch). Both live in `Orchestrator.kernel` storage by token, like the
-/// other driver data (resume, capture, …).
+// Lid + display driver channel between the kernel (which owns the DRM topology
+// and the session/render loop) and the rim (which owns input + policy).
+//
+// Direction is strictly kernel → orchestration for *crate* dependencies, so the
+// rim cannot reach the kernel's `Topology` directly. Instead the kernel writes a
+// primitive `DisplaySnapshot` the rim reads, and the rim writes a
+// `DisplayRequest` the kernel's loop drains and performs (DPMS / suspend /
+// output switch). Both live in `Orchestrator.kernel` storage by token, like the
+// other driver data (resume, capture, …).
 
 /// Kernel → rim: the display facts a lid policy needs. Primitive-only so no
 /// kernel/smithay types leak across the layer boundary.

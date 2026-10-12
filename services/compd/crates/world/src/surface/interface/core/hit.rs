@@ -632,10 +632,10 @@ impl Drawable {
 
 // ─── surface_under ─────────────────────────────────────────────────
 
-/// Hit-test a world point. Returns the topmost surface at that point.
-///
-/// `position_world` is in world: same units as `space.element_location`,
-/// camera-independent.
+// Hit-test a world point. Returns the topmost surface at that point.
+//
+// `position_world` is in world: same units as `space.element_location`,
+// camera-independent.
 // pub fn surface_under(_loop: &Loop, position_world: Point<f64, Logical>) -> Option<SurfaceHit> {
 //     surface_under_filtered(_loop, position_world, &pass_all)
 // }

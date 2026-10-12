@@ -32,13 +32,14 @@ pub const AGENT_SEAT: &str = "agent";
 /// on) and a pointer. Callable once per seat name; capabilities that belong to the
 /// session rather than a seat (touch, the pointer-protocol managers) are NOT added
 /// here, so a second call never duplicates a global.
-pub fn seat_named<I: SeatHandler + 'static>(
+pub fn seat_named<I>(
     seat_state: &mut SeatState<I>,
     display_handle: &DisplayHandle,
     name: &str,
     visible: impl Fn(&Client) -> bool + Send + Sync + 'static,
 ) -> Seat<I>
 where
+    I: SeatHandler + 'static,
     I: GlobalDispatch<WlSeat, SeatGlobalData<I>>,
     <I as SeatHandler>::PointerFocus: WaylandFocus,
     <I as SeatHandler>::KeyboardFocus: WaylandFocus,
@@ -57,8 +58,9 @@ where
     seat
 }
 
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> protocols::seat::state::Seat<I>
+pub fn new<I>(display_handle: &DisplayHandle) -> protocols::seat::state::Seat<I>
 where
+    I: DispatchWire,
     I: GlobalDispatch<ZwpRelativePointerManagerV1, GlobalData>,
     I: Dispatch<ZwpRelativePointerManagerV1, GlobalData>,
     I: Dispatch<ZwpRelativePointerV1, RelativePointerUserData<I>>,

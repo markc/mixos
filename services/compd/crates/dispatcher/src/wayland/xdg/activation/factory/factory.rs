@@ -5,8 +5,9 @@ use smithay::reexports::wayland_server::{Dispatch, DisplayHandle, GlobalDispatch
 use smithay::wayland::GlobalData;
 use smithay::wayland::xdg_activation::{XdgActivationHandler, XdgActivationState};
 
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> Activation
+pub fn new<I>(display_handle: &DisplayHandle) -> Activation
 where
+    I: DispatchWire,
     I: GlobalDispatch<xdg_activation_v1::XdgActivationV1, GlobalData>
         + Dispatch<xdg_activation_v1::XdgActivationV1, GlobalData>
         + XdgActivationHandler

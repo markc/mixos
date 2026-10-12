@@ -7,8 +7,9 @@ use smithay::reexports::wayland_server::{Dispatch, DisplayHandle, GlobalDispatch
 use smithay::wayland::GlobalData;
 use smithay::wayland::presentation::{PresentationData, PresentationState};
 
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> Presentation
+pub fn new<I>(display_handle: &DisplayHandle) -> Presentation
 where
+    I: DispatchWire,
     I: GlobalDispatch<wp_presentation::WpPresentation, PresentationData>
         + Dispatch<wp_presentation::WpPresentation, PresentationData>
         + Dispatch<wp_presentation_feedback::WpPresentationFeedback, GlobalData>

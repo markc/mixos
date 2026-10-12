@@ -1,3 +1,3 @@
-#[cfg(any(feature = "native-scanout"))]
+#[cfg(feature = "native-scanout")]
 pub mod acquire;
 pub mod slot;

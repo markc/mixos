@@ -8,8 +8,9 @@ use smithay::{
     wayland::{GlobalData, single_pixel_buffer::SinglePixelBufferState},
 };
 
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> SinglePixel
+pub fn new<I>(display_handle: &DisplayHandle) -> SinglePixel
 where
+    I: DispatchWire,
     I: GlobalDispatch<WpSinglePixelBufferManagerV1, GlobalData>,
     I: Dispatch<WpSinglePixelBufferManagerV1, GlobalData>,
     I: 'static,

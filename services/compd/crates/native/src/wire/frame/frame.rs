@@ -5,10 +5,10 @@
 //! feature compiles the mechanism in; the live `ctx.safety` enable activates
 //! it):
 //! - `timing-throttle`: re-time vblanks buggy drivers deliver early;
-//! - `flip-estimate`:   deliver frame callbacks for empty-damage frames at
-//!                      the estimated next vblank instead of immediately;
-//! - `timing-predict`:  refine that estimate with a presentation clock
-//!                      (implies `flip-estimate`).
+//! - `flip-estimate`: deliver frame callbacks for empty-damage frames at
+//!   the estimated next vblank instead of immediately;
+//! - `timing-predict`: refine that estimate with a presentation clock
+//!   (implies `flip-estimate`).
 
 use crate::context::render::render::NativeRenderContext;
 use crate::render::execute::execute::FrameOutcome;

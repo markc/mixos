@@ -29,8 +29,9 @@ use smithay::{
     },
 };
 
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> TextInput
+pub fn new<I>(display_handle: &DisplayHandle) -> TextInput
 where
+    I: DispatchWire,
     I: GlobalDispatch<ZwpTextInputManagerV3, GlobalData>,
     I: Dispatch<ZwpTextInputManagerV3, GlobalData>,
     I: Dispatch<ZwpTextInputV3, TextInputUserData>,

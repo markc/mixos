@@ -647,7 +647,6 @@ pub fn relative<I: InputBackend>(
         }
     }
 
-    let position_normalized = position_normalized;
     // 6. Dispatch normalize event to your native pointer handler
     // (Using the equivalent handler for PointerMotionEvent as you mentioned)
     native_motion::relative::input_received_normalized::<I>(

@@ -7,8 +7,9 @@ use smithay::wayland::GlobalData;
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::shm::{ShmHandler, ShmPoolUserData, ShmState};
 
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> SHMState
+pub fn new<I>(display_handle: &DisplayHandle) -> SHMState
 where
+    I: DispatchWire,
     I: GlobalDispatch<WlShm, GlobalData>
         + Dispatch<WlShm, GlobalData>
         + Dispatch<WlShmPool, ShmPoolUserData>

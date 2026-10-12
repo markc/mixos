@@ -9,8 +9,9 @@ use smithay::wayland::GlobalData;
 use smithay::wayland::presentation::{PresentationData, PresentationState};
 use smithay::wayland::viewporter::{ViewportState, ViewporterState};
 
-pub fn new<I: DispatchWire>(display_handle: &DisplayHandle) -> Viewporter
+pub fn new<I>(display_handle: &DisplayHandle) -> Viewporter
 where
+    I: DispatchWire,
     I: GlobalDispatch<wp_viewporter::WpViewporter, GlobalData>
         + Dispatch<wp_viewporter::WpViewporter, GlobalData>
         + Dispatch<wp_viewport::WpViewport, ViewportState>

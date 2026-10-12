@@ -5,6 +5,7 @@
 //! Coordinate spaces:
 //! - window geometries are world `Logical`;
 //! - the registry crop + the indicator overlays are screen `Physical`.
+//!
 //! The overlay instances are full-screen screen-space at the output's physical
 //! size (assumed 1:1 with output pixels, i.e. scale 1.0 — the region rect the
 //! user draws is treated as physical directly).
@@ -1013,10 +1014,9 @@ fn poll_saveas(state: &mut Loop, renderer: &mut GlesRenderer) {
     {
         *saveas = None;
     }
-    match outcome {
-        Some(path) => commit_save(state, renderer, path),
-        // Portal failed/cancelled: keep the Save dialog up (no-op).
-        None => {}
+    // Portal failed/cancelled (None): keep the Save dialog up.
+    if let Some(path) = outcome {
+        commit_save(state, renderer, path);
     }
 }
 

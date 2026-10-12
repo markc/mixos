@@ -458,8 +458,8 @@ impl Dispatch {
     /// Raise the X11 window the pointer just entered to the top of the X stack.
     ///
     /// **This is the only lever a window manager has over which X client an ungrabbed
-    /// pointer event reaches.** Xwayland turns a `wl_pointer` event into "window position
-    /// + surface-local" and the X server hit-tests its own tree at the result, so where
+    /// pointer event reaches.** Xwayland turns a `wl_pointer` event into "window
+    /// position + surface-local" and the X server hit-tests its own tree at the result, so where
     /// two X windows overlap — and they do, because X keeps its own layout, which owes
     /// nothing to the canvas — the STACK is the answer. There is nothing else to use:
     /// `XSendEvent` is flagged synthetic and toolkits ignore it, XTEST re-enters the same
