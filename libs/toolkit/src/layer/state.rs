@@ -83,6 +83,8 @@ struct Surface {
     frame_pending: bool,
     /// When the frame callback being waited for was asked for.
     pending_since: Option<Instant>,
+    /// Frames skipped in a row: the retry backs off with each.
+    skips: u32,
     /// The earliest delayed repaint a timer is armed for, and that timer.
     deadline: Option<Instant>,
     timer: Option<RegistrationToken>,
@@ -269,6 +271,7 @@ impl<P: LayerProgram + 'static> State<P> {
             dirty: true,
             frame_pending: false,
             pending_since: None,
+            skips: 0,
             deadline: None,
             timer: None,
             focused: false,
@@ -376,8 +379,9 @@ impl<P: LayerProgram + 'static> State<P> {
                 s.pending_since
                     .map(|t| WATCHDOG.saturating_sub(now.duration_since(t)))
             } else if s.configured && s.dirty {
-                // Still due after drawing: its frame was skipped.
-                Some(RETRY)
+                // Still due after drawing: its frame was skipped. Back off
+                // (50 ms doubling to 1 s) while it keeps being skipped.
+                Some((RETRY * 2u32.saturating_pow(s.skips.min(5))).min(WATCHDOG))
             } else {
                 None
             };
@@ -459,10 +463,14 @@ impl<P: LayerProgram + 'static> State<P> {
             Ok(()) => {
                 s.frame_pending = true;
                 s.pending_since = Some(Instant::now());
+                s.skips = 0;
                 self.program.presented(&info);
             }
             Err(Skipped::Reconfigure) => self.reconfigure(id),
-            Err(Skipped::Later) => s.dirty = true,
+            Err(Skipped::Later) => {
+                s.dirty = true;
+                s.skips = s.skips.saturating_add(1);
+            }
         }
         let over = self
             .pointer_over

@@ -316,7 +316,9 @@ check("no compositor panic (final log)", len(grep_lines($final, "panicked at")) 
 $own = ""
 if is_file($run .. "/backdrop.log") then $own = read_file($run .. "/backdrop.log") end
 check("no backdrop panic or protocol error (its log)",
-  len(grep_lines($own, "panicked at")) == 0 and len(grep_lines($own, ": error ")) == 0, $run .. "/backdrop.log")
+  len(grep_lines($own, "panicked at")) == 0 and len(grep_lines($own, ": error ")) == 0 and
+    len(grep_lines($own, "rotocol error")) == 0 and len(grep_lines($own, "backdrop: ")) == 0,
+  $run .. "/backdrop.log")
 
 $total = $TALLY["pass"] + $TALLY["fail"]
 if $TALLY["fail"] == 0 then

@@ -36,8 +36,11 @@ serde_json.workspace = true
 settings.workspace = true
 # thumbnail: the cache's capped reads and its size limits.
 thumbs.workspace = true
-# layer: egui on wlr-layer-shell surfaces. The smithay-client-toolkit eframe's
-# winit already uses (its calloop for timers and wake-ups, xkbcommon for keys),
+# layer: egui on wlr-layer-shell surfaces. smithay-client-toolkit 0.19.2, the
+# one eframe's winit 0.30 already links (its calloop 0.13 for timers and
+# wake-ups, xkbcommon for keys). The lock also holds 0.20 for vendored
+# smithay's winit 0.31 dev chain: a known second line, retired when eframe
+# moves to winit 0.31 and this follows it.
 # wgpu's GL backend on the raw wl_surface, and libwayland's display pointer.
 smithay-client-toolkit = { version = "=0.19.2", optional = true }
 wayland-backend = { workspace = true, features = ["client_system"], optional = true }
