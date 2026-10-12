@@ -17,7 +17,7 @@
 //! selected reply waits for (a selection is never claimed without a frame
 //! free of its overlay).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::time::Instant;
 
@@ -450,8 +450,17 @@ thread_local! {
     /// Rasterised once per scale, output width and look, then reused frame
     /// to frame.
     static HINT: RefCell<HintCache> = const { RefCell::new(None) };
-    /// The look, resolved once from the theme.
-    static LOOK: Look = Look::of(&toolkit::theme::Theme::embedded());
+    /// The look: the session's once the shell has followed it ([`follow`]),
+    /// the embedded theme's until then.
+    static LOOK: Cell<Option<Look>> = const { Cell::new(None) };
+}
+
+/// Follow the session theme (the shell's look, as settingsd accepted it):
+/// called on every look change, so a scheme, mode or contrast switch reaches
+/// the overlay on its next frame, mid-selection included. The hint cache is
+/// keyed by the look, so it re-rasterises once.
+pub fn follow(theme: &toolkit::theme::Theme) {
+    LOOK.set(Some(Look::of(theme)));
 }
 
 /// The hint's type, logical pixels and weight.
@@ -463,9 +472,9 @@ const HINT_PAD: (f64, f64) = (16.0, 8.0);
 const HINT_RADIUS: f64 = 10.0;
 const HINT_TOP: f64 = 24.0;
 
-/// The overlay's colours, straight-alpha sRGB, from the MixOS theme the
-/// capture overlays are drawn in (`toolkit::style` over the embedded theme,
-/// as `capture::style`): the outline is the theme's focus ring (held to 3:1
+/// The overlay's colours, straight-alpha sRGB, from the session's MixOS
+/// theme through `toolkit::style` (the embedded theme, as `capture::style`
+/// uses, until the shell delivers one): the outline is the theme's focus ring (held to 3:1
 /// against its surfaces; its accent if it has none), the hint its popover
 /// surface, window stroke and strong text. The dim is the capture mask
 /// (`capture::style::DIM_MASK`): translucency, not a themed surface.
@@ -502,7 +511,11 @@ impl Look {
     }
 
     fn current() -> Self {
-        LOOK.with(|look| *look)
+        LOOK.get().unwrap_or_else(|| {
+            let look = Self::of(&toolkit::theme::Theme::embedded());
+            LOOK.set(Some(look));
+            look
+        })
     }
 }
 
@@ -965,6 +978,23 @@ mod tests {
             look.dim[3] > 0.0 && look.dim[3] < 1.0,
             "the dim is translucent"
         );
+    }
+
+    #[test]
+    fn the_look_follows_the_session_theme() {
+        let embedded = Look::current();
+        let light = toolkit::theme::Theme::from_source("test", "mode: \"light\"\n").unwrap();
+        follow(&light);
+        let followed = Look::current();
+        assert_eq!(followed, Look::of(&light));
+        assert_ne!(followed, embedded, "light mode changes the look");
+        // The hint is re-rasterised for the new look, in its colours.
+        let text = crate::strings::text("region-select-hint");
+        let image = hint_image(&text, 1.0, 1_280.0, &followed).expect("a hint");
+        let before = hint_image(&text, 1.0, 1_280.0, &embedded).expect("a hint");
+        assert_ne!(image.argb, before.argb);
+        follow(&toolkit::theme::Theme::embedded());
+        assert_eq!(Look::current(), embedded);
     }
 
     #[test]
