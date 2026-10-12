@@ -24,6 +24,7 @@ pub(crate) const SIZE: u32 = 2048;
 
 /// Shelf packing: rows of rectangles, each shelf as tall as its first
 /// occupant; a rectangle goes on the tightest shelf it fits.
+#[derive(Clone)]
 pub(crate) struct Shelves {
     size: u32,
     /// (y, height, next free x)
@@ -77,7 +78,7 @@ pub(crate) struct Atlas {
     entries: HashMap<GlyphKey, Vec<Slot>>,
     identity: Option<Arc<()>>,
     pub generation: u64,
-    /// Bytes uploaded since the counter was last taken.
+    /// Bytes uploaded in total; panes read differences of it.
     pub uploaded: usize,
 }
 
@@ -139,9 +140,17 @@ impl Atlas {
     ) -> Option<&[Slot]> {
         if !self.entries.contains_key(key) {
             let layers = raster.glyph_layers(key);
+            // Place every layer before committing any: a glyph whose last
+            // layer does not fit must not leave its first ones occupying
+            // shelf space until the next reset.
+            let mut planned = self.shelves.clone();
+            let places = layers
+                .iter()
+                .map(|l| planned.allocate(l.width, l.height))
+                .collect::<Option<Vec<_>>>()?;
+            self.shelves = planned;
             let mut slots = Vec::with_capacity(layers.len());
-            for layer in &layers {
-                let (x, y) = self.shelves.allocate(layer.width, layer.height)?;
+            for (layer, (x, y)) in layers.iter().zip(places) {
                 let rgba: Vec<u8> = if layer.colour {
                     layer.pixels.clone()
                 } else {

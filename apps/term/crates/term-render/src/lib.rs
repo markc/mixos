@@ -232,6 +232,8 @@ struct PaneState {
     /// Rows changed since the last build.
     owed: Vec<bool>,
     reserve_ns: u64,
+    /// Atlas bytes this pane's reserve uploaded, reported with its build.
+    reserve_bytes: usize,
     /// Test hook: empty the atlas at this pane's next reserve.
     reset_atlas: bool,
     gpu: Option<PaneGpu>,
@@ -503,6 +505,7 @@ impl PaneState {
         screen_px: [f32; 2],
     ) {
         let started = std::time::Instant::now();
+        let uploaded = renderer.atlas.uploaded;
         let mut stats = Stats::default();
         let (cell_w, cell_h) = raster.cell();
         let Some(screen) = self.current.take() else {
@@ -637,7 +640,8 @@ impl PaneState {
         });
         self.current = Some(screen);
         stats.glyphs = self.glyph_count;
-        stats.atlas_bytes = std::mem::take(&mut renderer.atlas.uploaded);
+        stats.atlas_bytes =
+            std::mem::take(&mut self.reserve_bytes) + renderer.atlas.uploaded - uploaded;
         self.write_uniform(queue, origin, screen_px, (cell_w, cell_h));
         stats.prepare_ns = self.reserve_ns + started.elapsed().as_nanos() as u64;
         self.stats = stats;
@@ -701,7 +705,9 @@ impl egui_wgpu::CallbackTrait for PaneCallback {
         };
         let mut state = self.pane.state.lock().unwrap();
         let mut raster = self.raster.lock().unwrap();
+        let before = renderer.atlas.uploaded;
         state.reserve(queue, renderer, &mut raster);
+        state.reserve_bytes = renderer.atlas.uploaded - before;
         state.origin = self.origin(screen.pixels_per_point);
         state.screen = [
             screen.size_in_pixels[0] as f32,
