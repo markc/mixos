@@ -253,6 +253,8 @@ pub struct Stats {
     pub atlas_bytes: usize,
     /// Instance and background bytes uploaded.
     pub instance_bytes: usize,
+    /// CPU time of the prepare: snapshot to instances and uploads queued.
+    pub prepare_ns: u64,
 }
 
 /// One terminal pane's handle: cheap to clone, shared with its paint
@@ -409,6 +411,7 @@ impl PaneState {
         origin: [f32; 2],
         screen_px: [f32; 2],
     ) {
+        let started = std::time::Instant::now();
         let mut stats = Stats::default();
         renderer.atlas.bind(raster);
         let generation = renderer.atlas.generation;
@@ -424,6 +427,7 @@ impl PaneState {
                 self.glyph_count = 0;
             }
             self.write_uniform(queue, origin, screen_px, (cell_w, cell_h));
+            stats.prepare_ns = started.elapsed().as_nanos() as u64;
             self.stats = stats;
             return;
         };
@@ -571,6 +575,7 @@ impl PaneState {
         stats.glyphs = self.glyph_count;
         stats.atlas_bytes = std::mem::take(&mut renderer.atlas.uploaded);
         self.write_uniform(queue, origin, screen_px, (cell_w, cell_h));
+        stats.prepare_ns = started.elapsed().as_nanos() as u64;
         self.stats = stats;
     }
 
