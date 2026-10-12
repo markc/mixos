@@ -244,6 +244,21 @@ fn text_tool_narrow_studio_dark() {
     );
 }
 
+/// The Number tool at about 810 points, where the text size list ("Medium
+/// text", wider than the list's minimum width) only just fits or is left
+/// out whole, never cut at Copy.
+#[test]
+fn number_tool_narrow_studio_dark() {
+    let mut app = annotated();
+    app.set_tool(Tool::Draw(Kind::Number));
+    window_sized(
+        chrome(Scheme::Studio, Mode::Dark),
+        "number_tool_narrow_studio_dark",
+        app,
+        egui::vec2(810.0, 450.0),
+    );
+}
+
 /// Taking another shot over unsaved annotations asks first.
 #[test]
 fn discard_dialog_studio_light() {

@@ -257,11 +257,17 @@ fn controls(
     if fits(ui, inks_width) {
         inks(ui, app, editable, events);
     }
-    if fits(ui, COMBO + gap) {
-        width_combo(ui, app, editable, events);
+    let widths: Vec<String> = WIDTHS.iter().map(|(_, key, _)| label(key)).collect();
+    let (inner, outer) = combo_size(ui, &widths);
+    if fits(ui, outer + gap) {
+        width_combo(ui, app, &widths, inner, editable, events);
     }
-    if matches!(app.ui.tool, Tool::Draw(Kind::Text | Kind::Number)) && fits(ui, COMBO + gap) {
-        size_combo(ui, app, editable, events);
+    if matches!(app.ui.tool, Tool::Draw(Kind::Text | Kind::Number)) {
+        let sizes: Vec<String> = SIZES.iter().map(|(_, key, _)| label(key)).collect();
+        let (inner, outer) = combo_size(ui, &sizes);
+        if fits(ui, outer + gap) {
+            size_combo(ui, app, &sizes, inner, editable, events);
+        }
     }
     if text_tool {
         // The field takes what is left, up to its full width.
@@ -305,15 +311,21 @@ fn inks(ui: &mut Ui, app: &App, editable: bool, events: &mut Vec<UiEvent>) {
 }
 
 /// The stroke width list.
-fn width_combo(ui: &mut Ui, app: &App, editable: bool, events: &mut Vec<UiEvent>) {
-    let widths: Vec<String> = WIDTHS.iter().map(|(_, key, _)| label(key)).collect();
+fn width_combo(
+    ui: &mut Ui,
+    app: &App,
+    widths: &[String],
+    inner: f32,
+    editable: bool,
+    events: &mut Vec<UiEvent>,
+) {
     let mut at = WIDTHS
         .iter()
         .position(|(_, _, w)| *w == app.ui.width)
         .unwrap_or(1);
     let response = ui
         .add_enabled_ui(editable, |ui| {
-            toolkit::combo::show(ui, "screenshot-width", &mut at, &widths, Some(COMBO))
+            toolkit::combo::show(ui, "screenshot-width", &mut at, widths, Some(inner))
         })
         .inner
         .on_hover_text(label("width"));
@@ -322,16 +334,42 @@ fn width_combo(ui: &mut Ui, app: &App, editable: bool, events: &mut Vec<UiEvent>
     }
 }
 
+/// A list's size from its longest choice, as egui lays a combo out (the
+/// width it is given is only a minimum): `inner`, the width it is given so
+/// it keeps one width whatever is chosen, and `outer`, the room it takes
+/// with its padding (what the fit check needs).
+fn combo_size(ui: &Ui, options: &[String]) -> (f32, f32) {
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let text = options
+        .iter()
+        .map(|o| {
+            ui.painter()
+                .layout_no_wrap(o.clone(), font.clone(), Color32::PLACEHOLDER)
+                .size()
+                .x
+        })
+        .fold(0.0, f32::max);
+    let spacing = ui.spacing();
+    let inner = (text + spacing.icon_spacing + spacing.icon_width).max(COMBO);
+    (inner, inner + 2.0 * spacing.button_padding.x)
+}
+
 /// The text size list (Text and Number tools).
-fn size_combo(ui: &mut Ui, app: &App, editable: bool, events: &mut Vec<UiEvent>) {
-    let sizes: Vec<String> = SIZES.iter().map(|(_, key, _)| label(key)).collect();
+fn size_combo(
+    ui: &mut Ui,
+    app: &App,
+    sizes: &[String],
+    inner: f32,
+    editable: bool,
+    events: &mut Vec<UiEvent>,
+) {
     let mut at = SIZES
         .iter()
         .position(|(_, _, s)| *s == app.ui.text_size)
         .unwrap_or(1);
     let response = ui
         .add_enabled_ui(editable, |ui| {
-            toolkit::combo::show(ui, "screenshot-size", &mut at, &sizes, Some(COMBO))
+            toolkit::combo::show(ui, "screenshot-size", &mut at, sizes, Some(inner))
         })
         .inner
         .on_hover_text(label("text-size"));
