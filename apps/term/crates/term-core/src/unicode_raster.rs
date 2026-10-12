@@ -737,6 +737,17 @@ mod tests {
             eprintln!("SKIP SF coverage probe: fontdb cannot find SF Mono");
             return;
         }
+        // An activated MixOS asset set puts its own sans/serif first in the
+        // coverage chain; this probe is about the system fallbacks alone.
+        if ["sans", "serif"].iter().any(|role| {
+            matches!(
+                super::super::primary_font::installed_role(role),
+                Ok(Some(_))
+            )
+        }) {
+            eprintln!("SKIP SF coverage probe: an installed asset set provides coverage faces");
+            return;
+        }
         let primary = super::super::primary_font::from_database(&mut db).unwrap();
         let mut raster = crate::raster::Raster::from_font(
             primary.data,
