@@ -863,9 +863,9 @@ where
         }
     }
     // Live window thumbnails (a hover tip's preview box), over the screen UI,
-    // on the output the tip is on. A previewed window is owed frames (it is in
-    // the presented set) and kept out of `suspended` while it shows, so the
-    // preview is live even for a window on another workspace or minimised.
+    // on the output the tip is on. A previewed window gets paced frame
+    // callbacks and is kept out of `suspended` while it shows, so the preview
+    // is live even for a window on another workspace or minimised.
     let thumbs = world::window::draw::thumbnail::requests();
     world::window::draw::thumbnail::retain_ids(&thumbs.iter().map(|t| t.id).collect::<Vec<_>>());
     for request in thumbs {
@@ -913,9 +913,9 @@ where
         {
             awake.push(uuid);
         }
-        if !canvas_window.contains(&window) {
-            canvas_window.push(window);
-        }
+        // Not added to the presented set: a window shown only here gets its
+        // frame callbacks paced (`callbacks::pace_thumbnails`), not one per
+        // output frame.
     }
     let _ = prepared.surfaces; // world UI now drawn per-id in the content band
     // The solid background is pushed per-pane in the region loop above.

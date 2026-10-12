@@ -105,22 +105,43 @@ impl Tip {
 }
 
 impl Thumbnail {
-    /// `{id, generation, w, h}`: whole non-negative ids, a positive size.
+    /// `{id, generation, w, h, decorated?}`: whole non-negative ids, a
+    /// positive content size. `decorated: true` (server-side chrome) grows the
+    /// size by the installed theme's chrome, so the box has the frame's
+    /// aspect, which is what compd fits into it.
     fn from_port(value: &Value) -> Option<Thumbnail> {
         let id = value.get("id")?.as_f64()?;
         let generation = value.get("generation")?.as_f64()?;
         let w = value.get("w")?.as_f64()? as f32;
         let h = value.get("h")?.as_f64()? as f32;
         let whole = |v: f64| v >= 0.0 && v.fract() == 0.0 && v < 9.0e15;
-        (whole(id) && whole(generation) && w.is_finite() && h.is_finite() && w > 0.0 && h > 0.0)
-            .then_some(Thumbnail {
-                id: id as u64,
-                generation: generation as u64,
-                w,
-                h,
-            })
+        if !(whole(id) && whole(generation) && w.is_finite() && h.is_finite() && w > 0.0 && h > 0.0)
+        {
+            return None;
+        }
+        let decorated = value.get("decorated").and_then(Value::as_bool) == Some(true);
+        let (w, h) = if decorated {
+            framed(w, h, decor::window::installed().map(|t| decor::DecoExtents::of(&t.deco)))
+        } else {
+            (w, h)
+        };
+        Some(Thumbnail {
+            id: id as u64,
+            generation: generation as u64,
+            w,
+            h,
+        })
     }
 
+}
+
+/// A window's content size grown by its server-side chrome `extents` (none
+/// without an installed theme): the frame a thumbnail shows.
+fn framed(w: f32, h: f32, extents: Option<decor::DecoExtents>) -> (f32, f32) {
+    extents.map_or((w, h), |e| (w + e.left + e.right, h + e.top + e.bottom))
+}
+
+impl Thumbnail {
     /// The box the window fits into: its aspect, at most [`THUMB_MAX`].
     pub fn fitted(&self) -> (f32, f32) {
         let s = (THUMB_MAX.0 / self.w).min(THUMB_MAX.1 / self.h);
@@ -367,6 +388,23 @@ pub fn line_colour(ink: Color32, dim: bool) -> Color32 {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// A decorated window's box takes its frame's size: content plus chrome.
+    #[test]
+    fn a_decorated_thumbnail_is_sized_from_its_frame() {
+        let extents = decor::DecoExtents {
+            left: 1.0,
+            right: 1.0,
+            top: 30.0,
+            bottom: 1.0,
+        };
+        assert_eq!(framed(800.0, 600.0, Some(extents)), (802.0, 631.0));
+        assert_eq!(framed(800.0, 600.0, None), (800.0, 600.0));
+        // Without an installed theme (here) `decorated` changes nothing.
+        let port = json!({"id": 1, "generation": 2, "w": 800, "h": 600, "decorated": true});
+        let t = Thumbnail::from_port(&port).unwrap();
+        assert_eq!((t.w, t.h), (800.0, 600.0));
+    }
 
     /// A monospace stand-in: 7 px per character, 1.2 x size high.
     fn measure(text: &str, font: &FontId) -> (f32, f32) {

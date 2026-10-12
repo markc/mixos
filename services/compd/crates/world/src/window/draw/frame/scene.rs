@@ -51,6 +51,12 @@ use smithay::wayland::seat::WaylandFocus;
 #[derive(Default)]
 struct LetterboxBars(SolidBank);
 
+/// The captured pass's bars (see `decor::render::Pass`): a capture draws the
+/// same window at its own origin, so sharing the presented bank would move its
+/// rects, and bump its commits, every frame both are drawn.
+#[derive(Default)]
+struct CapturedLetterboxBars(SolidBank);
+
 /// Read a surface's [`SurfaceView`] (src crop / dst size / subsurface offset), if mapped.
 fn view_of(states: &SurfaceData) -> Option<SurfaceView> {
     states
@@ -399,6 +405,7 @@ where
         slot_size_of(window),
         pane_rect(state, ctx, size),
         decoration,
+        decor::render::Pass::Presented,
     );
     drawn.opaque = opaque;
     (elements, drawn)
@@ -414,6 +421,7 @@ fn window_elements<R>(
     slot_size: Option<Size<i32, Logical>>,
     crop_output: Rectangle<i32, Physical>,
     decoration: Vec<SolidColorRenderElement>,
+    pass: decor::render::Pass,
 ) -> (Vec<Element<R>>, Vec<Rectangle<i32, Physical>>)
 where
     R: Renderer + ImportAll + ImportMem + dispatcher::frame::frame::SceneDispatch,
@@ -643,6 +651,7 @@ where
         slot_size,
         output_scale,
         crop_output,
+        pass,
     );
     elements.extend(chrome.front.into_iter().map(Element::Chrome));
 
@@ -719,9 +728,13 @@ where
     // `subtract_rect` returns a stable order for a stable fit, so slot `i` keeps
     // meaning the same bar; a fit change reshuffles at most a few, which costs one
     // frame of extra damage rather than every frame of it.
-    let letterbox = window.user_data().get_or_insert(LetterboxBars::default);
+    let data = window.user_data();
+    let letterbox = match pass {
+        decor::render::Pass::Presented => &data.get_or_insert(LetterboxBars::default).0,
+        decor::render::Pass::Captured => &data.get_or_insert(CapturedLetterboxBars::default).0,
+    };
     for (slot, rect) in bars.iter().enumerate() {
-        elements.push(Element::SolidBox(letterbox.0.solid(
+        elements.push(Element::SolidBox(letterbox.solid(
             slot,
             *rect,
             [0.0, 0.0, 0.0, 1.0],
@@ -793,6 +806,20 @@ where
     R: Renderer + ImportAll + ImportMem + dispatcher::frame::frame::SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
 {
+    capture_framed(renderer, window, scale).map(|(elements, size, _)| (elements, size))
+}
+
+/// [`capture`], plus where the window's frame (its content and server-side
+/// chrome, without the shadow or popups) lies in the capture (physical px).
+pub fn capture_framed<R>(
+    renderer: &mut R,
+    window: &Window,
+    scale: f64,
+) -> Result<(Vec<Element<R>>, Size<i32, Physical>, Rectangle<i32, Physical>), String>
+where
+    R: Renderer + ImportAll + ImportMem + dispatcher::frame::frame::SceneDispatch,
+    R::TextureId: Texture + Clone + Send + 'static,
+{
     if !scale.is_finite() || scale <= 0.0 {
         return Err("window capture has no usable output scale".into());
     }
@@ -814,6 +841,7 @@ where
         (-left, -top).into(),
         (slot.size.w + left + right, slot.size.h + top + bottom).into(),
     );
+    let frame = bounds;
     if decor::window::decorated(window)
         && let Some(theme) = decor::window::installed()
     {
@@ -881,6 +909,11 @@ where
         Some(content),
         Rectangle::from_size(size),
         Vec::new(),
+        decor::render::Pass::Captured,
     );
-    Ok((elements, size))
+    Ok((
+        elements,
+        size,
+        Rectangle::new(frame.loc - bounds.loc, frame.size),
+    ))
 }

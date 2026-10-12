@@ -77,6 +77,31 @@ pub fn fit(
     ))
 }
 
+/// Where a capture goes in `rect` when its `frame` (content and chrome, in
+/// capture px) is what fills the box, as the box was sized from it: the
+/// scale, where the capture's origin lands, and the fitted frame to crop to.
+/// The shadow and any open popup fall outside the crop, so neither shrinks
+/// the preview.
+pub fn place(
+    frame: Rectangle<i32, Physical>,
+    rect: Rectangle<i32, Physical>,
+) -> Option<(f64, Point<i32, Physical>, Rectangle<i32, Physical>)> {
+    let (s, frame_at) = fit(frame.size, rect)?;
+    let at = Point::from((
+        frame_at.x - (frame.loc.x as f64 * s).round() as i32,
+        frame_at.y - (frame.loc.y as f64 * s).round() as i32,
+    ));
+    let shown = Rectangle::new(
+        frame_at,
+        (
+            (frame.size.w as f64 * s).round() as i32,
+            (frame.size.h as f64 * s).round() as i32,
+        )
+            .into(),
+    );
+    Some((s, at, shown.intersection(rect)?))
+}
+
 /// The element a thumbnail draws: a window element rescaled, moved into its
 /// box, cropped to it, under its own id.
 pub type Thumb<R> =
@@ -95,11 +120,12 @@ where
     R: Renderer + ImportAll + ImportMem + dispatcher::frame::frame::SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
 {
-    let Ok((inner, size)) = crate::window::draw::frame::scene::capture(renderer, window, scale)
+    let Ok((inner, _, frame)) =
+        crate::window::draw::frame::scene::capture_framed(renderer, window, scale)
     else {
         return Vec::new();
     };
-    let Some((s, at)) = fit(size, rect) else {
+    let Some((s, at, rect)) = place(frame, rect) else {
         return Vec::new();
     };
     inner
@@ -246,6 +272,26 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    /// The frame fills the box; the capture's shadow margin lands outside it
+    /// and is cropped.
+    #[test]
+    fn the_frame_fills_the_box_and_the_shadow_is_cropped() {
+        // A 1000x700 frame 40px into its capture (shadow all round).
+        let frame = Rectangle::new(Point::from((40, 40)), Size::from((1000, 700)));
+        let rect = Rectangle::new(Point::from((500, 300)), Size::from((200, 140)));
+        let (s, at, crop) = place(frame, rect).unwrap();
+        assert!((s - 0.2).abs() < 1e-9);
+        // The frame's corner is the box's corner; the capture origin is 8px
+        // (40 * 0.2) up and left of it.
+        assert_eq!(at, Point::from((492, 292)));
+        assert_eq!(crop, rect);
+        // A frame of another aspect is centred, and the crop is the frame.
+        let wide = Rectangle::new(Point::from((0, 0)), Size::from((1000, 500)));
+        let (_, at, crop) = place(wide, rect).unwrap();
+        assert_eq!(crop, Rectangle::new(Point::from((500, 320)), Size::from((200, 100))));
+        assert_eq!(at, crop.loc);
     }
 
     #[test]
