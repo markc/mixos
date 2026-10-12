@@ -11,7 +11,7 @@ where
     I: GlobalDispatch<ZxdgExporterV2, GlobalData>,
     I: GlobalDispatch<ZxdgImporterV2, GlobalData>,
 {
-    let xdg_foreign_state = XdgForeignState::new::<I>(&display_handle);
+    let xdg_foreign_state = XdgForeignState::new::<I>(display_handle);
 
     Foreign { xdg_foreign_state }
 }

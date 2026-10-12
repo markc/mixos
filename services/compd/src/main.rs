@@ -259,7 +259,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 world::world::manager::manager::MAIN_WORLD,
                 "main",
                 vec![
-                    Box::new(world::camera::system::base::CameraSystem::default()),
+                    Box::new(world::camera::system::base::CameraSystem),
                     Box::new(world::window::system::base::WindowSystem),
                     Box::new(world::surface::system::base::SurfaceSystem),
                     Box::new(world::canvas::system::base::CanvasSystem),

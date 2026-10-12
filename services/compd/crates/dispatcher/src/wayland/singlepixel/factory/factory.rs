@@ -14,7 +14,7 @@ where
     I: Dispatch<WpSinglePixelBufferManagerV1, GlobalData>,
     I: 'static,
 {
-    let single_pixel_buffer_state = SinglePixelBufferState::new::<I>(&display_handle);
+    let single_pixel_buffer_state = SinglePixelBufferState::new::<I>(display_handle);
     SinglePixel {
         single_pixel_buffer_state,
     }

@@ -277,7 +277,7 @@ fn invert3(m: [f32; 9]) -> Option<[f32; 9]> {
             _ => (0, 1),
         };
         let minor = a(r0, c0) * a(r1, c1) - a(r0, c1) * a(r1, c0);
-        let sign = if (r + c) % 2 == 0 { 1.0 } else { -1.0 };
+        let sign = if (r + c).is_multiple_of(2) { 1.0 } else { -1.0 };
         sign * minor / det
     };
     let mut out = [0.0; 9];

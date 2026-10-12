@@ -77,13 +77,12 @@ pub fn register(
             // A topology change on the driven device → drive the best connected
             // output per preferences (fail over / recover), or go dark + wait. Runs
             // in this udev dispatch (not the vblank callback), so the modeset is safe.
-            if reconcile {
-                if let Some(change) =
+            if reconcile
+                && let Some(change) =
                     crate::context::display::reconcile::reconcile::reconcile(state, &ctx_rc)
                 {
                     apply_output_change(state, change);
                 }
-            }
             // Refresh the rim's display snapshot after any topology change so the
             // lid policy sees current external/internal presence.
             let active = ctx_rc.borrow().pipe().connector;

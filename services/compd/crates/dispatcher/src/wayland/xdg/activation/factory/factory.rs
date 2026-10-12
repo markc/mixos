@@ -12,7 +12,7 @@ where
         + XdgActivationHandler
         + 'static,
 {
-    let xdg_activation_state = XdgActivationState::new::<I>(&display_handle);
+    let xdg_activation_state = XdgActivationState::new::<I>(display_handle);
 
     Activation {
         xdg_activation: xdg_activation_state,

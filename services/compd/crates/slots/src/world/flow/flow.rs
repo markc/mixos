@@ -43,14 +43,8 @@ pub fn each_system(
     mut f: impl FnMut(&mut dyn System, &mut SystemCx),
 ) {
     for index in 0..parts.systems.len() {
-        let platform = match &mut platform {
-            Some(p) => Some(&mut **p),
-            None => None,
-        };
-        let seat = match &mut seat {
-            Some(s) => Some(&mut **s),
-            None => None,
-        };
+        let platform = platform.as_deref_mut();
+        let seat = seat.as_deref_mut();
         {
             let mut cx = SystemCx::new(
                 parts.storage,
@@ -118,14 +112,8 @@ pub fn input(
 ) -> InputFlow {
     for i in 0..parts.input_order.len() {
         let index = parts.input_order[i];
-        let platform = match &mut platform {
-            Some(p) => Some(&mut **p),
-            None => None,
-        };
-        let seat = match &mut seat {
-            Some(s) => Some(&mut **s),
-            None => None,
-        };
+        let platform = platform.as_deref_mut();
+        let seat = seat.as_deref_mut();
         let flow = {
             let mut cx = SystemCx::new(
                 parts.storage,

@@ -105,19 +105,19 @@ where
 
     let bw_screen = bw_logical * ctx.scale;
 
-    let mut top_rect = render_with.clone();
+    let mut top_rect = render_with;
     top_rect.loc.y -= 1;
     top_rect.size.h = bw_screen.round() as i32;
 
-    let mut bottom_rect = render_with.clone();
-    bottom_rect.loc.y = bottom_rect.loc.y + bottom_rect.size.h;
+    let mut bottom_rect = render_with;
+    bottom_rect.loc.y += bottom_rect.size.h;
     bottom_rect.size.h = bw_screen.round() as i32;
 
-    let mut left_rect = render_with.clone();
+    let mut left_rect = render_with;
     left_rect.loc.x -= 1;
     left_rect.size.w = bw_screen.round() as i32;
 
-    let mut right_rect = render_with.clone();
+    let mut right_rect = render_with;
     right_rect.loc.x += right_rect.size.w;
     right_rect.size.w = bw_screen.round() as i32;
 
@@ -237,5 +237,5 @@ where
         // // Add it to the elements list so it renders!
         // elements.push(header_element);
     }
-    return elements;
+    elements
 }

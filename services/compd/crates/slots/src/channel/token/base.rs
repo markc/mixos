@@ -15,6 +15,12 @@ pub struct Channel<M> {
     _marker: PhantomData<fn() -> M>,
 }
 
+impl<M> Default for Channel<M> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<M> Channel<M> {
     pub const fn new() -> Self {
         Self {

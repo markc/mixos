@@ -533,8 +533,10 @@ pub struct KeyBind {
 /// What a pad button, stylus button, or the dial is remapped to. `Passthrough`
 /// (the default for every control) keeps the native tablet-v2 / driver behavior.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum PenAction {
     /// Keep native behavior (forward the protocol event / driver default).
+    #[default]
     Passthrough,
     /// Toggle the canvas Hand grab (navigation mode).
     ToggleHandMode,
@@ -551,11 +553,6 @@ pub enum PenAction {
     Wheel { mods: Vec<u32> },
 }
 
-impl Default for PenAction {
-    fn default() -> Self {
-        PenAction::Passthrough
-    }
-}
 
 /// Per-tablet overrides of the driver defaults. Serialized in `preferences.json`;
 /// `#[serde(default)]` keeps older files loading. Maps are keyed by stringified
@@ -705,11 +702,10 @@ pub fn normalize(mut p: Preference) -> Preference {
     // Clamp the ring depth in the struct itself, not only where it is published,
     // so the settings UI edits an already-valid value and a save round-trips it.
     p.interface_triple_buffer = p.interface_triple_buffer.normalized();
-    if let Some(m) = p.outputs_default_mode.as_mut() {
-        if m.refresh_mhz < MIN_DEFAULT_REFRESH_MHZ {
+    if let Some(m) = p.outputs_default_mode.as_mut()
+        && m.refresh_mhz < MIN_DEFAULT_REFRESH_MHZ {
             m.refresh_mhz = 30_000;
         }
-    }
     // Keep a hand-edited pan speed in a sane range (a 0 would freeze touch pan,
     // a huge value would fling the world off-screen).
     if !p.input_touch_pan_speed.is_finite() || p.input_touch_pan_speed <= 0.0 {

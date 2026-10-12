@@ -363,8 +363,8 @@ impl AudioController {
                 })
             });
         }
-        let v = out.borrow().clone();
-        v
+        
+        out.borrow().clone()
     }
 
     /// Set absolute volume as a fraction of NORMAL (`0.0..=max_volume`). Balance
@@ -475,8 +475,8 @@ impl AudioController {
                 })
             });
         }
-        let result = out.borrow_mut().take().ok_or(AudioError::NoDefaultSink);
-        result
+        
+        out.borrow_mut().take().ok_or(AudioError::NoDefaultSink)
     }
 
     fn query_default_sink_name(&self) -> Result<String, AudioError> {
@@ -493,8 +493,8 @@ impl AudioController {
                 })
             });
         }
-        let result = out.borrow_mut().take().ok_or(AudioError::NoDefaultSink);
-        result
+        
+        out.borrow_mut().take().ok_or(AudioError::NoDefaultSink)
     }
 
     /// Run an introspect operation to completion under the mainloop lock,

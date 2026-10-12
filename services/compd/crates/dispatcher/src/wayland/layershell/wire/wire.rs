@@ -26,7 +26,7 @@ pub fn new_layer_surface(
 
     let target_output: Option<Output> = output
         .as_ref()
-        .and_then(|wl_out| Output::from_resource(wl_out))
+        .and_then(Output::from_resource)
         .or(current_output)
         .or_else(|| space.state.outputs().next().cloned());
 

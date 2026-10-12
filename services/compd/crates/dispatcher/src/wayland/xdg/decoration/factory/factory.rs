@@ -25,7 +25,7 @@ where
         > + Dispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, GlobalData>
         + 'static,
 {
-    let xdg_decoration_state = XdgDecorationState::new::<I>(&display_handle);
+    let xdg_decoration_state = XdgDecorationState::new::<I>(display_handle);
 
     Decoration {
         xdg_state: xdg_decoration_state,

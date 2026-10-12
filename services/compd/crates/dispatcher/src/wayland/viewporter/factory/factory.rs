@@ -17,6 +17,6 @@ where
         + 'static,
 {
     // Part of loop construction. Shouldn't be here at all.
-    let mut viewporter_state = ViewporterState::new::<I>(&display_handle);
-    return Viewporter { viewporter_state };
+    let mut viewporter_state = ViewporterState::new::<I>(display_handle);
+    Viewporter { viewporter_state }
 }

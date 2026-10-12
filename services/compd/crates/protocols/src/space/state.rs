@@ -17,8 +17,8 @@ pub struct SpaceState {
 impl SpaceState {
     pub fn default_logical(&self) -> Rectangle<i32, Logical> {
         let compositor_output = self.state.outputs().next().unwrap();
-        let compositor_output_geometry = self.state.output_geometry(compositor_output).unwrap();
-        return compositor_output_geometry;
+        
+        self.state.output_geometry(compositor_output).unwrap()
     }
 
     pub fn default_physical_i32(&self) -> Rectangle<i32, Physical> {
@@ -27,7 +27,7 @@ impl SpaceState {
 
         let scale = compositor_output.current_scale();
 
-        return compositor_output_geometry.to_physical(scale.integer_scale());
+        compositor_output_geometry.to_physical(scale.integer_scale())
     }
 
     pub fn default_physical_precise(&self) -> Rectangle<f64, Physical> {
@@ -36,26 +36,26 @@ impl SpaceState {
 
         let scale = compositor_output.current_scale();
 
-        return compositor_output_geometry.to_physical_precise_round(scale.integer_scale());
+        compositor_output_geometry.to_physical_precise_round(scale.integer_scale())
     }
 
     pub fn default_scale(&self) -> Scale {
         let compositor_output = self.state.outputs().next().unwrap();
         let compositor_output_geometry = self.state.output_geometry(compositor_output).unwrap();
 
-        let scale = compositor_output.current_scale();
-        scale
+        
+        compositor_output.current_scale()
     }
 
     pub fn default_output(&self) -> &Output {
-        let compositor_output = self.state.outputs().next().unwrap();
-        compositor_output
+        
+        (self.state.outputs().next().unwrap()) as _
     }
 
     pub fn default_output_geometry(&self) -> Rectangle<i32, Logical> {
         let compositor_output = self.state.outputs().next().unwrap();
-        let compositor_output_geometry = self.state.output_geometry(compositor_output).unwrap();
-        compositor_output_geometry
+        
+        self.state.output_geometry(compositor_output).unwrap()
     }
 
     pub fn default_scale_logical(&self) -> f64 {

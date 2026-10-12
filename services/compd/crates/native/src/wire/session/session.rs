@@ -56,8 +56,8 @@ pub fn register(
                     // This is the last point a modeset can still be committed; the
                     // resume path re-enables via `queue_frame`.
                     for p in ctx_ref.outputs.iter() {
-                        if let Some(o) = p.drm_output.as_ref() {
-                            if let Err(e) =
+                        if let Some(o) = p.drm_output.as_ref()
+                            && let Err(e) =
                                 kms::scanout::surface::output::output::clear(o)
                             {
                                 warn!(
@@ -68,7 +68,6 @@ pub fn register(
                                     p.connector, p.crtc
                                 );
                             }
-                        }
                     }
 
                     // Pause protocol: display first, then input (seat.lifecycle).
@@ -156,11 +155,10 @@ pub fn register(
                                         // wrong (heavy red cast) until a mode change
                                         // rebuilds the pipe.
                                         p.props_applied = false;
-                                        if let Some(o) = p.drm_output.as_mut() {
-                                            if let Err(e) = kms::scanout::surface::output::output::reset(o) {
+                                        if let Some(o) = p.drm_output.as_mut()
+                                            && let Err(e) = kms::scanout::surface::output::output::reset(o) {
                                                 result = Err(e);
                                             }
-                                        }
                                     }
                                     result
                                 },

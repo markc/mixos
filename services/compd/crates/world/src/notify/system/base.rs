@@ -57,12 +57,11 @@ impl System for NotifySystem {
             .platform
             .as_deref_mut()
             .and_then(|p| p.downcast_mut::<Platform>())
-            .map(|p| {
+            .and_then(|p| {
                 let node = p.render_node().to_owned();
                 p.renderer()
                     .map(|r| present::tick(presenter, next, kernel, r, &node, &screen))
             })
-            .flatten()
             .unwrap_or((None, false));
         self.frame = frame;
         if taken {

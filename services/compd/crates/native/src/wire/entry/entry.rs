@@ -157,8 +157,7 @@ pub fn wire(
         let cfg = model::environment::config::base::get();
         if let Some(rn) =
             kms::device::node::node::render_node(std::path::Path::new(&cfg.render_node))
-        {
-            if rn.dev_id() != display.primary_gpu.dev_id() {
+            && rn.dev_id() != display.primary_gpu.dev_id() {
                 warn!(
                     "render_node {:?} is a DIFFERENT device from the scanout node {:?}. dmabuf \
                      feedback advertises the scanout device (correct — it is what composites), \
@@ -169,7 +168,6 @@ pub fn wire(
                     display.primary_gpu.dev_path(),
                 );
             }
-        }
     }
 
     info!("Backend initialization - wire backend to renderer and initialize renderer");

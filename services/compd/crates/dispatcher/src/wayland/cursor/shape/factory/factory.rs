@@ -16,7 +16,7 @@ where
     // Initialize the XDG Shell protocol.
     // Side-effect: Triggers window mapping/unmapping. When a client requests a new Toplevel,
     // it dispatches an event in your XDG delegate to assign the window a position in the `Space`.
-    let cursor_shape_state = CursorShapeManagerState::new::<I>(&display_handle);
+    let cursor_shape_state = CursorShapeManagerState::new::<I>(display_handle);
     CursorShape {
         state: cursor_shape_state,
     }

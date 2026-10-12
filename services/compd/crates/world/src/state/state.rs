@@ -397,8 +397,8 @@ impl Orchestrator {
             // too: left armed, the outgoing world resumes its pan the moment it is
             // re-entered, and the incoming world inherits one nobody is pushing.
             self.clear_edge_hold(previous);
-            if let Some(motion) = carried {
-                if let Some(pointer) = self
+            if let Some(motion) = carried
+                && let Some(pointer) = self
                     .worlds
                     .get_mut(id)
                     .storage_mut()
@@ -407,7 +407,6 @@ impl Orchestrator {
                     pointer.motion = motion;
                     pointer.edge_hold = None;
                 }
-            }
             // The outgoing world's off-thread background panes are now nobody's:
             // per-pane targets, a `history` image and a persistent ping-pong pair
             // are the largest thing that feature owns, and without a deterministic

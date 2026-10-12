@@ -75,8 +75,8 @@ pub fn register(
                 return;
             };
             for pipe in ctx.outputs.iter_mut() {
-                if world::state::state::output_key(&pipe.output) == key {
-                    if let Some(o) = pipe.drm_output.as_mut() {
+                if world::state::state::output_key(&pipe.output) == key
+                    && let Some(o) = pipe.drm_output.as_mut() {
                         if in_flight {
                             // A lost completion leaves smithay holding the flip as
                             // pending, and while it does `queue_frame` submits
@@ -92,7 +92,6 @@ pub fn register(
                         }
                         o.reset_buffers();
                     }
-                }
             }
         },
         move |state: &Loop| {

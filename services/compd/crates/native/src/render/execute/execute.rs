@@ -52,13 +52,11 @@ fn honor_needs_sync<B, F, E>(
     F: smithay::backend::drm::Framebuffer,
 {
     use smithay::backend::drm::compositor::PrimaryPlaneElement;
-    if result.needs_sync() {
-        if let PrimaryPlaneElement::Swapchain(ref element) = result.primary_element {
-            if let Err(err) = element.sync.wait() {
+    if result.needs_sync()
+        && let PrimaryPlaneElement::Swapchain(ref element) = result.primary_element
+            && let Err(err) = element.sync.wait() {
                 warn!("native: render fence wait interrupted before queue_frame: {err:?}");
             }
-        }
-    }
 }
 
 /// What this execute() call did, for the pacing layer.
@@ -502,12 +500,11 @@ pub fn execute(
         // Any other output is driven by its OWN vblank — rendering it here would
         // couple its cadence to this one. (All = ping/kickstart/resume: render every
         // idle output.)
-        if let RenderScope::Crtc(target) = scope {
-            if ctx_ref.outputs[output_idx].crtc != target {
+        if let RenderScope::Crtc(target) = scope
+            && ctx_ref.outputs[output_idx].crtc != target {
                 let _skip = ledger::frame_trace::span("kms_skip_other_crtc", trace_output);
                 continue;
             }
-        }
         // Skip a pipe whose page-flip is still in flight: its `queued_frame` slot
         // is occupied and won't scan out until its own vblank. Re-rendering it now
         // (on some OTHER output's vblank) would only overwrite that pending frame
@@ -664,7 +661,7 @@ pub fn execute(
         {
             let mut r = gles_renderer.borrow_mut();
             let _ = registry.set_output_size(
-                &state.inner.environment.GPU.as_str(),
+                state.inner.environment.GPU.as_str(),
                 r.as_mut(),
                 output_id,
                 size,

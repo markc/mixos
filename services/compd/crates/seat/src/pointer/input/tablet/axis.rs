@@ -32,8 +32,8 @@ pub fn axis<I: InputBackend>(event: &I::TabletToolAxisEvent, _loop: &mut Loop) {
         let last = _loop.state.tablet.last_pen_screen;
         _loop.state.tablet.last_pen_screen = Some(screen);
         cursor::follow(_loop, screen, world, time);
-        if _loop.state.tablet.stroke == Stroke::Pan {
-            if let Some(last) = last {
+        if _loop.state.tablet.stroke == Stroke::Pan
+            && let Some(last) = last {
                 crate::pointer::input::touch::emulate::pan(
                     _loop,
                     screen.x - last.x,
@@ -41,7 +41,6 @@ pub fn axis<I: InputBackend>(event: &I::TabletToolAxisEvent, _loop: &mut Loop) {
                     false,
                 );
             }
-        }
         return;
     }
 

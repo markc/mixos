@@ -29,7 +29,7 @@ pub fn load_snapshot<T: UiSnapshot>(
             .as_mut()
             .unwrap_or_else(|| abort!("registry to be created"));
         registry
-            .create_in_space_snapshot(&gpu.as_str(), t, gles, rect.loc, rect.size, space, layer)
+            .create_in_space_snapshot(gpu.as_str(), t, gles, rect.loc, rect.size, space, layer)
             .unwrap()
     };
     register(state, handle, space, layer);
@@ -78,10 +78,10 @@ pub fn load<T: UiProgram>(
 
     let handle = match space {
         UiSpace::World => registry
-            .create(&gpu.as_str(), t, gles, rect.loc, rect.size, layer)
+            .create(gpu.as_str(), t, gles, rect.loc, rect.size, layer)
             .unwrap(),
         UiSpace::Screen => registry
-            .create_screen(&gpu.as_str(), t, gles, rect.loc, rect.size, layer)
+            .create_screen(gpu.as_str(), t, gles, rect.loc, rect.size, layer)
             .unwrap(),
     };
 

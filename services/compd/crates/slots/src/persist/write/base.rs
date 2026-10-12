@@ -36,11 +36,10 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         f.sync_all()?;
     }
     std::fs::rename(&tmp, path)?;
-    if let Some(dir) = path.parent() {
-        if let Ok(d) = std::fs::File::open(dir) {
+    if let Some(dir) = path.parent()
+        && let Ok(d) = std::fs::File::open(dir) {
             let _ = d.sync_all();
         }
-    }
     Ok(())
 }
 

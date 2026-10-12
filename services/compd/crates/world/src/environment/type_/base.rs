@@ -14,5 +14,5 @@ pub fn Get() -> Environment {
     let DesktopName = String::from(env.desktop_name.trim());
     let GPU = String::from(env.render_node.trim());
 
-    return Environment { GPU, DesktopName };
+    Environment { GPU, DesktopName }
 }

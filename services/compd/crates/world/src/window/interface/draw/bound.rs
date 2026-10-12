@@ -93,11 +93,11 @@ where
         Height: (br.y - tl.y) as f64,
     };
 
-    return CalculateBoundResult {
+    CalculateBoundResult {
         Box: geom,
         World: world,
         Screen: screen,
-    };
+    }
 }
 
 // pub fn calculate<R>(

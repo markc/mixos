@@ -33,7 +33,7 @@ where
     // are always available, and compd answers them with the interactive grab
     // (`XdgShellHandler::move_request` / `resize_request`).
     let xdg_shell_state = XdgShellState::new_with_capabilities::<I>(
-        &display_handle,
+        display_handle,
         // The comp policy's window model answers maximise and
         // minimise, so GTK/Qt draw those buttons.
         [

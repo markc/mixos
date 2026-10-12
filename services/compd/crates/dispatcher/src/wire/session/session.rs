@@ -299,15 +299,14 @@ pub fn dispatch_manager<D>(
     };
 
     let resolved = session_id.filter(|s| store.exists(s));
-    if let Some(existing) = resolved.as_deref() {
-        if live.held_by(existing, client) {
+    if let Some(existing) = resolved.as_deref()
+        && live.held_by(existing, client) {
             manager.post_error(
                 xdg_session_manager_v1::Error::InUse,
                 "session already in use by this client",
             );
             return;
         }
-    }
 
     match resolved {
         // Known id — the client is coming back. Its toplevels can now restore
@@ -494,15 +493,14 @@ pub fn dispatch_legacy_manager<D>(
     }
 
     let resolved = session.filter(|s| store.exists(s));
-    if let Some(existing) = resolved.as_deref() {
-        if live.held_by(existing, client) {
+    if let Some(existing) = resolved.as_deref()
+        && live.held_by(existing, client) {
             manager.post_error(
                 xx_session_manager_v1::Error::InUse,
                 "session already in use by this client",
             );
             return;
         }
-    }
 
     match resolved {
         Some(existing) => {

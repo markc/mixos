@@ -185,7 +185,7 @@ mod tests {
         let mut s = Schedule::new();
         s.register("primary");
         s.register("secondary");
-        let pipes = vec![("secondary".to_string(), s.flips("secondary").unwrap())];
+        let pipes = [("secondary".to_string(), s.flips("secondary").unwrap())];
         s.queued("primary");
         s.vblank("primary");
         s.queued("primary");

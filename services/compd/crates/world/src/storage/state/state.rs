@@ -12,6 +12,6 @@ pub struct Storage {
 }
 impl Storage {
     pub fn new(nested: bool) -> Self {
-        return Self { nested };
+        Self { nested }
     }
 }

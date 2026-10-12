@@ -127,15 +127,13 @@ impl ReencodeJob {
             // ffmpeg `-progress` emits `key=value` lines; `out_time_us=<n>`
             // marks how far in the input it has consumed.
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-                if let Some(v) = line.strip_prefix("out_time_us=") {
-                    if total_us > 0 {
-                        if let Ok(us) = v.trim().parse::<i64>() {
+                if let Some(v) = line.strip_prefix("out_time_us=")
+                    && total_us > 0
+                        && let Ok(us) = v.trim().parse::<i64>() {
                             let ppm = ((us.max(0) as i128 * 1_000_000) / total_us as i128)
                                 .clamp(0, 1_000_000) as u32;
                             shared.store(ppm, Ordering::Relaxed);
                         }
-                    }
-                }
             }
         });
 

@@ -261,7 +261,7 @@ impl SurfaceHit {
 
     pub fn ice(&self) -> Option<bool> {
         match self {
-            Self::Layer { Ice, .. } => Ice.clone(),
+            Self::Layer { Ice, .. } => *Ice,
             _ => None,
         }
     }
@@ -818,8 +818,8 @@ pub fn surface_under_filtered_cx(
         }
     }
     for (u, w) in &by_uuid {
-        if !in_order.contains(u) {
-            if let Some(hit) = Drawable::Window(w.clone()).hit(
+        if !in_order.contains(u)
+            && let Some(hit) = Drawable::Window(w.clone()).hit(
                 &hcx,
                 position_world,
                 cursor_phys_world,
@@ -829,7 +829,6 @@ pub fn surface_under_filtered_cx(
             ) {
                 return Some(hit);
             }
-        }
     }
 
     // 6-7. Bottom → Background

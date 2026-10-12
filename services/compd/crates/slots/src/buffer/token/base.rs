@@ -11,6 +11,12 @@ pub struct Buffer<M: 'static> {
     _marker: PhantomData<fn() -> M>,
 }
 
+impl<M> Default for Buffer<M> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<M> Buffer<M> {
     pub const fn new() -> Self {
         Self {

@@ -191,8 +191,8 @@ fn arm(state: &mut Loop, ctx_rc: &Ctx, edid_key: String, baseline: DrmMode) -> R
             move |_, _, state: &mut Loop| {
                 let mut c = ctx.borrow_mut();
                 // Re-resolve the target pipe by key (hotplug may have reordered `outputs`).
-                if let Some(idx) = pipe_of(&c, &edid_key) {
-                    if c.outputs[idx].mode_revert.take().is_some() {
+                if let Some(idx) = pipe_of(&c, &edid_key)
+                    && c.outputs[idx].mode_revert.take().is_some() {
                         if let Err(e) = set_mode_now(&mut c, idx, baseline) {
                             warn!("auto-revert failed: {e}");
                         }
@@ -202,7 +202,6 @@ fn arm(state: &mut Loop, ctx_rc: &Ctx, edid_key: String, baseline: DrmMode) -> R
                         );
                         set_result(state, ApplyResult::Reverted);
                     }
-                }
                 TimeoutAction::Drop
             },
         )

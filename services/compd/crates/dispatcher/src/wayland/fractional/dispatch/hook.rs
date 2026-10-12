@@ -60,7 +60,7 @@ pub fn emit_best_per_surface(
             continue;
         }
         // New window (no record) or un-idling (record says idle, visible now).
-        if !want.idle && previous.map_or(true, |p| p.is_idle()) {
+        if !want.idle && previous.is_none_or(|p| p.is_idle()) {
             emit_to_surfaces(want.scale, std::iter::once(surface));
             emitted.push(surface.clone());
             next.insert(id, want);

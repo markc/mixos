@@ -15,6 +15,6 @@ where
         + 'static,
 {
     // Part of loop construction. Shouldn't be here at all.
-    let mut presentation_state = PresentationState::new::<I>(&display_handle, 1);
-    return Presentation { presentation_state };
+    let mut presentation_state = PresentationState::new::<I>(display_handle, 1);
+    Presentation { presentation_state }
 }

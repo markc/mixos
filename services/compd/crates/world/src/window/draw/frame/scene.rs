@@ -67,7 +67,7 @@ fn view_of(states: &SurfaceData) -> Option<SurfaceView> {
 
 /// Logical `dst` size of a (popup) surface, used to keep IME popups fully on-screen.
 fn popup_dst(surface: &WlSurface) -> Option<Size<i32, Logical>> {
-    with_states(surface, |s| view_of(s)).map(|v| v.dst)
+    with_states(surface, view_of).map(|v| v.dst)
 }
 
 fn project_point(ctx: XformCtx, x: f64, y: f64) -> Point<i32, Physical> {
@@ -438,7 +438,7 @@ where
         elements.extend(decoration.into_iter().map(Element::SolidBox));
         return (elements, Vec::new());
     };
-    let Some(root_view) = with_states(&root_surface, |s| view_of(s)) else {
+    let Some(root_view) = with_states(&root_surface, view_of) else {
         elements.extend(decoration.into_iter().map(Element::SolidBox));
         return (elements, Vec::new());
     };

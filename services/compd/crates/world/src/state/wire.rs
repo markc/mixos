@@ -81,11 +81,10 @@ impl WireTrait for Orchestrator {
             .flat_map(|s| s.state.elements())
             .find(|w| find::is_surface(w, surface))
             .cloned();
-        if let Some(window) = focused {
-            if let Some(world) = self.world_of_window(&window) {
+        if let Some(window) = focused
+            && let Some(world) = self.world_of_window(&window) {
                 self.world_focus_memory.insert(world, window);
             }
-        }
     }
 
     fn restore_focus_for_current_world(&mut self) -> Option<WlSurface> {
@@ -209,8 +208,7 @@ impl WireTrait for Orchestrator {
                 .unwrap_or_else(|| abort!("toplevels to have window data"))
                 .lock()
                 .unwrap()
-                .UUID
-                .clone();
+                .UUID;
             info!("destroy_surface_data: {:?}", data);
             // Shift-close mark: surface user data set by the selection toolbar —
             // the placeholder destroy path must not spawn a placeholder for this window.

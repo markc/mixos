@@ -55,11 +55,10 @@ pub fn sync_documents(entries: &[&'static DocumentEntry], storage: &Storage, wor
             if !changed {
                 continue;
             }
-            if let Some(p) = prev {
-                if p.partitions != row.partitions {
+            if let Some(p) = prev
+                && p.partitions != row.partitions {
                     let _ = store.unlink_partitions(&row.id, &borrow(&p.partitions));
                 }
-            }
             if let Err(e) = store.put(
                 &row.id,
                 entry.table,

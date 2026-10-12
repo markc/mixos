@@ -111,17 +111,17 @@ where
     // `TouchHandle` is one `Arc` held for the process lifetime.
     seat.add_touch();
 
-    let relative_pointer_manager_state = RelativePointerManagerState::new::<I>(&display_handle);
+    let relative_pointer_manager_state = RelativePointerManagerState::new::<I>(display_handle);
 
-    let pointer_constraints_state = PointerConstraintsState::new::<I>(&display_handle);
+    let pointer_constraints_state = PointerConstraintsState::new::<I>(display_handle);
 
     // Touchpad gesture protocol: clients that bind it receive native pinch/swipe
     // gestures when focused (the canvas otherwise repurposes them for zoom/pan).
-    let pointer_gestures_state = PointerGesturesState::new::<I>(&display_handle);
+    let pointer_gestures_state = PointerGesturesState::new::<I>(display_handle);
 
-    return protocols::seat::state::Seat {
+    protocols::seat::state::Seat {
         state: seat_state,
-        seat: seat,
+        seat,
         agent: Some(agent),
         pointer_status: CursorImageStatus::default_named(),
         relative_pointer_manager_state,
@@ -136,5 +136,5 @@ where
         libseat: None,
         keyboards: Vec::new(),
         touch_devices: Vec::new(),
-    };
+    }
 }

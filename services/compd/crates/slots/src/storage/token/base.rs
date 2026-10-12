@@ -17,6 +17,12 @@ pub struct Token<T> {
     _marker: PhantomData<fn() -> T>,
 }
 
+impl<T> Default for Token<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> Token<T> {
     pub const fn new() -> Self {
         Self {

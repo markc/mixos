@@ -221,7 +221,7 @@ pub fn register(
                         }
                     }
                     if device.has_capability(DeviceCapability::TabletPad) {
-                        state.state.tablet.remove_pad(&device.sysname());
+                        state.state.tablet.remove_pad(device.sysname());
                     }
                     crate::wire::input::map::map::write_touch_snapshot(state);
                 }

@@ -79,7 +79,7 @@ pub fn manager(
         allocator,
         exporter,
         gbm,
-        render_gles::format::catalog::catalog::scanout_ladder(ten_bit).into_iter(),
+        render_gles::format::catalog::catalog::scanout_ladder(ten_bit),
         render_formats,
     )
 }

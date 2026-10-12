@@ -9,6 +9,6 @@ where
     I: GlobalDispatch<ZwlrLayerShellV1, WlrLayerShellGlobalData>,
     I: 'static,
 {
-    let wlr = WlrLayerShellState::new::<I>(&display_handle);
-    return Layershell { wlr };
+    let wlr = WlrLayerShellState::new::<I>(display_handle);
+    Layershell { wlr }
 }

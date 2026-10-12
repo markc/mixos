@@ -55,6 +55,6 @@ impl KeyCombo {
             }
         }
 
-        return true;
+        true
     }
 }

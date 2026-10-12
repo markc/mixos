@@ -407,11 +407,10 @@ impl Dispatch {
         pointer: &smithay::input::pointer::PointerHandle<Dispatch>,
     ) {
         with_pointer_constraint(surface, pointer, |c| {
-            if let Some(c) = c {
-                if c.is_active() {
+            if let Some(c) = c
+                && c.is_active() {
                     c.deactivate(self, surface, pointer);
                 }
-            }
         });
     }
 
@@ -441,17 +440,15 @@ impl Dispatch {
         if let Some(old) = previous {
             self.deactivate_constraint_for(old, pointer);
         }
-        if let Some(new_surface) = updated {
-            if self.seat.is_keyboard_focused(new_surface) && !self.seat.constraints_suspended {
+        if let Some(new_surface) = updated
+            && self.seat.is_keyboard_focused(new_surface) && !self.seat.constraints_suspended {
                 with_pointer_constraint(new_surface, pointer, |c| {
-                    if let Some(c) = c {
-                        if !c.is_active() {
+                    if let Some(c) = c
+                        && !c.is_active() {
                             c.activate();
                         }
-                    }
                 });
             }
-        }
     }
 
     /// Raise the X11 window the pointer just entered to the top of the X stack.
@@ -579,14 +576,13 @@ impl Dispatch {
             self.clipboard.capture.advertised(),
             self.clipboard.capture.used()
         );
-        if let Some(xwm) = self.xwayland.xwm.as_mut() {
-            if let Err(err) = xwm.new_selection(
+        if let Some(xwm) = self.xwayland.xwm.as_mut()
+            && let Err(err) = xwm.new_selection(
                 smithay::wayland::selection::SelectionTarget::Clipboard,
                 Some(mime_types.clone()),
             ) {
                 warn!("failed to claim the x11 selection for the persisted clipboard: {err:?}");
             }
-        }
         smithay::wayland::selection::data_device::set_data_device_selection::<Dispatch>(
             &dh, &seat, mime_types, generation,
         );
@@ -633,17 +629,15 @@ impl Dispatch {
         pointer: &smithay::input::pointer::PointerHandle<Dispatch>,
     ) {
         self.seat.constraints_suspended = false;
-        if let Some(surface) = pointer.current_focus() {
-            if self.seat.is_keyboard_focused(&surface) {
+        if let Some(surface) = pointer.current_focus()
+            && self.seat.is_keyboard_focused(&surface) {
                 with_pointer_constraint(&surface, pointer, |c| {
-                    if let Some(c) = c {
-                        if !c.is_active() {
+                    if let Some(c) = c
+                        && !c.is_active() {
                             c.activate();
                         }
-                    }
                 });
             }
-        }
     }
 }
 
@@ -730,11 +724,10 @@ impl SeatHandler for Dispatch {
         //
         // Called even when nothing is focused (`None` → `_NET_ACTIVE_WINDOW` unset),
         // because that is the half that releases a fullscreen client.
-        if let Some(xwm) = self.xwayland.xwm.as_mut() {
-            if let Err(err) = xwm.set_active_window(newly.as_ref()) {
+        if let Some(xwm) = self.xwayland.xwm.as_mut()
+            && let Err(err) = xwm.set_active_window(newly.as_ref()) {
                 warn!("x11 set_active_window failed: {err:?}");
             }
-        }
 
         if let Some(pointer) = seat.get_pointer() {
             // Deactivate on whatever lost keyboard focus.
@@ -1093,8 +1086,7 @@ mod tablet_impls {
                 hotspot_y,
                 ..
             } = request
-            {
-                if let Some(status) =
+                && let Some(status) =
                     state
                         .tablet
                         .set_tool_cursor(tool, surface, (hotspot_x, hotspot_y).into())
@@ -1102,7 +1094,6 @@ mod tablet_impls {
                     state.seat.pointer_status = status;
                     state.schedule_redraw(RedrawReason::Cursor);
                 }
-            }
         }
         fn destroyed(state: &mut Self, _: ClientId, tool: &ZwpTabletToolV2, _: &()) {
             state.tablet.remove_tool_resource(&tool.id());
@@ -1474,12 +1465,9 @@ mod foreign_impls {
             _dh: &DisplayHandle,
             _di: &mut DataInit<'_, Self>,
         ) {
-            match request {
-                zwlr_foreign_toplevel_manager_v1::Request::Stop => {
-                    state.foreign.remove_manager(manager);
-                    manager.finished();
-                }
-                _ => {}
+            if let zwlr_foreign_toplevel_manager_v1::Request::Stop = request {
+                state.foreign.remove_manager(manager);
+                manager.finished();
             }
         }
         fn destroyed(
@@ -1655,11 +1643,10 @@ mod handler_impls {
                 return;
             }
             with_pointer_constraint(surface, pointer, |c| {
-                if let Some(c) = c {
-                    if !c.is_active() {
+                if let Some(c) = c
+                    && !c.is_active() {
                         c.activate();
                     }
-                }
             });
         }
         /// The ONE place a constraint going away is announced — a client destroying
@@ -2477,7 +2464,7 @@ mod handler_impls {
             dmabuf: Dmabuf,
             notifier: ImportNotifier,
         ) {
-            self.pending_dmabuf.push((global.clone(), dmabuf, notifier));
+            self.pending_dmabuf.push((*global, dmabuf, notifier));
         }
     }
     impl ToplevelDragHost for Dispatch {
@@ -2924,11 +2911,10 @@ pub mod xwm_impls {
             // window is the one kind that must never receive one: it told the X server
             // no WM may touch it, and unlike placement this cannot be overridden from
             // our side.
-            if !window.is_override_redirect() {
-                if let Err(err) = window.set_mapped(false) {
+            if !window.is_override_redirect()
+                && let Err(err) = window.set_mapped(false) {
                     warn!("x11 unmap failed: {err:?}");
                 }
-            }
             self.deferred.push(Deferred::WindowWithdrawn(window));
             self.schedule_redraw(RedrawReason::Unmap);
         }

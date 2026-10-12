@@ -13,9 +13,9 @@ where
     // Initialize Clipboard and Drag-and-Drop functionality.
     // Side-effect: Interacts with `calloop` heavily when users highlight text or drag files,
     // negotiating MIME types between two separate Wayland clients asynchronously.
-    let data_device_state = DataDeviceState::new::<I>(&display_handle);
+    let data_device_state = DataDeviceState::new::<I>(display_handle);
 
-    return Clipboard {
+    Clipboard {
         data_device_state,
         capture: Default::default(),
         // Started lazily by the drain on the first copy — it needs a loop handle.
@@ -23,5 +23,5 @@ where
         pending_capture: None,
         pending_sends: vec![],
         pending_focus: None,
-    };
+    }
 }

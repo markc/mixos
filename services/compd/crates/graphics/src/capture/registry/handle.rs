@@ -174,11 +174,10 @@ impl Drop for HandleInner {
             // The entry was extracted by `take`. Nothing to decref.
             return;
         }
-        if let Some(reg) = self.registry.upgrade() {
-            if let Ok(mut reg) = reg.lock() {
+        if let Some(reg) = self.registry.upgrade()
+            && let Ok(mut reg) = reg.lock() {
                 reg.decref(self.entry_id);
             }
-        }
     }
 }
 

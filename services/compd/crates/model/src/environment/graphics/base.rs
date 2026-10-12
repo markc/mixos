@@ -12,8 +12,10 @@ use std::sync::RwLock;
 
 /// Which anti-aliasing technique the textured (window + UI) arm uses.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub enum AaMethod {
     /// No AA — the plain composite path.
+    #[default]
     Off,
     /// In-shader N×N supersample (+ optional sharpen). No mip chain.
     Ssaa,
@@ -46,11 +48,6 @@ impl AaMethod {
     }
 }
 
-impl Default for AaMethod {
-    fn default() -> Self {
-        AaMethod::Off
-    }
-}
 
 /// A single tunable knob whose value scales with how far the view is zoomed out:
 /// `value = base + per_zoom · zoom_out`, where `zoom_out = 1/zoom − 1` (clamped).

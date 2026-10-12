@@ -55,9 +55,9 @@ pub fn create(info: &connector::Info, identity: &MonitorIdentity) -> Output {
         PhysicalProperties {
             size: Size::new(size_x as i32, size_y as i32),
             subpixel: Subpixel::Unknown,
-            make: identity.make.clone().into(),
-            model: identity.model.clone().into(),
-            serial_number: identity.serial.clone().into(),
+            make: identity.make.clone(),
+            model: identity.model.clone(),
+            serial_number: identity.serial.clone(),
         },
     )
 }
