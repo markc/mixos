@@ -58,14 +58,18 @@ fn services_changed(body: &str) -> bool {
         .is_none_or(|b| b["path"] == "services.registered")
 }
 
-/// Events the terminal takes from egui while it has the keyboard. Alt
-/// chords stay for the window's own keys.
+/// Events the terminal takes from egui while it has the keyboard, Alt
+/// chords included: Alt is the shell's Meta.
 fn takes(event: &Event) -> bool {
-    match event {
-        Event::Key { modifiers, .. } => !modifiers.alt,
-        Event::Text(_) | Event::Copy | Event::Cut | Event::Paste(_) | Event::Ime(_) => true,
-        _ => false,
-    }
+    matches!(
+        event,
+        Event::Key { .. }
+            | Event::Text(_)
+            | Event::Copy
+            | Event::Cut
+            | Event::Paste(_)
+            | Event::Ime(_)
+    )
 }
 
 pub struct Shell {
@@ -520,9 +524,6 @@ impl Shell {
                     modifiers,
                     ..
                 } => {
-                    if modifiers.alt {
-                        continue;
-                    }
                     self.app.modifiers_changed(modifiers);
                     if !pressed {
                         self.app.key_released(key);

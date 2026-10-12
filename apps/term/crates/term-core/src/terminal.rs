@@ -388,6 +388,12 @@ pub enum Key {
     PageUp,
     PageDown,
     Control(char),
+    /// A cursor key with xterm modifiers: CSI 1 ; `modifier` `code`, e.g.
+    /// Alt+Left is `code` b'D' with `modifier` 3.
+    Modified {
+        code: u8,
+        modifier: u8,
+    },
 }
 pub fn encode(key: Key) -> Vec<u8> {
     match key {
@@ -413,6 +419,11 @@ pub fn encode(key: Key) -> Vec<u8> {
         // Ctrl+[ ESC, Ctrl+\ FS, Ctrl+] GS, Ctrl+^ RS, Ctrl+_ US.
         Key::Control(c @ ('@' | '[' | '\\' | ']' | '^' | '_')) => vec![c as u8 & 0x1f],
         Key::Control(' ') => vec![0],
+        Key::Modified { code, modifier } => {
+            let mut bytes = format!("\x1b[1;{modifier}").into_bytes();
+            bytes.push(code);
+            bytes
+        }
         Key::Control(_) => Vec::new(),
     }
 }

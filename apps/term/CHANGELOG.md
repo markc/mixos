@@ -12,6 +12,10 @@ id), `app.describe`, the toolkit drive verbs (`term.ui.*`, `term.window`,
 `term.window.state`), and `term.command.executed`, published for every
 command run with how it was reached.
 
+Alt is Meta: ESC before the key (readline's Alt+b/f/., Alt+Backspace,
+Alt+Enter), and Alt+cursor keys send xterm's CSI 1;3 sequences.
+Ctrl+[ and the other control punctuation send their control codes.
+
 Program (OSC) titles now reach the tab strip without a `term.props.watch`
 watcher. Right Shift with Left/Right no longer changes tab: right-hand
 modifier chords are the person's own keys on MixOS.

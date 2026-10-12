@@ -107,10 +107,12 @@ fn chords_come_before_the_shell_and_repeats_are_filtered() {
     assert_eq!(read(), None);
     app.text("a");
     assert_eq!(read().as_deref(), Some(&b"a"[..]));
-    // Alt text is not the shell's.
+    // Alt is Meta: the shell gets ESC and the text.
     app.modifiers_changed(Modifiers::ALT);
     app.text("x");
-    assert_eq!(read(), None);
+    assert_eq!(read().as_deref(), Some(&b"\x1bx"[..]));
+    assert_eq!(app.key(Key::Backspace, Modifiers::ALT, false), None);
+    assert_eq!(read().as_deref(), Some(&b"\x1b\x7f"[..]));
     finish(app, reaper);
 }
 

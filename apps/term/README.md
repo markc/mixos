@@ -44,7 +44,8 @@ prints what was resolved.
 Panes: Ctrl+Shift+E/O split, Ctrl+Shift+X close, Ctrl+Shift+arrows,
 Tab/Shift+Tab or Ctrl+Tab between split panes. Clipboard: Ctrl+Shift+C/V,
 Shift+Insert. Font: Ctrl+plus/minus/0 and Ctrl+wheel. History:
-Shift+PageUp/PageDown/Home/End. Right-hand modifier chords are the
+Shift+PageUp/PageDown/Home/End. Alt is Meta (ESC before the key; Alt+cursor
+keys send xterm's CSI 1;3 sequences). Right-hand modifier chords are the
 person's own on MixOS and are not bound.
 
 ## Building and testing

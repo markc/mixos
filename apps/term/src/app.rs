@@ -563,11 +563,10 @@ impl App {
                 .alternate_screen()
     }
 
-    /// Typed text, for the shell unless a chord modifier is held.
+    /// Typed text: the shell's, ESC-prefixed under Alt (Meta), and
+    /// nothing under Ctrl (the key press carries the chord).
     pub fn text(&mut self, text: &str) {
-        if input::text_is_input(self.modifiers) {
-            self.send_keys(input::text_keys(text));
-        }
+        self.send_keys(input::typed(text, self.modifiers));
     }
 
     /// A copy, cut or paste event from the platform (see
@@ -579,8 +578,8 @@ impl App {
             _ => Key::V,
         };
         match input::clipboard_event(event, self.modifiers)? {
-            input::Clipboard::Key(key) => {
-                self.send_keys(vec![key]);
+            input::Clipboard::Keys(keys) => {
+                self.send_keys(keys);
                 None
             }
             // The platform repeats these with the key held; only the first

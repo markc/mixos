@@ -163,30 +163,45 @@ pub fn action_on_screen(action: Option<Action>, alternate: bool) -> Option<Actio
 /// What a clipboard event from the platform is. egui makes Ctrl+C, Ctrl+X
 /// and Ctrl+V into copy, cut and paste events whether or not Shift is held,
 /// so Shift decides: with it they are the terminal's chords, without it
-/// the shell's control codes.
+/// the shell's control codes (ESC-prefixed with Alt: Ctrl+Alt+C is ESC ^C).
 #[derive(Clone, Debug)]
 pub enum Clipboard {
     Action(Action),
     /// Paste this text (Ctrl+Shift+V: the platform has read the clipboard).
     Paste(String),
-    Key(TerminalKey),
+    Keys(Vec<TerminalKey>),
 }
 
 /// The meaning of `event` (Copy, Cut or Paste) under `modifiers`.
 pub fn clipboard_event(event: &egui::Event, modifiers: Modifiers) -> Option<Clipboard> {
+    let letter = match event {
+        egui::Event::Copy => 'c',
+        egui::Event::Cut => 'x',
+        egui::Event::Paste(_) => 'v',
+        _ => return None,
+    };
     if modifiers.alt {
-        return None;
+        return Some(Clipboard::Keys(meta(vec![TerminalKey::Control(letter)])));
     }
-    let shift = modifiers.shift;
     Some(match event {
-        egui::Event::Copy if shift => Clipboard::Action(Action::Copy),
-        egui::Event::Copy => Clipboard::Key(TerminalKey::Control('c')),
-        egui::Event::Cut if shift => Clipboard::Action(Action::ClosePane),
-        egui::Event::Cut => Clipboard::Key(TerminalKey::Control('x')),
-        egui::Event::Paste(text) if shift => Clipboard::Paste(text.clone()),
-        egui::Event::Paste(_) => Clipboard::Key(TerminalKey::Control('v')),
+        _ if !modifiers.shift => Clipboard::Keys(vec![TerminalKey::Control(letter)]),
+        egui::Event::Copy => Clipboard::Action(Action::Copy),
+        egui::Event::Cut => Clipboard::Action(Action::ClosePane),
+        egui::Event::Paste(text) => Clipboard::Paste(text.clone()),
         _ => return None,
     })
+}
+
+/// Alt as Meta: ESC before the keys (readline's Alt+b, Alt+., Alt+Backspace,
+/// a TUI's Alt+Enter).
+pub fn meta(keys: Vec<TerminalKey>) -> Vec<TerminalKey> {
+    if keys.is_empty() {
+        return keys;
+    }
+    let mut out = Vec::with_capacity(keys.len() + 1);
+    out.push(TerminalKey::Escape);
+    out.extend(keys);
+    out
 }
 
 /// Layout order is the pane tree's first-child/second-child traversal.
@@ -275,12 +290,23 @@ pub fn scroll_steps(pending: &mut f32, wheel: Wheel, cell_height: f32) -> i32 {
     steps as i32
 }
 
-/// The PTY keys one key press sends. Empty means "not ours" (Alt chords),
-/// or that the press types text, which arrives as its own event
-/// ([`text_keys`]).
+/// The PTY keys one key press sends. Empty means the press types text,
+/// which arrives as its own event ([`text_keys`], ESC-prefixed under Alt).
+///
+/// Alt is Meta, as in xterm with `metaSendsEscape`: ESC before the key's
+/// own bytes (Alt+Enter is ESC CR, Alt+Backspace ESC DEL, Ctrl+Alt+x
+/// ESC ^X), except the cursor keys, which carry the xterm modifier
+/// (Alt+Left is CSI 1;3D).
 pub fn keys_for(key: Key, modifiers: Modifiers) -> Vec<TerminalKey> {
     if modifiers.alt {
-        return Vec::new();
+        if let Some(code) = cursor_code(key) {
+            return vec![TerminalKey::Modified { code, modifier: 3 }];
+        }
+        let plain = Modifiers {
+            alt: false,
+            ..modifiers
+        };
+        return meta(keys_for(key, plain));
     }
     if modifiers.ctrl {
         // Ctrl is a chord, never text: the control code comes from the
@@ -314,6 +340,19 @@ fn control_punctuation(key: Key, shift: bool) -> Option<char> {
     })
 }
 
+/// The final byte of a cursor key's xterm sequence.
+fn cursor_code(key: Key) -> Option<u8> {
+    Some(match key {
+        Key::ArrowUp => b'A',
+        Key::ArrowDown => b'B',
+        Key::ArrowRight => b'C',
+        Key::ArrowLeft => b'D',
+        Key::Home => b'H',
+        Key::End => b'F',
+        _ => return None,
+    })
+}
+
 /// Typed text into PTY keys. Shared by key text and IME commits; format
 /// characters (ZWJ, variation selectors) are text, controls are not.
 pub fn text_keys(text: &str) -> Vec<TerminalKey> {
@@ -323,10 +362,15 @@ pub fn text_keys(text: &str) -> Vec<TerminalKey> {
         .collect()
 }
 
-/// Whether typed text under `modifiers` belongs to the shell. egui reports
-/// the text of Alt chords too; those are not ours.
-pub fn text_is_input(modifiers: Modifiers) -> bool {
-    !modifiers.alt && !modifiers.ctrl
+/// The keys typed text sends under `modifiers`: itself, ESC-prefixed
+/// under Alt (egui reports the text of Alt chords, the layout's character),
+/// nothing under Ctrl (the key press carries the chord).
+pub fn typed(text: &str, modifiers: Modifiers) -> Vec<TerminalKey> {
+    if modifiers.ctrl {
+        return Vec::new();
+    }
+    let keys = text_keys(text);
+    if modifiers.alt { meta(keys) } else { keys }
 }
 
 /// The lowercase ASCII letter a letter key stands for.
@@ -386,7 +430,7 @@ mod tests {
     #[test]
     fn clipboard_events_are_chords_with_shift_and_control_codes_without() {
         let codes = |event: &egui::Event| match clipboard_event(event, CTRL) {
-            Some(Clipboard::Key(key)) => encode(key),
+            Some(Clipboard::Keys(keys)) => keys.into_iter().flat_map(encode).collect::<Vec<_>>(),
             other => panic!("{other:?}"),
         };
         assert_eq!(codes(&egui::Event::Copy), [3]);
@@ -404,7 +448,11 @@ mod tests {
             clipboard_event(&egui::Event::Paste("hi".into()), ctrl_shift()),
             Some(Clipboard::Paste(text)) if text == "hi"
         ));
-        assert!(clipboard_event(&egui::Event::Copy, CTRL | ALT).is_none());
+        // Ctrl+Alt+C is Meta+^C.
+        assert!(matches!(
+            clipboard_event(&egui::Event::Copy, CTRL | ALT),
+            Some(Clipboard::Keys(keys)) if keys.into_iter().flat_map(encode).collect::<Vec<_>>() == [0x1b, 3]
+        ));
         // A driven Ctrl+Shift+C arrives as a key press: the same chord.
         assert_eq!(action_for(Key::C, ctrl_shift()), Some(Action::Copy));
         assert_eq!(action_for(Key::V, ctrl_shift()), Some(Action::Paste));
@@ -429,8 +477,47 @@ mod tests {
         // A letter key types through its text, not its key press.
         assert!(bytes(Key::A, NONE).is_empty());
         assert!(bytes(Key::Space, NONE).is_empty());
-        assert!(text_is_input(NONE) && text_is_input(SHIFT));
-        assert!(!text_is_input(ALT) && !text_is_input(CTRL));
+        let typed_bytes = |t: &str, m| typed(t, m).into_iter().flat_map(encode).collect::<Vec<_>>();
+        assert_eq!(typed_bytes("A", SHIFT), b"A");
+        assert!(
+            typed_bytes("a", CTRL).is_empty(),
+            "Ctrl is a chord, never text"
+        );
+    }
+
+    /// GLM review: Alt chords were dropped. Alt is Meta: ESC, then the
+    /// key's own bytes; cursor keys carry the xterm modifier.
+    #[test]
+    fn alt_is_meta() {
+        let typed_bytes = |t: &str, m| typed(t, m).into_iter().flat_map(encode).collect::<Vec<_>>();
+        // readline: Alt+b, Alt+f, Alt+. arrive as text with Alt held.
+        assert_eq!(typed_bytes("b", ALT), b"\x1bb");
+        assert_eq!(typed_bytes("f", ALT), b"\x1bf");
+        assert_eq!(typed_bytes(".", ALT), b"\x1b.");
+        assert_eq!(typed_bytes("B", ALT | SHIFT), b"\x1bB");
+        // Their key presses add nothing: the text carries them.
+        assert!(bytes(Key::B, ALT).is_empty());
+        assert!(bytes(Key::Space, ALT).is_empty());
+        assert_eq!(bytes(Key::Backspace, ALT), b"\x1b\x7f");
+        assert_eq!(bytes(Key::Enter, ALT), b"\x1b\r");
+        assert_eq!(bytes(Key::Escape, ALT), b"\x1b\x1b");
+        assert_eq!(bytes(Key::Tab, ALT), b"\x1b\t");
+        assert_eq!(bytes(Key::Delete, ALT), b"\x1b\x1b[3~");
+        assert_eq!(bytes(Key::X, CTRL | ALT), b"\x1b\x18");
+        assert_eq!(bytes(Key::OpenBracket, CTRL | ALT), b"\x1b\x1b");
+        for (key, sequence) in [
+            (Key::ArrowUp, b"\x1b[1;3A"),
+            (Key::ArrowDown, b"\x1b[1;3B"),
+            (Key::ArrowRight, b"\x1b[1;3C"),
+            (Key::ArrowLeft, b"\x1b[1;3D"),
+            (Key::Home, b"\x1b[1;3H"),
+            (Key::End, b"\x1b[1;3F"),
+        ] {
+            assert_eq!(bytes(key, ALT), sequence, "{key:?}");
+        }
+        // Alt chords are never the terminal's own.
+        assert_eq!(action_for(Key::T, ctrl_shift() | ALT), None);
+        assert_eq!(action_for(Key::Equals, CTRL | ALT), None);
     }
 
     #[test]
@@ -477,8 +564,6 @@ mod tests {
 
     #[test]
     fn chords_this_frontend_does_not_own_are_left_alone() {
-        assert!(bytes(Key::X, ALT).is_empty());
-        assert!(bytes(Key::Enter, ALT).is_empty());
         assert!(bytes(Key::F5, CTRL).is_empty());
         assert!(bytes(Key::Num1, CTRL).is_empty());
         assert_eq!(action_for(Key::T, ctrl_shift() | ALT), None);
