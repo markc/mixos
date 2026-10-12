@@ -143,7 +143,7 @@ mod tests {
         let mut ime = Composition::default();
         assert!(ime.preedit("a", Some(1)));
         ime.cancel();
-        assert!(ime.stale());
+        assert!(ime.stale() && ime.take_interrupt());
         assert!(!ime.preedit("", Some(2)));
         assert!(!ime.stale());
         assert!(ime.preedit("b", Some(2)));
