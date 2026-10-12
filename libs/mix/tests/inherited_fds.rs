@@ -78,10 +78,10 @@ async fn spawned_programs_never_see_inherited_descriptors() {
         let path = dir.join(route);
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         let text = loop {
-            if let Ok(text) = std::fs::read_to_string(&path) {
-                if !text.is_empty() {
-                    break text;
-                }
+            if let Ok(text) = std::fs::read_to_string(&path)
+                && !text.is_empty()
+            {
+                break text;
             }
             assert!(std::time::Instant::now() < deadline, "{route}: no listing");
             std::thread::sleep(std::time::Duration::from_millis(20));
