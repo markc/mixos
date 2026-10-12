@@ -284,6 +284,18 @@ impl Shell {
         &mut self.engine
     }
 
+    /// Hand on every delivery still in the inbox now, in order, as the
+    /// forwarder would: under the inbox lock it holds while it hands one on,
+    /// so these go in behind whatever it has already forwarded. For tests
+    /// whose next frame must see every delivery already sent.
+    #[doc(hidden)]
+    pub fn forward_pending(&self) {
+        let mut inbox = locked(&self.inbox);
+        while let Ok(delivery) = inbox.try_recv() {
+            let _ = self.tx.send(Event::Delivery(delivery));
+        }
+    }
+
     /// Apply every finished event, settling after each one. A Bus command
     /// is held, in order, while drive input accepted before it is still
     /// unanswered; completions are applied at once.

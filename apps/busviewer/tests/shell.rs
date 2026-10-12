@@ -295,6 +295,11 @@ fn an_injected_quit_answers_everything_before_the_bus_stops() {
     send(&mut rig, 2, "busviewer.ui.click", json!({"label":"File"}));
     send(&mut rig, 3, "busviewer.ui.capture", json!({}));
     send(&mut rig, 4, "busviewer.info", json!({}));
+    // All four reach the shell before its first frame, so the click and the
+    // capture are queued drive input when the quit runs (CANCELLED). Left to
+    // the forwarder thread, one could still be in flight then, and be
+    // refused as arriving while quitting (BUSY) instead.
+    rig.h.state().as_ref().unwrap().forward_pending();
     step_until(&mut rig, "the quit", |rig| quit_at(rig).is_some());
     let quit = quit_at(&rig).unwrap();
     for id in 1..=4 {
