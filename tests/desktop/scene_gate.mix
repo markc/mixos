@@ -663,8 +663,10 @@ for each $path in $docs
   if $src == nil then fail("S9: cannot read --doc " .. $path) end
   $name = nil
   $edge = nil
+  $model_src = "{}"
   for each $line in split(before(after($src, "---\n"), "\n---"), "\n")
     if starts_with($line, "name: ") then $name = trim(after($line, "name: ")) end
+    if starts_with($line, "model: ") then $model_src = after($line, "model: ") end
     if starts_with($line, "window: ") then $edge = json_parse(after($line, "window: ")).edge end
   end
   if $name == nil or $edge == nil then fail("S9: " .. $path .. " has no name or no edge window") end
@@ -709,11 +711,22 @@ for each $path in $docs
     $shown = $shown + 1
   end
   if $shown == 0 then fail("S9 " .. $name .. ": no node measured: " .. json_encode($D)) end
+  -- Every list bound to a non-empty model list (`rows: "= $model.KEY"`)
+  -- measured instances, its first row inside the surface: row templates are
+  -- not in `nodes`, so a broken row binding shows only here.
+  $model = json_parse($model_src)
   $rows = 0
-  for each $list, $insts in $D.instances ?? {}
-    for each $rid, $rect in $insts
-      $rows = $rows + 1
-    end
+  for each $id, $node in data_parse(before(after($src, "```mix\n"), "\n```"))
+    if $node.widget != "list" or type($node.rows) != "string" then continue end
+    $key = re_find($node.rows, '^= \$model\.([a-z_]+)$')
+    if len($key) == 0 then continue end
+    $want = $model[$key[0].groups[0]]
+    if type($want) != "list" or length($want) == 0 then continue end
+    $insts = ($D.instances ?? {})[$id] ?? {}
+    $first = $insts[to_string($want[0].id)]
+    $within = $first != nil and $first.x >= 0 and $first.y >= 0 and $first.x + $first.w <= $D.surface.w + 0.5 and $first.y + $first.h <= $D.surface.h + 0.5 and $first.w > 0 and $first.h > 0
+    if not $within then fail("S9 " .. $name .. ": list " .. $id .. " has " .. to_string(length($want)) .. " model rows but its first row is not measured inside the surface: " .. json_encode($insts)) end
+    $rows = $rows + length(keys($insts))
   end
   if not alive($cp) then fail("S9 " .. $name .. ": compd exited while drawing it") end
   $u = call($host, "shell.scene.unload", {scene: $name})

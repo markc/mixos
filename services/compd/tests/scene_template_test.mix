@@ -595,7 +595,16 @@ check(deep_eq($rd, {global: ["127.0.0.1"], links: {wlan0: ["192.0.2.1"]}}), "res
 check($net_lib.parse_resolved("nope") == nil, "resolved absent is nil")
 $rt = $net_lib.parse_routes([{dst: "default", gateway: "198.51.100.1", dev: "eth0", metric: 600}, {dst: "default", gateway: "192.0.2.254", dev: "wlan0", metric: 100}, {dst: "default"}])
 check(deep_eq($rt, [{gateway: "192.0.2.254", dev: "wlan0", metric: 100}, {gateway: "198.51.100.1", dev: "eth0", metric: 600}]), "routes: lowest metric first, a dev-less entry skipped")
+$ecmp = $net_lib.parse_routes([{dst: "default", metric: 50, flags: [], nexthops: [
+  {gateway: "192.0.2.1", dev: "eth0", weight: 1, flags: []}, {gateway: "198.51.100.1", dev: "eth1", weight: 1, flags: []}]}])
+check(deep_eq($ecmp, [{gateway: "192.0.2.1", dev: "eth0", metric: 50}, {gateway: "198.51.100.1", dev: "eth1", metric: 50}]), "routes: a multipath route is one route per nexthop")
 check($net_lib.sys_kind("no-such-link", "/nonexistent") == nil, "sysfs kind: a missing link is nil")
+-- Opening the popup re-reads (route and DNS changes raise no net_watch event).
+check($net_lib.popup_open({scenes: [{name: "calendar", open: true}, {name: "network", open: false}]}, "network") == false, "another popup open: not ours")
+check($net_lib.popup_open({scenes: [{name: "network", open: true}]}, "network") == true, "our popup open")
+check($net_lib.popup_open({}, "network") == nil and $net_lib.popup_open("x", "network") == nil, "an unreadable inventory is nil (re-read)")
+$net_behaviour = read_file($net_dir .. "/behaviour.mix")
+check(contains($net_behaviour, "subscribe(\"scenes.changed\")") and contains($net_behaviour, "$n.popup_open("), "the behaviour re-reads on open")
 
 $net_snap = {
   links: [{ifname: "lo", index: 1, loopback: true, up: true, wireless: false},

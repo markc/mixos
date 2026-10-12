@@ -67,16 +67,31 @@ fn parse_resolved($doc)
 end
 
 -- `ip -j route show default` -> [{gateway, dev, metric}], lowest metric first;
--- nil when ip did not answer.
+-- nil when ip did not answer. A multipath (ECMP) route has no top-level dev:
+-- each of its nexthops is a route at the same metric.
 fn parse_routes($doc)
   if type($doc) != "list" then return nil end
   $out = []
   for each $r in $doc
-    if type($r) == "map" and type($r.dev) == "string" then
-      push($out, {gateway: $r.gateway ?? "", dev: $r.dev, metric: $r.metric ?? 0})
+    if type($r) != "map" then continue end
+    $hops = type($r.dev) == "string" ? [$r] : (type($r.nexthops) == "list" ? $r.nexthops : [])
+    for each $h in $hops
+      if type($h) == "map" and type($h.dev) == "string" then
+        push($out, {gateway: $h.gateway ?? "", dev: $h.dev, metric: $r.metric ?? 0})
+      end
     end
   end
   return sort_by($out, function ($r) = $r.metric)
+end
+
+-- Whether the loader's scenes.changed inventory shows scene $name open:
+-- true or false, or nil when the inventory cannot be read.
+fn popup_open($inventory, $name)
+  if type($inventory) != "map" or type($inventory.scenes) != "list" then return nil end
+  for each $row in $inventory.scenes
+    if type($row) == "map" and $row.name == $name and $row.open == true then return true end
+  end
+  return false
 end
 
 -- One snapshot for models.network(). net_state() blocks for up to 2 s and

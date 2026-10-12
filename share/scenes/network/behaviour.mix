@@ -9,7 +9,7 @@ $m = require($LIB .. "/models.mix")
 $n = require($LIB .. "/network.mix")
 $ctx = $r.scene_context("network")
 $state = {ready: false, queued: false, sequence: 0, model: $m.network(nil),
-  watch: nil, started: 0, retry: 5, retrying: false}
+  watch: nil, started: 0, retry: 5, retrying: false, open: false}
 
 fn schedule()
   $state.sequence = $state.sequence + 1
@@ -99,6 +99,19 @@ on net.retry async
   schedule()
 end
 
+-- A route, metric or DNS change raises no link or address event (net_watch
+-- has no route source and resolved no watch here yet), so the popup also
+-- re-reads each time it opens. An inventory it cannot read re-reads too.
+on scenes.changed
+  $open = $n.popup_open($r.event_args($event), $ctx.name)
+  if $open == nil then
+    schedule()
+    return
+  end
+  if $open and not $state.open then schedule() end
+  $state.open = $open
+end
+
 on network.open
   $r.respond($r.popup($ctx, "open"))
 end
@@ -127,6 +140,7 @@ on bus.connected
   schedule()
 end
 subscribe(env("NODED_SERVICE", "noded") .. ".props.changed")
+subscribe("scenes.changed")
 $ready = $r.ready($ctx)
 if not $ready.ok then raise("SCENE_READY", json_encode($ready.value)) end
 $state.ready = true
