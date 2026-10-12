@@ -12,6 +12,12 @@ pub const MAX_PIXELS: u64 = 32 * 1024 * 1024;
 pub const MAX_OBJECTS: usize = 256;
 /// The most points one freehand stroke keeps.
 pub const MAX_POINTS: usize = 16_384;
+/// A stroke's width, in original-image pixels. Wide enough that a preset
+/// drawn on a large image shown scaled down (an 8K shot at fit) keeps the
+/// width it shows on screen.
+pub const WIDTH: std::ops::RangeInclusive<f32> = 0.5..=512.0;
+/// A text or marker size, in original-image pixels (as [`WIDTH`]).
+pub const TEXT_SIZE: std::ops::RangeInclusive<f32> = 8.0..=1024.0;
 const MAX_HISTORY: usize = 128;
 const MAX_DOCUMENT_POINTS: usize = 131_072;
 const MAX_HISTORY_BYTES: usize = 16 * 1024 * 1024;
@@ -135,8 +141,12 @@ impl Shape {
     }
 
     pub fn validate(&self) -> Result<(), String> {
-        if !self.width.is_finite() || !(0.5..=128.0).contains(&self.width) {
-            return Err("stroke width must be 0.5..128 pixels".into());
+        if !self.width.is_finite() || !WIDTH.contains(&self.width) {
+            return Err(format!(
+                "stroke width must be {}..{} pixels",
+                WIDTH.start(),
+                WIDTH.end()
+            ));
         }
         let count = self.points.len();
         if !(2..=MAX_POINTS).contains(&count)
@@ -152,9 +162,13 @@ impl Shape {
             }
             if self
                 .size
-                .is_none_or(|s| !s.is_finite() || !(8.0..=256.0).contains(&s))
+                .is_none_or(|s| !s.is_finite() || !TEXT_SIZE.contains(&s))
             {
-                return Err("text size must be 8..256 pixels".into());
+                return Err(format!(
+                    "text size must be {}..{} pixels",
+                    TEXT_SIZE.start(),
+                    TEXT_SIZE.end()
+                ));
             }
             match self.kind {
                 Kind::Text

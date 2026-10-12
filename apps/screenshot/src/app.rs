@@ -20,10 +20,39 @@ use annotation::library::Saved;
 use annotation::{Crop, Document, Kind, Point, Shape};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Localises a catalogue key; the shell supplies it.
 pub type Label = fn(&str) -> String;
+
+/// `path` as the status line and tips show it: under the home folder it
+/// reads `~/…`.
+pub fn shown_path(path: &Path) -> String {
+    shown_path_in(path, std::env::var_os("HOME").as_deref().map(Path::new))
+}
+
+/// `points` on screen, in image pixels at view `scale` (view points per
+/// image pixel), held inside the engine's `limits`.
+pub fn to_image(points: f32, scale: f32, limits: &std::ops::RangeInclusive<f32>) -> f32 {
+    let scale = if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
+    };
+    (points / scale).clamp(*limits.start(), *limits.end())
+}
+
+/// [`shown_path`] with `home` given.
+pub fn shown_path_in(path: &Path, home: Option<&Path>) -> String {
+    match home
+        .filter(|h| h.is_absolute() && h.parent().is_some())
+        .and_then(|h| path.strip_prefix(h).ok())
+    {
+        Some(rest) if rest.as_os_str().is_empty() => "~".into(),
+        Some(rest) => format!("~/{}", rest.display()),
+        None => path.display().to_string(),
+    }
+}
 
 /// What a press on the picture does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -323,6 +352,10 @@ pub struct App {
     pub inks: [Ink; 6],
     /// Command ids Bus verbs ran, for `<service>.command.executed`.
     pub ran: Vec<&'static str>,
+    /// View points per image pixel as the picture was last laid out (1
+    /// until it is): a new object's width and text size are converted
+    /// with it.
+    pub view_scale: f32,
     job: Option<Job>,
     pending: Option<Pending>,
     effects: Vec<Effect>,
@@ -366,6 +399,7 @@ impl App {
             comp: "comp".into(),
             inks,
             ran: Vec::new(),
+            view_scale: 1.0,
             job: None,
             pending: None,
             effects: Vec::new(),
@@ -582,7 +616,13 @@ impl App {
         self.supersede();
         let focus = !self.headless && reply.is_none();
         let ticket = self.start(JobKind::Capture, reply);
-        self.status = self.label("capturing");
+        // A region waits on the person: say what to do before the window
+        // hides (compd's selection overlay carries no text).
+        self.status = self.label(if request.mode == Mode::Region {
+            "region-hint"
+        } else {
+            "capturing"
+        });
         self.effects.push(Effect::Capture {
             ticket,
             request,
@@ -618,7 +658,7 @@ impl App {
             return;
         }
         if !self.unsaved() {
-            let path = self.saved.as_ref().map(|s| s.path.display().to_string());
+            let path = self.saved.as_ref().map(|s| shown_path(&s.path));
             self.status =
                 crate::label_with("already-saved", &[("path", &path.unwrap_or_default())]);
             return;
@@ -863,22 +903,56 @@ impl App {
         self.effects.push(Effect::Refresh);
     }
 
-    /// The ink `colour` for new objects, and for the selected one.
+    /// The ink `colour` for new objects, and for the selected one (which
+    /// keeps its width).
     pub fn set_colour(&mut self, colour: [u8; 4]) {
         if self.modal() {
             return;
         }
         self.ui.colour = colour;
-        self.restyle();
+        self.restyle(false);
     }
 
-    /// The stroke width for new objects, and for the selected one.
+    /// The stroke width (a preset, in view points) for new objects, and
+    /// for the selected one.
     pub fn set_width(&mut self, width: f32) {
         if self.modal() || !(0.5..=128.0).contains(&width) {
             return;
         }
         self.ui.width = width;
-        self.restyle();
+        self.restyle(true);
+    }
+
+    /// How many view points one image pixel takes on screen now; the view
+    /// reports it as it lays the picture out.
+    pub fn set_view_scale(&mut self, scale: f32) {
+        if scale.is_finite() && scale > 0.0 {
+            self.view_scale = scale;
+        }
+    }
+
+    /// The width a new or restyled object takes, in image pixels: the
+    /// chosen width as it shows on screen at the current view scale, so a
+    /// stroke looks the same whatever the image's size.
+    pub fn stroke_width(&self) -> f32 {
+        self.stroke_width_at(self.view_scale)
+    }
+
+    /// [`App::stroke_width`] at view `scale` (a gesture passes its own
+    /// frame's).
+    pub fn stroke_width_at(&self, scale: f32) -> f32 {
+        to_image(self.ui.width, scale, &annotation::document::WIDTH)
+    }
+
+    /// The text size a new text box or marker takes, in image pixels (as
+    /// [`App::stroke_width`]).
+    pub fn text_px(&self) -> f32 {
+        self.text_px_at(self.view_scale)
+    }
+
+    /// [`App::text_px`] at view `scale`.
+    pub fn text_px_at(&self, scale: f32) -> f32 {
+        to_image(self.ui.text_size, scale, &annotation::document::TEXT_SIZE)
     }
 
     pub fn set_text_size(&mut self, size: f32) {
@@ -899,18 +973,24 @@ impl App {
         }
     }
 
-    fn restyle(&mut self) {
+    /// Give the selected object the ink and, with `width`, the chosen
+    /// width converted as for a new object; otherwise it keeps its own.
+    fn restyle(&mut self, width: bool) {
         if !self.editable() {
             return;
         }
-        let (colour, width) = (self.ui.colour, self.ui.width);
+        let colour = self.ui.colour;
+        let new_width = width.then(|| self.stroke_width());
         if let (Some(id), Some(doc)) = (self.ui.selected, self.document.as_mut())
-            && doc
-                .object(id)
-                .is_some_and(|o| o.shape.colour != colour || o.shape.width != width)
-            && doc.restyle(id, colour, width).is_ok()
+            && let Some((had_colour, had_width)) =
+                doc.object(id).map(|o| (o.shape.colour, o.shape.width))
         {
-            self.changed();
+            let width = new_width.unwrap_or(had_width);
+            if (had_colour != colour || had_width != width)
+                && doc.restyle(id, colour, width).is_ok()
+            {
+                self.changed();
+            }
         }
     }
 
@@ -930,12 +1010,14 @@ impl App {
 
     // ---- gestures ----------------------------------------------------------
 
-    /// Add `shape` (from a drag): text and markers take the controls' text,
-    /// size and next number. The new object is selected.
+    /// Add `shape` (from a drag): text and markers take the controls' text
+    /// and next number, and the converted text size unless the gesture
+    /// already set it at its own frame's scale. The new object is selected.
     pub fn add_shape(&mut self, mut shape: Shape) {
         if !self.editable() {
             return;
         }
+        let size = shape.size.unwrap_or_else(|| self.text_px());
         match shape.kind {
             Kind::Text => {
                 if self.ui.text.trim().is_empty() {
@@ -943,7 +1025,7 @@ impl App {
                     return;
                 }
                 shape.text = Some(self.ui.text.clone());
-                shape.size = Some(self.ui.text_size);
+                shape.size = Some(size);
             }
             Kind::Number => {
                 shape.number = self.document.as_ref().and_then(Document::next_number);
@@ -951,7 +1033,7 @@ impl App {
                     self.status = self.label("marker-limit");
                     return;
                 }
-                shape.size = Some(self.ui.text_size);
+                shape.size = Some(size);
             }
             _ => {}
         }
@@ -1076,7 +1158,13 @@ impl App {
                 Err((code::CANCELLED, error))
             }
             Err(error) => {
-                self.fail(&error);
+                // The selection's own endings read as what happened; the
+                // Bus answer keeps compd's words.
+                match crate::capture::selection_ending(&error) {
+                    Some("timeout") => self.status = self.label("nothing-selected"),
+                    Some("cancelled") => self.status = self.label("cancelled"),
+                    _ => self.fail(&error),
+                }
                 Err((code::FAILED, error))
             }
         };
@@ -1132,8 +1220,9 @@ impl App {
                 }
                 // The pixels are kept in the saved file now.
                 self.release_capture();
-                self.status =
-                    crate::label_with("saved-to", &[("path", &saved.path.display().to_string())]);
+                // The status line names the file, so the person sees where
+                // it went.
+                self.status = crate::label_with("saved-to", &[("path", &shown_path(&saved.path))]);
                 let body = serde_json::to_value(&saved).unwrap_or(Value::Null);
                 self.effects.push(Effect::Publish {
                     suffix: "saved",
@@ -2102,6 +2191,87 @@ mod tests {
     }
 
     #[test]
+    fn a_width_looks_the_same_on_screen_whatever_the_image_size() {
+        // A 4K shot and a small region in the same canvas: the chosen width
+        // and text size show at the same view-point size on both.
+        for (w, h) in [(3840, 2160), (1513, 1023)] {
+            let mut a = app();
+            a.document = Some(Document::new(RgbaImage::new(w, h)).unwrap());
+            let vp = annotation::Viewport::fit((w, h), (1040.0, 590.0), 1.0, a.ui.pan);
+            a.set_view_scale(vp.scale);
+            for (_, _, width) in WIDTHS {
+                a.set_width(width);
+                assert!(
+                    (a.stroke_width() * vp.scale - width).abs() < 1e-3,
+                    "{w}x{h}"
+                );
+            }
+            for (_, _, size) in SIZES {
+                a.set_text_size(size);
+                assert!((a.text_px() * vp.scale - size).abs() < 1e-3, "{w}x{h}");
+            }
+        }
+        // The 4K image needs more than the old 128 / 256 pixel limits.
+        let mut a = app();
+        a.set_view_scale(0.25);
+        a.set_width(WIDTHS[3].2);
+        a.set_text_size(SIZES[3].2);
+        assert_eq!((a.stroke_width(), a.text_px()), (64.0, 256.0));
+        a.set_view_scale(0.1);
+        assert_eq!((a.stroke_width(), a.text_px()), (160.0, 640.0));
+        // Past the engine's limits the value is held inside them.
+        a.set_view_scale(0.001);
+        assert_eq!((a.stroke_width(), a.text_px()), (512.0, 1024.0));
+        a.set_view_scale(100.0);
+        assert_eq!((a.stroke_width(), a.text_px()), (0.5, 8.0));
+        // A nonsense scale is ignored.
+        a.set_view_scale(f32::NAN);
+        a.set_view_scale(0.0);
+        assert_eq!(a.view_scale, 100.0);
+    }
+
+    #[test]
+    fn new_objects_take_the_converted_width_and_old_ones_keep_theirs() {
+        let mut a = with_doc();
+        a.set_view_scale(0.5);
+        a.add_shape(Shape::new(
+            Kind::Rectangle,
+            vec![Point { x: 2.0, y: 2.0 }, Point { x: 20.0, y: 20.0 }],
+            a.ui.colour,
+            a.stroke_width(),
+        ));
+        let first = a.ui.selected.unwrap();
+        let width = |a: &App, id| a.document.as_ref().unwrap().object(id).unwrap().shape.width;
+        assert_eq!(width(&a, first), 8.0, "medium (4) at half scale");
+        // Text takes the converted size.
+        a.set_text("Note".into());
+        let mut text = rect();
+        text.kind = Kind::Text;
+        a.add_shape(text);
+        let note = a.ui.selected.unwrap();
+        let size = a
+            .document
+            .as_ref()
+            .unwrap()
+            .object(note)
+            .unwrap()
+            .shape
+            .size;
+        assert_eq!(size, Some(48.0), "medium text (24) at half scale");
+        // Zooming in changes nothing already drawn, and a new ink keeps
+        // the selection's width.
+        a.set_view_scale(2.0);
+        a.select(Some(first));
+        a.set_colour(a.inks[2].rgba);
+        assert_eq!(width(&a, first), 8.0);
+        // A new width restyles the selection converted at today's scale.
+        a.set_width(WIDTHS[3].2);
+        assert_eq!(width(&a, first), 8.0, "heavy (16) at double scale");
+        a.set_width(WIDTHS[0].2);
+        assert_eq!(width(&a, first), 1.0, "thin (2) at double scale");
+    }
+
+    #[test]
     fn the_ui_state_round_trips_and_tools_go_by_name() {
         let a = app();
         let text = serde_json::to_string(&a.ui).unwrap();
@@ -2460,6 +2630,94 @@ mod tests {
             !Request::default().cursor,
             "the pointer is off unless asked"
         );
+    }
+
+    #[test]
+    fn a_persons_capture_comes_back_focused_by_every_route() {
+        let focused = |effects: Vec<Effect>| {
+            effects.iter().any(|e| {
+                matches!(
+                    e,
+                    Effect::Capture {
+                        focus: true,
+                        hide: true,
+                        ..
+                    }
+                )
+            })
+        };
+        // The Take button and Ctrl+N.
+        let commands = crate::commands::registry();
+        let mut a = app();
+        commands
+            .execute("capture.take", &mut a, toolkit::command::Origin::Ui)
+            .unwrap();
+        assert!(focused(a.take_effects()), "the Take button");
+        // Print Screen forwarded to a running window.
+        let mut a = app();
+        a.command(1, "screenshot.take", r#"{"mode":"region"}"#);
+        assert!(focused(a.take_effects()), "Print Screen");
+        // `--capture` at launch.
+        let mut a = app();
+        a.take(Some(Mode::Screen));
+        assert!(focused(a.take_effects()), "--capture");
+    }
+
+    #[test]
+    fn a_region_capture_says_what_to_do_and_a_timeout_says_nothing_was_selected() {
+        let mut a = app();
+        a.take(Some(Mode::Region));
+        let ticket = ticket_of(&a.take_effects());
+        assert_eq!(a.status, crate::label("region-hint"));
+        a.captured_job(ticket, Err("selection timeout".into()), false, false);
+        assert_eq!(a.status, crate::label("nothing-selected"));
+        a.take(Some(Mode::Region));
+        let ticket = ticket_of(&a.take_effects());
+        a.captured_job(ticket, Err("selection cancelled".into()), false, false);
+        assert_eq!(a.status, crate::label("cancelled"));
+        // Any other failure still says what went wrong.
+        a.take(Some(Mode::Screen));
+        let ticket = ticket_of(&a.take_effects());
+        assert_eq!(a.status, crate::label("capturing"));
+        a.captured_job(ticket, Err("Bus down".into()), false, false);
+        assert!(a.status.ends_with("Bus down"), "{}", a.status);
+    }
+
+    #[test]
+    fn a_save_names_the_file_it_wrote() {
+        let mut a = with_doc();
+        a.save();
+        let ticket = ticket_of(&a.take_effects());
+        let path =
+            PathBuf::from("/home/user/Pictures/Screenshots/Screenshot 2026-10-13 09-00-00.png");
+        a.saved(
+            ticket,
+            Ok(Saved {
+                path: path.clone(),
+                width: 100,
+                height: 80,
+                annotated: false,
+                saved_at: "2026-10-13T09:00:00+10:00".into(),
+            }),
+        );
+        assert_eq!(
+            a.status,
+            crate::label_with("saved-to", &[("path", &shown_path(&path))])
+        );
+        assert!(a.status.ends_with("Screenshot 2026-10-13 09-00-00.png"));
+        assert_eq!(
+            shown_path_in(&path, Some(Path::new("/home/user"))),
+            "~/Pictures/Screenshots/Screenshot 2026-10-13 09-00-00.png"
+        );
+        assert_eq!(
+            shown_path_in(&path, Some(Path::new("/home/other"))),
+            path.display().to_string()
+        );
+        assert_eq!(
+            shown_path_in(&path, Some(Path::new("/"))),
+            path.display().to_string()
+        );
+        assert_eq!(shown_path_in(&path, None), path.display().to_string());
     }
 
     #[test]

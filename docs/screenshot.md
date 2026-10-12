@@ -30,6 +30,13 @@ the windows again. With more than one display, the same place offers the
 **output**: the one under the pointer, or a named one (also
 **Capture › Output**). The **Capture** menu also has a delay (3, 5 or 10
 seconds) and **Include pointer**, which is off unless you turn it on.
+For a region, the status line says "Drag to select an area · Esc to
+cancel" as the window hides; compd then outlines the screen until you
+drag. A left drag selects, Escape or the right button cancels, and a click
+without a drag keeps the selection waiting. If you select nothing before
+compd's limit, the window comes back saying "Nothing was selected".
+Whatever happens, a shot you asked for brings the window back on top and
+focused.
 Escape or **Capture › Cancel** stops a shot that is waiting out its delay.
 A second Print while a shot is being taken is answered "already being
 taken" in the window's status line.
@@ -56,7 +63,15 @@ nothing else held:
 The bar at the top sets the **ink** (red, amber, green, teal, black or
 white), the **stroke width**, and for text and markers the **text size**.
 Changing the ink or width while an annotation is selected changes that
-annotation too.
+annotation too. In a narrow window, the controls that don't fit are left
+out of the bar; **Annotate** still has them all.
+
+Widths and text sizes are what you see: a Medium line is the same
+thickness on screen whether the shot is a 4K screen shown scaled down or a
+small region shown full size. Each annotation keeps the size it was drawn
+at in the image's own pixels, so zooming later makes it bigger or smaller
+with the picture, and changing only the ink never changes its width. To
+an agent, `width` and `size` are in the image's pixels (up to 512 and 1024).
 
 Delete or Backspace removes the selected annotation, and Escape deselects
 it. Undo is Ctrl+Z and
@@ -65,11 +80,15 @@ picture to the window, the wheel scrolls, and a middle-button drag pans.
 
 ## Saving
 
+Once there is a picture, **Copy** and **Save** buttons sit at the right
+end of the bar at the top; Save's tip names the folder it saves to.
+
 - **Save** (Ctrl+S) writes the picture straight into
   **Pictures/Screenshots**, no questions asked, as
   `Screenshot 2026-10-12 14-03-22.png` (the date and time you saved). If
   that name is taken, the new file gets ` (2)`, ` (3)` and so on.
-  Screenshot never overwrites a file.
+  Screenshot never overwrites a file. The status line then says
+  "Saved to ~/Pictures/Screenshots/…" with the file's name.
 - **Save As…** (Ctrl+Shift+S) asks for a path, proposing one in
   Pictures/Screenshots (created if missing). It refuses one that already
   exists.
