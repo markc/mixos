@@ -186,7 +186,7 @@ fn stderr_stdout_merge_follows_inherited_stdout_not_parent_stderr() {
     assert!(stdout.contains("ok=true"), "stdout={stdout:?}");
 }
 
-/// The deadline must also bound the stdin WRITER. `sh -c "sleep 5 <&0 >/dev/null 2>/dev/null & exit 0"`
+/// The deadline must also bound the stdin WRITER. `sh -c "exec 3<&0; sleep 5 <&3 3<&- >/dev/null 2>/dev/null & exit 0"`
 /// exits immediately but leaves a descendant in the same process group holding
 /// the stdin read end without reading it, so a payload larger than the pipe
 /// buffer blocks the writer. Every direct child has exited, so the wait loop
@@ -194,14 +194,17 @@ fn stderr_stdout_merge_follows_inherited_stdout_not_parent_stderr() {
 /// the call returned only when the descendant happened to exit — here ten times
 /// past its 0.5 s deadline, reporting `ok: true, timed_out: false`. With a
 /// descendant that sleeps for an hour, that is an hour-long wedge.
+/// Stdin goes through fd 3 because dash (Debian's and Ubuntu's `sh`) gives an
+/// asynchronous list /dev/null before applying `<&0`, so `<&0` alone would
+/// hold nothing; `<&3` reaches the real stdin in every POSIX shell.
 #[test]
 fn stdin_writer_cannot_outlive_the_deadline() {
     let (stdout, stderr) = run_script(
         "stdin-writer-deadline",
-        "$a = run_argv([\"sh\", \"-c\", \"sleep 5 <&0 >/dev/null 2>/dev/null & exit 0\"], \
+        "$a = run_argv([\"sh\", \"-c\", \"exec 3<&0; sleep 5 <&3 3<&- >/dev/null 2>/dev/null & exit 0\"], \
              {stdin: repeat(\"x\", 1000000), timeout: 0.5})\n\
          print(\"argv \" .. $a.ok .. \" \" .. $a.timed_out)\n\
-         $p = run_pipeline([{argv: [\"sh\", \"-c\", \"sleep 5 <&0 >/dev/null 2>/dev/null & exit 0\"], \
+         $p = run_pipeline([{argv: [\"sh\", \"-c\", \"exec 3<&0; sleep 5 <&3 3<&- >/dev/null 2>/dev/null & exit 0\"], \
              stdin: repeat(\"x\", 1000000)}, [\"cat\"]], {timeout: 0.5})\n\
          print(\"pipeline \" .. $p.ok .. \" \" .. $p.timed_out)\n",
         Duration::from_secs(20),

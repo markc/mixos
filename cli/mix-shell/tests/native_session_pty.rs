@@ -16,7 +16,7 @@ use session_fd::{LaunchFd, fresh_key};
 use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{Read, Write};
-use std::os::fd::FromRawFd;
+use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -24,6 +24,9 @@ use test_broker::Broker;
 use test_broker::session_fd;
 
 static FIXTURE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// The stray descriptor the fixture hands the shell (see `spawn`).
+const STRAY_FD: i32 = 142;
 fn fixture_guard() -> std::sync::MutexGuard<'static, ()> {
     FIXTURE_LOCK
         .lock()
@@ -351,12 +354,20 @@ impl Child {
             .stdout(slave.try_clone().unwrap())
             .stderr(slave);
         let (source, target) = launch.mapping();
+        // The shell also inherits a stray descriptor without close-on-exec,
+        // as CI runners hand them out (fd 142 on GitHub's). Nothing the shell
+        // spawns as a task may see it.
+        let stray = File::open("/dev/null").unwrap();
+        let stray_fd = stray.as_raw_fd();
         unsafe {
             command.pre_exec(move || {
                 if libc::setsid() < 0 || libc::ioctl(0, libc::TIOCSCTTY, 0) < 0 {
                     return Err(std::io::Error::last_os_error());
                 }
                 if libc::dup2(source, target) < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                if libc::dup2(stray_fd, STRAY_FD) < 0 {
                     return Err(std::io::Error::last_os_error());
                 }
                 Ok(())
@@ -2570,6 +2581,11 @@ fn p4_a_task_inherits_only_what_it_was_given() {
         for expected in [0, 1, 2] {
             assert!(open.contains(&expected), "fd {expected} missing: {listed}");
         }
+        eprintln!("PROBE task fds: {listed:?}");
+        assert!(
+            !open.contains(&STRAY_FD),
+            "the shell's inherited fd {STRAY_FD} leaked into the task: {listed}"
+        );
         assert!(
             open.len() <= 4,
             "a descriptor leaked into the task: {listed}"
