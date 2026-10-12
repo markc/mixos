@@ -2496,9 +2496,16 @@ mod tests {
     #[test]
     fn a_persons_capture_comes_back_focused_by_every_route() {
         let focused = |effects: Vec<Effect>| {
-            effects
-                .iter()
-                .any(|e| matches!(e, Effect::Capture { focus: true, hide: true, .. }))
+            effects.iter().any(|e| {
+                matches!(
+                    e,
+                    Effect::Capture {
+                        focus: true,
+                        hide: true,
+                        ..
+                    }
+                )
+            })
         };
         // The Take button and Ctrl+N.
         let commands = crate::commands::registry();
@@ -2542,7 +2549,8 @@ mod tests {
         let mut a = with_doc();
         a.save();
         let ticket = ticket_of(&a.take_effects());
-        let path = PathBuf::from("/home/user/Pictures/Screenshots/Screenshot 2026-10-13 09-00-00.png");
+        let path =
+            PathBuf::from("/home/user/Pictures/Screenshots/Screenshot 2026-10-13 09-00-00.png");
         a.saved(
             ticket,
             Ok(Saved {
@@ -2566,7 +2574,10 @@ mod tests {
             shown_path_in(&path, Some(Path::new("/home/other"))),
             path.display().to_string()
         );
-        assert_eq!(shown_path_in(&path, Some(Path::new("/"))), path.display().to_string());
+        assert_eq!(
+            shown_path_in(&path, Some(Path::new("/"))),
+            path.display().to_string()
+        );
         assert_eq!(shown_path_in(&path, None), path.display().to_string());
     }
 

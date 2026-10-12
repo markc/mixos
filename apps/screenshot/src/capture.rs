@@ -640,10 +640,7 @@ pub(crate) mod tests {
         assert_eq!(frame["output_generation"], 3);
         assert_eq!(frame["region"]["width"], 30);
         // A person's capture: restored activated, then raised and focused.
-        assert_eq!(
-            calls[5].1,
-            json!({"id":4,"generation":9,"activate":true})
-        );
+        assert_eq!(calls[5].1, json!({"id":4,"generation":9,"activate":true}));
         assert_eq!(calls[6].1, json!({"id":4,"generation":9,"raise":true}));
     }
 
