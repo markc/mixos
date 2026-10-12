@@ -435,10 +435,76 @@ for each $w in $WHOLE_ARMS
   end
 end
 
+-- ── arms 11–13: what a drag in progress becomes ──────────────────────────
+-- Escape mid-drag cancels, and the release that follows selects nothing over
+-- it; Enter mid-drag takes the whole output; a drag that comes back to its
+-- start is still a drag, never a click.
+fn press_drag($x2, $y2)
+  point(300, 200)
+  sleep(0.1)
+  button("left", "press")
+  sleep(0.1)
+  point($x2, $y2)
+  sleep(0.1)
+  return 0
+end
+
+settle(10)
+$p11 = start_selector("drag-escape", {timeout_ms: 20000})
+sleep(1.0)
+press_drag(600, 450)
+key("Escape", "press")
+sleep(0.1)
+key("Escape", "release")
+sleep(0.1)
+button("left", "release")
+$r11 = await_selector($p11, 25)
+if $r11 == nil or $r11.value == nil or to_string($r11.value.status) != "cancelled" then
+  push($FAILURES, "drag-escape")
+  fail("drag-escape", "expected cancelled: " .. (($r11 ?? {body: "no reply"}).body))
+else
+  note("arm 11 escape mid-drag cancelled; the release after it selected nothing")
+end
+
+settle(10)
+$p12 = start_selector("drag-enter", {timeout_ms: 20000})
+sleep(1.0)
+press_drag(600, 450)
+key("Return", "press")
+sleep(0.1)
+key("Return", "release")
+sleep(0.1)
+button("left", "release")
+$r12 = await_selector($p12, 25)
+if $r12 == nil or $r12.value == nil or to_string($r12.value.status) != "selected" or $FULL == nil or not same_region($r12.value.region, $FULL.region) then
+  push($FAILURES, "drag-enter")
+  fail("drag-enter", "expected the whole output: " .. (($r12 ?? {body: "no reply"}).body))
+else
+  note("arm 12 enter mid-drag selected the whole output")
+end
+
+settle(10)
+$p13 = start_selector("drag-return", {timeout_ms: 20000})
+sleep(1.0)
+press_drag(600, 450)
+point(302, 202)
+sleep(0.1)
+button("left", "release")
+$r13 = await_selector($p13, 25)
+if $r13 == nil or $r13.value == nil or to_string($r13.value.status) != "selected" then
+  push($FAILURES, "drag-return")
+  fail("drag-return", "expected the drag's own rectangle: " .. (($r13 ?? {body: "no reply"}).body))
+elif $r13.value.region.x != 300 or $r13.value.region.y != 200 or $r13.value.region.width != 2 or $r13.value.region.height != 2 then
+  push($FAILURES, "drag-return")
+  fail("drag-return", "a drag back to its start was not its own rectangle: " .. json_encode($r13.value.region))
+else
+  note("arm 13 a drag back to its start stayed a drag: " .. json_encode($r13.value.region))
+end
+
 $n.stop($SESSION)
 print("")
 if len($FAILURES) == 0 then
-  print("=== REGION SELECT GATE [" .. $KIND .. "]: GREEN — 10 arms, every one answered ===")
+  print("=== REGION SELECT GATE [" .. $KIND .. "]: GREEN — 13 arms, every one answered ===")
   $CLEANUP.ok = true
   exit(0)
 end

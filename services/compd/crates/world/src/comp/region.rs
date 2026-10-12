@@ -70,8 +70,8 @@ pub struct Run {
     /// The output's logical size.
     pub bounds: (f64, f64),
     pub scale: f64,
-    /// Where the left button went down (output-local logical).
-    pub start: Option<(f64, f64)>,
+    /// The left button, while it is down.
+    pub press: Option<Press>,
     pub pointer: (f64, f64),
     pub deadline: Instant,
     /// The latest a selected reply may wait for its clean frame.
@@ -207,13 +207,37 @@ pub fn whole(bounds: (f64, f64)) -> Option<[i32; 4]> {
     normalise(bounds, (0.0, 0.0), bounds)
 }
 
-/// What a left release selects: the dragged rectangle, the whole output for
-/// a click, or nothing for a line (the selection stays armed).
-pub fn release(bounds: (f64, f64), start: (f64, f64), end: (f64, f64)) -> Option<[i32; 4]> {
-    if dragged(start, end) {
-        normalise(bounds, start, end)
-    } else {
-        whole(bounds)
+/// The left button while it is down: where it went down (output-local
+/// logical) and whether the pointer has ever left the click slop since. Once
+/// a press is a drag it stays one, even back at its start.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Press {
+    pub start: (f64, f64),
+    pub dragging: bool,
+}
+
+impl Press {
+    pub fn new(start: (f64, f64)) -> Self {
+        Self {
+            start,
+            dragging: false,
+        }
+    }
+
+    /// The pointer moved to `to` with the button down.
+    pub fn moved(&mut self, to: (f64, f64)) {
+        self.dragging = self.dragging || dragged(self.start, to);
+    }
+
+    /// What releasing at `end` selects: the dragged rectangle, the whole
+    /// output for a click, or nothing for a line (the selection stays armed).
+    pub fn release(mut self, bounds: (f64, f64), end: (f64, f64)) -> Option<[i32; 4]> {
+        self.moved(end);
+        if self.dragging {
+            normalise(bounds, self.start, end)
+        } else {
+            whole(bounds)
+        }
     }
 }
 
@@ -251,6 +275,9 @@ pub fn motion(lp: &mut Loop, position: (f64, f64)) {
         position.1.clamp(0.0, run.bounds.1),
     );
     run.pointer = position;
+    if let Some(press) = run.press.as_mut() {
+        press.moved(position);
+    }
     let physical = Point::<f64, Physical>::from((position.0 * run.scale, position.1 * run.scale));
     lp.inner.pointer_mut().motion.x = physical.x;
     lp.inner.pointer_mut().motion.y = physical.y;
@@ -278,7 +305,12 @@ pub fn motion(lp: &mut Loop, position: (f64, f64)) {
 pub fn button(lp: &mut Loop, button: u32, pressed: bool) -> bool {
     let region = &mut lp.inner.comp.region;
     if !region.suspended() {
-        // A release of a button the run took is swallowed after it ends.
+        // Decided already (Escape or Enter mid-drag): the press is dropped and
+        // its release, swallowed, selects nothing; nor does any release of a
+        // button the run took after it ends.
+        if let Some(run) = region.run.as_mut() {
+            run.press = None;
+        }
         return !pressed && region.buttons.remove(&button);
     }
     if pressed {
@@ -296,14 +328,17 @@ pub fn button(lp: &mut Loop, button: u32, pressed: bool) -> bool {
             // even with the cursor pinned at the far edge.
             let p = run.pointer;
             if p.0.is_finite() && p.1.is_finite() {
-                run.start = Some((p.0.clamp(0.0, run.bounds.0), p.1.clamp(0.0, run.bounds.1)));
+                run.press = Some(Press::new((
+                    p.0.clamp(0.0, run.bounds.0),
+                    p.1.clamp(0.0, run.bounds.1),
+                )));
             }
             None
         }
         (0x110, false) => match run
-            .start
+            .press
             .take()
-            .map(|start| release(run.bounds, start, run.pointer))
+            .map(|press| press.release(run.bounds, run.pointer))
         {
             // A drag selects its rectangle; a click the whole output.
             Some(Some(rect)) => Some(Outcome::Selected(rect)),
@@ -402,22 +437,21 @@ pub fn device_input<I: InputBackend>(lp: &mut Loop, event: &InputEvent<I>) -> bo
     }
 }
 
-/// The rasterised hint, for the scale and width it was made at (`None`
-/// when there was nothing to draw).
-type HintCache = Option<((u64, u64), Option<(MemoryRenderBuffer, Size<i32, Logical>)>)>;
+/// What the hint was rasterised for: scale and output width (as bits) and
+/// the look.
+type HintKey = (u64, u64, Look);
+/// The rasterised hint and its key (`None` when there was nothing to draw).
+type HintCache = Option<(HintKey, Option<(MemoryRenderBuffer, Size<i32, Logical>)>)>;
 
 thread_local! {
     /// The outline's four edges, then the dim's four pieces.
     static OVERLAY_IDS: [Id; 8] = std::array::from_fn(|_| Id::new());
-    /// Rasterised once per scale and output width, then reused frame to frame.
+    /// Rasterised once per scale, output width and look, then reused frame
+    /// to frame.
     static HINT: RefCell<HintCache> = const { RefCell::new(None) };
+    /// The look, resolved once from the theme.
+    static LOOK: Look = Look::of(&toolkit::theme::Theme::embedded());
 }
-
-const OUTLINE: [f32; 4] = [0.30, 0.60, 1.00, 1.0];
-/// Over the output outside the selection (premultiplied).
-const DIM: [f32; 4] = [0.0, 0.0, 0.0, 0.45];
-/// The outline's thickness, logical pixels.
-const LINE: f64 = 2.0;
 
 /// The hint's type, logical pixels and weight.
 const HINT_SIZE: f32 = 14.0;
@@ -427,11 +461,47 @@ const HINT_WEIGHT: u16 = 500;
 const HINT_PAD: (f64, f64) = (16.0, 8.0);
 const HINT_RADIUS: f64 = 10.0;
 const HINT_TOP: f64 = 24.0;
-/// Straight-alpha sRGB.
-const HINT_BACK: [f32; 4] = [0.08, 0.09, 0.11, 0.88];
-/// The pill's one-pixel edge, so it still reads over a dark desktop.
-const HINT_EDGE: [f32; 4] = [1.0, 1.0, 1.0, 0.22];
-const HINT_TEXT: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+
+/// The overlay's colours, straight-alpha sRGB, from the MixOS theme the
+/// capture overlays are drawn in (`toolkit::style` over the embedded theme,
+/// as `capture::style`): the outline is the theme's accent, the hint its
+/// popover surface, window stroke and strong text. The dim is the capture
+/// mask (`capture::style::DIM_MASK`): translucency, not a themed surface.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Look {
+    accent: [f32; 4],
+    back: [f32; 4],
+    edge: [f32; 4],
+    text: [f32; 4],
+    dim: [f32; 4],
+}
+
+impl Look {
+    fn of(theme: &toolkit::theme::Theme) -> Self {
+        let visuals = toolkit::style::visuals(theme);
+        let straight = |colour: egui::Color32| {
+            colour
+                .to_srgba_unmultiplied()
+                .map(|channel| f32::from(channel) / 255.0)
+        };
+        Self {
+            accent: straight(visuals.selection.bg_fill),
+            back: straight(visuals.window_fill),
+            edge: straight(visuals.window_stroke.color),
+            text: straight(visuals.strong_text_color()),
+            dim: straight(crate::surface::draw::capture::style::DIM_MASK),
+        }
+    }
+
+    fn current() -> Self {
+        LOOK.with(|look| *look)
+    }
+}
+
+/// `colour` premultiplied, as a solid element takes it.
+fn premultiplied([r, g, b, a]: [f32; 4]) -> [f32; 4] {
+    [r * a, g * a, b * a, a]
+}
 
 /// One frame's region overlay, in physical screen pixels.
 pub struct Overlay<R: Renderer> {
@@ -454,35 +524,44 @@ impl<R: Renderer> Overlay<R> {
 /// output dimmed, a thin outline round it and the hint. While dragging: the
 /// dim around the selection only, the selection's outline and the hint.
 /// Nothing on another output, nothing otherwise. After a run finishes, the
-/// first frame built without it is recorded as the clean frame its reply
-/// waits for.
+/// first frame of the selected output built without it is recorded as the
+/// clean frame its reply waits for: another monitor's frame proves nothing.
 pub fn overlay<R>(lp: &mut Loop, renderer: &mut R, _size: Size<i32, Physical>) -> Overlay<R>
 where
     R: Renderer + ImportMem,
     R::TextureId: Send + Clone + 'static,
 {
-    let Some(run) = lp.inner.comp.region.run.as_mut() else {
+    let Some((output, finished)) = lp
+        .inner
+        .comp
+        .region
+        .run
+        .as_ref()
+        .map(|run| (run.output.clone(), run.result.is_some()))
+    else {
         return Overlay::empty();
     };
-    if run.result.is_some() {
-        run.clean = true;
-        return Overlay::empty();
-    }
-    let output = run.output.clone();
     if !drawn_on(lp, &output) {
         return Overlay::empty();
     }
-    let Some(run) = lp.inner.comp.region.run.as_ref() else {
+    let Some(run) = lp.inner.comp.region.run.as_mut() else {
         return Overlay::empty();
     };
+    if finished {
+        run.clean = true;
+        return Overlay::empty();
+    }
+    let run = &*run;
+    let look = Look::current();
     let scale = run.scale;
     let px = |value: f64| (value * scale).round() as i32;
-    let line = px(LINE).max(1);
+    let line = px(f64::from(crate::surface::draw::capture::style::BORDER_WIDTH)).max(1);
     let (width, height) = (px(run.bounds.0), px(run.bounds.1));
-    // Below the click slop the press still reads as "the whole output".
+    // Until the press is a drag it still reads as "the whole output".
     let selection = run
-        .start
-        .filter(|start| dragged(*start, run.pointer))
+        .press
+        .filter(|press| press.dragging)
+        .map(|press| press.start)
         .map(|start| {
             let (x, y) = (
                 px(start.0.min(run.pointer.0)),
@@ -527,16 +606,17 @@ where
                 edge.loc,
                 Size::from((edge.size.w.max(1), edge.size.h.max(1))),
             );
-            solid(id, edge, OUTLINE)
+            solid(id, edge, premultiplied(look.accent))
         });
         let dims = dims
             .into_iter()
             .zip(&ids[4..])
             .filter(|(piece, _)| piece.size.w > 0 && piece.size.h > 0)
-            .map(|(piece, id)| solid(id, piece, DIM));
+            .map(|(piece, id)| solid(id, piece, premultiplied(look.dim)));
         edges.chain(dims).collect()
     });
-    let hint = hint_buffer(scale, run.bounds.0 - 2.0 * HINT_TOP).and_then(|(buffer, logical)| {
+    let room = run.bounds.0 - 2.0 * HINT_TOP;
+    let hint = hint_buffer(scale, room, look).and_then(|(buffer, logical)| {
         let (buffer_w, buffer_h) = (px(f64::from(logical.w)), px(f64::from(logical.h)));
         let at = Point::<f64, Physical>::from((
             f64::from((width - buffer_w) / 2),
@@ -558,28 +638,41 @@ where
     Overlay { hint, solids }
 }
 
-/// The run's output is the one this scene pass draws (or the pass draws
-/// every output).
+/// This scene pass draws the run's output (named `output`).
 fn drawn_on(lp: &Loop, output: &str) -> bool {
-    let Some(key) = lp.inner.render_output.as_deref() else {
-        return true;
-    };
-    lp.inner
+    let selected = lp
+        .inner
         .space_state()
         .state
         .outputs()
         .find(|candidate| candidate.name() == output)
-        .is_none_or(|candidate| crate::state::state::output_key(candidate) == key)
+        .map(crate::state::state::output_key);
+    pass_draws(lp.inner.render_output.as_deref(), selected.as_deref())
 }
 
-/// The hint as a texture `logical` pixels in size, rasterised at `scale` for
-/// an output `max_width` logical pixels wide (elided to fit).
-fn hint_buffer(scale: f64, max_width: f64) -> Option<(MemoryRenderBuffer, Size<i32, Logical>)> {
+/// A pass for `render_key` (`None`: a pass that draws every output) draws
+/// the selected output, whose key is `selected` (`None`: it is gone). A
+/// vanished output is drawn by no keyed pass, so nothing else stands in for
+/// it, neither the overlay nor its clean frame.
+fn pass_draws(render_key: Option<&str>, selected: Option<&str>) -> bool {
+    match render_key {
+        None => true,
+        Some(key) => selected.is_some_and(|selected| selected == key),
+    }
+}
+
+/// The hint as a texture `logical` pixels in size, rasterised at `scale` in
+/// `look` for an output `max_width` logical pixels wide (elided to fit).
+fn hint_buffer(
+    scale: f64,
+    max_width: f64,
+    look: Look,
+) -> Option<(MemoryRenderBuffer, Size<i32, Logical>)> {
     HINT.with_borrow_mut(|slot| {
-        let key = (scale.to_bits(), max_width.to_bits());
+        let key = (scale.to_bits(), max_width.to_bits(), look);
         if slot.as_ref().is_none_or(|(made, _)| *made != key) {
             let text = crate::strings::text("region-select-hint");
-            let image = hint_image(&text, scale, max_width).map(|image| {
+            let image = hint_image(&text, scale, max_width, &look).map(|image| {
                 let buffer = MemoryRenderBuffer::from_slice(
                     &image.argb,
                     Fourcc::Argb8888,
@@ -606,11 +699,15 @@ struct HintImage {
 /// `text` in a rounded pill, at `scale` physical pixels per logical pixel.
 /// Its logical size is whole pixels and its pixel size that times `scale`,
 /// so it lands on the screen unscaled.
-fn hint_image(text: &str, scale: f64, max_width: f64) -> Option<HintImage> {
+fn hint_image(text: &str, scale: f64, max_width: f64, look: &Look) -> Option<HintImage> {
     if !scale.is_finite() || scale <= 0.0 {
         return None;
     }
     let room = ((max_width - 2.0 * HINT_PAD.0) * scale) as f32;
+    // A narrow output has no room for the hint (nor a non-finite width).
+    if !(room.is_finite() && room >= 1.0) {
+        return None;
+    }
     let mask = decor::text::title_mask(
         text,
         &decor::layout::DecoFontFamily::SystemUi,
@@ -640,16 +737,16 @@ fn hint_image(text: &str, scale: f64, max_width: f64) -> Option<HintImage> {
             // same box inset by the edge: the ring between them is the edge.
             let cover = rounded(x, y, half_w, half_h, radius, 0.0);
             let inner = rounded(x, y, half_w, half_h, radius, edge);
-            let (fill, ring) = (HINT_BACK[3] * inner, HINT_EDGE[3] * (cover - inner));
+            let (fill, ring) = (look.back[3] * inner, look.edge[3] * (cover - inner));
             let back = fill + ring;
             let ink = if x >= left && y >= top && x - left < mask.width && y - top < mask.height {
-                f32::from(mask.at(x - left, y - top)) / 255.0 * HINT_TEXT[3]
+                f32::from(mask.at(x - left, y - top)) / 255.0 * look.text[3]
             } else {
                 0.0
             };
             // Text over the box, premultiplied.
             let channel = |c: usize| {
-                HINT_TEXT[c] * ink + (HINT_BACK[c] * fill + HINT_EDGE[c] * ring) * (1.0 - ink)
+                look.text[c] * ink + (look.back[c] * fill + look.edge[c] * ring) * (1.0 - ink)
             };
             argb.extend_from_slice(&[
                 quantise(channel(2)),
@@ -715,7 +812,7 @@ impl Run {
             requested,
             bounds,
             scale,
-            start: None,
+            press: None,
             pointer,
             deadline,
             reply_deadline,
@@ -732,17 +829,30 @@ mod tests {
 
     const BOUNDS: (f64, f64) = (1_280.0, 800.0);
 
+    /// Press at `start`, move through `path`, release at its last point.
+    fn gesture(bounds: (f64, f64), start: (f64, f64), path: &[(f64, f64)]) -> Option<[i32; 4]> {
+        let mut press = Press::new(start);
+        for at in path {
+            press.moved(*at);
+        }
+        press.release(bounds, *path.last().unwrap_or(&start))
+    }
+
     #[test]
     fn a_click_selects_the_whole_output_as_a_corner_to_corner_drag_does() {
         let full = normalise(BOUNDS, (0.0, 0.0), BOUNDS);
         assert_eq!(full, Some([0, 0, 1_280, 800]));
         assert_eq!(whole(BOUNDS), full);
+        assert_eq!(gesture(BOUNDS, (0.0, 0.0), &[(640.0, 400.0), BOUNDS]), full);
         // No movement, and movement just under the slop, either way.
-        assert_eq!(release(BOUNDS, (500.0, 300.0), (500.0, 300.0)), full);
-        assert_eq!(release(BOUNDS, (500.0, 300.0), (502.5, 297.0)), full);
-        assert_eq!(release(BOUNDS, (500.0, 300.0), (496.1, 300.0)), full);
+        assert_eq!(gesture(BOUNDS, (500.0, 300.0), &[]), full);
+        assert_eq!(gesture(BOUNDS, (500.0, 300.0), &[(502.5, 297.0)]), full);
+        assert_eq!(
+            gesture(BOUNDS, (500.0, 300.0), &[(498.0, 301.0), (496.1, 300.0)]),
+            full
+        );
         // At the far edge (the pinned cursor) too.
-        assert_eq!(release(BOUNDS, BOUNDS, BOUNDS), full);
+        assert_eq!(gesture(BOUNDS, BOUNDS, &[BOUNDS]), full);
     }
 
     #[test]
@@ -751,7 +861,7 @@ mod tests {
         let bounds = (1_280.0 / 1.5, 800.0 / 1.5);
         let full = normalise(bounds, (0.0, 0.0), bounds);
         assert_eq!(full, Some([0, 0, 853, 533]));
-        assert_eq!(release(bounds, (10.0, 10.0), (11.0, 11.0)), full);
+        assert_eq!(gesture(bounds, (10.0, 10.0), &[(11.0, 11.0)]), full);
     }
 
     #[test]
@@ -760,26 +870,46 @@ mod tests {
         assert!(dragged((10.0, 10.0), (14.0, 10.0)));
         assert!(dragged((10.0, 10.0), (13.0, 13.0)));
         assert_eq!(
-            release(BOUNDS, (10.0, 10.0), (14.0, 14.0)),
+            gesture(BOUNDS, (10.0, 10.0), &[(14.0, 14.0)]),
             Some([10, 10, 4, 4])
         );
         assert_eq!(
-            release(BOUNDS, (700.0, 500.0), (400.0, 300.0)),
+            gesture(BOUNDS, (700.0, 500.0), &[(550.0, 400.0), (400.0, 300.0)]),
             Some([400, 300, 300, 200])
         );
     }
 
     #[test]
+    fn a_drag_that_comes_back_to_its_start_stays_a_drag() {
+        // Out to (400, 300) and back within the slop: the drag's own tiny
+        // rectangle, never the whole output.
+        let back = gesture(BOUNDS, (100.0, 100.0), &[(400.0, 300.0), (102.0, 102.0)]);
+        assert_eq!(back, Some([100, 100, 2, 2]));
+        assert_ne!(back, whole(BOUNDS));
+        // Exactly back on the start is a point, not a region: it stays armed.
+        assert_eq!(
+            gesture(BOUNDS, (100.0, 100.0), &[(400.0, 300.0), (100.0, 100.0)]),
+            None
+        );
+        let mut press = Press::new((100.0, 100.0));
+        press.moved((101.0, 101.0));
+        assert!(!press.dragging);
+        press.moved((400.0, 300.0));
+        press.moved((100.0, 100.0));
+        assert!(press.dragging, "the drag latches");
+    }
+
+    #[test]
     fn a_dragged_line_selects_nothing_and_stays_armed() {
-        assert_eq!(release(BOUNDS, (100.0, 100.0), (300.0, 100.0)), None);
-        assert_eq!(release(BOUNDS, (100.0, 100.0), (100.0, 300.0)), None);
+        assert_eq!(gesture(BOUNDS, (100.0, 100.0), &[(300.0, 100.0)]), None);
+        assert_eq!(gesture(BOUNDS, (100.0, 100.0), &[(100.0, 300.0)]), None);
     }
 
     #[test]
     fn a_non_finite_point_is_never_a_selection() {
         assert!(dragged((10.0, 10.0), (f64::NAN, 10.0)));
-        assert_eq!(release(BOUNDS, (10.0, 10.0), (f64::NAN, 10.0)), None);
-        assert_eq!(release(BOUNDS, (f64::INFINITY, 10.0), (10.0, 10.0)), None);
+        assert_eq!(gesture(BOUNDS, (10.0, 10.0), &[(f64::NAN, 10.0)]), None);
+        assert_eq!(gesture(BOUNDS, (f64::INFINITY, 10.0), &[(10.0, 10.0)]), None);
     }
 
     #[test]
@@ -800,11 +930,36 @@ mod tests {
     }
 
     #[test]
+    fn only_the_selected_outputs_pass_draws_the_overlay_or_proves_it_clean() {
+        // A single pass draws every output.
+        assert!(pass_draws(None, Some("A 1 x")));
+        assert!(pass_draws(None, None));
+        // The selected output's own pass.
+        assert!(pass_draws(Some("A 1 x"), Some("A 1 x")));
+        // Another monitor's pass: neither the overlay nor a clean frame.
+        assert!(!pass_draws(Some("B 2 y"), Some("A 1 x")));
+        // The selected output is gone (hotplug): no keyed pass stands in.
+        assert!(!pass_draws(Some("B 2 y"), None));
+    }
+
+    #[test]
+    fn the_look_comes_from_the_theme() {
+        let look = Look::current();
+        let visuals = toolkit::style::visuals(&toolkit::theme::Theme::embedded());
+        let accent = visuals.selection.bg_fill.to_srgba_unmultiplied();
+        assert_eq!(look.accent.map(|c| (c * 255.0).round() as u8), accent);
+        assert!(look.back[3] > 0.0 && look.text[3] > 0.0);
+        assert!(look.dim[3] > 0.0 && look.dim[3] < 1.0, "the dim is translucent");
+    }
+
+    #[test]
     fn the_hint_is_a_whole_logical_size_at_its_scale() {
         let text = crate::strings::text("region-select-hint");
         assert!(text.starts_with("Drag to select"), "{text}");
+        let look = Look::current();
+        let text_blue = (look.text[2] * 255.0) as i32;
         for scale in [1.0, 1.25, 2.0] {
-            let image = hint_image(&text, scale, 1_280.0).expect("a hint");
+            let image = hint_image(&text, scale, 1_280.0, &look).expect("a hint");
             let (w, h) = (image.size.w, image.size.h);
             assert_eq!(w, (f64::from(image.logical.w) * scale).round() as i32);
             assert_eq!(h, (f64::from(image.logical.h) * scale).round() as i32);
@@ -816,12 +971,18 @@ mod tests {
             let alphas = (0..w as usize).map(|x| image.argb[row + x * 4 + 3]);
             assert!(alphas.clone().all(|a| a > 0));
             assert!(
-                (0..w as usize).any(|x| image.argb[row + x * 4] > 150),
+                (0..w as usize).any(|x| {
+                    let at = row + x * 4;
+                    image.argb[at + 3] > 200 && (i32::from(image.argb[at]) - text_blue).abs() < 60
+                }),
                 "no text on the middle row"
             );
         }
         // A narrow output elides rather than overflows.
-        let narrow = hint_image(&text, 1.0, 200.0).expect("an elided hint");
+        let narrow = hint_image(&text, 1.0, 200.0, &look).expect("an elided hint");
         assert!(narrow.logical.w <= 200);
+        // No room at all: no hint.
+        assert!(hint_image(&text, 1.0, 2.0 * HINT_PAD.0, &look).is_none());
+        assert!(hint_image(&text, 1.0, 10.0, &look).is_none());
     }
 }
