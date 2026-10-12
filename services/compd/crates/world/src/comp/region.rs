@@ -428,7 +428,9 @@ const HINT_PAD: (f64, f64) = (16.0, 8.0);
 const HINT_RADIUS: f64 = 10.0;
 const HINT_TOP: f64 = 24.0;
 /// Straight-alpha sRGB.
-const HINT_BACK: [f32; 4] = [0.08, 0.09, 0.11, 0.85];
+const HINT_BACK: [f32; 4] = [0.08, 0.09, 0.11, 0.88];
+/// The pill's one-pixel edge, so it still reads over a dark desktop.
+const HINT_EDGE: [f32; 4] = [1.0, 1.0, 1.0, 0.22];
 const HINT_TEXT: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
 /// One frame's region overlay, in physical screen pixels.
@@ -629,22 +631,26 @@ fn hint_image(text: &str, scale: f64, max_width: f64) -> Option<HintImage> {
     let (left, top) = ((width - mask.width) / 2, (height - mask.height) / 2);
     let (half_w, half_h) = (width as f32 / 2.0, height as f32 / 2.0);
     let radius = ((HINT_RADIUS * scale) as f32).min(half_h).min(half_w);
+    let edge = (scale as f32).round().max(1.0);
     let quantise = |value: f32| (value.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
     let mut argb = Vec::with_capacity((width * height * 4) as usize);
     for y in 0..height {
         for x in 0..width {
-            // The rounded box's coverage from its signed distance.
-            let dx = ((x as f32 + 0.5 - half_w).abs() - (half_w - radius)).max(0.0);
-            let dy = ((y as f32 + 0.5 - half_h).abs() - (half_h - radius)).max(0.0);
-            let cover = (0.5 - (dx.hypot(dy) - radius)).clamp(0.0, 1.0);
-            let back = HINT_BACK[3] * cover;
+            // The rounded box's coverage from its signed distance, and the
+            // same box inset by the edge: the ring between them is the edge.
+            let cover = rounded(x, y, half_w, half_h, radius, 0.0);
+            let inner = rounded(x, y, half_w, half_h, radius, edge);
+            let (fill, ring) = (HINT_BACK[3] * inner, HINT_EDGE[3] * (cover - inner));
+            let back = fill + ring;
             let ink = if x >= left && y >= top && x - left < mask.width && y - top < mask.height {
                 f32::from(mask.at(x - left, y - top)) / 255.0 * HINT_TEXT[3]
             } else {
                 0.0
             };
             // Text over the box, premultiplied.
-            let channel = |c: usize| HINT_TEXT[c] * ink + HINT_BACK[c] * back * (1.0 - ink);
+            let channel = |c: usize| {
+                HINT_TEXT[c] * ink + (HINT_BACK[c] * fill + HINT_EDGE[c] * ring) * (1.0 - ink)
+            };
             argb.extend_from_slice(&[
                 quantise(channel(2)),
                 quantise(channel(1)),
@@ -658,6 +664,25 @@ fn hint_image(text: &str, scale: f64, max_width: f64) -> Option<HintImage> {
         size: Size::from((width as i32, height as i32)),
         logical,
     })
+}
+
+/// Coverage of pixel (`x`, `y`) by a box centred at (`half_w`, `half_h`)
+/// with corner `radius`, inset by `inset` pixels on every side.
+fn rounded(x: u32, y: u32, half_w: f32, half_h: f32, radius: f32, inset: f32) -> f32 {
+    let (half_w, half_h, radius) = (half_w - inset, half_h - inset, (radius - inset).max(0.0));
+    if half_w <= 0.0 || half_h <= 0.0 {
+        return 0.0;
+    }
+    let (cx, cy) = (x as f32 + 0.5 - (half_w + inset), y as f32 + 0.5 - (half_h + inset));
+    let dx = (cx.abs() - (half_w - radius)).max(0.0);
+    let dy = (cy.abs() - (half_h - radius)).max(0.0);
+    let outside = (cx.abs() - half_w).max(cy.abs() - half_h);
+    let distance = if dx > 0.0 && dy > 0.0 {
+        dx.hypot(dy) - radius
+    } else {
+        outside
+    };
+    (0.5 - distance).clamp(0.0, 1.0)
 }
 
 impl Region {
