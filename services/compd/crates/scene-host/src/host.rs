@@ -745,6 +745,8 @@ impl SceneHost {
                 let style = decor::window::installed()
                     .map_or(decor::ChromeStyle::Mac, |theme| theme.deco.style);
                 decor::window::install(look.chrome(style));
+                // The region-select overlay draws in the session look too.
+                world::comp::region::follow(&look.theme);
             },
         ) {
             self.appearance_generation = self.appearance_generation.wrapping_add(1);

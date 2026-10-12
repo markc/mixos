@@ -189,7 +189,7 @@
     {name:"comp.props.watch", owner:"compd", version:"0.1.11", status:"accepted", class:"query"},
     {name:"comp.pointer.watch", owner:"compd", version:"0.1.11", status:"accepted", class:"query"},
     {name:"comp.props.set", owner:"compd", version:"0.1.11", status:"accepted", class:"intent"},
-    {name:"comp.region.select", owner:"compd", version:"0.1.11", status:"accepted", class:"intent"},
+    {name:"comp.region.select", owner:"compd", version:"0.2.0", status:"accepted", class:"intent"},
     {name:"comp.input.sequence", owner:"compd", version:"0.1.11", status:"accepted", class:"input"},
     {name:"comp.panel.hold", owner:"compd", version:"0.1.11", status:"accepted", class:"intent"},
     {name:"comp.panel.mode", owner:"compd", version:"0.1.11", status:"accepted", class:"intent"},

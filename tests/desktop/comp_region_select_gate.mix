@@ -1,6 +1,6 @@
 #!/usr/bin/env mix
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.2.0
+-- version: 0.3.0
 -- comp_region_select_gate.mix — acceptance gate for comp.region.select: it
 -- starts a PRIVATE nested compd on nested_host_lib's headless weston host.
 --
@@ -369,10 +369,142 @@ else
   note("arm 6 selection after timeout still works")
 end
 
+-- ── arms 7–10: the whole output, by a full drag, a click and Enter ─────────
+-- A click (no travel) and Enter or keypad Enter select the whole output, and
+-- the reply must be indistinguishable from a drag from corner to corner: the
+-- drag's far end is past the output, where the selection clamps it.
+fn same_region($a, $b)
+  return $a.x == $b.x and $a.y == $b.y and $a.width == $b.width and $a.height == $b.height
+end
+
+settle(10)
+$p7 = start_selector("full-drag", {timeout_ms: 20000})
+sleep(1.0)
+drag(0, 0, 20000, 20000)
+$r7 = await_selector($p7, 25)
+$FULL = nil
+if $r7 == nil or $r7.value == nil or to_string($r7.value.status) != "selected" then
+  push($FAILURES, "full-drag")
+  fail("full-drag", "a corner-to-corner drag did not select: " .. (($r7 ?? {body: "no reply"}).body))
+elif $r7.value.region.x != 0 or $r7.value.region.y != 0 then
+  push($FAILURES, "full-drag")
+  fail("full-drag", "not at the origin: " .. json_encode($r7.value.region))
+else
+  $FULL = $r7.value
+  note("arm 7 full drag: " .. json_encode($FULL.region))
+end
+
+$WHOLE_ARMS = [
+  {tag: "click", arm: 8},
+  {tag: "enter", arm: 9, key: "Return"},
+  {tag: "kp-enter", arm: 10, key: "KP_Enter"}
+]
+for each $w in $WHOLE_ARMS
+  settle(10)
+  $pw = start_selector($w.tag, {timeout_ms: 20000})
+  sleep(1.0)
+  point(500, 400)
+  sleep(0.1)
+  if $w.key == nil then
+    -- Press and release with a 2 px wobble: inside the click slop.
+    button("left", "press")
+    sleep(0.1)
+    point(502, 401)
+    sleep(0.1)
+    button("left", "release")
+  else
+    key($w.key, "press")
+    sleep(0.1)
+    key($w.key, "release")
+  end
+  $rw = await_selector($pw, 25)
+  if $rw == nil or $rw.value == nil then
+    push($FAILURES, $w.tag)
+    fail($w.tag, "no usable reply")
+  elif to_string($rw.value.status) != "selected" then
+    push($FAILURES, $w.tag)
+    fail($w.tag, "status=" .. to_string($rw.value.status) .. " (expected selected) body=" .. $rw.body)
+  elif $FULL == nil then
+    push($FAILURES, $w.tag)
+    fail($w.tag, "no full-drag reply to compare with")
+  elif not same_region($rw.value.region, $FULL.region) or $rw.value.output != $FULL.output or $rw.value.coordinate_space != $FULL.coordinate_space or $rw.value.output_generation != $FULL.output_generation then
+    push($FAILURES, $w.tag)
+    fail($w.tag, json_encode($rw.value) .. " differs from the full drag " .. json_encode($FULL))
+  else
+    note("arm " .. to_string($w.arm) .. " " .. $w.tag .. " selected the whole output, as the full drag did")
+  end
+end
+
+-- ── arms 11–13: what a drag in progress becomes ──────────────────────────
+-- Escape mid-drag cancels, and the release that follows selects nothing over
+-- it; Enter mid-drag takes the whole output; a drag that comes back to its
+-- start is still a drag, never a click.
+fn press_drag($x2, $y2)
+  point(300, 200)
+  sleep(0.1)
+  button("left", "press")
+  sleep(0.1)
+  point($x2, $y2)
+  sleep(0.1)
+  return 0
+end
+
+settle(10)
+$p11 = start_selector("drag-escape", {timeout_ms: 20000})
+sleep(1.0)
+press_drag(600, 450)
+key("Escape", "press")
+sleep(0.1)
+key("Escape", "release")
+sleep(0.1)
+button("left", "release")
+$r11 = await_selector($p11, 25)
+if $r11 == nil or $r11.value == nil or to_string($r11.value.status) != "cancelled" then
+  push($FAILURES, "drag-escape")
+  fail("drag-escape", "expected cancelled: " .. (($r11 ?? {body: "no reply"}).body))
+else
+  note("arm 11 escape mid-drag cancelled; the release after it selected nothing")
+end
+
+settle(10)
+$p12 = start_selector("drag-enter", {timeout_ms: 20000})
+sleep(1.0)
+press_drag(600, 450)
+key("Return", "press")
+sleep(0.1)
+key("Return", "release")
+sleep(0.1)
+button("left", "release")
+$r12 = await_selector($p12, 25)
+if $r12 == nil or $r12.value == nil or to_string($r12.value.status) != "selected" or $FULL == nil or not same_region($r12.value.region, $FULL.region) then
+  push($FAILURES, "drag-enter")
+  fail("drag-enter", "expected the whole output: " .. (($r12 ?? {body: "no reply"}).body))
+else
+  note("arm 12 enter mid-drag selected the whole output")
+end
+
+settle(10)
+$p13 = start_selector("drag-return", {timeout_ms: 20000})
+sleep(1.0)
+press_drag(600, 450)
+point(302, 202)
+sleep(0.1)
+button("left", "release")
+$r13 = await_selector($p13, 25)
+if $r13 == nil or $r13.value == nil or to_string($r13.value.status) != "selected" then
+  push($FAILURES, "drag-return")
+  fail("drag-return", "expected the drag's own rectangle: " .. (($r13 ?? {body: "no reply"}).body))
+elif $r13.value.region.x != 300 or $r13.value.region.y != 200 or $r13.value.region.width != 2 or $r13.value.region.height != 2 then
+  push($FAILURES, "drag-return")
+  fail("drag-return", "a drag back to its start was not its own rectangle: " .. json_encode($r13.value.region))
+else
+  note("arm 13 a drag back to its start stayed a drag: " .. json_encode($r13.value.region))
+end
+
 $n.stop($SESSION)
 print("")
 if len($FAILURES) == 0 then
-  print("=== REGION SELECT GATE [" .. $KIND .. "]: GREEN — 6 arms, every one answered ===")
+  print("=== REGION SELECT GATE [" .. $KIND .. "]: GREEN — 13 arms, every one answered ===")
   $CLEANUP.ok = true
   exit(0)
 end
