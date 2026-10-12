@@ -13,7 +13,7 @@ use smithay_client_toolkit::globals::GlobalData;
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::reexports::calloop::channel::{Channel, Event as ChannelEvent, Sender};
 use smithay_client_toolkit::reexports::calloop::timer::{TimeoutAction, Timer};
-use smithay_client_toolkit::reexports::calloop::{EventLoop, LoopHandle};
+use smithay_client_toolkit::reexports::calloop::{EventLoop, LoopHandle, RegistrationToken};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::reexports::client::backend::ObjectId;
 use smithay_client_toolkit::reexports::client::globals::registry_queue_init;
@@ -49,6 +49,9 @@ use super::{LayerOptions, LayerProgram, Outputs, SurfaceInfo, input, scale};
 /// A repaint asked for: which surface, and in how long.
 type Repaint = (u64, Duration);
 
+/// How soon a surface whose frame was skipped is drawn again.
+const RETRY: Duration = Duration::from_millis(50);
+
 struct Surface {
     // Dropped first: the GPU target before the Wayland surface it draws on.
     target: Target,
@@ -65,10 +68,24 @@ struct Surface {
     configured: bool,
     dirty: bool,
     frame_pending: bool,
-    /// The earliest delayed repaint a timer is armed for.
+    /// The earliest delayed repaint a timer is armed for, and that timer.
     deadline: Option<Instant>,
+    timer: Option<RegistrationToken>,
     focused: bool,
     started: Instant,
+}
+
+impl Drop for Surface {
+    fn drop(&mut self) {
+        // Protocol objects send their destructors only when asked; the layer
+        // surface (dropped after this) destroys itself.
+        if let Some(viewport) = self.viewport.take() {
+            viewport.destroy();
+        }
+        if let Some(fractional) = self.fractional.take() {
+            fractional.destroy();
+        }
+    }
 }
 
 struct State<P> {
@@ -82,14 +99,19 @@ struct State<P> {
     fractional: Option<WpFractionalScaleManagerV1>,
     viewporter: Option<WpViewporter>,
     cursor_shapes: Option<CursorShapeManager>,
-    pointer: Option<wl_pointer::WlPointer>,
+    /// The pointer and the seat it belongs to.
+    pointer: Option<(wl_pointer::WlPointer, wl_seat::WlSeat)>,
     shape_device: Option<WpCursorShapeDeviceV1>,
     /// The surface the pointer is over, and the serial of its enter.
     pointer_over: Option<(ObjectId, u32)>,
     cursor: egui::CursorIcon,
-    keyboard: Option<wl_keyboard::WlKeyboard>,
+    /// The keyboard and the seat it belongs to.
+    keyboard: Option<(wl_keyboard::WlKeyboard, wl_seat::WlSeat)>,
     keyboard_focus: Option<ObjectId>,
     modifiers: Modifiers,
+    /// Keys held, by raw code, as the logical key their press sent: the
+    /// release (which types no text) sends the same one.
+    held: Vec<(u32, egui::Key)>,
     program: P,
     options: LayerOptions,
     repaint: Sender<Repaint>,
@@ -142,6 +164,7 @@ pub(super) fn run<P: LayerProgram + 'static>(
         keyboard: None,
         keyboard_focus: None,
         modifiers: Modifiers::default(),
+        held: Vec::new(),
         program,
         options,
         repaint,
@@ -153,8 +176,15 @@ pub(super) fn run<P: LayerProgram + 'static>(
         state.add_surface(&qh, None)?;
     }
     while !state.exit {
+        // A surface still due after drawing skipped its frame (a stale or
+        // busy swapchain): try again shortly rather than at the next event.
+        let retry = state
+            .surfaces
+            .iter()
+            .any(|s| s.configured && s.dirty && !s.frame_pending)
+            .then_some(RETRY);
         event_loop
-            .dispatch(None, &mut state)
+            .dispatch(retry, &mut state)
             .map_err(|e| format!("dispatch: {e}"))?;
         state.draw_due(&qh);
     }
@@ -181,13 +211,15 @@ impl<P: LayerProgram + 'static> State<P> {
         layer.set_size(self.options.size.0, self.options.size.1);
         let id = self.next_id;
         self.next_id += 1;
-        let fractional = self
-            .fractional
-            .as_ref()
-            .map(|m| m.get_fractional_scale(layer.wl_surface(), qh, id));
-        let viewport = match (&fractional, &self.viewporter) {
-            (Some(_), Some(v)) => Some(v.get_viewport(layer.wl_surface(), qh, GlobalData)),
-            _ => None,
+        // Fractional scaling needs both protocols: the scale, and a viewport
+        // to show the larger buffer at the logical size. Otherwise the
+        // integer buffer scale applies.
+        let (fractional, viewport) = match (&self.fractional, &self.viewporter) {
+            (Some(f), Some(v)) => (
+                Some(f.get_fractional_scale(layer.wl_surface(), qh, id)),
+                Some(v.get_viewport(layer.wl_surface(), qh, GlobalData)),
+            ),
+            _ => (None, None),
         };
         layer.commit();
         let target = self.gpu.target(layer.wl_surface().id().as_ptr().cast())?;
@@ -217,10 +249,26 @@ impl<P: LayerProgram + 'static> State<P> {
             dirty: true,
             frame_pending: false,
             deadline: None,
+            timer: None,
             focused: false,
             started: Instant::now(),
         });
         Ok(())
+    }
+
+    /// Drop the surfaces `gone` names, cancelling their timers.
+    fn drop_surfaces(&mut self, gone: impl Fn(&Surface) -> bool) {
+        let handle = self.handle.clone();
+        self.surfaces.retain_mut(|s| {
+            if gone(s) {
+                if let Some(timer) = s.timer.take() {
+                    handle.remove(timer);
+                }
+                false
+            } else {
+                true
+            }
+        });
     }
 
     fn surface_mut(&mut self, id: u64) -> Option<&mut Surface> {
@@ -240,7 +288,12 @@ impl<P: LayerProgram + 'static> State<P> {
             return;
         };
         if delay.is_zero() {
+            // Now: any delayed repaint is moot.
             s.dirty = true;
+            s.deadline = None;
+            if let Some(timer) = s.timer.take() {
+                handle.remove(timer);
+            }
             return;
         }
         // egui uses Duration::MAX for "not until something happens".
@@ -250,22 +303,26 @@ impl<P: LayerProgram + 'static> State<P> {
         if s.deadline.is_some_and(|d| d <= at) {
             return;
         }
+        // One timer per surface: an earlier deadline replaces the armed one.
+        if let Some(timer) = s.timer.take() {
+            handle.remove(timer);
+        }
         s.deadline = Some(at);
         let armed = handle.insert_source(Timer::from_deadline(at), move |_, _, state| {
-            if let Some(s) = state.surface_mut(id)
-                && s.deadline.is_some_and(|d| d <= Instant::now())
-            {
+            if let Some(s) = state.surface_mut(id) {
                 s.deadline = None;
+                s.timer = None;
                 s.dirty = true;
             }
             TimeoutAction::Drop
         });
-        if armed.is_err()
-            && let Some(s) = self.surface_mut(id)
-        {
-            // No timer: draw now rather than never.
-            s.deadline = None;
-            s.dirty = true;
+        match armed {
+            Ok(timer) => s.timer = Some(timer),
+            Err(_) => {
+                // No timer: draw now rather than never.
+                s.deadline = None;
+                s.dirty = true;
+            }
         }
     }
 
@@ -275,6 +332,11 @@ impl<P: LayerProgram + 'static> State<P> {
             return;
         };
         let s = &mut self.surfaces[at];
+        // A scale may arrive before the first configure: keep it until a
+        // size does (a 0x0 viewport destination is a protocol error).
+        if s.size.0 == 0 || s.size.1 == 0 {
+            return;
+        }
         let px = scale::buffer_size(s.size, s.scale);
         if let Some(viewport) = &s.viewport {
             viewport.set_destination(s.size.0 as i32, s.size.1 as i32);
@@ -303,10 +365,12 @@ impl<P: LayerProgram + 'static> State<P> {
         };
         let s = &mut self.surfaces[at];
         s.dirty = false;
+        // egui lays out in points: logical pixels over its zoom factor.
+        let zoom = s.ctx.zoom_factor();
         let mut raw = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
-                egui::vec2(s.size.0 as f32, s.size.1 as f32),
+                egui::vec2(s.size.0 as f32 / zoom, s.size.1 as f32 / zoom),
             )),
             max_texture_side,
             time: Some(s.started.elapsed().as_secs_f64()),
@@ -367,7 +431,24 @@ impl<P: LayerProgram + 'static> State<P> {
         };
         let modifiers = input::modifiers(&self.modifiers);
         let text = event.utf8.as_deref();
-        if let Some(key) = input::key(event.keysym.raw(), text) {
+        let code = event.raw_code;
+        // A key sends the logical key its press resolved to, for its repeats
+        // and its release too: a release types no text, and the modifiers
+        // may have changed since the press.
+        let logical = if pressed && !repeat {
+            let key = input::key(event.keysym.raw(), text);
+            self.held.retain(|(c, _)| *c != code);
+            if let Some(key) = key {
+                self.held.push((code, key));
+            }
+            key
+        } else if pressed {
+            self.held.iter().find(|(c, _)| *c == code).map(|(_, k)| *k)
+        } else {
+            let at = self.held.iter().position(|(c, _)| *c == code);
+            at.map(|at| self.held.remove(at).1)
+        };
+        if let Some(key) = logical {
             self.push_to(
                 &focus,
                 egui::Event::Key {
@@ -483,14 +564,14 @@ impl<P: LayerProgram + 'static> OutputHandler for State<P> {
         _: &QueueHandle<Self>,
         output: wl_output::WlOutput,
     ) {
-        self.surfaces.retain(|s| s.output.as_ref() != Some(&output));
+        self.drop_surfaces(|s| s.output.as_ref() == Some(&output));
     }
 }
 
 impl<P: LayerProgram + 'static> LayerShellHandler for State<P> {
     fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface) {
         let wl = layer.wl_surface().id();
-        self.surfaces.retain(|s| s.layer.wl_surface().id() != wl);
+        self.drop_surfaces(|s| s.layer.wl_surface().id() == wl);
         if self.surfaces.is_empty() && self.options.outputs == Outputs::Compositor {
             self.exit = true;
         }
@@ -543,9 +624,11 @@ impl<P: LayerProgram + 'static> SeatHandler for State<P> {
         capability: Capability,
     ) {
         if capability == Capability::Pointer && self.pointer.is_none() {
-            self.pointer = self.seat.get_pointer(qh, &seat).ok();
-            if let (Some(pointer), Some(shapes)) = (&self.pointer, &self.cursor_shapes) {
-                self.shape_device = Some(shapes.get_shape_device(pointer, qh));
+            if let Ok(pointer) = self.seat.get_pointer(qh, &seat) {
+                if let Some(shapes) = &self.cursor_shapes {
+                    self.shape_device = Some(shapes.get_shape_device(&pointer, qh));
+                }
+                self.pointer = Some((pointer, seat.clone()));
             }
         }
         if capability == Capability::Keyboard
@@ -561,7 +644,8 @@ impl<P: LayerProgram + 'static> SeatHandler for State<P> {
                     self.handle.clone(),
                     Box::new(|state, _, event| state.key(&event, true, true)),
                 )
-                .ok();
+                .ok()
+                .map(|keyboard| (keyboard, seat.clone()));
         }
     }
 
@@ -569,25 +653,57 @@ impl<P: LayerProgram + 'static> SeatHandler for State<P> {
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        _: wl_seat::WlSeat,
+        seat: wl_seat::WlSeat,
         capability: Capability,
     ) {
+        // Only the seat that owns a device takes it away.
         if capability == Capability::Pointer {
-            if let Some(device) = self.shape_device.take() {
-                device.destroy();
-            }
-            if let Some(pointer) = self.pointer.take() {
-                pointer.release();
-            }
+            self.drop_pointer(&seat);
         }
-        if capability == Capability::Keyboard
-            && let Some(keyboard) = self.keyboard.take()
-        {
-            keyboard.release();
+        if capability == Capability::Keyboard {
+            self.drop_keyboard(&seat);
         }
     }
 
-    fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
+    fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, seat: wl_seat::WlSeat) {
+        self.drop_pointer(&seat);
+        self.drop_keyboard(&seat);
+    }
+}
+
+impl<P: LayerProgram + 'static> State<P> {
+    /// Release the pointer if `seat` owns it; a later seat's pointer can
+    /// then take its place.
+    fn drop_pointer(&mut self, seat: &wl_seat::WlSeat) {
+        if self.pointer.as_ref().is_some_and(|(_, owner)| owner == seat) {
+            if let Some(device) = self.shape_device.take() {
+                device.destroy();
+            }
+            if let Some((pointer, _)) = self.pointer.take() {
+                pointer.release();
+            }
+            if let Some((over, _)) = self.pointer_over.take() {
+                self.push_to(&over, egui::Event::PointerGone);
+            }
+        }
+    }
+
+    /// Release the keyboard if `seat` owns it, with its focus and held keys.
+    fn drop_keyboard(&mut self, seat: &wl_seat::WlSeat) {
+        if self.keyboard.as_ref().is_some_and(|(_, owner)| owner == seat) {
+            if let Some((keyboard, _)) = self.keyboard.take() {
+                keyboard.release();
+            }
+            self.held.clear();
+            self.modifiers = Modifiers::default();
+            if let Some(focus) = self.keyboard_focus.take() {
+                self.push_to(&focus, egui::Event::WindowFocused(false));
+                if let Some(s) = self.by_wl(&focus) {
+                    s.focused = false;
+                }
+            }
+        }
+    }
 }
 
 impl<P: LayerProgram + 'static> PointerHandler for State<P> {
@@ -600,7 +716,12 @@ impl<P: LayerProgram + 'static> PointerHandler for State<P> {
     ) {
         for event in events {
             let wl = event.surface.id();
-            let pos = egui::pos2(event.position.0 as f32, event.position.1 as f32);
+            // Logical pixels to egui points, at that surface's zoom.
+            let zoom = self.by_wl(&wl).map_or(1.0, |s| s.ctx.zoom_factor());
+            let pos = egui::pos2(
+                event.position.0 as f32 / zoom,
+                event.position.1 as f32 / zoom,
+            );
             match event.kind {
                 PointerEventKind::Enter { serial } => {
                     self.pointer_over = Some((wl.clone(), serial));
@@ -643,7 +764,7 @@ impl<P: LayerProgram + 'static> PointerHandler for State<P> {
                         &wl,
                         egui::Event::MouseWheel {
                             unit: egui::MouseWheelUnit::Point,
-                            delta: input::wheel(horizontal.absolute, vertical.absolute),
+                            delta: input::wheel(horizontal.absolute, vertical.absolute) / zoom,
                             phase: egui::TouchPhase::Move,
                             modifiers,
                         },
@@ -683,6 +804,8 @@ impl<P: LayerProgram + 'static> KeyboardHandler for State<P> {
     ) {
         if self.keyboard_focus.as_ref() == Some(&surface.id()) {
             self.keyboard_focus = None;
+            // Keys held now are released elsewhere: their releases never come.
+            self.held.clear();
         }
         if let Some(s) = self.by_wl(&surface.id()) {
             s.focused = false;

@@ -51,6 +51,9 @@ pub(crate) struct Target {
     format: wgpu::TextureFormat,
     alpha: wgpu::CompositeAlphaMode,
     configured: Option<(u32, u32)>,
+    /// Textures egui retired, freed once a pass that no longer draws them
+    /// has rendered (a skipped frame keeps them).
+    retired: Vec<egui::TextureId>,
 }
 
 /// The frame was not drawn; what to do about it.
@@ -147,6 +150,7 @@ impl Gpu {
             format,
             alpha,
             configured: None,
+            retired: Vec::new(),
         })
     }
 
@@ -183,20 +187,32 @@ impl Gpu {
         ctx: &egui::Context,
         before_present: impl FnOnce(),
     ) -> Result<(), Skipped> {
+        let egui::FullOutput {
+            mut textures_delta,
+            shapes,
+            pixels_per_point,
+            ..
+        } = output;
+        // Every delta is applied whether or not this frame is drawn (egui
+        // never sends them again), and the delta is left empty: epaint
+        // asserts that none is dropped unapplied.
+        target.retired.extend(textures_delta.free.drain());
         let Some(d) = &self.device else {
+            textures_delta.clear();
             return Err(Skipped::Later);
         };
+        for (id, deltas) in textures_delta.set.drain() {
+            for delta in &deltas {
+                target
+                    .renderer
+                    .update_texture(&d.device, &d.queue, id, delta);
+            }
+        }
+        textures_delta.clear();
         let Some(size_px) = target.configured else {
             return Err(Skipped::Reconfigure);
         };
-        for (id, deltas) in &output.textures_delta.set {
-            for delta in deltas {
-                target
-                    .renderer
-                    .update_texture(&d.device, &d.queue, *id, delta);
-            }
-        }
-        let primitives = ctx.tessellate(output.shapes, output.pixels_per_point);
+        let primitives = ctx.tessellate(shapes, pixels_per_point);
         let frame = match target.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
@@ -211,7 +227,7 @@ impl Gpu {
             .create_view(&wgpu::TextureViewDescriptor::default());
         let screen = egui_wgpu::ScreenDescriptor {
             size_in_pixels: [size_px.0, size_px.1],
-            pixels_per_point: output.pixels_per_point,
+            pixels_per_point,
         };
         let mut encoder = d
             .device
@@ -241,8 +257,8 @@ impl Gpu {
         }
         buffers.push(encoder.finish());
         d.queue.submit(buffers);
-        for id in &output.textures_delta.free {
-            target.renderer.free_texture(id);
+        for id in target.retired.drain(..) {
+            target.renderer.free_texture(&id);
         }
         before_present();
         d.queue.present(frame);

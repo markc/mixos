@@ -28,6 +28,7 @@
 $n = require("nested_host_lib.mix")
 $c = require("capture_lib.mix")
 $CLEANUP = {ok: false, run: nil}
+$BUS = nil
 try
 
 $USAGE = "usage: backdrop_gate.mix --backdrop PATH [--bin PATH] --config-file PATH [--software] [--private-bus [--noded PATH]] [--shot-out PATH]"
@@ -96,7 +97,6 @@ fn check($name, $ok, $detail)
 end
 
 $CLEANUP.run = $n.new_run("/tmp/backdrop-gate-" .. to_string(pid()))
-$BUS = nil
 if $PRIVATE_BUS then
   $BUS = $n.private_bus({dir: $CLEANUP.run.path .. "/bus", name: "backdrop-gate", noded: $NODED})
 end
@@ -211,12 +211,14 @@ fn screenshot($name)
   return $c.ppm($path)
 end
 
+-- Move, press, release; true only when the compositor accepted all three.
 fn click($x, $y)
-  call("comp.input.pointer.move", {seat: "human", x: $x, y: $y})
+  $m = call("comp.input.pointer.move", {seat: "human", x: $x, y: $y})
   sleep(0.1)
-  call("comp.input.pointer.button", {seat: "human", button: "left", action: "press"})
+  $p = call("comp.input.pointer.button", {seat: "human", button: "left", action: "press"})
   sleep(0.05)
-  call("comp.input.pointer.button", {seat: "human", button: "left", action: "release"})
+  $r = call("comp.input.pointer.button", {seat: "human", button: "left", action: "release"})
+  return $m.rc == 0 and $p.rc == 0 and $r.rc == 0
 end
 
 try
@@ -261,7 +263,7 @@ try
   if $out != nil then
     $x = $out.x + $out.width / 4
     $y = $out.y + $out.height / 4
-    click($x, $y)
+    check("the click on bare desktop was injected", click($x, $y), "comp.input refused")
     $clicks = wait_events("click", 1, 5)
     if check("a click on bare desktop reached backdrop", len($clicks) == 1, to_string(len($clicks)) .. " clicks") then
       $k = $clicks[0]
@@ -275,7 +277,8 @@ try
     $win = wait_new_row($before, "toplevel", 15)
     if check("a window mapped above backdrop", $win != nil, "no new toplevel in 15 s") then
       sleep(0.5)
-      click($win.x + $win.width / 2, $win.y + $win.height / 2)
+      check("the click on the window was injected", click($win.x + $win.width / 2, $win.y + $win.height / 2),
+        "comp.input refused")
       sleep(1)
       check("a click on the window did not reach backdrop", len(events("click")) == 1,
         to_string(len(events("click"))) .. " clicks")
@@ -306,7 +309,6 @@ if is_file($session["log"]) then
   $final = re_replace(read_file($session["log"]), "\u{1b}\\[[0-9;]*m", "")
 end
 check("no compositor panic (final log)", len(grep_lines($final, "panicked at")) == 0, $session["log"])
-$n.stop_bus($BUS)
 
 $total = $TALLY["pass"] + $TALLY["fail"]
 if $TALLY["fail"] == 0 then
@@ -318,5 +320,7 @@ print("FAIL backdrop_gate: " .. to_string($TALLY["fail"]) .. " of " .. to_string
   " checks failed (logs in " .. $run .. ")")
 exit(1)
 finally
+  -- An owned broker goes however the run ended.
+  $n.stop_bus($BUS)
   $n.finish_run($CLEANUP.run, $CLEANUP.ok)
 end
