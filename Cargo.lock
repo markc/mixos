@@ -564,6 +564,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "backdrop"
+version = "0.1.1"
+dependencies = [
+ "egui",
+ "egui-wgpu",
+ "futures",
+ "raw-window-handle",
+ "serde_json",
+ "smithay-client-toolkit 0.19.2",
+ "toolkit",
+ "wayland-backend",
+ "wgpu",
+]
+
+[[package]]
 name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
