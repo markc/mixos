@@ -64,6 +64,10 @@ pub struct FileChange {
     /// the reader it is for can read it and nobody else can.
     #[serde(default)]
     pub group: Option<String>,
+    /// An existing file's owner and group (numeric), recorded at backup and
+    /// given back on restore, so a file networkd reads keeps its reader.
+    #[serde(default)]
+    pub owner: Option<(u32, u32)>,
 }
 
 fn default_mode() -> u32 {
@@ -75,22 +79,23 @@ impl FileChange {
     /// provably doesn't exist backs up as `None`; any other failure to read
     /// it stops the change before anything is written.
     ///
-    /// An existing file keeps its mode on restore. A new file is written
-    /// with `mode` (and `group`, if set) chosen by the verb.
+    /// An existing file keeps its mode, owner and group on restore (read
+    /// from the same open file as its content). A new file is written with
+    /// the `mode` (and `group`, if set) the verb chooses.
     pub fn backup(path: &Path) -> anyhow::Result<Self> {
-        use std::os::unix::fs::MetadataExt;
-        let (previous, mode) = match std::fs::read(path) {
-            Ok(bytes) => {
-                let mode = std::fs::metadata(path)
-                    .with_context(|| format!("back up {}", path.display()))?
-                    .mode()
-                    & 0o7777;
+        use std::{io::Read, os::unix::fs::MetadataExt};
+        let context = || format!("back up {}", path.display());
+        let (previous, mode, owner) = match std::fs::File::open(path) {
+            Ok(mut file) => {
+                let meta = file.metadata().with_context(context)?;
+                let mut bytes = vec![];
+                file.read_to_end(&mut bytes).with_context(context)?;
                 let text = String::from_utf8(bytes)
                     .with_context(|| format!("{} is not UTF-8 text", path.display()))?;
-                (Some(text), mode)
+                (Some(text), meta.mode() & 0o7777, Some((meta.uid(), meta.gid())))
             }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (None, default_mode()),
-            Err(e) => return Err(e).with_context(|| format!("back up {}", path.display())),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (None, default_mode(), None),
+            Err(e) => return Err(e).with_context(context),
         };
         Ok(Self {
             path: path.into(),
@@ -98,6 +103,7 @@ impl FileChange {
             installed: None,
             mode,
             group: None,
+            owner,
         })
     }
 
@@ -230,6 +236,25 @@ pub fn write_atomic(path: &Path, bytes: &[u8], mode: u32) -> anyhow::Result<()> 
 /// file before a byte is written, so the content is never readable by
 /// anyone it isn't for, even briefly.
 pub fn write_as(path: &Path, bytes: &[u8], mode: u32, group: Option<&str>) -> anyhow::Result<()> {
+    let owner = match group {
+        Some(group) => Owner::Group(group),
+        None => Owner::Default,
+    };
+    write_owned(path, bytes, mode, owner)
+}
+
+/// Who a written file belongs to.
+pub enum Owner<'a> {
+    /// hostd (root).
+    Default,
+    /// root, and this group by name.
+    Group(&'a str),
+    /// Exactly this owner and group, as a backup recorded them.
+    Ids(u32, u32),
+}
+
+/// `write_as` with any `Owner`.
+pub fn write_owned(path: &Path, bytes: &[u8], mode: u32, owner: Owner) -> anyhow::Result<()> {
     use std::{io::Write, os::fd::AsRawFd, os::unix::fs::PermissionsExt};
     let dir = path.parent().context("path has no directory")?;
     let tmp = dir.join(format!(
@@ -243,13 +268,18 @@ pub fn write_as(path: &Path, bytes: &[u8], mode: u32, group: Option<&str>) -> an
         .mode(0o600)
         .open(&tmp)
         .with_context(|| format!("create {}", tmp.display()))?;
-    if let Some(group) = group {
-        let gid = gid_of(group)?;
-        // SAFETY: fchown on a file descriptor we own; -1 keeps the owner.
-        if unsafe { libc::fchown(file.as_raw_fd(), u32::MAX, gid) } != 0 {
+    let ids = match owner {
+        Owner::Default => None,
+        // -1 (u32::MAX) keeps the owner.
+        Owner::Group(group) => Some((u32::MAX, gid_of(group)?)),
+        Owner::Ids(uid, gid) => Some((uid, gid)),
+    };
+    if let Some((uid, gid)) = ids {
+        // SAFETY: fchown on a file descriptor we own.
+        if unsafe { libc::fchown(file.as_raw_fd(), uid, gid) } != 0 {
             let e = std::io::Error::last_os_error();
             let _ = std::fs::remove_file(&tmp);
-            return Err(e).with_context(|| format!("give {} to group {group}", tmp.display()));
+            return Err(e).with_context(|| format!("set the owner of {}", tmp.display()));
         }
     }
     file.set_permissions(std::fs::Permissions::from_mode(mode))?;
@@ -277,12 +307,14 @@ pub fn gid_of(group: &str) -> anyhow::Result<u32> {
 pub fn restore(files: &[FileChange]) -> anyhow::Result<()> {
     for change in files.iter().rev() {
         match &change.previous {
-            Some(text) => write_as(
-                &change.path,
-                text.as_bytes(),
-                change.mode,
-                change.group.as_deref(),
-            )?,
+            Some(text) => {
+                let owner = match (change.owner, change.group.as_deref()) {
+                    (Some((uid, gid)), _) => Owner::Ids(uid, gid),
+                    (None, Some(group)) => Owner::Group(group),
+                    (None, None) => Owner::Default,
+                };
+                write_owned(&change.path, text.as_bytes(), change.mode, owner)?
+            }
             None => match std::fs::remove_file(&change.path) {
                 Ok(()) => sync_dir(change.path.parent().context("no directory")?)?,
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -386,6 +418,7 @@ mod tests {
                 installed: None,
                 mode: 0o644,
                 group: None,
+                owner: None,
             },
             FileChange {
                 path: new.clone(),
@@ -393,11 +426,35 @@ mod tests {
                 installed: None,
                 mode: 0o644,
                 group: None,
+                owner: None,
             },
         ])
         .unwrap();
         assert_eq!(std::fs::read_to_string(&old).unwrap(), "original");
         assert!(!new.exists());
+    }
+
+    /// A restored file gets back its mode and its owner and group, not
+    /// root's defaults (a 0640 file networkd reads must stay readable).
+    #[test]
+    fn restore_keeps_mode_owner_and_group() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("x.netdev");
+        std::fs::write(&path, "original").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640)).unwrap();
+        let meta = std::fs::metadata(&path).unwrap();
+        let change = FileChange::backup(&path).unwrap();
+        assert_eq!(change.mode, 0o640);
+        assert_eq!(change.owner, Some((meta.uid(), meta.gid())));
+        std::fs::remove_file(&path).unwrap();
+        std::fs::write(&path, "replaced").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        restore(std::slice::from_ref(&change)).unwrap();
+        let after = std::fs::metadata(&path).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "original");
+        assert_eq!(after.mode() & 0o7777, 0o640);
+        assert_eq!((after.uid(), after.gid()), (meta.uid(), meta.gid()));
     }
 
     #[test]

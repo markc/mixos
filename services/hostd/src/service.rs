@@ -793,6 +793,7 @@ mod tests {
             installed: None,
             mode: 0o644,
             group: None,
+            owner: None,
         });
         r.save(&host.state).unwrap();
         let got = dispatch(

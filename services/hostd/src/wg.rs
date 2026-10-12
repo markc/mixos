@@ -15,6 +15,7 @@ use crate::{
     caller::Origin,
     link::valid_link,
     net::{OWNED_PREFIX, is_owned_path},
+    neigh,
     networkd::{self, Networkd},
     receipt::{self, FileChange, Receipt},
     service::Host,
@@ -83,8 +84,10 @@ pub struct Plan {
     pub new_key: Option<String>,
     pub public_key: String,
     pub addresses: Vec<(IpAddr, u8)>,
-    /// Peers whose handshake the dead-man check waits for.
-    pub must_handshake: Vec<[u8; 32]>,
+    /// Peers whose handshake the dead-man check waits for, each with an
+    /// address inside its allowed IPs: a datagram sent there through the
+    /// link makes WireGuard start the handshake.
+    pub must_handshake: Vec<([u8; 32], IpAddr)>,
     pub window: Duration,
 }
 
@@ -221,10 +224,12 @@ pub fn plan(root: &Path, request: Request) -> Result<Plan, Value> {
             return Err(bad(format!("each peer needs 1-{MAX_ALLOWED} allowed_ips")));
         }
         let mut allowed = vec![];
+        let mut probe = None;
         for a in &peer.allowed_ips {
             let (addr, prefix) =
                 cidr(a, true).ok_or_else(|| bad(format!("{a:?} is not address/prefix")))?;
             allowed.push(format!("{addr}/{prefix}"));
+            probe.get_or_insert(probe_target(addr, prefix));
         }
         netdev_text.push_str(&format!(
             "\n[WireGuardPeer]\nPublicKey={}\nAllowedIPs={}\n",
@@ -237,7 +242,8 @@ pub fn plan(root: &Path, request: Request) -> Result<Plan, Value> {
             }
             netdev_text.push_str(&format!("Endpoint={endpoint}\n"));
             any_endpoint = true;
-            must_handshake.push(key);
+            // `allowed` is never empty here, so neither is `probe`.
+            must_handshake.push((key, probe.expect("checked above")));
         }
         if let Some(seconds) = peer.keepalive_s {
             if !(1..=3600).contains(&seconds) {
@@ -327,21 +333,68 @@ fn now_epoch() -> i64 {
         .unwrap_or(0)
 }
 
+/// An address inside an allowed-IPs entry to send a handshake-starting
+/// datagram to: the entry's own address, or the next one when the entry is
+/// a network (`10.0.0.0/24` -> `10.0.0.1`), or a documentation address for
+/// a default route (`0.0.0.0/0`), which WireGuard still sends to this peer.
+pub fn probe_target(addr: IpAddr, prefix: u8) -> IpAddr {
+    match addr {
+        IpAddr::V4(v4) if v4.is_unspecified() => "192.0.2.1".parse().expect("literal"),
+        IpAddr::V6(v6) if v6.is_unspecified() => "2001:db8::1".parse().expect("literal"),
+        IpAddr::V4(v4) => {
+            let host_bits = 32 - u32::from(prefix);
+            let n = u32::from(v4);
+            if host_bits > 0 && host_bits < 32 && n & ((1u32 << host_bits) - 1) == 0 {
+                IpAddr::V4((n + 1).into())
+            } else {
+                addr
+            }
+        }
+        IpAddr::V6(v6) => {
+            let host_bits = 128 - u32::from(prefix);
+            let n = u128::from(v6);
+            if host_bits > 0 && host_bits < 128 && n & ((1u128 << host_bits) - 1) == 0 {
+                IpAddr::V6((n + 1).into())
+            } else {
+                addr
+            }
+        }
+    }
+}
+
 /// Waits, within `window`, for every listed peer to complete a handshake
-/// after `since` (seconds since the epoch). Bounded to one change's window.
-async fn handshakes(name: &str, peers: &[[u8; 32]], since: i64, window: Duration) -> bool {
+/// after `since` (seconds since the epoch). Each round sends a datagram
+/// through the link to every peer still waiting, because WireGuard starts a
+/// handshake only when it has something to send: an idle pair without
+/// keepalives would otherwise never handshake. Bounded to one window.
+async fn handshakes(
+    name: &str,
+    ifindex: i32,
+    peers: &[([u8; 32], IpAddr)],
+    since: i64,
+    window: Duration,
+) -> bool {
     let deadline = tokio::time::Instant::now() + window;
     loop {
         let link = name.to_owned();
         let state = tokio::task::spawn_blocking(move || wgnl::peers(&link)).await;
-        if let Ok(Ok(state)) = state
-            && peers.iter().all(|want| {
-                state
-                    .iter()
-                    .any(|p| &p.public_key == want && p.last_handshake >= since)
-            })
-        {
+        let done = |want: &[u8; 32], state: &[wgnl::Peer]| {
+            state
+                .iter()
+                .any(|p| &p.public_key == want && p.last_handshake >= since)
+        };
+        let state = match state {
+            Ok(Ok(state)) => state,
+            _ => vec![],
+        };
+        if peers.iter().all(|(key, _)| done(key, &state)) {
             return true;
+        }
+        for (key, target) in peers {
+            if !done(key, &state) {
+                let (link, target) = (name.to_owned(), *target);
+                let _ = tokio::task::spawn_blocking(move || neigh::nudge(&link, ifindex, target)).await;
+            }
         }
         if tokio::time::Instant::now() + Duration::from_millis(500) >= deadline {
             return false;
@@ -377,13 +430,16 @@ pub async fn apply(host: Host, plan: Plan, grant: String, origin: Origin) -> Res
             return Err(json!({"status":"foreign_config","link":plan.name,
                 "message":"a link of this name exists that hostd didn't create"}));
         }
-        if entry
-            .get("Kind")
-            .and_then(Value::as_str)
-            .is_some_and(|k| k != "wireguard")
-        {
+        // It must be WireGuard and hold hostd's key for this name: a link
+        // someone made with the same name is never deleted or reconfigured.
+        let name = plan.name.clone();
+        let live = tokio::task::spawn_blocking(move || wgnl::device_key(&name))
+            .await
+            .map_err(|e| internal(e.into()))?;
+        let ours = decode_key(&plan.public_key);
+        if !matches!(live, Ok(Some(key)) if Some(key) == ours) {
             return Err(json!({"status":"foreign_config","link":plan.name,
-                "message":"the link isn't WireGuard"}));
+                "message":"the link isn't hostd's WireGuard link"}));
         }
     }
 
@@ -437,8 +493,9 @@ pub async fn apply(host: Host, plan: Plan, grant: String, origin: Origin) -> Res
             .window
             .saturating_sub(started.elapsed())
             .max(Duration::from_secs(2));
+        let ifindex = ifindex_of(&last).unwrap_or(0);
         Ok((
-            handshakes(&plan.name, &plan.must_handshake, since, left).await,
+            handshakes(&plan.name, ifindex, &plan.must_handshake, since, left).await,
             last,
         ))
     }
@@ -477,13 +534,12 @@ pub async fn apply(host: Host, plan: Plan, grant: String, origin: Origin) -> Res
 /// Makes networkd use the restored files (`txn::put_back`): delete hostd's
 /// link, then reload, so the previous `.netdev` (if any) creates it again.
 pub async fn reapply(host: &Host, receipt: &Receipt) -> anyhow::Result<()> {
-    let name = receipt
-        .summary
-        .get("link")
-        .and_then(Value::as_str)
-        .filter(|l| valid_link(l))
-        .ok_or_else(|| anyhow::anyhow!("receipt names no link"))?
-        .to_owned();
+    let name = receipt_name(receipt)?;
+    // `txn::put_back` checked ownership before restoring files; check again
+    // here, right before the delete, so nothing else's link is ever removed.
+    if !owns(receipt).await? {
+        anyhow::bail!("link {name} is no longer hostd's own WireGuard link; left alone");
+    }
     if let Some(index) = networkd::describe(&host.root, &name)
         .await?
         .as_ref()
@@ -492,6 +548,36 @@ pub async fn reapply(host: &Host, receipt: &Receipt) -> anyhow::Result<()> {
         tokio::task::spawn_blocking(move || wgnl::delete_link(index)).await??;
     }
     Networkd::connect().await?.reload().await
+}
+
+fn receipt_name(receipt: &Receipt) -> anyhow::Result<String> {
+    Ok(receipt
+        .summary
+        .get("link")
+        .and_then(Value::as_str)
+        .filter(|l| valid_link(l))
+        .ok_or_else(|| anyhow::anyhow!("receipt names no link"))?
+        .to_owned())
+}
+
+/// Whether the link a receipt names is still hostd's: absent, or a
+/// WireGuard link holding the key the receipt recorded. Anything else (a
+/// link of another kind, or a WireGuard link with another key, made by
+/// someone else since) isn't hostd's to delete or reconfigure.
+pub async fn owns(receipt: &Receipt) -> anyhow::Result<bool> {
+    let name = receipt_name(receipt)?;
+    let recorded = receipt
+        .summary
+        .get("public_key")
+        .and_then(Value::as_str)
+        .and_then(decode_key);
+    let live = tokio::task::spawn_blocking(move || wgnl::device_key(&name)).await?;
+    Ok(match live {
+        Ok(None) => true,
+        Ok(Some(key)) => recorded == Some(key),
+        // Not WireGuard (the kernel refuses the query), or unreadable.
+        Err(_) => false,
+    })
 }
 
 #[cfg(test)]
@@ -544,6 +630,9 @@ mod tests {
         assert!(p.netdev_text.contains(&format!("PublicKey={PEER}\nAllowedIPs=10.99.0.2/32,0.0.0.0/0\nEndpoint=198.51.100.7:51820\nPersistentKeepalive=25\n")));
         assert!(p.network_text.contains("Address=10.99.0.1/24\n"));
         assert_eq!(p.must_handshake.len(), 1);
+        // The handshake probe goes to an address inside the peer's first
+        // allowed entry.
+        assert_eq!(p.must_handshake[0].1, "10.99.0.2".parse::<IpAddr>().unwrap());
         // The key never appears in what a caller sees.
         assert!(
             !summary(&p)
@@ -597,6 +686,17 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn probe_targets_land_inside_the_allowed_entry() {
+        let t = |a: &str, p: u8| probe_target(a.parse().unwrap(), p).to_string();
+        assert_eq!(t("10.99.0.2", 32), "10.99.0.2");
+        assert_eq!(t("10.99.0.0", 24), "10.99.0.1");
+        assert_eq!(t("10.99.0.7", 24), "10.99.0.7");
+        assert_eq!(t("0.0.0.0", 0), "192.0.2.1");
+        assert_eq!(t("::", 0), "2001:db8::1");
+        assert_eq!(t("2001:db8:1::", 64), "2001:db8:1::1");
     }
 
     #[test]

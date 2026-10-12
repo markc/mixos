@@ -130,6 +130,11 @@ pub async fn put_back(host: &Host, receipt: &Receipt) -> anyhow::Result<Put> {
             return Ok(Put::LeftAlone);
         }
     }
+    // The live object a verb would reconfigure or delete must still be
+    // hostd's: a WireGuard link replaced by someone else's is left alone.
+    if receipt.verb == wg::VERB && !wg::owns(receipt).await? {
+        return Ok(Put::LeftAlone);
+    }
     for change in &receipt.files {
         if change.holds()? == Holds::Installed {
             receipt::restore(std::slice::from_ref(change))?;

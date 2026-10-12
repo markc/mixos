@@ -19,6 +19,7 @@ const CTRL_ATTR_FAMILY_NAME: u16 = 2;
 
 const WG_CMD_GET_DEVICE: u8 = 0;
 const WGDEVICE_A_IFNAME: u16 = 2;
+const WGDEVICE_A_PUBLIC_KEY: u16 = 4;
 const WGDEVICE_A_PEERS: u16 = 8;
 const WGPEER_A_PUBLIC_KEY: u16 = 1;
 const WGPEER_A_LAST_HANDSHAKE_TIME: u16 = 6;
@@ -185,16 +186,39 @@ fn wireguard_family() -> std::io::Result<u16> {
 
 /// Every peer of WireGuard link `name`, with its last handshake.
 pub fn peers(name: &str) -> std::io::Result<Vec<Peer>> {
+    Ok(parse_peers(&device_replies(name)?))
+}
+
+fn device_replies(name: &str) -> std::io::Result<Vec<Vec<u8>>> {
     let family = wireguard_family()?;
     let mut body = vec![WG_CMD_GET_DEVICE, 1, 0, 0];
     let mut ifname = name.as_bytes().to_vec();
     ifname.push(0);
     attr(&mut body, WGDEVICE_A_IFNAME, &ifname);
-    let replies = transact(
+    transact(
         libc::NETLINK_GENERIC,
         &message(family, NLM_F_REQUEST | NLM_F_DUMP, &body),
-    )?;
-    Ok(parse_peers(&replies))
+    )
+}
+
+/// The public key of WireGuard link `name`: `None` when no link of that
+/// name exists; an error when one exists but isn't WireGuard (the kernel
+/// refuses the query) or can't be read.
+pub fn device_key(name: &str) -> std::io::Result<Option<[u8; 32]>> {
+    match device_replies(name) {
+        Ok(replies) => Ok(parse_device_key(&replies)),
+        Err(e) if e.raw_os_error() == Some(libc::ENODEV) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+pub fn parse_device_key(replies: &[Vec<u8>]) -> Option<[u8; 32]> {
+    replies
+        .iter()
+        .filter_map(|r| r.get(4..))
+        .flat_map(attrs)
+        .find(|(kind, _)| *kind == WGDEVICE_A_PUBLIC_KEY)
+        .and_then(|(_, v)| <[u8; 32]>::try_from(v).ok())
 }
 
 /// Peers from a device dump's reply bodies (each a genl header, then
@@ -271,11 +295,14 @@ mod tests {
         attr(&mut list, 0x8001, &peer_attrs([2; 32], 0));
         let mut device = vec![WG_CMD_GET_DEVICE, 1, 0, 0];
         attr(&mut device, WGDEVICE_A_IFNAME, b"wg0\0");
+        attr(&mut device, WGDEVICE_A_PUBLIC_KEY, &[9; 32]);
         attr(&mut device, WGDEVICE_A_PEERS | 0x8000, &list);
         let mut second = vec![WG_CMD_GET_DEVICE, 1, 0, 0];
         let mut list2 = vec![];
         attr(&mut list2, 0x8000, &peer_attrs([3; 32], 42));
         attr(&mut second, WGDEVICE_A_PEERS | 0x8000, &list2);
+        assert_eq!(parse_device_key(&[device.clone()]), Some([9; 32]));
+        assert_eq!(parse_device_key(&[second.clone()]), None);
         let peers = parse_peers(&[device.clone(), second]);
         assert_eq!(peers.len(), 3);
         assert_eq!(
