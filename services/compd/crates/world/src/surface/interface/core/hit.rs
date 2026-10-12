@@ -361,6 +361,11 @@ fn hit_ui_in_space(
         if (item.layer & crate::scene::layer::base::Layer::CAPTURE_PASSTHROUGH.bits()) != 0 {
             continue;
         }
+        // A click-through surface (a hover tip) and a hidden one never take
+        // the pointer: the registry's own pick skips them the same way.
+        if item.is_passthrough() || !item.is_visible() {
+            continue;
+        }
         if !item.contains_screen_point(screen_point, transform, output_size) {
             continue;
         }
@@ -393,6 +398,9 @@ fn hit_ui_one(
         return None;
     }
     if (item.layer & crate::scene::layer::base::Layer::CAPTURE_PASSTHROUGH.bits()) != 0 {
+        return None;
+    }
+    if item.is_passthrough() || !item.is_visible() {
         return None;
     }
     if !item.contains_screen_point(screen_point, transform, output_size) {

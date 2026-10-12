@@ -239,6 +239,12 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
             .unwrap()
             .enum_values = &["auto", "start", "center", "end", "stretch"];
     }
+    // A hover tip: {title, subtitle?, lines?}, shown on a card beside the
+    // node after a short hover (the host draws it on its own surface). Only
+    // an object is accepted, bound or literal.
+    if matches!(f, "row" | "column" | "button") {
+        ports.push(p("tooltip", "object", false, None));
+    }
     if matches!(f, "row" | "column") {
         let mut justify = p("justify", "string", false, None);
         justify.enum_values = &["start", "center", "end", "between", "around", "evenly"];

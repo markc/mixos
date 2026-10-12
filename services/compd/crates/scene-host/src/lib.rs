@@ -41,6 +41,7 @@ pub mod seat;
 mod state;
 pub mod store;
 pub mod templates;
+pub mod tooltip;
 pub mod verb;
 pub mod view;
 

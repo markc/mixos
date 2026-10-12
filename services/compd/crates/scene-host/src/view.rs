@@ -25,8 +25,15 @@ use crate::templates::{children, rows, text as port_text};
 
 mod flex;
 mod paint;
+pub(crate) mod tip;
 
 pub(crate) use flex::SceneLayout;
+pub use tip::{Tip, TipAt};
+
+/// The font a tip card line draws in: the scene's own text font.
+pub(crate) fn tip_font(size: f32, bold: bool) -> egui::FontId {
+    paint::font(size, false, bold)
+}
 
 /// Text size where a node names none (Quoin's 13 px).
 pub const TEXT_SIZE: f32 = 13.0;
@@ -117,6 +124,11 @@ pub enum SceneMessage {
     Close,
     EscapeEdge,
     EdgeFocus(bool),
+    /// Show (`Some`) or hide (`None`) this scene's hover tip.
+    Tooltip(Option<TipAt>),
+    /// The host took this scene's tip down (a menu opened): forget it, so
+    /// the next hover shows it again.
+    ForgetTip,
 }
 
 pub(crate) fn colour(c: Srgba) -> Color32 {
@@ -279,11 +291,14 @@ pub struct SceneUi {
     installed: Option<(usize, bool)>,
     /// The surface's keyboard focus as last seen (edges report changes).
     focused: Option<bool>,
+    /// The hover tip's state between passes.
+    hover: tip::Hover,
 }
 
 impl SceneUi {
     pub fn new(content: Arc<Content>) -> SceneUi {
         SceneUi {
+            hover: tip::Hover::default(),
             images: crate::images::prepare(&content.tree, &content.lists),
             content,
             look: None,
@@ -485,7 +500,9 @@ impl ui::UiProgram for SceneUi {
             | SceneMessage::Submit(..)
             | SceneMessage::Close
             | SceneMessage::EscapeEdge
-            | SceneMessage::EdgeFocus(_) => {}
+            | SceneMessage::EdgeFocus(_)
+            | SceneMessage::Tooltip(_) => {}
+            SceneMessage::ForgetTip => self.hover = tip::Hover::default(),
         }
     }
 }
@@ -502,7 +519,9 @@ pub fn event_of(message: &SceneMessage) -> Option<(&str, &str, Value)> {
         | SceneMessage::Appearance(_)
         | SceneMessage::Close
         | SceneMessage::EscapeEdge
-        | SceneMessage::EdgeFocus(_) => None,
+        | SceneMessage::EdgeFocus(_)
+        | SceneMessage::Tooltip(_)
+        | SceneMessage::ForgetTip => None,
     }
 }
 

@@ -82,55 +82,132 @@ fn icon_choice($paths, $name, $fallback)
   return {icon: $path, has_icon: $path != ""}
 end
 
--- The longest workspace name the pager draws before it elides, and the
--- characters all the pager's labels may use together: with many named
--- workspaces each name gets an equal share (at least 3), so the pager cannot
--- crowd the task list and the status area off the panel.
-$WS_LABEL_MAX = 14
-$WS_LABELS_BUDGET = 48
+-- ── hover tips (scene `tooltip` ports: {title, subtitle?, lines?}) ──────
+-- The host draws each on a card beside the panel after a short hover, as
+-- Plasma's panel tips do; the buttons themselves stay icon- or number-only.
 
--- The per-name character limit for $count workspaces.
-fn workspace_label_max($count)
-  $share = floor($WS_LABELS_BUDGET / max(1, $count))
-  return min($WS_LABEL_MAX, max(3, $share))
+-- The most window titles a workspace tip lists before "N more".
+$TIP_WINDOWS = 6
+
+-- Every string the tips show, in one place: the English source. Mix has
+-- no Fluent loader yet; until it has, scene strings live in tables like this
+-- (docs/decisions/2026-10-12-scene-strings.md), and then this table becomes
+-- the en catalogue and text() its lookup.
+-- "{name}" placeholders are filled from the vars map.
+$TEXT = {
+  launcher_title: "Application Launcher", launcher_subtitle: "Search for and launch applications",
+  workspace: "Workspace {n}", windows_none: "No windows", windows_one: "1 window", windows_many: "{n} windows",
+  current: "current", more: "{n} more", window: "Window", minimised: "Minimised", on_workspace: "On workspace {n}",
+  status_item: "Status item",
+  notes_title: "Notifications", notes_none: "No new notifications", notes_one: "1 notification", notes_many: "{n} notifications",
+  volume_title: "Volume", muted: "Muted", level: "{n}%", unmute: "Click to unmute", mute: "Click to mute",
+  network_title: "Network", wireless: "Connected (wireless)", wired: "Connected (wired)", offline: "Offline",
+  peek_title: "Peek at Desktop", peek_restore: "Restore the windows", peek_minimise: "Minimise this workspace's windows",
+  zone: "UTC{offset}", calendar_hint: "Click for the calendar"
+}
+
+fn text($key, $vars = nil)
+  $out = $TEXT[$key] ?? $key
+  for each $k, $v in $vars ?? {}
+    $out = replace($out, "{" .. $k .. "}", to_string($v))
+  end
+  return $out
 end
 
--- A pager button's label: the workspace's name (comp.workspace.rename), else
--- its number. A name longer than $limit characters (default $WS_LABEL_MAX)
--- is cut with an ellipsis.
-fn workspace_label($names, $index, $limit = nil)
-  $limit = $limit ?? $WS_LABEL_MAX
+-- A count in words: none / one / many.
+fn counted($n, $none, $one, $many)
+  return $n == 0 ? text($none) : ($n == 1 ? text($one) : text($many, {n: $n}))
+end
+
+fn tip($title, $subtitle, $lines)
+  $out = {title: $title}
+  if $subtitle != nil and $subtitle != "" then $out.subtitle = $subtitle end
+  if type($lines) == "list" and length($lines) > 0 then $out.lines = $lines end
+  return $out
+end
+
+-- A workspace's name (comp.workspace.rename), or nil.
+fn workspace_name($names, $index)
   $name = $index <= len($names) ? $names[$index - 1] : nil
-  if type($name) != "string" or trim($name) == "" then return to_string($index) end
-  if len($name) > $limit then return slice($name, 0, $limit - 1) .. "…" end
+  if type($name) != "string" or trim($name) == "" then return nil end
   return $name
 end
 
--- The bottom panel's complete runtime model, as the legacy builder drew it.
+-- A pager button's tip: its name (else "Workspace N"), whether it is the
+-- current one, and the windows on it.
+fn workspace_tip($names, $index, $current, $windows)
+  $name = workspace_name($names, $index)
+  $on = []
+  for each $w in $windows
+    -- The taskbar's rule: a window with no workspace (or comp's 0 before
+    -- its first map) is on the current one.
+    $ws = $w.workspace ?? 0
+    if $ws == $index or ($ws == 0 and $current) then push($on, $w) end
+  end
+  $where = text("workspace", {n: $index})
+  $count = counted(length($on), "windows_none", "windows_one", "windows_many")
+  $subtitle = ($name != nil ? $where .. " · " : "") .. $count .. ($current ? " · " .. text("current") : "")
+  $lines = []
+  for each $w in slice($on, 0, $TIP_WINDOWS)
+    push($lines, $p.short_title(($w.title ?? "") != "" ? $w.title : to_string($w.app_id ?? text("window")), 60))
+  end
+  if length($on) > $TIP_WINDOWS then push($lines, text("more", {n: length($on) - $TIP_WINDOWS})) end
+  return tip($name ?? $where, $subtitle, $lines)
+end
+
+-- A task button's tip: the application's name, the window's title, and
+-- where the window is when it is not plainly on screen.
+fn task_tip($w, $name, $ws_current)
+  $app = ($name != nil and $name != "") ? $name : to_string($w.app_id ?? text("window"))
+  $title = $p.short_title($w.title ?? "", 80)
+  $lines = []
+  if $w.minimized then push($lines, text("minimised")) end
+  if $t.elsewhere($w, $ws_current) then push($lines, text("on_workspace", {n: $w.workspace})) end
+  return tip($app, $title != $app ? $title : "", $lines)
+end
+
+-- A tray item's tip: its title, and its own status or tooltip text when
+-- the adapter supplies one.
+fn tray_tip($item)
+  $title = to_string($item.title ?? "")
+  $detail = ""
+  for each $key in ["tooltip_title", "tooltip", "tooltip_text", "status"]
+    $v = $item[$key]
+    if $detail == "" and type($v) == "string" and trim($v) != "" and $v != $title then $detail = $v end
+  end
+  return tip($title != "" ? $title : text("status_item"), $detail, [])
+end
+
+-- The bottom panel's complete runtime model (the legacy builder's, plus a
+-- hover tip per widget since 2026-10-12).
 -- $snap: {windows (normal band, id order), ws_count, ws_current,
---         ws_names (one per workspace, nil unnamed; absent = numbers),
+--         ws_names (one per workspace, nil unnamed; shown in the tips),
 --         tasks_scope ("all" | "current"; absent = "current", what a
 --         behaviour copy older than the setting draws), tray,
 --         notes_count, net:{up,wireless}, vol:{ok,level,muted},
 --         open:{launcher,calendar,notes}, peeked (bool)}
 -- $icons: {themed:{name:path} (dark status theme), plain:{name:path}
---          (tray icons), windows:{app_id:path}} -- cache hits only.
+--          (tray icons), windows:{app_id:path}, names:{app_id:name}
+--          (desktop-entry names)} -- cache hits only.
 fn panel($snap, $icons, $now)
   $themed = $icons.themed ?? {}
   $plain = $icons.plain ?? {}
   $window_icons = $icons.windows ?? {}
+  $app_names = $icons.names ?? {}
   $open = $snap.open ?? {}
   $ws_current = $snap.ws_current ?? 1
 
   $launcher = icon_choice($themed, "dev.mixos", nil)
   if not $launcher.has_icon then $launcher = icon_choice($themed, "start-here-kde", "start-here") end
   $launcher.background = ($open.launcher ?? false) ? $C.accent_bg : nil
+  $launcher.tip = tip(text("launcher_title"), text("launcher_subtitle"), [])
 
   $workspaces = []
   for $i = 1 to $snap.ws_count ?? 1
     $current = $i == $ws_current
-    push($workspaces, {id: "ws_" .. to_string($i), cells: [], index: $i, label: workspace_label($snap.ws_names ?? [], $i, workspace_label_max($snap.ws_count ?? 1)),
-      current: $current, background: $current ? $C.accent : $C.task_bg, color: $current ? "#0b1f2b" : $C.dim})
+    push($workspaces, {id: "ws_" .. to_string($i), cells: [], index: $i, label: to_string($i),
+      current: $current, background: $current ? $C.accent : $C.task_bg, color: $current ? "#0b1f2b" : $C.dim,
+      tip: workspace_tip($snap.ws_names ?? [], $i, $current, $snap.windows ?? [])})
   end
 
   -- A window on another workspace (tasks_scope "all") has no button
@@ -153,7 +230,8 @@ fn panel($snap, $icons, $now)
     $icon = $window_icons[to_string($w.app_id)] ?? ""
     push($tasks, {id: "t_" .. to_string($w.id), cells: [], window: $w.id, generation: $w.generation,
       title: $p.short_title($w.title, 40), icon: $icon, has_icon: $icon != "",
-      background: $background, color: $color})
+      initial: upper(slice(to_string($app_names[to_string($w.app_id)] ?? $w.app_id ?? "?"), 0, 1)),
+      background: $background, color: $color, tip: task_tip($w, $app_names[to_string($w.app_id)], $ws_current)})
   end
 
   -- Row ids carry the adapter's store key, so a click resolves to the exact
@@ -162,7 +240,7 @@ fn panel($snap, $icons, $now)
   for each $item in $snap.tray ?? []
     $icon = $plain[$item.icon_name ?? ""] ?? ""
     push($tray, {id: "tr_" .. lower(to_string($item.key)), cells: [], key: to_string($item.key),
-      icon: $icon, has_icon: $icon != "", initial: slice(to_string($item.title ?? "?"), 0, 1)})
+      icon: $icon, has_icon: $icon != "", initial: slice(to_string($item.title ?? "?"), 0, 1), tip: tray_tip($item)})
   end
 
   $count = $snap.notes_count ?? 0
@@ -170,6 +248,7 @@ fn panel($snap, $icons, $now)
   $notes.count = $count > 0 ? to_string($count) : ""
   $notes.has_count = $count > 0
   $notes.background = ($open.notes ?? false) ? $C.accent_bg : nil
+  $notes.tip = tip(text("notes_title"), counted($count, "notes_none", "notes_one", "notes_many"), [])
 
   $vol = $snap.vol ?? {ok: false, level: 0, muted: false}
   $vol_icon = "audio-volume-muted"
@@ -178,16 +257,20 @@ fn panel($snap, $icons, $now)
   end
   $volume = icon_choice($themed, $vol_icon, "audio-card")
   $volume.shown = $vol.ok
+  $volume.tip = tip(text("volume_title"), $vol.muted ? text("muted") : text("level", {n: $vol.level}), [text($vol.muted ? "unmute" : "mute")])
 
   $net = $snap.net ?? {up: false, wireless: false}
   $network = icon_choice($themed, $net.up ? ($net.wireless ? "network-wireless-signal-excellent" : "network-wired-activated") : "network-offline", "network-wired")
+  $network.tip = tip(text("network_title"), text($net.up ? ($net.wireless ? "wireless" : "wired") : "offline"), [])
 
   $peek = icon_choice($themed, "user-desktop", "desktop")
   $peek.background = ($snap.peeked ?? false) ? $C.accent_bg : nil
+  $peek.tip = tip(text("peek_title"), text(($snap.peeked ?? false) ? "peek_restore" : "peek_minimise"), [])
 
   return {launcher: $launcher, workspaces: $workspaces, tasks: $tasks, tray: $tray,
     tray_empty: length($tray) == 0, notes: $notes, volume: $volume, network: $network,
-    clock: {time: $p.clock_text($now), date: $p.date_text($now), background: ($open.calendar ?? false) ? $C.accent_bg : nil},
+    clock: {time: $p.clock_text($now), date: $p.date_text($now), background: ($open.calendar ?? false) ? $C.accent_bg : nil,
+      tip: tip(date_format($now, "%A %-d %B %Y"), text("zone", {offset: date_format($now, "%:z")}), [text("calendar_hint")])},
     peek: $peek}
 end
 

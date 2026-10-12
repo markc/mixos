@@ -49,6 +49,14 @@ fn describe_advertises_exact_layout_vocabulary_without_new_defaults() {
                 matches!(family, "row" | "column")
             );
         }
+        // The hover tip: an optional object on the interactive families.
+        let tooltip = ports.iter().find(|p| p.path == "tooltip");
+        assert_eq!(
+            tooltip.is_some(),
+            matches!(family, "row" | "column" | "button"),
+            "{family}"
+        );
+        assert!(tooltip.is_none_or(|p| p.default.is_none()));
         assert_eq!(
             ports
                 .iter()

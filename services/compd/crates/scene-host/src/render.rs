@@ -349,6 +349,10 @@ pub enum Action {
     EscapeEdge(String),
     EdgeFocus(String, bool),
     Menu(u64, crate::menu::Input),
+    /// A scene's hover tip: show (`Some`) or hide (`None`).
+    /// The scene's surface (its incarnation) rides along, so a scene
+    /// reloaded under the same name cannot inherit the old surface's tip.
+    Tooltip(String, HandleId, Option<crate::view::TipAt>),
 }
 
 fn panel_marks(
@@ -652,12 +656,16 @@ pub(crate) fn reconcile(
                         Arc::clone(&wiring.waker),
                         name.clone(),
                     );
+                    let asking = handle.id;
                     registry.set_message_handler(handle, move |message: &SceneMessage| {
                         let action = match message {
                             SceneMessage::Close => Some(Action::HideDialog(scene.clone())),
                             SceneMessage::EscapeEdge => Some(Action::EscapeEdge(scene.clone())),
                             SceneMessage::EdgeFocus(focused) => {
                                 Some(Action::EdgeFocus(scene.clone(), *focused))
+                            }
+                            SceneMessage::Tooltip(at) => {
+                                Some(Action::Tooltip(scene.clone(), asking, at.clone()))
                             }
                             _ => None,
                         };

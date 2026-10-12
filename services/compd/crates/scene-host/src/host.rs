@@ -43,6 +43,9 @@ pub struct Host {
     /// [`crate::conf::conf_mix_path`]).
     pub conf_mix: Option<std::path::PathBuf>,
     menu_calls: Vec<crate::menu::Extra>,
+    /// The hover tip on screen (`shell.props.get` `tooltip`), `null` when
+    /// none: `{scene, title, subtitle, lines, x, y, width, height}`.
+    pub tooltip: Value,
 }
 
 impl Host {
@@ -227,6 +230,7 @@ impl Host {
                 if let Some(cache) = cache {
                     snapshot["settings_cache"] = json!(cache);
                 }
+                snapshot["tooltip"] = self.tooltip.clone();
                 let path = argument(request, &args, "path").filter(|path| !path.is_empty());
                 let found = match path {
                     None => Some(snapshot),
@@ -636,6 +640,11 @@ pub struct SceneHost {
     wiring: Wiring,
     actions: Receiver<Action>,
     menu_surface: Option<crate::menu::Surface>,
+    /// The scene whose hover tip shows, and the tip.
+    tooltip: Option<(String, crate::view::TipAt)>,
+    /// The surface that asked for `tooltip` (its scene's incarnation).
+    tooltip_handle: Option<ui::HandleId>,
+    tooltip_surfaces: crate::tooltip::Surfaces,
     settings: crate::lane::native::Ui<Arc<crate::appearance::Look>>,
     appearance_generation: u64,
     input_geometry: Option<InputGeometry>,
@@ -679,6 +688,9 @@ impl SceneHost {
             wiring,
             actions,
             menu_surface: None,
+            tooltip: None,
+            tooltip_handle: None,
+            tooltip_surfaces: Default::default(),
             settings,
             appearance_generation: 0,
             input_geometry: None,
@@ -831,6 +843,26 @@ impl SceneHost {
                         self.host.panels.focus(surface.output(), edge);
                         serviced.changed = true;
                     }
+                }
+                Action::Tooltip(scene, asking, at) => {
+                    // A later hide from another scene must not close this
+                    // scene's tip: only the asking scene's own None does.
+                    match at {
+                        Some(at) => {
+                            self.tooltip = Some((scene, at));
+                            self.tooltip_handle = Some(asking);
+                        }
+                        None => {
+                            if self
+                                .tooltip
+                                .as_ref()
+                                .is_some_and(|(shown, _)| *shown == scene)
+                            {
+                                self.tooltip = None;
+                            }
+                        }
+                    }
+                    serviced.changed = true;
                 }
                 Action::Menu(serial, input) => match self.host.panels.menu_input(serial, input) {
                     Ok(extra) => {
@@ -1014,6 +1046,52 @@ impl SceneHost {
             renderer,
             restack,
         );
+        // A tip whose scene is gone or unmapped is forgotten, not deferred:
+        // a scene reloaded under the same name starts with no tip.
+        // A menu clears it too: the scene runs no pass while the menu holds
+        // the pointer, so it could not hide its own tip, and the tip must not
+        // pop back when the menu closes (it shows again on the next hover).
+        if self.host.panels.menu().is_some()
+            && let Some((scene, _)) = self.tooltip.take()
+            && let Some(surface) = self.surfaces.get(&scene)
+            && let Some(registry) = state.inner.surface_mut().registry.as_mut()
+        {
+            let _ = registry.dispatch_message(
+                ui::UiHandle::<crate::view::SceneUi>::from_id(surface.handle()),
+                crate::view::SceneMessage::ForgetTip,
+            );
+        }
+        if self.tooltip.as_ref().is_some_and(|(scene, _)| {
+            self.surfaces.get(scene).map(Surface::handle) != self.tooltip_handle
+                || self.host.mapped_output(scene).is_none()
+        }) {
+            self.tooltip = None;
+        }
+        // Each output renders in its own pass: only the tip's own output
+        // places it (any pass may hide it).
+        let current = state.inner.current_output().name();
+        let here = self.tooltip.as_ref().is_none_or(|(scene, _)| {
+            self.surfaces
+                .get(scene)
+                .is_some_and(|surface| surface.output() == current)
+        });
+        if here {
+            let tip = self.tooltip.as_ref();
+            self.host.tooltip = crate::tooltip::reconcile(
+                tip,
+                &mut self.tooltip_surfaces,
+                &self.placed,
+                self.settings
+                    .session()
+                    .host()
+                    .presentation()
+                    .map(|presentation| Arc::clone(presentation.content())),
+                self.appearance_generation,
+                state,
+                renderer,
+                restack,
+            );
+        }
         let seat = self.host.store.dialog_seat().map(|seat| seat.scene.clone());
         self.host.dialog_fit =
             seat.and_then(|scene| self.placed.get(&scene).map(|&(_, _, w, h)| (scene, w, h)));

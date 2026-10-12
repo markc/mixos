@@ -1,4 +1,4 @@
--- version: 0.3.0
+-- version: 0.4.0
 -- The bottom panel's behaviour: compositor, tray, notification and popup
 -- state in; one complete model out through the loader (scenes.model). The
 -- layout is static in scene.mix. Clicks arrive as {scene,node,kind,item?};
@@ -72,7 +72,7 @@ fn settings_text($data)
 end
 
 fn empty_icons()
-  return {themed: {}, plain: {}, windows: {}}
+  return {themed: {}, plain: {}, windows: {}, names: {}}
 end
 
 $state = {ready: false, windows: [], ws_count: 1, ws_current: 1, ws_names: [], tray: [], notes_count: 0,
@@ -269,23 +269,27 @@ fn apps_icon($name, $size, $theme)
   return ""
 end
 
--- A compositor app_id to an icon: the desktop entry's Icon= when one matches
--- (tried as-is, then lower-case), else the app_id as an icon name, else a
--- generic window icon.
-fn window_icon($app_id)
+-- A compositor app_id to {icon, name}: the desktop entry's Icon= and Name=
+-- when one matches (tried as-is, then lower-case), else the app_id as an
+-- icon name, else a generic window icon. The name goes in the task tip.
+fn window_entry($app_id)
   $icon_name = ""
+  $name = nil
   if $app_id != nil and $app_id != "" then
     for each $candidate in [$app_id, lower($app_id)]
       if $icon_name == "" then
         $entry = $r.call($APPS, "apps.get", {id: $candidate})
-        if $entry.ok and type($entry.value) == "map" and type($entry.value.icon) == "string" then $icon_name = $entry.value.icon end
+        if $entry.ok and type($entry.value) == "map" then
+          if type($entry.value.icon) == "string" then $icon_name = $entry.value.icon end
+          if $name == nil and type($entry.value.name) == "string" and $entry.value.name != "" then $name = $entry.value.name end
+        end
       end
     end
     if $icon_name == "" then $icon_name = $app_id end
   end
   $path = apps_icon($icon_name, 48, "")
   if $path == "" then $path = apps_icon("application-x-executable-symbolic", 48, "") end
-  return $path
+  return {icon: $path, name: $name}
 end
 
 fn resolve_icons()
@@ -304,7 +308,11 @@ fn resolve_icons()
   end
   for each $w in $t.panel_tasks($state.windows, $state.ws_current, $state.tasks_scope, $m.MAX_TASKS)
     $key = to_string($w.app_id)
-    if not has_key($state.icons.windows, $key) then $state.icons.windows[$key] = window_icon($w.app_id) end
+    if not has_key($state.icons.windows, $key) then
+      $entry = window_entry($w.app_id)
+      $state.icons.windows[$key] = $entry.icon
+      if $entry.name != nil then $state.icons.names[$key] = $entry.name end
+    end
   end
   for each $item in $state.tray
     $name = $item.icon_name ?? ""

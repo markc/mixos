@@ -133,6 +133,9 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
     // The textures this pass draws; the rest are dropped after it (egui
     // frees them, and the painter retires them a pass later).
     let mut drawn = std::collections::BTreeSet::new();
+    // The innermost hovered node that has a tip (children paint after
+    // their parents, so a later hit replaces an earlier one).
+    let mut tip_candidate: Option<super::tip::Candidate> = None;
     for item in &placed {
         let Some(node) = node_of(scene, item) else {
             continue;
@@ -170,7 +173,11 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                 let hover = hex(port_text(&node, "hover")).or(normal);
                 let radius = number(&node, "radius").unwrap_or(0.0);
                 let clickable = node.ports.contains_key("on_click") || item.source != Source::Tree;
-                let hovered = if clickable || hover != normal {
+                let tip = node
+                    .ports
+                    .get("tooltip")
+                    .and_then(super::tip::Tip::from_port);
+                let hovered = if clickable || hover != normal || tip.is_some() {
                     let response = ui.interact(
                         visible,
                         id,
@@ -187,6 +194,13 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                 } else {
                     false
                 };
+                if hovered && let Some(tip) = tip {
+                    tip_candidate = Some(super::tip::Candidate {
+                        key: item.key.clone(),
+                        rect: visible,
+                        tip,
+                    });
+                }
                 if let Some(fill) = if hovered { hover } else { normal } {
                     painter.rect_filled(rect, radius, fill);
                 }
@@ -217,6 +231,18 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                 } else {
                     InteractionState::Resting
                 };
+                if response.hovered()
+                    && let Some(tip) = node
+                        .ports
+                        .get("tooltip")
+                        .and_then(super::tip::Tip::from_port)
+                {
+                    tip_candidate = Some(super::tip::Candidate {
+                        key: item.key.clone(),
+                        rect: visible,
+                        tip,
+                    });
+                }
                 let theme = scene.theme();
                 let tables = theme.design().tables();
                 let cell = tables.button.cell(button_key(&node, interaction));
@@ -329,6 +355,7 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
         }
     }
     scene.textures.retain(|key, _| drawn.contains(key));
+    tip_pass(scene, ui, tip_candidate, emit);
     if framed {
         ui.painter().rect_stroke(
             full,
@@ -336,6 +363,37 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
             Stroke::new(1.0, colour(palette.border)),
             StrokeKind::Inside,
         );
+    }
+}
+
+/// Advance the hover tip: show, move, hide, or ask to be woken when the
+/// delay runs out (a one-shot deadline, never a frame loop).
+fn tip_pass(
+    scene: &mut SceneUi,
+    ui: &Ui,
+    candidate: Option<super::tip::Candidate>,
+    emit: &mut Vec<SceneMessage>,
+) {
+    let ctx = ui.ctx().clone();
+    let pressed = ctx.input(|input| input.pointer.any_pressed());
+    let size = scene.text_styles().ui.size;
+    let measure = |text: &str, font: &egui::FontId| {
+        let size = ctx.fonts_mut(|fonts| {
+            fonts
+                .layout_no_wrap(text.to_owned(), font.clone(), Color32::WHITE)
+                .size()
+        });
+        (size.x, size.y)
+    };
+    let size_of = |tip: &super::tip::Tip| super::tip::card(tip, size, &measure).size;
+    match scene
+        .hover
+        .pass(std::time::Instant::now(), candidate, pressed, &size_of)
+    {
+        super::tip::Outcome::Same => {}
+        super::tip::Outcome::Show(at) => emit.push(SceneMessage::Tooltip(Some(at))),
+        super::tip::Outcome::Hide => emit.push(SceneMessage::Tooltip(None)),
+        super::tip::Outcome::Wait(after) => ctx.request_repaint_after(after),
     }
 }
 
