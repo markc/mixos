@@ -595,6 +595,32 @@ and, as tie-breaker, Gemini.
 
 ---
 
+<!-- page: https://mixos.dev/backdrop/ (source: https://mixos.dev/backdrop.md) -->
+
+# Backdrop
+
+Backdrop draws the MixOS desktop background. It is its own program, not
+part of the compositor: it puts one surface on the compositor's
+background layer for each output, under every window and panel, and
+draws it with egui. A crash in it never takes the session down.
+
+What it will draw:
+
+- a **colour**, an **image** (fill, fit, centre, tile or stretch) or a
+  **slideshow** that crossfades through a folder;
+- optionally, over any of them, a **live folder**: the files of a folder
+  as icons, photos and videos as thumbnails, updated as files come and go.
+
+**Today it is a probe.** It fills each output with the session theme and
+shows the output's size and scale and the clicks it receives. That proves
+the surfaces, the scaling and the input before the wallpapers and the
+folder view are built on them.
+
+It costs nothing while nothing changes: it draws only when its content,
+size, scale or input changes.
+
+---
+
 <!-- page: https://mixos.dev/decisions/2026-10-07-settings-authority/ (source: https://mixos.dev/decisions/2026-10-07-settings-authority.md) -->
 
 # Desktop settings have one native ABP authority
@@ -2214,6 +2240,7 @@ layering gate.
 
 | Package | Owner | Kind | Layer | Contract | Version |
 |---|---|---|---|---|---|
+| [backdrop](https://github.com/markc/mixos/blob/main/apps/backdrop/Cargo.toml) | backdrop | app | desktop | none | 0.1.1 |
 | [busviewer](https://github.com/markc/mixos/blob/main/apps/busviewer/Cargo.toml) | busviewer | app | desktop | public | 0.1.1 |
 | [inspector](https://github.com/markc/mixos/blob/main/apps/busviewer/crates/inspector/Cargo.toml) | busviewer | app | core | none | 0.1.1 |
 | [ced](https://github.com/markc/mixos/blob/main/apps/ced/Cargo.toml) | ced | app | desktop | public | 0.1.1 |

@@ -1,0 +1,25 @@
+# backdrop: the MixOS desktop background — colour, image, slideshow and a
+# live folder view — drawn with egui on compd's Background layer.
+[package]
+name = "backdrop"
+description = "The MixOS desktop background: wallpapers, slideshows and a live folder view"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "backdrop"
+kind = "app"
+layer = "desktop"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+egui.workspace = true
+toolkit = { workspace = true, features = ["layer"] }
+serde_json.workspace = true

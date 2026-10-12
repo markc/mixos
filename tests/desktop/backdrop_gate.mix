@@ -1,0 +1,336 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- backdrop_gate.mix — backdrop on a PRIVATE nested compd (its own headless
+-- weston host), judged by Bus evidence, a screenshot and backdrop's own
+-- JSON lines.
+--
+--   mix tests/desktop/backdrop_gate.mix [--backdrop PATH] [--bin PATH] --config-file PATH
+--       [--software] [--private-bus [--noded PATH]] [--shot-out PATH]
+--
+-- --shot-out keeps the screenshot taken with backdrop drawn (P6), to look at.
+--
+-- --private-bus starts an owned noded on a loopback port for the run (a
+-- build worker runs no broker); without it the run uses this node's.
+--
+-- Checks:
+-- - backdrop maps a NEW layer row on the Background band;
+-- - it reports a painted pass at the output's size (`drawn`);
+-- - the screenshot at the output's centre changed from the compositor's
+--   own fill to backdrop's;
+-- - an injected click on bare desktop reaches it (`click`, at the place
+--   clicked);
+-- - a click on a window above it does not;
+-- - the compositor stops on TERM within 10 s, with no panic in its log.
+--
+-- Every check prints a line; the run ends with one PASS/FAIL summary and
+-- exits non-zero if anything failed.
+
+$n = require("nested_host_lib.mix")
+$c = require("capture_lib.mix")
+$CLEANUP = {ok: false, run: nil}
+$BUS = nil
+try
+
+$USAGE = "usage: backdrop_gate.mix [--backdrop PATH] [--bin PATH] --config-file PATH [--software] [--private-bus [--noded PATH]] [--shot-out PATH]"
+$PRIVATE_BUS = false
+$NODED = ""
+$SHOT_OUT = ""
+$BIN = ""
+$CONFIG = ""
+$BACKDROP = ""
+$SOFTWARE = false
+$argv = args()
+$ai = 0
+while $ai < len($argv)
+  $arg = $argv[$ai]
+  if $arg == "--bin" and $ai + 1 < len($argv) then
+    $BIN = $argv[$ai + 1]
+    $ai = $ai + 2
+  elif $arg == "--config-file" and $ai + 1 < len($argv) then
+    $CONFIG = $argv[$ai + 1]
+    $ai = $ai + 2
+  elif $arg == "--backdrop" and $ai + 1 < len($argv) then
+    $BACKDROP = $argv[$ai + 1]
+    $ai = $ai + 2
+  elif $arg == "--software" then
+    $SOFTWARE = true
+    $ai = $ai + 1
+  elif $arg == "--shot-out" and $ai + 1 < len($argv) then
+    $SHOT_OUT = $argv[$ai + 1]
+    $ai = $ai + 2
+  elif $arg == "--private-bus" then
+    $PRIVATE_BUS = true
+    $ai = $ai + 1
+  elif $arg == "--noded" and $ai + 1 < len($argv) then
+    $NODED = $argv[$ai + 1]
+    $ai = $ai + 2
+  else
+    print("  ERROR: unknown or incomplete argument '" .. $arg .. "'")
+    print($USAGE)
+    exit(2)
+  end
+end
+-- The backdrop built with the compd under test, else the installed one.
+if $BACKDROP == "" then
+  $BACKDROP = if $BIN != "" then dirname($BIN) .. "/backdrop" else "/opt/mixos/bin/backdrop" end
+end
+if not is_file($BACKDROP) then
+  print("  ERROR: --backdrop must name the backdrop binary")
+  print($USAGE)
+  exit(2)
+end
+
+$comp = $n.require_binary("compd", $BIN, ["/opt/mixos/bin"])
+$shot = $n.require_probe("testkit-screenshot", "", $comp)
+$shm = which("weston-simple-shm")
+if $shm == nil or $shm == "" then
+  print("  ERROR: weston-simple-shm is not on PATH")
+  exit(2)
+end
+
+$TALLY = {pass: 0, fail: 0}
+fn check($name, $ok, $detail)
+  if $ok then
+    print("  PASS " .. $name)
+    $TALLY["pass"] = $TALLY["pass"] + 1
+  else
+    print("  FAIL " .. $name .. ": " .. $detail)
+    $TALLY["fail"] = $TALLY["fail"] + 1
+  end
+  return $ok
+end
+
+$CLEANUP.run = $n.new_run("/tmp/backdrop-gate-" .. to_string(pid()))
+if $PRIVATE_BUS then
+  $BUS = $n.private_bus({dir: $CLEANUP.run.path .. "/bus", name: "backdrop-gate", noded: $NODED})
+end
+$session = $n.start({bin: $comp, tag: "backdrop", run: $CLEANUP.run, config: $CONFIG, env: {}, software: $SOFTWARE})
+$svc = $session["service"]
+$run = $session["runtime"]
+if not check("compositor socket up and comp.ping answered", $n.wait_ready($session, 30),
+    "log " .. $session["log"]) then
+  $n.stop($session)
+  $n.stop_bus($BUS)
+  exit(1)
+end
+print("nested compd (" .. $comp .. "): socket " .. $session["socket"] .. ", service " .. $svc)
+
+fn call($verb, $args)
+  return $n.call($svc, $verb, $args)
+end
+
+fn surface_rows()
+  $r = call("comp.props.get", {path: "surfaces"})
+  if $r.rc != 0 or type($r.result) != "map" then
+    return {}
+  end
+  $out = {}
+  for each $k in keys($r.result)
+    $row = $r.result[$k]
+    if type($row) == "map" and $row.id != nil then
+      $out[to_string($row.id)] = $row
+    end
+  end
+  return $out
+end
+
+fn known_ids()
+  $set = {}
+  for each $k in keys(surface_rows())
+    $set[$k] = true
+  end
+  return $set
+end
+
+fn wait_new_row($known, $role, $secs)
+  $i = 0
+  while $i < $secs * 4
+    $rows = surface_rows()
+    for each $k in keys($rows)
+      $row = $rows[$k]
+      if $known[$k] != true and $row.role == $role and $row.mapped == true then
+        return $row
+      end
+    end
+    sleep(0.25)
+    $i = $i + 1
+  end
+  return nil
+end
+
+fn client_env()
+  $e = {WAYLAND_DISPLAY: $session["socket"], XDG_RUNTIME_DIR: $run, HOME: env("HOME", "/tmp")}
+  if $SOFTWARE then
+    $e["LIBGL_ALWAYS_SOFTWARE"] = "1"
+  end
+  return $e
+end
+
+$PIDS = {}
+fn launch($name, $argv)
+  $p = spawn($argv, {env: client_env(), stdout: {file: $run .. "/" .. $name .. ".log"},
+    stderr: "stdout", detach: true})
+  $PIDS[$name] = $p
+  return $p
+end
+
+fn alive($p)
+  return $p != nil and exists("/proc/" .. to_string($p))
+end
+
+-- backdrop's JSON lines with `event` == $event, parsed.
+fn events($event)
+  $out = []
+  $path = $run .. "/backdrop.log"
+  if not is_file($path) then
+    return $out
+  end
+  for each $line in split(read_file($path), "\n")
+    if starts_with($line, "{") then
+      $e = json_parse($line)
+      if type($e) == "map" and $e.event == $event then
+        push($out, $e)
+      end
+    end
+  end
+  return $out
+end
+
+fn wait_events($event, $count, $secs)
+  $i = 0
+  while len(events($event)) < $count and $i < $secs * 4
+    sleep(0.25)
+    $i = $i + 1
+  end
+  return events($event)
+end
+
+fn screenshot($name)
+  $path = $run .. "/" .. $name .. ".ppm"
+  $r = run_argv([$shot, $path], {env: client_env(), timeout: 20})
+  if $r.exit_code != 0 then
+    print("  note: testkit-screenshot " .. $name .. ": " .. trim($r.stderr))
+    return nil
+  end
+  return $c.ppm($path)
+end
+
+-- Move, press, release; true only when the compositor accepted all three.
+fn click($x, $y)
+  $m = call("comp.input.pointer.move", {seat: "human", x: $x, y: $y})
+  sleep(0.1)
+  $p = call("comp.input.pointer.button", {seat: "human", button: "left", action: "press"})
+  sleep(0.05)
+  $r = call("comp.input.pointer.button", {seat: "human", button: "left", action: "release"})
+  return $m.rc == 0 and $p.rc == 0 and $r.rc == 0
+end
+
+try
+  $o = call("comp.props.get", {path: "outputs"})
+  $out = nil
+  if $o.rc == 0 and type($o.result) == "map" and len(keys($o.result)) > 0 then
+    $out = $o.result[keys($o.result)[0]]
+  end
+  check("the compositor reports an output", $out != nil, json_encode($o))
+  $before_img = screenshot("before")
+
+  -- ── backdrop maps on the Background band ──────────────────────────────
+  $before = known_ids()
+  launch("backdrop", [$BACKDROP])
+  $row = wait_new_row($before, "layer", 15)
+  if check("backdrop mapped a NEW layer surface", $row != nil, "no new mapped layer row in 15 s (" .. $run .. "/backdrop.log)") then
+    check("backdrop is on the Background band", $row.band == "background", json_encode($row.band))
+  end
+  $drawn = wait_events("drawn", 1, 15)
+  if check("backdrop reported a painted pass", len($drawn) > 0, "no drawn line") then
+    $d = $drawn[len($drawn) - 1]
+    check("drawn at the output's size", $out != nil and $d.width == $out.width and $d.height == $out.height,
+      json_encode($d) .. " vs output " .. json_encode($out))
+  end
+
+  -- ── the screen changed under it ───────────────────────────────────────
+  sleep(0.5)
+  $after_img = screenshot("after")
+  if check("screenshots before and after", $before_img != nil and $after_img != nil, "testkit-screenshot failed") then
+    $cx = $after_img.w / 2
+    $cy = $after_img.h / 2
+    $p0 = $c.pixel($before_img, $cx, $cy)
+    $p1 = $c.pixel($after_img, $cx, $cy)
+    if $SHOT_OUT != "" then
+      copy($run .. "/after.ppm", $SHOT_OUT)
+    end
+    print("  note: centre pixel " .. json_encode($p0) .. " -> " .. json_encode($p1))
+    check("the centre pixel changed from the compositor's fill to backdrop's", not deep_eq($p0, $p1), json_encode([$p0, $p1]))
+  end
+
+  -- ── a click on bare desktop reaches it ────────────────────────────────
+  if $out != nil then
+    $x = $out.x + $out.width / 4
+    $y = $out.y + $out.height / 4
+    check("the click on bare desktop was injected", click($x, $y), "comp.input refused")
+    $clicks = wait_events("click", 1, 5)
+    if check("a click on bare desktop reached backdrop", len($clicks) == 1, to_string(len($clicks)) .. " clicks") then
+      $k = $clicks[0]
+      check("at the place clicked", abs($k.x - ($x - $out.x)) < 2 and abs($k.y - ($y - $out.y)) < 2,
+        json_encode($k) .. " vs " .. json_encode([$x, $y]))
+    end
+
+    -- ── a click on a window above it does not ───────────────────────────
+    $before = known_ids()
+    launch("weston-simple-shm", [$shm])
+    $win = wait_new_row($before, "toplevel", 15)
+    if check("a window mapped above backdrop", $win != nil, "no new toplevel in 15 s") then
+      sleep(0.5)
+      check("the click on the window was injected", click($win.x + $win.width / 2, $win.y + $win.height / 2),
+        "comp.input refused")
+      sleep(1)
+      check("a click on the window did not reach backdrop", len(events("click")) == 1,
+        to_string(len(events("click"))) .. " clicks")
+    end
+  end
+  check("backdrop is still running", alive($PIDS["backdrop"]), "it exited (" .. $run .. "/backdrop.log)")
+catch $e
+  check("the runner completed", false, to_string($e))
+end
+
+-- ── teardown: clients, then TERM the compositor ──────────────────────────
+for each $name in keys($PIDS)
+  if alive($PIDS[$name]) then
+    $sent = kill($PIDS[$name], 15)
+  end
+end
+$cp = $session["comp_pid"]
+$sent = kill($cp, 15)
+$t = 0
+while alive($cp) and $t < 40
+  sleep(0.25)
+  $t = $t + 1
+end
+check("SIGTERM stopped the compositor within 10 s", not alive($cp), "pid " .. to_string($cp))
+$n.stop($session)
+$final = ""
+if is_file($session["log"]) then
+  $final = re_replace(read_file($session["log"]), "\u{1b}\\[[0-9;]*m", "")
+end
+check("no compositor panic (final log)", len(grep_lines($final, "panicked at")) == 0, $session["log"])
+$own = ""
+if is_file($run .. "/backdrop.log") then $own = read_file($run .. "/backdrop.log") end
+check("no backdrop panic or protocol error (its log)",
+  len(grep_lines($own, "panicked at")) == 0 and len(grep_lines($own, ": error ")) == 0 and
+    len(grep_lines($own, "rotocol error")) == 0 and len(grep_lines($own, "backdrop: ")) == 0,
+  $run .. "/backdrop.log")
+
+$total = $TALLY["pass"] + $TALLY["fail"]
+if $TALLY["fail"] == 0 then
+  print("PASS backdrop_gate: " .. to_string($TALLY["pass"]) .. "/" .. to_string($total) .. " checks")
+  $CLEANUP.ok = true
+  exit(0)
+end
+print("FAIL backdrop_gate: " .. to_string($TALLY["fail"]) .. " of " .. to_string($total) ..
+  " checks failed (logs in " .. $run .. ")")
+exit(1)
+finally
+  -- An owned broker goes however the run ended.
+  $n.stop_bus($BUS)
+  $n.finish_run($CLEANUP.run, $CLEANUP.ok)
+end
