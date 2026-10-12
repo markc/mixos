@@ -246,9 +246,10 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="decision--one-repository-install-profiles">Decision — one repository, install profiles</h1>
-<p>Status: accepted 2026-10-12. AGENTS.md §2.3 (identity and metadata), §2.5
-(Mix components) and §10 (the checklist) are amended in the same change
-that adds the <code>profiles</code> field and its gates.</p>
+<p>Status: accepted 2026-10-12; amended 2026-10-12 after review. AGENTS.md
+§2.3 (identity and metadata), §2.5 (Mix components) and §10 (the
+checklist) are amended in the same change that adds the <code>profiles</code> field
+and its gate.</p>
 <h2 id="the-question">The question</h2>
 <p>MixOS has two audiences: a desktop (the compositor, the apps and their
 settings services) and servers (mail, web, blobs, DNS and the mesh daemons
@@ -263,16 +264,29 @@ MixOS source repository for server programs.</p>
 </li>
 <li>
 <p><strong>The split is an install split, not a source split.</strong> Every shipping
-component (every <code>app</code>, <code>service</code> and <code>cli</code>) declares the <strong>install
-profiles</strong> that include it:</p>
+component declares the <strong>install profiles</strong> that include it:</p>
 <table><thead><tr><th>Profile</th><th>Meaning</th></tr></thead><tbody>
 <tr><td><code>base</code></td><td>On every MixOS system: the shell and the Bus node</td></tr>
-<tr><td><code>server</code></td><td>A headless node's services</td></tr>
-<tr><td><code>desktop</code></td><td>The desktop session: compositor, apps, their services</td></tr>
+<tr><td><code>server</code></td><td>What a headless node may run</td></tr>
+<tr><td><code>desktop</code></td><td>The desktop session: compositor, apps, their services and the session's own wiring</td></tr>
 </tbody></table>
-<p>A component may be in more than one profile. Libraries and a component's
-private crates declare none: they are installed only as part of what
-needs them.</p>
+</li>
+<li>
+<p><strong>Composition.</strong> <code>server</code> and <code>desktop</code> each include <code>base</code>: resolving
+either one yields its own components plus <code>base</code>'s. A system may install
+both. A resolved set is the union of its profiles, each component once.</p>
+</li>
+<li>
+<p><strong>Who declares.</strong> A component's <em>principal</em> package declares <code>profiles</code>:
+the package whose name is its component (the directory under <code>apps/</code>,
+<code>services/</code> or <code>cli/</code>), or a Mix component's <code>component.mx</code>. The list is
+non-empty, has no duplicates and names only the three profiles. The field
+is absent on libraries, on a component's private crates (whatever <code>kind</code>
+they inherit from their owner), and on <code>tool</code> and <code>test</code> packages.
+Libraries are never installed on their own; they are linked into what
+needs them. The session's targets and wiring (<code>session/</code>) belong to
+<code>desktop</code>; when the <code>session</code> kind lands, it declares <code>profiles</code> like any
+other shipping component.</p>
 </li>
 <li>
 <p><strong>Where it is declared.</strong> A Rust component adds <code>profiles</code> to its
@@ -284,55 +298,79 @@ layer = "core"
 contract = "public"
 profiles = ["server"]
 </code></pre>
-<p>A Mix component adds the same <code>profiles</code> list to its <code>component.mx</code>.
-Install profiles are unrelated to Cargo's build profiles
-(<code>release</code>, <code>release-fast</code>): any install profile can be built with any
-of them.</p>
+<p>A Mix component adds the same <code>profiles</code> list to its <code>component.mx</code>.</p>
 </li>
 <li>
-<p><strong>The gates.</strong></p>
+<p><strong>Naming.</strong> Install profiles are unrelated to Cargo's build profiles
+(<code>release</code>, <code>release-fast</code>) and to any service's own settings profiles.
+Prose says "install profile"; tools take <code>--install-profile</code>, beside
+<code>--cargo-profile</code> and <code>--target</code>, never a bare <code>--profile</code>.</p>
+</li>
+<li>
+<p><strong>The profile gate</strong> is new, workspace-wide work. Today's closure and
+layering gates check compd's own crates only; they do not protect other
+components. The profile gate:</p>
 <ul>
-<li>The component gate refuses an <code>app</code>, <code>service</code> or <code>cli</code> without a
-<code>profiles</code> list, an unknown profile, and <code>profiles</code> on a library or a
-private crate.</li>
-<li>The layering gate refuses a <code>base</code> or <code>server</code> component whose
-dependency closure contains a <code>desktop</code>-layer package. A server never
-builds egui, wgpu or smithay.</li>
-<li>The component index (<code>docs/dev/components.md</code>) shows each component's
-profiles.</li>
+<li>refuses the declaration errors above;</li>
+<li>refuses a <code>base</code> or <code>server</code> component that itself declares the
+<code>desktop</code> layer;</li>
+<li>resolves the normal and build dependency closure of each <code>base</code> and
+<code>server</code> principal, for every feature set its profiles build, and
+refuses any <code>desktop</code>-layer workspace package in it, and any upstream
+GUI crate (smithay, egui, eframe, wgpu, winit, Bevy and the like) even
+though those carry no MixOS metadata;</li>
+<li>for a Mix component, which has no Cargo closure, refuses a <code>desktop</code>
+layer in a <code>base</code> or <code>server</code> component; what it calls on the Bus is
+checked at review, as AGENTS.md §2.5 already says.</li>
 </ul>
+<p>The component index (<code>docs/dev/components.md</code>) shows each component's
+profiles.</p>
 </li>
 <li>
-<p><strong>Building and installing by profile.</strong> A profile resolves to a list of
-packages to build (<code>cargo build -p …</code>), the Mix components to install, and
-their units. One tool answers "what is in <code>server</code>?" from the metadata, so
-build scripts, images and installers never keep their own lists. The
-installer for Rust binaries and their units, with the record, rollback
-and drift check that <code>tools/component_install.mix</code> gives Mix components,
-is separate work that follows this decision.</p>
+<p><strong>Resolving, installing and activating are separate.</strong></p>
+<ul>
+<li><strong>Resolve:</strong> one tool answers "what is in <code>server</code>?" from the metadata,
+deterministically. Its output covers the packages to build, the Mix
+components, and each component's runtime artefacts: units by class
+(system or session), <code>sysusers</code> and <code>tmpfiles</code> fragments, and assets.
+Build scripts, images and installers never keep their own lists.</li>
+<li><strong>Install:</strong> places those files. Rust components go to an installer
+that gives binaries and units the record, rollback and drift check
+<code>tools/component_install.mix</code> gives Mix components (separate work that
+follows this decision); Mix components go to that existing installer.</li>
+<li><strong>Activate:</strong> which services a particular node runs, with what
+configuration, is that node's decision, not the profile's. Installing
+<code>server</code> makes a service available; it does not start every server on
+every node.</li>
+</ul>
 </li>
 </ul>
 <h3 id="the-first-assignment">The first assignment</h3>
 <table><thead><tr><th>Component</th><th>Profiles</th></tr></thead><tbody>
 <tr><td><code>mix-shell</code> (the <code>mix</code> binary), <code>noded</code></td><td><code>base</code></td></tr>
-<tr><td><code>releasesd</code></td><td><code>server</code></td></tr>
-<tr><td><code>compd</code>, <code>settingsd</code>, <code>portald</code>, <code>editd</code>, <code>busviewer</code>, <code>ced</code>, <code>dopus</code>, <code>prefs</code></td><td><code>desktop</code></td></tr>
+<tr><td><code>compd</code>, <code>settingsd</code>, <code>portald</code>, <code>editd</code>, <code>releasesd</code>, <code>busviewer</code>, <code>ced</code>, <code>dopus</code>, <code>prefs</code></td><td><code>desktop</code></td></tr>
 </tbody></table>
-<p>Server programs moved in later (mail, web, blobs and the rest) join
-<code>server</code> as they land.</p>
+<p><code>server</code> starts empty: the server programs join it as they move in (mail,
+web, blobs and the rest). <code>releasesd</code> is a per-user session service and
+<code>editd</code> serves the session's editors, so both are <code>desktop</code>. A headless
+mode for either would be its own decision, with suitable supervision,
+before it joins <code>server</code>.</p>
 <h2 id="why">Why</h2>
 <ul>
 <li><strong>The two sides share their foundation.</strong> The Bus, noded, Mix, the config
-and props libraries and logging sit under both. A second repository would
-have to consume them as published versions, and they change almost daily.
-Every change to them would become a release here and an upgrade there.</li>
+and props libraries and logging sit under both, and they change almost
+daily. A second repository could pin them as Git dependencies rather than
+wait for releases, but every foundation change would still mean a
+coordinated upgrade on the other side, and consolidating duplicated code
+across the boundary would mean moving it between repositories.</li>
 <li><strong>Changes cut across both.</strong> The verb registry's move to classes changed
 the registry, its gate and every application in one commit. Across two
 repositories that is coordinated pull requests that can drift apart.</li>
-<li><strong>The separation that matters is already enforced</strong> by the layering and
-dependency gates (AGENTS.md §6): headless crates never depend on smithay,
-egui, wgpu or Bevy. A repository boundary adds nothing to that. The
-profile gate extends it from crates to what a server installs.</li>
+<li><strong>The separation that matters can be enforced here.</strong> Headless code
+never needing a GUI stack is a property of a dependency closure, and the
+profile gate checks exactly that for every <code>base</code> and <code>server</code> component.
+A repository boundary would enforce it less precisely: it says nothing
+about which features or which programs a node gets.</li>
 <li><strong>This was decided once already.</strong> The
 <a href="/decisions/2026-10-04-source-layout/">source layout decision</a> rejected one
 repository per component so that one dependency graph can be gated,
@@ -345,11 +383,14 @@ that precisely, from data, in one place.</li>
 </ul>
 <h2 id="alternatives">Alternatives</h2>
 <ul>
-<li><strong>A second repository for server programs.</strong> Rejected for the reasons
-above. It would be the right call if the server side ever needed a
-different licence, private code, its own team or its own release cadence.
-None of these applies. Private deployment detail already lives outside
-this repository.</li>
+<li><strong>A second repository for server programs.</strong> The strongest case for it:
+an independent lockfile, toolchain and release pipeline, so desktop
+dependency churn never touches a server build and a server fix never
+waits on the desktop. That isolation is real; it loses to the shared,
+fast-moving foundation and the consolidation still to do. A split would
+be the right call if the server side ever needed a different licence,
+private code, its own team or its own release cadence. None of these
+applies. Private deployment detail already lives outside this repository.</li>
 <li><strong>Cargo features or a second workspace in this repository.</strong> Rejected. A
 second workspace means two lockfiles and two dependency graphs, which is
 what AGENTS.md §0 rules out. Features select code inside a crate, not
@@ -361,10 +402,12 @@ any other; which systems it belongs on is data.</li>
 <h2 id="consequences">Consequences</h2>
 <ul>
 <li>One <code>Cargo.lock</code>: a dependency bump for the desktop also moves the
-servers' resolved versions. The gates and each component's tests catch a
+servers' resolved versions, and a server fix ships from the same tree as
+that day's desktop work. Each component's tests and the gates catch a
 break; the alternative was version drift between repositories.</li>
 <li>Building a server set compiles only that set's closure (<code>cargo build -p</code>),
-so headless builds stay small.</li>
+so headless builds stay small. A server build host still checks out the
+whole tree, desktop vendor forks included.</li>
 <li>AGENTS.md §2.3 and §2.5 gain the <code>profiles</code> field, and §10's checklist
 asks for it.</li>
 </ul>
