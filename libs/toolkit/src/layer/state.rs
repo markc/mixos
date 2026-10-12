@@ -312,7 +312,6 @@ impl<P: LayerProgram + 'static> State<P> {
             time: Some(s.started.elapsed().as_secs_f64()),
             events: std::mem::take(&mut s.events),
             focused: s.focused,
-            modifiers: input::modifiers(&self.modifiers),
             ..egui::RawInput::default()
         };
         raw.viewports
