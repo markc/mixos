@@ -918,7 +918,8 @@ impl<P: LayerProgram + 'static> State<P> {
         }
         // A key the keymap marks `repeat=no` never repeats (and, like a
         // modifier, leaves a running repeat alone). Evdev codes are 8 below
-        // XKB's.
+        // XKB's. With no keymap yet (a compositor out of protocol order)
+        // keys repeat, unlike sctk's default: deliberate, as before.
         if self
             .keymap
             .as_ref()
