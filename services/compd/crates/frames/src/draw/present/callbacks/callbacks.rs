@@ -74,10 +74,14 @@ pub fn collect_feedback(
 /// instead ([`trickle`]): one callback at most every [`OCCLUDED_TRICKLE`].
 pub fn send_window_frames(state: &Loop, output: &Output, visible: &[Window]) {
     let frame_time = state.inner.start_time.elapsed();
-    // A window drawn here only as a hover thumbnail is the pacer's.
-    let paced = world::window::draw::thumbnail::paced();
+    // A window this output drew only as a hover thumbnail is not its to
+    // pace: the output drawing it in place sends its callbacks, else the
+    // thumbnail pacer does.
+    let key = world::state::state::output_key(output);
     for window in visible {
-        if paced.iter().any(|(w, _)| w == window) {
+        if world::window::draw::thumbnail::preview_only_on(&key, window)
+            || world::window::draw::thumbnail::preview_only_on("", window)
+        {
             continue;
         }
         window.send_frame(output, frame_time, Some(Duration::ZERO), |_, _| {
@@ -108,6 +112,8 @@ fn thumbnail_targets(state: &Loop) -> Vec<(Window, Output)> {
         return Vec::new();
     }
     let space = &state.inner.space_state().state;
+    let live: Vec<String> = space.outputs().map(world::state::state::output_key).collect();
+    world::window::draw::thumbnail::retain_outputs(&live);
     world::window::draw::thumbnail::paced()
         .into_iter()
         .filter_map(|(window, key)| {
@@ -220,9 +226,8 @@ pub fn surface_awaits_frame(
 /// callbacks (egui answering Bus verbs) stalled until it was shown again.
 fn trickle_targets(state: &Loop) -> Vec<(Window, Output)> {
     // One owner per window: a hover thumbnail's pacer outranks the trickle.
-    let paced = world::window::draw::thumbnail::paced();
     let mut targets = trickle_candidates(state);
-    targets.retain(|(window, _)| !paced.iter().any(|(w, _)| w == window));
+    targets.retain(|(window, _)| !world::window::draw::thumbnail::is_paced(window));
     targets
 }
 

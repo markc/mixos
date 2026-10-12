@@ -146,8 +146,20 @@ pub enum Pass {
 }
 
 /// The captured pass's chrome: a distinct type in the window's user data.
+/// Captures at two scales at once (a screenshot taken while a tip previews
+/// the same window) re-raster it each time; that corner is accepted, as
+/// both are brief.
 #[derive(Default)]
 struct CapturedChrome(RefCell<WindowChrome>);
+
+/// Free `window`'s captured-pass rasters (titlebar, shadow, corners) when no
+/// capture needs them any more, e.g. when the last hover thumbnail of it
+/// hides. The user-data entry stays (it cannot be removed), empty.
+pub fn release_captured(window: &Window) {
+    if let Some(captured) = window.user_data().get::<CapturedChrome>() {
+        *captured.0.borrow_mut() = WindowChrome::default();
+    }
+}
 
 /// The per-window chrome, kept in the window's user data.
 #[derive(Default)]

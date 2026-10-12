@@ -503,15 +503,25 @@ impl Placements {
             .as_ref()
             .and_then(surface_size)
             .unwrap_or_else(|| window.bbox().size);
-        let decoration = window.toplevel().map(|toplevel| {
-            match toplevel
-                .with_committed_state(|state| state.and_then(|state| state.decoration_mode))
-            {
-                Some(DecorationMode::ServerSide) => "server",
-                Some(DecorationMode::ClientSide) => "client",
-                _ => "unbound",
-            }
-        });
+        let decoration = match window.toplevel() {
+            Some(toplevel) => Some(
+                match toplevel
+                    .with_committed_state(|state| state.and_then(|state| state.decoration_mode))
+                {
+                    Some(DecorationMode::ServerSide) => "server",
+                    Some(DecorationMode::ClientSide) => "client",
+                    _ => "unbound",
+                },
+            ),
+            // An X11 window negotiates no xdg-decoration: compd's own policy
+            // decides whether it draws the frame, so that is its mode.
+            None if window.x11_surface().is_some() => Some(if decor::window::decorated(window) {
+                "server"
+            } else {
+                "client"
+            }),
+            None => None,
+        };
         let foreign_id = window
             .toplevel()
             .and_then(|toplevel| lp.state.foreign.identifier_of(toplevel.wl_surface()));
