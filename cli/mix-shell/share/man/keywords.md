@@ -3,7 +3,7 @@
 Mix's keyword lexemes, held to the lexer by
 `cargo test -p mixos-lib-mix keyword_set_matches_lexer` (the lib's
 `KEYWORDS` list and the lexer match arms must agree, and
-`cargo test -p mix-shell --test man_pages` holds this table to the same
+`cargo test -p system --test man_pages` holds this table to the same
 set). Since 0.21 the old reserved-word footgun is retired: a keyword is
 accepted anywhere it is unambiguously a **name** (bare map keys, `.field`
 access, strict-data keys, `send` kwargs, `parse … with` delimiters) — see

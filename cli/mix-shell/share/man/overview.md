@@ -106,7 +106,7 @@ It ships as two crates that version in lockstep (a third workspace member,
 | Crate | What it is |
 |---|---|
 | **`mixos-lib-mix`** | The interpreter library — lexer, parser, evaluator, builtins, value model. Pure Rust, no internal deps; feature-gated capabilities (`json`, `regex`, `toml`, `datetime`, `url`, `crypto`, `http`, `sqlite`, `dkim`, `markdown`, `datastar`). |
-| **`mix-shell`** | The `mix` binary — REPL, shell layer, Bus wiring, the `--serve` supervised-citizen runtime, and the `mix man`/`help`/`what` meta-commands. |
+| **`mix-shell`** | The shell behind the `mix` binary (built by `cli/system`) — REPL, shell layer, Bus wiring, the `--serve` supervised-citizen runtime, and the `mix man`/`help`/`what` meta-commands. |
 
 A standalone `mix` install runs as a normal scripting shell. When a Bus broker
 (`noded`, from the [cos](https://github.com/markc/mixos) repo) later appears

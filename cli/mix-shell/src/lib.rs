@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+//! The mix shell. The `mix` binary is built by `cli/system`, which runs
+//! [`main`] when started as `mix` (docs/decisions/2026-10-12-one-system-binary.md).
+
 // Crate-wide CLI output policy. Declared before the modules so every
 // print!/println!/eprintln! in main, meta, the REPL, and shell surface
 // resolves to these BrokenPipe-tolerant writers. Internal process-pipe I/O uses
@@ -60,6 +63,9 @@ use mix::stats::{ExecutionMode, StatsContext, UsageStats};
 use mix::value::Value;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// This component's version, for the system binary's `--personalities`.
+pub const COMPONENT_VERSION: &str = VERSION;
 
 #[derive(Clone, Copy)]
 enum CliStream {
@@ -1376,8 +1382,9 @@ fn init_serve_tracing() -> logging::LogHandle {
     // crate's compiled name, NOT its Cargo package name. Getting this
     // wrong silently drops the SPEC 18 §9 observability markers (a
     // mismatched directive is not an error — it just never matches):
-    //   * binary crate `mix-shell` has `[[bin]] name = "mix"` → the
-    //     §3.5 shutdown markers in this file log under target `mix`;
+    //   * library crate `mix-shell` compiles as `mix_shell` → the §3.5
+    //     shutdown markers in this file log under target `mix_shell`,
+    //     whichever binary runs the shell;
     //   * `mix` has `[lib] name = "mix"` → the WS6
     //     §3.4 panic marker + pump lines log under `mix::…`;
     //   * `mixos-lib-client` has `[lib] name = "::bus::native_client"` → the
@@ -1412,7 +1419,7 @@ fn init_serve_tracing() -> logging::LogHandle {
         &opts,
         &logging::StatsOpts::default(),
         logging::LogDefaults::serve("mix-shell")
-            .with_filter("mix=info,mix=info,::bus::native_client=info,::bus=info"),
+            .with_filter("mix=info,mix_shell=info,::bus::native_client=info,::bus=info"),
     ) {
         Ok(handle) => handle,
         Err(e) => {
@@ -2119,7 +2126,8 @@ fn check_syntax(source: &str, filename: &str) -> i32 {
 /// microseconds before process exit — semantically unchanged.
 const MAIN_STACK_SIZE: usize = 64 * 1024 * 1024;
 
-fn main() {
+/// The whole shell program. `cli/system` runs it for the `mix` personality.
+pub fn main() -> process::ExitCode {
     // `--version` answers from a COLD process, before anything below runs:
     // no base-env capture, no session lane, no Bus dispatch, no evaluation
     // thread, no prelude, no rc. Mark's contract (2026-09-21) is that a
@@ -2131,7 +2139,7 @@ fn main() {
         let args: Vec<String> = env::args().collect();
         if let Some(text) = meta::version_request(&args, VERSION) {
             println!("{text}");
-            return;
+            return process::ExitCode::SUCCESS;
         }
         // `mix SCRIPT --version` (and `--serve SCRIPT`, `mix -`): the same
         // cold answer for a script. The script is read, never parsed or run.
@@ -2140,7 +2148,7 @@ fn main() {
         match script_meta::script_version_request(&args, &reserved) {
             script_meta::Answer::Print(line) => {
                 println!("{line}");
-                return;
+                return process::ExitCode::SUCCESS;
             }
             script_meta::Answer::Fail(msg) => {
                 eprintln!("{msg}");

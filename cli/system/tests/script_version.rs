@@ -53,7 +53,7 @@ fn sha12(body: &str) -> String {
 }
 
 fn mix_part() -> String {
-    format!("; mix {} (", env!("CARGO_PKG_VERSION"))
+    format!("; mix {} (", mix_shell::COMPONENT_VERSION)
 }
 
 /// One line, exit 0, script not run, shape `name version (sha12, modified …; mix …)`.
@@ -274,7 +274,7 @@ fn builtin_matches_the_version_line() {
         format!(
             "self.mix|3.1.4|{}|64|{}|string",
             sha12(body),
-            env!("CARGO_PKG_VERSION")
+            mix_shell::COMPONENT_VERSION
         )
     );
 
@@ -462,7 +462,7 @@ fn json_form_is_the_builtin_map() {
         v["modified"].as_str().is_some_and(|m| m.ends_with('Z')),
         "{v}"
     );
-    assert_eq!(v["mix"]["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(v["mix"]["version"], mix_shell::COMPONENT_VERSION);
     assert!(v["mix"]["dirty"].is_boolean(), "{v}");
     // Unversioned and stdin: nulls, not strings.
     let p = write(d.path(), "plain.mix", UNVERSIONED);

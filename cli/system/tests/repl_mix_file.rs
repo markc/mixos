@@ -109,7 +109,7 @@ fn meta_name_wins_over_same_named_file_in_cwd() {
 
     let (stdout, stderr) = output_text(&run_repl(dir.path(), "mix status\n"));
     assert!(
-        stdout.contains(&format!("mix {}", env!("CARGO_PKG_VERSION"))),
+        stdout.contains(&format!("mix {}", mix_shell::COMPONENT_VERSION)),
         "stdout:\n{stdout}"
     );
     assert!(stdout.contains("pid:"), "stdout:\n{stdout}");

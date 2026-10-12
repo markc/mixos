@@ -17,6 +17,13 @@ contract = "public"
 [lints.clippy]
 mod_module_files = "deny"
 
+# The daemon is a library, so the system binary can run it as its `noded`
+# personality (docs/decisions/2026-10-12-one-system-binary.md); src/main.rs
+# is the standalone development binary. Doc comments here were never
+# doctests.
+[lib]
+doctest = false
+
 [dependencies]
 logging.workspace = true
 bus = { workspace = true, features = ["native"] }

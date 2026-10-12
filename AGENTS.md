@@ -32,7 +32,7 @@ mixos/
 ├── Cargo.toml  Cargo.lock  rust-toolchain.toml  deny.toml  clippy.toml
 ├── apps/       GUI applications: Wayland clients people use (term, ced, dopus, email…)
 ├── services/   long-running daemons, named <role>d (noded, maild, webd, compd…)
-├── cli/        command-line tools run by people and agents (mix-shell → the `mix` binary)
+├── cli/        command-line tools run by people and agents (system → the `mix` binary)
 ├── libs/       shared libraries (mix, design, config, props…)
 ├── session/    the desktop session: targets and wiring that compose services + apps
 ├── tests/      cross-component gates and integration suites (Mix)
@@ -54,7 +54,7 @@ directory requires a decision record.
 |---|---|---|---|
 | app | `apps/<name>/` | short app name | `term`, `ced`, `dopus`, `email` |
 | service | `services/<name>/` | `<role>d` | `noded`, `maild`, `compd` |
-| cli | `cli/<name>/` | command name | `mix-shell` (builds `mix`) |
+| cli | `cli/<name>/` | command name | `system` (builds `mix`) |
 | lib | `libs/<name>/` | plain noun | `mix`, `design`, `config` |
 | session | `session/` | — | the desktop session |
 
@@ -119,9 +119,11 @@ contract = "none"          # none | public  (public = semver'd, see §5)
 ```
 
 - **Directory = component = principal package name.** The principal binary
-  has the same name. The single declared exception is `cli/mix-shell`,
-  which builds the `mix` binary, so that the library can be `libs/mix`
-  (package `mix`).
+  has the same name. The single declared exception is `cli/system`, which
+  builds the `mix` binary: the shell and every headless daemon in one file
+  ([decision](docs/decisions/2026-10-12-one-system-binary.md)). The shell
+  itself is the library `cli/mix-shell`, so that `libs/mix` (package `mix`)
+  stays the language.
 - A gate checks that each package's path matches its `component` and
   `kind`, and generates the component index (`docs/dev/components.md`).
   That index is the agent's map of the tree.
@@ -191,7 +193,10 @@ services/releasesd/
    - daemons are `<role>d`;
    - apps use short distinctive names;
    - the shell is `mix`;
-   - units are named after their binary (`maild.service`).
+   - units are named after their binary (`maild.service`);
+   - a daemon linked into the system binary is installed as a personality:
+     a symlink to `mix` named after its component, which its unit names
+     ([decision](docs/decisions/2026-10-12-one-system-binary.md)).
    Binary names are checked against the major distributions' file lists
    before first use. The accepted collisions are `mix` (Elixir), `rec`
    and `play` (sox,
@@ -301,7 +306,8 @@ applies to every GUI app and to the desktop furniture.
   - headless crates never depend on smithay, egui, wgpu or Bevy;
   - no second version of wgpu, egui, Bevy or smithay;
   - Bevy only in named effects crates;
-  - no non-dev dependency on a `kind = "cli"` package;
+  - no non-dev dependency on a `kind = "cli"` package, except from
+    `cli/system`, the system binary's host;
   - declared `layer` matches the layer derived from the dependency closure
     (bus ← mix ← core ← desktop);
   - component-internal orders (`layers.conf.mix`) hold.
@@ -341,7 +347,7 @@ are prerendered, and every page is also published as Markdown.
 
 - Requirements: the toolchain in `rust-toolchain.toml`, `git`, and the system
   libraries listed in `docs/dev/building.md`. No Python.
-- **Bootstrap:** `cargo build --profile release-fast -p mix-shell` produces
+- **Bootstrap:** `cargo build --profile release-fast -p system` produces
   `mix`. Every gate after that is `mix tools/<gate>.mix`.
 - Gates run before merge. A gate that cannot run counts as failed.
 

@@ -16,7 +16,7 @@
 //! emit forms use the Map branch internally. The pre-cut successes establish
 //! that the later lookup failure comes from the cut.
 //!
-//! Run: `cargo test -p mix-shell --test serve_bus_honesty`
+//! Run: `cargo test -p system --test serve_bus_honesty`
 //!      (the workspace gate runs it: `cargo test --workspace`)
 #![cfg(target_os = "linux")]
 

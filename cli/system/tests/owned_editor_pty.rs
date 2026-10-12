@@ -7,10 +7,10 @@
 //! still needs to allow setup plus the real editor fixture durations.
 #![cfg(target_os = "linux")]
 #[allow(dead_code)]
-#[path = "../src/editor.rs"]
+#[path = "../../mix-shell/src/editor.rs"]
 mod editor;
 #[allow(dead_code)]
-#[path = "../src/session_state.rs"]
+#[path = "../../mix-shell/src/session_state.rs"]
 mod session_state;
 
 use editor::runtime::{CompletionSnapshot, Line, OwnedEditor};
@@ -881,7 +881,14 @@ fn foreground_job_ctrl_z_fg_and_nested_editor_stop_preserve_draft() {
     p.prompt();
     p.send(b"/bin/sleep 300\n");
     p.until("\x1b[?2004l");
-    wait(|| unsafe { libc::tcgetpgrp(p.master.as_raw_fd()) } != p.child.id() as i32);
+    // The job's group takes the terminal before its stage execs sleep; a ^Z in
+    // that window is reported as "stopped before exec acknowledgement". Wait
+    // for sleep itself.
+    wait(|| {
+        let group = unsafe { libc::tcgetpgrp(p.master.as_raw_fd()) };
+        group != p.child.id() as i32
+            && fs::read_to_string(format!("/proc/{group}/comm")).is_ok_and(|c| c == "sleep\n")
+    });
     p.send(b"\x1a");
     p.until("Stopped");
     p.prompt();

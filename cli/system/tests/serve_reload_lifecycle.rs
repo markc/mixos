@@ -31,7 +31,7 @@
 //! test guard SIGKILLs the whole group on panic/drop, so a failed
 //! assertion cannot leak infinite sleep-producer children.
 //!
-//! Run: `cargo test -p mix-shell --test serve_reload_lifecycle`
+//! Run: `cargo test -p system --test serve_reload_lifecycle`
 //!      (the workspace gate runs it: `cargo test --workspace`)
 #![cfg(target_os = "linux")]
 

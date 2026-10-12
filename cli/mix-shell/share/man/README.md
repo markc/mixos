@@ -18,7 +18,7 @@ home of these pages is
 
 **New to Mix, or coming from bash/Python/JS? Read [gotchas](gotchas.md) first** —
 it is the errata against every other language's reflexes, and every row of its
-table is executed by `cargo test -p mix-shell --test man_gotchas`, so it cannot
+table is executed by `cargo test -p system --test man_gotchas`, so it cannot
 rot. `mix man syntax` is the mental model; gotchas is the corrections.
 
 ## Start here
