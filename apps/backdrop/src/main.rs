@@ -6,7 +6,8 @@
 //! that counts pointer clicks. It proves the layer surfaces, the GL path
 //! and input before the wallpapers and the folder view are built on it.
 //! Each fact a test needs is printed as one JSON line on stdout: `drawn`
-//! after a pass at a new size or scale, and `click` for each primary press.
+//! once a pass at a new size or scale has been presented, and `click` for
+//! each primary press.
 
 use toolkit::layer::{LayerOptions, LayerProgram, SurfaceInfo};
 
@@ -72,6 +73,10 @@ impl LayerProgram for Probe {
                 });
             });
         });
+    }
+
+    /// `drawn` once a pass at a new size or scale is on screen.
+    fn presented(&mut self, surface: &SurfaceInfo) {
         if !self.reported.contains(surface) {
             self.reported.retain(|r| r.output != surface.output);
             self.reported.push(surface.clone());

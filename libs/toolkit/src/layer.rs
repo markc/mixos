@@ -87,6 +87,11 @@ pub trait LayerProgram {
     fn setup(&mut self, ctx: &egui::Context);
     /// One pass on one surface.
     fn show(&mut self, ui: &mut egui::Ui, surface: &SurfaceInfo);
+    /// A pass on `surface` was painted and presented (a skipped frame calls
+    /// nothing).
+    fn presented(&mut self, surface: &SurfaceInfo) {
+        let _ = surface;
+    }
 }
 
 /// Run `program` until the connection ends. With [`Outputs::Compositor`] it

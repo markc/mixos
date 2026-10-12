@@ -30,7 +30,9 @@ use smithay_client_toolkit::reexports::protocols::wp::viewporter::client::{
     wp_viewport::WpViewport, wp_viewporter::WpViewporter,
 };
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
-use smithay_client_toolkit::seat::keyboard::{KeyEvent, KeyboardHandler, Keysym, Modifiers};
+use smithay_client_toolkit::seat::keyboard::{
+    KeyEvent, KeyboardHandler, Keysym, Modifiers, RepeatInfo,
+};
 use smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager;
 use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind, PointerHandler};
 use smithay_client_toolkit::seat::{Capability, SeatHandler, SeatState};
@@ -52,6 +54,14 @@ type Repaint = (u64, Duration);
 /// How soon a surface whose frame was skipped is drawn again.
 const RETRY: Duration = Duration::from_millis(50);
 
+/// How long a frame callback is waited for before the surface may draw
+/// again anyway: a present that failed (wgpu does not report it) commits
+/// nothing, so its callback never comes. One wake-up, not a poll.
+const WATCHDOG: Duration = Duration::from_secs(1);
+
+/// Key repeat until the compositor says otherwise.
+const REPEAT: (Duration, Duration) = (Duration::from_millis(600), Duration::from_millis(40));
+
 struct Surface {
     // Field order is load-bearing: the GPU target (a wgpu surface on this
     // `wl_surface`'s raw pointer) drops before `layer`. Do not reorder.
@@ -71,6 +81,8 @@ struct Surface {
     configured: bool,
     dirty: bool,
     frame_pending: bool,
+    /// When the frame callback being waited for was asked for.
+    pending_since: Option<Instant>,
     /// The earliest delayed repaint a timer is armed for, and that timer.
     deadline: Option<Instant>,
     timer: Option<RegistrationToken>,
@@ -115,6 +127,12 @@ struct State<P> {
     /// Keys held, by raw code, as the logical key their press sent: the
     /// release (which types no text) sends the same one.
     held: Vec<(u32, egui::Key)>,
+    /// Key repeat: (delay, interval), or none; the key repeating and its timer.
+    repeat_info: Option<(Duration, Duration)>,
+    repeating: Option<(u32, RegistrationToken)>,
+    /// Pointer buttons held, and where the pointer last was (in points).
+    buttons: Vec<egui::PointerButton>,
+    last_pos: egui::Pos2,
     program: P,
     options: LayerOptions,
     repaint: Sender<Repaint>,
@@ -168,6 +186,10 @@ pub(super) fn run<P: LayerProgram + 'static>(
         keyboard_focus: None,
         modifiers: Modifiers::default(),
         held: Vec::new(),
+        repeat_info: Some(REPEAT),
+        repeating: None,
+        buttons: Vec::new(),
+        last_pos: egui::Pos2::ZERO,
         program,
         options,
         repaint,
@@ -179,16 +201,11 @@ pub(super) fn run<P: LayerProgram + 'static>(
         state.add_surface(&qh, None)?;
     }
     while !state.exit {
-        // A surface still due after drawing skipped its frame (a stale or
-        // busy swapchain): try again shortly rather than at the next event.
-        let retry = state
-            .surfaces
-            .iter()
-            .any(|s| s.configured && s.dirty && !s.frame_pending)
-            .then_some(RETRY);
+        let wait = state.next_wake();
         event_loop
-            .dispatch(retry, &mut state)
+            .dispatch(wait, &mut state)
             .map_err(|e| format!("dispatch: {e}"))?;
+        state.expire_frames();
         state.draw_due(&qh);
     }
     Ok(())
@@ -251,6 +268,7 @@ impl<P: LayerProgram + 'static> State<P> {
             configured: false,
             dirty: true,
             frame_pending: false,
+            pending_since: None,
             deadline: None,
             timer: None,
             focused: false,
@@ -348,6 +366,40 @@ impl<P: LayerProgram + 'static> State<P> {
         s.dirty = true;
     }
 
+    /// How long the loop may block: until a skipped frame retries, or a
+    /// frame callback's watchdog runs out; otherwise until an event.
+    fn next_wake(&self) -> Option<Duration> {
+        let now = Instant::now();
+        let mut wait: Option<Duration> = None;
+        for s in &self.surfaces {
+            let this = if s.frame_pending {
+                s.pending_since
+                    .map(|t| WATCHDOG.saturating_sub(now.duration_since(t)))
+            } else if s.configured && s.dirty {
+                // Still due after drawing: its frame was skipped.
+                Some(RETRY)
+            } else {
+                None
+            };
+            wait = match (wait, this) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            };
+        }
+        wait
+    }
+
+    /// Stop waiting on frame callbacks that never came.
+    fn expire_frames(&mut self) {
+        let now = Instant::now();
+        for s in &mut self.surfaces {
+            if s.frame_pending && s.pending_since.is_some_and(|t| now.duration_since(t) >= WATCHDOG) {
+                s.frame_pending = false;
+                s.pending_since = None;
+            }
+        }
+    }
+
     fn draw_due(&mut self, qh: &QueueHandle<Self>) {
         let due: Vec<u64> = self
             .surfaces
@@ -401,7 +453,11 @@ impl<P: LayerProgram + 'static> State<P> {
             wl.frame(qh, wl.clone());
         });
         match painted {
-            Ok(()) => s.frame_pending = true,
+            Ok(()) => {
+                s.frame_pending = true;
+                s.pending_since = Some(Instant::now());
+                self.program.presented(&info);
+            }
             Err(Skipped::Reconfigure) => self.reconfigure(id),
             Err(Skipped::Later) => s.dirty = true,
         }
@@ -511,6 +567,7 @@ impl<P: LayerProgram + 'static> CompositorHandler for State<P> {
     ) {
         if let Some(s) = self.by_wl(&surface.id()) {
             s.frame_pending = false;
+            s.pending_since = None;
         }
     }
 
@@ -607,6 +664,7 @@ impl<P: LayerProgram + 'static> LayerShellHandler for State<P> {
         // A configure asks for a redraw: don't wait on a frame callback the
         // compositor may withhold (a hidden or powered-down output).
         s.frame_pending = false;
+        s.pending_since = None;
         if (width, height) != s.size {
             s.size = (width, height);
             let id = s.id;
@@ -629,94 +687,171 @@ impl<P: LayerProgram + 'static> SeatHandler for State<P> {
         seat: wl_seat::WlSeat,
         capability: Capability,
     ) {
-        if capability == Capability::Pointer
-            && self.pointer.is_none()
-            && let Ok(pointer) = self.seat.get_pointer(qh, &seat)
-        {
-            if let Some(shapes) = &self.cursor_shapes {
-                self.shape_device = Some(shapes.get_shape_device(&pointer, qh));
-            }
-            self.pointer = Some((pointer, seat.clone()));
+        if capability == Capability::Pointer {
+            self.attach_pointer(qh, &seat);
         }
-        if capability == Capability::Keyboard
-            && self.keyboard.is_none()
-            && self.options.keyboard != super::KeyboardInteractivity::None
-        {
-            self.keyboard = self
-                .seat
-                .get_keyboard_with_repeat(
-                    qh,
-                    &seat,
-                    None,
-                    self.handle.clone(),
-                    Box::new(|state, _, event| state.key(&event, true, true)),
-                )
-                .ok()
-                .map(|keyboard| (keyboard, seat.clone()));
+        if capability == Capability::Keyboard {
+            self.attach_keyboard(qh, &seat);
         }
     }
 
     fn remove_capability(
         &mut self,
         _: &Connection,
-        _: &QueueHandle<Self>,
+        qh: &QueueHandle<Self>,
         seat: wl_seat::WlSeat,
         capability: Capability,
     ) {
-        // Only the seat that owns a device takes it away.
+        // Only the seat that owns a device takes it away; another seat that
+        // has one then takes over.
         if capability == Capability::Pointer {
             self.drop_pointer(&seat);
         }
         if capability == Capability::Keyboard {
             self.drop_keyboard(&seat);
         }
+        self.adopt_devices(qh, &seat);
     }
 
-    fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, seat: wl_seat::WlSeat) {
+    fn remove_seat(&mut self, _: &Connection, qh: &QueueHandle<Self>, seat: wl_seat::WlSeat) {
         self.drop_pointer(&seat);
         self.drop_keyboard(&seat);
+        self.adopt_devices(qh, &seat);
     }
 }
 
 impl<P: LayerProgram + 'static> State<P> {
-    /// Release the pointer if `seat` owns it; a later seat's pointer can
-    /// then take its place.
-    fn drop_pointer(&mut self, seat: &wl_seat::WlSeat) {
-        if self
-            .pointer
-            .as_ref()
-            .is_some_and(|(_, owner)| owner == seat)
-        {
-            if let Some(device) = self.shape_device.take() {
-                device.destroy();
+    fn attach_pointer(&mut self, qh: &QueueHandle<Self>, seat: &wl_seat::WlSeat) {
+        if self.pointer.is_some() {
+            return;
+        }
+        if let Ok(pointer) = self.seat.get_pointer(qh, seat) {
+            if let Some(shapes) = &self.cursor_shapes {
+                self.shape_device = Some(shapes.get_shape_device(&pointer, qh));
             }
-            if let Some((pointer, _)) = self.pointer.take() {
-                pointer.release();
+            self.pointer = Some((pointer, seat.clone()));
+        }
+    }
+
+    fn attach_keyboard(&mut self, qh: &QueueHandle<Self>, seat: &wl_seat::WlSeat) {
+        if self.keyboard.is_some() || self.options.keyboard == super::KeyboardInteractivity::None {
+            return;
+        }
+        // Repeat is ours (one loop timer), not sctk's: it ends with the
+        // key, the focus or the keyboard, whichever goes first.
+        self.keyboard = self
+            .seat
+            .get_keyboard::<Self, Self>(qh, seat, None)
+            .ok()
+            .map(|keyboard| (keyboard, seat.clone()));
+    }
+
+    /// Any remaining seat with a pointer or keyboard supplies the one that
+    /// is missing (the capability callbacks fire only on change).
+    fn adopt_devices(&mut self, qh: &QueueHandle<Self>, gone: &wl_seat::WlSeat) {
+        for seat in self.seat.seats() {
+            if &seat == gone {
+                continue;
             }
-            if let Some((over, _)) = self.pointer_over.take() {
-                self.push_to(&over, egui::Event::PointerGone);
+            let Some(info) = self.seat.info(&seat) else {
+                continue;
+            };
+            if info.has_pointer {
+                self.attach_pointer(qh, &seat);
+            }
+            if info.has_keyboard {
+                self.attach_keyboard(qh, &seat);
             }
         }
     }
 
-    /// Release the keyboard if `seat` owns it, with its focus and held keys.
+    /// Release the pointer if `seat` owns it: buttons it holds are released
+    /// where it last was (egui keeps them down through `PointerGone`).
+    fn drop_pointer(&mut self, seat: &wl_seat::WlSeat) {
+        if !self
+            .pointer
+            .as_ref()
+            .is_some_and(|(_, owner)| owner == seat)
+        {
+            return;
+        }
+        if let Some(device) = self.shape_device.take() {
+            device.destroy();
+        }
+        if let Some((pointer, _)) = self.pointer.take() {
+            pointer.release();
+        }
+        let held = std::mem::take(&mut self.buttons);
+        if let Some((over, _)) = self.pointer_over.take() {
+            let modifiers = input::modifiers(&self.modifiers);
+            for button in held {
+                self.push_to(
+                    &over,
+                    egui::Event::PointerButton {
+                        pos: self.last_pos,
+                        button,
+                        pressed: false,
+                        modifiers,
+                    },
+                );
+            }
+            self.push_to(&over, egui::Event::PointerGone);
+        }
+    }
+
+    /// Release the keyboard if `seat` owns it, with its focus, held keys and
+    /// repeat.
     fn drop_keyboard(&mut self, seat: &wl_seat::WlSeat) {
-        if self
+        if !self
             .keyboard
             .as_ref()
             .is_some_and(|(_, owner)| owner == seat)
         {
-            if let Some((keyboard, _)) = self.keyboard.take() {
-                keyboard.release();
+            return;
+        }
+        self.stop_repeat();
+        if let Some((keyboard, _)) = self.keyboard.take() {
+            keyboard.release();
+        }
+        self.held.clear();
+        self.modifiers = Modifiers::default();
+        if let Some(focus) = self.keyboard_focus.take() {
+            self.push_to(&focus, egui::Event::WindowFocused(false));
+            if let Some(s) = self.by_wl(&focus) {
+                s.focused = false;
             }
-            self.held.clear();
-            self.modifiers = Modifiers::default();
-            if let Some(focus) = self.keyboard_focus.take() {
-                self.push_to(&focus, egui::Event::WindowFocused(false));
-                if let Some(s) = self.by_wl(&focus) {
-                    s.focused = false;
+        }
+    }
+
+    /// Repeat `event`'s key while it stays held, at the compositor's rate.
+    fn start_repeat(&mut self, event: &KeyEvent) {
+        self.stop_repeat();
+        let Some((delay, interval)) = self.repeat_info else {
+            return;
+        };
+        if event.keysym.is_modifier_key() {
+            return;
+        }
+        let code = event.raw_code;
+        let event = event.clone();
+        let armed = self
+            .handle
+            .insert_source(Timer::from_duration(delay), move |_, _, state| {
+                if state.repeating.as_ref().is_some_and(|(c, _)| *c == code) {
+                    state.key(&event, true, true);
+                    TimeoutAction::ToDuration(interval)
+                } else {
+                    TimeoutAction::Drop
                 }
-            }
+            });
+        if let Ok(timer) = armed {
+            self.repeating = Some((code, timer));
+        }
+    }
+
+    fn stop_repeat(&mut self) {
+        if let Some((_, timer)) = self.repeating.take() {
+            self.handle.remove(timer);
         }
     }
 }
@@ -740,6 +875,7 @@ impl<P: LayerProgram + 'static> PointerHandler for State<P> {
             match event.kind {
                 PointerEventKind::Enter { serial } => {
                     self.pointer_over = Some((wl.clone(), serial));
+                    self.last_pos = pos;
                     self.cursor = egui::CursorIcon::Default;
                     self.set_cursor();
                     self.push_to(&wl, egui::Event::PointerMoved(pos));
@@ -751,12 +887,17 @@ impl<P: LayerProgram + 'static> PointerHandler for State<P> {
                     self.push_to(&wl, egui::Event::PointerGone);
                 }
                 PointerEventKind::Motion { .. } => {
+                    self.last_pos = pos;
                     self.push_to(&wl, egui::Event::PointerMoved(pos));
                 }
                 PointerEventKind::Press { button, .. }
                 | PointerEventKind::Release { button, .. } => {
                     if let Some(button) = input::button(button) {
                         let pressed = matches!(event.kind, PointerEventKind::Press { .. });
+                        self.buttons.retain(|b| *b != button);
+                        if pressed {
+                            self.buttons.push(button);
+                        }
                         let modifiers = input::modifiers(&self.modifiers);
                         self.push_to(
                             &wl,
@@ -791,17 +932,14 @@ impl<P: LayerProgram + 'static> PointerHandler for State<P> {
                             input::wheel(horizontal.absolute, vertical.absolute) / zoom,
                         )
                     };
-                    let stopped = horizontal.stop || vertical.stop;
                     self.push_to(
                         &wl,
                         egui::Event::MouseWheel {
                             unit,
                             delta,
-                            phase: if stopped {
-                                egui::TouchPhase::End
-                            } else {
-                                egui::TouchPhase::Move
-                            },
+                            // Movement only: an End phase would drop the
+                            // frame's delta, and egui has no kinetic scroll.
+                            phase: egui::TouchPhase::Move,
                             modifiers,
                         },
                     );
@@ -842,6 +980,7 @@ impl<P: LayerProgram + 'static> KeyboardHandler for State<P> {
             self.keyboard_focus = None;
             // Keys held now are released elsewhere: their releases never come.
             self.held.clear();
+            self.stop_repeat();
         }
         if let Some(s) = self.by_wl(&surface.id()) {
             s.focused = false;
@@ -859,6 +998,9 @@ impl<P: LayerProgram + 'static> KeyboardHandler for State<P> {
         event: KeyEvent,
     ) {
         self.key(&event, true, false);
+        if self.keyboard_focus.is_some() {
+            self.start_repeat(&event);
+        }
     }
 
     fn release_key(
@@ -869,7 +1011,30 @@ impl<P: LayerProgram + 'static> KeyboardHandler for State<P> {
         _: u32,
         event: KeyEvent,
     ) {
+        if self
+            .repeating
+            .as_ref()
+            .is_some_and(|(code, _)| *code == event.raw_code)
+        {
+            self.stop_repeat();
+        }
         self.key(&event, false, false);
+    }
+
+    fn update_repeat_info(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        info: RepeatInfo,
+    ) {
+        self.repeat_info = match info {
+            RepeatInfo::Repeat { rate, delay } => Some((
+                Duration::from_millis(u64::from(delay)),
+                Duration::from_secs(1) / rate.get(),
+            )),
+            RepeatInfo::Disable => None,
+        };
     }
 
     fn update_modifiers(
