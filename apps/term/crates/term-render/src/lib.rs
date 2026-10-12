@@ -133,7 +133,7 @@ impl GridRenderer {
                 operation: wgpu::BlendOperation::Add,
             },
         };
-        let pipeline = |label, vs, fs, buffers: &[wgpu::VertexBufferLayout], blend| {
+        let pipeline = |label, vs, fs, buffers: &[Option<wgpu::VertexBufferLayout>], blend| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(label),
                 layout: Some(&layout),
@@ -182,21 +182,21 @@ impl GridRenderer {
                 "term glyphs",
                 "vs_glyph",
                 "fs_glyph",
-                std::slice::from_ref(&glyph_layout),
+                &[Some(glyph_layout.clone())],
                 Some(premultiplied),
             ),
             invert: pipeline(
                 "term cursor invert",
                 "vs_rect",
                 "fs_rect",
-                std::slice::from_ref(&rect_layout),
+                &[Some(rect_layout.clone())],
                 Some(invert),
             ),
             solid: pipeline(
                 "term cursor solid",
                 "vs_rect",
                 "fs_rect",
-                std::slice::from_ref(&rect_layout),
+                &[Some(rect_layout.clone())],
                 None,
             ),
             pane_layout,
