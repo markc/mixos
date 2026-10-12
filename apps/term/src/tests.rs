@@ -240,13 +240,8 @@ fn ime_focus_switch_and_owner_close_drop_queued_commit_before_wake() {
         assert_eq!(read_first(), None, "{change}");
         assert_eq!(read_target(), None, "{change}");
         assert!(app.ime_preedit.is_none());
-        assert!(!app.ime.enabled());
-        // The input method acknowledges; a fresh composition then commits.
-        app.ime(&ImeEvent::Preedit {
-            text: String::new(),
-            active_range_chars: None,
-        });
-        app.ime.frame();
+        assert!(!app.ime.stale(), "that commit was the cancelled one");
+        // A fresh composition then commits where the keyboard is.
         app.ime(&ImeEvent::Preedit {
             text: "new".into(),
             active_range_chars: None,
@@ -264,12 +259,48 @@ fn ime_focus_switch_and_owner_close_drop_queued_commit_before_wake() {
                 active_range_chars: None,
             });
             app.select_tab(original_tab);
-            assert!(!app.ime.enabled());
+            assert!(
+                app.ime.stale(),
+                "the composition in the left tab is cancelled"
+            );
             assert!(app.ime_preedit.is_none());
             assert_eq!(active_pane(&app.tabs.lock().unwrap()), owner);
         }
         finish(app, reaper);
     }
+}
+
+/// Review finding: compose in pane A, focus pane B, let frames pass, and
+/// A's delayed commit must still not reach B.
+#[test]
+fn a_delayed_commit_after_frames_never_reaches_the_next_pane() {
+    let (mut app, reaper) = test_app();
+    let a = app.shape.active_pane;
+    let b = app
+        .tabs
+        .lock()
+        .unwrap()
+        .split_active(SplitDir::Vertical)
+        .unwrap();
+    app.tabs.lock().unwrap().focus(a);
+    let (_a, read_a) = fixture(&mut app, a, 8, 3, b"");
+    let (_b, read_b) = fixture(&mut app, b, 8, 3, b"");
+    app.ime(&ImeEvent::Preedit {
+        text: "draft".into(),
+        active_range_chars: None,
+    });
+    app.tabs.lock().unwrap().focus(b);
+    for _ in 0..5 {
+        app.sync();
+        app.paint();
+    }
+    assert!(app.ime.take_interrupt(), "the platform is asked to reset");
+    app.ime(&ImeEvent::Commit("draft".into()));
+    assert_eq!(read_a(), None);
+    assert_eq!(read_b(), None, "A's commit landed in B");
+    app.ime(&ImeEvent::Commit("b".into()));
+    assert_eq!(read_b().as_deref(), Some(&b"b"[..]));
+    finish(app, reaper);
 }
 
 #[test]

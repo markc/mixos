@@ -394,7 +394,6 @@ impl Shell {
 
     /// One frame's logic; it runs even while the window is hidden.
     pub fn logic(&mut self, ctx: &egui::Context) {
-        self.app.ime.frame();
         for answer in drive::logic(ctx) {
             self.answer(answer.id, answer.rc, answer.body);
         }
@@ -532,15 +531,16 @@ impl Shell {
                 view::panes(ui, &self.app);
                 if keyboard
                     && self.app.keyboard_focus
-                    && self.app.ime.enabled()
                     && let Some(caret) = self.app.caret()
                 {
+                    // A focus change mid-composition interrupts it (ime.rs).
+                    let interrupt = self.app.ime.take_interrupt();
                     ctx.output_mut(|o| {
                         o.ime = Some(egui::output::IMEOutput {
                             purpose: egui::IMEPurpose::Terminal,
                             rect: area,
                             cursor_rect: caret,
-                            should_interrupt_composition: false,
+                            should_interrupt_composition: interrupt,
                         });
                     });
                 }
