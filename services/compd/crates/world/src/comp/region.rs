@@ -465,12 +465,13 @@ const HINT_TOP: f64 = 24.0;
 
 /// The overlay's colours, straight-alpha sRGB, from the MixOS theme the
 /// capture overlays are drawn in (`toolkit::style` over the embedded theme,
-/// as `capture::style`): the outline is the theme's accent, the hint its
-/// popover surface, window stroke and strong text. The dim is the capture
-/// mask (`capture::style::DIM_MASK`): translucency, not a themed surface.
+/// as `capture::style`): the outline is the theme's focus ring (held to 3:1
+/// against its surfaces; its accent if it has none), the hint its popover
+/// surface, window stroke and strong text. The dim is the capture mask
+/// (`capture::style::DIM_MASK`): translucency, not a themed surface.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Look {
-    accent: [f32; 4],
+    outline: [f32; 4],
     back: [f32; 4],
     edge: [f32; 4],
     text: [f32; 4],
@@ -480,13 +481,19 @@ struct Look {
 impl Look {
     fn of(theme: &toolkit::theme::Theme) -> Self {
         let visuals = toolkit::style::visuals(theme);
+        let ring = theme
+            .dictionary()
+            .colours
+            .non_text
+            .get("ring")
+            .map(|ring| toolkit::style::colour(ring.value));
         let straight = |colour: egui::Color32| {
             colour
                 .to_srgba_unmultiplied()
                 .map(|channel| f32::from(channel) / 255.0)
         };
         Self {
-            accent: straight(visuals.selection.bg_fill),
+            outline: straight(ring.unwrap_or(visuals.selection.bg_fill)),
             back: straight(visuals.window_fill),
             edge: straight(visuals.window_stroke.color),
             text: straight(visuals.strong_text_color()),
@@ -607,7 +614,7 @@ where
                 edge.loc,
                 Size::from((edge.size.w.max(1), edge.size.h.max(1))),
             );
-            solid(id, edge, premultiplied(look.accent))
+            solid(id, edge, premultiplied(look.outline))
         });
         let dims = dims
             .into_iter()
@@ -949,9 +956,10 @@ mod tests {
     #[test]
     fn the_look_comes_from_the_theme() {
         let look = Look::current();
-        let visuals = toolkit::style::visuals(&toolkit::theme::Theme::embedded());
-        let accent = visuals.selection.bg_fill.to_srgba_unmultiplied();
-        assert_eq!(look.accent.map(|c| (c * 255.0).round() as u8), accent);
+        let theme = toolkit::theme::Theme::embedded();
+        let ring = &theme.dictionary().colours.non_text["ring"];
+        let ring = toolkit::style::colour(ring.value).to_srgba_unmultiplied();
+        assert_eq!(look.outline.map(|c| (c * 255.0).round() as u8), ring);
         assert!(look.back[3] > 0.0 && look.text[3] > 0.0);
         assert!(
             look.dim[3] > 0.0 && look.dim[3] < 1.0,
