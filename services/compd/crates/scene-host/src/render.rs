@@ -763,6 +763,37 @@ pub(crate) fn reconcile(
                 .state
                 .schedule_redraw(dispatcher::state::state::RedrawReason::Publish);
         }
+        if mapped
+            && dialog
+            && !autofocus_done
+            && let Some(id) = crate::view::autofocus(entry.tree())
+        {
+            if ready {
+                if let Some(instance) =
+                    state
+                        .inner
+                        .surface_mut()
+                        .registry
+                        .as_mut()
+                        .and_then(|registry| {
+                            registry.instance_mut(UiHandle::<SceneUi>::from_id(handle))
+                        })
+                {
+                    // One attempt once the viewport is final (the tick lays
+                    // the field out): never a redraw loop for a field that
+                    // does not draw.
+                    instance.runtime_mut().tick();
+                    let ctx = instance.runtime().context().clone();
+                    let _ = instance.ui().focus_field(&ctx, id);
+                    instance.runtime_mut().request_redraw();
+                }
+                autofocus_done = true;
+            } else {
+                state
+                    .state
+                    .schedule_redraw(dispatcher::state::state::RedrawReason::Publish);
+            }
+        }
         if mapped && !dialog && !autofocus_done && !ready && (field.is_some() || requested) {
             state
                 .state

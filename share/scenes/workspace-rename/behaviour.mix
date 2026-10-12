@@ -1,0 +1,132 @@
+-- version: 0.4.0
+-- The pager's rename dialog, a shipped system dialog
+-- (docs/decisions/2026-10-12-system-dialogs.md). The panel enables this
+-- scene on demand and opens it for a workspace (`rename.open {index}`, after
+-- a right click on a pager button). Enter or Save names the workspace
+-- through compd (comp.workspace.rename, saved as the name compd starts
+-- with); Cancel or Esc closes it. Once its dialog is hidden the scene
+-- disables itself, so it holds the single dialog seat only while it shows.
+$LIB = env("SCENES_LIB", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mixos/scenes/lib")
+$r = require($LIB .. "/runtime.mix")
+$m = require($LIB .. "/models.mix")
+$ctx = $r.scene_context("workspace-rename")
+$COMP = env("COMP_SERVICE", "comp")
+$state = {ready: false, index: 0, typed: nil, shown: false, released: false}
+
+fn show($shown)
+  return $r.call($ctx.host, $shown ? "shell.dialog.show" : "shell.dialog.hide", {scene: $ctx.name})
+end
+
+-- Give the dialog seat back: the loader unloads this scene (and stops this
+-- behaviour). Once.
+fn release()
+  if $state.released then return end
+  $state.released = true
+  $_ = $r.call($ctx.loader, "scenes.disable", {name: $ctx.name})
+end
+
+-- {index}: publish the dialog for that workspace, with its current name,
+-- then show it. Only an index inside the live count is accepted.
+on rename.open desc "open the rename dialog for workspace {index}"
+  $index = $r.event_args($event).index
+  $list = $r.call($COMP, "comp.workspaces.list", {})
+  if not $list.ok then $r.respond($list); return end
+  if type($index) != "number" or $index < 1 or floor($index) != $index or $index > ($list.value.count ?? 0) then
+    $r.respond($r.failure("invalid_args", "index must be a workspace number")); return
+  end
+  $row = nil
+  for each $w in $list.value.list ?? []
+    if $w.index == $index then $row = $w end
+  end
+  -- One rename at a time: another workspace waits until this one is saved
+  -- or cancelled (the field's draft belongs to the open one).
+  if $state.shown and $state.index > 0 and $state.index != $index then
+    $r.respond($r.failure("rename_in_progress", "workspace " .. to_string($state.index) .. " is being renamed")); return
+  end
+  -- The same workspace again while it shows: keep the draft, just show.
+  if $state.shown and $state.index == $index then
+    $r.respond(show(true)); return
+  end
+  $name = $row != nil and type($row.name) == "string" ? $row.name : ""
+  $state.index = $index
+  $state.typed = nil
+  $out = $r.publish_model($ctx, $m.rename_dialog($index, $name))
+  if not $out.ok then
+    $state.index = 0
+    $r.respond($out)
+    return
+  end
+  $shown = show(true)
+  if $shown.ok then
+    $state.shown = true
+  else
+    -- Not open: a save cannot act on this workspace.
+    $state.index = 0
+  end
+  $r.respond($shown)
+end
+
+-- The field's text as it is typed (the save may come from the button).
+on rename.edit
+  $value = $r.event_args($event).value
+  if type($value) == "string" then $state.typed = $value end
+  reply(0, "{}")
+end
+
+-- Enter in the field (value in the event) or Save (the typed text). A
+-- refused rename keeps the dialog open; a saved one closes it.
+on rename.save
+  $value = $r.event_args($event).value
+  if type($value) != "string" then $value = $state.typed end
+  if $state.index < 1 then $r.respond($r.failure("not_open", "no workspace is being renamed")); return end
+  if $value != nil then
+    $out = $r.call($COMP, "comp.workspace.rename", {index: $state.index, name: $value})
+    if not $out.ok then
+      $model = $m.rename_dialog($state.index, $value)
+      $model.note = $m.text("rename_refused")
+      $_ = $r.publish_model($ctx, $model)
+      $r.respond($out)
+      return
+    end
+  end
+  $state.index = 0
+  $state.typed = nil
+  $r.respond(show(false))
+end
+
+on rename.cancel
+  $state.index = 0
+  $state.typed = nil
+  $r.respond(show(false))
+end
+
+-- The shell's seat notice: once this dialog has shown and is now hidden
+-- (Save, Cancel, Esc, or another dialog took the seat), release the seat.
+on "shell.panel.changed"
+  $dialog = $r.event_args($event).dialog
+  $mine = type($dialog) == "map" and $dialog.scene == $ctx.name
+  if $mine and $dialog.visible == true then
+    $state.shown = true
+  elif $state.shown then
+    -- A notice can arrive late (an earlier hide after a newer show): only
+    -- the host's current state decides.
+    -- A failed read proves nothing: keep the seat until a read says hidden.
+    $now = $r.call($ctx.host, "shell.props.get", {path: "dialog"})
+    $live = type($now.value) == "map" and $now.value.scene == $ctx.name and $now.value.visible == true
+    if $now.ok and not $live then
+      $state.shown = false
+      release()
+    end
+  end
+end
+
+on bus.connected
+  if len(keys($event.headers)) != 0 then return end
+  $ready = $r.ready($ctx)
+  $state.ready = $ready.ok
+end
+
+subscribe($ctx.host .. ".panel.changed")
+$ready = $r.ready($ctx)
+if not $ready.ok then raise("SCENE_READY", json_encode($ready.value)) end
+$state.ready = true

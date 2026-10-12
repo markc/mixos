@@ -491,20 +491,45 @@ $named = $models.panel({windows: $wins, ws_count: 3, ws_current: 2, ws_names: [n
   notes_count: 2, net: {up: true, wireless: true}, vol: {ok: true, level: 40, muted: false}, open: {}, peeked: false},
   {themed: {}, plain: {}, windows: {}, names: {"example.mail": "Example Mail"}}, 0)
 check(deep_eq(map($named.workspaces, fn($w) = $w.label), ["1", "2", "3"]), "the pager shows numbers only")
-check(deep_eq($named.workspaces[1].tip, {title: "Mail", subtitle: "Workspace 2 · 2 windows · current", lines: ["Inbox - Mail", "example.term"]}), "a named workspace tip: name, where, windows")
-check(deep_eq($named.workspaces[0].tip, {title: "Workspace 1", subtitle: "1 window", lines: ["Notes"]}), "an unnamed workspace tip")
-check(deep_eq($named.workspaces[2].tip, {title: "Workspace 3", subtitle: "No windows"}), "a blank name reads as unnamed; no lines")
+check(deep_eq($named.workspaces[1].tip, {title: "Mail", subtitle: "Workspace 2 · 2 windows · current", lines: ["Inbox - Mail", "example.term", "Right-click to rename"]}), "a named workspace tip: name, where, windows, the rename hint")
+check(deep_eq($named.workspaces[0].tip, {title: "Workspace 1", subtitle: "1 window", lines: ["Notes", "Right-click to rename"]}), "an unnamed workspace tip")
+check(deep_eq($named.workspaces[2].tip, {title: "Workspace 3", subtitle: "No windows", lines: ["Right-click to rename"]}), "a blank name reads as unnamed; only the hint")
 $many = []
 for $i = 1 to 9
   push($many, window_row($i, 1, 1, "W" .. to_string($i), "example.app", false, false))
 end
+-- The rename dialog (right-click a pager button): a hidden dialog
+-- template whose field autofocuses, submits and edits through its own
+-- citizen; every string comes from the models table.
+$rename_dir = $root .. "/share/scenes/workspace-rename"
+$rename_meta = data_parse(read_file($rename_dir .. "/template.conf.mix"))
+check($rename_meta.name == "workspace-rename" and $rename_meta.hidden == true and $rename_meta.behaviour == "behaviour.mix", "rename dialog metadata: hidden, with a behaviour")
+$rename_src = read_file($rename_dir .. "/scene.mix")
+$rename_window = json_parse(header($rename_src, "window"))
+check($rename_window.kind == "dialog" and $rename_window.autofocus == "name", "rename is a dialog that focuses its field")
+check($rename_window.w >= 240 and $rename_window.w <= 2048 and $rename_window.h >= 240 and $rename_window.h <= 2048, "dialog size inside the host's 240..=2048")
+check(header($rename_src, "citizen") == "scene-workspace-rename", "rename dialog citizen")
+$rename_nodes = fence($rename_src)
+check($rename_nodes.name.widget == "field" and $rename_nodes.name.on_submit == "rename.save" and $rename_nodes.name.on_change == "rename.edit", "the field saves on Enter and reports edits")
+check($rename_nodes.save.on_click == "rename.save" and $rename_nodes.cancel.on_click == "rename.cancel", "Save and Cancel")
+$dialog = $models.rename_dialog(3, "Mail")
+check(deep_eq($dialog, {index: 3, name: "Mail", prompt: "Name for workspace 3", hint: "Workspace 3",
+  note: "Enter saves. An empty name shows the number again.", cancel: "Cancel", save: "Save"}), "the rename dialog model")
+check(deep_eq(sort(keys(json_parse(header($rename_src, "model")))), sort(keys($dialog))), "the dialog's default model declares every key")
+check($models.rename_dialog(1, nil).name == "", "an unnamed workspace opens empty")
+for each $id, $node in $rename_nodes
+  for each $port, $value in $node
+    check(not ($port == "text" or $port == "label") or bound($value), "dialog text is model-bound (the strings table): " .. $id)
+  end
+end
+check(fence($panel_source).pager.on_context == "ws_rename", "a right click on the pager opens the rename")
 -- The taskbar's membership rule: no workspace (or 0) is the current one.
 $loose = [{id: 7, title: "Loose", app_id: "x", workspace: 0}, {id: 8, title: "Unset", app_id: "x"}]
 check($models.workspace_tip([], 2, true, $loose).subtitle == "2 windows · current", "windows without a workspace count on the current one")
 check($models.workspace_tip([], 3, false, $loose).subtitle == "No windows", "and on no other")
 check($models.text("on_workspace", {n: 3}) == "On workspace 3" and $models.text("unknown_key") == "unknown_key", "the string table")
 check($models.counted(0, "notes_none", "notes_one", "notes_many") == "No new notifications" and $models.counted(5, "notes_none", "notes_one", "notes_many") == "5 notifications", "counted plurals")
-check(deep_eq($models.workspace_tip([], 1, false, $many).lines, ["W1", "W2", "W3", "W4", "W5", "W6", "3 more"]), "a busy workspace tip lists 6 and counts the rest")
+check(deep_eq($models.workspace_tip([], 1, false, $many).lines, ["W1", "W2", "W3", "W4", "W5", "W6", "3 more", "Right-click to rename"]), "a busy workspace tip lists 6 and counts the rest")
 check(deep_eq($named.tasks[0].tip, {title: "Example Mail", subtitle: "Inbox - Mail"}), "a task tip: desktop name, then the window title")
 check(deep_eq($named.tasks[1].tip, {title: "example.term", lines: ["Minimised"]}), "no desktop name: the app id; an untitled window has no subtitle")
 check($named.tasks[0].initial == "E" and $named.tasks[1].initial == "E", "an icon-less task shows its initial")

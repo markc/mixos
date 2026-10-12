@@ -69,6 +69,7 @@ pub struct Route {
     pub node: String,
     pub item: Option<Value>,
     pub click: Option<String>,
+    pub context: Option<String>,
     pub change: Option<String>,
     pub submit: Option<String>,
 }
@@ -87,6 +88,7 @@ impl Route {
             node: id.to_owned(),
             item: None,
             click: port("on_click"),
+            context: port("on_context"),
             change: port("on_change"),
             submit: port("on_submit"),
         }
@@ -96,6 +98,7 @@ impl Route {
     pub fn event(&self, kind: &str, value: Option<Value>) -> Option<(&str, &str, Value)> {
         let handler = match kind {
             "click" => self.click.as_deref(),
+            "context" => self.context.as_deref(),
             "change" => self.change.as_deref(),
             _ => self.submit.as_deref(),
         }?;
@@ -117,6 +120,8 @@ pub enum SceneMessage {
     /// Restyle with the session's look, keeping local edits and focus.
     Appearance(Arc<Look>),
     Click(Arc<Route>),
+    /// A secondary (right) click on a node with `on_context`.
+    Context(Arc<Route>),
     Toggle(Arc<Route>, String, bool),
     Input(Arc<Route>, String, String),
     Submit(Arc<Route>, String),
@@ -497,6 +502,7 @@ impl ui::UiProgram for SceneUi {
                 self.toggles.insert(key, on);
             }
             SceneMessage::Click(_)
+            | SceneMessage::Context(_)
             | SceneMessage::Submit(..)
             | SceneMessage::Close
             | SceneMessage::EscapeEdge
@@ -512,6 +518,7 @@ impl ui::UiProgram for SceneUi {
 pub fn event_of(message: &SceneMessage) -> Option<(&str, &str, Value)> {
     match message {
         SceneMessage::Click(route) => route.event("click", None),
+        SceneMessage::Context(route) => route.event("context", None),
         SceneMessage::Toggle(route, _, on) => route.event("change", Some(json!(on))),
         SceneMessage::Input(route, _, value) => route.event("change", Some(json!(value))),
         SceneMessage::Submit(route, value) => route.event("submit", Some(json!(value))),

@@ -516,6 +516,26 @@ fn start($s, $name)
   return $s
 end
 
+-- A shipped system dialog (docs/decisions/2026-10-12-system-dialogs.md):
+-- installed under its own template's name, from a SHIPPED template whose own
+-- metadata says hidden and whose own scene is a dialog. The permission comes
+-- from the shipped files, never from the user-editable installed copy.
+fn system_dialog($s, $name)
+  -- The recorded origin, or (while an install is still being staged) the
+  -- template being staged.
+  $origin = $s.desired.origins[$name] ?? $s.staging_template ?? ""
+  if $origin != $name or $s.templates == nil then return false end
+  $t = $s.templates .. "/" .. $name
+  if not valid_name($name) or not regular($t .. "/template.conf.mix") or not regular($t .. "/scene.mix") then return false end
+  try
+    $meta = data_parse(bounded_read($t .. "/template.conf.mix", 65536))
+    $doc = document(bounded_read($t .. "/scene.mix", 262144))
+    return type($meta) == "map" and $meta.hidden == true and ($doc.mount.kind ?? "edge") == "dialog" and $doc.name == $name
+  catch $e
+    return false
+  end
+end
+
 fn candidate($s, $name, $dir)
   if stat($dir, {follow_symlinks:false}).is_symlink or not regular($dir .. "/scene.mix") or not regular($dir .. "/template.conf.mix") then
     fail("SCENES_FILES", "scene and metadata must be regular files in a real directory", {file:$dir})
@@ -534,7 +554,9 @@ fn candidate($s, $name, $dir)
   if $name != "editor" then
     -- The recovery path must never be squatted (plan §3, rule 13).
     if $page == "scene-editor" then fail("SCENES_RESERVED", "page scene-editor is reserved for the Scene Editor", {name:$name, page:$page}) end
-    if $kind == "dialog" then fail("SCENES_RESERVED", "window.kind dialog is reserved for the Scene Editor in v1", {name:$name}) end
+    if $kind == "dialog" and not system_dialog($s, $name) then
+      fail("SCENES_RESERVED", "window.kind dialog is reserved for the Scene Editor and shipped system dialogs", {name:$name})
+    end
   end
   $meta_text = bounded_read($dir .. "/template.conf.mix", 65536)
   try
@@ -1087,6 +1109,8 @@ fn stage($s, $template, $name)
   if not valid_name($template) then fail("SCENES_TEMPLATE", "invalid template name", {}) end
   $src = $s.templates .. "/" .. $template
   if not is_dir($src) or stat($src, {follow_symlinks:false}).is_symlink then fail("SCENES_TEMPLATE", "shipped template is unavailable", {template:$template}) end
+  -- Only this staging validation sees it (a local copy of the state).
+  $s.staging_template = $template
   return stage_from($s, $src, $name, nil)
 end
 

@@ -320,6 +320,86 @@ fn autofocus_targets_the_field_and_typing_emits_filter() {
     );
 }
 
+/// A right click on a list row emits the list's `on_context` with the row
+/// item; a left click still emits `on_click`. A row with no `on_context`
+/// sends nothing on a right click.
+#[test]
+fn a_right_click_on_a_row_emits_the_lists_context_event_with_its_item() {
+    let source = "---\nscene: 1\nname: pager\ncitizen: test\nwindow: {\"kind\":\"edge\",\"edge\":\"bottom\",\"h\":40}\n---\n```mix\nroot: {widget: \"row\", children: [\"pager\"]}\npager: {widget: \"list\", flow: \"horizontal\", rows: [{id: \"ws_1\", cells: [], index: 1}, {id: \"ws_2\", cells: [], index: 2}], row: \"ws_btn\", row_height: 30, on_click: \"ws\", on_context: \"ws_rename\"}\nws_btn: {widget: \"row\", height: 30, min_width: 30, children: [\"ws_label\"]}\nws_label: {widget: \"text\", text: \"= $item.id\"}\n```\n";
+    let mut rt = runtime(source, (300, 40));
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&seen);
+    rt.set_message_handler(move |message: &SceneMessage| {
+        if let Some((_, handler, body)) = event_of(message) {
+            sink.lock().unwrap().push((handler.to_owned(), body));
+        }
+    });
+    let second = row_of(&rt, "pager", "ws_2").center();
+    rt.queue_input(Input::PointerMoved {
+        x: second.x,
+        y: second.y,
+    });
+    rt.tick();
+    // BTN_RIGHT (0x111), then BTN_LEFT (0x110).
+    for code in [0x111, 0x110] {
+        rt.queue_input(Input::Button {
+            code,
+            pressed: true,
+        });
+        rt.tick();
+        rt.queue_input(Input::Button {
+            code,
+            pressed: false,
+        });
+        rt.tick();
+    }
+    let seen = seen.lock().unwrap();
+    let context: Vec<_> = seen.iter().filter(|(h, _)| h == "ws_rename").collect();
+    assert_eq!(context.len(), 1, "{seen:?}");
+    assert_eq!(context[0].1["kind"], "context");
+    assert_eq!(context[0].1["item"]["index"].as_f64(), Some(2.0));
+    assert_eq!(context[0].1["node"], "pager");
+    assert_eq!(
+        seen.iter().filter(|(h, _)| h == "ws").count(),
+        1,
+        "the left click still clicks: {seen:?}"
+    );
+}
+
+/// A button's own `on_context` answers a right click; a button without one
+/// sends nothing on a right click.
+#[test]
+fn a_right_click_on_a_button_emits_its_context_event() {
+    let source = "---\nscene: 1\nname: buttons\ncitizen: test\nwindow: {\"kind\":\"edge\",\"edge\":\"bottom\",\"h\":40}\n---\n```mix\nroot: {widget: \"row\", children: [\"a\", \"b\"]}\na: {widget: \"button\", label: \"A\", width: 80, on_click: \"a.click\", on_context: \"a.menu\"}\nb: {widget: \"button\", label: \"B\", width: 80, on_click: \"b.click\"}\n```\n";
+    let mut rt = runtime(source, (300, 40));
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&seen);
+    rt.set_message_handler(move |message: &SceneMessage| {
+        if let Some((_, handler, body)) = event_of(message) {
+            sink.lock().unwrap().push((handler.to_owned(), body));
+        }
+    });
+    for id in ["a", "b"] {
+        let at = rect_of(&rt, id).center();
+        rt.queue_input(Input::PointerMoved { x: at.x, y: at.y });
+        rt.tick();
+        for pressed in [true, false] {
+            rt.queue_input(Input::Button {
+                code: 0x111,
+                pressed,
+            });
+            rt.tick();
+        }
+    }
+    let seen = seen.lock().unwrap();
+    assert_eq!(
+        seen.iter().map(|(h, _)| h.as_str()).collect::<Vec<_>>(),
+        ["a.menu"],
+        "only A has a context handler, and a right click is not a click: {seen:?}"
+    );
+    assert_eq!(seen[0].1["kind"], "context");
+}
+
 #[test]
 fn every_calendar_node_has_visible_non_zero_bounds_including_the_footer() {
     for (width, height) in [(360, 600), (380, 812), (360, 600)] {

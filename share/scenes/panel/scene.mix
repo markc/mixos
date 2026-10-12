@@ -11,7 +11,7 @@ launcher_btn: {"align":"center","background":"= $model.launcher.background","chi
 launcher_icon: {"h":28,"hidden":"= not $model.launcher.has_icon","src":"= $model.launcher.icon","w":28,"widget":"image"}
 launcher_text: {"bold":true,"color":"#fcfcfc","hidden":"= $model.launcher.has_icon","size":14,"text":"Apps","widget":"text"}
 gap1: {"size":6,"widget":"spacer"}
-pager: {"align":"center","flow":"horizontal","gap":3,"on_click":"ws","row":"ws_btn","row_height":30,"rows":"= $model.workspaces","widget":"list"}
+pager: {"align":"center","flow":"horizontal","gap":3,"on_click":"ws","on_context":"ws_rename","row":"ws_btn","row_height":30,"rows":"= $model.workspaces","widget":"list"}
 ws_btn: {"align":"center","background":"= $item.background","children":["ws_label"],"height":30,"hover":"#ffffff1a","justify":"center","padding":8,"radius":6,"tooltip":"= $item.tip","widget":"row"}
 ws_label: {"bold":"= $item.current","color":"= $item.color","size":12,"text":"= $item.label","widget":"text"}
 gap2: {"size":8,"widget":"spacer"}

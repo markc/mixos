@@ -165,6 +165,12 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
             if response.clicked() {
                 emit.push(SceneMessage::Click(route_of(scene, item, &node)));
             }
+            if response.secondary_clicked() {
+                let route = route_of(scene, item, &node);
+                if route.context.is_some() {
+                    emit.push(SceneMessage::Context(route));
+                }
+            }
             continue;
         }
         match node.family.as_str() {
@@ -172,7 +178,9 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                 let normal = hex(port_text(&node, "background"));
                 let hover = hex(port_text(&node, "hover")).or(normal);
                 let radius = number(&node, "radius").unwrap_or(0.0);
-                let clickable = node.ports.contains_key("on_click") || item.source != Source::Tree;
+                let clickable = node.ports.contains_key("on_click")
+                    || node.ports.contains_key("on_context")
+                    || item.source != Source::Tree;
                 let tip = node
                     .ports
                     .get("tooltip")
@@ -189,6 +197,13 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                     );
                     if clickable && response.clicked() {
                         emit.push(SceneMessage::Click(route_of(scene, item, &node)));
+                    }
+                    // In a list row the route (and its on_context) is the list's.
+                    if clickable && response.secondary_clicked() {
+                        let route = route_of(scene, item, &node);
+                        if route.context.is_some() {
+                            emit.push(SceneMessage::Context(route));
+                        }
                     }
                     response.hovered()
                 } else {
@@ -265,6 +280,14 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                 );
                 if response.clicked() {
                     emit.push(SceneMessage::Click(route_of(scene, item, &node)));
+                }
+                // A right click: the button's own on_context (or, inside a
+                // list row, the list's).
+                if response.secondary_clicked() {
+                    let route = route_of(scene, item, &node);
+                    if route.context.is_some() {
+                        emit.push(SceneMessage::Context(route));
+                    }
                 }
             }
             "field" => {

@@ -113,7 +113,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         // default keeps every v0 document laying out exactly as it did.
         pe("align", "\"stretch\"", ALIGN),
     ];
-    static ROW: [Port; 10] = [
+    static ROW: [Port; 11] = [
         p("children", "list", true, None),
         pnd("gap", "0", None),
         pnd("padding", "0", None),
@@ -131,6 +131,8 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         p("background", "string", false, None),
         p("hover", "string", false, None),
         p("on_click", "string", false, None),
+        // A secondary (right) click: the `context` event kind.
+        p("on_context", "string", false, None),
     ];
     static TEXT: [Port; 10] = [
         p("text", "string", true, None),
@@ -152,7 +154,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         p("on_change", "string", false, None),
         p("on_submit", "string", false, None),
     ];
-    static BUTTON: [Port; 4] = [
+    static BUTTON: [Port; 5] = [
         p("label", "string", true, None),
         Port {
             name: "tone",
@@ -164,13 +166,15 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         },
         pn("width", false, Some(0.0)),
         p("on_click", "string", false, None),
+        // A secondary (right) click: the `context` event kind.
+        p("on_context", "string", false, None),
     ];
     static TOGGLE: [Port; 3] = [
         p("value", "bool", true, None),
         p("label", "string", true, None),
         p("on_change", "string", false, None),
     ];
-    static LIST: [Port; 10] = [
+    static LIST: [Port; 11] = [
         p("rows", "list", true, None),
         p("row", "string", true, None),
         pn("row_height", true, Some(0.0)),
@@ -179,6 +183,8 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         p("fill", "bool", false, Some("false")),
         p("hidden_if_empty", "bool", false, Some("false")),
         p("on_click", "string", false, None),
+        // A secondary (right) click: the `context` event kind.
+        p("on_context", "string", false, None),
         // No default: absence keeps the historical resolved document and the
         // renderer's vertical list.
         p("flow", "string", false, None),

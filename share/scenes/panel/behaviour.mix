@@ -1,4 +1,4 @@
--- version: 0.4.0
+-- version: 0.5.0
 -- The bottom panel's behaviour: compositor, tray, notification and popup
 -- state in; one complete model out through the loader (scenes.model). The
 -- layout is static in scene.mix. Clicks arrive as {scene,node,kind,item?};
@@ -473,6 +473,61 @@ on calendar async
 end
 on notes async
   $r.respond(toggle_popup("notes"))
+end
+
+-- A right click on a pager button: the rename dialog for that workspace.
+-- Its scene (workspace-rename) is installed and enabled on first use; its
+-- behaviour answers once the loader has started it.
+$RENAME = "workspace-rename"
+on ws_rename async
+  $index = $t.workspace_index($r.event_args($event).item)
+  if $index == nil then $r.respond($r.failure("invalid_args", "item.index must be a workspace number")); return end
+  $list = $r.call($ctx.loader, "scenes.list", {})
+  $row = nil
+  if $list.ok and type($list.value) == "map" then
+    for each $s in $list.value.scenes ?? []
+      if type($s) == "map" and $s.name == $RENAME then $row = $s end
+    end
+  end
+  if $row == nil then
+    $add = $r.call($ctx.loader, "scenes.install", {template: $RENAME, enable: false})
+    if not $add.ok then $r.respond($add); return end
+  end
+  -- Enabled only while renaming: it takes the single dialog seat when it
+  -- loads and disables itself once its dialog is hidden. A failed start is
+  -- rolled back, so a refused enable never stays enabled.
+  -- scenes.enable reconciles (idempotent), so it runs every time: a scene
+  -- left enabled but unmounted, say after a pre-emption, is brought back
+  -- too. Only a start this click made is rolled back; an open dialog is
+  -- never disabled from here.
+  $started = $row == nil or $row.enabled != true or $row.behaviour != "running" or $row.mounted != true
+  $on = $r.call($ctx.loader, "scenes.enable", {name: $RENAME})
+  if not $on.ok then
+    if $started then $_ = $r.call($ctx.loader, "scenes.disable", {name: $RENAME}) end
+    if contains(json_encode($on.value), "DIALOG_BUSY") then
+      $r.respond($r.failure("dialog_busy", "another dialog holds the dialog seat (a scene-frontend Scene Editor holds it until unloaded)")); return
+    end
+    $r.respond($on); return
+  end
+  -- The dialog's behaviour may still be starting: bounded retries, never a
+  -- standing poll.
+  $out = nil
+  for $try = 1 to 20
+    $out = $r.call("scene-" .. $RENAME, "rename.open", {index: $index})
+    -- A just-enabled behaviour may not be registered or ready yet: retry
+    -- any failure but a refused index.
+    if $out.ok or (type($out.value) == "map" and $out.value.error_code == "upstream_refused" and (contains(json_encode($out.value), "invalid_args") or contains(json_encode($out.value), "rename_in_progress"))) then break end
+    sleep(0.25)
+  end
+  -- A dialog this click started but could not show must not keep the seat.
+  -- Never when another rename is in progress (another click opened it), and
+  -- never while the host shows it (overlapping clicks).
+  if $started and not $out.ok and not contains(json_encode($out.value), "rename_in_progress") then
+    $seat = $r.call($ctx.host, "shell.props.get", {path: "dialog"})
+    $shown = $seat.ok and type($seat.value) == "map" and $seat.value.scene == $RENAME and $seat.value.visible == true
+    if $seat.ok and not $shown then $_ = $r.call($ctx.loader, "scenes.disable", {name: $RENAME}) end
+  end
+  $r.respond($out)
 end
 
 on ws async

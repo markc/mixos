@@ -1402,6 +1402,30 @@ try
   $_ = refused($s, "enable", {name:"squat"}, "SCENES_RESERVED")
   $_ = refused($s, "enable", {name:"dlg"}, "SCENES_RESERVED")
 
+  -- R4: a SHIPPED hidden dialog template (a system dialog, such as
+  -- workspace-rename) installs and loads as a dialog under its own name. A
+  -- shipped dialog that is not hidden, or a system dialog installed under
+  -- another name, stays refused: the permission comes from the shipped files.
+  $sys = $tmp .. "/sys-templates"
+  mkdir($sys)
+  $dialog_window = "{\"kind\":\"dialog\",\"w\":340,\"h\":160}"
+  tpl_fixture($sys, "sysdlg", "{title: \"System\", hidden: true}\n", false, $dialog_window)
+  tpl_fixture($sys, "shown-dlg", "{title: \"Shown\"}\n", false, $dialog_window)
+  $s = se_fresh("sd", $sys)
+  $s = $l.request($s, "install", {template:"sysdlg", enable:true})
+  check($s.rc == 0 and $s.response.installed == true and $s.response.enabled == true, "R4: a shipped hidden dialog installs and loads: " .. json_encode($s.response))
+  check(len(filter(since(0, "shell.scene.load"), fn($c) = $l.document($c.body.source).name == "sysdlg")) >= 1, "R4: the system dialog was loaded on the host")
+  check($s.staging_template == nil, "R4: the staging hint stays inside stage() (state is copied by value)")
+  -- An origin-less dialog directory under another name is still refused,
+  -- after a system dialog was staged.
+  install_fixture($s.root, "hand-dlg", false)
+  write_file($s.root .. "/hand-dlg/scene.mix", replace(fixture_source("hand-dlg", "x"), "{\"kind\":\"edge\",\"edge\":\"right\"}", $dialog_window))
+  $s = $l.rescan($s, false)
+  $_ = refused($s, "enable", {name:"hand-dlg"}, "SCENES_RESERVED")
+  $_ = refused($s, "install", {template:"shown-dlg", enable:true}, "SCENES_RESERVED")
+  $_ = refused($s, "install", {template:"sysdlg", name:"renamed-dlg", enable:true}, "SCENES_RESERVED")
+  check(len(filter($l.templates_list($s).templates ?? [], fn($t) = $t.template == "sysdlg")) == 0, "R4: a system dialog stays out of the gallery")
+
   -- P1: problems carry lines and the attempted per-file digests.
   $s = se_fresh("p", $tpl)
   $s = $l.request($s, "install", {template:"alpha", enable:true})

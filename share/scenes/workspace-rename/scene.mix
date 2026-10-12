@@ -1,0 +1,17 @@
+---
+scene: 1
+name: workspace-rename
+citizen: scene-workspace-rename
+window: {"autofocus":"name","chrome":true,"h":240,"kind":"dialog","title":"Rename Workspace","w":340}
+model: {"cancel":"","hint":"","index":0,"name":"","note":"","prompt":"","save":""}
+---
+```mix
+root: {"children":["prompt","name","note","actions"],"fill":true,"gap":10,"padding":16,"widget":"column"}
+prompt: {"bold":true,"size":13,"text":"= $model.prompt","widget":"text"}
+name: {"on_change":"rename.edit","on_submit":"rename.save","placeholder":"= $model.hint","value":"= $model.name","widget":"field","width":308}
+note: {"color":"#a1a9b1","size":11,"text":"= $model.note","widget":"text"}
+actions: {"align":"center","children":["actions_fill","cancel","save"],"gap":8,"widget":"row"}
+actions_fill: {"widget":"spacer"}
+cancel: {"label":"= $model.cancel","on_click":"rename.cancel","widget":"button"}
+save: {"label":"= $model.save","on_click":"rename.save","tone":"primary","widget":"button"}
+```

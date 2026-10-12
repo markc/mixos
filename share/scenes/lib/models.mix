@@ -103,7 +103,11 @@ $TEXT = {
   volume_title: "Volume", muted: "Muted", level: "{n}%", unmute: "Click to unmute", mute: "Click to mute",
   network_title: "Network", wireless: "Connected (wireless)", wired: "Connected (wired)", offline: "Offline",
   peek_title: "Peek at Desktop", peek_restore: "Restore the windows", peek_minimise: "Minimise this workspace's windows",
-  zone: "UTC{offset}", calendar_hint: "Click for the calendar"
+  zone: "UTC{offset}", calendar_hint: "Click for the calendar",
+  rename_prompt: "Name for workspace {n}", rename_hint: "Workspace {n}",
+  rename_note: "Enter saves. An empty name shows the number again.",
+  rename_cancel: "Cancel", rename_save: "Save", rename_menu: "Right-click to rename",
+  rename_refused: "That name was not accepted (at most 64 characters, no control characters)."
 }
 
 fn text($key, $vars = nil)
@@ -133,6 +137,14 @@ fn workspace_name($names, $index)
   return $name
 end
 
+-- The rename dialog's model for workspace $index, whose name is $name (""
+-- when unnamed).
+fn rename_dialog($index, $name)
+  return {index: $index, name: $name ?? "", prompt: text("rename_prompt", {n: $index}),
+    hint: text("rename_hint", {n: $index}), note: text("rename_note"),
+    cancel: text("rename_cancel"), save: text("rename_save")}
+end
+
 -- A pager button's tip: its name (else "Workspace N"), whether it is the
 -- current one, and the windows on it.
 fn workspace_tip($names, $index, $current, $windows)
@@ -152,6 +164,7 @@ fn workspace_tip($names, $index, $current, $windows)
     push($lines, $p.short_title(($w.title ?? "") != "" ? $w.title : to_string($w.app_id ?? text("window")), 60))
   end
   if length($on) > $TIP_WINDOWS then push($lines, text("more", {n: length($on) - $TIP_WINDOWS})) end
+  push($lines, text("rename_menu"))
   return tip($name ?? $where, $subtitle, $lines)
 end
 

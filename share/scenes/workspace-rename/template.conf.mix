@@ -1,0 +1,7 @@
+schema: 1
+name: "workspace-rename"
+title: "Rename Workspace"
+behaviour: "behaviour.mix"
+description: "The pager's rename dialog: name a workspace (right-click a pager button)"
+hidden: true
+requires: ["comp"]
