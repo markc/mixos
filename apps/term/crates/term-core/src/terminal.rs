@@ -409,6 +409,10 @@ pub fn encode(key: Key) -> Vec<u8> {
         Key::PageUp => b"\x1b[5~".to_vec(),
         Key::PageDown => b"\x1b[6~".to_vec(),
         Key::Control(c) if c.is_ascii_alphabetic() => vec![c.to_ascii_lowercase() as u8 - b'a' + 1],
+        // The conventional control punctuation: Ctrl+@ and Ctrl+Space NUL,
+        // Ctrl+[ ESC, Ctrl+\ FS, Ctrl+] GS, Ctrl+^ RS, Ctrl+_ US.
+        Key::Control(c @ ('@' | '[' | '\\' | ']' | '^' | '_')) => vec![c as u8 & 0x1f],
+        Key::Control(' ') => vec![0],
         Key::Control(_) => Vec::new(),
     }
 }

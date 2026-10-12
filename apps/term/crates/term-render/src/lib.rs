@@ -14,6 +14,9 @@
 //! 3. the cursor: a block inverts what is under it, an underline is a solid
 //!    bottom row.
 //!
+//! Each frame runs in two phases over all panes: every pane first reserves
+//! its glyphs (the atlas may empty itself only then), then every pane builds
+//! its instances, so no pane draws against an atlas emptied after it built.
 //! Only rows the terminal reports dirty are rebuilt; a glyph already in the
 //! atlas costs one 20-byte instance. The CPU does no pixel work after a
 //! glyph's first use.
@@ -223,6 +226,14 @@ struct PaneState {
     /// The latest snapshot not yet drawn, with the rows that changed since
     /// the one before it.
     pending: Option<(Screen, Vec<bool>)>,
+    /// The snapshot the instances are built from, kept so an atlas or
+    /// raster change can rebuild a pane that has no new output.
+    current: Option<Screen>,
+    /// Rows changed since the last build.
+    owed: Vec<bool>,
+    reserve_ns: u64,
+    /// Test hook: empty the atlas at this pane's next reserve.
+    reset_atlas: bool,
     gpu: Option<PaneGpu>,
     rows: Vec<Vec<u8>>,
     glyph_count: u32,
@@ -285,6 +296,13 @@ impl Pane {
             None => dirty_rows,
         };
         state.pending = Some((screen, dirty));
+    }
+
+    /// Test hook: this pane's next frame empties the shared atlas during its
+    /// reserve phase, as a full atlas would.
+    #[doc(hidden)]
+    pub fn reset_atlas_next_frame(&self) {
+        self.state.lock().unwrap().reset_atlas = true;
     }
 
     /// The counters from this pane's last prepare.
@@ -401,8 +419,81 @@ impl PaneState {
         self.built = None;
     }
 
+    /// Phase one, egui-wgpu's `prepare`: take the newest snapshot and make
+    /// sure the glyphs this pane will build are in the atlas. This is the
+    /// only place the atlas may empty itself (when full); every pane builds
+    /// its instances afterwards, in [`PaneState::build`], so no pane can be
+    /// drawn against a generation that was reset after it built.
+    fn reserve(&mut self, queue: &wgpu::Queue, renderer: &mut GridRenderer, raster: &mut Raster) {
+        let started = std::time::Instant::now();
+        renderer.atlas.bind(raster);
+        if std::mem::take(&mut self.reset_atlas) {
+            renderer.atlas.reset();
+        }
+        if let Some((screen, dirty)) = self.pending.take() {
+            let rows = grid_rows(&screen);
+            let same_shape = self
+                .current
+                .as_ref()
+                .is_some_and(|c| c.cols == screen.cols && grid_rows(c) == rows);
+            if same_shape && dirty.len() == screen.rows && self.owed.len() == rows {
+                for (o, d) in self.owed.iter_mut().zip(&dirty) {
+                    *o |= *d;
+                }
+            } else {
+                self.owed = vec![true; rows];
+            }
+            self.current = Some(screen);
+        }
+        let Some(screen) = &self.current else {
+            self.reserve_ns = started.elapsed().as_nanos() as u64;
+            return;
+        };
+        let all = !self.is_current(renderer, raster);
+        for attempt in 0..2 {
+            let mut full = false;
+            'rows: for row in 0..grid_rows(screen) {
+                if !(all || attempt > 0 || self.owed.get(row).copied().unwrap_or(true)) {
+                    continue;
+                }
+                let cells = &screen.cells[row * screen.cols..(row + 1) * screen.cols];
+                for col in 0..screen.cols {
+                    if let Some(key) = GlyphKey::for_cell(screen, cells, col)
+                        && renderer.atlas.slots(queue, raster, &key).is_none()
+                    {
+                        full = true;
+                        break 'rows;
+                    }
+                }
+            }
+            if !full || attempt > 0 {
+                break;
+            }
+            // Full: empty it once and reserve this pane's whole screen. Every
+            // other pane sees the new generation and rebuilds in phase two.
+            renderer.atlas.reset();
+        }
+        self.reserve_ns = started.elapsed().as_nanos() as u64;
+    }
+
+    /// True when this pane's instances still match the atlas and raster.
+    fn is_current(&self, renderer: &GridRenderer, raster: &Raster) -> bool {
+        let Some(screen) = &self.current else {
+            return false;
+        };
+        self.built.as_ref().is_some_and(|b| {
+            b.generation == renderer.atlas.generation
+                && raster.same_identity(&b.raster)
+                && b.cols == screen.cols
+                && b.rows == grid_rows(screen)
+        })
+    }
+
+    /// Phase two, egui-wgpu's `finish_prepare`: rebuild owed rows (all of
+    /// them when the atlas or raster changed) from the retained snapshot.
+    /// The atlas only grows here; a glyph that no longer fits is skipped.
     #[allow(clippy::too_many_arguments)]
-    fn prepare(
+    fn build(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -413,83 +504,50 @@ impl PaneState {
     ) {
         let started = std::time::Instant::now();
         let mut stats = Stats::default();
-        renderer.atlas.bind(raster);
-        let generation = renderer.atlas.generation;
         let (cell_w, cell_h) = raster.cell();
-        let stale_atlas = self
-            .built
-            .as_ref()
-            .is_some_and(|b| b.generation != generation || !raster.same_identity(&b.raster));
-        let Some((screen, dirty)) = self.pending.take() else {
-            if stale_atlas {
-                // Nothing new to draw from; the next snapshot rebuilds.
-                self.built = None;
-                self.glyph_count = 0;
-            }
+        let Some(screen) = self.current.take() else {
             self.write_uniform(queue, origin, screen_px, (cell_w, cell_h));
-            stats.prepare_ns = started.elapsed().as_nanos() as u64;
+            stats.prepare_ns = self.reserve_ns + started.elapsed().as_nanos() as u64;
             self.stats = stats;
             return;
         };
         let cols = screen.cols;
         let rows = grid_rows(&screen);
         self.gpu(device, &renderer.pane_layout, cols as u32, rows as u32);
-        let built = Built {
-            raster: raster.identity(),
-            generation,
-            cols,
-            rows,
-        };
-        let full = self.built.as_ref() != Some(&built) || dirty.len() != screen.rows;
-        self.rows.resize_with(rows, Vec::new);
-        let mut rebuild: Vec<bool> = if full {
+        self.current = Some(screen);
+        let full = !self.is_current(renderer, raster);
+        let screen = self.current.take().unwrap();
+        let rebuild: Vec<bool> = if full || self.owed.len() != rows {
             vec![true; rows]
         } else {
-            dirty[..rows].to_vec()
+            std::mem::take(&mut self.owed)
         };
-        // Rebuild rows; an atlas that fills up mid-frame empties once and
-        // every row rebuilds against the new generation.
-        let mut overflowed = false;
-        'build: loop {
-            for row in 0..rows {
-                if !rebuild[row] {
+        self.owed = vec![false; rows];
+        self.rows.resize_with(rows, Vec::new);
+        for row in (0..rows).filter(|&r| rebuild[r]) {
+            let cells = &screen.cells[row * cols..(row + 1) * cols];
+            let out = &mut self.rows[row];
+            out.clear();
+            for col in 0..cols {
+                let Some(key) = GlyphKey::for_cell(&screen, cells, col) else {
                     continue;
+                };
+                let Some(slots) = renderer.atlas.slots(queue, raster, &key) else {
+                    // More distinct glyphs on screen than the atlas holds.
+                    continue;
+                };
+                let x = (col as u32 * cell_w) as f32;
+                let y = (row as u32 * cell_h) as f32;
+                for slot in slots {
+                    let at = [x + f32::from(slot.offset[0]), y + f32::from(slot.offset[1])];
+                    push_glyph(out, at, slot, cells[col].fg);
                 }
-                let cells = &screen.cells[row * cols..(row + 1) * cols];
-                let out = &mut self.rows[row];
-                out.clear();
-                for col in 0..cols {
-                    let Some(key) = GlyphKey::for_cell(&screen, cells, col) else {
-                        continue;
-                    };
-                    let Some(slots) = renderer.atlas.slots(queue, raster, &key) else {
-                        if overflowed {
-                            // This frame's glyphs alone do not fit: draw what did.
-                            continue;
-                        }
-                        overflowed = true;
-                        renderer.atlas.reset();
-                        rebuild.fill(true);
-                        continue 'build;
-                    };
-                    let x = (col as u32 * cell_w) as f32;
-                    let y = (row as u32 * cell_h) as f32;
-                    for slot in slots {
-                        let at = [x + f32::from(slot.offset[0]), y + f32::from(slot.offset[1])];
-                        push_glyph(out, at, slot, cells[col].fg);
-                    }
-                }
-                stats.rows_built += 1;
             }
-            break;
+            stats.rows_built += 1;
         }
-        let built = Built {
-            generation: renderer.atlas.generation,
-            ..built
-        };
         let gpu = self.gpu.as_mut().unwrap();
         // Backgrounds: one texel per cell, rewritten for rebuilt rows.
-        for (row, _) in rebuild.iter().enumerate().filter(|(_, r)| **r) {
+        for row in (0..rows).filter(|&r| rebuild[r]) {
             let texels: Vec<u8> = screen.cells[row * cols..(row + 1) * cols]
                 .iter()
                 .flat_map(|c| [c.bg[0], c.bg[1], c.bg[2], 255])
@@ -571,11 +629,17 @@ impl PaneState {
             );
             self.cursor = Some((shape, rect));
         }
-        self.built = Some(built);
+        self.built = Some(Built {
+            raster: raster.identity(),
+            generation: renderer.atlas.generation,
+            cols,
+            rows,
+        });
+        self.current = Some(screen);
         stats.glyphs = self.glyph_count;
         stats.atlas_bytes = std::mem::take(&mut renderer.atlas.uploaded);
         self.write_uniform(queue, origin, screen_px, (cell_w, cell_h));
-        stats.prepare_ns = started.elapsed().as_nanos() as u64;
+        stats.prepare_ns = self.reserve_ns + started.elapsed().as_nanos() as u64;
         self.stats = stats;
     }
 
@@ -613,10 +677,20 @@ fn glyph_buffer(device: &wgpu::Device, size: u64) -> wgpu::Buffer {
     })
 }
 
+impl PaneCallback {
+    /// The callback rect's origin, a whole physical pixel by contract.
+    fn origin(&self, ppp: f32) -> [f32; 2] {
+        [
+            (self.rect.min.x * ppp).round(),
+            (self.rect.min.y * ppp).round(),
+        ]
+    }
+}
+
 impl egui_wgpu::CallbackTrait for PaneCallback {
     fn prepare(
         &self,
-        device: &wgpu::Device,
+        _device: &wgpu::Device,
         queue: &wgpu::Queue,
         screen: &egui_wgpu::ScreenDescriptor,
         _encoder: &mut wgpu::CommandEncoder,
@@ -627,23 +701,29 @@ impl egui_wgpu::CallbackTrait for PaneCallback {
         };
         let mut state = self.pane.state.lock().unwrap();
         let mut raster = self.raster.lock().unwrap();
-        // The callback rect's origin, a whole physical pixel by contract.
-        let ppp = screen.pixels_per_point;
-        let origin = [
-            (self.rect.min.x * ppp).round(),
-            (self.rect.min.y * ppp).round(),
+        state.reserve(queue, renderer, &mut raster);
+        state.origin = self.origin(screen.pixels_per_point);
+        state.screen = [
+            screen.size_in_pixels[0] as f32,
+            screen.size_in_pixels[1] as f32,
         ];
-        state.prepare(
-            device,
-            queue,
-            renderer,
-            &mut raster,
-            origin,
-            [
-                screen.size_in_pixels[0] as f32,
-                screen.size_in_pixels[1] as f32,
-            ],
-        );
+        Vec::new()
+    }
+
+    fn finish_prepare(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        _encoder: &mut wgpu::CommandEncoder,
+        resources: &mut egui_wgpu::CallbackResources,
+    ) -> Vec<wgpu::CommandBuffer> {
+        let Some(renderer) = resources.get_mut::<GridRenderer>() else {
+            return Vec::new();
+        };
+        let mut state = self.pane.state.lock().unwrap();
+        let mut raster = self.raster.lock().unwrap();
+        let (origin, screen) = (state.origin, state.screen);
+        state.build(device, queue, renderer, &mut raster, origin, screen);
         Vec::new()
     }
 

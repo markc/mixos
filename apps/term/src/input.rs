@@ -284,10 +284,34 @@ pub fn keys_for(key: Key, modifiers: Modifiers) -> Vec<TerminalKey> {
     }
     if modifiers.ctrl {
         // Ctrl is a chord, never text: the control code comes from the
-        // letter, whatever text the seat would have reported.
-        return letter(key).map(TerminalKey::Control).into_iter().collect();
+        // letter or punctuation key, whatever text the seat would have
+        // reported (egui reports none under Ctrl).
+        return letter(key)
+            .or_else(|| control_punctuation(key, modifiers.shift))
+            .map(TerminalKey::Control)
+            .into_iter()
+            .collect();
     }
     named_key(key).into_iter().collect()
+}
+
+/// The character whose control code a Ctrl+punctuation key sends, as
+/// xterm and foot do: Ctrl+[ is ESC (Vim's escape), Ctrl+\ FS, Ctrl+] GS,
+/// Ctrl+Space and Ctrl+@ (Shift+2) NUL, Ctrl+^ (Shift+6) RS, Ctrl+_
+/// (Shift+minus) and Ctrl+/ US. Shifted keys arrive as their US position
+/// when egui has no name for the shifted character.
+fn control_punctuation(key: Key, shift: bool) -> Option<char> {
+    Some(match key {
+        Key::OpenBracket => '[',
+        Key::Backslash => '\\',
+        Key::CloseBracket => ']',
+        Key::Space => ' ',
+        Key::Slash => '_',
+        Key::Num2 if shift => '@',
+        Key::Num6 if shift => '^',
+        Key::Minus if shift => '_',
+        _ => return None,
+    })
 }
 
 /// Typed text into PTY keys. Shared by key text and IME commits; format
@@ -427,6 +451,28 @@ mod tests {
         assert_eq!(bytes(Key::C, CTRL), [3]);
         assert_eq!(bytes(Key::D, CTRL), [4]);
         assert_eq!(bytes(Key::I, CTRL), b"\t");
+    }
+
+    #[test]
+    fn control_punctuation_sends_its_control_codes() {
+        let cs = ctrl_shift();
+        for (key, modifiers, byte) in [
+            (Key::OpenBracket, CTRL, 0x1b),
+            (Key::Backslash, CTRL, 0x1c),
+            (Key::CloseBracket, CTRL, 0x1d),
+            (Key::Space, CTRL, 0x00),
+            (Key::Num2, cs, 0x00),
+            (Key::Num6, cs, 0x1e),
+            (Key::Minus, cs, 0x1f),
+            (Key::Slash, CTRL, 0x1f),
+        ] {
+            assert_eq!(action_for(key, modifiers), None, "{key:?}");
+            assert_eq!(bytes(key, modifiers), [byte], "{key:?}");
+        }
+        // Unshifted digits and minus stay out of it (Ctrl+- is a font step).
+        assert!(bytes(Key::Num2, CTRL).is_empty());
+        assert!(bytes(Key::Num6, CTRL).is_empty());
+        assert_eq!(action_for(Key::Minus, CTRL), Some(Action::FontDecrease));
     }
 
     #[test]

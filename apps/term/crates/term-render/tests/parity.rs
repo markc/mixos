@@ -147,3 +147,82 @@ fn a_dirty_row_rebuilds_alone_and_the_frame_still_matches() {
     let (_, more) = compare(&frame.gpu, &cpu, frame.width, "dirty row");
     assert_eq!(more, 0);
 }
+
+/// Two panes share the atlas. When the right pane empties it during its
+/// reserve phase (as a full atlas does), the left pane, which has no new
+/// output and was drawn in an earlier frame, must rebuild from its retained
+/// snapshot and draw its own glyphs, not whatever the right pane put there.
+#[test]
+fn an_atlas_reset_by_one_pane_rebuilds_an_idle_neighbour() {
+    let scale = 1.0;
+    let raster = Arc::new(Mutex::new(
+        Raster::for_test(scale, 13.0, Cursor::Block).unwrap(),
+    ));
+    let left_screen = screen((1, 0));
+    let mut right_first = screen((2, 1));
+    let mut right_second = screen((4, 3));
+    let fill = |s: &mut Screen, chars: &[char]| {
+        for (i, cell) in s.cells.iter_mut().enumerate() {
+            cell.c = chars[i % chars.len()];
+            cell.extra = 0;
+            cell.width = Default::default();
+        }
+    };
+    fill(&mut right_first, &['#', '%', '&']);
+    fill(&mut right_second, &['K', 'L', 'W', '@', '8']);
+    let (cpu_left, cpu_right) = {
+        let mut r = raster.lock().unwrap();
+        (r.render(&left_screen), r.render(&right_second))
+    };
+    let (width, height) = raster.lock().unwrap().target_size(&left_screen);
+    let state = create_render_state(
+        default_wgpu_setup(),
+        egui_wgpu::RendererOptions::PREDICTABLE,
+    );
+    term_render::install(&state);
+    let (left, right) = (Pane::new(), Pane::new());
+    let size = egui::vec2(width as f32 / scale, height as f32 / scale);
+    let (ui_left, ui_right, ui_raster) = (left.clone(), right.clone(), raster.clone());
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(size.x * 2.0, size.y))
+        .with_pixels_per_point(scale)
+        .renderer(WgpuTestRenderer::from_render_state(state))
+        .build_ui(move |ui| {
+            let painter = ui.painter();
+            painter.add(ui_left.callback(
+                egui::Rect::from_min_size(egui::Pos2::ZERO, size),
+                ui_raster.clone(),
+            ));
+            painter.add(ui_right.callback(
+                egui::Rect::from_min_size(egui::pos2(size.x, 0.0), size),
+                ui_raster.clone(),
+            ));
+        });
+    let rows = left_screen.rows;
+    left.update(left_screen, vec![true; rows]);
+    right.update(right_first, vec![true; rows]);
+    harness.step();
+    harness.render().expect("first frame");
+    right.update(right_second, vec![true; rows]);
+    right.reset_atlas_next_frame();
+    harness.step();
+    let image = harness.render().expect("second frame");
+    assert_eq!(
+        left.stats().rows_built,
+        rows,
+        "the idle pane rebuilt every row"
+    );
+    let crop = |x0: u32| {
+        let mut out = Vec::new();
+        for y in 0..height {
+            for x in x0..x0 + width {
+                out.extend_from_slice(&image.get_pixel(x, y).0);
+            }
+        }
+        out
+    };
+    let (_, more) = compare(&crop(0), &cpu_left, width as usize, "idle left pane");
+    assert_eq!(more, 0);
+    let (_, more) = compare(&crop(width), &cpu_right, width as usize, "right pane");
+    assert_eq!(more, 0);
+}
