@@ -171,7 +171,8 @@ try
   -- 0. watch dopus-test.command.executed. The `on` line must name the full
   -- topic, and subscribe() returns before the broker confirms it, so publish
   -- probes (carrying $tag) until one comes back: then the watcher is live.
-  -- The name is quoted: a bare `on dopus-test.…` parses but never fires.
+  -- The name is quoted so the test runs on mix before 0.113.1 too, where a
+  -- bare hyphenated `on` name parsed but never fired.
   write_file($tmp .. "/watch.mix", "subscribe(\"dopus-test.command.executed\")\nwrite_file(env(\"WATCH_OUT\"), \"\")\n" ..
     "on \"dopus-test.command.executed\"\n  append_file(env(\"WATCH_OUT\"), json_encode($event.args) .. \"\\n\")\nend\n")
   write_file($tmp .. "/probe.mix", "publish(\"dopus-test.command.executed\", json_encode({probe: $1}))\nexit(if $rc == 0 then 0 else 1 end)\n")
