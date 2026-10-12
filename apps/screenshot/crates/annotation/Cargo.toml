@@ -1,0 +1,36 @@
+# annotation: screenshot's headless engine — the immutable captured raster,
+# its editable annotation objects with undo, one painter for preview and
+# export, and where finished shots are published (AGENTS.md §4.1).
+[package]
+name = "annotation"
+description = "Screenshot annotation documents: immutable pixels, editable objects, one painter, safe PNG publication"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "screenshot"
+kind = "app"
+layer = "core"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+chrono = { workspace = true, features = ["clock"] }
+# Annotation text, shaped with the face the caller supplies (no host fonts).
+cosmic-text.workspace = true
+image.workspace = true
+libc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# The version resvg already brings; no PNG codec of its own.
+tiny-skia = { version = "=0.11.4", default-features = false, features = ["std", "simd"] }
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

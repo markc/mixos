@@ -502,11 +502,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // its own thread and retries with backoff, so a missing broker never holds up
     // the compositor; a failure here (bad name, no wake source) is logged and the
     // compositor runs without a Bus port rather than not at all.
-    let mut bus = match comp::Bus::start(
-        comp::service_name(backend, cli.bus_service.as_deref()),
-        backend,
-        &event_loop.handle(),
-    ) {
+    let comp_service = comp::service_name(backend, cli.bus_service.as_deref());
+    // Print Screen's launches capture through this compositor, by name.
+    crate::execution::driver::executor::executor::set_comp_service(&comp_service);
+    let mut bus = match comp::Bus::start(comp_service, backend, &event_loop.handle()) {
         Ok(bus) => Some(bus),
         Err(err) => {
             warn!("comp Bus port not started: {err}");
@@ -632,6 +631,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // then the chords the keyboard queued this dispatch.
         state.inner.comp.bindings.ensure(if nested { "nested" } else { "kms-live" });
         policy_host::control::apply_bindings(state);
+        // Print Screen presses, queued by the chords above or by a Bus
+        // pass's injected key, start (or hand off to) the screenshot app.
+        crate::execution::driver::executor::executor::launch_screenshots(state);
         // The session lock's policy, with or without a Bus port.
         // Held keys are released to their client first, while it still has the
         // keyboard (once `service` enters the lock, focus is gone).

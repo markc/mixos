@@ -71,6 +71,9 @@ pub enum WindowOp {
     },
     Restore {
         target: Option<(u64, u64)>,
+        /// Activate it too (raise, focus, switch to its workspace): the
+        /// default. `false` only unminimises, leaving the focus alone.
+        activate: bool,
     },
     /// Keyboard focus; `raise` also raises and retargets the pointer (the
     /// Alt+Tab activation).
@@ -461,7 +464,8 @@ fn window_arg(
 }
 
 /// `comp.window.minimize {id, generation}` and
-/// `comp.window.restore {id?, generation?}` (both or neither).
+/// `comp.window.restore {id?, generation?, activate?}` (id and generation
+/// both or neither; `activate` defaults to true).
 pub fn parse_window_op(verb: &str, args: &Value) -> Result<WindowOp, ControlReply> {
     let empty = serde_json::Map::new();
     let object = match args {
@@ -472,13 +476,19 @@ pub fn parse_window_op(verb: &str, args: &Value) -> Result<WindowOp, ControlRepl
         }
     };
     const WINDOW_ARGS: &[&str] = &["id", "generation"];
+    const RESTORE_ARGS: &[&str] = &["id", "generation", "activate"];
+    let allowed = if verb == "comp.window.restore" {
+        RESTORE_ARGS
+    } else {
+        WINDOW_ARGS
+    };
     if let Some(field) = object
         .keys()
-        .find(|field| !WINDOW_ARGS.contains(&field.as_str()))
+        .find(|field| !allowed.contains(&field.as_str()))
     {
         return Err(ControlReply::InvalidArgs {
             field: field.clone(),
-            allowed: WINDOW_ARGS,
+            allowed,
         });
     }
     let id = window_arg(object, "id")?;
@@ -507,7 +517,10 @@ pub fn parse_window_op(verb: &str, args: &Value) -> Result<WindowOp, ControlRepl
         };
         Ok(WindowOp::Minimize { id, generation })
     } else {
-        Ok(WindowOp::Restore { target })
+        Ok(WindowOp::Restore {
+            target,
+            activate: bool_arg(object, "activate", true)?,
+        })
     }
 }
 

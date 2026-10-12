@@ -46,21 +46,26 @@ pub fn start(
     } else {
         None
     };
-    let output = lp
-        .inner
-        .space_state()
-        .state
-        .outputs()
-        .find(|output| {
-            if let Some(window_output) = &window_output {
-                *output == window_output
-            } else {
-                spec.output
-                    .as_ref()
-                    .is_none_or(|name| *name == output.name())
-            }
-        })
-        .cloned();
+    // The window's output, else the named one, else the one under the
+    // pointer (as `comp.region.select` chooses), else the first.
+    let outputs: Vec<_> = lp.inner.space_state().state.outputs().cloned().collect();
+    let names: Vec<String> = outputs.iter().map(|o| o.name()).collect();
+    let pointer = lp.inner.cursor_output.clone().and_then(|key| {
+        outputs
+            .iter()
+            .position(|o| world::state::state::output_key(o) == key)
+    });
+    let window_at = window_output
+        .as_ref()
+        .and_then(|w| outputs.iter().position(|o| o == w));
+    let output = pick_output(
+        &names,
+        window_output.is_some(),
+        window_at,
+        spec.output.as_deref(),
+        pointer,
+    )
+    .map(|at| outputs[at].clone());
     let Some(output) = output else {
         answer(ControlReply::Refused {
             error: "unknown_output",
@@ -110,4 +115,48 @@ pub fn start(
     }
     lp.state.redraw.request_for(RedrawReason::Capture);
     lp.state.redraw.wake();
+}
+
+/// Which of `names` a frame comes from: a window capture's own output
+/// (`window_at`; none if the window is on no output), else the `named` one,
+/// else the output under the pointer, else the first.
+fn pick_output(
+    names: &[String],
+    window: bool,
+    window_at: Option<usize>,
+    named: Option<&str>,
+    pointer: Option<usize>,
+) -> Option<usize> {
+    if window {
+        return window_at;
+    }
+    match named {
+        Some(name) => names.iter().position(|n| n == name),
+        None => pointer
+            .filter(|at| *at < names.len())
+            .or((!names.is_empty()).then_some(0)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pick_output;
+
+    #[test]
+    fn an_unnamed_frame_comes_from_the_pointer_output() {
+        let names = ["DP-1".to_owned(), "HDMI-A-1".to_owned()];
+        assert_eq!(pick_output(&names, false, None, None, Some(1)), Some(1));
+        assert_eq!(pick_output(&names, false, None, None, None), Some(0));
+        assert_eq!(
+            pick_output(&names, false, None, Some("DP-1"), Some(1)),
+            Some(0)
+        );
+        assert_eq!(pick_output(&names, false, None, Some("VGA"), Some(1)), None);
+        assert_eq!(
+            pick_output(&names, true, Some(1), Some("DP-1"), Some(0)),
+            Some(1)
+        );
+        assert_eq!(pick_output(&names, true, None, None, Some(0)), None);
+        assert_eq!(pick_output(&[], false, None, None, None), None);
+    }
 }

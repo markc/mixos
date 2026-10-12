@@ -190,6 +190,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "annotation"
+version = "0.1.1"
+dependencies = [
+ "chrono",
+ "cosmic-text",
+ "image",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tiny-skia",
+ "uuid",
+]
+
+[[package]]
 name = "anstream"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6372,6 +6387,30 @@ dependencies = [
  "protocols",
  "serde_json",
  "smithay",
+]
+
+[[package]]
+name = "screenshot"
+version = "0.1.1"
+dependencies = [
+ "annotation",
+ "buildinfo",
+ "bus",
+ "citizen",
+ "design",
+ "eframe",
+ "egui",
+ "egui_kittest",
+ "futures",
+ "image",
+ "serde",
+ "serde_json",
+ "settings",
+ "tempfile",
+ "test-broker",
+ "tokio",
+ "toolkit",
+ "uuid",
 ]
 
 [[package]]

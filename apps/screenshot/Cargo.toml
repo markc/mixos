@@ -1,0 +1,46 @@
+# screenshot: native screenshots and editable annotations — the egui shell
+# around the `annotation` engine (AGENTS.md §4.1). Supersedes the iced Cap.
+[package]
+name = "screenshot"
+description = "Native screenshots and editable annotations over the Bus"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "screenshot"
+kind = "app"
+layer = "desktop"
+contract = "public"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+annotation = { path = "crates/annotation" }
+buildinfo.workspace = true
+# The Bus connection: commands, replies, calls to compd, topics, activation.
+citizen.workspace = true
+design.workspace = true
+eframe.workspace = true
+egui.workspace = true
+futures.workspace = true
+image.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+settings.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "sync", "time", "macros"] }
+toolkit.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+bus = { workspace = true, features = ["native"] }
+egui_kittest.workspace = true
+tempfile.workspace = true
+test-broker = { path = "../../libs/test-broker" }
+
+[build-dependencies]
+buildinfo.workspace = true
