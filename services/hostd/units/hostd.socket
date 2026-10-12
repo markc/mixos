@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixOS host service socket
+
+[Socket]
+ListenStream=/run/hostd/hostd.sock
+SocketUser=root
+SocketGroup=hostd
+SocketMode=0660
+DirectoryMode=0755
+Accept=no
+
+[Install]
+WantedBy=sockets.target

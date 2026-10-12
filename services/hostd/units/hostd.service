@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# One per host, not per session. Root because write verbs change root-owned
+# host configuration.
+[Unit]
+Description=MixOS host service
+Requires=hostd.socket
+After=hostd.socket
+
+[Service]
+Type=simple
+ExecStart=/opt/mixos/bin/hostd serve
+Restart=on-failure
+RestartSec=1
+# A stop waits up to 80 s for a running transaction (health window plus
+# rollback); a transaction cut short anyway is rolled back at the next start.
+TimeoutStopSec=90
+# Sandbox. hostd reads the host and its policy (/etc/hostd/policy.mx). It
+# writes its state directory (freeze record, receipts, circuit breaker) and,
+# through net.link.apply, only its own 50-hostd-* files in
+# /etc/systemd/network. Each new write verb adds exactly the paths it needs.
+StateDirectory=hostd
+StateDirectoryMode=0700
+ReadWritePaths=/etc/systemd/network
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+NoNewPrivileges=yes
+# Unix sockets for the local socket, Varlink and D-Bus; netlink to read the
+# kernel's neighbour table; inet for the Bus broker on loopback and the one
+# UDP datagram that makes a new gateway resolve. No IP allow-list: that
+# datagram goes to whatever gateway a change installs.
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

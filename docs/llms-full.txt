@@ -1606,6 +1606,91 @@ status, so its purpose belongs there too.
 
 ---
 
+<!-- page: https://mixos.dev/decisions/2026-10-12-hostd/ (source: https://mixos.dev/decisions/2026-10-12-hostd.md) -->
+
+# Decision — hostd, the host service
+
+Status: accepted 2026-10-12.
+
+## The decision
+
+- **One service, `hostd`, runs as root on each host.** It has two jobs:
+  information about the host (hardware, OS, the MixOS mode, network
+  management state, devices, power) and privileged actions on the host.
+  It is the host agent of the VT-native design: the only MixOS code on the
+  host besides `mix`.
+- **No generic exec.** No verb runs a caller-supplied command, script or
+  shell string. Each verb does one job, checks its arguments against a
+  schema and does the work natively (writes the file itself, calls
+  networkd, resolved, logind or iwd over Varlink or D-Bus).
+- **Written in Rust.** Mix is the client. A root process that interprets
+  scripts is too much attack surface.
+- **A verb that can't be reversed is not added.**
+- **Every new verb is reviewed on its own,** and the verb list stays short.
+
+### Callers and transport
+
+- **Local callers** use a Unix socket. Identity comes from the kernel
+  (`SO_PEERCRED`) and the caller's cgroup, never from the request.
+- **Reads are also served on the Bus,** like any other service's.
+- **Writes from other nodes** are accepted only when signed by a controller
+  key listed in that host's policy, over the target node, a nonce and an
+  expiry. Mesh trust alone never authorises a write. A host with no listed
+  controller accepts no remote writes. Enforcement is on the receiving
+  host.
+- **Ports below 1024 are not hostd's job.** A service that binds one gets
+  `AmbientCapabilities=CAP_NET_BIND_SERVICE` in its own unit.
+
+### Tiers
+
+| Tier | Examples | Gate |
+|---|---|---|
+| read | host info, network state, devices | caller identity |
+| reversible | Wi-Fi connect, link configuration, device bind, suspend | a standing grant, plus a dead-man check or a kept previous state |
+| reversible, wide blast radius | firewall, host package upgrade, reboot | a grant, a second signature from an independent reviewer, and a rate limit |
+| irreversible | — | no verb exists |
+
+### Autonomy within limits set in advance
+
+- **Standing grants,** not per-call prompts. A grant names the caller (from
+  the kernel), the verbs, argument limits and an optional expiry. Only
+  creating or widening a grant needs a person, confirmed through physical
+  input that no Bus caller can synthesise.
+- **Reversible by construction.** A verb applies its change, runs a health
+  check, and reverts unless the check passes in time. It keeps the previous
+  state (the previous file, or a filesystem snapshot) behind a receipt that
+  `hostd.undo` restores.
+- **Limits:** a rate limit per caller and verb, a circuit breaker after
+  repeated rollbacks, and a `freeze` that drops hostd to reads only.
+- **Audit:** one journal record per call.
+
+### Files hostd owns
+
+hostd writes only files it names itself (networkd files are
+`/etc/systemd/network/50-hostd-*`) and never edits a file it didn't write.
+
+## Why
+
+- Agents need to change host configuration (network, WireGuard, power,
+  devices) without `sudo` from a session, and without a person approving
+  each call.
+- MixOS core has no polkit. hostd is the mechanism and its policy in one
+  small binary, with rules as data instead of scripts.
+- Closed verbs make a stolen credential worth far less than a root shell.
+
+## Consequences
+
+- Session code never shells out to `sudo`; a missing host action is a new
+  hostd verb.
+- Write verbs arrive one reviewed verb at a time. The first is
+  `net.link.apply`; the verbs, grants and refusals are documented in the
+  [host service manual](../hostd.md).
+- **Root on the host** means uid 0 in hostd's own pid and user namespaces,
+  proven through a pidfd. Root inside a container is never root on the
+  host, with or without uid remapping.
+
+---
+
 <!-- page: https://mixos.dev/decisions/2026-10-12-non-root-install-and-service-ports/ (source: https://mixos.dev/decisions/2026-10-12-non-root-install-and-service-ports.md) -->
 
 # Decision — non-root install, per-service users, mesh-first ports
@@ -2195,6 +2280,7 @@ layering gate.
 | [world](https://github.com/markc/mixos/blob/main/services/compd/crates/world/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [x11-wm](https://github.com/markc/mixos/blob/main/services/compd/crates/x11-wm/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [editd](https://github.com/markc/mixos/blob/main/services/editd/Cargo.toml) | editd | service | core | public | 0.2.0 |
+| [hostd](https://github.com/markc/mixos/blob/main/services/hostd/Cargo.toml) | hostd | service | core | public | 0.1.0 |
 | [noded](https://github.com/markc/mixos/blob/main/services/noded/Cargo.toml) | noded | service | core | public | 0.18.3 |
 | [mesh-trust](https://github.com/markc/mixos/blob/main/services/noded/crates/mesh-trust/Cargo.toml) | noded | service | core | none | 0.1.1 |
 | [mesh](https://github.com/markc/mixos/blob/main/services/noded/crates/mesh/Cargo.toml) | noded | service | core | none | 0.1.1 |
@@ -2365,6 +2451,194 @@ Recovery defaults beneath `MIXOS_VAR/edit/recovery`.
 durable recovery. The session supplies its own state root. See
 [the component](https://github.com/markc/mixos/blob/main/services/editd/README.md) and
 [the shared contract](https://github.com/markc/mixos/blob/main/libs/edit/README.md).
+
+---
+
+<!-- page: https://mixos.dev/hostd/ (source: https://mixos.dev/hostd.md) -->
+
+# The host service
+
+`hostd` is the one MixOS service that runs as root on a host. It does two
+jobs:
+
+- **It describes the host:** hardware, OS, the MixOS mode, and who manages
+  the network.
+- **It makes privileged changes** through a short list of closed, typed
+  verbs. Each change is checked, recorded, and reversed if it doesn't work.
+
+Agents and session code ask hostd instead of running `sudo`. The rules
+behind it are in the
+[hostd decision](decisions/2026-10-12-hostd.md).
+
+## Calling it
+
+Locally, hostd listens on `/run/hostd/hostd.sock` (mode 0660, group
+`hostd`). Frames are JSON, each ended by a NUL byte, many per connection:
+
+```text
+-> {"verb":"net.state","body":{}}\0
+<- {"rc":0,"body":{...}}\0
+```
+
+`rc` is 0 on success and 10 on refusal, with `body.status` saying why. From
+a shell:
+
+```text
+hostd call host.info
+hostd call net.link.apply '{"link":"eth1","config":{"mode":"dhcp"}}'
+```
+
+Read verbs are also on the Bus, owned by `hostd`. Changes are never taken
+from the Bus.
+
+## Verbs
+
+| Verb | Tier | What |
+|---|---|---|
+| `host.info` | read | hostname, kernel, OS, MixOS mode, container, uptime, CPU, memory |
+| `net.state` | read | which network managers run, networkd links and files, resolved DNS, iwd stations, hostd's own files |
+| `hostd.status` | read | frozen or not, the policy's state, the caller's identity and the grants it holds |
+| `hostd.receipt` | read | one change's receipt: what it changed, under which grant, how it ended (never file contents) |
+| `hostd.freeze` | control | refuse every change until thawed: root on the host, or a grant naming it |
+| `hostd.thaw` | control | accept changes again and lift grant suspensions: root on the host only |
+| `net.link.apply` | write | configure one link through networkd, rolled back unless it comes up |
+| `hostd.undo` | write | put back what an applied change replaced |
+
+`host.info` is also published as the retained topic `hostd.info`.
+
+## Who may change what
+
+Reads are open to anyone who can reach hostd. Changes need a **standing
+grant** in `/etc/hostd/policy.mx`, a strict-data document that only root
+can change:
+
+```text
+{
+  schema: 1,
+  grants: [
+    {name: "desk-network",
+     caller: {cgroup: "/machine.slice/systemd-nspawn@desk.service/*"},
+     verbs: ["net.link.apply"],
+     limits: {links: ["eth0", "wlan0"]},
+     expires: "2027-01-01T00:00:00Z",
+     rate: {count: 3, per_s: 600}}
+  ]
+}
+```
+
+- **The caller is matched by what the kernel says,** never by what it
+  sends: its uid and its cgroup. A cgroup only counts when hostd holds a
+  pidfd for the caller and the caller was alive after the cgroup was read.
+  Both are read again for every request.
+- **`X/*` matches the cgroup `X` and everything below it.** Name a subtree
+  the caller can't move itself into, such as one under `machine.slice`.
+- **Verbs** are exact names or a family such as `net.*`. No grant can name
+  `hostd.thaw`.
+- **Limits** are allow-lists the verb checks its arguments against
+  (`links` for `net.link.apply`). A key the grant doesn't list is
+  unrestricted.
+- **Rate** applies per caller, with a grant-wide cap of four callers' worth.
+- **Default deny.** No policy file means no grants.
+
+The policy is read for every change, so an edit takes effect at once. A
+file that anyone but root could change, or that sits in a directory anyone
+but root could change, is refused.
+
+## What a change does
+
+Every write follows the same pattern:
+
+1. **Check:** the request is typed and validated (no free text reaches a
+   file), then the grant, limits, rate and freeze state.
+2. **Record:** a receipt keeps the previous content of every file the change
+   replaces.
+3. **Apply:** hostd writes only files it names itself, and never edits a file
+   it didn't write.
+4. **Prove:** a health check runs within the change's window (5 to 60
+   seconds, 20 by default).
+5. **Keep or revert:** a change that doesn't pass is rolled back
+   automatically.
+
+One change runs at a time, host-wide. A change waits at most 15 seconds
+behind others (`busy` after that), and the whole gate runs again once it
+holds the lock, so a freeze, a suspension, an expiry or a policy edit that
+lands while it waits is obeyed. A change runs to the end, rollback
+included, even if the caller hangs up.
+
+**A stop waits for a running change** (up to 80 seconds), and a change that
+a crash or a forced kill cuts short is rolled back when hostd next starts,
+before it accepts any change.
+
+Recovery looks at what each file holds before it acts. It puts back the
+backup only over content hostd itself installed. A file someone else has
+changed since is left alone, and the receipt is marked `abandoned`. A
+rollback, undo or recovery that can't finish, or a receipt that can't be
+recorded, blocks all changes (`recovery_pending`). Every later change
+retries it first, and changes resume once it finishes.
+
+**Undo puts back exactly what a receipt replaced,** and only while the file
+still holds what that change installed. If a later change, or anyone's
+edit, has replaced it since, undo is refused (`superseded`): undo the later
+change first.
+
+**Two rollbacks in a row** under one grant suspend that grant until root on
+the host thaws hostd.
+
+## Network links
+
+`net.link.apply` gives one link a networkd configuration:
+
+```text
+{"link": "eth1", "config": {"mode": "dhcp"}}
+{"link": "eth1", "config": {"mode": "static",
+  "addresses": ["192.0.2.10/24"], "gateway": "192.0.2.1", "dns": ["192.0.2.53"]},
+ "window_s": 30}
+```
+
+- hostd writes `/etc/systemd/network/50-hostd-<link>.network`, reloads
+  networkd and reconfigures the link.
+- **It passes** when networkd reports the link configured from hostd's file,
+  carrying every requested address with its prefix length. With DHCP or a
+  gateway, the default route must also be installed (through the requested
+  gateway, if static) and **the gateway must answer**: hostd sends it one UDP
+  datagram and reads the kernel's neighbour table until the gateway's
+  address resolves. A gateway that doesn't exist fails the change, even one
+  inside the link's own subnet.
+- **A link another file already configures is refused** (`foreign_config`),
+  and so is a link that carries addresses nobody's networkd file set, by
+  hand or by another manager such as NetworkManager
+  (`unmanaged_configured`). hostd's rollback restores files, so it can't
+  give such a link its old runtime configuration back, and it doesn't take
+  it over.
+
+## Stopping it
+
+`hostd.freeze` stops every change at once and survives restarts and
+reboots. An unreadable freeze record counts as frozen. Only root on the
+host itself thaws it, never root inside a container.
+
+## Refusals
+
+| Status | Meaning |
+|---|---|
+| `not_served` | no such verb |
+| `bad_request` | the body doesn't fit the verb's schema |
+| `local_only` | a control or write verb arrived over the Bus |
+| `caller_unverified` | hostd couldn't prove the caller's cgroup |
+| `no_grant` | no unexpired grant covers this caller and verb |
+| `outside_grant` | a grant covers the verb but not these arguments |
+| `grant_suspended` | the circuit breaker suspended the grant |
+| `rate_limited` | the grant's rate is used up |
+| `frozen` | hostd is frozen |
+| `policy_invalid` | the policy can't be loaded; changes are refused |
+| `root_only` | only root on the host may do this |
+| `foreign_config`, `unmanaged_configured`, `no_such_link` | `net.link.apply` won't touch this link |
+| `rolled_back` | the change failed its health check and was reversed |
+| `superseded` | undo refused: the file no longer holds what that change installed |
+| `not_applied` | undo refused: the change was rolled back or already undone |
+| `rollback_failed`, `undo_incomplete` | a rollback or undo couldn't finish; it is retried, and writes wait |
+| `recovery_pending` | an unfinished change is being retried and hasn't finished yet; writes wait |
+| `timeout`, `busy` | too slow, or too many requests at once |
 
 ---
 

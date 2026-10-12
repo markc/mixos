@@ -254,6 +254,14 @@
     {name:"shell.corner.unpin", owner:"compd", version:"0.2.0", status:"accepted", class:"intent"},
     {name:"shell.corner.menu.open", owner:"compd", version:"0.2.0", status:"accepted", class:"intent"},
     {name:"shell.corner.menu.choose", owner:"compd", version:"0.2.0", status:"accepted", class:"intent"},
-    {name:"shell.corner.menu.close", owner:"compd", version:"0.2.0", status:"accepted", class:"intent"}
+    {name:"shell.corner.menu.close", owner:"compd", version:"0.2.0", status:"accepted", class:"intent"},
+    {name:"host.info", owner:"hostd", version:"0.1.0", status:"draft", class:"query"},
+    {name:"net.state", owner:"hostd", version:"0.1.0", status:"draft", class:"query"},
+    {name:"hostd.status", owner:"hostd", version:"0.1.0", status:"draft", class:"query"},
+    {name:"hostd.receipt", owner:"hostd", version:"0.1.0", status:"draft", class:"query"},
+    {name:"hostd.freeze", owner:"hostd", version:"0.1.0", status:"draft", class:"intent"},
+    {name:"hostd.thaw", owner:"hostd", version:"0.1.0", status:"draft", class:"intent"},
+    {name:"net.link.apply", owner:"hostd", version:"0.1.0", status:"draft", class:"intent"},
+    {name:"hostd.undo", owner:"hostd", version:"0.1.0", status:"draft", class:"intent"}
   ]
 }
