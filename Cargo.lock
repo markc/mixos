@@ -3053,6 +3053,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "hostd"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "buildinfo",
+ "bus",
+ "chrono",
+ "clap",
+ "futures-util",
+ "libc",
+ "serde",
+ "serde_json",
+ "strict",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "zbus",
+]
+
+[[package]]
 name = "http"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
