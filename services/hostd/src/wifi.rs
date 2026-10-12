@@ -11,13 +11,7 @@
 //!
 //! hostd never starts iwd: it asks whether the name has an owner, and a
 //! call to an absent iwd would make D-Bus start it.
-use crate::{
-    caller::Origin,
-    link::valid_link,
-    receipt::Receipt,
-    service::Host,
-    txn,
-};
+use crate::{caller::Origin, link::valid_link, receipt::Receipt, service::Host, txn};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -79,8 +73,14 @@ impl ConnectRequest {
         if !valid_ssid(&self.ssid) {
             return Err(bad("ssid must be 1-32 bytes without control characters"));
         }
-        if self.passphrase.as_deref().is_some_and(|p| !valid_passphrase(p)) {
-            return Err(bad("passphrase must be 8-63 printable characters or 64 hex digits"));
+        if self
+            .passphrase
+            .as_deref()
+            .is_some_and(|p| !valid_passphrase(p))
+        {
+            return Err(bad(
+                "passphrase must be 8-63 printable characters or 64 hex digits",
+            ));
         }
         let window = self.window_s.unwrap_or(DEFAULT_WINDOW);
         if !(5..=MAX_WINDOW).contains(&window) {
@@ -118,7 +118,9 @@ async fn station(conn: &zbus::Connection, device: &str) -> anyhow::Result<Option
         .get_managed_objects()
         .await?;
     for (path, ifaces) in &objects {
-        let Some(dev) = ifaces.get(DEVICE) else { continue };
+        let Some(dev) = ifaces.get(DEVICE) else {
+            continue;
+        };
         let name = dev
             .get("Name")
             .and_then(|v| <&str>::try_from(&**v as &zbus::zvariant::Value).ok());
@@ -147,8 +149,17 @@ async fn networks(conn: &zbus::Connection, station: &str) -> anyhow::Result<Vec<
         let n = proxy(conn, path.as_str(), NETWORK).await?;
         let name: String = n.get_property("Name").await?;
         let security: String = n.get_property("Type").await?;
-        let known = n.get_property::<OwnedObjectPath>("KnownNetwork").await.is_ok();
-        out.push(Network { path, name, security, signal, known });
+        let known = n
+            .get_property::<OwnedObjectPath>("KnownNetwork")
+            .await
+            .is_ok();
+        out.push(Network {
+            path,
+            name,
+            security,
+            signal,
+            known,
+        });
     }
     Ok(out)
 }
@@ -170,7 +181,9 @@ async fn scan_now(conn: &zbus::Connection, station: &str) -> anyhow::Result<()> 
 
 /// `net.wifi.scan`: refreshes and lists the networks a device can see.
 pub async fn scan(device: &str) -> Result<Value, Value> {
-    let conn = iwd().await.map_err(|e| json!({"status":"no_iwd","message":e.to_string()}))?;
+    let conn = iwd()
+        .await
+        .map_err(|e| json!({"status":"no_iwd","message":e.to_string()}))?;
     let station = station(&conn, device)
         .await
         .map_err(internal)?
@@ -179,8 +192,10 @@ pub async fn scan(device: &str) -> Result<Value, Value> {
     let list = networks(&conn, &station).await.map_err(internal)?;
     let networks: Vec<Value> = list
         .iter()
-        .map(|n| json!({"ssid": n.name, "security": n.security,
-                        "signal_dbm": f64::from(n.signal) / 100.0, "known": n.known}))
+        .map(|n| {
+            json!({"ssid": n.name, "security": n.security,
+                        "signal_dbm": f64::from(n.signal) / 100.0, "known": n.known})
+        })
         .collect();
     Ok(json!({"device": device, "networks": networks}))
 }
@@ -219,7 +234,9 @@ impl Agent {
     ) -> zbus::fdo::Result<String> {
         let from_iwd = header.sender().is_some_and(|s| s.as_str() == self.iwd);
         if !from_iwd || network != self.network {
-            return Err(zbus::fdo::Error::AccessDenied("not for this caller or network".into()));
+            return Err(zbus::fdo::Error::AccessDenied(
+                "not for this caller or network".into(),
+            ));
         }
         Ok(self.passphrase.clone())
     }
@@ -263,13 +280,23 @@ async fn connect_network(
     result
 }
 
-async fn find(conn: &zbus::Connection, station: &str, ssid: &str) -> anyhow::Result<Option<Network>> {
-    let found = networks(conn, station).await?.into_iter().find(|n| n.name == ssid);
+async fn find(
+    conn: &zbus::Connection,
+    station: &str,
+    ssid: &str,
+) -> anyhow::Result<Option<Network>> {
+    let found = networks(conn, station)
+        .await?
+        .into_iter()
+        .find(|n| n.name == ssid);
     if found.is_some() {
         return Ok(found);
     }
     scan_now(conn, station).await?;
-    Ok(networks(conn, station).await?.into_iter().find(|n| n.name == ssid))
+    Ok(networks(conn, station)
+        .await?
+        .into_iter()
+        .find(|n| n.name == ssid))
 }
 
 /// `net.wifi.connect`, under the writer lock, in its own task.
@@ -280,7 +307,9 @@ pub async fn connect(
     grant: String,
     origin: Origin,
 ) -> Result<Value, Value> {
-    let conn = iwd().await.map_err(|e| json!({"status":"no_iwd","message":e.to_string()}))?;
+    let conn = iwd()
+        .await
+        .map_err(|e| json!({"status":"no_iwd","message":e.to_string()}))?;
     let station = station(&conn, &request.device)
         .await
         .map_err(internal)?
@@ -289,11 +318,17 @@ pub async fn connect(
         .await
         .map_err(internal)?
         .ok_or_else(|| json!({"status":"no_such_network","ssid":request.ssid}))?;
-    match (target.security.as_str(), target.known, request.passphrase.is_some()) {
+    match (
+        target.security.as_str(),
+        target.known,
+        request.passphrase.is_some(),
+    ) {
         ("open", _, true) => return Err(bad("an open network takes no passphrase")),
         ("psk", false, false) => return Err(bad("this network needs a passphrase")),
         ("psk", true, true) => {
-            return Err(bad("this network is known; forget it first to change its passphrase"));
+            return Err(bad(
+                "this network is known; forget it first to change its passphrase",
+            ));
         }
         ("open" | "psk", _, _) => {}
         (other, _, _) => {
@@ -334,7 +369,11 @@ pub async fn connect(
         "grant": receipt.grant, "grant_suspended": suspended,
         "device": request.device, "ssid": request.ssid,
     });
-    if passed { Ok(reply) } else { Err(json!({"status":"rolled_back","detail": reply})) }
+    if passed {
+        Ok(reply)
+    } else {
+        Err(json!({"status":"rolled_back","detail": reply}))
+    }
 }
 
 fn field<'a>(receipt: &'a Receipt, key: &str) -> Option<&'a str> {
@@ -349,8 +388,12 @@ pub async fn owns(receipt: &Receipt) -> anyhow::Result<bool> {
     let (Some(device), Some(ssid)) = (field(receipt, "link"), field(receipt, "ssid")) else {
         anyhow::bail!("receipt names no device or ssid");
     };
-    let Ok(conn) = iwd().await else { return Ok(false) };
-    let Some(station) = station(&conn, device).await? else { return Ok(false) };
+    let Ok(conn) = iwd().await else {
+        return Ok(false);
+    };
+    let Some(station) = station(&conn, device).await? else {
+        return Ok(false);
+    };
     let now = connected_ssid(&conn, &station).await?;
     Ok(match now.as_deref() {
         None => true,
@@ -365,7 +408,9 @@ pub async fn current(receipt: &Receipt) -> anyhow::Result<bool> {
         anyhow::bail!("receipt names no device or ssid");
     };
     let conn = iwd().await?;
-    let Some(station) = station(&conn, device).await? else { return Ok(false) };
+    let Some(station) = station(&conn, device).await? else {
+        return Ok(false);
+    };
     Ok(connected_ssid(&conn, &station).await?.as_deref() == Some(ssid))
 }
 
@@ -376,19 +421,29 @@ pub async fn reapply(_host: &Host, receipt: &Receipt) -> anyhow::Result<()> {
     let (Some(device), Some(ssid)) = (field(receipt, "link"), field(receipt, "ssid")) else {
         anyhow::bail!("receipt names no device or ssid");
     };
-    let was_known = receipt.summary.get("was_known").and_then(Value::as_bool).unwrap_or(true);
+    let was_known = receipt
+        .summary
+        .get("was_known")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
     let previous = field(receipt, "previous");
     let conn = iwd().await?;
     let station = station(&conn, device)
         .await?
         .ok_or_else(|| anyhow::anyhow!("no station {device}"))?;
     if !was_known
-        && let Some(target) = networks(&conn, &station).await?.into_iter().find(|n| n.name == ssid)
+        && let Some(target) = networks(&conn, &station)
+            .await?
+            .into_iter()
+            .find(|n| n.name == ssid)
         && target.known
     {
         let n = proxy(&conn, target.path.as_str(), NETWORK).await?;
         let known: OwnedObjectPath = n.get_property("KnownNetwork").await?;
-        proxy(&conn, known.as_str(), KNOWN).await?.call::<_, _, ()>("Forget", &()).await?;
+        proxy(&conn, known.as_str(), KNOWN)
+            .await?
+            .call::<_, _, ()>("Forget", &())
+            .await?;
     }
     match previous {
         Some(prev) if prev != ssid => {
@@ -402,7 +457,10 @@ pub async fn reapply(_host: &Host, receipt: &Receipt) -> anyhow::Result<()> {
         Some(_) => {}
         None => {
             if connected_ssid(&conn, &station).await?.is_some() {
-                proxy(&conn, &station, STATION).await?.call::<_, _, ()>("Disconnect", &()).await?;
+                proxy(&conn, &station, STATION)
+                    .await?
+                    .call::<_, _, ()>("Disconnect", &())
+                    .await?;
             }
         }
     }
@@ -430,10 +488,23 @@ mod tests {
     #[test]
     fn connect_requests_are_checked_and_strict() {
         let req = |v: Value| serde_json::from_value::<ConnectRequest>(v).unwrap();
-        assert!(req(json!({"device":"wlan0","ssid":"home","passphrase":"hostd-test-passphrase"})).check().is_ok());
+        assert!(
+            req(json!({"device":"wlan0","ssid":"home","passphrase":"hostd-test-passphrase"}))
+                .check()
+                .is_ok()
+        );
         assert!(req(json!({"device":"../x","ssid":"home"})).check().is_err());
         assert!(req(json!({"device":"wlan0","ssid":""})).check().is_err());
-        assert!(req(json!({"device":"wlan0","ssid":"home","window_s":1})).check().is_err());
-        assert!(serde_json::from_value::<ConnectRequest>(json!({"device":"wlan0","ssid":"h","bssid":"x"})).is_err());
+        assert!(
+            req(json!({"device":"wlan0","ssid":"home","window_s":1}))
+                .check()
+                .is_err()
+        );
+        assert!(
+            serde_json::from_value::<ConnectRequest>(
+                json!({"device":"wlan0","ssid":"h","bssid":"x"})
+            )
+            .is_err()
+        );
     }
 }

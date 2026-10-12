@@ -299,14 +299,21 @@ async fn serve(
         "net.wifi.scan" => {
             let request: wifi::ScanRequest = decode(body)?;
             if !link::valid_link(&request.device) {
-                return Err(json!({"status":"bad_request","message":"device must be 1-15 characters of [A-Za-z0-9._-]"}));
+                return Err(
+                    json!({"status":"bad_request","message":"device must be 1-15 characters of [A-Za-z0-9._-]"}),
+                );
             }
             let limits = vec![("links".to_owned(), request.device.clone())];
             // Nothing durable changes, so no receipt; the writer lock keeps a
             // scan from overlapping a connect on the same radio.
-            write(host, origin, peer, name, limits, move |_host, _origin, _grant| async move {
-                wifi::scan(&request.device).await
-            })
+            write(
+                host,
+                origin,
+                peer,
+                name,
+                limits,
+                move |_host, _origin, _grant| async move { wifi::scan(&request.device).await },
+            )
             .await
         }
         "net.wifi.connect" => {
@@ -316,9 +323,14 @@ async fn serve(
                 ("links".to_owned(), request.device.clone()),
                 ("ssids".to_owned(), request.ssid.clone()),
             ];
-            write(host, origin, peer, name, limits, move |host, origin, grant| {
-                wifi::connect(host, request, window, grant, origin)
-            })
+            write(
+                host,
+                origin,
+                peer,
+                name,
+                limits,
+                move |host, origin, grant| wifi::connect(host, request, window, grant, origin),
+            )
             .await
         }
         "hostd.undo" => undo_verb(host, body, origin, peer).await,
@@ -432,7 +444,13 @@ async fn undo_verb(
             .map(|l| vec![("links".to_owned(), l.to_owned())])
             .unwrap_or_default(),
         wifi::VERB => {
-            let get = |k: &str| receipt.summary.get(k).and_then(Value::as_str).map(str::to_owned);
+            let get = |k: &str| {
+                receipt
+                    .summary
+                    .get(k)
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            };
             match (get("link"), get("ssid")) {
                 (Some(device), Some(ssid)) => {
                     vec![("links".to_owned(), device), ("ssids".to_owned(), ssid)]

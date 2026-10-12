@@ -388,12 +388,20 @@ pub fn contains(net: (IpAddr, u8), ip: IpAddr) -> bool {
     match (net.0, ip) {
         (IpAddr::V4(n), IpAddr::V4(i)) => {
             let bits = u32::from(net.1.min(32));
-            let mask = if bits == 0 { 0 } else { u32::MAX << (32 - bits) };
+            let mask = if bits == 0 {
+                0
+            } else {
+                u32::MAX << (32 - bits)
+            };
             u32::from(n) & mask == u32::from(i) & mask
         }
         (IpAddr::V6(n), IpAddr::V6(i)) => {
             let bits = u32::from(net.1.min(128));
-            let mask = if bits == 0 { 0 } else { u128::MAX << (128 - bits) };
+            let mask = if bits == 0 {
+                0
+            } else {
+                u128::MAX << (128 - bits)
+            };
             u128::from(n) & mask == u128::from(i) & mask
         }
         _ => false,
@@ -404,7 +412,9 @@ pub fn contains(net: (IpAddr, u8), ip: IpAddr) -> bool {
 fn offset(ip: IpAddr, n: u32) -> Option<IpAddr> {
     match ip {
         IpAddr::V4(v4) => u32::from(v4).checked_add(n).map(|x| IpAddr::V4(x.into())),
-        IpAddr::V6(v6) => u128::from(v6).checked_add(n.into()).map(|x| IpAddr::V6(x.into())),
+        IpAddr::V6(v6) => u128::from(v6)
+            .checked_add(n.into())
+            .map(|x| IpAddr::V6(x.into())),
     }
 }
 
@@ -416,7 +426,9 @@ pub fn route_probe(own: &[(IpAddr, u8)], others: &[(IpAddr, u8)]) -> Option<IpAd
     for &(addr, prefix) in own {
         let start = probe_target(addr, prefix);
         for n in 0..256 {
-            let Some(candidate) = offset(start, n) else { break };
+            let Some(candidate) = offset(start, n) else {
+                break;
+            };
             let inside = contains((addr, prefix), candidate)
                 // A default route's probe is a documentation address, which
                 // the default route contains by definition.
@@ -775,12 +787,24 @@ mod tests {
         let ip = |s: &str| Some(s.parse::<IpAddr>().unwrap());
         // sol's case: A has the /24, B has .1/32 inside it. A's probe must
         // not be .1, which WireGuard sends to B.
-        assert_eq!(route_probe(&[n("10.99.0.0", 24)], &[n("10.99.0.1", 32)]), ip("10.99.0.2"));
-        assert_eq!(route_probe(&[n("10.99.0.1", 32)], &[n("10.99.0.0", 24)]), ip("10.99.0.1"));
+        assert_eq!(
+            route_probe(&[n("10.99.0.0", 24)], &[n("10.99.0.1", 32)]),
+            ip("10.99.0.2")
+        );
+        assert_eq!(
+            route_probe(&[n("10.99.0.1", 32)], &[n("10.99.0.0", 24)]),
+            ip("10.99.0.1")
+        );
         // A default route under a more specific peer still finds an address.
-        assert_eq!(route_probe(&[n("0.0.0.0", 0)], &[n("10.0.0.0", 8)]), ip("192.0.2.1"));
+        assert_eq!(
+            route_probe(&[n("0.0.0.0", 0)], &[n("10.0.0.0", 8)]),
+            ip("192.0.2.1")
+        );
         // Entirely covered by an equal or more specific peer: no probe.
-        assert_eq!(route_probe(&[n("10.99.0.1", 32)], &[n("10.99.0.1", 32)]), None);
+        assert_eq!(
+            route_probe(&[n("10.99.0.1", 32)], &[n("10.99.0.1", 32)]),
+            None
+        );
         assert!(contains(n("10.99.0.0", 24), "10.99.0.200".parse().unwrap()));
         assert!(!contains(n("10.99.0.0", 24), "10.99.1.1".parse().unwrap()));
         assert!(contains(n("0.0.0.0", 0), "203.0.113.9".parse().unwrap()));
@@ -792,10 +816,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let both = |keepalive: Option<u16>| {
             request(json!({"name":"wg0","addresses":["10.99.0.254/24"],
-                "peers":[
-                  {"public_key":PEER,"endpoint":"198.51.100.7:51820","allowed_ips":["10.99.0.1/32"],"keepalive_s":keepalive},
-                  {"public_key":"xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=","endpoint":"198.51.100.8:51820","allowed_ips":["10.99.0.1/32"],"keepalive_s":25}
-                ]}))
+            "peers":[
+              {"public_key":PEER,"endpoint":"198.51.100.7:51820","allowed_ips":["10.99.0.1/32"],"keepalive_s":keepalive},
+              {"public_key":"xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=","endpoint":"198.51.100.8:51820","allowed_ips":["10.99.0.1/32"],"keepalive_s":25}
+            ]}))
         };
         // The first peer's only address is also the second peer's: WireGuard
         // sends to one of them, so hostd can't reach the first alone.
