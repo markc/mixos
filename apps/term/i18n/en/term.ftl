@@ -29,6 +29,8 @@ pane-focus-up = Focus Pane Above
 pane-focus-down = Focus Pane Below
 tab-next = Next Tab
 tab-prev = Previous Tab
+tab-select = Select Tab
+pane-focus = Focus Pane
 help-keys = Keyboard Shortcuts
 
 keys-title = Keyboard Shortcuts

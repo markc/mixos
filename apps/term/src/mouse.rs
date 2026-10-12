@@ -166,10 +166,13 @@ impl App {
     }
 
     /// A wheel event at `position`.
-    pub fn wheel_at(&mut self, position: Pos2, wheel: Wheel) {
+    /// A wheel event at `position`; returns its zoom steps (see
+    /// [`App::wheel`]).
+    pub fn wheel_at(&mut self, position: Pos2, wheel: Wheel) -> i32 {
         self.pointer = Some(position);
-        if let Some(pane) = self.pane_at(position) {
-            self.wheel(pane, wheel);
+        match self.pane_at(position) {
+            Some(pane) => self.wheel(pane, wheel),
+            None => 0,
         }
     }
 
@@ -228,7 +231,11 @@ impl App {
             return;
         };
         tabs.user_activity();
-        tabs.focus(hit.pane);
+        // Click-to-focus is the pane.focus command, performed here so the
+        // gesture starts on the focused pane; it is published like any run.
+        if tabs.active_tab().active_pane != hit.pane && tabs.focus(hit.pane) {
+            self.noted.push("pane.focus");
+        }
         // Shift overrides the program's mouse reporting.
         let local = mods.shift || !terminal.lock().expect("terminal").mouse_reporting();
         if local && button == 0 {

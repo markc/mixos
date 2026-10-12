@@ -246,7 +246,14 @@ impl Shell {
                         json!({"error_code":"INVALID_ARGUMENT","message":"term.execute needs {\"id\": <command id>}"}),
                     );
                 };
-                match self.commands.execute(id, &mut self.app, Origin::Bus) {
+                // A targeted command (tab.select, tab.close, pane.focus)
+                // names its tab or pane; none left over for a later run.
+                self.app.target_tab = args["tab"].as_u64();
+                self.app.target_pane = args["pane"].as_u64();
+                let run = self.commands.execute(id, &mut self.app, Origin::Bus);
+                self.app.target_tab = None;
+                self.app.target_pane = None;
+                match run {
                     Ok(()) => (0, json!({"executed": id})),
                     Err(CommandError::Unknown(_)) => (
                         10,
@@ -383,6 +390,10 @@ impl Shell {
     /// Publish the commands run since the last call on
     /// `<name>.command.executed`.
     fn publish_executed(&mut self) {
+        // Commands the window performed itself (a click focusing a pane).
+        for id in std::mem::take(&mut self.app.noted) {
+            self.commands.note(id, Origin::Ui);
+        }
         let (runs, lost) = self.commands.take_executed();
         if runs.is_empty() && lost == 0 {
             return;
@@ -464,7 +475,16 @@ impl Shell {
                     };
                     if over(pos) {
                         self.app.modifiers_changed(modifiers);
-                        self.app.wheel_at(pos, Wheel::of(unit, delta));
+                        // Ctrl+wheel zooms through the zoom commands.
+                        let steps = self.app.wheel_at(pos, Wheel::of(unit, delta));
+                        let action = if steps > 0 {
+                            Action::FontIncrease
+                        } else {
+                            Action::FontDecrease
+                        };
+                        for _ in 0..steps.unsigned_abs() {
+                            self.run(action, Origin::Ui);
+                        }
                     }
                 }
                 _ if !keyboard => {}
@@ -550,8 +570,18 @@ impl Shell {
                 UiEvent::Command(id, origin) => {
                     let _ = self.commands.execute(id, &mut self.app, origin);
                 }
-                UiEvent::SelectTab(id) => self.app.select_tab(id),
-                UiEvent::CloseTab(id) => self.app.close_tab(id),
+                UiEvent::SelectTab(id) => {
+                    self.app.target_tab = Some(id);
+                    let _ = self
+                        .commands
+                        .execute("tab.select", &mut self.app, Origin::Ui);
+                }
+                UiEvent::CloseTab(id) => {
+                    self.app.target_tab = Some(id);
+                    let _ = self
+                        .commands
+                        .execute("tab.close", &mut self.app, Origin::Ui);
+                }
             }
         }
         if self.app.keys_dialog && view::keys_dialog(&ctx, &self.commands, &self.strings) {

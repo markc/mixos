@@ -101,6 +101,14 @@ pub struct App {
     pub keys_dialog: bool,
     /// Text the platform read for a Ctrl+Shift+V, for the paste command.
     pasted: Option<String>,
+    /// The tab or pane a targeted command (tab.select, tab.close,
+    /// pane.focus) acts on, set by the strip or `term.execute`; taken by
+    /// the command.
+    pub target_tab: Option<u64>,
+    pub target_pane: Option<u64>,
+    /// Commands the window ran itself (a click focusing a pane), for the
+    /// shell to publish.
+    pub noted: Vec<&'static str>,
 }
 
 impl App {
@@ -151,6 +159,9 @@ impl App {
             theme: Default::default(),
             keys_dialog: false,
             pasted: None,
+            target_tab: None,
+            target_pane: None,
+            noted: Vec::new(),
         }
     }
 
@@ -610,15 +621,14 @@ impl App {
 
     /// A wheel event over pane `id`: Ctrl zooms, otherwise it scrolls the
     /// pane under the pointer (or reports to the program in it).
-    pub fn wheel(&mut self, id: u64, wheel: Wheel) {
+    /// Returns the font steps a Ctrl+wheel gesture made (positive grows),
+    /// for the shell to run as zoom commands.
+    pub fn wheel(&mut self, id: u64, wheel: Wheel) -> i32 {
         if self.modifiers.ctrl {
-            let steps = input::wheel_steps(&mut self.wheel, wheel);
-            if steps != 0 {
-                self.zoom(|font| font.step_by(steps));
-            }
-        } else {
-            self.scroll(id, wheel);
+            return input::wheel_steps(&mut self.wheel, wheel);
         }
+        self.scroll(id, wheel);
+        0
     }
 
     fn scroll(&mut self, id: u64, wheel: Wheel) {
@@ -717,6 +727,33 @@ impl App {
         self.clipboard_chord = None;
         self.wheel = 0.0;
         self.scroll_wheel = 0.0;
+    }
+
+    /// `tab.select`: the targeted tab.
+    pub fn select_target_tab(&mut self) {
+        if let Some(id) = self.target_tab.take() {
+            self.select_tab(id);
+        }
+    }
+
+    /// `tab.close`: the targeted tab, else the active one.
+    pub fn close_target_tab(&mut self) {
+        match self.target_tab.take() {
+            Some(id) => self.close_tab(id),
+            None => self.act(Action::CloseTab),
+        }
+    }
+
+    /// `pane.focus`: the targeted pane of the active tab.
+    pub fn focus_target_pane(&mut self) {
+        if let Some(id) = self.target_pane.take() {
+            self.cancel_mouse_gesture();
+            let mut tabs = self.tabs.lock().expect("tabs");
+            tabs.user_activity();
+            tabs.focus(id);
+            drop(tabs);
+            self.sync_ime();
+        }
     }
 
     /// The person picked tab `id` in the strip.

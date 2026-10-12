@@ -221,11 +221,15 @@ fn the_window_answers_its_verbs_over_a_real_broker() {
     );
     assert_eq!(rc, 0, "{body}");
     assert_ne!(tabs.lock().unwrap().active_id(), before, "Ctrl+PageDown");
+    // A targeted command: term.execute names the tab.
+    let (rc, body) = call("term.execute", json!({"id": "tab.select", "tab": before}));
+    assert_eq!(rc, 0, "{body}");
+    assert_eq!(tabs.lock().unwrap().active_id(), before, "tab.select by id");
 
     // Every run was published, with how it was reached.
     let runs: Vec<(String, String)> = runtime.block_on(async {
         let mut runs = Vec::new();
-        while runs.len() < 2 {
+        while runs.len() < 3 {
             let next = tokio::time::timeout(Duration::from_secs(5), executed.recv())
                 .await
                 .expect("an executed event within 5 s");
@@ -248,6 +252,7 @@ fn the_window_answers_its_verbs_over_a_real_broker() {
         vec![
             ("tab.new".to_owned(), "bus".to_owned()),
             ("tab.next".to_owned(), "shortcut".to_owned()),
+            ("tab.select".to_owned(), "bus".to_owned()),
         ]
     );
 

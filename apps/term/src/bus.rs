@@ -62,7 +62,7 @@ pub fn describe() -> Value {
         verbs.push(json!({"name":name,"description":description,"read_only":read_only}));
     }
     verbs.push(json!({"name":"term.commands","description":"List the window's commands with labels, menus, shortcuts and enablement","read_only":true}));
-    verbs.push(json!({"name":"term.execute","args":{"id":"string"},"description":"Run one window command by id, as its menu item or shortcut would (tab.new, pane.split_right, view.zoom_in, edit.paste, app.quit, …; term.commands lists them)","read_only":false}));
+    verbs.push(json!({"name":"term.execute","args":{"id":"string","tab":"optional tab id: the tab tab.select or tab.close acts on (default the active one)","pane":"optional pane id: the pane pane.focus focuses"},"description":"Run one window command by id, as its menu item or shortcut would (tab.new, pane.split_right, view.zoom_in, edit.paste, app.quit, …; term.commands lists them)","read_only":false}));
     verbs.extend(drive::describe(APP));
     json!({"schema":"term.v1","app_id":crate::APP_ID,"verbs":verbs})
 }

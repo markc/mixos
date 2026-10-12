@@ -17,6 +17,7 @@ use term_core::panes::{Direction, Geometry, SplitDir};
 use term_core::raster::Raster;
 use term_core::tabs::{self, TabSet};
 use term_core::terminal::{ScrollRequest, Terminal};
+use toolkit::command::Origin;
 
 /// The pane area: below a 30-point strip in a 900 x 560 window.
 const AREA: Geometry = Geometry {
@@ -687,18 +688,22 @@ fn releasing_ctrl_forgets_partial_wheel_travel() {
     let start = app.font().current();
     let travel = |fraction: f32| Wheel::Points(PIXELS_PER_STEP * fraction);
     app.modifiers_changed(Modifiers::CTRL);
-    app.wheel(0, travel(0.75));
-    assert_eq!(app.font().current(), start, "three quarters is not a step");
+    assert_eq!(
+        app.wheel(0, travel(0.75)),
+        0,
+        "three quarters is not a step"
+    );
     app.modifiers_changed(Modifiers::NONE);
     app.modifiers_changed(Modifiers::CTRL);
-    app.wheel(0, travel(0.5));
     assert_eq!(
-        app.font().current(),
-        start,
+        app.wheel(0, travel(0.5)),
+        0,
         "a new gesture of half a step zoomed: the old three quarters carried over"
     );
-    app.wheel(0, travel(0.5));
-    assert_ne!(app.font().current(), start, "a whole step zooms");
+    assert_eq!(app.wheel(0, travel(0.5)), 1, "a whole step zooms");
+    // The steps are the shell's to run as zoom commands: the font is
+    // untouched here.
+    assert_eq!(app.font().current(), start);
     finish(app, reaper);
 }
 
@@ -780,7 +785,9 @@ fn viewport_changes_repaint_their_pane_once() {
     ] {
         let before = app.painted[&id];
         match request {
-            ScrollRequest::PageUp => app.wheel(id, Wheel::Lines(3.0)),
+            ScrollRequest::PageUp => {
+                app.wheel(id, Wheel::Lines(3.0));
+            }
             ScrollRequest::Top => app.act(Action::Scroll(request)),
             _ => terminal.lock().unwrap().scroll_view(request),
         }
@@ -884,6 +891,78 @@ fn painting_feeds_the_snapshot_frame_metrics() {
         "{summary}"
     );
     drop(terminal);
+    finish(app, reaper);
+}
+
+/// Click-to-focus, the strip's tabs and its close boxes are commands:
+/// targeted, and published (review finding: they bypassed the registry).
+#[test]
+fn clicks_and_the_strip_run_targeted_commands() {
+    let (mut app, reaper) = test_app();
+    let commands = crate::commands::registry();
+    let left = app.shape.active_pane;
+    app.act(Action::Split(SplitDir::Vertical));
+    app.sync();
+    let right = app.shape.active_pane;
+    // A click in the left pane focuses it, and says so.
+    let start = first_cell(&app);
+    app.pointer_event(
+        Pointer::Pressed(start, PointerButton::Primary),
+        Instant::now(),
+    );
+    app.pointer_event(
+        Pointer::Released(start, PointerButton::Primary),
+        Instant::now(),
+    );
+    assert_eq!(active_pane(&app.tabs.lock().unwrap()), left);
+    assert_eq!(std::mem::take(&mut app.noted), vec!["pane.focus"]);
+    // A click in the focused pane is no focus change.
+    app.pointer_event(
+        Pointer::Pressed(start, PointerButton::Primary),
+        Instant::now(),
+    );
+    assert!(app.noted.is_empty());
+    app.cancel_mouse_gesture();
+    // pane.focus on a target.
+    app.target_pane = Some(right);
+    commands
+        .execute("pane.focus", &mut app, Origin::Ui)
+        .unwrap();
+    assert_eq!(active_pane(&app.tabs.lock().unwrap()), right);
+    // tab.select and tab.close on a target; tab.close without one closes
+    // the active tab.
+    let first_tab = app.tabs.lock().unwrap().active_id();
+    app.act(Action::NewTab);
+    let second_tab = app.tabs.lock().unwrap().active_id();
+    app.act(Action::NewTab);
+    app.target_tab = Some(first_tab);
+    commands
+        .execute("tab.select", &mut app, Origin::Ui)
+        .unwrap();
+    assert_eq!(app.tabs.lock().unwrap().active_id(), first_tab);
+    app.target_tab = Some(second_tab);
+    commands.execute("tab.close", &mut app, Origin::Ui).unwrap();
+    assert!(app.tabs.lock().unwrap().by_id(second_tab).is_none());
+    assert_eq!(app.tabs.lock().unwrap().active_id(), first_tab);
+    commands
+        .execute("tab.close", &mut app, Origin::Shortcut)
+        .unwrap();
+    assert!(app.tabs.lock().unwrap().by_id(first_tab).is_none());
+    let runs: Vec<_> = commands
+        .take_executed()
+        .0
+        .into_iter()
+        .map(|r| (r.id, r.origin))
+        .collect();
+    assert_eq!(
+        runs,
+        vec![
+            ("pane.focus".to_owned(), Origin::Ui),
+            ("tab.select".to_owned(), Origin::Ui),
+            ("tab.close".to_owned(), Origin::Ui),
+            ("tab.close".to_owned(), Origin::Shortcut),
+        ]
+    );
     finish(app, reaper);
 }
 

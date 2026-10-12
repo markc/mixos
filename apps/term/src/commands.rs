@@ -58,7 +58,21 @@ pub fn registry() -> Registry<App> {
     let (ctrl, shift) = (Modifiers::CTRL, Modifiers::SHIFT);
     commands! { r;
         "tab.new", "tab-new", "file", 0, chord(cs, Key::T), running, Action::NewTab;
-        "tab.close", "tab-close", "file", 0, chord(cs, Key::W), running, Action::CloseTab;
+    }
+    // Targeted: the strip's close box and `term.execute {"id":"tab.close",
+    // "tab":N}` name a tab; with none it is the active one.
+    r.add(Command {
+        id: "tab.close",
+        label: "tab-close",
+        menu: Some("file"),
+        submenu: None,
+        group: 0,
+        shortcut: chord(cs, Key::W),
+        icon: None,
+        enabled: running,
+        run: App::close_target_tab,
+    });
+    commands! { r;
         "app.quit", "app-quit", "file", 1, chord(cs, Key::Q), always, Action::Quit;
         "edit.copy", "edit-copy", "edit", 0, chord(cs, Key::C), running, Action::Copy;
         "edit.paste", "edit-paste", "edit", 0, chord(cs, Key::V), running, Action::Paste;
@@ -81,6 +95,29 @@ pub fn registry() -> Registry<App> {
         "tab.next", "tab-next", "tabs", 0, chord(ctrl, Key::PageDown), several_tabs, Action::Cycle { forward: true };
         "tab.prev", "tab-prev", "tabs", 0, chord(ctrl, Key::PageUp), several_tabs, Action::Cycle { forward: false };
     }
+    // Palette and Bus only: the strip's tabs and a click on a pane.
+    r.add(Command {
+        id: "tab.select",
+        label: "tab-select",
+        menu: None,
+        submenu: None,
+        group: 0,
+        shortcut: None,
+        icon: None,
+        enabled: running,
+        run: App::select_target_tab,
+    });
+    r.add(Command {
+        id: "pane.focus",
+        label: "pane-focus",
+        menu: None,
+        submenu: None,
+        group: 0,
+        shortcut: None,
+        icon: None,
+        enabled: running,
+        run: App::focus_target_pane,
+    });
     r.add(Command {
         id: "help.keys",
         label: "help-keys",
