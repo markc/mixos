@@ -43,6 +43,7 @@ use dispatcher::state::state::RedrawReason;
 use crate::camera::transform::translate::transform::Transform;
 use crate::state::Loop;
 use crate::state::state::CoordinateTrait;
+use crate::surface::draw::capture::style as capture_style;
 
 /// How a run ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -489,7 +490,7 @@ impl Look {
             back: straight(visuals.window_fill),
             edge: straight(visuals.window_stroke.color),
             text: straight(visuals.strong_text_color()),
-            dim: straight(crate::surface::draw::capture::style::DIM_MASK),
+            dim: straight(capture_style::DIM_MASK),
         }
     }
 
@@ -555,7 +556,7 @@ where
     let look = Look::current();
     let scale = run.scale;
     let px = |value: f64| (value * scale).round() as i32;
-    let line = px(f64::from(crate::surface::draw::capture::style::BORDER_WIDTH)).max(1);
+    let line = px(f64::from(capture_style::BORDER_WIDTH)).max(1);
     let (width, height) = (px(run.bounds.0), px(run.bounds.1));
     // Until the press is a drag it still reads as "the whole output".
     let selection = run
@@ -909,7 +910,10 @@ mod tests {
     fn a_non_finite_point_is_never_a_selection() {
         assert!(dragged((10.0, 10.0), (f64::NAN, 10.0)));
         assert_eq!(gesture(BOUNDS, (10.0, 10.0), &[(f64::NAN, 10.0)]), None);
-        assert_eq!(gesture(BOUNDS, (f64::INFINITY, 10.0), &[(10.0, 10.0)]), None);
+        assert_eq!(
+            gesture(BOUNDS, (f64::INFINITY, 10.0), &[(10.0, 10.0)]),
+            None
+        );
     }
 
     #[test]
@@ -949,7 +953,10 @@ mod tests {
         let accent = visuals.selection.bg_fill.to_srgba_unmultiplied();
         assert_eq!(look.accent.map(|c| (c * 255.0).round() as u8), accent);
         assert!(look.back[3] > 0.0 && look.text[3] > 0.0);
-        assert!(look.dim[3] > 0.0 && look.dim[3] < 1.0, "the dim is translucent");
+        assert!(
+            look.dim[3] > 0.0 && look.dim[3] < 1.0,
+            "the dim is translucent"
+        );
     }
 
     #[test]
