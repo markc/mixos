@@ -668,16 +668,7 @@ fn project_surface(
         fullscreen: placement.fullscreen,
         minimized: record.minimized(),
         workspace: record.workspace_leaf(),
-        // A managed X11 window reports the mode compd draws it with
-        // (`place_window`), like an xdg toplevel its negotiated one.
-        decoration: matches!(
-            record.role(),
-            SurfaceRole::Toplevel
-                | SurfaceRole::X11 {
-                    override_redirect: false
-                }
-        )
-        .then_some(placement.decoration.unwrap_or("unbound")),
+        decoration: row_decoration(record.role(), placement.decoration),
         layer: placement.layer,
         foreign_id: window_row.then_some(placement.foreign_id).flatten(),
         generation: record.generation(),
@@ -916,5 +907,54 @@ fn exclusive_zone_value(zone: ExclusiveZone) -> i32 {
         ExclusiveZone::Exclusive(amount) => i32::try_from(amount).unwrap_or(i32::MAX),
         ExclusiveZone::Neutral => 0,
         ExclusiveZone::DontCare => -1,
+    }
+}
+
+/// The `decoration` a surface row carries. A managed window reports the mode
+/// compd draws it with: an xdg toplevel its negotiated one, a managed X11
+/// window compd's own policy (`place_window`). Every other role, including
+/// override-redirect X11, carries none.
+fn row_decoration(role: SurfaceRole, placed: Option<&'static str>) -> Option<&'static str> {
+    matches!(
+        role,
+        SurfaceRole::Toplevel
+            | SurfaceRole::X11 {
+                override_redirect: false
+            }
+    )
+    .then_some(placed.unwrap_or("unbound"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn managed_x11_rows_keep_their_decoration() {
+        let managed = SurfaceRole::X11 {
+            override_redirect: false,
+        };
+        assert_eq!(row_decoration(managed, Some("server")), Some("server"));
+        assert_eq!(row_decoration(managed, Some("client")), Some("client"));
+        assert_eq!(
+            row_decoration(SurfaceRole::Toplevel, Some("server")),
+            Some("server")
+        );
+        assert_eq!(row_decoration(SurfaceRole::Toplevel, None), Some("unbound"));
+    }
+
+    #[test]
+    fn unmanaged_rows_carry_no_decoration() {
+        let override_redirect = SurfaceRole::X11 {
+            override_redirect: true,
+        };
+        assert_eq!(row_decoration(override_redirect, Some("server")), None);
+        for role in [
+            SurfaceRole::Popup,
+            SurfaceRole::Layer,
+            SurfaceRole::Subsurface,
+        ] {
+            assert_eq!(row_decoration(role, Some("server")), None);
+        }
     }
 }
