@@ -451,7 +451,7 @@ mod tests {
         // Ctrl+Alt+C is Meta+^C.
         assert!(matches!(
             clipboard_event(&egui::Event::Copy, CTRL | ALT),
-            Some(Clipboard::Keys(keys)) if keys.into_iter().flat_map(encode).collect::<Vec<_>>() == [0x1b, 3]
+            Some(Clipboard::Keys(keys)) if keys.iter().copied().flat_map(encode).collect::<Vec<_>>() == [0x1b, 3]
         ));
         // A driven Ctrl+Shift+C arrives as a key press: the same chord.
         assert_eq!(action_for(Key::C, ctrl_shift()), Some(Action::Copy));
