@@ -35,13 +35,22 @@ pub struct Peer {
 
 fn socket(protocol: libc::c_int) -> std::io::Result<OwnedFd> {
     // SAFETY: plain socket(2); the result is checked before use.
-    let fd = unsafe { libc::socket(libc::AF_NETLINK, libc::SOCK_RAW | libc::SOCK_CLOEXEC, protocol) };
+    let fd = unsafe {
+        libc::socket(
+            libc::AF_NETLINK,
+            libc::SOCK_RAW | libc::SOCK_CLOEXEC,
+            protocol,
+        )
+    };
     if fd < 0 {
         return Err(std::io::Error::last_os_error());
     }
     // SAFETY: a fresh fd we own.
     let fd = unsafe { OwnedFd::from_raw_fd(fd) };
-    let timeout = libc::timeval { tv_sec: 3, tv_usec: 0 };
+    let timeout = libc::timeval {
+        tv_sec: 3,
+        tv_usec: 0,
+    };
     // SAFETY: setsockopt reads one timeval of the stated size.
     unsafe {
         libc::setsockopt(
@@ -135,7 +144,10 @@ fn transact(protocol: libc::c_int, request: &[u8]) -> std::io::Result<Vec<Vec<u8
             match kind {
                 NLMSG_DONE => return Ok(bodies),
                 NLMSG_ERROR => {
-                    let errno = body.get(..4).map(|e| i32::from_ne_bytes(e.try_into().unwrap_or_default())).unwrap_or(0);
+                    let errno = body
+                        .get(..4)
+                        .map(|e| i32::from_ne_bytes(e.try_into().unwrap_or_default()))
+                        .unwrap_or(0);
                     if errno == 0 {
                         return Ok(bodies); // an ack
                     }
@@ -158,7 +170,10 @@ fn transact(protocol: libc::c_int, request: &[u8]) -> std::io::Result<Vec<Vec<u8
 fn wireguard_family() -> std::io::Result<u16> {
     let mut body = vec![CTRL_CMD_GETFAMILY, 1, 0, 0];
     attr(&mut body, CTRL_ATTR_FAMILY_NAME, b"wireguard\0");
-    let replies = transact(libc::NETLINK_GENERIC, &message(GENL_ID_CTRL, NLM_F_REQUEST, &body))?;
+    let replies = transact(
+        libc::NETLINK_GENERIC,
+        &message(GENL_ID_CTRL, NLM_F_REQUEST, &body),
+    )?;
     replies
         .iter()
         .filter_map(|r| r.get(4..))
@@ -187,7 +202,9 @@ pub fn peers(name: &str) -> std::io::Result<Vec<Peer>> {
 pub fn parse_peers(replies: &[Vec<u8>]) -> Vec<Peer> {
     let mut out = vec![];
     for reply in replies {
-        let Some(device) = reply.get(4..) else { continue };
+        let Some(device) = reply.get(4..) else {
+            continue;
+        };
         for (kind, list) in attrs(device) {
             if kind != WGDEVICE_A_PEERS {
                 continue;
@@ -208,7 +225,10 @@ pub fn parse_peers(replies: &[Vec<u8>]) -> Vec<Peer> {
                     }
                 }
                 if let Some(public_key) = key {
-                    out.push(Peer { public_key, last_handshake: last });
+                    out.push(Peer {
+                        public_key,
+                        last_handshake: last,
+                    });
                 }
             }
         }
@@ -221,7 +241,10 @@ pub fn delete_link(ifindex: i32) -> std::io::Result<()> {
     let mut body = vec![libc::AF_UNSPEC as u8, 0, 0, 0];
     body.extend_from_slice(&ifindex.to_ne_bytes());
     body.extend_from_slice(&[0u8; 8]); // flags, change
-    match transact(libc::NETLINK_ROUTE, &message(RTM_DELLINK, NLM_F_REQUEST | NLM_F_ACK, &body)) {
+    match transact(
+        libc::NETLINK_ROUTE,
+        &message(RTM_DELLINK, NLM_F_REQUEST | NLM_F_ACK, &body),
+    ) {
         Ok(_) => Ok(()),
         Err(e) if e.raw_os_error() == Some(libc::ENODEV) => Ok(()),
         Err(e) => Err(e),
@@ -255,7 +278,13 @@ mod tests {
         attr(&mut second, WGDEVICE_A_PEERS | 0x8000, &list2);
         let peers = parse_peers(&[device.clone(), second]);
         assert_eq!(peers.len(), 3);
-        assert_eq!(peers[0], Peer { public_key: [1; 32], last_handshake: 1700 });
+        assert_eq!(
+            peers[0],
+            Peer {
+                public_key: [1; 32],
+                last_handshake: 1700
+            }
+        );
         assert_eq!(peers[1].last_handshake, 0);
         assert_eq!(peers[2].public_key, [3; 32]);
         for cut in 0..device.len() {

@@ -266,15 +266,24 @@ async fn serve(
         "net.wg.apply" => {
             let request: wg::Request = decode(body)?;
             if !link::valid_link(&request.name) {
-                return Err(json!({"status":"bad_request","message":"name must be 1-15 characters of [A-Za-z0-9._-]"}));
+                return Err(
+                    json!({"status":"bad_request","message":"name must be 1-15 characters of [A-Za-z0-9._-]"}),
+                );
             }
             let limits = vec![("links".to_owned(), request.name.clone())];
             // The plan reads or makes the key, so it is built under the
             // writer lock: two applies to one link never make two keys.
-            write(host, origin, peer, name, limits, move |host, origin, grant| async move {
-                let plan = wg::plan(&host.root, request)?;
-                wg::apply(host, plan, grant, origin).await
-            })
+            write(
+                host,
+                origin,
+                peer,
+                name,
+                limits,
+                move |host, origin, grant| async move {
+                    let plan = wg::plan(&host.root, request)?;
+                    wg::apply(host, plan, grant, origin).await
+                },
+            )
             .await
         }
         "hostd.undo" => undo_verb(host, body, origin, peer).await,
@@ -645,7 +654,9 @@ mod tests {
         let read_only: Vec<bool> = verbs.iter().map(|v| v.read_only).collect();
         assert_eq!(
             read_only,
-            [true, true, true, true, true, false, false, false, false, false]
+            [
+                true, true, true, true, true, false, false, false, false, false
+            ]
         );
     }
 

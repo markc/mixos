@@ -24,7 +24,10 @@ fn internal(e: anyhow::Error) -> Value {
 /// failure blocks writes until recovery has accounted for it.
 pub fn begin(host: &Host, receipt: &Receipt) -> Result<(), Value> {
     receipt.save(&host.state).map_err(|e| {
-        host.block(format!("receipt {} may be half-recorded: {e:#}", receipt.id));
+        host.block(format!(
+            "receipt {} may be half-recorded: {e:#}",
+            receipt.id
+        ));
         internal(e)
     })
 }
@@ -75,7 +78,10 @@ pub async fn conclude(
         match receipt::record(&host.state, &receipt.grant, true) {
             Ok(tripped) => suspended = tripped,
             Err(e) => {
-                host.block(format!("breaker for {} could not be recorded: {e:#}", receipt.id));
+                host.block(format!(
+                    "breaker for {} could not be recorded: {e:#}",
+                    receipt.id
+                ));
                 return Err(internal(e));
             }
         }
@@ -84,7 +90,10 @@ pub async fn conclude(
         // The durable receipt still says `applying`. Block writes so nothing
         // builds on a change hostd can't account for; the retry, or the next
         // start, finishes it from what the files hold.
-        host.block(format!("receipt {} could not be recorded: {e:#}", receipt.id));
+        host.block(format!(
+            "receipt {} could not be recorded: {e:#}",
+            receipt.id
+        ));
         return Err(internal(e));
     }
     if passed && let Err(e) = receipt::record(&host.state, &receipt.grant, false) {
@@ -129,7 +138,10 @@ pub async fn put_back(host: &Host, receipt: &Receipt) -> anyhow::Result<Put> {
     match receipt.verb.as_str() {
         link::VERB => link::reapply(host, receipt).await?,
         wg::VERB => wg::reapply(host, receipt).await?,
-        other => anyhow::bail!("receipt {} is for {other}, which this hostd can't put back", receipt.id),
+        other => anyhow::bail!(
+            "receipt {} is for {other}, which this hostd can't put back",
+            receipt.id
+        ),
     }
     Ok(Put::Restored)
 }
@@ -183,7 +195,10 @@ pub async fn undo(host: &Host, receipt: &mut Receipt) -> Result<(), Value> {
         // From here a durable `undoing` receipt may exist, whatever fails:
         // nothing else may change the host until it is finished.
         if let Err(e) = receipt.save(&host.state) {
-            host.block(format!("undo of {} could not be recorded: {e:#}", receipt.id));
+            host.block(format!(
+                "undo of {} could not be recorded: {e:#}",
+                receipt.id
+            ));
             return Err(internal(e));
         }
     }

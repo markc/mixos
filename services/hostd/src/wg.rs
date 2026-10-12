@@ -102,7 +102,9 @@ fn cidr(text: &str, allow_any: bool) -> Option<(IpAddr, u8)> {
 }
 
 pub fn decode_key(text: &str) -> Option<[u8; 32]> {
-    let bytes = base64::engine::general_purpose::STANDARD.decode(text.trim()).ok()?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(text.trim())
+        .ok()?;
     <[u8; 32]>::try_from(bytes).ok()
 }
 
@@ -141,7 +143,9 @@ pub fn valid_endpoint(text: &str) -> bool {
             || ((1..=253).contains(&host.len())
                 && host.split('.').all(|label| {
                     (1..=63).contains(&label.len())
-                        && label.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+                        && label
+                            .bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b == b'-')
                         && !label.starts_with('-')
                         && !label.ends_with('-')
                 }))
@@ -184,7 +188,8 @@ pub fn plan(root: &Path, request: Request) -> Result<Plan, Value> {
             None,
         ),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            let k = new_private().map_err(|e| json!({"status":"internal","message":e.to_string()}))?;
+            let k =
+                new_private().map_err(|e| json!({"status":"internal","message":e.to_string()}))?;
             (k, Some(encode_key(&k)))
         }
         Err(e) => return Err(json!({"status":"internal","message":e.to_string()})),
@@ -195,7 +200,10 @@ pub fn plan(root: &Path, request: Request) -> Result<Plan, Value> {
         "# Written by hostd ({VERB}). hostd replaces this file; edits are lost.\n\
          [NetDev]\nName={}\nKind=wireguard\n\n[WireGuard]\nPrivateKeyFile={}\n",
         request.name,
-        key.strip_prefix(root).map(|p| Path::new("/").join(p)).unwrap_or(key.clone()).display()
+        key.strip_prefix(root)
+            .map(|p| Path::new("/").join(p))
+            .unwrap_or(key.clone())
+            .display()
     );
     if let Some(port) = request.listen_port {
         netdev_text.push_str(&format!("ListenPort={port}\n"));
@@ -203,8 +211,12 @@ pub fn plan(root: &Path, request: Request) -> Result<Plan, Value> {
     let mut must_handshake = vec![];
     let mut any_endpoint = false;
     for peer in &request.peers {
-        let key = decode_key(&peer.public_key)
-            .ok_or_else(|| bad(format!("{:?} is not a WireGuard public key", peer.public_key)))?;
+        let key = decode_key(&peer.public_key).ok_or_else(|| {
+            bad(format!(
+                "{:?} is not a WireGuard public key",
+                peer.public_key
+            ))
+        })?;
         if peer.allowed_ips.is_empty() || peer.allowed_ips.len() > MAX_ALLOWED {
             return Err(bad(format!("each peer needs 1-{MAX_ALLOWED} allowed_ips")));
         }
@@ -290,14 +302,22 @@ pub fn healthy(plan: &Plan, entry: &Value) -> bool {
                 16 => IpAddr::from(<[u8; 16]>::try_from(bytes).ok()?),
                 _ => return None,
             };
-            Some((addr, a.get("PrefixLength")?.as_u64().and_then(|p| u8::try_from(p).ok())?))
+            Some((
+                addr,
+                a.get("PrefixLength")?
+                    .as_u64()
+                    .and_then(|p| u8::try_from(p).ok())?,
+            ))
         })
         .collect();
     ours && configured && plan.addresses.iter().all(|a| carried.contains(a))
 }
 
 fn ifindex_of(entry: &Value) -> Option<i32> {
-    entry.get("Index").and_then(Value::as_i64).and_then(|i| i32::try_from(i).ok())
+    entry
+        .get("Index")
+        .and_then(Value::as_i64)
+        .and_then(|i| i32::try_from(i).ok())
 }
 
 fn now_epoch() -> i64 {
@@ -331,7 +351,11 @@ async fn handshakes(name: &str, peers: &[[u8; 32]], since: i64, window: Duration
 }
 
 fn summary(plan: &Plan) -> Value {
-    let addresses: Vec<String> = plan.addresses.iter().map(|(a, p)| format!("{a}/{p}")).collect();
+    let addresses: Vec<String> = plan
+        .addresses
+        .iter()
+        .map(|(a, p)| format!("{a}/{p}"))
+        .collect();
     json!({"link": plan.name, "netdev": plan.netdev, "network": plan.network,
            "addresses": addresses, "public_key": plan.public_key,
            "handshake_peers": plan.must_handshake.len(), "window_s": plan.window.as_secs()})
@@ -353,7 +377,11 @@ pub async fn apply(host: Host, plan: Plan, grant: String, origin: Origin) -> Res
             return Err(json!({"status":"foreign_config","link":plan.name,
                 "message":"a link of this name exists that hostd didn't create"}));
         }
-        if entry.get("Kind").and_then(Value::as_str).is_some_and(|k| k != "wireguard") {
+        if entry
+            .get("Kind")
+            .and_then(Value::as_str)
+            .is_some_and(|k| k != "wireguard")
+        {
             return Err(json!({"status":"foreign_config","link":plan.name,
                 "message":"the link isn't WireGuard"}));
         }
@@ -369,7 +397,10 @@ pub async fn apply(host: Host, plan: Plan, grant: String, origin: Origin) -> Res
         change.group = Some(KEY_GROUP.to_owned());
         files.push(change);
     }
-    for (path, text) in [(&plan.netdev, &plan.netdev_text), (&plan.network, &plan.network_text)] {
+    for (path, text) in [
+        (&plan.netdev, &plan.netdev_text),
+        (&plan.network, &plan.network_text),
+    ] {
         let mut change = FileChange::backup(path).map_err(internal)?;
         change.installed = Some(receipt::digest(text.as_bytes()));
         files.push(change);
@@ -380,7 +411,12 @@ pub async fn apply(host: Host, plan: Plan, grant: String, origin: Origin) -> Res
     let since = now_epoch();
     let attempt = async {
         if let Some(key) = &plan.new_key {
-            receipt::write_as(&plan.key, format!("{key}\n").as_bytes(), 0o640, Some(KEY_GROUP))?;
+            receipt::write_as(
+                &plan.key,
+                format!("{key}\n").as_bytes(),
+                0o640,
+                Some(KEY_GROUP),
+            )?;
         }
         receipt::write_atomic(&plan.netdev, plan.netdev_text.as_bytes(), 0o644)?;
         receipt::write_atomic(&plan.network, plan.network_text.as_bytes(), 0o644)?;
@@ -397,8 +433,14 @@ pub async fn apply(host: Host, plan: Plan, grant: String, origin: Origin) -> Res
         if !up || plan.must_handshake.is_empty() {
             return anyhow::Ok((up, last));
         }
-        let left = plan.window.saturating_sub(started.elapsed()).max(Duration::from_secs(2));
-        Ok((handshakes(&plan.name, &plan.must_handshake, since, left).await, last))
+        let left = plan
+            .window
+            .saturating_sub(started.elapsed())
+            .max(Duration::from_secs(2));
+        Ok((
+            handshakes(&plan.name, &plan.must_handshake, since, left).await,
+            last,
+        ))
     }
     .await;
 
@@ -465,13 +507,17 @@ mod tests {
     #[test]
     fn public_key_matches_the_rfc_7748_vector() {
         // RFC 7748 §6.1, Alice.
-        let private: [u8; 32] = hex("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
-        let public: [u8; 32] = hex("8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a");
+        let private: [u8; 32] =
+            hex("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
+        let public: [u8; 32] =
+            hex("8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a");
         assert_eq!(public_of(&private), public);
     }
 
     fn hex(s: &str) -> [u8; 32] {
-        let v: Vec<u8> = (0..32).map(|i| u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).unwrap()).collect();
+        let v: Vec<u8> = (0..32)
+            .map(|i| u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).unwrap())
+            .collect();
         v.try_into().unwrap()
     }
 
@@ -481,20 +527,29 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("etc/systemd/network")).unwrap();
         let p = plan(
             dir.path(),
-            request(json!({"name":"wg-home","addresses":["10.99.0.1/24"],"listen_port":51820,
+            request(
+                json!({"name":"wg-home","addresses":["10.99.0.1/24"],"listen_port":51820,
                 "peers":[{"public_key":PEER,"endpoint":"198.51.100.7:51820",
-                          "allowed_ips":["10.99.0.2/32","0.0.0.0/0"],"keepalive_s":25}]})),
+                          "allowed_ips":["10.99.0.2/32","0.0.0.0/0"],"keepalive_s":25}]}),
+            ),
         )
         .unwrap();
         assert!(p.new_key.is_some());
         assert!(p.netdev_text.contains("Kind=wireguard\n"));
-        assert!(p.netdev_text.contains("PrivateKeyFile=/etc/systemd/network/50-hostd-wg-home.key\n"));
+        assert!(
+            p.netdev_text
+                .contains("PrivateKeyFile=/etc/systemd/network/50-hostd-wg-home.key\n")
+        );
         assert!(p.netdev_text.contains("ListenPort=51820\n"));
         assert!(p.netdev_text.contains(&format!("PublicKey={PEER}\nAllowedIPs=10.99.0.2/32,0.0.0.0/0\nEndpoint=198.51.100.7:51820\nPersistentKeepalive=25\n")));
         assert!(p.network_text.contains("Address=10.99.0.1/24\n"));
         assert_eq!(p.must_handshake.len(), 1);
         // The key never appears in what a caller sees.
-        assert!(!summary(&p).to_string().contains(p.new_key.as_ref().unwrap()));
+        assert!(
+            !summary(&p)
+                .to_string()
+                .contains(p.new_key.as_ref().unwrap())
+        );
         // With a key file present, it's kept and its public key reported.
         std::fs::write(&p.key, format!("{}\n", p.new_key.as_ref().unwrap())).unwrap();
         let again = plan(
@@ -536,15 +591,32 @@ mod tests {
         for value in refused {
             assert!(plan(dir.path(), request(value.clone())).is_err(), "{value}");
         }
-        assert!(serde_json::from_value::<Request>(json!({"name":"wg0","addresses":[],"private_key":"x"})).is_err());
+        assert!(
+            serde_json::from_value::<Request>(
+                json!({"name":"wg0","addresses":[],"private_key":"x"})
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn endpoints_are_strict() {
-        for ok in ["198.51.100.7:51820", "[2001:db8::1]:51820", "vpn.example.com:443"] {
+        for ok in [
+            "198.51.100.7:51820",
+            "[2001:db8::1]:51820",
+            "vpn.example.com:443",
+        ] {
             assert!(valid_endpoint(ok), "{ok}");
         }
-        for bad in ["198.51.100.7", "x:0", "-bad.example:1", "a b:1", "[::1:1", "host:99999", "h:1\n"] {
+        for bad in [
+            "198.51.100.7",
+            "x:0",
+            "-bad.example:1",
+            "a b:1",
+            "[::1:1",
+            "host:99999",
+            "h:1\n",
+        ] {
             assert!(!valid_endpoint(bad), "{bad}");
         }
     }
@@ -552,15 +624,30 @@ mod tests {
     #[test]
     fn health_needs_our_file_and_addresses() {
         let dir = tempfile::tempdir().unwrap();
-        let p = plan(dir.path(), request(json!({"name":"wga","addresses":["10.99.0.1/24"]}))).unwrap();
+        let p = plan(
+            dir.path(),
+            request(json!({"name":"wga","addresses":["10.99.0.1/24"]})),
+        )
+        .unwrap();
         let entry = |file: &str, admin: &str, addr: [u8; 4], prefix: u8| {
             json!({"NetworkFile": file, "AdministrativeState": admin,
                    "Addresses": [{"Address": addr, "PrefixLength": prefix}]})
         };
         let ours = "/etc/systemd/network/50-hostd-wga.network";
         assert!(healthy(&p, &entry(ours, "configured", [10, 99, 0, 1], 24)));
-        assert!(!healthy(&p, &entry(ours, "configuring", [10, 99, 0, 1], 24)));
+        assert!(!healthy(
+            &p,
+            &entry(ours, "configuring", [10, 99, 0, 1], 24)
+        ));
         assert!(!healthy(&p, &entry(ours, "configured", [10, 99, 0, 1], 16)));
-        assert!(!healthy(&p, &entry("/etc/systemd/network/wga.network", "configured", [10, 99, 0, 1], 24)));
+        assert!(!healthy(
+            &p,
+            &entry(
+                "/etc/systemd/network/wga.network",
+                "configured",
+                [10, 99, 0, 1],
+                24
+            )
+        ));
     }
 }
