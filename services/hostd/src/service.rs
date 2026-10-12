@@ -401,16 +401,19 @@ fn load_policy(host: &Host) -> anyhow::Result<Policy> {
 }
 
 fn status(host: &Host, origin: &Origin) -> Value {
-    // One load, so both halves describe the same policy.
-    let (policy, held) = match load_policy(host) {
+    // One load, so every part describes the same policy. `held` names the
+    // caller's grants; `held_grants` gives each in full (verbs, limits,
+    // expiry, rate), so a UI offers only what the caller may do.
+    let (policy, held, held_grants) = match load_policy(host) {
         Ok(policy) => {
-            let held = match origin {
-                Origin::Local(caller) => json!(policy.held_by(caller, chrono::Utc::now())),
-                Origin::Bus => json!([]),
+            let grants = match origin {
+                Origin::Local(caller) => policy.held_grants(caller, chrono::Utc::now()),
+                Origin::Bus => vec![],
             };
-            (json!({"grants": policy.grants.len()}), held)
+            let names: Vec<&str> = grants.iter().map(|g| g.name.as_str()).collect();
+            (json!({"grants": policy.grants.len()}), json!(names), json!(grants))
         }
-        Err(error) => (json!({"error": error.to_string()}), json!([])),
+        Err(error) => (json!({"error": error.to_string()}), json!([]), json!([])),
     };
     let frozen = match freeze::state(&host.state) {
         Ok(record) => json!(record),
@@ -422,6 +425,7 @@ fn status(host: &Host, origin: &Origin) -> Value {
         "policy": policy,
         "caller": origin,
         "held": held,
+        "held_grants": held_grants,
     })
 }
 
@@ -852,5 +856,16 @@ mod tests {
         assert_eq!(s["held"], json!(["agent", "agent-wide"]));
         assert_eq!(s["policy"]["grants"], 2);
         assert_eq!(s["frozen"], Value::Null);
+        // Each held grant comes back in full, limits verbatim.
+        assert_eq!(s["held_grants"][0]["name"], "agent");
+        assert_eq!(s["held_grants"][0]["limits"]["links"], json!(["hd0"]));
+        assert_eq!(s["held_grants"][1]["verbs"], json!(["net.link.apply"]));
+        assert_eq!(s["held_grants"][0]["rate"], json!({"count": 1, "per_s": 600}));
+        // A caller with no grant gets empty lists, never someone else's.
+        let stranger = caller(1000, "/user.slice/x");
+        let s = dispatch(&host, "hostd.status", &json!({}), &stranger)
+            .await
+            .unwrap();
+        assert_eq!(s["held_grants"], json!([]));
     }
 }

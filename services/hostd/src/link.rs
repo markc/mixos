@@ -484,7 +484,12 @@ async fn finish(host: &Host, receipt: &mut Receipt) -> anyhow::Result<()> {
         receipt::record(&host.state, &receipt.grant, true)?;
     }
     receipt.save(&host.state)?;
-    tracing::warn!(target: "hostd::audit", receipt = %receipt.id, outcome = ?receipt.outcome, "finished");
+    // A finished undo is routine; recovering an interrupted change is not.
+    if was == Outcome::Undoing && receipt.outcome == Outcome::Undone {
+        tracing::info!(target: "hostd::audit", receipt = %receipt.id, outcome = ?receipt.outcome, "finished");
+    } else {
+        tracing::warn!(target: "hostd::audit", receipt = %receipt.id, outcome = ?receipt.outcome, "finished");
+    }
     Ok(())
 }
 

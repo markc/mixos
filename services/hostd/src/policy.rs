@@ -19,7 +19,7 @@
 //! ```
 use crate::caller::Caller;
 use anyhow::{Context, bail};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashMap, VecDeque},
     os::unix::fs::MetadataExt,
@@ -40,7 +40,7 @@ pub struct Policy {
     pub grants: Vec<Grant>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Grant {
     pub name: String,
@@ -58,7 +58,7 @@ pub struct Grant {
     pub rate: Option<Rate>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CallerMatch {
     #[serde(default)]
@@ -68,7 +68,7 @@ pub struct CallerMatch {
     pub cgroup: String,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy)]
 #[serde(deny_unknown_fields)]
 pub struct Rate {
     pub count: u32,
@@ -235,13 +235,20 @@ impl Policy {
 
     /// Names of the unexpired grants this caller holds, for `hostd.status`.
     pub fn held_by(&self, caller: &Caller, now: chrono::DateTime<chrono::Utc>) -> Vec<&str> {
+        self.held_grants(caller, now)
+            .into_iter()
+            .map(|g| g.name.as_str())
+            .collect()
+    }
+
+    /// The unexpired grants this caller holds, in full.
+    pub fn held_grants(&self, caller: &Caller, now: chrono::DateTime<chrono::Utc>) -> Vec<&Grant> {
         if !caller.verified {
             return vec![];
         }
         self.grants
             .iter()
             .filter(|g| g.matches(caller) && !g.expired(now))
-            .map(|g| g.name.as_str())
             .collect()
     }
 }

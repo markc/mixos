@@ -275,12 +275,12 @@ from the Bus.</p>
 <table><thead><tr><th>Verb</th><th>Tier</th><th>What</th></tr></thead><tbody>
 <tr><td><code>host.info</code></td><td>read</td><td>hostname, kernel, OS, MixOS mode, container, uptime, CPU, memory</td></tr>
 <tr><td><code>net.state</code></td><td>read</td><td>which network managers run, networkd links and files, resolved DNS, iwd stations, hostd's own files</td></tr>
-<tr><td><code>hostd.status</code></td><td>read</td><td>frozen or not, the policy's state, the caller's identity and the grants it holds</td></tr>
+<tr><td><code>hostd.status</code></td><td>read</td><td>frozen or not, the policy's state, the caller's identity, and the grants it holds: <code>held</code> (names) and <code>held_grants</code> (each in full: verbs, limits, expiry, rate)</td></tr>
 <tr><td><code>hostd.receipt</code></td><td>read</td><td>one change's receipt: what it changed, under which grant, how it ended (never file contents)</td></tr>
 <tr><td><code>hostd.freeze</code></td><td>control</td><td>refuse every change until thawed: root on the host, or a grant naming it</td></tr>
 <tr><td><code>hostd.thaw</code></td><td>control</td><td>accept changes again and lift grant suspensions: root on the host only</td></tr>
 <tr><td><code>net.link.apply</code></td><td>write</td><td>configure one link through networkd, rolled back unless it comes up</td></tr>
-<tr><td><code>hostd.undo</code></td><td>write</td><td>put back what an applied change replaced</td></tr>
+<tr><td><code>hostd.undo</code></td><td>write</td><td>put back what an applied change replaced; needs no grant of its own (see below)</td></tr>
 </tbody></table>
 <p><code>host.info</code> is also published as the retained topic <code>hostd.info</code>.</p>
 <h2 id="who-may-change-what">Who may change what</h2>
@@ -375,6 +375,19 @@ hand or by another manager such as NetworkManager
 give such a link its old runtime configuration back, and it doesn't take
 it over.</li>
 </ul>
+<p>The reply to a change that passed (<code>rc</code> 0):</p>
+<pre><code class="language-text">{"receipt": "&lt;id&gt;", "outcome": "applied", "reason": null, "grant": "&lt;grant&gt;",
+ "grant_suspended": false, "link": {"admin": "configured", "operational": "routable"}}
+</code></pre>
+<p>A change that failed and was reversed comes back with <code>rc</code> 10, as
+<code>{"status": "rolled_back", "detail": {...}}</code>, where <code>detail</code> has the same
+keys. Keep the <code>receipt</code> id to undo the change later, or to look it up with
+<code>hostd.receipt</code>.</p>
+<p><strong>Undo needs no grant of its own.</strong> <code>hostd.undo {receipt}</code> is allowed to
+whoever holds a grant that covers the original change: its verb and its
+limits (for <code>net.link.apply</code>, that link). A grant that may configure <code>hd0</code>
+may undo its own changes to <code>hd0</code>. Naming <code>hostd.undo</code> in a grant adds
+nothing.</p>
 <h2 id="stopping-it">Stopping it</h2>
 <p><code>hostd.freeze</code> stops every change at once and survives restarts and
 reboots. An unreadable freeze record counts as frozen. Only root on the

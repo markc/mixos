@@ -44,12 +44,12 @@ from the Bus.
 |---|---|---|
 | `host.info` | read | hostname, kernel, OS, MixOS mode, container, uptime, CPU, memory |
 | `net.state` | read | which network managers run, networkd links and files, resolved DNS, iwd stations, hostd's own files |
-| `hostd.status` | read | frozen or not, the policy's state, the caller's identity and the grants it holds |
+| `hostd.status` | read | frozen or not, the policy's state, the caller's identity, and the grants it holds: `held` (names) and `held_grants` (each in full: verbs, limits, expiry, rate) |
 | `hostd.receipt` | read | one change's receipt: what it changed, under which grant, how it ended (never file contents) |
 | `hostd.freeze` | control | refuse every change until thawed: root on the host, or a grant naming it |
 | `hostd.thaw` | control | accept changes again and lift grant suspensions: root on the host only |
 | `net.link.apply` | write | configure one link through networkd, rolled back unless it comes up |
-| `hostd.undo` | write | put back what an applied change replaced |
+| `hostd.undo` | write | put back what an applied change replaced; needs no grant of its own (see below) |
 
 `host.info` is also published as the retained topic `hostd.info`.
 
@@ -157,6 +157,24 @@ the host thaws hostd.
   (`unmanaged_configured`). hostd's rollback restores files, so it can't
   give such a link its old runtime configuration back, and it doesn't take
   it over.
+
+The reply to a change that passed (`rc` 0):
+
+```text
+{"receipt": "<id>", "outcome": "applied", "reason": null, "grant": "<grant>",
+ "grant_suspended": false, "link": {"admin": "configured", "operational": "routable"}}
+```
+
+A change that failed and was reversed comes back with `rc` 10, as
+`{"status": "rolled_back", "detail": {...}}`, where `detail` has the same
+keys. Keep the `receipt` id to undo the change later, or to look it up with
+`hostd.receipt`.
+
+**Undo needs no grant of its own.** `hostd.undo {receipt}` is allowed to
+whoever holds a grant that covers the original change: its verb and its
+limits (for `net.link.apply`, that link). A grant that may configure `hd0`
+may undo its own changes to `hd0`. Naming `hostd.undo` in a grant adds
+nothing.
 
 ## Stopping it
 
