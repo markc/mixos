@@ -203,7 +203,7 @@ pub async fn undo(host: &Host, receipt: &mut Receipt) -> Result<(), Value> {
         }
         // Wi-Fi writes no files: its change is current only while the
         // station is still on the network it connected.
-        if receipt.verb == wifi::VERB && !wifi::current(receipt).await.map_err(internal)? {
+        if receipt.verb == wifi::VERB && !wifi::current(host, receipt).await.map_err(internal)? {
             return Err(json!({"status":"superseded","receipt":receipt.id,
                 "message":"the station is no longer on this network"}));
         }

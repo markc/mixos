@@ -196,6 +196,14 @@ impl Receipt {
 /// Fails closed: a receipt file that can't be read or parsed is an error,
 /// never skipped, because it may be an interrupted change.
 pub fn unfinished(state: &Path) -> anyhow::Result<Vec<Receipt>> {
+    Ok(all(state)?
+        .into_iter()
+        .filter(|r| r.outcome.in_flight())
+        .collect())
+}
+
+/// Every receipt, oldest first. Fails closed like `unfinished`.
+pub fn all(state: &Path) -> anyhow::Result<Vec<Receipt>> {
     let entries = match std::fs::read_dir(receipts(state)) {
         Ok(entries) => entries,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
@@ -207,10 +215,7 @@ pub fn unfinished(state: &Path) -> anyhow::Result<Vec<Receipt>> {
         let Some(id) = name.to_str().and_then(|n| n.strip_suffix(".json")) else {
             continue; // temporary files from an atomic write
         };
-        let receipt = Receipt::load(state, id).with_context(|| format!("receipt {id}"))?;
-        if receipt.outcome.in_flight() {
-            found.push(receipt);
-        }
+        found.push(Receipt::load(state, id).with_context(|| format!("receipt {id}"))?);
     }
     found.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(found)

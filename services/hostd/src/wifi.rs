@@ -91,8 +91,17 @@ impl ConnectRequest {
 }
 
 /// A system bus connection, after checking iwd is running. Never starts it.
-async fn iwd() -> anyhow::Result<zbus::Connection> {
-    let conn = tokio::time::timeout(STEP, zbus::Connection::system()).await??;
+///
+/// Every method call on the connection is bounded by `timeout` (property
+/// reads, agent registration and teardown included), so a stalled iwd can
+/// never hold the writer lock. A connect passes its window here, because
+/// iwd answers `Connect` only when the connection is up or has failed.
+async fn iwd(timeout: Duration) -> anyhow::Result<zbus::Connection> {
+    let conn = tokio::time::timeout(
+        STEP,
+        zbus::connection::Builder::system()?.method_timeout(timeout).build(),
+    )
+    .await??;
     let dbus = zbus::fdo::DBusProxy::new(&conn).await?;
     if !dbus.name_has_owner(IWD.try_into()?).await? {
         anyhow::bail!("iwd is not running");
@@ -181,7 +190,7 @@ async fn scan_now(conn: &zbus::Connection, station: &str) -> anyhow::Result<()> 
 
 /// `net.wifi.scan`: refreshes and lists the networks a device can see.
 pub async fn scan(device: &str) -> Result<Value, Value> {
-    let conn = iwd()
+    let conn = iwd(STEP)
         .await
         .map_err(|e| json!({"status":"no_iwd","message":e.to_string()}))?;
     let station = station(&conn, device)
@@ -307,7 +316,7 @@ pub async fn connect(
     grant: String,
     origin: Origin,
 ) -> Result<Value, Value> {
-    let conn = iwd()
+    let conn = iwd(window + STEP)
         .await
         .map_err(|e| json!({"status":"no_iwd","message":e.to_string()}))?;
     let station = station(&conn, &request.device)
@@ -380,43 +389,132 @@ fn field<'a>(receipt: &'a Receipt, key: &str) -> Option<&'a str> {
     receipt.summary.get(key).and_then(Value::as_str)
 }
 
+/// Bounds for put-back and the checks around it.
+const PUT_BACK: Duration = Duration::from_secs(25);
+
+/// The network a station is attached to now, whether connected or still
+/// connecting (iwd sets `ConnectedNetwork` from the start of a connect),
+/// and the station's state.
+async fn attached(conn: &zbus::Connection, station: &str) -> anyhow::Result<(String, Option<String>)> {
+    let st = proxy(conn, station, STATION).await?;
+    let state: String = st.get_property("State").await?;
+    if state == "disconnected" {
+        return Ok((state, None));
+    }
+    let Ok(path) = st.get_property::<OwnedObjectPath>("ConnectedNetwork").await else {
+        return Ok((state, None));
+    };
+    let n = proxy(conn, path.as_str(), NETWORK).await?;
+    Ok((state, Some(n.get_property("Name").await?)))
+}
+
+/// Waits (bounded) until the station is attached to `want`, connected,
+/// or (for `None`) disconnected.
+async fn settle(conn: &zbus::Connection, station: &str, want: Option<&str>) -> anyhow::Result<()> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        let (state, on) = attached(conn, station).await?;
+        let done = match want {
+            None => state == "disconnected",
+            Some(ssid) => state == "connected" && on.as_deref() == Some(ssid),
+        };
+        if done {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            anyhow::bail!("station did not settle ({state}, on {on:?}, want {want:?})");
+        }
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+}
+
 /// Whether the station is still where this change left it, or where it
-/// started: connected to the target, to the previous network, or to
-/// nothing. Connected anywhere else means someone has moved it since, and
-/// hostd leaves it alone. An iwd that isn't running has nothing to put back.
+/// started: attached to the target, to the previous network, or to nothing.
+/// Attached anywhere else means someone has moved it since, and hostd
+/// leaves it alone. A station that no longer exists has nothing of its own
+/// to put back (the target can still be forgotten). An iwd that can't be
+/// reached is an error, never "someone else's": the receipt stays in flight
+/// and is retried.
 pub async fn owns(receipt: &Receipt) -> anyhow::Result<bool> {
     let (Some(device), Some(ssid)) = (field(receipt, "link"), field(receipt, "ssid")) else {
         anyhow::bail!("receipt names no device or ssid");
     };
-    let Ok(conn) = iwd().await else {
-        return Ok(false);
-    };
+    let conn = iwd(PUT_BACK).await?;
     let Some(station) = station(&conn, device).await? else {
-        return Ok(false);
+        return Ok(true);
     };
-    let now = connected_ssid(&conn, &station).await?;
-    Ok(match now.as_deref() {
+    let (_, on) = attached(&conn, &station).await?;
+    Ok(match on.as_deref() {
         None => true,
         Some(s) => s == ssid || Some(s) == field(receipt, "previous"),
     })
 }
 
-/// Whether the station is connected to this change's network now: undo of
-/// an older connect is refused once the station has moved on.
-pub async fn current(receipt: &Receipt) -> anyhow::Result<bool> {
+/// Whether undoing this receipt would undo the station's current state:
+/// the station is attached to this change's network, and no later Wi-Fi
+/// change on the device is still in force. Returning to an SSID through a
+/// later change doesn't revive an older receipt.
+pub async fn current(host: &Host, receipt: &Receipt) -> anyhow::Result<bool> {
     let (Some(device), Some(ssid)) = (field(receipt, "link"), field(receipt, "ssid")) else {
         anyhow::bail!("receipt names no device or ssid");
     };
-    let conn = iwd().await?;
+    let newer_in_force = crate::receipt::all(&host.state)?.iter().any(|r| {
+        r.verb == VERB
+            && r.id > receipt.id
+            && field(r, "link") == Some(device)
+            && matches!(
+                r.outcome,
+                crate::receipt::Outcome::Applied
+                    | crate::receipt::Outcome::Applying
+                    | crate::receipt::Outcome::Undoing
+            )
+    });
+    if newer_in_force {
+        return Ok(false);
+    }
+    let conn = iwd(PUT_BACK).await?;
     let Some(station) = station(&conn, device).await? else {
         return Ok(false);
     };
-    Ok(connected_ssid(&conn, &station).await?.as_deref() == Some(ssid))
+    Ok(attached(&conn, &station).await?.1.as_deref() == Some(ssid))
 }
 
-/// Puts the station back (`txn::put_back`): forget the target if this
-/// change made it known, then reconnect the previous network, or
-/// disconnect if there was none. Idempotent.
+/// Forgets a known network by SSID, wherever iwd lists it (no station
+/// needed). Already forgotten is fine.
+async fn forget(conn: &zbus::Connection, ssid: &str) -> anyhow::Result<()> {
+    let objects = zbus::fdo::ObjectManagerProxy::builder(conn)
+        .destination(IWD)?
+        .path("/")?
+        .build()
+        .await?
+        .get_managed_objects()
+        .await?;
+    for (path, ifaces) in &objects {
+        let Some(known) = ifaces.get(KNOWN) else { continue };
+        let name = known
+            .get("Name")
+            .and_then(|v| <&str>::try_from(&**v as &zbus::zvariant::Value).ok());
+        if name == Some(ssid) {
+            proxy(conn, path.as_str(), KNOWN)
+                .await?
+                .call::<_, _, ()>("Forget", &())
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Puts the station back (`txn::put_back`), and checks it got there:
+///
+/// - the target is forgotten if this change made it known (whether or not
+///   the device still exists);
+/// - a connect still in progress, or a connection to anything but the
+///   previous network, is cancelled;
+/// - the previous network is reconnected, or the station left disconnected
+///   if there was none. If the previous network is no longer in range,
+///   the station is left disconnected: that is the closest state left.
+///
+/// Every step is idempotent, so a failed put-back simply runs again.
 pub async fn reapply(_host: &Host, receipt: &Receipt) -> anyhow::Result<()> {
     let (Some(device), Some(ssid)) = (field(receipt, "link"), field(receipt, "ssid")) else {
         anyhow::bail!("receipt names no device or ssid");
@@ -426,41 +524,40 @@ pub async fn reapply(_host: &Host, receipt: &Receipt) -> anyhow::Result<()> {
         .get("was_known")
         .and_then(Value::as_bool)
         .unwrap_or(true);
+    // Where the station started. It may be the target itself (a connect to
+    // the network it was already on), which is then reconnected.
     let previous = field(receipt, "previous");
-    let conn = iwd().await?;
-    let station = station(&conn, device)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("no station {device}"))?;
-    if !was_known
-        && let Some(target) = networks(&conn, &station)
-            .await?
-            .into_iter()
-            .find(|n| n.name == ssid)
-        && target.known
-    {
-        let n = proxy(&conn, target.path.as_str(), NETWORK).await?;
-        let known: OwnedObjectPath = n.get_property("KnownNetwork").await?;
-        proxy(&conn, known.as_str(), KNOWN)
-            .await?
-            .call::<_, _, ()>("Forget", &())
-            .await?;
+    let conn = iwd(PUT_BACK).await?;
+    if !was_known {
+        forget(&conn, ssid).await?;
     }
-    match previous {
-        Some(prev) if prev != ssid => {
-            if connected_ssid(&conn, &station).await?.as_deref() != Some(prev) {
-                let net = find(&conn, &station, prev)
-                    .await?
-                    .ok_or_else(|| anyhow::anyhow!("previous network {prev} not in range"))?;
+    let Some(station) = station(&conn, device).await? else {
+        return Ok(());
+    };
+    let (state, on) = attached(&conn, &station).await?;
+    let already = match previous {
+        None => state == "disconnected",
+        Some(prev) => state == "connected" && on.as_deref() == Some(prev),
+    };
+    if already {
+        return Ok(());
+    }
+    if state != "disconnected" {
+        proxy(&conn, &station, STATION)
+            .await?
+            .call::<_, _, ()>("Disconnect", &())
+            .await?;
+        settle(&conn, &station, None).await?;
+    }
+    if let Some(prev) = previous {
+        match find(&conn, &station, prev).await? {
+            Some(net) => {
                 connect_network(&conn, &net, None, Duration::from_secs(20)).await?;
+                settle(&conn, &station, Some(prev)).await?;
             }
-        }
-        Some(_) => {}
-        None => {
-            if connected_ssid(&conn, &station).await?.is_some() {
-                proxy(&conn, &station, STATION)
-                    .await?
-                    .call::<_, _, ()>("Disconnect", &())
-                    .await?;
+            None => {
+                tracing::warn!(target: "hostd::audit", receipt = %receipt.id, previous = %prev,
+                    "previous network not in range; left disconnected");
             }
         }
     }

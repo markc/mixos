@@ -214,6 +214,11 @@ pub fn plan(root: &Path, request: Request) -> Result<Plan, Value> {
     }
     let mut must_handshake = vec![];
     let mut any_endpoint = false;
+    // Whether the dead-man check waits for handshakes, decided before any
+    // peer is checked for a way to start one.
+    let verify = request
+        .require_handshake
+        .unwrap_or(request.peers.iter().any(|p| p.endpoint.is_some()));
     // First every peer's entries, so each probe can be checked against the
     // other peers' ranges.
     let mut parsed = vec![];
@@ -260,7 +265,8 @@ pub fn plan(root: &Path, request: Request) -> Result<Plan, Value> {
                 .flat_map(|(_, (_, e))| e.iter().copied())
                 .collect();
             let probe = route_probe(entries, &others);
-            if probe.is_none() && peer.keepalive_s.is_none() {
+            // Only a handshake hostd will wait for needs a way to start it.
+            if verify && probe.is_none() && peer.keepalive_s.is_none() {
                 return Err(bad(format!(
                     "no address routes to peer {} alone (other peers' allowed_ips cover its \
                      own), so hostd can't start its handshake: give it keepalive_s",
@@ -273,7 +279,8 @@ pub fn plan(root: &Path, request: Request) -> Result<Plan, Value> {
             netdev_text.push_str(&format!("PersistentKeepalive={seconds}\n"));
         }
     }
-    if !request.require_handshake.unwrap_or(any_endpoint) {
+    debug_assert_eq!(verify, request.require_handshake.unwrap_or(any_endpoint));
+    if !verify {
         must_handshake.clear();
     }
 
@@ -424,27 +431,47 @@ fn offset(ip: IpAddr, n: u32) -> Option<IpAddr> {
 /// addresses from each entry's natural probe target.
 pub fn route_probe(own: &[(IpAddr, u8)], others: &[(IpAddr, u8)]) -> Option<IpAddr> {
     for &(addr, prefix) in own {
-        let start = probe_target(addr, prefix);
-        for n in 0..256 {
-            let Some(candidate) = offset(start, n) else {
-                break;
-            };
+        // An uncovered address, if there is one, sits at the start of this
+        // entry, or just after the end of one of the ranges covering part
+        // of it: those few points are checked, not a sample.
+        let mut candidates = vec![probe_target(addr, prefix), addr];
+        for &(o, op) in others {
+            if op >= prefix && contains((addr, prefix), o)
+                && let Some(after) = last_of((o, op)).and_then(|end| offset(end, 1))
+            {
+                candidates.push(after);
+            }
+        }
+        for candidate in candidates {
             let inside = contains((addr, prefix), candidate)
                 // A default route's probe is a documentation address, which
                 // the default route contains by definition.
                 || prefix == 0;
-            if !inside {
-                break;
-            }
             let taken = others
                 .iter()
                 .any(|&(o, op)| op >= prefix && contains((o, op), candidate));
-            if !taken {
+            if inside && !taken && !candidate.is_unspecified() {
                 return Some(candidate);
             }
         }
     }
     None
+}
+
+/// The last address of a range.
+fn last_of((addr, prefix): (IpAddr, u8)) -> Option<IpAddr> {
+    match addr {
+        IpAddr::V4(v4) => {
+            let host = 32 - u32::from(prefix.min(32));
+            let span = if host == 32 { u32::MAX } else { (1u32 << host) - 1 };
+            Some(IpAddr::V4((u32::from(v4) | span).into()))
+        }
+        IpAddr::V6(v6) => {
+            let host = 128 - u32::from(prefix.min(128));
+            let span = if host == 128 { u128::MAX } else { (1u128 << host) - 1 };
+            Some(IpAddr::V6((u128::from(v6) | span).into()))
+        }
+    }
 }
 
 /// Waits, within `window`, for every listed peer to complete a handshake
@@ -805,6 +832,16 @@ mod tests {
             route_probe(&[n("10.99.0.1", 32)], &[n("10.99.0.1", 32)]),
             None
         );
+        // sol's round-3 case: a /8 whose first /16 is another peer's still
+        // has addresses of its own, past the /16.
+        assert_eq!(route_probe(&[n("10.0.0.0", 8)], &[n("10.0.0.0", 16)]), ip("10.1.0.0"));
+        // Covered piece by piece, with a gap at the end.
+        assert_eq!(
+            route_probe(&[n("10.0.0.0", 30)], &[n("10.0.0.0", 31), n("10.0.0.2", 32)]),
+            ip("10.0.0.3")
+        );
+        // Covered completely, piece by piece.
+        assert_eq!(route_probe(&[n("10.0.0.0", 31)], &[n("10.0.0.0", 32), n("10.0.0.1", 32)]), None);
         assert!(contains(n("10.99.0.0", 24), "10.99.0.200".parse().unwrap()));
         assert!(!contains(n("10.99.0.0", 24), "10.99.1.1".parse().unwrap()));
         assert!(contains(n("0.0.0.0", 0), "203.0.113.9".parse().unwrap()));
@@ -826,6 +863,11 @@ mod tests {
         assert!(plan(dir.path(), both(None)).is_err());
         let ok = plan(dir.path(), both(Some(25))).unwrap();
         assert_eq!(ok.must_handshake[0].1, None);
+        // Opting out of the handshake check needs no way to start one.
+        let mut opted_out = both(None);
+        opted_out.require_handshake = Some(false);
+        let p = plan(dir.path(), opted_out).unwrap();
+        assert!(p.must_handshake.is_empty());
     }
 
     #[test]
