@@ -668,8 +668,16 @@ fn project_surface(
         fullscreen: placement.fullscreen,
         minimized: record.minimized(),
         workspace: record.workspace_leaf(),
-        decoration: (record.role() == SurfaceRole::Toplevel)
-            .then_some(placement.decoration.unwrap_or("unbound")),
+        // A managed X11 window reports the mode compd draws it with
+        // (`place_window`), like an xdg toplevel its negotiated one.
+        decoration: matches!(
+            record.role(),
+            SurfaceRole::Toplevel
+                | SurfaceRole::X11 {
+                    override_redirect: false
+                }
+        )
+        .then_some(placement.decoration.unwrap_or("unbound")),
         layer: placement.layer,
         foreign_id: window_row.then_some(placement.foreign_id).flatten(),
         generation: record.generation(),

@@ -79,9 +79,7 @@ pub fn send_window_frames(state: &Loop, output: &Output, visible: &[Window]) {
     // thumbnail pacer does.
     let key = world::state::state::output_key(output);
     for window in visible {
-        if world::window::draw::thumbnail::preview_only_on(&key, window)
-            || world::window::draw::thumbnail::preview_only_on("", window)
-        {
+        if world::window::draw::thumbnail::preview_only_on(&key, window) {
             continue;
         }
         window.send_frame(output, frame_time, Some(Duration::ZERO), |_, _| {
@@ -108,7 +106,8 @@ thread_local! {
 /// that wait on a frame callback, each with the output its tip is on. None
 /// under a session lock (only the lock surface gets callbacks then).
 fn thumbnail_targets(state: &Loop) -> Vec<(Window, Output)> {
-    if world::comp::session_lock::active(state) {
+    // Nothing to do (and nothing allocated) while no tip asks.
+    if !world::window::draw::thumbnail::asked() || world::comp::session_lock::active(state) {
         return Vec::new();
     }
     let space = &state.inner.space_state().state;
@@ -230,7 +229,8 @@ pub fn surface_awaits_frame(
 fn trickle_targets(state: &Loop) -> Vec<(Window, Output)> {
     // One owner per window: a hover thumbnail's pacer outranks the trickle.
     let mut targets = trickle_candidates(state);
-    targets.retain(|(window, _)| !world::window::draw::thumbnail::is_paced(window));
+    let paced = world::window::draw::thumbnail::paced();
+    targets.retain(|(window, _)| !paced.iter().any(|(w, _)| w == window));
     targets
 }
 

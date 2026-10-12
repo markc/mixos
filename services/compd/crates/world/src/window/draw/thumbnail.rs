@@ -90,11 +90,9 @@ impl<T: PartialEq + Clone> Owners<T> {
         self.drawn.clear();
     }
 
-    /// Forget outputs that are gone (`live` are the current keys; the
-    /// nested backend's unnamed `""` is always kept).
+    /// Forget outputs that are gone (`live` are the current keys).
     pub fn retain_outputs(&mut self, live: &[String]) {
-        self.drawn
-            .retain(|key, _| key.is_empty() || live.contains(key));
+        self.drawn.retain(|key, _| live.contains(key));
     }
 
     /// Whether `output` drew `window` only as a thumbnail.
@@ -120,7 +118,9 @@ impl<T: PartialEq + Clone> Owners<T> {
     }
 }
 
-fn asked() -> bool {
+/// Whether some tip asks for a thumbnail now (when not, nothing here does
+/// any work).
+pub fn asked() -> bool {
     REQUESTS.with_borrow(|r| !r.is_empty())
 }
 
@@ -168,11 +168,6 @@ pub fn paced() -> Vec<(Window, String)> {
         return Vec::new();
     }
     OWNERS.with_borrow(Owners::paced)
-}
-
-/// Whether the pacer owns `window`'s frame callbacks ([`paced`]).
-pub fn is_paced(window: &Window) -> bool {
-    paced().iter().any(|(w, _)| w == window)
 }
 
 /// Replace the requested thumbnails (empty: none).
@@ -456,10 +451,9 @@ mod tests {
         let mut paced = owners.paced();
         paced.sort();
         assert_eq!(paced, vec![(1, "A".to_owned()), (2, "A".to_owned())]);
-        // The nested backend's unnamed output is never pruned.
-        owners.note("", &[], vec![3]);
         owners.retain_outputs(&[]);
-        assert_eq!(owners.paced(), vec![(3, String::new())]);
+        assert!(owners.paced().is_empty());
+        owners.note("A", &[], vec![3]);
         owners.clear();
         assert!(owners.paced().is_empty());
     }
