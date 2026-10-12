@@ -1,0 +1,111 @@
+-- The network popup's snapshot: kernel state from rtnetlink (always), plus
+-- systemd-networkd, systemd-resolved and the default routes when their tools
+-- answer. Every source but the kernel is optional: one that is missing or
+-- refuses is nil, never an error. Reads only; changes belong to the host.
+
+-- A link's kind from sysfs. DEVTYPE names bridges, bonds, Wi-Fi, WireGuard
+-- and VLANs; otherwise a link backed by a device is a NIC ("ether") and
+-- anything else is virtual (veth, dummy, tun). nil when sysfs has no entry.
+fn sys_kind($ifname, $root = "/sys/class/net")
+  $dir = $root .. "/" .. $ifname
+  try
+    $uevent = read_file($dir .. "/uevent")
+  catch $e
+    return nil
+  end
+  for each $line in split($uevent, "\n")
+    if starts_with($line, "DEVTYPE=") then return slice($line, 8, length($line)) end
+  end
+  return is_dir($dir .. "/device") ? "ether" : "virtual"
+end
+
+-- A tool's JSON output, or nil when the tool is absent, fails or prints
+-- something that is not JSON.
+fn tool_json($argv)
+  if which($argv[0]) == nil then return nil end
+  try
+    $run = run_argv($argv, {timeout: 3})
+    if not $run.ok then return nil end
+    return json_parse($run.stdout)
+  catch $e
+    return nil
+  end
+end
+
+-- `networkctl list --json=short` -> {ifname: {admin, oper, kind, ssid}}, or
+-- nil when networkd did not answer.
+fn parse_networkd($doc)
+  if type($doc) != "map" or type($doc.Interfaces) != "list" then return nil end
+  $out = {}
+  for each $i in $doc.Interfaces
+    if type($i) == "map" and type($i.Name) == "string" then
+      $out[$i.Name] = {admin: $i.AdministrativeState ?? "", oper: $i.OperationalState ?? "",
+        kind: $i.Kind ?? "", ssid: $i.SSID ?? ""}
+    end
+  end
+  return $out
+end
+
+-- `resolvectl status --json=short` -> {global: [server], links: {ifname: [server]}},
+-- or nil when resolved did not answer. The entry without an ifname is global.
+fn parse_resolved($doc)
+  if type($doc) != "list" then return nil end
+  $out = {global: [], links: {}}
+  for each $e in $doc
+    if type($e) != "map" then continue end
+    $servers = []
+    for each $s in $e.servers ?? []
+      if type($s) == "map" and type($s.addressString) == "string" then push($servers, $s.addressString) end
+    end
+    if type($e.ifname) == "string" then
+      if length($servers) > 0 then $out.links[$e.ifname] = $servers end
+    else
+      $out.global = $servers
+    end
+  end
+  return $out
+end
+
+-- `ip -j route show default` -> [{gateway, dev, metric}], lowest metric first;
+-- nil when ip did not answer. A multipath (ECMP) route has no top-level dev:
+-- each of its nexthops is a route at the same metric.
+fn parse_routes($doc)
+  if type($doc) != "list" then return nil end
+  $out = []
+  for each $r in $doc
+    if type($r) != "map" then continue end
+    $hops = type($r.dev) == "string" ? [$r] : (type($r.nexthops) == "list" ? $r.nexthops : [])
+    for each $h in $hops
+      if type($h) == "map" and type($h.dev) == "string" then
+        push($out, {gateway: $h.gateway ?? "", dev: $h.dev, metric: $r.metric ?? 0})
+      end
+    end
+  end
+  return sort_by($out, function ($r) = $r.metric)
+end
+
+-- Whether the loader's scenes.changed inventory shows scene $name open:
+-- true or false, or nil when the inventory cannot be read.
+fn popup_open($inventory, $name)
+  if type($inventory) != "map" or type($inventory.scenes) != "list" then return nil end
+  for each $row in $inventory.scenes
+    if type($row) == "map" and $row.name == $name and $row.open == true then return true end
+  end
+  return false
+end
+
+-- One snapshot for models.network(). net_state() blocks for up to 2 s and
+-- each tool for up to 3 s: call this from an async handler only.
+fn snapshot()
+  $kernel = net_state()
+  $kinds = {}
+  for each $link in $kernel.links
+    $kinds[$link.ifname] = sys_kind($link.ifname)
+  end
+  $v4 = parse_routes(tool_json(["ip", "-j", "route", "show", "default"]))
+  $v6 = parse_routes(tool_json(["ip", "-j", "-6", "route", "show", "default"]))
+  return {links: $kernel.links, addresses: $kernel.addresses, kinds: $kinds,
+    routes: concat($v4 ?? [], $v6 ?? []),
+    networkd: parse_networkd(tool_json(["networkctl", "list", "--json=short"])),
+    resolved: parse_resolved(tool_json(["resolvectl", "status", "--json=short"]))}
+end

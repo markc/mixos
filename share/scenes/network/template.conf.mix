@@ -1,0 +1,8 @@
+schema: 1
+name: "network"
+title: "Network"
+behaviour: "behaviour.mix"
+description: "Network links, addresses, default route and DNS (read-only)"
+recommended: true
+order: 45
+requires: []

@@ -11,10 +11,10 @@ Canonical, read-only template directories live here:
 `scene.mix` is an AMP scene document, not an executable script.
 `template.conf.mix` is a strict-data map. Only `behaviour.mix` executes.
 Reusable behaviour helpers are shipped in `lib/` (`data.mix`, `models.mix`,
-`runtime.mix`, `taskbar.mix`).
+`runtime.mix`, `taskbar.mix`, and `network.mix`, the network popup's snapshot).
 
 Templates: `panel` (bottom panel, page `scene-panel`), `launcher`, `calendar`,
-`notes` and `settings`. The loader copies a template into the user's scenes directory
+`notes`, `network` and `settings`. The loader copies a template into the user's scenes directory
 only on `scenes.install`; it never enables discovered directories
 automatically. Installed under their own names these reuse the legacy panel
 citizen's page IDs, so the loader keeps them unmounted while `quoin-panel` is
@@ -51,9 +51,14 @@ node block here and nowhere else. The template mounts on the right edge; edit
 | `requires` | list of Bus service names | shown as "needs …" while not registered |
 | `hidden` | bool | not listed by `scenes.templates` |
 
-The five shipped templates are the Recommended set: `panel` (order 10,
+The six shipped templates are the Recommended set: `panel` (order 10,
 requires `comp` and `apps`), `launcher` (20, `apps`), `calendar` (30),
-`notes` (40, `notify`) and `settings` (50).
+`notes` (40, `notify`), `network` (45) and `settings` (50).
+
+`network` is read-only: links and addresses from rtnetlink, plus
+systemd-networkd, systemd-resolved and the default routes when their tools
+answer (`networkctl`, `resolvectl`, `ip -j`). A missing daemon degrades to
+the kernel's view; the popup never changes network state.
 
 ## The editor helpers and legacy template
 
