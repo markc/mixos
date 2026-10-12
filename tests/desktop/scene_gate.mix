@@ -1,9 +1,9 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- scene_gate.mix — Mix Scenes host gate for nested compd (scene-host).
--- version: 0.6.1
+-- version: 0.7.0
 --
 --   mix tests/desktop/scene_gate.mix <compd-binary> [--config-file PATH] [--idle-secs N] [--scale S]
---       [--compare-layout PATH] [--json]
+--       [--compare-layout PATH] [--doc PATH]... [--json]
 --
 -- `--scale S` runs compd's nested output at S: compd is
 -- passed `--scale=S` (its window then asks for 1280x800 × S physical, so the
@@ -55,6 +55,10 @@
 --   S7. IDLE: pointer parked outside the scene, 2 s settle, then ZERO frames
 --       over --idle-secs (default 5) with the scene static;
 --   S8. unload: layout answers NOT_FOUND.
+--   S9. each `--doc PATH` (a shipped scene document, its model header
+--       filled in): load, pin its edge, applied, visible with every shown
+--       node inside the surface, compd alive, unload. A new popup's first
+--       drawn passes, nested, before any VT4 install.
 --   GL. the whole run's compositor.log holds no `No array object bound`
 --       (the UI's wgpu draws refused for want of a vertex array: the
 --       scene measured and clicked but drew nothing, unseen by S1–S8).
@@ -67,7 +71,7 @@
 
 $args = args()
 if len($args) < 1 then
-  eprint("usage: scene_gate.mix <compd-binary> [--config-file PATH] [--idle-secs N] [--scale S] [--compare-layout PATH] [--json]")
+  eprint("usage: scene_gate.mix <compd-binary> [--config-file PATH] [--idle-secs N] [--scale S] [--compare-layout PATH] [--doc PATH]... [--json]")
   exit(2)
 end
 $bin = $args[0]
@@ -76,6 +80,7 @@ $idle_secs = 5
 $as_json = false
 $SCALE = 1
 $compare = nil
+$docs = []
 $i = 1
 while $i < len($args)
   $a = $args[$i]
@@ -98,6 +103,9 @@ while $i < len($args)
   elif $a == "--json" then
     $as_json = true
     $i = $i + 1
+  elif $a == "--doc" then
+    push($docs, $args[$i + 1])
+    $i = $i + 2
   else
     eprint("unknown option: " .. $a)
     exit(2)
@@ -640,6 +648,78 @@ end
 $gone = call($host, "shell.scene.layout", {scene: "gate"})
 if $gone.rc == 0 or $gone.reply.error_code != "NOT_FOUND" then
   fail("S8: layout after unload is not NOT_FOUND: rc " .. to_string($gone.rc) .. " " .. json_encode($gone.reply))
+end
+
+-- ── S9: shipped scene documents (--doc, optional) ───────────────────────
+-- Each document (a share/scenes scene.mix, its model header filled with a
+-- real model) loads, pins its edge, reaches applied_revision == revision,
+-- comes to rest visible with every shown node measured inside its surface
+-- and its lists' first rows measured, then unloads. compd must still be
+-- alive afterwards. A new popup's first drawn passes run here, nested,
+-- before any VT4 install.
+$doc_results = []
+for each $path in $docs
+  $src = read_file($path)
+  if $src == nil then fail("S9: cannot read --doc " .. $path) end
+  $name = nil
+  $edge = nil
+  for each $line in split(before(after($src, "---\n"), "\n---"), "\n")
+    if starts_with($line, "name: ") then $name = trim(after($line, "name: ")) end
+    if starts_with($line, "window: ") then $edge = json_parse(after($line, "window: ")).edge end
+  end
+  if $name == nil or $edge == nil then fail("S9: " .. $path .. " has no name or no edge window") end
+  $ld = call($host, "shell.scene.load", {source: $src})
+  if $ld.rc != 0 then fail("S9 " .. $name .. " shell.scene.load: rc " .. to_string($ld.rc) .. " " .. json_encode($ld.reply)) end
+  $pin = call($host, "shell.panel.mode", {edge: $edge, mode: "pinned"})
+  if $pin.rc != 0 then fail("S9 " .. $name .. " shell.panel.mode pinned: rc " .. to_string($pin.rc) .. " " .. json_encode($pin.reply)) end
+  $t = 0
+  $w = nil
+  $drawn = false
+  while $t < 50 and not $drawn
+    $r = call($host, "shell.scene.watch", {scene: $name})
+    if $r.rc == 0 then
+      $w = $r.reply
+      $drawn = $w.revision >= 1 and $w.applied_revision == $w.revision
+    end
+    if not $drawn then
+      sleep(0.1)
+      $t = $t + 1
+    end
+  end
+  if not $drawn then fail("S9 " .. $name .. ": the renderer never applied the load: watch " .. json_encode($w)) end
+  $t = 0
+  $D = nil
+  while $t < 30 and $D == nil
+    $r = call($host, "shell.scene.layout", {scene: $name})
+    if $r.rc == 0 and $r.reply.visible and $r.reply.surface.w > 0 then
+      sleep(0.3)
+      $D = call($host, "shell.scene.layout", {scene: $name}).reply
+    else
+      sleep(0.1)
+      $t = $t + 1
+    end
+  end
+  if $D == nil then fail("S9 " .. $name .. ": never visible: " .. json_encode($r.reply)) end
+  $shown = 0
+  for each $id, $rect in $D.nodes ?? {}
+    if $rect.hidden then continue end
+    -- Bounds only: an empty text measures zero wide, and that is drawn right.
+    $within = $rect.x >= 0 and $rect.y >= 0 and $rect.x + $rect.w <= $D.surface.w + 0.5 and $rect.y + $rect.h <= $D.surface.h + 0.5
+    if not $within then fail("S9 " .. $name .. ": node " .. $id .. " outside the surface " .. json_encode($D.surface) .. ": " .. json_encode($rect)) end
+    $shown = $shown + 1
+  end
+  if $shown == 0 then fail("S9 " .. $name .. ": no node measured: " .. json_encode($D)) end
+  $rows = 0
+  for each $list, $insts in $D.instances ?? {}
+    for each $rid, $rect in $insts
+      $rows = $rows + 1
+    end
+  end
+  if not alive($cp) then fail("S9 " .. $name .. ": compd exited while drawing it") end
+  $u = call($host, "shell.scene.unload", {scene: $name})
+  if $u.rc != 0 then fail("S9 " .. $name .. " shell.scene.unload: rc " .. to_string($u.rc) .. " " .. json_encode($u.reply)) end
+  push($doc_results, {scene: $name, surface: $D.surface, nodes: $shown, rows: $rows})
+  print("S9 " .. $name .. ": drawn; " .. to_string($shown) .. " nodes inside " .. json_encode($D.surface) .. ", " .. to_string($rows) .. " list rows")
 end
 
 -- GL (whole run): a wgpu draw refused for want of a vertex array is dropped

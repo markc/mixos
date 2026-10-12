@@ -11,7 +11,7 @@ fn check($ok, $message)
   if not $ok then raise("SCENE_TEMPLATE_TEST", $message) end
 end
 check(date_format(0, "%z") == "+0000", "UTC timezone was not applied")
-for each $name in ["launcher", "calendar", "notes"]
+for each $name in ["launcher", "calendar", "notes", "network"]
   $directory = $root .. "/share/scenes/" .. $name
   $metadata = data_parse(read_file($directory .. "/template.conf.mix"))
   check($metadata.name == $name and $metadata.behaviour == "behaviour.mix", "strict metadata: " .. $name)
@@ -562,4 +562,69 @@ for each $id, $node in fence($panel_source)
   end
 end
 check($tipped == 9, "launcher, pager, tasks, tray, notes, volume, network, clock and peek have tips (" .. to_string($tipped) .. ")")
+
+-- ── the network popup: read-only links, addresses, route and DNS ─────────
+$net_lib = require($root .. "/share/scenes/lib/network.mix")
+$net_dir = $root .. "/share/scenes/network"
+$net_meta = data_parse(read_file($net_dir .. "/template.conf.mix"))
+check($net_meta.name == "network" and $net_meta.behaviour == "behaviour.mix" and $net_meta.hidden == nil, "network metadata: listed, with a behaviour")
+$net_src = read_file($net_dir .. "/scene.mix")
+check(header($net_src, "citizen") == "scene-network" and json_parse(header($net_src, "window")).kind == "edge", "network is an edge popup with its own citizen")
+$net_nodes = fence($net_src)
+check($net_nodes.root.widget == "column", "network root is a column")
+for each $id, $node in $net_nodes
+  check($node.text == nil or $node.text == "●" or bound($node.text), "network text is model-bound (the strings table): " .. $id)
+end
+check(deep_eq(sort(keys(json_parse(header($net_src, "model")))), sort(keys($models.network(nil)))), "the network default model declares every key")
+check(fence($panel_source).st_net.on_click == "network", "the panel's network button opens the popup")
+check($models.panel({open: {network: true}}, {}, 0).network.background != nil and $models.panel({}, {}, 0).network.background == nil, "the network button tints while its popup is open")
+
+-- The tools' JSON, as systemd 262 and iproute2 print it (trimmed).
+$nd = $net_lib.parse_networkd({Interfaces: [
+  {Index: 1, Name: "lo", Type: "loopback", AdministrativeState: "unmanaged", OperationalState: "carrier"},
+  {Index: 2, Name: "eth0", Type: "ether", Kind: "veth", AdministrativeState: "configured", OperationalState: "routable"},
+  {Index: 3, Name: "wlan0", Type: "wlan", AdministrativeState: "configured", OperationalState: "routable", SSID: "Example Net"},
+  {Index: 4, Type: "ether"}]})
+check(deep_eq($nd.eth0, {admin: "configured", oper: "routable", kind: "veth", ssid: ""}) and $nd.wlan0.ssid == "Example Net" and length(keys($nd)) == 3, "networkd: per-link state, a nameless entry skipped")
+check($net_lib.parse_networkd(nil) == nil and $net_lib.parse_networkd({}) == nil, "networkd absent is nil")
+$rd = $net_lib.parse_resolved([
+  {servers: [{addressString: "127.0.0.1", ifindex: 1}]},
+  {ifname: "wlan0", ifindex: 3, servers: [{addressString: "192.0.2.1"}, {address: [1]}]},
+  {ifname: "eth0", ifindex: 2}])
+check(deep_eq($rd, {global: ["127.0.0.1"], links: {wlan0: ["192.0.2.1"]}}), "resolved: global and per-link servers")
+check($net_lib.parse_resolved("nope") == nil, "resolved absent is nil")
+$rt = $net_lib.parse_routes([{dst: "default", gateway: "198.51.100.1", dev: "eth0", metric: 600}, {dst: "default", gateway: "192.0.2.254", dev: "wlan0", metric: 100}, {dst: "default"}])
+check(deep_eq($rt, [{gateway: "192.0.2.254", dev: "wlan0", metric: 100}, {gateway: "198.51.100.1", dev: "eth0", metric: 600}]), "routes: lowest metric first, a dev-less entry skipped")
+check($net_lib.sys_kind("no-such-link", "/nonexistent") == nil, "sysfs kind: a missing link is nil")
+
+$net_snap = {
+  links: [{ifname: "lo", index: 1, loopback: true, up: true, wireless: false},
+    {ifname: "eth0", index: 2, loopback: false, up: true, wireless: false},
+    {ifname: "wlan0", index: 3, loopback: false, up: true, wireless: true},
+    {ifname: "wg0", index: 4, loopback: false, up: false, wireless: false}],
+  addresses: [{ifname: "wlan0", family: "inet", address: "192.0.2.10", prefix: 24},
+    {ifname: "wlan0", family: "inet6", address: "fe80::1", prefix: 64},
+    {ifname: "wlan0", family: "inet6", address: "2001:db8::10", prefix: 64},
+    {ifname: "eth0", family: "inet", address: "198.51.100.7", prefix: 24}],
+  kinds: {lo: "virtual", eth0: "ether", wlan0: "wlan", wg0: "wireguard"},
+  routes: $rt, networkd: $nd, resolved: $rd}
+$net = $models.network($net_snap)
+check($net.summary == "Connected via wlan0 (Wireless)" and $net.count == "3 interfaces", "summary: the default-route link and the non-loopback count")
+check(deep_eq(map($net.rows, function ($row) = $row.name), ["wlan0", "eth0", "wg0"]), "default route first, then up, then down; loopback left out")
+check(deep_eq($net.rows[0], {id: "if_wlan0", cells: [], name: "wlan0", sub: "Wireless · up · Example Net",
+  addresses: "192.0.2.10/24  2001:db8::10/64", detail: "default route · networkd: configured · DNS 192.0.2.1", has_detail: true, dot: "#27ae60"}), "a full row: kind, SSID, link-local dropped, networkd and DNS")
+check($net.rows[2].sub == "WireGuard · down" and $net.rows[2].addresses == "No addresses" and $net.rows[2].dot == "#6e7680", "a down link")
+check($net.gateway == "192.0.2.254 on wlan0" and $net.dns == "192.0.2.1" and not $net.has_note, "route and the default link's DNS")
+$bare = $net_snap
+$bare.networkd = nil
+$bare.resolved = nil
+$bare.routes = []
+$bare_model = $models.network($bare)
+check($bare_model.summary == "Connected, no default route" and $bare_model.has_note and not $bare_model.has_dns and not $bare_model.has_gateway, "kernel-only: no route, no DNS, and it says why")
+check($bare_model.rows[0].detail == "" and not $bare_model.rows[0].has_detail, "kernel-only rows carry no networkd detail")
+$down = $bare
+$down.links = [$net_snap.links[0], {ifname: "eth0", index: 2, loopback: false, up: false, wireless: false}]
+check($models.network($down).summary == "Offline", "nothing up is offline")
+$fresh = $models.network(nil)
+check($fresh.empty and not $fresh.has_note and $fresh.summary == "Offline", "before the first snapshot: empty, no networkd note")
 print("scene-template-test: exact captures, models, caps, payloads and capabilities OK")

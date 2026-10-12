@@ -1,0 +1,134 @@
+-- version: 0.1.0
+-- The network popup: links, addresses, default route and DNS, read-only.
+-- rtnetlink link and address events (net_watch) re-read the whole snapshot
+-- (events are hints, state is truth); networkd, resolved and the route table
+-- are read with their own tools on each batch. There is no polling fallback.
+$LIB = env("SCENES_LIB", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mixos/scenes/lib")
+$r = require($LIB .. "/runtime.mix")
+$m = require($LIB .. "/models.mix")
+$n = require($LIB .. "/network.mix")
+$ctx = $r.scene_context("network")
+$state = {ready: false, queued: false, sequence: 0, model: $m.network(nil),
+  watch: nil, started: 0, retry: 5, retrying: false}
+
+fn schedule()
+  $state.sequence = $state.sequence + 1
+  if $state.ready and not $state.queued then
+    $state.queued = true
+    emit $ctx.citizen refresh
+  end
+end
+
+fn refresh()
+  if not $state.ready then return $r.failure("scene_not_ready", "Waiting for loader readiness") end
+  $sequence = $state.sequence
+  try
+    $snap = $n.snapshot()
+  catch $message
+    return $r.failure("net_state_failed", to_string($message))
+  end
+  if not $state.ready or $sequence != $state.sequence then return $r.failure("superseded", "A newer network event replaced this snapshot") end
+  $state.model = $m.network($snap)
+  return $r.publish_model($ctx, $state.model)
+end
+
+-- Only an I/O failure is retried (a local backoff); any other refusal (the
+-- handle limit, a retired evaluator) is terminal and logged once.
+fn start_watch()
+  if $state.watch != nil then return end
+  if not has_builtin("net_watch") then
+    eprint("network: link events unavailable: this mix has no net_watch")
+    return
+  end
+  try
+    $state.watch = net_watch({events: ["link", "addr"]})
+    $state.started = monotonic()
+  catch $message, $error
+    eprint("network: net_watch failed: " .. to_string($message))
+    if $error.code == "NET_WATCH_IO" then retry_watch() end
+  end
+end
+
+-- The link socket failed: subscribe again after a delay doubling to five
+-- minutes. A reconnect backoff, not a state poll.
+fn retry_watch()
+  if $state.retrying then return end
+  $state.retrying = true
+  try
+    task_start("net.retry", "{}")
+  catch $message
+    $state.retrying = false
+    eprint("network: net retry not scheduled: " .. to_string($message))
+  end
+end
+
+on refresh async
+  $state.queued = false
+  $r.respond(refresh())
+end
+
+-- A closed batch from the live handle re-subscribes after the backoff; one
+-- from an older handle (already replaced) changes nothing.
+on net.changed async
+  if len(keys($event.headers)) != 0 then return end
+  $batch = type($event.args) == "map" ? $event.args : {}
+  if type($batch.closed) == "map" then
+    eprint("network: net_watch ended: " .. to_string($batch.closed.message))
+    if $batch.watch != $state.watch then return end
+    try
+      net_unwatch($batch.watch)
+    catch $e
+    end
+    $state.watch = nil
+    -- A subscription that outlived the delay was a working one: start over.
+    if monotonic() - $state.started >= $state.retry then $state.retry = 5 end
+    retry_watch()
+  end
+  schedule()
+end
+
+on net.retry async
+  if len(keys($event.headers)) != 0 then return end
+  try
+    sleep($state.retry)
+    $state.retry = min($state.retry * 2, 300)
+  finally
+    $state.retrying = false
+  end
+  start_watch()
+  schedule()
+end
+
+on network.open
+  $r.respond($r.popup($ctx, "open"))
+end
+on network.close
+  $r.respond($r.popup($ctx, "close"))
+end
+on network
+  $r.respond($r.popup($ctx, "toggle"))
+end
+on network.state
+  reply(0, json_encode({summary: $state.model.summary, count: length($state.model.rows)}))
+end
+on props.changed
+  $a = $r.event_args($event)
+  if not $state.ready and $a.path == "services.registered" then
+    $ready = $r.ready($ctx)
+    $state.ready = $ready.ok
+    if $state.ready then schedule() end
+  end
+end
+on bus.connected
+  if len(keys($event.headers)) != 0 then return end
+  $state.ready = false
+  $ready = $r.ready($ctx)
+  $state.ready = $ready.ok
+  schedule()
+end
+subscribe(env("NODED_SERVICE", "noded") .. ".props.changed")
+$ready = $r.ready($ctx)
+if not $ready.ok then raise("SCENE_READY", json_encode($ready.value)) end
+$state.ready = true
+start_watch()
+schedule()

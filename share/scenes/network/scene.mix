@@ -1,0 +1,31 @@
+---
+scene: 1
+name: network
+citizen: scene-network
+window: {"chrome":false,"edge":"right","kind":"edge","title":"Network","w":400}
+model: {"count":"","dns":"","dns_label":"","empty":true,"empty_text":"","gateway":"","has_dns":false,"has_gateway":false,"has_note":false,"note":"","route_label":"","rows":[],"summary":"","title":""}
+---
+```mix
+root: {"children":["nh","n_summary","n_route","n_dns","n_note","n_empty","n_list"],"fill":true,"gap":10,"padding":16,"widget":"column"}
+nh: {"align":"center","children":["nh_t","nh_fill","nh_count"],"gap":8,"widget":"row"}
+nh_t: {"bold":true,"color":"#fcfcfc","size":18,"text":"= $model.title","widget":"text"}
+nh_fill: {"widget":"spacer"}
+nh_count: {"color":"#6e7680","size":12,"text":"= $model.count","widget":"text"}
+n_summary: {"color":"#a1a9b1","size":13,"text":"= $model.summary","widget":"text"}
+n_route: {"children":["n_route_l","n_route_v"],"gap":8,"hidden":"= not $model.has_gateway","widget":"row"}
+n_route_l: {"color":"#6e7680","size":12,"text":"= $model.route_label","widget":"text","width":96}
+n_route_v: {"color":"#fcfcfc","elide":true,"fill":true,"size":12,"text":"= $model.gateway","widget":"text"}
+n_dns: {"children":["n_dns_l","n_dns_v"],"gap":8,"hidden":"= not $model.has_dns","widget":"row"}
+n_dns_l: {"color":"#6e7680","size":12,"text":"= $model.dns_label","widget":"text","width":96}
+n_dns_v: {"color":"#fcfcfc","elide":true,"fill":true,"size":12,"text":"= $model.dns","widget":"text"}
+n_note: {"color":"#6e7680","hidden":"= not $model.has_note","size":11,"text":"= $model.note","widget":"text"}
+n_empty: {"color":"#6e7680","hidden":"= not $model.empty","size":13,"text":"= $model.empty_text","widget":"text"}
+n_list: {"fill":true,"gap":6,"hidden":"= $model.empty","row":"n_row","row_height":84,"rows":"= $model.rows","widget":"list"}
+n_row: {"align":"center","background":"#2a2e32","children":["n_dot","n_col"],"gap":10,"height":84,"padding":12,"radius":10,"widget":"row"}
+n_dot: {"color":"= $item.dot","size":12,"text":"●","widget":"text"}
+n_col: {"children":["n_name","n_sub","n_addr","n_detail"],"fill":true,"gap":2,"widget":"column"}
+n_name: {"bold":true,"color":"#fcfcfc","elide":true,"size":14,"text":"= $item.name","widget":"text"}
+n_sub: {"color":"#a1a9b1","elide":true,"size":12,"text":"= $item.sub","widget":"text"}
+n_addr: {"color":"#fcfcfc","elide":true,"size":12,"text":"= $item.addresses","widget":"text"}
+n_detail: {"color":"#6e7680","elide":true,"hidden":"= not $item.has_detail","size":11,"text":"= $item.detail","widget":"text"}
+```
