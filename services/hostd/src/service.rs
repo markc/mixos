@@ -411,7 +411,11 @@ fn status(host: &Host, origin: &Origin) -> Value {
                 Origin::Bus => vec![],
             };
             let names: Vec<&str> = grants.iter().map(|g| g.name.as_str()).collect();
-            (json!({"grants": policy.grants.len()}), json!(names), json!(grants))
+            (
+                json!({"grants": policy.grants.len()}),
+                json!(names),
+                json!(grants),
+            )
         }
         Err(error) => (json!({"error": error.to_string()}), json!([]), json!([])),
     };
@@ -860,7 +864,10 @@ mod tests {
         assert_eq!(s["held_grants"][0]["name"], "agent");
         assert_eq!(s["held_grants"][0]["limits"]["links"], json!(["hd0"]));
         assert_eq!(s["held_grants"][1]["verbs"], json!(["net.link.apply"]));
-        assert_eq!(s["held_grants"][0]["rate"], json!({"count": 1, "per_s": 600}));
+        assert_eq!(
+            s["held_grants"][0]["rate"],
+            json!({"count": 1, "per_s": 600})
+        );
         // A caller with no grant gets empty lists, never someone else's.
         let stranger = caller(1000, "/user.slice/x");
         let s = dispatch(&host, "hostd.status", &json!({}), &stranger)
