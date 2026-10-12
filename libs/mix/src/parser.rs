@@ -1599,7 +1599,8 @@ impl Parser {
 
     /// A TIGHT-HYPHENATED bare service word (`shell-ctl88`, `comp-nested`,
     /// `desktop-vt1`) read whole from the raw source, or `None` to leave
-    /// the target on the expression path untouched.
+    /// the target on the expression path untouched. The `on` header uses
+    /// it too, for topics under a hyphenated service.
     ///
     /// Hyphens are ordinary in Bus service names, but `-` is also the
     /// subtraction operator, so `send shell-ctl88 shell.debug.status`
@@ -1836,8 +1837,17 @@ impl Parser {
         // whole first segment and the evaluator replaces it with the
         // `--serve` name when the handler registers. The AST keeps the
         // static `@.verb` form so lint and listings still see a name.
+        //
+        // A hyphenated name (`on dopus-test.command.executed`) is read whole
+        // by the same scan as a `send` target. Without it the header stopped
+        // at the hyphen: the handler registered as `dopus` and
+        // `-test.command.executed` became its body, so it parsed, linted
+        // clean and never fired. Nothing valid changes meaning: a body that
+        // starts by negating a bareword was always a runtime error.
         let command = if self.peek() == &Token::At {
             self.parse_serve_prefixed_name()?
+        } else if let Some(name) = self.take_hyphenated_service_word() {
+            name
         } else if matches!(self.peek(), Token::String(_)) || self.at_keyword_led_dotted_name() {
             let span = self.peek_span();
             let name = self.parse_bus_dotted_name()?;

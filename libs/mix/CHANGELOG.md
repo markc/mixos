@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.113.1
+
+### Fixed
+
+- An `on` header reads a hyphenated name whole, like a `send` target:
+  `on dopus-test.command.executed` handles that topic. Before, the header
+  stopped at the hyphen, so the handler registered as `dopus` with
+  `-test.command.executed` as its body: it parsed, linted clean and never
+  fired. Leading-zero segments (`on svc-01.ping`) lex as part of the name,
+  as they do after `send`.
+
 ## 0.113.0
 
 ### Added

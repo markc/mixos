@@ -395,7 +395,7 @@ All-digit segments are fine bare, including malformed-looking ones: `svc-1`,
 multi-dot segment as a bad NUMBER and refused the line
 (`ambiguous leading-zero number '007'`, an error that never mentioned `send`);
 it now lexes such a segment as part of the word when it sits in the bare target
-right after `send`/`emit`/`address`. Everywhere else — `$x = 007`, a
+right after `send`/`emit`/`address`, or in an `on` header (0.113.1). Everywhere else — `$x = 007`, a
 `$var-007` target, a hyphenated command — the refusal is unchanged.
 
 Nothing that worked before changed meaning: the shape *requires* a hyphen, so
@@ -554,6 +554,13 @@ end
 The `<command>` is a dotted name whose segments may be Mix keywords
 (`on ced.select`, `on print.page`) — see
 [keyword segments](#verb-names-with-keyword-segments-mix-0962).
+A hyphenated name is read whole, with the same shape and the same two
+quoting exceptions as a [hyphenated `send` target](#send-and-the-verified-session-lane):
+`on dopus-test.command.executed` handles that topic (mix ≥ 0.113.1). Before
+0.113.1 the header stopped at the hyphen, so the handler registered as
+`dopus` and `-test.command.executed` became its body: it parsed, linted
+clean and never fired. The quoted form, `on "dopus-test.command.executed"`,
+works in every version.
 
 Legacy `done` still closes `on` (with a deprecation warning); prefer `end`.
 

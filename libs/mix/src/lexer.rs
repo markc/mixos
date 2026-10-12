@@ -614,7 +614,7 @@ impl Lexer {
     }
 
     /// Is the number starting at `token_start` a tight `-`-joined segment of
-    /// the bare word right after `send` / `emit` / `address` — the target
+    /// the bare word right after `send` / `emit` / `address` / `on` — the name
     /// position the parser's `take_hyphenated_service_word` reads whole?
     /// Mirrors that scan's shape: the word starts with an ASCII letter or
     /// `_` and runs over alphanumerics, `_`, `-` and `.`, and the keyword
@@ -645,7 +645,7 @@ impl Lexer {
             j -= 1;
         }
         let keyword: String = src[j..kw_end].iter().collect();
-        matches!(keyword.as_str(), "send" | "emit" | "address")
+        matches!(keyword.as_str(), "send" | "emit" | "address" | "on")
     }
 
     fn lex_number(&mut self, line: usize, col: usize) -> MixResult<SpannedToken> {

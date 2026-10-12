@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.113.1
+
+### Fixed
+
+- Built on mix 0.113.1: `on dopus-test.command.executed` (a hyphenated
+  handler name) now fires; before, it parsed and never did. `mix man bus`
+  documents it.
+
 ## 0.113.0
 
 ### Added
