@@ -1118,9 +1118,14 @@ mod tests {
             ran(&mut core, true, "dopus.action", hidden).as_deref(),
             Some("view.toggle-hidden")
         );
-        assert_eq!(ran(&mut core, true, "dopus.action", r#"{"id":"file.delete"}"#), None);
-        assert_eq!(ran(&mut core, true, "dopus.action", r#"{"id":"view.toggle-places"}"#), None);
-        assert_eq!(ran(&mut core, true, "dopus.state", "{}"), None);
+        // A file action, a sidebar headless (no window), another verb.
+        for (verb, body) in [
+            ("dopus.action", r#"{"id":"file.delete"}"#),
+            ("dopus.action", r#"{"id":"view.toggle-places"}"#),
+            ("dopus.state", "{}"),
+        ] {
+            assert_eq!(ran(&mut core, true, verb, body), None, "{verb} {body}");
+        }
     }
 
     #[test]
