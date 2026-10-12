@@ -295,8 +295,15 @@ end
 on network
   $r.respond($r.popup($ctx, "toggle"))
 end
+-- Read-only state for agents and tests: which links this panel may
+-- configure (its hostd grant), the hostd note, and a write in flight.
 on network.state
-  reply(0, json_encode({summary: $state.model.summary, count: length($state.model.rows)}))
+  $editable = []
+  for each $row in $state.model.rows
+    if $row.editable then push($editable, $row.name) end
+  end
+  reply(0, json_encode({summary: $state.model.summary, count: length($state.model.rows),
+    editable: $editable, hostd_note: $state.model.hostd_note, writing: $state.inflight}))
 end
 on props.changed
   $a = $r.event_args($event)
