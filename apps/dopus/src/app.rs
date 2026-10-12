@@ -107,6 +107,9 @@ pub struct App {
     pub theme: toolkit::theme_menu::Choice,
     /// Work for the shell.
     pub effects: Vec<Effect>,
+    /// Actions `dopus.action` accepted, oldest first, for the shell to
+    /// publish on `dopus.command.executed` once their effects are done.
+    pub ran: Vec<String>,
     pub quitting: bool,
     /// Bus drive input (`dopus.ui.*`) is playing this frame. File actions,
     /// accepting a dialog that changes files, and opening files are refused
@@ -128,6 +131,7 @@ impl App {
             status: None,
             theme: toolkit::theme_menu::Choice::default(),
             effects: Vec::new(),
+            ran: Vec::new(),
             quitting: false,
             driven: false,
         }
@@ -218,7 +222,14 @@ impl App {
     /// [`App::effects`].
     pub fn serve(&mut self, command: &verbs::Command, meta: &ServerMeta) {
         let info = buildinfo::build_info!();
-        for served in verbs::serve_command(command, &mut self.core, meta, &info) {
+        let served = verbs::serve_command(command, &mut self.core, meta, &info);
+        if command.verb == "dopus.action" && served.iter().any(Served::accepts) {
+            let body: serde_json::Value = serde_json::from_str(&command.body).unwrap_or_default();
+            if let Some(id) = body.get("id").and_then(|v| v.as_str()) {
+                self.ran.push(id.to_owned());
+            }
+        }
+        for served in served {
             match served {
                 Served::Reply { id, rc, body } => self.effects.push(Effect::Reply { id, rc, body }),
                 Served::ToggleSidebar {
@@ -582,6 +593,21 @@ mod tests {
             &a.effects[..],
             [Effect::Reply { id: 9, rc: 0, .. }]
         ));
+        // An accepted action is left for dopus.command.executed; refused
+        // ones (a file action, an unknown id) are not.
+        for (id, body) in [
+            (10, r#"{"id":"view.toggle-hidden"}"#),
+            (11, r#"{"id":"file.delete"}"#),
+            (12, r#"{"id":"nope.nothing"}"#),
+        ] {
+            let command = verbs::Command {
+                id,
+                verb: "dopus.action".into(),
+                body: body.into(),
+            };
+            a.serve(&command, &meta);
+        }
+        assert_eq!(a.ran, ["view.toggle-places", "view.toggle-hidden"]);
     }
 
     /// Drive input (`dopus.ui.*`) runs no file action and accepts no dialog

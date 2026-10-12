@@ -332,6 +332,11 @@ impl Served {
         }
     }
 
+    /// Whether this answer accepts the command: anything but a refusal.
+    pub fn accepts(&self) -> bool {
+        !matches!(self, Self::Reply { rc, .. } if *rc != 0)
+    }
+
     pub fn error(id: u64, error_code: &str, message: String) -> Self {
         Self::refusal(
             id,

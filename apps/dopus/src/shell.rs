@@ -271,6 +271,7 @@ impl Shell {
                     let meta = self.meta();
                     self.app.serve(&cmd, &meta);
                     self.perform();
+                    self.note_bus_runs();
                 }
             }
         }
@@ -618,6 +619,17 @@ impl Shell {
                 .send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.title = title;
         }
+    }
+
+    /// Record the actions `dopus.action` ran (their effects done) as Bus
+    /// runs of their commands, and publish them.
+    fn note_bus_runs(&mut self) {
+        for id in std::mem::take(&mut self.app.ran) {
+            if self.commands.get(&id).is_some() {
+                self.commands.note(&id, toolkit::command::Origin::Bus);
+            }
+        }
+        self.publish_executed();
     }
 
     /// Publish the commands run since the last call on
