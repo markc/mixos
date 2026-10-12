@@ -468,7 +468,8 @@ fn toggle_popup($key)
   -- (SCENES_DISABLED) stays off: that was the user's choice.
   if not $out.ok and loader_error($out) == "SCENES_NOT_FOUND" then
     $add = $r.call($ctx.loader, "scenes.install", {template: $POPUPS[$key], enable: true})
-    if not $add.ok then return $add end
+    -- Two quick clicks both install; the second finds it there (COLLISION).
+    if not $add.ok and loader_error($add) != "SCENES_COLLISION" then return $add end
     $out = $r.call($ctx.loader, "scenes.toggle", {name: $POPUPS[$key]})
   end
   if $out.ok and type($out.value) == "map" then
