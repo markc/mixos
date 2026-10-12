@@ -205,7 +205,10 @@ impl TabSet {
     pub(crate) fn titles_changed(&self) -> Arc<tokio::sync::Notify> {
         self.titles_changed.clone()
     }
-    pub(crate) fn refresh_titles(&mut self) {
+    /// Bring each tab's title up to date: its pinned title, else its
+    /// active pane's OSC title. Frontends call it on a wake, so a program's
+    /// title shows without a Bus watcher.
+    pub fn refresh_titles(&mut self) {
         let mut changed = Vec::new();
         for tab in &mut self.tabs {
             let title = tab.user_title.clone().unwrap_or_else(|| {
@@ -229,7 +232,8 @@ impl TabSet {
             self.notify();
         }
     }
-    pub(crate) fn set_title(&mut self, id: u64, title: String) -> Result<(), String> {
+    /// Pin tab `id`'s title (`term.tab.title`); an empty one unpins it.
+    pub fn set_title(&mut self, id: u64, title: String) -> Result<(), String> {
         let tab = self
             .tabs
             .iter_mut()

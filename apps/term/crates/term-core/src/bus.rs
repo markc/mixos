@@ -4,9 +4,123 @@ use ::bus::native_client::{
     BoundedIncomingEvent, IncomingCommand, SupervisedClient, SupervisedError,
 };
 use std::{
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
+
+/// The verbs this lane serves on the global name (INFO and HELP aside),
+/// each with whether it only reads: what `app.describe` lists for them.
+pub const VERBS: [(&str, bool); 15] = [
+    ("term.session", true),
+    ("term.tabs", true),
+    ("term.tab.new", false),
+    ("term.tab.select", false),
+    ("term.tab.close", false),
+    ("term.tab.title", false),
+    ("term.tab.move", false),
+    ("term.panes", true),
+    ("term.pane.split", false),
+    ("term.pane.close", false),
+    ("term.pane.select", false),
+    ("term.snapshot", true),
+    ("term.scroll", false),
+    ("term.type", false),
+    ("term.props.watch", false),
+];
+
+/// The window side of a frontend's Bus name: the verbs its shell answers
+/// itself (drive verbs, its command registry, `app.describe`), the topic
+/// frames it subscribed, and the events it publishes. The lane stays the
+/// only reader of the connection; the shell answers on its own thread.
+pub struct Window {
+    /// Whether the shell answers `verb`: a canonical `term.*` name or a
+    /// protocol verb such as `app.describe`.
+    pub answers: fn(&str) -> bool,
+    /// Where those verbs and the topic frames go; `wake` runs after each.
+    pub events: std::sync::mpsc::Sender<WindowEvent>,
+    pub wake: crate::terminal::Wake,
+    /// The shell's topic events (`<name>.command.executed`), published
+    /// once the name is registered.
+    pub outbox: Arc<citizen::outbox::Outbox>,
+    /// Set once the name is registered.
+    pub link: Arc<OnceLock<Link>>,
+}
+
+/// The registered connection, for a shell that calls and subscribes.
+pub struct Link {
+    /// The name registered: the frontend's service, or `<service>-<pid>`
+    /// when another instance holds it.
+    pub name: String,
+    pub client: Arc<SupervisedClient>,
+    /// The lane's runtime, for the shell's calls and timers.
+    pub runtime: tokio::runtime::Handle,
+}
+
+/// Something for the window from the Bus.
+#[derive(Debug)]
+pub enum WindowEvent {
+    /// A verb the window answers, in the canonical namespace; the answer
+    /// is `(rc, body)`. Dropping `reply` answers that the window is closing.
+    Command {
+        verb: String,
+        body: String,
+        reply: tokio::sync::oneshot::Sender<(u8, String)>,
+    },
+    /// A frame on a topic the shell subscribed.
+    Topic { topic: String, body: String },
+}
+
+const WINDOW_CLOSING: &str = r#"{"error_code":"BUSY","message":"the window is closing"}"#;
+
+/// A window verb's command and the answer it is waiting for.
+type WindowReply = (IncomingCommand, u8, String);
+
+/// Hand `command` to the window when it is a topic frame or a verb the
+/// window answers; otherwise give it back for this lane to serve.
+fn to_window(
+    service: &str,
+    window: &Window,
+    command: IncomingCommand,
+    replies: &mut tokio::task::JoinSet<WindowReply>,
+) -> Option<IncomingCommand> {
+    if let Some(topic) = command.topic() {
+        let _ = window.events.send(WindowEvent::Topic {
+            topic: topic.to_owned(),
+            body: command.body.clone(),
+        });
+        (window.wake)();
+        return None;
+    }
+    // The strict posture answers INFO and HELP only, window verbs included.
+    if !crate::control::mesh_open() {
+        return Some(command);
+    }
+    let verb = canonical_verb(service, &command.command)
+        .map(std::borrow::Cow::into_owned)
+        .filter(|verb| (window.answers)(verb))
+        .or_else(|| (window.answers)(&command.command).then(|| command.command.clone()));
+    let Some(verb) = verb else {
+        return Some(command);
+    };
+    let body = if command.body.trim().is_empty() {
+        "{}".to_owned()
+    } else {
+        command.body.clone()
+    };
+    let (reply, answer) = tokio::sync::oneshot::channel();
+    // A window that has gone drops `reply` with the event: answered below.
+    let _ = window
+        .events
+        .send(WindowEvent::Command { verb, body, reply });
+    (window.wake)();
+    replies.spawn(async move {
+        match answer.await {
+            Ok((rc, body)) => (command, rc, body),
+            Err(_) => (command, 10, WINDOW_CLOSING.to_owned()),
+        }
+    });
+    None
+}
 
 pub const HELP: &str = "term: tabbed Wayland Mix terminal\nMesh-open surface (2026-09-15 law): under the default posture (MIXOS_MESH_OPEN unset or != \"0\") this global name serves every verb below to any mesh or local caller, no grant required. Verbs are TARGETLESS — unless explicit pane/tab selectors are supplied, they act on the active tab/pane of the instance holding this name at delivery time (term.type excepted: it requires pane or tab); the frontend also starts target-bound control (instance/incarnation/pane_generation) on the allocated native-session route: list/session/tabs/panes/snapshot/type, execute, exec.result/cancel, task.submit/result/cancel, operation, props.get/set and tab/pane mutations. Use the allocated route HELP for target envelopes. These are not targetless verbs on this global name. Requires local noded >= 0.16.8 native ingress, MIXOS_RUN=/run/mixos and socket directory 0755; unavailable ingress leaves graphics working. MIXOS_MESH_OPEN=0 restores the strict diagnostic-only lane (INFO/HELP; everything else FORBIDDEN).\nINFO / HELP\nterm.tabs {}: list id, active, title, cols, rows, child_pid, revision, instance (this process's token)\nterm.tab.new {cwd?:<absolute existing directory>, title?:<string>}: open and activate a tab; the reply adds binding=granted (native launch grant delivered, enrolment async), graphics-only (no usable grant) or unavailable (no native session)\nterm.tab.select {\"id\":<integer>}: select tab\nterm.tab.close {\"id\":<integer>}: close tab; last tab quits\nterm.panes {tab?:<integer>}: list selected tab (default active tab) pane ids, focus, dimensions, child pids, logical geometry, tab, revision and instance (last layout only; hidden tabs may be stale or zero)\nterm.pane.split {\"dir\":\"h|horizontal|v|vertical\"}\nterm.pane.close {}: close active pane; last pane closes tab\nterm.pane.select {\"id\":<integer>}: select pane in active tab\nterm.snapshot {pane?:<integer>, tab?:<integer>, contents?:<boolean=true>, scrollback_lines?:<integer=0, max 10000>}: read-only selected live screen (offset zero, default active); buffered history above the live screen is capped at available lines; text has a 512 KiB encoded-byte budget, returns complete oldest-first rows with truncated and lines_returned; formatting happens after releasing capture locks; pane+tab must agree; contents=false omits text but keeps dimensions, cursor, child pid, byte counters and DIAGNOSTIC timings\nterm.scroll {pane?:<integer>, lines?:<signed integer>, page?:<signed integer>, to?:top|bottom}: exactly one of lines/page/to; positive lines or pages move up into history; pages overlap by one row; viewport only, snapshots stay live; returns JSON {pane,display_offset,history_lines}; stale pane is not-found; changed offsets publish pane.changed kind=scrolled when watching\nterm.type {pane:<integer> | tab:<integer>, instance?:<integer>, \"text\":\"<string>\"}: ASCII synthetic keys without changing focus; pane or tab is REQUIRED, neither is refused {error_code:INVALID_ARGUMENT} and never defaults to the active pane. pane is the SAFE selector; tab means that tab's active pane AT DELIVERY, so it still follows focus within the tab; both must agree. Pane/tab ids are per-process counters, so pass back the instance that term.tabs/term.panes/INFO reported: a different process refuses INVALID_ARGUMENT instead of typing into its own pane of that id. Keys go through the keyboard encoder, max 8192 bytes including JSON envelope; newline=Enter, tab, backspace, Ctrl+C/D supported; revokes any delegated control writer like real keys.\nterm.tab.title {id:<integer>, title:<string>}: pin a user title (controls stripped, max 256 UTF-8 bytes); empty after sanitising clears the pin and restores the active pane OSC title\nterm.tab.move {id:<integer>, index:<integer>}: reorder tab, clamping index to 0..len-1; focus is preserved\nterm.props.watch {}: first subscribe through noded topic.subscribe to term.tabs.changed, term.pane.changed and term.title.changed; then call this verb to enable caller-free publishing and return JSON {topics,revision}; then read current state. Bodies are {tab,pane,kind,revision}; revision is a separate monotonic event sequence, not the legacy layout revision. Bounded best-effort delivery; on a gap or reconnect read current state.\nBefore the first tab attaches, mutating verbs return non-zero rc with error starting. Retry after attach, including with the same request_id; starting refusals are not cached.\nEmpty body is {} for no-arg verbs; all term.* bodies must be JSON objects.\nAny MUTATING verb's body (tab.*, pane.*, type, scroll) may add \"request_id\":\"<string>\": a resend of the same request (same verb and arguments, key order free) replays the recorded reply instead of re-executing (last 128 remembered) — use it on every mutation you might resend. NOT recorded (the same id may be retried with the request fixed): starting, an oversized body, and every validation refusal — malformed JSON, unexpected/missing/mistyped arguments and any invalid-argument or INVALID_ARGUMENT reply (e.g. term.type without pane/tab, a pane/tab disagreement, a foreign instance). Recorded and replayed: successes and state refusals such as not-found, non-ASCII text and the tab limit. A reused id whose first attempt WAS recorded, sent with a different verb or arguments, is refused as a conflict. The replay is the recorded outcome of the ORIGINAL attempt; retrying after changing state (e.g. after freeing the tab limit) needs a fresh id. Reads never consult the cache and always answer current state.\nReplies echo the identity acted on as key=value tokens — tab=<id> pane=<id> revision=<tab-set revision> (tab.close: revision only; pane.close: tab and revision; list lines: revision, panes also tab) — so a caller can detect drift after the fact; it is detection, not binding.\nDIAGNOSTIC timings are process-side, never presented-frame evidence.";
 /// The one spelling the handlers in this crate are written in.
@@ -81,6 +195,26 @@ pub fn start(
         cleanup,
         notify_rx,
         ::bus::client_helpers::resolve_noded_url(),
+        None,
+    )
+}
+
+/// [`start`] for a frontend whose window answers verbs of its own
+/// ([`Window`]).
+pub fn start_with_window(
+    service: &'static str,
+    terminal: Arc<Mutex<TabSet>>,
+    cleanup: Cleanup,
+    notify_rx: tokio::sync::mpsc::UnboundedReceiver<CompletionNote>,
+    window: Window,
+) -> std::thread::JoinHandle<()> {
+    start_at(
+        service,
+        terminal,
+        cleanup,
+        notify_rx,
+        ::bus::client_helpers::resolve_noded_url(),
+        Some(window),
     )
 }
 
@@ -90,6 +224,7 @@ pub(crate) fn start_at(
     cleanup: Cleanup,
     mut notify_rx: tokio::sync::mpsc::UnboundedReceiver<CompletionNote>,
     url: String,
+    window: Option<Window>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::Builder::new()
         .name(format!("{service}-bus"))
@@ -141,8 +276,18 @@ pub(crate) fn start_at(
                 let Some(mut incoming) = client.incoming_bounded() else {
                     return;
                 };
+                if let Some(window) = &window {
+                    let _ = window.link.set(Link {
+                        name: name.clone(),
+                        client: client.clone(),
+                        runtime: tokio::runtime::Handle::current(),
+                    });
+                    citizen::outbox::spawn_publisher(client.clone(), window.outbox.clone());
+                    // The window starts its own Bus work now.
+                    (window.wake)();
+                }
                 let mut notifications = tokio::task::JoinSet::new();
-                serve(
+                serve_with(
                     &name,
                     &terminal,
                     &cleanup,
@@ -150,6 +295,7 @@ pub(crate) fn start_at(
                     &mut notifications,
                     &mut incoming,
                     &client,
+                    window.as_ref(),
                 )
                 .await;
                 // The final reap can queue notes just after the TabSet becomes
@@ -323,6 +469,33 @@ async fn serve(
     incoming: &mut impl Incoming,
     peer: &impl Peer,
 ) -> usize {
+    serve_with(
+        service,
+        terminal,
+        cleanup,
+        notify_rx,
+        notifications,
+        incoming,
+        peer,
+        None,
+    )
+    .await
+}
+
+/// [`serve`], handing the window its verbs and topic frames.
+#[expect(clippy::too_many_arguments, reason = "serve's inputs plus the window")]
+async fn serve_with(
+    service: &str,
+    terminal: &Mutex<TabSet>,
+    cleanup: &Cleanup,
+    notify_rx: &mut tokio::sync::mpsc::UnboundedReceiver<CompletionNote>,
+    notifications: &mut tokio::task::JoinSet<()>,
+    incoming: &mut impl Incoming,
+    peer: &impl Peer,
+    window: Option<&Window>,
+) -> usize {
+    // Window verbs waiting for the window's answer.
+    let mut window_replies = tokio::task::JoinSet::new();
     // Taken once: the TabSet signals this whichever thread closes the last
     // tab — a Bus verb here, or the frontend (keyboard, child exit, window
     // close) — and the permit survives until this loop next waits.
@@ -362,6 +535,11 @@ async fn serve(
                 }
             },
             _ = notifications.join_next(), if !notifications.is_empty() => {},
+            done = window_replies.join_next(), if !window_replies.is_empty() => {
+                if let Some(Ok((command, rc, body))) = done {
+                    peer.reply(&command, rc, &body).await;
+                }
+            },
             event = incoming.next() => {
                 let command = match event {
                     Some(BoundedIncomingEvent::Command(c)) => c,
@@ -378,6 +556,13 @@ async fn serve(
                         eprintln!("{service} Bus connection lost; this window is graphics-only until restarted");
                         break;
                     },
+                };
+                let command = match window {
+                    Some(window) => match to_window(service, window, command, &mut window_replies) {
+                        Some(command) => command,
+                        None => continue,
+                    },
+                    None => command,
                 };
                 let guarded = guard(terminal, std::panic::AssertUnwindSafe(|| dispatch(
                     crate::control::mesh_open(),
@@ -403,8 +588,15 @@ async fn serve(
     }
     // Include final removal records. One total shutdown budget bounds a
     // stalled broker; publication stays serial to preserve event ordering.
+    // A window that quit answered its own verb before the tabs emptied:
+    // that answer goes out too.
     changes.close();
     let _ = tokio::time::timeout(Duration::from_secs(2), async {
+        while let Some(done) = window_replies.join_next().await {
+            if let Ok((command, rc, body)) = done {
+                peer.reply(&command, rc, &body).await;
+            }
+        }
         while publishing.join_next().await.is_some() {}
         while let Some(change) = changes.recv().await {
             peer.changed(service, change).await;
@@ -1161,6 +1353,24 @@ fn parse_args(verb: &str, body: &str) -> Result<serde_json::Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `VERBS` is exactly the set the handlers accept and HELP documents
+    /// (term.session is served but not in HELP).
+    #[test]
+    fn the_verb_list_is_the_served_surface() {
+        for (verb, _) in VERBS {
+            assert_ne!(
+                parse_args(verb, "{}").err().as_deref(),
+                Some("unknown verb; use HELP"),
+                "{verb}"
+            );
+        }
+        assert!(parse_args("term.nope", "{}").is_err());
+        for line in HELP.lines().filter(|l| l.starts_with("term.")) {
+            let verb = line.split([' ', ':']).next().unwrap();
+            assert!(VERBS.iter().any(|(v, _)| *v == verb), "{verb}");
+        }
+    }
 
     fn c6_fixture() -> Option<(Mutex<TabSet>, Cleanup, std::thread::JoinHandle<()>)> {
         if !std::path::Path::new("/opt/mixos/bin/mix").is_file() {

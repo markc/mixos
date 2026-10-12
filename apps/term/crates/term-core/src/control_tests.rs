@@ -1183,6 +1183,7 @@ fn p0i_10_real_tcp_fallback_is_control_free() {
         fixture.cleanup.clone(),
         receiver,
         fixture.broker.url.clone(),
+        None,
     );
     runtime().block_on(async {
         let client = NodedClient::connect_anonymous(&fixture.broker.url)
@@ -1326,6 +1327,7 @@ fn p0i_10_parent_bootstrap_outage_has_only_diagnostic_lane() {
         cleanup.clone(),
         receiver,
         broker.url.clone(),
+        None,
     );
     runtime().block_on(async {
         let owner = verified(&broker).await;
