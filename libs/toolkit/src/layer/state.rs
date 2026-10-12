@@ -393,7 +393,10 @@ impl<P: LayerProgram + 'static> State<P> {
     fn expire_frames(&mut self) {
         let now = Instant::now();
         for s in &mut self.surfaces {
-            if s.frame_pending && s.pending_since.is_some_and(|t| now.duration_since(t) >= WATCHDOG) {
+            if s.frame_pending
+                && s.pending_since
+                    .is_some_and(|t| now.duration_since(t) >= WATCHDOG)
+            {
                 s.frame_pending = false;
                 s.pending_since = None;
             }
