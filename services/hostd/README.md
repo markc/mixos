@@ -28,6 +28,7 @@ hostd call net.link.apply '{"link":"eth1","config":{"mode":"dhcp"}}'
 | `src/link.rs` | `net.link.apply`: validation, rendering, the change, its proof |
 | `src/wg.rs` | `net.wg.apply`: WireGuard netdev, network and key files, the handshake proof |
 | `src/wgnl.rs` | WireGuard generic netlink (peer handshakes) and deleting a link |
+| `src/wifi.rs` | `net.wifi.scan` and `net.wifi.connect` through iwd: the one-connect passphrase agent, runtime put-back |
 | `src/networkd.rs` | networkd over D-Bus and Varlink, the event-driven health wait |
 | `src/net.rs`, `src/info.rs` | the read verbs |
 | `units/` | `hostd.socket`, `hostd.service` (sandboxed), `sysusers.conf` |

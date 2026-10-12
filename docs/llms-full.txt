@@ -2531,6 +2531,8 @@ from the Bus.
 | `net.link.apply` | write | configure one link through networkd, rolled back unless it comes up |
 | `hostd.undo` | write | put back what an applied change replaced; needs no grant of its own (see below) |
 | `net.wg.apply` | write | configure a WireGuard link through networkd, rolled back unless it comes up and its peers complete a handshake |
+| `net.wifi.scan` | write | scan for Wi-Fi networks on one device (iwd). It changes nothing durable, but it drives the radio, so it needs a grant |
+| `net.wifi.connect` | write | connect a Wi-Fi device to a network (iwd), put back unless connected in time |
 
 `host.info` is also published as the retained topic `hostd.info`.
 
@@ -2689,6 +2691,38 @@ hostd's unit has two capabilities, both for this verb:
 - `CAP_NET_ADMIN`, to read peer handshakes over WireGuard netlink and to
   delete its own WireGuard link.
 
+## Wi-Fi
+
+Wi-Fi goes through iwd. hostd never starts iwd: if it isn't running, the
+Wi-Fi verbs answer `no_iwd`.
+
+```text
+{"device": "wlan0"}                                         net.wifi.scan
+{"device": "wlan0", "ssid": "home", "passphrase": "…"}      net.wifi.connect
+{"device": "wlan0", "ssid": "cafe-open", "window_s": 30}    net.wifi.connect
+```
+
+- **`net.wifi.scan`** replies with each network's SSID, security
+  (`open`, `psk`), signal in dBm, and whether iwd already knows it.
+- **`net.wifi.connect`** writes no files.
+  - **The passphrase never leaves hostd except to iwd.** It reaches iwd
+    through an agent that hostd registers for that one connect. The agent
+    answers only the process that owns iwd's bus name, and only for the
+    network being connected. iwd saves the network itself, after a
+    successful connect. Receipts and the audit never hold the passphrase.
+  - **It passes** when the device is connected to that SSID within the
+    window.
+  - **If it doesn't,** hostd forgets the network (if this change made it
+    known) and reconnects the network the device was on before, or
+    disconnects if it was on none.
+  - **A known network takes no passphrase.** To change one, forget it
+    first. An open network takes none, and 802.1X networks are
+    `unsupported`.
+- **Undo** puts the device back the same way. It is refused (`superseded`)
+  once the device has moved to another network since. If someone else
+  moved the device during a change, the put-back leaves it alone.
+- Grants limit Wi-Fi by `links` (the device) and `ssids`.
+
 ## Stopping it
 
 `hostd.freeze` stops every change at once and survives restarts and
@@ -2710,7 +2744,8 @@ host itself thaws it, never root inside a container.
 | `frozen` | hostd is frozen |
 | `policy_invalid` | the policy can't be loaded; changes are refused |
 | `root_only` | only root on the host may do this |
-| `foreign_config`, `unmanaged_configured`, `no_such_link` | `net.link.apply` won't touch this link |
+| `foreign_config`, `unmanaged_configured`, `no_such_link` | `net.link.apply` or `net.wg.apply` won't touch this link |
+| `no_iwd`, `no_such_station`, `no_such_network`, `unsupported` | Wi-Fi: iwd isn't running, the device isn't an iwd station, the SSID isn't in range, or the security type isn't handled |
 | `rolled_back` | the change failed its health check and was reversed |
 | `superseded` | undo refused: the file no longer holds what that change installed |
 | `not_applied` | undo refused: the change was rolled back or already undone |

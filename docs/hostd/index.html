@@ -221,6 +221,7 @@
                         <a href="#what-a-change-does">What a change does</a>
                         <a href="#network-links">Network links</a>
                         <a href="#wireguard-links">WireGuard links</a>
+                        <a href="#wi-fi">Wi-Fi</a>
                         <a href="#stopping-it">Stopping it</a>
                         <a href="#refusals">Refusals</a>
                     </nav>
@@ -283,6 +284,8 @@ from the Bus.</p>
 <tr><td><code>net.link.apply</code></td><td>write</td><td>configure one link through networkd, rolled back unless it comes up</td></tr>
 <tr><td><code>hostd.undo</code></td><td>write</td><td>put back what an applied change replaced; needs no grant of its own (see below)</td></tr>
 <tr><td><code>net.wg.apply</code></td><td>write</td><td>configure a WireGuard link through networkd, rolled back unless it comes up and its peers complete a handshake</td></tr>
+<tr><td><code>net.wifi.scan</code></td><td>write</td><td>scan for Wi-Fi networks on one device (iwd). It changes nothing durable, but it drives the radio, so it needs a grant</td></tr>
+<tr><td><code>net.wifi.connect</code></td><td>write</td><td>connect a Wi-Fi device to a network (iwd), put back unless connected in time</td></tr>
 </tbody></table>
 <p><code>host.info</code> is also published as the retained topic <code>hostd.info</code>.</p>
 <h2 id="who-may-change-what">Who may change what</h2>
@@ -420,6 +423,38 @@ networkd creates it again. Peers reconnect within a keepalive.</li>
 <li><code>CAP_NET_ADMIN</code>, to read peer handshakes over WireGuard netlink and to
 delete its own WireGuard link.</li>
 </ul>
+<h2 id="wi-fi">Wi-Fi</h2>
+<p>Wi-Fi goes through iwd. hostd never starts iwd: if it isn't running, the
+Wi-Fi verbs answer <code>no_iwd</code>.</p>
+<pre><code class="language-text">{"device": "wlan0"}                                         net.wifi.scan
+{"device": "wlan0", "ssid": "home", "passphrase": "…"}      net.wifi.connect
+{"device": "wlan0", "ssid": "cafe-open", "window_s": 30}    net.wifi.connect
+</code></pre>
+<ul>
+<li><strong><code>net.wifi.scan</code></strong> replies with each network's SSID, security
+(<code>open</code>, <code>psk</code>), signal in dBm, and whether iwd already knows it.</li>
+<li><strong><code>net.wifi.connect</code></strong> writes no files.
+<ul>
+<li><strong>The passphrase never leaves hostd except to iwd.</strong> It reaches iwd
+through an agent that hostd registers for that one connect. The agent
+answers only the process that owns iwd's bus name, and only for the
+network being connected. iwd saves the network itself, after a
+successful connect. Receipts and the audit never hold the passphrase.</li>
+<li><strong>It passes</strong> when the device is connected to that SSID within the
+window.</li>
+<li><strong>If it doesn't,</strong> hostd forgets the network (if this change made it
+known) and reconnects the network the device was on before, or
+disconnects if it was on none.</li>
+<li><strong>A known network takes no passphrase.</strong> To change one, forget it
+first. An open network takes none, and 802.1X networks are
+<code>unsupported</code>.</li>
+</ul>
+</li>
+<li><strong>Undo</strong> puts the device back the same way. It is refused (<code>superseded</code>)
+once the device has moved to another network since. If someone else
+moved the device during a change, the put-back leaves it alone.</li>
+<li>Grants limit Wi-Fi by <code>links</code> (the device) and <code>ssids</code>.</li>
+</ul>
 <h2 id="stopping-it">Stopping it</h2>
 <p><code>hostd.freeze</code> stops every change at once and survives restarts and
 reboots. An unreadable freeze record counts as frozen. Only root on the
@@ -437,7 +472,8 @@ host itself thaws it, never root inside a container.</p>
 <tr><td><code>frozen</code></td><td>hostd is frozen</td></tr>
 <tr><td><code>policy_invalid</code></td><td>the policy can't be loaded; changes are refused</td></tr>
 <tr><td><code>root_only</code></td><td>only root on the host may do this</td></tr>
-<tr><td><code>foreign_config</code>, <code>unmanaged_configured</code>, <code>no_such_link</code></td><td><code>net.link.apply</code> won't touch this link</td></tr>
+<tr><td><code>foreign_config</code>, <code>unmanaged_configured</code>, <code>no_such_link</code></td><td><code>net.link.apply</code> or <code>net.wg.apply</code> won't touch this link</td></tr>
+<tr><td><code>no_iwd</code>, <code>no_such_station</code>, <code>no_such_network</code>, <code>unsupported</code></td><td>Wi-Fi: iwd isn't running, the device isn't an iwd station, the SSID isn't in range, or the security type isn't handled</td></tr>
 <tr><td><code>rolled_back</code></td><td>the change failed its health check and was reversed</td></tr>
 <tr><td><code>superseded</code></td><td>undo refused: the file no longer holds what that change installed</td></tr>
 <tr><td><code>not_applied</code></td><td>undo refused: the change was rolled back or already undone</td></tr>

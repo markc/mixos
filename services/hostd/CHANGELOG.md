@@ -18,3 +18,6 @@
 - Write verb `net.wg.apply`: networkd-native WireGuard, key made and kept by
   hostd (0640 root:systemd-network, never returned), the handshake dead-man
   check. The unit gains `CAP_CHOWN` and `CAP_NET_ADMIN` for it.
+- Write verbs `net.wifi.scan` and `net.wifi.connect` through iwd: no files,
+  the passphrase only through a one-connect agent, put back by forgetting
+  and reconnecting.
