@@ -120,4 +120,5 @@ reached (`menu`, `shortcut`, `ui` or `bus`;
 action is not published.
 
 `dopus --headless` runs the core and the Bus port without a window, for
-tests: the same verbs, minus those that need a window.
+tests: the same verbs, minus those that need a window. It publishes its
+accepted `dopus.action` runs on `<service>.command.executed` too.

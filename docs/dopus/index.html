@@ -345,7 +345,8 @@ reached (<code>menu</code>, <code>shortcut</code>, <code>ui</code> or <code>bus<
 <a href="/decisions/2026-10-11-executed-commands/">executed commands</a>). A refused
 action is not published.</p>
 <p><code>dopus --headless</code> runs the core and the Bus port without a window, for
-tests: the same verbs, minus those that need a window.</p>
+tests: the same verbs, minus those that need a window. It publishes its
+accepted <code>dopus.action</code> runs on <code>&lt;service&gt;.command.executed</code> too.</p>
         </article>
         <p class="doc-source"><a href="/dopus.md"><i data-lucide="file-text"></i> This page as Markdown</a></p>
     </div>

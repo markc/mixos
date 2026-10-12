@@ -7,13 +7,16 @@
 //! A drainer thread owns `on_event` and `tick` (laws 1 and 2) and answers
 //! every dialog at once with No (law 3), so nothing waits and no file
 //! operation starts. `OpenFile` is refused and logged (law 4). Theme and
-//! window actions are refused: there is nothing to paint.
+//! window actions are refused: there is nothing to paint. Accepted
+//! `dopus.action` runs are published on `dopus.command.executed`, origin
+//! `bus`, as the window publishes them.
 
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use dopus_core::{ConfigFile, ConfirmAnswer, CoreEvent, DOpusConfig, DopusCore};
 use futures::StreamExt;
+use toolkit::command::Origin;
 
 use crate::bus::{self, Delivery};
 use crate::dirs::AppDirs;
@@ -100,6 +103,10 @@ pub fn run(
         .enable_all()
         .build()
         .map_err(|e| format!("headless runtime: {e}"))?;
+    // Only for its command ids and the executed journal: accepted
+    // `dopus.action` runs are published as the window publishes them.
+    let commands = crate::commands::registry();
+    let topic = toolkit::executed::topic(bus.service());
     tracing::info!("dopus headless as `{service}`");
     runtime.block_on(async {
         while let Some(delivery) = deliveries.next().await {
@@ -110,15 +117,22 @@ pub fn run(
                 continue;
             };
             let mut quit = false;
-            for served in
-                verbs::serve_command(&command, &mut lock(&core), &meta, &buildinfo::build_info!())
-            {
+            let served =
+                verbs::serve_command(&command, &mut lock(&core), &meta, &buildinfo::build_info!());
+            let ran = verbs::accepted_action(&command, &served);
+            for served in served {
                 match served {
                     Served::Reply { id, rc, body } => bus.respond(id, rc, body),
                     Served::Quit { .. } => quit = true,
                     // serve_command refuses every window effect headless.
                     other => tracing::warn!("headless: unexpected {other:?}"),
                 }
+            }
+            if let Some(id) = ran.filter(|id| commands.get(id).is_some()) {
+                commands.note(&id, Origin::Bus);
+                let (runs, lost) = commands.take_executed();
+                let bodies = runs.iter().map(toolkit::executed::Executed::body).collect();
+                bus.publish(&topic, bodies, lost);
             }
             if quit {
                 break;

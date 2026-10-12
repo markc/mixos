@@ -349,6 +349,17 @@ impl Served {
     }
 }
 
+/// The action a `dopus.action` call ran, when `served` accepted it: what
+/// the window and headless publish on `dopus.command.executed`.
+pub fn accepted_action(command: &Command, served: &[Served]) -> Option<String> {
+    if command.verb != "dopus.action" || !served.iter().all(Served::accepts) {
+        return None;
+    }
+    serde_json::from_str::<ActionReq>(&command.body)
+        .ok()
+        .map(|req| req.id)
+}
+
 /// The action table: `(id, label)`. `file.*` rows run from the keyboard and
 /// menus only; their `enabled` flags follow the core ([`apply_availability`]).
 pub const ACTIONS: &[(&str, &str)] = &[
@@ -1086,6 +1097,30 @@ mod tests {
             r#"{"id":"nav.home","pane":3}"#,
         );
         assert_eq!(refusal(&pane).as_deref(), Some(code::INVALID_ARGUMENT));
+    }
+
+    /// What dopus.command.executed carries for a Bus call: the action of an
+    /// accepted dopus.action, never a refused one or another verb.
+    #[test]
+    fn only_accepted_actions_are_executed_runs() {
+        let (_dir, mut core) = core();
+        let ran = |core: &mut DopusCore, headless: bool, verb: &str, body: &str| {
+            let command = Command {
+                id: 1,
+                verb: verb.into(),
+                body: body.into(),
+            };
+            let served = serve_command(&command, core, &meta(headless), &buildinfo::build_info!());
+            accepted_action(&command, &served)
+        };
+        let hidden = r#"{"id":"view.toggle-hidden"}"#;
+        assert_eq!(
+            ran(&mut core, true, "dopus.action", hidden).as_deref(),
+            Some("view.toggle-hidden")
+        );
+        assert_eq!(ran(&mut core, true, "dopus.action", r#"{"id":"file.delete"}"#), None);
+        assert_eq!(ran(&mut core, true, "dopus.action", r#"{"id":"view.toggle-places"}"#), None);
+        assert_eq!(ran(&mut core, true, "dopus.state", "{}"), None);
     }
 
     #[test]

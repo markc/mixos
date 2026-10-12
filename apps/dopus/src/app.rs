@@ -223,12 +223,7 @@ impl App {
     pub fn serve(&mut self, command: &verbs::Command, meta: &ServerMeta) {
         let info = buildinfo::build_info!();
         let served = verbs::serve_command(command, &mut self.core, meta, &info);
-        if command.verb == "dopus.action" && served.iter().any(Served::accepts) {
-            let body: serde_json::Value = serde_json::from_str(&command.body).unwrap_or_default();
-            if let Some(id) = body.get("id").and_then(|v| v.as_str()) {
-                self.ran.push(id.to_owned());
-            }
-        }
+        self.ran.extend(verbs::accepted_action(command, &served));
         for served in served {
             match served {
                 Served::Reply { id, rc, body } => self.effects.push(Effect::Reply { id, rc, body }),
