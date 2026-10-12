@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Builds, tests and gates main on GitHub's Ubuntu runners. Development
+# happens on wip/* branches built on our own build hosts; only what lands on
+# main is checked here. The release build is release.yml.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # Line tables keep file:line in backtraces; the rest of the debug info only
+  # costs disk and link time on a runner.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+
+# Runs on main are never cancelled: every state of main is checked to the end.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (linux x86_64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Unused toolchains in the image are deleted in the background, so the
+      # space is free before the workspace build needs it.
+      - name: Install system libraries
+        run: |
+          nohup sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL </dev/null >/dev/null 2>&1 &
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libxcursor-dev \
+            libgl1-mesa-dev libegl-dev libgles-dev libgbm-dev libdrm-dev libinput-dev libudev-dev \
+            libseat-dev libpixman-1-dev libpulse-dev libarchive-tools
+
+      # The toolchain comes from rust-toolchain.toml.
+      - name: Install Rust
+        run: rustup toolchain install --profile minimal --component clippy
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          cache-on-failure: true
+
+      - name: Build
+        run: cargo build --workspace --all-targets --locked
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+      # The gates are Mix: the bootstrap above built the mix that runs them
+      # (AGENTS.md §9).
+      - name: Gates
+        run: |
+          mix=target/debug/mix
+          $mix tools/closure_gate.mix --locked
+          $mix tools/layering_gate.mix --manifest-path Cargo.toml --locked
+          $mix tools/verb_registry.mix
+          $mix tools/smithay_guards.mix
+          $mix tools/component_index.mix --check

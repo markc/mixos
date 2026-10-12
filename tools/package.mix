@@ -1,0 +1,76 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- package.mix: the release tarballs, from binaries cargo has already built.
+-- Run by .github/workflows/release.yml with the freshly built mix; locally:
+--
+--   mix tools/package.mix --release 0.1.1 [--arch x86_64] [--bin-dir target/release] [--out dist/release]
+--
+-- Two prefix tarballs per architecture, the layout releasesd installs
+-- (docs/releases.md): one top directory holding bin/ and share/.
+--
+--   mixos-server-<v>-linux-<arch>.tar.gz    mix and the headless services
+--   mixos-desktop-<v>-linux-<arch>.tar.gz   the compositor and the apps
+--
+-- releasesd picks between them by the catalogue name (mixos-server,
+-- mixos-desktop), so neither needs an `asset` pattern. The checksum file is
+-- written by the release job over every tarball, not here.
+
+$g = getopt(args(), {help: {short: "h"}, release: {arg: true}, arch: {arg: true},
+  "bin-dir": {arg: true}, out: {arg: true}})
+if len($g.errors) != 0 then raise("PACKAGE_ARGS", join($g.errors, "; ")) end
+if $g.opts.help then
+  print("usage: mix tools/package.mix --release V [--arch ARCH] [--bin-dir DIR] [--out DIR]")
+  exit(0)
+end
+
+$PACKAGES = {
+  "mixos-server": ["mix", "noded", "editd", "settingsd", "portald"],
+  "mixos-desktop": ["compd", "ced", "dopus", "prefs", "busviewer"]
+}
+-- Desktop entries ship with their app; Exec loses the system path so
+-- releasesd points it at the installed binary.
+$ENTRIES = {"mixos-desktop": ["apps/dopus/assets/dev.mixos.dopus.desktop"]}
+$DOCS = ["README.md", "LICENSE-MIT", "LICENSE-APACHE", "NOTICE"]
+
+$version = $g.opts.release ?? ""
+if not re_match($version, "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$") then
+  raise("PACKAGE_ARGS", "--release must be a version like 1.2.3 or 1.2.3-rc.1, got '" .. $version .. "'")
+end
+$arch = $g.opts.arch ?? platform().arch
+if not re_match($arch, "^(x86_64|aarch64)$") then raise("PACKAGE_ARGS", "--arch must be x86_64 or aarch64") end
+$source = dirname(dirname(realpath($0)))
+$bin_dir = $g.opts["bin-dir"] ?? ($source .. "/target/release")
+$out = $g.opts.out ?? ($source .. "/dist/release")
+
+mkdir($out, {parents: true})
+$stage = $out .. "/.stage"
+remove_dir($stage)
+
+for $pkg in sort(keys($PACKAGES))
+  $name = $pkg .. "-" .. $version .. "-linux-" .. $arch
+  $top = $stage .. "/" .. $name
+  mkdir($top .. "/bin", {parents: true})
+  for $b in $PACKAGES[$pkg]
+    $src = $bin_dir .. "/" .. $b
+    if not is_file($src) then raise("PACKAGE_MISSING", $src .. " is not built") end
+    copy($src, $top .. "/bin/" .. $b)
+    chmod($top .. "/bin/" .. $b, 0o755)
+  end
+  for $e in $ENTRIES[$pkg] ?? []
+    mkdir($top .. "/share/applications", {parents: true})
+    $text = replace(read_file($source .. "/" .. $e), "Exec=/opt/mixos/bin/", "Exec=")
+    write_file($top .. "/share/applications/" .. basename($e), $text)
+    chmod($top .. "/share/applications/" .. basename($e), 0o644)
+  end
+  mkdir($top .. "/share/doc/" .. $pkg, {parents: true})
+  for $d in $DOCS
+    copy($source .. "/" .. $d, $top .. "/share/doc/" .. $pkg .. "/" .. $d)
+    chmod($top .. "/share/doc/" .. $pkg .. "/" .. $d, 0o644)
+  end
+  $tar = $out .. "/" .. $name .. ".tar.gz"
+  -- Owner-neutral and sorted, so the archive does not depend on the runner.
+  run_argv_must(["tar", "--sort=name", "--owner=0", "--group=0", "--numeric-owner",
+    "-czf", $tar, "-C", $stage, $name], {timeout: 600})
+  print($tar .. "  sha256:" .. hash_file($tar, "sha256"))
+end
+remove_dir($stage)

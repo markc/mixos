@@ -73,7 +73,8 @@ try
   refuses("bad app name", "USAGE", fn() = $r.app_by_name($ctx, "../etc"))
 
   -- Catalogue.
-  check("catalogue: missing file is empty", len($r.load_catalogue($tmp .. "/absent.mx")) == 0)
+  check("catalogue: missing file follows MixOS itself",
+    deep_eq(map($r.load_catalogue($tmp .. "/absent.mx"), fn($a) = $a.name), ["mixos-desktop", "mixos-server"]))
   write_file($tmp .. "/bad1.mx", "{schema: 2, apps: []}\n")
   refuses("catalogue: wrong schema", "CATALOGUE", fn() = $r.load_catalogue($tmp .. "/bad1.mx"))
   write_file($tmp .. "/bad2.mx", "{schema: 1, apps: [{name: \"../x\", repo: \"a/b\"}]}\n")

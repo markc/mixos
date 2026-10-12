@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.3.0
+-- version: 0.4.0
 -- releases: the logic behind releasesd and the `releases` CLI. Follows the
 -- GitHub repositories in a catalogue, compares the installed version with the
 -- latest release, and installs each release's Linux tarball per user.
@@ -89,8 +89,16 @@ fn desktop_arg($s)
 end
 
 -- Load and check a catalogue document. A missing file is an empty catalogue.
+-- With no catalogue file, MixOS follows its own releases (release.yml in
+-- markc/mixos): the desktop and the headless services, one tarball each.
+-- A catalogue file replaces this list; keep these entries in it to keep them.
+$DEFAULT_APPS = [
+  {name: "mixos-desktop", repo: "markc/mixos"},
+  {name: "mixos-server", repo: "markc/mixos"}
+]
+
 fn load_catalogue($path)
-  if not is_file($path) then return [] end
+  if not is_file($path) then return $DEFAULT_APPS end
   $doc = load_data($path)
   if type($doc) != "map" or $doc.schema != 1 or type($doc.apps) != "list" then
     raise("CATALOGUE", $path .. ": expected {schema: 1, apps: [...]}")

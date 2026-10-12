@@ -281,8 +281,9 @@ rely on.</p>
 <code>error: &lt;text&gt;</code>. A result is <code>{app, action, version?, previous?, verified?, links?, skipped?, error?}</code>; <code>verified</code> is <code>{asset, sha256, proofs, tag}</code>.</p>
 <h2 id="catalogue-schema-1">Catalogue, schema 1</h2>
 <p>A strict-data document, by default <code>$XDG_CONFIG_HOME/mixos/releases.mx</code>
-(<code>~/.config/mixos/releases.mx</code>). A missing file is an empty catalogue. It is
-re-read on every request.</p>
+(<code>~/.config/mixos/releases.mx</code>). A missing file is the default catalogue,
+MixOS itself: <code>mixos-desktop</code> and <code>mixos-server</code>, both from <code>markc/mixos</code>. It
+is re-read on every request.</p>
 <pre><code class="language-text">{
   schema: 1,
   apps: [

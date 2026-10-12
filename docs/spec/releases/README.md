@@ -44,8 +44,9 @@ links?, skipped?, error?}`; `verified` is `{asset, sha256, proofs, tag}`.
 ## Catalogue, schema 1
 
 A strict-data document, by default `$XDG_CONFIG_HOME/mixos/releases.mx`
-(`~/.config/mixos/releases.mx`). A missing file is an empty catalogue. It is
-re-read on every request.
+(`~/.config/mixos/releases.mx`). A missing file is the default catalogue,
+MixOS itself: `mixos-desktop` and `mixos-server`, both from `markc/mixos`. It
+is re-read on every request.
 
 ```text
 {

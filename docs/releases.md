@@ -17,12 +17,18 @@ settings panel can drive it), and on any Linux, not only MixOS.
 
 ## The catalogue
 
-Your catalogue is `~/.config/mixos/releases.mx`. MixOS ships it empty:
+Your catalogue is `~/.config/mixos/releases.mx`. Until you write one,
+releasesd follows MixOS itself: `mixos-desktop` (the compositor and the
+apps) and `mixos-server` (`mix` and the headless services), both built by
+the MixOS release workflow. Your own catalogue replaces that list, so keep
+those two entries at the top to keep MixOS current:
 
 ```text
 {
   schema: 1,
   apps: [
+    {name: "mixos-desktop", repo: "markc/mixos"},
+    {name: "mixos-server", repo: "markc/mixos"},
     {name: "example", repo: "owner/example"}
   ]
 }
