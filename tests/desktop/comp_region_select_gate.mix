@@ -1,6 +1,6 @@
 #!/usr/bin/env mix
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.2.0
+-- version: 0.3.0
 -- comp_region_select_gate.mix — acceptance gate for comp.region.select: it
 -- starts a PRIVATE nested compd on nested_host_lib's headless weston host.
 --
@@ -369,10 +369,76 @@ else
   note("arm 6 selection after timeout still works")
 end
 
+-- ── arms 7–10: the whole output, by a full drag, a click and Enter ─────────
+-- A click (no travel) and Enter or keypad Enter select the whole output, and
+-- the reply must be indistinguishable from a drag from corner to corner: the
+-- drag's far end is past the output, where the selection clamps it.
+fn same_region($a, $b)
+  return $a.x == $b.x and $a.y == $b.y and $a.width == $b.width and $a.height == $b.height
+end
+
+settle(10)
+$p7 = start_selector("full-drag", {timeout_ms: 20000})
+sleep(1.0)
+drag(0, 0, 20000, 20000)
+$r7 = await_selector($p7, 25)
+$FULL = nil
+if $r7 == nil or $r7.value == nil or to_string($r7.value.status) != "selected" then
+  push($FAILURES, "full-drag")
+  fail("full-drag", "a corner-to-corner drag did not select: " .. (($r7 ?? {body: "no reply"}).body))
+elif $r7.value.region.x != 0 or $r7.value.region.y != 0 then
+  push($FAILURES, "full-drag")
+  fail("full-drag", "not at the origin: " .. json_encode($r7.value.region))
+else
+  $FULL = $r7.value
+  note("arm 7 full drag: " .. json_encode($FULL.region))
+end
+
+$WHOLE_ARMS = [
+  {tag: "click", arm: 8},
+  {tag: "enter", arm: 9, key: "Return"},
+  {tag: "kp-enter", arm: 10, key: "KP_Enter"}
+]
+for each $w in $WHOLE_ARMS
+  settle(10)
+  $pw = start_selector($w.tag, {timeout_ms: 20000})
+  sleep(1.0)
+  point(500, 400)
+  sleep(0.1)
+  if $w.key == nil then
+    -- Press and release with a 2 px wobble: inside the click slop.
+    button("left", "press")
+    sleep(0.1)
+    point(502, 401)
+    sleep(0.1)
+    button("left", "release")
+  else
+    key($w.key, "press")
+    sleep(0.1)
+    key($w.key, "release")
+  end
+  $rw = await_selector($pw, 25)
+  if $rw == nil or $rw.value == nil then
+    push($FAILURES, $w.tag)
+    fail($w.tag, "no usable reply")
+  elif to_string($rw.value.status) != "selected" then
+    push($FAILURES, $w.tag)
+    fail($w.tag, "status=" .. to_string($rw.value.status) .. " (expected selected) body=" .. $rw.body)
+  elif $FULL == nil then
+    push($FAILURES, $w.tag)
+    fail($w.tag, "no full-drag reply to compare with")
+  elif not same_region($rw.value.region, $FULL.region) or $rw.value.output != $FULL.output or $rw.value.coordinate_space != $FULL.coordinate_space or $rw.value.output_generation != $FULL.output_generation then
+    push($FAILURES, $w.tag)
+    fail($w.tag, json_encode($rw.value) .. " differs from the full drag " .. json_encode($FULL))
+  else
+    note("arm " .. to_string($w.arm) .. " " .. $w.tag .. " selected the whole output, as the full drag did")
+  end
+end
+
 $n.stop($SESSION)
 print("")
 if len($FAILURES) == 0 then
-  print("=== REGION SELECT GATE [" .. $KIND .. "]: GREEN — 6 arms, every one answered ===")
+  print("=== REGION SELECT GATE [" .. $KIND .. "]: GREEN — 10 arms, every one answered ===")
   $CLEANUP.ok = true
   exit(0)
 end

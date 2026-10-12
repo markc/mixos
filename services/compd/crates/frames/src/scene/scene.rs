@@ -300,6 +300,9 @@ const SEPARATOR_COLOR: [f32; 4] = [0.16, 0.16, 0.19, 1.0];
 /// can't punch through between a floating pane's background and its windows.
 const FLOATING_BG: layer::Layer = layer::Layer(401);
 const FLOATING_CONTENT: layer::Layer = layer::Layer(402);
+/// The region-select overlay: over the screen UI and thumbnails (the run holds
+/// the seat, so nothing under it is reachable), under the pointer.
+const REGION_SELECT: layer::Layer = layer::Layer(600);
 /// Border drawn around a detached (floating) viewport pane — its move/resize grab
 /// zone — so the edge is visible.
 const FLOATING_BORDER_COLOR: [f32; 4] = [0.30, 0.52, 0.92, 1.0];
@@ -842,14 +845,12 @@ where
                     }
                 }
             }
-            // The region-select overlay, only while a
-            // selection runs (and the clean frame its reply waits for).
-            plan.extend(
-                layer::UI_SCREEN,
-                world::comp::region::overlay(state, size)
-                    .into_iter()
-                    .map(DrawNode::Solid),
-            );
+            // The region-select overlay, only while a selection runs on this
+            // output (and the clean frame its reply waits for): its own band
+            // over the screen UI, the hint in front of the dim and outline.
+            let region = world::comp::region::overlay(state, renderer, size);
+            plan.extend(REGION_SELECT, region.hint.into_iter().map(DrawNode::Memory));
+            plan.extend(REGION_SELECT, region.solids.into_iter().map(DrawNode::Solid));
             cw
         }
     };

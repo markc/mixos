@@ -3059,7 +3059,7 @@ changed, and what is saved is exactly what you see.
 
 | Key | Takes |
 |---|---|
-| **Print** | a region: drag out a rectangle, Escape cancels |
+| **Print** | a region: drag out a rectangle; a click or Enter takes the whole screen, Escape cancels |
 | **Shift+Print** | the whole screen |
 | **Alt+Print** | the window you were working in |
 

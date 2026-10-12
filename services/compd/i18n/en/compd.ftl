@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 # compd's own user-visible strings: capture overlays and dialogs, the
-# frame-rate overlay.
+# region-select hint, the frame-rate overlay.
 
 capture-setup-title = Capture setup
 capture-kind-windows = Windows
@@ -18,6 +18,8 @@ capture-hint-screen = Drag to draw a region (fixed on screen).
 capture-hint-full = Capturing the whole screen.
 
 capture-stop = ⏹ Stop
+
+region-select-hint = Drag to select an area · Click or Enter for the whole screen · Esc to cancel
 
 capture-continue-title = Still capturing?
 capture-continue-body = Continue within { $seconds }s or the capture will stop.

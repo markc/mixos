@@ -56,6 +56,8 @@ pub enum DrawNode<R: Renderer> {
     /// A texture already imported into `R`.
     Texture(PreImported<R>),
     Solid(SolidColorRenderElement),
+    /// A CPU-rasterised image (the region-select hint), screen space.
+    Memory(smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement<R>),
     /// A live window thumbnail, screen space (`world::window::draw::thumbnail`).
     Thumbnail(world::window::draw::thumbnail::Thumb<R>),
 }
@@ -157,6 +159,7 @@ where
             DrawNode::Canvas { elem, .. } => vec![SceneElement::Canvas(elem)],
             DrawNode::Texture(e) => vec![SceneElement::Texture(e)],
             DrawNode::Solid(e) => vec![SceneElement::Sentinel(e)],
+            DrawNode::Memory(e) => vec![SceneElement::Memory(e)],
             DrawNode::Thumbnail(e) => vec![SceneElement::Thumbnail(e)],
             // An UI element is always a GL texture on the renderer's own
             // context (wgpu-GL); there is no dmabuf behind it.
