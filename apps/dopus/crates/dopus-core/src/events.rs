@@ -47,6 +47,13 @@ pub enum CoreEvent {
         path: PathBuf,
         count: Option<usize>,
     },
+    /// A thumbnail worker's reply ([`crate::thumbs`]).
+    ThumbnailArrived {
+        pane: PaneId,
+        generation: u64,
+        path: PathBuf,
+        outcome: crate::thumbs::Outcome,
+    },
     OperationArrived {
         kind: FileOpKind,
         source_pane: PaneId,

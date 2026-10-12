@@ -116,9 +116,58 @@ pub struct App {
     /// then, as `dopus.action` refuses `file.*`: the Bus never changes the
     /// filesystem through dopus.
     pub driven: bool,
+    /// The Properties preview: the active selection's thumbnail, decoded
+    /// once from the shared cache, keyed by what it shows.
+    pub preview: Option<PreviewImage>,
+    /// Decodes previews off the UI thread, latest request first.
+    decoder: toolkit::thumbnail::Decoder<PreviewKey>,
+}
+
+/// What a preview shows: the pane's listing generation, the selected file
+/// and the cache file it came from.
+pub type PreviewKey = (u64, std::path::PathBuf, std::path::PathBuf);
+
+/// A preview and what it shows. `texture` is `None` when the cache entry
+/// would not decode: remembered, so it is not tried again every frame.
+pub struct PreviewImage {
+    pub key: PreviewKey,
+    pub texture: Option<egui::TextureHandle>,
 }
 
 impl App {
+    /// Keep [`App::preview`] in step with the core: when the active
+    /// selection's thumbnail is ready and Properties is showing, decode it
+    /// once on the decoder thread (per selection, listing and cache file)
+    /// and upload it; drop it when there is none or Properties is hidden.
+    pub fn sync_preview(&mut self, ctx: &egui::Context) {
+        let pane = self.core.active();
+        let model = self.core.pane(pane);
+        let showing = self.core.sidebar(Sidebar::Properties).open;
+        let (true, Some(dopus_core::thumbs::Preview::Ready(cached)), Some(selected)) =
+            (showing, self.core.preview(pane), model.selected.clone())
+        else {
+            self.preview = None;
+            self.decoder.withdraw_all();
+            return;
+        };
+        let key: PreviewKey = (model.generation, selected, cached);
+        if self.preview.as_ref().is_some_and(|p| p.key == key) {
+            return;
+        }
+        if let Some(decoded) = self.decoder.take(&key) {
+            self.preview = Some(PreviewImage {
+                texture: decoded.map(|image| {
+                    ctx.load_texture("dopus-preview", image, egui::TextureOptions::LINEAR)
+                }),
+                key,
+            });
+            return;
+        }
+        if !self.decoder.replace(&key, &key.2, ctx) {
+            self.preview = Some(PreviewImage { key, texture: None });
+        }
+    }
+
     pub fn new(core: DopusCore) -> Self {
         let actions = verbs::action_table(crate::keymap::default_keys);
         Self {
@@ -134,6 +183,8 @@ impl App {
             ran: Vec::new(),
             quitting: false,
             driven: false,
+            preview: None,
+            decoder: toolkit::thumbnail::Decoder::new("dopus-preview"),
         }
     }
 
@@ -176,6 +227,7 @@ impl App {
             "view.toggle-places" => Some(self.core.sidebar(Sidebar::Places).open),
             "view.toggle-properties" => Some(self.core.sidebar(Sidebar::Properties).open),
             "view.toggle-hidden" => Some(self.core.availability().show_hidden),
+            "view.toggle-previews" => Some(self.core.availability().previews),
             _ => None,
         }
     }

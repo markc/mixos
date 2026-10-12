@@ -14,7 +14,7 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant, SystemTime};
 
 use design::{DesignContext, Mode, Scheme};
-use dopus::app::{App, Dialog};
+use dopus::app::{App, Dialog, PreviewImage};
 use dopus::{commands, strings, view::view};
 use dopus_core::{CoreEvent, DOpusConfig, DopusCore, PaneId, PromptKind};
 use egui_kittest::Harness;
@@ -257,4 +257,77 @@ fn shortcuts_studio_light() {
         true,
         Some(Dialog::Shortcuts),
     );
+}
+
+/// A deterministic stand-in for a thumbnail: a gradient with a dark frame
+/// and a light corner mark (top left), so orientation and scaling show.
+fn picture(w: usize, h: usize) -> egui::ColorImage {
+    let mut pixels = Vec::with_capacity(w * h);
+    for y in 0..h {
+        for x in 0..w {
+            let edge = x < 6 || y < 6 || x + 6 >= w || y + 6 >= h;
+            let mark = x < w / 5 && y < h / 5;
+            pixels.push(if edge {
+                egui::Color32::from_rgb(20, 24, 32)
+            } else if mark {
+                egui::Color32::from_rgb(240, 236, 220)
+            } else {
+                egui::Color32::from_rgb((x * 255 / w) as u8, (y * 255 / h) as u8, 160)
+            });
+        }
+    }
+    egui::ColorImage {
+        size: [w, h],
+        pixels,
+        source_size: egui::vec2(w as f32, h as f32),
+    }
+}
+
+/// Properties with a preview of the selected photo: drawn at the panel's
+/// width (landscape) or capped in height (portrait), centred, above the
+/// fields. The texture stands in for a cached thumbnail; the core's
+/// thumbnailer run is not part of the picture.
+fn preview(name: &str, w: usize, h: usize) {
+    let mut app = app(true);
+    let photo = home().join("photo.png");
+    app.core
+        .select_modified(PaneId::Left, photo.clone(), false, false);
+    let generation = app.core.pane(PaneId::Left).generation;
+    let theme = chrome(Scheme::Studio, Mode::Dark);
+    let registry = commands::registry();
+    let strings = strings();
+    let stroke = icons::stroke_width(&theme);
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(980.0, 640.0))
+        .wgpu()
+        .build_ui(move |ui| {
+            if app.preview.is_none() {
+                app.preview = Some(PreviewImage {
+                    key: (
+                        generation,
+                        photo.clone(),
+                        PathBuf::from("/cache/x-large/photo.png"),
+                    ),
+                    texture: Some(ui.ctx().load_texture(
+                        "dopus-preview",
+                        picture(w, h),
+                        egui::TextureOptions::LINEAR,
+                    )),
+                });
+            }
+            let _ = view(ui, &app, &registry, &strings, stroke);
+        });
+    toolkit::install(&harness.ctx, &theme);
+    harness.run();
+    harness.snapshot(name);
+}
+
+#[test]
+fn preview_landscape_studio_dark() {
+    preview("preview_landscape_studio_dark", 512, 320);
+}
+
+#[test]
+fn preview_portrait_studio_dark() {
+    preview("preview_portrait_studio_dark", 240, 512);
 }

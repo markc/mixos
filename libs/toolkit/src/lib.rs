@@ -59,6 +59,7 @@ pub mod style;
 pub mod tabs;
 pub mod theme;
 pub mod theme_menu;
+pub mod thumbnail;
 pub mod titlebar;
 pub mod toggle;
 pub mod tooltip;

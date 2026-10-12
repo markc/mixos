@@ -261,6 +261,22 @@ fn places_panel(ui: &mut Ui, app: &App, stroke: f32, events: &mut Vec<UiEvent>) 
     });
 }
 
+/// The tallest the Properties preview grows (logical px).
+const PREVIEW_MAX_HEIGHT: f32 = 240.0;
+
+/// The selection's thumbnail at the top of Properties: the panel's width
+/// at most, never larger than its own pixels, centred.
+fn preview_image(ui: &mut Ui, texture: &egui::TextureHandle) {
+    let natural = texture.size_vec2() / ui.ctx().pixels_per_point();
+    let scale = (ui.available_width() / natural.x)
+        .min(PREVIEW_MAX_HEIGHT / natural.y)
+        .min(1.0);
+    ui.vertical_centered(|ui| {
+        ui.add(egui::Image::new(texture).fit_to_exact_size(natural * scale));
+    });
+    ui.add_space(8.0);
+}
+
 fn properties_panel(ui: &mut Ui, app: &App) {
     let field = |ui: &mut Ui, key: &str, value: &str| {
         ui.label(RichText::new(label(key)).small().weak());
@@ -278,6 +294,14 @@ fn properties_panel(ui: &mut Ui, app: &App) {
                 count_pending,
                 metadata,
             } => {
+                if let Some(texture) = app
+                    .preview
+                    .as_ref()
+                    .filter(|p| p.key.1 == entry.path)
+                    .and_then(|p| p.texture.as_ref())
+                {
+                    preview_image(ui, texture);
+                }
                 field(ui, "prop-name", &entry.name);
                 match metadata {
                     None => field(ui, "prop-kind", "…"),
@@ -428,7 +452,12 @@ fn pane_view(
     }
     drop_target(&background, pane, model.path.clone(), events);
     background.context_menu(|ui| {
-        for id in ["file.new-folder", "view.refresh", "view.toggle-hidden"] {
+        for id in [
+            "file.new-folder",
+            "view.refresh",
+            "view.toggle-hidden",
+            "view.toggle-previews",
+        ] {
             context_item(ui, app, commands, strings, id, pane, events);
         }
     });

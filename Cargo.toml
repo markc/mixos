@@ -84,6 +84,7 @@ scene = { path = "libs/scene" }
 settings = { path = "libs/settings" }
 strict = { path = "libs/strict" }
 mimedb = { path = "libs/mimedb" }
+thumbs = { path = "libs/thumbs" }
 toolkit = { path = "libs/toolkit" }
 citizen = { path = "libs/citizen" }
 

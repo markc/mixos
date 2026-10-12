@@ -30,7 +30,17 @@ it keeps.
   Downloads, Music, Pictures and Videos folders, where they exist. Its
   toggle sits left of the left pane's path field.
 - **Properties** shows the selected item: kind, size, dates, permissions,
-  owner and path. Its toggle sits right of the right pane's path field.
+  owner and path, under a preview of a file when one can be made. Its
+  toggle sits right of the right pane's path field.
+- **Previews** (View › Previews, per pane, on by default) are thumbnails
+  from the desktop's shared thumbnail cache, made by the thumbnailers
+  installed on the system (the same ones GNOME and COSMIC use). dopus has
+  no image or video decoders of its own; a type with no thumbnailer keeps
+  its icon. Files on network, FUSE and automounted filesystems (NFS, SMB,
+  sshfs, ntfs-3g and the like) keep their icons too, unless
+  `remote_previews: true` is set in the configuration (below). A file
+  whose filesystem stops answering keeps its icon rather than holding up
+  the previews of the others.
 - **Icons** show what a folder or file holds: your well-known folders have
   their own, and files are grouped by their MIME type (document, code,
   image, audio, video, archive, spreadsheet, presentation, font, disk
@@ -85,7 +95,9 @@ The two panes' folders, sorting and hidden-files setting, which pane was
 active, the split, and the sidebars' state and widths are kept in
 `config.conf.mix` in DOpus's own directory (by default
 `~/.local/state/mixos/apps/dopus/config/`). `dopus --print-config` shows the
-configuration it would use.
+configuration it would use. One setting lives only there:
+`remote_previews` (default `false`) makes previews of files on network,
+FUSE and automounted filesystems too.
 
 ## For agents
 
@@ -94,7 +106,7 @@ DOpus answers on the Bus as `dopus` (schema `dopus.v1`).
 | Verb | Arguments | Answer |
 |---|---|---|
 | `dopus.ping`, `dopus.describe`, `dopus.info` | | liveness, the control surface, version and build |
-| `dopus.state` | | both panes (path, sort, hidden files, selection, rows, status) and the sidebars |
+| `dopus.state` | | both panes (path, sort, hidden files, previews, selection, rows, status) and the sidebars |
 | `dopus.open` | `paths` (one per pane), or one path and `pane` | goes there |
 | `dopus.action` | `id`, `pane` (`left`, `right` or `active`) | runs one action |
 | `dopus.actions.list` | | every action, its keys in force and whether it can run now |

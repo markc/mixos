@@ -13,6 +13,7 @@ quit = Quit
 view-places = Places
 view-properties = Properties
 view-hidden = Hidden Files
+view-previews = Previews
 view-refresh = Refresh
 view-sort-name = Sort by Name
 view-sort-size = Sort by Size

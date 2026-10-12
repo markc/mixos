@@ -1670,6 +1670,7 @@ dependencies = [
  "nix",
  "serde",
  "tempfile",
+ "thumbs",
 ]
 
 [[package]]
@@ -7169,6 +7170,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "thumbs"
+version = "0.1.1"
+dependencies = [
+ "crc32fast",
+ "md-5",
+ "mimedb",
+ "nix",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
 name = "tiff"
 version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7435,11 +7448,13 @@ dependencies = [
  "egui_extras",
  "egui_kittest",
  "fluent-bundle",
+ "image",
  "png 0.18.1",
  "serde",
  "serde_json",
  "settings",
  "tempfile",
+ "thumbs",
  "uuid",
 ]
 

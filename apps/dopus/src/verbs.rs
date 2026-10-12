@@ -104,6 +104,12 @@ pub struct PaneState {
     pub path: String,
     pub active: bool,
     pub show_hidden: bool,
+    /// Thumbnails on (Show Previews).
+    #[serde(default)]
+    pub previews: bool,
+    /// The selection's thumbnail in the shared cache, once made.
+    #[serde(default)]
+    pub preview: Option<String>,
     /// `name | size | modified`.
     pub sort: String,
     pub ascending: bool,
@@ -385,6 +391,7 @@ pub const ACTIONS: &[(&str, &str)] = &[
     ("nav.switch-pane", "Switch active pane"),
     ("view.refresh", "Refresh"),
     ("view.toggle-hidden", "Toggle hidden files"),
+    ("view.toggle-previews", "Toggle previews"),
     ("view.sort-name", "Sort by name"),
     ("view.sort-size", "Sort by size"),
     ("view.sort-modified", "Sort by modified"),
@@ -558,6 +565,10 @@ pub fn apply_action_in(
         }
         "view.toggle-hidden" => {
             core.toggle_hidden_in(pane);
+            done
+        }
+        "view.toggle-previews" => {
+            core.toggle_previews_in(pane);
             done
         }
         // Law 5: a column switch sorts ascending; the core toggles a same
@@ -738,6 +749,13 @@ pub fn pane_state(core: &DopusCore, pane_id: PaneId) -> PaneState {
         path: dopus_core::sanitise_display_path(&pane.path),
         active: core.active() == pane_id,
         show_hidden: pane.show_hidden,
+        previews: pane.previews,
+        preview: match core.preview(pane_id) {
+            Some(dopus_core::thumbs::Preview::Ready(path)) => {
+                Some(dopus_core::sanitise_display_path(&path))
+            }
+            _ => None,
+        },
         sort: match pane.sort {
             dopus_core::SortColumn::Name => "name",
             dopus_core::SortColumn::Size => "size",

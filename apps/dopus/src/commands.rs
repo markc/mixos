@@ -51,6 +51,7 @@ fn toggle(id: &str) -> Option<fn(&App) -> bool> {
         "view.toggle-places" => |a: &App| a.checked("view.toggle-places") == Some(true),
         "view.toggle-properties" => |a: &App| a.checked("view.toggle-properties") == Some(true),
         "view.toggle-hidden" => |a: &App| a.checked("view.toggle-hidden") == Some(true),
+        "view.toggle-previews" => |a: &App| a.checked("view.toggle-previews") == Some(true),
         _ => return None,
     })
 }
@@ -82,6 +83,7 @@ pub fn registry() -> Registry<App> {
         "view.toggle-places", "view-places", view, 0;
         "view.toggle-properties", "view-properties", view, 0;
         "view.toggle-hidden", "view-hidden", view, 1;
+        "view.toggle-previews", "view-previews", view, 1;
         "view.refresh", "view-refresh", view, 1;
         "view.sort-name", "view-sort-name", view, 2;
         "view.sort-size", "view-sort-size", view, 2;

@@ -27,6 +27,8 @@ pub(crate) struct WorkerHandle {
     /// jobs retire without ever sending a reply, so only the worker itself
     /// can release its slot (browser.rs:338, 1669).
     pub(crate) count_in_flight: Arc<AtomicUsize>,
+    /// The thumbnail pool (started on first request).
+    pub(crate) thumbs: crate::thumbs::Pool,
 }
 
 impl WorkerHandle {
@@ -43,9 +45,11 @@ impl WorkerHandle {
         });
     }
     pub(crate) fn new(tx: mpsc::Sender<CoreEvent>) -> Self {
+        let generations = [Arc::new(AtomicU64::new(0)), Arc::new(AtomicU64::new(0))];
         Self {
+            thumbs: crate::thumbs::Pool::new(tx.clone(), generations.clone()),
             tx,
-            generations: [Arc::new(AtomicU64::new(0)), Arc::new(AtomicU64::new(0))],
+            generations,
             count_in_flight: Arc::new(AtomicUsize::new(0)),
         }
     }

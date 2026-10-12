@@ -135,6 +135,8 @@ pub struct PaneModel {
     pub show_hidden: bool,
     pub sort: SortColumn,
     pub ascending: bool,
+    /// Thumbnails on (Show Previews).
+    pub previews: bool,
     pub status: String,
     /// Directory-count jobs sent but not yet replied (browser.rs
     /// `pending_counts`, 240).
@@ -174,6 +176,7 @@ impl PaneModel {
             show_hidden,
             sort,
             ascending,
+            previews: true,
             status: "Loading…".into(),
             pending_counts: 0,
             count_sort_dirty: false,
@@ -277,6 +280,8 @@ impl ConfirmBook {
 pub struct DopusCore {
     sidebars: [crate::config::SidebarConfig; 2],
     properties: [crate::properties::Slot; 2],
+    /// Each pane's preview of its selection.
+    thumbnails: [crate::thumbs::Slot; 2],
     places_home: PathBuf,
     places_cache: std::cell::OnceCell<Vec<(&'static str, PathBuf)>>,
     #[cfg(test)]
@@ -284,6 +289,8 @@ pub struct DopusCore {
     panes: [PaneModel; 2],
     active: PaneId,
     split_ratio: f32,
+    /// Thumbnails on network and FUSE filesystems too (config only).
+    remote_previews: bool,
     operation: OpState,
     confirms: ConfirmBook,
     /// Idle/status text and operation results. Selection metadata has its
@@ -313,12 +320,14 @@ impl DopusCore {
     ) -> (Self, mpsc::Receiver<CoreEvent>) {
         let (tx, rx) = mpsc::channel();
         let workers = WorkerHandle::new(tx);
+        workers.thumbs.set_remote(config.remote_previews);
         let home = home_directory();
         let left_start = configured_directory(&config.left.path, &home);
         let right_start = configured_directory(&config.right.path, &home);
         let mut core = Self {
             sidebars: [config.places.normalised(), config.properties.normalised()],
             properties: Default::default(),
+            thumbnails: Default::default(),
             places_home: home,
             places_cache: std::cell::OnceCell::new(),
             #[cfg(test)]
@@ -343,6 +352,7 @@ impl DopusCore {
                 PaneId::Left
             },
             split_ratio: config.split_ratio,
+            remote_previews: config.remote_previews,
             operation: OpState::Idle,
             confirms: ConfirmBook::new(),
             info: INFO_IDLE.into(),
@@ -355,6 +365,8 @@ impl DopusCore {
             workers,
             pending: Vec::new(),
         };
+        core.panes[PaneId::Left.index()].previews = config.left.previews;
+        core.panes[PaneId::Right.index()].previews = config.right.previews;
         core.start_listing(PaneId::Left);
         core.start_listing(PaneId::Right);
         (core, rx)
@@ -420,6 +432,7 @@ impl DopusCore {
             show_hidden: pane.show_hidden,
             sort: pane.sort,
             ascending: pane.ascending,
+            previews: pane.previews,
         }
     }
 
@@ -432,6 +445,7 @@ impl DopusCore {
             show_hidden: pane.show_hidden,
             sort: pane.sort,
             ascending: pane.ascending,
+            previews: pane.previews,
         };
         DOpusConfig {
             schema_version: CURRENT_SCHEMA,
@@ -445,6 +459,7 @@ impl DopusCore {
             }
             .into(),
             split_ratio: self.split_ratio,
+            remote_previews: self.remote_previews,
         }
     }
 
@@ -608,6 +623,61 @@ impl DopusCore {
     /// 3440-3452).
     pub fn toggle_hidden(&mut self) {
         self.toggle_hidden_in(self.active);
+    }
+
+    /// Flip the active pane's thumbnails (Show Previews).
+    pub fn toggle_previews(&mut self) {
+        self.toggle_previews_in(self.active);
+    }
+
+    /// Toggle thumbnails without changing keyboard focus.
+    pub fn toggle_previews_in(&mut self, pane_id: PaneId) {
+        let pane = &mut self.panes[pane_id.index()];
+        pane.previews = !pane.previews;
+    }
+
+    /// The preview of `pane`'s selection: `None` when previews are off or
+    /// the selection is not a single file; else pending, ready or none to
+    /// show. A pure snapshot (the request is made in [`DopusCore::tick`]).
+    pub fn preview(&self, pane: PaneId) -> Option<crate::thumbs::Preview> {
+        use crate::thumbs::{Outcome, Preview};
+        let (generation, path) = self.preview_target(pane)?;
+        let slot = &self.thumbnails[pane.index()];
+        Some(match slot.result(generation, &path) {
+            Some(Outcome::Ready(thumbnail)) => Preview::Ready(thumbnail.clone()),
+            Some(Outcome::Failed(_) | Outcome::Skipped(_)) => Preview::None,
+            None => Preview::Pending,
+        })
+    }
+
+    /// What `pane` would preview: its listing generation and its selected
+    /// file, when previews are on and the selection is a regular file.
+    fn preview_target(&self, pane: PaneId) -> Option<(u64, PathBuf)> {
+        let model = self.pane(pane);
+        if !model.previews {
+            return None;
+        }
+        let path = model.selected.as_ref()?;
+        let entry = find_entry(model, path)?;
+        (!entry.is_dir).then(|| (model.generation, entry.path.clone()))
+    }
+
+    /// Ask the thumbnail pool for each pane's preview not yet made or asked.
+    fn dispatch_previews(&mut self) {
+        for pane in [PaneId::Left, PaneId::Right] {
+            let Some(key) = self.preview_target(pane) else {
+                continue;
+            };
+            let slot = &mut self.thumbnails[pane.index()];
+            let made = slot.result(key.0, &key.1).is_some();
+            if made || slot.in_flight.as_ref() == Some(&key) {
+                continue;
+            }
+            slot.in_flight = Some(key.clone());
+            self.workers
+                .thumbs
+                .submit(pane, key.0, key.1, crate::thumbs::PREVIEW_SIZE);
+        }
     }
 
     /// Toggle hidden files without changing keyboard focus.
@@ -1231,6 +1301,23 @@ impl DopusCore {
                     }
                 }
             }
+            CoreEvent::ThumbnailArrived {
+                pane,
+                generation,
+                path,
+                outcome,
+            } => {
+                let slot = &mut self.thumbnails[pane.index()];
+                if slot.in_flight.as_ref() == Some(&(generation, path.clone())) {
+                    slot.in_flight = None;
+                }
+                // Kept by its own key even if the selection has moved: a late
+                // reply never evicts the current one, and selecting it again
+                // within this listing needs no second run.
+                if self.pane(pane).generation == generation {
+                    self.thumbnails[pane.index()].keep(generation, path, outcome);
+                }
+            }
             CoreEvent::ListingArrived {
                 pane,
                 generation,
@@ -1497,6 +1584,7 @@ impl DopusCore {
     /// view-facing events queued so far.
     pub fn tick(&mut self, now: Instant) -> Vec<CoreEvent> {
         self.dispatch_properties(now);
+        self.dispatch_previews();
         self.dispatch_counts();
         let snapshot = self.config_snapshot();
         if self.last_observed.as_ref() != Some(&snapshot) {
@@ -2145,6 +2233,7 @@ pub struct AvailabilitySnapshot {
     pub show_hidden: bool,
     pub sort: SortColumn,
     pub ascending: bool,
+    pub previews: bool,
 }
 
 #[cfg(test)]
@@ -2153,6 +2242,112 @@ mod tests {
 
     fn now_instant() -> Instant {
         Instant::now()
+    }
+
+    #[test]
+    fn a_selected_file_is_previewed_once_and_stale_replies_are_dropped() {
+        use crate::thumbs::{Outcome, Preview};
+        let (_dir, mut core, _rx) = core_fixture();
+        let pane = PaneId::Left;
+        let generation = core.pane(pane).generation;
+        core.panes[0].root = vec![entry("photo.jpg", false), entry("folder", true)];
+        // A folder has no preview; a file is pending once asked.
+        core.select_path(pane, Some(PathBuf::from("folder")));
+        assert_eq!(core.preview(pane), None);
+        core.select_path(pane, Some(PathBuf::from("photo.jpg")));
+        assert_eq!(core.preview(pane), Some(Preview::Pending));
+        core.dispatch_previews();
+        let key = (generation, PathBuf::from("photo.jpg"));
+        assert_eq!(core.thumbnails[0].in_flight.as_ref(), Some(&key));
+        // Asked once, not per tick.
+        core.dispatch_previews();
+        assert_eq!(core.thumbnails[0].in_flight.as_ref(), Some(&key));
+        // A reply for an older listing changes nothing.
+        core.on_event(CoreEvent::ThumbnailArrived {
+            pane,
+            generation: generation.wrapping_sub(1),
+            path: key.1.clone(),
+            outcome: Outcome::Ready(PathBuf::from("/old.png")),
+        });
+        assert_eq!(core.preview(pane), Some(Preview::Pending));
+        core.on_event(CoreEvent::ThumbnailArrived {
+            pane,
+            generation,
+            path: key.1.clone(),
+            outcome: Outcome::Ready(PathBuf::from("/cache/x.png")),
+        });
+        assert_eq!(
+            core.preview(pane),
+            Some(Preview::Ready(PathBuf::from("/cache/x.png")))
+        );
+        assert!(core.thumbnails[0].in_flight.is_none());
+        core.dispatch_previews();
+        assert!(
+            core.thumbnails[0].in_flight.is_none(),
+            "made: not asked again"
+        );
+        // Failures show the MIME icon; previews off hides it all.
+        core.thumbnails[0].keep(generation, key.1.clone(), Outcome::Skipped("x"));
+        assert_eq!(core.preview(pane), Some(Preview::None));
+        core.toggle_previews_in(pane);
+        assert_eq!(core.preview(pane), None);
+        assert!(!core.config_snapshot().left.previews);
+        assert!(!core.availability().previews);
+    }
+
+    #[test]
+    fn a_late_reply_never_evicts_the_current_preview() {
+        use crate::thumbs::{Outcome, Preview};
+        let (_dir, mut core, _rx) = core_fixture();
+        let pane = PaneId::Left;
+        let generation = core.pane(pane).generation;
+        core.panes[0].root = vec![entry("a.png", false), entry("b.png", false)];
+        core.select_path(pane, Some(PathBuf::from("a.png")));
+        core.dispatch_previews();
+        core.select_path(pane, Some(PathBuf::from("b.png")));
+        core.dispatch_previews();
+        let arrive = |core: &mut DopusCore, name: &str, cached: &str| {
+            core.on_event(CoreEvent::ThumbnailArrived {
+                pane,
+                generation,
+                path: PathBuf::from(name),
+                outcome: Outcome::Ready(PathBuf::from(cached)),
+            });
+        };
+        arrive(&mut core, "b.png", "/cache/b.png");
+        arrive(&mut core, "a.png", "/cache/a.png");
+        assert_eq!(
+            core.preview(pane),
+            Some(Preview::Ready(PathBuf::from("/cache/b.png")))
+        );
+        // Back to A: already made, shown at once, not asked again.
+        core.select_path(pane, Some(PathBuf::from("a.png")));
+        assert_eq!(
+            core.preview(pane),
+            Some(Preview::Ready(PathBuf::from("/cache/a.png")))
+        );
+        core.dispatch_previews();
+        assert!(core.thumbnails[0].in_flight.is_none());
+    }
+
+    #[test]
+    fn previews_persist_per_pane_and_older_configs_default_on() {
+        let raw =
+            "schema_version: 2\nleft: {path: \"/tmp\", previews: false}\nright: {path: \"/tmp\"}\n";
+        let config: DOpusConfig = ::config::from_conf_mix_str(raw).unwrap();
+        assert!(!config.left.previews);
+        assert!(config.right.previews);
+        // Remote previews are opt-in, and kept across a save.
+        assert!(!config.remote_previews);
+        let raw = "schema_version: 2\nremote_previews: true\n";
+        let mut config: DOpusConfig = ::config::from_conf_mix_str(raw).unwrap();
+        assert!(config.remote_previews);
+        let dir = tempfile::tempdir().unwrap();
+        config.left.path = dir.path().to_owned();
+        config.right.path = dir.path().to_owned();
+        let (core, _rx) = DopusCore::new(config, None);
+        assert!(core.config_snapshot().remote_previews);
+        assert!(core.workers.thumbs.remote());
     }
 
     #[test]

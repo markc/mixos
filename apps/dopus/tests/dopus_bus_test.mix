@@ -259,6 +259,12 @@ try
   check(pane(1).show_hidden and not pane(0).show_hidden, "toggle-hidden: " .. json_encode([pane(0), pane(1)]))
   act("view.toggle-hidden")
   check(not pane(1).show_hidden, "toggle-hidden back")
+  -- previews (thumbnails) on by default, per pane
+  check(pane(1).previews and pane(0).previews, "previews default on: " .. json_encode([pane(0), pane(1)]))
+  act("view.toggle-previews")
+  check(not pane(1).previews and pane(0).previews, "toggle-previews: " .. json_encode([pane(0), pane(1)]))
+  act("view.toggle-previews")
+  check(pane(1).previews, "toggle-previews back")
 
   -- 7. navigation on the ACTIVE pane (pane 1, at beta): parent, back, forward, home
   act("nav.parent")

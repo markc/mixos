@@ -79,6 +79,9 @@ pub struct PaneConfig {
     pub show_hidden: bool,
     pub sort: SortColumn,
     pub ascending: bool,
+    /// Show thumbnails (Dolphin's Show Previews). Added in place, with a
+    /// default: older files load with it on, and older dopus ignores it.
+    pub previews: bool,
 }
 
 impl Default for PaneConfig {
@@ -88,6 +91,7 @@ impl Default for PaneConfig {
             show_hidden: false,
             sort: SortColumn::Name,
             ascending: true,
+            previews: true,
         }
     }
 }
@@ -105,6 +109,11 @@ pub struct DOpusConfig {
     pub active_pane: String,
     #[serde(default = "default_split_ratio")]
     pub split_ratio: f32,
+    /// Thumbnail files on network and FUSE filesystems (NFS, SMB, sshfs…)
+    /// too. Off: reading them costs a round trip per file, and a FUSE
+    /// daemon may never answer. Added in place, with a default: older files
+    /// load with it off, and older dopus ignores it.
+    pub remote_previews: bool,
 }
 
 fn deserialize_properties<'de, D: serde::Deserializer<'de>>(
@@ -134,6 +143,7 @@ impl Default for DOpusConfig {
             right: default_right_pane(),
             active_pane: "left".into(),
             split_ratio: default_split_ratio(),
+            remote_previews: false,
         }
     }
 }

@@ -537,6 +537,7 @@ impl Shell {
             self.respond(answer.id, answer.rc, answer.body.to_string());
         }
         self.pump_core();
+        self.app.sync_preview(ctx);
         self.pump_bus();
         self.perform();
         self.follow_theme();
