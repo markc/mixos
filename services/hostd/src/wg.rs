@@ -434,7 +434,9 @@ pub fn route_probe(own: &[(IpAddr, u8)], others: &[(IpAddr, u8)]) -> Option<IpAd
         // An uncovered address, if there is one, sits at the start of this
         // entry, or just after the end of one of the ranges covering part
         // of it: those few points are checked, not a sample.
-        let mut candidates = vec![probe_target(addr, prefix), addr];
+        // Host addresses first; the entry's own first address (a network
+        // address, which still routes) only as a last resort.
+        let mut candidates = vec![probe_target(addr, prefix)];
         for &(o, op) in others {
             if op >= prefix && contains((addr, prefix), o)
                 && let Some(after) = last_of((o, op)).and_then(|end| offset(end, 1))
@@ -442,6 +444,7 @@ pub fn route_probe(own: &[(IpAddr, u8)], others: &[(IpAddr, u8)]) -> Option<IpAd
                 candidates.push(after);
             }
         }
+        candidates.push(addr);
         for candidate in candidates {
             let inside = contains((addr, prefix), candidate)
                 // A default route's probe is a documentation address, which
