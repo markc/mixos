@@ -3066,11 +3066,13 @@ name = "hostd"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
  "blake3",
  "buildinfo",
  "bus",
  "chrono",
  "clap",
+ "curve25519-dalek",
  "futures-util",
  "libc",
  "serde",
