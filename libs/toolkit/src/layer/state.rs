@@ -728,6 +728,10 @@ impl<P: LayerProgram + 'static> LayerShellHandler for State<P> {
         // compositor may withhold (a hidden or powered-down output).
         s.frame_pending = false;
         s.pending_since = None;
+        // A configure is a fresh start: whatever made frames skip may be
+        // gone, so draw now rather than wait out the backoff.
+        s.skips = 0;
+        s.retry_at = None;
         if (width, height) != s.size {
             s.size = (width, height);
             let id = s.id;
