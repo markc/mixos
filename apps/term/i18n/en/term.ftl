@@ -37,3 +37,7 @@ keys-title = Keyboard Shortcuts
 close = Close
 unknown-command = Unknown Terminal command
 command-disabled = That command is not available right now
+paste-too-large = Paste exceeds 16 MiB limit
+paste-timed-out = The clipboard did not answer in time
+paste-busy = A paste is still being read
+paste-failed = The clipboard could not be read

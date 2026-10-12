@@ -22,6 +22,7 @@ pub mod ime;
 pub mod input;
 pub mod layout;
 pub mod mouse;
+pub mod selection;
 pub mod shell;
 pub mod view;
 

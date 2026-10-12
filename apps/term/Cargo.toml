@@ -30,8 +30,11 @@ eframe.workspace = true
 egui.workspace = true
 serde_json.workspace = true
 settings.workspace = true
-# The Wayland clipboard and primary selection (egui has no primary).
-smithay-clipboard = "=0.7.3"
+# The Wayland clipboard and primary selection (egui has no primary), on
+# a worker of the window's own with bounded reads (src/selection.rs).
+sctk = { package = "smithay-client-toolkit", version = "=0.20.0", default-features = false, features = ["calloop"] }
+wayland-backend = { version = "=0.3.17", features = ["client_system"] }
+libc.workspace = true
 term-core = { path = "crates/term-core" }
 term-render = { path = "crates/term-render" }
 tokio = { workspace = true, features = ["sync"] }

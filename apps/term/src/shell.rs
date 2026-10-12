@@ -192,8 +192,24 @@ impl Shell {
                 }
             }
         }
-        for (pane, text) in self.clipboard.take() {
-            self.app.paste(pane, text);
+        for (pane, read) in self.clipboard.take() {
+            use crate::selection::ReadError;
+            let notice = match read {
+                Ok(text) => {
+                    self.app.paste(pane, Some(text));
+                    continue;
+                }
+                // Nothing to paste is not worth a notice.
+                Err(ReadError::Empty) => continue,
+                Err(ReadError::TooLarge) => crate::label("paste-too-large"),
+                Err(ReadError::TimedOut) => crate::label("paste-timed-out"),
+                Err(ReadError::Busy) => crate::label("paste-busy"),
+                Err(ReadError::Failed(error)) => {
+                    eprintln!("term: paste: {error}");
+                    crate::label("paste-failed")
+                }
+            };
+            self.app.paste_notice = Some(notice);
         }
         self.release();
     }

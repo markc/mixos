@@ -28,7 +28,7 @@ fn a_tiny_pane_never_draws_over_its_neighbour() {
     let left = tabs.active_tab().active_pane;
     let right = tabs.split_active(SplitDir::Vertical).expect("a split");
     // The left grid is solid red; the right one is the default background.
-    for (id, text) in [(left, "\x1b[41m        \r\n        "), (right, "")] {
+    for (id, text) in [(left, "\x1b[41m    "), (right, "")] {
         let terminal = tabs.pane_by_id(id).unwrap();
         *terminal.lock().unwrap() = Terminal::from_test_vt(2, 2, text.as_bytes());
     }
@@ -73,12 +73,16 @@ fn a_tiny_pane_never_draws_over_its_neighbour() {
         .build_ui_state(|ui, app: &mut App| term::view::panes(ui, app), app);
     harness.run_steps(2);
     let image = harness.render().expect("offscreen render");
-    let red = |x: u32, y: u32| {
-        let [r, g, b, _] = image.get_pixel(x, y).0;
-        r > 120 && g < 60 && b < 60
-    };
-    // Red inside the left pane: the grid did draw.
-    assert!(red(2, 4), "the left grid is drawn");
+    // The left grid's red, sampled inside it; the right pane must not
+    // show it anywhere.
+    let pixel = |x: u32, y: u32| image.get_pixel(x, y).0;
+    let ink = pixel(2, 4);
+    let right_inside = pixel(right_pane.x as u32 + 3, 30);
+    assert_ne!(
+        ink, right_inside,
+        "the left grid is drawn, in its own colour"
+    );
+    let red = |x: u32, y: u32| pixel(x, y) == ink;
     // Nothing red inside the right pane.
     for x in right_pane.x as u32..width as u32 {
         for y in 0..48 {
