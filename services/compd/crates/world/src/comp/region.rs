@@ -673,7 +673,10 @@ fn rounded(x: u32, y: u32, half_w: f32, half_h: f32, radius: f32, inset: f32) ->
     if half_w <= 0.0 || half_h <= 0.0 {
         return 0.0;
     }
-    let (cx, cy) = (x as f32 + 0.5 - (half_w + inset), y as f32 + 0.5 - (half_h + inset));
+    let (cx, cy) = (
+        x as f32 + 0.5 - (half_w + inset),
+        y as f32 + 0.5 - (half_h + inset),
+    );
     let dx = (cx.abs() - (half_w - radius)).max(0.0);
     let dy = (cy.abs() - (half_h - radius)).max(0.0);
     let outside = (cx.abs() - half_w).max(cy.abs() - half_h);
