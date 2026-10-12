@@ -2147,9 +2147,8 @@ it keeps.
   toggle sits right of the right pane's path field.
 - **Previews** (View › Previews, per pane, on by default) are thumbnails
   from the desktop's shared thumbnail cache, made by the thumbnailers
-  installed on the system (the same ones GNOME and COSMIC use). dopus has
-  no image or video decoders of its own; a type with no thumbnailer keeps
-  its icon. Files on network, FUSE and automounted filesystems (NFS, SMB,
+  installed on the system (the same ones GNOME and COSMIC use). A type
+  with no thumbnailer keeps its icon. Files on network, FUSE and automounted filesystems (NFS, SMB,
   sshfs, ntfs-3g and the like) keep their icons too, unless
   `remote_previews: true` is set in the configuration (below). A file
   whose filesystem stops answering keeps its icon rather than holding up

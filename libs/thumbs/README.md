@@ -6,7 +6,9 @@ Managing Standard), so one made by another file manager shows at once, and
 the reverse. A missing one is made by a thumbnailer installed on the system
 (a `.thumbnailer` entry, the contract GNOME, COSMIC and glycin share). It
 runs as a plain argv in its own process group under a timeout, and its
-output is checked before it is cached. No MixOS app decodes media itself.
+output is checked before it is cached. Thumbnailers reach every format the
+system knows, and keep decoders MixOS cannot ship under its licences
+(FFmpeg-backed video, for one) in their own process.
 
 The crate is headless: no toolkit, no pixels. Showing a cached thumbnail is
 `toolkit::thumbnail`'s part.

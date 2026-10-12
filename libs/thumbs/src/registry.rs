@@ -10,9 +10,11 @@
 //! MimeType=image/png;image/jpeg;
 //! ```
 //!
-//! No MixOS app decodes media (the core-app ruling): every thumbnail comes from
-//! one of these programs. An `Exec` line becomes an argv, never a shell
-//! command, and each placeholder fills exactly one argument.
+//! Every thumbnail this library makes comes from one of these programs:
+//! they cover every format the system knows, and keep decoders MixOS cannot
+//! ship (FFmpeg-backed video, for one) in their own process. An `Exec` line
+//! becomes an argv, never a shell command, and each placeholder fills
+//! exactly one argument.
 
 use std::collections::HashMap;
 use std::ffi::OsString;

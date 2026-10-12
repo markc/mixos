@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! File thumbnails, as Dolphin shows them: cached in the freedesktop shared
 //! cache ([`cache`]), made by the system's thumbnailers ([`registry`],
-//! [`generate`]), never by a decoder of MixOS's own. Requests run on a small
-//! pool ([`Pool`]) off the caller's thread and come back through its reply
-//! callback.
+//! [`generate`]), which reach every format the system knows. Requests run
+//! on a small pool ([`Pool`]) off the caller's thread and come back through
+//! its reply callback.
 //!
 //! Headless: no toolkit, no pixels. Showing a cached thumbnail is the
 //! toolkit's part (`toolkit::thumbnail`).
