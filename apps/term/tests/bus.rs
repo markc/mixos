@@ -73,7 +73,7 @@ fn the_window_answers_its_verbs_over_a_real_broker() {
         .unwrap()
         .set_wake(Arc::new(move || flag.store(true, Ordering::Release)));
     let (cleanup, reaper) = Cleanup::start().expect("cleanup worker");
-    let (events_tx, events_rx) = std::sync::mpsc::channel();
+    let (events_tx, events_rx) = std::sync::mpsc::sync_channel(64);
     let outbox = Arc::new(citizen::outbox::Outbox::default());
     let link = Arc::new(OnceLock::new());
     let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
@@ -90,6 +90,7 @@ fn the_window_answers_its_verbs_over_a_real_broker() {
             wake: wake.clone(),
             outbox: outbox.clone(),
             link: link.clone(),
+            reply_timeout: Duration::from_secs(2),
         },
     );
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -225,6 +226,33 @@ fn the_window_answers_its_verbs_over_a_real_broker() {
     let (rc, body) = call("term.execute", json!({"id": "tab.select", "tab": before}));
     assert_eq!(rc, 0, "{body}");
     assert_eq!(tabs.lock().unwrap().active_id(), before, "tab.select by id");
+
+    // A window that draws no frames (off screen) never answers: the lane
+    // answers TIMEOUT, and the command does not run when frames resume.
+    let tab_count = tabs.lock().unwrap().list().len();
+    let late = {
+        let client = client.clone();
+        runtime.block_on(async move {
+            client
+                .call_with_headers_raw(
+                    "term",
+                    "term.execute",
+                    &Default::default(),
+                    &json!({"id": "tab.new"}).to_string(),
+                )
+                .await
+        })
+    };
+    let (rc, body, _) = late.unwrap();
+    assert_eq!(rc, 10);
+    assert!(body.contains("TIMEOUT"), "{body}");
+    let (rc, _) = call("term.window.state", json!({}));
+    assert_eq!(rc, 0);
+    assert_eq!(
+        tabs.lock().unwrap().list().len(),
+        tab_count,
+        "an expired command ran late"
+    );
 
     // Every run was published, with how it was reached.
     let runs: Vec<(String, String)> = runtime.block_on(async {

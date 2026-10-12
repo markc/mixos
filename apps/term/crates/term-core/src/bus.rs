@@ -37,13 +37,17 @@ pub struct Window {
     /// protocol verb such as `app.describe`.
     pub answers: fn(&str) -> bool,
     /// Where those verbs and the topic frames go; `wake` runs after each.
-    pub events: std::sync::mpsc::Sender<WindowEvent>,
+    /// Bounded (`std::sync::mpsc::sync_channel`): when it is full the lane
+    /// answers BUSY rather than queue without limit.
+    pub events: std::sync::mpsc::SyncSender<WindowEvent>,
     pub wake: crate::terminal::Wake,
     /// The shell's topic events (`<name>.command.executed`), published
     /// once the name is registered.
     pub outbox: Arc<citizen::outbox::Outbox>,
     /// Set once the name is registered.
     pub link: Arc<OnceLock<Link>>,
+    /// How long a window verb may wait ([`WINDOW_REPLY_TIMEOUT`]).
+    pub reply_timeout: Duration,
 }
 
 /// The registered connection, for a shell that calls and subscribes.
@@ -71,6 +75,15 @@ pub enum WindowEvent {
 }
 
 const WINDOW_CLOSING: &str = r#"{"error_code":"BUSY","message":"the window is closing"}"#;
+const WINDOW_BUSY: &str =
+    r#"{"error_code":"BUSY","message":"the window has too many requests waiting; retry"}"#;
+const WINDOW_TIMEOUT: &str = r#"{"error_code":"TIMEOUT","message":"the window did not answer in time (it draws only while it is on screen)"}"#;
+
+/// Window verbs waiting for an answer at most; more are refused BUSY.
+pub const WINDOW_REPLIES_MAX: usize = 32;
+/// How long a window verb may wait for its answer. An expired request is
+/// answered TIMEOUT and the window skips it, so it never runs late.
+pub const WINDOW_REPLY_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// A window verb's command and the answer it is waiting for.
 type WindowReply = (IncomingCommand, u8, String);
@@ -84,11 +97,18 @@ fn to_window(
     replies: &mut tokio::task::JoinSet<WindowReply>,
 ) -> Option<IncomingCommand> {
     if let Some(topic) = command.topic() {
-        let _ = window.events.send(WindowEvent::Topic {
-            topic: topic.to_owned(),
-            body: command.body.clone(),
-        });
-        (window.wake)();
+        // Topic frames are hints the window reads state after: one dropped
+        // while the window is behind is caught up by the next.
+        if window
+            .events
+            .try_send(WindowEvent::Topic {
+                topic: topic.to_owned(),
+                body: command.body.clone(),
+            })
+            .is_ok()
+        {
+            (window.wake)();
+        }
         return None;
     }
     // The strict posture answers INFO and HELP only, window verbs included.
@@ -107,16 +127,30 @@ fn to_window(
     } else {
         command.body.clone()
     };
+    if replies.len() >= WINDOW_REPLIES_MAX {
+        replies.spawn(async move { (command, 10, WINDOW_BUSY.to_owned()) });
+        return None;
+    }
     let (reply, answer) = tokio::sync::oneshot::channel();
-    // A window that has gone drops `reply` with the event: answered below.
-    let _ = window
+    match window
         .events
-        .send(WindowEvent::Command { verb, body, reply });
-    (window.wake)();
+        .try_send(WindowEvent::Command { verb, body, reply })
+    {
+        Ok(()) => (window.wake)(),
+        Err(std::sync::mpsc::TrySendError::Full(_)) => {
+            replies.spawn(async move { (command, 10, WINDOW_BUSY.to_owned()) });
+            return None;
+        }
+        // A window that has gone dropped `reply` with the event: the wait
+        // below answers that it is closing.
+        Err(std::sync::mpsc::TrySendError::Disconnected(_)) => {}
+    }
+    let timeout = window.reply_timeout;
     replies.spawn(async move {
-        match answer.await {
-            Ok((rc, body)) => (command, rc, body),
-            Err(_) => (command, 10, WINDOW_CLOSING.to_owned()),
+        match tokio::time::timeout(timeout, answer).await {
+            Ok(Ok((rc, body))) => (command, rc, body),
+            Ok(Err(_)) => (command, 10, WINDOW_CLOSING.to_owned()),
+            Err(_) => (command, 10, WINDOW_TIMEOUT.to_owned()),
         }
     });
     None
@@ -1370,6 +1404,59 @@ mod tests {
 
     /// `VERBS` is exactly the set the handlers accept and HELP documents
     /// (term.session is served but not in HELP).
+    #[test]
+    fn the_window_hand_off_is_bounded_and_expires() {
+        let command = |verb: &str| IncomingCommand {
+            generation: 0,
+            from: "caller".into(),
+            command: verb.into(),
+            id: Some("1".into()),
+            args: serde_json::Value::Null,
+            body: "{}".into(),
+            headers: Default::default(),
+        };
+        let (events, received) = std::sync::mpsc::sync_channel(1);
+        let window = Window {
+            answers: |verb| verb == "term.ui.tree",
+            events,
+            wake: Arc::new(|| {}),
+            outbox: Arc::new(citizen::outbox::Outbox::default()),
+            link: Arc::new(OnceLock::new()),
+            reply_timeout: Duration::from_millis(50),
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let mut replies = tokio::task::JoinSet::new();
+            // Not the window's: given back to the lane.
+            assert!(to_window("term", &window, command("term.tabs"), &mut replies).is_some());
+            // The first waits in the bounded hand-off; the second finds it
+            // full and is answered BUSY at once, never queued.
+            assert!(to_window("term", &window, command("term.ui.tree"), &mut replies).is_none());
+            assert!(to_window("term", &window, command("term.ui.tree"), &mut replies).is_none());
+            let (_, rc, body) = replies.join_next().await.unwrap().unwrap();
+            assert_eq!((rc, body.as_str()), (10, WINDOW_BUSY));
+            // The window never answers the first: it expires.
+            let (_, rc, body) = replies.join_next().await.unwrap().unwrap();
+            assert_eq!((rc, body.as_str()), (10, WINDOW_TIMEOUT));
+            let Ok(WindowEvent::Command { reply, .. }) = received.try_recv() else {
+                panic!("the first request reached the window");
+            };
+            assert!(reply.is_closed(), "the window can see it expired");
+            // At most WINDOW_REPLIES_MAX wait; beyond that, BUSY.
+            let (events, _keep) = std::sync::mpsc::sync_channel(1024);
+            let window = Window { events, ..window };
+            for _ in 0..WINDOW_REPLIES_MAX {
+                to_window("term", &window, command("term.ui.tree"), &mut replies);
+            }
+            to_window("term", &window, command("term.ui.tree"), &mut replies);
+            let (_, rc, body) = replies.join_next().await.unwrap().unwrap();
+            assert_eq!((rc, body.as_str()), (10, WINDOW_BUSY));
+        });
+    }
+
     #[test]
     fn the_verb_list_is_the_served_surface() {
         for (verb, _) in VERBS {

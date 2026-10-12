@@ -149,7 +149,10 @@ fn run(settings: config::Settings) -> Result<(), String> {
     // handed to the Bus thread, which emits interact.notify. TERM_NOTIFY=0
     // drops the sender, so notes are never queued.
     let (notify_tx, notify_rx) = tokio::sync::mpsc::unbounded_channel();
-    let (events_tx, events_rx) = std::sync::mpsc::channel();
+    // Bounded: a window that falls behind (off screen, it draws no frames)
+    // has the lane answer BUSY, and each request expires after
+    // WINDOW_REPLY_TIMEOUT.
+    let (events_tx, events_rx) = std::sync::mpsc::sync_channel(64);
     let outbox = Arc::new(citizen::outbox::Outbox::default());
     let link = Arc::new(OnceLock::new());
     // The `term.*` surface, and the window's verbs on the same name. With
@@ -165,6 +168,7 @@ fn run(settings: config::Settings) -> Result<(), String> {
             wake: wake.clone(),
             outbox: outbox.clone(),
             link: link.clone(),
+            reply_timeout: term_core::bus::WINDOW_REPLY_TIMEOUT,
         },
     );
 

@@ -212,6 +212,15 @@ impl Shell {
                 return;
             }
             let held = self.held.pop_front().expect("a held command");
+            // The lane answered TIMEOUT already: a late command never runs.
+            if self
+                .replies
+                .get(&held.id)
+                .is_none_or(|reply| reply.is_closed())
+            {
+                self.replies.remove(&held.id);
+                continue;
+            }
             let args: Value = serde_json::from_str(&held.body).unwrap_or(Value::Null);
             match drive_verb {
                 Some(verb) => {
