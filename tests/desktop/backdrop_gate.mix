@@ -4,7 +4,11 @@
 -- weston host), judged by Bus evidence, a screenshot and backdrop's own
 -- JSON lines.
 --
---   mix tests/desktop/backdrop_gate.mix --backdrop PATH [--bin PATH] --config-file PATH [--software]
+--   mix tests/desktop/backdrop_gate.mix --backdrop PATH [--bin PATH] --config-file PATH
+--       [--software] [--private-bus [--noded PATH]]
+--
+-- --private-bus starts an owned noded on a loopback port for the run (a
+-- build worker runs no broker); without it the run uses this node's.
 --
 -- Checks:
 -- - backdrop maps a NEW layer row on the Background band;
@@ -24,7 +28,9 @@ $c = require("capture_lib.mix")
 $CLEANUP = {ok: false, run: nil}
 try
 
-$USAGE = "usage: backdrop_gate.mix --backdrop PATH [--bin PATH] --config-file PATH [--software]"
+$USAGE = "usage: backdrop_gate.mix --backdrop PATH [--bin PATH] --config-file PATH [--software] [--private-bus [--noded PATH]]"
+$PRIVATE_BUS = false
+$NODED = ""
 $BIN = ""
 $CONFIG = ""
 $BACKDROP = ""
@@ -45,6 +51,12 @@ while $ai < len($argv)
   elif $arg == "--software" then
     $SOFTWARE = true
     $ai = $ai + 1
+  elif $arg == "--private-bus" then
+    $PRIVATE_BUS = true
+    $ai = $ai + 1
+  elif $arg == "--noded" and $ai + 1 < len($argv) then
+    $NODED = $argv[$ai + 1]
+    $ai = $ai + 2
   else
     print("  ERROR: unknown or incomplete argument '" .. $arg .. "'")
     print($USAGE)
@@ -78,12 +90,17 @@ fn check($name, $ok, $detail)
 end
 
 $CLEANUP.run = $n.new_run("/tmp/backdrop-gate-" .. to_string(pid()))
+$BUS = nil
+if $PRIVATE_BUS then
+  $BUS = $n.private_bus({dir: $CLEANUP.run .. "/bus", name: "backdrop-gate", noded: $NODED})
+end
 $session = $n.start({bin: $comp, tag: "backdrop", run: $CLEANUP.run, config: $CONFIG, env: {}, software: $SOFTWARE})
 $svc = $session["service"]
 $run = $session["runtime"]
 if not check("compositor socket up and comp.ping answered", $n.wait_ready($session, 30),
     "log " .. $session["log"]) then
   $n.stop($session)
+  $n.stop_bus($BUS)
   exit(1)
 end
 print("nested compd (" .. $comp .. "): socket " .. $session["socket"] .. ", service " .. $svc)
@@ -280,6 +297,7 @@ if is_file($session["log"]) then
   $final = re_replace(read_file($session["log"]), "\u{1b}\\[[0-9;]*m", "")
 end
 check("no compositor panic (final log)", len(grep_lines($final, "panicked at")) == 0, $session["log"])
+$n.stop_bus($BUS)
 
 $total = $TALLY["pass"] + $TALLY["fail"]
 if $TALLY["fail"] == 0 then
