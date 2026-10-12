@@ -85,7 +85,11 @@ mod tests {
         assert_eq!(surface_wait(None, None, now), None);
         assert_eq!(shortest([None, None]), None);
         assert_eq!(
-            shortest([None, Some(Duration::from_millis(80)), Some(Duration::from_millis(30))]),
+            shortest([
+                None,
+                Some(Duration::from_millis(80)),
+                Some(Duration::from_millis(30))
+            ]),
             Some(Duration::from_millis(30))
         );
     }

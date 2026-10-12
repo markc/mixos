@@ -18,7 +18,7 @@ use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::reexports::client::backend::ObjectId;
 use smithay_client_toolkit::reexports::client::globals::registry_queue_init;
 use smithay_client_toolkit::reexports::client::protocol::{
-    wl_keyboard, wl_output, wl_pointer, wl_seat, wl_surface,
+    wl_callback, wl_keyboard, wl_output, wl_pointer, wl_seat, wl_surface,
 };
 use smithay_client_toolkit::reexports::client::{Connection, Dispatch, Proxy, QueueHandle};
 use smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::WpCursorShapeDeviceV1;
@@ -79,6 +79,8 @@ struct Surface {
     frame_pending: bool,
     /// When the frame callback being waited for was asked for.
     pending_since: Option<Instant>,
+    /// The generation of the frame callback being waited for.
+    frame_gen: u64,
     /// Frames skipped in a row, and when the next attempt may run: the
     /// retry backs off with each skip, whatever else wakes the loop.
     skips: u32,
@@ -276,6 +278,7 @@ impl<P: LayerProgram + 'static> State<P> {
             dirty: true,
             frame_pending: false,
             pending_since: None,
+            frame_gen: 0,
             skips: 0,
             retry_at: None,
             rescued: false,
@@ -491,10 +494,14 @@ impl<P: LayerProgram + 'static> State<P> {
         let output = s.ctx.run_ui(raw, |ui| program.show(ui, &info));
         let cursor = output.platform_output.cursor_icon;
         let wl = s.layer.wl_surface().clone();
+        // Each frame callback carries its frame's generation: a late one
+        // from an earlier present never clears a newer frame's wait.
+        s.frame_gen += 1;
+        let generation = s.frame_gen;
         let painted = self.gpu.paint(&mut s.target, output, &s.ctx, || {
             // The present commits the surface: the frame callback goes in
             // with it, so the next pass waits for this one to be shown.
-            wl.frame(qh, wl.clone());
+            wl.frame(qh, (id, generation));
         });
         match painted {
             Ok(()) => {
@@ -504,12 +511,15 @@ impl<P: LayerProgram + 'static> State<P> {
                 s.retry_at = None;
                 self.program.presented(&info);
             }
-            Err(Skipped::Reconfigure) => self.reconfigure(id),
-            Err(Skipped::Later) => {
-                // Back off: 50 ms doubling to 1 s while it keeps skipping.
+            Err(skipped) => {
+                // Either way it draws again on its own deadline, backing off
+                // (50 ms doubling to 1 s) while it keeps being skipped.
                 s.dirty = true;
                 s.retry_at = Some(Instant::now() + timing::retry_after(s.skips));
                 s.skips = s.skips.saturating_add(1);
+                if matches!(skipped, Skipped::Reconfigure) {
+                    self.reconfigure(id);
+                }
             }
         }
         let over = self
@@ -616,11 +626,9 @@ impl<P: LayerProgram + 'static> CompositorHandler for State<P> {
         surface: &wl_surface::WlSurface,
         _: u32,
     ) {
-        if let Some(s) = self.by_wl(&surface.id()) {
-            s.frame_pending = false;
-            s.pending_since = None;
-            s.rescued = false;
-        }
+        // Frame callbacks arrive through the generation-keyed dispatch
+        // below, not here.
+        let _ = surface;
     }
 
     fn surface_enter(
@@ -892,7 +900,12 @@ impl<P: LayerProgram + 'static> State<P> {
             return;
         };
         let code = event.raw_code;
-        let types = event.utf8.as_deref().is_some_and(|t| !t.is_empty());
+        // Text, not a control character (Backspace, Return and Delete carry
+        // those): only text goes stale when modifiers change.
+        let types = event
+            .utf8
+            .as_deref()
+            .is_some_and(|t| !t.is_empty() && !t.chars().any(char::is_control));
         let event = event.clone();
         let armed = self
             .handle
@@ -1163,6 +1176,26 @@ impl<P: LayerProgram + 'static> Dispatch<WpFractionalScaleV1, u64> for State<P> 
                 s.scale = scale;
                 state.reconfigure(*id);
             }
+        }
+    }
+}
+
+impl<P: LayerProgram + 'static> Dispatch<wl_callback::WlCallback, (u64, u64)> for State<P> {
+    fn event(
+        state: &mut Self,
+        _: &wl_callback::WlCallback,
+        event: wl_callback::Event,
+        &(id, generation): &(u64, u64),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wl_callback::Event::Done { .. } = event
+            && let Some(s) = state.surface_mut(id)
+            && s.frame_gen == generation
+        {
+            s.frame_pending = false;
+            s.pending_since = None;
+            s.rescued = false;
         }
     }
 }
