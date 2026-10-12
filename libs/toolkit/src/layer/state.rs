@@ -190,9 +190,7 @@ impl<P: LayerProgram + 'static> State<P> {
             _ => None,
         };
         layer.commit();
-        let target = self
-            .gpu
-            .target(layer.wl_surface().id().as_ptr().cast())?;
+        let target = self.gpu.target(layer.wl_surface().id().as_ptr().cast())?;
         let ctx = egui::Context::default();
         let sender = self.repaint.clone();
         ctx.set_request_repaint_callback(move |info| {
@@ -238,7 +236,9 @@ impl<P: LayerProgram + 'static> State<P> {
     /// A repaint egui asked for: now, or by a one-shot timer.
     fn request(&mut self, id: u64, delay: Duration) {
         let handle = self.handle.clone();
-        let Some(s) = self.surface_mut(id) else { return };
+        let Some(s) = self.surface_mut(id) else {
+            return;
+        };
         if delay.is_zero() {
             s.dirty = true;
             return;
@@ -418,7 +418,13 @@ impl<P: LayerProgram + 'static> CompositorHandler for State<P> {
     ) {
     }
 
-    fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &wl_surface::WlSurface, _: u32) {
+    fn frame(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        surface: &wl_surface::WlSurface,
+        _: u32,
+    ) {
         if let Some(s) = self.by_wl(&surface.id()) {
             s.frame_pending = false;
         }
@@ -456,7 +462,12 @@ impl<P: LayerProgram + 'static> OutputHandler for State<P> {
         }
     }
 
-    fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, output: wl_output::WlOutput) {
+    fn update_output(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        output: wl_output::WlOutput,
+    ) {
         let name = self.outputs.info(&output).and_then(|i| i.name);
         for s in &mut self.surfaces {
             if s.output.as_ref() == Some(&output) && s.output_name != name {
@@ -466,7 +477,12 @@ impl<P: LayerProgram + 'static> OutputHandler for State<P> {
         }
     }
 
-    fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, output: wl_output::WlOutput) {
+    fn output_destroyed(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        output: wl_output::WlOutput,
+    ) {
         self.surfaces.retain(|s| s.output.as_ref() != Some(&output));
     }
 }

@@ -177,7 +177,11 @@ mod tests {
                 ctrl: true,
                 ..Modifiers::default()
             }),
-            egui::Modifiers::COMMAND
+            egui::Modifiers {
+                ctrl: true,
+                command: true,
+                ..egui::Modifiers::default()
+            }
         );
     }
 }

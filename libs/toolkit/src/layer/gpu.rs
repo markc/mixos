@@ -91,9 +91,9 @@ impl Gpu {
         let surface = unsafe {
             self.instance
                 .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
-                    raw_display_handle: Some(RawDisplayHandle::Wayland(
-                        WaylandDisplayHandle::new(self.display),
-                    )),
+                    raw_display_handle: Some(RawDisplayHandle::Wayland(WaylandDisplayHandle::new(
+                        self.display,
+                    ))),
                     raw_window_handle: RawWindowHandle::Wayland(WaylandWindowHandle::new(window)),
                 })
         }
