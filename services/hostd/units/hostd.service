@@ -16,8 +16,9 @@ RestartSec=1
 TimeoutStopSec=90
 # Sandbox. hostd reads the host and its policy (/etc/hostd/policy.mx). It
 # writes its state directory (freeze record, receipts, circuit breaker) and,
-# through net.link.apply, only its own 50-hostd-* files in
-# /etc/systemd/network. Each new write verb adds exactly the paths it needs.
+# through net.link.apply and net.wg.apply, only its own 50-hostd-* files
+# in /etc/systemd/network. Each new write verb adds exactly the paths it
+# needs.
 StateDirectory=hostd
 StateDirectoryMode=0700
 ReadWritePaths=/etc/systemd/network
@@ -38,7 +39,12 @@ RestrictNamespaces=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
-CapabilityBoundingSet=
+# Two capabilities, both for net.wg.apply: CAP_CHOWN gives a WireGuard key
+# file to group systemd-network (so networkd, and nobody else, can read it);
+# CAP_NET_ADMIN reads peer handshakes over WireGuard netlink for the
+# dead-man check, and deletes hostd's own WireGuard link so a changed
+# .netdev takes effect.
+CapabilityBoundingSet=CAP_CHOWN CAP_NET_ADMIN
 
 [Install]
 WantedBy=multi-user.target

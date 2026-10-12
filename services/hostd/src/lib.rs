@@ -14,7 +14,10 @@ pub mod networkd;
 pub mod policy;
 pub mod receipt;
 pub mod service;
+pub mod txn;
 pub mod varlink;
+pub mod wg;
+pub mod wgnl;
 
 use service::Host;
 use std::path::PathBuf;

@@ -60,6 +60,12 @@ impl Networkd {
         Ok(())
     }
 
+    /// Re-read `.network` and `.netdev` files: networkd creates any netdev
+    /// a new `.netdev` describes.
+    pub async fn reload(&self) -> anyhow::Result<()> {
+        self.call("Reload", &()).await
+    }
+
     /// Re-read `.network` and `.netdev` files, then reconfigure one link so
     /// it picks up its (possibly new) file.
     pub async fn reload_link(&self, ifindex: i32) -> anyhow::Result<()> {

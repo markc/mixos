@@ -6,6 +6,7 @@ use crate::{
     freeze, info, link, net,
     policy::{self, Policy, RateLimiter},
     receipt::{self, Outcome, Receipt},
+    txn, wg,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -71,6 +72,11 @@ pub const VERBS: &[Verb] = &[
     Verb {
         name: "hostd.undo",
         summary: "Put back what an applied write replaced",
+        tier: Tier::Write,
+    },
+    Verb {
+        name: "net.wg.apply",
+        summary: "Configure a WireGuard link through networkd; rolled back unless it comes up and its peers complete a handshake",
         tier: Tier::Write,
     },
 ];
@@ -140,7 +146,7 @@ impl Host {
     /// Finishes every in-flight receipt; on success writes are unblocked.
     /// Call with the writer lock held.
     pub async fn recover(&self) -> anyhow::Result<Vec<String>> {
-        match link::recover(self).await {
+        match txn::recover(self).await {
             Ok(done) => {
                 *self.blocked.lock().unwrap_or_else(|p| p.into_inner()) = None;
                 Ok(done)
@@ -257,6 +263,20 @@ async fn serve(
             )
             .await
         }
+        "net.wg.apply" => {
+            let request: wg::Request = decode(body)?;
+            if !link::valid_link(&request.name) {
+                return Err(json!({"status":"bad_request","message":"name must be 1-15 characters of [A-Za-z0-9._-]"}));
+            }
+            let limits = vec![("links".to_owned(), request.name.clone())];
+            // The plan reads or makes the key, so it is built under the
+            // writer lock: two applies to one link never make two keys.
+            write(host, origin, peer, name, limits, move |host, origin, grant| async move {
+                let plan = wg::plan(&host.root, request)?;
+                wg::apply(host, plan, grant, origin).await
+            })
+            .await
+        }
         "hostd.undo" => undo_verb(host, body, origin, peer).await,
         _ => Err(refuse("not_served", name)),
     }
@@ -359,7 +379,9 @@ async fn undo_verb(
         return Err(json!({"status":"not_applied","outcome":receipt.outcome}));
     }
     let limits: Vec<(String, String)> = match receipt.verb.as_str() {
-        link::VERB => receipt
+        // Both verbs record their link under `link`, and grants limit both
+        // by `links`.
+        link::VERB | wg::VERB => receipt
             .summary
             .get("link")
             .and_then(Value::as_str)
@@ -382,7 +404,7 @@ async fn undo_verb(
             if !undoable(&receipt.outcome) {
                 return Err(json!({"status":"not_applied","outcome":receipt.outcome}));
             }
-            link::undo(&host, &mut receipt).await?;
+            txn::undo(&host, &mut receipt).await?;
             Ok(json!({"receipt": receipt.id, "outcome": receipt.outcome}))
         },
     )
@@ -616,13 +638,14 @@ mod tests {
                 "hostd.freeze",
                 "hostd.thaw",
                 "net.link.apply",
-                "hostd.undo"
+                "hostd.undo",
+                "net.wg.apply"
             ]
         );
         let read_only: Vec<bool> = verbs.iter().map(|v| v.read_only).collect();
         assert_eq!(
             read_only,
-            [true, true, true, true, true, false, false, false, false]
+            [true, true, true, true, true, false, false, false, false, false]
         );
     }
 
@@ -757,6 +780,8 @@ mod tests {
             path: "/etc/systemd/network/50-hostd-hd0.network".into(),
             previous: Some("PrivateKey=secret".into()),
             installed: None,
+            mode: 0o644,
+            group: None,
         });
         r.save(&host.state).unwrap();
         let got = dispatch(

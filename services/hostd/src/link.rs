@@ -9,10 +9,10 @@ use crate::{
     neigh,
     net::{OWNED_PREFIX, is_owned_path},
     networkd::{self, Networkd},
-    receipt::{self, FileChange, Holds, Outcome, Receipt},
+    receipt::{self, FileChange, Receipt},
     service::Host,
+    txn,
 };
-use anyhow::Context;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{net::IpAddr, path::PathBuf, time::Duration};
@@ -311,16 +311,7 @@ pub async fn apply(host: Host, plan: Plan, grant: String, origin: Origin) -> Res
     let mut change = FileChange::backup(&plan.path).map_err(internal)?;
     change.installed = Some(receipt::digest(plan.text.as_bytes()));
     receipt.files.push(change);
-    // The save can fail after its rename made the receipt durable (a failed
-    // directory sync): block writes then too, so recovery accounts for it
-    // before anything else changes the host.
-    if let Err(e) = receipt.save(&host.state) {
-        host.block(format!(
-            "receipt {} may be half-recorded: {e:#}",
-            receipt.id
-        ));
-        return Err(internal(e));
-    }
+    txn::begin(&host, &receipt)?;
 
     let attempt = async {
         receipt::write_atomic(&plan.path, plan.text.as_bytes(), 0o644)?;
@@ -338,66 +329,7 @@ pub async fn apply(host: Host, plan: Plan, grant: String, origin: Origin) -> Res
         ),
         Err(e) => (false, Value::Null, Some(format!("{e:#}"))),
     };
-    if passed {
-        receipt.outcome = Outcome::Applied;
-    } else {
-        // Put the previous file back and make networkd use it again. If that
-        // fails, the receipt stays `applying` and writes stop until a retry
-        // finishes it.
-        match put_back(&host, &receipt).await {
-            Ok(Put::Restored) => {
-                receipt.outcome = Outcome::RolledBack;
-                receipt.reason = reason;
-            }
-            Ok(Put::LeftAlone) => {
-                receipt.outcome = Outcome::Abandoned;
-                receipt.reason = Some(format!(
-                    "{}; the file changed underneath, left alone",
-                    reason.unwrap_or_default()
-                ));
-            }
-            Err(e) => {
-                host.block(format!("rollback of {} failed: {e:#}", receipt.id));
-                return Err(json!({"status":"rollback_failed","receipt":receipt.id,
-                    "message":format!("{e:#}")}));
-            }
-        }
-    }
-    // Breaker order, so a crash at any point errs toward suspending:
-    // - a failure is counted before the receipt leaves `applying` (as in
-    //   recovery): a crash in between leaves an in-flight receipt that
-    //   recovery counts again, twice at worst, never not at all;
-    // - a success resets the streak only after `applied` is durable: a
-    //   crash before that leaves the streak as it was, and recovery then
-    //   rolls the change back and counts it.
-    let mut suspended = false;
-    if !passed {
-        match receipt::record(&host.state, &grant, true) {
-            Ok(tripped) => suspended = tripped,
-            Err(e) => {
-                host.block(format!(
-                    "breaker for {} could not be recorded: {e:#}",
-                    receipt.id
-                ));
-                return Err(internal(e));
-            }
-        }
-    }
-    if let Err(e) = receipt.save(&host.state) {
-        // The durable receipt still says `applying`. Block writes so nothing
-        // builds on a change hostd can't account for; the retry, or the next
-        // start, finishes it from what the file holds.
-        host.block(format!(
-            "receipt {} could not be recorded: {e:#}",
-            receipt.id
-        ));
-        return Err(internal(e));
-    }
-    if passed && let Err(e) = receipt::record(&host.state, &grant, false) {
-        // The streak stays as it was: stricter, never looser. Not a reason
-        // to block writes.
-        tracing::warn!(error = %e, grant = %grant, "breaker reset not recorded");
-    }
+    let suspended = txn::conclude(&host, &mut receipt, passed, reason).await?;
     let reply = json!({
         "receipt": receipt.id,
         "outcome": receipt.outcome,
@@ -422,132 +354,15 @@ fn receipt_link(receipt: &Receipt) -> anyhow::Result<&str> {
         .ok_or_else(|| anyhow::anyhow!("receipt names no link"))
 }
 
-/// What `put_back` did.
-#[derive(Debug, PartialEq, Eq)]
-pub enum Put {
-    /// Every file now holds its backup, and networkd was told.
-    Restored,
-    /// A file held neither hostd's content nor the backup: someone else's
-    /// change, which hostd never overwrites.
-    LeftAlone,
-}
-
-/// Puts a receipt's files back to their backups and makes networkd use
-/// them. Idempotent, so a failed attempt can simply run again:
-///
-/// - a file still holding what this change installed is restored;
-/// - a file already holding the backup is left as it is;
-/// - a file holding anything else is never touched (`LeftAlone`).
-///
-/// networkd is reloaded whenever a file holds the backup, even if this call
-/// wrote nothing, because an earlier attempt may have written the file and
-/// then failed before the reload.
-pub async fn put_back(host: &Host, receipt: &Receipt) -> anyhow::Result<Put> {
+/// Makes networkd use the link's restored file (`txn::put_back`). A link
+/// that has gone away needs nothing.
+pub async fn reapply(host: &Host, receipt: &Receipt) -> anyhow::Result<()> {
     let link = receipt_link(receipt)?;
-    for change in &receipt.files {
-        if change.holds()? == Holds::Other {
-            return Ok(Put::LeftAlone);
-        }
-    }
-    for change in &receipt.files {
-        if change.holds()? == Holds::Installed {
-            receipt::restore(std::slice::from_ref(change))?;
-        }
-    }
     let networkd = Networkd::connect().await?;
     if let Some(entry) = networkd::describe(&host.root, link).await? {
         networkd.reload_link(ifindex_of(&entry)?).await?;
     }
-    Ok(Put::Restored)
-}
-
-/// Finishes one in-flight receipt and records how it ended. Leaves it in
-/// flight, and returns the error, when it can't be finished yet.
-async fn finish(host: &Host, receipt: &mut Receipt) -> anyhow::Result<()> {
-    let put = put_back(host, receipt).await?;
-    let was = receipt.outcome.clone();
-    receipt.outcome = match (put, &was) {
-        (Put::LeftAlone, _) => Outcome::Abandoned,
-        (Put::Restored, Outcome::Undoing) => Outcome::Undone,
-        (Put::Restored, _) => Outcome::RolledBack,
-    };
-    receipt.reason = Some(match (&receipt.outcome, &was) {
-        (Outcome::Abandoned, _) => "interrupted; the file changed underneath, left alone".into(),
-        (Outcome::Undone, _) => "undo finished".into(),
-        _ => "interrupted; rolled back".into(),
-    });
-    // An apply that never proved healthy is a failed change, however it
-    // ended: it counts toward the grant's circuit breaker. Counted before
-    // the receipt is saved, so a save that fails and is retried may count
-    // it twice, but never not at all.
-    if was == Outcome::Applying {
-        receipt::record(&host.state, &receipt.grant, true)?;
-    }
-    receipt.save(&host.state)?;
-    // A finished undo is routine; recovering an interrupted change is not.
-    if was == Outcome::Undoing && receipt.outcome == Outcome::Undone {
-        tracing::info!(target: "hostd::audit", receipt = %receipt.id, outcome = ?receipt.outcome, "finished");
-    } else {
-        tracing::warn!(target: "hostd::audit", receipt = %receipt.id, outcome = ?receipt.outcome, "finished");
-    }
     Ok(())
-}
-
-/// `hostd.undo` for this verb. An applied receipt must still own its file:
-/// if a later change or someone's edit replaced it, undo is refused
-/// (`superseded`), because restoring would throw that away. The receipt is
-/// marked `undoing` before anything moves, so an undo that fails part way
-/// is finished by a retry or by the next start.
-pub async fn undo(host: &Host, receipt: &mut Receipt) -> Result<(), Value> {
-    let internal = |e: anyhow::Error| json!({"status":"internal","message":format!("{e:#}")});
-    if receipt.outcome == Outcome::Applied {
-        for change in &receipt.files {
-            if change.holds().map_err(internal)? != Holds::Installed {
-                return Err(json!({"status":"superseded","receipt":receipt.id,
-                    "file": change.path}));
-            }
-        }
-        receipt.outcome = Outcome::Undoing;
-        // From here a durable `undoing` receipt may exist, whatever fails:
-        // nothing else may change the host until it is finished.
-        if let Err(e) = receipt.save(&host.state) {
-            host.block(format!(
-                "undo of {} could not be recorded: {e:#}",
-                receipt.id
-            ));
-            return Err(internal(e));
-        }
-    }
-    if let Err(e) = finish(host, receipt).await {
-        host.block(format!("undo of {} incomplete: {e:#}", receipt.id));
-        return Err(json!({"status":"undo_incomplete","receipt":receipt.id,
-            "message":format!("{e:#}")}));
-    }
-    if receipt.outcome != Outcome::Undone {
-        return Err(json!({"status":"superseded","receipt":receipt.id,"outcome":receipt.outcome}));
-    }
-    Ok(())
-}
-
-/// Finishes every in-flight receipt, oldest first. Stops at the first that
-/// can't be finished, and returns that error: the caller keeps writes
-/// blocked until a later call succeeds.
-pub async fn recover(host: &Host) -> anyhow::Result<Vec<String>> {
-    let mut done = vec![];
-    for mut receipt in receipt::unfinished(&host.state)? {
-        if receipt.verb != VERB {
-            anyhow::bail!(
-                "receipt {} is for {}, which this hostd can't finish",
-                receipt.id,
-                receipt.verb
-            );
-        }
-        finish(host, &mut receipt)
-            .await
-            .with_context(|| format!("finish receipt {}", receipt.id))?;
-        done.push(receipt.id.clone());
-    }
-    Ok(done)
 }
 
 #[cfg(test)]

@@ -57,25 +57,47 @@ pub struct FileChange {
     /// holds exactly this: a later change, or anyone's edit, wins.
     #[serde(default)]
     pub installed: Option<String>,
+    /// The mode the file is written and restored with.
+    #[serde(default = "default_mode")]
+    pub mode: u32,
+    /// A group the file is given (a WireGuard key: `systemd-network`), so
+    /// the reader it is for can read it and nobody else can.
+    #[serde(default)]
+    pub group: Option<String>,
+}
+
+fn default_mode() -> u32 {
+    0o644
 }
 
 impl FileChange {
     /// Reads the file's current content as the backup. Only a file that
     /// provably doesn't exist backs up as `None`; any other failure to read
     /// it stops the change before anything is written.
+    ///
+    /// An existing file keeps its mode on restore. A new file is written
+    /// with `mode` (and `group`, if set) chosen by the verb.
     pub fn backup(path: &Path) -> anyhow::Result<Self> {
-        let previous = match std::fs::read(path) {
-            Ok(bytes) => Some(
-                String::from_utf8(bytes)
-                    .with_context(|| format!("{} is not UTF-8 text", path.display()))?,
-            ),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        use std::os::unix::fs::MetadataExt;
+        let (previous, mode) = match std::fs::read(path) {
+            Ok(bytes) => {
+                let mode = std::fs::metadata(path)
+                    .with_context(|| format!("back up {}", path.display()))?
+                    .mode()
+                    & 0o7777;
+                let text = String::from_utf8(bytes)
+                    .with_context(|| format!("{} is not UTF-8 text", path.display()))?;
+                (Some(text), mode)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (None, default_mode()),
             Err(e) => return Err(e).with_context(|| format!("back up {}", path.display())),
         };
         Ok(Self {
             path: path.into(),
             previous,
             installed: None,
+            mode,
+            group: None,
         })
     }
 
@@ -200,7 +222,15 @@ pub fn sync_dir(dir: &Path) -> anyhow::Result<()> {
 /// over `path`, so readers see the old or the new file, never a part. Both
 /// the file and the rename are synced before this returns.
 pub fn write_atomic(path: &Path, bytes: &[u8], mode: u32) -> anyhow::Result<()> {
-    use std::io::Write;
+    write_as(path, bytes, mode, None)
+}
+
+/// `write_atomic`, giving the file exactly `mode` (not masked by the
+/// umask) and, if named, `group`. Mode and group are set on the temporary
+/// file before a byte is written, so the content is never readable by
+/// anyone it isn't for, even briefly.
+pub fn write_as(path: &Path, bytes: &[u8], mode: u32, group: Option<&str>) -> anyhow::Result<()> {
+    use std::{io::Write, os::fd::AsRawFd, os::unix::fs::PermissionsExt};
     let dir = path.parent().context("path has no directory")?;
     let tmp = dir.join(format!(
         ".{}.hostd-tmp",
@@ -210,20 +240,49 @@ pub fn write_atomic(path: &Path, bytes: &[u8], mode: u32) -> anyhow::Result<()> 
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
-        .mode(mode)
+        .mode(0o600)
         .open(&tmp)
         .with_context(|| format!("create {}", tmp.display()))?;
+    if let Some(group) = group {
+        let gid = gid_of(group)?;
+        // SAFETY: fchown on a file descriptor we own; -1 keeps the owner.
+        if unsafe { libc::fchown(file.as_raw_fd(), u32::MAX, gid) } != 0 {
+            let e = std::io::Error::last_os_error();
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e).with_context(|| format!("give {} to group {group}", tmp.display()));
+        }
+    }
+    file.set_permissions(std::fs::Permissions::from_mode(mode))?;
     file.write_all(bytes)?;
     file.sync_all()?;
     std::fs::rename(&tmp, path).with_context(|| format!("replace {}", path.display()))?;
     sync_dir(dir)
 }
 
-/// Puts each file back as the receipt found it.
+/// A group's id, from the group database.
+pub fn gid_of(group: &str) -> anyhow::Result<u32> {
+    let name = std::ffi::CString::new(group)?;
+    // SAFETY: getgrnam with a valid C string; the result is read at once and
+    // not kept. hostd's writes run one at a time, under the writer lock.
+    let entry = unsafe { libc::getgrnam(name.as_ptr()) };
+    if entry.is_null() {
+        anyhow::bail!("no group {group}");
+    }
+    // SAFETY: non-null, from getgrnam.
+    Ok(unsafe { (*entry).gr_gid })
+}
+
+/// Puts each file back as the receipt found it, with the mode and group it
+/// was written with.
 pub fn restore(files: &[FileChange]) -> anyhow::Result<()> {
     for change in files.iter().rev() {
         match &change.previous {
-            Some(text) => write_atomic(&change.path, text.as_bytes(), 0o644)?,
+            Some(text) => write_as(
+                &change.path,
+                text.as_bytes(),
+                change.mode,
+                change.group.as_deref(),
+            )?,
             None => match std::fs::remove_file(&change.path) {
                 Ok(()) => sync_dir(change.path.parent().context("no directory")?)?,
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -325,11 +384,15 @@ mod tests {
                 path: old.clone(),
                 previous: Some("original".into()),
                 installed: None,
+                mode: 0o644,
+                group: None,
             },
             FileChange {
                 path: new.clone(),
                 previous: None,
                 installed: None,
+                mode: 0o644,
+                group: None,
             },
         ])
         .unwrap();
