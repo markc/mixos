@@ -176,11 +176,12 @@ async fn serve_atomic_replacement_and_repeated_saves_keep_file_watch_alive() {
         };
         let moved: Vec<_> = changes
             .iter()
-            .filter_map(|c| match c {
-                Value::Map(c) if c.get("path").map(|p| p.to_mix_string()).as_deref() == file.to_str() => {
-                    c.get("old_path").map(|p| p.to_mix_string())
-                }
-                _ => None,
+            .filter_map(|c| {
+                let Value::Map(c) = c else {
+                    return None;
+                };
+                let path = c.get("path")?.to_mix_string();
+                (path == file.to_str()?).then(|| c.get("old_path").map(|p| p.to_mix_string()))?
             })
             .collect();
         assert_eq!(moved, vec![tmp.to_str().unwrap().to_string()]);

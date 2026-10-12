@@ -611,7 +611,8 @@ mod linux {
         use super::*;
 
         fn name(mode: RenameMode, tracker: Option<usize>, path: &str) -> notify::Event {
-            let e = notify::Event::new(EventKind::Modify(ModifyKind::Name(mode))).add_path(path.into());
+            let e =
+                notify::Event::new(EventKind::Modify(ModifyKind::Name(mode))).add_path(path.into());
             match tracker {
                 Some(t) => e.set_tracker(t),
                 None => e,
