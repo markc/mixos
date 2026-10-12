@@ -245,7 +245,7 @@ try
     $p0 = $c.pixel($before_img, $cx, $cy)
     $p1 = $c.pixel($after_img, $cx, $cy)
     print("  note: centre pixel " .. json_encode($p0) .. " -> " .. json_encode($p1))
-    check("the centre pixel changed from the compositor's fill to backdrop's", $p0 != $p1, json_encode([$p0, $p1]))
+    check("the centre pixel changed from the compositor's fill to backdrop's", not deep_eq($p0, $p1), json_encode([$p0, $p1]))
   end
 
   -- ── a click on bare desktop reaches it ────────────────────────────────
