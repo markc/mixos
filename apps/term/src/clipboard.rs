@@ -17,7 +17,6 @@ pub type Pasted = (u64, Result<String, ReadError>);
 
 pub struct Clipboard {
     worker: Option<sctk::reexports::calloop::channel::Sender<Request>>,
-    tx: Sender<Answer>,
     rx: Receiver<Answer>,
     wake: Arc<dyn Fn() + Send + Sync>,
     /// The read in flight: its id and the pane it pastes into.
@@ -49,7 +48,6 @@ impl Clipboard {
         };
         Self {
             worker,
-            tx,
             rx,
             wake,
             pending: None,
@@ -64,11 +62,16 @@ impl Clipboard {
         unsafe { Self::new(None, Arc::new(|| {})) }
     }
 
-    /// A clipboard whose requests go to `worker` (tests).
-    pub fn with_worker(worker: sctk::reexports::calloop::channel::Sender<Request>) -> Self {
+    /// A clipboard whose requests go to `worker`, and the sender its
+    /// answers come back on (tests).
+    pub fn with_worker(
+        worker: sctk::reexports::calloop::channel::Sender<Request>,
+    ) -> (Self, Sender<Answer>) {
+        let (tx, rx) = channel();
         let mut clipboard = Self::none();
         clipboard.worker = Some(worker);
-        clipboard
+        clipboard.rx = rx;
+        (clipboard, tx)
     }
 
     /// Write the clipboard (through egui when there is no Wayland worker)
@@ -148,7 +151,7 @@ mod tests {
     #[test]
     fn a_read_in_flight_never_blocks_the_window() {
         let (worker, requests) = sctk::reexports::calloop::channel::channel();
-        let mut clipboard = Clipboard::with_worker(worker);
+        let (mut clipboard, answers) = Clipboard::with_worker(worker);
         clipboard.read(7, true);
         clipboard.read(8, false);
         assert_eq!(clipboard.take(), vec![(8, Err(ReadError::Busy))]);
@@ -166,8 +169,7 @@ mod tests {
             ]
         ));
         // The worker's answer arrives later and pastes into the first pane.
-        clipboard
-            .tx
+        answers
             .send(Answer {
                 id: 1,
                 result: Ok("text".into()),
