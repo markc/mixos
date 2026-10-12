@@ -131,8 +131,12 @@ impl Gpu {
             .ok_or("the surface offers no format")?;
         let alpha = caps
             .alpha_modes
-            .first()
+            .iter()
             .copied()
+            // egui writes premultiplied alpha: a translucent dock or overlay
+            // composites right only in that mode.
+            .find(|m| *m == wgpu::CompositeAlphaMode::PreMultiplied)
+            .or_else(|| caps.alpha_modes.first().copied())
             .unwrap_or(wgpu::CompositeAlphaMode::Auto);
         let renderer = egui_wgpu::Renderer::new(
             &d.device,

@@ -4,7 +4,7 @@
 -- weston host), judged by Bus evidence, a screenshot and backdrop's own
 -- JSON lines.
 --
---   mix tests/desktop/backdrop_gate.mix --backdrop PATH [--bin PATH] --config-file PATH
+--   mix tests/desktop/backdrop_gate.mix [--backdrop PATH] [--bin PATH] --config-file PATH
 --       [--software] [--private-bus [--noded PATH]] [--shot-out PATH]
 --
 -- --shot-out keeps the screenshot taken with backdrop drawn (P6), to look at.
@@ -31,7 +31,7 @@ $CLEANUP = {ok: false, run: nil}
 $BUS = nil
 try
 
-$USAGE = "usage: backdrop_gate.mix --backdrop PATH [--bin PATH] --config-file PATH [--software] [--private-bus [--noded PATH]] [--shot-out PATH]"
+$USAGE = "usage: backdrop_gate.mix [--backdrop PATH] [--bin PATH] --config-file PATH [--software] [--private-bus [--noded PATH]] [--shot-out PATH]"
 $PRIVATE_BUS = false
 $NODED = ""
 $SHOT_OUT = ""
@@ -70,7 +70,11 @@ while $ai < len($argv)
     exit(2)
   end
 end
-if $BACKDROP == "" or not is_file($BACKDROP) then
+-- The backdrop built with the compd under test, else the installed one.
+if $BACKDROP == "" then
+  $BACKDROP = if $BIN != "" then dirname($BIN) .. "/backdrop" else "/opt/mixos/bin/backdrop" end
+end
+if not is_file($BACKDROP) then
   print("  ERROR: --backdrop must name the backdrop binary")
   print($USAGE)
   exit(2)
@@ -309,6 +313,10 @@ if is_file($session["log"]) then
   $final = re_replace(read_file($session["log"]), "\u{1b}\\[[0-9;]*m", "")
 end
 check("no compositor panic (final log)", len(grep_lines($final, "panicked at")) == 0, $session["log"])
+$own = ""
+if is_file($run .. "/backdrop.log") then $own = read_file($run .. "/backdrop.log") end
+check("no backdrop panic or protocol error (its log)",
+  len(grep_lines($own, "panicked at")) == 0 and len(grep_lines($own, ": error ")) == 0, $run .. "/backdrop.log")
 
 $total = $TALLY["pass"] + $TALLY["fail"]
 if $TALLY["fail"] == 0 then

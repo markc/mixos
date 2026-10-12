@@ -148,7 +148,8 @@ $GATES = [
   {name: "agent_seat", script: "comp_agent_seat_gate.mix", style: "harness", args: ["--seconds", $SEAT_SECONDS]},
   {name: "presentation", script: "comp_presentation_smoke.mix", style: "harness", args: ["--gate", "g1plus"]},
   {name: "region", script: "comp_region_select_gate.mix", style: "harness", args: []},
-  {name: "clients", script: "client_checklist_gate.mix", style: "harness", args: []}
+  {name: "clients", script: "client_checklist_gate.mix", style: "harness", args: []},
+  {name: "backdrop", script: "backdrop_gate.mix", style: "harness", args: []}
 ]
 for each $s in $SCALES
   push($GATES, {name: "nested_smoke@" .. $s, script: "nested_smoke.mix", style: "standalone", scale: $s,

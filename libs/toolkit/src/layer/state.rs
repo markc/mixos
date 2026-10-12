@@ -53,7 +53,10 @@ type Repaint = (u64, Duration);
 const RETRY: Duration = Duration::from_millis(50);
 
 struct Surface {
-    // Dropped first: the GPU target before the Wayland surface it draws on.
+    // Field order is load-bearing: the GPU target (a wgpu surface on this
+    // `wl_surface`'s raw pointer) drops before `layer`. Do not reorder.
+    // `State.gpu` dropping before `State.surfaces` is safe only because wgpu
+    // handles are reference-counted: each target keeps its device alive.
     target: Target,
     id: u64,
     output: Option<wl_output::WlOutput>,
@@ -601,6 +604,9 @@ impl<P: LayerProgram + 'static> LayerShellHandler for State<P> {
         }
         s.configured = true;
         s.dirty = true;
+        // A configure asks for a redraw: don't wait on a frame callback the
+        // compositor may withhold (a hidden or powered-down output).
+        s.frame_pending = false;
         if (width, height) != s.size {
             s.size = (width, height);
             let id = s.id;
@@ -623,13 +629,14 @@ impl<P: LayerProgram + 'static> SeatHandler for State<P> {
         seat: wl_seat::WlSeat,
         capability: Capability,
     ) {
-        if capability == Capability::Pointer && self.pointer.is_none() {
-            if let Ok(pointer) = self.seat.get_pointer(qh, &seat) {
-                if let Some(shapes) = &self.cursor_shapes {
-                    self.shape_device = Some(shapes.get_shape_device(&pointer, qh));
-                }
-                self.pointer = Some((pointer, seat.clone()));
+        if capability == Capability::Pointer
+            && self.pointer.is_none()
+            && let Ok(pointer) = self.seat.get_pointer(qh, &seat)
+        {
+            if let Some(shapes) = &self.cursor_shapes {
+                self.shape_device = Some(shapes.get_shape_device(&pointer, qh));
             }
+            self.pointer = Some((pointer, seat.clone()));
         }
         if capability == Capability::Keyboard
             && self.keyboard.is_none()
@@ -675,7 +682,11 @@ impl<P: LayerProgram + 'static> State<P> {
     /// Release the pointer if `seat` owns it; a later seat's pointer can
     /// then take its place.
     fn drop_pointer(&mut self, seat: &wl_seat::WlSeat) {
-        if self.pointer.as_ref().is_some_and(|(_, owner)| owner == seat) {
+        if self
+            .pointer
+            .as_ref()
+            .is_some_and(|(_, owner)| owner == seat)
+        {
             if let Some(device) = self.shape_device.take() {
                 device.destroy();
             }
@@ -690,7 +701,11 @@ impl<P: LayerProgram + 'static> State<P> {
 
     /// Release the keyboard if `seat` owns it, with its focus and held keys.
     fn drop_keyboard(&mut self, seat: &wl_seat::WlSeat) {
-        if self.keyboard.as_ref().is_some_and(|(_, owner)| owner == seat) {
+        if self
+            .keyboard
+            .as_ref()
+            .is_some_and(|(_, owner)| owner == seat)
+        {
             if let Some((keyboard, _)) = self.keyboard.take() {
                 keyboard.release();
             }
@@ -760,12 +775,30 @@ impl<P: LayerProgram + 'static> PointerHandler for State<P> {
                     ..
                 } => {
                     let modifiers = input::modifiers(&self.modifiers);
+                    // A wheel's detents scroll by lines; a touchpad's
+                    // continuous motion by points.
+                    let (unit, delta) = if horizontal.discrete != 0 || vertical.discrete != 0 {
+                        (
+                            egui::MouseWheelUnit::Line,
+                            input::wheel(f64::from(horizontal.discrete), f64::from(vertical.discrete)),
+                        )
+                    } else {
+                        (
+                            egui::MouseWheelUnit::Point,
+                            input::wheel(horizontal.absolute, vertical.absolute) / zoom,
+                        )
+                    };
+                    let stopped = horizontal.stop || vertical.stop;
                     self.push_to(
                         &wl,
                         egui::Event::MouseWheel {
-                            unit: egui::MouseWheelUnit::Point,
-                            delta: input::wheel(horizontal.absolute, vertical.absolute) / zoom,
-                            phase: egui::TouchPhase::Move,
+                            unit,
+                            delta,
+                            phase: if stopped {
+                                egui::TouchPhase::End
+                            } else {
+                                egui::TouchPhase::Move
+                            },
                             modifiers,
                         },
                     );

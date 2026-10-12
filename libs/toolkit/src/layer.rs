@@ -89,8 +89,10 @@ pub trait LayerProgram {
     fn show(&mut self, ui: &mut egui::Ui, surface: &SurfaceInfo);
 }
 
-/// Run `program` until the compositor closes its last surface, or the
-/// connection ends.
+/// Run `program` until the connection ends. With [`Outputs::Compositor`] it
+/// also ends when the compositor closes the one surface; with
+/// [`Outputs::Each`] surfaces come and go with outputs and it keeps running
+/// with none (end it with a signal).
 pub fn run<P: LayerProgram + 'static>(options: LayerOptions, program: P) -> Result<(), String> {
     state::run(options, program)
 }
