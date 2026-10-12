@@ -935,17 +935,24 @@ impl App {
     /// chosen width as it shows on screen at the current view scale, so a
     /// stroke looks the same whatever the image's size.
     pub fn stroke_width(&self) -> f32 {
-        to_image(self.ui.width, self.view_scale, &annotation::document::WIDTH)
+        self.stroke_width_at(self.view_scale)
+    }
+
+    /// [`App::stroke_width`] at view `scale` (a gesture passes its own
+    /// frame's).
+    pub fn stroke_width_at(&self, scale: f32) -> f32 {
+        to_image(self.ui.width, scale, &annotation::document::WIDTH)
     }
 
     /// The text size a new text box or marker takes, in image pixels (as
     /// [`App::stroke_width`]).
     pub fn text_px(&self) -> f32 {
-        to_image(
-            self.ui.text_size,
-            self.view_scale,
-            &annotation::document::TEXT_SIZE,
-        )
+        self.text_px_at(self.view_scale)
+    }
+
+    /// [`App::text_px`] at view `scale`.
+    pub fn text_px_at(&self, scale: f32) -> f32 {
+        to_image(self.ui.text_size, scale, &annotation::document::TEXT_SIZE)
     }
 
     pub fn set_text_size(&mut self, size: f32) {
@@ -1003,12 +1010,14 @@ impl App {
 
     // ---- gestures ----------------------------------------------------------
 
-    /// Add `shape` (from a drag): text and markers take the controls' text,
-    /// size and next number. The new object is selected.
+    /// Add `shape` (from a drag): text and markers take the controls' text
+    /// and next number, and the converted text size unless the gesture
+    /// already set it at its own frame's scale. The new object is selected.
     pub fn add_shape(&mut self, mut shape: Shape) {
         if !self.editable() {
             return;
         }
+        let size = shape.size.unwrap_or_else(|| self.text_px());
         match shape.kind {
             Kind::Text => {
                 if self.ui.text.trim().is_empty() {
@@ -1016,7 +1025,7 @@ impl App {
                     return;
                 }
                 shape.text = Some(self.ui.text.clone());
-                shape.size = Some(self.text_px());
+                shape.size = Some(size);
             }
             Kind::Number => {
                 shape.number = self.document.as_ref().and_then(Document::next_number);
@@ -1024,7 +1033,7 @@ impl App {
                     self.status = self.label("marker-limit");
                     return;
                 }
-                shape.size = Some(self.text_px());
+                shape.size = Some(size);
             }
             _ => {}
         }

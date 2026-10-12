@@ -69,6 +69,9 @@ pub struct Drag {
 const PICK: f32 = 6.0;
 /// The swatch side in the options bar.
 const SWATCH: f32 = 18.0;
+/// The Text tool's field: its full width, and the least it shrinks to.
+const TEXT_MAX: f32 = 220.0;
+const TEXT_MIN: f32 = 80.0;
 
 /// The window title.
 pub fn title(app: &App) -> String {
@@ -153,7 +156,8 @@ fn command_button(
     }
 }
 
-fn options(
+/// The options bar's controls, left to right.
+fn controls(
     ui: &mut Ui,
     app: &App,
     commands: &Registry<App>,
@@ -295,37 +299,69 @@ fn options(
         }
     }
     if app.ui.tool == Tool::Draw(Kind::Text) {
+        // The field takes what is left, up to its full width.
+        let width = (ui.available_width() - 2.0).clamp(TEXT_MIN, TEXT_MAX);
         let mut text = app.ui.text.clone();
-        let response = field::text(ui, &mut text, &label("text-placeholder"), 220.0);
+        let response = field::text(ui, &mut text, &label("text-placeholder"), width);
         if response.changed() {
             events.push(UiEvent::Text(text));
         }
     }
-    // Save and Copy at the right end, labelled, through their commands
-    // (enablement and shortcuts stay in the registry). Save's tip names
-    // the folder.
+}
+
+/// The options bar: Copy and Save keep their place at the right end; the
+/// controls take the rest, and what does not fit is cut off at the
+/// buttons, never drawn under them.
+fn options(
+    ui: &mut Ui,
+    app: &App,
+    commands: &Registry<App>,
+    strings: &Strings,
+    events: &mut Vec<UiEvent>,
+) {
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        for (id, text) in [("file.save", "save"), ("file.copy", "copy-short")] {
-            let Some(command) = commands.get(id) else {
-                continue;
-            };
-            let tip = if id == "file.save" {
-                let shortcut = command.shortcut.map(|s| ui.ctx().format_shortcut(&s));
-                tooltip::text(
-                    &label_with("save-tip", &[("folder", screenshots_folder())]),
-                    shortcut.as_deref(),
-                )
-            } else {
-                tooltip::for_command(ui.ctx(), command, strings)
-            };
-            let response = ui
-                .add_enabled((command.enabled)(app), PushButton::secondary(label(text)))
-                .on_hover_text(tip);
-            if response.clicked() {
-                events.push(UiEvent::Command(id, Origin::Ui));
-            }
+        if app.document.is_some() {
+            file_buttons(ui, app, commands, strings, events);
+            ui.add_space(8.0);
         }
+        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+            let room = ui.max_rect().intersect(ui.clip_rect());
+            ui.set_clip_rect(room);
+            controls(ui, app, commands, strings, events);
+        });
     });
+}
+
+/// Save and Copy, labelled, through their commands (enablement and
+/// shortcuts stay in the registry). Save's tip names the folder. Laid out
+/// right to left: Save at the end.
+fn file_buttons(
+    ui: &mut Ui,
+    app: &App,
+    commands: &Registry<App>,
+    strings: &Strings,
+    events: &mut Vec<UiEvent>,
+) {
+    for (id, text) in [("file.save", "save"), ("file.copy", "copy-short")] {
+        let Some(command) = commands.get(id) else {
+            continue;
+        };
+        let tip = if id == "file.save" {
+            let shortcut = command.shortcut.map(|s| ui.ctx().format_shortcut(&s));
+            tooltip::text(
+                &label_with("save-tip", &[("folder", screenshots_folder())]),
+                shortcut.as_deref(),
+            )
+        } else {
+            tooltip::for_command(ui.ctx(), command, strings)
+        };
+        let response = ui
+            .add_enabled((command.enabled)(app), PushButton::secondary(label(text)))
+            .on_hover_text(tip);
+        if response.clicked() {
+            events.push(UiEvent::Command(id, Origin::Ui));
+        }
+    }
 }
 
 /// The screenshots folder as Save's tip names it (read once: drawing never
@@ -436,8 +472,12 @@ fn picture(
         app.ui.zoom,
         app.ui.pan,
     );
-    // New objects take the chosen width as it shows at this scale.
-    if (vp.scale - app.view_scale).abs() > f32::EPSILON * vp.scale.max(1.0) {
+    // The app restyles the selection at this scale; this frame's own
+    // gestures pass it directly (the event lands after them).
+    if vp.scale.is_finite()
+        && vp.scale > 0.0
+        && (vp.scale - app.view_scale).abs() > f32::EPSILON * vp.scale.max(1.0)
+    {
         events.push(UiEvent::Scale(vp.scale));
     }
     let image_rect = Rect::from_min_size(
@@ -541,19 +581,31 @@ fn picture(
         let points = std::mem::take(&mut drag.points);
         let moving = drag.moving.take();
         if points.len() > 1 {
-            finish(app, doc, points, moving, events);
+            finish(app, doc, points, moving, vp.scale, events);
         }
     }
 }
 
+/// A new object of `kind` over `points`, in the chosen ink, with the
+/// chosen width (and, for text and markers, size) converted at `scale`,
+/// this frame's view scale: what is committed is what was shown.
+fn styled(app: &App, kind: Kind, points: Vec<Point>, scale: f32) -> Shape {
+    let mut shape = Shape::new(kind, points, app.ui.colour, app.stroke_width_at(scale));
+    if kind.boxed_text() {
+        shape.size = Some(app.text_px_at(scale));
+    }
+    shape
+}
+
 /// A click: pick with Select; drop a marker or a text box at the point.
 fn click(app: &App, doc: &annotation::Document, p: Point, vp: Viewport, events: &mut Vec<UiEvent>) {
-    let size = app.text_px();
+    let size = app.text_px_at(vp.scale);
     match app.ui.tool {
         Tool::Select => events.push(UiEvent::Select(doc.hit(p, PICK / vp.scale))),
         Tool::Draw(Kind::Number) => {
             let half = size * 0.8;
-            events.push(UiEvent::Add(Shape::new(
+            events.push(UiEvent::Add(styled(
+                app,
                 Kind::Number,
                 vec![
                     Point {
@@ -565,8 +617,7 @@ fn click(app: &App, doc: &annotation::Document, p: Point, vp: Viewport, events: 
                         y: p.y + half,
                     },
                 ],
-                app.ui.colour,
-                app.stroke_width(),
+                vp.scale,
             )));
         }
         Tool::Draw(Kind::Text) => {
@@ -580,7 +631,8 @@ fn click(app: &App, doc: &annotation::Document, p: Point, vp: Viewport, events: 
                 .unwrap_or(1) as f32;
             let width = (longest * size * 0.62 + size).max(size * 2.0);
             let height = lines * size * 1.25 + size * 0.25;
-            events.push(UiEvent::Add(Shape::new(
+            events.push(UiEvent::Add(styled(
+                app,
                 Kind::Text,
                 vec![
                     p,
@@ -589,8 +641,7 @@ fn click(app: &App, doc: &annotation::Document, p: Point, vp: Viewport, events: 
                         y: p.y + height,
                     },
                 ],
-                app.ui.colour,
-                app.stroke_width(),
+                vp.scale,
             )));
         }
         _ => {}
@@ -603,6 +654,7 @@ fn finish(
     doc: &annotation::Document,
     points: Vec<Point>,
     moving: Option<u64>,
+    scale: f32,
     events: &mut Vec<UiEvent>,
 ) {
     let a = points[0];
@@ -630,12 +682,7 @@ fn finish(
         }
         Tool::Draw(kind) => {
             let points = if kind.freehand() { points } else { vec![a, b] };
-            events.push(UiEvent::Add(Shape::new(
-                kind,
-                points,
-                app.ui.colour,
-                app.stroke_width(),
-            )));
+            events.push(UiEvent::Add(styled(app, kind, points, scale)));
         }
     }
 }
@@ -675,7 +722,7 @@ fn guide(
     let b = view(*drag.points.last().expect("two points"));
     let [r, g, bl, al] = app.ui.colour;
     let ink = Color32::from_rgba_unmultiplied(r, g, bl, al);
-    let width = (app.stroke_width() * vp.scale).max(1.0);
+    let width = (app.stroke_width_at(vp.scale) * vp.scale).max(1.0);
     let stroke = Stroke::new(width, ink);
     let boxed = Rect::from_two_pos(a, b);
     match app.ui.tool {
@@ -716,7 +763,7 @@ fn guide(
             painter.line_segment([a, b], stroke);
             if app.ui.tool == Tool::Draw(Kind::Arrow) {
                 let angle = (b.y - a.y).atan2(b.x - a.x);
-                let length = (app.stroke_width() * 4.0).max(12.0) * vp.scale;
+                let length = (app.stroke_width_at(vp.scale) * 4.0).max(12.0) * vp.scale;
                 for offset in [-0.5_f32, 0.5] {
                     let tip = pos2(
                         b.x - length * (angle + offset).cos(),
@@ -860,5 +907,64 @@ pub fn apply(app: &mut App, commands: &Registry<App>, events: Vec<UiEvent>) {
             UiEvent::SubmitPath => app.submit_path(),
             UiEvent::CloseDialog => app.close_dialog(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use annotation::Document;
+    use image::RgbaImage;
+
+    fn added(events: &[UiEvent]) -> Vec<Shape> {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                UiEvent::Add(shape) => Some(shape.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The first frame after a zoom or resize: the app still holds the
+    /// last reported scale, and the gesture commits at this frame's.
+    #[test]
+    fn a_commit_takes_this_frames_scale_not_the_last_reported_one() {
+        let mut app = App::new(crate::label, crate::ink::inks(), false);
+        app.document = Some(Document::new(RgbaImage::new(3840, 2160)).unwrap());
+        app.set_view_scale(1.0);
+        let vp = Viewport::fit((3840, 2160), (960.0, 540.0), 1.0, app.ui.pan);
+        assert_eq!(vp.scale, 0.25);
+        let a = Point { x: 100.0, y: 100.0 };
+        let b = Point { x: 900.0, y: 500.0 };
+        let mut events = Vec::new();
+        app.set_tool(Tool::Draw(Kind::Arrow));
+        let doc = app.document.as_ref().unwrap();
+        finish(&app, doc, vec![a, b], None, vp.scale, &mut events);
+        app.set_tool(Tool::Draw(Kind::Text));
+        app.set_text("Note".into());
+        let doc = app.document.as_ref().unwrap();
+        click(&app, doc, a, vp, &mut events);
+        app.set_tool(Tool::Draw(Kind::Number));
+        let doc = app.document.as_ref().unwrap();
+        click(&app, doc, b, vp, &mut events);
+        let shapes = added(&events);
+        assert_eq!(shapes.len(), 3);
+        // Medium (4 points) and medium text (24 points) at a quarter scale.
+        assert!(shapes.iter().all(|s| s.width == 16.0));
+        assert_eq!(shapes[0].size, None);
+        assert_eq!((shapes[1].size, shapes[2].size), (Some(96.0), Some(96.0)));
+        // The marker's box is sized at the same scale as its text.
+        let (l, _, r, _) = shapes[2].bounds();
+        assert!((r - l - 96.0 * 1.6).abs() < 1e-3);
+        // Applied with the stale scale still in the app, they keep it.
+        let commands = crate::commands::registry();
+        apply(&mut app, &commands, events);
+        let doc = app.document.as_ref().unwrap();
+        let objects = doc.objects();
+        assert_eq!(objects.len(), 3);
+        assert!(objects.iter().all(|o| o.shape.width == 16.0));
+        assert_eq!(objects[1].shape.size, Some(96.0));
+        assert_eq!(objects[2].shape.size, Some(96.0));
     }
 }

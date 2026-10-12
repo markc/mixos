@@ -120,6 +120,10 @@ fn annotated() -> App {
 }
 
 fn window(theme: Theme, name: &str, app: App) {
+    window_sized(theme, name, app, egui::vec2(1100.0, 720.0));
+}
+
+fn window_sized(theme: Theme, name: &str, app: App, size: egui::Vec2) {
     let registry = commands::registry();
     let strings = strings();
     let stroke = icons::stroke_width(&theme);
@@ -130,7 +134,7 @@ fn window(theme: Theme, name: &str, app: App) {
     let mut preview: Option<Preview> = None;
     let mut drag = Drag::default();
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(1100.0, 720.0))
+        .with_size(size)
         .wgpu()
         .build_ui(move |ui| {
             if preview.is_none()
@@ -221,6 +225,22 @@ fn text_tool_window_mode_ocean_dark() {
         chrome(Scheme::Ocean, Mode::Dark),
         "text_tool_window_mode_ocean_dark",
         app,
+    );
+}
+
+/// The Text tool at the window's smallest size (760 points) with long
+/// text: Copy and Save keep their place and the controls never run under
+/// them.
+#[test]
+fn text_tool_narrow_studio_dark() {
+    let mut app = annotated();
+    app.set_tool(Tool::Draw(Kind::Text));
+    app.set_text("A long note that is much wider than the field can show at once".into());
+    window_sized(
+        chrome(Scheme::Studio, Mode::Dark),
+        "text_tool_narrow_studio_dark",
+        app,
+        egui::vec2(760.0, 450.0),
     );
 }
 
