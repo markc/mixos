@@ -495,7 +495,7 @@ async fn serve_with(
     window: Option<&Window>,
 ) -> usize {
     // Window verbs waiting for the window's answer.
-    let mut window_replies = tokio::task::JoinSet::new();
+    let mut window_replies: tokio::task::JoinSet<WindowReply> = tokio::task::JoinSet::new();
     // Taken once: the TabSet signals this whichever thread closes the last
     // tab — a Bus verb here, or the frontend (keyboard, child exit, window
     // close) — and the permit survives until this loop next waits.
