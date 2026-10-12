@@ -92,7 +92,7 @@ end
 $CLEANUP.run = $n.new_run("/tmp/backdrop-gate-" .. to_string(pid()))
 $BUS = nil
 if $PRIVATE_BUS then
-  $BUS = $n.private_bus({dir: $CLEANUP.run .. "/bus", name: "backdrop-gate", noded: $NODED})
+  $BUS = $n.private_bus({dir: $CLEANUP.run.path .. "/bus", name: "backdrop-gate", noded: $NODED})
 end
 $session = $n.start({bin: $comp, tag: "backdrop", run: $CLEANUP.run, config: $CONFIG, env: {}, software: $SOFTWARE})
 $svc = $session["service"]
