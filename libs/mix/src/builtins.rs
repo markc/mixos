@@ -25235,11 +25235,21 @@ pub(crate) mod socket_sources {
             /// Consume the outgoing and answer its receipt. If the caller
             /// (a cancelled Class C task) dropped the receiver, the send
             /// simply reports nowhere — the write itself is unaffected.
-            /// Consuming drops the permits: the reservation releases here.
+            /// The reservation releases here, BEFORE the receipt answers: a
+            /// caller woken by its receipt may admit again at once and must
+            /// find the permits back. (Moving only the receipt out would
+            /// drop the permits at the end of this function, after the
+            /// caller had already been woken.)
             fn answer(self, result: SendReceipt) {
-                let receipt = match self {
-                    Outgoing::Tcp { receipt, .. } | Outgoing::Ws { receipt, .. } => receipt,
+                let (receipt, permits) = match self {
+                    Outgoing::Tcp {
+                        receipt, _permits, ..
+                    }
+                    | Outgoing::Ws {
+                        receipt, _permits, ..
+                    } => (receipt, _permits),
                 };
+                drop(permits);
                 let _ = receipt.send(result);
             }
         }
@@ -27510,14 +27520,23 @@ pub(crate) mod socket_sources {
                 (MAX_SEND_OPS - 1, MAX_SEND_BYTES)
             );
             drop(empty);
-            assert_eq!(
-                send_tcp(id, Vec::new(), None)
-                    .unwrap()
-                    .await
-                    .unwrap()
-                    .unwrap(),
-                0
-            );
+            // A receipt answers only after its reservation is released: the
+            // woken caller finds every permit back at once, every time.
+            for _ in 0..100 {
+                assert_eq!(
+                    send_tcp(id, Vec::new(), None)
+                        .unwrap()
+                        .await
+                        .unwrap()
+                        .unwrap(),
+                    0
+                );
+                assert_eq!(
+                    endpoint.available_permits(),
+                    (MAX_SEND_OPS, MAX_SEND_BYTES),
+                    "the receipt answered before its permits were released"
+                );
+            }
             // Ops bound: 64 reservations, the 65th refuses.
             let mut manual = Vec::new();
             for _ in 0..MAX_SEND_OPS {
