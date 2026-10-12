@@ -19,9 +19,9 @@
 --   --user manager.
 -- - services/compd/tests/settings_test.mix: runs its own release-fast cargo
 --   build.
--- - services/compd/tests/desktop_icons_test.mix: stale; it drives
---   tools/material_icons.mix and share/icons/, neither of which came into
---   this tree.
+-- - services/compd/tests/desktop_icons_test.mix and apps_bus_test.mix:
+--   stale; they drive tools/material_icons.mix and share/icons/, neither of
+--   which came into this tree.
 -- - tests/desktop/: nested and on-hardware compositor runs.
 $root = dirname(dirname(realpath($0)))
 $bin = $root .. "/target/debug"
@@ -39,12 +39,13 @@ while $i < len($argv)
     $i = $i + 1
   end
 end
+-- Absolute: the scripts spawn these binaries from their own working dirs.
+$bin = realpath($bin)
 
 $scripts = [
   "tests/component_install_test.mix",
   "tests/verb_registry_test.mix",
   "services/compd/tests/apps_test.mix",
-  "services/compd/tests/apps_bus_test.mix",
   "services/compd/tests/editor_app_test.mix",
   "services/compd/tests/editor_app_bus_test.mix",
   "services/compd/tests/scene_editor_fixtures_test.mix",
