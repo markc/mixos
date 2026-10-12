@@ -179,7 +179,10 @@ fn task_tip($w, $name, $ws_current)
   $out = tip($app, $title != $app ? $title : "", $lines)
   -- A live preview of the window (drawn by compd over the card).
   if type($w.width) == "number" and type($w.height) == "number" and $w.width > 0 and $w.height > 0 then
-    $out.thumbnail = {id: $w.id, generation: $w.generation, w: $w.width, h: $w.height}
+    -- decorated: compd draws the frame around it, so the box takes the
+    -- frame's aspect (the content plus the server-side chrome).
+    $out.thumbnail = {id: $w.id, generation: $w.generation, w: $w.width, h: $w.height,
+      decorated: $w.decoration == "server" and not ($w.fullscreen ?? false)}
   end
   return $out
 end

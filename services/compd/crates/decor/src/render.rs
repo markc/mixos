@@ -134,6 +134,33 @@ struct RasterKey {
     scale_bits: u32,
 }
 
+/// Which drawing of a window the chrome is for. Each keeps its own element
+/// ids, commit counters and rasters, so a window drawn in place and captured
+/// (a hover thumbnail) in the same frame never makes either look changed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pass {
+    /// The window where it is on screen. Pointer hover state lives here.
+    Presented,
+    /// A capture at its own origin and scale (screenshots, thumbnails).
+    Captured,
+}
+
+/// The captured pass's chrome: a distinct type in the window's user data.
+/// Captures at two scales at once (a screenshot taken while a tip previews
+/// the same window) re-raster it each time; that corner is accepted, as
+/// both are brief.
+#[derive(Default)]
+struct CapturedChrome(RefCell<WindowChrome>);
+
+/// Free `window`'s captured-pass rasters (titlebar, shadow, corners) when no
+/// capture needs them any more, e.g. when the last hover thumbnail of it
+/// hides. The user-data entry stays (it cannot be removed), empty.
+pub fn release_captured(window: &Window) {
+    if let Some(captured) = window.user_data().get::<CapturedChrome>() {
+        *captured.0.borrow_mut() = WindowChrome::default();
+    }
+}
+
 /// The per-window chrome, kept in the window's user data.
 #[derive(Default)]
 struct WindowChrome {
@@ -307,8 +334,8 @@ where
 
 /// `window`'s chrome around its content at `content` (physical px: the slot as
 /// drawn), at `scale` physical px per logical px (output scale × zoom),
-/// clipped to `clip` (the pane being drawn). Empty when the window gets no
-/// chrome ([`crate::window::decorated`]).
+/// clipped to `clip` (the pane being drawn), for `pass`. Empty when the window
+/// gets no chrome ([`crate::window::decorated`]).
 pub fn elements<R>(
     renderer: &mut R,
     window: &Window,
@@ -316,6 +343,7 @@ pub fn elements<R>(
     content_size: Size<i32, smithay::utils::Logical>,
     scale: f64,
     clip: Rectangle<i32, Physical>,
+    pass: Pass,
 ) -> Elements<R>
 where
     R: Renderer + ImportMem,
@@ -329,9 +357,11 @@ where
         return out;
     }
     let ChromeTheme { deco, .. } = &*theme;
-    let cell = window
-        .user_data()
-        .get_or_insert(|| RefCell::new(WindowChrome::default()));
+    let data = window.user_data();
+    let cell = match pass {
+        Pass::Presented => data.get_or_insert(|| RefCell::new(WindowChrome::default())),
+        Pass::Captured => &data.get_or_insert(CapturedChrome::default).0,
+    };
     let mut wc = cell.borrow_mut();
     let state = refresh(&mut wc.chrome, window, content_size);
     let layout = state.layout(deco);

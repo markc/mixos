@@ -74,7 +74,14 @@ pub fn collect_feedback(
 /// instead ([`trickle`]): one callback at most every [`OCCLUDED_TRICKLE`].
 pub fn send_window_frames(state: &Loop, output: &Output, visible: &[Window]) {
     let frame_time = state.inner.start_time.elapsed();
+    // A window this output drew only as a hover thumbnail is not its to
+    // pace: the output drawing it in place sends its callbacks, else the
+    // thumbnail pacer does.
+    let key = world::state::state::output_key(output);
     for window in visible {
+        if world::window::draw::thumbnail::preview_only_on(&key, window) {
+            continue;
+        }
         window.send_frame(output, frame_time, Some(Duration::ZERO), |_, _| {
             Some(output.clone())
         });
@@ -82,6 +89,75 @@ pub fn send_window_frames(state: &Loop, output: &Output, visible: &[Window]) {
     let occluded = world::window::draw::occlude::record::occluded();
     world::window::draw::occlude::record::note_withheld(occluded.len());
     trickle(state);
+    pace_thumbnails(state);
+}
+
+/// How often a window shown only as a hover thumbnail gets a frame callback.
+/// A preview needs to move, not to run at the output's refresh rate; a window
+/// also drawn in place gets its callbacks there at full rate.
+pub const THUMBNAIL_FRAME: Duration = Duration::from_millis(33);
+
+thread_local! {
+    /// A thumbnail pacing timer is armed (one at a time).
+    static THUMBNAIL_ARMED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The windows only a hover thumbnail shows ([`world::window::draw::thumbnail::paced`])
+/// that wait on a frame callback, each with the output its tip is on. None
+/// under a session lock (only the lock surface gets callbacks then).
+fn thumbnail_targets(state: &Loop) -> Vec<(Window, Output)> {
+    // Nothing to do (and nothing allocated) while no tip asks.
+    if !world::window::draw::thumbnail::asked() || world::comp::session_lock::active(state) {
+        return Vec::new();
+    }
+    let space = &state.inner.space_state().state;
+    let live: Vec<String> = space
+        .outputs()
+        .map(world::state::state::output_key)
+        .collect();
+    world::window::draw::thumbnail::retain_outputs(&live);
+    world::window::draw::thumbnail::paced()
+        .into_iter()
+        .filter_map(|(window, key)| {
+            let output = space
+                .outputs()
+                .find(|o| world::state::state::output_key(o) == key)
+                .or_else(|| space.outputs().next())?
+                .clone();
+            awaits_frame(&window).then_some((window, output))
+        })
+        .collect()
+}
+
+/// Pace the windows a hover tip previews: a frame callback at most every
+/// [`THUMBNAIL_FRAME`], from a timer, so the preview stays live without the
+/// window joining the presented set (and driving frames at full rate).
+/// Armed from each presented frame and each main-loop pass (as [`trickle`]
+/// is: a callback-only commit may bring no frame) while a previewed window
+/// waits; re-arms itself while one still does.
+pub fn pace_thumbnails(state: &Loop) {
+    if THUMBNAIL_ARMED.get() || thumbnail_targets(state).is_empty() {
+        return;
+    }
+    let armed = state.loop_handle.insert_source(
+        smithay::reexports::calloop::timer::Timer::from_duration(THUMBNAIL_FRAME),
+        |_, _, state: &mut Loop| {
+            THUMBNAIL_ARMED.set(false);
+            let frame_time = state.inner.start_time.elapsed();
+            for (window, output) in thumbnail_targets(state) {
+                // No primary output: smithay's throttle then holds each
+                // surface to one callback per THUMBNAIL_FRAME.
+                window.send_frame(&output, frame_time, Some(THUMBNAIL_FRAME), |_, _| None);
+            }
+            let _ = state.inner.loader.display_handle.flush_clients();
+            pace_thumbnails(state);
+            smithay::reexports::calloop::timer::TimeoutAction::Drop
+        },
+    );
+    match armed {
+        Ok(_) => THUMBNAIL_ARMED.set(true),
+        Err(error) => warn!("thumbnail frame pacing not armed: {error}"),
+    }
 }
 
 /// The occluded trickle: a covered window still gets a frame callback
@@ -151,6 +227,14 @@ pub fn surface_awaits_frame(
 /// this it got no callback at all, and a client that runs its UI loop on
 /// callbacks (egui answering Bus verbs) stalled until it was shown again.
 fn trickle_targets(state: &Loop) -> Vec<(Window, Output)> {
+    // One owner per window: a hover thumbnail's pacer outranks the trickle.
+    let mut targets = trickle_candidates(state);
+    let paced = world::window::draw::thumbnail::paced();
+    targets.retain(|(window, _)| !paced.iter().any(|(w, _)| w == window));
+    targets
+}
+
+fn trickle_candidates(state: &Loop) -> Vec<(Window, Output)> {
     use dispatcher::wire::trait_::surface_event::SurfaceHandle;
     use dispatcher::wire::trait_::wire_trait::WireTrait;
     use world::window::interface::record::window::LoopWindow;

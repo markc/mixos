@@ -538,7 +538,11 @@ check(deep_eq($models.task_tip(window_row(5, 1, 3, "Doc", "example.editor", fals
 $sized = window_row(6, 4, 2, "Inbox", "example.mail", false, false)
 $sized.width = 1600
 $sized.height = 900
-check(deep_eq($models.task_tip($sized, "Mail", 2).thumbnail, {id: 6, generation: 4, w: 1600, h: 900}), "a sized window's tip carries its thumbnail fence and size")
+check(deep_eq($models.task_tip($sized, "Mail", 2).thumbnail, {id: 6, generation: 4, w: 1600, h: 900, decorated: false}), "a sized window's tip carries its thumbnail fence and size")
+$sized.decoration = "server"
+check($models.task_tip($sized, "Mail", 2).thumbnail.decorated, "a server-decorated window's thumbnail is framed")
+$sized.fullscreen = true
+check(not $models.task_tip($sized, "Mail", 2).thumbnail.decorated, "a fullscreen window has no frame")
 $flat = window_row(7, 1, 2, "Zero", "example.mail", false, false)
 $flat.width = 0
 $flat.height = 900
