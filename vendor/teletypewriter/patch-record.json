@@ -1,0 +1,6 @@
+{
+  "upstream_rev": "932c1a7d9e07b4db5924f7a0dd689e823c3a1442",
+  "src/unix.rs": "b284fb59dd6cac10836a75376d07bbdff0bd93600769eaf765e60d7b3f198d02",
+  "launch_api_hunk": "e7f01bffb2f8f477e792117dc6cbf78122fe8d976f5dc33a1af7d969500e80fd",
+  "child_mapping_hunk": "56bc874d27bcfabfb9f033aec13f9cb79ff7c1f751f2166b19252bba612baf7e"
+}
