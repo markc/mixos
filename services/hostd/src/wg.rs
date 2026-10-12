@@ -438,7 +438,8 @@ pub fn route_probe(own: &[(IpAddr, u8)], others: &[(IpAddr, u8)]) -> Option<IpAd
         // address, which still routes) only as a last resort.
         let mut candidates = vec![probe_target(addr, prefix)];
         for &(o, op) in others {
-            if op >= prefix && contains((addr, prefix), o)
+            if op >= prefix
+                && contains((addr, prefix), o)
                 && let Some(after) = last_of((o, op)).and_then(|end| offset(end, 1))
             {
                 candidates.push(after);
@@ -466,12 +467,20 @@ fn last_of((addr, prefix): (IpAddr, u8)) -> Option<IpAddr> {
     match addr {
         IpAddr::V4(v4) => {
             let host = 32 - u32::from(prefix.min(32));
-            let span = if host == 32 { u32::MAX } else { (1u32 << host) - 1 };
+            let span = if host == 32 {
+                u32::MAX
+            } else {
+                (1u32 << host) - 1
+            };
             Some(IpAddr::V4((u32::from(v4) | span).into()))
         }
         IpAddr::V6(v6) => {
             let host = 128 - u32::from(prefix.min(128));
-            let span = if host == 128 { u128::MAX } else { (1u128 << host) - 1 };
+            let span = if host == 128 {
+                u128::MAX
+            } else {
+                (1u128 << host) - 1
+            };
             Some(IpAddr::V6((u128::from(v6) | span).into()))
         }
     }
@@ -837,14 +846,26 @@ mod tests {
         );
         // sol's round-3 case: a /8 whose first /16 is another peer's still
         // has addresses of its own, past the /16.
-        assert_eq!(route_probe(&[n("10.0.0.0", 8)], &[n("10.0.0.0", 16)]), ip("10.1.0.0"));
+        assert_eq!(
+            route_probe(&[n("10.0.0.0", 8)], &[n("10.0.0.0", 16)]),
+            ip("10.1.0.0")
+        );
         // Covered piece by piece, with a gap at the end.
         assert_eq!(
-            route_probe(&[n("10.0.0.0", 30)], &[n("10.0.0.0", 31), n("10.0.0.2", 32)]),
+            route_probe(
+                &[n("10.0.0.0", 30)],
+                &[n("10.0.0.0", 31), n("10.0.0.2", 32)]
+            ),
             ip("10.0.0.3")
         );
         // Covered completely, piece by piece.
-        assert_eq!(route_probe(&[n("10.0.0.0", 31)], &[n("10.0.0.0", 32), n("10.0.0.1", 32)]), None);
+        assert_eq!(
+            route_probe(
+                &[n("10.0.0.0", 31)],
+                &[n("10.0.0.0", 32), n("10.0.0.1", 32)]
+            ),
+            None
+        );
         assert!(contains(n("10.99.0.0", 24), "10.99.0.200".parse().unwrap()));
         assert!(!contains(n("10.99.0.0", 24), "10.99.1.1".parse().unwrap()));
         assert!(contains(n("0.0.0.0", 0), "203.0.113.9".parse().unwrap()));

@@ -99,7 +99,9 @@ impl ConnectRequest {
 async fn iwd(timeout: Duration) -> anyhow::Result<zbus::Connection> {
     let conn = tokio::time::timeout(
         STEP,
-        zbus::connection::Builder::system()?.method_timeout(timeout).build(),
+        zbus::connection::Builder::system()?
+            .method_timeout(timeout)
+            .build(),
     )
     .await??;
     let dbus = zbus::fdo::DBusProxy::new(&conn).await?;
@@ -395,7 +397,10 @@ const PUT_BACK: Duration = Duration::from_secs(25);
 /// The network a station is attached to now, whether connected or still
 /// connecting (iwd sets `ConnectedNetwork` from the start of a connect),
 /// and the station's state.
-async fn attached(conn: &zbus::Connection, station: &str) -> anyhow::Result<(String, Option<String>)> {
+async fn attached(
+    conn: &zbus::Connection,
+    station: &str,
+) -> anyhow::Result<(String, Option<String>)> {
     let st = proxy(conn, station, STATION).await?;
     let state: String = st.get_property("State").await?;
     if state == "disconnected" {
@@ -490,7 +495,9 @@ async fn forget(conn: &zbus::Connection, ssid: &str) -> anyhow::Result<()> {
         .get_managed_objects()
         .await?;
     for (path, ifaces) in &objects {
-        let Some(known) = ifaces.get(KNOWN) else { continue };
+        let Some(known) = ifaces.get(KNOWN) else {
+            continue;
+        };
         let name = known
             .get("Name")
             .and_then(|v| <&str>::try_from(&**v as &zbus::zvariant::Value).ok());
