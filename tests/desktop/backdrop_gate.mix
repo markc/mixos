@@ -5,7 +5,9 @@
 -- JSON lines.
 --
 --   mix tests/desktop/backdrop_gate.mix --backdrop PATH [--bin PATH] --config-file PATH
---       [--software] [--private-bus [--noded PATH]]
+--       [--software] [--private-bus [--noded PATH]] [--shot-out PATH]
+--
+-- --shot-out keeps the screenshot taken with backdrop drawn (P6), to look at.
 --
 -- --private-bus starts an owned noded on a loopback port for the run (a
 -- build worker runs no broker); without it the run uses this node's.
@@ -28,9 +30,10 @@ $c = require("capture_lib.mix")
 $CLEANUP = {ok: false, run: nil}
 try
 
-$USAGE = "usage: backdrop_gate.mix --backdrop PATH [--bin PATH] --config-file PATH [--software] [--private-bus [--noded PATH]]"
+$USAGE = "usage: backdrop_gate.mix --backdrop PATH [--bin PATH] --config-file PATH [--software] [--private-bus [--noded PATH]] [--shot-out PATH]"
 $PRIVATE_BUS = false
 $NODED = ""
+$SHOT_OUT = ""
 $BIN = ""
 $CONFIG = ""
 $BACKDROP = ""
@@ -51,6 +54,9 @@ while $ai < len($argv)
   elif $arg == "--software" then
     $SOFTWARE = true
     $ai = $ai + 1
+  elif $arg == "--shot-out" and $ai + 1 < len($argv) then
+    $SHOT_OUT = $argv[$ai + 1]
+    $ai = $ai + 2
   elif $arg == "--private-bus" then
     $PRIVATE_BUS = true
     $ai = $ai + 1
@@ -244,6 +250,9 @@ try
     $cy = $after_img.h / 2
     $p0 = $c.pixel($before_img, $cx, $cy)
     $p1 = $c.pixel($after_img, $cx, $cy)
+    if $SHOT_OUT != "" then
+      copy($run .. "/after.ppm", $SHOT_OUT)
+    end
     print("  note: centre pixel " .. json_encode($p0) .. " -> " .. json_encode($p1))
     check("the centre pixel changed from the compositor's fill to backdrop's", not deep_eq($p0, $p1), json_encode([$p0, $p1]))
   end
