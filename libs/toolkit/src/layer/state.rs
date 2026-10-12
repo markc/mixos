@@ -301,15 +301,27 @@ impl<P: LayerProgram + 'static> State<P> {
             .collect();
         // A surface that goes takes its keyboard focus, key repeat and
         // pointer state with it: no leave event need follow.
-        if self.keyboard_focus.as_ref().is_some_and(|f| removed.contains(f)) {
+        if self
+            .keyboard_focus
+            .as_ref()
+            .is_some_and(|f| removed.contains(f))
+        {
             self.keyboard_focus = None;
             self.held.clear();
             self.stop_repeat();
         }
-        if self.pointer_over.as_ref().is_some_and(|(o, _)| removed.contains(o)) {
+        if self
+            .pointer_over
+            .as_ref()
+            .is_some_and(|(o, _)| removed.contains(o))
+        {
             self.pointer_over = None;
         }
-        if self.button_target.as_ref().is_some_and(|t| removed.contains(t)) {
+        if self
+            .button_target
+            .as_ref()
+            .is_some_and(|t| removed.contains(t))
+        {
             self.button_target = None;
             self.buttons.clear();
         }
