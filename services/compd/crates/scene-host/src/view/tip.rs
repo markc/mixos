@@ -121,7 +121,11 @@ impl Thumbnail {
         }
         let decorated = value.get("decorated").and_then(Value::as_bool) == Some(true);
         let (w, h) = if decorated {
-            framed(w, h, decor::window::installed().map(|t| decor::DecoExtents::of(&t.deco)))
+            framed(
+                w,
+                h,
+                decor::window::installed().map(|t| decor::DecoExtents::of(&t.deco)),
+            )
         } else {
             (w, h)
         };
@@ -132,7 +136,6 @@ impl Thumbnail {
             h,
         })
     }
-
 }
 
 /// A window's content size grown by its server-side chrome `extents` (none

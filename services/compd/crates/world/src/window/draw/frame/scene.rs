@@ -815,7 +815,14 @@ pub fn capture_framed<R>(
     renderer: &mut R,
     window: &Window,
     scale: f64,
-) -> Result<(Vec<Element<R>>, Size<i32, Physical>, Rectangle<i32, Physical>), String>
+) -> Result<
+    (
+        Vec<Element<R>>,
+        Size<i32, Physical>,
+        Rectangle<i32, Physical>,
+    ),
+    String,
+>
 where
     R: Renderer + ImportAll + ImportMem + dispatcher::frame::frame::SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,

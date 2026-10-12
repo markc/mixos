@@ -290,7 +290,10 @@ mod tests {
         // A frame of another aspect is centred, and the crop is the frame.
         let wide = Rectangle::new(Point::from((0, 0)), Size::from((1000, 500)));
         let (_, at, crop) = place(wide, rect).unwrap();
-        assert_eq!(crop, Rectangle::new(Point::from((500, 320)), Size::from((200, 100))));
+        assert_eq!(
+            crop,
+            Rectangle::new(Point::from((500, 320)), Size::from((200, 100)))
+        );
         assert_eq!(at, crop.loc);
     }
 
