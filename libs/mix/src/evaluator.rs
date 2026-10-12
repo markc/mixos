@@ -10594,6 +10594,11 @@ impl Evaluator {
                         .entry(command.clone())
                         .or_default()
                         .push(entry);
+                    // Nothing dispatches before a handler exists, so share
+                    // the global scope here, at a statement boundary, rather
+                    // than at the first dispatch, which may come from inside
+                    // a function (`task_start` in a top-level helper).
+                    // PROMOTE_PLACEHOLDER
                     Ok(Value::Nil)
                 }
 
@@ -19485,6 +19490,44 @@ mod local_task_tests {
                 r#"
                 if $state.a.enabled or $state.a.pid != nil or $state.b.pid != 102 then
                   raise("TEST", "restart overwrote disable or sibling")
+                end
+            "#,
+            )
+            .await
+            .unwrap();
+        });
+    }
+
+    /// A top-level helper that starts a task: the first dispatch comes
+    /// from inside a function. The global scope must already be shared
+    /// (promoted when `on` registered), so the dispatch neither promotes
+    /// with the helper's frames live nor loses the helper's view of
+    /// globals afterwards. The scene editor's behaviour does exactly this.
+    #[test]
+    fn task_start_from_a_function_shares_globals_with_its_caller() {
+        run(async {
+            let mut eval = Evaluator::new();
+            eval.execute_script_source(
+                r#"
+                $state = {runs: 0, seen: nil}
+                on bump async
+                  $state.runs = $state.runs + 1
+                end
+                fn schedule($tag)
+                  $local = $tag
+                  task_start("bump", "{}")
+                  $state.seen = $local .. ":" .. to_string($state.runs)
+                end
+                schedule("first")
+            "#,
+            )
+            .await
+            .unwrap();
+            settle(&eval).await;
+            eval.execute_script_source(
+                r#"
+                if $state.runs != 1 or not starts_with($state.seen ?? "", "first:") then
+                  raise("TEST", "task or caller lost the shared globals: " .. json_encode($state))
                 end
             "#,
             )

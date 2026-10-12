@@ -413,6 +413,28 @@ impl Scope {
         handle
     }
 
+    /// Promote globals and functions to their shared handles now, if this
+    /// is a safe boundary: top level, no function frames and no transient
+    /// frames. Returns whether the scope is shared afterwards.
+    ///
+    /// `on` registration calls this so the promotion `for_invocation`
+    /// would otherwise do lazily at the first dispatch happens at a
+    /// statement boundary instead. Without it, a `task_start` (or a
+    /// pumping `sleep`) inside a function — a behaviour's top-level
+    /// `schedule()` calling `task_start` — promotes with that function's
+    /// frames live, which `shared_globals_handle` forbids.
+    pub(crate) fn promote_shared_at_boundary(&mut self) -> bool {
+        if self.shared_globals.is_some() {
+            return true;
+        }
+        if !self.function_floors.is_empty() || self.frames.len() != 1 {
+            return false;
+        }
+        self.shared_globals_handle();
+        self.shared_functions_handle();
+        true
+    }
+
     /// SPEC 18 Phase 2 WS3-C.7b — return the shared function registry
     /// handle, **promoting standalone state lazily** on first call.
     /// Same shape as `shared_globals_handle`; the local `functions`
