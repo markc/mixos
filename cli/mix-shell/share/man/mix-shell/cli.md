@@ -157,9 +157,10 @@ builtins functions aliases commands keywords meta errors sessions
 never all raw reset clear week query trend since help
 ```
 
-Current data is stored as `current.json` under the stats directory and rotates
-by ISO week. The implementation can batch data into `mix.db` and delegates SQL
-queries to an external `sqlite3` command when it is present.
+Each run appends one record to `runs/YYYY-MM-DD.jsonl` under the stats
+directory; reports aggregate the raw days, using an advisory per-day cache.
+`query` loads the store into an in-memory SQLite database with the tables of
+the old `mix.db`.
 
 ## Files and environment
 

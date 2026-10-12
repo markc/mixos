@@ -1,22 +1,23 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
-use std::io::Write;
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::fd::AsRawFd;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use mix::stats::{
-    BUILTIN_NAMES, CANONICAL_KEYWORDS, ExecutionMode, HOF_NAMES, StatsBucket, StatsCounters,
-    UsageStats, current_iso_week, date_for_epoch_day, datetime_string, iso_week_for_date,
+    BUILTIN_NAMES, CANONICAL_KEYWORDS, ExecutionMode, HOF_NAMES, SessionRecord, StatsBucket,
+    StatsCounters, UsageStats, current_iso_week, date_for_epoch_day, datetime_string,
+    iso_week_for_date, today_string,
 };
 use rusqlite::{Connection, params};
 
-const WRITER_LOCK_DEADLINE: Duration = Duration::from_millis(200);
-const REPORT_LOCK_DEADLINE: Duration = Duration::from_secs(2);
 const MAX_PERSISTED_TIMESTAMP: u64 = 253_402_300_799; // 9999-12-31 23:59:59 UTC
+const STALE_TEMP_AGE: Duration = Duration::from_secs(3600);
 static TEMP_SUFFIX: AtomicU64 = AtomicU64::new(0);
 static STATS_ENABLED: OnceLock<bool> = OnceLock::new();
 
@@ -151,13 +152,18 @@ fn legacy_advisory() {
 struct StatsLock(File);
 
 impl StatsLock {
-    fn acquire(dir: &Path, exclusive: bool, deadline: Duration) -> std::io::Result<Self> {
+    fn acquire(
+        dir: &Path,
+        name: &str,
+        exclusive: bool,
+        deadline: Duration,
+    ) -> std::io::Result<Self> {
         let file = OpenOptions::new()
             .create(true)
             .truncate(false)
             .read(true)
             .write(true)
-            .open(dir.join("stats.lock"))?;
+            .open(dir.join(name))?;
         let operation = if exclusive {
             libc::LOCK_EX
         } else {
@@ -186,77 +192,247 @@ impl Drop for StatsLock {
     }
 }
 
+/// Run records, `runs/YYYY-MM-DD.jsonl`, named for the UTC day they were
+/// appended on. Immutable history: never rewritten, truncated or deleted. The
+/// name is only where a record was written; its buckets carry their own dates.
+const RUNS_DIR: &str = "runs";
+/// Advisory per-day aggregates, `cache/YYYY-MM-DD.json`, and legacy document
+/// bounds, `cache/legacy/<name>.json`. Disposable: each names the exact file
+/// it summarises, and anything else is recomputed.
+const CACHE_DIR: &str = "cache";
+/// `clear` and `reset`, appended and applied at read time.
+const OPS_FILE: &str = "ops.jsonl";
+/// The new store's own lock, held only while refreshing the cache. Binaries
+/// from before the JSONL store take `stats.lock` for every write and drop
+/// the write if it is busy for 200 ms, so this store never takes that one.
+const CACHE_LOCK: &str = "cache.lock";
+/// Serialises `clear` and `reset`: reading positions and appending the op
+/// happen as one step. Runs and older binaries never take it.
+const OPS_LOCK: &str = "ops.lock";
+/// How long an op waits for another op before refusing.
+const OPS_LOCK_WAIT: Duration = Duration::from_secs(2);
+/// Attempts for a mid-session flush.
+const PENDING_FLUSH_ATTEMPTS: usize = 3;
+/// Attempts to read the legacy documents as one consistent snapshot.
+const LEGACY_READ_ATTEMPTS: u32 = 5;
+
+/// A writer for one framed record: production makes exactly one `write(2)`.
+/// Tests substitute short, failing or repeating writers.
+type WriteOnce<'a> = &'a mut dyn FnMut(&mut File, &[u8]) -> std::io::Result<usize>;
+
+/// One `write(2)`. `File::write` is a single syscall; `write_all` would loop
+/// and could split a record across writes that interleave with other runs.
+fn write_once(file: &mut File, bytes: &[u8]) -> std::io::Result<usize> {
+    file.write(bytes)
+}
+
+/// How one append went.
+#[derive(Debug)]
+enum Append {
+    /// The whole record landed.
+    Written,
+    /// Only this many bytes landed: a torn record, which readers skip (or, if
+    /// only the final newline is missing, read once). Never retried.
+    Short(usize),
+    /// Known to have written nothing: the open failed, or `write(2)` failed
+    /// with an error the kernel raises before writing any byte.
+    Clean(String),
+    /// `write(2)` failed with an error that does not prove nothing landed (an
+    /// EIO from a failed commit can follow data the file already holds).
+    Uncertain(String),
+}
+
+/// Errors `write(2)` returns before transferring any byte.
+fn wrote_nothing(error: &std::io::Error) -> bool {
+    matches!(
+        error.raw_os_error(),
+        Some(
+            libc::ENOSPC
+                | libc::EDQUOT
+                | libc::EAGAIN
+                | libc::EINTR
+                | libc::EFBIG
+                | libc::EBADF
+                | libc::EINVAL
+                | libc::EROFS
+                | libc::EACCES
+                | libc::EPERM
+        )
+    )
+}
+
+fn now_nanos() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX))
+        .unwrap_or(0)
+}
+
+/// 128 random bits as hex, from `getrandom(2)`. If the kernel cannot supply
+/// them, time, pid and a counter still make the id unique to this process.
+fn random_id() -> String {
+    let mut bytes = [0_u8; 16];
+    let filled = unsafe { libc::getrandom(bytes.as_mut_ptr().cast(), bytes.len(), 0) };
+    if usize::try_from(filled) != Ok(bytes.len()) {
+        let count = TEMP_SUFFIX.fetch_add(1, Ordering::Relaxed);
+        return format!("{:x}-{:x}-{count:x}", now_nanos(), std::process::id());
+    }
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// The stored form of a delta: its dated buckets and run records. The
+/// top-level totals derive from the buckets, so they are not stored twice.
+fn record_json(stats: &UsageStats) -> serde_json::Value {
+    let mut value = stats.to_json();
+    if let Some(object) = value.as_object_mut() {
+        object.retain(|key, _| key == "buckets" || key == "sessions");
+    }
+    value
+}
+
+/// Frame one JSON value as a record: a newline, the value, a newline. The
+/// leading newline ends any torn record before it, so a crash cannot cost the
+/// next run its line.
+fn frame(value: &serde_json::Value) -> Result<Vec<u8>, String> {
+    let mut bytes = vec![b'\n'];
+    serde_json::to_writer(&mut bytes, value).map_err(|e| e.to_string())?;
+    bytes.push(b'\n');
+    Ok(bytes)
+}
+
+/// A delta as one framed record carrying a random `batch` id (readers keep
+/// one copy of each batch per day file) and its write time `at` in Unix
+/// nanoseconds (metadata only; nothing is ordered by it).
+fn encode_record(delta: &UsageStats) -> Result<Vec<u8>, String> {
+    let mut value = record_json(delta);
+    if let Some(object) = value.as_object_mut() {
+        object.insert("batch".into(), random_id().into());
+        object.insert("at".into(), now_nanos().into());
+    }
+    frame(&value)
+}
+
+/// Open `path` for append (creating it and its directory) and hand the
+/// record to `write` once.
+fn append_to(path: &Path, bytes: &[u8], write: WriteOnce<'_>) -> Append {
+    let open = || OpenOptions::new().create(true).append(true).open(path);
+    let mut file = match open() {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            if let Some(parent) = path.parent()
+                && let Err(error) = fs::create_dir_all(parent)
+            {
+                return Append::Clean(format!("create {}: {error}", parent.display()));
+            }
+            match open() {
+                Ok(file) => file,
+                Err(error) => return Append::Clean(format!("open {}: {error}", path.display())),
+            }
+        }
+        Err(error) => return Append::Clean(format!("open {}: {error}", path.display())),
+    };
+    match write(&mut file, bytes) {
+        Ok(written) if written == bytes.len() => Append::Written,
+        Ok(written) => Append::Short(written),
+        Err(error) if wrote_nothing(&error) => {
+            Append::Clean(format!("write {}: {error}", path.display()))
+        }
+        Err(error) => Append::Uncertain(format!("write {}: {error}", path.display())),
+    }
+}
+
+fn run_path(dir: &Path, day: &str) -> PathBuf {
+    dir.join(RUNS_DIR).join(format!("{day}.jsonl"))
+}
+
 pub fn flush_batch(mut delta: UsageStats) {
     if !stats_enabled() {
         return;
     }
     delta.finalize_session();
-    let Some(dir) = ensure_stats_dir() else {
+    let Some(dir) = stats_dir() else {
         return;
     };
-    if let Err(error) = flush_batch_to_dir(&dir, &delta) {
-        debug_note(format!("flush skipped: {error}"));
+    flush_run(&dir, &delta, &today_string(), &mut write_once);
+}
+
+/// The exit path of a run, and of a `--serve` generation retiring at RELOAD:
+/// encode the finished delta and append it to `day`'s file, once. Nothing
+/// else: no listing, no lock, no maintenance, no retry. A short or failed
+/// write drops the run; collection is best-effort.
+fn flush_run(dir: &Path, delta: &UsageStats, day: &str, write: WriteOnce<'_>) {
+    let bytes = match encode_record(delta) {
+        Ok(bytes) => bytes,
+        Err(error) => return debug_note(format!("run not recorded: {error}")),
+    };
+    match append_to(&run_path(dir, day), &bytes, write) {
+        Append::Written => {}
+        Append::Short(written) => debug_note(format!(
+            "run dropped: short write ({written} of {} bytes)",
+            bytes.len()
+        )),
+        Append::Clean(error) | Append::Uncertain(error) => {
+            debug_note(format!("run dropped: {error}"))
+        }
     }
 }
 
-/// Flush a mid-session delta produced by `UsageStats::drain_pending_buckets`
-/// — buckets only, no session record, nothing finalized. Each ISO week is
-/// committed **independently**, and `Err` carries ONLY the buckets that were
-/// not persisted, for the caller to merge back into the live collector.
-/// Handing the whole delta to `flush_batch_to_dir` instead would commit its
-/// weeks sequentially, so a failure on week N after week N-1's write would
-/// make a whole-delta merge-back double-count the committed week on the next
-/// flush. (`flush_batch`'s fire-and-forget drop is only acceptable at
-/// process exit, where nothing remains to merge back into.)
+/// Persist a mid-session delta from `UsageStats::drain_pending_buckets` (a
+/// REPL `mix stats` pipeline drains the live collector before the child
+/// reads): buckets only, no session record, nothing finalized.
 pub fn flush_pending_delta(delta: &UsageStats) -> Result<(), Box<UsageStats>> {
     if !stats_enabled() || delta.buckets.is_empty() {
         return Ok(());
     }
-    let (week_deltas, mut residual) = split_delta_by_week(delta);
-    let Some(dir) = ensure_stats_dir() else {
+    let Some(dir) = stats_dir() else {
         return Err(Box::new(delta.clone()));
     };
-    for week_delta in week_deltas {
-        if let Err(error) = flush_batch_to_dir(&dir, &week_delta) {
-            debug_note(format!("pending flush skipped: {error}"));
-            residual.buckets.extend(week_delta.buckets);
-        }
-    }
-    if residual.buckets.is_empty() {
-        Ok(())
-    } else {
-        residual.rebuild_aggregates();
-        Err(Box::new(residual))
-    }
+    flush_pending_to(&dir, delta, &mut write_once)
 }
 
-/// Group a delta's buckets into one single-week delta per ISO week (each is
-/// a single atomic document write in `flush_batch_to_dir`), plus a residual
-/// holding buckets whose date maps to no week — those can never be
-/// persisted, so they go straight back to the caller.
-fn split_delta_by_week(delta: &UsageStats) -> (Vec<UsageStats>, UsageStats) {
-    let mut weeks: BTreeMap<String, UsageStats> = BTreeMap::new();
-    // `for_execution` starts with no buckets — these collectors only carry
-    // what the loop pushes into them.
-    let mut residual = UsageStats::for_execution(delta.context().clone());
-    for bucket in &delta.buckets {
-        match iso_week_for_date(&bucket.date) {
-            Some(week) => weeks
-                .entry(week)
-                .or_insert_with(|| UsageStats::for_execution(delta.context().clone()))
-                .buckets
-                .push(bucket.clone()),
-            None => residual.buckets.push(bucket.clone()),
+/// The record, its batch id and its file are fixed before the first attempt,
+/// so every retry repeats the same bytes into the same file and readers keep
+/// one copy. A short write is final. `Err` hands the delta back for the
+/// caller to merge into the live collector, and only when every attempt is
+/// known to have written nothing: after an uncertain attempt the bytes may
+/// already be on disk, and a merged-back delta would be flushed again under a
+/// new batch id and counted twice, so it is dropped instead.
+fn flush_pending_to(
+    dir: &Path,
+    delta: &UsageStats,
+    write: WriteOnce<'_>,
+) -> Result<(), Box<UsageStats>> {
+    let bytes = match encode_record(delta) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            debug_note(format!("pending flush not encoded: {error}"));
+            return Err(Box::new(delta.clone()));
+        }
+    };
+    let path = run_path(dir, &today_string());
+    let mut uncertain = false;
+    for _ in 0..PENDING_FLUSH_ATTEMPTS {
+        match append_to(&path, &bytes, write) {
+            Append::Written => return Ok(()),
+            Append::Short(written) => {
+                debug_note(format!(
+                    "pending flush dropped: short write ({written} of {} bytes)",
+                    bytes.len()
+                ));
+                return Ok(());
+            }
+            Append::Clean(error) => debug_note(format!("pending flush attempt failed: {error}")),
+            Append::Uncertain(error) => {
+                uncertain = true;
+                debug_note(format!("pending flush attempt uncertain: {error}"));
+            }
         }
     }
-    let week_deltas = weeks
-        .into_values()
-        .map(|mut part| {
-            part.rebuild_aggregates();
-            part
-        })
-        .collect();
-    (week_deltas, residual)
+    if uncertain {
+        debug_note("pending flush dropped: an attempt may have landed");
+        return Ok(());
+    }
+    Err(Box::new(delta.clone()))
 }
 
 /// Compatibility entry point used by older callers.
@@ -265,89 +441,773 @@ pub fn save_stats(stats: &mut UsageStats) {
     flush_batch(stats.clone());
 }
 
-fn flush_batch_to_dir(dir: &Path, delta: &UsageStats) -> Result<(), String> {
-    flush_batch_to_dir_with_deadline(dir, delta, WRITER_LOCK_DEADLINE)
-}
-
-fn flush_batch_to_dir_with_deadline(
-    dir: &Path,
-    delta: &UsageStats,
-    lock_deadline: Duration,
-) -> Result<(), String> {
-    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let _lock =
-        StatsLock::acquire(dir, true, lock_deadline).map_err(|e| format!("stats lock: {e}"))?;
-    rotate_current(dir)?;
-
-    let mut weeks: BTreeMap<String, UsageStats> = BTreeMap::new();
-    for bucket in &delta.buckets {
-        let week = iso_week_for_date(&bucket.date)
-            .ok_or_else(|| format!("invalid bucket date {:?}", bucket.date))?;
-        let doc = weeks
-            .entry(week.clone())
-            .or_insert_with(|| empty_doc(&week));
-        doc.buckets.push(bucket.clone());
+/// Parse and validate one stored line; `None` for a blank, torn or invalid
+/// one. A complete record that only lost its final newline still parses.
+/// Returns the record's batch id with its contents.
+fn parse_record(line: &[u8]) -> Option<(Option<String>, UsageStats)> {
+    let line = line.trim_ascii();
+    if line.is_empty() {
+        return None;
     }
-    for session in &delta.sessions {
-        let date = date_for_epoch_day(session.started / 86_400);
-        let week = iso_week_for_date(&date).ok_or_else(|| format!("invalid run date {date}"))?;
-        weeks
-            .entry(week.clone())
-            .or_insert_with(|| empty_doc(&week))
-            .sessions
-            .push(session.clone());
-    }
-
-    let now_week = current_iso_week();
-    let mut canonical = Vec::new();
-    for (week, mut part) in weeks {
-        part.rebuild_aggregates();
-        let path = week_path(dir, &week, &now_week);
-        let mut doc = read_doc(&path)?.unwrap_or_else(|| empty_doc(&week));
-        doc.merge(&part);
-        doc.week.clone_from(&week);
-        doc.last_date = doc
-            .buckets
-            .iter()
-            .map(|b| b.date.as_str())
-            .max()
-            .unwrap_or("")
-            .to_string();
-        doc.bound_script_labels();
-        atomic_write_json(&path, &doc)?;
-        canonical.push(doc);
-    }
-
-    if let Err(error) = update_sqlite(dir, &canonical) {
-        debug_note(format!("SQLite update failed after JSON commit: {error}"));
-    }
-    Ok(())
-}
-
-fn rotate_current(dir: &Path) -> Result<(), String> {
-    let path = dir.join("current.json");
-    let Some(mut current) = read_doc(&path)? else {
-        return Ok(());
+    let value = match serde_json::from_slice::<serde_json::Value>(line) {
+        Ok(value) => value,
+        Err(error) => {
+            debug_note(format!("skipped an unreadable stats record: {error}"));
+            return None;
+        }
     };
-    let now_week = current_iso_week();
-    let week = document_week(&current, &now_week);
-    if week == now_week {
-        return Ok(());
+    let batch = value
+        .get("batch")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    let stats = UsageStats::from_json(value);
+    if let Err(error) = validate_persisted_doc(&stats) {
+        debug_note(format!("skipped a stats record: {error}"));
+        return None;
     }
-    current.week.clone_from(&week);
-    let source = rotation_fingerprint(&current)?;
-    let archive = dir.join(format!("{week}.json"));
-    let mut merged = read_doc(&archive)?.unwrap_or_else(|| empty_doc(&week));
-    if !merged.rotation_sources.contains(&source) {
-        merged.merge(&current);
-        merged.week.clone_from(&week);
-        merged.rotation_sources.push(source);
-        merged.bound_script_labels();
-        atomic_write_json(&archive, &merged)?;
-    }
-    fs::remove_file(&path).map_err(|e| format!("remove rotated current.json: {e}"))
+    Some((batch, stats))
 }
 
+/// Stream `reader` line by line into `f` with each line's end offset;
+/// returns the bytes consumed.
+fn for_each_line(
+    reader: impl std::io::Read,
+    mut f: impl FnMut(&[u8], u64),
+) -> std::io::Result<u64> {
+    let mut reader = BufReader::new(reader);
+    let mut line = Vec::new();
+    let mut consumed = 0_u64;
+    loop {
+        line.clear();
+        let read = reader.read_until(b'\n', &mut line)?;
+        if read == 0 {
+            return Ok(consumed);
+        }
+        consumed = consumed.saturating_add(read as u64);
+        f(&line, consumed);
+    }
+}
+
+/// Raw day files on disk, oldest first.
+fn raw_days(dir: &Path) -> Result<Vec<(String, PathBuf)>, String> {
+    let entries = match fs::read_dir(dir.join(RUNS_DIR)) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error.to_string()),
+    };
+    let mut days: Vec<(String, PathBuf)> = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let name = entry.file_name();
+            let day = name.to_str()?.strip_suffix(".jsonl")?;
+            is_canonical_date(day).then(|| (day.to_string(), entry.path()))
+        })
+        .collect();
+    days.sort();
+    Ok(days)
+}
+
+/// Accumulates records into one: buckets that share date, mode and script
+/// are summed, and each run is kept once.
+#[derive(Default)]
+struct Merger {
+    buckets: HashMap<(String, ExecutionMode, Option<String>), StatsCounters>,
+    sessions: Vec<SessionRecord>,
+    seen: HashSet<String>,
+}
+
+impl Merger {
+    fn add(&mut self, stats: UsageStats) {
+        for bucket in stats.buckets {
+            self.buckets
+                .entry((bucket.date, bucket.mode, bucket.script))
+                .or_default()
+                .merge(&bucket.counters);
+        }
+        for session in stats.sessions {
+            if self.seen.insert(session.id.clone()) {
+                self.sessions.push(session);
+            }
+        }
+    }
+
+    fn finish(self) -> UsageStats {
+        let mut merged = empty_doc("");
+        merged.buckets = self
+            .buckets
+            .into_iter()
+            .map(|((date, mode, script), counters)| StatsBucket {
+                date,
+                mode,
+                script,
+                counters,
+            })
+            .collect();
+        merged.buckets.sort_by(|a, b| {
+            (&a.date, a.mode.as_str(), &a.script).cmp(&(&b.date, b.mode.as_str(), &b.script))
+        });
+        merged.sessions = self.sessions;
+        merged.rebuild_aggregates();
+        merged
+    }
+}
+
+/// Which file, exactly: taken from the `fstat` of the descriptor that was
+/// read, so a same-length replacement or a reused inode does not match.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FileId {
+    dev: u64,
+    ino: u64,
+    len: u64,
+    mtime_ns: i64,
+    ctime_ns: i64,
+}
+
+impl FileId {
+    fn of(meta: &fs::Metadata) -> Self {
+        Self {
+            dev: meta.dev(),
+            ino: meta.ino(),
+            len: meta.len(),
+            mtime_ns: meta
+                .mtime()
+                .saturating_mul(1_000_000_000)
+                .saturating_add(meta.mtime_nsec()),
+            ctime_ns: meta
+                .ctime()
+                .saturating_mul(1_000_000_000)
+                .saturating_add(meta.ctime_nsec()),
+        }
+    }
+
+    fn to_json(self) -> serde_json::Value {
+        serde_json::json!({
+            "dev": self.dev, "ino": self.ino, "len": self.len,
+            "mtime_ns": self.mtime_ns, "ctime_ns": self.ctime_ns,
+        })
+    }
+
+    fn from_json(value: &serde_json::Value) -> Option<Self> {
+        Some(Self {
+            dev: value.get("dev")?.as_u64()?,
+            ino: value.get("ino")?.as_u64()?,
+            len: value.get("len")?.as_u64()?,
+            mtime_ns: value.get("mtime_ns")?.as_i64()?,
+            ctime_ns: value.get("ctime_ns")?.as_i64()?,
+        })
+    }
+}
+
+/// The dates a record set touches, by bucket and by run: the only bounds a
+/// window may skip on. A file's name says nothing about its contents.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct DateBounds(Option<(String, String)>);
+
+impl DateBounds {
+    fn include(&mut self, date: &str) {
+        match &mut self.0 {
+            None => self.0 = Some((date.to_string(), date.to_string())),
+            Some((min, max)) => {
+                if date < min.as_str() {
+                    *min = date.to_string();
+                }
+                if date > max.as_str() {
+                    *max = date.to_string();
+                }
+            }
+        }
+    }
+
+    fn of(stats: &UsageStats) -> Self {
+        let mut bounds = Self::default();
+        for bucket in &stats.buckets {
+            bounds.include(&bucket.date);
+        }
+        for session in &stats.sessions {
+            bounds.include(&date_for_epoch_day(session.started / 86_400));
+        }
+        bounds
+    }
+
+    fn to_json(&self) -> serde_json::Value {
+        match &self.0 {
+            None => serde_json::Value::Null,
+            Some((min, max)) => serde_json::json!([min, max]),
+        }
+    }
+
+    fn from_json(value: &serde_json::Value) -> Option<Self> {
+        if value.is_null() {
+            return Some(Self(None));
+        }
+        let pair = value.as_array()?;
+        let (min, max) = (pair.first()?.as_str()?, pair.get(1)?.as_str()?);
+        (is_canonical_date(min) && is_canonical_date(max) && min <= max)
+            .then(|| Self(Some((min.to_string(), max.to_string()))))
+    }
+}
+
+/// A `clear` or `reset`, anchored to storage positions instead of a clock.
+/// It covers, in each raw day file that existed when it was issued, exactly
+/// the records whose JSON ends within the length that file had then;
+/// anything appended later, to any file, is after it. Ops apply only to the
+/// JSONL store: while legacy weekly documents exist, `clear` and `reset`
+/// refuse (see `append_op`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum OpKind {
+    Clear(String),
+    Reset(String),
+}
+
+#[derive(Debug, Clone)]
+struct Op {
+    kind: OpKind,
+    /// Raw day file -> (dev, ino, length) when the op was issued.
+    positions: HashMap<String, (u64, u64, u64)>,
+}
+
+impl Op {
+    /// How many leading bytes of this raw file the op covers.
+    fn cutoff(&self, day: &str, id: &FileId) -> u64 {
+        match self.positions.get(day) {
+            Some((dev, ino, len)) if *dev == id.dev && *ino == id.ino => *len,
+            _ => 0,
+        }
+    }
+}
+
+fn parse_op(line: &[u8]) -> Option<Op> {
+    let value: serde_json::Value = serde_json::from_slice(line.trim_ascii()).ok()?;
+    let args = value.get("args")?;
+    let kind = match value.get("op")?.as_str()? {
+        "clear" => OpKind::Clear(args.get("name")?.as_str()?.to_string()),
+        "reset" => {
+            let week = args.get("week")?.as_str()?;
+            is_canonical_week(week).then(|| OpKind::Reset(week.to_string()))?
+        }
+        _ => return None,
+    };
+    let mut positions = HashMap::new();
+    for (day, position) in value.get("positions")?.as_object()? {
+        let position = position.as_array()?;
+        positions.insert(
+            day.clone(),
+            (
+                position.first()?.as_u64()?,
+                position.get(1)?.as_u64()?,
+                position.get(2)?.as_u64()?,
+            ),
+        );
+    }
+    Some(Op { kind, positions })
+}
+
+/// Every recorded op, collapsed: ops of the same kind on the same target
+/// (repeated clears of one name, repeated resets of one week) become one,
+/// covering the union of their prefixes (the largest length per file).
+/// Collapsing bounds the number of ops a report applies; every report still
+/// reads the whole of ops.jsonl to get there.
+fn load_ops(dir: &Path) -> Vec<Op> {
+    let Ok(file) = File::open(dir.join(OPS_FILE)) else {
+        return Vec::new();
+    };
+    let mut collapsed: Vec<Op> = Vec::new();
+    let mut index: HashMap<OpKind, usize> = HashMap::new();
+    let result = for_each_line(file, |line, _| {
+        let Some(op) = parse_op(line) else {
+            return;
+        };
+        match index.get(&op.kind) {
+            Some(&at) => {
+                let into = &mut collapsed[at];
+                for (day, (dev, ino, len)) in op.positions {
+                    let slot = into.positions.entry(day).or_insert((dev, ino, len));
+                    if (slot.0, slot.1) == (dev, ino) {
+                        slot.2 = slot.2.max(len);
+                    } else {
+                        *slot = (dev, ino, len);
+                    }
+                }
+            }
+            None => {
+                index.insert(op.kind.clone(), collapsed.len());
+                collapsed.push(op);
+            }
+        }
+    });
+    if let Err(error) = result {
+        debug_note(format!("reading {OPS_FILE}: {error}"));
+    }
+    collapsed
+}
+
+fn apply_kind(stats: &mut UsageStats, kind: &OpKind) -> bool {
+    match kind {
+        OpKind::Clear(name) => clear_name_from_stats(stats, name),
+        OpKind::Reset(week) => {
+            let in_week = |date: &str| iso_week_for_date(date).as_deref() == Some(week.as_str());
+            let before = (stats.buckets.len(), stats.sessions.len());
+            stats.buckets.retain(|bucket| !in_week(&bucket.date));
+            stats
+                .sessions
+                .retain(|session| !in_week(&date_for_epoch_day(session.started / 86_400)));
+            stats.rebuild_aggregates();
+            before != (stats.buckets.len(), stats.sessions.len())
+        }
+    }
+}
+
+/// What one raw day file holds, read from one descriptor: its records before
+/// any op (each batch once), the file's identity from that descriptor's
+/// `fstat` with the bytes actually consumed, the dates it touches, and the
+/// smallest and largest payload end among its records.
+struct RawDay {
+    stats: UsageStats,
+    id: FileId,
+    bounds: DateBounds,
+    payload: Option<(u64, u64)>,
+    /// Whether the file stayed the same while it was read.
+    stable: bool,
+}
+
+/// Where a record's own bytes end: just after its closing JSON byte. The
+/// newline after it may have been written by the next record (a record whose
+/// write came up short by its final newline), so it is not part of the
+/// record, and coverage never depends on what a later append supplied.
+fn payload_end(line: &[u8], line_end: u64) -> u64 {
+    let trailing = line.len() - line.trim_ascii_end().len();
+    line_end.saturating_sub(trailing as u64)
+}
+
+/// Whether an op with `cutoff` covers all, none or part of records whose
+/// payload ends span `payload`.
+#[derive(Debug, PartialEq, Eq)]
+enum Coverage {
+    All,
+    None,
+    Part,
+}
+
+fn coverage(cutoff: u64, payload: Option<(u64, u64)>) -> Coverage {
+    match payload {
+        None => Coverage::None,
+        Some((_, last)) if cutoff >= last => Coverage::All,
+        Some((first, _)) if cutoff < first => Coverage::None,
+        Some(_) => Coverage::Part,
+    }
+}
+
+/// Read a raw day. With `ops`, apply each op to exactly the records whose
+/// payload ends within the bytes it covers.
+fn read_raw_day(day: &str, path: &Path, ops: Option<&[Op]>) -> std::io::Result<RawDay> {
+    let file = File::open(path)?;
+    let before = FileId::of(&file.metadata()?);
+    let mut merger = Merger::default();
+    let mut batches = HashSet::new();
+    let mut payload: Option<(u64, u64)> = None;
+    let cutoffs: Vec<(u64, &OpKind)> = ops
+        .unwrap_or_default()
+        .iter()
+        .map(|op| (op.cutoff(day, &before), &op.kind))
+        .filter(|(cutoff, _)| *cutoff > 0)
+        .collect();
+    let consumed = for_each_line(&file, |line, end| {
+        let Some((batch, mut stats)) = parse_record(line) else {
+            return;
+        };
+        let own_end = payload_end(line, end);
+        payload = Some(match payload {
+            None => (own_end, own_end),
+            Some((first, last)) => (first.min(own_end), last.max(own_end)),
+        });
+        if let Some(batch) = batch
+            && !batches.insert(batch)
+        {
+            return;
+        }
+        for (cutoff, kind) in &cutoffs {
+            if own_end <= *cutoff {
+                apply_kind(&mut stats, kind);
+            }
+        }
+        merger.add(stats);
+    })?;
+    let after = FileId::of(&file.metadata()?);
+    let stats = merger.finish();
+    let bounds = DateBounds::of(&stats);
+    let id = FileId {
+        len: consumed,
+        ..before
+    };
+    Ok(RawDay {
+        stats,
+        stable: after == before && consumed == before.len,
+        id,
+        bounds,
+        payload,
+    })
+}
+
+fn cache_path(dir: &Path, day: &str) -> PathBuf {
+    dir.join(CACHE_DIR).join(format!("{day}.json"))
+}
+
+/// The first line of a cache file: which raw file it summarises, the dates
+/// its records touch, and their payload-end range, readable without the
+/// aggregate on line two.
+struct CacheHeader {
+    id: FileId,
+    bounds: DateBounds,
+    payload: Option<(u64, u64)>,
+}
+
+/// Which kind of cache file a header belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CacheKind {
+    /// `cache/DAY.json`: a raw day's aggregate, which ops are judged against,
+    /// so it must say where its records' payloads end.
+    RawAggregate,
+    /// `cache/legacy/NAME.json`: only a legacy document's date bounds.
+    LegacyBounds,
+}
+
+/// A raw-aggregate header must carry `payload`: a range with
+/// 0 < first <= last <= the summarised length, or null for a file with no
+/// records (checked against the body). A header without it (written before
+/// payload coverage existed) or with an impossible range is rejected, so the
+/// day is read from the raw file instead of letting every op miss it.
+fn read_cache_header(path: &Path, kind: CacheKind) -> Option<(CacheHeader, BufReader<File>)> {
+    let mut reader = BufReader::new(File::open(path).ok()?);
+    let mut line = Vec::new();
+    reader.read_until(b'\n', &mut line).ok()?;
+    let value: serde_json::Value = serde_json::from_slice(line.trim_ascii()).ok()?;
+    let id = FileId::from_json(value.get("id")?)?;
+    let bounds = DateBounds::from_json(value.get("dates")?)?;
+    let payload = match (kind, value.get("payload")) {
+        (CacheKind::LegacyBounds, _) => None,
+        (CacheKind::RawAggregate, Some(serde_json::Value::Array(pair))) => {
+            let (first, last) = (pair.first()?.as_u64()?, pair.get(1)?.as_u64()?);
+            (0 < first && first <= last && last <= id.len).then_some(Some((first, last)))?
+        }
+        (CacheKind::RawAggregate, Some(serde_json::Value::Null)) => None,
+        (CacheKind::RawAggregate, _) => return None,
+    };
+    Some((
+        CacheHeader {
+            id,
+            bounds,
+            payload,
+        },
+        reader,
+    ))
+}
+
+/// The aggregate on a cache file's second line, fully validated.
+fn read_cache_body(mut reader: BufReader<File>) -> Option<UsageStats> {
+    let mut body = Vec::new();
+    reader.read_to_end(&mut body).ok()?;
+    let value: serde_json::Value = serde_json::from_slice(body.trim_ascii()).ok()?;
+    let stats = UsageStats::from_json(value);
+    validate_persisted_doc(&stats).ok()?;
+    Some(stats)
+}
+
+fn write_cache(dir: &Path, day: &str, raw: &RawDay) -> Result<(), String> {
+    let payload = raw
+        .payload
+        .map_or(serde_json::Value::Null, |(first, last)| {
+            serde_json::json!([first, last])
+        });
+    let header = serde_json::json!({
+        "day": day,
+        "id": raw.id.to_json(),
+        "dates": raw.bounds.to_json(),
+        "payload": payload,
+    });
+    let mut bytes = serde_json::to_vec(&header).map_err(|e| e.to_string())?;
+    bytes.push(b'\n');
+    serde_json::to_writer(&mut bytes, &record_json(&raw.stats)).map_err(|e| e.to_string())?;
+    bytes.push(b'\n');
+    fs::create_dir_all(dir.join(CACHE_DIR)).map_err(|e| e.to_string())?;
+    atomic_write_bytes(&cache_path(dir, day), &bytes)
+}
+
+/// A raw day's contribution to a window, with every op applied. The cache
+/// is used only when its header names exactly the file as it is now (device,
+/// inode, length, mtime and ctime). Its date bounds then decide whether the
+/// day can touch the window at all, and its aggregate is used unless an op
+/// covers some of its records but not all (judged by payload ends, as for a
+/// single record); then the raw file is read record by record. Without a
+/// usable cache the raw file is read; with `may_cache`, a stable read of a
+/// day before today refreshes the cache. A day that cannot be read counts
+/// nothing.
+fn day_records(
+    dir: &Path,
+    day: &str,
+    path: &Path,
+    ops: &[Op],
+    window: &StatsWindow,
+    may_cache: bool,
+) -> UsageStats {
+    let current = match fs::metadata(path) {
+        Ok(meta) if meta.is_file() => FileId::of(&meta),
+        Ok(_) | Err(_) => {
+            debug_note(format!("skipped {}: not a readable file", path.display()));
+            return empty_doc("");
+        }
+    };
+    if let Some((header, reader)) =
+        read_cache_header(&cache_path(dir, day), CacheKind::RawAggregate)
+        && header.id == current
+    {
+        if !window.overlaps(&header.bounds) {
+            return empty_doc("");
+        }
+        let covered: Vec<Coverage> = ops
+            .iter()
+            .map(|op| coverage(op.cutoff(day, &header.id), header.payload))
+            .collect();
+        if !covered.contains(&Coverage::Part)
+            && let Some(mut stats) = read_cache_body(reader)
+            // A null payload range only describes a file with no records.
+            && (header.payload.is_some() || (stats.buckets.is_empty() && stats.sessions.is_empty()))
+        {
+            for (op, covered) in ops.iter().zip(covered) {
+                if covered == Coverage::All {
+                    apply_kind(&mut stats, &op.kind);
+                }
+            }
+            return stats;
+        }
+    }
+    let raw = match read_raw_day(day, path, None) {
+        Ok(raw) => raw,
+        Err(error) => {
+            debug_note(format!("skipped {}: {error}", path.display()));
+            return empty_doc("");
+        }
+    };
+    if may_cache
+        && raw.stable
+        && let Err(error) = write_cache(dir, day, &raw)
+    {
+        debug_note(format!("cache for {day} not written: {error}"));
+    }
+    if ops
+        .iter()
+        .all(|op| coverage(op.cutoff(day, &raw.id), raw.payload) == Coverage::None)
+    {
+        return raw.stats;
+    }
+    match read_raw_day(day, path, Some(ops)) {
+        Ok(raw) => raw.stats,
+        Err(error) => {
+            debug_note(format!("skipped {}: {error}", path.display()));
+            empty_doc("")
+        }
+    }
+}
+
+/// Where a legacy read is, for the test seam.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LegacyPhase {
+    /// Every document is read; the snapshot is about to be validated.
+    Read,
+    /// The snapshot validated; the merge is next.
+    Validated,
+}
+
+/// Seam for tests: called at each phase of a legacy read, so a test can
+/// model an old writer racing it.
+type BetweenReads<'a> = &'a mut dyn FnMut(LegacyPhase);
+
+/// The weekly documents of the pre-JSONL store, read in place: binaries from
+/// before the JSONL store may still be running and writing them, and they
+/// write only these files while new binaries write only JSONL, so the two
+/// sources never overlap. Read with the old store's rules: a `current.json`
+/// from an earlier week whose fingerprint that week's archive already lists
+/// was merged by a rotation that died before removing it, so it is skipped;
+/// each run counts once across documents. Nothing here is written, renamed
+/// or quarantined, and no lock is taken (an old writer waits at most 200 ms
+/// for `stats.lock` and then drops its write). Instead the read is a
+/// validated snapshot: every document is identified from the descriptor it
+/// was read through, including the archive the rotation rule consults, the
+/// set is listed and stat'ed again afterwards, and any change (an old writer
+/// replacing, rotating or creating a document mid-read) means a retry. The
+/// merge then uses only what the snapshot captured. Returns the merged
+/// contribution and whether it stayed unstable after every attempt.
+/// Documents whose cached bounds miss `window` are identified but not parsed.
+/// `mix.db` held only what the documents carried and is ignored.
+fn legacy_contribution(
+    dir: &Path,
+    window: &StatsWindow,
+    may_cache: bool,
+    between: BetweenReads<'_>,
+) -> (UsageStats, bool) {
+    let now_week = current_iso_week();
+    let mut documents = Vec::new();
+    for attempt in 0..LEGACY_READ_ATTEMPTS {
+        documents.clear();
+        let listed = legacy_sources(dir);
+        let mut seen = Vec::new();
+        for path in &listed {
+            match read_legacy_source(dir, path, window, may_cache, false) {
+                Some((id, document)) => {
+                    seen.push((path.clone(), Some(id)));
+                    documents.extend(document.map(|document| (path.clone(), document)));
+                }
+                None => seen.push((path.clone(), None)),
+            }
+        }
+        // The rotation rule for an earlier week's current.json needs that
+        // week's archive: capture it in this snapshot even if its bounds
+        // would have skipped it.
+        let rotation_archive = documents
+            .iter()
+            .find(|(path, _)| path.file_name().is_some_and(|name| name == "current.json"))
+            .map(|(_, current)| document_week(current, &now_week))
+            .filter(|week| *week != now_week)
+            .map(|week| dir.join(format!("{week}.json")))
+            .filter(|archive| {
+                listed.contains(archive) && !documents.iter().any(|(path, _)| path == archive)
+            });
+        if let Some(archive) = rotation_archive
+            && let Some((id, document)) = read_legacy_source(dir, &archive, window, may_cache, true)
+        {
+            if let Some(entry) = seen.iter_mut().find(|(path, _)| *path == archive) {
+                entry.1 = Some(id);
+            }
+            documents.extend(document.map(|document| (archive.clone(), document)));
+        }
+        between(LegacyPhase::Read);
+        let unchanged = legacy_sources(dir) == listed
+            && seen
+                .iter()
+                .all(|(path, id)| fs::metadata(path).ok().map(|meta| FileId::of(&meta)) == *id);
+        if unchanged {
+            between(LegacyPhase::Validated);
+            return (merge_legacy(&documents), false);
+        }
+        std::thread::sleep(Duration::from_millis(10 << attempt));
+    }
+    (merge_legacy(&documents), true)
+}
+
+/// `current.json` and every `YYYY-WNN.json`, sorted.
+fn legacy_sources(dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut paths: Vec<PathBuf> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| {
+                    name == "current.json"
+                        || name.strip_suffix(".json").is_some_and(is_canonical_week)
+                })
+        })
+        .collect();
+    paths.sort();
+    paths
+}
+
+fn legacy_bounds_path(dir: &Path, source: &Path) -> PathBuf {
+    let name = source.file_name().unwrap_or_default().to_string_lossy();
+    dir.join(CACHE_DIR).join("legacy").join(name.as_ref())
+}
+
+/// Identify one legacy document through the descriptor it is read from and,
+/// unless `force` is off and its cached bounds (for exactly this file) miss
+/// the window, parse it. `None` if it cannot be opened; `Some((id, None))` if
+/// it was skipped or does not parse.
+fn read_legacy_source(
+    dir: &Path,
+    path: &Path,
+    window: &StatsWindow,
+    may_cache: bool,
+    force: bool,
+) -> Option<(FileId, Option<UsageStats>)> {
+    let mut file = File::open(path).ok()?;
+    let id = FileId::of(&file.metadata().ok()?);
+    let bounds_path = legacy_bounds_path(dir, path);
+    if !force
+        && let Some((header, _)) = read_cache_header(&bounds_path, CacheKind::LegacyBounds)
+        && header.id == id
+        && !window.overlaps(&header.bounds)
+    {
+        return Some((id, None));
+    }
+    let mut content = String::new();
+    if let Err(error) = file.read_to_string(&mut content) {
+        debug_note(format!("skipped legacy {}: {error}", path.display()));
+        return Some((id, None));
+    }
+    let document = match serde_json::from_str(&content) {
+        Ok(value) => UsageStats::from_json(value),
+        Err(error) => {
+            debug_note(format!("skipped legacy {}: {error}", path.display()));
+            return Some((id, None));
+        }
+    };
+    if let Err(error) = validate_persisted_doc(&document) {
+        debug_note(format!("skipped legacy {}: {error}", path.display()));
+        return Some((id, None));
+    }
+    if may_cache {
+        let header =
+            serde_json::json!({"id": id.to_json(), "dates": DateBounds::of(&document).to_json()});
+        let mut bytes = header.to_string().into_bytes();
+        bytes.push(b'\n');
+        let written = bounds_path
+            .parent()
+            .map(fs::create_dir_all)
+            .transpose()
+            .map_err(|e| e.to_string())
+            .and_then(|_| atomic_write_bytes(&bounds_path, &bytes));
+        if let Err(error) = written {
+            debug_note(format!("legacy bounds not cached: {error}"));
+        }
+    }
+    Some((id, Some(document)))
+}
+
+/// Merge the captured legacy documents with the old store's rotation rule
+/// and keep each run once. Reads nothing from disk: every document the rule
+/// consults was captured, and validated, with the rest.
+fn merge_legacy(documents: &[(PathBuf, UsageStats)]) -> UsageStats {
+    let now_week = current_iso_week();
+    let archives: HashMap<&str, &UsageStats> = documents
+        .iter()
+        .filter_map(|(path, document)| {
+            let week = path.file_name()?.to_str()?.strip_suffix(".json")?;
+            is_canonical_week(week).then_some((week, document))
+        })
+        .collect();
+    let mut merger = Merger::default();
+    for (path, document) in documents {
+        if path.file_name().is_some_and(|name| name == "current.json") {
+            let week = document_week(document, &now_week);
+            if week != now_week {
+                let mut rotated_source = document.clone();
+                rotated_source.week.clone_from(&week);
+                let rotated = archives
+                    .get(week.as_str())
+                    .zip(rotation_fingerprint(&rotated_source).ok())
+                    .is_some_and(|(archive, source)| archive.rotation_sources.contains(&source));
+                if rotated {
+                    continue;
+                }
+            }
+        }
+        merger.add(document.clone());
+    }
+    merger.finish()
+}
+
+/// The week a legacy document belongs to (the old store's rule).
 fn document_week(stats: &UsageStats, fallback: &str) -> String {
     if is_canonical_week(&stats.week) {
         return stats.week.clone();
@@ -367,48 +1227,112 @@ fn document_week(stats: &UsageStats, fallback: &str) -> String {
     let from_last_date = is_canonical_date(&stats.last_date)
         .then(|| iso_week_for_date(&stats.last_date))
         .flatten();
-    let week = from_buckets
+    from_buckets
         .or(from_sessions)
         .or(from_last_date)
-        .unwrap_or_else(|| fallback.to_string());
-    debug_note(format!(
-        "invalid persisted week {:?}; derived {week:?} from document dates",
-        stats.week
-    ));
-    week
+        .unwrap_or_else(|| fallback.to_string())
 }
 
+/// The old store's rotation fingerprint of a document.
 fn rotation_fingerprint(stats: &UsageStats) -> Result<String, String> {
     let bytes = serde_json::to_vec(&stats.to_json()).map_err(|error| error.to_string())?;
     Ok(format!("blake3:{}", blake3::hash(&bytes).to_hex()))
 }
 
-fn week_path(dir: &Path, week: &str, now_week: &str) -> PathBuf {
-    if week == now_week {
-        dir.join("current.json")
-    } else {
-        dir.join(format!("{week}.json"))
+/// The positions of every raw day file now, for a new op.
+fn current_positions(dir: &Path) -> Result<HashMap<String, (u64, u64, u64)>, String> {
+    let mut positions = HashMap::new();
+    for (day, path) in raw_days(dir)? {
+        if let Ok(meta) = fs::metadata(&path)
+            && meta.is_file()
+        {
+            positions.insert(day, (meta.dev(), meta.ino(), meta.len()));
+        }
+    }
+    Ok(positions)
+}
+
+/// Why `clear` and `reset` refuse while the pre-JSONL weekly documents exist.
+const LEGACY_REFUSAL: &str = "the old weekly stats (current.json, YYYY-WNN.json) are still \
+     live on this host, and an older mix binary may still be writing them, so they cannot be \
+     cleared exactly; nothing was recorded. They age out of week windows; once they are gone, \
+     clear and reset work.";
+
+/// Record an op: refuse while legacy documents exist (ops cover only the
+/// JSONL store), then, under `ops.lock` so concurrent ops each see the
+/// positions the other recorded, read every raw file's position and append
+/// the op with one write. Runs and older binaries never take `ops.lock`.
+fn append_op(dir: &Path, kind: OpKind) -> Result<(), String> {
+    if !legacy_sources(dir).is_empty() {
+        return Err(LEGACY_REFUSAL.to_string());
+    }
+    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let _lock = StatsLock::acquire(dir, OPS_LOCK, true, OPS_LOCK_WAIT).map_err(|error| {
+        format!("{OPS_LOCK} busy ({error}); another clear or reset is running, try again")
+    })?;
+    // Again under the lock: a legacy document may have appeared while this
+    // op waited. Still only a point-in-time check, not proof that no older
+    // binary will write one later.
+    if !legacy_sources(dir).is_empty() {
+        return Err(LEGACY_REFUSAL.to_string());
+    }
+    let positions = current_positions(dir)?;
+    let (op, args) = match &kind {
+        OpKind::Clear(name) => ("clear", serde_json::json!({"name": name})),
+        OpKind::Reset(week) => ("reset", serde_json::json!({"week": week})),
+    };
+    let positions: serde_json::Map<String, serde_json::Value> = positions
+        .into_iter()
+        .map(|(day, (dev, ino, len))| (day, serde_json::json!([dev, ino, len])))
+        .collect();
+    let bytes = frame(&serde_json::json!({
+        "op": op,
+        "args": args,
+        "at": now_nanos(),
+        "id": random_id(),
+        "positions": positions,
+    }))?;
+    match append_to(&dir.join(OPS_FILE), &bytes, &mut write_once) {
+        Append::Written => Ok(()),
+        Append::Short(written) => Err(format!(
+            "{OPS_FILE}: short write ({written} of {} bytes); run it again",
+            bytes.len()
+        )),
+        Append::Clean(error) | Append::Uncertain(error) => Err(error),
     }
 }
 
-fn read_doc(path: &Path) -> Result<Option<UsageStats>, String> {
-    if !path.exists() {
-        return Ok(None);
-    }
-    let content = fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    let value = match serde_json::from_str(&content) {
-        Ok(value) => value,
-        Err(error) => {
-            quarantine_doc(path, &error);
-            return Ok(None);
+/// An atomic write that dies between create and rename leaves
+/// `.<name>.<pid>.<n>.tmp` behind, and nothing ever reads it. Remove those
+/// older than an hour; a younger one may belong to a write in progress.
+fn remove_stale_temps(dir: &Path) {
+    for dir in [
+        dir.to_path_buf(),
+        dir.join(CACHE_DIR),
+        dir.join(CACHE_DIR).join("legacy"),
+    ] {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else {
+                continue;
+            };
+            if !(name.starts_with('.') && name.ends_with(".tmp")) {
+                continue;
+            }
+            let stale = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|modified| modified.elapsed().ok())
+                .is_some_and(|age| age >= STALE_TEMP_AGE);
+            if stale && let Err(error) = fs::remove_file(entry.path()) {
+                debug_note(format!("cannot remove stale {name}: {error}"));
+            }
         }
-    };
-    let stats = UsageStats::from_json(value);
-    if let Err(error) = validate_persisted_doc(&stats) {
-        quarantine_doc(path, &error);
-        return Ok(None);
     }
-    Ok(Some(stats))
 }
 
 fn validate_persisted_doc(stats: &UsageStats) -> Result<(), String> {
@@ -435,28 +1359,7 @@ fn validate_persisted_doc(stats: &UsageStats) -> Result<(), String> {
     Ok(())
 }
 
-fn quarantine_doc(path: &Path, error: &dyn std::fmt::Display) {
-    let suffix = TEMP_SUFFIX.fetch_add(1, Ordering::Relaxed);
-    let name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("stats.json");
-    let corrupt = path.with_file_name(format!("{name}.{}.{}.corrupt", std::process::id(), suffix));
-    match fs::rename(path, &corrupt) {
-        Ok(()) => debug_note(format!(
-            "quarantined corrupt {} as {}: {error}",
-            path.display(),
-            corrupt.display()
-        )),
-        Err(rename_error) => debug_note(format!(
-            "ignoring corrupt {} (quarantine failed: {rename_error}): {error}",
-            path.display()
-        )),
-    }
-}
-
-fn atomic_write_json(path: &Path, stats: &UsageStats) -> Result<(), String> {
-    let bytes = serde_json::to_vec_pretty(&stats.to_json()).map_err(|e| e.to_string())?;
+fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let suffix = TEMP_SUFFIX.fetch_add(1, Ordering::Relaxed);
     let name = path
         .file_name()
@@ -469,7 +1372,7 @@ fn atomic_write_json(path: &Path, stats: &UsageStats) -> Result<(), String> {
             .create_new(true)
             .open(&temp)
             .map_err(|e| format!("create {}: {e}", temp.display()))?;
-        file.write_all(&bytes).map_err(|e| e.to_string())?;
+        file.write_all(bytes).map_err(|e| e.to_string())?;
         file.sync_all().map_err(|e| e.to_string())?;
         fs::rename(&temp, path).map_err(|e| format!("rename {}: {e}", path.display()))?;
         Ok(())
@@ -496,50 +1399,42 @@ fn empty_doc(week: &str) -> UsageStats {
     stats
 }
 
-fn update_sqlite(dir: &Path, docs: &[UsageStats]) -> rusqlite::Result<()> {
-    let mut connection = Connection::open(dir.join("mix.db"))?;
+/// Load records into a fresh SQLite database with the tables the on-disk
+/// mix.db had, so `mix stats query` keeps answering the same SQL.
+fn load_sqlite(connection: &mut Connection, stats: &UsageStats) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
     transaction.execute_batch(
-        "CREATE TABLE IF NOT EXISTS usage (
+        "CREATE TABLE usage (
              date TEXT, category TEXT, name TEXT, count INTEGER,
              PRIMARY KEY (date, category, name));
-         CREATE TABLE IF NOT EXISTS sessions (
+         CREATE TABLE sessions (
              started INTEGER, duration_secs INTEGER, commands INTEGER, peak_memory_kb INTEGER);
-         CREATE TABLE IF NOT EXISTS usage_context (
+         CREATE TABLE usage_context (
              date TEXT, mode TEXT, script TEXT DEFAULT '', category TEXT, name TEXT, count INTEGER,
              PRIMARY KEY(date, mode, script, category, name));
-         CREATE TABLE IF NOT EXISTS runs (
+         CREATE TABLE runs (
              id TEXT PRIMARY KEY, started INTEGER, duration_secs INTEGER, commands INTEGER,
              peak_memory_kb INTEGER, mode TEXT, script TEXT DEFAULT '');
-         CREATE TABLE IF NOT EXISTS stats_meta (key TEXT PRIMARY KEY, value TEXT);",
+         CREATE TABLE stats_meta (key TEXT PRIMARY KEY, value TEXT);",
     )?;
-    let mut dates = HashSet::new();
-    for doc in docs {
-        dates.extend(doc.buckets.iter().map(|b| b.date.clone()));
+    let mut by_date: BTreeMap<&str, StatsCounters> = BTreeMap::new();
+    for bucket in &stats.buckets {
+        by_date
+            .entry(bucket.date.as_str())
+            .or_default()
+            .merge(&bucket.counters);
+        insert_counter_maps(
+            &transaction,
+            &bucket.date,
+            Some((bucket.mode.as_str(), bucket.script.as_deref().unwrap_or(""))),
+            &bucket.counters,
+        )?;
     }
-    for date in dates {
-        transaction.execute("DELETE FROM usage WHERE date = ?1", [&date])?;
-        transaction.execute("DELETE FROM usage_context WHERE date = ?1", [&date])?;
-        let mut aggregate = StatsCounters::default();
-        for doc in docs {
-            for bucket in doc.buckets.iter().filter(|b| b.date == date) {
-                aggregate.merge(&bucket.counters);
-                insert_counter_maps(
-                    &transaction,
-                    &bucket.date,
-                    Some((bucket.mode.as_str(), bucket.script.as_deref().unwrap_or(""))),
-                    &bucket.counters,
-                )?;
-            }
-        }
-        insert_counter_maps(&transaction, &date, None, &aggregate)?;
+    for (date, counters) in &by_date {
+        insert_counter_maps(&transaction, date, None, counters)?;
     }
-    for run in docs.iter().flat_map(|doc| doc.sessions.iter()) {
-        // Revisit every canonical run in each touched weekly document. Label
-        // folding can change an older run when a new basename consumes the
-        // final slot, so inserting only the current delta leaves SQLite with
-        // historical labels that JSON has already folded into `(other)`.
-        let inserted = transaction.execute(
+    for run in &stats.sessions {
+        transaction.execute(
             "INSERT OR IGNORE INTO runs
              (id, started, duration_secs, commands, peak_memory_kb, mode, script)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -553,26 +1448,19 @@ fn update_sqlite(dir: &Path, docs: &[UsageStats]) -> rusqlite::Result<()> {
                 run.script.as_deref().unwrap_or("")
             ],
         )?;
-        if inserted > 0 {
-            transaction.execute(
-                "INSERT INTO sessions (started, duration_secs, commands, peak_memory_kb)
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![
-                    sqlite_i64(run.started),
-                    sqlite_i64(run.duration_secs),
-                    sqlite_i64(run.commands),
-                    sqlite_i64(run.peak_memory_kb)
-                ],
-            )?;
-        } else {
-            transaction.execute(
-                "UPDATE runs SET script = ?1 WHERE id = ?2",
-                params![run.script.as_deref().unwrap_or(""), run.id],
-            )?;
-        }
+        transaction.execute(
+            "INSERT INTO sessions (started, duration_secs, commands, peak_memory_kb)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                sqlite_i64(run.started),
+                sqlite_i64(run.duration_secs),
+                sqlite_i64(run.commands),
+                sqlite_i64(run.peak_memory_kb)
+            ],
+        )?;
     }
     transaction.execute(
-        "INSERT OR REPLACE INTO stats_meta(key, value) VALUES ('schema_version', '2')",
+        "INSERT INTO stats_meta(key, value) VALUES ('schema_version', '2')",
         [],
     )?;
     transaction.commit()
@@ -645,14 +1533,38 @@ impl StatsWindow {
             Self::LastDays(days) => format!("last {days} recorded days"),
         }
     }
+
+    /// Whether content touching exactly the dates in `bounds` can contribute
+    /// to this window. Bounds come from the content itself (a validated
+    /// cache header), never from a file name.
+    fn overlaps(&self, bounds: &DateBounds) -> bool {
+        let Some((min, max)) = &bounds.0 else {
+            return false;
+        };
+        let spans_week = |week: &str| {
+            iso_week_for_date(min).is_none_or(|w| w.as_str() <= week)
+                && iso_week_for_date(max).is_none_or(|w| w.as_str() >= week)
+        };
+        match self {
+            Self::CurrentWeek => spans_week(&current_iso_week()),
+            Self::Week(week) => spans_week(week),
+            Self::Since(start) => max.as_str() >= start.as_str(),
+            Self::AllTime | Self::LastDays(_) => true,
+        }
+    }
 }
+
+/// Runs counted by (mode, script).
+type RunCounts = HashMap<(ExecutionMode, Option<String>), u64>;
 
 #[derive(Debug, Clone)]
 pub struct StatsSnapshot {
     pub window: StatsWindow,
     pub counters: StatsCounters,
     pub buckets: Vec<StatsBucket>,
-    pub sessions: Vec<mix::stats::SessionRecord>,
+    /// Run records, kept only for reports that list them (`sessions`, `raw`).
+    pub sessions: Vec<SessionRecord>,
+    pub runs: RunCounts,
 }
 
 impl StatsSnapshot {
@@ -677,84 +1589,157 @@ impl StatsSnapshot {
     }
 }
 
-pub fn load_snapshot(
+/// Aggregates records into a window as they stream past: buckets summed by
+/// date, mode and script, runs counted, and run records kept only on request.
+struct Accumulator {
     window: StatsWindow,
-    pending: Option<&UsageStats>,
-) -> Result<StatsSnapshot, String> {
-    let dir = ensure_stats_dir().ok_or_else(|| "stats state directory unavailable".to_string())?;
-    // Reports may quarantine a corrupt document, so they need the exclusive lock.
-    let _lock = StatsLock::acquire(&dir, true, REPORT_LOCK_DEADLINE)
-        .map_err(|e| format!("stats lock: {e}"))?;
-    load_snapshot_locked(&dir, window, pending)
+    current_week: String,
+    keep_sessions: bool,
+    buckets: HashMap<(String, ExecutionMode, Option<String>), StatsCounters>,
+    sessions: Vec<SessionRecord>,
+    runs: RunCounts,
 }
 
-fn load_snapshot_locked(
-    dir: &Path,
-    window: StatsWindow,
-    pending: Option<&UsageStats>,
-) -> Result<StatsSnapshot, String> {
-    let mut documents = Vec::new();
-    let mut paths: Vec<PathBuf> = fs::read_dir(dir)
-        .map_err(|e| e.to_string())?
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|e| e == "json"))
-        .collect();
-    paths.sort();
-    for path in paths {
-        if let Some(doc) = read_doc(&path)? {
-            documents.push(doc);
+impl Accumulator {
+    fn new(window: StatsWindow, keep_sessions: bool) -> Self {
+        Self {
+            window,
+            current_week: current_iso_week(),
+            keep_sessions,
+            buckets: HashMap::new(),
+            sessions: Vec::new(),
+            runs: HashMap::new(),
         }
     }
-    if let Some(delta) = pending {
-        documents.push(delta.clone());
+
+    fn matches(&self, date: &str) -> bool {
+        match &self.window {
+            StatsWindow::CurrentWeek => {
+                iso_week_for_date(date).as_deref() == Some(self.current_week.as_str())
+            }
+            StatsWindow::Week(week) => iso_week_for_date(date).as_deref() == Some(week.as_str()),
+            StatsWindow::Since(start) => date >= start.as_str(),
+            StatsWindow::AllTime | StatsWindow::LastDays(_) => true,
+        }
     }
-    let recorded_dates: HashSet<String> = if let StatsWindow::LastDays(days) = window {
-        let mut dates: Vec<String> = documents
-            .iter()
-            .flat_map(|doc| doc.buckets.iter().map(|b| b.date.clone()))
-            .collect();
-        dates.sort();
-        dates.dedup();
-        dates.into_iter().rev().take(days as usize).collect()
-    } else {
-        HashSet::new()
-    };
-    let matches = |date: &str| match &window {
-        StatsWindow::CurrentWeek => iso_week_for_date(date).as_deref() == Some(&current_iso_week()),
-        StatsWindow::Week(week) => iso_week_for_date(date).as_deref() == Some(week),
-        StatsWindow::Since(start) => date >= start.as_str(),
-        StatsWindow::AllTime => true,
-        StatsWindow::LastDays(_) => recorded_dates.contains(date),
-    };
-    let mut buckets = Vec::new();
-    let mut sessions = Vec::new();
-    let mut seen_runs = HashSet::new();
-    for doc in documents {
-        buckets.extend(doc.buckets.into_iter().filter(|b| matches(&b.date)));
-        for session in doc.sessions {
-            let date = date_for_epoch_day(session.started / 86_400);
-            if matches(&date) && seen_runs.insert(session.id.clone()) {
-                sessions.push(session);
+
+    fn add(&mut self, stats: UsageStats) {
+        for bucket in stats.buckets {
+            if self.matches(&bucket.date) {
+                self.buckets
+                    .entry((bucket.date, bucket.mode, bucket.script))
+                    .or_default()
+                    .merge(&bucket.counters);
+            }
+        }
+        for session in stats.sessions {
+            if self.matches(&date_for_epoch_day(session.started / 86_400)) {
+                *self
+                    .runs
+                    .entry((session.mode, session.script.clone()))
+                    .or_default() += 1;
+                if self.keep_sessions {
+                    self.sessions.push(session);
+                }
             }
         }
     }
-    for bucket in &mut buckets {
-        bucket
-            .counters
-            .keywords
-            .retain(|name, _| CANONICAL_KEYWORDS.contains(&name.as_str()));
+
+    fn finish(self) -> StatsSnapshot {
+        let mut buckets: Vec<StatsBucket> = self
+            .buckets
+            .into_iter()
+            .map(|((date, mode, script), counters)| StatsBucket {
+                date,
+                mode,
+                script,
+                counters,
+            })
+            .collect();
+        if let StatsWindow::LastDays(days) = &self.window {
+            let mut dates: Vec<&str> = buckets.iter().map(|b| b.date.as_str()).collect();
+            dates.sort_unstable();
+            dates.dedup();
+            let keep: HashSet<String> = dates
+                .into_iter()
+                .rev()
+                .take(*days as usize)
+                .map(str::to_string)
+                .collect();
+            buckets.retain(|bucket| keep.contains(&bucket.date));
+        }
+        buckets.sort_by(|a, b| {
+            (&a.date, a.mode.as_str(), &a.script).cmp(&(&b.date, b.mode.as_str(), &b.script))
+        });
+        for bucket in &mut buckets {
+            bucket
+                .counters
+                .keywords
+                .retain(|name, _| CANONICAL_KEYWORDS.contains(&name.as_str()));
+        }
+        let mut counters = StatsCounters::default();
+        for bucket in &buckets {
+            counters.merge(&bucket.counters);
+        }
+        StatsSnapshot {
+            window: self.window,
+            counters,
+            buckets,
+            sessions: self.sessions,
+            runs: self.runs,
+        }
     }
-    let mut counters = StatsCounters::default();
-    for bucket in &buckets {
-        counters.merge(&bucket.counters);
+}
+
+pub fn load_snapshot(
+    window: StatsWindow,
+    pending: Option<&UsageStats>,
+    keep_sessions: bool,
+) -> Result<StatsSnapshot, String> {
+    let dir = ensure_stats_dir().ok_or_else(|| "stats state directory unavailable".to_string())?;
+    // Reading needs no lock: runs and ops only ever append, the cache is
+    // replaced atomically, and legacy documents are read as a validated
+    // snapshot. The lock (`cache.lock`, never the old binaries' `stats.lock`)
+    // only decides who may refresh the cache and sweep stale temp files; if
+    // another report holds it, this one just reads.
+    let lock = StatsLock::acquire(&dir, CACHE_LOCK, true, Duration::ZERO).ok();
+    if lock.is_some() {
+        remove_stale_temps(&dir);
     }
-    Ok(StatsSnapshot {
-        window,
-        counters,
-        buckets,
-        sessions,
-    })
+    load_snapshot_from(&dir, window, pending, keep_sessions, lock.is_some())
+}
+
+/// Everything recorded that falls in `window`: the legacy weekly documents
+/// (which ops never touch), then every raw day with every `clear` and
+/// `reset` applied (a day is skipped only when a validated cache shows its
+/// dates miss the window), then the live `pending` collector. Buckets and
+/// runs are filtered by their own dates. `may_cache` lets fresh reads of
+/// days before today refresh the cache. Today is never cached.
+fn load_snapshot_from(
+    dir: &Path,
+    window: StatsWindow,
+    pending: Option<&UsageStats>,
+    keep_sessions: bool,
+    may_cache: bool,
+) -> Result<StatsSnapshot, String> {
+    let ops = load_ops(dir);
+    let mut accumulator = Accumulator::new(window.clone(), keep_sessions);
+    let (legacy, unstable) = legacy_contribution(dir, &window, may_cache, &mut |_| {});
+    if unstable {
+        eprintln!(
+            "mix stats: legacy store busy: an older mix kept changing it during the report, so its share may be incomplete"
+        );
+    }
+    accumulator.add(legacy);
+    let today = today_string();
+    for (day, path) in raw_days(dir)? {
+        let cacheable = may_cache && day < today;
+        accumulator.add(day_records(dir, &day, &path, &ops, &window, cacheable));
+    }
+    if let Some(pending) = pending {
+        accumulator.add(pending.clone());
+    }
+    Ok(accumulator.finish())
 }
 
 pub fn cmd_stats_dispatch(args: &[&str], pending: Option<&mut UsageStats>) -> i32 {
@@ -790,7 +1775,7 @@ fn dispatch_report(args: &[&str], pending: Option<&mut UsageStats>) -> Result<()
         Some("query") => query_db(&args[1..].join(" ")),
         Some("trend") => {
             let name = args.get(1).ok_or("trend requires a name")?;
-            let snapshot = load_snapshot(StatsWindow::LastDays(30), pending.as_deref())?;
+            let snapshot = load_snapshot(StatsWindow::LastDays(30), pending.as_deref(), false)?;
             print_trend(&snapshot, name);
             Ok(())
         }
@@ -802,6 +1787,7 @@ fn dispatch_report(args: &[&str], pending: Option<&mut UsageStats>) -> Result<()
             print_overview(&load_snapshot(
                 StatsWindow::Since((*date).to_string()),
                 pending.as_deref(),
+                false,
             )?);
             Ok(())
         }
@@ -813,15 +1799,22 @@ fn dispatch_report(args: &[&str], pending: Option<&mut UsageStats>) -> Result<()
             print_overview(&load_snapshot(
                 StatsWindow::Week((*week).to_string()),
                 pending.as_deref(),
+                false,
             )?);
             Ok(())
         }
         Some("all") => {
-            print_overview(&load_snapshot(StatsWindow::AllTime, pending.as_deref())?);
+            print_overview(&load_snapshot(
+                StatsWindow::AllTime,
+                pending.as_deref(),
+                false,
+            )?);
             Ok(())
         }
         command => {
-            let snapshot = load_snapshot(StatsWindow::CurrentWeek, pending.as_deref())?;
+            let keep_sessions = matches!(command, Some("sessions") | Some("raw"));
+            let snapshot =
+                load_snapshot(StatsWindow::CurrentWeek, pending.as_deref(), keep_sessions)?;
             match command {
                 None | Some("overview") => print_overview(&snapshot),
                 Some("builtins") => {
@@ -962,9 +1955,9 @@ fn print_modes_body(snapshot: &StatsSnapshot) {
             .errors
             .saturating_add(saturating_sum(bucket.counters.errors.values()));
     }
-    for run in &snapshot.sessions {
-        let row = rows.entry(run.mode.as_str()).or_default();
-        row.runs = row.runs.saturating_add(1);
+    for ((mode, _), runs) in &snapshot.runs {
+        let row = rows.entry(mode.as_str()).or_default();
+        row.runs = row.runs.saturating_add(*runs);
     }
     println!("Mode          Events Builtins Keywords Functions Commands Errors Runs");
     for (mode, row) in rows {
@@ -1001,10 +1994,10 @@ fn print_scripts_body(snapshot: &StatsSnapshot, top: usize) {
             .2
             .saturating_add(saturating_sum(bucket.counters.keywords.values()));
     }
-    for run in &snapshot.sessions {
-        if let Some(script) = &run.script {
-            let row = rows.entry((script.clone(), run.mode)).or_default();
-            row.3 = row.3.saturating_add(1);
+    for ((mode, script), runs) in &snapshot.runs {
+        if let Some(script) = script {
+            let row = rows.entry((script.clone(), *mode)).or_default();
+            row.3 = row.3.saturating_add(*runs);
         }
     }
     let mut rows: Vec<_> = rows.into_iter().collect();
@@ -1049,10 +2042,15 @@ fn query_db(sql: &str) -> Result<(), String> {
     if sql.trim().is_empty() {
         return Err("query requires SQL".to_string());
     }
-    let dir = ensure_stats_dir().ok_or("stats state directory unavailable")?;
-    let _lock = StatsLock::acquire(&dir, false, REPORT_LOCK_DEADLINE).map_err(|e| e.to_string())?;
+    // The store is JSONL; the query runs over the old mix.db tables, built in
+    // memory from everything recorded.
+    let snapshot = load_snapshot(StatsWindow::AllTime, None, true)?;
+    let mut stats = empty_doc("");
+    stats.buckets = snapshot.buckets;
+    stats.sessions = snapshot.sessions;
+    let mut connection = Connection::open_in_memory().map_err(|e| e.to_string())?;
+    load_sqlite(&mut connection, &stats).map_err(|e| e.to_string())?;
     println!("Usage statistics — all-time SQLite query");
-    let connection = Connection::open(dir.join("mix.db")).map_err(|e| e.to_string())?;
     let mut statement = connection.prepare(sql).map_err(|e| e.to_string())?;
     let columns = statement.column_count();
     let names: Vec<String> = statement
@@ -1083,52 +2081,29 @@ fn query_db(sql: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// `reset`: an appended op that drops the current ISO week's buckets and
+/// runs from everything stored before it. Nothing stored is rewritten.
 fn reset_current(pending: Option<&mut UsageStats>) -> Result<(), String> {
     let dir = ensure_stats_dir().ok_or("stats state directory unavailable")?;
-    let _lock = StatsLock::acquire(&dir, true, REPORT_LOCK_DEADLINE).map_err(|e| e.to_string())?;
-    reset_current_locked(&dir, pending)?;
-    println!("Stats reset for week {}.", current_iso_week());
-    Ok(())
-}
-
-fn reset_current_locked(dir: &Path, pending: Option<&mut UsageStats>) -> Result<(), String> {
-    rotate_current(dir)?;
-    let path = dir.join("current.json");
-    if path.exists() {
-        fs::remove_file(path).map_err(|e| e.to_string())?;
-    }
+    let week = current_iso_week();
+    append_op(&dir, OpKind::Reset(week.clone()))?;
     if let Some(pending) = pending {
         pending.reset_current_week();
     }
+    println!("Stats reset for week {week}.");
     Ok(())
 }
 
+/// `clear NAME`: an appended op that removes `name` from every counter
+/// category of everything stored before it.
 fn clear_name(name: Option<&str>, pending: Option<&mut UsageStats>) -> Result<(), String> {
     let name = name.ok_or("clear requires a name")?;
     let dir = ensure_stats_dir().ok_or("stats state directory unavailable")?;
-    let _lock = StatsLock::acquire(&dir, true, REPORT_LOCK_DEADLINE).map_err(|e| e.to_string())?;
-    let mut changed = false;
-    for entry in fs::read_dir(&dir).map_err(|e| e.to_string())? {
-        let path = entry.map_err(|e| e.to_string())?.path();
-        if path.extension().is_none_or(|e| e != "json") {
-            continue;
-        }
-        let Some(mut doc) = read_doc(&path)? else {
-            continue;
-        };
-        changed |= clear_name_from_stats(&mut doc, name);
-        atomic_write_json(&path, &doc)?;
-    }
-    let db_path = dir.join("mix.db");
-    if db_path.exists() {
-        match Connection::open(&db_path) {
-            Ok(connection) => {
-                let _ = connection.execute("DELETE FROM usage WHERE name = ?1", [name]);
-                let _ = connection.execute("DELETE FROM usage_context WHERE name = ?1", [name]);
-            }
-            Err(error) => debug_note(format!("clear SQLite update failed: {error}")),
-        }
-    }
+    let recorded = load_snapshot_from(&dir, StatsWindow::AllTime, None, false, false)?;
+    let mut changed = counter_maps(&recorded.counters)
+        .iter()
+        .any(|(_, map)| map.contains_key(name));
+    append_op(&dir, OpKind::Clear(name.to_string()))?;
     if let Some(pending) = pending {
         changed |= clear_name_from_stats(pending, name);
     }
@@ -1173,76 +2148,94 @@ fn print_help() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mix::stats::{
-        ExecutionMode, MAX_WEEKLY_SCRIPT_LABELS, OTHER_SCRIPT_LABEL, SessionRecord, StatsContext,
-    };
+    use mix::stats::{ExecutionMode, StatsContext, current_epoch_day};
 
     fn temp_dir(label: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("mix-stats-{}-{label}", std::process::id()))
+        let dir = std::env::temp_dir().join(format!("mix-stats-{}-{label}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
     }
 
-    fn old_doc() -> UsageStats {
-        let mut doc = empty_doc("1970-W01");
-        doc.buckets.push(StatsBucket {
-            date: "1970-01-01".to_string(),
+    fn bucket(date: &str, name: &str, count: u64) -> StatsBucket {
+        StatsBucket {
+            date: date.to_string(),
             mode: ExecutionMode::C,
             script: None,
             counters: StatsCounters {
-                builtins: HashMap::from([("len".to_string(), 1)]),
+                builtins: HashMap::from([(name.to_string(), count)]),
                 ..StatsCounters::default()
             },
-        });
-        doc.last_date = "1970-01-01".to_string();
-        doc.rebuild_aggregates();
-        doc
+        }
     }
 
-    /// `flush_pending_delta` commits per ISO week so a failed week merges
-    /// back alone (a whole-delta merge-back after a partial commit would
-    /// double-count the committed week). This pins the grouping seam: one
-    /// single-week delta per week, unpersistable (dateless) buckets to the
-    /// residual, and aggregates rebuilt on each part.
-    #[test]
-    fn split_delta_by_week_groups_and_quarantines_bad_dates() {
+    fn session(id: &str, day: &str) -> SessionRecord {
+        let epoch_day = (0..)
+            .find(|d| date_for_epoch_day(*d) == day)
+            .expect("test dates are after 1970");
+        SessionRecord {
+            id: id.to_string(),
+            started: epoch_day * 86_400 + 3_600,
+            duration_secs: 1,
+            commands: 1,
+            peak_memory_kb: 0,
+            mode: ExecutionMode::C,
+            script: None,
+        }
+    }
+
+    /// A finished run dated `day` that used `name` once.
+    fn run_on(id: &str, day: &str, name: &str) -> UsageStats {
+        let mut run = empty_doc("");
+        run.buckets.push(bucket(day, name, 1));
+        run.sessions.push(session(id, day));
+        run.rebuild_aggregates();
+        run
+    }
+
+    fn today_run(name: &str) -> UsageStats {
         let mut delta = UsageStats::for_execution(StatsContext::new(ExecutionMode::C, None));
-        for (date, name) in [
-            ("2026-08-16", "len"),   // 2026-W33 (Sunday)
-            ("2026-08-17", "upper"), // 2026-W34
-            ("not-a-date", "join"),
-        ] {
-            delta.buckets.push(StatsBucket {
-                date: date.to_string(),
-                mode: ExecutionMode::C,
-                script: None,
-                counters: StatsCounters {
-                    builtins: HashMap::from([(name.to_string(), 1)]),
-                    ..StatsCounters::default()
-                },
-            });
+        delta.track_builtin(name);
+        delta.finalize_session();
+        delta
+    }
+
+    fn days_ago(days: u64) -> String {
+        date_for_epoch_day(current_epoch_day() - days)
+    }
+
+    fn all(dir: &Path) -> StatsSnapshot {
+        load_snapshot_from(dir, StatsWindow::AllTime, None, true, false).unwrap()
+    }
+
+    /// An AllTime read that may refresh the cache, as a report holding the lock does.
+    fn all_caching(dir: &Path) -> StatsSnapshot {
+        load_snapshot_from(dir, StatsWindow::AllTime, None, true, true).unwrap()
+    }
+
+    fn len_count(snapshot: &StatsSnapshot) -> u64 {
+        snapshot.counters.builtins.get("len").copied().unwrap_or(0)
+    }
+
+    fn record(dir: &Path, delta: &UsageStats, day: &str) {
+        flush_run(dir, delta, day, &mut write_once);
+    }
+
+    /// Every file under `dir` with its length and modification time.
+    fn tree(dir: &Path) -> BTreeMap<PathBuf, (u64, std::time::SystemTime)> {
+        let mut files = BTreeMap::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(path) = stack.pop() {
+            for entry in fs::read_dir(&path).unwrap().filter_map(Result::ok) {
+                let meta = entry.metadata().unwrap();
+                if meta.is_dir() {
+                    stack.push(entry.path());
+                } else {
+                    files.insert(entry.path(), (meta.len(), meta.modified().unwrap()));
+                }
+            }
         }
-        let (weeks, residual) = split_delta_by_week(&delta);
-        assert_eq!(weeks.len(), 2);
-        for part in &weeks {
-            assert_eq!(part.buckets.len(), 1);
-            let week = iso_week_for_date(&part.buckets[0].date).unwrap();
-            assert!(
-                part.buckets
-                    .iter()
-                    .all(|b| iso_week_for_date(&b.date).as_deref() == Some(week.as_str())),
-                "each part must be single-week"
-            );
-            assert_eq!(
-                part.builtins.values().sum::<u64>(),
-                1,
-                "aggregates rebuilt per part"
-            );
-        }
-        assert_eq!(residual.buckets.len(), 1);
-        assert_eq!(residual.buckets[0].date, "not-a-date");
-        assert!(
-            weeks.iter().all(|p| p.sessions.is_empty()) && residual.sessions.is_empty(),
-            "no part may grow a session record"
-        );
+        files
     }
 
     #[test]
@@ -1260,10 +2253,9 @@ mod tests {
         let mut pending = UsageStats::for_execution(StatsContext::new(ExecutionMode::C, None));
         pending.track_keyword("if");
         let dir = temp_dir("window");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
         let snapshot =
-            load_snapshot_locked(&dir, StatsWindow::CurrentWeek, Some(&pending)).unwrap();
+            load_snapshot_from(&dir, StatsWindow::CurrentWeek, Some(&pending), false, false)
+                .unwrap();
         assert_eq!(snapshot.counters.keywords.get("if"), Some(&1));
         assert!(
             !CANONICAL_KEYWORDS
@@ -1274,294 +2266,868 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    /// The exit path appends and does nothing else: with a large history
+    /// (many raw days, caches, legacy documents, stale temps) and the lock
+    /// held by someone else, it touches no file but today's and is fast.
     #[test]
-    fn parallel_flushes_merge_exactly() {
-        let dir = temp_dir("parallel");
+    fn the_exit_path_only_appends_with_a_large_history_and_a_held_lock() {
+        let dir = temp_dir("exit-path");
+        for days in 2..120 {
+            let day = days_ago(days);
+            for index in 0..20 {
+                record(&dir, &run_on(&format!("{day}-{index}"), &day, "len"), &day);
+            }
+        }
+        all_caching(&dir);
+        let legacy = run_on("legacy", "2026-01-05", "len");
+        fs::write(dir.join("current.json"), legacy.to_json().to_string()).unwrap();
+        fs::write(dir.join(".current.json.1.0.tmp"), "x").unwrap();
+        let today = today_string();
+        record(&dir, &today_run("len"), &today);
+        let today_file = run_path(&dir, &today);
+        let _cache = StatsLock::acquire(&dir, CACHE_LOCK, true, Duration::ZERO).unwrap();
+        let _ops = StatsLock::acquire(&dir, OPS_LOCK, true, Duration::ZERO).unwrap();
+        let before = tree(&dir);
+
+        let started = Instant::now();
+        record(&dir, &today_run("len"), &today);
+        let elapsed = started.elapsed();
+
+        assert!(
+            elapsed < Duration::from_millis(50),
+            "exit path took {elapsed:?}"
+        );
+        let mut after = tree(&dir);
+        let grown = after.remove(&today_file).unwrap();
+        let mut expected = before;
+        let was = expected.remove(&today_file).unwrap();
+        assert_eq!(after, expected, "the exit path touched another file");
+        assert!(grown.0 > was.0);
         let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let mut workers = Vec::new();
-        for _ in 0..64 {
-            let dir = dir.clone();
-            workers.push(std::thread::spawn(move || {
-                let mut delta =
-                    UsageStats::for_execution(StatsContext::new(ExecutionMode::C, None));
-                delta.track_builtin("len");
-                delta.finalize_session();
-                // This stress test checks lossless merge serialisation, not the
-                // best-effort production deadline used by automatic flushes.
-                flush_batch_to_dir_with_deadline(&dir, &delta, Duration::from_secs(10)).unwrap();
-            }));
+    }
+
+    #[test]
+    fn a_short_write_is_dropped_and_never_retried() {
+        let dir = temp_dir("short");
+        let day = today_string();
+        let mut calls = 0;
+        let mut short = |file: &mut File, bytes: &[u8]| {
+            calls += 1;
+            file.write(&bytes[..bytes.len() / 2])
+        };
+        flush_run(&dir, &today_run("len"), &day, &mut short);
+        assert_eq!(calls, 1);
+        let mut calls = 0;
+        let mut short = |file: &mut File, bytes: &[u8]| {
+            calls += 1;
+            file.write(&bytes[..bytes.len() / 2])
+        };
+        let mut pending = empty_doc("");
+        pending.buckets.push(bucket(&day, "len", 5));
+        assert!(flush_pending_to(&dir, &pending, &mut short).is_ok());
+        assert_eq!(calls, 1, "a short mid-session write is final");
+        record(&dir, &today_run("len"), &day);
+        let snapshot = all(&dir);
+        assert_eq!(len_count(&snapshot), 1, "both torn records are skipped");
+        assert_eq!(snapshot.sessions.len(), 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_complete_record_missing_only_its_newline_counts_once_and_the_next_survives() {
+        let dir = temp_dir("no-newline");
+        let day = today_string();
+        let mut calls = 0;
+        let mut all_but_newline = |file: &mut File, bytes: &[u8]| {
+            calls += 1;
+            file.write(&bytes[..bytes.len() - 1])
+        };
+        let mut pending = empty_doc("");
+        pending.buckets.push(bucket(&day, "len", 5));
+        assert!(flush_pending_to(&dir, &pending, &mut all_but_newline).is_ok());
+        assert_eq!(calls, 1, "not retried, so it cannot land twice");
+        record(&dir, &today_run("len"), &day);
+        let snapshot = all(&dir);
+        assert_eq!(len_count(&snapshot), 6);
+        assert_eq!(snapshot.sessions.len(), 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_retried_mid_session_flush_counts_once_by_batch() {
+        let dir = temp_dir("retry");
+        let day = today_string();
+        let mut pending = empty_doc("");
+        pending.buckets.push(bucket(&day, "len", 3));
+        // The first attempt lands but reports failure; the retry repeats the
+        // same bytes, so the batch id is the same and readers keep one copy.
+        let mut calls = 0;
+        let mut landed_then_failed = |file: &mut File, bytes: &[u8]| {
+            calls += 1;
+            let written = file.write(bytes)?;
+            if calls == 1 {
+                return Err(std::io::Error::other("reported failure after landing"));
+            }
+            Ok(written)
+        };
+        assert!(flush_pending_to(&dir, &pending, &mut landed_then_failed).is_ok());
+        assert_eq!(calls, 2);
+        let raw = fs::read_to_string(run_path(&dir, &day)).unwrap();
+        assert_eq!(raw.lines().filter(|line| !line.is_empty()).count(), 2);
+        assert_eq!(len_count(&all(&dir)), 3);
+
+        // A clean failure every time writes nothing and hands the delta back.
+        let mut failing = |_: &mut File, _: &[u8]| -> std::io::Result<usize> {
+            Err(std::io::Error::from_raw_os_error(libc::ENOSPC))
+        };
+        assert!(flush_pending_to(&dir, &pending, &mut failing).is_err());
+        assert_eq!(len_count(&all(&dir)), 3);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn parallel_runs_all_land() {
+        let dir = temp_dir("parallel");
+        let workers: Vec<_> = (0..64)
+            .map(|_| {
+                let dir = dir.clone();
+                std::thread::spawn(move || record(&dir, &today_run("len"), &today_string()))
+            })
+            .collect();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        let snapshot = all(&dir);
+        assert_eq!(len_count(&snapshot), 64);
+        assert_eq!(snapshot.sessions.len(), 64);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The offset just past each record's closing brace in a raw file, found
+    /// by scanning bytes (independent of the production payload code).
+    fn closing_braces(path: &Path) -> Vec<u64> {
+        let raw = fs::read(path).unwrap();
+        let mut ends = Vec::new();
+        let mut offset = 0;
+        for line in raw.split(|byte| *byte == b'\n') {
+            if let Some(last) = line.iter().rposition(|byte| *byte == b'}') {
+                ends.push((offset + last + 1) as u64);
+            }
+            offset += line.len() + 1;
+        }
+        ends
+    }
+
+    /// A raw-day cache in the format 581b28e wrote: no payload range.
+    #[test]
+    fn a_cache_without_payload_bounds_is_reread_so_ops_apply() {
+        let dir = temp_dir("old-cache");
+        let day = today_string();
+        record(&dir, &today_run("len"), &day);
+        record(&dir, &today_run("len"), &day);
+        let path = run_path(&dir, &day);
+        let id = FileId::of(&fs::metadata(&path).unwrap());
+        let mut aggregate = empty_doc("");
+        for _ in 0..2 {
+            aggregate.buckets.push(bucket(&day, "len", 1));
+        }
+        aggregate.sessions.push(session("cached-1", &day));
+        aggregate.sessions.push(session("cached-2", &day));
+        let old_format = format!(
+            "{}\n{}\n",
+            serde_json::json!({"day": day, "id": id.to_json(), "dates": [day, day]}),
+            record_json(&aggregate)
+        );
+        write_cache_value(&dir, &day, &old_format);
+
+        append_op(&dir, OpKind::Clear("len".into())).unwrap();
+        // By construction: both runs were stored before the clear.
+        let snapshot = all(&dir);
+        assert_eq!(len_count(&snapshot), 0);
+        assert_eq!(snapshot.sessions.len(), 2, "a clear keeps the runs");
+
+        append_op(&dir, OpKind::Reset(current_iso_week())).unwrap();
+        // By construction: both runs were stored this week, before the reset.
+        let snapshot = all(&dir);
+        assert!(snapshot.counters.builtins.is_empty());
+        assert!(snapshot.sessions.is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn write_cache_value(dir: &Path, day: &str, value: &str) {
+        fs::create_dir_all(dir.join(CACHE_DIR)).unwrap();
+        fs::write(cache_path(dir, day), value).unwrap();
+    }
+
+    #[test]
+    fn the_cache_is_used_only_while_it_matches_the_raw_file() {
+        let dir = temp_dir("cache");
+        let day = days_ago(5);
+        record(&dir, &run_on("a", &day, "len"), &day);
+        record(&dir, &run_on("b", &day, "len"), &day);
+        assert_eq!(len_count(&all_caching(&dir)), 2);
+        assert!(cache_path(&dir, &day).exists());
+
+        // A forged entry that names the raw file exactly is believed, which
+        // shows reports really read the cache...
+        let id = FileId::of(&fs::metadata(run_path(&dir, &day)).unwrap());
+        let ends = closing_braces(&run_path(&dir, &day));
+        let header = serde_json::json!({
+            "day": day, "id": id.to_json(), "dates": [day, day],
+            "payload": [ends[0], ends[ends.len() - 1]],
+        });
+        let forged = format!(
+            "{header}\n{}\n",
+            record_json(&run_on("forged", &day, "upper"))
+        );
+        write_cache_value(&dir, &day, &forged);
+        assert_eq!(all(&dir).counters.builtins.get("upper"), Some(&1));
+
+        // ...and corrupt, prefix-only or header-only entries are ignored.
+        let header_only = format!("{header}\n");
+        for value in ["{broken", &format!("{{\"day\":\"{day}\""), &header_only] {
+            write_cache_value(&dir, &day, value);
+            let snapshot = all(&dir);
+            assert_eq!(len_count(&snapshot), 2, "{value}");
+            assert_eq!(snapshot.sessions.len(), 2);
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_late_append_after_caching_makes_the_entry_stale() {
+        let dir = temp_dir("late");
+        let day = days_ago(3);
+        record(&dir, &run_on("a", &day, "len"), &day);
+        all_caching(&dir);
+        record(&dir, &run_on("b", &day, "len"), &day);
+        let snapshot = all_caching(&dir);
+        assert_eq!(len_count(&snapshot), 2);
+        assert_eq!(snapshot.sessions.len(), 2);
+        assert_eq!(len_count(&all(&dir)), 2, "the refreshed entry is exact");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_clock_rolled_back_onto_a_cached_day_still_counts() {
+        let dir = temp_dir("rollback");
+        let day = days_ago(9);
+        record(&dir, &run_on("a", &day, "len"), &day);
+        all_caching(&dir);
+        // A run whose clock went back writes today's record into the old day.
+        record(&dir, &today_run("len"), &day);
+        let snapshot = all(&dir);
+        assert_eq!(len_count(&snapshot), 2);
+        assert_eq!(snapshot.sessions.len(), 2);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_cache_entry_without_a_readable_raw_file_counts_nothing() {
+        let dir = temp_dir("orphan");
+        let missing = days_ago(4);
+        let stats = record_json(&run_on("ghost", &missing, "len"));
+        write_cache_value(
+            &dir,
+            &missing,
+            &serde_json::json!({"day": missing, "dev": 0, "ino": 0, "len": 0,
+                "min_at": 0, "max_at": 0, "stats": stats})
+            .to_string(),
+        );
+        // Unreadable even as root: the raw path is a directory.
+        let unreadable = days_ago(6);
+        fs::create_dir_all(run_path(&dir, &unreadable)).unwrap();
+        let snapshot = all_caching(&dir);
+        assert_eq!(len_count(&snapshot), 0);
+        assert!(snapshot.sessions.is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn clear_concurrent_with_appenders_loses_nothing_and_applies_only_before_it() {
+        let dir = temp_dir("clear-race");
+        let day = today_string();
+        let workers: Vec<_> = (0..64)
+            .map(|index| {
+                let dir = dir.clone();
+                let day = day.clone();
+                std::thread::spawn(move || {
+                    if index % 2 == 0 {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    record(&dir, &today_run("len"), &day);
+                })
+            })
+            .collect();
+        std::thread::sleep(Duration::from_millis(2));
+        // Two op writers race the appenders and each other.
+        let clears: Vec<_> = (0..2)
+            .map(|_| {
+                let dir = dir.clone();
+                std::thread::spawn(move || append_op(&dir, OpKind::Clear("len".into())))
+            })
+            .collect();
+        for clear in clears {
+            clear.join().unwrap().unwrap();
         }
         for worker in workers {
             worker.join().unwrap();
         }
-        let snapshot = load_snapshot_locked(&dir, StatsWindow::CurrentWeek, None).unwrap();
-        assert_eq!(snapshot.counters.builtins.get("len"), Some(&64));
-        assert_eq!(snapshot.sessions.len(), 64);
-        let db = Connection::open(dir.join("mix.db")).unwrap();
-        let count: i64 = db
-            .query_row(
-                "SELECT count FROM usage WHERE category='builtin' AND name='len'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(count, 64);
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn corrupt_json_is_quarantined_and_recording_self_heals() {
-        let dir = temp_dir("corrupt-json");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("current.json"), "{broken").unwrap();
-        let mut delta = UsageStats::for_execution(StatsContext::new(ExecutionMode::C, None));
-        delta.track_builtin("len");
-
-        flush_batch_to_dir(&dir, &delta).unwrap();
-
-        assert_eq!(
-            read_doc(&dir.join("current.json"))
-                .unwrap()
-                .unwrap()
-                .builtins
-                .get("len"),
-            Some(&1)
-        );
-        assert!(
-            fs::read_dir(&dir)
-                .unwrap()
-                .filter_map(Result::ok)
-                .any(|entry| {
-                    entry
-                        .file_name()
-                        .to_str()
-                        .is_some_and(|name| name.ends_with(".corrupt"))
-                })
-        );
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn corrupt_archive_does_not_fail_reports() {
-        let dir = temp_dir("corrupt-report");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("1970-W01.json"), "not json").unwrap();
-        let mut current = UsageStats::new();
-        current.track_builtin("upper");
-        atomic_write_json(&dir.join("current.json"), &current).unwrap();
-
-        let snapshot = load_snapshot_locked(&dir, StatsWindow::AllTime, None).unwrap();
-
-        assert_eq!(snapshot.counters.builtins.get("upper"), Some(&1));
-        assert!(!dir.join("1970-W01.json").exists());
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn out_of_range_persisted_dates_and_timestamps_are_quarantined() {
-        let dir = temp_dir("hostile-dates");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("current.json");
-        fs::write(
-            &path,
-            serde_json::json!({
-                "week": "2026-W34",
-                "last_date": "2026-08-21",
-                "buckets": [{"date": "999999999999-01-01"}],
-                "sessions": [{"id": "hostile", "started": u64::MAX}]
-            })
-            .to_string(),
-        )
-        .unwrap();
-
-        assert!(read_doc(&path).unwrap().is_none());
-        assert!(!path.exists());
-        assert!(
-            fs::read_dir(&dir)
-                .unwrap()
-                .filter_map(Result::ok)
-                .any(|entry| {
-                    entry
-                        .file_name()
-                        .to_str()
-                        .is_some_and(|name| name.ends_with(".corrupt"))
-                })
-        );
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn rotation_replay_is_idempotent() {
-        let dir = temp_dir("rotation-replay");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let current = old_doc();
-        atomic_write_json(&dir.join("current.json"), &current).unwrap();
-        rotate_current(&dir).unwrap();
-        // Recreate the exact source document to model a crash after archive
-        // commit but before current.json removal.
-        atomic_write_json(&dir.join("current.json"), &current).unwrap();
-
-        rotate_current(&dir).unwrap();
-
-        let archive = read_doc(&dir.join("1970-W01.json")).unwrap().unwrap();
-        assert_eq!(archive.builtins.get("len"), Some(&1));
-        assert_eq!(archive.rotation_sources.len(), 1);
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn invalid_persisted_week_is_derived_without_path_escape() {
-        let dir = temp_dir("week-path");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let mut current = old_doc();
-        current.week = "../escaped".to_string();
-        atomic_write_json(&dir.join("current.json"), &current).unwrap();
-
-        rotate_current(&dir).unwrap();
-
-        assert!(dir.join("1970-W01.json").exists());
-        assert!(!dir.parent().unwrap().join("escaped.json").exists());
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn reset_archives_old_current_and_preserves_old_pending_buckets() {
-        let dir = temp_dir("boundary-reset");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        atomic_write_json(&dir.join("current.json"), &old_doc()).unwrap();
-        let mut pending = UsageStats::new();
-        pending.track_builtin("upper");
-        pending.buckets.extend(old_doc().buckets);
-        pending.rebuild_aggregates();
-
-        reset_current_locked(&dir, Some(&mut pending)).unwrap();
-
-        assert!(dir.join("1970-W01.json").exists());
-        assert!(!dir.join("current.json").exists());
-        assert_eq!(pending.buckets.len(), 1);
-        assert_eq!(pending.buckets[0].date, "1970-01-01");
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn sqlite_legacy_sessions_are_idempotent_by_run_id() {
-        let dir = temp_dir("session-idempotency");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let mut delta = UsageStats::for_execution(StatsContext::new(ExecutionMode::C, None));
-        delta.finalize_session();
-
-        flush_batch_to_dir(&dir, &delta).unwrap();
-        flush_batch_to_dir(&dir, &delta).unwrap();
-
-        let connection = Connection::open(dir.join("mix.db")).unwrap();
-        let count: i64 = connection
-            .query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(count, 1);
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn sqlite_reconciles_historical_run_labels_after_json_folding() {
-        let dir = temp_dir("sqlite-label-fold");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let mut first = UsageStats::for_execution(StatsContext::new(ExecutionMode::Script, None));
-        for index in 0..MAX_WEEKLY_SCRIPT_LABELS {
-            first.sessions.push(SessionRecord {
-                id: format!("run-{index}"),
-                started: 0,
-                duration_secs: 0,
-                commands: 1,
-                peak_memory_kb: 0,
-                mode: ExecutionMode::Script,
-                script: Some(format!("script-{index:03}.mix")),
-            });
+        // The expectation, computed without the production cutoff, payload
+        // or collapse code: the covered prefix is the largest length either
+        // op recorded for today's file, and a record keeps `len` exactly when
+        // its closing brace lies beyond it.
+        let ops = fs::read_to_string(dir.join(OPS_FILE)).unwrap();
+        let recorded: Vec<serde_json::Value> = ops
+            .lines()
+            .filter(|line| !line.is_empty())
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(recorded.len(), 2, "both clears recorded whole");
+        let covered = recorded
+            .iter()
+            .filter_map(|op| op["positions"][day.as_str()][2].as_u64())
+            .max()
+            .unwrap_or(0);
+        let raw = fs::read(run_path(&dir, &day)).unwrap();
+        let mut kept = 0;
+        let mut offset = 0;
+        for line in raw.split(|byte| *byte == b'\n') {
+            let start = offset;
+            offset += line.len() + 1;
+            if let Some(last) = line.iter().rposition(|byte| *byte == b'}') {
+                let closing = (start + last + 1) as u64;
+                if closing > covered {
+                    kept += 1;
+                }
+            }
         }
-        flush_batch_to_dir(&dir, &first).unwrap();
-
-        let mut second = UsageStats::for_execution(StatsContext::new(ExecutionMode::Script, None));
-        second.sessions.push(SessionRecord {
-            id: "run-new".to_string(),
-            started: 0,
-            duration_secs: 0,
-            commands: 1,
-            peak_memory_kb: 0,
-            mode: ExecutionMode::Script,
-            script: Some("aaa.mix".to_string()),
-        });
-        flush_batch_to_dir(&dir, &second).unwrap();
-
-        let connection = Connection::open(dir.join("mix.db")).unwrap();
-        let labels: i64 = connection
-            .query_row("SELECT COUNT(DISTINCT script) FROM runs", [], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        let folded: i64 = connection
-            .query_row(
-                "SELECT COUNT(*) FROM runs WHERE script = ?1",
-                [OTHER_SCRIPT_LABEL],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(labels, MAX_WEEKLY_SCRIPT_LABELS as i64);
-        assert_eq!(folded, 2);
+        let snapshot = all(&dir);
+        assert_eq!(snapshot.sessions.len(), 64, "every run survives");
+        assert_eq!(
+            len_count(&snapshot),
+            kept,
+            "only runs stored after both clears keep it"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn sqlite_clamps_unsigned_counters_and_run_fields_to_i64_max() {
-        let dir = temp_dir("sqlite-clamp");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let mut delta = empty_doc("1970-W01");
-        delta.buckets.push(StatsBucket {
-            date: "1970-01-01".to_string(),
-            mode: ExecutionMode::C,
-            script: None,
-            counters: StatsCounters {
-                builtins: HashMap::from([("len".to_string(), u64::MAX)]),
-                ..StatsCounters::default()
-            },
-        });
-        delta.sessions.push(SessionRecord {
-            id: "saturated-run".to_string(),
-            started: 0,
-            duration_secs: u64::MAX,
-            commands: u64::MAX,
-            peak_memory_kb: u64::MAX,
-            mode: ExecutionMode::C,
-            script: None,
-        });
-        delta.rebuild_aggregates();
-        flush_batch_to_dir(&dir, &delta).unwrap();
+    fn ops_apply_to_cached_days_and_split_a_day_by_position() {
+        let dir = temp_dir("ops");
+        let old = days_ago(3);
+        record(&dir, &run_on("a", &old, "len"), &old);
+        all_caching(&dir);
+        append_op(&dir, OpKind::Clear("len".into())).unwrap();
+        // The op covers the whole cached file, so it applies to the entry.
+        assert_eq!(len_count(&all_caching(&dir)), 0);
 
-        let connection = Connection::open(dir.join("mix.db")).unwrap();
-        let count: i64 = connection
+        // A day whose records straddle an op is read record by record.
+        let split = days_ago(4);
+        record(&dir, &run_on("b", &split, "upper"), &split);
+        append_op(&dir, OpKind::Clear("upper".into())).unwrap();
+        record(&dir, &run_on("c", &split, "upper"), &split);
+        all_caching(&dir);
+        let snapshot = all_caching(&dir);
+        assert_eq!(snapshot.counters.builtins.get("upper"), Some(&1));
+        assert_eq!(snapshot.sessions.len(), 3, "a clear keeps the runs");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reset_drops_the_current_week_before_it_and_keeps_older_days_and_pending_buckets() {
+        let dir = temp_dir("reset");
+        let old = "2026-01-05";
+        record(&dir, &run_on("old", old, "len"), old);
+        record(&dir, &today_run("upper"), &today_string());
+        append_op(&dir, OpKind::Reset(current_iso_week())).unwrap();
+        record(&dir, &today_run("join"), &today_string());
+        let mut pending = UsageStats::new();
+        pending.track_builtin("trim");
+        pending.buckets.push(bucket(old, "trim", 1));
+        pending.rebuild_aggregates();
+        pending.reset_current_week();
+
+        let snapshot = all(&dir);
+        assert_eq!(len_count(&snapshot), 1);
+        assert_eq!(snapshot.counters.builtins.get("upper"), None);
+        assert_eq!(snapshot.counters.builtins.get("join"), Some(&1));
+        assert_eq!(pending.buckets.len(), 1);
+        assert_eq!(pending.buckets[0].date, old);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn weekly_doc(week: &str, runs: &[UsageStats]) -> UsageStats {
+        let mut merger = Merger::default();
+        for run in runs {
+            merger.add(run.clone());
+        }
+        let mut doc = merger.finish();
+        doc.week = week.to_string();
+        doc.last_date = doc
+            .buckets
+            .iter()
+            .map(|b| b.date.clone())
+            .max()
+            .unwrap_or_default();
+        doc
+    }
+
+    #[test]
+    fn an_interrupted_old_rotation_is_counted_once() {
+        let dir = temp_dir("rotation");
+        // The old store rotated a 2026-W02 current.json into 2026-W02.json,
+        // recording its fingerprint, then died before removing current.json.
+        let current_text = weekly_doc("2026-W02", &[run_on("a", "2026-01-06", "len")])
+            .to_json()
+            .to_string();
+        let mut archive = weekly_doc(
+            "2026-W02",
+            &[
+                run_on("a", "2026-01-06", "len"),
+                run_on("z", "2026-01-07", "len"),
+            ],
+        );
+        // The old store fingerprinted the document as it read it back.
+        let reread = UsageStats::from_json(serde_json::from_str(&current_text).unwrap());
+        archive
+            .rotation_sources
+            .push(rotation_fingerprint(&reread).unwrap());
+        fs::write(dir.join("current.json"), &current_text).unwrap();
+        fs::write(dir.join("2026-W02.json"), archive.to_json().to_string()).unwrap();
+        let before = tree(&dir);
+
+        let snapshot = all(&dir);
+        assert_eq!(len_count(&snapshot), 2);
+        assert_eq!(snapshot.sessions.len(), 2);
+        assert_eq!(tree(&dir), before, "legacy documents are read in place");
+
+        // Without the fingerprint the rotation never happened: both count.
+        archive.rotation_sources.clear();
+        fs::write(dir.join("2026-W02.json"), archive.to_json().to_string()).unwrap();
+        assert_eq!(len_count(&all(&dir)), 3);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_old_binary_writing_after_the_new_store_ran_stays_visible() {
+        let dir = temp_dir("mixed-fleet");
+        record(&dir, &today_run("len"), &today_string());
+        let week = current_iso_week();
+        let today = today_string();
+        let first = weekly_doc(&week, &[run_on("old-1", &today, "upper")]);
+        fs::write(dir.join("current.json"), first.to_json().to_string()).unwrap();
+        assert_eq!(all_caching(&dir).counters.builtins.get("upper"), Some(&1));
+        // The old binary keeps recording into its own document.
+        let second = weekly_doc(
+            &week,
+            &[
+                run_on("old-1", &today, "upper"),
+                run_on("old-2", &today, "upper"),
+            ],
+        );
+        fs::write(dir.join("current.json"), second.to_json().to_string()).unwrap();
+        let snapshot = all(&dir);
+        assert_eq!(snapshot.counters.builtins.get("upper"), Some(&2));
+        assert_eq!(len_count(&snapshot), 1);
+        assert_eq!(snapshot.sessions.len(), 3);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn query_runs_sql_over_the_old_schema_loaded_in_memory() {
+        let dir = temp_dir("query");
+        let old = days_ago(9);
+        record(&dir, &run_on("a", &old, "len"), &old);
+        record(&dir, &run_on("b", &old, "len"), &old);
+        record(&dir, &today_run("len"), &today_string());
+        let mut saturated = empty_doc("");
+        saturated.buckets.push(bucket(&old, "upper", u64::MAX));
+        let mut run = session("saturated", &old);
+        run.duration_secs = u64::MAX;
+        saturated.sessions.push(run);
+        record(&dir, &saturated, &old);
+
+        let snapshot = all(&dir);
+        let mut stats = empty_doc("");
+        stats.buckets = snapshot.buckets;
+        stats.sessions = snapshot.sessions;
+        let mut connection = Connection::open_in_memory().unwrap();
+        load_sqlite(&mut connection, &stats).unwrap();
+        let row: (i64, i64, i64, i64) = connection
             .query_row(
-                "SELECT count FROM usage WHERE category = 'builtin' AND name = 'len'",
+                "SELECT (SELECT SUM(count) FROM usage WHERE name = 'len'),
+                        (SELECT COUNT(*) FROM runs),
+                        (SELECT count FROM usage WHERE name = 'upper'),
+                        (SELECT duration_secs FROM runs WHERE id = 'saturated')",
                 [],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .unwrap();
-        let run: (i64, i64, i64) = connection
-            .query_row(
-                "SELECT duration_secs, commands, peak_memory_kb FROM runs WHERE id = 'saturated-run'",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        assert_eq!(row, (3, 4, i64::MAX, i64::MAX));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn stale_temps_go_only_when_a_report_sweeps() {
+        let dir = temp_dir("temps");
+        let stale = dir.join(".current.json.1.0.tmp");
+        let fresh = dir.join(".current.json.2.0.tmp");
+        for path in [&stale, &fresh] {
+            fs::write(path, "x").unwrap();
+        }
+        File::options()
+            .write(true)
+            .open(&stale)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() - STALE_TEMP_AGE * 2)
+            .unwrap();
+        record(&dir, &today_run("len"), &today_string());
+        assert!(stale.exists(), "the exit path never sweeps");
+        remove_stale_temps(&dir);
+        assert!(!stale.exists());
+        assert!(fresh.exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// N1: attempts that land but report an error (an EIO after a failed
+    /// commit) must never be handed back for a merge, or the next flush would
+    /// write them again under a new batch id.
+    #[test]
+    fn uncertain_failures_after_landing_are_dropped_not_handed_back() {
+        let dir = temp_dir("uncertain");
+        let day = today_string();
+        let mut pending = empty_doc("");
+        pending.buckets.push(bucket(&day, "len", 4));
+        let mut calls = 0;
+        let mut landed_then_eio = |file: &mut File, bytes: &[u8]| -> std::io::Result<usize> {
+            calls += 1;
+            file.write_all(bytes)?;
+            Err(std::io::Error::from_raw_os_error(libc::EIO))
+        };
+        assert!(
+            flush_pending_to(&dir, &pending, &mut landed_then_eio).is_ok(),
+            "an uncertain outcome is not mergeable"
+        );
+        assert_eq!(calls, PENDING_FLUSH_ATTEMPTS);
+        assert_eq!(len_count(&all(&dir)), 4, "every landed copy is one batch");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A record with a chosen write time, framed and appended to `day`.
+    fn append_record_at(dir: &Path, day: &str, stats: &UsageStats, at: u64) {
+        let mut value = record_json(stats);
+        let object = value.as_object_mut().unwrap();
+        object.insert("batch".into(), random_id().into());
+        object.insert("at".into(), at.into());
+        fs::create_dir_all(dir.join(RUNS_DIR)).unwrap();
+        OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(run_path(dir, day))
+            .unwrap()
+            .write_all(&frame(&value).unwrap())
+            .unwrap();
+    }
+
+    /// N2: an op covers what was stored before it, whatever the clocks said.
+    #[test]
+    fn ops_follow_storage_position_not_the_clock() {
+        let dir = temp_dir("position");
+        let day = today_string();
+        // Written before the clear by a process whose clock ran ahead...
+        append_record_at(&dir, &day, &run_on("ahead", &day, "len"), u64::MAX / 2);
+        append_op(&dir, OpKind::Clear("len".into())).unwrap();
+        // ...and after it by one whose clock was rolled back.
+        append_record_at(&dir, &day, &run_on("behind", &day, "len"), 1);
+        let snapshot = all(&dir);
+        assert_eq!(
+            len_count(&snapshot),
+            1,
+            "only the record stored after the clear keeps len"
+        );
+        assert_eq!(snapshot.sessions.len(), 2);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Ops cover only the JSONL store; while a legacy document exists they
+    /// refuse and record nothing.
+    #[test]
+    fn clear_and_reset_refuse_while_legacy_documents_exist() {
+        let dir = temp_dir("refuse");
+        record(&dir, &today_run("len"), &today_string());
+        let legacy = weekly_doc("2026-W02", &[run_on("a", "2026-01-06", "len")]);
+        for name in ["current.json", "2026-W02.json"] {
+            let path = dir.join(name);
+            fs::write(&path, legacy.to_json().to_string()).unwrap();
+            for kind in [
+                OpKind::Clear("len".into()),
+                OpKind::Reset(current_iso_week()),
+            ] {
+                let error = append_op(&dir, kind).unwrap_err();
+                assert!(error.contains("old weekly stats"), "{error}");
+            }
+            assert!(!dir.join(OPS_FILE).exists(), "nothing recorded ({name})");
+            fs::remove_file(&path).unwrap();
+        }
+        append_op(&dir, OpKind::Clear("len".into())).unwrap();
+        assert_eq!(len_count(&all(&dir)), 0);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Finding 2: a record that lost only its final newline ends at its
+    /// closing brace, so a clear issued then covers it, and the newline the
+    /// next run supplies does not uncover it, raw or cached.
+    #[test]
+    fn a_record_cleared_after_a_short_write_stays_cleared() {
+        let dir = temp_dir("short-then-clear");
+        let mut all_but_newline =
+            |file: &mut File, bytes: &[u8]| file.write(&bytes[..bytes.len() - 1]);
+        let today = today_string();
+        flush_run(
+            &dir,
+            &run_on("a", &today, "len"),
+            &today,
+            &mut all_but_newline,
+        );
+        append_op(&dir, OpKind::Clear("len".into())).unwrap();
+        record(&dir, &run_on("b", &today, "len"), &today);
+        // By construction: run a was stored before the clear, run b after.
+        let snapshot = all(&dir);
+        assert_eq!(len_count(&snapshot), 1);
+        assert_eq!(snapshot.sessions.len(), 2);
+
+        let past = days_ago(2);
+        flush_run(
+            &dir,
+            &run_on("c", &past, "upper"),
+            &past,
+            &mut all_but_newline,
+        );
+        append_op(&dir, OpKind::Clear("upper".into())).unwrap();
+        record(&dir, &run_on("d", &past, "upper"), &past);
+        for _ in 0..2 {
+            let snapshot = all_caching(&dir);
+            assert_eq!(
+                snapshot.counters.builtins.get("upper"),
+                Some(&1),
+                "run d only"
+            );
+        }
+        assert!(cache_path(&dir, &past).exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Finding 3: an archive an old binary creates after the snapshot
+    /// validated was never captured, so it cannot hide current.json.
+    #[test]
+    fn an_archive_created_after_the_snapshot_cannot_hide_current() {
+        let dir = temp_dir("late-archive");
+        let current_text = weekly_doc("2026-W02", &[run_on("a", "2026-01-06", "len")])
+            .to_json()
+            .to_string();
+        fs::write(dir.join("current.json"), &current_text).unwrap();
+        let reread = UsageStats::from_json(serde_json::from_str(&current_text).unwrap());
+        let mut archive = weekly_doc("2026-W02", &[run_on("a", "2026-01-06", "len")]);
+        archive
+            .rotation_sources
+            .push(rotation_fingerprint(&reread).unwrap());
+        let archive_text = archive.to_json().to_string();
+        let archive_path = dir.join("2026-W02.json");
+        let mut late_rotation = |phase: LegacyPhase| {
+            if phase == LegacyPhase::Validated && !archive_path.exists() {
+                fs::write(&archive_path, &archive_text).unwrap();
+            }
+        };
+        let (legacy, unstable) =
+            legacy_contribution(&dir, &StatsWindow::AllTime, false, &mut late_rotation);
+        assert!(!unstable);
+        // By construction: the snapshot held current.json alone, one run of len.
+        assert_eq!(legacy.builtins.get("len"), Some(&1));
+        assert_eq!(legacy.sessions.len(), 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Concurrent clears and resets take turns under ops.lock, and refuse
+    /// once the wait runs out.
+    #[test]
+    fn ops_wait_for_ops_lock_and_refuse_when_it_stays_busy() {
+        let dir = temp_dir("ops-lock");
+        record(&dir, &today_run("len"), &today_string());
+        let held = StatsLock::acquire(&dir, OPS_LOCK, true, Duration::ZERO).unwrap();
+        let waiting = {
+            let dir = dir.clone();
+            std::thread::spawn(move || append_op(&dir, OpKind::Clear("len".into())))
+        };
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(!dir.join(OPS_FILE).exists(), "the clear waits for the lock");
+        drop(held);
+        waiting.join().unwrap().unwrap();
+        assert_eq!(
+            fs::read_to_string(dir.join(OPS_FILE))
+                .unwrap()
+                .lines()
+                .filter(|l| !l.is_empty())
+                .count(),
+            1
+        );
+
+        let _held = StatsLock::acquire(&dir, OPS_LOCK, true, Duration::ZERO).unwrap();
+        let error = append_op(&dir, OpKind::Clear("len".into())).unwrap_err();
+        assert!(error.contains("ops.lock busy"), "{error}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// N4: a raw file can hold buckets dated another day (the clock moved
+    /// back mid-process); windows filter by each bucket's own date.
+    #[test]
+    fn a_raw_file_holding_another_weeks_buckets_is_filtered_by_bucket_date() {
+        let dir = temp_dir("bucket-dates");
+        // Written into 2026-01-05 (week 2) but dated 2026-01-12 (week 3).
+        record(&dir, &run_on("moved", "2026-01-12", "len"), "2026-01-05");
+        for caching in [true, true, false] {
+            let week3 = load_snapshot_from(
+                &dir,
+                StatsWindow::Week("2026-W03".into()),
+                None,
+                true,
+                caching,
             )
             .unwrap();
-        assert_eq!(count, i64::MAX);
-        assert_eq!(run, (i64::MAX, i64::MAX, i64::MAX));
+            assert_eq!(len_count(&week3), 1);
+            assert_eq!(week3.sessions.len(), 1);
+            let week2 = load_snapshot_from(
+                &dir,
+                StatsWindow::Week("2026-W02".into()),
+                None,
+                true,
+                caching,
+            )
+            .unwrap();
+            assert_eq!(len_count(&week2), 0);
+        }
+        assert!(cache_path(&dir, "2026-01-05").exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// N4: a legacy document can hold a day from the neighbouring week.
+    #[test]
+    fn a_legacy_document_holding_a_neighbouring_weeks_day_is_counted_there() {
+        let dir = temp_dir("legacy-dates");
+        // 2026-08-30 is the Sunday of week 35; current.json is week 36.
+        let archive = weekly_doc("2026-W35", &[run_on("a", "2026-08-29", "upper")]);
+        let current = weekly_doc(
+            "2026-W36",
+            &[
+                run_on("b", "2026-08-30", "upper"),
+                run_on("c", "2026-08-31", "upper"),
+            ],
+        );
+        fs::write(dir.join("2026-W35.json"), archive.to_json().to_string()).unwrap();
+        fs::write(dir.join("current.json"), current.to_json().to_string()).unwrap();
+        for caching in [true, true, false] {
+            let week35 = load_snapshot_from(
+                &dir,
+                StatsWindow::Week("2026-W35".into()),
+                None,
+                true,
+                caching,
+            )
+            .unwrap();
+            assert_eq!(week35.counters.builtins.get("upper"), Some(&2));
+            assert_eq!(week35.sessions.len(), 2);
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// N5: a same-length rewrite of a cached day, even with its mtime put
+    /// back, is not served from the cache.
+    #[test]
+    fn a_same_length_rewrite_is_not_served_from_the_cache() {
+        let dir = temp_dir("same-length");
+        let day = days_ago(7);
+        record(&dir, &run_on("a", &day, "len"), &day);
+        assert_eq!(len_count(&all_caching(&dir)), 1);
+        let path = run_path(&dir, &day);
+        let mtime = fs::metadata(&path).unwrap().modified().unwrap();
+        let rewritten = fs::read_to_string(&path)
+            .unwrap()
+            .replace("\"len\"", "\"abs\"");
+        fs::write(&path, rewritten).unwrap();
+        File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(mtime)
+            .unwrap();
+        let snapshot = all(&dir);
+        assert_eq!(len_count(&snapshot), 0);
+        assert_eq!(snapshot.counters.builtins.get("abs"), Some(&1));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// N6: a legacy document changing mid-read is read again; one that never
+    /// settles is reported as unstable rather than silently mixed.
+    #[test]
+    fn a_legacy_store_changing_mid_read_is_read_again() {
+        let dir = temp_dir("legacy-race");
+        let week = current_iso_week();
+        let today = today_string();
+        let doc = |count: u64| {
+            let mut run = run_on("old-1", &today, "upper");
+            run.buckets[0]
+                .counters
+                .builtins
+                .insert("upper".into(), count);
+            weekly_doc(&week, &[run]).to_json().to_string()
+        };
+        let current = dir.join("current.json");
+        fs::write(&current, doc(1)).unwrap();
+        let mut calls = 0;
+        let mut old_writer_once = |phase: LegacyPhase| {
+            if phase != LegacyPhase::Read {
+                return;
+            }
+            if calls == 0 {
+                fs::write(&current, doc(2)).unwrap();
+            }
+            calls += 1;
+        };
+        let (legacy, unstable) =
+            legacy_contribution(&dir, &StatsWindow::AllTime, false, &mut old_writer_once);
+        assert!(!unstable);
+        assert_eq!(calls, 2, "the changed read was retried");
+        assert_eq!(legacy.builtins.get("upper"), Some(&2));
+
+        let mut count = 2;
+        let mut never_settles = |phase: LegacyPhase| {
+            if phase != LegacyPhase::Read {
+                return;
+            }
+            count += 1;
+            fs::write(&current, doc(count)).unwrap();
+        };
+        let (_, unstable) =
+            legacy_contribution(&dir, &StatsWindow::AllTime, false, &mut never_settles);
+        assert!(unstable);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_thousand_clears_of_one_name_collapse_to_one_op() {
+        let dir = temp_dir("collapse");
+        let day = today_string();
+        for index in 0..1000 {
+            if index % 100 == 0 {
+                record(&dir, &today_run("len"), &day);
+            }
+            append_op(&dir, OpKind::Clear("len".into())).unwrap();
+        }
+        record(&dir, &today_run("len"), &day);
+        assert_eq!(load_ops(&dir).len(), 1);
+        let snapshot = all(&dir);
+        assert_eq!(len_count(&snapshot), 1, "only the run after the last clear");
+        assert_eq!(snapshot.sessions.len(), 11);
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -1572,81 +3138,6 @@ mod tests {
         assert!(is_canonical_week("2026-W34"));
         assert!(!is_canonical_week("definitely-not-a-week"));
         assert!(!is_canonical_week("2026-W00"));
-    }
-
-    #[test]
-    fn lock_timeout_skips_the_batch_without_json_write() {
-        let dir = temp_dir("lock-timeout");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let _held = StatsLock::acquire(&dir, true, REPORT_LOCK_DEADLINE).unwrap();
-        let mut delta = UsageStats::for_execution(StatsContext::new(ExecutionMode::C, None));
-        delta.track_builtin("len");
-        let started = Instant::now();
-        assert!(flush_batch_to_dir(&dir, &delta).is_err());
-        let elapsed = started.elapsed();
-        assert!(elapsed >= Duration::from_millis(190), "elapsed={elapsed:?}");
-        assert!(elapsed < Duration::from_secs(1), "elapsed={elapsed:?}");
-        assert!(!dir.join("current.json").exists());
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn old_sqlite_schema_is_upgraded_additively() {
-        let dir = temp_dir("old-sqlite");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let connection = Connection::open(dir.join("mix.db")).unwrap();
-        connection
-            .execute_batch(
-                "CREATE TABLE usage (
-                    date TEXT, category TEXT, name TEXT, count INTEGER,
-                    PRIMARY KEY(date, category, name));
-                 CREATE TABLE sessions (
-                    started INTEGER, duration_secs INTEGER, commands INTEGER,
-                    peak_memory_kb INTEGER);",
-            )
-            .unwrap();
-        drop(connection);
-        let mut delta = UsageStats::for_execution(StatsContext::new(ExecutionMode::C, None));
-        delta.track_builtin("len");
-        delta.finalize_session();
-        flush_batch_to_dir(&dir, &delta).unwrap();
-        let connection = Connection::open(dir.join("mix.db")).unwrap();
-        let tables: i64 = connection
-            .query_row(
-                "SELECT COUNT(*) FROM sqlite_master
-                 WHERE type='table' AND name IN ('usage_context','runs','stats_meta')",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(tables, 3);
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn a_multi_week_batch_updates_archive_and_current_documents() {
-        let dir = temp_dir("multi-week");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let mut delta = UsageStats::for_execution(StatsContext::new(ExecutionMode::Serve, None));
-        delta.track_builtin("len");
-        let old_bucket = StatsBucket {
-            date: "2026-01-01".to_string(),
-            mode: ExecutionMode::Serve,
-            script: Some("worker.mix".to_string()),
-            counters: delta.buckets[0].counters.clone(),
-        };
-        delta.buckets.push(old_bucket);
-        delta.rebuild_aggregates();
-        delta.finalize_session();
-        flush_batch_to_dir(&dir, &delta).unwrap();
-        assert!(dir.join("2026-W01.json").exists());
-        assert!(dir.join("current.json").exists());
-        let archived = read_doc(&dir.join("2026-W01.json")).unwrap().unwrap();
-        assert_eq!(archived.builtins.get("len"), Some(&1));
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

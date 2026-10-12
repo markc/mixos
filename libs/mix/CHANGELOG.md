@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.114.0
+
+### Changed
+
+- Released with mix-shell 0.114.0, whose usage-statistics store is now an
+  append-only JSONL store (`mix man stats`). The language and its builtins
+  are unchanged.
+
 ## 0.113.1
 
 ### Fixed

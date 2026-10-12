@@ -29,7 +29,7 @@ fn coverage_ignores_strings_and_comments_and_fails_closed() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("length"));
     assert!(stdout.contains("Never-authored builtins:"));
-    assert!(!state.join("mix/current.json").exists());
+    assert!(!state.join("mix/runs").exists(), "coverage records no run");
 
     std::fs::write(dir.join("bad.mix"), "if true then\n").unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_mix"))

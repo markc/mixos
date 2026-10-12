@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.114.0
+
+### Changed
+
+- Usage statistics are an append-only JSONL store. A run's exit appends one
+  record to `runs/YYYY-MM-DD.jsonl` with a single write and does nothing
+  else, so recording costs nothing measurable: `mix -c 1` went from 151 ms
+  to 52 ms on a host with a busy history, the same as with stats off. Raw
+  day files are never rewritten; `cache/` holds disposable per-day
+  aggregates checked against the exact raw file; reports filter by each
+  bucket's own date. `mix stats query` runs SQL over the old `mix.db` tables
+  built in memory, so on a large history it now takes about a second.
+- `clear` and `reset` append an operation anchored to storage positions, not
+  a clock, under `ops.lock`. They refuse while the old weekly documents
+  (`current.json`, `YYYY-WNN.json`) exist; those are read in place, never
+  moved, and their `stats.lock` is never taken, so an older mix still writing
+  them keeps working. `mix man stats` documents the store.
+
+### Fixed
+
+- A session task no longer inherits file descriptors the shell itself
+  inherited without close-on-exec.
+
 ## 0.113.1
 
 ### Fixed

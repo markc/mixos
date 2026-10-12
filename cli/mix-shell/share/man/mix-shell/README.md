@@ -83,7 +83,7 @@ and collection limits remain unset. The process runs evaluation on a dedicated
 | `serve_runtime` | Reserved Bus verbs and the lifecycle property tree for served citizens. |
 | `shell` | REPL and `-c` classification between Mix, functions, builtins, and external commands. |
 | `shell_handler` | Per-line shell fallback for files loaded through `source`. |
-| `stats_io` | XDG state paths, weekly JSON statistics, SQLite batches, and stats reports. |
+| `stats_io` | XDG state paths, the append-only JSONL statistics store, its cache and ops, and stats reports. |
 
 These modules are private implementation modules of the binary.
 

@@ -464,10 +464,10 @@ stderr line is the real channel. It is REPL-only: it cannot be armed under
 `mix stats` aggregates which builtins, functions, aliases, commands, keywords,
 meta-commands, and error kinds you actually use — including a `never` report
 of builtins/keywords you have never invoked. Data lives under
-`$XDG_STATE_HOME/mix/` (default `~/.local/state/mix/`) as weekly JSON files,
-mirrored into a `mix.db` SQLite database when the `sqlite3` CLI is on `$PATH`
-(that database backs `trend`/`since`/`query`). `MIX_STATS=0` disables the
-subsystem. Run `mix stats` for the top-20 overview, or a subcommand:
+`$XDG_STATE_HOME/mix/` (default `~/.local/state/mix/`) as JSONL: one appended
+record per run (`mix man stats`).
+`query` runs SQL over an in-memory database built from it. `MIX_STATS=0`
+disables the subsystem. Run `mix stats` for the top-20 overview, or a subcommand:
 
 ```
 mix stats              top 20 most-used across all categories

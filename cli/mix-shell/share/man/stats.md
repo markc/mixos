@@ -54,40 +54,77 @@ once after evaluation, including after `exit(code)` and ordinary uncaught
 errors. Long-lived processes retain daily UTC buckets so a run crossing
 midnight or an ISO-week boundary is split truthfully.
 
-`current.json` is the current ISO week; archived weeks are `YYYY-WNN.json`.
-Schema 2 adds daily context buckets while retaining the original aggregate
-fields. A schema-1 file is loaded as one approximate legacy bucket on its
-`last_date`; that is the limit of the old format's date precision. Unknown JSON
-fields are ignored. A malformed JSON document, or one containing an
-out-of-range persisted date or timestamp, is renamed with a `.corrupt` suffix
-and skipped; recording continues with a fresh document and reports use the
-remaining valid history. Set `MIX_DEBUG` to see the quarantine path.
+The store is JSONL. A finished run appends one record, its counters by day
+plus its run record, to `runs/YYYY-MM-DD.jsonl`, named for the UTC day it was
+written. That is all a run does with the store: one `write(2)` on an
+`O_APPEND` file, with no lock, no read, no listing and no retry. Each record
+starts and ends with a newline, so a record a crash or a short write cut short
+cannot swallow the next one; readers skip blank and unparseable lines, and a
+complete record that lost only its final newline still counts once. A short or
+failed write drops that run's counters. Raw files are history: nothing ever
+rewrites, truncates or deletes them. A file's name says only where a record
+was written: its buckets and runs carry their own dates, and reports filter
+by those.
 
-Rotation stores a fingerprint of each imported `current.json` in the archive,
-so retrying after a crash between archive commit and current-file removal does
-not double its counters. Persisted week labels are accepted as filenames only
-in canonical `YYYY-WNN` form; invalid labels are derived from bucket/session
-dates instead.
+Every record carries a random `batch` id, and readers keep one copy of each
+batch per day file (the dedupe does not reach across files). A REPL
+`mix stats` pipeline flushes its live counters mid-session and may retry: the
+retry repeats the same record into the same file. It hands the counters back
+to the session only when every attempt is known to have written nothing; if an
+attempt may have landed (an I/O error after the write), they are dropped
+rather than risk being counted twice. A short write is never retried. A
+`--serve` generation retiring at RELOAD is finished, so it is recorded like a
+run's exit, once.
 
-`mix.db` retains the original `usage` and `sessions` tables and adds
-`usage_context`, `runs`, and `stats_meta`. JSON is canonical. Mix takes one
-bounded advisory lock across JSON merge/rotation and the SQLite transaction;
-JSON writes use a unique same-directory temporary file and atomic rename. If
-an automatic writer flush cannot acquire the lock within 200 milliseconds, the
-batch is skipped so a one-shot never stalls its exit on stats contention.
-Reader/report and explicit mutation paths retain a two-second lock deadline.
-Details are printed only when `MIX_DEBUG` is set. Run IDs include 128 bits of
-random entropy; the `runs` primary key also gates insertion into the legacy
-`sessions` table, so retrying the same completed run cannot duplicate that row.
+`cache/YYYY-MM-DD.json` holds an advisory aggregate per day, with the dates
+its records touch, written only by `mix stats` commands, only for days before
+today, and only when the command gets `cache.lock` (a busy lock just skips
+it; runs never touch it). Each entry names the raw file it summarises by
+device, inode, length, mtime and ctime, all taken from the descriptor that
+was read, and is fully validated when read. If the raw file no longer matches,
+because a late run, a clock rolled back or anything else changed it, the
+entry is ignored and the day is read from the raw file. Deleting `cache/`
+loses nothing.
 
-The store is required to be on a responsive local filesystem. The 200 ms writer
-and two-second report bounds apply to lock acquisition, not reads, writes,
-rename, `sync_all`, or SQLite; a stalled NFS/FUSE mount can therefore stall a
-flush. Full asynchronous I/O deadlines are outside this local-state design.
+`clear` and `reset` append an operation to `ops.jsonl` instead of rewriting
+anything, and apply only to the JSONL store. An operation is anchored to
+storage positions, not to a clock: it records the length of every raw file
+when it was issued and applies to exactly the records whose JSON ends within
+those lengths; anything stored later, in any file, is after it. Operations
+take `ops.lock` (runs never do), so two at once take turns, and one refuses if
+another holds it for two seconds. Repeated operations on the same target
+(clears of one name, resets of one week) collapse into one when read, which
+bounds how many a report applies; every report still reads all of
+`ops.jsonl`.
 
-The advisory lock coordinates Mix 0.61 and newer writers. During upgrade, stop
-long-running pre-0.61 processes before starting 0.61; older processes do not
-participate in this lock protocol.
+Weekly documents from the previous store (`current.json`, `YYYY-WNN.json`) are
+read in place, with that store's own rules, including the fingerprints that
+stop an interrupted rotation from counting a week twice. They are never moved,
+rewritten or quarantined, and their writers' lock, `stats.lock`, is never
+taken: a binary from before the JSONL store may still be running and writing
+them, and it drops a write if that lock stays busy. Since it writes only those
+files while new binaries write only JSONL, the totals add up exactly during a
+mixed rollout. The documents are read as a validated snapshot: if one changes
+while it is read (an older binary rotating or rewriting it), the read is
+repeated, and if it never settles the report says the legacy store was busy.
+`clear` and `reset` refuse, recording nothing, while any of these documents
+exists: an older binary may still be writing them, so they cannot be cleared
+exactly. They age out of week windows. The check runs when the operation
+starts and again once it holds `ops.lock`; it is a point-in-time check, not
+proof that no older binary will write one later. `mix.db` held only what the documents
+carried and is ignored.
+
+Reports stream: they read each day line by line, use the cache where it still
+matches (and skip a day whose cached dates miss the window), and keep run
+records only for reports that list them (`sessions`, `raw`, `query`). Run IDs
+include 128 bits of random entropy. `mix stats` commands that get the lock
+also remove atomic-write temporary files more than an hour old. Details of
+skipped records are printed only when `MIX_DEBUG` is set; nothing in
+collection ever changes a run's output or exit status.
+
+The store is required to be on a responsive local filesystem: appends rely on
+local `O_APPEND` semantics (a single write lands whole or is short, never
+interleaved), and a stalled NFS/FUSE mount can stall a flush.
 
 In script, `-c`, stdin, and serve modes, SIGINT and SIGTERM take the normal
 flush path. The interactive REPL stays alive on Ctrl-C and later flushes on EOF,
@@ -117,12 +154,12 @@ mix stats sessions       current-week completed runs
 mix stats never          current-week builtins and keywords with zero use
 mix stats modes          current-week per-mode breakdown
 mix stats scripts [N]    top scripts; N defaults to 10 and is bounded to 1–100
-mix stats raw            current-week schema-2 JSON snapshot
+mix stats raw            current-week JSON snapshot
 mix stats week YYYY-WNN  one ISO week
 mix stats since DATE     buckets on or after YYYY-MM-DD
-mix stats all            all weekly JSON documents
+mix stats all            everything recorded
 mix stats trend NAME     last 30 recorded days
-mix stats query SQL      explicitly labelled all-time SQLite query
+mix stats query SQL      all-time SQL over an in-memory database
 ```
 
 At the interactive REPL, a bare `mix stats …` line runs in-process and reports
@@ -132,11 +169,16 @@ pipeline instead — live stats are flushed to disk first, so the child reads
 current data including this session. Before 0.61.1 the plumbing was silently
 dropped. See `mix man shell-mode` § "`mix` meta-commands under plumbing".
 
-`clear NAME` removes a name from persisted counter categories. `reset` removes
-the current week's JSON document. At a week boundary it archives the old
-`current.json` first, and a live REPL retains older pending buckets. Week and
-date arguments must use canonical `YYYY-WNN` and `YYYY-MM-DD` forms. These
-mutation commands use the same lock as recording.
+`clear NAME` removes a name from every counter category of everything stored
+before it. `reset` removes the current week's buckets and runs stored before
+it; older days stay, and a live REPL retains older pending buckets. Both are
+appended operations, anchored to storage positions and applied at read time;
+neither rewrites stored data, and runs recorded later keep their counts. Both
+refuse while the old weekly documents exist (see Storage and concurrency). Week
+and date arguments must use canonical `YYYY-WNN` and `YYYY-MM-DD` forms. `query`
+loads everything recorded into an in-memory SQLite database with the tables the
+old on-disk `mix.db` had (`usage`, `usage_context`, `runs`, `sessions`,
+`stats_meta`), so existing queries keep working.
 
 The canonical tracked keyword vocabulary is:
 
