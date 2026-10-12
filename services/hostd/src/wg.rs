@@ -85,9 +85,10 @@ pub struct Plan {
     pub public_key: String,
     pub addresses: Vec<(IpAddr, u8)>,
     /// Peers whose handshake the dead-man check waits for, each with an
-    /// address inside its allowed IPs: a datagram sent there through the
-    /// link makes WireGuard start the handshake.
-    pub must_handshake: Vec<([u8; 32], IpAddr)>,
+    /// address WireGuard routes to that peer alone: a datagram sent there
+    /// through the link makes it start the handshake. `None` for a peer no
+    /// address reaches alone; its keepalive starts the handshake instead.
+    pub must_handshake: Vec<([u8; 32], Option<IpAddr>)>,
     pub window: Duration,
 }
 
@@ -213,6 +214,9 @@ pub fn plan(root: &Path, request: Request) -> Result<Plan, Value> {
     }
     let mut must_handshake = vec![];
     let mut any_endpoint = false;
+    // First every peer's entries, so each probe can be checked against the
+    // other peers' ranges.
+    let mut parsed = vec![];
     for peer in &request.peers {
         let key = decode_key(&peer.public_key).ok_or_else(|| {
             bad(format!(
@@ -223,32 +227,49 @@ pub fn plan(root: &Path, request: Request) -> Result<Plan, Value> {
         if peer.allowed_ips.is_empty() || peer.allowed_ips.len() > MAX_ALLOWED {
             return Err(bad(format!("each peer needs 1-{MAX_ALLOWED} allowed_ips")));
         }
-        let mut allowed = vec![];
-        let mut probe = None;
+        let mut entries = vec![];
         for a in &peer.allowed_ips {
-            let (addr, prefix) =
-                cidr(a, true).ok_or_else(|| bad(format!("{a:?} is not address/prefix")))?;
-            allowed.push(format!("{addr}/{prefix}"));
-            probe.get_or_insert(probe_target(addr, prefix));
+            entries.push(cidr(a, true).ok_or_else(|| bad(format!("{a:?} is not address/prefix")))?);
         }
+        if let Some(endpoint) = &peer.endpoint
+            && !valid_endpoint(endpoint)
+        {
+            return Err(bad(format!("{endpoint:?} is not host:port")));
+        }
+        if let Some(seconds) = peer.keepalive_s
+            && !(1..=3600).contains(&seconds)
+        {
+            return Err(bad("keepalive_s must be 1-3600"));
+        }
+        parsed.push((key, entries));
+    }
+    for (i, (peer, (key, entries))) in request.peers.iter().zip(&parsed).enumerate() {
+        let allowed: Vec<String> = entries.iter().map(|(a, p)| format!("{a}/{p}")).collect();
         netdev_text.push_str(&format!(
             "\n[WireGuardPeer]\nPublicKey={}\nAllowedIPs={}\n",
-            encode_key(&key),
+            encode_key(key),
             allowed.join(",")
         ));
         if let Some(endpoint) = &peer.endpoint {
-            if !valid_endpoint(endpoint) {
-                return Err(bad(format!("{endpoint:?} is not host:port")));
-            }
             netdev_text.push_str(&format!("Endpoint={endpoint}\n"));
             any_endpoint = true;
-            // `allowed` is never empty here, so neither is `probe`.
-            must_handshake.push((key, probe.expect("checked above")));
+            let others: Vec<(IpAddr, u8)> = parsed
+                .iter()
+                .enumerate()
+                .filter(|(j, _)| *j != i)
+                .flat_map(|(_, (_, e))| e.iter().copied())
+                .collect();
+            let probe = route_probe(entries, &others);
+            if probe.is_none() && peer.keepalive_s.is_none() {
+                return Err(bad(format!(
+                    "no address routes to peer {} alone (other peers' allowed_ips cover its \
+                     own), so hostd can't start its handshake: give it keepalive_s",
+                    peer.public_key
+                )));
+            }
+            must_handshake.push((*key, probe));
         }
         if let Some(seconds) = peer.keepalive_s {
-            if !(1..=3600).contains(&seconds) {
-                return Err(bad("keepalive_s must be 1-3600"));
-            }
             netdev_text.push_str(&format!("PersistentKeepalive={seconds}\n"));
         }
     }
@@ -362,6 +383,58 @@ pub fn probe_target(addr: IpAddr, prefix: u8) -> IpAddr {
     }
 }
 
+/// Whether `net` (address/prefix) contains `ip`.
+pub fn contains(net: (IpAddr, u8), ip: IpAddr) -> bool {
+    match (net.0, ip) {
+        (IpAddr::V4(n), IpAddr::V4(i)) => {
+            let bits = u32::from(net.1.min(32));
+            let mask = if bits == 0 { 0 } else { u32::MAX << (32 - bits) };
+            u32::from(n) & mask == u32::from(i) & mask
+        }
+        (IpAddr::V6(n), IpAddr::V6(i)) => {
+            let bits = u32::from(net.1.min(128));
+            let mask = if bits == 0 { 0 } else { u128::MAX << (128 - bits) };
+            u128::from(n) & mask == u128::from(i) & mask
+        }
+        _ => false,
+    }
+}
+
+/// The `n`th address after `ip`, within its family.
+fn offset(ip: IpAddr, n: u32) -> Option<IpAddr> {
+    match ip {
+        IpAddr::V4(v4) => u32::from(v4).checked_add(n).map(|x| IpAddr::V4(x.into())),
+        IpAddr::V6(v6) => u128::from(v6).checked_add(n.into()).map(|x| IpAddr::V6(x.into())),
+    }
+}
+
+/// An address WireGuard routes to this peer and no other: inside one of
+/// its entries, and outside every other peer's entry that is as specific or
+/// more (WireGuard routes by the longest prefix). Tries a bounded run of
+/// addresses from each entry's natural probe target.
+pub fn route_probe(own: &[(IpAddr, u8)], others: &[(IpAddr, u8)]) -> Option<IpAddr> {
+    for &(addr, prefix) in own {
+        let start = probe_target(addr, prefix);
+        for n in 0..256 {
+            let Some(candidate) = offset(start, n) else { break };
+            let inside = contains((addr, prefix), candidate)
+                // A default route's probe is a documentation address, which
+                // the default route contains by definition.
+                || prefix == 0;
+            if !inside {
+                break;
+            }
+            let taken = others
+                .iter()
+                .any(|&(o, op)| op >= prefix && contains((o, op), candidate));
+            if !taken {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
 /// Waits, within `window`, for every listed peer to complete a handshake
 /// after `since` (seconds since the epoch). Each round sends a datagram
 /// through the link to every peer still waiting, because WireGuard starts a
@@ -370,7 +443,7 @@ pub fn probe_target(addr: IpAddr, prefix: u8) -> IpAddr {
 async fn handshakes(
     name: &str,
     ifindex: i32,
-    peers: &[([u8; 32], IpAddr)],
+    peers: &[([u8; 32], Option<IpAddr>)],
     since: i64,
     window: Duration,
 ) -> bool {
@@ -391,8 +464,10 @@ async fn handshakes(
             return true;
         }
         for (key, target) in peers {
-            if !done(key, &state) {
-                let (link, target) = (name.to_owned(), *target);
+            if let Some(target) = *target
+                && !done(key, &state)
+            {
+                let link = name.to_owned();
                 let _ =
                     tokio::task::spawn_blocking(move || neigh::nudge(&link, ifindex, target)).await;
             }
@@ -438,7 +513,7 @@ pub async fn apply(host: Host, plan: Plan, grant: String, origin: Origin) -> Res
             .await
             .map_err(|e| internal(e.into()))?;
         let ours = decode_key(&plan.public_key);
-        if !matches!(live, Ok(Some(key)) if Some(key) == ours) {
+        if !matches!(live, Ok(wgnl::Live::Key(key)) if Some(key) == ours) {
             return Err(json!({"status":"foreign_config","link":plan.name,
                 "message":"the link isn't hostd's WireGuard link"}));
         }
@@ -574,8 +649,10 @@ pub async fn owns(receipt: &Receipt) -> anyhow::Result<bool> {
         .and_then(decode_key);
     let live = tokio::task::spawn_blocking(move || wgnl::device_key(&name)).await?;
     Ok(match live {
-        Ok(None) => true,
-        Ok(Some(key)) => recorded == Some(key),
+        Ok(wgnl::Live::Absent) => true,
+        Ok(wgnl::Live::Key(key)) => recorded == Some(key),
+        // A WireGuard link with no key was set up by someone else.
+        Ok(wgnl::Live::Keyless) => false,
         // Not WireGuard (the kernel refuses the query), or unreadable.
         Err(_) => false,
     })
@@ -635,7 +712,7 @@ mod tests {
         // allowed entry.
         assert_eq!(
             p.must_handshake[0].1,
-            "10.99.0.2".parse::<IpAddr>().unwrap()
+            Some("10.99.0.2".parse::<IpAddr>().unwrap())
         );
         // The key never appears in what a caller sees.
         assert!(
@@ -690,6 +767,41 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn probes_route_to_their_peer_alone() {
+        let n = |s: &str, p: u8| (s.parse::<IpAddr>().unwrap(), p);
+        let ip = |s: &str| Some(s.parse::<IpAddr>().unwrap());
+        // sol's case: A has the /24, B has .1/32 inside it. A's probe must
+        // not be .1, which WireGuard sends to B.
+        assert_eq!(route_probe(&[n("10.99.0.0", 24)], &[n("10.99.0.1", 32)]), ip("10.99.0.2"));
+        assert_eq!(route_probe(&[n("10.99.0.1", 32)], &[n("10.99.0.0", 24)]), ip("10.99.0.1"));
+        // A default route under a more specific peer still finds an address.
+        assert_eq!(route_probe(&[n("0.0.0.0", 0)], &[n("10.0.0.0", 8)]), ip("192.0.2.1"));
+        // Entirely covered by an equal or more specific peer: no probe.
+        assert_eq!(route_probe(&[n("10.99.0.1", 32)], &[n("10.99.0.1", 32)]), None);
+        assert!(contains(n("10.99.0.0", 24), "10.99.0.200".parse().unwrap()));
+        assert!(!contains(n("10.99.0.0", 24), "10.99.1.1".parse().unwrap()));
+        assert!(contains(n("0.0.0.0", 0), "203.0.113.9".parse().unwrap()));
+        assert!(!contains(n("10.0.0.0", 8), "2001:db8::1".parse().unwrap()));
+    }
+
+    #[test]
+    fn a_peer_no_address_reaches_needs_a_keepalive() {
+        let dir = tempfile::tempdir().unwrap();
+        let both = |keepalive: Option<u16>| {
+            request(json!({"name":"wg0","addresses":["10.99.0.254/24"],
+                "peers":[
+                  {"public_key":PEER,"endpoint":"198.51.100.7:51820","allowed_ips":["10.99.0.1/32"],"keepalive_s":keepalive},
+                  {"public_key":"xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=","endpoint":"198.51.100.8:51820","allowed_ips":["10.99.0.1/32"],"keepalive_s":25}
+                ]}))
+        };
+        // The first peer's only address is also the second peer's: WireGuard
+        // sends to one of them, so hostd can't reach the first alone.
+        assert!(plan(dir.path(), both(None)).is_err());
+        let ok = plan(dir.path(), both(Some(25))).unwrap();
+        assert_eq!(ok.must_handshake[0].1, None);
     }
 
     #[test]

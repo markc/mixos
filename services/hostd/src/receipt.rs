@@ -272,6 +272,11 @@ pub fn write_owned(path: &Path, bytes: &[u8], mode: u32, owner: Owner) -> anyhow
         .mode(0o600)
         .open(&tmp)
         .with_context(|| format!("create {}", tmp.display()))?;
+    // Order matters under hostd's capabilities (CAP_CHOWN, no CAP_FOWNER):
+    // set the mode while hostd still owns the file, then change the owner,
+    // then write the content, so it is never readable by anyone it isn't
+    // for and no step needs a capability hostd lacks.
+    file.set_permissions(std::fs::Permissions::from_mode(mode))?;
     let ids = match owner {
         Owner::Default => None,
         // -1 (u32::MAX) keeps the owner.
@@ -286,7 +291,6 @@ pub fn write_owned(path: &Path, bytes: &[u8], mode: u32, owner: Owner) -> anyhow
             return Err(e).with_context(|| format!("set the owner of {}", tmp.display()));
         }
     }
-    file.set_permissions(std::fs::Permissions::from_mode(mode))?;
     file.write_all(bytes)?;
     file.sync_all()?;
     std::fs::rename(&tmp, path).with_context(|| format!("replace {}", path.display()))?;

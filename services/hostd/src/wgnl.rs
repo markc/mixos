@@ -201,13 +201,27 @@ fn device_replies(name: &str) -> std::io::Result<Vec<Vec<u8>>> {
     )
 }
 
-/// The public key of WireGuard link `name`: `None` when no link of that
-/// name exists; an error when one exists but isn't WireGuard (the kernel
-/// refuses the query) or can't be read.
-pub fn device_key(name: &str) -> std::io::Result<Option<[u8; 32]>> {
+/// What a link name holds, as WireGuard netlink sees it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Live {
+    /// No link of that name (the kernel said ENODEV).
+    Absent,
+    /// A WireGuard link with this public key.
+    Key([u8; 32]),
+    /// A WireGuard link with no key set: someone else's, never hostd's.
+    Keyless,
+}
+
+/// What WireGuard link `name` is now. An error when a link of that name
+/// exists but isn't WireGuard (the kernel refuses the query) or can't be
+/// read: callers treat that as not theirs.
+pub fn device_key(name: &str) -> std::io::Result<Live> {
     match device_replies(name) {
-        Ok(replies) => Ok(parse_device_key(&replies)),
-        Err(e) if e.raw_os_error() == Some(libc::ENODEV) => Ok(None),
+        Ok(replies) => Ok(match parse_device_key(&replies) {
+            Some(key) => Live::Key(key),
+            None => Live::Keyless,
+        }),
+        Err(e) if e.raw_os_error() == Some(libc::ENODEV) => Ok(Live::Absent),
         Err(e) => Err(e),
     }
 }
