@@ -44,6 +44,9 @@ design.workspace = true
 egui-wgpu.workspace = true
 egui_kittest.workspace = true
 term-core = { path = "crates/term-core", features = ["test-support"] }
+# A real broker for the window verbs over the Bus (tests/bus.rs).
+test-broker = { path = "../../libs/test-broker" }
+tokio = { workspace = true, features = ["rt-multi-thread", "time"] }
 
 [build-dependencies]
 buildinfo.workspace = true

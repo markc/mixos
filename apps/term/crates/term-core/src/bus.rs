@@ -218,6 +218,18 @@ pub fn start_with_window(
     )
 }
 
+/// [`start_with_window`] on the broker at `url` (a frontend's tests).
+pub fn start_with_window_at(
+    service: &'static str,
+    terminal: Arc<Mutex<TabSet>>,
+    cleanup: Cleanup,
+    notify_rx: tokio::sync::mpsc::UnboundedReceiver<CompletionNote>,
+    url: String,
+    window: Window,
+) -> std::thread::JoinHandle<()> {
+    start_at(service, terminal, cleanup, notify_rx, url, Some(window))
+}
+
 pub(crate) fn start_at(
     service: &'static str,
     terminal: Arc<Mutex<TabSet>>,
