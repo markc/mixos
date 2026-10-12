@@ -26332,9 +26332,14 @@ pub(crate) mod socket_sources {
         async fn ws_subscription_orders_frames_then_one_terminal_and_retires() {
             let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             let port = listener.local_addr().unwrap().port();
+            // The peer waits for `go`: a peer that sends and closes at once
+            // lets the reader retire the source, unmarking the handle by
+            // design, before the test has looked at the mark.
+            let (go_tx, go_rx) = std::sync::mpsc::channel::<()>();
             let server = std::thread::spawn(move || {
                 let (stream, _) = listener.accept().unwrap();
                 let mut conn = tungstenite::accept(stream).unwrap();
+                go_rx.recv().unwrap();
                 for n in 0..5 {
                     conn.send(tungstenite::Message::text(format!("msg{n}")))
                         .unwrap();
@@ -26354,6 +26359,7 @@ pub(crate) mod socket_sources {
                 is_subscribed(ClientKey::ws(id)),
                 "the moved numeric handle is marked subscribed"
             );
+            go_tx.send(()).unwrap();
             let q = ne.queue.clone();
             for n in 0..5 {
                 let rec = match q.next_socket(&h, KIND_WS, usize::MAX).await.unwrap() {
