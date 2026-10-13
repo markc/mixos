@@ -4,7 +4,7 @@
 
 [workspace]
 resolver = "3"
-members = ["libs/*", "services/noded", "services/noded/crates/*", "cli/mix-shell", "cli/system", "services/editd", "services/settingsd", "services/portald", "services/hostd", "apps/busviewer", "apps/busviewer/crates/*", "apps/prefs", "apps/prefs/crates/*", "apps/ced", "apps/ced/crates/*", "apps/dopus", "apps/dopus/crates/*", "apps/screenshot", "apps/screenshot/crates/*", "apps/backdrop", "services/compd", "services/compd/crates/*"]
+members = ["libs/*", "services/noded", "services/noded/crates/*", "cli/mix-shell", "cli/system", "services/editd", "services/settingsd", "services/portald", "services/hostd", "apps/busviewer", "apps/busviewer/crates/*", "apps/prefs", "apps/prefs/crates/*", "apps/ced", "apps/ced/crates/*", "apps/dopus", "apps/dopus/crates/*", "apps/screenshot", "apps/screenshot/crates/*", "apps/backdrop", "apps/email", "apps/email/crates/*", "services/compd", "services/compd/crates/*"]
 exclude = ["vendor", "vendor/msedit/lsh", "vendor/msedit/stdext"]
 
 [workspace.package]
@@ -37,6 +37,9 @@ metrics = "0.24"
 metrics-util = "0.18"
 metrics-exporter-prometheus = { version = "0.18", default-features = false, features = ["http-listener"] }
 notify = { version = "7", default-features = false, features = ["macos_fsevent"] }
+# email's JMAP transport: rustls only (no native-tls); the account's own CA
+# is added per client, never a global invalid-certificate acceptance.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 rand = "0.8"
 rusqlite = { version = "0.38", features = ["bundled"] }
 rustc-hash = "2"
