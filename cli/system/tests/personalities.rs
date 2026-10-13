@@ -163,10 +163,8 @@ async fn the_noded_personality_brokers_and_stops_cleanly_on_sigterm() {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "system-noded-{}-{nanos:x}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("system-noded-{}-{nanos:x}", std::process::id()));
         fs::create_dir(&root).unwrap();
         // Native ingress serves separate UIDs and refuses non-traversable
         // existing ancestors; 0o711 keeps the socket path traversable.
@@ -208,8 +206,10 @@ async fn the_noded_personality_brokers_and_stops_cleanly_on_sigterm() {
             .stdout(Stdio::from(log.try_clone().unwrap()))
             .stderr(Stdio::from(log));
         let child = cmd.spawn().unwrap();
-        let mut proc =
-            NodedPersonality { child, root: root.clone() };
+        let mut proc = NodedPersonality {
+            child,
+            root: root.clone(),
+        };
 
         // Readiness: keep trying the production Unix connect until the
         // broker answers, on a deadline, and fail fast if it died.
@@ -229,18 +229,12 @@ async fn the_noded_personality_brokers_and_stops_cleanly_on_sigterm() {
                 "noded personality exited early; log: {}",
                 root.display()
             );
-            let error = match NodedClient::connect_unix(
-                "personality-probe",
-                &url,
-                &options,
-                None,
-            )
-            .await
-            {
-                Ok(UnixConnectOutcome::VerifiedUnix(connection)) => break connection,
-                Ok(_) => panic!("Unix verification cannot fall back to TCP"),
-                Err(error) => error,
-            };
+            let error =
+                match NodedClient::connect_unix("personality-probe", &url, &options, None).await {
+                    Ok(UnixConnectOutcome::VerifiedUnix(connection)) => break connection,
+                    Ok(_) => panic!("Unix verification cannot fall back to TCP"),
+                    Err(error) => error,
+                };
             assert!(
                 tokio::time::Instant::now() < deadline,
                 "broker readiness deadline: {error}; log: {}",
