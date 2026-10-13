@@ -83,7 +83,8 @@ pub fn build_mime(composed: &Composed) -> Vec<u8> {
     mime.push_str("Content-Type: text/plain; charset=utf-8\r\n");
     mime.push_str("Content-Transfer-Encoding: 8bit\r\n");
     mime.push_str("\r\n");
-    mime.push_str(&composed.body);
+    // RFC 5322 wants CRLF on every line; a text editor hands over bare LF.
+    mime.push_str(&composed.body.replace("\r\n", "\n").replace('\n', "\r\n"));
     mime.into_bytes()
 }
 
@@ -121,9 +122,12 @@ impl Client {
             .ok_or_else(|| crate::error::Error::Protocol("no identity on the account".into()))
     }
 
-    /// Send [`Composed`]: build, upload, create in Sent, submit. Returns
-    /// when the server has taken the submission.
+    /// Send [`Composed`]: identify, build, upload, create in Sent, submit.
+    /// The identity is fetched first: after the create, a failure would
+    /// strand the message in Sent with nothing submitted. Returns when the
+    /// server has taken the submission.
     pub async fn send(&self, composed: &Composed, sent_mailbox_id: &str) -> Result<()> {
+        let identity_id = self.identity_id().await?;
         let mime = build_mime(composed);
         let blob_id = self
             .upload_blob(mime, "message/rfc822")
@@ -148,9 +152,8 @@ impl Client {
             return Err(error);
         }
         let email_id = Client::created_id(&data, "out1")?;
-        // The submission references the created email; the identity comes
-        // from the account, not a hardcoded id.
-        let identity_id = self.identity_id().await?;
+        // The submission references the created email; the identity was
+        // read from the account before anything was created.
         let submit = json!({
             "accountId": self.account_id(),
             "create": {

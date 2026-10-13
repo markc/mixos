@@ -167,16 +167,16 @@ impl ConfigFile {
 /// sees either the old file or the new one, never a partial write.
 fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
-    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::OpenOptionsExt;
     let temp = path.with_extension("conf.mix.tmp");
     let _ = std::fs::remove_file(&temp);
+    // The mode is set at creation, so the password is never readable under
+    // the umask; the file is renamed into place only after the bytes are in.
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
+        .mode(0o600)
         .open(&temp)?;
-    // The file is empty here; from this line on it is private, and it is
-    // only ever renamed into place after the bytes are in.
-    file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
     file.write_all(bytes)?;
     drop(file);
     std::fs::rename(&temp, path)

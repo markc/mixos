@@ -104,8 +104,9 @@ impl Client {
     }
 
     /// Exchange the password for a token; a 404/405 leaves the client on
-    /// Basic auth. Any other failure propagates.
-    async fn exchange_token(&mut self) -> Result<()> {
+    /// Basic auth. Any other failure propagates. The cell is shared, so a
+    /// re-exchange from any clone is seen by them all.
+    async fn exchange_token(&self) -> Result<()> {
         let url = format!("{}/auth/tokens/issue", self.account.url.trim_end_matches('/'));
         let response = self
             .pool
@@ -174,17 +175,21 @@ impl Client {
     /// in call order. A method-level error triple fails the whole request
     /// as [`Error::Method`]; an HTTP 401 re-exchanges the token once before
     /// giving up as [`Error::Unauthorized`].
+    ///
+    /// The dead token stays in the cell while the exchange runs: a
+    /// concurrent call keeps sending it (401, its own re-exchange) rather
+    /// than dropping to Basic auth, which would cost the server a bcrypt
+    /// verify per call. Two racing exchanges each issue a valid token; the
+    /// last writer wins and both work.
     pub async fn call(&self, calls: &[Call]) -> Result<Vec<Value>> {
         match self.call_once(calls).await {
             Err(Error::Unauthorized(_reason)) if self.token.lock().unwrap().is_some() => {
                 // The token died mid-flight: spend another exchange and try
                 // the request once more.
-                let mut retry = self.clone();
-                *retry.token.lock().unwrap() = None;
-                retry.exchange_token().await.map_err(|_| {
+                self.exchange_token().await.map_err(|_| {
                     Error::Unauthorized("token expired and the re-exchange was refused".into())
                 })?;
-                retry.call_once(calls).await
+                self.call_once(calls).await
             }
             Err(Error::Unauthorized(reason)) => Err(Error::Unauthorized(reason)),
             other => other,

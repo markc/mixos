@@ -37,9 +37,10 @@ pub struct Token {
     /// string).
     #[serde(rename = "accountId", alias = "account_id")]
     pub account_id: String,
-    /// When the token expires, RFC 3339.
-    #[serde(rename = "expiresAt", alias = "expires_at")]
-    pub expires_at: String,
+    /// When the token expires, RFC 3339, when the server says. Optional: a
+    /// token without an expiry is still a token.
+    #[serde(rename = "expiresAt", alias = "expires_at", default)]
+    pub expires_at: Option<String>,
 }
 
 /// The request body of the token exchange. Both fields optional server-side;
@@ -52,7 +53,7 @@ pub struct IssueRequest {
 impl Token {
     /// A parseable expiry, if the server sent one and it parses.
     pub fn expires(&self) -> Option<chrono::DateTime<chrono::Utc>> {
-        chrono::DateTime::parse_from_rfc3339(&self.expires_at)
+        chrono::DateTime::parse_from_rfc3339(self.expires_at.as_deref()?)
             .ok()
             .map(|dt| dt.with_timezone(&chrono::Utc))
     }
