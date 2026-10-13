@@ -142,7 +142,7 @@ impl ConfigFile {
                     Self {
                         path,
                         allow_save: false,
-                    ),
+                    },
                 )
             }
         }
