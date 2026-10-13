@@ -29,7 +29,7 @@ fn account() -> Account {
 }
 
 fn fixture() -> State {
-    let mut state = State::new(Some(account()), UiState::default());
+    let mut state = State::new(Some(account()), UiState::default(), Mode::Mail);
     state.apply(Event::Connected(Ok(SessionInfo {
         account_name: "Account 7".into(),
         account_id: "7".into(),
@@ -150,7 +150,7 @@ fn the_contacts_filter_refetches() {
 
 #[test]
 fn the_setup_form_connect_runs_with_the_forms_account() {
-    let mut state = State::new(None, UiState::default());
+    let mut state = State::new(None, UiState::default(), Mode::Mail);
     state.setup.url = "https://example.invalid".into();
     state.setup.email = "ann@example.invalid".into();
     state.setup.password = "secret".into();

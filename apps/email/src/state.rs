@@ -192,8 +192,8 @@ pub struct State {
 
 impl State {
     /// The state a launch starts in: connecting with the saved account, or
-    /// at the setup form without one.
-    pub fn new(account: Option<Account>, ui: UiState) -> Self {
+    /// at the setup form without one. The mode is the persisted one.
+    pub fn new(account: Option<Account>, ui: UiState, mode: Mode) -> Self {
         let (phase, work) = match &account {
             Some(account) => (
                 Phase::Connecting,
@@ -210,7 +210,7 @@ impl State {
             phase,
             account,
             session: None,
-            mode: ui.mode,
+            mode,
             setup,
             mail: MailState::default(),
             calendars: CalendarState::default(),
@@ -761,7 +761,7 @@ mod tests {
     }
 
     fn connected() -> State {
-        let mut state = State::new(Some(account()), UiState::default());
+        let mut state = State::new(Some(account()), UiState::default(), Mode::Mail);
         state.take_work();
         state.apply(Event::Connected(Ok(SessionInfo {
             account_name: "Account 7".into(),
@@ -783,7 +783,7 @@ mod tests {
 
     #[test]
     fn a_saved_account_connects_at_launch() {
-        let state = State::new(Some(account()), UiState::default());
+        let mut state = State::new(Some(account()), UiState::default(), Mode::Mail);
         assert!(matches!(state.phase, Phase::Connecting));
         assert!(matches!(
             state.take_work().as_slice(),
@@ -793,14 +793,14 @@ mod tests {
 
     #[test]
     fn no_account_opens_the_setup_form() {
-        let state = State::new(None, UiState::default());
+        let mut state = State::new(None, UiState::default(), Mode::Mail);
         assert!(matches!(state.phase, Phase::Setup));
         assert!(state.take_work().is_empty());
     }
 
     #[test]
     fn a_first_connect_adopts_the_setup_form_account() {
-        let mut state = State::new(None, UiState::default());
+        let mut state = State::new(None, UiState::default(), Mode::Mail);
         state.apply_ui(UiEvent::SetupField(SetupField::Url, "https://example.invalid".into()));
         state.apply_ui(UiEvent::SetupField(SetupField::Email, "ann@example.invalid".into()));
         state.apply_ui(UiEvent::SetupField(SetupField::Password, "secret".into()));
@@ -815,7 +815,7 @@ mod tests {
 
     #[test]
     fn an_incomplete_setup_form_is_refused() {
-        let mut state = State::new(None, UiState::default());
+        let mut state = State::new(None, UiState::default(), Mode::Mail);
         state.apply_ui(UiEvent::SetupConnect);
         assert!(state.setup.error.is_some());
         assert!(state.take_work().is_empty());
@@ -823,7 +823,7 @@ mod tests {
 
     #[test]
     fn a_failed_first_connect_returns_to_the_form_with_the_error() {
-        let mut state = State::new(None, UiState::default());
+        let mut state = State::new(None, UiState::default(), Mode::Mail);
         state.apply_ui(UiEvent::SetupField(SetupField::Url, "https://example.invalid".into()));
         state.apply_ui(UiEvent::SetupField(SetupField::Email, "ann@example.invalid".into()));
         state.apply_ui(UiEvent::SetupField(SetupField::Password, "wrong".into()));
@@ -840,8 +840,8 @@ mod tests {
     #[test]
     fn a_failed_reconnect_shows_the_error_with_a_retry() {
         let mut state = connected();
-        state.apply(Event::Connected(Err(jmap::Error::Status(
-            reqwest::StatusCode::BAD_GATEWAY,
+        state.apply(Event::Connected(Err(jmap::Error::Unauthorized(
+            "the server went away".into(),
         ))));
         assert!(matches!(state.phase, Phase::Failed(_)));
         state.apply_ui(UiEvent::Retry);
@@ -921,7 +921,7 @@ mod tests {
             "bob@example.invalid, carol@example.invalid; ".into(),
         ));
         state.apply_ui(UiEvent::ComposeField(ComposeField::Subject, "Hi".into()));
-        let compose = state.compose.unwrap();
+        let compose = state.compose.clone().unwrap();
         assert_eq!(
             compose.draft.to,
             ["bob@example.invalid", "carol@example.invalid"]

@@ -71,7 +71,7 @@ pub fn view(
     let mut controls = [
         Control::Icon {
             command: "mail.compose",
-            icon: Icon::PenSquare,
+            icon: Icon::SquarePen,
             selected: false,
         },
         Control::Icon {
@@ -148,7 +148,7 @@ fn status(ui: &mut egui::Ui, state: &State, stroke: f32) {
     bars::status(ui, |ui| {
         let (icon, colour) = match state.phase {
             Phase::Ready => (Icon::Plug, ui.visuals().weak_text_color()),
-            _ => (Icon::Unplug, ui.visuals().error_fg_color()),
+            _ => (Icon::Unplug, ui.visuals().error_fg_color),
         };
         ui.add(toolkit::icons::image(icon, stroke, ICON, colour));
         let account = state
@@ -191,7 +191,7 @@ fn ready(
         .resizable(true)
         .default_size(remaining * state.ui.reader)
         .frame(bars::dock_frame(ui.ctx()))
-        .show(ui, |ui| reader(ui, state, stroke, events));
+        .show(ui, |ui| reader(ui, state));
     let split = right.response.rect.width() / remaining.max(1.0);
     if (split - state.ui.reader).abs() > 0.005 {
         events.push(UiEvent::SplitReader(split));
@@ -253,7 +253,7 @@ fn places(ui: &mut egui::Ui, state: &State, stroke: f32, events: &mut Vec<UiEven
 }
 
 /// The reader panel: the open email, event or contact.
-fn reader(ui: &mut egui::Ui, state: &State, stroke: f32, events: &mut Vec<UiEvent>) {
+fn reader(ui: &mut egui::Ui, state: &State) {
     let title = crate::label("reader");
     panel::group(ui, "reader", &[title.as_str()], |ui, _| {
         match state.mode {

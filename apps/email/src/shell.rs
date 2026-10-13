@@ -151,12 +151,11 @@ impl Shell {
         let ui = UiState {
             places: config.ui.places,
             reader: config.ui.reader,
-            mode: config.ui.mode,
             dialog: None,
             theme: Default::default(),
         };
         let mut shell = Self {
-            state: State::new(config.account, ui),
+            state: State::new(config.account, ui, config.ui.mode),
             commands: commands::registry(),
             strings: crate::strings(),
             theme: theme.clone(),

@@ -87,15 +87,11 @@ pub fn reader(ui: &mut Ui, state: &State) {
         return;
     };
     panel::section_label(ui, &contact.display_name());
-    let mut line = |label: &str, value: Option<&str>| {
-        if let Some(value) = value.filter(|value| !value.is_empty()) {
-            ui.label(RichText::new(crate::label_with(label, &[("value", value)])).weak());
-        }
-    };
-    line("email-line", Some(contact.display_email()).as_deref());
-    line("phone-line", contact.phone.as_deref());
-    line("company-line", contact.company.as_deref());
-    line(
+    detail(ui, "email-line", Some(contact.display_email()).as_deref());
+    detail(ui, "phone-line", contact.phone.as_deref());
+    detail(ui, "company-line", contact.company.as_deref());
+    detail(
+        ui,
         "address-book-line",
         state
             .contacts
@@ -117,6 +113,13 @@ pub fn reader(ui: &mut Ui, state: &State) {
             }
         }
     });
+}
+
+/// One detail line: the label with the value, when the value is set.
+fn detail(ui: &mut Ui, label: &str, value: Option<&str>) {
+    if let Some(value) = value.filter(|value| !value.is_empty()) {
+        ui.label(RichText::new(crate::label_with(label, &[("value", value)])).weak());
+    }
 }
 
 /// An address book row in the places panel.

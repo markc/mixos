@@ -24,7 +24,9 @@ mod_module_files = "deny"
 jmap = { path = "crates/jmap" }
 buildinfo.workspace = true
 # The Bus connection: theme-follow topics and single-instance activation.
+bus.workspace = true
 citizen.workspace = true
+chrono = { workspace = true, features = ["clock"] }
 config.workspace = true
 design.workspace = true
 eframe.workspace = true

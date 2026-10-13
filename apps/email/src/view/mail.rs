@@ -128,10 +128,10 @@ pub fn place_row(ui: &mut Ui, mailbox: &Mailbox, state: &State, stroke: f32, eve
     let icon = match mailbox.role.as_deref() {
         Some("inbox") => Icon::Inbox,
         Some("sent") => Icon::Send,
-        Some("drafts") => Icon::FilePen,
-        Some("trash") => Icon::Trash2,
-        Some("junk") | Some("spam") => Icon::ShieldAlert,
-        Some("archive") | Some("all") => Icon::Archive,
+        Some("drafts") => Icon::FileText,
+        Some("trash") => Icon::Trash,
+        Some("junk") | Some("spam") => Icon::CircleAlert,
+        Some("archive") | Some("all") => Icon::FileArchive,
         _ => Icon::Folder,
     };
     let weak = ui.visuals().weak_text_color();
@@ -195,9 +195,11 @@ pub fn reader(ui: &mut Ui, state: &State) {
                 // the label, with a note.
                 Some(html) => {
                     ui.weak(crate::label("html-source"));
-                    ui.add(egui::Label::new(html).wrap().monospace());
+                    ui.add(egui::Label::new(egui::RichText::new(html).monospace()).wrap());
                 }
-                None => ui.weak(crate::label("no-body")),
+                None => {
+                    ui.weak(crate::label("no-body"));
+                }
             },
         }
     });

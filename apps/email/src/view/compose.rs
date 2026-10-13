@@ -23,7 +23,7 @@ pub fn dialog(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
     send.enabled = state.compose_sendable();
     let choices = vec![
         send,
-        Choice::new(crate::label("cancel"), dialog::Role::Reject),
+        Choice::new(crate::label("cancel"), dialog::Role::Cancel),
     ];
     let send_index = 0; // choices[0] is Send; the cancel closes below.
     let shown = dialog::Dialog::new(id, crate::label("compose-title"))
@@ -69,7 +69,7 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiE
                 "send-failed",
                 &[("error", error)],
             ))
-            .color(ui.visuals().error_fg_color()),
+            .color(ui.visuals().error_fg_color),
         );
     }
     if compose.busy {

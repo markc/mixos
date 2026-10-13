@@ -51,7 +51,7 @@ pub fn form(ui: &mut Ui, state: &State, stroke: f32, events: &mut Vec<UiEvent>) 
                     "setup-failed",
                     &[("error", error)],
                 ))
-                .color(ui.visuals().error_fg_color()),
+                .color(ui.visuals().error_fg_color),
             );
         }
         ui.horizontal(|ui| {
@@ -95,7 +95,7 @@ pub fn failed(ui: &mut Ui, state: &State, stroke: f32, events: &mut Vec<UiEvent>
                 "setup-failed",
                 &[("error", &error)],
             ))
-            .color(ui.visuals().error_fg_color()),
+            .color(ui.visuals().error_fg_color),
         );
         ui.horizontal(|ui| {
             if ui
