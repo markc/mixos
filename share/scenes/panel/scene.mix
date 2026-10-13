@@ -3,7 +3,7 @@ scene: 1
 name: panel
 citizen: scene-panel
 window: {"chrome":false,"edge":"bottom","h":52,"kind":"edge","title":"Panel"}
-model: {"clock":{"background":null,"date":"","time":""},"launcher":{"background":null,"has_icon":false,"icon":""},"network":{"background":null,"has_icon":false,"icon":""},"notes":{"background":null,"count":"","has_count":false,"has_icon":false,"icon":""},"peek":{"background":null,"has_icon":false,"icon":""},"tasks":[],"tray":[],"tray_empty":true,"volume":{"has_icon":false,"icon":"","shown":false},"workspaces":[]}
+model: {"clock":{"background":null,"date":"","time":""},"launcher":{"background":null,"has_icon":false,"icon":""},"network":{"background":null,"has_icon":false,"icon":""},"notes":{"background":null,"count":"","has_count":false,"has_icon":false,"icon":""},"tasks":[],"tray":[],"tray_empty":true,"volume":{"has_icon":false,"icon":"","shown":false},"workspaces":[]}
 ---
 ```mix
 root: {"align":"center","background":"#202326f2","children":["launcher_btn","gap1","pager","gap2","tasks","fill","tray","status","clock"],"fill":true,"gap":4,"padding":4,"widget":"row"}

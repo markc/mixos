@@ -1,5 +1,5 @@
--- Pure taskbar decisions for the panel behaviour: window filtering, click
--- payload validation and peek plans. No Bus access, no document emission.
+-- Pure taskbar decisions for the panel behaviour: window filtering and click
+-- payload validation. No Bus access, no document emission.
 
 -- Normal-band windows in stable id order, so buttons do not jump when focus
 -- moves (Plasma's default launch order). Other bands never get a button.
@@ -110,28 +110,3 @@ fn tray_key($item)
   return $item.key
 end
 
--- Peek at the desktop minimises every visible window of this workspace.
-fn peek_candidates($windows, $ws_current)
-  $out = []
-  for each $w in $windows
-    if not elsewhere($w, $ws_current) and not $w.minimized then
-      push($out, {id: $w.id, generation: $w.generation})
-    end
-  end
-  return $out
-end
-
--- Restore exactly what the peek minimised: same id AND the generation
--- recorded then. A window that changed identity, or that the user restored
--- or closed meanwhile, is left alone.
-fn peek_restores($windows, $marks)
-  $out = []
-  for each $w in $windows
-    for each $mark in $marks
-      if $mark.id == $w.id and $mark.generation == $w.generation and $w.minimized then
-        push($out, {id: $w.id, generation: $w.generation})
-      end
-    end
-  end
-  return $out
-end

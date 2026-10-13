@@ -292,17 +292,17 @@ for $i = 1 to 55
 end
 $panel_cases = [
   {id: "panel-empty", at: "2024-02-29T00:00:00Z", raw: [], ws_count: 1, ws_current: 1, tray: [], notes: 0,
-    vol: {ok: false, level: 0, muted: false}, net: {up: false, wireless: false}, open: {}, peeked: false,
+    vol: {ok: false, level: 0, muted: false}, net: {up: false, wireless: false}, open: {},
     icons: {themed: {}, plain: {}, windows: {}}},
   {id: "panel-busy", at: "2024-02-29T21:05:07Z", raw: $raw_busy, ws_count: 3, ws_current: 2, tray: $tray_busy, notes: 3,
-    vol: {ok: true, level: 50, muted: false}, net: {up: true, wireless: false}, open: {launcher: true}, peeked: true,
+    vol: {ok: true, level: 50, muted: false}, net: {up: true, wireless: false}, open: {launcher: true},
     icons: $icons_busy},
   {id: "panel-tray-change", at: "2024-02-29T21:06:00Z", raw: $raw_busy, ws_count: 3, ws_current: 2,
     tray: [$tray_busy[1], {key: "i3", icon_name: "example-tray", title: "Example sync"}], notes: 12,
-    vol: {ok: true, level: 0, muted: true}, net: {up: true, wireless: true}, open: {calendar: true}, peeked: false,
+    vol: {ok: true, level: 0, muted: true}, net: {up: true, wireless: true}, open: {calendar: true},
     icons: $partial},
   {id: "panel-cap", at: "2026-12-31T23:59:00Z", raw: $many, ws_count: 1, ws_current: 1, tray: [], notes: 0,
-    vol: {ok: true, level: 80, muted: false}, net: {up: false, wireless: false}, open: {notes: true}, peeked: false,
+    vol: {ok: true, level: 80, muted: false}, net: {up: false, wireless: false}, open: {notes: true},
     icons: $icons_busy}
 ]
 $panel_manifest = []
@@ -313,10 +313,10 @@ for each $case in $panel_cases
   $legacy = {windows: $windows, ws_count: $case.ws_count, ws_current: $case.ws_current, tray: $case.tray,
     notes: notes_of($case.notes), vol: $case.vol, net: $case.net,
     launcher_open: $case.open.launcher ?? false, calendar_open: $case.open.calendar ?? false,
-    notes_open: $case.open.notes ?? false, peeked: $case.peeked ? [{id: 1, generation: 1}] : []}
+    notes_open: $case.open.notes ?? false}
   -- The legacy builder drew the current workspace only: parity pins "current".
   $snap = {windows: $windows, ws_count: $case.ws_count, ws_current: $case.ws_current, tasks_scope: "current", tray: $case.tray,
-    notes_count: $case.notes, vol: $case.vol, net: $case.net, open: $case.open, peeked: $case.peeked}
+    notes_count: $case.notes, vol: $case.vol, net: $case.net, open: $case.open}
   $doc = $old.capture("panel", $legacy, $at, $case.icons)
   $model = $models.panel($snap, $case.icons, $at)
   $panel_models[$case.id] = $model
@@ -352,7 +352,7 @@ if $record then write_file($fixtures .. "/panel-cases.json", json_encode($panel_
 -- renders an empty, clockless panel until the behaviour's first model.
 $default = resolve_template($panel_source, json_parse(header($panel_source, "model")), $tmp)
 $empty = visible("root", $default.nodes, $default.values, "", nil)
-check(length($empty.children) == 9 and length($empty.children[2].children) == 0 and length($empty.children[4].children) == 0, "default model: no pager/task instances and no tray")
+check(length($empty.children) == 8 and length($empty.children[2].children) == 0 and length($empty.children[4].children) == 0, "default model: no pager/task instances and no tray")
 check(deep_eq(sort(keys(json_parse(header($panel_source, "model")))), sort(keys($panel_models["panel-busy"]))), "default model declares every published key")
 
 -- Caps, fallbacks and stable IDs.
@@ -365,7 +365,7 @@ $changed = $panel_models["panel-tray-change"]
 check($changed.tray[0].id == $busy.tray[1].id and $changed.tray[1].id == "tr_i3", "tray change keeps surviving item ids")
 check($changed.notes.icon == $partial.themed.notifications and $changed.volume.icon == $partial.themed["audio-card"] and not $changed.network.has_icon, "status icon fallback name, then text stand-in")
 check($changed.launcher.icon == $partial.themed["start-here"], "launcher icon fallback name")
-check($panel_models["panel-empty"].clock.time == "12:00 am" and $busy.clock.time == "09:05 pm" and $busy.clock.date == "Thu 29 Feb", "displayed time from the fixed clock")
+check($panel_models["panel-empty"].clock.time == "12:00 am" and $busy.clock.time == "9:05 pm" and $busy.clock.date == "Thu 29 Feb", "displayed time from the fixed clock")
 
 -- Real click payloads: the renderer sends the owning list's node and the
 -- complete published row as item (template_tests.rs pins that shape).
@@ -390,7 +390,7 @@ check($taskbar.task_action_at($fresh, {id: "t_4"}, 2).error_code == "invalid_arg
 -- A snapshot without tasks_scope (a behaviour copy older than the setting)
 -- keeps drawing the current workspace only.
 $all_snap = {windows: $fresh, ws_count: 3, ws_current: 2, tray: [], notes_count: 0, vol: {ok: false, level: 0, muted: false},
-  net: {up: false, wireless: false}, open: {}, peeked: false}
+  net: {up: false, wireless: false}, open: {}}
 check(deep_eq(map($models.panel($all_snap, $icons_busy, date_parse("2024-02-29T21:05:07Z")).tasks, fn($x) = $x.id), ["t_4", "t_9", "t_12", "t_30"]), "a snapshot without tasks_scope draws the current workspace (old behaviour copies)")
 $all_snap.tasks_scope = "all"
 $all = $models.panel($all_snap, $icons_busy, date_parse("2024-02-29T21:05:07Z"))
@@ -432,10 +432,6 @@ check($taskbar.workspace_index($runtime.event_args(click("pager", $busy.workspac
 check($taskbar.workspace_index({index: 0}) == nil and $taskbar.workspace_index({index: 1.5}) == nil, "bad workspace index refused")
 check($taskbar.tray_key($runtime.event_args(click("tray", $changed.tray[1])).item) == "i3", "tray click resolves the adapter key")
 check($taskbar.tray_key({key: ""}) == nil, "empty tray key refused")
-$marks = $taskbar.peek_candidates($fresh, 2)
-check(deep_eq($marks, [{id: 4, generation: 1}, {id: 12, generation: 3}, {id: 30, generation: 2}]), "peek minimises the visible windows of this workspace")
-$after = [window_row(4, 1, 2, "Terminal", "example-term", false, true), window_row(12, 5, 2, "Replaced", "example.editor", false, true)]
-check(deep_eq($taskbar.peek_restores($after, $marks), [{id: 4, generation: 1}]), "peek restores only same-generation windows")
 remove_dir($tmp)
 -- Stage B settings.appearance. The snapshot/model fixtures are shared with
 -- Quoin's Rust test (settings.rs), which checks shell.settings.get and the
@@ -488,7 +484,7 @@ $wins = [window_row(1, 1, 2, "Inbox - Mail", "example.mail", false, false),
   window_row(2, 1, 2, "", "example.term", false, true),
   window_row(3, 1, 1, "Notes", "example.editor", true, false)]
 $named = $models.panel({windows: $wins, ws_count: 3, ws_current: 2, ws_names: [nil, "Mail", "  "], tray: [{key: "i1", icon_name: "x", title: "Updates", status: "3 pending"}],
-  notes_count: 2, net: {up: true, wireless: true}, vol: {ok: true, level: 40, muted: false}, open: {}, peeked: false},
+  notes_count: 2, net: {up: true, wireless: true}, vol: {ok: true, level: 40, muted: false}, open: {}},
   {themed: {}, plain: {}, windows: {}, names: {"example.mail": "Example Mail"}}, 0)
 check(deep_eq(map($named.workspaces, fn($w) = $w.label), ["1", "2", "3"]), "the pager shows numbers only")
 check(deep_eq($named.workspaces[1].tip, {title: "Mail", subtitle: "Workspace 2 · 2 windows · current", lines: ["Inbox - Mail", "example.term", "Right-click to rename"]}), "a named workspace tip: name, where, windows, the rename hint")
@@ -550,7 +546,7 @@ check($models.task_tip($flat, "Mail", 2).thumbnail == nil, "no thumbnail for a w
 check(deep_eq($named.tray[0].tip, {title: "Updates", subtitle: "3 pending"}), "a tray tip: title and the adapter's status")
 check(deep_eq($models.tray_tip({key: "i9"}), {title: "Status item"}), "an untitled tray item still has a tip")
 check($named.notes.tip.subtitle == "2 notifications" and $named.volume.tip.subtitle == "40%" and $named.network.tip.subtitle == "Connected (wireless)", "status tips")
-check($named.launcher.tip.title == "Application Launcher" and $named.peek.tip.title == "Peek at Desktop", "launcher and peek tips")
+check($named.launcher.tip.title == "Application Launcher", "launcher tip")
 check($named.clock.tip.title == "Thursday 1 January 1970" and $named.clock.tip.subtitle == "UTC+00:00", "the clock tip: the long date and the zone")
 -- Every tipped node in the template binds its tip, and the default model
 -- (no tips yet) evaluates them to nothing.
@@ -561,7 +557,7 @@ for each $id, $node in fence($panel_source)
     $tipped = $tipped + 1
   end
 end
-check($tipped == 9, "launcher, pager, tasks, tray, notes, volume, network, clock and peek have tips (" .. to_string($tipped) .. ")")
+check($tipped == 8, "launcher, pager, tasks, tray, notes, volume, network and clock have tips (" .. to_string($tipped) .. ")")
 
 -- ── the network popup: read-only links, addresses, route and DNS ─────────
 $net_lib = require($root .. "/share/scenes/lib/network.mix")

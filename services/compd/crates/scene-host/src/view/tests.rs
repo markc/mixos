@@ -131,8 +131,6 @@ fn panel_has_square_pager_two_clock_lines_and_full_task_hit_targets() {
         task.width() >= 218.0 && task.height() >= 40.0,
         "task: {task:?}"
     );
-    let peek = rect_of(&rt, "peek_i");
-    assert_eq!((peek.width(), peek.height()), (20.0, 20.0));
 }
 
 /// A panel too narrow for its tasks shrinks them (their titles elide) and
@@ -156,9 +154,9 @@ fn a_crowded_panel_shrinks_its_tasks_and_stays_on_screen() {
         );
     }
     assert_eq!(
-        rect_of(&rt, "peek").right(),
+        rect_of(&rt, "clock").right(),
         width - 4.0,
-        "peek ends at the padding"
+        "clock ends at the padding"
     );
 }
 

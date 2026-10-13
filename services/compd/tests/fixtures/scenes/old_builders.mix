@@ -188,7 +188,6 @@ fn panel_doc($state, $fixed_time)
   if length($state.tray) > 0 then push($children, "tray") end
   push($children, "status")
   push($children, "clock")
-  push($children, "peek")
   push($nodes, ["root", {widget: "row", fill: true, align: "center", gap: 4, padding: 4, background: $C.panel, children: $children}])
 
   -- launcher button: the start-here icon, tinted while the launcher is open
@@ -311,11 +310,6 @@ fn panel_doc($state, $fixed_time)
   push($nodes, ["clock_time", {widget: "text", text: $p.clock_text($now), size: 19, bold: true, color: $C.fg}])
   push($nodes, ["clock_date", {widget: "text", text: $p.date_text($now), size: 11, color: $C.dim}])
 
-  -- peek at desktop: minimise everything on this workspace; again restores
-  $peek = {widget: "row", height: 44, radius: 6, padding: 6, align: "center", hover: $C.hover, on_click: "peek", children: ["peek_i"]}
-  if length($state.peeked) > 0 then $peek.background = $C.accent_bg end
-  push($nodes, ["peek", $peek])
-  push($nodes, ["peek_i", status_icon("user-desktop", "desktop")])
 
   return $p.document({scene: "1", name: "panel", citizen: $ME, window: {kind: "edge", edge: "bottom", title: "Panel", h: 52, chrome: false}}, $nodes)
 end
