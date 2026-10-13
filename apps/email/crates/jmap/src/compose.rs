@@ -75,7 +75,8 @@ pub fn build_mime(composed: &Composed) -> Vec<u8> {
     );
     header(&mut mime, "Message-ID", &one_wrap(&message_id));
     if let Some(reply_to) = &composed.in_reply_to {
-        let wrapped = one_wrap(reply_to);
+        // The id came from the server, not the person: sanitise it like the rest.
+        let wrapped = one_wrap(&clean(reply_to));
         header(&mut mime, "In-Reply-To", &wrapped);
         header(&mut mime, "References", &wrapped);
     }
@@ -99,10 +100,10 @@ fn one_wrap(message_id: &str) -> String {
 }
 
 impl Client {
-    /// The account's first submission identity, for `EmailSubmission/set`.
-    /// maild seeds one; its id is the numeric string the Dioxus client
-    /// hardcoded as "1" — read it instead.
-    pub async fn identity_id(&self) -> Result<String> {
+    /// The submission identity to send `from` with, for `EmailSubmission/set`:
+    /// the one whose address is `from`, else the account's first. The Dioxus
+    /// client hardcoded the id as "1"; it is read from the account instead.
+    pub async fn identity_id(&self, from: &str) -> Result<String> {
         let replies = self
             .call(&[Call(
                 "Identity/get".into(),
@@ -113,9 +114,16 @@ impl Client {
         let data = replies.into_iter().next().ok_or_else(|| {
             crate::error::Error::Protocol("Identity/get reply is empty".into())
         })?;
-        data.get("list")
+        let list = data
+            .get("list")
             .and_then(Value::as_array)
-            .and_then(|list| list.first())
+            .ok_or_else(|| crate::error::Error::Protocol("Identity/get has no list".into()))?;
+        // Several identities can exist; prefer the one whose address matches.
+        let chosen = list
+            .iter()
+            .find(|identity| identity.get("email").and_then(Value::as_str) == Some(from))
+            .or_else(|| list.first());
+        chosen
             .and_then(|identity| identity.get("id"))
             .and_then(Value::as_str)
             .map(str::to_owned)
@@ -127,7 +135,7 @@ impl Client {
     /// strand the message in Sent with nothing submitted. Returns when the
     /// server has taken the submission.
     pub async fn send(&self, composed: &Composed, sent_mailbox_id: &str) -> Result<()> {
-        let identity_id = self.identity_id().await?;
+        let identity_id = self.identity_id(&composed.from).await?;
         let mime = build_mime(composed);
         let blob_id = self
             .upload_blob(mime, "message/rfc822")

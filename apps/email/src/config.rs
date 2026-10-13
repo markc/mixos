@@ -177,9 +177,17 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         .create_new(true)
         .mode(0o600)
         .open(&temp)?;
-    file.write_all(bytes)?;
-    drop(file);
-    std::fs::rename(&temp, path)
+    // A failed write or rename must not leave a partial private file behind.
+    let result = file
+        .write_all(bytes)
+        .and_then(|()| {
+            drop(file);
+            std::fs::rename(&temp, path)
+        });
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    result
 }
 
 impl From<&State> for EmailConfig {

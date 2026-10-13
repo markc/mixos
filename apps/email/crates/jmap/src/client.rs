@@ -71,9 +71,12 @@ impl Client {
     fn pool_for(account: &Account) -> Result<reqwest::Client> {
         let mut builder = reqwest::Client::builder();
         if let Some(pem) = &account.ca_pem {
-            let certificate = reqwest::Certificate::from_pem(pem.as_bytes())
+            // A bundle may hold several certificates (a root and its intermediate).
+            let certificates = reqwest::Certificate::from_pem_bundle(pem.as_bytes())
                 .map_err(|e| Error::Protocol(format!("account CA bundle: {e}")))?;
-            builder = builder.add_root_certificate(certificate);
+            for certificate in certificates {
+                builder = builder.add_root_certificate(certificate);
+            }
         }
         Ok(builder.build()?)
     }
@@ -187,8 +190,11 @@ impl Client {
     /// verify per call. Two racing exchanges each issue a valid token; the
     /// last writer wins and both work.
     pub async fn call(&self, calls: &[Call]) -> Result<Vec<Value>> {
+        // Whether this call carried a token, read before it is sent: a
+        // concurrent fallback may clear the cell while the call is in flight.
+        let sent_token = self.token.lock().unwrap().is_some();
         match self.call_once(calls).await {
-            Err(Error::Unauthorized(_reason)) if self.token.lock().unwrap().is_some() => {
+            Err(Error::Unauthorized(_reason)) if sent_token => {
                 // The token died mid-flight: spend another exchange and try
                 // the request once more.
                 self.exchange_token().await.map_err(|_| {
