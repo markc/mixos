@@ -1,0 +1,194 @@
+# Bridge contract
+
+Status: draft, version 0.1.0. Machine-checkable fixture:
+[`bridge.spec.mix`](bridge.spec.mix). Verified by
+`services/bridged/tests/bridge_core_test.mix` (the config contract against
+the fixture, the wire protocol against a stand-in app) and
+`services/bridged/tests/bridged_test.mix` (every verb over a private broker).
+
+`bridged` puts an external application on the Bus. The application offers a
+line-delimited JSON control channel on loopback TCP; one `bridged` instance
+per application maps six Bus verbs onto it. This page fixes the control
+channel an application must offer, the instance config schema, the serve-name
+rule and the Bus verbs.
+
+## The control channel an application offers
+
+| Item | Rule |
+|---|---|
+| Transport | TCP on the loopback interface, one port per application. The bridge keeps one connection open and reuses it. |
+| Framing | One JSON object per line, UTF-8, `\n`-terminated (a trailing `\r` is ignored). A line is at most `max_line` bytes. |
+| Auth (`auth: "token"`) | The first line on every connection is `{"id":"auth","method":"auth","params":{"token":"<64 hex>"}}`. The application replies `{"id":"auth","ok":true,...}` or refuses and closes. The bridge sends nothing else until that reply is ok. |
+| No auth (`auth: "none"`) | Requests start at once. An application that receives an `auth` line it does not expect should refuse it and close. Any local process can use such a port while it is open. |
+| Request | `{"id":N,"method":"<name>","params":{...}}`, `N` a number the bridge increments per request. |
+| Reply | `{"id":N,"ok":true,"result":<any JSON>}` or `{"id":N,"ok":false,"error":"<text>"}`, matched to the request by `id`. Lines that are not JSON or carry another `id` are skipped. A reply without a boolean `ok` is a transport failure. |
+| Port squatting (residual) | Loopback TCP cannot prove who listens. If the application dies, a local process that binds its port before it returns receives the token on the bridge's next reconnect, and can then impersonate the application to the bridge and use the token on the real one. A unix-socket control channel checked by owner would close this; it is a possible future protocol option. |
+| Methods the named verbs use | `engine.commands`, `engine.execute` (`{command, params}`), `ui.inspect`, `ui.screenshot` (`{path?, focus?}`). An application without one of them answers `ok:false`; `<app>.call` reaches any other method. |
+
+## Bus verbs
+
+An instance started with `--name <app>` answers under its own name.
+
+| Verb | Body | Sends | Reply on rc 0 |
+|---|---|---|---|
+| `<app>.call` | `{method, params?}` | `<method>` with `params` (default `{}`) | the app's `result` |
+| `<app>.commands` | — | `engine.commands` | the app's `result` |
+| `<app>.execute` | `{command, params?}` | `engine.execute {command, params}` | the app's `result` |
+| `<app>.inspect` | — | `ui.inspect` | the app's `result` |
+| `<app>.screenshot` | `{path?, focus?}`, or empty | `ui.screenshot` with only those keys | the app's `result` |
+| `<app>.status` | — | nothing | `{service, connection, host, port, auth, instance, connects, failures, calls, last_error, last_latency_ms, retry_after_s}` |
+
+`connection` is `never-connected`, `up` or `down`. `status` never contains
+the token.
+
+| rc | Meaning | Body |
+|---|---|---|
+| 0 | The app replied `ok:true` | its `result` as JSON |
+| 10 | The app replied `ok:false` | its `error` text |
+| 11 | Connect, auth, transport or timeout failure, or backing off after one | text saying which |
+| 12 | A bad request from the caller (missing field, body not a JSON object, an encoded request over `max_line`) | text naming the problem |
+
+Every call has one transport deadline, `timeout_s`, starting when the call
+does. Connect, the auth line and its reply, and the request and its reply
+all draw on that one budget: each write gets the time left as `tcp_send`'s
+`{timeout}`, which bounds the whole send, and each read gets the time left
+too. So a peer that stops reading or reads too slowly cannot hold a call
+past it: the write fails, the call answers rc 11 and the connection is
+dropped. A budget already spent before a write fails the same way without
+sending.
+
+The budget bounds transport, not local work. Encoding the request
+(`json_encode`) and Mix's scheduling run on the same clock but cannot be
+interrupted, so they can take a call past `timeout_s`; the next transport
+step then fails at once without touching the network. For example, a
+32 MiB request with `timeout_s` 0.001 spends tens of milliseconds encoding,
+then is refused before writing. This needs Mix >= 0.112.1; on an older Mix
+the bridge refuses to start (`RUNTIME`).
+
+After a transport failure, or a reply without a boolean `ok`, the connection is dropped and no new one is tried for
+`backoff_s`; calls in that window answer rc 11 at once.
+
+The token never appears in a reply: any occurrence of it, in any letter case,
+in an app's error text, in a result, or in `last_error`, is replaced by
+`[redacted]`.
+
+**Registration.** The six verbs are an instance family, `<app>.<verb>` with
+owner `bridged` and `members: "instances"` (runtime members, not listed). They
+are declared in `docs/spec/bus/verbs.conf.mix` (registry schema 3). The static
+gate `tools/verb_registry.mix` checks the family's owner and suffix;
+`tools/verb_registry.mix --instances DIR` checks private file-stem naming and
+collisions only and reads no config token. The runtime guard reads the verbs
+and families lists but does not enforce the full canonical format. Installing
+the registry is a separate deployed prerequisite: the scripts and the registry
+come from the same revision, at `/opt/mixos/share/bus/verbs.conf.mix` or the
+`BRIDGED_VERBS` override.
+
+**Classes.** `<app>.call` and `<app>.execute` are `intent`; `<app>.commands`,
+`<app>.inspect` and `<app>.status` are `query`. `<app>.screenshot` is `intent`,
+because its `focus` option can bring the window forward, a change another
+caller sees, even though the verb otherwise only captures. The reasoning is in
+the [decision](../../decisions/2026-10-13-instance-verb-families.md).
+
+## Instance config, version 0.1.0
+
+A strict-data document (`load_data`; never executed).
+
+**Path:** `$BRIDGED_CONFIG` when set; otherwise `<etc>/bridge/<app>.conf.mix`,
+where `<etc>` is `$MIXOS_ETC` when set, else `/etc/mixos`. The file stem is
+the serve name.
+
+```text
+port: 47801,
+token_file: "/home/user/.config/fakeapp/control.token",
+timeout_s: 20
+```
+
+| Key | Type | Default | Rule |
+|---|---|---|---|
+| `port` | integer | required | 1–65535 |
+| `host` | string | `"127.0.0.1"` | `"127.0.0.1"` or `"localhost"`, which is connected to as `127.0.0.1` (never `::1`); anything else is refused |
+| `auth` | string | `"token"` | `"token"` or `"none"`; an explicit `nil` is refused |
+| `token_file` | string | — | required with `auth: "token"`, refused with `auth: "none"`; a leading `~/` expands to `$HOME` |
+| `timeout_s` | number | 5 | (0, 300]: the whole-call deadline |
+| `connect_timeout_s` | number | 2 | (0, 300]: the connect step, within the deadline |
+| `backoff_s` | number | 2 | [0, 300]: the pause after a transport failure |
+| `max_line` | integer | 1048576 | 64–16777216 bytes per line, both ways: a longer reply is a transport failure (rc 11); a longer request is refused before it is sent (rc 12) |
+| `instance` | string | — | 1–64 of `[A-Za-z0-9_-]`; echoed by `status` so a launcher can recognise its own bridge |
+
+Unknown keys are refused, so a typo never falls back to a default. The token
+file holds exactly 64 hex characters (one trailing newline allowed) and has
+no group or other permission bits (`chmod 600`). Errors name the file, never
+its content.
+
+## Serve name and the start checks
+
+The name must match `^[a-z][a-z0-9-]{1,30}$`, the Bus's own rule for a
+service name, and must not start with `mixos-` (`mix --serve` strips that
+prefix before registering, so the checked name and the Bus name would
+differ). The broker's own names are refused as noded refuses them: `noded`,
+`noded-*`, and the session-name shape `<t|c><1-7 of [a-z0-9]>-<22 of
+[a-z2-7]>`. It must also not be the first segment of a verb the registry
+already gives to another component, so an instance can never answer, say,
+`settings.status`. The registry read is `$BRIDGED_VERBS`, else the installed
+`/opt/mixos/share/bus/verbs.conf.mix`:
+
+| Registry entry | Reserves |
+|---|---|
+| `verbs: [{name, ...}]` | the first segment of `name`, whatever the status (retired names stay reserved) |
+| `families: [{pattern, members: "instances"}]` | nothing (runtime members, such as bridged's own family) |
+| `families: [{pattern, members: [names]}]` | each listed name |
+| `families: [{pattern}]` with a literal first segment | that segment; an `<app>` or `*` first segment reserves nothing |
+
+The guard fails closed: a missing or unreadable registry, one without a
+`verbs` list, an entry without a `name` or `pattern`, or an unknown `members`
+form refuses the start. `families` is optional, so the schema-1 registry and
+later schemas with families both read.
+
+A refused start prints `bridged: refusing to start: CODE: message` and exits
+2. Codes: `RUNTIME` (Mix older than 0.112.1), `NAME_INVALID`, `NAME_RESERVED`,
+`REGISTRY`, `CONFIG`, `TOKEN`.
+`mix bridged.mix --check <app>` runs the same checks without joining the Bus
+and exits 0 when the instance may start; an unexpected error at start exits 3,
+never 2.
+
+The unit runs `mix bridged.mix --start <app>`. That process runs the same
+checks in process, before the name reaches the Bus, and exits 2 on a
+documented refusal without starting anything. Otherwise it runs
+`mix --serve bridged.mix --name <app>` as its child (no shell) and exits with
+the child's exit code. Mix has no process-replacing exec, so the parent and
+child pair is deliberate; the unit's control-group kill stops both. The unit
+never restarts on exit 2 (`RestartPreventExitStatus=2`); every other non-zero
+exit, including a missing or unreadable script (exit 1), is a failure,
+restarted under `Restart=on-failure` and rate-limited by
+`StartLimitBurst=5` in `StartLimitIntervalSec=60`. A clean stop exits 143:
+systemd signals both processes, and Mix records the SIGTERM the parent gets
+and exits 143 whatever the child returned, so the unit lists
+`SuccessExitStatus=143`. `$BRIDGED_MIX` overrides the mix binary the child
+runs under (default `/opt/mixos/bin/mix`); it exists for tests.
+
+Starting `mix --serve bridged.mix --name <app>` directly, not through
+`--start`, registers the name on the Bus before the checks run, so a
+refused name holds a free Bus name for a moment before the process exits.
+`--start` (the unit) is the supported path. The reverse collision, a verb
+registered later whose first segment is an instance already running, is
+the verb-registry gate's to refuse, not the bridge's: the bridge checks only
+at start.
+
+The unit is sandboxed: no capabilities or new privileges, the file system
+read-only with private `/tmp` and `/var/tmp` (config and token files must
+live elsewhere), address families limited to IPv4, IPv6 and unix sockets,
+and IP traffic to loopback only (`IPAddressAllow=localhost`,
+`IPAddressDeny=any`). A Bus endpoint off loopback needs a drop-in adding its
+address to `IPAddressAllow`. The IP filter is cgroup BPF: enforced on hosts
+that support it, ignored where they do not, and not proven by the offline
+`systemd-analyze security` score.
+
+`--start` outside systemd has no parent-death protection: killing the
+`--start` process alone can orphan the serve child. Run it under the unit,
+whose control group holds both. `BRIDGED_MIX` and the instance's `.env` file
+must be administrator-controlled: anyone who can change them picks the code
+that runs as `mixos`.
+
+## Changes
+
+- 0.1.0 (2026-10-10): first version.
