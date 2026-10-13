@@ -2629,6 +2629,10 @@ the host thaws hostd.
 
 - hostd writes `/etc/systemd/network/50-hostd-<link>.network`, reloads
   networkd and reconfigures the link.
+- **`route_metric`** (static with a gateway, or DHCP) sets the metric of
+  the default route the link installs. A higher metric loses to a lower
+  one, so a second uplink with a high metric never takes over the host's
+  default route.
 - **It passes** when networkd reports the link configured from hostd's file,
   carrying every requested address with its prefix length. With DHCP or a
   gateway, the default route must also be installed (through the requested
