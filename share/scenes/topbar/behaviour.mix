@@ -84,7 +84,7 @@ fn build_model()
   $m.notes = button("Notes", "notifications-symbolic", "Notifications")
   $m.network = button("Network", "network-wired-activated-symbolic", "Network")
   $m.restart = power_model("restart", "Restart", "dev.mixos.restart-symbolic")
-  $m.poweroff = power_model("poweroff", "Shut down", "dev.mixos.shutdown-symbolic")
+  $m.poweroff = power_model("poweroff", "Shutdown","dev.mixos.shutdown-symbolic")
   return $m
 end
 

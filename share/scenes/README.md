@@ -58,7 +58,7 @@ requires `comp` and `apps`), `panel` (order 10, requires `comp` and `apps`),
 
 The top bar's power buttons send `power.suspend`, `power.reboot` and
 `power.poweroff` to hostd. Each needs a hostd grant. A refusal is shown in the
-button's tooltip, and nothing runs. Shut down is not a hostd verb yet.
+button's tooltip, and nothing runs. Shutdown is not a hostd verb yet.
 
 `network` shows links and addresses from rtnetlink, plus systemd-networkd,
 systemd-resolved and the default routes when their tools answer
