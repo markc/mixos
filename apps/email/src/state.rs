@@ -768,6 +768,8 @@ mod tests {
             account_id: "7".into(),
         })));
         state.take_work();
+        // The shell saves the config when the connect settles.
+        state.config_saved();
         state
     }
 
