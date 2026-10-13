@@ -38,6 +38,11 @@ pub enum Config {
     Dhcp {
         #[serde(default)]
         dns: Vec<IpAddr>,
+        /// The metric of the routes DHCP installs. Higher loses to lower: a
+        /// second uplink that should never take over the default route
+        /// gets a high one.
+        #[serde(default)]
+        route_metric: Option<u32>,
     },
     Static {
         /// `address/prefix`, IPv4 or IPv6.
@@ -46,6 +51,9 @@ pub enum Config {
         gateway: Option<IpAddr>,
         #[serde(default)]
         dns: Vec<IpAddr>,
+        /// The metric of the default route through `gateway` (see Dhcp).
+        #[serde(default)]
+        route_metric: Option<u32>,
     },
 }
 
@@ -101,15 +109,23 @@ pub fn plan(root: &std::path::Path, request: Request) -> Result<Plan, Value> {
          [Match]\nName={}\n\n[Network]\n",
         request.link
     );
+    // Sections that follow [Network], written after its last line.
+    let mut tail = String::new();
     let (addresses, gateway, routable, dns) = match &request.config {
-        Config::Dhcp { dns } => {
+        Config::Dhcp { dns, route_metric } => {
             text.push_str("DHCP=yes\n");
+            if let Some(m) = route_metric {
+                tail.push_str(&format!(
+                    "\n[DHCPv4]\nRouteMetric={m}\n\n[IPv6AcceptRA]\nRouteMetric={m}\n"
+                ));
+            }
             (vec![], None, true, dns)
         }
         Config::Static {
             addresses,
             gateway,
             dns,
+            route_metric,
         } => {
             if addresses.is_empty() || addresses.len() > MAX_LIST {
                 return Err(bad(format!("static needs 1-{MAX_LIST} addresses")));
@@ -128,7 +144,12 @@ pub fn plan(root: &std::path::Path, request: Request) -> Result<Plan, Value> {
                 if !parsed.iter().any(|(a, _)| a.is_ipv4() == gw.is_ipv4()) {
                     return Err(bad("gateway needs an address of its own family"));
                 }
-                text.push_str(&format!("Gateway={gw}\n"));
+                match route_metric {
+                    None => text.push_str(&format!("Gateway={gw}\n")),
+                    Some(m) => tail.push_str(&format!("\n[Route]\nGateway={gw}\nMetric={m}\n")),
+                }
+            } else if route_metric.is_some() {
+                return Err(bad("route_metric needs a gateway"));
             }
             (parsed, *gateway, gateway.is_some(), dns)
         }
@@ -139,6 +160,7 @@ pub fn plan(root: &std::path::Path, request: Request) -> Result<Plan, Value> {
     for server in dns {
         text.push_str(&format!("DNS={server}\n"));
     }
+    text.push_str(&tail);
     Ok(Plan {
         path: root
             .join("etc/systemd/network")
@@ -508,6 +530,28 @@ mod tests {
                           "Addresses": [{"Address": [198, 51, 100, 7]}]});
         assert!(!configured_by_someone_else(&ours));
         assert!(!configured_by_someone_else(&json!({})));
+    }
+
+    #[test]
+    fn route_metric_renders_a_route_section_after_network() {
+        let p = plan(
+            std::path::Path::new("/"),
+            request(json!({"link":"hd0","config":{"mode":"static",
+                "addresses":["192.0.2.10/24"],"gateway":"192.0.2.1","dns":["192.0.2.53"],
+                "route_metric":4242}})),
+        )
+        .unwrap();
+        assert!(!p.text.contains("\nGateway=192.0.2.1\nDNS"));
+        assert!(p.text.ends_with("DNS=192.0.2.53\n\n[Route]\nGateway=192.0.2.1\nMetric=4242\n"));
+        let d = plan(
+            std::path::Path::new("/"),
+            request(json!({"link":"hd0","config":{"mode":"dhcp","route_metric":600}})),
+        )
+        .unwrap();
+        assert!(d.text.contains("[DHCPv4]\nRouteMetric=600\n"));
+        let no_gw = request(json!({"link":"hd0","config":{"mode":"static",
+            "addresses":["192.0.2.10/24"],"route_metric":10}}));
+        assert!(plan(std::path::Path::new("/"), no_gw).is_err());
     }
 
     #[test]
