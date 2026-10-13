@@ -7,8 +7,8 @@ use design::{DesignContext, Mode, Scheme};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use email::shell::Event;
-use email::state::{Mode, SessionInfo, State, UiState};
-use email::view::{UiEvent, view};
+use email::state::{Mode as Surface, SessionInfo, State, UiState};
+use email::view::view;
 use email::{commands, label, strings};
 use jmap::{Account, EmailPage};
 use toolkit::Theme;
@@ -29,7 +29,7 @@ fn account() -> Account {
 }
 
 fn fixture() -> State {
-    let mut state = State::new(Some(account()), UiState::default(), Mode::Mail);
+    let mut state = State::new(Some(account()), UiState::default(), Surface::Mail);
     state.apply(Event::Connected(Ok(SessionInfo {
         account_name: "Account 7".into(),
         account_id: "7".into(),
@@ -100,7 +100,7 @@ fn harness(state: State) -> Harness<'static, Window> {
 #[test]
 fn the_window_draws_the_account_and_the_surfaces() {
     let h = harness(fixture());
-    assert!(h.state().session.is_some());
+    assert!(h.state().state.session.is_some());
     // The places panel shows the mailbox, the calendar and the book.
     let _ = h.get_by_label("Inbox");
     let _ = h.get_by_label("Main");
@@ -122,7 +122,7 @@ fn an_unread_email_row_opens_and_marks_read() {
     h.run();
     let state = &h.state().state;
     assert!(state.mail.emails[0].is_read(), "the row marks read at once");
-    let work = state.take_work();
+    let work = h.state_mut().state.take_work();
     assert!(work.iter().any(
         |w| matches!(w, email::work::Work::MarkRead { id, read: true } if id == "E1")
     ));
@@ -134,14 +134,17 @@ fn an_unread_email_row_opens_and_marks_read() {
 #[test]
 fn the_contacts_filter_refetches() {
     let mut h = harness(fixture());
-    h.state().state.mode = Mode::Contacts;
+    h.state_mut().state.mode = Surface::Contacts;
     h.run();
-    let filter = h.get_by_label(&label("contact-search"));
-    filter.set_text("bob");
+    let field = h.get_by_role(egui::accesskit::Role::TextInput);
+    field.click();
+    h.run();
+    h.get_by_role(egui::accesskit::Role::TextInput)
+        .type_text("bob");
     h.run();
     assert_eq!(h.state().state.contacts.filter, "bob");
     assert!(h
-        .state()
+        .state_mut()
         .state
         .take_work()
         .iter()
@@ -150,14 +153,14 @@ fn the_contacts_filter_refetches() {
 
 #[test]
 fn the_setup_form_connect_runs_with_the_forms_account() {
-    let mut state = State::new(None, UiState::default(), Mode::Mail);
+    let mut state = State::new(None, UiState::default(), Surface::Mail);
     state.setup.url = "https://example.invalid".into();
     state.setup.email = "ann@example.invalid".into();
     state.setup.password = "secret".into();
     let mut h = harness(state);
     h.get_by_label(&label("setup-connect")).click();
     h.run();
-    let window = h.state();
+    let window = h.state_mut();
     assert!(window.state.account().is_some());
     assert!(matches!(
         window.state.take_work().as_slice(),

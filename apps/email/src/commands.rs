@@ -8,7 +8,6 @@ use egui::{Key, KeyboardShortcut, Modifiers};
 use toolkit::{Command, Icon, Registry};
 
 use crate::state::{Mode, State};
-use crate::view::UiEvent;
 
 fn idle(state: &State) -> bool {
     state.compose.is_none() && state.ui.dialog.is_none()

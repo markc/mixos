@@ -62,9 +62,6 @@ pub struct Shell {
     /// adopt; the event channel carries only the summary.
     adopted: Arc<Mutex<Option<Client>>>,
     exiting: bool,
-    /// The Bus deliveries not yet forwarded; shutdown closes and drains it
-    /// under the lock the forwarder holds while it hands one on.
-    inbox: Arc<Mutex<Deliveries>>,
     /// The theme choice installed last.
     installed: toolkit::theme_menu::Choice,
     /// The theme file's session theme: the fallback while settingsd is
@@ -117,8 +114,9 @@ impl Shell {
         let (tx, rx) = mpsc::channel();
         let forward = tx.clone();
         let wake = ctx.clone();
-        let inbox = Arc::new(Mutex::new(deliveries));
-        let source = inbox.clone();
+        // The forwarder owns the deliveries from here: the shell never
+        // reads them (email answers no Bus commands of its own).
+        let source = Arc::new(Mutex::new(deliveries));
         runtime.spawn(async move {
             loop {
                 // Take one delivery and hand it on under the inbox lock.
@@ -170,7 +168,6 @@ impl Shell {
             client: None,
             adopted: Arc::new(Mutex::new(None)),
             exiting: false,
-            inbox,
             installed: toolkit::theme_menu::Choice::default(),
             file_theme: theme,
             look: None,

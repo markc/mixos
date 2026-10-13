@@ -6,7 +6,6 @@
 //! the error so nothing typed is lost.
 
 use egui::{TextEdit, Ui};
-use toolkit::button::PushButton;
 use toolkit::dialog::{self, Choice};
 use toolkit::field;
 
