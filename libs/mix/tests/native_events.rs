@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Real inotify and pidfd sources dispatched through Evaluator::run_event_pump.
 //! Watchdog deadlines only fail hung tests; all progress is event-driven.
 #![cfg(target_os = "linux")]

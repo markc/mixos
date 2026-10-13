@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Literal/regex search (plan §3.7).
 //!
 //! Literal = `regex::escape`; `RegexBuilder` with `multi_line(true)`,

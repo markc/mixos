@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Keys the editor handles itself: navigation, editing keys, and the
 //! standard Select All, Undo and Redo chords when nothing else claimed them.
 //! Typed text arrives separately, as text events.

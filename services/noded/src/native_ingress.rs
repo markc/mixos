@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! BUS-013 Unix WebSocket endpoint, sharing Axum's HTTP/WS stack.
 use std::os::fd::{AsRawFd, FromRawFd};

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Rustyline 15 `FileHistory` compatibility, with no filesystem I/O.
 //!
 //! `history.rs::{save_to,load_from}` in rustyline is the format authority:

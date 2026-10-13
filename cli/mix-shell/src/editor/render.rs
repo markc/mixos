@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Pure reflow from a logical line, with no terminal reads, writes or modes.
 //! Positions use zero-based cells and canonical eager wrapping: an exact fit
 //! ends at column zero of the next row. The terminal writer must resolve

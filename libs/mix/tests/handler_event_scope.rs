@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `$event` dynamic extent + handler-fault observability (0.63.0).
 //!
 //! The historical failure shape (hub 2133f4b): a fn called from an `on`

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! preferences: Prefs' headless engine. It holds the panels, the
 //! Applications panel's rows and release notes (from the `releases`
 //! service), the Appearance panel over settingsd, the one-operation-at-a-time rules and the `prefs.*` Bus verbs,

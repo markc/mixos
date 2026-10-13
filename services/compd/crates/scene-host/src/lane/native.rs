@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Shared UI scheduling and jobs multiplexed by an existing host worker. No
 //! connection, runtime, receiver or loop is created here.
 use super::Once;

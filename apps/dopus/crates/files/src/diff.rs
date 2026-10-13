@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The pure reconcile diff (design §6): compare a disk scan against the current
 //! index state and classify each file. This encodes the two review BLOCKER fixes —
 //! a copy (`cp a.md b.md`) is a `DuplicateId`, not a clobber; an id-less file is

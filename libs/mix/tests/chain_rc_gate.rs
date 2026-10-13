@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! M-2 (mix 0.60.0): the `&&` / `||` statement chain gates on `$rc`, and a
 //! corrupted `$rc` RAISES instead of silently reading as success.
 //!

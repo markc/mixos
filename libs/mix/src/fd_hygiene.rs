@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! What a spawned program may inherit.
 //!
 //! A process can itself inherit descriptors without close-on-exec: CI runners,

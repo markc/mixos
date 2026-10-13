@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use std::env;
 use std::io::{Read, Write};
 use std::net::ToSocketAddrs;
@@ -906,7 +907,10 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
             // Re-enter the CLI script path in a child instead: it gives the file
             // the same clean evaluator and positional argv as `mix FILE`, without
             // replacing or contaminating the live REPL process.
+            // argv[0] "mix" so the system binary re-enters the shell.
+            use std::os::unix::process::CommandExt;
             let status = std::process::Command::new("/proc/self/exe")
+                .arg0("mix")
                 .arg(filename)
                 .args(&args[1..])
                 .status();

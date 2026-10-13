@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Checkpointed random access over a [`Highlighter`], adapted from msedit
 //! `crates/edit/src/lsh/cache.rs` (reference copy in `vendor/edit-lsh/cache.rs`).
 //!

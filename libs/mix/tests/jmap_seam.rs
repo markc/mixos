@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The `JmapHandler` seam (`jmap`). Mirrors the host-seam pattern of
 //! `DbHandler`: a stub handler is injected, the `jmap` builtin dispatches
 //! to it in both its single-call and batch forms, and the

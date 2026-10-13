@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The thumbnailers installed on the system: freedesktop `.thumbnailer`
 //! entries (the contract GNOME, COSMIC and glycin share), found in
 //! `thumbnailers/` under `$XDG_DATA_HOME` then each of `$XDG_DATA_DIRS`.

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Ingest: read + parse one corpus file into a [`DocRecord`] (the read half of
 //! reconcile). Pure with respect to the index — it never writes the file and never
 //! mints an id (a passive scan must not, §6); an id-less file yields

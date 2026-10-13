@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! systemd `Type=notify` readiness, self-contained (no libsystemd, no crate).
 //! Copied from `desktop/crates/mixos-comp/src/readiness.rs` (ced E0 plan D11).
 //!

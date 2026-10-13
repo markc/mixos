@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Headless appearance projection: the one portal-facing view of a settings
 //! snapshot. Pure data and validation; no transport, no renderer.
 use crate::{Binding, Diagnostic, Revision, Snapshot};

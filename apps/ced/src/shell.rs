@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The running window: hands Bus deliveries to the controller, performs the
 //! effects the window owns (clipboard, the session file, Mix relex on worker
 //! threads, quitting) and hands the rest to the transport. Nothing polls:

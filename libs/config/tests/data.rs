@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! The config-file loader: the re-exported strict-data entry points behave
 //! as a config reader expects, and a missing file is an error, not a panic.

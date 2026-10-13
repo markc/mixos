@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! run_pipeline / run_pipeline_must: shell-free argv pipelines with one
 //! deadline and per-stage outcomes.
 

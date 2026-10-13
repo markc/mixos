@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Regression tests for the evaluator/value safety fixes:
 //! deadline + interrupt coverage on the compiled For fast paths, NaN
 //! loop bounds, fixed-operand-stack depth gating, iterative deep

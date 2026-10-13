@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Feed-level hint scheduling against the real test broker.
 //!
 //! A scripted settingsd registers under the settingsd name, so the broker stamps

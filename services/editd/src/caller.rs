@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Caller identity and origin derivation (plan §4.3, D12).
 //!
 //! noded strips client `broker_*`/`mesh_from` headers

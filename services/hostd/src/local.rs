@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The local socket. Each frame is `{"verb": ..., "body": {...}}` and each
 //! reply `{"rc": 0|10, "body": {...}}`, NUL-terminated, many per connection.
 use crate::{

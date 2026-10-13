@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! BusViewer's drawing, driven through kittest with no Bus: the About and
 //! Shortcuts dialogs close from their button and from Esc, the body's push
 //! buttons run their commands and carry "Label (Shortcut)" tooltips, and

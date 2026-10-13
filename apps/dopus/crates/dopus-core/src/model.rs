@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The semantic heart of dopus: twin-pane state, navigation, sorting, the
 //! async listing/count pipeline, operation single-flight, the confirm/prompt
 //! reservation book and the config settle debounce.

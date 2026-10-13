@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Selection metadata. Filesystem calls run only in a properties worker.
 use crate::model::{FileEntry, sanitise_display_path, sanitise_display_text};
 use std::{

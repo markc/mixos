@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Stats subsystem — full P5 surface.
 //!
 //! Plan: `_doc/planned/logging-stats.md`. This module owns

@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- nested_host_lib.mix — start, drive and stop a PRIVATE nested compd on its
 -- version: 0.2.2
 -- own headless weston host.

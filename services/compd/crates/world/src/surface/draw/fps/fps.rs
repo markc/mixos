@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The frame-rate overlay: each output's present rate, top right, while the
 //! `show_fps` preference is on.
 

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `ced [PATH[:LINE[:COL]]…]` opens the paths in the running instance if
 //! there is one (an anonymous `ced.ping`, then `ced.open`); otherwise it
 //! starts the window, registered on the Bus as `ced`.

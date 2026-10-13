@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Cross-pillar event-counter `tracing-subscriber::Layer`
 //! (plan §3.3, "the cross-pillar bit").
 //!

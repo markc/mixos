@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The client-side title bar's window behaviour: each caption button sends
 //! its viewport command, the free bar maximizes on double-click, and its
 //! menus come from the registry.

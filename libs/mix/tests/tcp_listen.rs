@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Server-side TCP through the real evaluator, on loopback: tcp_listen,
 //! tcp_local_addr, tcp_accept (blocking, timeout and Class C), tcp_close
 //! on a listener, the structured error codes, generation ownership, and

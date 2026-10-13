@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Every mirror fixture's SERVER side, executed against the fake editd over the
 //! real `edit::Buffer`. Fixtures must be executable, not merely parsed. See
 //! `tests/fixtures/mirror/README.md` for the format.

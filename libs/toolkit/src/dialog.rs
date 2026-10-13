@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Modal dialogs (chrome specification §3.13, §3.21).
 //!
 //! To AccessKit a dialog is one node of role Dialog, modal, labelled with

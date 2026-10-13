@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Headless text-buffer core for the MixOS editor (ced): the shared buffer
 //! model behind the `edit` Bus citizen (`mixos-editd`) and, from E1, the ced
 //! app and the `text_edit` scene widget.

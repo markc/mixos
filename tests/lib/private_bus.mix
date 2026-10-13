@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- version: 0.2.0
 -- private_bus.mix — a throwaway, owned noded broker for tests of Bus citizens
 -- written in Mix (component tests/*_test.mix). The noded binary defaults to

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Ctrl-C ends every infinite blocking tcp_accept, even when SIGINT lands
 //! on another thread (it cannot interrupt the waiters' poll(2)) and even
 //! with several waiters, where one may drain the wake byte another

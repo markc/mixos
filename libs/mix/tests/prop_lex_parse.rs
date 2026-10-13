@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! P1 of the mix tokenizer fuzz/property corpus
 //! (_doc/planned/mix-tokenizer-fuzz-corpus.md in the mixos hub): property-based
 //! coverage of the Mix LANGUAGE lexer and parser (distinct from the shell-dispatch

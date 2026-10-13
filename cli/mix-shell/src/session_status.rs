@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Read-state admission on the existing enrolled connection, never legacy Bus.
 use crate::session_state::{self, Source, View};
 use ::bus::native_client::session::Hello;

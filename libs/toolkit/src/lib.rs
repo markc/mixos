@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! toolkit: the shared shell for MixOS egui applications (AGENTS.md §4.1).
 //!
 //! - [`theme`]: the resolved design for one scheme, mode and contrast;

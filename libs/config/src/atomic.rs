@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Durable same-directory replacement. Errors after rename are ambiguous:
 //! callers must recover/read back rather than report an uncommitted operation.
 

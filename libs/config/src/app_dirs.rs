@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Shared per-application roots, preserving Ced and Dopus's existing paths.
 //! Resolution performs no I/O and never creates a directory.
 use std::path::{Component, Path, PathBuf};

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Atomic file writes (invariant #6): write a unique sibling temp file, fsync it,
 //! `rename(2)` it over the destination (atomic on POSIX within one filesystem),
 //! then best-effort fsync the directory. A crash leaves either the prior file or

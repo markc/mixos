@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! One capture job, over compd's verbs: hide this window (fenced
 //! minimisation, confirmed by the compositor), let the person select a
 //! region if asked, capture a fresh frame into the private captures

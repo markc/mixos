@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! Cross-mesh signed envelope (plan §8) — types, parse, and v1
 //! canonical-bytes serialisation.

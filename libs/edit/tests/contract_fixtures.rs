@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Golden contract fixtures (ced E0 plan §4.2, Stage S).
 //!
 //! File names: `<verb>.<request|reply|refusal>[.<case>].json` and

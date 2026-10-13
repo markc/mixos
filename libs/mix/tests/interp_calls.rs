@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! 09-25 entry: string interpolation can now take an index or a call —
 //! `${a[0]}`, `${m.k}`, `${f()}`, `${m.k[1]}` — instead of reporting
 //! "undefined variable '$a[0]'".

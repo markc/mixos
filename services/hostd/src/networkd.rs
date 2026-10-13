@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Driving systemd-networkd: reload its configuration, reconfigure a link,
 //! and wait for a link to reach a state. hostd runs as root, so networkd's
 //! D-Bus methods need no polkit. Waiting is event-driven: each

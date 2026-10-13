@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Frontend-side model for the `edit` service: the mirror (local echo with
 //! single-authority OT rebase), the editor model, highlighting and diagnostics
 //! state. Shared by the ced app, `ced --headless` and other frontends, such as

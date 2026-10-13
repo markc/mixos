@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Double-quoted string escapes (0.90.0) — `\xHH`, `\0`, `\a \b \f \v`.
 //!
 //! Before 0.90.0 every one of these was kept LITERALLY (`"isn\x27t"`

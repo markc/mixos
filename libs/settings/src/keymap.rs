@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The person's key bindings: per application, per action, the chords they
 //! chose. An application's defaults ship with the application; only what
 //! the person changed is stored here. An empty list unbinds the action.

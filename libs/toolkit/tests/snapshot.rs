@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Offscreen snapshots of the toolkit's look: a representative panel in the
 //! ocean scheme's light and dark modes, rendered through wgpu and compared as
 //! images (`tests/snapshots/*.png`). Regenerate with `UPDATE_SNAPSHOTS=1`

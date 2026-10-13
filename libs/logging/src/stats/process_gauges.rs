@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Built-in process gauges (plan §3 "built-in counters" group).
 //!
 //! `update_process_gauges` is invoked at the top of every

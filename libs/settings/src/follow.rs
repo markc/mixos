@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Following the desktop profile's appearance from an app, with no I/O.
 //!
 //! The [`crate::consumer::Consumer`] serves shells that hold the raw native

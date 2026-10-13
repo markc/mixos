@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Desktop status sources: network links/addresses and audio volume.
 //!
 //! Both feed the evaluator-owned native-event queue in `native_events.rs`,

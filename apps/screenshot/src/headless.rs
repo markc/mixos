@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The same app, verbs and jobs with no window: a Bus service for agents.
 //! Nothing asks a person anything here: an action that would discard
 //! unsaved work is refused, and there is no clipboard or window to show.

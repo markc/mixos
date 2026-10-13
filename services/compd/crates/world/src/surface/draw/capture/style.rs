@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The shared look of the capture overlays.
 //!
 //! Panels, buttons and text are the MixOS theme's (`toolkit::style`), so the

@@ -1,5 +1,6 @@
 #!/usr/bin/env mix
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- version: 0.1.1
 -- comp_workspace_verbs_gate.mix — the named workspace verbs and their topic,
 -- against a PRIVATE nested compd on its own headless weston host

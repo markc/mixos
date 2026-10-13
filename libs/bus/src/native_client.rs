@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! Native ABP client, including authenticated Unix broker ingress.
 //! All requests pass through noded; no application socket transport is provided.

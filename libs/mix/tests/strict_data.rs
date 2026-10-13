@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Strict-data parse mode for `.*.mix` substrate-internal data files.
 //!
 //! These tests pin the contract from

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Core limits (ced E0 plan §3.8). Daemon policy limits live in
 //! `mixos-editd/src/limits.rs`.
 

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `mix explain MIX-XXXX` — the rustc-style diagnostics explainer.
 //!
 //! One embedded record per lint code: the code, a one-line summary (what it

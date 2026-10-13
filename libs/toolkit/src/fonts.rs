@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The embedded faces and how the theme's typography selects them.
 //!
 //! Weight is a design token: each typography role names a weight, and the

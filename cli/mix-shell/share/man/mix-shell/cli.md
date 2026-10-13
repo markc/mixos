@@ -1,6 +1,7 @@
 # Command-line interface
 
-The `mix-shell` package installs the `mix` command. The command is an
+The `mix` command is the shell of the `mix-shell` package, built into the
+system binary by `cli/system`. The command is an
 interactive shell, a Mix program runner, a shell-compatible `-c` dispatcher,
 and a collection of reference, diagnostic, and maintenance subcommands.
 

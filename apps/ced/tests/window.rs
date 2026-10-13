@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The window driven end to end with no Bus: a transport that answers the
 //! controller's edit-service calls from the fake edit service, so the real
 //! controller, mirrors and editor run in-process. Offscreen snapshots of the

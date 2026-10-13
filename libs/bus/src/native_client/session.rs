@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! Typed BUS-015 commands. No retries or transport downgrades are performed.
 //! After an uncertain mutation, reconcile by key before submitting new work.

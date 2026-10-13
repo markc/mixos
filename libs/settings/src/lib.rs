@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Shared headless settings contract and consumer. No renderer or owned transport.
 pub mod appearance;
 #[cfg(feature = "cache")]

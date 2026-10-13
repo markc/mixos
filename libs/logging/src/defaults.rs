@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Per-binary defaults — the data the `main` function knows that
 //! `LogOpts` flags do not (binary identity, Bus service, default
 //! sinks for the binary's class).

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `normalize(s[, form])` — Unicode normalisation (0.92.0).
 //!
 //! Before it, canonically-equivalent text compared unequal: a decomposed

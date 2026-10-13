@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The shell's look, prepared on the Bus worker from an accepted settings
 //! snapshot and activated as one value after the session fence: the MixOS
 //! theme the desktop profile describes (`toolkit::theme::Theme`, the one the

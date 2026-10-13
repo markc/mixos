@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The window's state around the controller: what the window shows beyond
 //! the documents (view options, the find bar, panels, dialogs, notices), and
 //! the routing of everything the controller asks of a window. No drawing

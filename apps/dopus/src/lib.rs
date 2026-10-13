@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! dopus, the MixOS twin-pane file manager.
 //!
 //! The behaviour is the `dopus-core` engine (panes, listings, selection,

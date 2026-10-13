@@ -1,5 +1,6 @@
 #!/usr/bin/env mix
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- version: 0.6.0
 -- desktop_nested_gate.mix — the nested desktop smoke: a PRIVATE nested compd
 -- on its own headless weston host, judged by Bus evidence.

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! P4 of the mix tokenizer fuzz/property corpus
 //! (_doc/planned/mix-tokenizer-fuzz-corpus.md in the mixos hub): property
 //! coverage of the EVALUATOR — the hardest slice, because evaluation has side

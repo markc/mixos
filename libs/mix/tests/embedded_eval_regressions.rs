@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Regression tests for two evaluator bugs surfaced by embedding Mix in
 //! mixos-webd (server-side `.mix` HTTP handlers run with injected
 //! globals + `EvalLimits` inside a `block_on` worker). Both were latent

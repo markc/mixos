@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The Theme menu every app can add ([`Registry::theme_menu`]): a "Theme"
 //! submenu of choice commands that picks the window's scheme, style, mode
 //! and framing directly, each group ticking its current entry.

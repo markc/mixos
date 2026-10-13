@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Immutable source pixels and bounded editable objects. Undo snapshots
 //! hold geometry, never raster copies; the original is shared, never
 //! written.

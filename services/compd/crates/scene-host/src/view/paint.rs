@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Draw and hit-test a laid-out scene: each node at exactly the rectangle
 //! [`super::flex`] gave it, parents before children (so a control inside a
 //! clickable row takes its own press), rows of a scrolling list offset by

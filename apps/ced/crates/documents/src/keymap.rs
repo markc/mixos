@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Default key bindings, following Notepad++ conventions. The bindings are
 //! data. Menus show them as accelerator labels; the root key router resolves
 //! them. The Ctrl+Alt+* rows must not collide with the desktop's global chords;

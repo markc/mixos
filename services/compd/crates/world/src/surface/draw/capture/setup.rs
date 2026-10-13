@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `SetupOverlay` — the capture setup phase. A full-screen screen-space
 //! instance: a dim mask with a clear hole over the prospective capture
 //! target, plus a chooser (target kind + media + Confirm/Cancel). For the two

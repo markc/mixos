@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `mime_type()` against a private shared-mime-info database: globs, magic,
 //! the text check, aliases and the parent chain, with no dependence on the
 //! host's `/usr/share/mime`.

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Where shots live and how finished ones are published.
 //!
 //! - **Captures** land in the app's private state directory

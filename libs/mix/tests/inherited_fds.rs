@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! A program started by a structured spawn builtin never sees a descriptor
 //! this process inherited without close-on-exec (mix::fd_hygiene). CI runners
 //! hand such descriptors out (GitHub's leaves fds 142 and 145 open), so the

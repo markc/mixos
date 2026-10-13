@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! One serialized authority, bounded native input, blocking work off Tokio.
 use crate::{authority::Authority, store::Store};
 use bus::native_client::{BoundedIncomingEvent, ConnState, SupervisedClient};

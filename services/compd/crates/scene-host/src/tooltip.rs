@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The hover tip card: one compositor-owned, click-through surface beside
 //! the scene that asked for it (a panel's tips sit just above a bottom
 //! panel, below a top one, beside a side one), in the session look.

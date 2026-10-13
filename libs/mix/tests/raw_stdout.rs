@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `write_stdout` / `write_stderr` / `print_raw` / `eprint_raw` (v0.65.0) —
 //! the byte-exact output family.
 //!

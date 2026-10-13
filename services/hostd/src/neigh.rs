@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Is a gateway really there? hostd sends it one UDP datagram (which makes
 //! the kernel resolve its link-layer address), then reads the kernel's
 //! neighbour entry for it over rtnetlink. Neither needs a privilege, unlike

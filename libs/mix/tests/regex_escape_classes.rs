@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Regex escape classes — behaviour pins (2026-09-03; migrated to the
 //! subject-first re_* family when release B deleted the legacy names,
 //! 0.73.0).

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The loop's timing rules, kept pure so they can be tested without a
 //! compositor: how long a skipped frame waits before its retry, whether a
 //! frame callback has waited too long, and how long the loop may block.

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Prepare small scene icons before drawing. Rasters are decoded here, before
 //! the pass that draws them, so the first frame already has pixels and
 //! dimensions; SVGs keep their bytes and are rasterised at the size they are

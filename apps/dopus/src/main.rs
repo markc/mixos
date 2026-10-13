@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `dopus [LEFT [RIGHT]]` opens the paths in the running instance if there
 //! is one (an anonymous `dopus.ping`, then `dopus.open`); otherwise it
 //! starts the window, registered on the Bus as `dopus`. Without a broker

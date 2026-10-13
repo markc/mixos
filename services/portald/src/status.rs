@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! What the portal knows about its own evidence. Served by `portald.status`;
 //! never fed back into the portal values.
 use serde::Serialize;

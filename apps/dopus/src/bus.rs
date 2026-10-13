@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The Bus thread: a current-thread tokio runtime on its own OS thread,
 //! holding a supervised client registered as `dopus` (or `--service NAME`)
 //! that will not run on under a rejected registration. It forwards

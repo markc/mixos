@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Terminal modes and screen output only. Foreground PGIDs belong to Controller.
 use super::render::{Layout, Position, Source};
 use std::fs::{File, OpenOptions};

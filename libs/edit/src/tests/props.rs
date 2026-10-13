@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Property tests (plan §6.1, proptest 1-8). Models are plain `String`s and
 //! naive recomputation; nothing here reuses the code under test's arithmetic.
 

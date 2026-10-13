@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The ABP feed uses the shared settings Consumer for subscription, initial
 //! reads, delivery loss, reconnect generations and bounded authority retries.
 //! Each appearance read includes its atomic snapshot evidence from settingsd.

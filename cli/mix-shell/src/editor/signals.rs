@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Async-signal-safe stop ingress shared with the process controller.
 use std::io;
 use std::os::fd::AsRawFd;

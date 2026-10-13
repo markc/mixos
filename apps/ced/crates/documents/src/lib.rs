@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! documents: ced's engine, with no UI toolkit. The controller holds the
 //! open documents (one tab per buffer of the `edit` Bus service, each a
 //! mirror with its editing model, highlighting and diagnostics), runs every

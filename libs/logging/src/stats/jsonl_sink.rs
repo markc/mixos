@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! JSONL `StatsSink` implementation (plan §4.1).
 //!
 //! Writes one JSON line per (metric, label-set) per roll-up period

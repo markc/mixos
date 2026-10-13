@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! CoW (card 4, 0.28.0) — semantics pins and safety tests.
 //!
 //! `Value::List/Map/Bytes` payloads became `Rc`-backed copy-on-write.

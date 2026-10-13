@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! Applied client shape notifications for stationary pointer reconciliation.
 //! No buffer identity, damage or commit counter: unchanged repaints are quiet.

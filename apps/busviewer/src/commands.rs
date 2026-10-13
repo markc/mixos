@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! BusViewer's commands. The menu bar, the shortcuts and the Bus verbs
 //! `busviewer.commands` / `busviewer.execute` all come from this registry.
 use egui::{Key, KeyboardShortcut, Modifiers};

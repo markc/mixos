@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! dopus's default key bindings. The person's own bindings live in the
 //! desktop profile (`settings::keymap`, under `dopus`); the shell applies
 //! them over these with `toolkit::Registry::rebind`. Chord text follows

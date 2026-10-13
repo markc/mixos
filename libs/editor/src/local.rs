@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! An in-process document: the text editor without a daemon.
 //!
 //! [`Document`] owns an [`edit::buffer::Buffer`] (the same buffer the edit

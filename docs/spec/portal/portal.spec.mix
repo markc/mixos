@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 {
   status:"accepted", version:"0.1.0", service:"portald",
   bus:{name:"org.freedesktop.portal.Desktop", path:"/org/freedesktop/portal/desktop", interface:"org.freedesktop.portal.Settings", version:2},

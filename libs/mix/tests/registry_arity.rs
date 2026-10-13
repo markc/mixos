@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! A7 (TODO-mix 2026-09-24): the arity test GENERATED from the registry.
 //! Every finite contract must reject `max + 1` and (where `min >= 1`)
 //! `min - 1` under strict mode, BEFORE any side effect; exact-arity sets

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! mimedb: the freedesktop shared-mime-info database, read from the same
 //! files the desktop reads (`globs2`, `magic`, `aliases`, `subclasses` under
 //! each `$XDG_DATA_HOME`/`$XDG_DATA_DIRS` `mime` directory), and a file's

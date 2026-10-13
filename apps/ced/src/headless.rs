@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `ced --headless`: the controller and the Bus thread with no window. Every
 //! `ced.*` verb works except `ced.layout` (UNAVAILABLE), so agents and tests
 //! can drive the real model.

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Collision-safe local filesystem operations for dopus.
 //!
 //! Ported verbatim from src/desktop/apps/filemgr/src/file_ops.rs (Bevy/ctk);

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The shared-GL proof (plan checkpoint 4): egui paints with egui-wgpu into a
 //! texture on smithay's own EGL context, then smithay's GLES renderer
 //! composites that texture, and both results are read back and checked:

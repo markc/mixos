@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! Explicit, node-local BUS-013 transport. Ordinary `NodedClient::connect`
 //! remains TCP. Unix traffic cannot leave this node in v1; remote delegation

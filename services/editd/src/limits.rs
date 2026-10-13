@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Daemon policy limits (plan §3.8). Core limits: `edit::limits`.
 
 const MIB: u64 = 1024 * 1024;

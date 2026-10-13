@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Semantic analyzer (0.29.0, decision D3) — rule coverage AND, just as
 //! load-bearing, the false-positive guards for Mix's dynamic seams.
 

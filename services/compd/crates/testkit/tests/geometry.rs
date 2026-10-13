@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Production geometry execution and real xdg ACK/commit semantics. This fixture
 //! has no renderer, scene settings worker or GPU: fitted coordinates are protocol
 //! geometry evidence, not native pixels or a settings-to-frame timing measure.

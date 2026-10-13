@@ -94,8 +94,8 @@ CLOEXEC, so concurrent fixture forks could inherit descriptors before duplicatio
 and closure. From the Cargo workspace, run:
 
 ```text
-cargo test -p mix-shell --test owned_editor_pty -- --test-threads=1
-cargo test -p mix-shell --test job_control_pty -- --test-threads=1
+cargo test -p system --test owned_editor_pty -- --test-threads=1
+cargo test -p system --test job_control_pty -- --test-threads=1
 ```
 
 Apply `--test-threads=1` to broader test invocations which include these binaries

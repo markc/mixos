@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `on @.verb`: the serve-name placeholder.
 //!
 //! Parser half: `@` (unquoted) is accepted only as the whole first segment

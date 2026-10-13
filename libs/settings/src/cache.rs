@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Optional bounded local presentation cache. Never authority persistence.
 //! All I/O belongs on the host's one serial cache worker, not its UI loop.
 use crate::{

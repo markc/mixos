@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The expression evaluation mode (`eval_expr_string`) and the
 //! `send`/`emit` capability gate. V1a lands both lib-mix prerequisites
 //! for Mix Scenes: the bare Bus forms are class-gated

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The Bus verb registry (`docs/spec/bus/verbs.conf.mix`, AGENTS.md §5)
 //! lists exactly the `comp.*` verbs the compositor serves: the catalogue in
 //! `comp_model::catalogue`, which is also what the port dispatches on.

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Paint one egui pass into a texture view with egui-wgpu.
 //!
 //! Each runtime owns its painter. egui contexts allocate their managed

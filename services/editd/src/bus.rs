@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Bus wiring: supervised connect with provenance and the verb manifest
 //! (template: `mixos-nspawnd/src/bus.rs` connect; NOT its Authorizer and NOT
 //! its concurrent pump — commands route to the router and per-buffer actors).

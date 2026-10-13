@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Per-service `.conf.mix` I/O.
 //!
 //! Each service owns its own file at `~/.config/mixos/<service>.conf.mix`.

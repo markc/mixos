@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Link extraction from a markdown body (invariant #5 / §4.5).
 //!
 //! Dependency-free scanners for `[[wikilink]]` and `[text](target)` markdown links.

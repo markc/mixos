@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The Wayland side of layer surfaces and the loop that drives them.
 //!
 //! One calloop loop holds the connection, a channel egui's repaint callbacks

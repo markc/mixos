@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! run_argv / run_argv_must (0.29.0, decision record D4): direct-argv
 //! captured bounded process execution. Unix-only assumptions (signal
 //! numbers, /bin/sh helpers for child behavior) match the rest of the

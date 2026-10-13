@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `net.wg.apply`: a networkd-native WireGuard link from typed fields.
 //!
 //! hostd writes three files, all its own, in `/etc/systemd/network`:

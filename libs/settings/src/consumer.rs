@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Shared bounded consumer engine. Hosts execute returned work on their existing
 //! worker, feed deliveries/lifecycle/loss, and acknowledge stages on their UI
 //! event loop. This engine owns neither a connection nor a renderer runtime.

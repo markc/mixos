@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Parser-level pin of the bare hyphenated `send`/`emit`/`address` target.
 //!
 //! The integration gate (`mix-shell/tests/send_hyphenated_target.rs`)

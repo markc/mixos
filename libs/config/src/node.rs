@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Typed node and broker configuration over strict data.
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -32,6 +33,7 @@ impl NodeConfig {
 }
 
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 /// SPEC 13 §9a D2 broker-admission posture (slice 2-c-1). Per-node operator
 /// policy, set in `node.conf.mix` `[noded] admission`. **Default `off`** — a
@@ -126,6 +128,7 @@ pub struct ObserveConfig {
     pub allowed_services: Vec<String>,
 }
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 const ENV_VAR: &str = "MIXOS_NODE_CONFIG";
 

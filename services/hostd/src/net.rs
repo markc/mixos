@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `net.state`: who manages this host's network, and what they report.
 //!
 //! Links and addresses are not repeated here: every session reads them

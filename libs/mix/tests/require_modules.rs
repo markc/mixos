@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `require()` module loader (0.27.0, Card 3 of the 4-feature rebuild).
 //!
 //! Covers the regenerated card3-require spec's test plan: the FIX 1

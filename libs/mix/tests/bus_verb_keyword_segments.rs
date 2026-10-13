@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Parser pin: a dotted Bus name may contain Mix keywords.
 //!
 //! Bus verbs are dotted identifiers owned by the services that define them,

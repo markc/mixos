@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! `ServiceInfo` / `NodeInfo` — the Bus service & node discovery wire
 //! types (SPEC 02 §4.1).

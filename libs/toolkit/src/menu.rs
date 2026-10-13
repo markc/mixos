@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Menu bars and their drop-down menus (chrome specification §3.3–3.6).
 //!
 //! The toolkit draws its menus itself rather than through egui's `MenuBar`,

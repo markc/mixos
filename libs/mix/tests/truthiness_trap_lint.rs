@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! MIX-W2305 — `index_of()` / `byte_index_of()` used bare as a truth value.
 //!
 //! These return `-1` for "not found" and `0` for "found at the first

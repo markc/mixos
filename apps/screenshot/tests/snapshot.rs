@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Offscreen snapshots of screenshot driven through its real app state and
 //! view: an annotated shot with every kind of object and a selection; the
 //! empty window; the Text tool with window capture chosen; the Discard and

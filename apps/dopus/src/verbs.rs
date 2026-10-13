@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The `dopus` Bus port, schema `dopus.v1`: the verbs, every request and
 //! reply shape, and the one place a command becomes replies and effects,
 //! shared by the window and [`crate::headless`] so the two cannot drift.

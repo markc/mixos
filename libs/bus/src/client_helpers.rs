@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! Automatic discovery around the explicit native ABP connection APIs.
 //! The data/config crate remains independent of the client and interpreter.

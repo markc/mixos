@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! In-process snapshot reader (plan §3.4 — `local_snapshot()`).
 //!
 //! Reads the installed [`StatsRecorder`]'s `Registry` and projects it

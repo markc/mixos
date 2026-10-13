@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The `edit.v1` Bus contract as serde types (plan §4). One request and one
 //! reply type per verb, one type per event kind, and the refusal body.
 //!

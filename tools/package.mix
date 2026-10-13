@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- version: 0.1.0
 -- package.mix: the release tarballs, from binaries cargo has already built.
 -- Run by .github/workflows/release.yml with the freshly built mix; locally:

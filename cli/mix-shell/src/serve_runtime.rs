@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! SPEC 18 WS4 — runtime-provided Ch07 L0+ conformance for
 //! `mix --serve` citizens.
 //!

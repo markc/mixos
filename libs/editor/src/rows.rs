@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Visual rows: where each line is cut into the rows the view draws.
 //!
 //! Without wrap a line is one row. With [`Wrap::Words`] a row breaks after

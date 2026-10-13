@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Roll-up driver — walks the in-memory recorder registry once
 //! per period, then hands a per-sink `PeriodSnapshot` to every
 //! installed [`StatsSink`] (plan §3.4, §4.1).

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Topic events waiting to be published, and the task that publishes them
 //! (`<app>.command.executed`, `docs/decisions/2026-10-11-executed-commands.md`).
 //!

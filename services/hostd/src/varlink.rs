@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! A minimal Varlink client: one call per connection, bounded in size and
 //! time. networkd and resolved speak it on Unix sockets.
 use crate::frame;

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! egui programs on wlr-layer-shell surfaces: wallpapers, desktops, docks
 //! and overlays (the `layer` feature).
 //!

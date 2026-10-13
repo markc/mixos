@@ -1,5 +1,6 @@
 #!/usr/bin/env mix
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- version: 0.3.0
 -- client_checklist_gate.mix — the real-client checklist as a nested gate:
 -- real Firefox and Thunderbird, native Wayland, on a PRIVATE nested compd

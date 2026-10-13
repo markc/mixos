@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Real broker integration, invoked by tests/settings/authority_test.mix.
 use bus::native_client::NodedClient;
 use serde_json::{Value, json};

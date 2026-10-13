@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Shared validation for numbers crossing into operational domains.
 //!
 //! Mix arithmetic is intentionally IEEE-754: existing numeric NaN/infinity

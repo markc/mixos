@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Idle-prompt execution admission on the enrolled attachment (P0-J stage D).
 //!
 //! This is the half of BROKER-023's `execute` that lives in the SHELL. Holding

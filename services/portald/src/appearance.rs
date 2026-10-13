@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Portal values for the `org.freedesktop.appearance` namespace, derived from
 //! one accepted appearance projection. Pure data; the D-Bus surface lives in
 //! `portal`.

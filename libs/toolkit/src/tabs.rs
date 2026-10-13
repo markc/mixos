@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Tab strips (chrome specification §3.10–3.12): the overflow rules shared
 //! by panel tabs, Studio pills and document tabs, and the document tabs.
 //!

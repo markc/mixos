@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Owned UTF-8 editing. Cursors and ranges are byte offsets at extended
 //! grapheme boundaries; every edit resegments, including across the insertion.
 use std::collections::VecDeque;

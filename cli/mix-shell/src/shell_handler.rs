@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `ShellHandler` implementation bridging the REPL's shell primitives
 //! into the library evaluator's `source` statement. Registered on the
 //! `Evaluator` by `run_repl` and `run_source` so that `.mixrc`-style

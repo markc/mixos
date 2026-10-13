@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `<AppDirs ced>/state/session.json`. The format is fixed. Written atomically
 //! (temp, fsync, rename) 1 s after the last change (armed by the change) and on exit.
 

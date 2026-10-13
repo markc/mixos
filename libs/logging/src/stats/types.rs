@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Public snapshot types (plan §3.4).
 //!
 //! Pure data — no I/O, no recorder state, no thread-locals. The

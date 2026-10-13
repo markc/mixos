@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Recovery files: unsaved text survives a daemon crash, restart or SIGTERM
 //! (ced E1 plan `_plan/2026-09-26-ced-e1-implementation.md` §5 — the binding
 //! contract, repeated here). Stage S froze the types; Stage E1c implemented

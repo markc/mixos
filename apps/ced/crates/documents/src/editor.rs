@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! What the editor view reports to the controller: editing commands, scroll,
 //! clipboard, input-method and focus changes, and its geometry. The window
 //! translates its editor widget's events into these; the controller never

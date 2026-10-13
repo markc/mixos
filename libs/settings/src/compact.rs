@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Snapshot schema 2: the wire form with each distinct design projection
 //! sent once.
 //!

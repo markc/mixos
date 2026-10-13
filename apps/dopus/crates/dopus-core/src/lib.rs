@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Headless twin-pane file-manager core for dopus.
 //!
 //! Logic and laws ported from `src/desktop/apps/filemgr` (Bevy/ctk), which

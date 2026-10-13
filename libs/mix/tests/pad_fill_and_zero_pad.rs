@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! v0.54.0 — zero-padding in `fmt` (`%0Nd`) and the optional fill-character
 //! argument on `lpad`/`rpad`/`lpad_w`/`rpad_w`.
 //!

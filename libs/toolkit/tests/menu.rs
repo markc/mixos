@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Menu-bar behaviour (chrome specification §3.3 and §3.6), driven through
 //! the real title bar: open on press, the shared pointer and keyboard
 //! highlight, submenus, running commands, hover switching, and the open menu

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Making one thumbnail: cache first, else the file's thumbnailer, run as a
 //! plain argv in its own process group under a timeout, its output checked
 //! and stored in the shared cache. A failure the file itself caused is

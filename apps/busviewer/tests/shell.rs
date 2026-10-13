@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The real [`Shell`] on a logging Bus handle: Bus commands arrive through
 //! its delivery channel and its effect runtime, exactly as from noded, and
 //! every reply, call and the final quit is read back from the handle in the

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Pure owned-editor core. No tty, evaluator, Bus, or process-group ownership.
 //!
 //! The input owner must drain already-observed human activity before

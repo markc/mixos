@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- version: 0.1.0
 -- Bounded binary P6 inspection for native desktop acceptance gates.
 fn ppm($path)

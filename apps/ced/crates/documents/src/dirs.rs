@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! App-owned filenames over config's shared per-application directories.
 #[cfg(test)]
 use std::path::Path;

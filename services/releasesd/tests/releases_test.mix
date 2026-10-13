@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- releases_test: the releasesd logic, offline. Builds fixture release
 -- tarballs with bsdtar and drives lib/releases.mix directly: validation,
 -- catalogue checks, asset choice, checksum verification (and its refusals),

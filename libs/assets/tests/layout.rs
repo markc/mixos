@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 #![cfg(feature = "mixos")]
 
 //! The installed layout, as `share/assets/install.mix` publishes it: the

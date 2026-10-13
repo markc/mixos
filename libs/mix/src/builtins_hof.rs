@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Higher-order function builtins.
 //!
 //! A parallel registry to the pure `builtins.rs`. Entries here get

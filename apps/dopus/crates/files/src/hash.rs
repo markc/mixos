@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! BLAKE3 content hashing — the #6 hash-verify key and #7 reconcile signal.
 //! Matches `mixos-mds` blob hashing so a corpus hash and a CAS hash are the same
 //! function.

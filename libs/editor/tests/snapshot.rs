@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The editor driven through egui: offscreen snapshots of a code view and a
 //! wrapped Markdown view, and typing, selection and undo through real input
 //! events. Regenerate the images with `UPDATE_SNAPSHOTS=1` and look at them
@@ -13,6 +14,7 @@ use toolkit::Theme;
 
 const RUST: &str = "\
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use std::collections::HashMap;
 
 /// Count the words in `text`.

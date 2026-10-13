@@ -1,5 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.3.0
 -- Validate component ownership and generate the public map without Cargo.
 -- Two identity sources: Cargo workspace members ([package.metadata.mixos])
 -- and Mix components (component.mx, docs/decisions/2026-10-10-mix-components.md).
@@ -20,10 +21,25 @@ $names = []
 $kinds = {apps:"app", services:"service", cli:"cli", libs:"lib", tools:"tool", tests:"test"}
 $layers = ["bus", "mix", "core", "desktop"]
 $contracts = ["none", "public"]
+-- Package name -> kind, and each package's non-dev dependency names, for
+-- the cli rule (AGENTS.md §6).
+$package_kinds = {}
+$runtime_deps = {}
+-- The names a manifest's dependency table refers to (a renamed dependency
+-- by its `package`).
+fn dependency_names($table)
+  $out = []
+  for each $key in keys($table ?? {})
+    $spec = $table[$key]
+    push($out, (type($spec) == "map" and $spec.package != nil) ? $spec.package : $key)
+  end
+  return $out
+end
 for each $manifest in sort($manifests)
   $relative = substr($manifest, len($root) + 1)
   $parts = split($relative, "/")
-  $pkg = toml_parse(read_file($manifest)).package
+  $doc = toml_parse(read_file($manifest))
+  $pkg = $doc.package
   $meta = $pkg.metadata.mixos
   $valid_kind = $meta.kind == $kinds[$parts[0]] or (len($parts) == 5 and $meta.kind == "test")
   if $pkg.publish != false or $meta.component != $parts[1] or not $valid_kind then
@@ -37,8 +53,23 @@ for each $manifest in sort($manifests)
   end
   if contains($names, $pkg.name) then raise("COMPONENT_DUPLICATE", $pkg.name) end
   push($names, $pkg.name)
+  $package_kinds[$pkg.name] = $meta.kind
+  $deps = concat(dependency_names($doc.dependencies), dependency_names($doc["build-dependencies"]))
+  for each $target in keys($doc.target ?? {})
+    $deps = concat($deps, dependency_names($doc.target[$target].dependencies), dependency_names($doc.target[$target]["build-dependencies"]))
+  end
+  $runtime_deps[$pkg.name] = $deps
   $version = type($pkg.version) == "map" ? $workspace.workspace.package.version : $pkg.version
   push($entries, {path: $relative, name: $pkg.name, component: $meta.component, kind: $meta.kind, layer: $meta.layer, contract: $meta.contract, version: $version})
+end
+-- No non-dev dependency on a `kind = "cli"` package, except from cli/system,
+-- the system binary's host (docs/decisions/2026-10-12-one-system-binary.md).
+for each $name in sort(keys($runtime_deps))
+  for each $dep in $runtime_deps[$name]
+    if $package_kinds[$dep] == "cli" and $name != "system" then
+      raise("COMPONENT_CLI_DEPENDENCY", $name .. " depends on the cli package " .. $dep .. "; only cli/system may")
+    end
+  end
 end
 -- Mix components: one component.mx at the top of a kind directory, and no
 -- Cargo.toml beside it (a component is one or the other).

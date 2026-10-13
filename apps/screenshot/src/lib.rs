@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! screenshot: native screenshots and editable annotations for MixOS.
 //!
 //! The behaviour is the `annotation` engine (the document, its painter, the

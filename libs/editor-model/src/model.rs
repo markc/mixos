@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The editor model: selection, preferred column, scroll, remote carets,
 //! markers and the IME composition range, plus pure text commands that turn
 //! into [`LocalEdit`]s. Shared by the ced widget, `ced --headless` and other

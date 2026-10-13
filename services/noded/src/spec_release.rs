@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! Opt-in, digest-pinned public spec snapshots. Never discovers private sources.
 //! The release directory and its ancestors must be operator-controlled. Hashes

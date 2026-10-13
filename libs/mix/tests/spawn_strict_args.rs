@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! spawn() argument discipline: the shell form coerces nothing (0.52.0), and
 //! the argv form (0.89.0) runs a list directly with no shell.
 //!

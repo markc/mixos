@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Mix-local mixos path resolver. Inlined so mix has no dependency
 //! on the cos-side `mixos-lib-config` crate; behaviour-parity with
 //! that crate's `mixos_root()` / `mixos_path()` / `current_uid()`.

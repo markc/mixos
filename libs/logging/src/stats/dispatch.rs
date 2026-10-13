@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Substrate-side handler for the `<svc>.stats.snapshot` Bus verb
 //! (plan §4.2).
 //!

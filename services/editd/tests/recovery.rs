@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Recovery-file tests (ced E1 plan §5, Stage E1c). Two layers:
 //! - the daemon in-process (`Editd::start_recovering` over a temp recovery
 //!   dir, a recording sink, synthesized commands) for lifecycle, restore and

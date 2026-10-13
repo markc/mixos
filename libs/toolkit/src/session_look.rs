@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The session's look as settingsd holds it, turned into a [`Theme`]. Pure:
 //! no Bus and no I/O. The app reads the desktop profile (for example with
 //! `settings::follow::Follower`) and hands its appearance here.

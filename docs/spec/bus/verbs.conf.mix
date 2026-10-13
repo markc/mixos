@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- Accepted Bus verb registry, schema 2. Each component registers its verbs
 -- here when it enters the tree (AGENTS.md §5). tools/verb_registry.mix keeps
 -- it canonical: one entry per line, fields in the order name, owner,

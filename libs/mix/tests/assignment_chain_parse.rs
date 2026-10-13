@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Assignment statements must never become any operand of `&&` / `||`.
 
 use mix::MixError;

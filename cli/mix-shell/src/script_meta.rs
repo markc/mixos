@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `mix SCRIPT --version` — the Mix-script half of the fleet `--version`
 //! contract (Mark 2026-09-25), plus the provenance record `script_version()`
 //! reads.

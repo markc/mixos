@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Run against an isolated real broker on a native-session capable kernel.
 //! Transplanted from `apps/busviewer/tests/native.rs` (markc/mixos-iced).
 use bus::native_client::NodedClient;

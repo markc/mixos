@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The sealed format is untouched by the in-memory accent sidecar. The digests
 //! below were taken from the tree before the sidecar existed (27efdba, probed on
 //! the CBC worker for the default desktop). A change to `Snapshot` or `Effective`

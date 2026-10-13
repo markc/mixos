@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Session config: the core's `ConfigFile` pointed at dopus's config
 //! directory. The file, schema and poison-pill law all live in the core
 //! (`dopus_core::config`); this module resolves the directory and renders

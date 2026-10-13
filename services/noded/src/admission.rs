@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! SPEC 13 §9a D2 broker-admission — the broker-side handshake state (slice
 //! 2-c-1b). The crypto/membership gate lives in

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! dopus's side of thumbnails: one preview per pane, made by the shared
 //! [`thumbs`](::thumbs) library. Each pane is a lane of the pool (a newer
 //! selection replaces the request still waiting), its listing generation is

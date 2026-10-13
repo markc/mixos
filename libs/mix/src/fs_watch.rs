@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Linux inotify only. Each registration watches its stable parent and manually
 //! enumerated directories; no symlink following and no periodic reconciliation.
 use crate::{error::MixResult, native_events::refusal, value::Value};

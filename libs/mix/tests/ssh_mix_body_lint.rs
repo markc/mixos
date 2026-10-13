@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `mix lint` sees inside `ssh_mix` remote bodies (v0.69.0).
 //!
 //! `ssh_mix(host, source[, opts])` ships its SECOND argument to a remote

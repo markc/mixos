@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! C6/C8/C9/C10 (TODO-mix sweep): parse match status, `.fn` spelling,
 //! and the collection-literal traps.
 

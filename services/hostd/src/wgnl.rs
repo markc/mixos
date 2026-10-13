@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Netlink for WireGuard links, with `CAP_NET_ADMIN`: read each peer's
 //! last handshake (generic netlink, family `wireguard`), and delete a link
 //! so networkd creates it afresh from a changed `.netdev`.

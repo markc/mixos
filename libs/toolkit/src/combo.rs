@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Combo boxes (chrome specification §3.17): egui's combo, whose button and
 //! list the chrome style already draws to the specification, with three
 //! changes.

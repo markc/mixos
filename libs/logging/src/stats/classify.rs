@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Label-sensitivity classification registry (plan §3.3.2).
 //!
 //! Each metric family declares its `LabelSensitivity` at startup via

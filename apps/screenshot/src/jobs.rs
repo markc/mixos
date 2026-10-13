@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The effects that leave the process, shared by the window and headless
 //! mode: captures over compd, decoding, rendering and publishing PNGs, the
 //! ledger, and the registry-backed Bus verbs. Image work runs on blocking

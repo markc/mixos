@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `ErrorDialog` — a small centered modal shown when a capture can't proceed
 //! (e.g. no working hardware video encoder). A message + a single OK button that
 //! emits [`CaptureMessage::Discard`] (the interface tears the capture down).

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The scene view through a real (headless) egui runtime: one pass lays a
 //! scene out at a surface size, and the tests read back the rectangles the
 //! scene was drawn and hit-tested at.

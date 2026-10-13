@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Offscreen snapshots of BusViewer driven through its real engine: a
 //! discovered node with one service whose descriptions failed, a selected
 //! verb, a body and a completed reply. Regenerate with `UPDATE_SNAPSHOTS=1`

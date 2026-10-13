@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Parser/lexer stack-safety: deeply nested input must surface a clean
 //! `MixError` instead of overflowing the native stack (SIGABRT,
 //! uncatchable). The deep-input tests here PROVE the depth cap — before

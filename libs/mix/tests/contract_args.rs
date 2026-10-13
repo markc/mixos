@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! A2 (TODO-mix 2026-09-24): contract argument TYPE checks — always-on
 //! for the side-effect classes (fs/process/network/bus), strict-mode-only
 //! for pure builtins in the first release. The 0.93-era side effects were

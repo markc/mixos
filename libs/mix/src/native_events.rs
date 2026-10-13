@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Evaluator-generation-owned native sources. Only owned Rust data crosses threads.
 //! Notify is a readiness hint; records stay under the mutex until delivery commits.
 use crate::{

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! Run inside a delegated test service with MIXOS_CONTAIN_CHILDREN=1.
 //! A double-forked child changes session and process group immediately, then

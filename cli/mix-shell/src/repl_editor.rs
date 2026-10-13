@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Opt-in adapter. The legacy editor receives the same calls when unselected.
 use crate::completion::MixHelper;
 use crate::editor::runtime::{Admitted, Control, Line, OwnedEditor};

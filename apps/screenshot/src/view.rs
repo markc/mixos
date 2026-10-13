@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The egui rendering of the app's state. [`view`] reads the app and
 //! returns what the person did as [`UiEvent`]s; the shell applies them
 //! after the frame, so drawing never changes state and a snapshot needs no

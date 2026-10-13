@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Parser-aware audit of `${head}` interpolation sites across the Mix
 //! corpus. Phase A of the bash-parity plan introduces env-fallback for
 //! the brace form; this audit reports every interpolation head with a

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Phase B audit — enumerate every `[:= ]~/` occurrence inside a
 //! double-quoted Mix string body where the planned Phase B lexer rule
 //! ("if the *last buffered char* in `current` is `[:= ]` and the next

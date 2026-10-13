@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Nested lvalue assignment — `$m[$u]["k"] = v`, `$m.a.b = v`,
 //! `$l[0][1] = v` (mix 0.33.0).
 //!

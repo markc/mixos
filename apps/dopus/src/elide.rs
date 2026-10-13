@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Middle elision for file names and paths: the start and the extension
 //! stay, the middle gives way to "…". Widths are measured with the real
 //! font, never estimated from character counts, and the search is bounded.

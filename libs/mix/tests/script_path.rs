@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `script_path()` — the entry script's `$0`, resolved the way `realpath($0)`
 //! resolves it. The CLI sets `$0` to the path the script was run as; a
 //! required module must still see the ENTRY script, not itself.

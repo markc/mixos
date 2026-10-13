@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- releasesd_test: the releases.* verbs over a real Bus, offline. A private
 -- noded broker (tests/lib/private_bus.mix), a static stand-in for the GitHub
 -- API (http_serve over release JSON and fixture tarballs) and releasesd

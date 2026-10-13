@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Regenerates `src/defs.rs` from `vendor/lsh/definitions/*.lsh` — what
 //! msedit's build script does, run by hand so the output is committed and
 //! reviewable.

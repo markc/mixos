@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! On/off controls (chrome specification §3.16): the checkbox, the Studio
 //! switch, and [`Toggle`], the style's on/off control: the checkbox in Pro
 //! (every Pro on/off toggle is one) and the switch otherwise.

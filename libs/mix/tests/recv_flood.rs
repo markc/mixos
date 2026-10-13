@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! A receive whose peer keeps sending things it cannot deliver must still
 //! end at its timeout: a WebSocket peer flooding unsolicited Pong frames
 //! (control frames, never returned by ws_recv), and a TCP peer trickling

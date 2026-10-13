@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use mix::ast::{Expr, StmtKind};
 use mix::error::MixError;
 use mix::lexer::Lexer;

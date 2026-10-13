@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The window's bars (chrome specification §2.6, §3.9): the options bar
 //! under the title bar, the status bar, the tool bar and the icon rail, all
 //! in the `chrome` role, with their `separator` edges, and the dividers

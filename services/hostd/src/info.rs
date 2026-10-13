@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `host.info`: what this host is. Every source is a plain file under a root
 //! directory (`/` in production), so tests run against a fixture tree.
 use serde_json::{Value, json};

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! TODO-mix P2: process lifetime — deadline escalation (`grace`), descendant
 //! reaping, and the option validation around them.
 //!

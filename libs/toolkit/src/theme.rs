@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! A compiled MixOS theme: the resolved design for one scheme, style, mode
 //! and contrast, together with the context it was compiled for, and how its
 //! windows are framed (decorations and caption side, which change no token).

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `globs2` patterns and their matching, in the order the desktop uses:
 //! a literal name first, then the longest `*.suffix`, then full globs.
 

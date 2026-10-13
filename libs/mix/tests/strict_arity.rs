@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Strict arity mode (0.29.0, decision D5): ArityMode::Strict raises
 //! ARITY_MISMATCH before entering a user function and enforces builtin
 //! contract arity; Compatible (default) keeps missing->nil /

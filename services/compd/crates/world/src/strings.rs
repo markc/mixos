@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! compd's user-visible strings, from its Fluent catalogue
 //! (`services/compd/i18n/en/compd.ftl`, AGENTS.md §4). A missing key renders
 //! as the key itself, so a gap shows instead of going blank.

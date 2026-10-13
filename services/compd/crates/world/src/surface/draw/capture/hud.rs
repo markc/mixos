@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `StopHud` — the top-right Stop button shown while a capture is active. Its
 //! own small screen-space instance (positioned by the interface) so it only
 //! intercepts clicks where the button is.

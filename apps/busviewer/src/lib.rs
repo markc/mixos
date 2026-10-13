@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! busviewer: browse the native ABP services on this node, read their verb
 //! descriptions and mesh membership, and call a verb once with a JSON body.
 //!

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! 09-24 entries: a nil env value removes the variable from the child
 //! (the `env -u` form, all three process builtins through RunArgvOpts),
 //! and the fs `remove`/`remove_dir` refuse a non-string path.

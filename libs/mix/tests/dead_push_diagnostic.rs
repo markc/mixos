@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The dead-push-into-a-by-value-parameter diagnostic (mix 0.21.9).
 //!
 //! `push($p, x)` inside a helper mutates a throwaway copy of a by-value

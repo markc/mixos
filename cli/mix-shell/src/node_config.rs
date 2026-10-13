@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Mix-local `node.conf.mix` broker-URL resolver. Inlined so mix has no
 //! dependency on the cos-side `mixos-lib-config` crate; mirrors that
 //! crate's `node::load_node_config()` search order so `mix` and any

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Window chrome: the colours and geometry of the title bar, the menu bar and
 //! its menus, and, for the chrome styles, the whole egui style.
 //!

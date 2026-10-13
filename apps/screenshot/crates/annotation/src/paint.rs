@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! One painter for preview, clipboard and export: what is saved is what was
 //! shown. Shapes are stroked with tiny-skia; text is shaped with
 //! cosmic-text over the one [`Face`] the caller supplies, so rendering never

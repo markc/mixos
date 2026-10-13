@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The running window: feeds the engine its events and carries out its
 //! effects. Bus work runs on a small tokio runtime; each completion is sent
 //! back as an [`Event`] with a repaint request, so the window wakes only

@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- New frontend verbs against a private native broker and the real loader.
 -- Renderer/Ced/apps fixtures are boundaries; loader I/O and files are real.
 $here=dirname(realpath($0))

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Mix Scenes for compd: the host side of the Mix Scenes contract (Quoin's
 //! `shell.scene.*` verbs), drawn with egui.
 //!

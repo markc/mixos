@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Tooltips (chrome specification §3.20). egui's own tooltips already meet
 //! the specification under the chrome style: the popup frame (`card`, a
 //! 1 pt `card_border`, `radius`, a 6 pt margin and the popup shadow), Body

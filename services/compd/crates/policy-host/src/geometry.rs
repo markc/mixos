@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Renderer-free window geometry executor, shared by the compositor and its
 //! protocol fixtures. Callers resolve windows across their owning worlds before
 //! borrowing the placement Space, and own redraw and pointer invalidation.

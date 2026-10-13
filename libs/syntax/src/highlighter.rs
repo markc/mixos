@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Line-by-line highlighting over a [`LineSource`], adapted from msedit
 //! `crates/edit/src/lsh/highlighter.rs` (reference copy in
 //! `vendor/edit-lsh/highlighter.rs`).

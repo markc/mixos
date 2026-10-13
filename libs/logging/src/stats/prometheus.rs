@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Redaction-first Prometheus child recorder (plan §3.3.2 + §8.1).
 //!
 //! `PrometheusChild` wraps a `metrics-exporter-prometheus`

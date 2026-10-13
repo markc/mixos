@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Tests-only embedding of the real noded, with no broker source refactor.
 //! Keep module paths pointed at production sources: no simulated session RPCs.
 // This crate has no tests of its own ([lib] test = false), but

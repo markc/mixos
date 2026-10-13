@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `mix lint` — the CLI over the semantic analyzer (0.29.0, decision
 //! record D3).
 //!

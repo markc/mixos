@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Who is calling. Identity comes from the kernel (`SO_PEERCRED`) and the
 //! caller's cgroup, never from anything the caller sends.
 use serde::{Deserialize, Serialize};

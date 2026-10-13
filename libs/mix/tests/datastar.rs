@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Datastar `ds_*` SSE builtin tests (Part A.2 of the Datastar webd
 //! foundation plan). Each test drives Mix source through the public
 //! `mix::run` API and asserts the EXACT SSE wire bytes — the

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The `magic` file: content rules, one section per type, highest priority
 //! first. Format (shared-mime-info spec, "The magic files"):
 //!

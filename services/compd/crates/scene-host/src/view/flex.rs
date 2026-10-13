@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Mix Scenes laid out as flexbox with taffy, the engine Quoin lays its
 //! scenes out with. Every drawn node gets one rectangle here; the painter
 //! draws and hit-tests at exactly that rectangle and `shell.scene.layout`

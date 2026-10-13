@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The transaction every write verb runs through, whatever it changes:
 //! a receipt recorded before anything moves, the change, its proof, then
 //! keep or put back; recovery of changes a stop or crash cut short; undo.

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The MixOS Settings portal: `org.freedesktop.portal.Desktop` on the session
 //! bus, serving the `org.freedesktop.appearance` namespace from settingsd.
 pub mod appearance;

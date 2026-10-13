@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Bounded streaming HTTP transfers. No dependency on the daemon layer.
 use super::*;
 use indexmap::IndexMap;

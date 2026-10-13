@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `EncodingDialog` — shown while the optimized (software) re-encode runs in the
 //! manual "Optimized encoding" path. A title + a progress bar updated each frame
 //! by the interface via [`CaptureMessage::SetEncodeProgress`]. Own small centered

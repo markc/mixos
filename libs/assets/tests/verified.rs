@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 #![cfg(feature = "verified")]
 
 //! Immutable verified byte reads: the owned bytes, the identity pinning

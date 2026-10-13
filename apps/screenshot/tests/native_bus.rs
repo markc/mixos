@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Agent acceptance over a real broker: the headless binary, a fixture
 //! compositor that only supplies deterministic pixels, and an agent that
 //! captures, annotates, crops, saves into the screenshots folder (and hears

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Regression guards for the 0.21.7 fixes:
 //!   1. Free-variable closure capture — a lambda defined inside a
 //!      function snapshots only the frame vars its body references, not

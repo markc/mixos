@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Refusal vocabulary shared by the core and the `edit` citizen.
 //!
 //! Wire shape (decision 10): `rc = 10`, body

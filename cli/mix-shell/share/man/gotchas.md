@@ -8,7 +8,7 @@ This page is the list of them.
 Read it before writing Mix. It is the one page that pays for itself in a
 single session. `mix man syntax` is the mental model; this is the errata.
 
-Every row below is executed by `cargo test -p mix-shell --test man_gotchas`,
+Every row below is executed by `cargo test -p system --test man_gotchas`,
 which runs the **probe** column through `mix -c` and compares the **prints**
 column. A wrong row fails the build, so the page cannot rot into confident
 fiction.
