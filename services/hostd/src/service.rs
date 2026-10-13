@@ -4,7 +4,7 @@
 //! a caller-supplied command, script or shell string.
 use crate::{
     caller::{Caller, Origin, Peer},
-    freeze, info, link, net,
+    desk, freeze, info, link, net,
     policy::{self, Policy, RateLimiter},
     receipt::{self, Outcome, Receipt},
     txn, wg, wifi,
@@ -88,6 +88,16 @@ pub const VERBS: &[Verb] = &[
     Verb {
         name: "net.wg.apply",
         summary: "Configure a WireGuard link through networkd; rolled back unless it comes up and its peers complete a handshake",
+        tier: Tier::Write,
+    },
+    Verb {
+        name: "desk.restart",
+        summary: "Restart the desk machine this session's grant names; the host stays up",
+        tier: Tier::Write,
+    },
+    Verb {
+        name: "desk.stop",
+        summary: "Power off the desk machine this session's grant names; the host stays up",
         tier: Tier::Write,
     },
 ];
@@ -261,6 +271,27 @@ async fn serve(
         "hostd.receipt" => receipt_verb(host, body),
         "hostd.freeze" => freeze_verb(host, body, local(origin)),
         "hostd.thaw" => thaw_verb(host, body, local(origin)),
+        desk::RESTART | desk::STOP => {
+            // The verb takes no machine name: the grant names the desk.
+            let policy = load_policy(host).map_err(|e| policy_invalid(&e))?;
+            let Origin::Local(caller) = origin else {
+                return Err(refuse("local_only", name));
+            };
+            let desk = desk::target(&policy, caller, name, chrono::Utc::now())
+                .map_err(|status| refuse(status, name))?;
+            let (verb, run_desk) = (name.to_owned(), desk.clone());
+            write(
+                host,
+                origin,
+                peer,
+                name,
+                vec![(desk::LIMIT.to_owned(), desk)],
+                move |host, origin, grant| async move {
+                    desk::act(&host.state, &verb, &run_desk, &grant, &origin).await
+                },
+            )
+            .await
+        }
         "net.link.apply" => {
             let plan = link::plan(&host.root, decode(body)?)?;
             let limits = vec![("links".to_owned(), plan.link.clone())];
