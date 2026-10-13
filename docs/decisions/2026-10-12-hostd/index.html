@@ -344,9 +344,10 @@ grant carries a rate limit and an expiry.</li>
 <li><strong>Every call is recorded,</strong> as a receipt and in the audit journal. <code>hostd.undo</code>
 refuses both verbs.</li>
 </ul>
-<p>Open: whether <code>desk.*</code> also needs the second signature from an independent
-reviewer that the reboot tier requires. Until that is decided, the grant's
-own rate limit and expiry are the only second check.</p>
+<p>Deferred (Mark, 2026-10-13): the second signature from an independent reviewer
+that the reboot tier requires is not built for <code>desk.*</code>. Security gates are
+added once the desktop is ready for daily use, where they are needed. Until
+then, the grant's rate limit and expiry are the only second check.</p>
         </article>
         <p class="doc-source"><a href="/decisions/2026-10-12-hostd.md"><i data-lucide="file-text"></i> This page as Markdown</a></p>
     </div>
