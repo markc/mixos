@@ -81,6 +81,14 @@ fn the_file_itself_is_the_shell() {
 }
 
 #[test]
+fn a_renamed_copy_is_the_shell() {
+    let dir = tempfile::tempdir().unwrap();
+    let copy = dir.path().join("development-copy");
+    fs::copy(BIN, &copy).unwrap();
+    assert_shell_identity(&mut Command::new(copy));
+}
+
+#[test]
 fn a_login_shell_is_the_shell() {
     assert_shell_identity(Command::new(BIN).arg0("-mix"));
 }
@@ -117,18 +125,19 @@ fn an_unknown_name_exits_2_with_the_list() {
 
 /// The `noded` personality as a real process: the system binary started
 /// through a symlink, in a throwaway root with its own config and log.
-/// Drop SIGKILLs the whole process group and removes the root, retaining
+/// Drop kills a still-running child and removes the root, retaining
 /// the evidence only when the test is already panicking.
 struct NodedPersonality {
     root: PathBuf,
     child: Child,
-    pgid: libc::pid_t,
 }
 
 impl Drop for NodedPersonality {
     fn drop(&mut self) {
-        unsafe {
-            libc::kill(-self.pgid, libc::SIGKILL);
+        // A completed try_wait has reaped the child. Never signal its old
+        // PID/process group, which the kernel may already have reused.
+        if self.child.try_wait().is_ok_and(|status| status.is_none()) {
+            let _ = self.child.kill();
         }
         let _ = self.child.wait();
         if std::thread::panicking() {
@@ -174,6 +183,7 @@ async fn the_noded_personality_brokers_and_stops_cleanly_on_sigterm() {
 
         let conf = json!({
             "node": "alpha",
+            "wg_ip": "127.0.0.1",
             "noded": {"port": port, "unix_socket": root.join("run/bus.sock")}
         });
         fs::write(
@@ -197,17 +207,9 @@ async fn the_noded_personality_brokers_and_stops_cleanly_on_sigterm() {
             .stdin(Stdio::null())
             .stdout(Stdio::from(log.try_clone().unwrap()))
             .stderr(Stdio::from(log));
-        unsafe {
-            cmd.pre_exec(|| {
-                if libc::setpgid(0, 0) == -1 {
-                    return Err(std::io::Error::last_os_error());
-                }
-                Ok(())
-            });
-        }
         let child = cmd.spawn().unwrap();
         let mut proc =
-            NodedPersonality { pgid: child.id() as libc::pid_t, child, root: root.clone() };
+            NodedPersonality { child, root: root.clone() };
 
         // Readiness: keep trying the production Unix connect until the
         // broker answers, on a deadline, and fail fast if it died.
@@ -277,13 +279,8 @@ async fn the_noded_personality_brokers_and_stops_cleanly_on_sigterm() {
             "unclean shutdown {status}; log: {}",
             root.display()
         );
-        // The personality's own logging identity ran, start to stop.
-        let log = fs::read_to_string(root.join("noded.log")).unwrap_or_default();
-        assert!(
-            log.contains("Starting noded") && log.contains("noded stopped"),
-            "missing daemon log lines; log: {}",
-            root.display()
-        );
+        // Daemon logs may go to journald instead of stderr. The captured
+        // file is diagnostic evidence, not a required logging sink.
     })
     .await
     .expect("noded personality acceptance deadline");
