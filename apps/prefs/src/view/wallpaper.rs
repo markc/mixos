@@ -67,9 +67,15 @@ pub fn controls(
                 egui::ComboBox::from_id_salt("wallpaper-output")
                     .selected_text(target.clone().unwrap_or_else(|| label("wallpaper-default")))
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut target, None, label("wallpaper-default"));
+                        if toolkit::selectable(ui, target.is_none(), label("wallpaper-default")).clicked() {
+                            target = None;
+                            ui.close();
+                        }
                         for name in &editor.outputs {
-                            ui.selectable_value(&mut target, Some(name.clone()), name);
+                            if toolkit::selectable(ui, target.as_deref() == Some(name), name).clicked() {
+                                target = Some(name.clone());
+                                ui.close();
+                            }
                         }
                     });
                 if target != editor.target {
