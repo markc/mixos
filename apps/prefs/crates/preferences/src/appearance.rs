@@ -1070,7 +1070,7 @@ impl Engine {
 
     /// The panel as `prefs.appearance` answers it.
     pub fn appearance_view(&self) -> Value {
-        json!({"settings":self.look.settings,"binding":self.look.binding,
+        json!({"wallpaper":self.wallpaper,"settings":self.look.settings,"binding":self.look.binding,
             "revision":self.look.revision().map(|r| r.to_string()),
             "current":self.look.current,"draft":self.look.draft.map(|d| d.look),
             "edits":self.look.draft.map(|d| d.edits()).unwrap_or_default(),

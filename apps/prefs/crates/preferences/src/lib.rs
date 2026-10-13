@@ -6,8 +6,11 @@
 //! and knows nothing about the UI; `prefs` renders it with egui
 //! (AGENTS.md §4.1, engine first).
 pub mod appearance;
+mod background;
 pub mod engine;
 pub mod model;
+pub mod picker;
+pub mod wallpaper;
 
 pub use appearance::Look;
 pub use engine::{Availability, Dialog, Effect, Engine, Op, UiState};

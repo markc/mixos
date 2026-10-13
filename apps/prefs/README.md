@@ -24,3 +24,11 @@ second launch raises the first window (`prefs.show`).
 
 Test with `cargo test -p preferences -p prefs`. Regenerate the snapshots with
 `UPDATE_SNAPSHOTS=1` and look at the images before committing them.
+# Wallpaper
+
+Appearance also edits backdrop's default and per-output wallpaper: theme,
+solid colour or PNG/JPEG image. The native image browser runs directory I/O
+off the window thread. Apply sends the complete configuration after a fresh
+state check; untouched output overrides are preserved. A refused image keeps
+the last good wallpaper and the local draft.
+

@@ -38,6 +38,8 @@ pub enum Effect {
         verb: &'static str,
         body: Value,
     },
+    Backdrop { ticket: u64, verb: &'static str, body: Value },
+    Browse { ticket: u64, path: Option<String> },
     /// Restore and focus the window and report [`Engine::shown`].
     Show { ticket: u64, reply: Option<u64> },
     /// Answer the Bus command `id`.
@@ -127,6 +129,14 @@ impl Op {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UiState {
+    #[serde(default)]
+    pub wallpaper_kind: Option<crate::wallpaper::Kind>,
+    #[serde(default)]
+    pub wallpaper_colour: Option<String>,
+    #[serde(default)]
+    pub wallpaper_image: Option<String>,
+    #[serde(default)]
+    pub wallpaper_invalid: bool,
     pub panel: Panel,
     /// The selected app in the Applications panel.
     pub selected: Option<String>,
@@ -151,6 +161,10 @@ pub struct UiState {
 impl Default for UiState {
     fn default() -> Self {
         Self {
+            wallpaper_kind: None,
+            wallpaper_colour: None,
+            wallpaper_image: None,
+            wallpaper_invalid: false,
             panel: Panel::Applications,
             selected: None,
             dialog: None,
@@ -277,6 +291,8 @@ pub struct Engine {
     pub session: (Scheme, Mode),
     /// The Appearance panel over settingsd.
     pub look: Appearance,
+    pub wallpaper: crate::wallpaper::WallpaperEditor,
+    pub picker: crate::picker::Picker,
     next_ticket: u64,
     job: Option<Job>,
     notes_job: Option<(u64, String)>,
@@ -303,6 +319,8 @@ impl Engine {
             quitting: false,
             session: (Scheme::default(), Mode::default()),
             look: Appearance::default(),
+            wallpaper: crate::wallpaper::WallpaperEditor::default(),
+            picker: crate::picker::Picker::default(),
             next_ticket: 0,
             job: None,
             notes_job: None,
@@ -334,6 +352,8 @@ impl Engine {
         self.job.is_some()
             || self.notes_job.is_some()
             || self.look.job.is_some()
+            || self.wallpaper.working()
+            || self.picker.loading.is_some()
             || !self.activations.is_empty()
     }
 
@@ -360,7 +380,7 @@ impl Engine {
         match self.ui.panel {
             Panel::Applications => self.idle(),
             Panel::Appearance => {
-                !self.look.working() && self.connected && self.ui.dialog.is_none() && !self.quitting
+                !self.look.working() && !self.wallpaper.working() && self.connected && self.ui.dialog.is_none() && !self.picker.open && !self.quitting
             }
         }
     }
@@ -430,7 +450,7 @@ impl Engine {
     pub fn refresh(&mut self) {
         match self.ui.panel {
             Panel::Applications => self.start(Op::List),
-            Panel::Appearance => self.read_look(),
+            Panel::Appearance => { self.read_look(); self.read_wallpaper(); },
         }
     }
 
@@ -553,6 +573,7 @@ impl Engine {
     /// Close now, or as soon as the work in flight finishes.
     pub fn quit(&mut self) {
         self.quitting = true;
+        self.picker_cancel();
         // A second close after one stopped for unapplied edits drops them.
         self.discard_look_on_quit();
         // A lost apply is settled by its receipt first (a bounded number of
@@ -614,17 +635,20 @@ impl Engine {
             Delivery::Changed => {
                 self.start(Op::List);
                 self.read_look();
+                self.read_wallpaper();
             }
             Delivery::Connected => {
                 self.connected = true;
                 self.start(Op::List);
                 self.read_look();
+                self.read_wallpaper();
             }
             // settingsd announced a change: a hint, re-read over the call.
             Delivery::Topic(topic) => {
                 if topic == crate::appearance::topic() {
                     self.read_look();
                 }
+                if topic == "backdrop.command.executed" { self.read_wallpaper(); }
             }
             Delivery::Disconnected => {
                 self.connected = false;
@@ -764,7 +788,7 @@ impl Engine {
         json!({"schema":"prefs.v1","app_id":APP_ID,"version":env!("CARGO_PKG_VERSION"),"pid":std::process::id(),
             "connected":self.connected,"releases":self.releases,"busy":self.busy(),"working":self.working(),"uncertain":self.uncertain,
             "status":self.status,"failed":self.failed,"apps":self.apps,"notes":self.notes,"notes_error":self.notes_error,
-            "appearance":self.appearance_view(),"ui":self.ui})
+            "appearance":self.appearance_view(),"wallpaper":self.wallpaper,"picker":self.picker,"ui":self.ui})
     }
 
     fn apps_view(&self) -> Value {

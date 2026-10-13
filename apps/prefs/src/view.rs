@@ -22,6 +22,7 @@ use toolkit::command::Origin;
 use toolkit::dialog::{self, Choice};
 use toolkit::titlebar::{self, Control};
 use toolkit::{Icon, Registry, Strings, bars, icons, panel, tooltip};
+mod wallpaper;
 
 /// One interaction from this frame.
 #[derive(Clone, Debug, PartialEq)]
@@ -36,6 +37,13 @@ pub enum UiEvent {
     SetMode(design::Mode),
     /// An edit in the Appearance panel: the whole look it leaves.
     Look(Look),
+    WallpaperTarget(Option<String>),
+    WallpaperKind(preferences::wallpaper::Kind),
+    WallpaperColour(String),
+    WallpaperImage(String),
+    PickerDirectory(String),
+    PickerSelect(String),
+    PickerEnter(String),
 }
 
 const ICON: f32 = 14.0;
@@ -119,9 +127,16 @@ pub fn view(
         .frame(bars::dock_frame(ui.ctx()))
         .show(ui, |ui| match engine.ui.panel {
             Panel::Applications => applications(ui, engine, commands, strings, &mut events),
-            Panel::Appearance => appearance(ui, engine, commands, strings, &mut events),
+            Panel::Appearance => {
+                ScrollArea::vertical().id_salt("appearance-page").auto_shrink(false).show(ui, |ui| {
+                    wallpaper::controls(ui, engine, commands, strings, &mut events);
+                    ui.add_space(ui.spacing().item_spacing.y);
+                    appearance(ui, engine, commands, strings, &mut events);
+                });
+            },
         });
     dialogs(ui, engine, commands, strings, &mut events);
+    wallpaper::picker(ui, engine, &mut events);
     toolkit::titlebar::edges(ui);
     events
 }
@@ -394,10 +409,7 @@ fn appearance(
             ui.label(RichText::new(label("look-reading")).weak());
             return;
         };
-        ScrollArea::vertical()
-            .id_salt("look")
-            .auto_shrink(false)
-            .show(ui, |ui| {
+        ui.vertical(|ui| {
                 ui.set_width(ui.available_width());
                 look_controls(ui, engine, strings, look, events);
                 bars::hairline(ui);

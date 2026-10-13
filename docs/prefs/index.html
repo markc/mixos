@@ -306,6 +306,26 @@ enablement. The window is drivable like every MixOS app
 <code>docs/spec/bus/verbs.conf.mix</code>.</p>
 <p>For scripted work, call the services directly (<code>releases.*</code>,
 <code>settings.*</code>): Prefs is their window, not a second implementation.</p>
+<h1 id="wallpaper">Wallpaper</h1>
+<p>In <strong>Appearance → Wallpaper</strong>, choose the default or an output, then Theme,
+Colour or Image. Colour accepts a picker or <code>#RRGGBB</code>. Browse opens the native
+image browser at the installed wallpaper folder, or Pictures in your home
+folder. It lists PNG/JPEG files and folders without blocking the window.
+Changes stay in Prefs until <strong>Apply wallpaper</strong>. <strong>Revert wallpaper</strong> drops
+them; <strong>Refresh wallpaper</strong> reads the current state again.</p>
+<p>An output's <strong>Use default</strong> removes just that override. Editing the default
+preserves every output override. Images currently crop to fill; fit controls
+and slideshows will follow when backdrop supports them.</p>
+<p>Backdrop must be running on the same session Bus. A refusal shows its reason,
+keeps the draft and leaves the last good wallpaper in place. Prefs checks for
+intervening changes before sending the whole document; conflicts require
+Revert and a fresh edit. This check is best effort: backdrop does not yet
+provide an atomic compare-and-set operation. A lost reply is checked by a
+state read, never automatically resent.</p>
+<p>Wallpaper and browser state are included in <code>prefs.info</code>, wallpaper state in
+<code>prefs.appearance</code>. Commands <code>wallpaper.apply</code>, <code>wallpaper.revert</code>,
+<code>wallpaper.refresh</code> and <code>wallpaper.browse</code> are available through
+<code>prefs.execute</code>; the normal <code>prefs.ui.*</code> verbs drive the controls and browser.</p>
         </article>
         <p class="doc-source"><a href="/prefs.md"><i data-lucide="file-text"></i> This page as Markdown</a></p>
     </div>

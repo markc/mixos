@@ -9,6 +9,7 @@
 //! around it (AGENTS.md §4.1): [`view`] draws the engine's state, [`shell`]
 //! runs its effects, and [`commands`] is the registry every action goes
 //! through, from the menu, a button, a shortcut or the Bus.
+mod browser;
 pub mod commands;
 pub mod shell;
 pub mod view;
