@@ -90,6 +90,13 @@ precedence = "override"
 SPDX-FileCopyrightText = "2026 Lucide Icons and Contributors; Cole Bemis (Feather-derived icons)"
 SPDX-License-Identifier = "ISC AND MIT"
 
+# Icon bundle: unmodified upstream Lucide SVGs and their licence (share/icons).
+[[annotations]]
+path = ["share/icons/lucide/*.svg", "share/icons/LICENSE-lucide.txt"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Lucide Icons and Contributors; Cole Bemis (Feather-derived icons)"
+SPDX-License-Identifier = "ISC AND MIT"
+
 # Provenance not yet recorded; clear it (or replace it) before a release.
 [[annotations]]
 path = "docs/web/Server_Room_Dark.webp"

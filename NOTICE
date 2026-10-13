@@ -47,6 +47,17 @@ also Cole Bemis (Feather), MIT. Licence in libs/toolkit/assets/icons/LICENSE-luc
 The screenshot app icon (apps/screenshot/assets/dev.mixos.screenshot-symbolic.svg)
 is Lucide 1.54.0 camera.svg, unmodified, under the same licence.
 
+Icon bundle (share/icons)
+-------------------------
+
+share/icons/lucide holds 27 unmodified SVGs from Lucide 1.54.0
+(https://github.com/lucide-icons/lucide), Lucide Icons and Contributors, ISC; the
+Feather-derived icons among them are also Cole Bemis (Feather), MIT. The licence
+is share/icons/LICENSE-lucide.txt. The installer (share/icons/install.mix)
+writes copies with stroke-width changed from 2 to 1.5 into the MixOS icon theme;
+the sources are never changed, and each is pinned by SHA-256 in
+share/icons/manifest.conf.mix.
+
 Site assets (docs/web)
 ----------------------
 

@@ -1,39 +1,34 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Real isolated noded + the production apps citizen driven over the Bus:
--- list/get/launch/reload/props against fixture desktop files only. The
--- broker gets a private TCP port AND a private unix socket -- the verified
--- lane every `send` prefers -- so nothing here can reach, or be reached
--- from, the host's real Bus (this is why it spawns directly instead of
--- using systemd-run: it runs in sessions without a user systemd manager).
--- XDG_DATA_HOME/XDG_DATA_DIRS/HOME point into the fixture tree, so no real
--- desktop file or icon is ever read, and every fixture "binary" is a mix
--- script that records its argv and exits -- no real application launches.
-$root = env("MIXOS")
-if $root == "" then raise("TEST_CONFIG", "set MIXOS to the checkout root") end
+-- list/get/launch/reload/props against fixture desktop files, and the icon
+-- trees the installers write. The broker is a private, owned noded from
+-- tests/lib/private_bus.mix (its own port and unix socket). The client, the
+-- citizen and every launched fixture get that broker's explicit client_env,
+-- with clear_env, so no host broker can be reached or leak in. stop() and
+-- the finally block retire the broker and the citizen, then remove the
+-- unique mktemp tree.
+-- XDG_DATA_HOME/XDG_DATA_DIRS/HOME point into the fixture tree. Production
+-- lookup retains its final /usr/share/pixmaps fallback; the pre-install miss
+-- checks assume that directory has no bundled aliases. Every fixture "binary"
+-- is a Mix script that records its argv and exits; no real app launches.
+-- Needs a fresh mix and noded: MIXOS_TEST_MIX and MIXOS_TEST_NODED when set,
+-- else /opt/mixos/bin/mix and /opt/mixos/bin/noded.
+--   mix services/compd/tests/apps_bus_test.mix      (MIXOS overrides the root)
+$root = env("MIXOS") != "" ? env("MIXOS") : realpath(dirname(realpath($0)) .. "/../../..")
+$pb = require("../../../tests/lib/private_bus.mix")
 $scripts = $root .. "/services/compd/scripts"
-$mix = "/opt/mixos/bin/mix"
+$mix = env("MIXOS_TEST_MIX") != "" ? env("MIXOS_TEST_MIX") : "/opt/mixos/bin/mix"
+$noded = env("MIXOS_TEST_NODED") != "" ? env("MIXOS_TEST_NODED") : "/opt/mixos/bin/noded"
+$icons_install = $root .. "/share/icons/install.mix"
+$brand_install = $root .. "/share/brand/install.mix"
 $tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-apps-bus-test.XXXXXXXX"]))
 $tag = uuid()
-$port = random(46000, 46999)
-$node = $tmp .. "/node.conf.mix"
-write_file($node, json_encode({node: "apps-bus-test-" .. $tag, wg_ip: "", mesh: "apps-bus-test.invalid",
-  noded: {port: $port, admission: "off", unix_socket: $tmp .. "/bus.sock"}}))
-$env = {MIXOS_NODE_CONFIG: $node, MIX_STATS: "off", PATH: "/usr/bin:/bin"}
-$citizen_env = {
-  MIXOS_NODE_CONFIG: $node, MIX_STATS: "off", PATH: "/usr/bin:/bin",
-  HOME: $tmp,
-  XDG_DATA_HOME: $tmp .. "/data",
-  XDG_DATA_DIRS: $tmp .. "/sys",
-  -- comp's XWayland descriptor lives under the fixture runtime dir.
-  XDG_RUNTIME_DIR: $tmp .. "/run",
-  WAYLAND_DISPLAY: "wayland-apps-test",
-  -- The static value the desk-boot units carry: must never leak to a child.
-  DISPLAY: ":0"
-}
 -- Pre-bound so the finally block can run even when a setup step fails
--- before the two daemons are spawned (an unbound read would raise there
--- and skip the temp-dir cleanup).
+-- before the broker or the citizen exists.
+$bus = nil
+$env = nil
+$citizen_env = nil
 $svc_pid = nil
-$noded_pid = nil
 -- One-shot Bus client: cli.mix <target> <verb> [json-body] -> one JSON line.
 -- The send must NOT be assigned to $rc -- the runtime sets $rc/$result
 -- itself and an assignment would shadow them with the reply value.
@@ -45,7 +40,7 @@ fn write_client()
 end
 -- Fixture "binaries": record argv under the citizen's HOME and exit.
 fn write_recorder()
-  mkdir($tmp .. "/bin")
+  mkdir($tmp .. "/bin", {parents: true})
   write_file($tmp .. "/bin/recorder", "#!/opt/mixos/bin/mix\n" ..
     "write_file(env(\"HOME\") .. \"/launched-\" .. basename($0), join(args(), \"\\n\") .. \"\\n\")\n")
   -- Records the DISPLAY the launched app actually inherited.
@@ -62,17 +57,25 @@ fn check($condition, $message)
   if not $condition then raise("APPS_BUS_TEST", $message) end
 end
 fn fixture($path, $content)
-  mkdir(dirname($tmp .. "/" .. $path))
+  mkdir(dirname($tmp .. "/" .. $path), {parents: true})
   write_file($tmp .. "/" .. $path, $content)
 end
 fn call($target, $verb, $body)
   -- run_argv_must returns captured stdout directly (raising on a spawn
   -- failure); the client prints exactly one JSON line.
-  return json_parse(run_argv_must([$mix, $tmp .. "/cli.mix", $target, $verb, $body], {env: $env, timeout: 25}))
+  return json_parse(run_argv_must([$mix, $tmp .. "/cli.mix", $target, $verb, $body], {clear_env: true, env: $env, timeout: 25}))
+end
+-- apps.icon for $name at $size. An empty $theme omits the field, so the
+-- citizen's selected theme (apps.props.set apps.icon_theme) applies.
+fn icon_call($name, $size, $theme)
+  if $theme == "" then
+    return call("apps", "apps.icon", json_encode({name: $name, size: $size}))
+  end
+  return call("apps", "apps.icon", json_encode({name: $name, size: $size, theme: $theme}))
 end
 fn wait_ready()
   for each $i in range(1, 80)
-    $r = run_argv([$mix, $tmp .. "/cli.mix", "apps", "apps.list", "{}"], {env: $env, timeout: 25})
+    $r = run_argv([$mix, $tmp .. "/cli.mix", "apps", "apps.list", "{}"], {clear_env: true, env: $env, timeout: 25})
     if $r.ok then
       $parsed = json_parse($r.stdout)
       if type($parsed) == "map" and $parsed.rc == 0 then return nil end
@@ -99,6 +102,28 @@ fn wait_file($path)
   end
   raise("APPS_BUS_TEST", "launched fixture never ran: " .. $path)
 end
+-- Terminate the citizen we spawned: TERM, a bounded wait, then KILL.
+fn stop_pid($pid)
+  if $pid == nil or not process_alive($pid) then return nil end
+  $_term = kill($pid, 15)
+  for $wait = 1 to 40
+    if not process_alive($pid) then return nil end
+    sleep(0.05)
+  end
+  $_kill = kill($pid, 9)
+  return nil
+end
+-- The Lucide and brand installers write into the sandbox root $tmp/sys.
+-- --verify is read-only and fails on an empty destination, so the Lucide
+-- install runs first and --verify checks the tree it just wrote.
+fn install_icons()
+  check(is_file($icons_install), "share/icons/install.mix is not in this tree (the Lucide installer)")
+  print(run_argv_must([$mix, $icons_install, "--root", $tmp .. "/sys"], {timeout: 120}))
+  print(run_argv_must([$mix, $icons_install, "--root", $tmp .. "/sys", "--verify"], {timeout: 120}))
+  print(run_argv_must([$mix, $brand_install, "--root", $tmp .. "/sys"], {timeout: 120}))
+  check(is_file($tmp .. "/sys/icons/mixos/index.theme"), "the icons installer did not write mixos/index.theme")
+end
+
 try
   write_client()
   write_recorder()
@@ -123,11 +148,21 @@ try
     "Type=Application\nName=NoExec App\nExec=" .. $tmp .. "/bin/not-runnable\n")
   $_chmod = run_argv_must(["chmod", "0755", $tmp .. "/bin/recorder", $tmp .. "/bin/display-recorder"])
 
-  $noded_pid = spawn(["/opt/mixos/bin/noded", "serve", "--listen", "127.0.0.1:" .. to_string($port),
-    "--node", "apps-bus-test-" .. $tag, "--no-monitor", "--no-log"],
-    {detach: true, env: $env, stdout: {file: $tmp .. "/noded.log"}, stderr: "stdout"})
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "apps-bus-test-" .. $tag, noded: $noded})
+  $env = merge($pb.client_env($bus), {MIX_STATS: "off", PATH: "/usr/bin:/bin", HOME: $tmp .. "/bus/home"})
+  $citizen_env = merge($pb.client_env($bus), {
+    MIX_STATS: "off", PATH: "/usr/bin:/bin",
+    HOME: $tmp,
+    XDG_DATA_HOME: $tmp .. "/data",
+    XDG_DATA_DIRS: $tmp .. "/sys",
+    -- comp's XWayland descriptor lives under the fixture runtime dir.
+    XDG_RUNTIME_DIR: $tmp .. "/run",
+    WAYLAND_DISPLAY: "wayland-apps-test",
+    -- The static value the desk-boot units carry: must never leak to a child.
+    DISPLAY: ":0"
+  })
   $svc_pid = spawn([$mix, "--serve", $scripts .. "/apps.mix", "--name", "apps"],
-    {detach: true, env: $citizen_env, stdout: {file: $tmp .. "/svc.log"}, stderr: "stdout"})
+    {detach: true, clear_env: true, env: $citizen_env, stdout: {file: $tmp .. "/svc.log"}, stderr: "stdout"})
   wait_ready()
 
   -- apps.list excludes NoDisplay; apps.get still finds it (B4 over the Bus).
@@ -183,47 +218,100 @@ try
   check(wait_file($tmp .. "/launched-recorder") == "-e\n" .. $tmp .. "/bin/recorder\nterm-arg\n",
     "terminal argv not parsed and prefixed onto the app argv")
 
-  -- apps.reload rebinds the scanned index after the tree changed.
-  $late_icon={name:"late-symbolic",size:22,theme:"late-theme"}
-  check(call("apps","apps.icon",json_encode($late_icon)).rc == 14,"missing theme must be cached before installation")
-  fixture("data/icons/late-theme/index.theme","[Icon Theme]\nName=Late\nDirectories=symbolic\n\n[symbolic]\nSize=22\nType=Scalable\nMinSize=1\nMaxSize=512\n")
-  fixture("data/icons/late-theme/symbolic/late-symbolic.svg","<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M0 0h24v24H0z\"/></svg>")
+  -- Icon resolution through the citizen before any installer has run: the
+  -- fixture hicolor theme resolves, and a theme that is not there yet is a miss.
+  $early_icon = call("apps", "apps.icon", json_encode({name: "apps-bus-test-icon", size: 22}))
+  check($early_icon.rc == 0 and ends_with($early_icon.result.path, "/data/icons/hicolor/22x22/apps-bus-test-icon.png"),
+    "apps.icon did not resolve the fixture icon")
+  $late_icon = {name: "late-symbolic", size: 22, theme: "late-theme"}
+  check(call("apps", "apps.icon", json_encode($late_icon)).rc == 14, "missing theme must be cached before installation")
+
+  -- Every manifest alias is a cached miss before installation. apps.reload
+  -- must drop all of them, not just the entries.
+  $manifest = load_data($root .. "/share/icons/manifest.conf.mix")
+  check($manifest.schema == 1 and $manifest.stroke_width == 1.5, "manifest is not the stroke 1.5 Lucide catalogue")
+  check(len($manifest.icons) == 34, "manifest must list 34 aliases, found " .. to_string(len($manifest.icons)))
+  for each $icon in $manifest.icons
+    check(icon_call($icon.name, 24, "mixos").rc == 14, "a manifest alias resolved before installation: " .. $icon.name)
+  end
+
+  -- Install the Lucide tree, then the brand tree, into the sandbox root.
+  install_icons()
+
+  -- Theme installed later, with deliberate artwork, under the same name as a
+  -- mixos alias. Its index declares both the flat and the apps directories.
+  fixture("data/icons/late-theme/index.theme", "[Icon Theme]\nName=Late\nDirectories=symbolic,symbolic/apps\n\n" ..
+    "[symbolic]\nSize=22\nType=Scalable\nMinSize=1\nMaxSize=512\n\n" ..
+    "[symbolic/apps]\nSize=22\nType=Scalable\nMinSize=1\nMaxSize=512\n")
+  fixture("data/icons/late-theme/symbolic/late-symbolic.svg", "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M0 0h24v24H0z\"/></svg>")
+  fixture("data/icons/late-theme/symbolic/apps/dev.mixos.term-symbolic.svg", "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\">" ..
+    "<!-- late-theme deliberate artwork --><rect x=\"2\" y=\"2\" width=\"20\" height=\"20\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"/></svg>")
   check(call("apps", "apps.get", json_encode({id: "late"})).rc == 14, "stale index served an app that does not exist yet")
   fixture("data/applications/late.desktop", "[Desktop Entry]\n" ..
     "Type=Application\nName=Late App\nExec=" .. $tmp .. "/bin/recorder late-arg\n")
   $reload = call("apps", "apps.reload", "{}")
   check($reload.rc == 0 and $reload.result.count == 7, "apps.reload count wrong (expected 7 index entries)")
   check(call("apps", "apps.get", json_encode({id: "late"})).rc == 0, "apps.reload did not rebind the index")
-  $resolved_late=call("apps","apps.icon",json_encode($late_icon))
-  check($resolved_late.rc == 0 and ends_with($resolved_late.result.path,"/late-theme/symbolic/late-symbolic.svg"),"apps.reload did not invalidate an installed theme's cached miss")
+  $resolved_late = call("apps", "apps.icon", json_encode($late_icon))
+  check($resolved_late.rc == 0 and ends_with($resolved_late.result.path, "/late-theme/symbolic/late-symbolic.svg"),
+    "apps.reload did not invalidate an installed theme's cached miss")
 
-  -- Icon resolution through the citizen (theme chain, fixture hicolor).
-  $icon = call("apps", "apps.icon", json_encode({name: "apps-bus-test-icon", size: 22}))
-  check($icon.rc == 0 and ends_with($icon.result.path, "/data/icons/hicolor/22x22/apps-bus-test-icon.png"),
-    "apps.icon did not resolve the fixture icon")
-
-  -- All real bundled weights remain selectable with the same icon name.
-  print(run_argv_must([$mix,$root .. "/share/icons/install.mix","--root",$tmp .. "/sys"]))
-  print(run_argv_must([$mix,$root .. "/share/brand/install.mix","--root",$tmp .. "/sys"]))
-  check(call("apps","apps.reload","{}").rc == 0,"reload after installing all weights")
-  $weight_paths={}
-  for each $theme in ["mixos","mixos-300","mixos-200","mixos"]
-    check(call("apps","apps.props.set",json_encode({path:"apps.icon_theme",value:$theme})).rc == 0,"select theme through native property")
-    $variant=call("apps","apps.icon",json_encode({name:"dev.mixos.term-symbolic",size:32}))
-    check($variant.rc == 0 and contains($variant.result.path,"/icons/"+$theme+"/"),"default icon requests follow selected weight")
-    $weight_paths[$theme]=$variant.result.path
-    $brand=call("apps","apps.icon",json_encode({name:"dev.mixos",size:28}))
-    check($brand.rc == 0 and contains($brand.result.path,"/icons/mixos/"),"all weights inherit the same cyclops")
+  -- The mixos theme is selected natively, so no host default (breeze, say) applies.
+  check(call("apps", "apps.props.set", json_encode({path: "apps.icon_theme", value: "mixos"})).rc == 0, "select mixos through native property")
+  for each $icon in $manifest.icons
+    check(ends_with($icon.name, "-symbolic"), "alias is not symbolic: " .. $icon.name)
+    check(contains(["apps", "status", "actions"], $icon.context), "unknown context for " .. $icon.name .. ": " .. $icon.context)
+    check(has_key($manifest.sources, $icon.source), "alias has no source: " .. $icon.name)
+    $r = icon_call($icon.name, 24, "")
+    check($r.rc == 0, "apps.icon did not resolve " .. $icon.name)
+    check(ends_with($r.result.path, "/icons/mixos/scalable/" .. $icon.context .. "/" .. $icon.name .. ".svg"),
+      "alias resolved outside the native mixos scalable tree: " .. $icon.name .. " -> " .. $r.result.path)
+    check(starts_with($r.result.path, $tmp .. "/sys/") and $r.result.theme == "mixos" and $r.result.kind == "svg",
+      "alias did not come from the installed mixos svg tree: " .. $icon.name)
+    -- The pinned upstream bytes, then the generated copy at stroke 1.5.
+    $src = $manifest.sources[$icon.source]
+    check(hash_file($root .. "/share/icons/" .. $src.file, "sha256") == $src.sha256, "upstream bytes changed for " .. $icon.source)
+    $text = read_file($r.result.path)
+    check(contains($text, "stroke-width=\"1.5\"") and not contains($text, "stroke-width=\"2\""),
+      "installed alias is not generated at stroke 1.5: " .. $icon.name)
   end
-  check(hash_file($weight_paths.mixos,"sha256") != hash_file($weight_paths["mixos-300"],"sha256"),"selected weights contain different SVG geometry")
-  check(hash_file($weight_paths["mixos-300"],"sha256") != hash_file($weight_paths["mixos-200"],"sha256"),"200 and 300 contain different SVG geometry")
 
-  print("PASS apps Bus surface: list/get/launch, argv, reload, icon cache invalidation and native 400/300/200/400 selection")
+  -- The brand mark ships as dev.mixos-symbolic: the symbolic brand source,
+  -- not a non-symbolic dev.mixos.svg, is what both installed copies hold.
+  $canon = $root .. "/share/brand/logos/mixos-black-transparent.svg"
+  check(is_file($canon), "brand source dev.mixos-symbolic is missing: " .. $canon)
+  $canon_hash = hash_file($canon, "sha256")
+  for each $dest in [$tmp .. "/sys/icons/hicolor/symbolic/apps/dev.mixos-symbolic.svg", $tmp .. "/sys/icons/mixos/symbolic/apps/dev.mixos-symbolic.svg"]
+    check(is_file($dest) and hash_file($dest, "sha256") == $canon_hash, "brand installed the wrong dev.mixos-symbolic bytes: " .. $dest)
+  end
+  check(not is_file($tmp .. "/sys/icons/mixos/symbolic/apps/dev.mixos.svg"), "a non-symbolic dev.mixos.svg was installed")
+  $brand = icon_call("dev.mixos-symbolic", 28, "")
+  check($brand.rc == 0 and ends_with($brand.result.path, "/dev.mixos-symbolic.svg"), "apps.icon did not resolve the brand mark")
+  check(hash_file($brand.result.path, "sha256") == $canon_hash, "brand mark resolved to bytes other than the canonical source")
+
+  -- An explicit selection wins: the late theme is chosen natively, and the
+  -- chosen path must survive another install and a reload.
+  check(call("apps", "apps.props.set", json_encode({path: "apps.icon_theme", value: "late-theme"})).rc == 0, "select late-theme through native property")
+  $late_term = icon_call("dev.mixos.term-symbolic", 24, "")
+  check($late_term.rc == 0 and ends_with($late_term.result.path, "/late-theme/symbolic/apps/dev.mixos.term-symbolic.svg"),
+    "explicit late-theme selection did not win over mixos")
+  check(contains(read_file($late_term.result.path), "late-theme deliberate artwork"), "late-theme path does not serve its deliberate artwork")
+  install_icons()
+  check(call("apps", "apps.reload", "{}").rc == 0, "reload after the second install")
+  $late_again = icon_call("dev.mixos.term-symbolic", 24, "")
+  check($late_again.rc == 0 and $late_again.result.path == $late_term.result.path, "the explicit theme path changed after another install and reload")
+  $watch = call("apps", "apps.props.watch", json_encode({path: "apps.icon_theme"}))
+  check($watch.rc == 0 and $watch.result.value == "late-theme", "the explicit theme preference was not kept")
+
+  -- The unrelated third-party hicolor fixture still resolves under the late theme.
+  $fixture_icon = icon_call("apps-bus-test-icon", 22, "")
+  check($fixture_icon.rc == 0 and ends_with($fixture_icon.result.path, "/data/icons/hicolor/22x22/apps-bus-test-icon.png"),
+    "the third-party hicolor fixture no longer resolves")
+
+  print("PASS apps Bus surface: list/get/launch, argv, DISPLAY, reload, manifest icon resolution, brand mark and explicit theme preference")
 finally
-  if $svc_pid != nil then $_kill_svc = run_argv(["kill", "--", to_string($svc_pid)], {timeout: 10}) end
-  if $noded_pid != nil then $_kill_noded = run_argv(["kill", "--", to_string($noded_pid)], {timeout: 10}) end
+  stop_pid($svc_pid)
+  if $bus != nil then $pb.stop($bus) end
   -- Only the unique mktemp tree created by this test is removed.
-  if starts_with($tmp, "/tmp/mixos-apps-bus-test.") then
-    $_remove = run_argv_must(["rm", "-rf", "--", $tmp])
-  end
+  if starts_with($tmp, "/tmp/mixos-apps-bus-test.") then remove_dir($tmp) end
 end

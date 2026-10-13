@@ -14,7 +14,7 @@ $APPS = env("APPS_SERVICE", "apps")
 $TRAY = env("TRAY_SERVICE", "tray")
 $NOTIFY = env("NOTIFY_SERVICE", "notify")
 $NODED = env("NODED_SERVICE", "noded")
--- The shipped symbolic Material icons take the panel ink in either scheme.
+-- The shipped symbolic Lucide icons take the panel ink in either scheme.
 -- Empty means the apps citizen's selected theme, for status and tasks alike.
 -- An explicit panel override remains supported.
 $ICON_THEME = env("PANEL_ICON_THEME", "")
@@ -296,14 +296,20 @@ end
 fn resolve_icons()
   if length(keys($state.icons.windows)) + length(keys($state.icons.plain)) >= 512 then $state.icons = empty_icons() end
   if not has_key($state.icons.themed,"dev.mixos") then
-    $state.icons.themed["dev.mixos"] = apps_icon("dev.mixos",48,$ICON_THEME)
+    -- apps.icon matches the exact name (no suffix rule), so the symbolic M
+    -- mark is asked for explicitly when the full-colour brand is not installed.
+    $brand = apps_icon("dev.mixos",48,$ICON_THEME)
+    if $brand == "" then $brand = apps_icon("dev.mixos-symbolic",48,$ICON_THEME) end
+    $state.icons.themed["dev.mixos"] = $brand
   end
   for each $name in $m.PANEL_THEMED_ICONS
     if not has_key($state.icons.themed, $name) then
       $size = starts_with($name, "start-here") ? 48 : 22
-      $symbolic = starts_with($name,"start-here") ? $name : $name .. "-symbolic"
+      -- start-here-kde is external artwork, asked for as it is. The bare
+      -- start-here is the Lucide mark, catalogued as start-here-symbolic.
+      $symbolic = $name == "start-here-kde" ? $name : $name .. "-symbolic"
       $path = apps_icon($symbolic, $size, $ICON_THEME)
-      if $path == "" and $symbolic != $name then $path = apps_icon($name, $size, $ICON_THEME) end
+      if $path == "" and not starts_with($name, "start-here") then $path = apps_icon($name, $size, $ICON_THEME) end
       $state.icons.themed[$name] = $path
     end
   end

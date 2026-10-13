@@ -1,0 +1,32 @@
+[Icon Theme]
+Name=MixOS
+Comment=Lucide icons at stroke 1.5, with the MixOS brand mark
+Directories=scalable/apps,scalable/status,scalable/actions,symbolic/apps
+
+[scalable/apps]
+Size=24
+Type=Scalable
+MinSize=1
+MaxSize=512
+Context=Applications
+
+[scalable/status]
+Size=24
+Type=Scalable
+MinSize=1
+MaxSize=512
+Context=Status
+
+[scalable/actions]
+Size=24
+Type=Scalable
+MinSize=1
+MaxSize=512
+Context=Actions
+
+[symbolic/apps]
+Size=48
+Type=Scalable
+MinSize=1
+MaxSize=512
+Context=Applications

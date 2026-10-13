@@ -19,9 +19,6 @@
 --   --user manager.
 -- - services/compd/tests/settings_test.mix: runs its own release-fast cargo
 --   build.
--- - services/compd/tests/desktop_icons_test.mix and apps_bus_test.mix:
---   stale; they drive tools/material_icons.mix and share/icons/, neither of
---   which came into this tree.
 -- - services/compd/tests/scene_editor_e2e.mix: in a debug build the editor
 --   behaviour crash-loops on the global-scope promotion debug_assert
 --   (libs/mix/src/scope.rs); back in once that scope design is settled.
@@ -48,13 +45,16 @@ $bin = realpath($bin)
 $scripts = [
   "tests/component_install_test.mix",
   "tests/verb_registry_test.mix",
+  "services/compd/tests/apps_bus_test.mix",
   "services/compd/tests/apps_test.mix",
+  "services/compd/tests/desktop_icons_test.mix",
   "services/compd/tests/editor_app_test.mix",
   "services/compd/tests/editor_app_bus_test.mix",
   "services/compd/tests/scene_editor_fixtures_test.mix",
   "services/compd/tests/scene_editor_test.mix",
   "services/compd/tests/scene_template_test.mix",
   "services/compd/tests/scenes_test.mix",
+  "services/compd/tests/scenes_io_test.mix",
   "services/editd/tests/edit_bus_test.mix",
   "services/releasesd/tests/releases_test.mix",
   "services/releasesd/tests/releasesd_test.mix",
@@ -70,6 +70,8 @@ $env = {
   MIXOS_TEST_NODED: $bin .. "/noded",
   MIXOS_TEST_EDITD: $bin .. "/editd",
   MIXOS_TEST_DOPUS: $bin .. "/dopus",
+  -- Pinned so a host's SCENES_FIRST_RUN=0 cannot leak into scenes_test.mix.
+  SCENES_FIRST_RUN: "1",
   TZ: "UTC"
 }
 $failed = []

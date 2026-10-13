@@ -25,8 +25,14 @@ fn rpc($target, $verb, $body)
 end
 
 fn interpreter()
-  -- /proc/self/exe is this running Mix, not an unrelated executable on PATH.
-  return realpath("/proc/self/exe")
+  -- This running Mix, via its own /proc/<pid>/exe: the kernel link keeps
+  -- naming the inode this process executes after its file has been replaced
+  -- or unlinked, so checks and spawns stay on the interpreter this loader
+  -- started with. realpath never follows the replacement: while the old
+  -- inode is still linked it resolves the old pathname (even a moved one),
+  -- and once it is unlinked it returns nil. A bare "mix" could pick an
+  -- unrelated interpreter from PATH. scenes_cli.mix re-enters the same way.
+  return "/proc/" .. to_string(pid()) .. "/exe"
 end
 
 fn templates($script)

@@ -1,0 +1,349 @@
+#!/opt/mixos/bin/mix
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Install the Lucide icon bundle, drawn at stroke 1.5, as the MixOS icon theme.
+--
+--   mix share/icons/install.mix [--root /absolute/share]
+--   mix share/icons/install.mix --check    validate the bundle; write nothing
+--   mix share/icons/install.mix --verify   validate it, then compare the installed bytes
+--
+-- Default root: $MIXOS_SHARE, otherwise /opt/mixos/share. No network is used.
+--
+-- Outputs, all under <root>/icons/mixos (the theme apps.mix selects by default):
+--   scalable/apps/<alias>.svg, scalable/status/<alias>.svg, scalable/actions/<alias>.svg
+--       one per alias in manifest.conf.mix: its upstream SVG with stroke-width 1.5
+--   LICENSE-lucide.txt   the Lucide licence text, beside the icons it covers
+--   index.theme          the three native directories, then the legacy symbolic/apps
+--
+-- Safety:
+-- - Everything is validated before a byte is written: the manifest schema, family,
+--   release and stroke; each source's name, path and SHA-256 (null, non-hex or
+--   mismatched digests, missing or symlinked files); each SVG's 24-unit viewBox,
+--   single root, upstream stroke of 2 and line-icon traits; alias names, contexts,
+--   uniqueness and -symbolic suffix; and the theme index. --check stops after this.
+-- - Each output is staged inside <root>/icons, then renamed into place. A file
+--   being replaced is renamed aside, not read, so its exact bytes come back on
+--   rollback. index.theme is published last.
+-- - A failed publish undoes this run's renames, newest first: it removes the files
+--   this run created and restores the bytes it replaced. If an undo step fails
+--   too, the error says so, the original error is kept in the message, and the
+--   staging directory (with the replaced bytes) is left for manual recovery.
+-- - The root must be an absolute path with no empty, "." or ".." segment. Every
+--   existing directory from / down to the root must be a plain directory, not a
+--   symlink, and that walk runs before anything is created. Directories and outputs
+--   under the root are checked the same way. A symlink anywhere on that path is
+--   refused, so nothing is written outside the root. This is not race-free against
+--   a writer inside the root. --check does not look at the root at all.
+-- - Files this installer does not own are never touched. An alias removed from the
+--   manifest leaves its old file in place, unlisted: nothing is deleted.
+
+$g = getopt(args(), {help: {short: "h"}, root: {arg: true}, check: {}, verify: {}})
+if len($g.errors) != 0 or len($g.rest) != 0 then
+  raise("ICON_ARGS", "Unexpected arguments: " .. join(concat($g.errors, $g.rest), "; "))
+end
+if $g.opts.help then
+  print("usage: mix share/icons/install.mix [--root /absolute/share] [--check | --verify]")
+  exit(0)
+end
+$check = if $g.opts.check then true else false end
+$verify = if $g.opts.verify then true else false end
+if $check and $verify then raise("ICON_ARGS", "--check and --verify are separate modes") end
+$root = $g.opts.root ?? env("MIXOS_SHARE", "/opt/mixos/share")
+$here = dirname(realpath($0))
+$KEY_RE = "^[a-z0-9][a-z0-9-]{0,63}$"
+$NAME_RE = "^[a-z0-9][a-z0-9._-]{0,127}$"
+$SYMBOLIC_RE = "-symbolic$"
+$HEX_RE = "^[0-9a-f]{64}$"
+$CONTEXTS = ["apps", "status", "actions"]
+$NATIVE_DIRS = ["scalable/apps", "scalable/status", "scalable/actions", "symbolic/apps"]
+
+fn plain_file($p)
+  -- A regular file that is not a symlink. A missing path is false.
+  if not exists($p, {follow_symlinks: false}) then return false end
+  $st = stat($p, {follow_symlinks: false})
+  return $st.is_file and not $st.is_symlink
+end
+
+fn plain_dir($p, $create)
+  -- A directory on the way to an output: a plain directory, created when $create.
+  if exists($p, {follow_symlinks: false}) then
+    $st = stat($p, {follow_symlinks: false})
+    if $st.is_symlink or not $st.is_dir then
+      raise("ICON_ROOT", $p .. " is not a plain directory; refusing to write through it")
+    end
+  elif $create then
+    mkdir($p)
+  end
+end
+
+fn plain_target($p)
+  -- An output may be absent or a plain file. Anything else is refused.
+  if exists($p, {follow_symlinks: false}) and not plain_file($p) then
+    raise("ICON_ROOT", $p .. " is not a plain file; refusing to replace it")
+  end
+end
+
+fn check_root($root)
+  -- Lexical first: absolute, and no empty, "." or ".." segment, so the path means
+  -- what it says. Then every component from / down: a missing one is fine, an
+  -- existing one must be a plain directory. Nothing is created here.
+  if not starts_with($root, "/") then
+    raise("ICON_ROOT", "Destination must be an absolute share directory")
+  end
+  plain_dir("/", false)
+  $cur = ""
+  for each $seg in split($root, "/")
+    if $seg == "" then
+      if $cur != "" then raise("ICON_ROOT", "Destination has an empty path segment") end
+    else
+      if $seg == "." or $seg == ".." then
+        raise("ICON_ROOT", "Destination must not contain . or .. segments")
+      end
+      $cur = $cur .. "/" .. $seg
+      plain_dir($cur, false)
+    end
+  end
+  if $cur == "" then raise("ICON_ROOT", "Destination must be an absolute share directory") end
+end
+
+fn check_svg($name, $svg)
+  -- One root element on the 24-unit canvas, the upstream stroke of 2 on every
+  -- stroke-width, and the attributes that make a line icon usable.
+  if count_of($svg, '<svg') != 1 then raise("ICON_SVG", $name .. ": needs exactly one <svg> element") end
+  if count_of($svg, 'viewBox="0 0 24 24"') != 1 then raise("ICON_SVG", $name .. ": viewBox must be exactly 0 0 24 24") end
+  if count_of($svg, 'stroke-width="2"') == 0 or count_of($svg, 'stroke-width="') != count_of($svg, 'stroke-width="2"') then
+    raise("ICON_SVG", $name .. ": every stroke-width must be the upstream 2")
+  end
+  for each $trait in ['fill="none"', 'stroke="currentColor"', 'stroke-linecap="round"', 'stroke-linejoin="round"']
+    if count_of($svg, $trait) == 0 then raise("ICON_SVG", $name .. ": missing " .. $trait) end
+  end
+  for each $banned in ['<script', '<!ENTITY', '<!DOCTYPE', '<image', '<style', 'href']
+    if count_of($svg, $banned) != 0 then raise("ICON_SVG", $name .. ": contains " .. $banned) end
+  end
+end
+
+fn want_context($d)
+  -- The Context each native section must name.
+  if $d == "scalable/status" then return "Status" end
+  if $d == "scalable/actions" then return "Actions" end
+  return "Applications"
+end
+
+fn check_index($text)
+  -- The three native directories in this order, then symbolic/apps. Each listed
+  -- section is scalable, has a positive Size inside its MinSize..MaxSize bounds, and
+  -- names its own context. The theme inherits nothing, so no other theme's status
+  -- icons can take priority over the bundle.
+  $ini = ini_parse($text)
+  if not has_key($ini, "Icon Theme") then raise("ICON_INDEX", "index.theme has no [Icon Theme] section") end
+  if has_key($ini["Icon Theme"], "Inherits") then
+    raise("ICON_INDEX", "index.theme must not inherit another theme")
+  end
+  $dirs = split(get_or($ini["Icon Theme"], "Directories", ""), ",")
+  if not deep_eq($dirs, $NATIVE_DIRS) then
+    raise("ICON_INDEX", "index.theme Directories must be " .. join($NATIVE_DIRS, ","))
+  end
+  for each $d in $dirs
+    if not has_key($ini, $d) then raise("ICON_INDEX", "index.theme has no usable [" .. $d .. "] section") end
+    $sec = $ini[$d]
+    if get_or($sec, "Type", "") != "Scalable" then
+      raise("ICON_INDEX", "[" .. $d .. "] must be Type=Scalable")
+    end
+    $size = to_number(get_or($sec, "Size", ""))
+    $lo = to_number(get_or($sec, "MinSize", ""))
+    $hi = to_number(get_or($sec, "MaxSize", ""))
+    if $size == nil or $lo == nil or $hi == nil then
+      raise("ICON_INDEX", "[" .. $d .. "] needs numeric Size, MinSize and MaxSize")
+    end
+    if $size < 1 then raise("ICON_INDEX", "[" .. $d .. "] needs a positive Size") end
+    if $lo < 1 or $hi < $lo or $size < $lo or $size > $hi then
+      raise("ICON_INDEX", "[" .. $d .. "] MinSize and MaxSize must bracket Size")
+    end
+    if get_or($sec, "Context", "") != want_context($d) then
+      raise("ICON_INDEX", "[" .. $d .. "] Context must be " .. want_context($d))
+    end
+  end
+end
+
+fn bundle_items($here)
+  -- Validate the manifest and every source. Returns the outputs in publish order:
+  -- one per alias, then the licence, then index.theme last.
+  $m = load_data($here .. "/manifest.conf.mix")
+  if type($m) != "map" then raise("ICON_MANIFEST", "manifest is not a map") end
+  for each $k in ["schema", "family", "release", "stroke_width", "sources", "icons"]
+    if not has_key($m, $k) then raise("ICON_MANIFEST", "manifest has no " .. $k) end
+  end
+  if $m.schema != 1 then raise("ICON_MANIFEST", "unsupported schema " .. to_string($m.schema)) end
+  if $m.family != "lucide" then raise("ICON_MANIFEST", "unsupported family " .. to_string($m.family)) end
+  if $m.release != "1.54.0" then raise("ICON_MANIFEST", "unsupported release " .. to_string($m.release)) end
+  if $m.stroke_width != 1.5 then raise("ICON_MANIFEST", "unsupported stroke_width " .. to_string($m.stroke_width)) end
+  if type($m.sources) != "map" then raise("ICON_MANIFEST", "sources must be a map") end
+  if len(keys($m.sources)) == 0 then raise("ICON_MANIFEST", "sources must not be empty") end
+  if type($m.icons) != "list" then raise("ICON_MANIFEST", "icons must be a list") end
+  if len($m.icons) == 0 then raise("ICON_MANIFEST", "icons must not be empty") end
+
+  $svgs = {}
+  for each $name in sort(keys($m.sources))
+    $s = $m.sources[$name]
+    if not re_match($name, $KEY_RE) then raise("ICON_SOURCE", "unsafe source name " .. $name) end
+    if type($s) != "map" or not has_key($s, "file") then raise("ICON_SOURCE", $name .. " has no file") end
+    $want = "lucide/" .. $name .. ".svg"
+    if $s.file != $want then raise("ICON_SOURCE", $name .. ": file must be " .. $want) end
+    if type($s.sha256) != "string" or not re_match($s.sha256, $HEX_RE) then
+      raise("ICON_HASH", $name .. ": sha256 must be 64 lowercase hex digits, not null")
+    end
+    $path = $here .. "/" .. $want
+    if not plain_file($path) then raise("ICON_SOURCE", $name .. ": " .. $want .. " is missing or not a plain file") end
+    if hash_file($path, "sha256") != $s.sha256 then raise("ICON_HASH", $name .. ": " .. $want .. " does not match its sha256") end
+    $svg = read_file($path)
+    check_svg($name, $svg)
+    $svgs[$name] = $svg
+  end
+
+  $items = []
+  $seen = {}
+  for each $icon in $m.icons
+    if type($icon) != "map" or not has_key($icon, "name") or not has_key($icon, "context") or not has_key($icon, "source") then
+      raise("ICON_ALIAS", "every alias needs name, context and source")
+    end
+    $name = $icon.name
+    if type($name) != "string" or not re_match($name, $NAME_RE) or contains($name, "..") then
+      raise("ICON_ALIAS", "unsafe alias name " .. to_string($name))
+    end
+    if not re_match($name, $SYMBOLIC_RE) then
+      raise("ICON_ALIAS", "alias " .. $name .. " must end in -symbolic")
+    end
+    if has_key($seen, $name) then raise("ICON_ALIAS", "duplicate alias " .. $name) end
+    $seen[$name] = true
+    if not contains($CONTEXTS, $icon.context) then
+      raise("ICON_ALIAS", $name .. ": invalid context " .. to_string($icon.context))
+    end
+    if type($icon.source) != "string" or not has_key($svgs, $icon.source) then
+      raise("ICON_ALIAS", $name .. ": unknown source " .. to_string($icon.source))
+    end
+    $data = replace($svgs[$icon.source], 'stroke-width="2"', 'stroke-width="1.5"')
+    push($items, {rel: "scalable/" .. $icon.context .. "/" .. $name .. ".svg", data: $data})
+  end
+
+  $licence = $here .. "/LICENSE-lucide.txt"
+  if not plain_file($licence) then raise("ICON_SOURCE", "LICENSE-lucide.txt is missing or not a plain file") end
+  $licence_text = read_file($licence)
+  if not contains($licence_text, "ISC License") then raise("ICON_SOURCE", "LICENSE-lucide.txt is not the Lucide licence") end
+  $index = $here .. "/index.theme"
+  if not plain_file($index) then raise("ICON_SOURCE", "index.theme is missing or not a plain file") end
+  $index_text = read_file($index)
+  check_index($index_text)
+  push($items, {rel: "LICENSE-lucide.txt", data: $licence_text})
+  push($items, {rel: "index.theme", data: $index_text})
+  return $items
+end
+
+fn undo_publish($log)
+  -- Undo this run's renames, newest first. Every step is attempted, and the
+  -- first failure is returned. nil means everything was undone.
+  $problem = nil
+  for each $op in reverse($log)
+    try
+      if $op.op == "place" then
+        remove($op.dest)
+      else
+        rename($op.saved, $op.dest)
+      end
+    catch $msg
+      if $problem == nil then $problem = $msg end
+    end
+  end
+  return $problem
+end
+
+fn publish_items($pub, $stage)
+  -- Rename each staged output into place. A file being replaced is renamed
+  -- aside first, so its bytes come back exactly on rollback.
+  $log = []
+  try
+    for each $p in $pub
+      if exists($p.dest, {follow_symlinks: false}) then
+        rename($p.dest, $p.saved)
+        push($log, {op: "aside", dest: $p.dest, saved: $p.saved})
+      end
+      rename($p.staged, $p.dest)
+      push($log, {op: "place", dest: $p.dest})
+    end
+  catch $msg, $err
+    $undo = undo_publish($log)
+    if $undo != nil then
+      raise("ICON_ROLLBACK", $msg .. "; undo also failed: " .. $undo .. "; previous bytes kept in " .. $stage)
+    end
+    raise($err.code ?? "ICON_PUBLISH", $msg)
+  end
+end
+
+$items = bundle_items($here)
+if $check then
+  print("icons: " .. to_string(len($items)) .. " outputs validated from the bundle; nothing written")
+  exit(0)
+end
+
+check_root($root)
+$icons = $root .. "/icons"
+$base = $icons .. "/mixos"
+$dirs = [$root, $icons, $base, $base .. "/scalable", $base .. "/scalable/apps", $base .. "/scalable/status", $base .. "/scalable/actions"]
+for each $d in $dirs
+  plain_dir($d, false)
+end
+for each $it in $items
+  plain_target($base .. "/" .. $it.rel)
+end
+
+if $verify then
+  $bad = []
+  for each $it in $items
+    $path = $base .. "/" .. $it.rel
+    $why = nil
+    if not exists($path, {follow_symlinks: false}) then
+      $why = "missing"
+    elif not plain_file($path) then
+      $why = "not a plain file"
+    elif read_file($path) != $it.data then
+      $why = "differs from the bundle"
+    end
+    if $why != nil then push($bad, $path .. ": " .. $why) end
+  end
+  for each $line in $bad
+    print($line)
+  end
+  if len($bad) > 0 then raise("ICON_DRIFT", to_string(len($bad)) .. " installed file(s) do not match the bundle") end
+  print("verified " .. to_string(len($items)) .. " files under " .. $base)
+  exit(0)
+end
+
+-- Install: every check has passed, so from here on each change is journalled.
+for each $d in $dirs
+  plain_dir($d, true)
+end
+$stage = $icons .. "/.lucide-install-" .. uuid()
+mkdir($stage)
+$pub = []
+$failed = nil
+try
+  $n = 0
+  for each $it in $items
+    $n = $n + 1
+    $staged = $stage .. "/new-" .. to_string($n)
+    write_atomic($staged, $it.data, {mode: 0o644})
+    if read_file($staged) != $it.data then raise("ICON_PUBLISH", "staged copy of " .. $it.rel .. " differs from the bundle") end
+    push($pub, {dest: $base .. "/" .. $it.rel, staged: $staged, saved: $stage .. "/old-" .. to_string($n)})
+  end
+  publish_items($pub, $stage)
+catch $msg, $err
+  $failed = {code: $err.code ?? "ICON_PUBLISH", msg: $msg}
+end
+if $failed == nil then
+  remove_dir($stage)
+elif $failed.code == "ICON_ROLLBACK" then
+  print("kept " .. $stage .. " with the previous bytes for manual recovery")
+else
+  remove_dir($stage)
+end
+if $failed != nil then raise($failed.code, $failed.msg) end
+print("installed " .. to_string(len($items)) .. " files under " .. $base)

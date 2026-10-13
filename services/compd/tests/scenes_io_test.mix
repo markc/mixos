@@ -1,0 +1,151 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- The scene loader must keep the interpreter it started with. scenes_io's
+-- interpreter() once realpath'd /proc/self/exe: realpath never follows the
+-- replacement file. While the running binary's old inode is still linked it
+-- resolves the old pathname -- even one the original was moved to -- and
+-- once that inode is unlinked it returns nil, so a replaced interpreter
+-- loses its own path and behaviour validation and launch break.
+--
+-- The regression drives the real adapter end to end. A copy of this running
+-- Mix plays the loader (a registered --serve citizen on a private broker);
+-- mid-flight it atomically replaces its own executable file with /bin/true,
+-- then must still validate a good behaviour, still REFUSE a broken one (an
+-- interpreter that exits 0 for everything would wave the broken one through),
+-- and still spawn a behaviour that really executes on the held inode. The
+-- broken-behaviour refusal and the launched behaviour's marker file are what
+-- prove the calls ran on this Mix, not on the replacement or a PATH fallback.
+--
+-- Run from the checkout root: mix services/compd/tests/scenes_io_test.mix
+-- Needs cp, mv and a noded binary (MIXOS_TEST_NODED, else /opt/mixos/bin/noded).
+
+$repo = dirname(dirname(dirname(dirname(realpath($0)))))
+$pb = require("../../../tests/lib/private_bus.mix")
+-- This test's own interpreter, the same reference the loader now uses.
+$SELF = "/proc/" .. to_string(pid()) .. "/exe"
+$noded = env("MIXOS_TEST_NODED", "")
+if $noded == "" then $noded = "/opt/mixos/bin/noded" end
+
+fn check($ok, $message)
+  if not $ok then raise("SCENES_IO_TEST", $message) end
+end
+
+-- Behaviour fixtures, as the loader finds them beside a scene. "good" must
+-- pass mix --check and lint --deny-warnings; "bad" is refused by --check;
+-- "live" records that the interpreter launch() spawned really served it.
+fn write_fixtures($tmp)
+  mkdir($tmp .. "/good")
+  write_file($tmp .. "/good/behaviour.mix", "-- version: 0.1.0\n" ..
+    "-- Fixture behaviour: valid and minimal.\n" ..
+    "on probe\n" ..
+    "  reply(0, \"{}\")\n" ..
+    "end\n")
+  mkdir($tmp .. "/bad")
+  write_file($tmp .. "/bad/behaviour.mix", "-- version: 0.1.0\n" ..
+    "-- Fixture behaviour: broken, the handler never ends.\n" ..
+    "on probe\n" ..
+    "  reply(0, \"{}\")\n")
+  mkdir($tmp .. "/live")
+  write_file($tmp .. "/live/behaviour.mix", "-- version: 0.1.0\n" ..
+    "-- Fixture behaviour: records its launch context, then serves.\n" ..
+    "write_file(env(\"SCENE_DIR\") .. \"/ran\", \"scene=\" .. env(\"SCENE_NAME\") ..\n" ..
+    "  \" generation=\" .. env(\"SCENE_GENERATION\") .. \" pid=\" .. to_string(pid()) .. \"\\n\")\n" ..
+    "on probe\n" ..
+    "  reply(0, \"{}\")\n" ..
+    "end\n")
+end
+
+-- The stand-in loader citizen. Paths arrive as JSON strings so nothing needs
+-- double escaping; every behaviour file it touches was written above.
+fn inner_source($tmp)
+  return join([
+    "-- SPDX-License-Identifier: MIT OR Apache-2.0",
+    "-- Loader stand-in: a copied Mix that replaces its own executable, then",
+    "-- drives the real scenes_io adapter exactly as scenes.mix does.",
+    "$tmp = " .. json_encode($tmp),
+    "$io = require(" .. json_encode($repo .. "/services/compd/scripts/lib/scenes_io.mix") .. ")",
+    "fn fail($why)",
+    "  print(\"INNER-FAILED: \" .. $why)",
+    "  exit(1)",
+    "end",
+    "fn wait_ran()",
+    "  for each $i in range(1, 100)",
+    "    try",
+    "      return read_file($tmp .. \"/live/ran\")",
+    "    catch $message",
+    "      sleep(0.1)",
+    "    end",
+    "  end",
+    "  return nil",
+    "end",
+    "",
+    "-- Baseline: the adapter validates before anything is replaced.",
+    "$base = $io.check($tmp .. \"/good/behaviour.mix\", {})",
+    "if not $base.ok then fail(\"baseline check failed\") end",
+    "",
+    "-- Replace this process's executable file with a non-Mix program: copy",
+    "-- /bin/true beside it, then one rename over bin/mix atomically swaps",
+    "-- the directory entry and unlinks the running inode (same filesystem);",
+    "-- the running process keeps executing the original, unlinked inode.",
+    "-- No move-aside step: while the old inode is still linked, realpath",
+    "-- never follows the replacement; it resolves the old moved pathname,",
+    "-- and the old realpath-based interpreter() would pass this test.",
+    "run_argv_must([\"cp\", \"/bin/true\", $tmp .. \"/bin/replacement\"])",
+    "run_argv_must([\"mv\", $tmp .. \"/bin/replacement\", $tmp .. \"/bin/mix\"])",
+    "-- The running inode is unlinked now, so realpath(\"/proc/self/exe\")",
+    "-- must be nil -- assert the scenario is real before any io call.",
+    "if realpath(\"/proc/self/exe\") != nil then fail(\"realpath(/proc/self/exe) must be nil after the running executable was unlinked\") end",
+    "",
+    "-- Validation must still work through the still-running interpreter...",
+    "$after = $io.check($tmp .. \"/good/behaviour.mix\", {})",
+    "if not $after.ok then fail(\"check failed after the executable was replaced\") end",
+    "-- ...and still refuse a broken behaviour. A loader that had ended up",
+    "-- on the replacement would exec /bin/true, whose exit 0 passes every check.",
+    "$refused = false",
+    "try",
+    "  $io.check($tmp .. \"/bad/behaviour.mix\", {})",
+    "catch $message, $error",
+    "  $refused = $error.code == \"SCENES_BEHAVIOUR_INVALID\"",
+    "end",
+    "if not $refused then fail(\"a broken behaviour was accepted after replacement\") end",
+    "",
+    "-- Launch through the same interpreter: the behaviour must really run,",
+    "-- with the loader's launch context, and stop on demand.",
+    "$child = $io.launch($tmp .. \"/live\", \"probe\", 7, \"shell-fixture\", \"scenes-fixture\")",
+    "if type($child) != \"number\" then fail(\"launch returned no pid\") end",
+    "$ran = wait_ran()",
+    "if $ran == nil then fail(\"the spawned behaviour never ran\") end",
+    "if not contains($ran, \"scene=probe\") or not contains($ran, \"generation=7\") then",
+    "  fail(\"wrong launch context: \" .. trim($ran))",
+    "end",
+    "if not $io.stop($child, \"{}\") then fail(\"stop failed\") end",
+    "print(\"INNER-LOADER-OK child=\" .. to_string($child))",
+    "exit(0)"
+  ], "\n") .. "\n"
+end
+
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-scenes-io-test.XXXXXXXX"]))
+$bus = nil
+try
+  mkdir($tmp .. "/bin")
+  mkdir($tmp .. "/home")
+  run_argv_must(["cp", $SELF, $tmp .. "/bin/mix"])
+  write_fixtures($tmp)
+  write_file($tmp .. "/inner.mix", inner_source($tmp))
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "scenes-io-test", noded: $noded})
+  -- PATH deliberately holds no mix: any interpreter reached by name would not
+  -- be the one under test.
+  $env = merge($pb.client_env($bus), {PATH: "/usr/bin:/bin", HOME: $tmp .. "/home", MIX_STATS: "off"})
+  $r = run_argv([$tmp .. "/bin/mix", "--serve", $tmp .. "/inner.mix", "--name", "scenes-io-loader"],
+    {env: $env, timeout: 180})
+  if not $r.ok then print($r.stdout ?? "") end
+  check($r.ok, "the loader stand-in failed (exit " .. to_string($r.exit_code) .. ")")
+  check(contains($r.stdout, "INNER-LOADER-OK"), "the stand-in did not finish its checks")
+  -- The scenario must be real: the executable path now holds /bin/true, so
+  -- every adapter call above ran on the replaced interpreter's held inode.
+  check(hash_file($tmp .. "/bin/mix", "sha256") == hash_file("/bin/true", "sha256"),
+    "the stand-in's executable was not actually replaced")
+  print("PASS scenes_io keeps validating, refusing and launching on a replaced interpreter")
+finally
+  if $bus != nil then $pb.stop($bus) end
+  remove_dir($tmp)
+end

@@ -652,7 +652,8 @@ end
 
 -- ── S9: shipped scene documents (--doc, optional) ───────────────────────
 -- Each document (a share/scenes scene.mix, its model header filled with a
--- real model) loads, pins its edge, reaches applied_revision == revision,
+-- real model) loads, pins its edge if hidden (a visible edge keeps its mode),
+-- reaches applied_revision == revision,
 -- comes to rest visible with every shown node measured inside its surface
 -- and its lists' first rows measured, then unloads. compd must still be
 -- alive afterwards. A new popup's first drawn passes run here, nested,
@@ -672,8 +673,14 @@ for each $path in $docs
   if $name == nil or $edge == nil then fail("S9: " .. $path .. " has no name or no edge window") end
   $ld = call($host, "shell.scene.load", {source: $src})
   if $ld.rc != 0 then fail("S9 " .. $name .. " shell.scene.load: rc " .. to_string($ld.rc) .. " " .. json_encode($ld.reply)) end
-  $pin = call($host, "shell.panel.mode", {edge: $edge, mode: "pinned"})
-  if $pin.rc != 0 then fail("S9 " .. $name .. " shell.panel.mode pinned: rc " .. to_string($pin.rc) .. " " .. json_encode($pin.reply)) end
+  -- A visible edge (the settings profile's bottom panel) keeps its current
+  -- mode: a pin there is refused with SETTINGS_MANAGED. Pin only a hidden edge.
+  $ps = call($host, "shell.panel.state", {edge: $edge})
+  if $ps.rc != 0 then fail("S9 " .. $name .. " shell.panel.state {edge: " .. $edge .. "}: rc " .. to_string($ps.rc) .. " " .. json_encode($ps.reply)) end
+  if not $ps.reply.visible then
+    $pin = call($host, "shell.panel.mode", {edge: $edge, mode: "pinned"})
+    if $pin.rc != 0 then fail("S9 " .. $name .. " shell.panel.mode pinned: rc " .. to_string($pin.rc) .. " " .. json_encode($pin.reply)) end
+  end
   $t = 0
   $w = nil
   $drawn = false

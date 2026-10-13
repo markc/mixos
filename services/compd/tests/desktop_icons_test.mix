@@ -1,83 +1,435 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- Real offline installers and native apps lookup, with no distro icon tree.
-$repo=dirname(dirname(dirname(dirname(realpath($0)))))
-$mix=realpath("/proc/self/exe")
-$tmp=trim(run_argv_must(["mktemp","-d","/tmp/mixos-desktop-icons.XXXXXXXX"]))
-$share=$tmp+"/share"
+-- The Lucide icon bundle on real files in an off-tree share: the installer's
+-- source checks, publish, drift detection and rollback; the native lookup through
+-- apps.mix; the default theme; and the brand installer beside it. Nothing here
+-- reads or writes the host's icon tree.
+$repo = dirname(dirname(dirname(dirname(realpath($0)))))
+$mix = realpath("/proc/self/exe")
+$bundle = $repo .. "/share/icons"
+-- The installer refuses a symlink anywhere on its root path, so the scratch
+-- directory is named by its real path.
+$tmp = realpath("/tmp") .. "/mixos-icons-test-" .. uuid()
+mkdir($tmp)
+$share = $tmp .. "/share"
+$data = $tmp .. "/data"
 export XDG_DATA_DIRS=$share
-export XDG_DATA_HOME=$tmp+"/data"
-$apps=require("../scripts/lib/apps.mix")
-$models=require($repo+"/share/scenes/lib/models.mix")
-fn check($condition,$message)
-  if not $condition then raise("DESKTOP_ICONS",$message) end
+export XDG_DATA_HOME=$data
+$apps = require($repo .. "/services/compd/scripts/lib/apps.mix")
+$models = require($repo .. "/share/scenes/lib/models.mix")
+$SIZES = [16, 22, 24, 32, 48, 128]
+
+fn check($condition, $message)
+  if not $condition then raise("ICON_TEST", $message) end
 end
+
+fn run_mix($argv, $env)
+  -- The real mix binary, with stderr folded into stdout so refusals can be matched.
+  if type($env) == "map" then return run_argv($argv, {stderr: "stdout", env: $env}) end
+  return run_argv($argv, {stderr: "stdout"})
+end
+
+fn run_denied($argv)
+  -- The installer under file permissions it cannot bypass. As root it runs under
+  -- setpriv with DAC_OVERRIDE and DAC_READ_SEARCH out of its bounding set, so the
+  -- mode bits bind it exactly as they bind an ordinary user.
+  if uid() != 0 then return run_mix($argv, nil) end
+  $setpriv = "/usr/bin/setpriv"
+  check(exists($setpriv), "root needs " .. $setpriv .. " to run the permission test")
+  return run_mix(concat([$setpriv, "--bounding-set=-dac_override,-dac_read_search", "--"], $argv), nil)
+end
+
+fn must_pass($r, $what)
+  check($r.exit_code == 0, $what .. " failed (exit " .. to_string($r.exit_code) .. "): " .. $r.stdout)
+end
+
+fn must_fail($r, $code, $what)
+  check($r.exit_code != 0, $what .. " should have been refused")
+  check(contains($r.stdout, $code), $what .. " was refused for the wrong reason: " .. $r.stdout)
+end
+
+fn put($path, $text)
+  mkdir(dirname($path))
+  write_file($path, $text)
+end
+
+fn snapshot($paths)
+  -- Path -> bytes, for files that every run must leave exactly as they were.
+  $out = {}
+  for each $p in $paths
+    $out[$p] = read_file($p)
+  end
+  return $out
+end
+
+fn changed($snap)
+  $bad = []
+  for each $p in keys($snap)
+    if not exists($p, {follow_symlinks: false}) then
+      push($bad, $p)
+    elif read_file($p) != $snap[$p] then
+      push($bad, $p)
+    end
+  end
+  return $bad
+end
+
+fn same_tree($dir, $before)
+  return deep_eq(walk($dir, {include_dirs: true, follow_symlinks: false}), $before)
+end
+
+fn hit_of($name, $size)
+  -- The real lookup against the bundle's theme, with a fresh cache each call.
+  $ctx = {icon_dirs: [$share .. "/icons"], pixmaps: $tmp .. "/pixmaps", cache: {}}
+  return $apps.resolve_icon($ctx, $name, $size, 1, "mixos").hit
+end
+
+fn out_path($context, $name)
+  return $share .. "/icons/mixos/scalable/" .. $context .. "/" .. $name .. ".svg"
+end
+
+fn owned_paths($theme, $m)
+  -- Every file the bundle owns under one theme directory.
+  $out = []
+  for each $icon in $m.icons
+    push($out, $theme .. "/scalable/" .. $icon.context .. "/" .. $icon.name .. ".svg")
+  end
+  push($out, $theme .. "/LICENSE-lucide.txt")
+  push($out, $theme .. "/index.theme")
+  return $out
+end
+
+fn with_source($m, $name, $field, $value)
+  -- The manifest with one field of one source replaced.
+  $srcs = $m.sources
+  $s = $srcs[$name]
+  $s[$field] = $value
+  $srcs[$name] = $s
+  $m.sources = $srcs
+  return $m
+end
+
+fn save_manifest($fx, $m)
+  write_file($fx .. "/manifest.conf.mix", json_encode($m))
+end
+
+fn fixture($label)
+  -- A private copy of the bundle alone, so that the corruption is the only change.
+  $dir = $tmp .. "/bundle-" .. $label
+  copy_tree($bundle, $dir)
+  return $dir
+end
+
+fn refuse($fx, $label, $code)
+  -- The bundle is refused by --check and by an install, and the root is not created.
+  must_fail(run_mix([$mix, $fx .. "/install.mix", "--check"], nil), $code, $label .. " --check")
+  $root_bad = $tmp .. "/refused-" .. $label
+  must_fail(run_mix([$mix, $fx .. "/install.mix", "--root", $root_bad], nil), $code, $label .. " install")
+  check(not exists($root_bad, {follow_symlinks: false}), $label .. " created " .. $root_bad)
+end
+
 try
-  print(run_argv_must([$mix,$repo+"/tools/material_icons.mix","--check"]))
-  print(run_argv_must([$mix,$repo+"/share/icons/install.mix","--root",$share]))
-  print(run_argv_must([$mix,$repo+"/share/brand/install.mix","--root",$share]))
-  print(run_argv_must([$mix,$repo+"/share/icons/install.mix","--root",$share,"--verify"]))
-  $probe=$tmp+"/theme.mix"
-  write_file($probe,"$a=require("+json_encode($repo+"/services/compd/scripts/lib/apps.mix")+")\nprint($a.default_theme())\n")
-  check(trim(run_argv_must([$mix,$probe],{env:{HOME:$tmp}})) == "mixos","installed theme is selected without a host desktop")
-  mkdir($tmp+"/.config")
-  write_file($tmp+"/.config/kdeglobals","[Icons]\nTheme=user-theme\n")
-  check(trim(run_argv_must([$mix,$probe],{env:{HOME:$tmp}})) == "user-theme","explicit existing theme preference is preserved")
-  $ctx={icon_dirs:[$share+"/icons"],pixmaps:$tmp+"/pixmaps",cache:{}}
-  for each $size in [20,28,32,48,128]
-    for each $name in ["dev.mixos","notification-active-symbolic","notification-inactive-symbolic","audio-volume-muted-symbolic","audio-volume-high-symbolic","audio-volume-medium-symbolic","audio-volume-low-symbolic","network-wireless-signal-excellent-symbolic","network-wired-activated-symbolic","network-offline-symbolic","user-desktop-symbolic"]
-      $hit=$apps.resolve_icon($ctx,$name,$size,1,"mixos")
-      $ctx=$hit.ctx
-      check($hit.hit != nil and ends_with($hit.hit.path,$name+".svg"),"real icon lookup at "+to_string($size)+": "+$name)
-      check(contains(read_file($hit.hit.path),"<svg"),"lookup supplies SVG bytes")
+  $m = load_data($bundle .. "/manifest.conf.mix")
+  $aliases = []
+  for each $icon in $m.icons
+    push($aliases, $icon.name)
+  end
+
+  -- 1. Source-only check: validates the bundle, writes nothing, creates no root.
+  must_pass(run_mix([$mix, $bundle .. "/install.mix", "--check", "--root", $share], nil), "source-only --check")
+  check(not exists($share, {follow_symlinks: false}), "--check created the root")
+
+  -- Pre-existing brand artwork, a third-party icon and a deliberate user theme.
+  put($share .. "/icons/hicolor/48x48/apps/dev.mixos.png", "brand png fixture")
+  put($share .. "/icons/mixos/scalable/apps/dev.mixos.legacy.svg", "<svg>legacy brand</svg>\n")
+  put($share .. "/icons/hicolor/scalable/apps/org.example.Third.svg", "<svg>third party</svg>\n")
+  put($share .. "/icons/user-theme/index.theme", "[Icon Theme]\nName=User\nDirectories=\n")
+  $kept = snapshot([$share .. "/icons/hicolor/48x48/apps/dev.mixos.png", $share .. "/icons/mixos/scalable/apps/dev.mixos.legacy.svg", $share .. "/icons/hicolor/scalable/apps/org.example.Third.svg", $share .. "/icons/user-theme/index.theme"])
+
+  -- 2. Install, then check every output against the bundle.
+  must_pass(run_mix([$mix, $bundle .. "/install.mix", "--root", $share], nil), "install")
+  $made = 0
+  for each $icon in $m.icons
+    $dest = out_path($icon.context, $icon.name)
+    $src = read_file($bundle .. "/" .. $m.sources[$icon.source].file)
+    check(read_file($dest) == replace($src, 'stroke-width="2"', 'stroke-width="1.5"'), "the bytes of " .. $icon.name .. " are not the upstream SVG at stroke 1.5")
+    check(not contains(read_file($dest), 'stroke-width="2"'), $icon.name .. " still has stroke 2")
+    $made = $made + 1
+  end
+  check($made == len($aliases), "not every alias was written")
+  check(read_file($share .. "/icons/mixos/LICENSE-lucide.txt") == read_file($bundle .. "/LICENSE-lucide.txt"), "the licence was not installed beside the icons")
+  check(contains(read_file($bundle .. "/LICENSE-lucide.txt"), "ISC License"), "the bundled licence is not the Lucide licence")
+  $index_path = $share .. "/icons/mixos/index.theme"
+  check(read_file($index_path) == read_file($bundle .. "/index.theme"), "index.theme bytes differ from the bundle")
+  $ini = ini_parse(read_file($index_path))
+  check(deep_eq(split($ini["Icon Theme"].Directories, ","), ["scalable/apps", "scalable/status", "scalable/actions", "symbolic/apps"]), "native directories must come before the legacy symbolic/apps")
+  check(not contains(read_file($index_path), "symbolic/status"), "index.theme indexes an old Material status directory")
+  must_pass(run_mix([$mix, $bundle .. "/install.mix", "--verify", "--root", $share], nil), "--verify after install")
+
+  -- 3. The real lookup: every manifest alias at several sizes resolves to its output.
+  for each $icon in $m.icons
+    for each $size in $SIZES
+      $hit = hit_of($icon.name, $size)
+      check($hit != nil, "lookup misses " .. $icon.name .. " at " .. to_string($size))
+      check($hit.path == out_path($icon.context, $icon.name), "lookup of " .. $icon.name .. " at " .. to_string($size) .. " returned " .. $hit.path)
     end
   end
-  for each $app in ["term","ced","dopus","cap","scene-editor","busviewer"]
-    $entry=ini_parse(read_file($repo+"/apps/"+$app+"/assets/dev.mixos."+$app+".desktop"))["Desktop Entry"]
-    $hit=$apps.resolve_icon($ctx,$entry.Icon,32,1,"mixos")
-    check($hit.hit != nil and ends_with($hit.hit.path,"-symbolic.svg"),"declared app icon resolves: "+$app)
-  end
+
+  -- Every panel status name the scene models draw, with the -symbolic suffix.
+  -- start-here-kde is the KDE launcher and is not a bundle name.
   for each $name in $models.PANEL_THEMED_ICONS
-    if not starts_with($name,"start-here") then
-      check($apps.resolve_icon($ctx,$name+"-symbolic",22,1,"mixos").hit != nil,"every published status name has a shipped symbolic icon: "+$name)
-    end
-  end
-  -- Thinner sets are additive: distinct files, same names and shared mark.
-  for each $weight in [300,200]
-    $theme="mixos-"+to_string($weight)
-    for each $pair in [{name:"dev.mixos.term-symbolic",source:"terminal"},{name:"dev.mixos.ced-symbolic",source:"edit_note"},{name:"dev.mixos.dopus-symbolic",source:"folder_open"},{name:"dev.mixos.cap-symbolic",source:"screenshot_monitor"},{name:"dev.mixos.scene-editor-symbolic",source:"desktop_windows"},{name:"dev.mixos.busviewer-symbolic",source:"settings_ethernet"},{name:"audio-volume-high-symbolic",source:"volume_up"}]
-      $regular=$apps.resolve_icon($ctx,$pair.name,32,1,"mixos").hit.path
-      $light=$apps.resolve_icon($ctx,$pair.name,32,1,$theme).hit.path
-      check($regular != $light,"weights coexist at separate paths: "+$pair.name)
-      check(hash_file($regular,"sha256") == hash_file($repo+"/share/icons/material/"+$pair.source+".svg","sha256"),"original 400 bytes are retained")
-      check(hash_file($light,"sha256") == hash_file($repo+"/share/icons/material/"+to_string($weight)+"/"+$pair.source+".svg","sha256"),"lookup selects the thinner source")
-      check(hash_file($regular,"sha256") != hash_file($light,"sha256"),"variants have different geometry")
-    end
-    for each $name in $models.PANEL_THEMED_ICONS
-      if not starts_with($name,"start-here") then
-        check(contains($apps.resolve_icon($ctx,$name+"-symbolic",22,1,$theme).hit.path,"/icons/"+$theme+"/"),"all status names resolve in the thinner theme")
+    if $name != "start-here-kde" then
+      for each $size in $SIZES
+        $hit = hit_of($name .. "-symbolic", $size)
+        check($hit != nil, "no shipped icon for the panel status " .. $name .. " at " .. to_string($size))
+        check(contains($hit.path, "/icons/mixos/"), $name .. " resolved outside the bundle theme: " .. $hit.path)
       end
     end
   end
-  $mark=$apps.resolve_icon($ctx,"dev.mixos",28,1,"mixos").hit.path
-  for each $theme in ["mixos-300","mixos-200"]
-    check($apps.resolve_icon($ctx,"dev.mixos",28,1,$theme).hit.path == $mark,"all weights share the unchanged cyclops")
+
+  -- The live MixOS app aliases.
+  for each $app in ["term", "ced", "dopus", "cap", "screenshot", "scene-editor", "busviewer", "prefs", "media", "backdrop"]
+    $name = "dev.mixos." .. $app .. "-symbolic"
+    check(contains($aliases, $name), "the live app " .. $app .. " has no alias in the manifest")
+    check(hit_of($name, 32) != nil, "the live app " .. $app .. " icon does not resolve")
   end
-  check(hash_file($mark,"sha256") == hash_file($repo+"/share/brand/cyclops/cyclops.svg","sha256"),"launcher is the canonical cyclops vector")
-  check(not ends_with(basename($mark),"-symbolic.svg"),"the cyclops is full colour, never a tinted symbolic")
-  $model=$models.panel({windows:[],ws_count:1,ws_current:1},{themed:{"dev.mixos":$mark,"start-here-kde":"/old-kde.svg"}},0)
-  check($model.launcher.has_icon and $model.launcher.icon == $mark,"the cyclops takes precedence over an existing KDE launcher")
-  $old_index="[Icon Theme]\nName=Existing\nDirectories=48x48/apps\n\n[48x48/apps]\nSize=48\nType=Fixed\nContext=Applications\n"
-  write_file($share+"/icons/hicolor/index.theme",$old_index)
-  print(run_argv_must([$mix,$repo+"/share/brand/install.mix","--root",$share]))
-  check(read_file($share+"/icons/hicolor/index.theme") == $old_index,"existing hicolor metadata is preserved")
-  $uncached={icon_dirs:[$share+"/icons"],pixmaps:$tmp+"/pixmaps",cache:{}}
-  check($apps.resolve_icon($uncached,"dev.mixos",28,1,"mixos").hit.path == $share+"/icons/mixos/symbolic/apps/dev.mixos.svg","the cyclops resolves even when existing hicolor omits symbolic/apps")
-  -- Verify failure before publishing anything from a corrupted source bundle.
-  print(run_argv_must(["cp","-a",$repo+"/share/icons",$tmp+"/corrupt"]))
-  append_file($tmp+"/corrupt/material/volume_up.svg"," ")
-  $bad=run_argv([$mix,$tmp+"/corrupt/install.mix","--root",$tmp+"/bad"],{stderr:"stdout"})
-  check(not $bad.ok and contains($bad.stdout,"ICON_HASH") and not is_dir($tmp+"/bad/icons"),"corrupted bundle fails before installation")
-  print("PASS offline Material/cyclops installers, scaled lookup, app entries, brand precedence and corruption refusal")
+  -- The desktop entries shipped in the tree name icons that must resolve too.
+  $desktop_found = 0
+  for each $f in glob($repo .. "/apps/*/assets/*.desktop")
+    $entry = get_or(ini_parse(read_file($f)), "Desktop Entry", {})
+    if has_key($entry, "Icon") and starts_with($entry.Icon, "dev.mixos.") then
+      $desktop_found = $desktop_found + 1
+      check(hit_of($entry.Icon, 48) != nil, $f .. " names an icon that does not resolve: " .. $entry.Icon)
+    end
+  end
+  check($desktop_found >= 2, "the desktop entries for dopus and screenshot were not found")
+
+  -- 4. The default theme: the bundle is selected without a desktop, and a user's
+  -- own preference still wins.
+  $probe = $tmp .. "/theme-probe.mix"
+  write_file($probe, "$a = require(" .. json_encode($repo .. "/services/compd/scripts/lib/apps.mix") .. ")\nprint($a.default_theme())\n")
+  $home_plain = $tmp .. "/home-plain"
+  mkdir($home_plain)
+  check(trim(run_argv_must([$mix, $probe], {env: {HOME: $home_plain}})) == "mixos", "the bundle theme is not the default without a desktop preference")
+  $home_user = $tmp .. "/home-user"
+  put($home_user .. "/.config/kdeglobals", "[Icons]\nTheme=user-theme\n")
+  check(trim(run_argv_must([$mix, $probe], {env: {HOME: $home_user}})) == "user-theme", "a deliberate user theme must win over the bundle")
+
+  -- 5. The real brand installer beside it: its canonical M mark, and nothing else changes.
+  must_pass(run_mix([$mix, $repo .. "/share/brand/install.mix", "--root", $share], nil), "the brand installer")
+  $mark = $share .. "/icons/mixos/symbolic/apps/dev.mixos-symbolic.svg"
+  check(read_file($mark) == read_file($repo .. "/share/brand/logos/mixos-black-transparent.svg"), "the brand mark is not the canonical M")
+  $mark_hit = hit_of("dev.mixos-symbolic", 28)
+  check($mark_hit != nil, "the brand mark does not resolve through the bundle theme")
+  check($mark_hit.path == $mark, "the brand mark resolved to " .. $mark_hit.path)
+  must_pass(run_mix([$mix, $bundle .. "/install.mix", "--verify", "--root", $share], nil), "--verify after the brand installer")
+  check(len(changed($kept)) == 0, "pre-existing files changed: " .. join(changed($kept), ", "))
+
+  -- 6. Drift in an installed output is detected, and a plain install repairs it.
+  $drifted = out_path("apps", "dev.mixos.term-symbolic")
+  write_file($drifted, read_file($drifted) .. " ")
+  must_fail(run_mix([$mix, $bundle .. "/install.mix", "--verify", "--root", $share], nil), "ICON_DRIFT", "--verify of a drifted output")
+  must_pass(run_mix([$mix, $bundle .. "/install.mix", "--root", $share], nil), "repair install")
+  must_pass(run_mix([$mix, $bundle .. "/install.mix", "--verify", "--root", $share], nil), "--verify after the repair")
+  check(len(changed($kept)) == 0, "the repair changed pre-existing files")
+
+  -- 7. Corrupt bundles are refused before anything is written.
+  $fx = fixture("hash")
+  put($fx .. "/lucide/terminal.svg", read_file($fx .. "/lucide/terminal.svg") .. " ")
+  refuse($fx, "hash", "ICON_HASH")
+
+  $fx = fixture("missing")
+  remove($fx .. "/lucide/camera.svg")
+  refuse($fx, "missing", "ICON_SOURCE")
+
+  $fx = fixture("source-symlink")
+  put($tmp .. "/outside-camera.svg", read_file($fx .. "/lucide/camera.svg"))
+  remove($fx .. "/lucide/camera.svg")
+  symlink($tmp .. "/outside-camera.svg", $fx .. "/lucide/camera.svg")
+  refuse($fx, "source-symlink", "ICON_SOURCE")
+
+  $fx = fixture("null-digest")
+  save_manifest($fx, with_source(load_data($fx .. "/manifest.conf.mix"), "terminal", "sha256", nil))
+  refuse($fx, "null-digest", "ICON_HASH")
+
+  $fx = fixture("short-digest")
+  save_manifest($fx, with_source(load_data($fx .. "/manifest.conf.mix"), "terminal", "sha256", "abc123"))
+  refuse($fx, "short-digest", "ICON_HASH")
+
+  $fx = fixture("traversal")
+  save_manifest($fx, with_source(load_data($fx .. "/manifest.conf.mix"), "terminal", "file", "../lucide/terminal.svg"))
+  refuse($fx, "traversal", "ICON_SOURCE")
+
+  $fx = fixture("viewbox")
+  put($fx .. "/lucide/camera.svg", replace(read_file($fx .. "/lucide/camera.svg"), 'viewBox="0 0 24 24"', 'viewBox="0 0 32 32"'))
+  save_manifest($fx, with_source(load_data($fx .. "/manifest.conf.mix"), "camera", "sha256", hash_file($fx .. "/lucide/camera.svg", "sha256")))
+  refuse($fx, "viewbox", "ICON_SVG")
+
+  $fx = fixture("duplicate")
+  $dup = load_data($fx .. "/manifest.conf.mix")
+  $dup.icons = concat($dup.icons, [$dup.icons[0]])
+  save_manifest($fx, $dup)
+  refuse($fx, "duplicate", "ICON_ALIAS")
+
+  $fx = fixture("context")
+  $bad_ctx = load_data($fx .. "/manifest.conf.mix")
+  $bad_ctx.icons = [{name: "dev.mixos.term-symbolic", context: "panel", source: "terminal"}]
+  save_manifest($fx, $bad_ctx)
+  refuse($fx, "context", "ICON_ALIAS")
+
+  $fx = fixture("unknown-source")
+  $bad_src = load_data($fx .. "/manifest.conf.mix")
+  $bad_src.icons = [{name: "x-symbolic", context: "apps", source: "nope"}]
+  save_manifest($fx, $bad_src)
+  refuse($fx, "unknown-source", "ICON_ALIAS")
+
+  $fx = fixture("unsafe-name")
+  $bad_name = load_data($fx .. "/manifest.conf.mix")
+  $bad_name.icons = [{name: "../escape", context: "apps", source: "terminal"}]
+  save_manifest($fx, $bad_name)
+  refuse($fx, "unsafe-name", "ICON_ALIAS")
+
+  $fx = fixture("non-symbolic")
+  $bad_sym = load_data($fx .. "/manifest.conf.mix")
+  $bad_sym.icons = [{name: "dev.mixos.term", context: "apps", source: "terminal"}]
+  save_manifest($fx, $bad_sym)
+  refuse($fx, "non-symbolic", "ICON_ALIAS")
+
+  $fx = fixture("icons-empty")
+  $no_icons = load_data($fx .. "/manifest.conf.mix")
+  $no_icons.icons = []
+  save_manifest($fx, $no_icons)
+  refuse($fx, "icons-empty", "ICON_MANIFEST")
+
+  $fx = fixture("icons-map")
+  $map_icons = load_data($fx .. "/manifest.conf.mix")
+  $map_icons.icons = {name: "dev.mixos.term-symbolic"}
+  save_manifest($fx, $map_icons)
+  refuse($fx, "icons-map", "ICON_MANIFEST")
+
+  $fx = fixture("sources-empty")
+  $no_sources = load_data($fx .. "/manifest.conf.mix")
+  $no_sources.sources = {}
+  save_manifest($fx, $no_sources)
+  refuse($fx, "sources-empty", "ICON_MANIFEST")
+
+  $fx = fixture("index-type")
+  put($fx .. "/index.theme", replace(read_file($fx .. "/index.theme"), "Type=Scalable", "Type=Fixed"))
+  refuse($fx, "index-type", "ICON_INDEX")
+
+  $fx = fixture("index-size")
+  put($fx .. "/index.theme", replace(read_file($fx .. "/index.theme"), "Size=24", "Size=0"))
+  refuse($fx, "index-size", "ICON_INDEX")
+
+  $fx = fixture("index-bounds")
+  put($fx .. "/index.theme", replace(read_file($fx .. "/index.theme"), "MinSize=1", "MinSize=600"))
+  refuse($fx, "index-bounds", "ICON_INDEX")
+
+  $fx = fixture("index-context")
+  put($fx .. "/index.theme", replace(read_file($fx .. "/index.theme"), "Context=Applications", "Context=Status"))
+  refuse($fx, "index-context", "ICON_INDEX")
+
+  $fx = fixture("index-inherits")
+  put($fx .. "/index.theme", replace(read_file($fx .. "/index.theme"), "Name=MixOS", "Name=MixOS\nInherits=material"))
+  refuse($fx, "index-inherits", "ICON_INDEX")
+
+  $fx = fixture("stroke")
+  $bad_stroke = load_data($fx .. "/manifest.conf.mix")
+  $bad_stroke.stroke_width = 2
+  save_manifest($fx, $bad_stroke)
+  refuse($fx, "stroke", "ICON_MANIFEST")
+
+  -- 8. Roots and theme directories. Nothing is created or written through a symlink,
+  -- whether it is the theme directory, the root itself or an ancestor above the root.
+  -- A relative root and a dot-dot segment are refused before anything is touched.
+  $outside = $tmp .. "/outside"
+  put($outside .. "/sentinel.txt", "OUTSIDE")
+  $outside_before = walk($outside, {include_dirs: true, follow_symlinks: false})
+  $sentinel = snapshot([$outside .. "/sentinel.txt"])
+
+  $linked = $tmp .. "/linked"
+  mkdir($linked .. "/icons")
+  symlink($outside, $linked .. "/icons/mixos")
+  $linked_before = walk($linked, {include_dirs: true, follow_symlinks: false})
+  must_fail(run_mix([$mix, $bundle .. "/install.mix", "--root", $linked], nil), "ICON_ROOT", "install through a symlinked theme directory")
+  must_fail(run_mix([$mix, $bundle .. "/install.mix", "--verify", "--root", $linked], nil), "ICON_ROOT", "verify through a symlinked theme directory")
+  check(same_tree($linked, $linked_before), "a refused run changed the tree under the root")
+
+  $root_link = $tmp .. "/root-symlink"
+  symlink($outside, $root_link)
+  must_fail(run_mix([$mix, $bundle .. "/install.mix", "--root", $root_link], nil), "ICON_ROOT", "install with a symlinked root")
+  must_fail(run_mix([$mix, $bundle .. "/install.mix", "--verify", "--root", $root_link], nil), "ICON_ROOT", "verify with a symlinked root")
+
+  $anc_link = $tmp .. "/ancestor-symlink"
+  symlink($outside, $anc_link)
+  must_fail(run_mix([$mix, $bundle .. "/install.mix", "--root", $anc_link .. "/share"], nil), "ICON_ROOT", "install under a symlinked ancestor")
+  must_fail(run_mix([$mix, $bundle .. "/install.mix", "--verify", "--root", $anc_link .. "/share"], nil), "ICON_ROOT", "verify under a symlinked ancestor")
+  check(not exists($outside .. "/share", {follow_symlinks: false}), "a refused install created a directory through the ancestor symlink")
+
+  must_fail(run_mix([$mix, $bundle .. "/install.mix", "--root", "relative/share"], nil), "ICON_ROOT", "a relative root")
+  must_fail(run_mix([$mix, $bundle .. "/install.mix", "--root", $tmp .. "/gone/../share"], nil), "ICON_ROOT", "a root with a dot-dot segment")
+  check(not exists($tmp .. "/gone", {follow_symlinks: false}), "a dot-dot root created a directory before it was refused")
+  must_pass(run_mix([$mix, $bundle .. "/install.mix", "--check", "--root", "relative/share"], nil), "--check ignores the root")
+
+  check(same_tree($outside, $outside_before), "something was written in the outside directory")
+  check(len(changed($sentinel)) == 0, "the outside sentinel changed: " .. join(changed($sentinel), ", "))
+
+  -- A symlink where an output belongs is refused before anything is staged.
+  $root_file = $tmp .. "/linked-file"
+  $victim = $tmp .. "/victim.svg"
+  put($victim, "VICTIM")
+  mkdir($root_file .. "/icons/mixos/scalable/apps")
+  symlink($victim, $root_file .. "/icons/mixos/scalable/apps/dev.mixos.term-symbolic.svg")
+  must_fail(run_mix([$mix, $bundle .. "/install.mix", "--root", $root_file], nil), "ICON_ROOT", "install over a symlinked output")
+  check(read_file($victim) == "VICTIM", "the install wrote through an output symlink")
+  check(not exists($root_file .. "/icons/mixos/index.theme", {follow_symlinks: false}), "a refused install still published index.theme")
+
+  -- 9. A real partial failure, with nothing injected. The bundle is installed, then
+  -- its first app alias is changed so its prior bytes are distinct, and its second
+  -- app alias (ced) is removed, so the publish creates it. The status
+  -- directory is made read-only, so the publish replaces every app alias in order
+  -- and then the rename of the first status SVG is refused with EACCES. The
+  -- rollback has to undo the apps it already replaced and remove the one it created.
+  $rb = $tmp .. "/rollback-share"
+  $rb_theme = $rb .. "/icons/mixos"
+  must_pass(run_mix([$mix, $bundle .. "/install.mix", "--root", $rb], nil), "install for the rollback test")
+  $term = $rb_theme .. "/scalable/apps/dev.mixos.term-symbolic.svg"
+  $ced = $rb_theme .. "/scalable/apps/dev.mixos.ced-symbolic.svg"
+  $status_dir = $rb_theme .. "/scalable/status"
+  $third = $rb_theme .. "/scalable/apps/third-party.svg"
+  $status_user = $status_dir .. "/user-own.svg"
+  put($term, "PREVIOUS-TERM")
+  remove($ced)
+  put($third, "THIRD PARTY")
+  put($status_user, "USER STATUS")
+  $owned_list = []
+  for each $p in owned_paths($rb_theme, $m)
+    if $p != $ced then push($owned_list, $p) end
+  end
+  $owned_before = snapshot($owned_list)
+  $unrelated_before = snapshot([$third, $status_user])
+  $term_before = stat($term, {follow_symlinks: false})
+  chmod($status_dir, 0o555)
+  try
+    $r = run_denied([$mix, $bundle .. "/install.mix", "--root", $rb])
+  finally
+    chmod($status_dir, 0o755)
+  end
+  $term_after = stat($term, {follow_symlinks: false})
+  must_fail($r, "Permission denied", "install whose status rename the filesystem refuses")
+  check(not contains($r.stdout, "undo also failed"), "the undo failed as well: " .. $r.stdout)
+  -- Renamed aside and back keeps the inode but moves the ctime pair: the proof that
+  -- the first alias really was replaced during the publish and then rolled back.
+  check($term_after.ino == $term_before.ino, "the first alias has a new inode; a rename back should keep it")
+  check($term_after.ctime != $term_before.ctime or $term_after.ctime_nsec != $term_before.ctime_nsec, "the first alias was not renamed aside and back: its ctime pair is unchanged")
+  check(len(changed($owned_before)) == 0, "rollback left owned files changed: " .. join(changed($owned_before), ", "))
+  check(not exists($ced, {follow_symlinks: false}), "rollback left the ced alias it created")
+  check(len(changed($unrelated_before)) == 0, "rollback touched an unrelated file: " .. join(changed($unrelated_before), ", "))
+  check(len(glob($rb .. "/icons/.lucide-install-*")) == 0, "the staging directory was left behind by a rollback")
+  must_pass(run_mix([$mix, $bundle .. "/install.mix", "--root", $rb], nil), "repair after the refused publish")
+  must_pass(run_mix([$mix, $bundle .. "/install.mix", "--verify", "--root", $rb], nil), "--verify after the repair")
+  check(len(changed($unrelated_before)) == 0, "the repair changed an unrelated file")
+
+  print("PASS offline Lucide bundle: source checks, install and verify, native lookup, default theme, brand mark, drift repair, corrupt-source and index refusals, root and symlink refusals, real EACCES rollback")
 finally
   remove_dir($tmp)
 end
