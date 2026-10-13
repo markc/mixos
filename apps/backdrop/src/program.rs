@@ -227,7 +227,8 @@ fn draw_image(
             };
             let texture = match previous {
                 Some(mut slot) => {
-                    slot.texture.set(upload(&resident.image), TextureOptions::LINEAR);
+                    slot.texture
+                        .set(upload(&resident.image), TextureOptions::LINEAR);
                     slot.texture
                 }
                 None => ctx.load_texture(
@@ -375,7 +376,9 @@ mod tests {
         assert_eq!(budget.used(), 100);
         drop(old);
         assert_eq!(budget.used(), 0, "the old reservation is released");
-        let new = budget.reserve(100).expect("the released bytes are free again");
+        let new = budget
+            .reserve(100)
+            .expect("the released bytes are free again");
         assert!(budget.reserve(51).is_none(), "the limit still holds");
         assert!(budget.reserve(50).is_some(), "exactly the limit is allowed");
         drop(new);
@@ -398,7 +401,10 @@ mod tests {
         let budget = Budget::new(100);
         let held = budget.reserve(60).expect("60 of 100 fits");
         assert!(budget.reserve(60).is_none(), "a second 60 is starved");
-        assert!(!budget.take_freed(), "nothing released, so nothing to wake for");
+        assert!(
+            !budget.take_freed(),
+            "nothing released, so nothing to wake for"
+        );
         drop(held);
         assert!(budget.take_freed(), "the release is reported");
         assert!(!budget.take_freed(), "and reported once");

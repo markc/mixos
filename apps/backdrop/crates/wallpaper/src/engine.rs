@@ -167,7 +167,11 @@ impl Engine {
 
     /// A ready request could not be stored: drop it, keep the applied one.
     pub fn refuse(&mut self, revision: u64, reason: String) -> bool {
-        if self.pending.as_ref().is_some_and(|p| p.revision == revision) {
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(|p| p.revision == revision)
+        {
             self.pending = None;
             self.error = Some(reason);
             true
@@ -234,7 +238,10 @@ mod tests {
         assert!(!engine.ready());
         assert_eq!(engine.apply(), None);
         assert_eq!(engine.applied(), &Config::default());
-        assert_eq!(engine.decoded(1, Path::new("/a.png"), Ok(())), Decode::Ready);
+        assert_eq!(
+            engine.decoded(1, Path::new("/a.png"), Ok(())),
+            Decode::Ready
+        );
         assert_eq!(engine.apply(), Some(1));
         assert_eq!(engine.applied(), &image("/a.png"));
     }
@@ -252,7 +259,10 @@ mod tests {
         );
         assert_eq!(engine.pending(), Some(2));
         assert_eq!(engine.applied(), &Config::default());
-        assert_eq!(engine.decoded(2, Path::new("/b.png"), Ok(())), Decode::Ready);
+        assert_eq!(
+            engine.decoded(2, Path::new("/b.png"), Ok(())),
+            Decode::Ready
+        );
         assert_eq!(engine.apply(), Some(2));
     }
 
@@ -266,7 +276,12 @@ mod tests {
         assert!(matches!(&outcome, Decode::Failed(m) if m.contains("no such file")));
         let status = engine.status();
         assert_eq!((status.requested, status.active), (2, 1));
-        assert!(status.error.as_deref().is_some_and(|e| e.contains("no such file")));
+        assert!(
+            status
+                .error
+                .as_deref()
+                .is_some_and(|e| e.contains("no such file"))
+        );
         assert_eq!(status.pending, None);
         assert_eq!(engine.applied(), &colour());
         assert_eq!(engine.apply(), None, "nothing waits to apply");

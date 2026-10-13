@@ -16,7 +16,8 @@ impl Rgb {
         let Some(digits) = digits else {
             return Err(format!("{text:?} is not a colour as #RRGGBB"));
         };
-        let channel = |at: usize| u8::from_str_radix(&digits[at..at + 2], 16).map_err(|e| e.to_string());
+        let channel =
+            |at: usize| u8::from_str_radix(&digits[at..at + 2], 16).map_err(|e| e.to_string());
         Ok(Self([channel(0)?, channel(2)?, channel(4)?]))
     }
 
@@ -40,7 +41,9 @@ mod tests {
     #[test]
     fn a_colour_is_hash_and_six_hex_digits() {
         assert_eq!(Rgb::parse("#0A1b2C"), Ok(Rgb([0x0a, 0x1b, 0x2c])));
-        for bad in ["", "#", "0a1b2c", "#0a1b2", "#0a1b2c0", "#0a1b2g", "#0a1b2c ", "red", "#fff"] {
+        for bad in [
+            "", "#", "0a1b2c", "#0a1b2", "#0a1b2c0", "#0a1b2g", "#0a1b2c ", "red", "#fff",
+        ] {
             assert!(Rgb::parse(bad).is_err(), "{bad:?} must be refused");
         }
         assert_eq!(Rgb([0x0a, 0x1b, 0x2c]).hex(), "#0a1b2c");

@@ -92,27 +92,36 @@ pub enum Wallpaper {
     Colour(Rgb),
     /// An absolute path to a PNG or JPEG, centre-cropped to fill the surface.
     /// `fallback` shows while the image is not decoded.
-    Image { path: PathBuf, fallback: Option<Rgb> },
+    Image {
+        path: PathBuf,
+        fallback: Option<Rgb>,
+    },
 }
 
 impl Wallpaper {
     /// Validate one fill; `field` names it in the error.
     pub fn from_fill(fill: &Fill, field: &str) -> Result<Self, Invalid> {
         match (&fill.colour, &fill.image) {
-            (Some(_), Some(_)) => Err(Invalid::new(field, "names both a colour and an image; use one")),
+            (Some(_), Some(_)) => Err(Invalid::new(
+                field,
+                "names both a colour and an image; use one",
+            )),
             (None, None) => Err(Invalid::new(field, "names neither a colour nor an image")),
             (Some(colour), None) => {
                 if fill.fallback.is_some() {
                     return Err(Invalid::new(field, "a fallback colour goes with an image"));
                 }
-                let rgb = Rgb::parse(colour).map_err(|e| Invalid::new(format!("{field}.colour"), e))?;
+                let rgb =
+                    Rgb::parse(colour).map_err(|e| Invalid::new(format!("{field}.colour"), e))?;
                 Ok(Self::Colour(rgb))
             }
             (None, Some(image)) => {
-                let path = image_path(image).map_err(|e| Invalid::new(format!("{field}.image"), e))?;
+                let path =
+                    image_path(image).map_err(|e| Invalid::new(format!("{field}.image"), e))?;
                 let fallback = match &fill.fallback {
                     Some(text) => Some(
-                        Rgb::parse(text).map_err(|e| Invalid::new(format!("{field}.fallback"), e))?,
+                        Rgb::parse(text)
+                            .map_err(|e| Invalid::new(format!("{field}.fallback"), e))?,
                     ),
                     None => None,
                 };
@@ -196,8 +205,8 @@ impl Default for Config {
 impl Config {
     /// Parse and validate strict data (`backdrop.mx`).
     pub fn from_text(text: &str) -> Result<Self, Invalid> {
-        let document: Document =
-            config::from_conf_mix_str(text).map_err(|e| Invalid::new("", format!("document: {e}")))?;
+        let document: Document = config::from_conf_mix_str(text)
+            .map_err(|e| Invalid::new("", format!("document: {e}")))?;
         Self::from_document(document)
     }
 
@@ -216,7 +225,10 @@ impl Config {
         if document.outputs.len() > MAX_OUTPUTS {
             return Err(Invalid::new(
                 "outputs",
-                format!("at most {MAX_OUTPUTS} outputs, found {}", document.outputs.len()),
+                format!(
+                    "at most {MAX_OUTPUTS} outputs, found {}",
+                    document.outputs.len()
+                ),
             ));
         }
         let mut outputs = BTreeMap::new();
@@ -290,7 +302,10 @@ mod tests {
     #[test]
     fn a_document_with_no_default_is_the_session_theme() {
         assert_eq!(parse("schema: 1").unwrap(), Config::default());
-        assert_eq!(Config::default().for_output(Some("DP-1")), &Wallpaper::Theme);
+        assert_eq!(
+            Config::default().for_output(Some("DP-1")),
+            &Wallpaper::Theme
+        );
     }
 
     #[test]
@@ -372,8 +387,7 @@ mod tests {
             from_bus,
             parse("schema: 1\ndefault: { colour: \"#abcdef\" }").unwrap()
         );
-        let unknown: Result<Document, _> =
-            serde_json::from_str(r#"{"schema":1,"extra":true}"#);
+        let unknown: Result<Document, _> = serde_json::from_str(r#"{"schema":1,"extra":true}"#);
         assert!(unknown.is_err(), "unknown keys are refused on the Bus too");
     }
 
@@ -385,6 +399,11 @@ mod tests {
         .unwrap();
         let text = config.to_conf_text().unwrap();
         assert_eq!(Config::from_text(&text).unwrap(), config);
-        assert_eq!(Config::default().to_conf_text().map(|t| t.contains("schema")), Ok(true));
+        assert_eq!(
+            Config::default()
+                .to_conf_text()
+                .map(|t| t.contains("schema")),
+            Ok(true)
+        );
     }
 }

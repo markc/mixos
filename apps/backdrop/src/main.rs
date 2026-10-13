@@ -11,10 +11,10 @@ mod control;
 mod probe;
 mod program;
 
-use std::path::{Path, PathBuf};
 use std::fs::OpenOptions;
 use std::io::Read;
 use std::os::unix::fs::OpenOptionsExt;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use toolkit::layer::LayerOptions;
 use wallpaper::{Config, Fill, Wallpaper};
@@ -66,7 +66,12 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Args, String> {
             other => return Err(format!("unknown option {other} (see --help)")),
         }
     }
-    if out.probe && (out.config.is_some() || out.colour.is_some() || out.image.is_some() || out.service.is_some()) {
+    if out.probe
+        && (out.config.is_some()
+            || out.colour.is_some()
+            || out.image.is_some()
+            || out.service.is_some())
+    {
         return Err("--probe runs alone: no wallpaper or service option goes with it".into());
     }
     Ok(out)
@@ -90,7 +95,11 @@ fn default_store() -> Option<PathBuf> {
 /// A document read and validated. `required`: a missing file is an error.
 fn load(path: &Path, required: bool) -> Result<Option<Config>, String> {
     let shown = path.display();
-    let file = match OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open(path) {
+    let file = match OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)
+    {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound && !required => {
             return Ok(None);
@@ -99,10 +108,14 @@ fn load(path: &Path, required: bool) -> Result<Option<Config>, String> {
     };
     let meta = file.metadata().map_err(|e| format!("{shown}: {e}"))?;
     if !meta.is_file() || meta.len() > MAX_DOCUMENT {
-        return Err(format!("{shown}: expected a regular document of at most {MAX_DOCUMENT} bytes"));
+        return Err(format!(
+            "{shown}: expected a regular document of at most {MAX_DOCUMENT} bytes"
+        ));
     }
     let mut bytes = Vec::new();
-    file.take(MAX_DOCUMENT + 1).read_to_end(&mut bytes).map_err(|e| format!("{shown}: {e}"))?;
+    file.take(MAX_DOCUMENT + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("{shown}: {e}"))?;
     if bytes.len() as u64 > MAX_DOCUMENT {
         return Err(format!("{shown}: over {MAX_DOCUMENT} bytes"));
     }
@@ -139,7 +152,9 @@ fn cli_default(args: &Args) -> Result<Option<Wallpaper>, String> {
 /// The configuration to start with, and where accepted documents are stored.
 fn startup(args: &Args) -> Result<(Config, Option<PathBuf>), String> {
     let store = match &args.config {
-        Some(path) => Some(std::path::absolute(path).map_err(|e| format!("{}: {e}", path.display()))?),
+        Some(path) => {
+            Some(std::path::absolute(path).map_err(|e| format!("{}: {e}", path.display()))?)
+        }
         None => default_store(),
     };
     let file = match &store {
@@ -169,10 +184,9 @@ fn main() {
         }
     };
     if args.probe {
-        if let Err(error) = toolkit::layer::run(
-            LayerOptions::background(control::APP),
-            probe::Probe::new(),
-        ) {
+        if let Err(error) =
+            toolkit::layer::run(LayerOptions::background(control::APP), probe::Probe::new())
+        {
             eprintln!("backdrop: {error}");
             std::process::exit(1);
         }
@@ -190,7 +204,9 @@ fn main() {
         .clone()
         .unwrap_or_else(|| control::APP.to_owned());
     if !valid_service(&service) {
-        eprintln!("backdrop: --service {service:?}: 2 to 31 of a-z, 0-9 and '-', starting with a letter");
+        eprintln!(
+            "backdrop: --service {service:?}: 2 to 31 of a-z, 0-9 and '-', starting with a letter"
+        );
         std::process::exit(2);
     }
     let shared = Arc::new(Mutex::new(program::Shared::default()));

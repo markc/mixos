@@ -20,4 +20,4 @@ pub mod schema;
 
 pub use colour::Rgb;
 pub use engine::{Decode, Engine, Staged, Status};
-pub use schema::{Config, Document, Fill, Invalid, Wallpaper, SCHEMA};
+pub use schema::{Config, Document, Fill, Invalid, SCHEMA, Wallpaper};

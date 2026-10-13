@@ -654,7 +654,10 @@ mod tests {
         // The refreshed bytes are corrupt: the last good image stays active.
         c.decoded(2, path.clone(), Err("corrupt".into()));
         assert!(c.candidate.is_empty());
-        assert_eq!(c.active[&path].serial, good, "the applied image is untouched");
+        assert_eq!(
+            c.active[&path].serial, good,
+            "the applied image is untouched"
+        );
         let status = c.engine.status();
         assert_eq!((status.requested, status.active), (2, 1));
         assert!(status.error.is_some());
@@ -666,7 +669,10 @@ mod tests {
         c.stage(images(&["/w/a.png", "/w/b.png", "/w/c.png"]), Owed::Startup);
         assert!(!c.queue.is_empty(), "the other images wait in the queue");
         c.decoded(1, PathBuf::from("/w/a.png"), Err("corrupt".into()));
-        assert!(c.queue.is_empty(), "no decode is wasted on a failed request");
+        assert!(
+            c.queue.is_empty(),
+            "no decode is wasted on a failed request"
+        );
         assert!(c.candidate.is_empty());
         assert!(!c.decoding);
     }
@@ -711,7 +717,13 @@ mod tests {
                 rgba: image::RgbaImage::new(1, 1),
             }),
         );
-        assert!(c.engine.status().error.as_deref().is_some_and(|e| e.contains("budget")));
+        assert!(
+            c.engine
+                .status()
+                .error
+                .as_deref()
+                .is_some_and(|e| e.contains("budget"))
+        );
         assert_eq!(c.active.len(), 4, "the last good images are still applied");
         assert!(c.resident_bytes() <= 512 * MIB);
     }
@@ -726,7 +738,16 @@ mod tests {
             rgba: image::RgbaImage::new(1, 1),
         };
         c.decoded(1, PathBuf::from("/w/a.png"), Ok(big));
-        assert!(c.candidate.is_empty(), "a result over the budget is refused");
-        assert!(c.engine.status().error.as_deref().is_some_and(|e| e.contains("budget")));
+        assert!(
+            c.candidate.is_empty(),
+            "a result over the budget is refused"
+        );
+        assert!(
+            c.engine
+                .status()
+                .error
+                .as_deref()
+                .is_some_and(|e| e.contains("budget"))
+        );
     }
 }
