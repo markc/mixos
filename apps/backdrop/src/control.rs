@@ -519,6 +519,12 @@ fn persist(store: &Path, config: &Config) -> Result<(), Stored> {
     let text = config
         .to_conf_text()
         .map_err(|e| Stored::Refused(e.to_string()))?;
+    if text.len() as u64 > crate::MAX_DOCUMENT {
+        return Err(Stored::Refused(format!(
+            "stored document: over {} bytes",
+            crate::MAX_DOCUMENT
+        )));
+    }
     let dir = store
         .parent()
         .ok_or_else(|| Stored::Refused(format!("{}: no directory", store.display())))?;
