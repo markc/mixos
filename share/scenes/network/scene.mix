@@ -3,10 +3,10 @@ scene: 1
 name: network
 citizen: scene-network
 window: {"chrome":false,"edge":"right","kind":"edge","title":"Network","w":400}
-model: {"count":"No interfaces","dns":"","dns_label":"DNS","edit":{"addresses":"","addresses_hint":"192.0.2.10/24, …","addresses_label":"Addresses","apply_label":"Apply","busy":false,"close_label":"Close","dhcp_bg":"#3daee9","dhcp_color":"#0b1f2b","dhcp_label":"DHCP","dns":"","dns_hint":"optional","dns_label":"DNS servers","gateway":"","gateway_hint":"optional","gateway_label":"Gateway","has_note":false,"has_undo":false,"is_static":false,"note":"","shown":false,"static_bg":"#ffffff0f","static_color":"#fcfcfc","static_label":"Static","title":"","undo_label":"Undo last change"},"empty":true,"empty_text":"No interfaces","gateway":"","has_dns":false,"has_gateway":false,"has_hostd_note":false,"has_note":false,"hostd_note":"","note":"","route_label":"Default route","rows":[],"summary":"Offline","title":"Network"}
+model: {"count":"No interfaces","dns":"","dns_label":"DNS","edit":{"addresses":"","addresses_hint":"192.0.2.10/24, …","addresses_label":"Addresses","apply_label":"Apply","busy":false,"close_label":"Close","dhcp_bg":"#3daee9","dhcp_color":"#0b1f2b","dhcp_label":"DHCP","dns":"","dns_hint":"optional","dns_label":"DNS servers","gateway":"","gateway_hint":"optional","gateway_label":"Gateway","handshake_bg":"#3daee9","handshake_color":"#0b1f2b","handshake_label":"Keep only if the peer answers: on","has_networks":false,"has_no_networks":false,"has_note":false,"has_pubkey":false,"has_undo":false,"is_link":false,"is_static":false,"is_wg":false,"is_wifi":false,"kind":"link","needs_pass":false,"networks":[],"no_networks":"","note":"","pass_hint":"type it and press Enter to connect","pass_label":"Passphrase","pass_value":"held-0","peer_allowed":"","peer_allowed_hint":"192.0.2.10/24, …","peer_allowed_label":"Peer allowed IPs","peer_endpoint":"","peer_endpoint_hint":"host:port, optional","peer_endpoint_label":"Peer endpoint","peer_keepalive":"","peer_keepalive_hint":"optional","peer_keepalive_label":"Keepalive (s)","peer_key":"","peer_key_hint":"leave empty for no peer yet","peer_key_label":"Peer public key","peer_label":"Peer","scan_label":"Scan","show_pass":false,"shown":false,"static_bg":"#ffffff0f","static_color":"#fcfcfc","static_label":"Static","title":"","undo_label":"Undo last change","wg_addresses":"","wg_addresses_label":"Addresses","wg_port":"","wg_port_hint":"optional","wg_port_label":"Listen port","wg_pubkey":"","wg_pubkey_label":"This tunnel's public key (give it to the peer)"},"empty":true,"empty_text":"No interfaces","gateway":"","has_dns":false,"has_gateway":false,"has_hostd_note":false,"has_new_tunnels":false,"has_note":false,"hostd_note":"","new_tunnels":[],"note":"","route_label":"Default route","rows":[],"summary":"Offline","title":"Network"}
 ---
 ```mix
-root: {"children":["nh","n_summary","n_route","n_dns","n_note","n_hostd","n_edit","n_empty","n_list"],"fill":true,"gap":10,"padding":16,"widget":"column"}
+root: {"children":["nh","n_summary","n_route","n_dns","n_note","n_hostd","n_newwg","n_edit","n_empty","n_list"],"fill":true,"gap":10,"padding":16,"widget":"column"}
 nh: {"align":"center","children":["nh_t","nh_fill","nh_count"],"gap":8,"widget":"row"}
 nh_t: {"bold":true,"color":"#fcfcfc","size":18,"text":"= $model.title","widget":"text"}
 nh_fill: {"widget":"spacer"}
@@ -21,8 +21,40 @@ n_dns_v: {"color":"#fcfcfc","elide":true,"fill":true,"size":12,"text":"= $model.
 n_note: {"color":"#6e7680","hidden":"= not $model.has_note","size":11,"text":"= $model.note","widget":"text"}
 n_hostd: {"color":"#6e7680","hidden":"= not $model.has_hostd_note","size":11,"text":"= $model.hostd_note","widget":"text"}
 n_edit: {"background":"#2a2e32","children":["n_edit_col"],"hidden":"= not $model.edit.shown","padding":12,"radius":10,"widget":"row"}
-n_edit_col: {"children":["e_title","e_mode","e_addr_l","e_addr","e_gw_l","e_gw","e_dns_l","e_dns","e_btns","e_note"],"fill":true,"gap":6,"widget":"column"}
+n_edit_col: {"children":["e_title","e_link","e_wg","e_wifi","e_btns","e_note"],"fill":true,"gap":6,"widget":"column"}
 e_title: {"bold":true,"color":"#fcfcfc","size":14,"text":"= $model.edit.title","widget":"text"}
+n_newwg: {"flow":"horizontal","gap":6,"hidden":"= not $model.has_new_tunnels","on_click":"net_wg_new","row":"n_newwg_btn","row_height":30,"rows":"= $model.new_tunnels","widget":"list"}
+n_newwg_btn: {"align":"center","background":"#ffffff0f","children":["n_newwg_t"],"height":30,"hover":"#ffffff1a","padding":10,"radius":6,"widget":"row"}
+n_newwg_t: {"color":"#3daee9","size":12,"text":"= $item.label","widget":"text"}
+e_link: {"children":["e_mode","e_addr_l","e_addr","e_gw_l","e_gw","e_dns_l","e_dns"],"gap":6,"hidden":"= not $model.edit.is_link","widget":"column"}
+e_wg: {"children":["w_addr_l","w_addr","w_port_l","w_port","w_peer_t","w_key_l","w_key","w_ep_l","w_ep","w_allowed_l","w_allowed","w_ka_l","w_ka","w_hs","w_pub_l","w_pub"],"gap":6,"hidden":"= not $model.edit.is_wg","widget":"column"}
+w_addr_l: {"color":"#a1a9b1","size":11,"text":"= $model.edit.wg_addresses_label","widget":"text"}
+w_addr: {"on_change":"net_wg_addr","on_submit":"net_apply","placeholder":"= $model.edit.addresses_hint","value":"= $model.edit.wg_addresses","widget":"field","width":344}
+w_port_l: {"color":"#a1a9b1","size":11,"text":"= $model.edit.wg_port_label","widget":"text"}
+w_port: {"on_change":"net_wg_port","on_submit":"net_apply","placeholder":"= $model.edit.wg_port_hint","value":"= $model.edit.wg_port","widget":"field","width":344}
+w_peer_t: {"bold":true,"color":"#fcfcfc","size":12,"text":"= $model.edit.peer_label","widget":"text"}
+w_key_l: {"color":"#a1a9b1","size":11,"text":"= $model.edit.peer_key_label","widget":"text"}
+w_key: {"on_change":"net_peer_key","on_submit":"net_apply","placeholder":"= $model.edit.peer_key_hint","value":"= $model.edit.peer_key","widget":"field","width":344}
+w_ep_l: {"color":"#a1a9b1","size":11,"text":"= $model.edit.peer_endpoint_label","widget":"text"}
+w_ep: {"on_change":"net_peer_ep","on_submit":"net_apply","placeholder":"= $model.edit.peer_endpoint_hint","value":"= $model.edit.peer_endpoint","widget":"field","width":344}
+w_allowed_l: {"color":"#a1a9b1","size":11,"text":"= $model.edit.peer_allowed_label","widget":"text"}
+w_allowed: {"on_change":"net_peer_allowed","on_submit":"net_apply","placeholder":"= $model.edit.peer_allowed_hint","value":"= $model.edit.peer_allowed","widget":"field","width":344}
+w_ka_l: {"color":"#a1a9b1","size":11,"text":"= $model.edit.peer_keepalive_label","widget":"text"}
+w_ka: {"on_change":"net_peer_ka","on_submit":"net_apply","placeholder":"= $model.edit.peer_keepalive_hint","value":"= $model.edit.peer_keepalive","widget":"field","width":344}
+w_hs: {"align":"center","background":"= $model.edit.handshake_bg","children":["w_hs_t"],"height":28,"hover":"#ffffff1a","on_click":"net_wg_handshake","padding":10,"radius":6,"widget":"row"}
+w_hs_t: {"color":"= $model.edit.handshake_color","size":12,"text":"= $model.edit.handshake_label","widget":"text"}
+w_pub_l: {"color":"#a1a9b1","hidden":"= not $model.edit.has_pubkey","size":11,"text":"= $model.edit.wg_pubkey_label","widget":"text"}
+w_pub: {"color":"#fcfcfc","hidden":"= not $model.edit.has_pubkey","size":11,"text":"= $model.edit.wg_pubkey","widget":"text"}
+e_wifi: {"children":["f_scan","f_none","f_list","f_pass_l","f_pass"],"gap":6,"hidden":"= not $model.edit.is_wifi","widget":"column"}
+f_scan: {"label":"= $model.edit.scan_label","on_click":"net_wifi_scan","widget":"button"}
+f_none: {"color":"#6e7680","hidden":"= not $model.edit.has_no_networks","size":12,"text":"= $model.edit.no_networks","widget":"text"}
+f_list: {"gap":4,"hidden":"= not $model.edit.has_networks","on_click":"net_wifi_pick","row":"f_row","row_height":44,"rows":"= $model.edit.networks","widget":"list"}
+f_row: {"align":"center","background":"= $item.background","children":["f_col"],"height":44,"hover":"#ffffff1a","padding":8,"radius":6,"widget":"row"}
+f_col: {"children":["f_ssid","f_info"],"fill":true,"gap":2,"widget":"column"}
+f_ssid: {"bold":true,"color":"#fcfcfc","elide":true,"size":13,"text":"= $item.ssid","widget":"text"}
+f_info: {"color":"#a1a9b1","elide":true,"size":11,"text":"= $item.info","widget":"text"}
+f_pass_l: {"color":"#a1a9b1","hidden":"= not $model.edit.show_pass","size":11,"text":"= $model.edit.pass_label","widget":"text"}
+f_pass: {"hidden":"= not $model.edit.show_pass","on_submit":"net_wifi_connect","password":true,"placeholder":"= $model.edit.pass_hint","value":"= $model.edit.pass_value","widget":"field","width":344}
 e_mode: {"children":["e_dhcp","e_static"],"gap":6,"widget":"row"}
 e_dhcp: {"align":"center","background":"= $model.edit.dhcp_bg","children":["e_dhcp_t"],"height":28,"hover":"#ffffff1a","justify":"center","on_click":"net_mode_dhcp","padding":10,"radius":6,"widget":"row"}
 e_dhcp_t: {"color":"= $model.edit.dhcp_color","size":12,"text":"= $model.edit.dhcp_label","widget":"text"}

@@ -718,9 +718,13 @@ for each $path in $docs
   $rows = 0
   for each $id, $node in data_parse(before(after($src, "```mix\n"), "\n```"))
     if $node.widget != "list" or type($node.rows) != "string" then continue end
-    $key = re_find($node.rows, '^= \$model\.([a-z_]+)$')
+    $key = re_find($node.rows, '^= \$model\.([a-z_.]+)$')
     if len($key) == 0 then continue end
-    $want = $model[$key[0].groups[0]]
+    -- A dotted path ($model.edit.networks) walks nested maps.
+    $want = $model
+    for each $part in split($key[0].groups[0], ".")
+      $want = type($want) == "map" ? $want[$part] : nil
+    end
     if type($want) != "list" or length($want) == 0 then continue end
     $insts = ($D.instances ?? {})[$id] ?? {}
     $first = $insts[to_string($want[0].id)]

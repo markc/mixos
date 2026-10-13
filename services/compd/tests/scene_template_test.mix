@@ -623,7 +623,7 @@ check($net.summary == "Connected via wlan0 (Wireless)" and $net.count == "3 inte
 check(deep_eq(map($net.rows, function ($row) = $row.name), ["wlan0", "eth0", "wg0"]), "default route first, then up, then down; loopback left out")
 check(deep_eq($net.rows[0], {id: "if_wlan0", cells: [], name: "wlan0", sub: "Wireless · up · Example Net",
   addresses: "192.0.2.10/24  2001:db8::10/64", detail: "default route · networkd: configured · DNS 192.0.2.1", has_detail: true, dot: "#27ae60",
-  editable: false, cta: "", background: "#2a2e32"}), "a full row: kind, SSID, link-local dropped, networkd and DNS")
+  action: "", editable: false, cta: "", background: "#2a2e32"}), "a full row: kind, SSID, link-local dropped, networkd and DNS")
 check($net.rows[2].sub == "WireGuard · down" and $net.rows[2].addresses == "No addresses" and $net.rows[2].dot == "#6e7680", "a down link")
 check($net.gateway == "192.0.2.254 on wlan0" and $net.dns == "192.0.2.1" and not $net.has_note, "route and the default link's DNS")
 $bare = $net_snap
@@ -653,27 +653,32 @@ check($hostd.link_request("hd0", {mode: "static", addresses: "192.0.2.10/24", ga
 -- net.link.apply count, and their links limit (none = any link).
 $held = [{name: "widget", verbs: ["net.link.apply", "hostd.freeze"], limits: {links: ["eth0", "hd0"]}},
   {name: "freeze-only", verbs: ["hostd.freeze"]}, {name: "family", verbs: ["net.*"], limits: {links: ["hd0", "wg0"]}}]
-check(deep_eq($hostd.link_grants($held), ["widget", "family"]), "grants covering net.link.apply, by name or family")
-check(deep_eq($hostd.grant_links($held), ["eth0", "hd0", "wg0"]), "the union of their links")
-check($hostd.grant_links([{name: "any", verbs: ["net.link.apply"], limits: {}}]) == nil, "no links limit means any link")
+$acc = {available: true, frozen: false, grants: ["widget", "freeze-only", "family"], held: $held}
+check($hostd.may($acc, "net.link.apply", "eth0") and $hostd.may($acc, "net.link.apply", "wg0") and not $hostd.may($acc, "net.link.apply", "wlan0"), "a verb is allowed on the links some covering grant lists")
+check($hostd.may({available: true, frozen: false, held: [{name: "any", verbs: ["net.link.apply"], limits: {}}]}, "net.link.apply", "anything"), "no links limit means any link")
+check(not $hostd.may(merge($acc, {frozen: true}), "net.link.apply", "eth0") and not $hostd.may(merge($acc, {available: false}), "net.link.apply", "eth0"), "frozen or absent hostd: nothing")
+$wifi_acc = {available: true, frozen: false, held: [{name: "w", verbs: ["net.wifi.*"], limits: {links: ["wlan0"], ssids: ["home"]}}]}
+check($hostd.may($wifi_acc, "net.wifi.connect", "wlan0") and $hostd.may($wifi_acc, "net.wifi.connect", "wlan0", "home") and not $hostd.may($wifi_acc, "net.wifi.connect", "wlan0", "cafe"), "Wi-Fi: device by links, network by ssids")
+check(deep_eq($hostd.named_links($acc, "net.wg.apply"), ["hd0", "wg0"]) and deep_eq($hostd.named_links($acc, "net.link.apply"), ["eth0", "hd0", "wg0"]), "the links grants name per verb (net.* covers both)")
 check($hostd.verb_covers("net.link.*", "net.link.apply") and $hostd.verb_covers("net.*", "net.link.apply") and $hostd.verb_covers("net.link.apply", "net.link.apply"), "exact names and prefix families, as hostd matches them")
 check($hostd.uncertain({ok: false, status: "timeout"}) and $hostd.uncertain({ok: false, status: "unavailable", sent: true}), "hostd's timeout and an unanswered sent request are unknown outcomes")
 check(not $hostd.uncertain({ok: false, status: "unavailable", sent: false}) and not $hostd.uncertain({ok: false, status: "rolled_back"}) and not $hostd.uncertain({ok: true}), "a failed connect, a rollback and a success are known")
 check($hostd.call("hostd.status", {}, 1).sent == false or $hostd.call("hostd.status", {}, 1).ok, "no hostd socket here: a failed connect reports nothing sent")
 check(not $hostd.verb_covers("net.wifi.*", "net.link.apply") and not $hostd.verb_covers("net.link", "net.link.apply") and not $hostd.verb_covers("*", "net.link.apply"), "other families, a bare prefix and a lone star do not")
-check(deep_eq($hostd.link_grants([{name: "narrow", verbs: ["net.link.*"]}]), ["narrow"]), "a narrower family counts as a grant")
-check(deep_eq($hostd.grant_links(nil), []) and deep_eq($hostd.link_grants("x"), []), "no held grants")
-$limited = {access: {available: true, frozen: false, grants: ["widget"], links: ["eth0"]}}
+check($hostd.may({available: true, frozen: false, held: [{name: "narrow", verbs: ["net.link.*"]}]}, "net.link.apply", "x"), "a narrower family counts as a grant")
+check(not $hostd.may({available: true, frozen: false, held: []}, "net.link.apply", "x") and deep_eq($hostd.named_links(nil, "net.wg.apply"), []), "no held grants")
+$limited = {access: {available: true, frozen: false, grants: ["widget"], held: [{name: "widget", verbs: ["net.link.apply"], limits: {links: ["eth0"]}}]}}
 $lim = $models.network($net_snap, $limited)
 check(not $lim.rows[0].editable and $lim.rows[1].editable and $lim.rows[1].name == "eth0" and $lim.rows[0].cta == "", "Configure only on the grant's links")
 
 -- Rows offer Configure only with a live, unfrozen grant.
-$granted = {access: {available: true, frozen: false, grants: ["vt4-network-widget"], links: nil}, edit: nil}
+$granted = {access: {available: true, frozen: false, grants: ["vt4-network-widget"], held: [{name: "vt4-network-widget", verbs: ["net.*"], limits: {}}]}, edit: nil}
 $wr = $models.network($net_snap, $granted)
-check($wr.rows[0].editable and $wr.rows[0].cta == "Configure" and not $wr.has_hostd_note and not $wr.edit.shown, "a grant makes rows configurable, with no read-only note")
-$frozen_ui = {access: {available: true, frozen: true, grants: ["vt4-network-widget"]}}
+check($wr.rows[0].editable and not $wr.has_hostd_note and not $wr.edit.shown, "a grant makes rows configurable, with no read-only note")
+check(deep_eq(map($wr.rows, function ($row) = [$row.name, $row.action, $row.cta]), [["wlan0", "wifi", "Wi-Fi networks"], ["eth0", "link", "Configure"], ["wg0", "wg", "Configure tunnel"]]), "each kind opens its own editor: Wi-Fi, link, tunnel")
+$frozen_ui = {access: {available: true, frozen: true, grants: ["vt4-network-widget"], held: [{name: "vt4-network-widget", verbs: ["net.*"]}]}}
 check(not $models.network($net_snap, $frozen_ui).rows[0].editable and $models.network($net_snap, $frozen_ui).hostd_note == "hostd is frozen: changes are off until root on the host thaws it.", "frozen: read only, and it says why")
-check($models.network($net_snap, {access: {available: true, frozen: false, grants: []}}).hostd_note == "No hostd grant for this panel: read only.", "no grant: read only, and it says why")
+check($models.network($net_snap, {access: {available: true, frozen: false, grants: [], held: []}}).hostd_note == "No hostd grant for this panel: read only.", "no grant: read only, and it says why")
 check(not $models.network($net_snap).rows[0].editable and not $models.network($net_snap).has_hostd_note, "no hostd at all: read only, silently")
 
 -- The editor: prefill from the snapshot, then its model.
@@ -715,6 +720,98 @@ $apply_body = before(after($net_behaviour, "on net_apply\n"), "\nend\n")
 $task_body = before(after($net_behaviour, "on net.write async\n"), "\nend\n")
 check(not contains($apply_body, "$h.call(") and contains($apply_body, "start_write("), "a click is answered at once; hostd runs in the task")
 check(starts_with(trim($task_body), "if len(keys($event.headers)) != 0 then return end"), "the write task refuses any event with headers (every Bus event has them)")
-check(contains($task_body, "$state.inflight != $link") and contains($task_body, "contains([\"net.link.apply\", \"hostd.undo\"], $verb)"), "the task only runs the write its click started, and only the two write verbs")
+check(contains($task_body, "$state.inflight != $link") and contains($task_body, "contains($WRITE_VERBS, $verb)"), "the task only runs the write its click started, and only listed write verbs")
+check(contains($net_behaviour, "$WRITE_VERBS = [\"net.link.apply\", \"net.wg.apply\", \"net.wifi.connect\", \"hostd.undo\"]"), "the write verbs: link, tunnel, Wi-Fi connect, undo")
 check(contains($net_behaviour, "$state.receipts[$link] = $out.body.receipt") and contains($net_behaviour, "$edit.receipt = $state.receipts[$edit.link]"), "the newest receipt is kept per link, outside the editor")
+-- ── tunnels and Wi-Fi through hostd ─────────────────────────────────────
+-- Tunnel requests: one peer at most, handshake off only when asked.
+$wg_first = $hostd.wg_request("wgtest", {wg_addresses: "10.77.0.1/32", wg_port: "51830", peer_key: "", handshake: false}).request
+check(deep_eq($wg_first, {name: "wgtest", addresses: ["10.77.0.1/32"], window_s: 25, listen_port: 51830, peers: [], require_handshake: false}), "the first side of a pair: no peer, no handshake wait")
+$wg_pair = $hostd.wg_request("wgtest", {wg_addresses: "10.77.0.1/32", wg_port: "", peer_key: "PEERKEY=", peer_endpoint: "127.0.0.1:51831", peer_allowed: "10.77.0.2/32", peer_keepalive: "5", handshake: true}, 30).request
+check(deep_eq($wg_pair, {name: "wgtest", addresses: ["10.77.0.1/32"], window_s: 30, peers: [{public_key: "PEERKEY=", allowed_ips: ["10.77.0.2/32"], endpoint: "127.0.0.1:51831", keepalive_s: 5}]}), "a peer with endpoint and keepalive; handshake left to hostd's default")
+check($hostd.wg_request("w", {wg_addresses: ""}).error == "net_need_address" and $hostd.wg_request("w", {wg_addresses: "10.0.0.1"}).error == "net_need_prefix", "tunnel addresses need a prefix")
+check($hostd.wg_request("w", {wg_addresses: "10.0.0.1/32", wg_port: "70000"}).error == "net_bad_port" and $hostd.wg_request("w", {wg_addresses: "10.0.0.1/32", wg_port: "51.5"}).error == "net_bad_port", "a bad listen port is caught")
+check($hostd.wg_request("w", {wg_addresses: "10.0.0.1/32", peer_key: "K", peer_allowed: ""}).error == "net_need_allowed", "a peer needs allowed IPs")
+check($hostd.wg_request("w", {wg_addresses: "10.0.0.1/32", peer_key: "K", peer_allowed: "10.0.0.2/32", peer_keepalive: "x"}).error == "net_bad_keepalive", "keepalive is whole seconds")
+check(deep_eq($hostd.wifi_request("wlan0", "home", "secret").request, {device: "wlan0", ssid: "home", window_s: 30, passphrase: "secret"}) and $hostd.wifi_request("wlan0", "cafe", nil).request.passphrase == nil, "Wi-Fi connect carries a passphrase only when given")
+
+-- New tunnels: names a net.wg.apply grant lists that don't exist yet.
+$wg_ui = {access: {available: true, frozen: false, grants: ["w"], held: [{name: "w", verbs: ["net.wg.apply"], limits: {links: ["wg0", "wgtest"]}}]}}
+$wgm = $models.network($net_snap, $wg_ui)
+check(deep_eq($wgm.new_tunnels, [{id: "wg_wgtest", cells: [], label: "New tunnel: wgtest"}]) and $wgm.has_new_tunnels, "an existing tunnel is not offered as new")
+check(deep_eq(map($wgm.rows, function ($row) = $row.action), ["", "", "wg"]), "only the granted tunnel row is configurable")
+check(not $models.network($net_snap, $granted).has_new_tunnels, "an unlimited grant names no tunnels to offer")
+
+-- The tunnel editor.
+$wpre = $models.wg_prefill($net_snap, "wg0")
+check($wpre.kind == "wg" and $wpre.wg_addresses == "" and $wpre.handshake == true and $models.wg_prefill(nil, "wgtest").link == "wgtest", "tunnel prefill: own addresses, handshake on")
+$wpre.wg_pubkey = "OWNKEY="
+$wpre.handshake = false
+$wed = $models.network($net_snap, {access: $wg_ui.access, edit: $wpre}).edit
+check($wed.is_wg and not $wed.is_link and not $wed.is_wifi and $wed.title == "Tunnel wg0", "the tunnel editor shows only its block")
+check($wed.has_pubkey and $wed.wg_pubkey == "OWNKEY=" and $wed.handshake_label == "Keep only if the peer answers: off", "own public key shown; handshake toggle reads its state")
+
+-- The Wi-Fi editor: networks, a pick, the passphrase field only when needed.
+$fpre = $models.wifi_prefill("wlan0")
+$fpre.networks = [{ssid: "home", security: "psk", signal_dbm: -48, known: false}, {ssid: "cafe", security: "open", signal_dbm: -70, known: false},
+  {ssid: "saved", security: "psk", signal_dbm: -60, known: true}]
+$fpre.scanned = true
+$fed = $models.network($net_snap, {access: $wifi_acc, edit: $fpre}).edit
+check($fed.is_wifi and $fed.title == "Wi-Fi on wlan0" and $fed.apply_label == "Connect" and length($fed.networks) == 3, "the Wi-Fi editor lists the scan")
+check($fed.networks[0].info == "psk · -48 dBm" and $fed.networks[1].info == "open · -70 dBm" and $fed.networks[2].info == "psk · -60 dBm · saved", "security, signal and saved, in words")
+check(not $fed.needs_pass, "no pick: no passphrase field")
+$fpre.selected = 0
+check($models.network($net_snap, {access: $wifi_acc, edit: $fpre}).edit.needs_pass, "a secured, unsaved network asks for a passphrase")
+$fpre.selected = 1
+check(not $models.network($net_snap, {access: $wifi_acc, edit: $fpre}).edit.needs_pass, "an open network does not")
+$fpre.selected = 2
+check(not $models.network($net_snap, {access: $wifi_acc, edit: $fpre}).edit.needs_pass, "a saved network does not")
+$fpre.networks = []
+check($models.network($net_snap, {access: $wifi_acc, edit: $fpre}).edit.has_no_networks, "an empty scan says so")
+check(deep_eq(sort(keys($models.editor(nil))), sort(keys($models.editor($wpre)))) and deep_eq(sort(keys($models.editor(nil))), sort(keys($models.editor($fpre)))), "every editor kind declares the same keys as the closed editor")
+check($models.net_refusal("no_iwd", "wlan0", {}) == "iwd is not running, so there is no Wi-Fi to manage here.", "no_iwd in words")
+
+-- The passphrase: masked, sent once on Enter, never kept.
+check($net_nodes.f_pass.password == true and $net_nodes.f_pass.on_change == nil and $net_nodes.f_pass.on_submit == "net_wifi_connect", "the passphrase field is masked and reports no keystrokes")
+check(not contains($net_behaviour, "edit.passphrase") and not contains($net_behaviour, "$state.passphrase"), "a passphrase is never kept in state")
+for each $verb in ["net_wg_new", "net_wg_handshake", "net_wifi_scan", "net_wifi_pick", "net_wifi_connect"]
+  $body = before(after($net_behaviour, "on " .. $verb .. "\n"), "\nend\n")
+  check(contains($body, "if not from_ui($event) then $r.respond(ui_only()); return end"), "a write-path handler refuses non-UI senders: " .. $verb)
+end
+check(starts_with(trim(before(after($net_behaviour, "on net.scan async\n"), "\nend\n")), "if len(keys($event.headers)) != 0 then return end"), "the scan task refuses any event with headers")
+check(contains(before(after($net_behaviour, "fn typed($event, $field)\n"), "\nend\n"), "if from_ui($event) and"), "typed text is stored only from the scene host")
+check($net_nodes.n_newwg.on_click == "net_wg_new" and $net_nodes.f_list.on_click == "net_wifi_pick" and $net_nodes.f_scan.on_click == "net_wifi_scan" and $net_nodes.w_hs.on_click == "net_wg_handshake", "tunnel and Wi-Fi controls are wired")
+-- Review round 1 (sol): the fixes, pinned.
+check($hostd.wg_request("w", {wg_addresses: "10.0.0.1/32", peer_key: "K", peer_allowed: "10.0.0.2/32", peer_keepalive: "3601"}).error == "net_bad_keepalive" and $hostd.wg_request("w", {wg_addresses: "10.0.0.1/32", peer_key: "K", peer_allowed: "10.0.0.2/32", peer_keepalive: "3600"}).request != nil, "keepalive is 1 to 3600, as hostd takes it")
+$last = $models.wg_form({wg_addresses: "10.77.0.1/32", wg_port: "51820", peer_key: "P=", peer_endpoint: "127.0.0.1:51821", peer_allowed: "10.77.1.1/32", peer_keepalive: "", handshake: true})
+$again = $models.wg_prefill($net_snap, "wgtest", $last)
+check($again.wg_port == "51820" and $again.peer_key == "P=" and $again.kind == "wg" and $again.confirmed == false and $again.wg_pubkey == "", "a tunnel this panel set up reopens with its last form")
+check(not contains(json_encode($last), "private"), "the remembered form holds no key material")
+$fpre2 = $models.wifi_prefill("wlan0")
+$fpre2.networks = [{ssid: "home", security: "psk", known: false}]
+$fpre2.selected = 0
+$fpre2.pass_gen = 7
+$shown = $models.editor($fpre2)
+check($shown.show_pass and $shown.pass_value == "", "a secured pick shows an empty passphrase field")
+$fpre2.pass_hold = true
+$held = $models.editor($fpre2)
+check(not $held.show_pass and $held.pass_value == "held-7", "held: hidden, under a placeholder value")
+check($models.editor(nil).pass_value != "" and $models.editor($models.wifi_prefill("wlan0")).pass_value != "", "closed or unpicked: never the empty value, so the next showing resets the field")
+check($net_nodes.f_pass.value == "= $model.edit.pass_value" and $net_nodes.f_pass.hidden == "= not $model.edit.show_pass", "the field is bound to the reset value")
+for each $hold in ["on net_wifi_pick\n", "on net_wifi_connect\n"]
+  check(contains(before(after($net_behaviour, $hold), "\nend\n"), "hold_pass()"), "the passphrase field is held and reset: " .. trim($hold))
+end
+check(starts_with(trim(before(after($net_behaviour, "on net.pass.release async\n"), "\nend\n")), "if len(keys($event.headers)) != 0 then return end"), "the release task refuses any event with headers")
+check(contains($net_behaviour, "$state.edit.scan_gen == $gen"), "only the newest scan lands in the editor")
+for each $fname in ["fn start_write(", "fn start_scan("]
+  $fbody = before(after($net_behaviour, $fname), "\nend\n")
+  check(contains($fbody, "net_task_failed") and not contains($fbody, "to_string($message)"), "a failed task start never shows its message (it could carry the body): " .. $fname)
+end
+check(contains($net_behaviour, "net_wg_replace_confirm") and contains($net_behaviour, "$state.edit.confirmed = true"), "replacing an unknown tunnel without peers needs a second Apply")
+$release = before(after($net_behaviour, "on net.pass.release async\n"), "\n-- Enter in the passphrase field")
+check(contains($release, "shell.scene.watch") and contains($release, "applied_revision") and contains($release, "for $try = 1 to 50") and not contains($release, "sleep(0.3)"), "the passphrase field returns only after its reset revision is applied, in a bounded wait")
+$write_task = before(after($net_behaviour, "on net.write async\n"), "\nend\n\n")
+check(contains($write_task, "$state.wg_last = delete($state.wg_last, $link)") and length(split($write_task, "$state.wg_last = delete($state.wg_last, $link)")) == 3, "undo and an unknown outcome both forget the tunnel form")
+$wg_apply = before(after($net_behaviour, "  elif $e.kind == \"wg\" then\n"), "\n  else\n    $req = $h.link_request(")
+check(index_of($wg_apply, "$state.edit.confirmed = false") >= 0 and index_of($wg_apply, "$state.edit.confirmed = false") < index_of($wg_apply, "start_write("), "a replacement confirmation is consumed when it starts")
 print("scene-template-test: exact captures, models, caps, payloads and capabilities OK")

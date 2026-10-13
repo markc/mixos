@@ -1,6 +1,7 @@
 -- Model construction only. Layout lives in the strict-data scene files.
 $p = require("data.mix")
 $t = require("taskbar.mix")
+$hd = require("hostd.mix")
 $C = {
   fg: "#fcfcfc", dim: "#a1a9b1", faint: "#6e7680", hover: "#ffffff1a",
   accent: "#3daee9", accent_bg: "#3daee940", task_bg: "#ffffff0f", card: "#2a2e32",
@@ -111,6 +112,31 @@ $TEXT = {
   net_managed: "networkd: {state}", net_unmanaged: "not managed by networkd",
   kind_ether: "Wired", kind_wlan: "Wireless", kind_bridge: "Bridge", kind_bond: "Bond",
   kind_wireguard: "WireGuard", kind_vlan: "VLAN", kind_virtual: "Virtual", kind_unknown: "Interface",
+  net_tunnel_configure: "Configure tunnel", net_wifi_networks: "Wi-Fi networks",
+  net_tunnel_title: "Tunnel {link}", net_wifi_title: "Wi-Fi on {link}", net_new_tunnel: "New tunnel: {name}",
+  net_wg_port: "Listen port", net_wg_pubkey: "This tunnel's public key (give it to the peer)", net_wg_peer: "Peer",
+  net_wg_peer_key: "Peer public key", net_wg_peer_key_hint: "leave empty for no peer yet",
+  net_wg_endpoint: "Peer endpoint", net_wg_endpoint_hint: "host:port, optional",
+  net_wg_allowed: "Peer allowed IPs", net_wg_keepalive: "Keepalive (s)",
+  net_wg_handshake_on: "Keep only if the peer answers: on", net_wg_handshake_off: "Keep only if the peer answers: off",
+  net_bad_port: "The listen port must be a number from 1 to 65535.",
+  net_need_allowed: "A peer needs at least one allowed IP range.",
+  net_bad_keepalive: "Keepalive must be a whole number of seconds from 1 to 3600.",
+  net_wg_replace_confirm: "Applying replaces {link}'s whole setup, peers included, and this panel does not know its current one. Fill in the peer, or press Apply again to replace it as shown.",
+  net_task_failed: "The change could not be started. Try again.",
+  net_wifi_pick_again: "Pick the network again to type its passphrase.",
+  net_tunnel_applied: "Applied: {link} is up and hostd kept it.",
+  net_scan: "Scan", net_scanning: "Scanning…", net_wifi_none: "No networks found.",
+  net_wifi_open: "open", net_wifi_signal: "{dbm} dBm", net_wifi_known: "saved",
+  net_wifi_pass: "Passphrase", net_wifi_pass_hint: "type it and press Enter to connect",
+  net_wifi_pick: "Pick a network first.", net_wifi_need_pass: "Type the passphrase and press Enter.",
+  net_connect: "Connect", net_connecting_short: "Connecting…",
+  net_connecting: "Connecting to {ssid}… hostd keeps it only if {link} connects within {n} s.",
+  net_wifi_connected: "Connected: hostd kept the change.",
+  net_scan_failed: "Scan failed: {why}",
+  hostd_no_iwd: "iwd is not running, so there is no Wi-Fi to manage here.",
+  hostd_no_such_station: "{link} is not a Wi-Fi station iwd knows.",
+  hostd_unsupported: "That network needs 802.1X, which hostd does not support yet.",
   net_configure: "Configure", net_edit_title: "Configure {link}", net_dhcp: "DHCP", net_static: "Static",
   net_addresses: "Addresses", net_addresses_hint: "192.0.2.10/24, …", net_gateway: "Gateway",
   net_dns_servers: "DNS servers", net_optional: "optional", net_apply: "Apply", net_applying_short: "Applying…",
@@ -354,7 +380,7 @@ end
 fn network($snap, $ui = nil)
   $known = $snap != nil
   $ui = $ui ?? {}
-  $access = $ui.access ?? {available: false, frozen: false, grants: [], links: []}
+  $access = $ui.access ?? {available: false, frozen: false, grants: [], held: []}
   $edit = $ui.edit
   $snap = $snap ?? {}
   $kinds = $snap.kinds ?? {}
@@ -396,11 +422,12 @@ fn network($snap, $ui = nil)
     end
     if $link_dns[$l.ifname] != nil then push($detail, text("net_dns") .. " " .. join($link_dns[$l.ifname], ", ")) end
     $shown = $addrs[$l.ifname] ?? []
+    $action = row_action($access, $kinds[$l.ifname] ?? ($managed != nil ? $managed.kind : nil), $l.ifname)
     push($rows, {id: "if_" .. $l.ifname, cells: [], name: $l.ifname, sub: join($sub, " · "),
       addresses: length($shown) > 0 ? join($shown, "  ") : text("net_no_addresses"),
       detail: join($detail, " · "), has_detail: length($detail) > 0,
       dot: $l.up == true ? $C.ok : $C.faint,
-      editable: link_writable($access, $l.ifname), cta: link_writable($access, $l.ifname) ? text("net_configure") : "",
+      action: $action, editable: $action != "", cta: $action != "" ? text($ACTION_CTA[$action]) : "",
       background: ($edit != nil and $edit.link == $l.ifname) ? $C.accent_bg : $C.card})
   end
 
@@ -424,6 +451,11 @@ fn network($snap, $ui = nil)
   $servers = []
   if $snap.resolved != nil then $servers = $link_dns[$default_dev] ?? $snap.resolved.global end
   $note = ($known and $nd == nil) ? text("net_kernel_only") : ""
+  -- Tunnel names a grant lists for net.wg.apply that don't exist yet.
+  $new_tunnels = []
+  for each $name in $hd.named_links($access, "net.wg.apply")
+    if $by_name[$name] == nil then push($new_tunnels, {id: "wg_" .. $name, cells: [], label: text("net_new_tunnel", {name: $name})}) end
+  end
 
   return {title: text("network_title"), summary: $summary,
     count: counted(length($sorted), "net_interfaces_none", "net_interfaces_one", "net_interfaces_many"),
@@ -432,15 +464,20 @@ fn network($snap, $ui = nil)
     dns_label: text("net_dns"), dns: join($servers, ", "), has_dns: length($servers) > 0,
     note: $note, has_note: $note != "",
     hostd_note: hostd_note($access), has_hostd_note: hostd_note($access) != "",
+    new_tunnels: $new_tunnels, has_new_tunnels: length($new_tunnels) > 0,
     edit: editor($edit)}
 end
 
--- May this panel configure $link? A live, unfrozen grant whose links
--- allow it (nil links: any link).
-fn link_writable($access, $link)
-  if not $access.available or $access.frozen or length($access.grants ?? []) == 0 then return false end
-  return $access.links == nil or contains($access.links, $link)
+-- What a click on a link row opens: "wifi" for a Wi-Fi device, "wg" for a
+-- WireGuard link, "link" for any other, each only when a held grant covers
+-- that verb for that link; "" when the row is read only.
+fn row_action($access, $kind, $link)
+  if $kind == "wlan" then return $hd.may($access, "net.wifi.connect", $link) ? "wifi" : "" end
+  if $kind == "wireguard" then return $hd.may($access, "net.wg.apply", $link) ? "wg" : "" end
+  return $hd.may($access, "net.link.apply", $link) ? "link" : ""
 end
+
+$ACTION_CTA = {link: "net_configure", wg: "net_tunnel_configure", wifi: "net_wifi_networks"}
 
 -- One line about hostd under the summary: why the popup is read only, or
 -- nothing when it may change links (or hostd is not on this host at all).
@@ -451,26 +488,109 @@ fn hostd_note($access)
   return ""
 end
 
+-- A toggle-style button's colours.
+fn chip($on)
+  return {bg: $on ? $C.accent : $C.task_bg, color: $on ? "#0b1f2b" : $C.fg}
+end
+
 -- The editor's model; every key is always present so the scene's default
--- model declares them all. $edit: {link, mode, addresses, gateway, dns,
--- note, busy, receipt} or nil (closed).
+-- model declares them all. $edit (nil when closed) has kind "link" (mode,
+-- addresses, gateway, dns), "wg" (wg_addresses, wg_port, wg_pubkey,
+-- peer_key, peer_endpoint, peer_allowed, peer_keepalive, handshake) or
+-- "wifi" (networks, selected, scanned, scanning), plus link, note, busy and
+-- receipt. A Wi-Fi passphrase is never part of it.
 fn editor($edit)
   $on = $edit != nil
   $e = $edit ?? {}
+  $kind = $e.kind ?? "link"
   $static = ($e.mode ?? "dhcp") == "static"
   $busy = $e.busy == true
   $note = to_string($e.note ?? "")
-  return {shown: $on, title: $on ? text("net_edit_title", {link: $e.link}) : "",
+  $dhcp = chip(not $static)
+  $stat = chip($static)
+  $hs = $e.handshake != false
+  $hs_chip = chip($hs)
+  $title_key = $kind == "wg" ? "net_tunnel_title" : ($kind == "wifi" ? "net_wifi_title" : "net_edit_title")
+
+  $networks = []
+  $i = 0
+  for each $n in $e.networks ?? []
+    $info = [$n.security == "open" ? text("net_wifi_open") : to_string($n.security)]
+    if $n.signal_dbm != nil then push($info, text("net_wifi_signal", {dbm: $n.signal_dbm})) end
+    if $n.known == true then push($info, text("net_wifi_known")) end
+    push($networks, {id: "ssid_" .. to_string($i), cells: [], ssid: to_string($n.ssid), info: join($info, " · "),
+      background: $e.selected == $i ? $C.accent_bg : $C.task_bg})
+    $i = $i + 1
+  end
+  $picked = ($e.selected != nil and $e.selected < length($e.networks ?? [])) ? $e.networks[$e.selected] : nil
+  $needs_pass = $picked != nil and $picked.security != "open" and $picked.known != true
+
+  $apply = $kind == "wifi" ? "net_connect" : "net_apply"
+  $applying = $kind == "wifi" ? "net_connecting_short" : "net_applying_short"
+  return {shown: $on, kind: $kind, is_link: $on and $kind == "link", is_wg: $on and $kind == "wg", is_wifi: $on and $kind == "wifi",
+    title: $on ? text($title_key, {link: $e.link}) : "",
     dhcp_label: text("net_dhcp"), static_label: text("net_static"),
-    dhcp_bg: $static ? $C.task_bg : $C.accent, static_bg: $static ? $C.accent : $C.task_bg,
-    dhcp_color: $static ? $C.fg : "#0b1f2b", static_color: $static ? "#0b1f2b" : $C.fg,
+    dhcp_bg: $dhcp.bg, static_bg: $stat.bg, dhcp_color: $dhcp.color, static_color: $stat.color,
     is_static: $static,
     addresses_label: text("net_addresses"), addresses_hint: text("net_addresses_hint"), addresses: to_string($e.addresses ?? ""),
     gateway_label: text("net_gateway"), gateway_hint: text("net_optional"), gateway: to_string($e.gateway ?? ""),
     dns_label: text("net_dns_servers"), dns_hint: text("net_optional"), dns: to_string($e.dns ?? ""),
-    apply_label: $busy ? text("net_applying_short") : text("net_apply"), busy: $busy,
+    wg_addresses_label: text("net_addresses"), wg_addresses: to_string($e.wg_addresses ?? ""),
+    wg_port_label: text("net_wg_port"), wg_port_hint: text("net_optional"), wg_port: to_string($e.wg_port ?? ""),
+    wg_pubkey_label: text("net_wg_pubkey"), wg_pubkey: to_string($e.wg_pubkey ?? ""), has_pubkey: to_string($e.wg_pubkey ?? "") != "",
+    peer_label: text("net_wg_peer"),
+    peer_key_label: text("net_wg_peer_key"), peer_key_hint: text("net_wg_peer_key_hint"), peer_key: to_string($e.peer_key ?? ""),
+    peer_endpoint_label: text("net_wg_endpoint"), peer_endpoint_hint: text("net_wg_endpoint_hint"), peer_endpoint: to_string($e.peer_endpoint ?? ""),
+    peer_allowed_label: text("net_wg_allowed"), peer_allowed_hint: text("net_addresses_hint"), peer_allowed: to_string($e.peer_allowed ?? ""),
+    peer_keepalive_label: text("net_wg_keepalive"), peer_keepalive_hint: text("net_optional"), peer_keepalive: to_string($e.peer_keepalive ?? ""),
+    handshake_label: text($hs ? "net_wg_handshake_on" : "net_wg_handshake_off"), handshake_bg: $hs_chip.bg, handshake_color: $hs_chip.color,
+    scan_label: text($e.scanning == true ? "net_scanning" : "net_scan"),
+    networks: $networks, has_networks: length($networks) > 0,
+    no_networks: ($e.scanned == true and length($networks) == 0) ? text("net_wifi_none") : "",
+    has_no_networks: $e.scanned == true and length($networks) == 0,
+    needs_pass: $needs_pass, pass_label: text("net_wifi_pass"), pass_hint: text("net_wifi_pass_hint"),
+    -- The scene host keeps typed text until the field's bound value
+    -- changes. The value is "" only while the field is shown; while it is
+    -- hidden (no secured pick, editor closed, or held for a moment after a
+    -- submit or a new pick) it is a per-generation placeholder. So every
+    -- time the field comes back its value changes and it starts empty: a
+    -- passphrase never carries over to another network or another try.
+    show_pass: $needs_pass and $e.pass_hold != true,
+    pass_value: ($needs_pass and $e.pass_hold != true) ? "" : "held-" .. to_string($e.pass_gen ?? 0),
+    apply_label: $busy ? text($applying) : text($apply), busy: $busy,
     undo_label: text("net_undo"), has_undo: $on and $e.receipt != nil and not $busy,
     close_label: text("net_close"), note: $note, has_note: $note != ""}
+end
+
+-- A tunnel editor's starting values: the link's own addresses from the
+-- snapshot (none for a new tunnel). Port and peer are typed: hostd does
+-- not hand them back, and applying replaces the tunnel's whole setup.
+fn wg_prefill($snap, $name, $last = nil)
+  if $last != nil then
+    return merge($last, {kind: "wg", link: $name, wg_pubkey: "", note: "", busy: false, receipt: nil, confirmed: false})
+  end
+  $addrs = []
+  for each $a in ($snap ?? {}).addresses ?? []
+    if $a.ifname != $name then continue end
+    if $a.family == "inet6" and starts_with(lower($a.address), "fe80:") then continue end
+    push($addrs, $a.address .. "/" .. to_string($a.prefix))
+  end
+  return {kind: "wg", link: $name, wg_addresses: join($addrs, ", "), wg_port: "", wg_pubkey: "",
+    peer_key: "", peer_endpoint: "", peer_allowed: "", peer_keepalive: "", handshake: true,
+    note: "", busy: false, receipt: nil, confirmed: false}
+end
+
+-- The tunnel form fields worth remembering after an apply (no secrets: the
+-- private key stays in hostd).
+fn wg_form($edit)
+  return {wg_addresses: $edit.wg_addresses ?? "", wg_port: $edit.wg_port ?? "", peer_key: $edit.peer_key ?? "",
+    peer_endpoint: $edit.peer_endpoint ?? "", peer_allowed: $edit.peer_allowed ?? "",
+    peer_keepalive: $edit.peer_keepalive ?? "", handshake: $edit.handshake != false}
+end
+
+fn wifi_prefill($device)
+  return {kind: "wifi", link: $device, networks: [], selected: nil, scanned: false, scanning: false,
+    note: "", busy: false, receipt: nil}
 end
 
 -- The editor's starting values for a link, from the snapshot: its own

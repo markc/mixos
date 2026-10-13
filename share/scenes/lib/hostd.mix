@@ -60,14 +60,17 @@ fn uncertain($out)
 end
 
 -- What the widget may do, from hostd.status: {available, frozen, grants,
--- links}. grants names the held grants that cover net.link.apply; links is
--- the links they allow: nil when one of them lists no `links` limit (a key
--- a grant doesn't list is unrestricted), else the union of their lists.
+-- held}. held is hostd's held_grants (each in full: verbs, limits);
+-- grants their names. may() answers per verb and link.
 fn grant_state()
   $out = call("hostd.status", {})
-  if not $out.ok then return {available: $out.status != "unavailable", frozen: false, grants: [], links: []} end
+  if not $out.ok then return {available: $out.status != "unavailable", frozen: false, grants: [], held: []} end
+  $held = []
+  for each $g in type($out.body.held_grants) == "list" ? $out.body.held_grants : []
+    if type($g) == "map" then push($held, $g) end
+  end
   return {available: true, frozen: $out.body.frozen != nil,
-    grants: link_grants($out.body.held_grants), links: grant_links($out.body.held_grants)}
+    grants: map($held, function ($g) = to_string($g.name)), held: $held}
 end
 
 -- Does a grant verb cover $verb? hostd's rule: an exact name, or a
@@ -78,34 +81,53 @@ fn verb_covers($pattern, $verb)
   return ends_with($p, ".*") and starts_with($verb, slice($p, 0, length($p) - 1))
 end
 
--- Does a held grant cover net.link.apply?
-fn covers_apply($g)
+fn covers($g, $verb)
   if type($g) != "map" or type($g.verbs) != "list" then return false end
   for each $v in $g.verbs
-    if verb_covers($v, "net.link.apply") then return true end
+    if verb_covers($v, $verb) then return true end
   end
   return false
 end
 
-fn link_grants($held)
-  $out = []
-  for each $g in type($held) == "list" ? $held : []
-    if covers_apply($g) then push($out, to_string($g.name)) end
-  end
-  return $out
+-- A grant's allow-list for one limit key, or nil when it lists none (a key
+-- a grant doesn't list is unrestricted).
+fn limit($g, $key)
+  $limits = type($g.limits) == "map" ? $g.limits : {}
+  $l = $limits[$key]
+  return type($l) == "list" ? $l : nil
 end
 
-fn grant_links($held)
-  $links = []
-  for each $g in type($held) == "list" ? $held : []
-    if not covers_apply($g) then continue end
-    $limits = type($g.limits) == "map" ? $g.limits : {}
-    if $limits.links == nil then return nil end
-    for each $l in type($limits.links) == "list" ? $limits.links : []
-      if not contains($links, $l) then push($links, $l) end
+-- May this panel run $verb on $link (and, for Wi-Fi, $ssid)? A live,
+-- unfrozen hostd and a held grant covering the verb whose limits allow
+-- the arguments.
+fn may($access, $verb, $link, $ssid = nil)
+  if $access == nil or not $access.available or $access.frozen then return false end
+  for each $g in $access.held ?? []
+    if not covers($g, $verb) then continue end
+    $links = limit($g, "links")
+    if $links != nil and not contains($links, $link) then continue end
+    if $ssid != nil then
+      $ssids = limit($g, "ssids")
+      if $ssids != nil and not contains($ssids, $ssid) then continue end
+    end
+    return true
+  end
+  return false
+end
+
+-- The links a grant names for $verb (only explicit lists: an unlimited
+-- grant names none). The panel offers "New tunnel" for names in this list
+-- that don't exist yet.
+fn named_links($access, $verb)
+  $out = []
+  if $access == nil or not $access.available or $access.frozen then return $out end
+  for each $g in $access.held ?? []
+    if not covers($g, $verb) then continue end
+    for each $l in limit($g, "links") ?? []
+      if not contains($out, $l) then push($out, $l) end
     end
   end
-  return $links
+  return $out
 end
 
 -- Split a typed list ("a, b c") into its non-empty items.
@@ -134,4 +156,47 @@ fn link_request($link, $edit, $window_s = 20)
   $dns = items($edit.dns)
   if length($dns) > 0 then $config.dns = $dns end
   return {request: {link: $link, config: $config, window_s: $window_s}}
+end
+
+-- The net.wg.apply body for a tunnel editor, or {error}. One peer (the
+-- editor's); with no peer key typed the tunnel has no peers. require_handshake
+-- is sent only when turned off (hostd's default is on): the first side of a
+-- new pair has no peer to answer yet.
+fn wg_request($name, $edit, $window_s = 25)
+  $req = {name: $name, addresses: items($edit.wg_addresses), window_s: $window_s}
+  if length($req.addresses) == 0 then return {error: "net_need_address"} end
+  for each $a in $req.addresses
+    if not contains($a, "/") then return {error: "net_need_prefix"} end
+  end
+  $port = trim(to_string($edit.wg_port ?? ""))
+  if $port != "" then
+    $n = to_number($port)
+    if $n == nil or floor($n) != $n or $n < 1 or $n > 65535 then return {error: "net_bad_port"} end
+    $req.listen_port = $n
+  end
+  $req.peers = []
+  $key = trim(to_string($edit.peer_key ?? ""))
+  if $key != "" then
+    $peer = {public_key: $key, allowed_ips: items($edit.peer_allowed)}
+    if length($peer.allowed_ips) == 0 then return {error: "net_need_allowed"} end
+    $ep = trim(to_string($edit.peer_endpoint ?? ""))
+    if $ep != "" then $peer.endpoint = $ep end
+    $ka = trim(to_string($edit.peer_keepalive ?? ""))
+    if $ka != "" then
+      $k = to_number($ka)
+      if $k == nil or floor($k) != $k or $k < 1 or $k > 3600 then return {error: "net_bad_keepalive"} end
+      $peer.keepalive_s = $k
+    end
+    $req.peers = push($req.peers, $peer)
+  end
+  if $edit.handshake == false then $req.require_handshake = false end
+  return {request: $req}
+end
+
+-- The net.wifi.connect body. The passphrase is passed straight through:
+-- the caller never keeps it, and hostd hands it only to iwd.
+fn wifi_request($device, $ssid, $passphrase, $window_s = 30)
+  $req = {device: $device, ssid: $ssid, window_s: $window_s}
+  if $passphrase != nil and $passphrase != "" then $req.passphrase = $passphrase end
+  return {request: $req}
 end
