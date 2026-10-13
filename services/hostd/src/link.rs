@@ -542,7 +542,10 @@ mod tests {
         )
         .unwrap();
         assert!(!p.text.contains("\nGateway=192.0.2.1\nDNS"));
-        assert!(p.text.ends_with("DNS=192.0.2.53\n\n[Route]\nGateway=192.0.2.1\nMetric=4242\n"));
+        assert!(
+            p.text
+                .ends_with("DNS=192.0.2.53\n\n[Route]\nGateway=192.0.2.1\nMetric=4242\n")
+        );
         let d = plan(
             std::path::Path::new("/"),
             request(json!({"link":"hd0","config":{"mode":"dhcp","route_metric":600}})),
