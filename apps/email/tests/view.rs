@@ -101,10 +101,18 @@ fn harness(state: State) -> Harness<'static, Window> {
 fn the_window_draws_the_account_and_the_surfaces() {
     let h = harness(fixture());
     assert!(h.state().state.session.is_some());
-    // The places panel shows the mailbox, the calendar and the book.
-    let _ = h.get_by_label("Inbox");
-    let _ = h.get_by_label("Main");
-    let _ = h.get_by_label("Colleagues");
+    // The places panel shows the mailbox, the calendar and the book. The
+    // selected row answers to two accessible nodes (the button and its
+    // labelled widget info), so the draw asserts on "at least one".
+    assert!(
+        h.query_all_by_label("Inbox").next().is_some(),
+        "the Inbox row"
+    );
+    assert!(h.query_all_by_label("Main").next().is_some(), "the calendar");
+    assert!(
+        h.query_all_by_label("Colleagues").next().is_some(),
+        "the address book"
+    );
 }
 
 #[test]
