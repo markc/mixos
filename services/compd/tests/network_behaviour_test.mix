@@ -199,6 +199,15 @@ fn wait_note($what, $part)
   raise("NETWORK_BEHAVIOUR_TEST", "timed out waiting for " .. $what)
 end
 
+-- The task can publish busy before its adapter has recorded the request.
+fn wait_calls($verb, $count)
+  for $i = 1 to 150
+    if length(calls($verb)) >= $count then return end
+    sleep(0.1)
+  end
+  raise("NETWORK_BEHAVIOUR_TEST", "timed out waiting for " .. $verb .. " call")
+end
+
 -- One Bus request from a plain client (not the host).
 fn direct($target, $verb, $body)
   $r = run_argv([$mix, $tmp .. "/cli.mix", $target, $verb, json_encode($body)], {clear_env: true, env: $env, timeout: 25})
@@ -342,6 +351,10 @@ try
   reply_for("net.link.apply", {ok: true, body: {receipt: "rc-2"}})
   expect_rc(ui_event("net_apply", "e_apply", "click"), 0, "apply ok")
   wait_edit("applied again", "has_undo", true)
+  reply_for("net.link.apply", {ok: false, status: "no_grant", body: {status: "no_grant"}})
+  expect_rc(ui_event("net_apply", "e_apply", "click"), 0, "refusal with a previous receipt")
+  $m = wait_edit("previous receipt retained", "note", "This panel has no hostd grant for that change.")
+  check($m.edit.has_undo, "a refused change discarded the previous receipt")
   reply_for("net.link.apply", {ok: false, status: "timeout", body: {}})
   expect_rc(ui_event("net_apply", "e_apply", "click"), 0, "apply timed out")
   wait_note("unknown outcome", "hostd did not answer in time. The change to hd0 may still finish")
@@ -354,6 +367,7 @@ try
   $before = length(calls("net.link.apply"))
   expect_rc(ui_event("net_apply", "e_apply", "click"), 0, "apply that holds hostd")
   wait_edit("in flight", "busy", true)
+  wait_calls("net.link.apply", $before + 1)
   expect_rc(ui_event("net_apply", "e_apply", "click"), 0, "apply while busy")
   wait_edit("busy", "note", "hostd is busy with another change. Try again.")
   $headered = direct_quiet("shell-stub", "ui.forward", {to: "scene-network", verb: "net.write", event: {link: "hd0", verb: "net.link.apply", body: {link: "hd0", config: {mode: "dhcp"}, window_s: 20}, done: "net_applied"}})
