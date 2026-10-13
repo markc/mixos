@@ -1,0 +1,67 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.1.0
+-- Native distribution proof: install, drift, fail-before-write and archive.
+$repo = dirname(dirname(dirname(dirname(realpath($0)))))
+$installer = $repo .. "/libs/toolkit/scripts/install_licenses.mix"
+$assets = $repo .. "/libs/toolkit/assets"
+$manifest = load_data($assets .. "/licenses.conf.mix")
+$tmp = trim(run_argv_must(["mktemp","-d","/tmp/toolkit-licences-XXXXXX"]))
+$checks = {count:0}
+fn check($condition,$message)
+  if not $condition then raise("TEST",$message) end
+  $checks.count = $checks.count + 1
+  print("PASS " .. $message)
+end
+try
+  $share = $tmp .. "/share"
+  check(run_argv(["/opt/mixos/bin/mix",$installer,"--root",$share,"--check"]).ok,"source licence hashes valid")
+  check(not exists($share),"source check creates no destination")
+  check(not run_argv(["/opt/mixos/bin/mix",$installer,"--root",$share,"--verify"]).ok,"verification refuses absent notices")
+  check(run_argv(["/opt/mixos/bin/mix",$installer,"--root",$share]).ok,"native installer succeeds")
+  check(run_argv(["/opt/mixos/bin/mix",$installer,"--root",$share,"--verify"]).ok,"installed notices verified")
+  for $file in $manifest.files
+    check(hash_file($share .. "/licenses/toolkit/" .. $file.name,"sha256") == $file.sha256,"installed " .. $file.name .. " unchanged")
+  end
+  $notice = $share .. "/licenses/toolkit/LICENSE-Ubuntu.txt"
+  write_file($notice,read_file($notice) .. "\nmodified\n")
+  check(not run_argv(["/opt/mixos/bin/mix",$installer,"--root",$share,"--verify"]).ok,"verification detects changed licence")
+
+  -- Corrupt the LAST source in an owned miniature source tree. Nothing from
+  -- earlier validated entries may be installed before the refusal.
+  $fixture = $tmp .. "/fixture"
+  mkdir($fixture .. "/scripts")
+  copy($installer,$fixture .. "/scripts/install_licenses.mix")
+  mkdir($fixture .. "/assets")
+  copy($assets .. "/licenses.conf.mix",$fixture .. "/assets/licenses.conf.mix")
+  for $file in $manifest.files
+    $dest = $fixture .. "/assets/" .. $file.source
+    mkdir(dirname($dest))
+    copy($assets .. "/" .. $file.source,$dest)
+  end
+  $last = $manifest.files[len($manifest.files)-1]
+  write_file($fixture .. "/assets/" .. $last.source,"bad source")
+  $unwritten = $tmp .. "/unwritten"
+  check(not run_argv(["/opt/mixos/bin/mix",$fixture .. "/scripts/install_licenses.mix","--root",$unwritten]).ok,"bad source refuses installation")
+  check(not exists($unwritten),"bad source leaves no partially written notices")
+
+  -- Fixture files stand in for binaries: this tests archive contents and
+  -- legal-notice distribution, without claiming to build or run an app.
+  $bins = $tmp .. "/bin"
+  mkdir($bins)
+  for $name in ["mix","noded","editd","settingsd","portald","compd","ced","dopus","prefs","busviewer","screenshot"]
+    write_file($bins .. "/" .. $name,"fixture: " .. $name .. "\n")
+  end
+  $out = $tmp .. "/release"
+  $r = run_argv(["/opt/mixos/bin/mix",$repo .. "/tools/package.mix","--release","99.0.0","--arch","x86_64","--bin-dir",$bins,"--out",$out],{timeout:60})
+  check($r.ok,"native release packaging succeeds")
+  $archive = $out .. "/mixos-desktop-99.0.0-linux-x86_64.tar.gz"
+  $prefix = "mixos-desktop-99.0.0-linux-x86_64/share/licenses/toolkit/"
+  for $file in $manifest.files
+    $text = run_argv_must(["tar","-xOf",$archive,$prefix .. $file.name])
+    check($text == read_file($assets .. "/" .. $file.source),"desktop archive carries complete " .. $file.name)
+  end
+  print("PASS asset_licenses_test: " .. to_string($checks.count) .. " checks")
+finally
+  remove_dir($tmp)
+end

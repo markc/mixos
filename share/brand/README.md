@@ -46,7 +46,7 @@ the M directly even when that existing index omits symbolic apps. Include the sh
 and the panel prefers it over legacy launcher icons.
 
 Install [`share/icons`](../icons/README.md) alongside it for the bundled
-Material Symbols used by panel controls and core application entries.
+Lucide icons used by panel controls and core application entries.
 
 ## Using it on a website
 

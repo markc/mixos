@@ -1,0 +1,57 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.1.0
+-- Install the licence notices for fonts and icons embedded by toolkit.
+-- --check validates sources only; --verify checks an installed tree.
+$g = getopt(args(), {help:{short:"h"},root:{arg:true},check:{},verify:{}})
+if len($g.errors) != 0 or len($g.rest) != 0 or ($g.opts.check and $g.opts.verify) then
+  raise("ARGS","usage: install_licenses.mix [--root SHARE] [--check | --verify]")
+end
+if $g.opts.help then
+  print("usage: install_licenses.mix [--root SHARE] [--check | --verify]")
+  exit(0)
+end
+$share = $g.opts.root ?? "/opt/mixos/share"
+if not starts_with($share,"/") then raise("ARGS","--root must be absolute") end
+$assets = dirname(dirname(realpath($0))) .. "/assets"
+$manifest = load_data($assets .. "/licenses.conf.mix")
+if $manifest.schema != 1 or type($manifest.files) != "list" or len($manifest.files) == 0 then
+  raise("MANIFEST","expected toolkit licence schema 1 and files")
+end
+$seen = {}
+-- Check every source before creating or writing any destination.
+for $file in $manifest.files
+  if not re_match($file.source ?? "","^[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+)+$") or contains($file.source,"..") then
+    raise("MANIFEST","unsafe source path")
+  end
+  if not re_match($file.name ?? "","^[A-Za-z0-9_-]+\\.(txt|md)$") or has_key($seen,$file.name) then
+    raise("MANIFEST","unsafe or duplicate destination name")
+  end
+  if not re_match($file.sha256 ?? "","^[a-f0-9]{64}$") then raise("MANIFEST","invalid SHA256") end
+  $seen[$file.name] = true
+  $source = $assets .. "/" .. $file.source
+  if not is_file($source) or hash_file($source,"sha256") != $file.sha256 then
+    raise("SOURCE","licence missing or changed: " .. $file.source)
+  end
+end
+if $g.opts.check then
+  print("toolkit licences: " .. to_string(len($manifest.files)) .. " pinned sources verified")
+  exit(0)
+end
+$dest = $share .. "/licenses/toolkit"
+if $g.opts.verify then
+  for $file in $manifest.files
+    $path = $dest .. "/" .. $file.name
+    if not is_file($path) or hash_file($path,"sha256") != $file.sha256 then
+      raise("VERIFY","installed licence missing or changed: " .. $file.name)
+    end
+  end
+  print("toolkit licences: installed notices verified")
+  exit(0)
+end
+mkdir($dest,{parents:true})
+for $file in $manifest.files
+  copy($assets .. "/" .. $file.source,$dest .. "/" .. $file.name)
+  chmod($dest .. "/" .. $file.name,0o644)
+end
+print("toolkit licences: installed " .. to_string(len($manifest.files)) .. " notices")
