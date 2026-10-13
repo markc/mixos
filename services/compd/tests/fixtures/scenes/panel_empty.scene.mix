@@ -5,7 +5,7 @@ citizen: scene-fixture
 window: {"chrome":false,"edge":"bottom","h":52,"kind":"edge","title":"Panel"}
 ---
 ```mix
-root: {"align":"center","background":"#202326f2","children":["launcher_btn","gap1","pager","gap2","tasks","fill","status","clock","peek"],"fill":true,"gap":4,"padding":4,"widget":"row"}
+root: {"align":"center","background":"#202326f2","children":["launcher_btn","gap1","pager","gap2","tasks","fill","status","clock"],"fill":true,"gap":4,"padding":4,"widget":"row"}
 launcher_btn: {"align":"center","children":["launcher_icon"],"height":40,"hover":"#ffffff1a","on_click":"launcher","padding":6,"radius":8,"widget":"row"}
 launcher_icon: {"bold":true,"color":"#fcfcfc","size":14,"text":"Apps","widget":"text"}
 gap1: {"size":6,"widget":"spacer"}
@@ -24,6 +24,4 @@ clock: {"align":"center","children":["clock_col"],"height":44,"hover":"#ffffff1a
 clock_col: {"align":"center","children":["clock_time","clock_date"],"gap":0,"widget":"column"}
 clock_time: {"bold":true,"color":"#fcfcfc","size":19,"text":"12:00 am","widget":"text"}
 clock_date: {"color":"#a1a9b1","size":11,"text":"Thu 29 Feb","widget":"text"}
-peek: {"align":"center","children":["peek_i"],"height":44,"hover":"#ffffff1a","on_click":"peek","padding":6,"radius":6,"widget":"row"}
-peek_i: {"color":"#a1a9b1","size":14,"text":"•","widget":"text"}
 ```

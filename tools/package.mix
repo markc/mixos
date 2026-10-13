@@ -40,6 +40,9 @@ end
 $arch = $g.opts.arch ?? platform().arch
 if not re_match($arch, "^(x86_64|aarch64)$") then raise("PACKAGE_ARGS", "--arch must be x86_64 or aarch64") end
 $source = dirname(dirname(realpath($0)))
+-- Use the native Mix executing this packager, including release bootstrap.
+$mix = realpath("/proc/self/exe")
+if $mix == nil then raise("PACKAGE_MIX", "cannot resolve the running Mix binary") end
 $bin_dir = $g.opts["bin-dir"] ?? ($source .. "/target/release")
 $out = $g.opts.out ?? ($source .. "/dist/release")
 
@@ -67,6 +70,10 @@ for $pkg in sort(keys($PACKAGES))
   for $d in $DOCS
     copy($source .. "/" .. $d, $top .. "/share/doc/" .. $pkg .. "/" .. $d)
     chmod($top .. "/share/doc/" .. $pkg .. "/" .. $d, 0o644)
+  end
+  if $pkg == "mixos-desktop" then
+    run_argv_must([$mix, $source .. "/libs/toolkit/scripts/install_licenses.mix",
+      "--root", $top .. "/share"], {timeout: 30})
   end
   $tar = $out .. "/" .. $name .. ".tar.gz"
   -- Owner-neutral and sorted, so the archive does not depend on the runner.

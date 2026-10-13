@@ -3,10 +3,10 @@ scene: 1
 name: panel
 citizen: scene-panel
 window: {"chrome":false,"edge":"bottom","h":52,"kind":"edge","title":"Panel"}
-model: {"clock":{"background":null,"date":"","time":""},"launcher":{"background":null,"has_icon":false,"icon":""},"network":{"background":null,"has_icon":false,"icon":""},"notes":{"background":null,"count":"","has_count":false,"has_icon":false,"icon":""},"peek":{"background":null,"has_icon":false,"icon":""},"tasks":[],"tray":[],"tray_empty":true,"volume":{"has_icon":false,"icon":"","shown":false},"workspaces":[]}
+model: {"clock":{"background":null,"date":"","time":""},"launcher":{"background":null,"has_icon":false,"icon":""},"network":{"background":null,"has_icon":false,"icon":""},"notes":{"background":null,"count":"","has_count":false,"has_icon":false,"icon":""},"tasks":[],"tray":[],"tray_empty":true,"volume":{"has_icon":false,"icon":"","shown":false},"workspaces":[]}
 ---
 ```mix
-root: {"align":"center","background":"#202326f2","children":["launcher_btn","gap1","pager","gap2","tasks","fill","tray","status","clock","peek"],"fill":true,"gap":4,"padding":4,"widget":"row"}
+root: {"align":"center","background":"#202326f2","children":["launcher_btn","gap1","pager","gap2","tasks","fill","tray","status","clock"],"fill":true,"gap":4,"padding":4,"widget":"row"}
 launcher_btn: {"align":"center","background":"= $model.launcher.background","children":["launcher_icon","launcher_text"],"height":40,"hover":"#ffffff1a","on_click":"launcher","padding":6,"radius":8,"tooltip":"= $model.launcher.tip","widget":"row"}
 launcher_icon: {"h":28,"hidden":"= not $model.launcher.has_icon","src":"= $model.launcher.icon","w":28,"widget":"image"}
 launcher_text: {"bold":true,"color":"#fcfcfc","hidden":"= $model.launcher.has_icon","size":14,"text":"Apps","widget":"text"}
@@ -39,7 +39,4 @@ clock: {"align":"center","background":"= $model.clock.background","children":["c
 clock_col: {"align":"center","children":["clock_time","clock_date"],"gap":0,"widget":"column"}
 clock_time: {"bold":true,"color":"#fcfcfc","size":19,"text":"= $model.clock.time","widget":"text"}
 clock_date: {"color":"#a1a9b1","size":11,"text":"= $model.clock.date","widget":"text"}
-peek: {"align":"center","background":"= $model.peek.background","children":["peek_i","peek_f"],"height":44,"hover":"#ffffff1a","on_click":"peek","padding":6,"radius":6,"tooltip":"= $model.peek.tip","widget":"row"}
-peek_i: {"h":20,"hidden":"= not $model.peek.has_icon","src":"= $model.peek.icon","w":20,"widget":"image"}
-peek_f: {"color":"#a1a9b1","hidden":"= $model.peek.has_icon","size":14,"text":"•","widget":"text"}
 ```

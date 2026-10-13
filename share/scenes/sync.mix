@@ -1,0 +1,105 @@
+-- version: 0.1.0
+-- Sync this checkout's shared scene catalogue into the one a session reads,
+-- then reload the enabled scenes that use a changed shared helper.
+-- usage: mix share/scenes/sync.mix [--env FILE] [--apply]
+--   --env FILE  session environment file (default /etc/mixos/session/4.env);
+--               its SCENES_TEMPLATES is the catalogue that gets written.
+--   --apply     write the files and reload. Without it, only the plan prints.
+-- A changed lib/ file reloads every enabled scene, because each one loads
+-- lib/ when its behaviour starts. A changed scene file does not reach the
+-- user copy: that needs `scenes reset NAME` (see README, "Reloading a scene").
+
+$here = dirname(realpath($0))
+$argv = args()
+$apply = contains($argv, "--apply")
+$env_path = "/etc/mixos/session/4.env"
+if contains($argv, "--env") then
+  $env_path = $argv[index_of($argv, "--env") + 1]
+end
+
+$envmap = {}
+for $line in read_lines($env_path)
+  $kv = split_once($line, "=")
+  if $kv != nil then
+    $envmap[$kv[0]] = $kv[1]
+  end
+end
+$dest = $envmap["SCENES_TEMPLATES"] ?? ""
+if $dest == "" then
+  raise("SCENES_TEMPLATES", "session environment names no catalogue", {file: $env_path})
+end
+
+-- The same shipped set install.mix copies.
+$groups = [
+  ["lib", ["data.mix", "hostd.mix", "models.mix", "network.mix", "runtime.mix", "taskbar.mix"]],
+  ["panel", ["scene.mix", "behaviour.mix", "template.conf.mix", "settings.conf.mix"]],
+  ["topbar", ["scene.mix", "behaviour.mix", "template.conf.mix"]],
+  ["launcher", ["scene.mix", "behaviour.mix", "template.conf.mix"]],
+  ["calendar", ["scene.mix", "behaviour.mix", "template.conf.mix"]],
+  ["notes", ["scene.mix", "behaviour.mix", "template.conf.mix"]],
+  ["network", ["scene.mix", "behaviour.mix", "template.conf.mix"]],
+  ["settings", ["scene.mix", "behaviour.mix", "template.conf.mix"]],
+  ["editor", ["scene.mix", "behaviour.mix", "template.conf.mix", "lib.mix"]]
+]
+
+$changed = []
+for $g in $groups
+  $dir = $g[0]
+  for $f in $g[1]
+    $src = $here .. "/" .. $dir .. "/" .. $f
+    $dst = $dest .. "/" .. $dir .. "/" .. $f
+    if not exists($dst) or read_file($dst) != read_file($src) then
+      push($changed, [$dir, $f])
+    end
+  end
+end
+
+if len($changed) == 0 then
+  print("catalogue at " .. $dest .. " matches this checkout; nothing to do")
+  exit(0)
+end
+
+for $c in $changed
+  print(($apply ? "update " : "would update ") .. $c[0] .. "/" .. $c[1])
+end
+
+if $apply then
+  for $c in $changed
+    $ddir = $dest .. "/" .. $c[0]
+    if not is_dir($ddir) then mkdir($ddir) end
+    copy($here .. "/" .. $c[0] .. "/" .. $c[1], $ddir .. "/" .. $c[1])
+  end
+  print("wrote " .. to_string(len($changed)) .. " file(s) to " .. $dest)
+else
+  print("dry run: nothing written (add --apply)")
+end
+
+-- Scene files: the panel and the other scenes keep their user copies, so only
+-- a shared lib/ change leads to a reload here.
+$lib_changed = false
+for $c in $changed
+  if $c[0] == "lib" then $lib_changed = true end
+end
+if not $lib_changed then
+  exit(0)
+end
+
+$cli = realpath($here .. "/../../services/compd/scripts/scenes_cli.mix")
+$listed = run_argv(["/opt/mixos/bin/mix", $cli, "list", "--json"], {env: $envmap})
+if $listed["exit_code"] != 0 then
+  raise("SCENES_LIST", "could not list scenes", {stderr: $listed["stderr"]})
+end
+$doc = json_parse($listed["stdout"])
+$names = []
+for $s in $doc.scenes
+  if $s.enabled and $s.mounted then push($names, $s.name) end
+end
+
+for $n in $names
+  if $apply then
+    $r = run_argv(["/opt/mixos/bin/mix", $cli, "reload", $n], {env: $envmap})
+    print("reload " .. $n .. " -> rc=" .. to_string($r["exit_code"]) .. " " .. $r["stdout"])
+  else
+    print("would reload " .. $n)
+  end
+end

@@ -5,7 +5,7 @@ citizen: scene-fixture
 window: {"chrome":false,"edge":"bottom","h":52,"kind":"edge","title":"Panel"}
 ---
 ```mix
-root: {"align":"center","background":"#202326f2","children":["launcher_btn","gap1","pager","gap2","tasks","fill","tray","status","clock","peek"],"fill":true,"gap":4,"padding":4,"widget":"row"}
+root: {"align":"center","background":"#202326f2","children":["launcher_btn","gap1","pager","gap2","tasks","fill","tray","status","clock"],"fill":true,"gap":4,"padding":4,"widget":"row"}
 launcher_btn: {"align":"center","background":"#3daee940","children":["launcher_icon"],"height":40,"hover":"#ffffff1a","on_click":"launcher","padding":6,"radius":8,"widget":"row"}
 launcher_icon: {"h":28,"src":"/usr/share/icons/example-dark/start-here-kde.svg","w":28,"widget":"image"}
 gap1: {"size":6,"widget":"spacer"}
@@ -46,8 +46,6 @@ st_net: {"align":"center","children":["st_net_i"],"height":36,"hover":"#ffffff1a
 st_net_i: {"h":20,"src":"/usr/share/icons/example-dark/network-wired-activated.svg","w":20,"widget":"image"}
 clock: {"align":"center","children":["clock_col"],"height":44,"hover":"#ffffff1a","on_click":"calendar","padding":10,"radius":8,"widget":"row"}
 clock_col: {"align":"center","children":["clock_time","clock_date"],"gap":0,"widget":"column"}
-clock_time: {"bold":true,"color":"#fcfcfc","size":19,"text":"09:05 pm","widget":"text"}
+clock_time: {"bold":true,"color":"#fcfcfc","size":19,"text":"9:05 pm","widget":"text"}
 clock_date: {"color":"#a1a9b1","size":11,"text":"Thu 29 Feb","widget":"text"}
-peek: {"align":"center","background":"#3daee940","children":["peek_i"],"height":44,"hover":"#ffffff1a","on_click":"peek","padding":6,"radius":6,"widget":"row"}
-peek_i: {"h":20,"src":"/usr/share/icons/example-dark/user-desktop.svg","w":20,"widget":"image"}
 ```

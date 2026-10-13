@@ -4,9 +4,9 @@ $MONTHS_LONG = ["January", "February", "March", "April", "May", "June", "July", 
 -- Weeks start on Monday.
 $WEEKDAYS_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
--- "09:05 pm" -- zero-padded 12-hour clock, lower-case meridiem.
+-- "9:05 pm" -- unpadded 12-hour clock, lower-case meridiem.
 fn clock_text($t)
-  return date_format($t, "%I:%M %P")
+  return date_format($t, "%-I:%M %P")
 end
 
 -- "Wed 12 Sept"

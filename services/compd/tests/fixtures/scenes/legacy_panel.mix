@@ -4,7 +4,7 @@
 --
 --   panel     bottom edge, pinned: launcher button, workspace pager, task
 --             buttons, tray icons, status applets (notifications, volume,
---             network), the clock (big time, date beneath), peek-at-desktop
+--             network), the clock (big time, date beneath)
 --   launcher  left edge: search + every visible .desktop application (the
 --             `apps` citizen), click = launch
 --   calendar  right edge: month grid, Monday first, today marked; opened by
@@ -79,13 +79,13 @@ $state = {
   net_watch: nil, net_started: 0, net_retry: 5, net_retrying: false,
   audio_watch: nil, audio_started: 0, audio_retry: 5, audio_retrying: false, audio_unavailable: false,
   status_refreshing: false,
-  notes: [], notes_open: false, peeked: [],
+  notes: [], notes_open: false,
   launcher_open: false, calendar_open: false,
   query: "", category: "", apps: [], apps_loaded: false,
   apps_query: nil, apps_category: nil,
   launcher_shown: false, calendar_shown: false, notes_shown: false,
   cal_offset: 0, icons: {},
-  popup_gen: 0, clock_running: false, peek_busy: false, dirty: false, scheduled: false,
+  popup_gen: 0, clock_running: false, dirty: false, scheduled: false,
   -- per-page registration (a load the host accepted, revision > 0), the
   -- register pass in flight, and whether this host generation has selected
   -- and pinned the taskbar page yet
@@ -526,7 +526,6 @@ fn panel_doc()
   if length($state.tray) > 0 then push($children, "tray") end
   push($children, "status")
   push($children, "clock")
-  push($children, "peek")
   push($nodes, ["root", {widget: "row", fill: true, align: "center", gap: 4, padding: 4, background: $C.panel, children: $children}])
 
   -- launcher button: the start-here icon, tinted while the launcher is open
@@ -649,11 +648,6 @@ fn panel_doc()
   push($nodes, ["clock_time", {widget: "text", text: $p.clock_text($now), size: 19, bold: true, color: $C.fg}])
   push($nodes, ["clock_date", {widget: "text", text: $p.date_text($now), size: 11, color: $C.dim}])
 
-  -- peek at desktop: minimise everything on this workspace; again restores
-  $peek = {widget: "row", height: 44, radius: 6, padding: 6, align: "center", hover: $C.hover, on_click: "peek", children: ["peek_i"]}
-  if length($state.peeked) > 0 then $peek.background = $C.accent_bg end
-  push($nodes, ["peek", $peek])
-  push($nodes, ["peek_i", status_icon("user-desktop", "desktop")])
 
   return $p.document({scene: "1", name: "panel", citizen: $ME, window: {kind: "edge", edge: "bottom", title: "Panel", h: 52, chrome: false}}, $nodes)
 end
@@ -1664,47 +1658,6 @@ on vol_mute desc "toggle mute on the default audio sink" async
   if not $muted.ok then note("wpctl set-mute failed: " .. $muted.stderr) end
   fetch_vol()
   render_panel()
-end
-
-on peek desc "peek at the desktop: minimise this workspace, click again to restore" async
-  reply(0, "")
-  -- async, so two quick clicks could interleave and clobber each other's
-  -- restore marks: a second click while one is running is ignored
-  if $state.peek_busy then return end
-  $state.peek_busy = true
-  try
-    peek_toggle()
-  catch $e
-    note("peek failed: " .. to_string($e))
-  end
-  $state.peek_busy = false
-  schedule()
-end
-
-fn peek_toggle()
-  fetch_windows()
-  if length($state.peeked) > 0 then
-    -- Restore exactly what this peek minimised: same id AND the generation
-    -- recorded then (a window that has since changed identity, or that the
-    -- user restored or closed meanwhile, is left alone).
-    for each $w in $state.windows
-      for each $mark in $state.peeked
-        if $mark.id == $w.id and $mark.generation == $w.generation and $w.minimized then
-          rpc($COMP, "comp.window.restore", {id: $w.id, generation: $w.generation})
-        end
-      end
-    end
-    $state.peeked = []
-  else
-    $marks = []
-    for each $w in $state.windows
-      if ($w.workspace ?? $state.ws_current) == $state.ws_current and not $w.minimized then
-        send $COMP "comp.window.minimize" body=json_encode({id: $w.id, generation: $w.generation}) timeout=3
-        if $rc == 0 then push($marks, {id: $w.id, generation: $w.generation}) end
-      end
-    end
-    $state.peeked = $marks
-  end
 end
 
 on panel.refresh desc "rebuild every scene now (reveals only the open popup)"

@@ -14,17 +14,16 @@
     <title>The host service — MixOS</title>
     <link rel="canonical" href="https://mixos.dev/hostd/">
     <link rel="alternate" type="text/markdown" href="/hostd.md" title="Markdown source">
-    <meta name="mixos-build" content="87a61ef09456">
-    <link rel="preload" href="/web/fonts/icons.woff2?v=3a1086a40a" as="font" type="font/woff2" crossorigin>
+    <meta name="mixos-build" content="08493203ff6c">
     <link rel="preload" href="/web/fonts/sans.woff2?v=22f05185ef" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/web/fonts.css?v=b1859e7656"><!-- generated: Inter / Quicksand / JetBrains Mono / emoji cut from the asset set -->
     <!-- FOUC prevention: paint theme/scheme synchronously before first paint (dcs.spa convention). -->
     <script>(function(){var s=JSON.parse(localStorage.getItem('base-state')||'{}'),t=s.theme,c=(s.scheme||'mono'),h=document.documentElement;h.className='preload '+(t||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'))+(c&&c!=='default'?' scheme-'+c:'')+(s.width==='wide'?' wide':(s.width==='narrow'?' narrow':''));})()</script>
     <link rel="stylesheet" href="/web/base.css?v=f7fb8c8f9e">
     <link rel="stylesheet" href="/web/site.css?v=cc5e468d34">
-    <link rel="stylesheet" href="/web/icons.css?v=662ff180d9"><!-- generated: Material Symbols Rounded subset -->
-    <!-- Icons are CSS glyphs keyed on data-lucide/data-icon (web/icons.css), so
-         base.js's lucide.createIcons() calls only need this no-op stand-in. -->
+    <link rel="stylesheet" href="/web/icons.css?v=9c47fc4ada"><!-- generated: Lucide CSS masks -->
+    <!-- Icons are CSS masks keyed on data-lucide (web/icons.css), so base.js's
+         lucide.createIcons() calls only need this no-op stand-in. -->
     <script>window.lucide={createIcons:function(){}};</script>
     <style>
         /* Light-mode hero fix: hero sits over the always-dark backdrop. */
@@ -284,9 +283,14 @@ from the Bus.</p>
 <tr><td><code>net.link.apply</code></td><td>write</td><td>configure one link through networkd, rolled back unless it comes up</td></tr>
 <tr><td><code>hostd.undo</code></td><td>write</td><td>put back what an applied change replaced; needs no grant of its own (see below)</td></tr>
 <tr><td><code>net.wg.apply</code></td><td>write</td><td>configure a WireGuard link through networkd, rolled back unless it comes up and its peers complete a handshake</td></tr>
-<tr><td><code>net.wifi.scan</code></td><td>write</td><td>scan for Wi-Fi networks on one device (iwd). It changes nothing durable, but it drives the radio, so it needs a grant</td></tr>
-<tr><td><code>net.wifi.connect</code></td><td>write</td><td>connect a Wi-Fi device to a network (iwd), put back unless connected in time</td></tr>
+<tr><td><code>desk.restart</code></td><td>write</td><td>restart the desk machine that the caller's grant names (<code>machinectl reboot</code>); the host stays up; no undo</td></tr>
+<tr><td><code>desk.stop</code></td><td>write</td><td>power off the desk machine that the caller's grant names (<code>machinectl poweroff</code>); the host stays up; no undo</td></tr>
 </tbody></table>
+<p>The desk verbs take no machine name. A grant gives the caller one desk through
+its <code>desks</code> limit, which must name exactly one machine. A grant with no desk,
+or with two, is refused.
+| <code>net.wifi.scan</code> | write | scan for Wi-Fi networks on one device (iwd). It changes nothing durable, but it drives the radio, so it needs a grant |
+| <code>net.wifi.connect</code> | write | connect a Wi-Fi device to a network (iwd), put back unless connected in time |</p>
 <p><code>host.info</code> is also published as the retained topic <code>hostd.info</code>.</p>
 <h2 id="who-may-change-what">Who may change what</h2>
 <p>Reads are open to anyone who can reach hostd. Changes need a <strong>standing

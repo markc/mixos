@@ -17,14 +17,16 @@
 -- Inputs (all in build/): shell.html (the DCS page chrome, with {{slots}}),
 -- home.html (the landing content), site.conf.mix (sidebar, icons, fonts,
 -- redirects). Outputs: index.html, 404.html, <page>/index.html, redirect
--- pages, llms.txt, llms-full.txt, sitemap.xml, robots.txt, web/icons.css,
--- web/fonts.css, web/fonts/<role>.woff2 (icons, text faces and emoji, each
--- cut from the pinned asset set, + their licences), and the favicons from
--- share/brand (web/favicon.svg, favicon.ico, web/brand/*).
+-- pages, llms.txt, llms-full.txt, sitemap.xml, robots.txt, web/icons.css
+-- (a CSS mask per Lucide icon), web/icons/<file>.svg (those icons at the
+-- desktop's stroke width, + the Lucide licence), web/fonts.css,
+-- web/fonts/<role>.woff2 (text faces and emoji, each cut from the pinned
+-- asset set, + their licences), and the favicons from share/brand
+-- (web/favicon.svg, favicon.ico, web/brand/*).
 --
 -- Runs locally with /opt/mixos/bin/mix; GitHub Pages only serves the
 -- committed result, so there is no CI step. External tools: git, hb-subset
--- (harfbuzz-utils) and woff2_compress (woff2) for the fonts.
+-- (harfbuzz-utils) and woff2_compress (woff2) for the fonts. Icons need none.
 --
 -- Deterministic by construction: sorted inputs, no timestamps, content-hash
 -- asset versions. A rebuild with no source change writes nothing.
@@ -235,19 +237,25 @@ fn cut_font($role, $src, $unicodes, $instance, $code)
 end
 
 -- ---------------------------------------------------------------- icons
+-- Lucide: the checked-in SVG set the MixOS desktop draws from. Each icon the
+-- site uses is verified by sha256, restyled to the desktop's stroke width,
+-- written to web/icons/<file>.svg, and shown as a CSS mask on its data-lucide
+-- name. A mask follows the attribute, so base.js's runtime swaps need no JS.
 $shell_src = read_file($build .. "/shell.html")
 $home_src = read_file($build .. "/home.html")
 $ic = $cfg.icons
-$font = pinned($ic.asset_set, $ic.font, $ic.sha256, "SITE_ICONS", "icon font")
-$cp = {}
-for each $line in lines(read_file($ic.asset_set .. "/" .. $ic.codepoints))
-  $parts = split(trim($line), " ")
-  if len($parts) == 2 and not has_key($cp, $parts[0]) then
-    $cp[$parts[0]] = $parts[1]
+for each $k in ["version", "source", "stroke", "licence", "aliases", "dynamic", "sha256"]
+  if not has_key($ic, $k) then
+    raise("SITE_ICONS", "site.conf.mix icons is missing " .. $k)
   end
 end
+if len(re_find($shell_src .. $home_src, "data-icon=")) > 0 then
+  raise("SITE_ICONS", "data-icon is retired: name a Lucide icon with data-lucide=\"<name>\"")
+end
+$lucide_dir = $repo .. "/" .. $ic.source
 
--- Lucide-style names used anywhere, mapped to Material names.
+-- Lucide names used anywhere: in the templates, in the sidebar and home
+-- config, and the ones base.js swaps in at runtime.
 $lucide = concat($ic.dynamic, $GEN_ICONS)
 for each $m in re_find($shell_src .. $home_src, "data-lucide=\"([a-z0-9-]+)\"")
   push($lucide, $m["groups"][0])
@@ -264,65 +272,57 @@ for each $item in $cfg.home_toc
     push($lucide, $item.icon)
   end
 end
-$direct = []
-for each $m in re_find($shell_src .. $home_src, "data-icon=\"([a-z0-9_]+)\"")
-  push($direct, $m["groups"][0])
-end
 
+-- Each name draws its Lucide file: an alias (home -> house) or the name
+-- itself. Two names may draw one file, which is then written once.
+$icon_files = {}   -- "web/icons/<file>.svg" -> generated SVG text
 $rules = []
-$glyphs = {}
 for each $name in sort(unique($lucide))
-  if not has_key($ic.map, $name) then
-    raise("SITE_ICONS", "icon '" .. $name .. "' has no Material mapping in site.conf.mix icons.map")
+  $file = if has_key($ic.aliases, $name) then $ic.aliases[$name] else $name end
+  if not re_match($name, "^[a-z0-9-]+$") or not re_match($file, "^[a-z0-9-]+$") then
+    raise("SITE_ICONS", "Lucide names and aliases must be plain icon names")
   end
-  $mat = $ic.map[$name]
-  if not has_key($cp, $mat) then
-    raise("SITE_ICONS", "Material icon '" .. $mat .. "' (for '" .. $name .. "') is not in the pinned catalogue")
+  if not is_file($lucide_dir .. "/" .. $file .. ".svg") then
+    raise("SITE_ICONS", "icon '" .. $name .. "' is not in the Lucide set: " .. $ic.source .. "/" .. $file .. ".svg")
   end
-  push($rules, "[data-lucide=\"" .. $name .. "\"]::before { content: \"\\" .. $cp[$mat] .. "\"; }")
-  $glyphs[$cp[$mat]] = true
+  $pin = if has_key($ic.sha256, $file) then $ic.sha256[$file] else "" end
+  if $pin == "" then
+    raise("SITE_ICONS", "Lucide " .. $file .. ".svg has no sha256 pinned in site.conf.mix icons.sha256")
+  end
+  $svg = read_file(pinned($lucide_dir, $file .. ".svg", $pin, "SITE_ICONS", "Lucide icon " .. $file))
+  if len(re_find($svg, "stroke-width=\"2\"")) != 1 then
+    raise("SITE_ICONS", "Lucide " .. $file .. ".svg must carry one stroke-width=\"2\" to restyle")
+  end
+  $svg = $MARKER .. "\n" .. replace($svg, "stroke-width=\"2\"", "stroke-width=\"" .. $ic.stroke .. "\"")
+  $rel = "web/icons/" .. $file .. ".svg"
+  $icon_files[$rel] = $svg
+  $url = "/" .. $rel .. "?v=" .. substr(hash_sha256($svg), 0, 10)
+  push($rules, "[data-lucide=\"" .. $name .. "\"] { background-color: currentColor; -webkit-mask-image: url(\"" .. $url .. "\"); mask-image: url(\"" .. $url .. "\"); }")
 end
-for each $mat in sort(unique($direct))
-  if not has_key($cp, $mat) then
-    raise("SITE_ICONS", "Material icon '" .. $mat .. "' is not in the pinned catalogue")
-  end
-  push($rules, "[data-icon=\"" .. $mat .. "\"]::before { content: \"\\" .. $cp[$mat] .. "\"; }")
-  $glyphs[$cp[$mat]] = true
+
+if $ic.licence.sha256 == "" then
+  raise("SITE_ICONS", "the Lucide licence has no sha256 pinned in site.conf.mix icons.licence")
 end
-$unicodes = join(map(sort(keys($glyphs)), fn($h) = "U+" .. upper($h)), ",")
+$icon_files["web/icons/LICENSE-Lucide.txt"] = read_file(pinned($lucide_dir, $ic.licence.file, $ic.licence.sha256, "SITE_ICONS", "Lucide licence"))
 
-$woff2 = cut_font("icons", $font, $unicodes, $ic.instance, "SITE_ICONS")
-$woff2_ver = substr(hash_file($woff2, "sha256"), 0, 10)
-$bins["web/fonts/icons.woff2"] = $woff2
-$font_ver["icons"] = $woff2_ver
-
+-- Layout is set on every icon; the mask only paints where a name has a rule,
+-- so an unknown name shows nothing rather than a solid square.
 $icons_css = "/* " .. $MARKER .. "\n" ..
-     "   Material Symbols Rounded (Apache-2.0, (c) Google), " .. to_string(len(keys($glyphs))) .. " glyphs subset from\n" ..
-     "   asset set " .. basename($ic.asset_set) .. " at " .. $ic.instance .. " - the desktop's own icons.\n" ..
-     "   Licence: /web/fonts/LICENSE-MaterialSymbols.txt. Glyphs are CSS, keyed on the\n" ..
-     "   data-lucide/data-icon attribute, so base.js icon swaps need no icon library. */\n" ..
-     "@font-face {\n" ..
-     "    font-family: \"MixOS Icons\";\n" ..
-     "    src: url(\"/web/fonts/icons.woff2?v=" .. $woff2_ver .. "\") format(\"woff2\");\n" ..
-     "    font-display: block;\n" ..
-     "}\n" ..
-     "[data-icon] { display: inline-block; width: 1em; height: 1em; vertical-align: -0.125em; }\n" ..
-     "[data-lucide], [data-icon] { font-style: normal; }\n" ..
-     "[data-lucide]::before, [data-icon]::before {\n" ..
-     "    display: block;\n" ..
+     "   Lucide " .. $ic.version .. " (ISC) at stroke-width " .. $ic.stroke .. ": " .. to_string(len($rules)) .. " icons drawn from\n" ..
+     "   " .. $ic.source .. ". Each is a CSS mask painted in currentColor, keyed on the\n" ..
+     "   data-lucide attribute, so base.js's icon swaps need no icon library.\n" ..
+     "   Licence: /web/icons/LICENSE-Lucide.txt. */\n" ..
+     "[data-lucide] {\n" ..
+     "    display: inline-block;\n" ..
      "    width: 1em;\n" ..
      "    height: 1em;\n" ..
-     "    font-family: \"MixOS Icons\";\n" ..
-     "    font-style: normal;\n" ..
-     "    font-weight: normal;\n" ..
-     "    font-size: 1em;\n" ..
-     "    line-height: 1;\n" ..
-     "    letter-spacing: normal;\n" ..
-     "    text-transform: none;\n" ..
-     "    white-space: nowrap;\n" ..
-     "    direction: ltr;\n" ..
-     "    overflow: hidden;\n" ..
-     "    -webkit-font-smoothing: antialiased;\n" ..
+     "    vertical-align: -0.125em;\n" ..
+     "    -webkit-mask-repeat: no-repeat;\n" ..
+     "    mask-repeat: no-repeat;\n" ..
+     "    -webkit-mask-position: center;\n" ..
+     "    mask-position: center;\n" ..
+     "    -webkit-mask-size: 100% 100%;\n" ..
+     "    mask-size: 100% 100%;\n" ..
      "}\n" ..
      join($rules, "\n") .. "\n"
 
@@ -346,7 +346,7 @@ for each $face in $fc.faces
   if not re_match($face.role, "^[a-z][a-z0-9-]*$") then
     raise("SITE_FONTS", "font role is not a plain name: " .. $face.role)
   end
-  if $face.role == "icons" or has_key($bins, "web/fonts/" .. $face.role .. ".woff2") then
+  if has_key($bins, "web/fonts/" .. $face.role .. ".woff2") then
     raise("SITE_FONTS", "font role used twice: " .. $face.role)
   end
   if not has_key($fc.licences, $face.licence) then
@@ -371,7 +371,7 @@ for each $face in $fc.faces
     "}")
 end
 for each $role in $fc.preload
-  if not has_key($font_ver, $role) or $role == "icons" then
+  if not has_key($font_ver, $role) then
     raise("SITE_FONTS", "fonts.preload names a face that is not configured: " .. $role)
   end
 end
@@ -454,7 +454,7 @@ fn head_html($canonical, $alt_href, $alt_title, $robots)
     push($h, "    <meta name=\"robots\" content=\"" .. $robots .. "\">")
   end
   push($h, "    <meta name=\"mixos-build\" content=\"" .. $BUILD .. "\">")
-  for each $role in concat(["icons"], $fc.preload)
+  for each $role in $fc.preload
     push($h, "    <link rel=\"preload\" href=\"/web/fonts/" .. $role .. ".woff2?v=" .. $font_ver[$role] .. "\" as=\"font\" type=\"font/woff2\" crossorigin>")
   end
   return join($h, "\n")
@@ -730,9 +730,11 @@ $outputs["robots.txt"] = "User-agent: *\nAllow: /\n\nSitemap: " .. $SITE .. "/si
 $outputs["web/icons.css"] = $icons_css
 $outputs["web/fonts.css"] = $fonts_css
 $outputs["web/favicon.svg"] = $favicon_svg
-$outputs["web/fonts/LICENSE-MaterialSymbols.txt"] = read_file($ic.asset_set .. "/" .. $ic.licence)
 for each $k in keys($licence_files)
   $outputs[$k] = $licence_files[$k]
+end
+for each $k in keys($icon_files)
+  $outputs[$k] = $icon_files[$k]
 end
 
 -- ---------------------------------------------------------------- link check
@@ -791,8 +793,10 @@ for each $k in sort(keys($outputs))
 end
 
 -- ---------------------------------------------------------------- compare / write
--- Stale: a generated page whose source is gone, or anything in web/fonts/
--- this build did not produce (every web font must trace to the asset set).
+-- Stale: a generated page whose source is gone, or anything in web/fonts/ or
+-- web/icons/ this build did not produce (every web font must trace to the
+-- asset set; web/fonts/ also holds the retired Material Symbols font and its
+-- licence, which this rule removes).
 $stale = []
 for each $p in sort(walk($root))
   $rel = substr($p, len($root) + 1, len($p) - len($root) - 1)
@@ -802,6 +806,9 @@ for each $p in sort(walk($root))
     end
   end
   if starts_with($rel, "web/fonts/") and not has_key($outputs, $rel) and not has_key($bins, $rel) then
+    push($stale, $rel)
+  end
+  if starts_with($rel, "web/icons/") and not has_key($outputs, $rel) then
     push($stale, $rel)
   end
 end

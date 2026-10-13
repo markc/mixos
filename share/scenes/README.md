@@ -13,7 +13,7 @@ Canonical, read-only template directories live here:
 Reusable behaviour helpers are shipped in `lib/` (`data.mix`, `models.mix`,
 `runtime.mix`, `taskbar.mix`, and `network.mix`, the network popup's snapshot).
 
-Templates: `panel` (bottom panel, page `scene-panel`), `launcher`, `calendar`,
+Templates: `topbar` (top bar, page `scene-topbar`), `panel` (bottom panel, page `scene-panel`), `launcher`, `calendar`,
 `notes`, `network` and `settings`. The loader copies a template into the user's scenes directory
 only on `scenes.install`; it never enables discovered directories
 automatically. Installed under their own names these reuse the legacy panel
@@ -51,9 +51,14 @@ node block here and nowhere else. The template mounts on the right edge; edit
 | `requires` | list of Bus service names | shown as "needs …" while not registered |
 | `hidden` | bool | not listed by `scenes.templates` |
 
-The six shipped templates are the Recommended set: `panel` (order 10,
-requires `comp` and `apps`), `launcher` (20, `apps`), `calendar` (30),
-`notes` (40, `notify`), `network` (45) and `settings` (50).
+The seven shipped templates are the Recommended set: `topbar` (order 5,
+requires `comp` and `apps`), `panel` (order 10, requires `comp` and `apps`),
+`launcher` (20, `apps`), `calendar` (30), `notes` (40, `notify`), `network`
+(45) and `settings` (50).
+
+The top bar's power buttons send `power.suspend`, `power.reboot` and
+`power.poweroff` to hostd. Each needs a hostd grant. A refusal is shown in the
+button's tooltip, and nothing runs. Shutdown is not a hostd verb yet.
 
 `network` shows links and addresses from rtnetlink, plus systemd-networkd,
 systemd-resolved and the default routes when their tools answer
@@ -86,3 +91,69 @@ The loader runs this directory in place as safe mode and never writes to it.
 `scenes.install {template:"editor"}` makes the editable user copy; see the
 Scene Editor manual for how the two are chosen. No other template may use
 `window.kind:"dialog"` or the page `scene-editor`.
+
+## Reloading a scene
+
+Three separate things can change, and each reaches the running panel by a
+different route.
+
+| What changed | Where it lives at runtime | How it reaches the panel |
+| --- | --- | --- |
+| Shared helpers (`lib/data.mix`, `lib/models.mix`, …) | `$SCENES_LIB`, which defaults to `$SCENES_TEMPLATES/lib` | Copy into the catalogue, then reload the scene that uses it |
+| A scene's own `scene.mix`, `behaviour.mix` or `template.conf.mix` | The user copy under `$SCENES_DIR/<name>/` | Reload re-reads the user copy. A template edit needs `reset` or a fresh install first |
+| Loader code (`services/compd/scripts/`) | The compd scenes service | Restart that service; reload does not run new loader code |
+
+The environment fixes the paths. On the VT4 session (`/etc/mixos/session/4.env`):
+
+- `SCENES_DIR=/var/lib/mixos/vt4/scenes` holds the user copies. The panel is
+  `panel/`.
+- `SCENES_TEMPLATES=/opt/mixos/share/scenes` is the catalogue. Its `lib/` is
+  the one the panel's `behaviour.mix` loads (`$LIB`) when it starts.
+
+Steps for a change to shared helpers, such as `lib/data.mix`:
+
+The one-step route is `sync.mix`. It reads `SCENES_TEMPLATES` from the
+session environment file, copies any shared file that differs from this
+checkout, and reloads every enabled scene:
+
+    mix share/scenes/sync.mix                      # dry run: the plan only
+    mix share/scenes/sync.mix --apply              # write, then reload
+    mix share/scenes/sync.mix --env FILE --apply   # another session's env
+
+It needs write access to the catalogue. A host where a file there is
+root-owned needs root for that file, and the script stops on the error
+rather than skipping it.
+
+The steps it runs, for reference:
+
+1. Copy each changed file from `share/scenes/lib/` into the catalogue.
+   `install.mix` copies everything but is not the right tool here: its
+   default destination is `$XDG_DATA_HOME/mixos/scenes`, not the VT4
+   catalogue, and it does not report what changed.
+2. Reload each enabled scene:
+   `mix services/compd/scripts/scenes_cli.mix reload panel`.
+   The CLI sends `scenes.reload`, which re-checks `behaviour.mix`, re-renders
+   `scene.mix` and remounts the scene. Use `--target scenes.<node>.bus` for
+   another node. The CLI needs that session's D-Bus address, which the
+   script takes from the env file.
+3. Check the result: `scenes_cli.mix list --json` should show no diagnostic
+   for `panel`, and the panel should show the new output.
+
+A change to a scene's own files (`scene.mix`, `behaviour.mix`) is not picked
+up by `sync.mix`. The user copy under `$SCENES_DIR` is what reloads, so use
+`scenes reset NAME` for that.
+
+Automatic reload on save (a loader that watches `$SCENES_LIB` and reloads
+dependent scenes) is planned, not built.
+
+A forced reload re-runs the behaviour, so it should pick up the new `lib/`
+files. That is the expected behaviour from reading `reconcile_one`
+(`services/compd/scripts/lib/scenes.mix`). It has not been confirmed on a
+live panel. If the old output persists after step 2, restart the compd
+scenes service and check again. The unit's name is not recorded in this
+repo, so look it up on the host. `scenes.restart` is different: it is the
+loader's internal crash restart for a single scene, not a manual restart.
+
+Reset is for template changes to a scene's own files. `scenes.reset {name}`
+restores the template defaults and keeps a recovery copy, so it discards the
+user's edits to that scene. Use it on purpose.

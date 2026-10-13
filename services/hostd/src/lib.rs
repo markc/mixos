@@ -4,6 +4,7 @@
 //! closed, typed verbs, behind standing grants, receipts and rollback.
 pub mod bus_loop;
 pub mod caller;
+pub mod desk;
 pub mod frame;
 pub mod freeze;
 pub mod info;

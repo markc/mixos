@@ -100,7 +100,6 @@ pub(crate) fn panel_fallback(id: &str) -> Option<&'static str> {
         "st_notes_i" => Some("preferences-system-notifications-symbolic"),
         "st_vol_i" => Some("audio-volume-high-symbolic"),
         "st_net_i" => Some("network-wired-symbolic"),
-        "peek_i" => Some("video-display-symbolic"),
         // The launcher mark, the full-colour cyclops (share/brand installs
         // it). Not symbolic: its red eye must keep its colour.
         "launcher_icon" => Some("dev.mixos"),
@@ -113,7 +112,6 @@ pub(crate) fn fallback_image(id: &str) -> Option<&'static str> {
         "st_notes_f" => Some("st_notes_i"),
         "st_vol_f" => Some("st_vol_i"),
         "st_net_f" => Some("st_net_i"),
-        "peek_f" => Some("peek_i"),
         "launcher_text" => Some("launcher_icon"),
         _ => None,
     }

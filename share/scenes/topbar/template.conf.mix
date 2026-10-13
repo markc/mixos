@@ -1,0 +1,8 @@
+schema: 1
+name: "topbar"
+title: "Top bar"
+behaviour: "behaviour.mix"
+description: "Top bar: apps on the left, big clock in the centre, status and power on the right"
+recommended: true
+order: 5
+requires: ["comp", "apps"]
