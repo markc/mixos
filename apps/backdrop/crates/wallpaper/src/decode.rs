@@ -201,7 +201,11 @@ mod tests {
         chunk(&mut out, b"IHDR", &ihdr);
         // A valid empty zlib stream lets the PNG reader inspect IDAT and
         // report dimensions. Pixel decoding is never reached by these tests.
-        chunk(&mut out, b"IDAT", &[0x78, 0x9c, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01]);
+        chunk(
+            &mut out,
+            b"IDAT",
+            &[0x78, 0x9c, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01],
+        );
         chunk(&mut out, b"IEND", &[]);
         out
     }
