@@ -678,7 +678,7 @@ is the same pool with `ssh_mix`'s `bindings`, `decode` and result shape kept. A 
 
 ### send_mail — report mail through the local MTA
 
-`send_mail(msg [, {host, sendmail, timeout}])` is the last step of every nightly
+`send_mail(msg [, {host, sendmail, timeout, mix_bin}])` is the last step of every nightly
 report: render a plain-text message and hand it to the MTA. It replaces the
 hand-written `.eml` file, the `run_argv(["/usr/sbin/sendmail", "-t", "-f", $from],
 {stdin: {file: …}})` and the cleanup.
@@ -733,7 +733,10 @@ end
 - **`host` sends from another host** — the one with a working MTA — through
   [`ssh_exec`](remote.md). The message is still built locally; only the
   sendmail run is remote, with `/usr/sbin/sendmail` as the default there. The
-  result carries `host` as `ssh_exec`'s does, and only then.
+  result carries `host` as `ssh_exec`'s does, and only then. **`mix_bin`**
+  (with `host` only) names the remote mix binary the hop runs, resolved as
+  for [`ssh_mix`](remote.md): `mix_bin`, else local `MIX_REMOTE_BIN`, else
+  `/opt/cosmix/bin/mix`.
 - **The result is `run_argv`'s `process_result` plus `message_id`**. `ok`
   means the MTA accepted the message for submission, not that it was
   delivered. An MTA that refuses the message, or a sendmail that is not

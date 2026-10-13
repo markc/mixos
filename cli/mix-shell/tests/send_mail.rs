@@ -83,7 +83,8 @@ impl Bed {
             .env("PATH", path)
             .env("MIX_UNDER_TEST", env!("CARGO_BIN_EXE_mix"))
             .env("SENDMAIL_CAPTURE", self.capture())
-            .env_remove("REMOTE_SENDMAIL_STANDIN");
+            .env_remove("REMOTE_SENDMAIL_STANDIN")
+            .env_remove("MIX_REMOTE_BIN");
         for (k, v) in extra {
             cmd.env(k, v);
         }

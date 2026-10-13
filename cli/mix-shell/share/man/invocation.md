@@ -411,7 +411,10 @@ hostname is: node1
 From a Mix script, drive a remote mix through the ssh builtins instead of raw
 `ssh`: `ssh_run($host, $cmd)` for a one-liner, and `ssh_mix($host, $source)` —
 which ships whole Mix source over ssh stdin into `/opt/cosmix/bin/mix -`,
-bypassing every shell-quoting layer — for anything with quoting. The
+bypassing every shell-quoting layer — for anything with quoting. A remote
+whose mix lives elsewhere takes the `mix_bin` option, or set
+`MIX_REMOTE_BIN` locally for every call (see
+[`ssh_mix`](remote.md#ssh_mixhost-source-opts--map)). The
 [`ssh_mix` + heredoc headline idiom](remote.md#headline-idiom-ssh_mix--heredoc)
 shows the interpolation and bindings rules.
 

@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.116.0
+
+### Added
+
+- The remote mix binary is configurable. Every builtin that drives a
+  remote mix (`ssh_mix`, `ssh_mix_many`, `ssh_exec`, `ssh_run`'s
+  `env_transport: "mix"`, `send_mail`'s `host` hop) resolves it in one
+  place: the `mix_bin` option, else the local env var `MIX_REMOTE_BIN`
+  (empty counts as unset), else `/opt/cosmix/bin/mix`, the unchanged
+  default. The value is interpolated into the remote command string, so
+  it must be an absolute path or a bare name using only `[A-Za-z0-9_./+-]`;
+  anything else raises `OPTION_INVALID` locally before ssh runs. A host with
+  mix only at `/opt/mixos/bin/mix` used to fail with exit 127.
+
+### Changed
+
+- `ssh_exec`'s `remote_mix` option is now validated the same way (it was
+  interpolated unchecked) and is an alias of `mix_bin`; passing both
+  raises.
+
 ## 0.115.0
 
 ### Added
