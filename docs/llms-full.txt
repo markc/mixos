@@ -670,7 +670,7 @@ totals.
 | Budget | Limit | Worst case |
 |---|---|---|
 | Decoded RGBA held by the controller (applied and candidate images together) | 512 MiB (`RESIDENT_BUDGET`) | a decode that would take the total over it is refused (`IMAGE`); the last applied images stay until a whole candidate set applies |
-| Texture memory on the GPU, across all outputs, overlap included (`TEXTURE_BUDGET`) | 512 MiB | four full-size outputs swapping (four old and four new textures) |
+| Accounted wallpaper texture bytes, across all outputs, overlap included (`TEXTURE_BUDGET`) | 512 MiB | four full-size outputs swapping (four old and four new textures) |
 
 A full-size image is 3840 × 3840 × 4 bytes = 56.25 MiB, the largest kept. Four
 applied plus four candidates is 450 MiB, which fits the 512 MiB resident budget.
@@ -686,6 +686,11 @@ is freed.
   releases its bytes.
 - A texture upload copies the decoded image once (a transient copy of at most
   one image, on the CPU).
+
+These account for wallpaper data, rather than total process RSS or GPU-driver
+memory. Compressed input, decoder allocations, RGBA conversion and resizing
+have their own transient bounds; the renderer also owns resources beyond the
+wallpaper textures.
 
 ## The Bus
 

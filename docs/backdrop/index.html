@@ -310,7 +310,7 @@ decoded for a refused or superseded set are dropped at once.</li>
 totals.</p>
 <table><thead><tr><th>Budget</th><th>Limit</th><th>Worst case</th></tr></thead><tbody>
 <tr><td>Decoded RGBA held by the controller (applied and candidate images together)</td><td>512 MiB (<code>RESIDENT_BUDGET</code>)</td><td>a decode that would take the total over it is refused (<code>IMAGE</code>); the last applied images stay until a whole candidate set applies</td></tr>
-<tr><td>Texture memory on the GPU, across all outputs, overlap included (<code>TEXTURE_BUDGET</code>)</td><td>512 MiB</td><td>four full-size outputs swapping (four old and four new textures)</td></tr>
+<tr><td>Accounted wallpaper texture bytes, across all outputs, overlap included (<code>TEXTURE_BUDGET</code>)</td><td>512 MiB</td><td>four full-size outputs swapping (four old and four new textures)</td></tr>
 </tbody></table>
 <p>A full-size image is 3840 × 3840 × 4 bytes = 56.25 MiB, the largest kept. Four
 applied plus four candidates is 450 MiB, which fits the 512 MiB resident budget.
@@ -327,6 +327,10 @@ releases its bytes.</li>
 <li>A texture upload copies the decoded image once (a transient copy of at most
 one image, on the CPU).</li>
 </ul>
+<p>These account for wallpaper data, rather than total process RSS or GPU-driver
+memory. Compressed input, decoder allocations, RGBA conversion and resizing
+have their own transient bounds; the renderer also owns resources beyond the
+wallpaper textures.</p>
 <h2 id="the-bus">The Bus</h2>
 <p>Service <code>backdrop</code> (or <code>--service</code>). Verbs (registered in
 <code>docs/spec/bus/verbs.conf.mix</code>):</p>
