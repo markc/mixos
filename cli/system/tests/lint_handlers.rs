@@ -52,7 +52,10 @@ fn handlers(report: &Value) -> Vec<(String, Option<String>, u64)> {
         .iter()
         .map(|h| {
             (
-                h["command"].as_str().expect("command is a string").to_string(),
+                h["command"]
+                    .as_str()
+                    .expect("command is a string")
+                    .to_string(),
                 h["file"].as_str().map(str::to_string),
                 h["line"].as_u64().expect("line is a number"),
             )
@@ -61,11 +64,7 @@ fn handlers(report: &Value) -> Vec<(String, Option<String>, u64)> {
 }
 
 fn decl(command: &str, file: &Path, line: u64) -> (String, Option<String>, u64) {
-    (
-        command.to_string(),
-        Some(file.display().to_string()),
-        line,
-    )
+    (command.to_string(), Some(file.display().to_string()), line)
 }
 
 /// Every 1-based line of `source` containing `needle`, in order.
@@ -207,9 +206,17 @@ end
         handlers(&report),
         vec![
             decl("inner.fn", &path, lines_of(source, "on inner.fn")[0]),
-            decl("lambda.block", &path, lines_of(source, "on lambda.block")[0]),
+            decl(
+                "lambda.block",
+                &path,
+                lines_of(source, "on lambda.block")[0]
+            ),
             decl("expr.branch", &path, lines_of(source, "on expr.branch")[0]),
-            decl("control.block", &path, lines_of(source, "on control.block")[0]),
+            decl(
+                "control.block",
+                &path,
+                lines_of(source, "on control.block")[0]
+            ),
         ],
         "report: {report}"
     );
@@ -321,7 +328,14 @@ fn data_output_carries_handlers() {
         String::from_utf8_lossy(&out.stderr)
     );
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
-    assert!(text.contains("handlers"), "--data output lacks handlers: {text}");
-    assert!(text.contains("ping.one"), "--data output lacks the command: {text}");
-    mix::parse_data(&text).unwrap_or_else(|e| panic!("--data output is not strict data ({e}):\n{text}"));
+    assert!(
+        text.contains("handlers"),
+        "--data output lacks handlers: {text}"
+    );
+    assert!(
+        text.contains("ping.one"),
+        "--data output lacks the command: {text}"
+    );
+    mix::parse_data(&text)
+        .unwrap_or_else(|e| panic!("--data output is not strict data ({e}):\n{text}"));
 }
