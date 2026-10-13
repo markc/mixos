@@ -22,7 +22,7 @@ use smithay::backend::renderer::element::utils::RescaleRenderElement;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::utils::CommitCounter;
-use smithay::backend::renderer::{Bind, Color32F, Frame, Offscreen, Renderer};
+use smithay::backend::renderer::{Bind, Color32F, ExportMem, Frame, Offscreen, Renderer};
 use smithay::utils::{Buffer, DeviceFd, Physical, Point, Rectangle, Scale, Size, Transform};
 
 const W: i32 = 256;
