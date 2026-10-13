@@ -108,7 +108,7 @@ impl Client {
     async fn exchange_token(&mut self) -> Result<()> {
         let url = format!("{}/auth/tokens/issue", self.account.url.trim_end_matches('/'));
         let response = self
-            .http
+            .pool
             .post(&url)
             .basic_auth(&self.account.email, Some(&self.account.password))
             .json(&IssueRequest {
