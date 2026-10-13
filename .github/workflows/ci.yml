@@ -89,6 +89,8 @@ jobs:
       # (AGENTS.md §9).
       - name: Gates
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        env:
+          MIXOS_TEST_MIX: ${{ github.workspace }}/target/debug/mix
         run: |
           mix=target/debug/mix
           $mix tools/closure_gate.mix --locked
