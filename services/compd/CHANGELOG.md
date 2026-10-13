@@ -12,6 +12,17 @@
   cancel"), only on the selected output, in the session look (followed on
   every change); a selected reply waits for a frame of that output without
   the overlay.
+- While a `comp.region.select` run holds the seat the cursor is a
+  crosshair (the theme's `crosshair`, else `cross` or `tcross`, else the
+  arrow); the normal cursor is back on the frame that ends the run, however
+  it ends, so the clean frame never shows the crosshair. A cursor's hotspot
+  is now read after its shape is chosen, so a change of shape lands in place
+  on its first frame.
+- The capture panels (the setup chooser, region border and dim, Stop
+  buttons and the Continue, Save, Encoding and error dialogs) draw in the
+  session theme, followed on every change like the region overlay, with
+  the embedded theme until the shell delivers one. Open panels repaint at
+  once.
 - Workspaces: `comp.workspaces.list`, `comp.workspaces.set_count {count,
   persist}` and `comp.workspace.rename {index, name, persist}`, and the
   `comp.workspace.changed` topic. The count and names persist in

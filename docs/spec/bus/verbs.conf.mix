@@ -163,7 +163,7 @@
     {name:"screenshot.undo", owner:"screenshot", version:"0.1.1", status:"accepted", class:"intent"},
     {name:"screenshot.redo", owner:"screenshot", version:"0.1.1", status:"accepted", class:"intent"},
     {name:"screenshot.export", owner:"screenshot", version:"0.1.1", status:"accepted", class:"intent"},
-    {name:"screenshot.save", owner:"screenshot", version:"0.1.1", status:"accepted", class:"intent"},
+    {name:"screenshot.save", owner:"screenshot", version:"0.2.0", status:"accepted", class:"intent"},
     {name:"screenshot.recent", owner:"screenshot", version:"0.1.1", status:"accepted", class:"query"},
     {name:"screenshot.select", owner:"screenshot", version:"0.1.1", status:"accepted", class:"intent"},
     {name:"screenshot.commands", owner:"screenshot", version:"0.1.1", status:"accepted", class:"query"},

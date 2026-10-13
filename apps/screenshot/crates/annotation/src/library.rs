@@ -6,8 +6,11 @@
 //!   compd writes, before anyone decides to keep them.
 //! - **Saved shots** are published into the person's screenshots folder,
 //!   `XDG_PICTURES_DIR/Screenshots` (`~/Pictures/Screenshots`), named by
-//!   local time, `Screenshot 2026-10-12 14-03-22.png`, with ` (2)`, ` (3)`…
-//!   when a name is taken. Nothing is ever overwritten.
+//!   local time, `20261012_140322.png` (Spectacle's `yyyyMMdd_HHmmss`),
+//!   with `_2`, `_3`… when a name is taken. Nothing is ever overwritten.
+//!   Nothing reads a name back: the ledger records whole paths, so shots
+//!   saved under the earlier `Screenshot 2026-10-12 14-03-22.png` form
+//!   stay listed.
 //! - **The ledger** (`saved.jsonl` in the state directory) records every
 //!   save, newest last, so an agent can ask for the latest shots
 //!   (`screenshot.recent`) without scanning a folder or guessing which file
@@ -29,7 +32,7 @@ pub const RECENT_LIMIT: usize = 100;
 /// Past this size the ledger is rewritten with its newest entries only.
 const LEDGER_COMPACT_BYTES: u64 = 512 * 1024;
 const LEDGER_KEEP: usize = 500;
-/// How many ` (n)` suffixes a save tries before giving up.
+/// How many `_n` suffixes a save tries before giving up.
 const SUFFIXES: usize = 999;
 
 fn absolute_env(name: &str) -> Option<PathBuf> {
@@ -114,15 +117,17 @@ pub fn screenshots_dir() -> Result<PathBuf, String> {
     Ok(pictures.join(FOLDER))
 }
 
-/// The file name a shot saved at `at` takes, before any suffix.
+/// The file name a shot saved at `at` takes, before any suffix:
+/// `YYYYMMDD_HHMMSS`, Spectacle's `yyyyMMdd_HHmmss`.
 pub fn shot_stem<Tz: chrono::TimeZone>(at: &chrono::DateTime<Tz>) -> String
 where
     Tz::Offset: std::fmt::Display,
 {
-    format!("Screenshot {}", at.format("%Y-%m-%d %H-%M-%S"))
+    at.format("%Y%m%d_%H%M%S").to_string()
 }
 
-/// The names a shot called `stem` may take in `dir`, in order.
+/// The names a shot called `stem` may take in `dir`, in order:
+/// `stem.png`, then `stem_2.png`, `stem_3.png`…
 pub fn candidates(dir: &Path, stem: &str) -> impl Iterator<Item = PathBuf> {
     let dir = dir.to_path_buf();
     let stem = stem.to_owned();
@@ -130,9 +135,40 @@ pub fn candidates(dir: &Path, stem: &str) -> impl Iterator<Item = PathBuf> {
         if n == 1 {
             dir.join(format!("{stem}.png"))
         } else {
-            dir.join(format!("{stem} ({n}).png"))
+            dir.join(format!("{stem}_{n}.png"))
         }
     })
+}
+
+/// Whether `name` has the form a folder save gives a file:
+/// `YYYYMMDD_HHMMSS.png`, or `YYYYMMDD_HHMMSS_n.png` for n of 2 or more.
+pub fn is_shot_name(name: &str) -> bool {
+    let Some(stem) = name.strip_suffix(".png") else {
+        return false;
+    };
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    let mut parts = stem.split('_');
+    let (Some(date), Some(time)) = (parts.next(), parts.next()) else {
+        return false;
+    };
+    let suffix_ok = match parts.next() {
+        None => true,
+        Some(n) => digits(n) && !n.starts_with('0') && n != "1",
+    };
+    date.len() == 8
+        && digits(date)
+        && time.len() == 6
+        && digits(time)
+        && suffix_ok
+        && parts.next().is_none()
+}
+
+/// The first of `stem`'s names in `dir` that nothing holds yet, as Save As
+/// proposes it; `stem.png` when every one is taken.
+pub fn free_name(dir: &Path, stem: &str) -> PathBuf {
+    candidates(dir, stem)
+        .find(|p| std::fs::symlink_metadata(p).is_err())
+        .unwrap_or_else(|| dir.join(format!("{stem}.png")))
 }
 
 /// One save, as the ledger and `screenshot.saved` report it.
@@ -479,16 +515,44 @@ mod tests {
             .with_ymd_and_hms(2026, 10, 12, 14, 3, 22)
             .unwrap();
         let stem = shot_stem(&at);
-        assert_eq!(stem, "Screenshot 2026-10-12 14-03-22");
+        assert_eq!(stem, "20261012_140322");
+        // Single digits are zero-padded, so names sort by time.
+        let early = chrono::FixedOffset::east_opt(10 * 3600)
+            .unwrap()
+            .with_ymd_and_hms(2026, 1, 2, 3, 4, 5)
+            .unwrap();
+        assert_eq!(shot_stem(&early), "20260102_030405");
         let dir = tempfile::tempdir().unwrap();
         let shots = dir.path().join("Pictures/Screenshots");
         let image = RgbaImage::from_pixel(3, 2, image::Rgba([9, 9, 9, 255]));
+        assert_eq!(free_name(&shots, &stem), shots.join("20261012_140322.png"));
         let first = save_into(&shots, &stem, &image).unwrap();
+        assert_eq!(
+            free_name(&shots, &stem),
+            shots.join("20261012_140322_2.png")
+        );
         let second = save_into(&shots, &stem, &image).unwrap();
         let third = save_into(&shots, &stem, &image).unwrap();
-        assert_eq!(first, shots.join("Screenshot 2026-10-12 14-03-22.png"));
-        assert_eq!(second, shots.join("Screenshot 2026-10-12 14-03-22 (2).png"));
-        assert_eq!(third, shots.join("Screenshot 2026-10-12 14-03-22 (3).png"));
+        assert_eq!(first, shots.join("20261012_140322.png"));
+        assert_eq!(second, shots.join("20261012_140322_2.png"));
+        assert_eq!(third, shots.join("20261012_140322_3.png"));
+        for name in [
+            "20261012_140322.png",
+            "20261012_140322_2.png",
+            "20261012_140322_12.png",
+        ] {
+            assert!(is_shot_name(name), "{name}");
+        }
+        for name in [
+            "Screenshot 2026-10-12 14-03-22.png",
+            "20261012_140322_1.png",
+            "20261012_140322_02.png",
+            "20261012_1403.png",
+            "20261012_140322.jpg",
+            "20261012_140322_2_3.png",
+        ] {
+            assert!(!is_shot_name(name), "{name}");
+        }
         assert_eq!(image::open(&second).unwrap().to_rgba8(), image);
         // The umask decides, as for any file an application creates: the
         // same mode an ordinary 0666 creation gets here.
@@ -570,8 +634,9 @@ mod tests {
             annotated,
             saved_at: "2026-10-12T14:03:22+10:00".into(),
         };
-        let a = file("a.png");
-        let b = file("b.png");
+        // A shot saved under the earlier name form still lists.
+        let a = file("Screenshot 2026-10-12 14-03-22.png");
+        let b = file("20261012_140323.png");
         ledger.append(&saved(a.clone(), false)).unwrap();
         ledger.append(&saved(b.clone(), true)).unwrap();
         ledger

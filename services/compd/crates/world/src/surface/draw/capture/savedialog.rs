@@ -46,7 +46,12 @@ impl UiProgram for SaveDialog {
         }
     }
 
+    fn setup(&mut self, ctx: &egui::Context) {
+        style::install(ctx);
+    }
+
     fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<CaptureMessage>) {
+        style::keep_up(ui.ctx());
         let accent = style::accent(ui);
         let title = if self.is_video() {
             "capture-saved-video"

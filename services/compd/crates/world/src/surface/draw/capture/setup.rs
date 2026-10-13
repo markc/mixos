@@ -142,7 +142,12 @@ impl UiProgram for SetupOverlay {
         }
     }
 
+    fn setup(&mut self, ctx: &egui::Context) {
+        style::install(ctx);
+    }
+
     fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<CaptureMessage>) {
+        style::keep_up(ui.ctx());
         let accent = style::accent(ui);
         // Bottom layer: the mask with a clear hole, painted first.
         mask::mask_with_hole(

@@ -261,7 +261,7 @@ struct Job {
 /// Where a save goes.
 #[derive(Clone, Debug, PartialEq)]
 pub enum SaveTo {
-    /// The screenshots folder, under a timestamped name.
+    /// The screenshots folder, as `YYYYMMDD_HHMMSS.png`.
     Folder,
     /// Exactly this new file.
     Path(PathBuf),
@@ -673,7 +673,9 @@ impl App {
         }
         let stem = annotation::library::shot_stem(&annotation::library::now_local().0);
         let folder = annotation::library::screenshots_dir().unwrap_or_default();
-        self.ui.path = folder.join(format!("{stem}.png")).display().to_string();
+        self.ui.path = annotation::library::free_name(&folder, &stem)
+            .display()
+            .to_string();
         self.ui.dialog = Some(Dialog::SaveAs);
     }
 
@@ -1879,7 +1881,7 @@ mod tests {
         a.saved(
             ticket,
             Ok(Saved {
-                path: "/home/user/Pictures/Screenshots/Screenshot 2026-10-12 14-03-22.png".into(),
+                path: "/home/user/Pictures/Screenshots/20261012_140322.png".into(),
                 width: 100,
                 height: 80,
                 annotated: true,
@@ -2132,7 +2134,13 @@ mod tests {
         let mut a = with_doc();
         a.save_as();
         assert_eq!(a.ui.dialog, Some(Dialog::SaveAs));
-        assert!(a.ui.path.ends_with(".png"));
+        // Proposed as the folder save would name it: YYYYMMDD_HHMMSS.png.
+        let proposed = Path::new(&a.ui.path)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert!(annotation::library::is_shot_name(&proposed), "{proposed}");
         a.set_path(taken.display().to_string());
         a.submit_path();
         assert_eq!(a.ui.dialog, Some(Dialog::SaveAs), "kept open");
@@ -2688,8 +2696,7 @@ mod tests {
         let mut a = with_doc();
         a.save();
         let ticket = ticket_of(&a.take_effects());
-        let path =
-            PathBuf::from("/home/user/Pictures/Screenshots/Screenshot 2026-10-13 09-00-00.png");
+        let path = PathBuf::from("/home/user/Pictures/Screenshots/20261013_090000.png");
         a.saved(
             ticket,
             Ok(Saved {
@@ -2704,10 +2711,10 @@ mod tests {
             a.status,
             crate::label_with("saved-to", &[("path", &shown_path(&path))])
         );
-        assert!(a.status.ends_with("Screenshot 2026-10-13 09-00-00.png"));
+        assert!(a.status.ends_with("20261013_090000.png"));
         assert_eq!(
             shown_path_in(&path, Some(Path::new("/home/user"))),
-            "~/Pictures/Screenshots/Screenshot 2026-10-13 09-00-00.png"
+            "~/Pictures/Screenshots/20261013_090000.png"
         );
         assert_eq!(
             shown_path_in(&path, Some(Path::new("/home/other"))),

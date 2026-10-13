@@ -102,6 +102,8 @@ pub(crate) trait UiInstanceAny: Any {
     fn acknowledge_frame(&mut self);
     /// Off screen (`true`) or shown again (see `UiRuntime::set_suspended`).
     fn set_suspended(&mut self, suspended: bool);
+    /// Force a pass and paint on the next frame (`UiRuntime::request_redraw`).
+    fn request_redraw(&mut self);
     /// True if the runtime still wants to be rendered next frame — dirty or
     /// mid-animation. Drives the host's "keep scheduling frames" decision.
     fn wants_frame(&self) -> bool;
@@ -206,6 +208,9 @@ impl<U: UiProgram> UiInstanceAny for UiInstance<U> {
     }
     fn set_suspended(&mut self, suspended: bool) {
         self.runtime.set_suspended(suspended);
+    }
+    fn request_redraw(&mut self) {
+        self.runtime.request_redraw();
     }
     fn wants_frame(&self) -> bool {
         // `has_pending` is what keeps a pipelined publish reachable: the runtime
@@ -466,6 +471,12 @@ impl UiItem {
     /// mid-animation).
     pub fn wants_frame(&self) -> bool {
         self.inner.wants_frame()
+    }
+
+    /// Force a pass and paint on the next frame, with no input or message:
+    /// for state the program reads from outside (a new session look).
+    pub fn request_redraw(&mut self) {
+        self.inner.request_redraw();
     }
 
     /// When a waiting animation next needs a frame (see

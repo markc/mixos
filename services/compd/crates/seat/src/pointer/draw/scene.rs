@@ -60,6 +60,22 @@ where
     // position even when a split pane's camera is panned/zoomed.
     let size_context = state.focus_pane_context();
 
+    // A compositor-forced cursor (e.g. the canvas hand tool's grab icon) overrides
+    // whatever the focused client set, so the affordance survives moving over windows.
+    // A region selection's crosshair overrides both, only while the run holds the seat.
+    // Chosen before the hotspot is read, so a change of shape is placed by its own
+    // hotspot on its first frame (the crosshair's is its centre, the arrow's its tip).
+    let forced = state
+        .inner
+        .comp
+        .region
+        .cursor()
+        .or(state.state.seat.force_cursor);
+    state.inner.pointer_mut().element.status = match forced {
+        Some(icon) => smithay::input::pointer::CursorImageStatus::Named(icon),
+        None => state.state.seat.pointer_status.clone(),
+    };
+
     let hotspot_logical = state.inner.pointer_mut().element.get_current_hotspot();
     // hotspot is in surface logical buffer space; convert to physical:
     let hotspot_phys = Point::<i32, Physical>::from((
@@ -78,12 +94,6 @@ where
     let cursor_phys: Point<i32, Physical> = cursor_rect_transform.into();
     let render_at = cursor_phys - hotspot_phys; // subtract hotspot
 
-    // A compositor-forced cursor (e.g. the canvas hand tool's grab icon) overrides
-    // whatever the focused client set, so the affordance survives moving over windows.
-    state.inner.pointer_mut().element.status = match state.state.seat.force_cursor {
-        Some(icon) => smithay::input::pointer::CursorImageStatus::Named(icon),
-        None => state.state.seat.pointer_status.clone(),
-    };
     let pointer_elements: Vec<PointerRenderElement<_>> =
         state.inner.pointer_mut().element.render_elements(
             renderer,

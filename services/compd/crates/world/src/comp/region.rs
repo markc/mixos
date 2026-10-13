@@ -4,7 +4,8 @@
 //! is consumed (Escape or the right button cancels; a left drag selects that
 //! rectangle; a click, Enter or keypad Enter selects the whole output; a line
 //! re-arms), and pointer motion moves the cursor with NO client focus, so no
-//! client sees enter, motion or a button. Releases of what was pressed during
+//! client sees enter, motion or a button. The cursor is a crosshair until the
+//! run is decided ([`Region::cursor`]). Releases of what was pressed during
 //! the run are swallowed after it ends. Device input reaches this through the
 //! human-input hook; injected human input (policy-host `input`) through the
 //! same calls. Coordinates are output-local logical (the cursor's physical
@@ -34,7 +35,7 @@ use smithay::backend::renderer::element::memory::{
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::{ImportMem, Renderer};
-use smithay::input::pointer::MotionEvent;
+use smithay::input::pointer::{CursorIcon, MotionEvent};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, SERIAL_COUNTER, Size};
 
@@ -94,10 +95,25 @@ pub struct Region {
     buttons: HashSet<u32>,
 }
 
+/// The cursor a run shows: the theme's `crosshair` (which the cursor theme
+/// cache falls back to `cross`, `tcross`, then the default arrow).
+pub const CURSOR: CursorIcon = CursorIcon::Crosshair;
+
 impl Region {
     /// A run holds the seat (not yet finished).
     pub fn suspended(&self) -> bool {
         self.run.as_ref().is_some_and(|run| run.result.is_none())
+    }
+
+    /// The cursor the run forces over every other choice, client or
+    /// compositor: [`CURSOR`] while it holds the seat, `None` from the moment
+    /// it is decided, however it ends (a selection, Escape, Enter, the right
+    /// button, a timeout, a refusal, a lock or the caller going away all go
+    /// through [`finish`], which redraws). The frame that ends the run is
+    /// drawn with the normal cursor, as is the clean frame a selection waits
+    /// for.
+    pub fn cursor(&self) -> Option<CursorIcon> {
+        self.suspended().then_some(CURSOR)
     }
 
     pub fn next_id(&mut self) -> u64 {
@@ -473,8 +489,8 @@ const HINT_RADIUS: f64 = 10.0;
 const HINT_TOP: f64 = 24.0;
 
 /// The overlay's colours, straight-alpha sRGB, from the session's MixOS
-/// theme through `toolkit::style` (the embedded theme, as `capture::style`
-/// uses, until the shell delivers one): the outline is the theme's focus ring (held to 3:1
+/// theme through `toolkit::style` (the embedded theme until the shell
+/// delivers one, as for `capture::style`): the outline is the theme's focus ring (held to 3:1
 /// against its surfaces; its accent if it has none), the hint its popover
 /// surface, window stroke and strong text. The dim is the capture mask
 /// (`capture::style::DIM_MASK`): translucency, not a themed surface.
@@ -946,6 +962,44 @@ mod tests {
         for other in [65, 38, 67, 105] {
             assert_eq!(key_action(other), None, "keycode {other}");
         }
+    }
+
+    #[test]
+    fn the_crosshair_shows_only_while_the_run_holds_the_seat() {
+        let mut region = Region::default();
+        assert_eq!(region.cursor(), None, "no run");
+        let now = Instant::now();
+        region.run = Some(Run::new(
+            1,
+            0,
+            "A".into(),
+            None,
+            BOUNDS,
+            1.0,
+            (0.0, 0.0),
+            now,
+            now,
+        ));
+        assert_eq!(region.cursor(), Some(CursorIcon::Crosshair));
+        assert_eq!(CURSOR.name(), "crosshair");
+        // Every way a run ends sets its result: the cursor goes back at once,
+        // before the reply (a selection's clean frame is drawn without it).
+        for outcome in [
+            Outcome::Selected([0, 0, 10, 10]),
+            Outcome::Cancelled("escape"),
+            Outcome::Timeout,
+            Outcome::Busy,
+            Outcome::Refused("output_changed"),
+            Outcome::Locked,
+        ] {
+            let run = region.run.as_mut().unwrap();
+            run.result = None;
+            assert_eq!(region.cursor(), Some(CURSOR));
+            region.run.as_mut().unwrap().result = Some(outcome);
+            assert_eq!(region.cursor(), None, "{outcome:?}");
+        }
+        region.run = None;
+        assert_eq!(region.cursor(), None, "replied");
     }
 
     #[test]

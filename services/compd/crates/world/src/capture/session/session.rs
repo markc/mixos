@@ -148,6 +148,22 @@ pub struct CaptureState {
 }
 
 impl CaptureState {
+    /// Every live overlay's UI handle: the setup chooser, the region's border
+    /// and dim, the Stop buttons and whichever dialog is up.
+    pub fn overlay_ids(&self) -> Vec<HandleId> {
+        [
+            self.setup_id,
+            self.border_id,
+            self.dim_id,
+            self.continue_dialog_id,
+            self.save_dialog_id,
+        ]
+        .into_iter()
+        .flatten()
+        .chain(self.stop_hud_ids.iter().copied())
+        .collect()
+    }
+
     pub fn idle() -> Self {
         Self {
             phase: CapturePhase::Idle,
@@ -188,5 +204,21 @@ impl CaptureState {
 impl Default for CaptureState {
     fn default() -> Self {
         Self::idle()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overlay_ids_name_every_live_overlay() {
+        let mut state = CaptureState::idle();
+        assert!(state.overlay_ids().is_empty());
+        state.setup_id = Some(HandleId(1));
+        state.dim_id = Some(HandleId(3));
+        state.save_dialog_id = Some(HandleId(6));
+        state.stop_hud_ids = vec![HandleId(7), HandleId(8)];
+        assert_eq!(state.overlay_ids(), [1, 3, 6, 7, 8].map(HandleId).to_vec());
     }
 }

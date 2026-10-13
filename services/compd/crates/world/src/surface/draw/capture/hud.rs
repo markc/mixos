@@ -16,7 +16,12 @@ impl UiProgram for StopHud {
 
     fn update(&mut self, _message: Self::Message) {}
 
+    fn setup(&mut self, ctx: &egui::Context) {
+        style::install(ctx);
+    }
+
     fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<CaptureMessage>) {
+        style::keep_up(ui.ctx());
         egui::Frame::NONE.inner_margin(10.0).show(ui, |ui| {
             let danger = style::danger(ui);
             if style::button(ui, strings::text("capture-stop"), Some(danger)).clicked() {

@@ -335,10 +335,7 @@ mod tests {
             .unwrap()
             .to_string_lossy()
             .into_owned();
-        assert!(
-            name.starts_with("Screenshot ") && name.ends_with(".png"),
-            "{name}"
-        );
+        assert!(library::is_shot_name(&name), "{name}");
         assert!(!first.annotated);
         document
             .add(annotation::Shape::new(

@@ -29,7 +29,12 @@ impl UiProgram for ContinueDialog {
         }
     }
 
+    fn setup(&mut self, ctx: &egui::Context) {
+        style::install(ctx);
+    }
+
     fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<CaptureMessage>) {
+        style::keep_up(ui.ctx());
         let accent = style::accent(ui);
         let seconds = self.seconds.to_string();
         style::centred_dialog(ui, "capture-continue", accent, |ui| {

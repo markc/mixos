@@ -254,7 +254,7 @@ it. Every mark stays editable until you save: the captured pixels are never
 changed, and what is saved is exactly what you see.</p>
 <h2 id="taking-a-screenshot">Taking a screenshot</h2>
 <table><thead><tr><th>Key</th><th>Takes</th></tr></thead><tbody>
-<tr><td><strong>Print</strong></td><td>a region: drag out a rectangle; a click or Enter takes the whole screen, Escape cancels</td></tr>
+<tr><td><strong>Print</strong></td><td>a region: drag out a rectangle with the crosshair; a click or Enter takes the whole screen, Escape cancels</td></tr>
 <tr><td><strong>Shift+Print</strong></td><td>the whole screen</td></tr>
 <tr><td><strong>Alt+Print</strong></td><td>the window you were working in</td></tr>
 </tbody></table>
@@ -316,13 +316,15 @@ end of the bar at the top; Save's tip names the folder it saves to.</p>
 <ul>
 <li><strong>Save</strong> (Ctrl+S) writes the picture straight into
 <strong>Pictures/Screenshots</strong>, no questions asked, as
-<code>Screenshot 2026-10-12 14-03-22.png</code> (the date and time you saved). If
-that name is taken, the new file gets <code> (2)</code>, <code> (3)</code> and so on.
+<code>20261012_193927.png</code> (the local date and time you saved, as
+<code>YYYYMMDD_HHMMSS</code>, the form KDE's Spectacle can be set to use). If that
+name is taken, the new file gets <code>_2</code>, <code>_3</code> and so on
+(<code>20261012_193927_2.png</code>).
 Screenshot never overwrites a file. The status line then says
 "Saved to ~/Pictures/Screenshots/…" with the file's name.</li>
-<li><strong>Save As…</strong> (Ctrl+Shift+S) asks for a path, proposing one in
-Pictures/Screenshots (created if missing). It refuses one that already
-exists.</li>
+<li><strong>Save As…</strong> (Ctrl+Shift+S) asks for a path, proposing the name Save
+would use in Pictures/Screenshots (created if missing). It refuses one
+that already exists.</li>
 <li><strong>Copy image</strong> (Ctrl+C) puts the marked-up picture on the clipboard.</li>
 </ul>
 <p>The Pictures folder is the one your desktop names
@@ -367,7 +369,7 @@ first.</p>
 <tr><td><code>screenshot.move</code>, <code>screenshot.delete</code></td><td><code>id</code> (and <code>dx</code>, <code>dy</code>)</td><td>the document</td></tr>
 <tr><td><code>screenshot.crop</code></td><td><code>crop</code> <code>{x, y, width, height}</code>, or null</td><td>the document</td></tr>
 <tr><td><code>screenshot.undo</code>, <code>screenshot.redo</code></td><td></td><td>the document</td></tr>
-<tr><td><code>screenshot.save</code></td><td></td><td>saves into the screenshots folder; publishes <code>screenshot.saved</code></td></tr>
+<tr><td><code>screenshot.save</code></td><td></td><td>saves into the screenshots folder as <code>YYYYMMDD_HHMMSS.png</code> (<code>_2</code>, <code>_3</code>… when taken); publishes <code>screenshot.saved</code></td></tr>
 <tr><td><code>screenshot.export</code></td><td><code>path</code></td><td>Save As to a new file</td></tr>
 <tr><td><code>screenshot.recent</code></td><td><code>limit</code> (1–100)</td><td>the newest saved shots</td></tr>
 <tr><td><code>screenshot.select</code></td><td><code>tool</code>, <code>mode</code>, <code>window</code>, <code>output</code></td><td>the UI state</td></tr>

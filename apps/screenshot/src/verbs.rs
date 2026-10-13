@@ -87,7 +87,7 @@ pub fn describe() -> Value {
         {"name":"screenshot.undo","description":"Undo the last edit","read_only":false},
         {"name":"screenshot.redo","description":"Redo the last undone edit","read_only":false},
         {"name":"screenshot.export","args":{"path":"new PNG file"},"description":"Save As: publish the annotated PNG at a path that does not exist yet","read_only":false},
-        {"name":"screenshot.save","description":"Save into the screenshots folder (Pictures/Screenshots) under a timestamped name; publishes screenshot.saved","read_only":false},
+        {"name":"screenshot.save","description":"Save into the screenshots folder (Pictures/Screenshots) as YYYYMMDD_HHMMSS.png, local time (_2, _3... when taken); publishes screenshot.saved","read_only":false},
         {"name":"screenshot.recent","args":{"limit":"optional 1..100 (default 10)"},"description":"The most recent saved shots, newest first: path, width, height, annotated, saved_at","read_only":true},
         {"name":"screenshot.select","args":{"tool":"optional tool (select, crop, or an annotation kind)","window":"optional {id, generation} for window mode","output":"optional output name","mode":"optional screen|window|region"},"description":"Choose the tool, the capture mode, window or output, as the window's controls do","read_only":false},
         {"name":"screenshot.commands","description":"List the app's commands with labels, shortcuts, enablement and ticks","read_only":true},

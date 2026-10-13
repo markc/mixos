@@ -745,12 +745,16 @@ impl SceneHost {
                 let style = decor::window::installed()
                     .map_or(decor::ChromeStyle::Mac, |theme| theme.deco.style);
                 decor::window::install(look.chrome(style));
-                // The region-select overlay draws in the session look too.
+                // The region-select overlay and the capture panels draw in
+                // the session look too.
                 world::comp::region::follow(&look.theme);
+                world::surface::draw::capture::style::follow(look.theme.clone());
             },
         ) {
             self.appearance_generation = self.appearance_generation.wrapping_add(1);
             serviced.changed = true;
+            // Open capture panels take the new look without waiting for input.
+            world::surface::draw::capture::style::restyle(lp);
         }
         let Some(monitor) =
             dispatcher::wire::trait_::wire_trait::WireTrait::active_output(&lp.inner)

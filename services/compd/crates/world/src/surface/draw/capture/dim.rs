@@ -33,7 +33,12 @@ impl UiProgram for RegionDim {
         }
     }
 
+    fn setup(&mut self, ctx: &egui::Context) {
+        style::install(ctx);
+    }
+
     fn show(&mut self, ui: &mut egui::Ui, _emit: &mut Vec<CaptureMessage>) {
+        style::keep_up(ui.ctx());
         mask::mask_with_hole(
             ui.painter(),
             self.screen_w,

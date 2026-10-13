@@ -5,8 +5,10 @@ description: The screenshot and annotation app is named screenshot (app id dev.m
 
 # Decision — screenshot
 
-Status: accepted 2026-10-12. Amends [the source layout](2026-10-04-source-layout.md)
-(AGENTS.md §3.4).
+Status: accepted 2026-10-12; amended 2026-10-13 (saved shots are named
+`YYYYMMDD_HHMMSS.png`, as Spectacle can name them, instead of
+`Screenshot YYYY-MM-DD HH-MM-SS.png`). Amends
+[the source layout](2026-10-04-source-layout.md) (AGENTS.md §3.4).
 
 ## The decision
 
@@ -47,8 +49,8 @@ Status: accepted 2026-10-12. Amends [the source layout](2026-10-04-source-layout
   exits. Unsaved annotations are never discarded by a key press: the window
   comes forward and asks first.
 - **Saved shots go to the screenshots folder.** Save (Ctrl+S) writes
-  `XDG_PICTURES_DIR/Screenshots/Screenshot YYYY-MM-DD HH-MM-SS.png` with no
-  dialog. A taken name gets ` (2)`, ` (3)` and so on, and nothing is ever
+  `XDG_PICTURES_DIR/Screenshots/YYYYMMDD_HHMMSS.png` (local time) with no
+  dialog. A taken name gets `_2`, `_3` and so on, and nothing is ever
   replaced. Every save is published on `screenshot.saved` and recorded, so
   an agent gets the latest shots from `screenshot.recent` without being
   told a path.

@@ -278,6 +278,6 @@ fn save_as_classic() {
     let mut app = annotated();
     app.save_as();
     assert_eq!(app.ui.dialog, Some(Dialog::SaveAs));
-    app.set_path("/home/user/Pictures/Screenshots/Screenshot 2026-10-12 14-03-22.png".into());
+    app.set_path("/home/user/Pictures/Screenshots/20261012_140322.png".into());
     window(chrome(Scheme::Classic, Mode::Light), "save_as_classic", app);
 }

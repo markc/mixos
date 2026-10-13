@@ -33,7 +33,12 @@ impl UiProgram for RegionBorder {
         }
     }
 
+    fn setup(&mut self, ctx: &egui::Context) {
+        style::install(ctx);
+    }
+
     fn show(&mut self, ui: &mut egui::Ui, _emit: &mut Vec<CaptureMessage>) {
+        style::keep_up(ui.ctx());
         // Inflated by the border width, so the stroke lands entirely OUTSIDE
         // the captured region (otherwise its pixels show up in the capture).
         let bw = style::BORDER_WIDTH as i32;

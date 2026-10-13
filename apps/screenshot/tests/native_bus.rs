@@ -197,10 +197,7 @@ async fn agent_capture_annotate_save_recent_export_cancel_and_quit() {
     let path = PathBuf::from(saved["saved"]["path"].as_str().unwrap());
     assert!(path.starts_with(&shots), "{path:?}");
     let name = path.file_name().unwrap().to_string_lossy().into_owned();
-    assert!(
-        name.starts_with("Screenshot ") && name.ends_with(".png"),
-        "{name}"
-    );
+    assert!(annotation::library::is_shot_name(&name), "{name}");
     let heard = next_on(&mut incoming, &format!("{SERVICE}.saved")).await;
     assert_eq!(heard["path"], json!(path));
     assert_eq!(heard["annotated"], true);

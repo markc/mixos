@@ -36,7 +36,12 @@ impl UiProgram for EncodingDialog {
         }
     }
 
+    fn setup(&mut self, ctx: &egui::Context) {
+        style::install(ctx);
+    }
+
     fn show(&mut self, ui: &mut egui::Ui, _emit: &mut Vec<CaptureMessage>) {
+        style::keep_up(ui.ctx());
         let accent = style::accent(ui);
         let percent = self.percent;
         style::centred_dialog(ui, "capture-encoding", accent, |ui| {

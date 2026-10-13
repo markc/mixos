@@ -243,8 +243,10 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="decision--screenshot">Decision — screenshot</h1>
-<p>Status: accepted 2026-10-12. Amends <a href="/decisions/2026-10-04-source-layout/">the source layout</a>
-(AGENTS.md §3.4).</p>
+<p>Status: accepted 2026-10-12; amended 2026-10-13 (saved shots are named
+<code>YYYYMMDD_HHMMSS.png</code>, as Spectacle can name them, instead of
+<code>Screenshot YYYY-MM-DD HH-MM-SS.png</code>). Amends
+<a href="/decisions/2026-10-04-source-layout/">the source layout</a> (AGENTS.md §3.4).</p>
 <h2 id="the-decision">The decision</h2>
 <ul>
 <li>
@@ -293,8 +295,8 @@ comes forward and asks first.</p>
 </li>
 <li>
 <p><strong>Saved shots go to the screenshots folder.</strong> Save (Ctrl+S) writes
-<code>XDG_PICTURES_DIR/Screenshots/Screenshot YYYY-MM-DD HH-MM-SS.png</code> with no
-dialog. A taken name gets <code> (2)</code>, <code> (3)</code> and so on, and nothing is ever
+<code>XDG_PICTURES_DIR/Screenshots/YYYYMMDD_HHMMSS.png</code> (local time) with no
+dialog. A taken name gets <code>_2</code>, <code>_3</code> and so on, and nothing is ever
 replaced. Every save is published on <code>screenshot.saved</code> and recorded, so
 an agent gets the latest shots from <code>screenshot.recent</code> without being
 told a path.</p>

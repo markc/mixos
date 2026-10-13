@@ -50,7 +50,8 @@ impl CursorThemeCache {
     }
 
     /// Resolve a freedesktop cursor name to a loaded cursor.
-    /// Walks the theme's inheritance chain, then falls back to "default"
+    /// Walks the theme's inheritance chain, then the name's X11-era
+    /// [`alternates`], then falls back to "default"
     /// and "left_ptr", then a built-in arrow. A self-contained session must
     /// retain a visible named cursor even without installed theme files.
     pub fn get(&self, name: &str) -> Option<Arc<Cursor>> {
@@ -87,6 +88,11 @@ impl CursorThemeCache {
 
         let loaded =
             self.load_shape(name, target)
+                .or_else(|| {
+                    alternates(name)
+                        .iter()
+                        .find_map(|alternate| self.load_shape(alternate, target))
+                })
                 .or_else(|| self.load_shape("default", target))
                 .or_else(|| self.load_shape("left_ptr", target))
                 .or_else(|| {
@@ -166,6 +172,16 @@ impl CursorThemeCache {
             size,
             nominal: chosen_size,
         }))
+    }
+}
+
+/// The older names a theme may ship a shape under instead of `name`, tried
+/// in order before the default arrow: a theme without `crosshair` often has
+/// the X11 core `cross` or `tcross`.
+fn alternates(name: &str) -> &'static [&'static str] {
+    match name {
+        "crosshair" => &["cross", "tcross"],
+        _ => &[],
     }
 }
 
@@ -345,6 +361,52 @@ mod tests {
         assert_eq!(cursor.size, (2, 2).into());
         assert_eq!(cursor.hotspot, (1, 1).into());
         assert_eq!(cursor.frames[0].delay, Duration::from_millis(10));
+    }
+
+    /// A one-image 2x2 xcursor with hotspot `hot`.
+    fn xcursor(hot: (u32, u32)) -> Vec<u8> {
+        let mut bytes = b"Xcur".to_vec();
+        for word in [
+            16_u32, 1, 1, 0xfffd0002, 24, 28, 36, 0xfffd0002, 24, 1, 2, 2, hot.0, hot.1, 10,
+        ] {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[255; 16]);
+        bytes
+    }
+
+    #[test]
+    fn crosshair_falls_back_to_cross_then_tcross_then_the_arrow() {
+        let fixture = ThemeFixture::new();
+        let cursors = fixture.0.join("cursors");
+        let hotspot = |fixture: &ThemeFixture| fixture.cache(24).get("crosshair").unwrap().hotspot;
+        // No cross shape at all: the default arrow.
+        assert_eq!(hotspot(&fixture), (0, 0).into());
+        assert_eq!(
+            fixture.cache(24).get("crosshair").unwrap().size,
+            (24, 24).into()
+        );
+        std::fs::write(cursors.join("tcross"), xcursor((1, 0))).unwrap();
+        assert_eq!(hotspot(&fixture), (1, 0).into(), "tcross");
+        std::fs::write(cursors.join("cross"), xcursor((0, 1))).unwrap();
+        assert_eq!(hotspot(&fixture), (0, 1).into(), "cross before tcross");
+        std::fs::write(cursors.join("crosshair"), xcursor((1, 1))).unwrap();
+        assert_eq!(
+            hotspot(&fixture),
+            (1, 1).into(),
+            "the theme's own crosshair"
+        );
+        // The alternates are the crosshair's only: other names keep the arrow.
+        assert_eq!(fixture.cache(24).get("text").unwrap().size, (24, 24).into());
+        // At an output scale too.
+        assert_eq!(
+            fixture
+                .cache(24)
+                .get_scaled("crosshair", 2.0)
+                .unwrap()
+                .hotspot,
+            (1, 1).into()
+        );
     }
 
     #[test]

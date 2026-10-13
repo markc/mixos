@@ -14,7 +14,7 @@ changed, and what is saved is exactly what you see.
 
 | Key | Takes |
 |---|---|
-| **Print** | a region: drag out a rectangle; a click or Enter takes the whole screen, Escape cancels |
+| **Print** | a region: drag out a rectangle with the crosshair; a click or Enter takes the whole screen, Escape cancels |
 | **Shift+Print** | the whole screen |
 | **Alt+Print** | the window you were working in |
 
@@ -85,13 +85,15 @@ end of the bar at the top; Save's tip names the folder it saves to.
 
 - **Save** (Ctrl+S) writes the picture straight into
   **Pictures/Screenshots**, no questions asked, as
-  `Screenshot 2026-10-12 14-03-22.png` (the date and time you saved). If
-  that name is taken, the new file gets ` (2)`, ` (3)` and so on.
+  `20261012_193927.png` (the local date and time you saved, as
+  `YYYYMMDD_HHMMSS`, the form KDE's Spectacle can be set to use). If that
+  name is taken, the new file gets `_2`, `_3` and so on
+  (`20261012_193927_2.png`).
   Screenshot never overwrites a file. The status line then says
   "Saved to ~/Pictures/Screenshots/…" with the file's name.
-- **Save As…** (Ctrl+Shift+S) asks for a path, proposing one in
-  Pictures/Screenshots (created if missing). It refuses one that already
-  exists.
+- **Save As…** (Ctrl+Shift+S) asks for a path, proposing the name Save
+  would use in Pictures/Screenshots (created if missing). It refuses one
+  that already exists.
 - **Copy image** (Ctrl+C) puts the marked-up picture on the clipboard.
 
 The Pictures folder is the one your desktop names
@@ -145,7 +147,7 @@ Screenshot answers on the Bus as `screenshot` (schema `screenshot.v1`).
 | `screenshot.move`, `screenshot.delete` | `id` (and `dx`, `dy`) | the document |
 | `screenshot.crop` | `crop` `{x, y, width, height}`, or null | the document |
 | `screenshot.undo`, `screenshot.redo` | | the document |
-| `screenshot.save` | | saves into the screenshots folder; publishes `screenshot.saved` |
+| `screenshot.save` | | saves into the screenshots folder as `YYYYMMDD_HHMMSS.png` (`_2`, `_3`… when taken); publishes `screenshot.saved` |
 | `screenshot.export` | `path` | Save As to a new file |
 | `screenshot.recent` | `limit` (1–100) | the newest saved shots |
 | `screenshot.select` | `tool`, `mode`, `window`, `output` | the UI state |
