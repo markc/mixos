@@ -18,11 +18,13 @@ use smithay::backend::allocator::Fourcc;
 use smithay::backend::allocator::gbm::GbmDevice;
 use smithay::backend::egl::{EGLContext, EGLDisplay};
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
+use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::utils::RescaleRenderElement;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::{Bind, Color32F, ExportMem, Frame, Offscreen, Renderer};
+use smithay::backend::renderer::ContextId;
 use smithay::utils::{Buffer, DeviceFd, Physical, Point, Rectangle, Scale, Size, Transform};
 
 const W: i32 = 256;
@@ -129,4 +131,72 @@ fn element_alpha_blends_green_at_half_opacity() {
     println!("half-opacity green at (100,100) = {p:?}");
     // The element alpha is 0.5. Expect the output alpha near 128.
     assert!((p[3] as i32 - 128).abs() < 16, "alpha near 0.5: {p:?}");
+}
+
+/// A W x H texture filled with `colour`, the stand-in for a window's content.
+fn texture_filled(gles: &mut GlesRenderer, colour: [f32; 4]) -> GlesTexture {
+    let size: Size<i32, Physical> = (W, H).into();
+    let mut texture: GlesTexture = gles
+        .create_buffer(Fourcc::Abgr8888, Size::<i32, Buffer>::from((W, H)))
+        .expect("content buffer");
+    {
+        let mut target = gles.bind(&mut texture).expect("bind content");
+        let mut frame = gles
+            .render(&mut target, size, Transform::Normal)
+            .expect("begin content frame");
+        frame
+            .clear(Color32F::new(colour[0], colour[1], colour[2], colour[3]), &[Rectangle::from_size(size)])
+            .expect("fill content");
+        let sync = frame.finish().expect("finish content");
+        let _ = sync.wait();
+    }
+    texture
+}
+
+/// A 200 x 200 logical texture element at the origin, with an optional alpha.
+fn content_element(
+    gles: &GlesRenderer,
+    texture: GlesTexture,
+    alpha: Option<f32>,
+) -> TextureRenderElement<GlesTexture> {
+    TextureRenderElement::from_static_texture(
+        Id::new(),
+        gles.context_id(),
+        Point::<f64, Physical>::from((0.0, 0.0)),
+        texture,
+        1,
+        Transform::Normal,
+        alpha,
+        None,
+        Some(Size::from((200, 200))),
+        None,
+        Kind::Unspecified,
+    )
+}
+
+#[test]
+#[ignore = "needs a GPU render node"]
+fn scale_halves_a_content_texture() {
+    let mut gles = gles();
+    let texture = texture_filled(&mut gles, [1.0, 0.0, 0.0, 1.0]);
+    let content = content_element(&gles, texture, None);
+    let scaled = RescaleRenderElement::from_element(content, Point::from((0, 0)), Scale::from(0.5));
+    let bytes = draw_once(&mut gles, &scaled);
+    let inside = pixel(&bytes, 50, 50);
+    let outside = pixel(&bytes, 150, 150);
+    println!("content inside (50,50) = {inside:?}, outside (150,150) = {outside:?}");
+    assert!(inside[0] > 200 && inside[3] > 200, "scaled content is red at (50,50): {inside:?}");
+    assert!(outside[0] < 20, "scaled content does not reach (150,150): {outside:?}");
+}
+
+#[test]
+#[ignore = "needs a GPU render node"]
+fn content_alpha_fades_a_texture_to_half() {
+    let mut gles = gles();
+    let texture = texture_filled(&mut gles, [0.0, 1.0, 0.0, 1.0]);
+    let content = content_element(&gles, texture, Some(0.5));
+    let bytes = draw_once(&mut gles, &content);
+    let p = pixel(&bytes, 100, 100);
+    println!("content at half alpha (100,100) = {p:?}");
+    assert!((p[3] as i32 - 128).abs() < 16, "content alpha near 0.5: {p:?}");
 }
