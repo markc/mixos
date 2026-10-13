@@ -282,7 +282,7 @@ impl Client {
     pub async fn upload_blob(&self, data: Vec<u8>, content_type: &str) -> Result<String> {
         let response = self
             .authorize(
-                self.http()
+                self.pool()
                     .post(self.session().upload_for(self.account_id()))
                     .header(reqwest::header::CONTENT_TYPE, content_type)
                     .body(data),
@@ -305,7 +305,7 @@ impl Client {
     /// Download one blob's bytes (an attachment, a raw message).
     pub async fn download_blob(&self, blob_id: &str) -> Result<Vec<u8>> {
         let bytes = self
-            .authorize(self.http().get(self.session().download_for(blob_id)))
+            .authorize(self.pool().get(self.session().download_for(blob_id)))
             .send()
             .await?
             .error_for_status()?

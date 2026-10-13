@@ -51,7 +51,7 @@ pub fn build_mime(composed: &Composed) -> Vec<u8> {
         .to_owned();
     let message_id = format!(
         "{}@{}",
-        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::now_v7().simple(),
         clean(&domain)
     );
     let mut mime = String::new();

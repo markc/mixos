@@ -57,7 +57,7 @@ struct Reply {
 /// cell are shared, so a re-authenticated token is seen by every clone.
 #[derive(Clone)]
 pub struct Client {
-    http: reqwest::Client,
+    pool: reqwest::Client,
     account: Account,
     /// The shared Bearer token, when one has been issued.
     token: Arc<Mutex<Option<String>>>,
@@ -68,7 +68,7 @@ impl Client {
     /// Build the HTTP client for an account: rustls, plus the account's own
     /// CA bundle when the server's certificate is self-issued. Never a
     /// global invalid-certificate acceptance.
-    fn http(account: &Account) -> Result<reqwest::Client> {
+    fn pool_for(account: &Account) -> Result<reqwest::Client> {
         let mut builder = reqwest::Client::builder();
         if let Some(pem) = &account.ca_pem {
             let certificate = reqwest::Certificate::from_pem(pem.as_bytes())
@@ -81,9 +81,9 @@ impl Client {
     /// Discover the Session and exchange the password for a token. Two or
     /// three HTTPS calls; every call after this goes through [`call`].
     pub async fn connect(account: &Account) -> Result<Self> {
-        let http = Self::http(account)?;
+        let pool = Self::pool_for(account)?;
         let mut client = Self {
-            http,
+            pool,
             account: account.clone(),
             token: Arc::new(Mutex::new(None)),
             session: Session {
@@ -133,7 +133,7 @@ impl Client {
     async fn read_session(&mut self) -> Result<()> {
         let url = format!("{}/.well-known/jmap", self.account.url.trim_end_matches('/'));
         let value = self
-            .authorize(self.http.get(&url))
+            .authorize(self.pool.get(&url))
             .send()
             .await?
             .and_then_ok_status()?
@@ -150,8 +150,8 @@ impl Client {
 
     /// The HTTP pool, for the endpoints outside the `/jmap` envelope (blob
     /// upload and download) — always paired with [`Client::authorize`].
-    pub(crate) fn http(&self) -> &reqwest::Client {
-        &self.http
+    pub(crate) fn pool(&self) -> &reqwest::Client {
+        &self.pool
     }
 
     /// The account id every call addresses.
@@ -176,7 +176,7 @@ impl Client {
     /// giving up as [`Error::Unauthorized`].
     pub async fn call(&self, calls: &[Call]) -> Result<Vec<Value>> {
         match self.call_once(calls).await {
-            Err(Error::Unauthorized(reason)) if self.token.lock().unwrap().is_some() => {
+            Err(Error::Unauthorized(_reason)) if self.token.lock().unwrap().is_some() => {
                 // The token died mid-flight: spend another exchange and try
                 // the request once more.
                 let mut retry = self.clone();
@@ -198,7 +198,7 @@ impl Client {
             method_calls: calls,
         };
         let response = self
-            .authorize(self.http.post(&self.session.api_url))
+            .authorize(self.pool.post(&self.session.api_url))
             .json(&envelope)
             .send()
             .await?;
