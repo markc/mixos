@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! One render-domain comparison for all native consumers. Authority identity,
 //! source names, revisions and provenance are evidence, not render inputs.
 use crate::{CommonUi, Effective, Snapshot};

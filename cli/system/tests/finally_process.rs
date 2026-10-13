@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `finally` and exit semantics that need the real binary: the evaluator
 //! unwinds `exit()` through cleanup, then each binary entrypoint must consume
 //! the control signal as the exact requested process status.

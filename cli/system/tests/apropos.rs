@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `mix apropos TERM` — one substring search across builtins, keywords, and
 //! manual section headings. The "lpad lesson made structural": finding a
 //! capability no longer needs the exact name up front. Also pins the

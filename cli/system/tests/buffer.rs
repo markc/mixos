@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Executable contract for the reference-semantic `Value::Buffer` type
 //! (mix 0.26.0). Runs `tests/scripts/buffer.mix` — which exits non-zero on
 //! the first failed check — and asserts a clean exit plus the final marker.

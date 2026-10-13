@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The verb table and dispatch. Every verb is closed and typed: no verb runs
 //! a caller-supplied command, script or shell string.
 use crate::{

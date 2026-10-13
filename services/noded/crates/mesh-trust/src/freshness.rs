@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! Freshness check (plan §6 step 4) — pure timestamp arithmetic.
 //!

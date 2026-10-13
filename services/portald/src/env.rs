@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The environment portald is started with. The unit passes the session bus
 //! address through `EnvironmentFile=`; portald keeps it.
 use anyhow::Context;

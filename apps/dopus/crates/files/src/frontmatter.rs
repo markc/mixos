@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Frontmatter: canonical READ + surgical byte-preserving WRITE.
 //!
 //! The corpus grammar is the Crisp/Bus `---`-fenced flat `Key: value` header

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! net_watch/audio_watch through Evaluator::run_event_pump. Its own test
 //! binary because the audio test puts a pactl stand-in first on PATH, which
 //! would race with any other test in the same process.

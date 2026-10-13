@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Contract tests against a private dbus-daemon: the Settings interface on the
 //! wire, changed-only signals, the startup budget and single ownership.
 use futures_util::{Stream, StreamExt};

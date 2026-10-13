@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The Controller surface the windowed chrome (`app.rs`) drives: typed action
 //! args (find / replace / save-as / goto / close), the infobar's choices (keep
 //! mine, take the service's, keep as new, dismiss a conflict), recovered

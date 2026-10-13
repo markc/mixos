@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! One image-pixel transform for painting and pointer mapping. Zoom and pan
 //! are view state; the document only ever sees image coordinates.
 use crate::document::Point;

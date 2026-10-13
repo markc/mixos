@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The reconcile pass (§6): walk the corpus tree, diff it against the index, and
 //! apply the changes. This is the correctness backstop the daemon runs on a timer
 //! and after every settled watcher burst; it is synchronous and fully testable over

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Usage statistics from a real `mix --serve` citizen against an embedded
 //! `noded` broker (test-broker): each generation's counters land once, on
 //! RELOAD (the retiring generation) and on SIGTERM (the live one).

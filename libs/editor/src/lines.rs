@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Line measurement for drawing and hit-testing: walks
 //! [`edit::view::clusters`] over the part of one line that is needed. Long
 //! lines are seeked through checkpoints that grow only to the requested

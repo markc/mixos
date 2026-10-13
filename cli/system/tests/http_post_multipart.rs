@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `http_post_multipart` — the generic multipart/form-data POST builtin
 //! (v0.103.12). Served by a one-shot local listener so the body is
 //! inspected end-to-end without any network beyond loopback.

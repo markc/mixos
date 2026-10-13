@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The GPU side of layer surfaces: one wgpu instance on the connection's
 //! display and one device for every surface (made with the first), and per
 //! surface a wgpu surface on its `wl_surface` and an egui-wgpu renderer

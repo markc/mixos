@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! Native binding state. No session method acquires the registry; callers
 //! needing both locks take the registry first. Authority transitions and route

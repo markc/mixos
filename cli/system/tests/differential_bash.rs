@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! P3 of the mix tokenizer fuzz/property corpus
 //! (_doc/planned/mix-tokenizer-fuzz-corpus.md in the mixos hub): a DIFFERENTIAL
 //! test against bash. On the bash≡mix safe subset (no expansion, no Mix-only

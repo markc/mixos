@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Incremental, bounded terminal decoding. No tty reads outside `wait`/`read`.
 use std::io;
 use std::os::fd::RawFd;

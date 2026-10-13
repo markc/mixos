@@ -1,5 +1,6 @@
 #!/usr/bin/env mix
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- version: 0.4.0
 -- suite.mix — the compd desktop suite: every desktop gate on the same harness
 -- (nested_host_lib, or the equivalent setup inside the standalone gates: a

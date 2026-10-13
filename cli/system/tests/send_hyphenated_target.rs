@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! A hyphenated Bus service name as a bare `send`/`emit`/`address` target.
 //!
 //! `send shell-ctl88 shell.debug.status` used to parse as

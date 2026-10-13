@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The drive layer: the same UI-level Bus verbs for every MixOS app, so an
 //! agent can do in the window whatever a person can (agentic first).
 //!

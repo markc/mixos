@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `net.link.apply`: give one link a networkd configuration from typed
 //! fields, check it comes up, and put the previous file back if it doesn't.
 //!

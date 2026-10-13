@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Socket acceptance through the real evaluator, on loopback: a Class C
 //! handler parks ~2 s in a NUMERIC tcp_recv while a concurrent handler
 //! must still run (the read permit is released — the pull yields), and a

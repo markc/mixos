@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Real `run_serve` hot-reload lifecycle acceptance (SPEC 18 RELOAD /
 //! post-commit handover): the built `mix --serve` subprocess booted
 //! against a real embedded `noded` broker (term-native-test-broker),

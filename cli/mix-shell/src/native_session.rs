@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Private BROKER-019 bootstrap and BROKER-020 attachment owner.
 //!
 //! This binary-only module has a startup entry point, called before any threads,

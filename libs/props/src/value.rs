@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! Property values per SPEC 07 §2.4 + SPEC 12 §4.3 type set.
 //!

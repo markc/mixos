@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Whether a path is on a network or FUSE filesystem, from the kernel's
 //! mount table (`/proc/self/mountinfo`) alone, so such a file is refused
 //! before anything touches its mount. Asking the mount itself (`stat`,

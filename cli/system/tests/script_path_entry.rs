@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `script_path()` through the real binary: the entry script's absolute
 //! path is fixed when the script starts. A relative entry path is resolved
 //! against the working directory at start, so a `chdir()` inside the script

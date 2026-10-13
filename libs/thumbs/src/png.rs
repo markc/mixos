@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The few PNG facts the thumbnail cache needs, read from the bytes with no
 //! pixel decoding: the image size (IHDR), the `tEXt` keys, and a copy with
 //! keys set. The Thumbnail Managing Standard keeps its `Thumb::*` keys in

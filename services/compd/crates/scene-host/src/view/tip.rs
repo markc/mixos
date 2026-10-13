@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Hover tips: a node's `tooltip` port (`{title, subtitle?, lines?}`), the
 //! card it lays out to, and when it shows.
 //!

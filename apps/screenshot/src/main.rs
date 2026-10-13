@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `screenshot [--capture MODE [--window ID:GEN]] [IMAGE]`: one window per
 //! compositor ([`screenshot::names`]). A second launch hands its request to
 //! the running window of the same compositor

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! SIGTERM must end a script waiting in tcp_accept or a TCP receive as
 //! promptly as one waiting in sleep(). These waits used to block the
 //! single runtime thread, so the shell's SIGTERM select arm never ran and

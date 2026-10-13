@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! citizen: one app's supervised native Bus connection. The app registers
 //! under its service name, receives its commands as [`Delivery`]s, answers
 //! each through its [`Handle`], calls other services, and on quit answers

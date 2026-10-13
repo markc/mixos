@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! tcp_send's `{timeout}` bounds the WHOLE send through the real
 //! evaluator, on loopback: a peer that never reads and a peer that drains
 //! a few bytes at a time both fail at about the timeout (not at timeout ×

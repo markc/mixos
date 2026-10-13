@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! ced, the MixOS Editor: a desktop editor over the `edit` Bus service.
 //! Several people and agents can edit the same document at once; ced shows
 //! their carets and changes as they happen.

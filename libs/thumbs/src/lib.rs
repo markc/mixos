@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! File thumbnails, as Dolphin shows them: cached in the freedesktop shared
 //! cache ([`cache`]), made by the system's thumbnailers ([`registry`],
 //! [`generate`]), which reach every format the system knows. Requests run

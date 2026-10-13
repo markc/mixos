@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `StatsSink` trait + period-roll-up payload types (plan §3.4, §4.1).
 //!
 //! The trait is the v1 storage-backend seam (Codex round-14 MAJOR fix

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Real PTYs and a re-executed Rust fixture (no shell/interpreter helpers).
 //! A process-wide fixture lock serialises tests: openpty has no atomic CLOEXEC
 //! option, so sibling fixture forks must not overlap openpty/dup/close.

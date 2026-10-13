@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Interactive process ownership. Only signal-safe stop ingress crosses into the editor.
 //!
 //! Only this controller consumes wait statuses for registered interactive

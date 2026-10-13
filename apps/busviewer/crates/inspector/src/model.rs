@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The renderer-independent protocol model: services, verbs, peers and the
 //! body and reply bounds. Transplanted from `apps/busviewer/src/model.rs`
 //! (markc/mixos-iced), itself adapted from Cosmix BusViewer

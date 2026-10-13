@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Native evaluator self-protection limits (the depth / capability /
 //! time / collection knobs added for in-daemon embedding). Each test
 //! drives a Mix program that would otherwise crash or exhaust the host

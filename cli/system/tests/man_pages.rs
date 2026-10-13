@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `mix man` pages are held to the binary, not to each other.
 //!
 //! The manual's index, keyword table, and version stamps are prose — and

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Cache state belongs to the host's existing serial blocking lane.
 use super::{Diagnostic, Running};
 use settings::cache::{Save, Target, WriteOutcome, Writer};

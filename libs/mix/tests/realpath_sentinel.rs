@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! A6 (TODO-mix 2026-09-24): `realpath` now returns nil ONLY for absence —
 //! a permission/IO/symlink-loop/non-UTF-8 failure raises instead of
 //! collapsing to nil (which misread a denied or broken path as "missing").

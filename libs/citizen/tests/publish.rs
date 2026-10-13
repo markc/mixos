@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Published events reach a subscriber through a real broker, in order,
 //! with the loss reported on the first one sent (citizen::outbox).
 use ::bus::native_client::{BoundedIncomingEvent, SupervisedClient};

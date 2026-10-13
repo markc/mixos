@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `mix -c` must run a program whose FIRST line is a comment.
 //!
 //! It did not: both the no-op guard in `main.rs` and the classifier in

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The session-local appearance cache. It is a convenience for cold start
 //! only: it is read once, validated, and never written back to settingsd.
 use settings::Binding;

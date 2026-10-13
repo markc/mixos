@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Offscreen snapshots of dopus driven through its real core and view, over
 //! a fixed scratch home: Places and Properties open, a folder expanded in
 //! the tree, a file selected, the right pane in Documents; the sidebars

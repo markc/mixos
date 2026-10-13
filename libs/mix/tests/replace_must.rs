@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `replace_must()` / `re_replace_must()` — the fail-loud edit twins (0.90.0).
 //!
 //! `replace()` returning the subject unchanged when the needle is absent is

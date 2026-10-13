@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The buffer façade (plan §3.10): text + op log + anchors + selections.
 //!
 //! # Contract: transactions (plan §3.4, frozen)

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Race-safe, read-only access beneath an operator-provisioned directory.
 //!
 //! The root descriptor pins its identity even if its pathname is renamed. Each

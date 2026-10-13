@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Exercise the shipped module with the evaluator's Bus seam and a loopback
 //! byte lane. No daemon dependency or substitute production transport.
 #![cfg(all(

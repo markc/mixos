@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `LogHandle::attach_prometheus` backing module (plan §8.1).
 //!
 //! Builds a `PrometheusRecorder` + `ExporterFuture` from

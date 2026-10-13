@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! 09-25 entry: SHA512-CRYPT ($6$) hash + verify builtins — every NS
 //! passdb (Dovecot {SHA512-CRYPT}$6$…) uses this scheme, so
 //! password_hash()/password_verify() grew the sha512-crypt scheme, the

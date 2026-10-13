@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `do` is reserved and refused, not accepted.
 //!
 //! Before 0.98.0 the lexer had no `do` token, so `while … do … end` and

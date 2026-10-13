@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! A fake `edit` daemon over the REAL `edit::Buffer`, the server side of every
 //! mirror test and fixture. Changes to it need review, because the fixtures
 //! depend on its behaviour.

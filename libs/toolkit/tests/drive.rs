@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The drive layer driven the way an app's shell drives it: each request is
 //! made inside a frame and answered then or from a later frame, against the
 //! fixture's real title bar and menus, a text field and a scrolled list.

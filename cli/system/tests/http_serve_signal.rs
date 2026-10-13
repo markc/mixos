@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! A blocking `http_serve` must stop on SIGINT (Ctrl-C). Driven as a
 //! subprocess because the interrupt flag is process-global — arming it
 //! inside a unit-test binary would poison every parallel interrupt-aware

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Top-level `fn` hoisting (mix 0.63.0): every function declared at the
 //! DIRECT top level of an invocation root is bound before the first
 //! statement runs, so a forward call works and a helper referenced only

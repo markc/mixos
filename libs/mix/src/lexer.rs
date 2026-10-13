@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::continuation::{ContinuationSite, continuation_sites};
 use crate::error::{MixError, MixResult, Span};
 use crate::token::{SpannedToken, StringPart, Token};

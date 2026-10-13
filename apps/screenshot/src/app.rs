@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The window's state and rules, with no drawing and no I/O: the document,
 //! the one job at a time (a capture, an open, a save, a copy, an
 //! activation), the dialogs, and every action, from a menu, a shortcut, a

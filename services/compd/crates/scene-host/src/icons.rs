@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Local freedesktop icon lookup for scene images, over the generic resolver
 //! (`crate::freedesktop`): the apps service usually supplies a path; names and
 //! missing paths also need a useful icon. `crate::images` decodes SVG/PNG at

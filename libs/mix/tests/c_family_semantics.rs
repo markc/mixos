@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! C-family semantics (TODO-mix sweep C1, C4): nil arithmetic raises
 //! instead of silently stringifying; duplicate literal map keys are a
 //! parse error instead of a silent overwrite.

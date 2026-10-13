@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `ssh_mix_many(hosts, source[, opts])` end to end, against a fake `ssh`.
 //!
 //! The fake is a shell script first on PATH. It finds the host after ssh's

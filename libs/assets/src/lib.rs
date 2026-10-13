@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! Pinned, immutable sets of fonts, icons and emoji on the local disk. No
 //! downloader, daemon or storage service: an installer publishes a set as

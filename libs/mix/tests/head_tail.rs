@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! head()/tail() — the no-slurp file line readers (v0.28.1) — plus the
 //! line_count() streaming rewrite that landed with them. Fixtures are
 //! written with std::fs so the tests control bytes exactly (trailing

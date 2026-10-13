@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `mix man gotchas` is executable, not prose.
 //!
 //! The gotchas page exists because Mix has almost no training-data

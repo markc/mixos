@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Wi-Fi through iwd: `net.wifi.scan` and `net.wifi.connect`.
 //!
 //! hostd writes no files for Wi-Fi. A passphrase reaches iwd through an

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! S3: real noded + Term's real LaunchFd/PTY mapping + the built Mix binary.
 //! The fixture owns the Term-side record/renew/re-grant/revoke duties. Term's
 //! GUI mutation and exit-notifier ordering remain covered in its own workspace.

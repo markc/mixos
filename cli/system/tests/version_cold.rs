@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `mix --version` answers from a cold process.
 //!
 //! Mark's contract (2026-09-21): a version query does **nothing** except

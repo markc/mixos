@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Input fields (chrome specification §3.14–3.15): numeric value fields,
 //! single-line text fields and the search field.
 //!

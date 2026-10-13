@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! SIGTERM must end a non-interactive mix even when evaluation is stuck in a
 //! synchronous syscall. tokio's handler replaces the default disposition and
 //! only wakes a `select!` arm, which a builtin blocked on the single runtime

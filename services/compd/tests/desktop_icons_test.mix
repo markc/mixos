@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- Real offline installers and native apps lookup, with no distro icon tree.
 $repo=dirname(dirname(dirname(dirname(realpath($0)))))
 $mix=realpath("/proc/self/exe")

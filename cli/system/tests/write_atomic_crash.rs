@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! TODO-mix P3 acceptance, out of process: a `mix` rewriting a file in a
 //! tight loop with `write_atomic` is SIGKILLed, several times. After every
 //! kill the target must be one COMPLETE version — never a prefix, never

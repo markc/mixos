@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Highlight: lsh spans, Mix spans, invalidation from the touched line, stale
 //! Mix results, cold-seek time slicing.
 

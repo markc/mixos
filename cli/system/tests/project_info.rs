@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! P5 (TODO-mix 2026-09-24): `project_info()` — read-only workspace
 //! introspection over a synthetic fixture.
 

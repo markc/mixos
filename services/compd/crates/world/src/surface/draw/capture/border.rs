@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `RegionBorder` — the bright outline around the captured region. Drawn above
 //! everything (screen-space, top layer). Fully transparent except the outline,
 //! and click-through (the interface adds the passthrough layer bit).

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! hostd on the Bus: the read verbs, and `host.info` as a retained topic.
 //! The broker is optional. hostd keeps serving its local socket while noded
 //! is down, and joins whenever it appears.

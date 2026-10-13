@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The editor's colours, from the MixOS theme.
 //!
 //! Surfaces and text come from the toolkit's chrome roles, the same ones

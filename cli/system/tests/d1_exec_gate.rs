@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! D1 (TODO-mix 2026-09-24): the `-c`/stdin pre-execution lint gate —
 //! a hard-safe diagnostic (arity, dead mutation, push-assign-back,
 //! literal-type) refuses to run with exit 2 BEFORE any line executes;

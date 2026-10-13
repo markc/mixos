@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `which()` answers "can I run this?" (0.52.0).
 //!
 //! Until 0.52.0 it used `is_file()`, so any regular file on PATH came back as

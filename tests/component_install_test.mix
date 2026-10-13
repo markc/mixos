@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- component_install_test: tools/component_install.mix against a throwaway
 -- checkout (Mix components `demod` and `demoe`, in their own git repository)
 -- and throwaway roots. Install, an unchanged reinstall, an upgrade that keeps

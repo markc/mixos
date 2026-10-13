@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- closure_gate.mix — what each compd crate's resolved closure may contain.
 -- version: 0.1.0
 --

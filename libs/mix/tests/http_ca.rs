@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! HTTP private-CA options (0.29.0, decision record D8): `ca_file` /
 //! `ca_pem` add certificates to the default webpki roots. These tests
 //! cover the option-validation and PEM-loading paths without touching

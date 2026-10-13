@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The title, shaped and rasterised with cosmic-text into a coverage mask,
 //! elided at the end to the width it may take.
 //!

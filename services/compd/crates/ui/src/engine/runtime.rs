@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `UiRuntime<P>`: one egui UI instance, with no window system.
 //!
 //! Input arrives as [`crate::input::Input`] (or raw egui events); frames go

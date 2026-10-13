@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `args()` reports the script's arguments — and nothing else.
 //!
 //! It used to re-derive them from the process argv with a hardcoded

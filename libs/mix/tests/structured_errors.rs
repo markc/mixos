@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Structured errors (0.29.0, decision record D6): code-carrying
 //! `MixError::Structured`, `raise()`, the optional second `catch`
 //! binding, and traceback frame snapshots.

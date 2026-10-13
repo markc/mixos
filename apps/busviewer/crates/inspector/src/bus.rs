@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! BusViewer's Bus: the app connection is the shared `citizen` library
 //! (promoted from this file when Prefs became its second owner); what stays
 //! here is BusViewer's own discovery of the services and their verbs.

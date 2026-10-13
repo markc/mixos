@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `mix --version --json` (0.63.0) — machine-readable build provenance.
 //! The release-B gate compares a recorded 40-hex source_commit against
 //! `git_sha_full`; these pins keep the contract shape stable.

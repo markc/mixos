@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Renders for comparison with the chrome specification's evidence images.
 //!
 //! The evidence is private and never enters this tree, so nothing is

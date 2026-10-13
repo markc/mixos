@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The name prompt (New Folder, Rename) through its real view: Enter in the
 //! field submits a valid name, and leaves an invalid one open.
 use dopus::app::{Answer, App, Dialog};

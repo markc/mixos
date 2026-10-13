@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! One scene drawn with egui: the ten families laid out as flexbox with taffy
 //! ([`flex`], Quoin's own layout engine) and painted and hit-tested at those
 //! rectangles ([`paint`]).

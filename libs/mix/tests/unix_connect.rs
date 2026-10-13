@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! unix_connect through the real evaluator: a unix-domain stream socket in
 //! tcp_connect's handle space, NUL-terminated frames (Varlink and hostd
 //! framing) through tcp_recv_line on both its paths (the Class C pull and

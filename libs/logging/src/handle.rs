@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `LogHandle`, `LogReloadHandle`, and `LogError`.
 //!
 //! `LogHandle` owns the `tracing_appender::WorkerGuard`s, the live

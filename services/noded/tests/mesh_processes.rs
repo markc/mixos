@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Two production brokers, separate roots and verified Unix clients. The hop
 //! between brokers is native ABP; the fixture never relays application data.
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};

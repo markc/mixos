@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The notification pill: one line of text on a dark rounded pill, centred in
 //! its surface.
 //!

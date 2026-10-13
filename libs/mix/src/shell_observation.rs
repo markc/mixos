@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Optional evaluator-owner observation seam. Only owned data leaves this thread.
 //! No transport, session identity, key or evaluator handle enters the callback.
 use std::cell::Cell;

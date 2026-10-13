@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The sealed-profile upgrade rule (`Accepted::upgrade`, `store::FORMAT`),
 //! against a format-1 profile written by the settingsd before the style and
 //! framing keys (fixtures: a primary and its backup after four accepted

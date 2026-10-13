@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `shell.scene.layout`: per-node geometry, as drawn.
 //!
 //! The reply is Quoin's frozen shape (shell-verbs.json `shell.scene.layout`):

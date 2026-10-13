@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `init()` — the single entry point every MixOS binary calls.
 //!
 //! Resolves the pre-Bus precedence ladder for the bootstrap

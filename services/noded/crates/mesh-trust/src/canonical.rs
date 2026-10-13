@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! v1 canonical-bytes serialisation — the single authoritative
 //! `serde_json::Value → bytes` canonicaliser shared by every signed

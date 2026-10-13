@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The `org.freedesktop.portal.Settings` interface (version 2) served on the
 //! session bus. Every read is answered from the shared `Values`; this module
 //! never talks to settingsd.

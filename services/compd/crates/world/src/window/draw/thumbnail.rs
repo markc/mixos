@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Live window thumbnails: a window's own surfaces, drawn scaled into a
 //! rectangle of the screen (a hover tip's preview box, as Plasma's task
 //! tooltips show one).

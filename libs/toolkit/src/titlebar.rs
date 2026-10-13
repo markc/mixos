@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The window's own title bar (client-side decorations; chrome specification
 //! §3.1–3.2). An application opens its window undecorated ([`viewport`])
 //! and the top row of the window is drawn here, edge to edge in the

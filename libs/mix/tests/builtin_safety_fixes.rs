@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Safety-fix regressions for builtins: substr slice-panic, sql_quote
 //! backslash/NUL escaping, allocation caps (repeat/lpad/rpad/range),
 //! and template's single-brace placeholder contract. Each test drives

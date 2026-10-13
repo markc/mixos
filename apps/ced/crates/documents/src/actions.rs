@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Every menu / keymap / `ced.action` action. The string id is the `ced.action` /
 //! `ced.actions` wire name and never changes once shipped.
 //!

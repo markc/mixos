@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Showing file thumbnails: a cached thumbnail (a small PNG a thumbnailer
 //! made, never the user's file) decoded under explicit limits on a
 //! [`Decoder`] thread, ready to upload as a texture. Making thumbnails is

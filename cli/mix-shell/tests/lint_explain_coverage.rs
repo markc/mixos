@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Anti-drift for `mix explain`, binary side. The lib's `lint_docs` test greps
 //! analyzer.rs; the lexer/parser codes E1001–E1003 are assigned in THIS crate's
 //! lint.rs, so a new code added there would slip past the lib test. This greps

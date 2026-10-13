@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Explicitly unavailable player transport until a native media service owns it.
 //! Output volume continues through the independent native audio controller.
 

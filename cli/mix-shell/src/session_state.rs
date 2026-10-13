@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Owned, bounded stage-A state. No evaluator, transport or child waits here.
 use crate::editor::Generation;
 use ::bus::native_client::session::boottime_ms;

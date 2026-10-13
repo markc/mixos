@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The remote mix binary every remote-mix builtin drives: the `mix_bin`
 //! option, else the local `MIX_REMOTE_BIN`, else `/opt/cosmix/bin/mix`.
 //!

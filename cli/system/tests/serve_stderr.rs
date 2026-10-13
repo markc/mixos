@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `mix --serve` fatal outcomes must be visible on stderr. Mix installs no
 //! tracing subscriber, so before this a syntax error, a missing script or a
 //! refused registration exited 1 with no output anywhere. The cases here fail

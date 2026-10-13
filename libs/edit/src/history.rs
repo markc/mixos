@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Op log, undo lanes, coalescing and retention (plan §3.5).
 //!
 //! # Contract: undo is preflighted, never rolled back (frozen)

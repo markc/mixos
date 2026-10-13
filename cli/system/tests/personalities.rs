@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Every personality of the system binary reports its own component and
 //! version, never the host's: argv[0] picks the program, and build
 //! provenance is captured inside each component's library. The `noded`

@@ -1,5 +1,6 @@
 #!/usr/bin/env mix
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- panel_holder.mix — a stand-in Quoin holder service for nested_smoke.mix --bus.
 -- version: 0.1.1
 --

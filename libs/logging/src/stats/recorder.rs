@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `StatsRecorder` — the substrate's `metrics::Recorder` impl
 //! (plan §3.3.1, §3.4).
 //!

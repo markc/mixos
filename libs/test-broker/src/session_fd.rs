@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! BROKER-019's private, anonymous launch handoff. Never log these contents.
 use ::bus::native_client::session::GrantResult;
 use ed25519_dalek::SigningKey;

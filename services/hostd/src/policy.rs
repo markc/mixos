@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Standing grants: who may call which write verbs, within which limits,
 //! until when. Default deny. The policy is a strict-data document
 //! (`/etc/hostd/policy.mx`), root-owned and not writable by anyone else,

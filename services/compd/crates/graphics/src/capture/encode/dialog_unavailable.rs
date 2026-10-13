@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Save As compatibility is explicitly unavailable without an enabled adapter.
 //! The ordinary native Save action still writes to the configured default path.
 

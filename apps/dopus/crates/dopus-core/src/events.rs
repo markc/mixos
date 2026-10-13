@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Core events for dopus: raw worker replies plus derived view-facing events.
 //!
 //! Ported from src/desktop/apps/filemgr/src/browser.rs (Bevy/ctk); filemgr

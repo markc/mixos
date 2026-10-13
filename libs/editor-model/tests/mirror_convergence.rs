@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The mirror driven end to end against the fake editd over the real
 //! `edit::Buffer`.
 //!

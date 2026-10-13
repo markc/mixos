@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! screenshot's commands. The menu bar, the toolbar, the shortcuts, Help
 //! search and the Bus (`screenshot.commands` / `screenshot.execute`) all come
 //! from this registry, so anything a person can do an agent can do by id.

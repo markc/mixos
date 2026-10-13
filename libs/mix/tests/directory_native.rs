@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Exercise retained-root recovery through the actual Mix evaluator.
 #![cfg(target_os = "linux")]
 

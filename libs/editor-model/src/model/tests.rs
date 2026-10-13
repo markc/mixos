@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! EditorModel against real `Text`: every command, multi-item Tab/Outdent,
 //! delta mapping bias, composition cancel/map.
 

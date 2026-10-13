@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The kill switch. A frozen hostd serves reads and refuses every write
 //! until root on the host thaws it. The state is a file in hostd's state
 //! directory, written durably, so it survives restarts, crashes and reboots.

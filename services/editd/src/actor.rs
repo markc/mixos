@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Per-buffer actors (plan D10, §3.5).
 //!
 //! One tokio task per buffer processes that buffer's commands in receive order

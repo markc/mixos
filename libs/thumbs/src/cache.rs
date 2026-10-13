@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The shared thumbnail cache of the freedesktop Thumbnail Managing Standard:
 //! `$XDG_CACHE_HOME/thumbnails/<size>/<md5 of the file URI>.png`, valid while
 //! its `Thumb::URI` and `Thumb::MTime` keys match the file. Every desktop

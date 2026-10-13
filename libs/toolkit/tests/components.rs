@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The chrome components' behaviour, driven through kittest: checkboxes
 //! and switches, the combo's keyboard, value-field scrubbing, editing and
 //! stepping, push-button focus, dialogs, panel groups, document tabs,

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `kill(false)` must raise, tested OUT OF PROCESS (0.52.0).
 //!
 //! This case lives here rather than beside the other kill tests in

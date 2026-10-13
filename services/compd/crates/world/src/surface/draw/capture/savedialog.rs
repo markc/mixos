@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `SaveDialog` — shown when a capture stops: Save / Save As / Discard, with an
 //! optional "Optimized encoding" checkbox (video only; hidden when the
 //! `background_encoder` setting makes the optimized re-encode automatic).

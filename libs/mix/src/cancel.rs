@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Per-evaluation cancellation (P0-J J-8).
 //!
 //! [`interrupt`](crate::interrupt) owns ONE process-wide flag because every

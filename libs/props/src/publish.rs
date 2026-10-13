@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! SPEC 07 §3/§4 publish helpers — wire-message construction for the
 //! `world.<svc>` retained snapshot and `<svc>.props.changed` event

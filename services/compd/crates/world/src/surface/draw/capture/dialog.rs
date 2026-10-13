@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `ContinueDialog` — the 5-minute keep-alive dialog for video captures. Shows
 //! a countdown; the user must click Continue within the window or the capture
 //! stops. Its own small centered screen-space instance.

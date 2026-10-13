@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! MIX-W2306 — escaped quotes in an `ssh_run` / `ssh_must` command literal.
 //!
 //! `\"` in that position is a high-signal sign that Mix source has been

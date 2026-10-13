@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Pure ordering/fencing reducer, reusable by renderer-specific async adapters.
 //! Only a fresh bound read confirms a new incarnation; topic delivery alone
 //! cannot roll a consumer back to a retired store or complete superseded work.

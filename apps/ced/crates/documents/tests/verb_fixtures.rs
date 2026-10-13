@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `ced.v1` golden fixtures: every verb has a request that parses and a reply
 //! that round-trips exactly; refusals round-trip. An unmapped file fails the test.
 

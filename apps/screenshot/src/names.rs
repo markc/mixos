@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The Bus service names screenshot registers as. One window and one
 //! headless instance per compositor, so a request only ever reaches an
 //! instance that captures through the compositor it came from:

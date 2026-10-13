@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Syntax highlighting for MixOS text editors: msedit's `lsh` — a small
 //! compiler from `definitions/*.lsh` to bytecode plus a line-oriented runtime
 //! — vendored from microsoft/edit@826b4c0 (MIT; `vendor/README.md`), with a

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `send_mail(msg[, opts])` end to end, against a fake `sendmail`.
 //!
 //! The fake records its argv and the message it was handed on stdin, and

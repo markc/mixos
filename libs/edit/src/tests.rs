@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Core tests (ced E0 plan §6.1). In-crate so they can reach the gap
 //! buffer's failure injection and the line index.
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env mix
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- version: 0.2.0
 -- comp_presentation_smoke.mix — the nested `wp_presentation` gates against a
 -- PRIVATE nested compd on nested_host_lib's headless weston host.

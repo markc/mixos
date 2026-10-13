@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `ssh_mix_many` stops at Ctrl-C: no ssh is spawned once the interrupt
 //! flag is set.
 //!

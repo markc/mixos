@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Offscreen snapshots of Prefs driven through its real engine: the
 //! Applications editor with a listed catalogue (an update, a current app, a
 //! new one and a failed check), a selected app with its release notes, and

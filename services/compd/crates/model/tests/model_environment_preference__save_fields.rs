@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `save_fields`: only the named keys change; everything else in the file,
 //! unknown keys included, survives; a broken file is refused, not replaced.
 use model::environment::preference::base::{Preference, save_fields_at};

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Managed children have one reaper. poll(2) waits on pidfd + cancellation FD,
 //! with an infinite deadline; neither waitpid(WNOHANG) nor timers drive exits.
 use crate::{

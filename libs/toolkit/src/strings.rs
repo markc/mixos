@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! User-visible strings from a Fluent catalogue (AGENTS.md §4: no hard-coded
 //! UI strings). An application embeds `i18n/en/<app>.ftl` and looks keys up
 //! through [`Strings`]; a missing key renders as the key itself, so a gap is

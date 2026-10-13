@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Receipts and the circuit breaker. Every write keeps the previous content
 //! of each file it replaces, under a receipt id, so `hostd.undo` can put it
 //! back. Two rollbacks in a row under one grant suspend that grant until

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The runtime's contract without a GPU: when passes run, how messages flow,
 //! what the program sees of size, scale and input.
 

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The system binary, `mix`: the shell and the headless daemons in one file
 //! (docs/decisions/2026-10-12-one-system-binary.md). The personality comes
 //! from argv[0]'s basename, so each daemon is a symlink to `mix` named after

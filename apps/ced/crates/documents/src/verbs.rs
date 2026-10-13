@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The `ced` Bus port, schema `ced.v1`: the manifest and every request/reply
 //! DTO. Golden fixtures live in `tests/fixtures/verbs/` (checked by
 //! `tests/verb_fixtures.rs`).

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Grapheme-correct measurement and navigation over a [`Text`] — the frontend
 //! facade over vendored msedit `unicode` + `navigation` (ced E1 plan §1.3).
 //! Frozen in Stage S; bodies landed in Stage E1a.

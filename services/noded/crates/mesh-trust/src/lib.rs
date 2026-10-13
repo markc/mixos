@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Signature, inventory, freshness and capability verification owned by noded.
 pub mod admission;
 pub mod canonical;

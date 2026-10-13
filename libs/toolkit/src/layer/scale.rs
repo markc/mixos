@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Scale arithmetic for layer surfaces.
 
 /// `wp_fractional_scale_v1` sends the scale in 120ths.

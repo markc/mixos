@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Worker spawning for dopus: thread-per-job replacements for filemgr's
 //! detached `IoTaskPool` tasks (browser.rs:1385-1396, 1410-1421, 1654-1671,
 //! 1818-1828). Same shape — one detached job per listing/count/operation —

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Buttons (chrome specification §3.8, §3.13): square icon buttons for bars,
 //! the title bar and the icon rail; the default-action ("primary") and
 //! secondary push buttons of dialogs; and a frameless text link.

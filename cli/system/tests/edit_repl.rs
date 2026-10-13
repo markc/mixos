@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `mix edit` at the interactive Mix prompt.
 //!
 //! The subcommand exists for a one-line edit **from a prompt**, and Mix

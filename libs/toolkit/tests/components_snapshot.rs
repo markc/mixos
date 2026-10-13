@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Offscreen snapshots (wgpu) of the chrome components in each chrome
 //! theme: a window with an options bar, tool bar, icon rail, status bar,
 //! document tabs, the canvas surround and scrollbars, and a dock of panel

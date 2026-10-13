@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Optional `each` (mix 0.63.0): `for $x in $xs` and `for $i, $x in $xs`
 //! parse to the same `StmtKind::ForEach` as the `for each …` spellings,
 //! which stay accepted indefinitely. The counted C-style loop

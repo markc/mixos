@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The shell classifier's refusal layer (B1, B3, 09-29 #1): a bash
 //! keyword written as a shell command fails ONCE and legibly instead of
 //! piecemeal at exit 0, an unquoted newline is a `;`, and a misrouted

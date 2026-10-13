@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The shell's settings lane: UI-loop activation of the session look. Hosts feed their existing Consumer,
 //! prepare captured requests on their existing worker and complete them here.
 //! No transport, runtime, receiver, file I/O, timer or redraw loop is owned.

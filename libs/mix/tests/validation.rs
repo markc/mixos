@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Validation builtins (0.29.0, decision record D7): require_key,
 //! expect_type, nonblank, get_or, validate — strict data boundaries by
 //! choice, structured VALIDATION_* errors with {path, expected,

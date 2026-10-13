@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! In-process dispatch tests (ced E0 plan §6.2): no broker; synthesized
 //! `IncomingCommand`s with broker headers against a live `Editd` (router,
 //! actors, publisher, watcher), files in temp directories. Waits are

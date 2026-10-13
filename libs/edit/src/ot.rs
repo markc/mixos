@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Edits, range sets and single-authority OT (plan §3.4, §3.5).
 //!
 //! # Transform (frozen)

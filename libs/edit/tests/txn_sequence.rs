@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `ot::txn_sequence` round trips (ced E1 plan Stage S, codex round-2 N2):
 //! the client-side sequence of a base-coordinate transaction must produce
 //! exactly the text the server produces for the same request, keep the

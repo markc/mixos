@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Text storage: vendored gap buffer + line index, with two-phase application
 //! (plan §3.1).
 //!

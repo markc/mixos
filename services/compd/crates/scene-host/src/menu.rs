@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Compositor-owned corner menu. Mode choices use the panel core's SetMode;
 //! extras use the host's existing Bus worker, never a separate transport.
 

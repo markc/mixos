@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Dock panel groups (chrome specification §3.10–3.11, §3.22): the Pro tab
 //! strip and body, the Studio card with pill tabs (Classic follows Studio,
 //! square and bevelled), section labels and the drag-drop insertion line.

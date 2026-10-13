@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Language detection (plan §3.9). E1 replaces the table with lsh's globs.
 //!
 //! Basename `scene.mix` → `scene`; `*.conf.mix` → `mix-data`; `*.mix` or a

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! write_atomic behaviour that only an UNPRIVILEGED writer can show. The cbc
 //! gate runs as root, where CAP_FSETID keeps setuid through a write and DAC
 //! lets any directory be opened, so these tests would pass vacuously there.

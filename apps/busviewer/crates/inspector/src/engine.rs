@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! BusViewer's behaviour, with no UI and no I/O: discovery, selection, the
 //! body, one call at a time, agent commands over the Bus, and quitting only
 //! once accepted work is finished.

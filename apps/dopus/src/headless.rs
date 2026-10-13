@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Headless dopus: the same core and Bus surface, no window. Neighbours can
 //! read `dopus.state` (two panes) and drive `dopus.action` against it. The
 //! window and this loop share [`verbs::serve_command`]; only the transport

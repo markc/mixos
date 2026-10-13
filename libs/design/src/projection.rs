@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Versioned render data only. This DTO cannot construct an accepted design or
 //! participate in its apply lineage; recipes/ownership/provenance remain opaque.
 use crate::*;

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Shared frontend types. Every frontend (the ced app, a scene editor widget,
 //! headless harnesses) speaks these.
 

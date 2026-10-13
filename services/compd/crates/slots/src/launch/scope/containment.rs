@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! Session-owned cgroup containment without a user manager or D-Bus.
 //! The OS supervisor delegates the session's cgroup. Application attachment

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Load, save and disk identities (plan §4.7).
 //!
 //! # Contract: two identities per buffer (frozen)

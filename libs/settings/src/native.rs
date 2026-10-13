@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Optional native executor over the host's EXISTING supervised connection.
 //! It never connects, takes the incoming receiver, spawns a task or polls.
 use crate::{

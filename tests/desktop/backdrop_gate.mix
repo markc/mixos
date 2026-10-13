@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- version: 0.1.0
 -- backdrop_gate.mix — backdrop on a PRIVATE nested compd (its own headless
 -- weston host), judged by Bus evidence, a screenshot and backdrop's own

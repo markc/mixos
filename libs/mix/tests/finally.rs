@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `finally` clause (0.30.0, decision D6): runs on every exit path of a
 //! `try` — normal completion, caught error, and propagating
 //! error/return/break/continue/exit — except panic(). A finally error

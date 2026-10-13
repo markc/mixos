@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! NUL-terminated JSON frames: the Varlink wire, also used by hostd's own
 //! local socket so one client primitive (a Unix socket plus NUL framing)
 //! serves both.

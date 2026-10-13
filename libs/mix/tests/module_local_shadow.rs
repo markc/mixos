@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! 09-24 entry: a required-module fn that assigns a local `$rows` and
 //! then calls the module's own `rows()` raised FUNCTION_UNDEFINED — the
 //! frame-injected sibling function was shadowed by the same-named local

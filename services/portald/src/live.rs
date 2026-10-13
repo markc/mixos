@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The live portal. Startup requests the bus name with cached or default
 //! values immediately, independently of the asynchronous authority feed.
 //! Accepted projections replace the served values atomically and emit

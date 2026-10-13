@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The per-corpus `index.db` schema (design §5) as constants. The daemon
 //! (`mixos-filesd`) executes this via the mds migration discipline
 //! (`PRAGMA user_version` + `application_id` magic); this crate stays

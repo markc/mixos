@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `on @.verb` end to end: one generic script served twice, as
 //! `mix --serve bridge.mix --name foo` and `--name other`, against a real
 //! embedded `noded` broker (test-broker), driven only over native ABP.

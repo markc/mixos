@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `mix doctor` — substrate self-check. Pins that it runs, emits the expected
 //! check lines, and its exit status reflects health (0 when no ✗). The Bus line
 //! is environment-dependent (noded may or may not be up), so it is not asserted.

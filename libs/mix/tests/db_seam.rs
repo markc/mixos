@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The `DbHandler` seam (`db_query`/`db_exec`) + the `url_decode`/
 //! `url_encode` builtins. Mirrors the host-seam pattern of `BusHandler`:
 //! a stub handler is injected, the builtins dispatch to it, and the

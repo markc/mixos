@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! The Bus wire format: frontmatter-framed headers with an optional body.
 //!
@@ -651,6 +652,7 @@ mod tests {
 }
 
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 #[cfg(feature = "native")]
 mod transport {

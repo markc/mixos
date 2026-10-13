@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Chord text, the one grammar every app's key bindings use: `Ctrl`, `Alt`
 //! and `Shift` (any order) then one key, joined by `+`. `Ctrl` is the
 //! platform's command key. Keys are egui's names (`ArrowLeft`, `PageDown`,

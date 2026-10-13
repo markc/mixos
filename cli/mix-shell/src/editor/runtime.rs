@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! One editor thread owns tty reads, decoder, buffer and terminal modes.
 //! All cross-thread payloads are owned; evaluator state never enters this module.
 use std::fs::File;

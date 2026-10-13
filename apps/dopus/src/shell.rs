@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The running window: feeds the core its events, serves Bus commands, and
 //! performs the effects the app leaves (replies, opening files, the theme,
 //! quitting). Nothing polls:

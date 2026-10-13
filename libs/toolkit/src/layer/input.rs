@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Wayland input as egui sees it: buttons, keys, modifiers, wheel deltas,
 //! and egui's cursor as a `wp_cursor_shape_v1` shape.
 

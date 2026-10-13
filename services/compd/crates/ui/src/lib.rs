@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The compositor's own UI: egui programs drawn by compd itself (capture
 //! overlays and dialogs, notifications, the frame-rate overlay, the shell).
 //!

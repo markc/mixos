@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Serde `Serializer` building a Mix `Value` tree, plus
 //! [`to_conf_mix_string`] for write-back.
 //!

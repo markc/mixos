@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The annotation inks: six colours from design tokens. They are content,
 //! not chrome, so they come from one fixed light design (revision one)
 //! rather than the window's theme: an arrow drawn red stays the same red

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Executed commands (`docs/decisions/2026-10-11-executed-commands.md`):
 //! every command the registry runs is recorded with how it was reached, and
 //! the application hands the records to its Bus connection, which publishes

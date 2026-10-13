@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `mix edit FILE OLD NEW` — the one-line exact-match file edit.
 //!
 //! ```text

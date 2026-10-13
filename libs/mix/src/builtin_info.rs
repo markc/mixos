@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Single source of truth for builtin metadata.
 //!
 //! The `builtin_table!` macro emits two const arrays from one list:

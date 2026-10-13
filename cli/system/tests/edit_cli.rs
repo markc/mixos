@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `mix edit FILE OLD NEW` — the exact-match one-line edit.
 //!
 //! The reason this subcommand exists is `sed -i`'s two silent failure

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The REPL's `mix` dispatcher shares meta names with the one-shot CLI, then
 //! falls back to a script file. Exercise the real process boundary: this is
 //! where clean scope, positional argv, stdout/stderr routing, and meta-name

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Disposable real controlling-PTY tests. Fixtures execute in isolated libtest
 //! processes so signal handlers never interfere with the parent test runner.
 //! A process-wide fixture lock excludes sibling forks during openpty/dup/close.

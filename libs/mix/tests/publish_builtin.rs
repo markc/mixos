@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `publish(topic, body[, opts])` (0.63.0) — the one-call topic publish
 //! that replaces the two recorded traps: the hand-built `---\n…\n---\n`
 //! wire frame, and `send noded topic.publish` needing `body=` before

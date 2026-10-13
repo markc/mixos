@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The `screenshot.v1` Bus surface: every verb the app answers itself, with
 //! its arguments, as `HELP` and `app.describe` report it. The window adds
 //! the toolkit's drive verbs (`screenshot.ui.*`, `screenshot.window*`).

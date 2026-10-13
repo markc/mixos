@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Parser pin: an `on` header reads a hyphenated name whole.
 //!
 //! Before 0.113.1 `on dopus-test.command.executed` stopped at the hyphen:

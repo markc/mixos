@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The running window: feeds the app its events and carries out its
 //! effects. Bus work and captures run on a small tokio runtime and image
 //! work on blocking threads; each completion comes back as an [`Event`]

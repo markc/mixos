@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Prefs' commands. The menu bar, the panel's buttons, the shortcuts and
 //! the Bus verbs `prefs.commands` / `prefs.execute` all come from this
 //! registry.

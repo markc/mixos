@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `RegionDim` — the dark backdrop with a clear hole over the captured region.
 //! Drawn BELOW windows (its own `CAPTURE_DIM` layer) so windows in the region
 //! stay bright while everything else is dimmed. Click-through.

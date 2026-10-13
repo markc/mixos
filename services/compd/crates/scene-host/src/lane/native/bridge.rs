@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Paired endpoints on the host's existing UI and worker, with no own runtime.
 use super::Diagnostic;
 use super::{ChangePlan, Event, Jobs, Mailbox, Presentation, Session, Worker};

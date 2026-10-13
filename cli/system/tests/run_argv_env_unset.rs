@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `run_argv`/`run_argv_must`/`run_parallel` env nil-removal regression.
 //!
 //! Contract: `env: {NAME: nil}` REMOVES an inherited NAME from the child

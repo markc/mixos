@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Generic RS256 JWT signing. Claims/header semantics belong to the caller;
 //! the core enforces JSON object shape, algorithm, input bounds and RSA key
 //! validity. Static failures never echo claims, headers or private key material.

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `env(name, default)` two-arg contract — out-of-process variant.
 //!
 //! Like env_fallback_lc.rs, this pins env-dependent behaviour as an executable

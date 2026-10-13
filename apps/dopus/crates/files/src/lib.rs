@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `files` — the pure core of the files-as-truth markdown corpus manager,
 //! and dopus's live-filesystem layer.
 //!

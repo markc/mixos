@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Highlighter tests: multi-chunk sources, random seeks equal a linear parse
 //! (also after an edit + `invalidate_from`), time-sliced advancing, and
 //! `MAX_LINE_LEN`.

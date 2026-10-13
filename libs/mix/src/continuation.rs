@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Explicit `\` physical-line continuation shared by the Mix lexer and the
 //! shell-facing logical-line assembler.
 //!

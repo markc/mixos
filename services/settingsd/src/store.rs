@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Exactly one profile writer. Accepted state and receipts share one synced
 //! replacement. Invalid candidates never occupy the accepted path.
 use serde::{Deserialize, Serialize};

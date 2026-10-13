@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! BusViewer driven over its Bus verbs the way the running shell is: every
 //! command enters the engine, is settled, and window-level verbs go to the
 //! toolkit drive layer, against the real view. What an agent clicks and

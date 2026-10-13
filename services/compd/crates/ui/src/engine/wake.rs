@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Event-driven wakeups for compositor-owned UIs.
 //!
 //! egui asks for a repaint through the context's repaint callback, from the

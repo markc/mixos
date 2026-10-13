@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! End-to-end guard: the `mix` binary must turn a runaway recursion
 //! into a clean exit-1 Mix error, never a native stack overflow
 //! (SIGABRT 134 / SIGSEGV 139). This exercises the recursion-depth cap

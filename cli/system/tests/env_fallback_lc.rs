@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Phase A lowercase-head env-fallback contract — out-of-process variant.
 //!
 //! This test runs the `mix` binary (not the `mix` library) because pinning

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Sliders (chrome specification §3.18).
 //!
 //! A slider is an 18 pt row, the full width it is given (at least 60). Its

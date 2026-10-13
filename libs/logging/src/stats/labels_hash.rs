@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Canonical `labels_hash` encoding (plan §4.1).
 //!
 //! The label set is canonicalised into a length-prefixed byte string

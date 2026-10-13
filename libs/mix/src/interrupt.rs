@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Process-wide SIGINT cooperation for blocking Mix builtins.
 //!
 //! ## Why this exists

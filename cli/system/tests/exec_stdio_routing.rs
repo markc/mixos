@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Exec stdio routing that only tells the truth OUT OF PROCESS.
 //!
 //! Two claims here are about the *real* file descriptors 1 and 2 of the Mix

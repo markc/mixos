@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The input-method composition. Cancelling one (focus loss or gain, a
 //! document switch, a remote edit over it) asks the platform to interrupt it
 //! in the next frame's output, and drops preedits and commits until that

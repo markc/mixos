@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The Controller: tabs, the global `event_seq`, the op-id generator, `ced.*`
 //! verbs, `ced.wait` waiters, reattach. UI-toolkit-free — the GUI (`app.rs`)
 //! and `--headless` (`headless.rs`) drive the same Controller.

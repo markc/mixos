@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Third-party code vendored into mixos-edit-core. See `msedit/README.md`
 //! for provenance and the patch log.
 

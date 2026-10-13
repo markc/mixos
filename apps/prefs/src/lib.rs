@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! prefs: MixOS's preferences, a nod to the Prefs drawer of AmigaOS. One
 //! window, one sidebar of editors; the first is Applications, which shows
 //! the apps the `releases` service follows and installs, updates, rolls

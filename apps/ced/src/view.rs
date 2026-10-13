@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The window: the toolkit title bar with the menus, the document tabs, the
 //! notice strip (warnings, set-aside edits, a detached document), the find
 //! bar, the editor, the Problems and Output panels, and the status bar.

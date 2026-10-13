@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Mix as a byte-exact pipeline filter (v0.65.0) — `read_stdin_bytes` in,
 //! `write_stdout` out, through the REAL binary's fd 0 and fd 1.
 //!

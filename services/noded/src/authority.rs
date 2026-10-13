@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! SPEC 13 1b-c — the authority plane: load + verify the signed inventory.
 //!

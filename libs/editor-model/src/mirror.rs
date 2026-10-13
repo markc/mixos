@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The mirror: one [`Text`] (the VIEW = confirmed(rev) + in-flight + queue)
 //! with local echo and single-authority OT rebase against the `edit` daemon.
 //! The rules below are binding. Pure: no Bus, no clock, no async; every

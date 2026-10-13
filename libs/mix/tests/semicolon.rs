@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Executable-Mix `;` statement-separator semantics.
 //!
 //! Semicolons survive lexing inside grouping but are accepted only at actual

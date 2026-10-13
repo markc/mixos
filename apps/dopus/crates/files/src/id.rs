@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Opaque corpus identity (invariant #4): a time-ordered UUIDv7.
 //!
 //! v7 (not v4): lexicographically sortable, a valid JMAP/web id, and already in

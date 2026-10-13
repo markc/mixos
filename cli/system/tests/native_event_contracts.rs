@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Discovery must describe the same shapes the evaluator implements.
 use serde_json::Value;
 use std::process::Command;

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The resolved design mapped onto egui's [`Style`]: colours from the
 //! semantic pairs and non-text colours, sizes from the metrics, scales and
 //! typography roles.

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Origins (who made an edit) and the attested transport provenance (`Via`).
 //!
 //! An origin is a LABEL, not an authorization. Its *kind* is decided by editd

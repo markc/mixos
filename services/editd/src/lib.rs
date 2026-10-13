@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The `edit` Bus citizen (ced E0). Owns text buffers for humans and agents
 //! alike; every buffer is a `mixos-edit-core` `Buffer` inside its own actor.
 //!

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The discovery surface an agent meets: bus statements resolve like
 //! builtins (D3), `mix config` reports the modes that gate a run (B14),
 //! `mix status` reports real uptime in one-shot mode, and a discarded

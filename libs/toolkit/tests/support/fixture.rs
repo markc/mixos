@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The shared fixture of the title-bar, menu and chrome tests: a desktop
 //! editor's menu bar (ten menus; File with a disabled row, a submenu and
 //! groups), drawn by the real title bar, with every chosen command recorded.

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Offscreen snapshots of the chrome schemes (wgpu): the title bar with File
 //! open, the keyboard four rows down on a submenu row and Right pressed into
 //! its submenu, in each chrome scheme and mode; and the caption buttons'

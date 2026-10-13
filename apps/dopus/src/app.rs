@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The window's state around the core: dialogs, the location bar being
 //! edited, the status line, the window's theme choice, and the routing of
 //! actions and Bus commands. No drawing happens here, so it is tested

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The rusqlite-backed corpus index (feature `sqlite`).
 //!
 //! One `index.db` per corpus, a 100%-rebuildable PROJECTION of the markdown files

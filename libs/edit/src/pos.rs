@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Positions and ranges (plan §3.2). These types ARE the wire forms (§4.2).
 //!
 //! Canonical position = UTF-8 byte offset. `line` and `col` are 1-based; `col`

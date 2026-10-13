@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Serve-mode Bus error-honesty acceptance: the built `mix --serve`
 //! subprocess (a real `MixServeHandler` over a real `SupervisedClient`)
 //! booted against a real embedded `noded` broker

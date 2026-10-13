@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! A1 step 1 (TODO-mix strict-arity sweep): the strict mode now has three
 //! operator-level knobs — `MIX_STRICT_ARITY=1` env, `$strict_arity = true`
 //! in `~/.mixrc`, and `ssh_mix(…, {strict_arity: true})` — plus a warning

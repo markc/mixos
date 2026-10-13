@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! TODO-mix P2 out of process: a `spawn(argv, {die_with_parent: true})`
 //! child must end with the `mix` process that started it — gracefully (SIGTERM
 //! to its whole group first) when mix exits normally, and by the kernel's

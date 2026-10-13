@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Unified logging surface for every MixOS binary.
 //!
 //! Scope: CLI flags (`LogOpts`), per-binary defaults (`LogDefaults`),

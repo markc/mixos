@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `view` tests (ced E1 plan, Stage E1a). The oracle is msedit's own
 //! measurement over a contiguous `&[u8]` — the upstream path with no gap and
 //! no adapter — so every gap-straddling result is checked against what

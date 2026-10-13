@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `+` operand typing (0.90.0).
 //!
 //! Until 0.90.0 the `+` fallback stringified EVERY value type, so

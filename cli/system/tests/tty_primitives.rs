@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! 2026-09-26 entry: the keystroke-recorder primitives — `tty_mode` and
 //! the incremental `stdin_copy`.
 
