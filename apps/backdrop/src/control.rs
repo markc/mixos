@@ -109,7 +109,7 @@ pub fn start(setup: Setup) -> Result<(), String> {
         .name("backdrop-bus".into())
         .spawn(move || {
             let mut deliveries = deliveries;
-            futures::executor::block_on(async move {
+            futures::executor::block_on(async {
                 while let Some(delivery) = deliveries.next().await {
                     // A full inbox waits here, on this thread, not on the Bus runtime.
                     if forward.send(Msg::Delivery(delivery)).is_err() {
