@@ -306,8 +306,10 @@ impl State {
                 self.mail.busy = false;
                 self.failed_now(&error);
             }
-            Event::Opened(Ok(email)) => self.mail.open = Some(email),
-            Event::Opened(Err(error)) => self.failed_now(&error),
+            Event::Opened(result) => match *result {
+                Ok(email) => self.mail.open = Some(email),
+                Err(ref error) => self.failed_now(error),
+            },
             Event::Marked(Ok(())) => self.queue(Work::FetchMailboxes),
             Event::Marked(Err(error)) => self.failed_now(&error),
             Event::Sent(Ok(())) => {
@@ -433,18 +435,17 @@ impl State {
                     .emails
                     .iter_mut()
                     .find(|email| email.id == id)
+                    && !email.is_read()
                 {
-                    if !email.is_read() {
-                        email
-                            .keywords
-                            .get_or_insert_with(|| serde_json::json!({}))
-                            .as_object_mut()
-                            .map(|k| k.insert("$seen".into(), serde_json::json!(true)));
-                        self.queue(Work::MarkRead {
-                            id: id.clone(),
-                            read: true,
-                        });
-                    }
+                    email
+                        .keywords
+                        .get_or_insert_with(|| serde_json::json!({}))
+                        .as_object_mut()
+                        .map(|k| k.insert("$seen".into(), serde_json::json!(true)));
+                    self.queue(Work::MarkRead {
+                        id: id.clone(),
+                        read: true,
+                    });
                 }
                 self.queue(Work::OpenEmail { id });
             }
@@ -521,14 +522,14 @@ impl State {
             }
             UiEvent::CloseCompose => self.compose = None,
             UiEvent::SendCompose => {
-                if let Some(compose) = &self.compose {
-                    if !compose.busy {
-                        let draft = compose.draft.clone();
-                        self.queue(Work::Send(draft));
-                        if let Some(compose) = &mut self.compose {
-                            compose.busy = true;
-                            compose.error = None;
-                        }
+                if let Some(compose) = &self.compose
+                    && !compose.busy
+                {
+                    let draft = compose.draft.clone();
+                    self.queue(Work::Send(draft));
+                    if let Some(compose) = &mut self.compose {
+                        compose.busy = true;
+                        compose.error = None;
                     }
                 }
             }

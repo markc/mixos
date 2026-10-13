@@ -34,7 +34,8 @@ pub enum Event {
     Connected(Result<SessionInfo, jmap::Error>),
     Mailboxes(Result<Vec<jmap::Mailbox>, jmap::Error>),
     Page(Result<EmailPage, jmap::Error>),
-    Opened(Result<jmap::Email, jmap::Error>),
+    /// One email with its bodies; boxed — a full [`jmap::Email`] is large.
+    Opened(Box<Result<jmap::Email, jmap::Error>>),
     Marked(Result<(), jmap::Error>),
     Sent(Result<(), jmap::Error>),
     Calendars(Result<Vec<jmap::Calendar>, jmap::Error>),
@@ -253,7 +254,9 @@ impl Shell {
             }
             Work::OpenEmail { id } => {
                 if let Some(client) = self.client() {
-                    self.spawn(async move { Event::Opened(client.email(&id).await) });
+                    self.spawn(async move {
+                        Event::Opened(Box::new(client.email(&id).await))
+                    });
                 }
             }
             Work::MarkRead { id, read } => {
@@ -539,10 +542,10 @@ impl Shell {
             self.state.apply_ui(event);
         }
         for event in commands {
-            if let UiEvent::Command(id, origin) = event {
-                if let Err(error) = self.commands.execute(&id, &mut self.state, origin) {
-                    eprintln!("email: {id}: {error}");
-                }
+            if let UiEvent::Command(id, origin) = event
+                && let Err(error) = self.commands.execute(id, &mut self.state, origin)
+            {
+                eprintln!("email: {id}: {error}");
             }
         }
         self.settle();

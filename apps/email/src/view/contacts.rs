@@ -105,10 +105,10 @@ pub fn reader(ui: &mut Ui, state: &State) {
         // Extra addresses out of the JSContact card.
         if let Some(emails) = contact.data.get("emails").and_then(|e| e.as_object()) {
             for entry in emails.values() {
-                if let Some(address) = entry.get("address").and_then(|a| a.as_str()) {
-                    if address != contact.display_email() {
-                        ui.label(RichText::new(address).weak());
-                    }
+                if let Some(address) = entry.get("address").and_then(|a| a.as_str())
+                    && address != contact.display_email()
+                {
+                    ui.label(RichText::new(address).weak());
                 }
             }
         }
