@@ -1,0 +1,413 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- The network popup's behaviour (share/scenes/network/behaviour.mix), run as
+-- its own --serve citizen on a private broker. Real: the behaviour, models.mix,
+-- runtime.mix, and hostd.mix's request builders and grant rules. Stand-ins:
+-- the scene host (shell-stub; its ui.forward sends each UI event as itself, so
+-- the behaviour sees headers.from = shell-stub, the authenticated host name),
+-- the loader (scenes-stub, which keeps every published model), network.mix (a
+-- fixed snapshot) and hostd's call() (records each call in a file outside the
+-- behaviour's process, answers from a scripted reply file). Every wait is
+-- bounded. Bus callers (cli.mix) are not the host: their events carry their
+-- own name, so every write and editor verb must refuse them.
+--
+--   mix services/compd/tests/network_behaviour_test.mix
+--
+-- Needs a fresh mix and noded: MIXOS_TEST_MIX and MIXOS_TEST_NODED when set,
+-- else /opt/mixos/bin/mix and /opt/mixos/bin/noded.
+
+$root = env("MIXOS") != "" ? env("MIXOS") : realpath(dirname(realpath($0)) .. "/../../..")
+$pb = require("../../../tests/lib/private_bus.mix")
+$mix = env("MIXOS_TEST_MIX") != "" ? env("MIXOS_TEST_MIX") : "/opt/mixos/bin/mix"
+$noded = env("MIXOS_TEST_NODED") != "" ? env("MIXOS_TEST_NODED") : "/opt/mixos/bin/noded"
+$behaviour = $root .. "/share/scenes/network/behaviour.mix"
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-network-behaviour-test.XXXXXXXX"]))
+$bus = nil
+$env = nil
+$shell_pid = nil
+$scenes_pid = nil
+$scene_pid = nil
+
+-- The fixed link snapshot: hd0 has no address (DHCP), eth0 has one (static),
+-- wlan0 is Wi-Fi, wg0 is a tunnel that exists already.
+$SNAP = {
+  links: [
+    {ifname: "lo", index: 1, loopback: true, up: true, wireless: false},
+    {ifname: "eth0", index: 2, loopback: false, up: true, wireless: false},
+    {ifname: "hd0", index: 3, loopback: false, up: true, wireless: false},
+    {ifname: "wlan0", index: 4, loopback: false, up: true, wireless: true},
+    {ifname: "wg0", index: 5, loopback: false, up: true, wireless: false}],
+  addresses: [
+    {ifname: "eth0", family: "inet", address: "198.51.100.7", prefix: 24},
+    {ifname: "wlan0", family: "inet", address: "192.0.2.10", prefix: 24}],
+  kinds: {lo: "virtual", eth0: "ether", hd0: "ether", wlan0: "wlan", wg0: "wireguard"},
+  routes: []
+}
+
+-- hostd.mix's call() is replaced by this one; the rest of the real file stays.
+-- Every call is appended to hostd/calls.jsonl; the reply comes from
+-- hostd/reply-<verb>.json ({delay, result}) when the test wrote one.
+$FAKE_CALL = join([
+  "fn call($verb, $body, $wait_s = 10)",
+  "  $dir = env('HOSTD_FIXTURE_DIR')",
+  "  append_file($dir .. '/calls.jsonl', json_encode({verb: $verb, body: $body}) .. chr(10))",
+  "  $reply = {delay: 0, result: {ok: true, body: {receipt: 'rc-default'}}}",
+  "  $file = $dir .. '/reply-' .. replace($verb, '.', '_') .. '.json'",
+  "  if is_file($file) then $reply = json_parse(read_file($file)) end",
+  "  if $reply.delay > 0 then sleep($reply.delay) end",
+  "  return $reply.result",
+  "end",
+  ""
+], "\n")
+
+$NET_FIXTURE = join([
+  "-- Fixture: the snapshot the test wrote, in place of the netlink reader.",
+  "fn snapshot()",
+  "  return json_parse(read_file(env('NET_FIXTURE_DIR') .. '/snapshot.json'))",
+  "end",
+  "fn popup_open($args, $name)",
+  "  return false",
+  "end",
+  ""
+], "\n")
+
+-- The scene host stand-in. It answers the two host verbs the behaviour calls
+-- and forwards a UI event as itself: the broker stamps this citizen's name.
+$SHELL_STUB = join([
+  "-- SPDX-License-Identifier: MIT OR Apache-2.0",
+  "-- The scene host stand-in: answers the host verbs, and forwards UI events",
+  "-- to the behaviour as this citizen (headers.from = shell-stub).",
+  "on shell.scene.describe",
+  "  reply(0, json_encode([{path: 'flow', enum: ['vertical', 'horizontal']}, {path: 'hidden', type: 'bool'}]))",
+  "end",
+  "on shell.scene.watch",
+  "  reply(0, json_encode({revision: 1, applied_revision: 1}))",
+  "end",
+  "on ui.forward",
+  "  $to = $event.args.to",
+  "  $verb = $event.args.verb",
+  "  $body = json_encode($event.args.event)",
+  "  send $to $verb body=$body timeout=5",
+  "  $code = $rc < 0 ? 20 : $rc",
+  "  reply($code, json_encode($result))",
+  "end",
+  ""
+], "\n")
+
+-- The loader stand-in: it accepts the scene and keeps every published model.
+$SCENES_STUB = join([
+  "-- SPDX-License-Identifier: MIT OR Apache-2.0",
+  "-- The loader stand-in: ready, and each published model appended to",
+  "-- STUB_OUT/out/models.jsonl.",
+  "on scenes.ready",
+  "  reply(0, '{}')",
+  "end",
+  "on scenes.model",
+  "  append_file(env('STUB_OUT') .. '/out/models.jsonl', json_encode($event.args.value) .. chr(10))",
+  "  reply(0, '{}')",
+  "end",
+  ""
+], "\n")
+
+-- The Bus client: one send, one JSON line. The broker stamps its name, not a host's.
+$CLI = join([
+  "send $1 $2 timeout=8 body=$3",
+  "print(json_encode({rc: $rc, result: $result}))",
+  ""
+], "\n")
+
+fn check($ok, $message)
+  if not $ok then raise("NETWORK_BEHAVIOUR_TEST", $message) end
+end
+
+fn write_fixtures()
+  mkdir($tmp .. "/hostd", {parents: true})
+  mkdir($tmp .. "/out", {parents: true})
+  mkdir($tmp .. "/home", {parents: true})
+  run_argv_must(["cp", "-r", $root .. "/share/scenes/lib", $tmp .. "/lib"])
+  -- The real hostd.mix with only its call() replaced. Everything else (the
+  -- grant rules, the request builders, uncertain()) is the shipped code.
+  $real = read_file($tmp .. "/lib/hostd.mix")
+  $marker = "-- Is a failed write"
+  check(contains($real, "fn call(") and contains($real, $marker), "hostd.mix changed shape: the fixture cannot replace call()")
+  $fake = before($real, "fn call(") .. $FAKE_CALL .. "\n" .. $marker .. after($real, $marker)
+  write_file($tmp .. "/lib/hostd.mix", $fake)
+  write_file($tmp .. "/lib/network.mix", $NET_FIXTURE)
+end
+
+fn reply_for($verb, $result, $delay = 0)
+  write_file($tmp .. "/hostd/reply-" .. replace($verb, ".", "_") .. ".json", json_encode({delay: $delay, result: $result}))
+end
+
+-- Every hostd call of one verb, in the order the behaviour made them.
+fn calls($verb)
+  $out = []
+  $file = $tmp .. "/hostd/calls.jsonl"
+  if is_file($file) then
+    for each $line in read_lines($file)
+      if trim($line) == "" then continue end
+      $c = json_parse($line)
+      if $c.verb == $verb then push($out, $c) end
+    end
+  end
+  return $out
+end
+
+-- Every model the loader stand-in received, oldest first.
+fn published()
+  $out = []
+  $file = $tmp .. "/out/models.jsonl"
+  if is_file($file) then
+    for each $line in read_lines($file)
+      if trim($line) != "" then push($out, json_parse($line)) end
+    end
+  end
+  return $out
+end
+
+fn last_model()
+  $all = published()
+  if length($all) == 0 then return nil end
+  return $all[length($all) - 1]
+end
+
+-- Bounded waits on the newest published model (about 15 s each).
+fn wait_rows($what, $n)
+  for $i = 1 to 150
+    $m = last_model()
+    if $m != nil and length($m.rows) == $n then return $m end
+    sleep(0.1)
+  end
+  raise("NETWORK_BEHAVIOUR_TEST", "timed out waiting for " .. $what)
+end
+
+fn wait_edit($what, $key, $value)
+  for $i = 1 to 150
+    $m = last_model()
+    if $m != nil and deep_eq($m.edit[$key] ?? nil, $value) then return $m end
+    sleep(0.1)
+  end
+  raise("NETWORK_BEHAVIOUR_TEST", "timed out waiting for " .. $what)
+end
+
+fn wait_note($what, $part)
+  for $i = 1 to 150
+    $m = last_model()
+    if $m != nil and contains($m.edit.note ?? "", $part) then return $m end
+    sleep(0.1)
+  end
+  raise("NETWORK_BEHAVIOUR_TEST", "timed out waiting for " .. $what)
+end
+
+-- One Bus request from a plain client (not the host).
+fn direct($target, $verb, $body)
+  $r = run_argv([$mix, $tmp .. "/cli.mix", $target, $verb, json_encode($body)], {clear_env: true, env: $env, timeout: 25})
+  check($r.ok, "client " .. $verb .. " did not run: " .. ($r.stderr ?? ""))
+  return json_parse(trim($r.stdout))
+end
+
+-- A Bus request whose handler may never answer (an internal task). Its
+-- outcome is read from the hostd call log, so the reply is not checked.
+fn direct_quiet($target, $verb, $body)
+  return run_argv([$mix, $tmp .. "/cli.mix", $target, $verb, json_encode($body)], {clear_env: true, env: $env, timeout: 25})
+end
+
+-- A UI event, as the scene host relays a click, change or submit.
+fn ui_event($handler, $node, $kind, $item = nil, $value = nil)
+  $ev = {scene: "network", node: $node, kind: $kind}
+  if $item != nil then $ev.item = $item end
+  if $value != nil then $ev.value = $value end
+  return direct("shell-stub", "ui.forward", {to: "scene-network", verb: $handler, event: $ev})
+end
+
+fn expect_rc($r, $rc, $what)
+  check($r.rc == $rc, $what .. ": rc " .. to_string($r.rc) .. " " .. json_encode($r.result))
+end
+
+fn wait_reply($target, $verb, $body)
+  for $i = 1 to 150
+    $r = direct($target, $verb, $body)
+    if $r.rc == 0 then return $r end
+    sleep(0.1)
+  end
+  raise("NETWORK_BEHAVIOUR_TEST", "no reply from " .. $target .. " " .. $verb)
+end
+
+-- A citizen from its own source file, on the private broker.
+fn start_citizen($name, $file, $extra)
+  $vars = merge($pb.client_env($bus), {MIX_STATS: "off", PATH: "/usr/bin:/bin", HOME: $tmp .. "/home"})
+  return spawn([$mix, "--serve", $file, "--name", $name],
+    {detach: true, clear_env: true, env: merge($vars, $extra), stdout: {file: $tmp .. "/" .. $name .. ".log"}, stderr: "stdout"})
+end
+
+-- Terminate a citizen: TERM, a bounded wait, then KILL.
+fn stop_pid($pid)
+  if $pid == nil or not process_alive($pid) then return nil end
+  $_term = kill($pid, 15)
+  for $wait = 1 to 40
+    if not process_alive($pid) then return nil end
+    sleep(0.05)
+  end
+  $_kill = kill($pid, 9)
+  return nil
+end
+
+try
+  write_fixtures()
+  write_file($tmp .. "/shell-stub.mix", $SHELL_STUB)
+  write_file($tmp .. "/scenes-stub.mix", $SCENES_STUB)
+  write_file($tmp .. "/cli.mix", $CLI)
+  write_file($tmp .. "/snapshot.json", json_encode($SNAP))
+  reply_for("hostd.status", {ok: true, body: {held_grants: [{name: "network-test", verbs: ["net.*"], limits: {links: ["eth0", "hd0", "wlan0", "wg0"]}}]}})
+
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "network-behaviour-test", noded: $noded})
+  $env = merge($pb.client_env($bus), {MIX_STATS: "off", PATH: "/usr/bin:/bin", HOME: $tmp .. "/home"})
+  $shell_pid = start_citizen("shell-stub", $tmp .. "/shell-stub.mix", {})
+  $scenes_pid = start_citizen("scenes-stub", $tmp .. "/scenes-stub.mix", {STUB_OUT: $tmp})
+  wait_reply("shell-stub", "shell.scene.describe", {family: "list"})
+  wait_reply("scenes-stub", "scenes.ready", {})
+  $scene_pid = start_citizen("scene-network", $behaviour, {
+    SCENE_NAME: "network", SCENE_GENERATION: "1", SCENE_HOST: "shell-stub",
+    SCENES_SERVICE: "scenes-stub", SCENES_LIB: $tmp .. "/lib",
+    NET_FIXTURE_DIR: $tmp, HOSTD_FIXTURE_DIR: $tmp .. "/hostd"})
+
+  -- Setup: the rows, with the action each one offers under the grant.
+  $m = wait_rows("the first published model", 4)
+  $actions = {}
+  for each $row in $m.rows
+    $actions[$row.id] = $row.action
+  end
+  check(deep_eq($actions, {"if_eth0": "link", "if_hd0": "link", "if_wlan0": "wifi", "if_wg0": "wg"}), "row actions: " .. json_encode($actions))
+
+  -- A: a UI row opens its editor; static; a typed address; Apply; receipt.
+  reply_for("net.link.apply", {ok: true, body: {receipt: "rc-1"}})
+  expect_rc(ui_event("net_row", "n_list", "click", {id: "if_hd0"}), 0, "open hd0")
+  $m = wait_edit("hd0 editor", "title", "Configure hd0")
+  check($m.edit.is_link == true and $m.edit.is_static == false, "hd0 opens as a DHCP link editor")
+  expect_rc(ui_event("net_mode_static", "e_static", "click"), 0, "static")
+  wait_edit("static mode", "is_static", true)
+  expect_rc(ui_event("net_edit_addr", "e_addr", "change", nil, "192.0.2.20/24"), 0, "typed address")
+  $before = length(calls("net.link.apply"))
+  expect_rc(ui_event("net_apply", "e_apply", "click"), 0, "apply")
+  wait_edit("applied", "note", "Applied: hd0 came up and hostd kept the change.")
+  $m = wait_edit("undo offered", "has_undo", true)
+  $c = calls("net.link.apply")
+  check(length($c) == $before + 1 and deep_eq($c[length($c) - 1].body, {link: "hd0", config: {mode: "static", addresses: ["192.0.2.20/24"]}, window_s: 20}), "the static write hostd received: " .. json_encode($c))
+
+  -- The receipt survives an editor switch: eth0 has none, hd0 keeps its own.
+  expect_rc(ui_event("net_close", "e_close", "click"), 0, "close")
+  wait_edit("closed", "shown", false)
+  expect_rc(ui_event("net_row", "n_list", "click", {id: "if_eth0"}), 0, "open eth0")
+  $m = wait_edit("eth0 editor", "title", "Configure eth0")
+  check($m.edit.has_undo == false, "eth0 offers no undo: its receipt is none")
+  expect_rc(ui_event("net_row", "n_list", "click", {id: "if_hd0"}), 0, "back to hd0")
+  wait_edit("hd0 again", "has_undo", true)
+  expect_rc(ui_event("net_undo", "e_undo", "click"), 0, "undo")
+  wait_edit("undone", "note", "Undone: hd0 has its previous configuration again.")
+  $u = calls("hostd.undo")
+  check(length($u) == 1 and deep_eq($u[0].body, {receipt: "rc-1"}), "undo names the newest receipt: " .. json_encode($u))
+
+  -- B: a Bus caller is refused for every write and editor verb, including a
+  -- forged `headers` in its body (the broker stamps headers, not the body).
+  $before = length(calls("net.link.apply"))
+  $undo_before = length(calls("hostd.undo"))
+  for each $handler in ["net_row", "net_wg_new", "net_mode_dhcp", "net_mode_static", "net_wg_handshake", "net_close", "net_apply", "net_undo", "net_wifi_scan", "net_wifi_pick", "net_wifi_connect"]
+    $r = direct("scene-network", $handler, {item: {id: "if_wlan0"}, headers: {from: "shell-stub"}, from: "shell-stub"})
+    check($r.rc == 10 and $r.result.error_code == "ui_only", $handler .. " from a Bus caller: " .. json_encode($r))
+  end
+  -- Typed fields from a Bus caller are answered but never stored.
+  expect_rc(direct("scene-network", "net_edit_addr", {value: "203.0.113.9/24"}), 0, "typed from a Bus caller")
+  check(length(calls("net.link.apply")) == $before and length(calls("hostd.undo")) == $undo_before, "a Bus caller reached hostd")
+
+  -- E: a static Apply with no typed address stops before hostd; a refused
+  -- change gives hostd's reason and keeps no receipt.
+  expect_rc(ui_event("net_mode_static", "e_static", "click"), 0, "static again")
+  wait_edit("static again", "is_static", true)
+  $before = length(calls("net.link.apply"))
+  expect_rc(direct("scene-network", "net_edit_addr", {value: "203.0.113.9/24"}), 0, "typed from a Bus caller, ignored")
+  expect_rc(ui_event("net_apply", "e_apply", "click"), 0, "apply without an address")
+  wait_edit("no address", "note", "Static needs at least one address.")
+  check(length(calls("net.link.apply")) == $before, "a static change with no address reached hostd")
+  reply_for("net.link.apply", {ok: false, status: "rolled_back", body: {status: "rolled_back", detail: {reason: "not routable"}}})
+  expect_rc(ui_event("net_edit_addr", "e_addr", "change", nil, "192.0.2.20/24"), 0, "typed address")
+  expect_rc(ui_event("net_apply", "e_apply", "click"), 0, "apply refused")
+  wait_edit("refused", "note", "hd0 did not come up, so hostd put the old configuration back (not routable)")
+  $c = calls("net.link.apply")
+  check(length($c) == $before + 1 and deep_eq($c[length($c) - 1].body.config.addresses, ["192.0.2.20/24"]), "the UI address went to hostd, not the Bus one")
+  $m = wait_edit("no receipt after a refusal", "note", "hd0 did not come up, so hostd put the old configuration back (not routable)")
+  check($m.edit.has_undo == false, "a refused change left a receipt")
+
+  -- F: an applied change, then an unknown outcome (hostd timed out): the old
+  -- receipt is no longer trusted, so Undo is withdrawn.
+  reply_for("net.link.apply", {ok: true, body: {receipt: "rc-2"}})
+  expect_rc(ui_event("net_apply", "e_apply", "click"), 0, "apply ok")
+  wait_edit("applied again", "has_undo", true)
+  reply_for("net.link.apply", {ok: false, status: "timeout", body: {}})
+  expect_rc(ui_event("net_apply", "e_apply", "click"), 0, "apply timed out")
+  wait_note("unknown outcome", "hostd did not answer in time. The change to hd0 may still finish")
+  $m = last_model()
+  check($m.edit.has_undo == false, "an unknown outcome kept the old receipt")
+
+  -- G: a busy hostd. A second Apply is refused in words; a headered net.write
+  -- (a Bus event, not the task the click started) is refused and writes nothing.
+  reply_for("net.link.apply", {ok: true, body: {receipt: "rc-3"}}, 10)
+  $before = length(calls("net.link.apply"))
+  expect_rc(ui_event("net_apply", "e_apply", "click"), 0, "apply that holds hostd")
+  wait_edit("in flight", "busy", true)
+  expect_rc(ui_event("net_apply", "e_apply", "click"), 0, "apply while busy")
+  wait_edit("busy", "note", "hostd is busy with another change. Try again.")
+  $headered = direct_quiet("shell-stub", "ui.forward", {to: "scene-network", verb: "net.write", event: {link: "hd0", verb: "net.link.apply", body: {link: "hd0", config: {mode: "dhcp"}, window_s: 20}, done: "net_applied"}})
+  check(length(calls("net.link.apply")) == $before + 1, "a headered net.write reached hostd")
+  wait_edit("the change lands", "note", "Applied: hd0 came up and hostd kept the change.")
+  $m = wait_edit("receipt kept", "has_undo", true)
+  check(length(calls("net.link.apply")) == $before + 1, "the busy Apply reached hostd")
+
+  -- H: Wi-Fi. A scan lands in the editor; a Bus-headed scan does nothing; a
+  -- passphrase goes to hostd once and never into a published model.
+  reply_for("net.wifi.scan", {ok: true, body: {networks: [{ssid: "home", security: "psk", signal_dbm: -48, known: false}, {ssid: "cafe", security: "open", signal_dbm: -70, known: false}]}})
+  expect_rc(ui_event("net_close", "e_close", "click"), 0, "close before Wi-Fi")
+  wait_edit("closed before Wi-Fi", "shown", false)
+  expect_rc(ui_event("net_row", "n_list", "click", {id: "if_wlan0"}), 0, "open wlan0")
+  wait_edit("Wi-Fi editor", "title", "Wi-Fi on wlan0")
+  $m = wait_edit("scan lands", "has_networks", true)
+  check(length($m.edit.networks) == 2, "the scan's networks: " .. json_encode($m.edit.networks))
+  $before_scan = length(calls("net.wifi.scan"))
+  direct_quiet("scene-network", "net.scan", {device: "wlan0", gen: 1})
+  check(length(calls("net.wifi.scan")) == $before_scan, "a Bus caller started a scan")
+  expect_rc(ui_event("net_wifi_pick", "f_list", "click", {id: "ssid_0"}), 0, "pick home")
+  wait_edit("picked", "needs_pass", true)
+  wait_edit("passphrase field back", "show_pass", true)
+  reply_for("net.wifi.connect", {ok: true, body: {receipt: "rc-wifi"}})
+  expect_rc(ui_event("net_wifi_connect", "f_pass", "submit", nil, "s3cret-passphrase"), 0, "connect")
+  wait_edit("connected", "note", "Connected: hostd kept the change.")
+  $w = calls("net.wifi.connect")
+  check(length($w) == 1 and $w[0].body.passphrase == "s3cret-passphrase" and $w[0].body.device == "wlan0" and $w[0].body.ssid == "home", "the Wi-Fi write hostd received: " .. json_encode($w))
+  for each $pub in published()
+    check(not contains(json_encode($pub), "s3cret-passphrase"), "the passphrase reached a published model")
+  end
+
+  -- I: a tunnel the panel never set up asks for a second Apply before it
+  -- replaces the peerless setup; the second Apply writes it.
+  expect_rc(ui_event("net_close", "e_close", "click"), 0, "close before the tunnel")
+  wait_edit("closed before the tunnel", "shown", false)
+  expect_rc(ui_event("net_row", "n_list", "click", {id: "if_wg0"}), 0, "open wg0")
+  wait_edit("tunnel editor", "title", "Tunnel wg0")
+  expect_rc(ui_event("net_wg_addr", "w_addr", "change", nil, "198.51.100.23/32"), 0, "tunnel address")
+  reply_for("net.wg.apply", {ok: true, body: {public_key: "WGPUB="}})
+  expect_rc(ui_event("net_apply", "e_apply", "click"), 0, "first tunnel apply")
+  wait_note("the replacement confirmation", "press Apply again")
+  check(length(calls("net.wg.apply")) == 0, "an unconfirmed replacement reached hostd")
+  expect_rc(ui_event("net_apply", "e_apply", "click"), 0, "second tunnel apply")
+  $m = wait_edit("tunnel applied", "note", "Applied: wg0 is up and hostd kept it.")
+  $t = calls("net.wg.apply")
+  check(length($t) == 1 and $t[0].body.name == "wg0" and deep_eq($t[0].body.addresses, ["198.51.100.23/32"]) and $t[0].body.window_s == 25 and length($t[0].body.peers) == 0, "the tunnel write hostd received: " .. json_encode($t))
+  check($m.edit.wg_pubkey == "WGPUB=", "the tunnel's public key is shown after the apply")
+
+  print("PASS network behaviour: UI-only writes, the static Apply, receipt and Undo, refusals, unknown outcomes, busy, Wi-Fi, tunnel confirmation, passphrase hygiene")
+finally
+  stop_pid($scene_pid)
+  stop_pid($scenes_pid)
+  stop_pid($shell_pid)
+  if $bus != nil then $pb.stop($bus) end
+  remove_dir($tmp)
+end

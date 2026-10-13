@@ -370,6 +370,12 @@ end
 -- nil}. With a hostd grant, each link offers Configure; the editor applies
 -- through hostd (net.link.apply) and can undo its last change.
 $MAX_LINKS = 32
+-- Card geometry. Every card is one shared height (the scene's list and rows
+-- take it from the model's row_height): CARD_H, plus ADDR_LINE_H for each
+-- address line beyond the first, for the link with the most address lines.
+-- The cards are equal-height on purpose; they are not auto-sized one by one.
+$CARD_H = 84
+$ADDR_LINE_H = 16
 
 -- A link kind (sysfs DEVTYPE or networkd Kind) in words.
 fn kind_text($kind)
@@ -389,12 +395,22 @@ fn network($snap, $ui = nil)
   $route = length($routes) > 0 ? $routes[0] : nil
   $default_dev = $route != nil ? $route.dev : ""
 
-  $addrs = {}
+  -- Per link: IPv4 addresses, then IPv6 (each in snapshot order). Link-local
+  -- IPv6 is left out; nothing is capped.
+  $v4 = {}
+  $v6 = {}
   for each $a in $snap.addresses ?? []
     if $a.family == "inet6" and starts_with(lower($a.address), "fe80:") then continue end
-    $list = $addrs[$a.ifname] ?? []
-    push($list, $a.address .. "/" .. to_string($a.prefix))
-    $addrs[$a.ifname] = $list
+    $text = $a.address .. "/" .. to_string($a.prefix)
+    if $a.family == "inet6" then
+      $list = $v6[$a.ifname] ?? []
+      push($list, $text)
+      $v6[$a.ifname] = $list
+    else
+      $list = $v4[$a.ifname] ?? []
+      push($list, $text)
+      $v4[$a.ifname] = $list
+    end
   end
   $link_dns = $snap.resolved != nil ? $snap.resolved.links : {}
 
@@ -408,6 +424,9 @@ fn network($snap, $ui = nil)
   $sorted = sort_by($sorted, function ($e) = $e.key)
 
   $rows = []
+  -- The most address lines any displayed link has (at least one): sets the
+  -- shared card height below.
+  $max_lines = 1
   for each $e in $sorted
     if length($rows) >= $MAX_LINKS then break end
     $l = $e.link
@@ -421,10 +440,13 @@ fn network($snap, $ui = nil)
       push($detail, $managed.admin == "unmanaged" ? text("net_unmanaged") : text("net_managed", {state: $managed.admin}))
     end
     if $link_dns[$l.ifname] != nil then push($detail, text("net_dns") .. " " .. join($link_dns[$l.ifname], ", ")) end
-    $shown = $addrs[$l.ifname] ?? []
+    $shown = concat($v4[$l.ifname] ?? [], $v6[$l.ifname] ?? [])
+    $lines = max(length($shown), 1)
+    if $lines > $max_lines then $max_lines = $lines end
     $action = row_action($access, $kinds[$l.ifname] ?? ($managed != nil ? $managed.kind : nil), $l.ifname)
     push($rows, {id: "if_" .. $l.ifname, cells: [], name: $l.ifname, sub: join($sub, " · "),
-      addresses: length($shown) > 0 ? join($shown, "  ") : text("net_no_addresses"),
+      addresses: length($shown) > 0 ? join($shown, "\n") : text("net_no_addresses"),
+      address_height: $ADDR_LINE_H * $lines,
       detail: join($detail, " · "), has_detail: length($detail) > 0,
       dot: $l.up == true ? $C.ok : $C.faint,
       action: $action, editable: $action != "", cta: $action != "" ? text($ACTION_CTA[$action]) : "",
@@ -459,7 +481,8 @@ fn network($snap, $ui = nil)
 
   return {title: text("network_title"), summary: $summary,
     count: counted(length($sorted), "net_interfaces_none", "net_interfaces_one", "net_interfaces_many"),
-    rows: $rows, empty: length($rows) == 0, empty_text: text("net_interfaces_none"),
+    rows: $rows, row_height: $CARD_H + $ADDR_LINE_H * ($max_lines - 1),
+    empty: length($rows) == 0, empty_text: text("net_interfaces_none"),
     route_label: text("net_route"), gateway: $gateway, has_gateway: $gateway != "",
     dns_label: text("net_dns"), dns: join($servers, ", "), has_dns: length($servers) > 0,
     note: $note, has_note: $note != "",

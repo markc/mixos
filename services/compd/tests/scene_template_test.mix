@@ -622,10 +622,36 @@ $net = $models.network($net_snap)
 check($net.summary == "Connected via wlan0 (Wireless)" and $net.count == "3 interfaces", "summary: the default-route link and the non-loopback count")
 check(deep_eq(map($net.rows, function ($row) = $row.name), ["wlan0", "eth0", "wg0"]), "default route first, then up, then down; loopback left out")
 check(deep_eq($net.rows[0], {id: "if_wlan0", cells: [], name: "wlan0", sub: "Wireless · up · Example Net",
-  addresses: "192.0.2.10/24  2001:db8::10/64", detail: "default route · networkd: configured · DNS 192.0.2.1", has_detail: true, dot: "#27ae60",
-  action: "", editable: false, cta: "", background: "#2a2e32"}), "a full row: kind, SSID, link-local dropped, networkd and DNS")
+  addresses: "192.0.2.10/24\n2001:db8::10/64", address_height: 32, detail: "default route · networkd: configured · DNS 192.0.2.1", has_detail: true, dot: "#27ae60",
+  action: "", editable: false, cta: "", background: "#2a2e32"}), "a full row: kind, SSID, link-local dropped, networkd and DNS, one line per address")
 check($net.rows[2].sub == "WireGuard · down" and $net.rows[2].addresses == "No addresses" and $net.rows[2].dot == "#6e7680", "a down link")
 check($net.gateway == "192.0.2.254 on wlan0" and $net.dns == "192.0.2.1" and not $net.has_note, "route and the default link's DNS")
+check($net.rows[2].addresses == "No addresses" and $net.rows[2].address_height == 16, "a link with no address: one line of text")
+check($net.row_height == 100, "shared card height: wlan0 has two address lines, so 84 plus 16")
+-- Addresses: IPv4 first, then IPv6, one line each, link-local IPv6 out, no cap.
+$addr_snap = {links: [{ifname: "eth0", index: 2, loopback: false, up: true, wireless: false}],
+  addresses: [{ifname: "eth0", family: "inet6", address: "2001:db8::1", prefix: 64},
+    {ifname: "eth0", family: "inet", address: "192.0.2.101", prefix: 24},
+    {ifname: "eth0", family: "inet6", address: "fe80::1", prefix: 64},
+    {ifname: "eth0", family: "inet", address: "192.0.2.102", prefix: 24},
+    {ifname: "eth0", family: "inet6", address: "2001:db8::2", prefix: 64}],
+  kinds: {eth0: "ether"}, routes: []}
+$mixed = $models.network($addr_snap)
+check($mixed.rows[0].addresses == "192.0.2.101/24\n192.0.2.102/24\n2001:db8::1/64\n2001:db8::2/64" and $mixed.rows[0].address_height == 64, "interleaved families: IPv4 first, IPv6 second, one line each")
+check($mixed.row_height == 84 + 16 * 3, "four address lines: 84 plus 16 per extra line")
+$many_addrs = []
+for $i = 1 to 6
+  push($many_addrs, {ifname: "eth0", family: "inet", address: "198.51.100." .. to_string($i), prefix: 24})
+end
+$many = $models.network(merge($addr_snap, {addresses: $many_addrs}))
+check(length(split($many.rows[0].addresses, "\n")) == 6 and $many.rows[0].address_height == 96, "no cap: every IPv4 address is shown")
+check($many.row_height == 84 + 16 * 5, "six address lines: the shared card is taller")
+$one = $models.network(merge($addr_snap, {addresses: [{ifname: "eth0", family: "inet", address: "192.0.2.101", prefix: 24}]}))
+check($one.row_height == 84 and $one.rows[0].address_height == 16, "one address: the 84 minimum")
+$none = $models.network(merge($addr_snap, {addresses: []}))
+check($none.rows[0].addresses == "No addresses" and $none.rows[0].address_height == 16 and $none.row_height == 84, "no addresses: one line of text, the minimum card")
+check($many.row_height > $one.row_height, "a larger address count yields taller cards")
+check($models.network(nil).row_height == 84, "the default model's row height is the minimum")
 $bare = $net_snap
 $bare.networkd = nil
 $bare.resolved = nil
@@ -729,10 +755,10 @@ $wg_first = $hostd.wg_request("wgtest", {wg_addresses: "10.77.0.1/32", wg_port: 
 check(deep_eq($wg_first, {name: "wgtest", addresses: ["10.77.0.1/32"], window_s: 25, listen_port: 51830, peers: [], require_handshake: false}), "the first side of a pair: no peer, no handshake wait")
 $wg_pair = $hostd.wg_request("wgtest", {wg_addresses: "10.77.0.1/32", wg_port: "", peer_key: "PEERKEY=", peer_endpoint: "127.0.0.1:51831", peer_allowed: "10.77.0.2/32", peer_keepalive: "5", handshake: true}, 30).request
 check(deep_eq($wg_pair, {name: "wgtest", addresses: ["10.77.0.1/32"], window_s: 30, peers: [{public_key: "PEERKEY=", allowed_ips: ["10.77.0.2/32"], endpoint: "127.0.0.1:51831", keepalive_s: 5}]}), "a peer with endpoint and keepalive; handshake left to hostd's default")
-check($hostd.wg_request("w", {wg_addresses: ""}).error == "net_need_address" and $hostd.wg_request("w", {wg_addresses: "10.0.0.1"}).error == "net_need_prefix", "tunnel addresses need a prefix")
-check($hostd.wg_request("w", {wg_addresses: "10.0.0.1/32", wg_port: "70000"}).error == "net_bad_port" and $hostd.wg_request("w", {wg_addresses: "10.0.0.1/32", wg_port: "51.5"}).error == "net_bad_port", "a bad listen port is caught")
-check($hostd.wg_request("w", {wg_addresses: "10.0.0.1/32", peer_key: "K", peer_allowed: ""}).error == "net_need_allowed", "a peer needs allowed IPs")
-check($hostd.wg_request("w", {wg_addresses: "10.0.0.1/32", peer_key: "K", peer_allowed: "10.0.0.2/32", peer_keepalive: "x"}).error == "net_bad_keepalive", "keepalive is whole seconds")
+check($hostd.wg_request("w", {wg_addresses: ""}).error == "net_need_address" and $hostd.wg_request("w", {wg_addresses: "192.0.2.101"}).error == "net_need_prefix", "tunnel addresses need a prefix")
+check($hostd.wg_request("w", {wg_addresses: "192.0.2.101/32", wg_port: "70000"}).error == "net_bad_port" and $hostd.wg_request("w", {wg_addresses: "192.0.2.101/32", wg_port: "51.5"}).error == "net_bad_port", "a bad listen port is caught")
+check($hostd.wg_request("w", {wg_addresses: "192.0.2.101/32", peer_key: "K", peer_allowed: ""}).error == "net_need_allowed", "a peer needs allowed IPs")
+check($hostd.wg_request("w", {wg_addresses: "192.0.2.101/32", peer_key: "K", peer_allowed: "192.0.2.102/32", peer_keepalive: "x"}).error == "net_bad_keepalive", "keepalive is whole seconds")
 check(deep_eq($hostd.wifi_request("wlan0", "home", "secret").request, {device: "wlan0", ssid: "home", window_s: 30, passphrase: "secret"}) and $hostd.wifi_request("wlan0", "cafe", nil).request.passphrase == nil, "Wi-Fi connect carries a passphrase only when given")
 
 -- New tunnels: names a net.wg.apply grant lists that don't exist yet.
@@ -782,7 +808,7 @@ check(starts_with(trim(before(after($net_behaviour, "on net.scan async\n"), "\ne
 check(contains(before(after($net_behaviour, "fn typed($event, $field)\n"), "\nend\n"), "if from_ui($event) and"), "typed text is stored only from the scene host")
 check($net_nodes.n_newwg.on_click == "net_wg_new" and $net_nodes.f_list.on_click == "net_wifi_pick" and $net_nodes.f_scan.on_click == "net_wifi_scan" and $net_nodes.w_hs.on_click == "net_wg_handshake", "tunnel and Wi-Fi controls are wired")
 -- Review round 1 (sol): the fixes, pinned.
-check($hostd.wg_request("w", {wg_addresses: "10.0.0.1/32", peer_key: "K", peer_allowed: "10.0.0.2/32", peer_keepalive: "3601"}).error == "net_bad_keepalive" and $hostd.wg_request("w", {wg_addresses: "10.0.0.1/32", peer_key: "K", peer_allowed: "10.0.0.2/32", peer_keepalive: "3600"}).request != nil, "keepalive is 1 to 3600, as hostd takes it")
+check($hostd.wg_request("w", {wg_addresses: "192.0.2.101/32", peer_key: "K", peer_allowed: "192.0.2.102/32", peer_keepalive: "3601"}).error == "net_bad_keepalive" and $hostd.wg_request("w", {wg_addresses: "192.0.2.101/32", peer_key: "K", peer_allowed: "192.0.2.102/32", peer_keepalive: "3600"}).request != nil, "keepalive is 1 to 3600, as hostd takes it")
 $last = $models.wg_form({wg_addresses: "10.77.0.1/32", wg_port: "51820", peer_key: "P=", peer_endpoint: "127.0.0.1:51821", peer_allowed: "10.77.1.1/32", peer_keepalive: "", handshake: true})
 $again = $models.wg_prefill($net_snap, "wgtest", $last)
 check($again.wg_port == "51820" and $again.peer_key == "P=" and $again.kind == "wg" and $again.confirmed == false and $again.wg_pubkey == "", "a tunnel this panel set up reopens with its last form")
