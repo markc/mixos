@@ -77,7 +77,11 @@ fn draw_once<E: RenderElement<GlesRenderer>>(gles: &mut GlesRenderer, element: &
         let _ = sync.wait();
     }
     let mapping = gles
-        .copy_texture(&texture, full, Fourcc::Abgr8888)
+        .copy_texture(
+            &texture,
+            Rectangle::from_size(Size::<i32, Buffer>::from((W, H))),
+            Fourcc::Abgr8888,
+        )
         .expect("copy texture");
     gles.map_texture(&mapping).expect("map readback").to_vec()
 }
