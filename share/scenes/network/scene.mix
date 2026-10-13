@@ -73,13 +73,13 @@ e_btn_fill: {"widget":"spacer"}
 e_close: {"label":"= $model.edit.close_label","on_click":"net_close","widget":"button"}
 e_note: {"color":"#fcfcfc","hidden":"= not $model.edit.has_note","size":12,"text":"= $model.edit.note","widget":"text"}
 n_empty: {"color":"#6e7680","hidden":"= not $model.empty","size":13,"text":"= $model.empty_text","widget":"text"}
-n_list: {"fill":true,"gap":6,"hidden":"= $model.empty","on_click":"net_row","row":"n_row","row_height":"= $model.row_height","rows":"= $model.rows","widget":"list"}
-n_row: {"align":"center","background":"= $item.background","children":["n_dot","n_col","n_cta"],"gap":10,"height":"= $model.row_height","hover":"#343a40","padding":12,"radius":10,"widget":"row"}
+n_list: {"fill":true,"gap":6,"hidden":"= $model.empty","on_click":"net_row","row":"n_row","row_height":"= $model.row_height ?? 84","rows":"= $model.rows","widget":"list"}
+n_row: {"align":"center","background":"= $item.background","children":["n_dot","n_col","n_cta"],"gap":10,"height":"= $model.row_height ?? 84","hover":"#343a40","padding":12,"radius":10,"widget":"row"}
 n_dot: {"color":"= $item.dot","size":12,"text":"●","widget":"text"}
 n_col: {"children":["n_name","n_sub","n_addr","n_detail"],"fill":true,"gap":2,"widget":"column"}
 n_name: {"bold":true,"color":"#fcfcfc","elide":true,"size":14,"text":"= $item.name","widget":"text"}
 n_sub: {"color":"#a1a9b1","elide":true,"size":12,"text":"= $item.sub","widget":"text"}
-n_addr: {"color":"#fcfcfc","elide":false,"min_height":"= $item.address_height","shrink":0,"size":12,"text":"= $item.addresses","widget":"text"}
+n_addr: {"color":"#fcfcfc","elide":false,"min_height":"= $item.address_height ?? 16","shrink":0,"size":12,"text":"= $item.addresses","widget":"text"}
 n_detail: {"color":"#6e7680","elide":true,"hidden":"= not $item.has_detail","size":11,"text":"= $item.detail","widget":"text"}
 n_cta: {"color":"#3daee9","hidden":"= not $item.editable","size":12,"text":"= $item.cta","widget":"text"}
 ```
