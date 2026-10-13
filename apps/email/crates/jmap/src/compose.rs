@@ -217,7 +217,8 @@ mod tests {
         };
         let mime = String::from_utf8(build_mime(&evil)).unwrap();
         assert!(!mime.contains("\nBcc: eve"));
-        assert!(mime.contains("Subject: Hi Bcc: eve@example.invalid\r\n"));
+        // Each stripped control character leaves one space.
+        assert!(mime.contains("Subject: Hi  Bcc: eve@example.invalid\r\n"));
     }
 
     #[test]
