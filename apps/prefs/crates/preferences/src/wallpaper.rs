@@ -664,7 +664,7 @@ mod tests {
 
     #[test]
     fn unknown_config_refuses_editing() {
-        let mut editor = loaded(json!({"schema": 1, "extra": true}));
+        let editor = loaded(json!({"schema": 1, "extra": true}));
         assert!(!editor.can_edit());
         assert!(!editor.can_apply());
         assert_eq!(editor.status, "status.unavailable");

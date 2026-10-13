@@ -42,3 +42,36 @@ fn starting_directory() -> PathBuf {
     let pictures = home.join("Pictures");
     if pictures.is_dir() { pictures } else { home }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    struct Directory(PathBuf);
+    impl Directory {
+        fn new()->Self {
+            static NEXT:AtomicU64=AtomicU64::new(0);
+            let path=std::env::temp_dir().join(format!("prefs-browser-{}-{}",std::process::id(),NEXT.fetch_add(1,Ordering::Relaxed)));
+            std::fs::create_dir(&path).unwrap(); Self(path)
+        }
+        fn listing(&self)->Listing {list(Some(self.0.to_str().unwrap().into())).unwrap()}
+    }
+    impl Drop for Directory {fn drop(&mut self){std::fs::remove_dir_all(&self.0).unwrap();}}
+    #[test]
+    fn browser_lists_directories_and_image_extensions_in_stable_order() {
+        let dir=Directory::new();
+        std::fs::create_dir(dir.0.join("folder")).unwrap();
+        for name in ["B.JPG","a.png","c.Jpeg","hidden.txt"] {std::fs::write(dir.0.join(name),[]).unwrap();}
+        let listing=dir.listing();
+        assert_eq!(listing.entries.iter().map(|e|e.name.as_str()).collect::<Vec<_>>(),["folder","a.png","B.JPG","c.Jpeg"]);
+        assert!(listing.entries[0].directory); assert!(!listing.truncated);
+    }
+    #[test]
+    fn directory_scan_has_a_hard_entry_limit_and_reports_errors() {
+        let dir=Directory::new();
+        for index in 0..MAX_ENTRIES+1 {std::fs::write(dir.0.join(format!("{index}.png")),[]).unwrap();}
+        let listing=dir.listing(); assert!(listing.truncated); assert_eq!(listing.entries.len(),MAX_ENTRIES);
+        assert!(list(Some(dir.0.join("missing").to_str().unwrap().into())).is_err());
+        assert!(list(Some("relative".into())).is_err());
+    }
+}

@@ -51,6 +51,8 @@ impl Engine {
         self.picker.loading = Some(ticket);
         self.picker.error = None;
         self.picker.selected = None;
+        self.picker.entries.clear();
+        self.picker.truncated = false;
         self.effects.push(Effect::Browse { ticket, path });
     }
 

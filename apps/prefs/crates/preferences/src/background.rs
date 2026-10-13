@@ -67,7 +67,9 @@ mod tests {
     use serde_json::json;
     fn label(key:&str,_:&[(&str,&str)])->String {key.into()}
     fn loaded()->Engine {
-        let mut e=Engine::new(label); e.take_effects(); e.read_wallpaper();
+        let mut e=Engine::new(label);
+        let release=match e.take_effects().pop().unwrap(){Effect::Releases{ticket,..}=>ticket,_=>panic!("listing")};
+        e.released(release,Ok(Reply{rc:0,body:"[]".into(),error:None})); e.take_effects(); e.read_wallpaper();
         let ticket=match e.take_effects().pop().unwrap(){Effect::Backdrop{ticket,..}=>ticket,_=>panic!("read")};
         e.wallpaper_finished(ticket,Ok(Reply{rc:0,body:json!({"schema":"backdrop.v1","config":{"schema":1,"default":{"colour":"#112233"}},"outputs":[],"pending":null}).to_string(),error:None}));
         e
