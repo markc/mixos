@@ -51,6 +51,12 @@ from the Bus.
 | `net.link.apply` | write | configure one link through networkd, rolled back unless it comes up |
 | `hostd.undo` | write | put back what an applied change replaced; needs no grant of its own (see below) |
 | `net.wg.apply` | write | configure a WireGuard link through networkd, rolled back unless it comes up and its peers complete a handshake |
+| `desk.restart` | write | restart the desk machine that the caller's grant names (`machinectl reboot`); the host stays up; no undo |
+| `desk.stop` | write | power off the desk machine that the caller's grant names (`machinectl poweroff`); the host stays up; no undo |
+
+The desk verbs take no machine name. A grant gives the caller one desk through
+its `desks` limit, which must name exactly one machine. A grant with no desk,
+or with two, is refused.
 | `net.wifi.scan` | write | scan for Wi-Fi networks on one device (iwd). It changes nothing durable, but it drives the radio, so it needs a grant |
 | `net.wifi.connect` | write | connect a Wi-Fi device to a network (iwd), put back unless connected in time |
 

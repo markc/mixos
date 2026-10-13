@@ -744,14 +744,17 @@ mod tests {
                 "hostd.undo",
                 "net.wifi.scan",
                 "net.wifi.connect",
-                "net.wg.apply"
+                "net.wg.apply",
+                "desk.restart",
+                "desk.stop"
             ]
         );
         let read_only: Vec<bool> = verbs.iter().map(|v| v.read_only).collect();
         assert_eq!(
             read_only,
             [
-                true, true, true, true, true, false, false, false, false, false, false, false
+                true, true, true, true, true, false, false, false, false, false, false, false,
+                false, false
             ]
         );
     }

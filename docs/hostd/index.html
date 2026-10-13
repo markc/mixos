@@ -284,9 +284,14 @@ from the Bus.</p>
 <tr><td><code>net.link.apply</code></td><td>write</td><td>configure one link through networkd, rolled back unless it comes up</td></tr>
 <tr><td><code>hostd.undo</code></td><td>write</td><td>put back what an applied change replaced; needs no grant of its own (see below)</td></tr>
 <tr><td><code>net.wg.apply</code></td><td>write</td><td>configure a WireGuard link through networkd, rolled back unless it comes up and its peers complete a handshake</td></tr>
-<tr><td><code>net.wifi.scan</code></td><td>write</td><td>scan for Wi-Fi networks on one device (iwd). It changes nothing durable, but it drives the radio, so it needs a grant</td></tr>
-<tr><td><code>net.wifi.connect</code></td><td>write</td><td>connect a Wi-Fi device to a network (iwd), put back unless connected in time</td></tr>
+<tr><td><code>desk.restart</code></td><td>write</td><td>restart the desk machine that the caller's grant names (<code>machinectl reboot</code>); the host stays up; no undo</td></tr>
+<tr><td><code>desk.stop</code></td><td>write</td><td>power off the desk machine that the caller's grant names (<code>machinectl poweroff</code>); the host stays up; no undo</td></tr>
 </tbody></table>
+<p>The desk verbs take no machine name. A grant gives the caller one desk through
+its <code>desks</code> limit, which must name exactly one machine. A grant with no desk,
+or with two, is refused.
+| <code>net.wifi.scan</code> | write | scan for Wi-Fi networks on one device (iwd). It changes nothing durable, but it drives the radio, so it needs a grant |
+| <code>net.wifi.connect</code> | write | connect a Wi-Fi device to a network (iwd), put back unless connected in time |</p>
 <p><code>host.info</code> is also published as the retained topic <code>hostd.info</code>.</p>
 <h2 id="who-may-change-what">Who may change what</h2>
 <p>Reads are open to anyone who can reach hostd. Changes need a <strong>standing
