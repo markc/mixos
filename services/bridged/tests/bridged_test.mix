@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- bridged_test: bridged over a real Bus, offline. A private noded broker
 -- (tests/lib/private_bus.mix), a stand-in app (tests/lib/fake_app.mix, token
 -- auth) and bridged itself as a serve citizen named fakeapp, configured by
@@ -13,21 +14,26 @@
 -- code through.
 -- Run from the checkout root with Mix >= 0.112.1:
 --   mix services/bridged/tests/bridged_test.mix [--noded PATH]
--- $BRIDGED_MIX names the mix binary for every process the test starts,
--- including the serve child of bridged --start (default /opt/mixos/bin/mix).
--- Needs a noded binary (default /opt/mixos/bin/noded).
+-- The mix binary for every process the test starts, including the serve child
+-- of bridged --start: $BRIDGED_MIX, else $MIXOS_TEST_MIX, else
+-- /opt/mixos/bin/mix. The noded binary: --noded PATH, else $MIXOS_TEST_NODED,
+-- else /opt/mixos/bin/noded. An empty variable counts as unset.
 
 $pb = require("../../../tests/lib/private_bus.mix")
 $here = dirname(realpath($0))
 
 -- The mix binary the tests run their processes under: $BRIDGED_MIX when set
--- (also inherited by bridged --start for its child), else the installed one.
+-- (also inherited by bridged --start for its child), else $MIXOS_TEST_MIX
+-- (the runner's fresh build), else the installed one.
 $MIX = env("BRIDGED_MIX") ?? ""
+if $MIX == "" then $MIX = env("MIXOS_TEST_MIX") ?? "" end
 if $MIX == "" then $MIX = "/opt/mixos/bin/mix" end
 $citizen = realpath($here .. "/../scripts/bridged.mix")
 $fake = realpath($here .. "/lib/fake_app.mix")
 $registry = realpath($here .. "/../../../docs/spec/bus/verbs.conf.mix")
-$noded = "/opt/mixos/bin/noded"
+-- The noded binary: --noded PATH wins, else $MIXOS_TEST_NODED, else the installed one.
+$noded = env("MIXOS_TEST_NODED") ?? ""
+if $noded == "" then $noded = "/opt/mixos/bin/noded" end
 $a = args()
 if len($a) == 2 and $a[0] == "--noded" then $noded = $a[1] end
 $tmp = "/var/tmp/bridged-test." .. uuid()
@@ -103,7 +109,8 @@ try
   mkdir($client.MIXOS_ETC .. "/bridge", {parents: true})
   write_file($client.MIXOS_ETC .. "/bridge/fakeapp.conf.mix", join(["token_file: \"" .. $tmp .. "/app.tok\"", "port: " .. to_string($port),
     "timeout_s: 3", "backoff_s: 1", "instance: \"bridged-test\""], ",\n") .. "\n")
-  $env = merge($client, {BRIDGED_VERBS: $registry, BRIDGED_CONFIG: ""})
+  -- BRIDGED_MIX reaches every bridged process, the --start parent and its serve child.
+  $env = merge($client, {BRIDGED_MIX: $MIX, BRIDGED_VERBS: $registry, BRIDGED_CONFIG: ""})
 
   -- Start refusals.
   $r = refused("settings", $env)
@@ -168,6 +175,34 @@ try
 
   $s = call("fakeapp.status", nil, 5).v
   check("status: registered, app not yet contacted", $s.connection == "never-connected" and $s.port == $port and $s.service == "fakeapp" and $s.instance == "bridged-test")
+
+  -- The Bus registry, read behaviourally: HELP lists what fakeapp answers. The
+  -- runtime plumbing (HELP, INFO, QUIT, RELOAD and the props verbs) is not the
+  -- bridge's contract and is subtracted; what remains must be exactly the six
+  -- bridged family members the registry declares for an instance, no more,
+  -- fewer, or duplicated.
+  $h = call("HELP", nil, 5)
+  check("help: HELP answers rc 0 with a list", $h.rc == 0 and type($h.v) == "list")
+  $runtime = ["HELP", "INFO", "QUIT", "RELOAD", "fakeapp.props.get", "fakeapp.props.list", "fakeapp.props.describe"]
+  $reg = {families: []}
+  try
+    $reg = load_data($registry)
+  catch $m
+  end
+  $declared = map(filter($reg.families ?? [], fn($f) = $f.owner == "bridged" and $f.members == "instances"), fn($f) = replace($f.pattern, "<app>", "fakeapp"))
+  $authored = []
+  if type($h.v) == "list" then
+    for each $e in $h.v
+      if type($e) == "map" and type($e.name) == "string" then
+        $is_runtime = false
+        for each $r in $runtime
+          if $r == $e.name then $is_runtime = true end
+        end
+        if not $is_runtime then push($authored, $e.name) end
+      end
+    end
+  end
+  check("help: the authored names are exactly the six declared bridged family members", len($declared) == 6 and deep_eq(sort($authored), sort($declared)))
 
   $r = call("fakeapp.commands", nil, 10)
   check("commands: rc 0 with the app's list", $r.rc == 0 and contains(json_encode($r.v), "engine.execute"))

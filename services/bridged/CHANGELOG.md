@@ -48,8 +48,15 @@ auth, transport or timeout) or 12 (a bad request).
   unix-socket channel would close it), a direct `mix --serve` briefly holding
   a refused name, and the reverse name collision being the verb-registry
   gate's to refuse.
-- Verb registration in `docs/spec/bus/verbs.conf.mix` is pending the registry
-  gate's instance-family mapping.
+- The six verbs are declared in `docs/spec/bus/verbs.conf.mix` as the
+  `bridged` instance family (`<app>.<verb>`, `members: "instances"`), in the
+  registry's schema 3. Installing the registry is a separate deployed
+  prerequisite, and this entry does not claim a live installation.
+- The bridge tests run in `tools/mix_tests.mix`. Their mix binary is
+  `BRIDGED_MIX`, else `MIXOS_TEST_MIX`, else `/opt/mixos/bin/mix`; the Bus
+  test's noded is `--noded`, else `MIXOS_TEST_NODED`, else the installed one.
+- The over-`max_line` reply test asserts rc 11 and the `transport:` prefix,
+  not the wording of Mix's line-limit error, which the current Mix changed.
 
 Ported from a private prototype (a serve citizen and its core, version
 0.3.0), with the instance-config path rule, the serve-name guard and the

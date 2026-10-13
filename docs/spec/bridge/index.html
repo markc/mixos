@@ -304,10 +304,16 @@ the bridge refuses to start (<code>RUNTIME</code>).</p>
 <p>The token never appears in a reply: any occurrence of it, in any letter case,
 in an app's error text, in a result, or in <code>last_error</code>, is replaced by
 <code>[redacted]</code>.</p>
-<p><strong>Registration is pending.</strong> The six verbs are an instance family,
-<code>&lt;app&gt;.&lt;verb&gt;</code> with owner <code>bridged</code> and runtime members. They enter
-<code>docs/spec/bus/verbs.conf.mix</code> together with the verb registry gate's family
-mapping (<code>members: "instances"</code>), not before.</p>
+<p><strong>Registration.</strong> The six verbs are an instance family, <code>&lt;app&gt;.&lt;verb&gt;</code> with
+owner <code>bridged</code> and <code>members: "instances"</code> (runtime members, not listed). They
+are declared in <code>docs/spec/bus/verbs.conf.mix</code> (registry schema 3). The static
+gate <code>tools/verb_registry.mix</code> checks the family's owner and suffix;
+<code>tools/verb_registry.mix --instances DIR</code> checks private file-stem naming and
+collisions only and reads no config token. The runtime guard reads the verbs
+and families lists but does not enforce the full canonical format. Installing
+the registry is a separate deployed prerequisite: the scripts and the registry
+come from the same revision, at <code>/opt/mixos/share/bus/verbs.conf.mix</code> or the
+<code>BRIDGED_VERBS</code> override.</p>
 <h2 id="instance-config-version-010">Instance config, version 0.1.0</h2>
 <p>A strict-data document (<code>load_data</code>; never executed).</p>
 <p><strong>Path:</strong> <code>$BRIDGED_CONFIG</code> when set; otherwise <code>&lt;etc&gt;/bridge/&lt;app&gt;.conf.mix</code>,

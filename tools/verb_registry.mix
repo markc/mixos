@@ -1,42 +1,152 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
--- version: 0.3.0
+-- version: 0.4.0
 -- The Bus verb registry gate (AGENTS.md §5) for docs/spec/bus/verbs.conf.mix:
 --
--- - schema 2;
--- - every entry is a map of exactly name, owner, version, status and class,
---   all strings;
--- - names are unique and well formed, owners are component names, versions
---   are release versions (MAJOR.MINOR.PATCH, no leading zeros), statuses and
---   classes come from their fixed sets
+-- - schema 2 or 3 (schema 1 is refused);
+-- - verbs: every entry is a map of exactly name, owner, version, status and
+--   class, all strings; names are unique and well formed, owners are
+--   component names, versions are release versions (MAJOR.MINOR.PATCH, no
+--   leading zeros), statuses and classes come from their fixed sets
 --   (classes: docs/decisions/2026-10-11-verb-classes.md);
--- - the file is in canonical form: inside `verbs: [ … ]` every line is
---   blank or exactly one entry, its fields in the order name, owner,
---   version, status, class, each written key:"value" with ", " between
---   them, braces round it and a trailing comma except on the last, in the
---   same order as the parsed entries. No comments inside the block, and no
---   line anywhere else may contain the text name:" at all. The
---   applications' registry tests read the file line by line, so this is
+-- - families (schema 3 only, additive; docs/decisions/2026-10-13-instance-verb-families.md):
+--   each is a map of exactly pattern, owner, members, version, status and
+--   class. pattern is <app>.<suffix> and unique; members is "instances" (the
+--   runtime members are instances, not listed) or a nonempty list of unique
+--   Bus service names. A listed member may be shared by families of one owner
+--   only. It may equal a concrete verb prefix only when every concrete verb
+--   with that prefix has the family's owner, and the expanded name
+--   (member.suffix) is not itself a concrete verb. Sharing across owners is
+--   refused;
+-- - the file is in canonical form: inside `verbs: [ … ]` and `families: [ … ]`
+--   every line is blank or exactly one entry, its fields in the order given
+--   above, each written key:"value" with ", " between them, braces round it
+--   and a trailing comma except on the last. No comments inside the blocks,
+--   and no line outside the verbs block may contain the text name:" at all.
+--   The applications' registry tests read the file line by line, so this is
 --   what keeps them honest.
 --
---   mix tools/verb_registry.mix [FILE]    exit 1 and list every problem
+-- With --source ROOT the component sources under ROOT are checked
+-- structurally (every on @.<suffix> declaration belongs to its owner's
+-- instances family; every instances family is declared by its owner). With
+-- --instances DIR the instance config names in DIR are checked against the
+-- Bus name rule, the reserved names and the registry's collisions. Neither
+-- check reads a config's contents or a token, or touches the network.
+--
+--   mix tools/verb_registry.mix [FILE] [--source ROOT] [--instances DIR]
+--
+-- With no FILE the repository registry is checked, and its source is checked
+-- against the repository root unless --source names another root. With an
+-- explicit FILE and no --source the check is data only. Exit 0 when clean,
+-- 1 when any check fails, 2 on a usage error.
 $root = dirname(dirname(realpath($0)))
-$path = $root .. "/docs/spec/bus/verbs.conf.mix"
-if len(args()) == 1 then
-  $path = args()[0]
-elif len(args()) > 1 then
-  raise("USAGE", "verb_registry.mix [FILE]")
+$src = require("lib/verb_registry_source.mix")
+
+$USAGE = "usage: mix tools/verb_registry.mix [FILE] [--source ROOT] [--instances DIR]\n  FILE: the registry (default docs/spec/bus/verbs.conf.mix)\n  --source ROOT: check the component sources under ROOT (default with no FILE: the repository)\n  --instances DIR: check the instance config names in DIR against the registry\n  --help: this text"
+-- A listed family member is a Bus service name, as the instance names are.
+$_MEMBER = "^[a-z][a-z0-9-]{1,30}$"
+
+fn usage_error($message)
+  eprint("verb_registry: " .. $message)
+  eprint($USAGE)
+  exit(2)
+end
+
+$file = nil
+$source = nil
+$instances = nil
+$a = args()
+$i = 0
+while $i < len($a)
+  $x = $a[$i]
+  if $x == "--help" or $x == "-h" then
+    print($USAGE)
+    exit(0)
+  elif $x == "--source" or $x == "--instances" then
+    if $i + 1 >= len($a) then usage_error($x .. " needs a value") end
+    if $x == "--source" then
+      $source = $a[$i + 1]
+    else
+      $instances = $a[$i + 1]
+    end
+    $i = $i + 2
+  elif starts_with($x, "--") then
+    usage_error("unknown option " .. $x)
+  else
+    if $file != nil then usage_error("only one FILE") end
+    $file = $x
+    $i = $i + 1
+  end
+end
+
+$path = $file
+if $file == nil then
+  $path = $root .. "/docs/spec/bus/verbs.conf.mix"
+  if $source == nil then $source = $root end
 end
 
 $fields = ["name", "owner", "version", "status", "class"]
 $classes = ["intent", "query", "input", "system"]
 $statuses = ["accepted", "draft", "deprecated"]
+$family_fields = ["pattern", "owner", "members", "version", "status", "class"]
 $problems = []
 
-$registry = load_data($path)
-if type($registry) != "map" or not has_key($registry, "schema") or $registry.schema != 2 then
-  push($problems, "schema must be 2")
+-- The canonical block bounds: the line of `<title>: [` and the first line
+-- after it that is `]` or `],`. -1 when missing.
+fn find_block($lines, $title)
+  $start = -1
+  $end_at = -1
+  $i = 0
+  while $i < len($lines)
+    if $start < 0 and trim($lines[$i]) == ($title .. ": [") then
+      $start = $i
+    elif $start >= 0 and $end_at < 0 and (trim($lines[$i]) == "]" or trim($lines[$i]) == "],") then
+      $end_at = $i
+    end
+    $i = $i + 1
+  end
+  return {start: $start, end_at: $end_at}
 end
+
+-- The non-blank lines strictly inside a block.
+fn block_lines($lines, $block)
+  $out = []
+  $i = $block.start + 1
+  while $i < $block.end_at
+    if trim($lines[$i]) != "" then push($out, $lines[$i]) end
+    $i = $i + 1
+  end
+  return $out
+end
+
+-- ["a", "b"] as written in the canonical form.
+fn quoted_list($items)
+  $parts = []
+  for each $x in $items
+    push($parts, "\"" .. $x .. "\"")
+  end
+  return "[" .. join($parts, ", ") .. "]"
+end
+
+$registry = load_data($path)
+$schema = nil
+if type($registry) == "map" and has_key($registry, "schema") then $schema = $registry.schema end
+if $schema != 2 and $schema != 3 then
+  push($problems, "schema must be 2 or 3")
+end
+$has_families = type($registry) == "map" and has_key($registry, "families")
+if $schema == 2 and $has_families then
+  push($problems, "schema 2 takes no families; a families list needs schema 3")
+end
+$families = []
+if $schema == 3 then
+  if $has_families and type($registry.families) == "list" then
+    $families = $registry.families
+  else
+    push($problems, "schema 3 requires a families list")
+  end
+end
+
 $verbs = []
 if type($registry) == "map" and has_key($registry, "verbs") and type($registry.verbs) == "list" then
   $verbs = $registry.verbs
@@ -45,6 +155,11 @@ else
 end
 
 $seen = {}
+$concrete = {}
+-- concrete_owner maps a verb prefix to its owner; mixed_prefix marks a prefix
+-- whose verbs have more than one owner.
+$concrete_owner = {}
+$mixed_prefix = {}
 $index = 0
 for each $verb in $verbs
   $index = $index + 1
@@ -74,6 +189,12 @@ for each $verb in $verbs
         push($problems, $where .. ": duplicate")
       end
       $seen[$name] = true
+      $prefix = split($name, ".")[0]
+      $concrete[$prefix] = true
+      if has_key($concrete_owner, $prefix) and $concrete_owner[$prefix] != $verb.owner then
+        $mixed_prefix[$prefix] = true
+      end
+      $concrete_owner[$prefix] = $verb.owner
       if not re_match($verb.owner, "^[a-z][a-z0-9-]*$") then
         push($problems, $where .. ": owner must be a component name")
       end
@@ -90,32 +211,122 @@ for each $verb in $verbs
   end
 end
 
+-- Families: validated one by one. good keeps only the valid ones, which the
+-- source and instance checks use; member_owner maps each listed member to its
+-- family's pattern.
+$good = []
+$patterns = {}
+$member_owner = {}
+$has_instance_family = false
+$index = 0
+for each $f in $families
+  $index = $index + 1
+  $where = "family " .. to_string($index)
+  if type($f) != "map" then
+    push($problems, $where .. ": not a map")
+  else
+    if has_key($f, "pattern") and type($f.pattern) == "string" then $where = $f.pattern end
+    for each $key in keys($f)
+      if not contains($family_fields, $key) then
+        push($problems, $where .. ": unknown field " .. $key)
+      end
+    end
+    $ok = true
+    for each $key in ["pattern", "owner", "version", "status", "class"]
+      if not has_key($f, $key) or type($f[$key]) != "string" then
+        push($problems, $where .. ": " .. $key .. " must be a string")
+        $ok = false
+      end
+    end
+    if not has_key($f, "members") then
+      push($problems, $where .. ": members must be \"instances\" or a list of names")
+      $ok = false
+    elif type($f.members) == "string" then
+      if $f.members != "instances" then
+        push($problems, $where .. ": members must be \"instances\" or a list of names")
+        $ok = false
+      end
+    elif type($f.members) != "list" or len($f.members) == 0 then
+      push($problems, $where .. ": members must be \"instances\" or a list of names")
+      $ok = false
+    else
+      $listed = {}
+      for each $m in $f.members
+        if type($m) != "string" or not re_match($m, $_MEMBER) then
+          push($problems, $where .. ": member " .. to_string($m) .. " is not a Bus service name")
+          $ok = false
+        elif has_key($listed, $m) then
+          push($problems, $where .. ": member " .. $m .. " is listed twice")
+          $ok = false
+        end
+        if type($m) == "string" then $listed[$m] = true end
+      end
+    end
+    if $ok then
+      if not re_match($f.pattern, "^<app>\\.[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$") then
+        push($problems, $where .. ": pattern must be <app>.<suffix>")
+        $ok = false
+      end
+      if has_key($patterns, $f.pattern) then
+        push($problems, $where .. ": duplicate pattern")
+        $ok = false
+      end
+      $patterns[$f.pattern] = true
+      if not re_match($f.owner, "^[a-z][a-z0-9-]*$") then
+        push($problems, $where .. ": owner must be a component name")
+        $ok = false
+      end
+      if not re_match($f.version, "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$") then
+        push($problems, $where .. ": version must be MAJOR.MINOR.PATCH without leading zeros")
+        $ok = false
+      end
+      if not contains($statuses, $f.status) then
+        push($problems, $where .. ": status " .. $f.status .. " is not one of " .. join($statuses, ", "))
+        $ok = false
+      end
+      if not contains($classes, $f.class) then
+        push($problems, $where .. ": class " .. $f.class .. " is not one of " .. join($classes, ", "))
+        $ok = false
+      end
+    end
+    if $ok and type($f.members) == "list" then
+      $suffix = strip_prefix($f.pattern, "<app>.")
+      for each $m in $f.members
+        if has_key($concrete, $m) then
+          if has_key($mixed_prefix, $m) or $concrete_owner[$m] != $f.owner then
+            push($problems, $where .. ": member " .. $m .. " is a concrete verb prefix of another owner")
+            $ok = false
+          elif has_key($seen, $m .. "." .. $suffix) then
+            push($problems, $where .. ": member " .. $m .. " gives " .. $m .. "." .. $suffix .. ", which is already a concrete verb")
+            $ok = false
+          end
+        end
+        if has_key($member_owner, $m) and $member_owner[$m] != $f.owner then
+          push($problems, $where .. ": member " .. $m .. " is already a member of another owner's family")
+          $ok = false
+        end
+      end
+    end
+    if $ok then
+      push($good, $f)
+      if $f.members == "instances" then
+        $has_instance_family = true
+      else
+        for each $m in $f.members
+          $member_owner[$m] = $f.owner
+        end
+      end
+    end
+  end
+end
+
 -- Canonical form, compared line by line with the parsed entries.
 $lines = split(read_file($path), "\n")
-$start = -1
-$end_at = -1
-$i = 0
-while $i < len($lines)
-  if $start < 0 and trim($lines[$i]) == "verbs: [" then
-    $start = $i
-  elif $start >= 0 and $end_at < 0 and trim($lines[$i]) == "]" then
-    $end_at = $i
-  end
-  $i = $i + 1
-end
-if $start < 0 or $end_at < 0 then
+$vblock = find_block($lines, "verbs")
+if $vblock.start < 0 or $vblock.end_at < 0 then
   push($problems, "no `verbs: [` … `]` block on lines of their own")
 else
-  $entry_lines = []
-  $i = $start + 1
-  while $i < $end_at
-    $line = $lines[$i]
-    $t = trim($line)
-    if $t != "" then
-      push($entry_lines, $line)
-    end
-    $i = $i + 1
-  end
+  $entry_lines = block_lines($lines, $vblock)
   if len($entry_lines) != len($verbs) then
     push($problems, "canonical form: " .. to_string(len($entry_lines)) .. " entry lines for " .. to_string(len($verbs)) .. " entries")
   else
@@ -136,13 +347,63 @@ else
   end
 end
 
--- Outside the entry lines, nothing may look like an entry to a line reader.
+if $schema == 3 then
+  $fblock = find_block($lines, "families")
+  if $fblock.start < 0 or $fblock.end_at < 0 then
+    push($problems, "no `families: [` … `]` block on lines of their own")
+  else
+    $family_lines = block_lines($lines, $fblock)
+    if len($family_lines) != len($families) then
+      push($problems, "canonical form: " .. to_string(len($family_lines)) .. " family lines for " .. to_string(len($families)) .. " families")
+    else
+      $i = 0
+      while $i < len($families)
+        $f = $families[$i]
+        if type($f) == "map" and has_key($f, "pattern") and type($f.pattern) == "string" then
+          $mem = "\"instances\""
+          if type($f.members) == "list" then $mem = quoted_list($f.members) end
+          $expected = "    {pattern:\"" .. to_string($f.pattern) .. "\", owner:\"" .. to_string($f.owner) .. "\", members:" .. $mem .. ", version:\"" .. to_string($f.version) .. "\", status:\"" .. to_string($f.status) .. "\", class:\"" .. to_string($f.class) .. "\"}"
+          if $i < len($families) - 1 then
+            $expected = $expected .. ","
+          end
+          if $family_lines[$i] != $expected then
+            push($problems, "canonical form: line for " .. to_string($f.pattern) .. " should read: " .. trim($expected))
+          end
+        end
+        $i = $i + 1
+      end
+    end
+  end
+end
+
+-- Outside the verbs block, nothing may look like a concrete entry to a line
+-- reader (families lines included: they use pattern:).
 $i = 0
 while $i < len($lines)
-  if ($start < 0 or $i <= $start or $i >= $end_at) and contains($lines[$i], "name:" .. "\"") then
+  if ($vblock.start < 0 or $i <= $vblock.start or $i >= $vblock.end_at) and contains($lines[$i], "name:" .. "\"") then
     push($problems, "line " .. to_string($i + 1) .. ": name:" .. "\"" .. " outside an entry line")
   end
   $i = $i + 1
+end
+
+-- Source check: explicit --source, or the repository default with no FILE.
+$source_note = ""
+if $source != nil then
+  $report = $src.check_source($source, $good)
+  for each $p in $report.problems
+    push($problems, $p)
+  end
+  $source_note = "source: " .. to_string($report.declared) .. " on @ declarations in " .. to_string($report.files) .. " files"
+end
+
+-- Instance check: the config names in --instances DIR.
+$instance_note = ""
+if $instances != nil then
+  $report = $src.check_instances($instances, $concrete, $member_owner, $has_instance_family)
+  for each $p in $report.problems
+    push($problems, $p)
+  end
+  $instance_note = "instances: " .. to_string($report.count) .. " configs"
 end
 
 if len($problems) > 0 then
@@ -151,4 +412,6 @@ if len($problems) > 0 then
   end
   exit(1)
 end
-print("verb_registry: " .. to_string(len($verbs)) .. " verbs, schema 2, canonical, ok")
+print("verb_registry: " .. to_string(len($verbs)) .. " verbs, " .. to_string(len($families)) .. " families, schema " .. to_string($schema) .. ", canonical, ok")
+if $source_note != "" then print("verb_registry: " .. $source_note .. ", ok") end
+if $instance_note != "" then print("verb_registry: " .. $instance_note .. ", ok") end

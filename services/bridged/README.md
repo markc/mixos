@@ -19,9 +19,12 @@ no Cargo package, identity in `component.mx`.
 | `tests/bridge_core_test.mix` | offline: config, token, guard, spec fixture, the client against stand-in apps |
 | `tests/bridged_test.mix` | every verb over a private broker, the start refusals, `--start` (no child on a refusal, the child's exit code passed through), the app dying and coming back |
 
-Run the tests from the checkout root with Mix >= 0.112.1 (the Bus test needs
-a `noded`, default `/opt/mixos/bin/noded`, or `--noded <path>`; to test
-another mix binary, run the tests with it and set `BRIDGED_MIX` to it):
+Run the tests from the checkout root with Mix >= 0.112.1. The mix binary the
+tests run under is `BRIDGED_MIX`, else `MIXOS_TEST_MIX`, else
+`/opt/mixos/bin/mix`. The Bus test needs a `noded`: `--noded <path>`, else
+`MIXOS_TEST_NODED`, else `/opt/mixos/bin/noded`. An empty variable counts as
+unset. `tools/mix_tests.mix` sets `MIXOS_TEST_MIX`, `MIXOS_TEST_NODED` and
+`BRIDGED_MIX` to the fresh build:
 
 ```sh
 mix services/bridged/tests/bridge_core_test.mix
@@ -33,10 +36,21 @@ can drive a bridged application through `<app>.call`, within whatever its
 control channel allows. Read the manual's Security section before bridging
 anything.
 
-**Verb registration is pending.** The verbs are an instance family
-(`<app>.<verb>`, owner `bridged`, runtime members). They are registered in
-`docs/spec/bus/verbs.conf.mix` together with the verb registry gate's family
-mapping, not before. Nothing installs the registry to
-`/opt/mixos/share/bus/verbs.conf.mix` yet: until it does, a unit needs
-`BRIDGED_VERBS` in `/etc/mixos/bridge/<app>.env`, or the start check refuses
-(fail closed).
+**Verb registration.** The six verbs are declared in
+`docs/spec/bus/verbs.conf.mix` (registry schema 3) as the `bridged` instance
+family: `<app>.call`, `.commands`, `.execute`, `.inspect`, `.screenshot` and
+`.status`, with `members: "instances"`, so the running instances are not
+listed. The static gate `tools/verb_registry.mix` checks each family's owner
+and suffix. `tools/verb_registry.mix --instances DIR` checks only the private
+file-stem naming and collisions; it reads no config token. Mesh access is
+unchanged: the Bus still gives every member every verb.
+
+Registry installation is a separate, deployed prerequisite. The scripts and
+the registry must come from the same revision, and the registry must be at
+`/opt/mixos/share/bus/verbs.conf.mix` (the default) or named by a `BRIDGED_VERBS`
+override in `/etc/mixos/bridge/<app>.env`. Without one, the start check refuses
+(fail closed). This checkout is not a live deployment, and nothing here
+installs the registry for you.
+
+The runtime guard reads the verbs and families lists. It does not enforce the
+full canonical format (field order, spacing); the static gate does that.

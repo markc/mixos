@@ -72,10 +72,16 @@ The token never appears in a reply: any occurrence of it, in any letter case,
 in an app's error text, in a result, or in `last_error`, is replaced by
 `[redacted]`.
 
-**Registration is pending.** The six verbs are an instance family,
-`<app>.<verb>` with owner `bridged` and runtime members. They enter
-`docs/spec/bus/verbs.conf.mix` together with the verb registry gate's family
-mapping (`members: "instances"`), not before.
+**Registration.** The six verbs are an instance family, `<app>.<verb>` with
+owner `bridged` and `members: "instances"` (runtime members, not listed). They
+are declared in `docs/spec/bus/verbs.conf.mix` (registry schema 3). The static
+gate `tools/verb_registry.mix` checks the family's owner and suffix;
+`tools/verb_registry.mix --instances DIR` checks private file-stem naming and
+collisions only and reads no config token. The runtime guard reads the verbs
+and families lists but does not enforce the full canonical format. Installing
+the registry is a separate deployed prerequisite: the scripts and the registry
+come from the same revision, at `/opt/mixos/share/bus/verbs.conf.mix` or the
+`BRIDGED_VERBS` override.
 
 ## Instance config, version 0.1.0
 

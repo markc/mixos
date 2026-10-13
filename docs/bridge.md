@@ -150,10 +150,12 @@ Read this before bridging an application.
 
 ## Status
 
-`bridged` is version 0.1.0. Its verbs are not yet in the Bus verb registry:
-they are an instance family (`<app>.<verb>`, owned by `bridged`) and are
-registered together with the registry gate's family support. Nothing installs
-the verb registry to `/opt/mixos/share/bus/` yet either; until something
-does, point `BRIDGED_VERBS` at a copy of `docs/spec/bus/verbs.conf.mix` in
-`/etc/mixos/bridge/<app>.env`, or every start is refused. The component is
-`services/bridged/` in the source tree.
+`bridged` is version 0.1.0 (unreleased). Its six verbs are declared in the Bus
+verb registry, `docs/spec/bus/verbs.conf.mix` (schema 3), as the `bridged`
+instance family `<app>.<verb>`. The static registry gate checks the family's
+owner and suffix. Installing the registry is a separate prerequisite: the
+scripts and the registry must come from the same revision, and the registry
+must be at `/opt/mixos/share/bus/verbs.conf.mix` or named by `BRIDGED_VERBS`
+in `/etc/mixos/bridge/<app>.env`. Otherwise every start is refused. This
+source tree is not a live deployment. The component is `services/bridged/`
+in the source tree.

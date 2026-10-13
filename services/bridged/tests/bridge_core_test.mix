@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- bridge_core_test: the bridged core offline, no Bus. Config and token rules,
 -- the serve-name guard, the config contract against its spec fixture, and the
 -- line-JSON client against stand-in apps (tests/lib/fake_app.mix on
@@ -6,14 +7,17 @@
 -- a mid-request drop, and both auth modes against the wrong kind of app.
 -- Run from the checkout root with Mix >= 0.112.1:
 --   mix services/bridged/tests/bridge_core_test.mix
--- $BRIDGED_MIX names the mix binary for the stand-in apps (default /opt/mixos/bin/mix).
+-- The mix binary for the stand-in apps: $BRIDGED_MIX, else $MIXOS_TEST_MIX, else
+-- /opt/mixos/bin/mix. An empty variable counts as unset.
 -- Writes only under /var/tmp/bridge-core-test.<uuid>; the fakes die with it.
 
 $here = dirname(realpath($0))
 
 -- The mix binary the tests run their processes under: $BRIDGED_MIX when set
--- (also inherited by bridged --start for its child), else the installed one.
+-- (also inherited by bridged --start for its child), else $MIXOS_TEST_MIX
+-- (the runner's fresh build), else the installed one.
 $MIX = env("BRIDGED_MIX") ?? ""
+if $MIX == "" then $MIX = env("MIXOS_TEST_MIX") ?? "" end
 if $MIX == "" then $MIX = "/opt/mixos/bin/mix" end
 $core = require("../scripts/lib/bridge_core.mix")
 $fake = realpath($here .. "/lib/fake_app.mix")
@@ -309,7 +313,9 @@ try
   $failures = $small.failures
   $r = $core.call($small, "big_reply", {size: 8192})
   $small = $r.st
-  check("max_line: a reply over max_line, in one write, is rc 11 (" .. ($r.error ?? "") .. ")", $r.rc == 11 and contains($r.error ?? "", "over max_line"))
+  -- The rc and the transport prefix are the contract; the wording of the
+  -- Mix error (tcp_recv_line's, or the bridge's own check) is not.
+  check("max_line: a reply over max_line, in one write, is rc 11 (" .. ($r.error ?? "") .. ")", $r.rc == 11 and starts_with($r.error ?? "", "transport:"))
   check("max_line: the connection is dropped and backs off", not $small.connected and $small.failures == $failures + 1 and contains($core.call($small, "engine.commands", {}).error ?? "", "backing off"))
   sleep(0.4)
   $S = merge($small, {cfg: $S.cfg})

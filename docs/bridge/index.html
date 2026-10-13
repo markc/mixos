@@ -370,13 +370,15 @@ name that a registered verb already starts with, and the Bus itself refuses
 a name that is already registered.</li>
 </ul>
 <h2 id="status">Status</h2>
-<p><code>bridged</code> is version 0.1.0. Its verbs are not yet in the Bus verb registry:
-they are an instance family (<code>&lt;app&gt;.&lt;verb&gt;</code>, owned by <code>bridged</code>) and are
-registered together with the registry gate's family support. Nothing installs
-the verb registry to <code>/opt/mixos/share/bus/</code> yet either; until something
-does, point <code>BRIDGED_VERBS</code> at a copy of <code>docs/spec/bus/verbs.conf.mix</code> in
-<code>/etc/mixos/bridge/&lt;app&gt;.env</code>, or every start is refused. The component is
-<code>services/bridged/</code> in the source tree.</p>
+<p><code>bridged</code> is version 0.1.0 (unreleased). Its six verbs are declared in the Bus
+verb registry, <code>docs/spec/bus/verbs.conf.mix</code> (schema 3), as the <code>bridged</code>
+instance family <code>&lt;app&gt;.&lt;verb&gt;</code>. The static registry gate checks the family's
+owner and suffix. Installing the registry is a separate prerequisite: the
+scripts and the registry must come from the same revision, and the registry
+must be at <code>/opt/mixos/share/bus/verbs.conf.mix</code> or named by <code>BRIDGED_VERBS</code>
+in <code>/etc/mixos/bridge/&lt;app&gt;.env</code>. Otherwise every start is refused. This
+source tree is not a live deployment. The component is <code>services/bridged/</code>
+in the source tree.</p>
         </article>
         <p class="doc-source"><a href="/bridge.md"><i data-lucide="file-text"></i> This page as Markdown</a></p>
     </div>

@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- fake_app: a stand-in external application for the bridged tests. It offers
 -- a line-delimited JSON control channel on loopback TCP, in Mix (tcp_listen),
 -- with the behaviour the bridge relies on and the failures it must survive.

@@ -1,11 +1,19 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
--- Accepted Bus verb registry, schema 2. Each component registers its verbs
+-- Accepted Bus verb registry, schema 3. Each component registers its verbs
 -- here when it enters the tree (AGENTS.md §5). tools/verb_registry.mix keeps
 -- it canonical: one entry per line, fields in the order name, owner,
 -- version, status, class, with no comments inside the verbs list. Status is
 -- accepted, draft or deprecated; versions are release versions
 -- (MAJOR.MINOR.PATCH).
+--
+-- Schema 3 is additive: the verbs list is schema 2's, unchanged, and a new
+-- `families` list follows it. A family is a pattern that many runtime members
+-- answer, so it is not a list of concrete names. Each family's fields are
+-- pattern, owner, members, version, status, class, in that order. members is
+-- "instances" for a family whose members run at runtime, one per running
+-- instance, which the registry does not list. A schema 2 registry (no
+-- families) is still read during the transition.
 --
 -- Schema 2 adds `class` (docs/decisions/2026-10-11-verb-classes.md):
 -- intent (changes what a service holds or another caller sees), query
@@ -14,16 +22,16 @@
 -- system (session plumbing, such as <app>.show). A verb the app describes as
 -- read_only is a query. When in doubt, it is intent.
 --
--- The toolkit drive verbs (docs/drive.md) are one family that every egui
--- app answers under its own prefix: <app>.ui.tree, .ui.click, .ui.pointer,
+-- The toolkit drive verbs (docs/drive.md) are answered by every egui app
+-- under its own prefix: <app>.ui.tree, .ui.click, .ui.pointer,
 -- .ui.scroll, .ui.key, .ui.type, .ui.menu, .ui.menu.list, .ui.menu.open,
--- .ui.menu.close, .ui.capture, <app>.window and
--- <app>.window.state. This schema has no family entries, so each app
--- registers its concrete names, owned by the app that answers them.
+-- .ui.menu.close, .ui.capture, <app>.window and <app>.window.state. They stay
+-- concrete: each app registers its own names, owned by the app that answers
+-- them. The families list holds only the bridged instance family (below).
 -- HELP and app.describe are protocol verbs every service answers; they are
 -- not registered per component.
 {
-  schema: 2,
+  schema: 3,
   verbs: [
     {name:"settings.describe", owner:"settingsd", version:"0.1.0", status:"accepted", class:"query"},
     {name:"settings.get", owner:"settingsd", version:"0.4.0", status:"accepted", class:"query"},
@@ -267,5 +275,13 @@
     {name:"net.wifi.scan", owner:"hostd", version:"0.1.0", status:"draft", class:"intent"},
     {name:"net.wifi.connect", owner:"hostd", version:"0.1.0", status:"draft", class:"intent"},
     {name:"net.wg.apply", owner:"hostd", version:"0.1.0", status:"draft", class:"intent"}
+  ],
+  families: [
+    {pattern:"<app>.call", owner:"bridged", members:"instances", version:"0.1.0", status:"accepted", class:"intent"},
+    {pattern:"<app>.commands", owner:"bridged", members:"instances", version:"0.1.0", status:"accepted", class:"query"},
+    {pattern:"<app>.execute", owner:"bridged", members:"instances", version:"0.1.0", status:"accepted", class:"intent"},
+    {pattern:"<app>.inspect", owner:"bridged", members:"instances", version:"0.1.0", status:"accepted", class:"query"},
+    {pattern:"<app>.screenshot", owner:"bridged", members:"instances", version:"0.1.0", status:"accepted", class:"query"},
+    {pattern:"<app>.status", owner:"bridged", members:"instances", version:"0.1.0", status:"accepted", class:"query"}
   ]
 }

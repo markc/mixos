@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `analyzer::Analysis` carries `handlers`: one `HandlerDeclaration` (`command`,
+  `file`, `line`) per `on <command>` statement in the parsed AST, in source
+  order, with duplicates kept. `analyze()` collects them with the existing
+  statement walker. Remote `ssh_mix` bodies are not included. `mix lint --json`
+  and `--data` report the same list as an additive `handlers` field. The data
+  is structural: it does not prove that a handler runs or is reachable.
+
 ## 0.116.0
 
 ### Added
