@@ -24,8 +24,8 @@ use std::path::{Path, PathBuf};
 pub const SCHEMA: u32 = 1;
 /// Outputs with a wallpaper of their own, at most.
 pub const MAX_OUTPUTS: usize = 64;
-/// Distinct images one document may name. Each is resident while shown:
-/// at most 4 decoded images, about 128 MiB of RGBA each at most.
+/// Distinct images one document may name. Each is resident while shown; a kept
+/// image is at most 3840 × 3840 × 4 bytes (56.25 MiB) after the downscale.
 pub const MAX_IMAGES: usize = 4;
 const MAX_NAME: usize = 64;
 const MAX_PATH: usize = 4096;

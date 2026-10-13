@@ -75,8 +75,15 @@ totals.
 
 | Budget | Limit | Worst case |
 |---|---|---|
-| Decoded RGBA held by the controller (applied and candidate images together) | 256 MiB (`RESIDENT_BUDGET`) | a decode that would take the total over it is refused (`IMAGE`) |
-| Texture memory on the GPU, across all outputs (`TEXTURE_BUDGET`) | 256 MiB | four full-size (3840 × 3840, 59 MiB) textures |
+| Decoded RGBA held by the controller (applied and candidate images together) | 512 MiB (`RESIDENT_BUDGET`) | a decode that would take the total over it is refused (`IMAGE`); the last applied images stay until a whole candidate set applies |
+| Texture memory on the GPU, across all outputs, overlap included (`TEXTURE_BUDGET`) | 512 MiB | four full-size outputs swapping (four old and four new textures) |
+
+A full-size image is 3840 × 3840 × 4 bytes = 56.25 MiB, the largest kept. Four
+applied plus four candidates is 450 MiB, which fits the 512 MiB resident budget.
+Textures are accounted as the bytes of the new size reserved while the old is
+still held, so a swap is counted in full. When bytes are released, live outputs
+are woken once so one that was starved draws again; nothing wakes when nothing
+is freed.
 
 - A context owns at most one image texture. Replacing it reserves the new size
   while the old is still held, so the overlap is counted; a texture that does
@@ -111,11 +118,13 @@ through `config::atomic`), and then applies. Its reply is `rc 0` with
 
 `backdrop.state` answers with no output on screen:
 `{schema, service, requested, active, pending, error, config, config_file,
-outputs}`. `requested` and `active` are revisions: `requested` numbers every
-accepted set, and `active` is the one on screen. `pending` is the revision
-still decoding, if any. `error` is the last refused change's reason. `outputs`
-lists each output drawn so far, with its size, scale and what it shows
-(`theme`, `colour`, `image` or `fallback`).
+outputs}`. `requested` and `active` are revisions: `requested` numbers every request
+made, and `active` is the revision of the accepted configuration. `pending` is
+the revision still decoding, if any. `error` is the last refused change's
+reason. `outputs` lists each output drawn so far, with its size, scale, what it
+shows (`theme`, `colour`, `image` or `fallback`), its `error`, and
+`presented_revision`: the revision that output last drew. Use that field to see
+what is on screen; `active` alone does not mean every output has presented it yet.
 
 Every applied set is one run of `backdrop.set` and is published on
 `backdrop.command.executed` with origin `bus`. The command line's default is

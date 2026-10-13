@@ -24,6 +24,9 @@
 --   plus one, and the screen shows the last colour;
 -- - a body that is not a document is refused (ARGUMENT) and changes nothing;
 -- - the accepted document is stored in the file it came from;
+-- - a per-output override, under the output's native name from backdrop.state,
+--   is drawn on that output and the output presents the revision it was given;
+-- - every screenshot is asserted captured before any pixel is read from it;
 -- - the backdrop process is idle: its CPU time over 3 s is under 150 ms;
 -- - the compositor stops on TERM within 10 s, with no panic in any log.
 --
@@ -259,6 +262,7 @@ try
   check("backdrop.set colour: accepted", $r.rc == 0 and $r.result.active == 2, json_encode($r))
   sleep(0.5)
   $shot1 = screenshot("colour")
+  check("colour: screenshot captured", $shot1 != nil, "testkit-screenshot failed")
   if $shot1 != nil then
     $c1 = $c.pixel($shot1, $shot1.w / 2, $shot1.h / 2)
     check("colour: the output shows #204080", near($c1, [32, 64, 128], 3), json_encode($c1))
@@ -269,6 +273,7 @@ try
   check("backdrop.set image: accepted", $r.rc == 0 and $r.result.active == 3, json_encode($r))
   sleep(0.5)
   $shot2 = screenshot("image")
+  check("image: screenshot captured", $shot2 != nil, "testkit-screenshot failed")
   $samples = []
   if $shot2 != nil then
     $samples = grid($shot2)
@@ -289,6 +294,7 @@ try
   check("refused: the state names the reason", $after.result.error != nil, json_encode($after.result))
   sleep(0.5)
   $shot3 = screenshot("refused")
+  check("refused: screenshot captured", $shot3 != nil, "testkit-screenshot failed")
   if $shot2 != nil and $shot3 != nil then
     check("refused: the pixels are the last good image's, unchanged", deep_eq(grid($shot3), $samples),
       "the screen changed after a refused set")
@@ -303,6 +309,7 @@ try
     json_encode([$r4.result, $r5.result]))
   sleep(0.5)
   $shot4 = screenshot("rapid")
+  check("rapid: screenshot captured", $shot4 != nil, "testkit-screenshot failed")
   if $shot4 != nil then
     check("rapid sets: the screen shows the last colour, #607080",
       near($c.pixel($shot4, $shot4.w / 2, $shot4.h / 2), [96, 112, 128], 3), "last colour not shown")
@@ -320,6 +327,31 @@ try
   $stored = read_file($DOC)
   check("the accepted document is stored in its file", contains($stored, "#607080"), $stored)
   check("the refused image is not stored", not contains($stored, "wallpaper-gate"), $stored)
+
+  -- ── a per-output override, by the output's native name ──────────────
+  -- The name comes from backdrop.state, never from an assumed connector.
+  $st = bcall("backdrop.state", {})
+  $OUT = ""
+  if type($st.result) == "map" and len($st.result.outputs ?? []) > 0 then
+    $OUT = $st.result.outputs[0].name ?? ""
+  end
+  if check("the output's native name is reported", $OUT != "", json_encode($st.result.outputs ?? [])) then
+    $outs = {}
+    $outs[$OUT] = {colour: "#884422"}
+    $r = bcall("backdrop.set", {schema: 1, default: {colour: "#607080"}, outputs: $outs})
+    check("per-output override: accepted", $r.rc == 0, json_encode($r))
+    sleep(0.5)
+    $shot5 = screenshot("override")
+    check("per-output override: screenshot captured", $shot5 != nil, "testkit-screenshot failed")
+    if $shot5 != nil then
+      check("per-output override: that output shows #884422",
+        near($c.pixel($shot5, $shot5.w / 2, $shot5.h / 2), [136, 68, 34], 3), "override not drawn")
+    end
+    $st2 = bcall("backdrop.state", {})
+    check("per-output override: the output presents the revision it was given",
+      $r.rc == 0 and $st2.result.outputs[0].presented_revision == $r.result.active,
+      json_encode($st2.result.outputs ?? []))
+  end
 
   -- ── bounded static idle ─────────────────────────────────────────────
   sleep(1)

@@ -53,9 +53,11 @@ pub const VERBS: &[(&str, &str)] = &[
 ];
 /// Messages the controller's inbox holds before a sender waits.
 const INBOX: usize = 64;
-/// Decoded RGBA the controller may hold at once, the applied images and the
-/// candidate's together: 256 MiB, four full-size (3840 × 3840) images.
-pub const RESIDENT_BUDGET: u64 = 256 * 1024 * 1024;
+/// Decoded RGBA the controller may hold at once: the applied images and the
+/// candidate's together. A full-size image (3840 × 3840 × 4 bytes) is 56.25 MiB,
+/// so four applied plus four candidates (a complete replacement) is 450 MiB;
+/// 512 MiB holds that with room to spare.
+pub const RESIDENT_BUDGET: u64 = 512 * 1024 * 1024;
 
 /// What the controller needs to start.
 pub struct Setup {
@@ -302,7 +304,9 @@ impl Controller {
                 self.complete();
             }
             Decode::Failed(message) => {
+                // The failed request is dead: its queued decodes and its candidates go.
                 self.candidate.clear();
+                self.queue.clear();
                 let owed = self.owed.remove(&revision);
                 if matches!(owed, Some(Owed::Startup)) {
                     eprintln!("backdrop: {message}; the session theme stays");
@@ -654,6 +658,62 @@ mod tests {
         let status = c.engine.status();
         assert_eq!((status.requested, status.active), (2, 1));
         assert!(status.error.is_some());
+    }
+
+    #[test]
+    fn a_failed_decode_drops_the_queued_jobs_too() {
+        let mut c = controller();
+        c.stage(images(&["/w/a.png", "/w/b.png", "/w/c.png"]), Owed::Startup);
+        assert!(!c.queue.is_empty(), "the other images wait in the queue");
+        c.decoded(1, PathBuf::from("/w/a.png"), Err("corrupt".into()));
+        assert!(c.queue.is_empty(), "no decode is wasted on a failed request");
+        assert!(c.candidate.is_empty());
+        assert!(!c.decoding);
+    }
+
+    /// A full-size image's accounting (3840 × 3840 × 4 bytes). The pixel buffer
+    /// is 1 × 1: only the size fields are counted, so no 56 MiB is allocated.
+    fn full_size() -> Result<Decoded, String> {
+        Ok(Decoded {
+            size: [3840, 3840],
+            rgba: image::RgbaImage::new(1, 1),
+        })
+    }
+
+    #[test]
+    fn a_complete_replacement_of_four_full_size_images_fits_the_budget() {
+        const MIB: u64 = 1024 * 1024;
+        let mut c = controller();
+        let paths = ["/w/1.png", "/w/2.png", "/w/3.png", "/w/4.png"];
+        // Four applied full-size images: 225 MiB.
+        c.stage(images(&paths), Owed::Startup);
+        for path in paths {
+            c.decoded(1, PathBuf::from(path), full_size());
+        }
+        assert_eq!(c.active.len(), 4);
+        assert_eq!(c.resident_bytes(), 4 * 3840 * 3840 * 4);
+        // Four candidates on top, the same size: 450 MiB, within 512 MiB.
+        let fresh = ["/w/5.png", "/w/6.png", "/w/7.png", "/w/8.png"];
+        c.stage(images(&fresh), Owed::Startup);
+        for path in fresh {
+            c.decoded(2, PathBuf::from(path), full_size());
+        }
+        assert_eq!(c.active.len(), 4, "the full replacement applied");
+        assert!(c.active.contains_key(&PathBuf::from("/w/8.png")));
+        // While the last good images are held, a candidate that would take the
+        // total over 512 MiB is refused: 4 × 56.25 MiB + 300 MiB > 512 MiB.
+        c.stage(images(&["/w/9.png"]), Owed::Startup);
+        c.decoded(
+            3,
+            PathBuf::from("/w/9.png"),
+            Ok(Decoded {
+                size: [5_000, 15_625],
+                rgba: image::RgbaImage::new(1, 1),
+            }),
+        );
+        assert!(c.engine.status().error.as_deref().is_some_and(|e| e.contains("budget")));
+        assert_eq!(c.active.len(), 4, "the last good images are still applied");
+        assert!(c.resident_bytes() <= 512 * MIB);
     }
 
     #[test]

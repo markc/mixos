@@ -22,15 +22,17 @@
 use egui::{Color32, ColorImage, CornerRadius, Id, Rect, TextureHandle, TextureOptions, pos2};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use toolkit::layer::{LayerProgram, SurfaceInfo};
 use wallpaper::decode::Decoded;
 use wallpaper::{Config, Rgb, Wallpaper, fit};
 
-/// The most texture memory, in bytes, all outputs' images may hold together.
-/// At 3840 × 3840 RGBA (59 MiB) that is four full-size images. A smaller
-/// image costs what it is.
-pub const TEXTURE_BUDGET: u64 = 256 * 1024 * 1024;
+/// The most texture memory, in bytes, all outputs' images may hold together,
+/// overlap included. A full-size image (3840 × 3840 × 4 bytes) is 56.25 MiB; a
+/// complete replacement on four outputs holds four old and four new textures
+/// while it swaps, 450 MiB, which this covers. A smaller image costs what it is.
+pub const TEXTURE_BUDGET: u64 = 512 * 1024 * 1024;
 
 /// The owner key a context carries in its own data: which wakers entry is it.
 const OWNER: &str = "backdrop-owner";
@@ -87,6 +89,9 @@ pub fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 pub struct Budget {
     limit: u64,
     used: Mutex<u64>,
+    /// Set when a reservation releases bytes; taken once by the program, which
+    /// then wakes the outputs that may have been starved of them.
+    freed: AtomicBool,
 }
 
 impl Budget {
@@ -94,7 +99,13 @@ impl Budget {
         Arc::new(Self {
             limit,
             used: Mutex::new(0),
+            freed: AtomicBool::new(false),
         })
+    }
+
+    /// Whether bytes were released since the last call (reported once).
+    pub fn take_freed(&self) -> bool {
+        self.freed.swap(false, Ordering::AcqRel)
     }
 
     /// Reserve `bytes`, or `None` when they would take the budget over its limit.
@@ -126,17 +137,23 @@ pub struct Reservation {
 
 impl Drop for Reservation {
     fn drop(&mut self) {
-        let mut used = lock(&self.budget.used);
-        *used = used.saturating_sub(self.bytes);
+        {
+            let mut used = lock(&self.budget.used);
+            *used = used.saturating_sub(self.bytes);
+        }
+        // Only a real release counts; no callback runs here (drops happen inside
+        // egui's data lock), the program wakes outputs after its own pass.
+        self.budget.freed.store(true, Ordering::Release);
     }
 }
 
-/// The image texture a context owns, with the bytes it is paid for in.
+/// The image texture a context owns, with the bytes it is paid for in. The
+/// reservation is held for its drop: it releases the bytes when the slot goes.
 #[derive(Clone)]
 struct Slot {
     serial: u64,
     texture: TextureHandle,
-    reservation: Arc<Reservation>,
+    _reservation: Arc<Reservation>,
 }
 
 pub struct Backdrop {
@@ -226,7 +243,7 @@ fn draw_image(
                     Slot {
                         serial: resident.serial,
                         texture: texture.clone(),
-                        reservation: Arc::new(reservation),
+                        _reservation: Arc::new(reservation),
                     },
                 )
             });
@@ -252,6 +269,61 @@ impl LayerProgram for Backdrop {
     }
 
     fn show(&mut self, ui: &mut egui::Ui, surface: &SurfaceInfo) {
+        self.show_pass(ui, surface);
+        self.wake_starved();
+    }
+
+    /// Record what a pass drew, once it was presented.
+    fn presented(&mut self, surface: &SurfaceInfo) {
+        let Some(name) = surface.output.clone() else {
+            return;
+        };
+        lock(&self.shared).outputs.insert(
+            name,
+            OutputStatus {
+                revision: self.revision,
+                width: surface.width,
+                height: surface.height,
+                scale: surface.scale,
+                shows: self.shows,
+                error: self.error.clone(),
+            },
+        );
+    }
+
+    /// The surface is going away: forget its context, free its texture (its
+    /// reservation goes back to the budget) and its output's status.
+    fn removed(&mut self, ctx: &egui::Context, surface: &SurfaceInfo) {
+        if let Some(owner) = ctx.data(|d| d.get_temp::<u64>(Id::new(OWNER))) {
+            lock(&self.wakers).retain(|(token, _)| *token != owner);
+        }
+        ctx.data_mut(|d| d.remove::<Slot>(Id::new(SLOT)));
+        if let Some(name) = &surface.output {
+            lock(&self.shared).outputs.remove(name);
+        }
+        self.wake_starved();
+    }
+}
+
+impl Backdrop {
+    /// Once bytes were released, wake every live context once, so an output
+    /// starved of texture memory draws again. Nothing wakes when nothing was
+    /// freed, so an idle or fitting set never loops. The handles are cloned out
+    /// first: no repaint request runs under the wakers lock.
+    fn wake_starved(&self) {
+        if !self.budget.take_freed() {
+            return;
+        }
+        let contexts: Vec<egui::Context> = lock(&self.wakers)
+            .iter()
+            .map(|(_, context)| context.clone())
+            .collect();
+        for context in contexts {
+            context.request_repaint();
+        }
+    }
+
+    fn show_pass(&mut self, ui: &mut egui::Ui, surface: &SurfaceInfo) {
         let view = lock(&self.shared).view.clone();
         self.revision = view.revision;
         let rect = ui.max_rect();
@@ -288,36 +360,6 @@ impl LayerProgram for Backdrop {
             ui.ctx().data_mut(|d| d.remove::<Slot>(Id::new(SLOT)));
         }
     }
-
-    /// Record what a pass drew, once it was presented.
-    fn presented(&mut self, surface: &SurfaceInfo) {
-        let Some(name) = surface.output.clone() else {
-            return;
-        };
-        lock(&self.shared).outputs.insert(
-            name,
-            OutputStatus {
-                revision: self.revision,
-                width: surface.width,
-                height: surface.height,
-                scale: surface.scale,
-                shows: self.shows,
-                error: self.error.clone(),
-            },
-        );
-    }
-
-    /// The surface is going away: forget its context, free its texture (its
-    /// reservation goes back to the budget) and its output's status.
-    fn removed(&mut self, ctx: &egui::Context, surface: &SurfaceInfo) {
-        if let Some(owner) = ctx.data(|d| d.get_temp::<u64>(Id::new(OWNER))) {
-            lock(&self.wakers).retain(|(token, _)| *token != owner);
-        }
-        ctx.data_mut(|d| d.remove::<Slot>(Id::new(SLOT)));
-        if let Some(name) = &surface.output {
-            lock(&self.shared).outputs.remove(name);
-        }
-    }
 }
 
 #[cfg(test)]
@@ -348,5 +390,18 @@ mod tests {
         assert_eq!(budget.used(), 64, "a copy still holds the texture");
         drop(copy);
         assert_eq!(budget.used(), 0);
+    }
+
+    #[test]
+    fn a_release_is_reported_once_and_only_when_bytes_are_freed() {
+        // A 512 MiB-shaped budget at 100 bytes: a starved output needs a release.
+        let budget = Budget::new(100);
+        let held = budget.reserve(60).expect("60 of 100 fits");
+        assert!(budget.reserve(60).is_none(), "a second 60 is starved");
+        assert!(!budget.take_freed(), "nothing released, so nothing to wake for");
+        drop(held);
+        assert!(budget.take_freed(), "the release is reported");
+        assert!(!budget.take_freed(), "and reported once");
+        assert!(budget.reserve(60).is_some(), "the starved output now fits");
     }
 }

@@ -230,8 +230,10 @@ mod tests {
         let dir = dir();
         let path = dir.path().join("huge.png");
         std::fs::write(&path, png_header(20_000, 20_000)).unwrap();
+        // The image library's own dimension limit (`Image size exceeds limit`)
+        // refuses this header first, and our side check would say the same.
         let error = load(&path).unwrap_err();
-        assert!(error.contains("side limit"), "{error}");
+        assert!(error.contains("limit"), "{error}");
         // Just inside the side limit but over the pixel limit.
         let path = dir.path().join("wide.png");
         std::fs::write(&path, png_header(8_000, 8_000)).unwrap();
