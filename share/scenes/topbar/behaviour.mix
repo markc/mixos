@@ -55,7 +55,7 @@ fn build_model()
   $now = time()
   $m = {}
   $m.clock = {time: $p.clock_text($now),
-    tip: {title: date_format($now, "%A %-d %B %Y"), subtitle: "UTC" .. date_format($now, "%:z")}}
+    tip: {title: date_format($now, "%A %-d %B %Y")}}
   $m.apps = button("Apps", "start-here", "Applications")
   for each $key in ["term", "files", "shot", "settings"]
     $a = $LAUNCH[$key]
