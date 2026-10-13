@@ -27,6 +27,23 @@ $CONFIRM_S = 5
 
 $state = {ready: false, clock_armed: false, icons: {}, armed: nil, armed_at: 0, notice: {}}
 
+-- This desk's identity, written into its root by desk_identity.mix: DESK=name,
+-- VT=number. Read here, never inferred from the hostname or the foreground VT.
+fn identity()
+  $out = {desk: "unknown", vt: "?"}
+  try
+    for $line in read_lines(env("DESK_IDENTITY", "/etc/mixos/desk.env"))
+      $kv = split_once($line, "=")
+      if $kv != nil and $kv[0] == "DESK" then $out.desk = $kv[1] end
+      if $kv != nil and $kv[0] == "VT" then $out.vt = $kv[1] end
+    end
+  catch $message
+    eprint("topbar identity: " .. to_string($message))
+  end
+  return $out
+end
+$IDENTITY = identity()
+
 fn icon_path($name)
   if has_key($state.icons, $name) then return $state.icons[$name] end
   $req = {name: $name, size: 24}
@@ -47,8 +64,8 @@ end
 
 fn power_model($key, $label, $icon)
   $armed = $state.armed == $key and monotonic() - $state.armed_at <= $CONFIRM_S
-  $text = $label
-  if $armed then $text = "Click again to confirm: " .. $label end
+  $text = $label .. " " .. $IDENTITY.desk .. " (VT" .. $IDENTITY.vt .. ")"
+  if $armed then $text = "Click again to confirm: " .. $text end
   if ($state.notice[$key] ?? "") != "" then $text = $text .. " (" .. $state.notice[$key] .. ")" end
   $path = icon_path($icon)
   return {label: $label, icon: $path, has_icon: $path != "", background: $armed ? "#c0392b" : nil, tip: {title: $text}}
