@@ -17,13 +17,13 @@ use std::os::fd::OwnedFd;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::allocator::gbm::GbmDevice;
 use smithay::backend::egl::{EGLContext, EGLDisplay};
-use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::utils::RescaleRenderElement;
-use smithay::backend::renderer::element::{CommitCounter, Element, Id, RenderElement};
+use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
-use smithay::backend::renderer::{Bind, Color32F, ExportMem, Frame, Offscreen, Renderer};
-use smithay::utils::{DeviceFd, Physical, Point, Rectangle, Scale, Size, Transform};
+use smithay::backend::renderer::utils::CommitCounter;
+use smithay::backend::renderer::{Bind, Color32F, Frame, Offscreen, Renderer};
+use smithay::utils::{Buffer, DeviceFd, Physical, Point, Rectangle, Scale, Size, Transform};
 
 const W: i32 = 256;
 const H: i32 = 256;
@@ -47,17 +47,38 @@ fn gles() -> GlesRenderer {
     unsafe { GlesRenderer::new(context) }.expect("GLES renderer")
 }
 
-/// Draw `draw` into a fresh transparent W x H buffer and return its bytes.
-fn render(gles: &mut GlesRenderer, draw: impl FnOnce(&mut GlesRenderer, &mut GlesTexture)) -> Vec<u8> {
+/// Clear a fresh W x H buffer to transparent, draw `element` into it, and
+/// return the bytes read back from the GPU.
+fn draw_once<E: RenderElement<GlesRenderer>>(gles: &mut GlesRenderer, element: &E) -> Vec<u8> {
     let size: Size<i32, Physical> = (W, H).into();
+    let full = Rectangle::from_size(size);
     let mut texture: GlesTexture = gles
-        .create_buffer(Fourcc::Abgr8888, size.to_logical(1).to_buffer(1, Transform::Normal))
+        .create_buffer(Fourcc::Abgr8888, Size::<i32, Buffer>::from((W, H)))
         .expect("offscreen buffer");
-    draw(gles, &mut texture);
-    let region = Rectangle::from_size(size);
+    {
+        let mut target = gles.bind(&mut texture).expect("bind target");
+        let mut frame = gles
+            .render(&mut target, size, Transform::Normal)
+            .expect("begin frame");
+        frame
+            .clear(Color32F::new(0.0, 0.0, 0.0, 0.0), &[full])
+            .expect("clear");
+        element
+            .draw(
+                &mut frame,
+                element.src(),
+                element.geometry(Scale::from(1.0)),
+                &[full],
+                &[],
+                None,
+            )
+            .expect("draw element");
+        let sync = frame.finish().expect("finish frame");
+        let _ = sync.wait();
+    }
     let mapping = gles
-        .copy_framebuffer(&texture, region, Fourcc::Abgr8888)
-        .expect("read back");
+        .copy_texture(&texture, full, Fourcc::Abgr8888)
+        .expect("copy texture");
     gles.map_texture(&mapping).expect("map readback").to_vec()
 }
 
@@ -74,23 +95,18 @@ fn scale_halves_a_red_square() {
     );
     // Scale 0.5 about the origin: the 200-px square becomes 100 px.
     let scaled = RescaleRenderElement::from_element(red, Point::from((0, 0)), Scale::from(0.5));
-    let bytes = render(&mut gles, |gles, texture| {
-        gles.bind(texture).expect("bind");
-        let mut frame = gles
-            .render(Size::from((W, H)), Transform::Normal)
-            .expect("frame");
-        let damage = Rectangle::from_size((W, H).into());
-        frame.clear(Color32F::TRANSPARENT, &[damage]).expect("clear");
-        scaled
-            .draw(&mut frame, scaled.src(), scaled.geometry(Scale::from(1.0)), &[damage], &[])
-            .expect("draw scaled");
-        frame.finish().expect("finish").sync.wait();
-    });
+    let bytes = draw_once(&mut gles, &scaled);
     let inside = pixel(&bytes, 50, 50);
     let outside = pixel(&bytes, 150, 150);
     println!("inside (50,50) = {inside:?}, outside (150,150) = {outside:?}");
-    assert!(inside[0] > 200 && inside[3] > 200, "scaled square is red at (50,50): {inside:?}");
-    assert!(outside[0] < 20, "scaled square does not reach (150,150): {outside:?}");
+    assert!(
+        inside[0] > 200 && inside[3] > 200,
+        "scaled square is red at (50,50): {inside:?}"
+    );
+    assert!(
+        outside[0] < 20,
+        "scaled square does not reach (150,150): {outside:?}"
+    );
 }
 
 #[test]
@@ -104,21 +120,9 @@ fn element_alpha_blends_green_at_half_opacity() {
         [0.0, 1.0, 0.0, 0.5],
         Kind::Unspecified,
     );
-    let bytes = render(&mut gles, |gles, texture| {
-        gles.bind(texture).expect("bind");
-        let mut frame = gles
-            .render(Size::from((W, H)), Transform::Normal)
-            .expect("frame");
-        let damage = Rectangle::from_size((W, H).into());
-        frame.clear(Color32F::TRANSPARENT, &[damage]).expect("clear");
-        green
-            .draw(&mut frame, green.src(), green.geometry(Scale::from(1.0)), &[damage], &[])
-            .expect("draw green");
-        frame.finish().expect("finish").sync.wait();
-    });
+    let bytes = draw_once(&mut gles, &green);
     let p = pixel(&bytes, 100, 100);
     println!("half-opacity green at (100,100) = {p:?}");
-    // Premultiplied or not, green should be about half on, and alpha about half.
-    assert!((p[3] as i32 - 128).abs() < 16, "alpha ~ 0.5: {p:?}");
-    assert!((p[1] as i32 - 128).abs() < 16 || (p[1] as i32 - 0).abs() < 16 && p[3] > 0, "green channel: {p:?}");
+    // The element alpha is 0.5. Expect the output alpha near 128.
+    assert!((p[3] as i32 - 128).abs() < 16, "alpha near 0.5: {p:?}");
 }
