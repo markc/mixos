@@ -66,7 +66,8 @@ pub fn build_mime(composed: &Composed) -> Vec<u8> {
     header(&mut mime, "From", &clean(&composed.from));
     header(&mut mime, "To", &address_list(&composed.to));
     header(&mut mime, "Cc", &address_list(&composed.cc));
-    header(&mut mime, "Bcc", &address_list(&composed.bcc));
+    // No Bcc header: the bytes go to every recipient. Bcc recipients travel
+    // in the submission envelope instead (see `send`).
     header(&mut mime, "Subject", &clean(&composed.subject));
     header(
         &mut mime,
@@ -118,16 +119,21 @@ impl Client {
             .get("list")
             .and_then(Value::as_array)
             .ok_or_else(|| crate::error::Error::Protocol("Identity/get has no list".into()))?;
-        // Several identities can exist; prefer the one whose address matches.
-        let chosen = list
-            .iter()
-            .find(|identity| identity.get("email").and_then(Value::as_str) == Some(from))
-            .or_else(|| list.first());
-        chosen
+        // The identity must carry the sender's address. No fallback: sending
+        // under another identity would put a From that is not ours on the wire.
+        list.iter()
+            .find(|identity| {
+                identity
+                    .get("email")
+                    .and_then(Value::as_str)
+                    .is_some_and(|email| email.eq_ignore_ascii_case(from))
+            })
             .and_then(|identity| identity.get("id"))
             .and_then(Value::as_str)
             .map(str::to_owned)
-            .ok_or_else(|| crate::error::Error::Protocol("no identity on the account".into()))
+            .ok_or_else(|| {
+                crate::error::Error::Protocol(format!("no submission identity for {from}"))
+            })
     }
 
     /// Send [`Composed`]: identify, build, upload, create in Sent, submit.
@@ -162,12 +168,25 @@ impl Client {
         let email_id = Client::created_id(&data, "out1")?;
         // The submission references the created email; the identity was
         // read from the account before anything was created.
+        // The envelope names every recipient, Bcc included, so Bcc people
+        // receive the message without appearing in its bytes.
+        let rcpt_to: Vec<Value> = composed
+            .to
+            .iter()
+            .chain(&composed.cc)
+            .chain(&composed.bcc)
+            .map(|address| json!({ "email": address }))
+            .collect();
         let submit = json!({
             "accountId": self.account_id(),
             "create": {
                 "sub1": {
                     "emailId": email_id,
-                    "identityId": identity_id
+                    "identityId": identity_id,
+                    "envelope": {
+                        "mailFrom": { "email": composed.from },
+                        "rcptTo": rcpt_to
+                    }
                 }
             }
         });
@@ -202,9 +221,10 @@ mod tests {
     }
 
     #[test]
-    fn bcc_rides_its_own_header() {
+    fn bcc_stays_out_of_the_bytes() {
         let mime = String::from_utf8(build_mime(&composed())).unwrap();
-        assert!(mime.contains("Bcc: dave@example.invalid\r\n"));
+        assert!(!mime.contains("Bcc:"), "the bytes must not name Bcc recipients");
+        assert!(!mime.contains("dave@example.invalid"));
     }
 
     #[test]

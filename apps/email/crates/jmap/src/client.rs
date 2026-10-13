@@ -130,6 +130,11 @@ impl Client {
             status if !status.is_success() => Err(Error::Status(status)),
             _ => {
                 let token: Token = response.json().await?;
+                // The token goes into a header on every call; refuse anything
+                // that is not a plain header value.
+                if token.token.is_empty() || token.token.chars().any(char::is_control) {
+                    return Err(Error::Protocol("the server issued an unusable token".into()));
+                }
                 *self.token.lock().unwrap() = Some(token.token);
                 Ok(())
             }
