@@ -366,7 +366,7 @@ mod tests {
     #[test]
     fn the_bus_body_and_the_file_mean_the_same() {
         let document: Document =
-            serde_json::from_str(r#"{"schema":1,"default":{"colour":"#abcdef"}}"#).unwrap();
+            serde_json::from_str(r##"{"schema":1,"default":{"colour":"#abcdef"}}"##).unwrap();
         let from_bus = Config::from_document(document).unwrap();
         assert_eq!(
             from_bus,

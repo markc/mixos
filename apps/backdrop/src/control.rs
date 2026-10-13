@@ -611,7 +611,7 @@ mod tests {
 
     #[test]
     fn a_bus_body_is_validated_before_any_change() {
-        assert!(parse_document(r#"{"schema":1,"default":{"colour":"#102030"}}"#).is_ok());
+        assert!(parse_document(r##"{"schema":1,"default":{"colour":"#102030"}}"##).is_ok());
         assert!(parse_document(r#"{"schema":1,"default":{"colour":"red"}}"#).is_err());
         assert!(parse_document(r#"{"schema":1,"nope":1}"#).is_err());
         assert!(parse_document("{}").is_err());
