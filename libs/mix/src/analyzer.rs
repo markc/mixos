@@ -130,6 +130,20 @@ pub struct AnalyzerConfig {
     pub agent: bool,
 }
 
+/// One `on <command>` handler declaration, taken from the parsed AST.
+///
+/// Structural evidence only: a declaration is recorded wherever the parser
+/// placed the `on` statement, but nothing here proves it runs or is
+/// reachable.
+#[derive(Debug, Clone)]
+pub struct HandlerDeclaration {
+    pub command: String,
+    /// The file as the caller named it; `None` when the caller gave no name.
+    pub file: Option<String>,
+    /// 1-based line of the `on` statement.
+    pub line: usize,
+}
+
 /// The result of one file's analysis.
 #[derive(Debug, Clone, Default)]
 pub struct Analysis {
@@ -138,6 +152,9 @@ pub struct Analysis {
     /// (plus "process" for shell constructs and "bus" for messaging) —
     /// reported as data, not warnings (D3).
     pub capabilities: Vec<&'static str>,
+    /// Every `on` declaration in the file, in walker order, duplicates kept.
+    /// Filled by [`analyze`] only; remote `ssh_mix` bodies are not included.
+    pub handlers: Vec<HandlerDeclaration>,
 }
 
 /// Runtime-injected variable names a lint must treat as declared.
@@ -390,7 +407,20 @@ fn has_dynamic_include(stmts: &[Stmt]) -> (bool, Option<usize>) {
 
 /// The whole-file analyzer entry point.
 pub fn analyze(stmts: &[Stmt], file: Option<&str>, cfg: &AnalyzerConfig) -> Analysis {
-    analyze_at(stmts, file, cfg, false, false)
+    let mut analysis = analyze_at(stmts, file, cfg, false, false);
+    // Handler declarations come from this file's own AST only. The remote
+    // `ssh_mix` bodies analysed inside `analyze_at` are literal payloads, so
+    // they never reach this walk.
+    walk_stmts(stmts, &mut |stmt| {
+        if let StmtKind::On { command, .. } = &stmt.kind {
+            analysis.handlers.push(HandlerDeclaration {
+                command: command.clone(),
+                file: file.map(str::to_owned),
+                line: stmt.line,
+            });
+        }
+    });
+    analysis
 }
 
 /// [`analyze`], told whether `stmts` is itself an `ssh_mix` remote body.

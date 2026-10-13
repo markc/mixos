@@ -219,6 +219,7 @@ parsed v1, inventoried 2026-09-03):
     "hint": "assign it, use env(\"DOMAIN\") for environment values, or pass --allow-global DOMAIN"
   }],
   "capabilities": ["fs-read", "network", "process"],
+  "handlers": [],
   "summary": {"errors": 1, "warnings": 0, "notes": 0, "denied_warnings": false}
 }
 ```
@@ -233,6 +234,21 @@ carry one — the assignment-chain error, for instance, points at the offending
 exercise — data, not warnings.
 `strict_data_files` lists inputs validated by the strict-data fallback rather
 than by the script analyzer.
+
+`handlers` (additive, still `schema_version` 2) lists each `on <command>`
+declaration the parser built, across every input file, in source order:
+`{"command": "ping.one", "file": "ping.mix", "line": 2}`. `file` is the path as
+given, or `"-"` for stdin. The field is always present: it is
+`[]` for strict-data inputs, for a file that failed to parse, and for a script
+with no `on` statement. Duplicate declarations are kept.
+
+`handlers` is structural evidence only. It comes from the native AST, so an `on`
+counts wherever the parser places it (top level, a `fn` body, a block lambda, an
+`if` branch or a control block). It does not prove that the handler runs or is
+reachable. Text inside comments, quoted strings and heredocs is never a
+declaration. Bodies of `ssh_mix` remote programs are not included either,
+because they are literal payloads, not local source. Lint never executes the
+file to collect them.
 
 ## Remote bodies — lint sees inside `ssh_mix` (0.69.0)
 
