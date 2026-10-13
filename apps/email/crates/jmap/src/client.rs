@@ -118,7 +118,12 @@ impl Client {
             .send()
             .await?;
         match response.status() {
-            reqwest::StatusCode::NOT_FOUND | reqwest::StatusCode::METHOD_NOT_ALLOWED => Ok(()),
+            reqwest::StatusCode::NOT_FOUND | reqwest::StatusCode::METHOD_NOT_ALLOWED => {
+                // No token endpoint: a dead token held from before must go,
+                // or every call 401s into this same branch forever.
+                *self.token.lock().unwrap() = None;
+                Ok(())
+            }
             status if !status.is_success() => Err(Error::Status(status)),
             _ => {
                 let token: Token = response.json().await?;
