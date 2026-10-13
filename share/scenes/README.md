@@ -13,7 +13,7 @@ Canonical, read-only template directories live here:
 Reusable behaviour helpers are shipped in `lib/` (`data.mix`, `models.mix`,
 `runtime.mix`, `taskbar.mix`, and `network.mix`, the network popup's snapshot).
 
-Templates: `panel` (bottom panel, page `scene-panel`), `launcher`, `calendar`,
+Templates: `topbar` (top bar, page `scene-topbar`), `panel` (bottom panel, page `scene-panel`), `launcher`, `calendar`,
 `notes`, `network` and `settings`. The loader copies a template into the user's scenes directory
 only on `scenes.install`; it never enables discovered directories
 automatically. Installed under their own names these reuse the legacy panel
@@ -51,9 +51,14 @@ node block here and nowhere else. The template mounts on the right edge; edit
 | `requires` | list of Bus service names | shown as "needs …" while not registered |
 | `hidden` | bool | not listed by `scenes.templates` |
 
-The six shipped templates are the Recommended set: `panel` (order 10,
-requires `comp` and `apps`), `launcher` (20, `apps`), `calendar` (30),
-`notes` (40, `notify`), `network` (45) and `settings` (50).
+The seven shipped templates are the Recommended set: `topbar` (order 5,
+requires `comp` and `apps`), `panel` (order 10, requires `comp` and `apps`),
+`launcher` (20, `apps`), `calendar` (30), `notes` (40, `notify`), `network`
+(45) and `settings` (50).
+
+The top bar's power buttons send `power.suspend`, `power.reboot` and
+`power.poweroff` to hostd. Each needs a hostd grant. A refusal is shown in the
+button's tooltip, and nothing runs. Shut down is not a hostd verb yet.
 
 `network` shows links and addresses from rtnetlink, plus systemd-networkd,
 systemd-resolved and the default routes when their tools answer
