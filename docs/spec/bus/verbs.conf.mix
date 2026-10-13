@@ -266,6 +266,8 @@
     {name:"hostd.undo", owner:"hostd", version:"0.1.0", status:"draft", class:"intent"},
     {name:"net.wifi.scan", owner:"hostd", version:"0.1.0", status:"draft", class:"intent"},
     {name:"net.wifi.connect", owner:"hostd", version:"0.1.0", status:"draft", class:"intent"},
-    {name:"net.wg.apply", owner:"hostd", version:"0.1.0", status:"draft", class:"intent"}
+    {name:"net.wg.apply", owner:"hostd", version:"0.1.0", status:"draft", class:"intent"},
+    {name:"desk.restart", owner:"hostd", version:"0.1.0", status:"draft", class:"intent"},
+    {name:"desk.stop", owner:"hostd", version:"0.1.0", status:"draft", class:"intent"}
   ]
 }
