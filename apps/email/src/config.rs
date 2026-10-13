@@ -178,8 +178,11 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         .mode(0o600)
         .open(&temp)?;
     // A failed write or rename must not leave a partial private file behind.
+    // The bytes reach the disk before the rename makes them the config; a
+    // crash between the two must not leave an empty file in its place.
     let result = file
         .write_all(bytes)
+        .and_then(|()| file.sync_all())
         .and_then(|()| {
             drop(file);
             std::fs::rename(&temp, path)
