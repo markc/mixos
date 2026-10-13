@@ -62,7 +62,7 @@ pub fn controls(
         bars::hairline(ui);
         ui.add_enabled_ui(engine.can_edit_wallpaper(), |ui| {
             ui.horizontal(|ui| {
-                ui.label(label("wallpaper-output"));
+                let caption = ui.label(label("wallpaper-output"));
                 let mut target = editor.target.clone();
                 egui::ComboBox::from_id_salt("wallpaper-output")
                     .selected_text(target.clone().unwrap_or_else(|| label("wallpaper-default")))
@@ -81,7 +81,9 @@ pub fn controls(
                                 ui.close();
                             }
                         }
-                    });
+                    })
+                    .response
+                    .labelled_by(caption.id);
                 if target != editor.target {
                     events.push(UiEvent::WallpaperTarget(target));
                 }
