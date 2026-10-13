@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use citizen::{CallError, Reply};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const SCHEMA: &str = "backdrop.v1";
 const VERB_STATE: &str = "backdrop.state";
@@ -110,14 +110,22 @@ impl Document {
             return Err("status.too_large");
         }
         for name in self.outputs.keys() {
-            if name.is_empty() || name.len() > 64 || name == "." || name == ".." || !name.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-'|b'_'|b'.')) {
+            if name.is_empty()
+                || name.len() > 64
+                || name == "."
+                || name == ".."
+                || !name
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+            {
                 return Err("status.unknown_config");
             }
         }
         for fill in self.default.iter().chain(self.outputs.values()) {
             match (&fill.colour, &fill.image) {
-                (Some(colour), None) if valid_colour(colour) && fill.fallback.is_none() => {},
-                (None, Some(image)) if valid_path(image) && fill.fallback.as_deref().is_none_or(valid_colour) => {},
+                (Some(colour), None) if valid_colour(colour) && fill.fallback.is_none() => {}
+                (None, Some(image))
+                    if valid_path(image) && fill.fallback.as_deref().is_none_or(valid_colour) => {}
                 _ => return Err("status.unknown_config"),
             }
         }
@@ -126,8 +134,7 @@ impl Document {
 }
 
 fn parse(value: Value) -> Result<Document, &'static str> {
-    let document: Document =
-        serde_json::from_value(value).map_err(|_| "status.unknown_config")?;
+    let document: Document = serde_json::from_value(value).map_err(|_| "status.unknown_config")?;
     if document.schema == 1 {
         document.check()?;
         Ok(document)
@@ -219,7 +226,13 @@ enum Step {
 }
 
 impl WallpaperEditor {
-    pub fn can_edit(&self) -> bool { self.current.is_some() && !self.working() && !self.unavailable && !self.uncertain && !self.conflict }
+    pub fn can_edit(&self) -> bool {
+        self.current.is_some()
+            && !self.working()
+            && !self.unavailable
+            && !self.uncertain
+            && !self.conflict
+    }
     pub fn working(&self) -> bool {
         self.job.is_some()
     }
@@ -382,10 +395,13 @@ impl WallpaperEditor {
 
     /// Take a state reply, or mark the state unavailable. Returns success.
     fn read_state(&mut self, result: Result<Reply, CallError>) -> bool {
-        if let Ok(reply) = result && reply.rc == 0
+        if let Ok(reply) = result
+            && reply.rc == 0
             && let Ok(body) = serde_json::from_str::<Value>(&reply.body)
             && body["schema"].as_str() == Some(SCHEMA)
-            && body.get("pending").is_some_and(|p| p.is_null() || p.as_u64().is_some())
+            && body
+                .get("pending")
+                .is_some_and(|p| p.is_null() || p.as_u64().is_some())
             && let Some(config) = body.get("config")
             && parse(config.clone()).is_ok()
         {
@@ -414,10 +430,15 @@ impl WallpaperEditor {
         if let Some(names) = self.current.as_ref().and_then(|c| c["outputs"].as_object()) {
             self.outputs.extend(names.keys().cloned());
         }
-        self.outputs.sort(); self.outputs.dedup();
-        self.pending = body.get("pending").is_some_and(|pending| !pending.is_null());
+        self.outputs.sort();
+        self.outputs.dedup();
+        self.pending = body
+            .get("pending")
+            .is_some_and(|pending| !pending.is_null());
         self.unavailable = false;
-        if !self.pending { self.uncertain = false; }
+        if !self.pending {
+            self.uncertain = false;
+        }
         // The daemon already holds the draft: nothing is left to apply.
         if self.draft == self.current {
             self.draft = None;
@@ -434,7 +455,9 @@ impl WallpaperEditor {
             self.settle();
             return self.reread(next_ticket, false);
         }
-        if self.draft.is_none() { return self.reread(next_ticket, false); }
+        if self.draft.is_none() {
+            return self.reread(next_ticket, false);
+        }
         if self.current != self.base {
             self.conflict = true;
             self.settle();
@@ -460,7 +483,11 @@ impl WallpaperEditor {
     ) -> Option<Call> {
         match result {
             Ok(reply) if reply.rc == 0 => {
-                let accepted = serde_json::from_str::<Value>(&reply.body).ok().is_some_and(|b| b["active"].as_u64().is_some() && b["requested"].as_u64().is_some());
+                let accepted = serde_json::from_str::<Value>(&reply.body)
+                    .ok()
+                    .is_some_and(|b| {
+                        b["active"].as_u64().is_some() && b["requested"].as_u64().is_some()
+                    });
                 if !accepted {
                     self.uncertain = true;
                     self.settle();
@@ -476,10 +503,13 @@ impl WallpaperEditor {
             }
             Ok(reply) => {
                 // Refused: nothing changed, so current and draft stay as they were.
-                self.detail = serde_json::from_str::<Value>(&reply.body).ok().as_ref()
+                self.detail = serde_json::from_str::<Value>(&reply.body)
+                    .ok()
+                    .as_ref()
                     .and_then(|b| b.get("message"))
                     .and_then(Value::as_str)
-                    .map(str::to_owned).or(reply.error);
+                    .map(str::to_owned)
+                    .or(reply.error);
                 self.refusal = true;
                 self.status = "status.refused".to_owned();
                 self.failed = true;
@@ -512,8 +542,12 @@ impl WallpaperEditor {
         &mut self,
         change: impl FnOnce(&mut Document, Option<&str>) -> Result<(), &'static str>,
     ) -> Result<(), &'static str> {
-        if self.current.is_none() || self.unavailable || self.uncertain { return Err("status.unavailable"); }
-        if self.conflict { return Err("status.conflict"); }
+        if self.current.is_none() || self.unavailable || self.uncertain {
+            return Err("status.unavailable");
+        }
+        if self.conflict {
+            return Err("status.conflict");
+        }
         if self.working() {
             return Err("status.busy");
         }
@@ -569,7 +603,11 @@ mod tests {
     use super::*;
 
     fn reply(rc: u8, body: Value) -> Reply {
-        Reply { rc, body:body.to_string(), error:None }
+        Reply {
+            rc,
+            body: body.to_string(),
+            error: None,
+        }
     }
 
     fn state(config: Value, pending: Value) -> Result<Reply, CallError> {
@@ -585,7 +623,10 @@ mod tests {
     }
 
     fn lost() -> Result<Reply, CallError> {
-        Err(CallError { message:"timed out".into(), outcome_unknown:true })
+        Err(CallError {
+            message: "timed out".into(),
+            outcome_unknown: true,
+        })
     }
 
     fn config() -> Value {
@@ -656,9 +697,18 @@ mod tests {
     #[test]
     fn invalid_values_are_refused() {
         let mut editor = loaded(config());
-        assert_eq!(editor.edit_colour("#12345".into()), Err("status.invalid_colour"));
-        assert_eq!(editor.edit_image("relative.png".into()), Err("status.invalid_image"));
-        assert_eq!(editor.edit_image("/a\0b.png".into()), Err("status.invalid_image"));
+        assert_eq!(
+            editor.edit_colour("#12345".into()),
+            Err("status.invalid_colour")
+        );
+        assert_eq!(
+            editor.edit_image("relative.png".into()),
+            Err("status.invalid_image")
+        );
+        assert_eq!(
+            editor.edit_image("/a\0b.png".into()),
+            Err("status.invalid_image")
+        );
         assert!(editor.draft.is_none());
     }
 
@@ -674,7 +724,11 @@ mod tests {
     fn stale_reply_is_ignored() {
         let mut editor = WallpaperEditor::default();
         editor.read(1).unwrap();
-        assert!(editor.complete(7, state(config(), Value::Null), 2).is_none());
+        assert!(
+            editor
+                .complete(7, state(config(), Value::Null), 2)
+                .is_none()
+        );
         assert!(editor.working());
         assert!(editor.current.is_none());
     }
@@ -689,7 +743,11 @@ mod tests {
             .complete(1, state(config(), Value::Null), 4)
             .expect("one deferred read");
         assert_eq!((call.ticket, call.verb), (4, VERB_STATE));
-        assert!(editor.complete(4, state(config(), Value::Null), 5).is_none());
+        assert!(
+            editor
+                .complete(4, state(config(), Value::Null), 5)
+                .is_none()
+        );
         assert!(!editor.working());
     }
 
@@ -712,7 +770,10 @@ mod tests {
         assert_eq!(editor.status, "status.conflict");
         assert!(editor.failed);
         assert!(!editor.can_apply());
-        assert_eq!(editor.draft.as_ref().unwrap()["default"]["colour"], "#445566");
+        assert_eq!(
+            editor.draft.as_ref().unwrap()["default"]["colour"],
+            "#445566"
+        );
 
         assert_eq!(editor.edit_colour("#445566".into()), Err("status.conflict"));
         editor.revert();
@@ -728,9 +789,15 @@ mod tests {
         let draft = editor.draft.clone();
         let call = preflight(&mut editor, 10, state(config(), Value::Null)).expect("set");
         assert_eq!(call.verb, VERB_SET);
-        assert!(editor
-            .complete(call.ticket, Ok(reply(10, json!({"message": "no such output"}))), 12)
-            .is_none());
+        assert!(
+            editor
+                .complete(
+                    call.ticket,
+                    Ok(reply(10, json!({"message": "no such output"}))),
+                    12
+                )
+                .is_none()
+        );
         assert_eq!(editor.current, Some(config()));
         assert_eq!(editor.draft, draft);
         assert_eq!(editor.status, "status.refused");
@@ -744,11 +811,18 @@ mod tests {
         editor.edit_colour("#445566".into()).unwrap();
         let call = preflight(&mut editor, 10, state(config(), Value::Null)).expect("set");
         let reread = editor
-            .complete(call.ticket, Ok(reply(0, json!({"requested": 1, "active": 1}))), 12)
+            .complete(
+                call.ticket,
+                Ok(reply(0, json!({"requested": 1, "active": 1}))),
+                12,
+            )
             .expect("reread");
         assert_eq!(reread.verb, VERB_STATE);
         assert!(editor.draft.is_none());
-        assert_eq!(editor.current.as_ref().unwrap()["default"]["colour"], "#445566");
+        assert_eq!(
+            editor.current.as_ref().unwrap()["default"]["colour"],
+            "#445566"
+        );
     }
 
     #[test]
@@ -765,9 +839,11 @@ mod tests {
         assert!(editor.apply(13).is_none());
 
         // A successful reread that shows the set landed clears the uncertainty.
-        assert!(editor
-            .complete(12, state(landed, Value::Null), 14)
-            .is_none());
+        assert!(
+            editor
+                .complete(12, state(landed, Value::Null), 14)
+                .is_none()
+        );
         assert!(!editor.uncertain);
         assert!(editor.draft.is_none());
         assert!(!editor.can_apply());

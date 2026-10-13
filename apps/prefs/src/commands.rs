@@ -63,16 +63,74 @@ pub fn registry() -> Registry<Engine> {
     });
     // View › Theme: any scheme, style, mode and framing, in this window only.
     for (id, label, menu, enabled, run) in [
-        ("wallpaper.apply", "wallpaper-apply", Some("wallpaper"), Engine::can_apply_wallpaper as fn(&Engine)->bool, Engine::apply_wallpaper as fn(&mut Engine)),
-        ("wallpaper.revert", "wallpaper-revert", Some("wallpaper"), Engine::can_revert_wallpaper, Engine::revert_wallpaper),
-        ("wallpaper.refresh", "wallpaper-refresh", Some("wallpaper"), can_refresh_wallpaper, Engine::read_wallpaper),
-        ("wallpaper.browse", "wallpaper-browse", Some("wallpaper"), Engine::can_browse_wallpaper, Engine::browse_wallpaper),
-        ("wallpaper.picker.go", "wallpaper-go", None, Engine::can_picker_go, Engine::picker_go),
-        ("wallpaper.picker.parent", "wallpaper-parent", None, Engine::can_picker_go, Engine::picker_parent),
-        ("wallpaper.picker.use", "wallpaper-use-image", None, Engine::can_picker_use, Engine::picker_use),
-        ("wallpaper.picker.cancel", "cancel", None, picker_open, Engine::picker_cancel),
+        (
+            "wallpaper.apply",
+            "wallpaper-apply",
+            Some("wallpaper"),
+            Engine::can_apply_wallpaper as fn(&Engine) -> bool,
+            Engine::apply_wallpaper as fn(&mut Engine),
+        ),
+        (
+            "wallpaper.revert",
+            "wallpaper-revert",
+            Some("wallpaper"),
+            Engine::can_revert_wallpaper,
+            Engine::revert_wallpaper,
+        ),
+        (
+            "wallpaper.refresh",
+            "wallpaper-refresh",
+            Some("wallpaper"),
+            can_refresh_wallpaper,
+            Engine::read_wallpaper,
+        ),
+        (
+            "wallpaper.browse",
+            "wallpaper-browse",
+            Some("wallpaper"),
+            Engine::can_browse_wallpaper,
+            Engine::browse_wallpaper,
+        ),
+        (
+            "wallpaper.picker.go",
+            "wallpaper-go",
+            None,
+            Engine::can_picker_go,
+            Engine::picker_go,
+        ),
+        (
+            "wallpaper.picker.parent",
+            "wallpaper-parent",
+            None,
+            Engine::can_picker_go,
+            Engine::picker_parent,
+        ),
+        (
+            "wallpaper.picker.use",
+            "wallpaper-use-image",
+            None,
+            Engine::can_picker_use,
+            Engine::picker_use,
+        ),
+        (
+            "wallpaper.picker.cancel",
+            "cancel",
+            None,
+            picker_open,
+            Engine::picker_cancel,
+        ),
     ] {
-        r.add(Command { id, label, menu, submenu:None, group:0, shortcut:None, icon:None, enabled, run });
+        r.add(Command {
+            id,
+            label,
+            menu,
+            submenu: None,
+            group: 0,
+            shortcut: None,
+            icon: None,
+            enabled,
+            run,
+        });
     }
     r.theme_menu("view", choice, set_choice);
     r.add(Command {
@@ -224,8 +282,12 @@ pub fn choice(e: &Engine) -> toolkit::theme_menu::Choice {
     }
 }
 
-fn picker_open(e: &Engine) -> bool { e.picker.open }
-fn can_refresh_wallpaper(e: &Engine) -> bool { e.connected && !e.quitting && undialogued(e) && !e.wallpaper.working() }
+fn picker_open(e: &Engine) -> bool {
+    e.picker.open
+}
+fn can_refresh_wallpaper(e: &Engine) -> bool {
+    e.connected && !e.quitting && undialogued(e) && !e.wallpaper.working()
+}
 
 /// Store the Theme menu's choice as the window's.
 fn set_choice(e: &mut Engine, choice: toolkit::theme_menu::Choice) {

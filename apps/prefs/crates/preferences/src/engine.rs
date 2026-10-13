@@ -38,22 +38,48 @@ pub enum Effect {
         verb: &'static str,
         body: Value,
     },
-    Backdrop { ticket: u64, verb: &'static str, body: Value },
-    Browse { ticket: u64, path: Option<String> },
+    Backdrop {
+        ticket: u64,
+        verb: &'static str,
+        body: Value,
+    },
+    Browse {
+        ticket: u64,
+        path: Option<String>,
+    },
     /// Restore and focus the window and report [`Engine::shown`].
-    Show { ticket: u64, reply: Option<u64> },
+    Show {
+        ticket: u64,
+        reply: Option<u64>,
+    },
     /// Answer the Bus command `id`.
-    Reply { id: u64, rc: u8, body: Value },
+    Reply {
+        id: u64,
+        rc: u8,
+        body: Value,
+    },
     /// Answer `id` with the command registry's description.
-    Commands { id: u64 },
+    Commands {
+        id: u64,
+    },
     /// Run registry command `command` and answer `id`.
-    Execute { id: u64, command: String },
+    Execute {
+        id: u64,
+        command: String,
+    },
     /// Answer `id` with the whole Bus surface (`app.describe`), or only its
     /// verbs (`HELP`): the engine's and the window's drive verbs.
-    Describe { id: u64, help: bool },
+    Describe {
+        id: u64,
+        help: bool,
+    },
     /// Hand the window-level verb `verb` (without the `prefs.` prefix:
     /// `ui.click`, `window`, …) to the toolkit drive layer.
-    Drive { id: u64, verb: String, args: Value },
+    Drive {
+        id: u64,
+        verb: String,
+        args: Value,
+    },
     /// Close: stop the Bus connection and the window.
     Exit,
 }
@@ -380,7 +406,12 @@ impl Engine {
         match self.ui.panel {
             Panel::Applications => self.idle(),
             Panel::Appearance => {
-                !self.look.working() && !self.wallpaper.working() && self.connected && self.ui.dialog.is_none() && !self.picker.open && !self.quitting
+                !self.look.working()
+                    && !self.wallpaper.working()
+                    && self.connected
+                    && self.ui.dialog.is_none()
+                    && !self.picker.open
+                    && !self.quitting
             }
         }
     }
@@ -450,7 +481,10 @@ impl Engine {
     pub fn refresh(&mut self) {
         match self.ui.panel {
             Panel::Applications => self.start(Op::List),
-            Panel::Appearance => { self.read_look(); self.read_wallpaper(); },
+            Panel::Appearance => {
+                self.read_look();
+                self.read_wallpaper();
+            }
         }
     }
 
@@ -648,7 +682,9 @@ impl Engine {
                 if topic == crate::appearance::topic() {
                     self.read_look();
                 }
-                if topic == "backdrop.command.executed" { self.read_wallpaper(); }
+                if topic == "backdrop.command.executed" {
+                    self.read_wallpaper();
+                }
             }
             Delivery::Disconnected => {
                 self.connected = false;

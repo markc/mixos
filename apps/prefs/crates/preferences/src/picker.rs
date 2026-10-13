@@ -91,7 +91,11 @@ impl Engine {
 
     pub fn picker_select(&mut self, path: &str) {
         if self.can_picker_go()
-            && self.picker.entries.iter().any(|e| !e.directory && e.path == path)
+            && self
+                .picker
+                .entries
+                .iter()
+                .any(|e| !e.directory && e.path == path)
         {
             self.picker.selected = Some(path.to_owned());
         }
@@ -99,7 +103,11 @@ impl Engine {
 
     pub fn picker_enter(&mut self, path: &str) {
         if self.can_picker_go()
-            && self.picker.entries.iter().any(|e| e.directory && e.path == path)
+            && self
+                .picker
+                .entries
+                .iter()
+                .any(|e| e.directory && e.path == path)
         {
             self.list_wallpapers(Some(path.to_owned()));
         }
@@ -151,7 +159,9 @@ impl Engine {
 mod tests {
     use super::*;
 
-    fn label(key: &str, _: &[(&str, &str)]) -> String { key.into() }
+    fn label(key: &str, _: &[(&str, &str)]) -> String {
+        key.into()
+    }
 
     #[test]
     fn cancellation_and_stale_completion_do_not_select_an_image() {
@@ -171,7 +181,11 @@ mod tests {
     fn only_listed_files_can_be_selected() {
         let mut e = Engine::new(label);
         e.picker.open = true;
-        e.picker.entries = vec![Entry { name:"image.png".into(), path:"/pictures/image.png".into(), directory:false }];
+        e.picker.entries = vec![Entry {
+            name: "image.png".into(),
+            path: "/pictures/image.png".into(),
+            directory: false,
+        }];
         e.picker_select("/pictures/elsewhere.png");
         assert!(e.picker.selected.is_none());
         e.picker_select("/pictures/image.png");

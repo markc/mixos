@@ -106,46 +106,83 @@ fn appearance_engine() -> Engine {
     e
 }
 
-fn wallpaper_read(e:&mut Engine, config:serde_json::Value) {
+fn wallpaper_read(e: &mut Engine, config: serde_json::Value) {
     e.read_wallpaper();
-    let ticket=e.take_effects().into_iter().find_map(|f| match f {Effect::Backdrop{ticket,..}=>Some(ticket),_=>None}).unwrap();
+    let ticket = e
+        .take_effects()
+        .into_iter()
+        .find_map(|f| match f {
+            Effect::Backdrop { ticket, .. } => Some(ticket),
+            _ => None,
+        })
+        .unwrap();
     e.wallpaper_finished(ticket,Ok(Reply{rc:0,body:json!({"schema":"backdrop.v1","config":config,"pending":null,"outputs":[{"name":"DP-1"}]}).to_string(),error:None}));
 }
 
 #[test]
 fn wallpaper_colour_studio_dark() {
-    let mut e=appearance_engine();
+    let mut e = appearance_engine();
     e.wallpaper_kind(preferences::wallpaper::Kind::Colour);
     e.wallpaper_colour("#25354a".into());
-    draw(chrome(Scheme::Studio,Mode::Dark),"wallpaper_colour_studio_dark",e);
+    draw(
+        chrome(Scheme::Studio, Mode::Dark),
+        "wallpaper_colour_studio_dark",
+        e,
+    );
 }
 
 #[test]
 fn wallpaper_image_pro_light() {
-    let mut e=appearance_engine();
-    wallpaper_read(&mut e,json!({"schema":1,"default":{"image":"/opt/mixos/share/wallpapers/landscape.jpg"}}));
-    draw(chrome(Scheme::Pro,Mode::Light),"wallpaper_image_pro_light",e);
+    let mut e = appearance_engine();
+    wallpaper_read(
+        &mut e,
+        json!({"schema":1,"default":{"image":"/opt/mixos/share/wallpapers/landscape.jpg"}}),
+    );
+    draw(
+        chrome(Scheme::Pro, Mode::Light),
+        "wallpaper_image_pro_light",
+        e,
+    );
 }
 
 #[test]
 fn wallpaper_refused_studio_dark() {
-    let mut e=appearance_engine();
+    let mut e = appearance_engine();
     e.wallpaper_kind(preferences::wallpaper::Kind::Image);
     e.wallpaper_image("/pictures/missing.png".into());
-    e.wallpaper.status="status.refused".into();
-    e.wallpaper.failed=true;
-    e.wallpaper.detail=Some("Image could not be opened: No such file or directory".into());
-    draw(chrome(Scheme::Studio,Mode::Dark),"wallpaper_refused_studio_dark",e);
+    e.wallpaper.status = "status.refused".into();
+    e.wallpaper.failed = true;
+    e.wallpaper.detail = Some("Image could not be opened: No such file or directory".into());
+    draw(
+        chrome(Scheme::Studio, Mode::Dark),
+        "wallpaper_refused_studio_dark",
+        e,
+    );
 }
 
 #[test]
 fn wallpaper_picker_studio_dark() {
-    let mut e=appearance_engine();
-    e.picker.open=true;
-    e.picker.directory="/opt/mixos/share/wallpapers".into();
-    e.picker.entries=vec![preferences::picker::Entry{name:"landscapes".into(),path:"/opt/mixos/share/wallpapers/landscapes".into(),directory:true},preferences::picker::Entry{name:"mountains.jpg".into(),path:"/opt/mixos/share/wallpapers/mountains.jpg".into(),directory:false}];
-    e.picker.selected=Some("/opt/mixos/share/wallpapers/mountains.jpg".into());
-    draw(chrome(Scheme::Studio,Mode::Dark),"wallpaper_picker_studio_dark",e);
+    let mut e = appearance_engine();
+    e.picker.open = true;
+    e.picker.directory = "/opt/mixos/share/wallpapers".into();
+    e.picker.entries = vec![
+        preferences::picker::Entry {
+            name: "landscapes".into(),
+            path: "/opt/mixos/share/wallpapers/landscapes".into(),
+            directory: true,
+        },
+        preferences::picker::Entry {
+            name: "mountains.jpg".into(),
+            path: "/opt/mixos/share/wallpapers/mountains.jpg".into(),
+            directory: false,
+        },
+    ];
+    e.picker.selected = Some("/opt/mixos/share/wallpapers/mountains.jpg".into());
+    draw(
+        chrome(Scheme::Studio, Mode::Dark),
+        "wallpaper_picker_studio_dark",
+        e,
+    );
 }
 
 fn draw(theme: Theme, name: &str, engine: Engine) {

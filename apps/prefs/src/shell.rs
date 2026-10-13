@@ -363,12 +363,17 @@ impl Shell {
             Effect::Backdrop { ticket, verb, body } => {
                 let bus = self.bus.clone();
                 self.spawn(async move {
-                    Event::Backdrop(ticket, bus.raw_within("backdrop", verb, body.to_string(), Duration::from_secs(60)).await)
+                    Event::Backdrop(
+                        ticket,
+                        bus.raw_within("backdrop", verb, body.to_string(), Duration::from_secs(60))
+                            .await,
+                    )
                 });
             }
             Effect::Browse { ticket, path } => {
                 self.spawn(async move {
-                    let result = tokio::task::spawn_blocking(move || crate::browser::list(path)).await
+                    let result = tokio::task::spawn_blocking(move || crate::browser::list(path))
+                        .await
                         .unwrap_or_else(|e| Err(e.to_string()));
                     Event::Browsed(ticket, result)
                 });

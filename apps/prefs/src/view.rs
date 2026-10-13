@@ -128,12 +128,15 @@ pub fn view(
         .show(ui, |ui| match engine.ui.panel {
             Panel::Applications => applications(ui, engine, commands, strings, &mut events),
             Panel::Appearance => {
-                ScrollArea::vertical().id_salt("appearance-page").auto_shrink(false).show(ui, |ui| {
-                    wallpaper::controls(ui, engine, commands, strings, &mut events);
-                    ui.add_space(ui.spacing().item_spacing.y);
-                    appearance(ui, engine, commands, strings, &mut events);
-                });
-            },
+                ScrollArea::vertical()
+                    .id_salt("appearance-page")
+                    .auto_shrink(false)
+                    .show(ui, |ui| {
+                        wallpaper::controls(ui, engine, commands, strings, &mut events);
+                        ui.add_space(ui.spacing().item_spacing.y);
+                        appearance(ui, engine, commands, strings, &mut events);
+                    });
+            }
         });
     dialogs(ui, engine, commands, strings, &mut events);
     wallpaper::picker(ui, engine, &mut events);
@@ -410,43 +413,42 @@ fn appearance(
             return;
         };
         ui.vertical(|ui| {
-                ui.set_width(ui.available_width());
-                look_controls(ui, engine, strings, look, events);
-                bars::hairline(ui);
-                let note = |ui: &mut Ui, key: &str, colour: Option<Color32>| {
-                    let mut text = RichText::new(label(key));
-                    text = match colour {
-                        Some(colour) => text.color(colour),
-                        None => text.weak(),
-                    };
-                    ui.add(egui::Label::new(text).wrap());
+            ui.set_width(ui.available_width());
+            look_controls(ui, engine, strings, look, events);
+            bars::hairline(ui);
+            let note = |ui: &mut Ui, key: &str, colour: Option<Color32>| {
+                let mut text = RichText::new(label(key));
+                text = match colour {
+                    Some(colour) => text.color(colour),
+                    None => text.weak(),
                 };
-                if !engine.look.conflicts.is_empty() {
-                    let axes: Vec<String> = engine
-                        .look
-                        .conflicts
-                        .iter()
-                        .map(|a| label(axis_label(*a)))
-                        .collect();
-                    let text = label_with("look-conflicts", &[("axes", &axes.join(", "))]);
-                    ui.add(
-                        egui::Label::new(RichText::new(text).color(ui.visuals().warn_fg_color))
-                            .wrap(),
-                    );
-                }
-                if engine.look.custom_source {
-                    note(ui, "look-custom", None);
-                }
-                note(
-                    ui,
-                    if engine.look.hold {
-                        "look-held"
-                    } else {
-                        "look-current"
-                    },
-                    None,
+                ui.add(egui::Label::new(text).wrap());
+            };
+            if !engine.look.conflicts.is_empty() {
+                let axes: Vec<String> = engine
+                    .look
+                    .conflicts
+                    .iter()
+                    .map(|a| label(axis_label(*a)))
+                    .collect();
+                let text = label_with("look-conflicts", &[("axes", &axes.join(", "))]);
+                ui.add(
+                    egui::Label::new(RichText::new(text).color(ui.visuals().warn_fg_color)).wrap(),
                 );
-            });
+            }
+            if engine.look.custom_source {
+                note(ui, "look-custom", None);
+            }
+            note(
+                ui,
+                if engine.look.hold {
+                    "look-held"
+                } else {
+                    "look-current"
+                },
+                None,
+            );
+        });
     });
 }
 

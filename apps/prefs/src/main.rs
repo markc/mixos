@@ -52,7 +52,10 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Settings, String> {
 
 fn run(settings: &Settings) -> Result<(), String> {
     // The desktop profile's change hints wake the Appearance panel.
-    let topics = [preferences::appearance::topic(), "backdrop.command.executed".into()];
+    let topics = [
+        preferences::appearance::topic(),
+        "backdrop.command.executed".into(),
+    ];
     let (handle, deliveries) =
         citizen::start_with_topics(APP, &settings.service, &settings.url, &topics)?;
     let theme = toolkit::Theme::load();
