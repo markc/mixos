@@ -77,5 +77,6 @@ Inter, JetBrains Mono and Quicksand (SIL OFL 1.1), Noto Color Emoji
 (SIL OFL 1.1).
 
 Website interface icons are generated from the pinned, unmodified Lucide SVG
-sources. The distributed CSS changes only their rendered stroke width; the
+sources. The distributed SVG copies change stroke-width from 2 to 1.5 and add
+a generated-by comment. CSS masks paint those copies in the current colour; the
 Lucide ISC and Feather-derived MIT notices ship in docs/web/icons/LICENSE-Lucide.txt.
