@@ -215,7 +215,14 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
-                        <div class="toc-empty">No sections on this page</div>
+                        <a href="#the-document">The document</a>
+                        <a href="#images">Images</a>
+                        <a href="#memory-budgets" class="toc-h3">Memory budgets</a>
+                        <a href="#the-bus">The Bus</a>
+                        <a href="#cost">Cost</a>
+                        <a href="#start-up-and-failure">Start-up and failure</a>
+                        <a href="#known-gaps">Known gaps</a>
+                        <a href="#tests">Tests</a>
                     </nav>
                 </div>
             </div>
@@ -245,19 +252,138 @@
 part of the compositor: it puts one surface on the compositor's
 background layer for each output, under every window and panel, and
 draws it with egui. A crash in it never takes the session down.</p>
-<p>What it will draw:</p>
+<p>What it draws today:</p>
 <ul>
-<li>a <strong>colour</strong>, an <strong>image</strong> (fill, fit, centre, tile or stretch) or a
-<strong>slideshow</strong> that crossfades through a folder;</li>
-<li>optionally, over any of them, a <strong>live folder</strong>: the files of a folder
-as icons, photos and videos as thumbnails, updated as files come and go.</li>
+<li>a <strong>solid colour</strong> per output, or the <strong>session theme's</strong> colour when no
+document names one;</li>
+<li>a <strong>PNG or JPEG image</strong>, centre-cropped to fill each output (the default
+and only fit). Each output may have its own.</li>
 </ul>
-<p><strong>Today it is a probe.</strong> It fills each output with the session theme and
-shows the output's size and scale and the clicks it receives. That proves
-the surfaces, the scaling and the input before the wallpapers and the
-folder view are built on them.</p>
-<p>It costs nothing while nothing changes: it draws only when its content,
-size, scale or input changes.</p>
+<p>Not yet: fit modes other than centre-crop, slideshows, the live folder view
+and preferences UI. The probe (<code>backdrop --probe</code>) is still there: it is the
+regression gate for the surfaces, scale and input, and draws its own labels.</p>
+<h2 id="the-document">The document</h2>
+<p><code>backdrop.mx</code> (strict data, <code>schema: 1</code>), in the app's config directory
+(<code>AppDirs</code>, <code>config/backdrop.mx</code>) unless <code>--config PATH</code> names another.</p>
+<pre><code class="language-text">schema: 1
+default: { colour: "#1e1e2e" }
+outputs: {
+  "DP-1": { image: "/usr/share/wallpapers/hills.jpg", fallback: "#000000" },
+}
+</code></pre>
+<ul>
+<li><code>schema</code> is required and must be <code>1</code>.</li>
+<li><code>default</code> is one wallpaper; without it the session theme's colour fills
+every output.</li>
+<li>Each wallpaper names exactly one of <code>colour</code> (<code>#RRGGBB</code>, six hex digits) or
+<code>image</code> (an absolute path). <code>fallback</code> (<code>#RRGGBB</code>) goes with an image only:
+it is shown until the image is decoded.</li>
+<li><code>outputs</code> maps an output's name (<code>DP-1</code>) to its own wallpaper; an output
+without one takes the default.</li>
+<li>Unknown keys, wrong types, bad colours, relative paths and other shapes
+are refused, naming the field. A bad document at start stops the app.</li>
+</ul>
+<p>Command line: <code>--colour #RRGGBB</code> or <code>--image FILE</code> replaces the document's
+<strong>default</strong> for this run (it is not stored). <code>--service NAME</code> registers the
+Bus name (default <code>backdrop</code>).</p>
+<h2 id="images">Images</h2>
+<ul>
+<li>PNG and JPEG only. The file is opened once, without blocking (a FIFO or
+device is refused), and read through a limit of 32 MiB; anything larger is
+refused. The format, the header's dimensions and the pixels all come from
+those same bytes. A header over 16384 pixels a side, or over 32 Mpx, is
+refused before any pixel buffer exists. The decoder's own allocation cap is
+256 MiB.</li>
+<li>Decoding runs on one worker thread, one image at a time. The kept image is
+downscaled so its longest side is at most 3840 pixels.</li>
+<li>At most four distinct images per document, counted after command-line
+overrides: a <code>--image</code> that makes five is refused.</li>
+<li>Every image a set names is decoded again, even one already on screen, so a
+file replaced at the same path is picked up by the next set.</li>
+<li>A set applies only once all its images are decoded. A missing, corrupt,
+oversize or unsupported image refuses the whole change: the last applied
+backdrop stays on screen, and the reason is in <code>backdrop.state</code>. Images being
+decoded for a refused or superseded set are dropped at once.</li>
+</ul>
+<h3 id="memory-budgets">Memory budgets</h3>
+<p>Two aggregate budgets, both enforced; the per-image limits above are not
+totals.</p>
+<table><thead><tr><th>Budget</th><th>Limit</th><th>Worst case</th></tr></thead><tbody>
+<tr><td>Decoded RGBA held by the controller (applied and candidate images together)</td><td>256 MiB (<code>RESIDENT_BUDGET</code>)</td><td>a decode that would take the total over it is refused (<code>IMAGE</code>)</td></tr>
+<tr><td>Texture memory on the GPU, across all outputs (<code>TEXTURE_BUDGET</code>)</td><td>256 MiB</td><td>four full-size (3840 × 3840, 59 MiB) textures</td></tr>
+</tbody></table>
+<ul>
+<li>A context owns at most one image texture. Replacing it reserves the new size
+while the old is still held, so the overlap is counted; a texture that does
+not fit leaves that output on its fallback colour, with the reason in its
+<code>error</code>. Removing an output, showing a solid colour, or a change of image
+releases its bytes.</li>
+<li>A texture upload copies the decoded image once (a transient copy of at most
+one image, on the CPU).</li>
+</ul>
+<h2 id="the-bus">The Bus</h2>
+<p>Service <code>backdrop</code> (or <code>--service</code>). Verbs (registered in
+<code>docs/spec/bus/verbs.conf.mix</code>):</p>
+<table><thead><tr><th>Verb</th><th>Class</th><th>Body</th><th>Reply</th></tr></thead><tbody>
+<tr><td><code>backdrop.ping</code></td><td>query</td><td><code>{}</code></td><td><code>{schema, service}</code></td></tr>
+<tr><td><code>backdrop.state</code></td><td>query</td><td><code>{}</code></td><td>the state below</td></tr>
+<tr><td><code>backdrop.set</code></td><td>intent</td><td>a complete document (above)</td><td>the change, once applied</td></tr>
+</tbody></table>
+<p><code>backdrop.set</code> replaces the whole document; it does not patch it. A valid
+set waits for its images, is stored in the document's file (atomically,
+through <code>config::atomic</code>), and then applies. Its reply is <code>rc 0</code> with
+<code>{requested, active, config_file}</code>. A refusal is <code>rc 10</code> with
+<code>{error_code, message}</code>:</p>
+<ul>
+<li><code>ARGUMENT</code>: the body is not a valid document (nothing changed);</li>
+<li><code>IMAGE</code>: an image did not decode (nothing changed);</li>
+<li><code>STORE</code>: the document could not be stored (nothing changed), or it was
+stored but its durability is not confirmed (applied; the reply says so);</li>
+<li><code>SUPERSEDED</code>: a newer set replaced this one before it applied.</li>
+</ul>
+<p><code>backdrop.state</code> answers with no output on screen:
+<code>{schema, service, requested, active, pending, error, config, config_file, outputs}</code>. <code>requested</code> and <code>active</code> are revisions: <code>requested</code> numbers every
+accepted set, and <code>active</code> is the one on screen. <code>pending</code> is the revision
+still decoding, if any. <code>error</code> is the last refused change's reason. <code>outputs</code>
+lists each output drawn so far, with its size, scale and what it shows
+(<code>theme</code>, <code>colour</code>, <code>image</code> or <code>fallback</code>).</p>
+<p>Every applied set is one run of <code>backdrop.set</code> and is published on
+<code>backdrop.command.executed</code> with origin <code>bus</code>. The command line's default is
+not a run: it is the start state.</p>
+<h2 id="cost">Cost</h2>
+<p>It costs nothing while nothing changes. A static colour or image draws once
+per output and then sleeps; a set, a decode, a change of output or scale wakes
+it through egui's repaint request.</p>
+<h2 id="start-up-and-failure">Start-up and failure</h2>
+<ul>
+<li>The Bus registration must succeed: if the broker refuses or is unreachable,
+backdrop exits with the reason rather than running a second, unregistered
+wallpaper.</li>
+<li>An output that goes away is released (<code>LayerProgram::removed</code>): its context,
+its texture and its status.</li>
+</ul>
+<h2 id="known-gaps">Known gaps</h2>
+<ul>
+<li>The theme's colour is taken from the installed style's panel fill, not a
+named design token. Naming the desktop token is a follow-up.</li>
+<li>Overlapping sets (one still decoding when the next arrives) are exercised by
+the controller's unit tests; the Mix gate sends its sets one after another.</li>
+</ul>
+<h2 id="tests">Tests</h2>
+<ul>
+<li><code>tests/desktop/wallpaper_gate.mix</code> runs the wallpaper on a private broker and
+a private nested compd, takes screenshots of a solid colour and a PNG
+(<code>share/brand</code>'s favicon), and checks <code>backdrop.set</code> and <code>backdrop.state</code>: a
+refused image keeps the last good pixels and revision, rapid sets apply in
+order, a non-document is refused, the accepted document is stored, and the
+process is idle. <code>--shot-out DIR</code> keeps the PPMs.</li>
+<li><code>tests/desktop/backdrop_gate.mix</code> is the <code>--probe</code> regression gate: input,
+paint and occlusion.</li>
+<li>Unit tests (<code>cargo test -p wallpaper</code>, <code>cargo test -p backdrop</code>) cover the
+document, colour, fit, decoder limits (including an oversized header and a
+FIFO), revisions, candidate and active images, the texture budget and the
+verb registry.</li>
+</ul>
         </article>
         <p class="doc-source"><a href="/backdrop.md"><i data-lucide="file-text"></i> This page as Markdown</a></p>
     </div>

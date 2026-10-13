@@ -1,0 +1,372 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.1.0
+-- wallpaper_gate.mix — backdrop's wallpaper on a PRIVATE nested compd (its own
+-- headless weston host) and a PRIVATE broker, judged by real screenshots and
+-- by backdrop.state / backdrop.set over the Bus.
+--
+--   mix tests/desktop/wallpaper_gate.mix [--backdrop PATH] [--bin PATH]
+--       --config-file PATH [--software] [--noded PATH]
+--       [--image-fixture PATH] [--shot-out DIR]
+--
+-- --image-fixture defaults to the MixOS brand favicon in this checkout
+-- (share/brand, cleared MIT OR Apache-2.0). --shot-out DIR keeps every
+-- screenshot as a PPM there, to look at.
+--
+-- Checks:
+-- - the document on disk at start is shown: its colour at the output's centre;
+-- - backdrop.set with a solid colour is applied and drawn (revision 2);
+-- - backdrop.set with a PNG is applied and drawn: it is an image, not a flat
+--   fill (the sampled pixels vary);
+-- - a set naming a missing image is refused (IMAGE), the revision is numbered
+--   but not applied, and the screen and state keep the last good image;
+-- - rapid sets apply in order: each reply's active revision is the one before
+--   plus one, and the screen shows the last colour;
+-- - a body that is not a document is refused (ARGUMENT) and changes nothing;
+-- - the accepted document is stored in the file it came from;
+-- - the backdrop process is idle: its CPU time over 3 s is under 150 ms;
+-- - the compositor stops on TERM within 10 s, with no panic in any log.
+--
+-- Every check prints a line; the run ends with one PASS/FAIL summary and
+-- exits non-zero if anything failed.
+
+$n = require("nested_host_lib.mix")
+$c = require("capture_lib.mix")
+$CLEANUP = {ok: false, run: nil}
+$BUS = nil
+try
+
+$USAGE = "usage: wallpaper_gate.mix [--backdrop PATH] [--bin PATH] --config-file PATH [--software] [--noded PATH] [--image-fixture PATH] [--shot-out DIR]"
+$NODED = ""
+$SHOT_OUT = ""
+$BIN = ""
+$CONFIG = ""
+$BACKDROP = ""
+$FIXTURE = ""
+$SOFTWARE = false
+$argv = args()
+$ai = 0
+while $ai < len($argv)
+  $arg = $argv[$ai]
+  if $arg == "--bin" and $ai + 1 < len($argv) then
+    $BIN = $argv[$ai + 1]
+    $ai = $ai + 2
+  elif $arg == "--config-file" and $ai + 1 < len($argv) then
+    $CONFIG = $argv[$ai + 1]
+    $ai = $ai + 2
+  elif $arg == "--backdrop" and $ai + 1 < len($argv) then
+    $BACKDROP = $argv[$ai + 1]
+    $ai = $ai + 2
+  elif $arg == "--image-fixture" and $ai + 1 < len($argv) then
+    $FIXTURE = $argv[$ai + 1]
+    $ai = $ai + 2
+  elif $arg == "--shot-out" and $ai + 1 < len($argv) then
+    $SHOT_OUT = $argv[$ai + 1]
+    $ai = $ai + 2
+  elif $arg == "--noded" and $ai + 1 < len($argv) then
+    $NODED = $argv[$ai + 1]
+    $ai = $ai + 2
+  elif $arg == "--software" then
+    $SOFTWARE = true
+    $ai = $ai + 1
+  else
+    print("  ERROR: unknown or incomplete argument '" .. $arg .. "'")
+    print($USAGE)
+    exit(2)
+  end
+end
+if $CONFIG == "" or not is_file($CONFIG) then
+  print("  ERROR: --config-file must name compd's settings file")
+  print($USAGE)
+  exit(2)
+end
+-- The fixture: a cleared PNG in this checkout, unless the caller names one.
+if $FIXTURE == "" then
+  $FIXTURE = realpath("share/brand/favicons/black-on-white/favicon-32x32.png") ?? ""
+end
+if $FIXTURE == "" or not is_file($FIXTURE) then
+  print("  ERROR: no image fixture (run from the checkout, or pass --image-fixture PATH)")
+  exit(2)
+end
+-- The backdrop built with the compd under test, else the installed one.
+if $BACKDROP == "" then
+  $BACKDROP = if $BIN != "" then dirname($BIN) .. "/backdrop" else "/opt/mixos/bin/backdrop" end
+end
+if not is_file($BACKDROP) then
+  print("  ERROR: --backdrop must name the backdrop binary")
+  print($USAGE)
+  exit(2)
+end
+if $SHOT_OUT != "" then
+  mkdir($SHOT_OUT, {parents: true})
+end
+
+$comp = $n.require_binary("compd", $BIN, ["/opt/mixos/bin"])
+$shot = $n.require_probe("testkit-screenshot", "", $comp)
+
+$TALLY = {pass: 0, fail: 0}
+fn check($name, $ok, $detail)
+  if $ok then
+    print("  PASS " .. $name)
+    $TALLY["pass"] = $TALLY["pass"] + 1
+  else
+    print("  FAIL " .. $name .. ": " .. $detail)
+    $TALLY["fail"] = $TALLY["fail"] + 1
+  end
+  return $ok
+end
+
+$CLEANUP.run = $n.new_run("/tmp/wallpaper-gate-" .. to_string(pid()))
+-- Its own broker: every Bus call below goes to it, never to a host's.
+$BUS = $n.private_bus({dir: $CLEANUP.run.path .. "/bus", name: "wallpaper-gate", noded: $NODED})
+$session = $n.start({bin: $comp, tag: "wallpaper", run: $CLEANUP.run, config: $CONFIG, env: {}, software: $SOFTWARE})
+$svc = $session["service"]
+$run = $session["runtime"]
+if not check("compositor socket up and comp.ping answered", $n.wait_ready($session, 30),
+    "log " .. $session["log"]) then
+  $n.stop($session)
+  $n.stop_bus($BUS)
+  exit(1)
+end
+print("nested compd (" .. $comp .. "): socket " .. $session["socket"] .. ", service " .. $svc)
+
+-- The document backdrop starts from and stores into: a colour, on disk.
+$DOC = $run .. "/backdrop.mx"
+write_file($DOC, "schema: 1\ndefault: { colour: \"#102030\" }\n")
+$BSVC = "backdrop-wp-" .. to_string(pid())
+
+fn call($verb, $args)
+  return $n.call($svc, $verb, $args)
+end
+
+fn bcall($verb, $args)
+  return $n.call($BSVC, $verb, $args)
+end
+
+fn client_env()
+  $e = {WAYLAND_DISPLAY: $session["socket"], XDG_RUNTIME_DIR: $run, HOME: env("HOME", "/tmp")}
+  if $SOFTWARE then
+    $e["LIBGL_ALWAYS_SOFTWARE"] = "1"
+  end
+  -- backdrop reaches its own broker by the record's address, never by inheritance.
+  $e["MIXOS_NODED_URL"] = $BUS.url
+  $e["MIXOS_NODE_CONFIG"] = $BUS.conf
+  return $e
+end
+
+$PIDS = {}
+fn launch($name, $argv)
+  $p = spawn($argv, {env: client_env(), stdout: {file: $run .. "/" .. $name .. ".log"},
+    stderr: "stdout", detach: true})
+  $PIDS[$name] = $p
+  return $p
+end
+
+fn alive($p)
+  return $p != nil and exists("/proc/" .. to_string($p))
+end
+
+fn screenshot($name)
+  $path = $run .. "/" .. $name .. ".ppm"
+  $r = run_argv([$shot, $path], {env: client_env(), timeout: 20})
+  if $r.exit_code != 0 then
+    print("  note: testkit-screenshot " .. $name .. ": " .. trim($r.stderr))
+    return nil
+  end
+  if $SHOT_OUT != "" then
+    copy($path, $SHOT_OUT .. "/" .. $name .. ".ppm")
+  end
+  return $c.ppm($path)
+end
+
+-- Five by five samples across the image: a flat fill gives one value.
+fn grid($img)
+  $out = []
+  for each $j in [1, 2, 3, 4, 5]
+    for each $i in [1, 2, 3, 4, 5]
+      push($out, $c.pixel($img, $img.w * $i / 6, $img.h * $j / 6))
+    end
+  end
+  return $out
+end
+
+fn distinct($samples)
+  $seen = {}
+  for each $p in $samples
+    $seen[json_encode($p)] = true
+  end
+  return len(keys($seen))
+end
+
+fn near($p, $rgb, $tol)
+  return abs($p[0] - $rgb[0]) <= $tol and abs($p[1] - $rgb[1]) <= $tol and abs($p[2] - $rgb[2]) <= $tol
+end
+
+-- A document with one solid colour, as backdrop.set takes it.
+fn doc_colour($hex)
+  return {schema: 1, default: {colour: $hex}}
+end
+
+fn doc_image($path)
+  return {schema: 1, default: {image: $path}}
+end
+
+-- backdrop's state once it answers and has drawn a surface; nil otherwise.
+fn wait_state($secs)
+  $i = 0
+  while $i < $secs * 4
+    $s = bcall("backdrop.state", {})
+    if $s.rc == 0 and type($s.result) == "map" and len($s.result.outputs ?? []) > 0 then
+      return $s
+    end
+    sleep(0.25)
+    $i = $i + 1
+  end
+  return nil
+end
+
+-- CPU ticks (user + system) of a process, from /proc.
+fn cpu_ticks($pid)
+  $parts = split(read_file("/proc/" .. to_string($pid) .. "/stat"), ") ")
+  $fields = split($parts[len($parts) - 1], " ")
+  return to_number($fields[11]) + to_number($fields[12])
+end
+
+fn refused_with($r, $code)
+  return $r.rc == 10 and type($r.result) == "map" and $r.result.error_code == $code
+end
+
+try
+  $o = call("comp.props.get", {path: "outputs"})
+  check("the compositor reports an output", $o.rc == 0 and type($o.result) == "map" and len(keys($o.result)) > 0, json_encode($o))
+
+  -- ── backdrop starts from the document on disk ─────────────────────────
+  launch("backdrop", [$BACKDROP, "--config", $DOC, "--service", $BSVC])
+  $s = wait_state(20)
+  if check("backdrop answers backdrop.state once a surface is drawn", $s != nil,
+      "no state in 20 s (" .. $run .. "/backdrop.log)") then
+    check("the start document is revision 1 and applied", $s.result.requested == 1 and $s.result.active == 1,
+      json_encode($s.result))
+    $shot0 = screenshot("start")
+    if check("start: screenshots taken", $shot0 != nil, "testkit-screenshot failed") then
+      $c0 = $c.pixel($shot0, $shot0.w / 2, $shot0.h / 2)
+      check("start: the document's colour fills the output", near($c0, [16, 32, 48], 3), json_encode($c0))
+    end
+  end
+
+  -- ── a chosen solid colour, over the Bus ───────────────────────────────
+  $r = bcall("backdrop.set", doc_colour("#204080"))
+  check("backdrop.set colour: accepted", $r.rc == 0 and $r.result.active == 2, json_encode($r))
+  sleep(0.5)
+  $shot1 = screenshot("colour")
+  if $shot1 != nil then
+    $c1 = $c.pixel($shot1, $shot1.w / 2, $shot1.h / 2)
+    check("colour: the output shows #204080", near($c1, [32, 64, 128], 3), json_encode($c1))
+  end
+
+  -- ── a PNG, decoded and drawn ─────────────────────────────────────────
+  $r = bcall("backdrop.set", doc_image($FIXTURE))
+  check("backdrop.set image: accepted", $r.rc == 0 and $r.result.active == 3, json_encode($r))
+  sleep(0.5)
+  $shot2 = screenshot("image")
+  $samples = []
+  if $shot2 != nil then
+    $samples = grid($shot2)
+    check("image: the output is an image, not a flat fill", distinct($samples) >= 2,
+      to_string(distinct($samples)) .. " distinct samples")
+    check("image: it is not the colour it replaced", not near($c.pixel($shot2, $shot2.w / 2, $shot2.h / 2), [32, 64, 128], 3),
+      "centre still the colour")
+  end
+
+  -- ── a missing image: refused, last good kept ─────────────────────────
+  $before = bcall("backdrop.state", {})
+  $r = bcall("backdrop.set", doc_image("/nonexistent/wallpaper-gate.png"))
+  check("a missing image is refused (IMAGE) and nothing is applied", refused_with($r, "IMAGE"), json_encode($r))
+  $after = bcall("backdrop.state", {})
+  check("refused: the revision is numbered, the applied one is unchanged",
+    $after.result.requested == $before.result.requested + 1 and $after.result.active == 3,
+    json_encode($after.result))
+  check("refused: the state names the reason", $after.result.error != nil, json_encode($after.result))
+  sleep(0.5)
+  $shot3 = screenshot("refused")
+  if $shot2 != nil and $shot3 != nil then
+    check("refused: the pixels are the last good image's, unchanged", deep_eq(grid($shot3), $samples),
+      "the screen changed after a refused set")
+  end
+
+  -- ── rapid sets apply in order ────────────────────────────────────────
+  $r4 = bcall("backdrop.set", doc_colour("#405060"))
+  $r5 = bcall("backdrop.set", doc_colour("#607080"))
+  check("rapid sets: both accepted", $r4.rc == 0 and $r5.rc == 0, json_encode([$r4, $r5]))
+  -- Revisions: start 1, colour 2, image 3, refused image 4 (numbered, not applied).
+  check("rapid sets: revisions apply in order", $r5.result.active == $r4.result.active + 1 and $r4.result.active == 5,
+    json_encode([$r4.result, $r5.result]))
+  sleep(0.5)
+  $shot4 = screenshot("rapid")
+  if $shot4 != nil then
+    check("rapid sets: the screen shows the last colour, #607080",
+      near($c.pixel($shot4, $shot4.w / 2, $shot4.h / 2), [96, 112, 128], 3), "last colour not shown")
+  end
+
+  -- ── a body that is not a document changes nothing ───────────────────
+  $r = bcall("backdrop.set", {schema: 1, bogus: true})
+  check("a non-document body is refused (ARGUMENT)", refused_with($r, "ARGUMENT"), json_encode($r))
+  $now = bcall("backdrop.state", {})
+  -- A body that is not a document is never numbered: the revision stays at 6.
+  check("refused body: state unchanged", $now.result.active == 6 and $now.result.requested == 6,
+    json_encode($now.result))
+
+  -- ── the accepted document is stored where it came from ──────────────
+  $stored = read_file($DOC)
+  check("the accepted document is stored in its file", contains($stored, "#607080"), $stored)
+  check("the refused image is not stored", not contains($stored, "wallpaper-gate"), $stored)
+
+  -- ── bounded static idle ─────────────────────────────────────────────
+  sleep(1)
+  $t0 = cpu_ticks($PIDS["backdrop"])
+  sleep(3)
+  $t1 = cpu_ticks($PIDS["backdrop"])
+  check("idle: backdrop used under 150 ms of CPU in 3 s", $t1 - $t0 < 15,
+    to_string($t1 - $t0) .. " ticks")
+catch $e
+  check("the runner completed", false, to_string($e))
+end
+
+-- ── teardown: clients, then TERM the compositor ──────────────────────────
+for each $name in keys($PIDS)
+  if alive($PIDS[$name]) then
+    $sent = kill($PIDS[$name], 15)
+  end
+end
+$cp = $session["comp_pid"]
+$sent = kill($cp, 15)
+$t = 0
+while alive($cp) and $t < 40
+  sleep(0.25)
+  $t = $t + 1
+end
+check("SIGTERM stopped the compositor within 10 s", not alive($cp), "pid " .. to_string($cp))
+$n.stop($session)
+$final = ""
+if is_file($session["log"]) then
+  $final = re_replace(read_file($session["log"]), "\u{1b}\\[[0-9;]*m", "")
+end
+check("no compositor panic (final log)", len(grep_lines($final, "panicked at")) == 0, $session["log"])
+$own = ""
+if is_file($run .. "/backdrop.log") then $own = read_file($run .. "/backdrop.log") end
+check("no backdrop panic (its log)", len(grep_lines($own, "panicked at")) == 0, $run .. "/backdrop.log")
+
+$total = $TALLY["pass"] + $TALLY["fail"]
+if $TALLY["fail"] == 0 then
+  print("PASS wallpaper_gate: " .. to_string($TALLY["pass"]) .. "/" .. to_string($total) .. " checks")
+  $CLEANUP.ok = true
+  exit(0)
+end
+print("FAIL wallpaper_gate: " .. to_string($TALLY["fail"]) .. " of " .. to_string($total) ..
+  " checks failed (logs in " .. $run .. ")")
+exit(1)
+finally
+  -- An owned broker goes however the run ended.
+  $n.stop_bus($BUS)
+  $n.finish_run($CLEANUP.run, $CLEANUP.ok)
+end

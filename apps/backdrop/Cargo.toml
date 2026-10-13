@@ -1,5 +1,6 @@
 # backdrop: the MixOS desktop background — colour, image, slideshow and a
-# live folder view — drawn with egui on compd's Background layer.
+# live folder view — drawn with egui on compd's Background layer. The wallpaper
+# engine is a private crate (crates/wallpaper); this app is its shell.
 [package]
 name = "backdrop"
 description = "The MixOS desktop background: wallpapers, slideshows and a live folder view"
@@ -20,6 +21,16 @@ contract = "none"
 mod_module_files = "deny"
 
 [dependencies]
+# The Bus connection: commands, replies, topics (AGENTS.md §5).
+citizen.workspace = true
+# The app's config directory (AppDirs) and atomic writes of accepted documents.
+config.workspace = true
 egui.workspace = true
+# Bus deliveries are read off the connection's stream on a plain thread.
+futures.workspace = true
+libc.workspace = true
+# RGBA buffers in the controller's tests only (decode results are wallpaper's).
+image.workspace = true
 toolkit = { workspace = true, features = ["layer"] }
 serde_json.workspace = true
+wallpaper = { path = "crates/wallpaper" }

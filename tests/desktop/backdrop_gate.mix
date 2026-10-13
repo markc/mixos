@@ -237,7 +237,9 @@ try
 
   -- ── backdrop maps on the Background band ──────────────────────────────
   $before = known_ids()
-  launch("backdrop", [$BACKDROP])
+  -- The probe: the gate reads its drawn and click lines (the wallpaper runs
+  -- without them; its own gate is tests/desktop/wallpaper_gate.mix, not yet written).
+  launch("backdrop", [$BACKDROP, "--probe"])
   $row = wait_new_row($before, "layer", 15)
   if check("backdrop mapped a NEW layer surface", $row != nil, "no new mapped layer row in 15 s (" .. $run .. "/backdrop.log)") then
     check("backdrop is on the Background band", $row.band == "background", json_encode($row.band))
