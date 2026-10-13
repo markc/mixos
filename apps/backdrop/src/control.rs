@@ -732,9 +732,9 @@ mod tests {
     fn the_resident_budget_refuses_a_decode_that_would_overflow_it() {
         let mut c = controller();
         c.stage(images(&["/w/a.png"]), Owed::Startup);
-        // One byte-row over the budget (4097 × 16384 × 4 bytes).
+        // One byte-row over the budget (8193 × 16384 × 4 bytes).
         let big = Decoded {
-            size: [16_384, 4_097],
+            size: [16_384, 8_193],
             rgba: image::RgbaImage::new(1, 1),
         };
         c.decoded(1, PathBuf::from("/w/a.png"), Ok(big));
