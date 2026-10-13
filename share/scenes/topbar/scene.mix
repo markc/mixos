@@ -2,45 +2,43 @@
 scene: 1
 name: topbar
 citizen: scene-topbar
-window: {"chrome":false,"edge":"top","kind":"edge","title":"Top bar","h":44}
-model: {"clock":{"time":"","date":"","tip":{"title":""}},"apps":{"label":"Apps","icon":"","has_icon":false,"background":null,"tip":{"title":"Applications"}},"term":{"label":"Terminal","icon":"","has_icon":false,"background":null,"tip":{"title":"Terminal"}},"files":{"label":"Files","icon":"","has_icon":false,"background":null,"tip":{"title":"Files"}},"shot":{"label":"Screenshot","icon":"","has_icon":false,"background":null,"tip":{"title":"Screenshot"}},"settings":{"label":"Settings","icon":"","has_icon":false,"background":null,"tip":{"title":"Settings"}},"notes":{"label":"Notes","icon":"","has_icon":false,"background":null,"tip":{"title":"Notifications"}},"network":{"label":"Network","icon":"","has_icon":false,"background":null,"tip":{"title":"Network"}},"suspend":{"label":"Suspend","background":null,"tip":{"title":"Suspend"}},"restart":{"label":"Restart","background":null,"tip":{"title":"Restart"}},"poweroff":{"label":"Shut down","background":null,"tip":{"title":"Shut down"}}}
+window: {"chrome":false,"edge":"top","kind":"edge","title":"Top bar","h":36}
+model: {"clock":{"time":"","tip":{"title":""}},"apps":{"label":"Apps","icon":"","has_icon":false,"background":null,"tip":{"title":"Applications"}},"term":{"label":"Terminal","icon":"","has_icon":false,"background":null,"tip":{"title":"Terminal"}},"files":{"label":"Files","icon":"","has_icon":false,"background":null,"tip":{"title":"Files"}},"shot":{"label":"Screenshot","icon":"","has_icon":false,"background":null,"tip":{"title":"Screenshot"}},"settings":{"label":"Settings","icon":"","has_icon":false,"background":null,"tip":{"title":"Settings"}},"notes":{"label":"Notes","icon":"","has_icon":false,"background":null,"tip":{"title":"Notifications"}},"network":{"label":"Network","icon":"","has_icon":false,"background":null,"tip":{"title":"Network"}},"suspend":{"label":"Suspend","background":null,"tip":{"title":"Suspend"}},"restart":{"label":"Restart","background":null,"tip":{"title":"Restart"}},"poweroff":{"label":"Shut down","background":null,"tip":{"title":"Shut down"}}}
 ---
 ```mix
 root: {"align":"center","background":"#202326f2","children":["left","lfill","clock","rfill","right"],"fill":true,"gap":4,"padding":4,"widget":"row"}
 left: {"align":"center","children":["apps_btn","term_btn","files_btn","shot_btn","settings_btn"],"gap":2,"widget":"row"}
-apps_btn: {"align":"center","background":"= $model.apps.background","children":["apps_i","apps_t"],"height":36,"hover":"#ffffff1a","on_click":"apps","padding":6,"radius":6,"tooltip":"= $model.apps.tip","widget":"row"}
-apps_i: {"h":20,"hidden":"= not $model.apps.has_icon","src":"= $model.apps.icon","w":20,"widget":"image"}
+apps_btn: {"align":"center","background":"= $model.apps.background","children":["apps_i","apps_t"],"height":28,"hover":"#ffffff1a","on_click":"apps","padding":6,"radius":6,"tooltip":"= $model.apps.tip","widget":"row"}
+apps_i: {"h":16,"hidden":"= not $model.apps.has_icon","src":"= $model.apps.icon","w":16,"widget":"image"}
 apps_t: {"bold":true,"color":"#fcfcfc","hidden":"= $model.apps.has_icon","size":13,"text":"= $model.apps.label","widget":"text"}
-term_btn: {"align":"center","children":["term_i","term_t"],"height":36,"hover":"#ffffff1a","on_click":"term","padding":6,"radius":6,"tooltip":"= $model.term.tip","widget":"row"}
-term_i: {"h":20,"hidden":"= not $model.term.has_icon","src":"= $model.term.icon","w":20,"widget":"image"}
+term_btn: {"align":"center","children":["term_i","term_t"],"height":28,"hover":"#ffffff1a","on_click":"term","padding":6,"radius":6,"tooltip":"= $model.term.tip","widget":"row"}
+term_i: {"h":16,"hidden":"= not $model.term.has_icon","src":"= $model.term.icon","w":16,"widget":"image"}
 term_t: {"bold":true,"color":"#fcfcfc","hidden":"= $model.term.has_icon","size":13,"text":"= $model.term.label","widget":"text"}
-files_btn: {"align":"center","children":["files_i","files_t"],"height":36,"hover":"#ffffff1a","on_click":"files","padding":6,"radius":6,"tooltip":"= $model.files.tip","widget":"row"}
-files_i: {"h":20,"hidden":"= not $model.files.has_icon","src":"= $model.files.icon","w":20,"widget":"image"}
+files_btn: {"align":"center","children":["files_i","files_t"],"height":28,"hover":"#ffffff1a","on_click":"files","padding":6,"radius":6,"tooltip":"= $model.files.tip","widget":"row"}
+files_i: {"h":16,"hidden":"= not $model.files.has_icon","src":"= $model.files.icon","w":16,"widget":"image"}
 files_t: {"bold":true,"color":"#fcfcfc","hidden":"= $model.files.has_icon","size":13,"text":"= $model.files.label","widget":"text"}
-shot_btn: {"align":"center","children":["shot_i","shot_t"],"height":36,"hover":"#ffffff1a","on_click":"shot","padding":6,"radius":6,"tooltip":"= $model.shot.tip","widget":"row"}
-shot_i: {"h":20,"hidden":"= not $model.shot.has_icon","src":"= $model.shot.icon","w":20,"widget":"image"}
+shot_btn: {"align":"center","children":["shot_i","shot_t"],"height":28,"hover":"#ffffff1a","on_click":"shot","padding":6,"radius":6,"tooltip":"= $model.shot.tip","widget":"row"}
+shot_i: {"h":16,"hidden":"= not $model.shot.has_icon","src":"= $model.shot.icon","w":16,"widget":"image"}
 shot_t: {"bold":true,"color":"#fcfcfc","hidden":"= $model.shot.has_icon","size":13,"text":"= $model.shot.label","widget":"text"}
-settings_btn: {"align":"center","children":["settings_i","settings_t"],"height":36,"hover":"#ffffff1a","on_click":"settings","padding":6,"radius":6,"tooltip":"= $model.settings.tip","widget":"row"}
-settings_i: {"h":20,"hidden":"= not $model.settings.has_icon","src":"= $model.settings.icon","w":20,"widget":"image"}
+settings_btn: {"align":"center","children":["settings_i","settings_t"],"height":28,"hover":"#ffffff1a","on_click":"settings","padding":6,"radius":6,"tooltip":"= $model.settings.tip","widget":"row"}
+settings_i: {"h":16,"hidden":"= not $model.settings.has_icon","src":"= $model.settings.icon","w":16,"widget":"image"}
 settings_t: {"bold":true,"color":"#fcfcfc","hidden":"= $model.settings.has_icon","size":13,"text":"= $model.settings.label","widget":"text"}
 lfill: {"widget":"spacer"}
-clock: {"align":"center","children":["clock_col"],"height":40,"hover":"#ffffff1a","on_click":"calendar","padding":8,"radius":8,"tooltip":"= $model.clock.tip","widget":"row"}
-clock_col: {"align":"center","children":["clock_time","clock_date"],"gap":0,"widget":"column"}
-clock_time: {"bold":true,"color":"#fcfcfc","size":22,"text":"= $model.clock.time","widget":"text"}
-clock_date: {"color":"#a1a9b1","size":10,"text":"= $model.clock.date","widget":"text"}
+clock: {"align":"center","children":["clock_time"],"height":28,"hover":"#ffffff1a","on_click":"calendar","padding":6,"radius":8,"tooltip":"= $model.clock.tip","widget":"row"}
+clock_time: {"bold":true,"color":"#fcfcfc","size":17,"text":"= $model.clock.time","widget":"text"}
 rfill: {"widget":"spacer"}
 right: {"align":"center","children":["st_notes","st_net","gap_p","pw_suspend","pw_restart","pw_off"],"gap":2,"widget":"row"}
-st_notes: {"align":"center","background":"= $model.notes.background","children":["st_notes_i","st_notes_t"],"height":36,"hover":"#ffffff1a","on_click":"notes","padding":6,"radius":6,"tooltip":"= $model.notes.tip","widget":"row"}
-st_notes_i: {"h":20,"hidden":"= not $model.notes.has_icon","src":"= $model.notes.icon","w":20,"widget":"image"}
+st_notes: {"align":"center","background":"= $model.notes.background","children":["st_notes_i","st_notes_t"],"height":28,"hover":"#ffffff1a","on_click":"notes","padding":6,"radius":6,"tooltip":"= $model.notes.tip","widget":"row"}
+st_notes_i: {"h":16,"hidden":"= not $model.notes.has_icon","src":"= $model.notes.icon","w":16,"widget":"image"}
 st_notes_t: {"color":"#a1a9b1","hidden":"= $model.notes.has_icon","size":13,"text":"= $model.notes.label","widget":"text"}
-st_net: {"align":"center","background":"= $model.network.background","children":["st_net_i","st_net_t"],"height":36,"hover":"#ffffff1a","on_click":"network","padding":6,"radius":6,"tooltip":"= $model.network.tip","widget":"row"}
-st_net_i: {"h":20,"hidden":"= not $model.network.has_icon","src":"= $model.network.icon","w":20,"widget":"image"}
+st_net: {"align":"center","background":"= $model.network.background","children":["st_net_i","st_net_t"],"height":28,"hover":"#ffffff1a","on_click":"network","padding":6,"radius":6,"tooltip":"= $model.network.tip","widget":"row"}
+st_net_i: {"h":16,"hidden":"= not $model.network.has_icon","src":"= $model.network.icon","w":16,"widget":"image"}
 st_net_t: {"color":"#a1a9b1","hidden":"= $model.network.has_icon","size":13,"text":"= $model.network.label","widget":"text"}
 gap_p: {"size":12,"widget":"spacer"}
-pw_suspend: {"align":"center","background":"= $model.suspend.background","children":["pw_suspend_t"],"height":36,"hover":"#ffffff1a","on_click":"suspend","padding":6,"radius":6,"tooltip":"= $model.suspend.tip","widget":"row"}
+pw_suspend: {"align":"center","background":"= $model.suspend.background","children":["pw_suspend_t"],"height":28,"hover":"#ffffff1a","on_click":"suspend","padding":6,"radius":6,"tooltip":"= $model.suspend.tip","widget":"row"}
 pw_suspend_t: {"bold":true,"color":"#fcfcfc","size":12,"text":"= $model.suspend.label","widget":"text"}
-pw_restart: {"align":"center","background":"= $model.restart.background","children":["pw_restart_t"],"height":36,"hover":"#ffffff1a","on_click":"restart","padding":6,"radius":6,"tooltip":"= $model.restart.tip","widget":"row"}
+pw_restart: {"align":"center","background":"= $model.restart.background","children":["pw_restart_t"],"height":28,"hover":"#ffffff1a","on_click":"restart","padding":6,"radius":6,"tooltip":"= $model.restart.tip","widget":"row"}
 pw_restart_t: {"bold":true,"color":"#fcfcfc","size":12,"text":"= $model.restart.label","widget":"text"}
-pw_off: {"align":"center","background":"= $model.poweroff.background","children":["pw_off_t"],"height":36,"hover":"#ffffff1a","on_click":"poweroff","padding":6,"radius":6,"tooltip":"= $model.poweroff.tip","widget":"row"}
+pw_off: {"align":"center","background":"= $model.poweroff.background","children":["pw_off_t"],"height":28,"hover":"#ffffff1a","on_click":"poweroff","padding":6,"radius":6,"tooltip":"= $model.poweroff.tip","widget":"row"}
 pw_off_t: {"bold":true,"color":"#fcfcfc","size":12,"text":"= $model.poweroff.label","widget":"text"}
 ```
