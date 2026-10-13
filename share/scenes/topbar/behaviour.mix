@@ -19,8 +19,10 @@ $LAUNCH = {term: {app: "dev.mixos.term", icon: "dev.mixos.term-symbolic", label:
   files: {app: "dev.mixos.dopus", icon: "dev.mixos.dopus-symbolic", label: "Files"},
   shot: {app: "dev.mixos.screenshot", icon: "dev.mixos.screenshot-symbolic", label: "Screenshot"},
   settings: {app: "dev.mixos.prefs", icon: "dev.mixos.prefs-symbolic", label: "Settings"}}
--- Power actions and the hostd verb each one sends. Writes go only through hostd.
-$POWER = {suspend: "power.suspend", restart: "power.reboot", poweroff: "power.poweroff"}
+-- Desk power actions. Each names a hostd verb scoped to the caller's own desk
+-- (hostd identifies the desk by its cgroup): restart and stop this machine
+-- only, never the host. Writes go only through hostd.
+$POWER = {restart: "desk.restart", poweroff: "desk.stop"}
 $CONFIRM_S = 5
 
 $state = {ready: false, clock_armed: false, icons: {}, armed: nil, armed_at: 0, notice: {}}
@@ -43,12 +45,13 @@ fn button($label, $icon, $tip)
   return {label: $label, icon: $path, has_icon: $path != "", background: nil, tip: {title: $tip}}
 end
 
-fn power_model($key, $label)
+fn power_model($key, $label, $icon)
   $armed = $state.armed == $key and monotonic() - $state.armed_at <= $CONFIRM_S
   $text = $label
   if $armed then $text = "Click again to confirm: " .. $label end
   if ($state.notice[$key] ?? "") != "" then $text = $text .. " (" .. $state.notice[$key] .. ")" end
-  return {label: $label, background: $armed ? "#c0392b" : nil, tip: {title: $text}}
+  $path = icon_path($icon)
+  return {label: $label, icon: $path, has_icon: $path != "", background: $armed ? "#c0392b" : nil, tip: {title: $text}}
 end
 
 fn build_model()
@@ -56,16 +59,15 @@ fn build_model()
   $m = {}
   $m.clock = {time: $p.clock_text($now),
     tip: {title: date_format($now, "%A %-d %B %Y")}}
-  $m.apps = button("Apps", "start-here", "Applications")
+  $m.apps = button("Apps", "dev.mixos", "Applications")
   for each $key in ["term", "files", "shot", "settings"]
     $a = $LAUNCH[$key]
     $m[$key] = button($a.label, $a.icon, $a.label)
   end
   $m.notes = button("Notes", "notifications-symbolic", "Notifications")
   $m.network = button("Network", "network-wired-activated-symbolic", "Network")
-  $m.suspend = power_model("suspend", "Suspend")
-  $m.restart = power_model("restart", "Restart")
-  $m.poweroff = power_model("poweroff", "Shut down")
+  $m.restart = power_model("restart", "Restart", "dev.mixos.restart-symbolic")
+  $m.poweroff = power_model("poweroff", "Shut down", "dev.mixos.shutdown-symbolic")
   return $m
 end
 
@@ -125,9 +127,6 @@ on settings async
   $r.respond(launch("settings"))
 end
 
-on suspend async
-  $r.respond(power("suspend"))
-end
 on restart async
   $r.respond(power("restart"))
 end
