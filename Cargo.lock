@@ -2051,6 +2051,8 @@ name = "email"
 version = "0.1.1"
 dependencies = [
  "buildinfo",
+ "bus",
+ "chrono",
  "citizen",
  "config",
  "design",
