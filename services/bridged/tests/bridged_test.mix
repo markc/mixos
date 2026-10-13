@@ -1,0 +1,294 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- bridged_test: bridged over a real Bus, offline. A private noded broker
+-- (tests/lib/private_bus.mix), a stand-in app (tests/lib/fake_app.mix, token
+-- auth) and bridged itself as a serve citizen named fakeapp, configured by
+-- the instance-config path rule (<MIXOS_ETC>/bridge/fakeapp.conf.mix) and
+-- guarded by this checkout's verb registry, started the way the unit starts
+-- it (bridged.mix --start fakeapp: checks, then the serve citizen as a child).
+-- Every verb is driven with `send`, including the refusals; then the app dies
+-- (rc 11) and comes back (the bridge reconnects after its backoff); then the
+-- serve child is stopped and the --start parent ends with it. The start
+-- refusals run as their own processes and exit 2 with a stable code; --start
+-- with a refusal never starts a child, and passes a stand-in child's exit
+-- code through.
+-- Run from the checkout root with Mix >= 0.112.1:
+--   mix services/bridged/tests/bridged_test.mix [--noded PATH]
+-- The mix binary for every process the test starts, including the serve child
+-- of bridged --start: $BRIDGED_MIX, else $MIXOS_TEST_MIX, else
+-- /opt/mixos/bin/mix. The noded binary: --noded PATH, else $MIXOS_TEST_NODED,
+-- else /opt/mixos/bin/noded. An empty variable counts as unset.
+
+$pb = require("../../../tests/lib/private_bus.mix")
+$here = dirname(realpath($0))
+
+-- The mix binary the tests run their processes under: $BRIDGED_MIX when set
+-- (also inherited by bridged --start for its child), else $MIXOS_TEST_MIX
+-- (the runner's fresh build), else the installed one.
+$MIX = env("BRIDGED_MIX") ?? ""
+if $MIX == "" then $MIX = env("MIXOS_TEST_MIX") ?? "" end
+if $MIX == "" then $MIX = "/opt/mixos/bin/mix" end
+$citizen = realpath($here .. "/../scripts/bridged.mix")
+$fake = realpath($here .. "/lib/fake_app.mix")
+$registry = realpath($here .. "/../../../docs/spec/bus/verbs.conf.mix")
+-- The noded binary: --noded PATH wins, else $MIXOS_TEST_NODED, else the installed one.
+$noded = env("MIXOS_TEST_NODED") ?? ""
+if $noded == "" then $noded = "/opt/mixos/bin/noded" end
+$a = args()
+if len($a) == 2 and $a[0] == "--noded" then $noded = $a[1] end
+$tmp = "/var/tmp/bridged-test." .. uuid()
+$results = []
+$pids = []
+
+fn check($name, $ok)
+  push($results, {name: $name, ok: $ok})
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+
+-- One Bus call: {rc, v, text}. send decodes a JSON reply; error replies are text.
+fn call($verb, $body, $timeout)
+  if $body == nil then
+    send fakeapp $verb timeout=$timeout
+  elif type($body) == "string" then
+    send fakeapp $verb body=$body timeout=$timeout
+  else
+    $b = json_encode($body)
+    send fakeapp $verb body=$b timeout=$timeout
+  end
+  $v = $result
+  if type($v) == "string" then
+    try
+      $v = json_parse($v)
+    catch $m
+    end
+  end
+  return {rc: $rc, v: $v, text: if type($result) == "string" then $result else json_encode($result) end}
+end
+
+-- Start the fake app; returns {pid, port} once it listens.
+fn start_fake($tag, $port)
+  $pf = $tmp .. "/" .. $tag .. ".port"
+  $p = spawn([$MIX, $fake, "--auth", "token", "--token-file", $tmp .. "/app.tok", "--port-file", $pf,
+    "--parent", to_string(pid()), "--port", to_string($port)], {die_with_parent: true, stdout: {file: $tmp .. "/" .. $tag .. ".log"}, stderr: "stdout"})
+  push($pids, $p)
+  for $i = 1 to 200
+    if is_file($pf) then return {pid: $p, port: to_number(trim(read_file($pf)))} end
+    sleep(0.05)
+  end
+  raise("HARNESS", "fake app " .. $tag .. " did not listen; see " .. $tmp .. "/" .. $tag .. ".log")
+end
+
+-- A bridged start that must be refused: {exit, err}.
+fn refused($name, $env)
+  $r = run_argv([$MIX, "--serve", $citizen, "--name", $name], {env: $env, timeout: 20, stdout: "null"})
+  return {exit: $r.exit_code, err: $r.stderr ?? ""}
+end
+
+-- Processes whose command line contains $pattern.
+fn pids_matching($pattern)
+  $out = run_argv(["pgrep", "-f", "--", $pattern]).stdout ?? ""
+  return map(filter(split(trim($out), "\n"), fn($l) = $l != ""), fn($l) = to_number($l))
+end
+
+-- The start checks alone: {exit, out, err}.
+fn preflight($name, $env)
+  $r = run_argv([$MIX, $citizen, "--check", $name], {env: $env, timeout: 20})
+  return {exit: $r.exit_code, out: $r.stdout ?? "", err: $r.stderr ?? ""}
+end
+
+$bus = nil
+mkdir($tmp, {parents: true})
+try
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "bridged-test", noded: $noded})
+  $client = $pb.client_env($bus)
+  $token = hash_sha256("bridged-test " .. uuid())
+  write_new($tmp .. "/app.tok", $token .. "\n", 0o600)
+  $app = start_fake("app", 0)
+  $port = $app.port
+  -- The instance config, where the path rule looks for it.
+  mkdir($client.MIXOS_ETC .. "/bridge", {parents: true})
+  write_file($client.MIXOS_ETC .. "/bridge/fakeapp.conf.mix", join(["token_file: \"" .. $tmp .. "/app.tok\"", "port: " .. to_string($port),
+    "timeout_s: 3", "backoff_s: 1", "instance: \"bridged-test\""], ",\n") .. "\n")
+  -- BRIDGED_MIX reaches every bridged process, the --start parent and its serve child.
+  $env = merge($client, {BRIDGED_MIX: $MIX, BRIDGED_VERBS: $registry, BRIDGED_CONFIG: ""})
+
+  -- Start refusals.
+  $r = refused("settings", $env)
+  check("guard: a concrete verb's first segment is refused, exit 2 NAME_RESERVED", $r.exit == 2 and contains($r.err, "NAME_RESERVED"))
+  $r = refused("fakeapp", merge($env, {BRIDGED_VERBS: $tmp .. "/no-registry.conf.mix"}))
+  check("guard: a missing registry fails closed, exit 2 REGISTRY", $r.exit == 2 and contains($r.err, "REGISTRY"))
+  $r = refused("otherapp", $env)
+  check("config: no <etc>/bridge/otherapp.conf.mix, exit 2 CONFIG", $r.exit == 2 and contains($r.err, "CONFIG") and contains($r.err, "/bridge/otherapp.conf.mix"))
+  check("guard: a refused instance is gone from the Bus", not port_exists("otherapp"))
+  $r = preflight("settings", $env)
+  check("check: a reserved name, exit 2 NAME_RESERVED", $r.exit == 2 and contains($r.err, "NAME_RESERVED"))
+  $r = preflight("fake_app", $env)
+  check("check: a name the Bus would not register, exit 2 NAME_INVALID", $r.exit == 2 and contains($r.err, "NAME_INVALID"))
+  write_file($tmp .. "/notoken.conf.mix", "token_file: \"" .. $tmp .. "/absent.tok\",\nport: 1\n")
+  $r = preflight("fakeapp", merge($env, {BRIDGED_CONFIG: $tmp .. "/notoken.conf.mix"}))
+  check("check: a missing token file, exit 2 TOKEN", $r.exit == 2 and contains($r.err, "TOKEN"))
+  $r = preflight("mixos-fakeapp", $env)
+  check("check: a mixos- name (mix --serve would strip it), exit 2 NAME_INVALID", $r.exit == 2 and contains($r.err, "NAME_INVALID"))
+  $r = preflight("noded-x", $env)
+  check("check: a broker-reserved name, exit 2 NAME_RESERVED", $r.exit == 2 and contains($r.err, "NAME_RESERVED"))
+  $r = preflight("fakeapp", $env)
+  check("check: fakeapp may start, exit 0", $r.exit == 0 and contains($r.out, "fakeapp may start"))
+
+  -- --start against a stand-in mix for the child: it records that it ran.
+  $marker = $tmp .. "/child-ran"
+  write_file($tmp .. "/stand-in-mix", "#!/opt/mixos/bin/mix\nwrite_file(\"" .. $marker .. "\", json_encode(args()))\nexit(3)\n")
+  chmod($tmp .. "/stand-in-mix", 0o755)
+  $sx = merge($env, {BRIDGED_MIX: $tmp .. "/stand-in-mix"})
+  $r = run_argv([$MIX, $citizen, "--start", "settings"], {env: $sx, timeout: 30})
+  check("start: a reserved name exits 2 and starts no child", $r.exit_code == 2 and contains($r.stderr ?? "", "NAME_RESERVED") and not is_file($marker))
+  $r = run_argv([$MIX, $citizen, "--start", "fakeapp"], {env: $sx, timeout: 30})
+  check("start: a valid setup starts the child as mix --serve <bridged.mix> --name fakeapp", is_file($marker) and contains(read_file($marker), "\"--serve\"") and contains(read_file($marker), "\"fakeapp\""))
+  check("start: exits with the child's code (stand-in exits 3)", $r.exit_code == 3)
+
+  -- The instance, as the unit starts it. A small recorder runs --start and
+  -- writes its exit status when it ends, as systemd would see it.
+  $exit_file = $tmp .. "/start.exit"
+  write_file($tmp .. "/record_exit.mix", "$a = args()\nwrite_file($a[0], to_string(run_stream(slice($a, 1, len($a)))))\n")
+  push($pids, spawn([$MIX, $tmp .. "/record_exit.mix", $exit_file, $MIX, $citizen, "--start", "fakeapp"],
+    {die_with_parent: true, env: $env, stdout: {file: $tmp .. "/bridged.log"}, stderr: "stdout"}))
+  $starter = nil
+  for $i = 1 to 100
+    $found = pids_matching("^" .. $MIX .. " " .. $citizen .. " --start fakeapp$")
+    if len($found) == 1 then
+      $starter = $found[0]
+      break
+    end
+    sleep(0.05)
+  end
+  if $starter == nil then raise("SETUP", "no --start process; see " .. $tmp .. "/bridged.log") end
+  push($pids, $starter)
+  $up = false
+  for $i = 1 to 80
+    if call("fakeapp.status", nil, 2).rc == 0 then
+      $up = true
+      break
+    end
+    sleep(0.25)
+  end
+  check("guard: fakeapp accepted; the instance answers fakeapp.status", $up)
+  if not $up then raise("SETUP", "bridged never answered; see " .. $tmp .. "/bridged.log") end
+
+  $s = call("fakeapp.status", nil, 5).v
+  check("status: registered, app not yet contacted", $s.connection == "never-connected" and $s.port == $port and $s.service == "fakeapp" and $s.instance == "bridged-test")
+
+  -- The Bus registry, read behaviourally: HELP lists what fakeapp answers. The
+  -- runtime plumbing (HELP, INFO, QUIT, RELOAD and the props verbs) is not the
+  -- bridge's contract and is subtracted; what remains must be exactly the six
+  -- bridged family members the registry declares for an instance, no more,
+  -- fewer, or duplicated.
+  $h = call("HELP", nil, 5)
+  check("help: HELP answers rc 0 with a list", $h.rc == 0 and type($h.v) == "list")
+  $runtime = ["HELP", "INFO", "QUIT", "RELOAD", "fakeapp.props.get", "fakeapp.props.list", "fakeapp.props.describe"]
+  $reg = {families: []}
+  try
+    $reg = load_data($registry)
+  catch $m
+  end
+  $declared = map(filter($reg.families ?? [], fn($f) = $f.owner == "bridged" and $f.members == "instances"), fn($f) = replace($f.pattern, "<app>", "fakeapp"))
+  $authored = []
+  if type($h.v) == "list" then
+    for each $e in $h.v
+      if type($e) == "map" and type($e.name) == "string" then
+        $is_runtime = false
+        for each $r in $runtime
+          if $r == $e.name then $is_runtime = true end
+        end
+        if not $is_runtime then push($authored, $e.name) end
+      end
+    end
+  end
+  check("help: the authored names are exactly the six declared bridged family members", len($declared) == 6 and deep_eq(sort($authored), sort($declared)))
+
+  $r = call("fakeapp.commands", nil, 10)
+  check("commands: rc 0 with the app's list", $r.rc == 0 and contains(json_encode($r.v), "engine.execute"))
+  $r = call("fakeapp.execute", {command: "app.open", params: {path: "/x/y"}}, 10)
+  check("execute: command and params reach the app", $r.rc == 0 and $r.v.echo.command == "app.open" and $r.v.echo.params.path == "/x/y")
+  $r = call("fakeapp.execute", {command: "no.such.command"}, 10)
+  check("execute: an unknown command is the app's error, rc 10", $r.rc == 10 and contains($r.text, "unknown command"))
+  $r = call("fakeapp.execute", {params: {}}, 10)
+  check("execute: a missing command is refused by the bridge, rc 12", $r.rc == 12)
+  $r = call("fakeapp.call", {method: "echo", params: {a: 1, b: "two"}}, 10)
+  check("call: pass-through of any method", $r.rc == 0 and $r.v.a == 1 and $r.v.b == "two")
+  $r = call("fakeapp.call", {method: "fail"}, 10)
+  check("call: the app's ok:false is rc 10 with its text", $r.rc == 10 and $r.text == "fake failure text")
+  $r = call("fakeapp.call", {params: {}}, 10)
+  check("call: a missing method is rc 12", $r.rc == 12)
+  $r = call("fakeapp.call", "not json", 10)
+  check("call: a body that is not JSON is rc 12", $r.rc == 12)
+  $r = call("fakeapp.inspect", nil, 10)
+  check("inspect: the app's UI tree", $r.rc == 0 and $r.v.windows[0].title == "fakeapp")
+  $shot = $tmp .. "/shot.png"
+  $r = call("fakeapp.screenshot", {path: $shot, focus: true}, 10)
+  check("screenshot: path and focus reach the app", $r.rc == 0 and is_file($shot) and $r.v.focus == true)
+  $r = call("fakeapp.screenshot", nil, 10)
+  check("screenshot: an empty body is fine", $r.rc == 0 and $r.v.bytes == 0)
+  $r = call("fakeapp.screenshot", "[1]", 10)
+  check("screenshot: a body that is not an object is rc 12", $r.rc == 12)
+
+  $s = call("fakeapp.status", nil, 5)
+  check("status: one persistent authenticated connection", $s.v.connection == "up" and $s.v.connects == 1 and is_number($s.v.last_latency_ms))
+  check("status: never shows the token", not contains($s.text, $token))
+  $r = call("fakeapp.call", {method: "leak"}, 10)
+  check("redact: an app error echoing the token reaches the Bus redacted", $r.rc == 10 and not contains(lower($r.text), $token) and contains($r.text, "[redacted]"))
+  $r = call("fakeapp.call", {method: "leak_result"}, 10)
+  check("redact: a result carrying the token reaches the Bus redacted", $r.rc == 0 and not contains(lower($r.text), $token))
+  $s = call("fakeapp.status", nil, 5)
+  check("redact: status after the echo still has no token", not contains(lower($s.text), $token) and $s.v.connection == "up")
+
+  -- The app goes away mid-session, then comes back on the same port.
+  -- SIGKILL, as a crash would: a Mix script blocked in a tcp_accept loop does
+  -- not act on SIGTERM (mix 0.112.0).
+  $k = kill($app.pid, 9)
+  for $i = 1 to 100
+    if not process_alive($app.pid) then break end
+    sleep(0.05)
+  end
+  $r = call("fakeapp.execute", {command: "app.open"}, 10)
+  check("app gone: rc 11 transport error", $r.rc == 11)
+  check("app gone: status down", call("fakeapp.status", nil, 5).v.connection == "down")
+  $r = call("fakeapp.execute", {command: "app.open"}, 10)
+  check("app gone: backing off, still rc 11", $r.rc == 11 and contains($r.text, "backing off"))
+  start_fake("app2", $port)
+  sleep(1.2)
+  $r = call("fakeapp.execute", {command: "app.open"}, 10)
+  check("app back: the bridge reconnects after its backoff", $r.rc == 0)
+  $s = call("fakeapp.status", nil, 5).v
+  check("app back: a second authenticated connection", $s.connection == "up" and $s.connects == 2)
+
+  -- The serve citizen is the --start process's child. A stop signals both, as
+  -- systemd's control-group kill does; the clean-stop status is 143.
+  $children = pids_matching("--serve " .. $citizen .. " --name fakeapp")
+  check("start: the serve citizen runs as a separate child process", len($children) == 1 and $children[0] != $starter)
+  $k = kill($starter, 15)
+  if len($children) == 1 then $k = kill($children[0], 15) end
+  for $i = 1 to 200
+    if is_file($exit_file) then break end
+    sleep(0.05)
+  end
+  $status = if is_file($exit_file) then trim(read_file($exit_file)) else "none" end
+  check("stop: SIGTERM to parent and child ends --start with 143 (got " .. $status .. ")", $status == "143")
+  check("stop: no serve child is left", len(pids_matching("--serve " .. $citizen .. " --name fakeapp")) == 0 and not process_alive($starter))
+  check("start: fakeapp is gone from the Bus", not port_exists("fakeapp"))
+catch $m
+  check("harness: " .. $m, false)
+finally
+  for each $p in $pids
+    -- 9, not 15: see the crash above.
+    if process_alive($p) then $k = kill($p, 9) end
+  end
+  -- A serve child left by a failed run (its --start parent was killed above).
+  for each $p in pids_matching("--serve " .. $citizen .. " --name fakeapp")
+    $k = kill($p, 9)
+  end
+  if $bus != nil then $pb.stop($bus) end
+  if len(filter($results, fn($x) = not $x.ok)) == 0 then remove_dir($tmp) else print("kept for inspection: " .. $tmp) end
+end
+
+$failed = filter($results, fn($x) = not $x.ok)
+print(to_string(len($results) - len($failed)) .. "/" .. to_string(len($results)) .. " passed")
+if len($failed) > 0 then exit(1) end

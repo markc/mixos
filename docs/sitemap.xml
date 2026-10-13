@@ -6,6 +6,7 @@
   <url><loc>https://mixos.dev/decisions/2026-10-09-egui-applications/</loc></url>
   <url><loc>https://mixos.dev/decisions/2026-10-04-source-layout/</loc></url>
   <url><loc>https://mixos.dev/backdrop/</loc></url>
+  <url><loc>https://mixos.dev/bridge/</loc></url>
   <url><loc>https://mixos.dev/decisions/2026-10-07-settings-authority/</loc></url>
   <url><loc>https://mixos.dev/decisions/2026-10-08-mix-programs-and-documents/</loc></url>
   <url><loc>https://mixos.dev/decisions/2026-10-09-chrome-family-and-schemes/</loc></url>
@@ -30,6 +31,7 @@
   <url><loc>https://mixos.dev/decisions/2026-10-12-system-dialogs/</loc></url>
   <url><loc>https://mixos.dev/decisions/2026-10-13-bundled-font-licences/</loc></url>
   <url><loc>https://mixos.dev/decisions/2026-10-13-desk-and-deskd/</loc></url>
+  <url><loc>https://mixos.dev/decisions/2026-10-13-instance-verb-families/</loc></url>
   <url><loc>https://mixos.dev/dev/components/</loc></url>
   <url><loc>https://mixos.dev/dopus/</loc></url>
   <url><loc>https://mixos.dev/edit/</loc></url>
@@ -40,6 +42,7 @@
   <url><loc>https://mixos.dev/prefs/</loc></url>
   <url><loc>https://mixos.dev/releases/</loc></url>
   <url><loc>https://mixos.dev/screenshot/</loc></url>
+  <url><loc>https://mixos.dev/spec/bridge/</loc></url>
   <url><loc>https://mixos.dev/spec/handler-closure-capture/</loc></url>
   <url><loc>https://mixos.dev/spec/mix/2026-10-08-programs-and-documents/</loc></url>
   <url><loc>https://mixos.dev/spec/portal/</loc></url>
