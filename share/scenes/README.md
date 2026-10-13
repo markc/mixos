@@ -107,18 +107,39 @@ The environment fixes the paths. On the VT4 session (`/etc/mixos/session/4.env`)
 
 Steps for a change to shared helpers, such as `lib/data.mix`:
 
-1. Copy the repo's catalogue over the installed one:
-   `mix share/scenes/install.mix /opt/mixos/share/scenes`.
-   The default destination is `$XDG_DATA_HOME/mixos/scenes`, which is not the
-   VT4 catalogue, so pass the path. On a host where `lib/models.mix` is
-   root-owned, the copy needs root.
-2. Reload the panel:
+The one-step route is `sync.mix`. It reads `SCENES_TEMPLATES` from the
+session environment file, copies any shared file that differs from this
+checkout, and reloads every enabled scene:
+
+    mix share/scenes/sync.mix                      # dry run: the plan only
+    mix share/scenes/sync.mix --apply              # write, then reload
+    mix share/scenes/sync.mix --env FILE --apply   # another session's env
+
+It needs write access to the catalogue. A host where a file there is
+root-owned needs root for that file, and the script stops on the error
+rather than skipping it.
+
+The steps it runs, for reference:
+
+1. Copy each changed file from `share/scenes/lib/` into the catalogue.
+   `install.mix` copies everything but is not the right tool here: its
+   default destination is `$XDG_DATA_HOME/mixos/scenes`, not the VT4
+   catalogue, and it does not report what changed.
+2. Reload each enabled scene:
    `mix services/compd/scripts/scenes_cli.mix reload panel`.
    The CLI sends `scenes.reload`, which re-checks `behaviour.mix`, re-renders
    `scene.mix` and remounts the scene. Use `--target scenes.<node>.bus` for
-   another node. The CLI needs that session's D-Bus address.
+   another node. The CLI needs that session's D-Bus address, which the
+   script takes from the env file.
 3. Check the result: `scenes_cli.mix list --json` should show no diagnostic
    for `panel`, and the panel should show the new output.
+
+A change to a scene's own files (`scene.mix`, `behaviour.mix`) is not picked
+up by `sync.mix`. The user copy under `$SCENES_DIR` is what reloads, so use
+`scenes reset NAME` for that.
+
+Automatic reload on save (a loader that watches `$SCENES_LIB` and reloads
+dependent scenes) is planned, not built.
 
 A forced reload re-runs the behaviour, so it should pick up the new `lib/`
 files. That is the expected behaviour from reading `reconcile_one`
