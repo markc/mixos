@@ -307,10 +307,10 @@ impl WallpaperEditor {
     /// Select the output to edit. `None` is the default. Unknown outputs are
     /// ignored.
     pub fn select_target(&mut self, target: Option<String>) {
-        if let Some(name) = &target {
-            if !self.outputs.contains(name) {
-                return;
-            }
+        if let Some(name) = &target
+            && !self.outputs.contains(name)
+        {
+            return;
         }
         self.target = target;
     }
@@ -551,10 +551,10 @@ impl WallpaperEditor {
         if self.working() {
             return Err("status.busy");
         }
-        if let Some(name) = &self.target {
-            if !self.outputs.contains(name) {
-                return Err("status.unknown_output");
-            }
+        if let Some(name) = &self.target
+            && !self.outputs.contains(name)
+        {
+            return Err("status.unknown_output");
         }
         let source = if self.conflict {
             self.current.clone()
