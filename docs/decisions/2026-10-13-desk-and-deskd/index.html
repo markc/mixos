@@ -262,6 +262,10 @@ unit.</li>
 <ul>
 <li><code>mix</code> (the shell, on every host);</li>
 <li><code>noded</code> (the broker, on every host, desktop or not);</li>
+<li><code>hostd</code> (the host's information and privilege service, on every
+host). It runs as root and is the one way to elevate: it never shares
+a binary with <code>deskd</code> or anything else that runs as the session
+account;</li>
 <li><code>compd</code> (the compositor: its robustness and its dependency set are
 its own).</li>
 </ul>
@@ -300,9 +304,12 @@ checked before first use).</p>
 <li><strong>MixOS</strong> is the system.</li>
 <li><strong>mix</strong> is its shell and language.</li>
 <li><strong>noded</strong> is the broker on every host.</li>
+<li><strong>hostd</strong> is the host's information and privileged actions, as root,
+on every host.</li>
 <li><strong>compd</strong>, <strong>desk</strong> and <strong>deskd</strong> are the desktop.</li>
 </ul>
-<p>A headless host runs <code>mix</code> and <code>noded</code>; a desktop adds the other three.</p>
+<p>A headless host runs <code>mix</code>, <code>noded</code> and <code>hostd</code>; a desktop adds the
+other three.</p>
 </li>
 <li>
 <p>A machine running the desktop is "a desk"; numbered instances (a desk

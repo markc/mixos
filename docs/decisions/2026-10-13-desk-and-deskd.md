@@ -23,6 +23,10 @@ Status: accepted 2026-10-13. Follows the multi-call precedent of
 - **What stays separate:**
   - `mix` (the shell, on every host);
   - `noded` (the broker, on every host, desktop or not);
+  - `hostd` (the host's information and privilege service, on every
+    host). It runs as root and is the one way to elevate: it never shares
+    a binary with `deskd` or anything else that runs as the session
+    account;
   - `compd` (the compositor: its robustness and its dependency set are
     its own).
 - **Each app and service is still its own process.** A crash ends one app,
@@ -58,9 +62,12 @@ second UI API.
   - **MixOS** is the system.
   - **mix** is its shell and language.
   - **noded** is the broker on every host.
+  - **hostd** is the host's information and privileged actions, as root,
+    on every host.
   - **compd**, **desk** and **deskd** are the desktop.
 
-  A headless host runs `mix` and `noded`; a desktop adds the other three.
+  A headless host runs `mix`, `noded` and `hostd`; a desktop adds the
+  other three.
 - A machine running the desktop is "a desk"; numbered instances (a desk
   and its number) are names of machines, not of these binaries.
 
