@@ -279,6 +279,9 @@ $icon_files = {}   -- "web/icons/<file>.svg" -> generated SVG text
 $rules = []
 for each $name in sort(unique($lucide))
   $file = if has_key($ic.aliases, $name) then $ic.aliases[$name] else $name end
+  if not re_match($name, "^[a-z0-9-]+$") or not re_match($file, "^[a-z0-9-]+$") then
+    raise("SITE_ICONS", "Lucide names and aliases must be plain icon names")
+  end
   if not is_file($lucide_dir .. "/" .. $file .. ".svg") then
     raise("SITE_ICONS", "icon '" .. $name .. "' is not in the Lucide set: " .. $ic.source .. "/" .. $file .. ".svg")
   end
