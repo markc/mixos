@@ -1,5 +1,14 @@
 # bridged Bus contract
 
+## 0.2.0
+
+- Additive: `auth: "key"` (instance config 0.2.0). The first line is
+  `params.key`, the secret is the 64-hex content of `token_file`, read on every
+  connect before any bytes are sent. A missing, unreadable or unusable key is
+  rc 11 with no connection; the retry after `backoff_s` reads it again.
+  `status` works before the key exists and never shows it. Token and none
+  modes are unchanged. Bus verbs and registry classes are unchanged.
+
 ## 0.1.0
 
 First version. A Bus bridge to an external application's line-delimited JSON

@@ -15,7 +15,7 @@ no Cargo package, identity in `component.mx`.
 | `scripts/lib/bridge_core.mix` | the stateless core: config, token, serve-name guard, line-JSON client |
 | `scripts/bridged.mix` | the Bus service (`mix --serve … --name <app>`); `--start <app>` (the unit: checks, then the service as a child); `--check <app>` (the checks alone) |
 | `units/bridged@.service` | one unit per application; config `/etc/mixos/bridge/<app>.conf.mix` |
-| `tests/lib/fake_app.mix` | a stand-in application on `tcp_listen` (token or no auth, slow and dropping methods) |
+| `tests/lib/fake_app.mix` | a stand-in application on `tcp_listen` (token, key or no auth, slow and dropping methods) |
 | `tests/bridge_core_test.mix` | offline: config, token, guard, spec fixture, the client against stand-in apps |
 | `tests/bridged_test.mix` | every verb over a private broker, the start refusals, `--start` (no child on a refusal, the child's exit code passed through), the app dying and coming back |
 

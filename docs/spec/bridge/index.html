@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Status: draft, version 0.1.0. Machine-checkable fixture: bridge.spec.mix. Verified by services/bridged/tests/bridge_core_test.mix (the config contract against…">
+    <meta name="description" content="Status: draft, version 0.2.0. Machine-checkable fixture: bridge.spec.mix. Verified by services/bridged/tests/bridge_core_test.mix (the config contract against…">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=c34fdc68c4" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/web/favicon.svg?v=51993ccf9f">
@@ -216,7 +216,7 @@
                     <nav id="toc-nav">
                         <a href="#the-control-channel-an-application-offers">The control channel an application offers</a>
                         <a href="#bus-verbs">Bus verbs</a>
-                        <a href="#instance-config-version-010">Instance config, version 0.1.0</a>
+                        <a href="#instance-config-version-020">Instance config, version 0.2.0</a>
                         <a href="#serve-name-and-the-start-checks">Serve name and the start checks</a>
                         <a href="#changes">Changes</a>
                     </nav>
@@ -244,7 +244,7 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="bridge-contract">Bridge contract</h1>
-<p>Status: draft, version 0.1.0. Machine-checkable fixture:
+<p>Status: draft, version 0.2.0. Machine-checkable fixture:
 <a href="/spec/bridge/bridge.spec.mix"><code>bridge.spec.mix</code></a>. Verified by
 <code>services/bridged/tests/bridge_core_test.mix</code> (the config contract against
 the fixture, the wire protocol against a stand-in app) and
@@ -259,6 +259,7 @@ rule and the Bus verbs.</p>
 <tr><td>Transport</td><td>TCP on the loopback interface, one port per application. The bridge keeps one connection open and reuses it.</td></tr>
 <tr><td>Framing</td><td>One JSON object per line, UTF-8, <code>\n</code>-terminated (a trailing <code>\r</code> is ignored). A line is at most <code>max_line</code> bytes.</td></tr>
 <tr><td>Auth (<code>auth: "token"</code>)</td><td>The first line on every connection is <code>{"id":"auth","method":"auth","params":{"token":"&lt;64 hex&gt;"}}</code>. The application replies <code>{"id":"auth","ok":true,...}</code> or refuses and closes. The bridge sends nothing else until that reply is ok.</td></tr>
+<tr><td>Auth (<code>auth: "key"</code>)</td><td>As <code>token</code>, with <code>params.key</code>. The application writes the 64-hex secret to the key file after it starts, and may rotate it; the bridge reads the file on every connect, before any bytes are sent.</td></tr>
 <tr><td>No auth (<code>auth: "none"</code>)</td><td>Requests start at once. An application that receives an <code>auth</code> line it does not expect should refuse it and close. Any local process can use such a port while it is open.</td></tr>
 <tr><td>Request</td><td><code>{"id":N,"method":"&lt;name&gt;","params":{...}}</code>, <code>N</code> a number the bridge increments per request.</td></tr>
 <tr><td>Reply</td><td><code>{"id":N,"ok":true,"result":&lt;any JSON&gt;}</code> or <code>{"id":N,"ok":false,"error":"&lt;text&gt;"}</code>, matched to the request by <code>id</code>. Lines that are not JSON or carry another <code>id</code> are skipped. A reply without a boolean <code>ok</code> is a transport failure.</td></tr>
@@ -318,7 +319,7 @@ come from the same revision, at <code>/opt/mixos/share/bus/verbs.conf.mix</code>
 because its <code>focus</code> option can bring the window forward, a change another
 caller sees, even though the verb otherwise only captures. The reasoning is in
 the <a href="/decisions/2026-10-13-instance-verb-families/">decision</a>.</p>
-<h2 id="instance-config-version-010">Instance config, version 0.1.0</h2>
+<h2 id="instance-config-version-020">Instance config, version 0.2.0</h2>
 <p>A strict-data document (<code>load_data</code>; never executed).</p>
 <p><strong>Path:</strong> <code>$BRIDGED_CONFIG</code> when set; otherwise <code>&lt;etc&gt;/bridge/&lt;app&gt;.conf.mix</code>,
 where <code>&lt;etc&gt;</code> is <code>$MIXOS_ETC</code> when set, else <code>/etc/mixos</code>. The file stem is
@@ -330,8 +331,8 @@ timeout_s: 20
 <table><thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Rule</th></tr></thead><tbody>
 <tr><td><code>port</code></td><td>integer</td><td>required</td><td>1–65535</td></tr>
 <tr><td><code>host</code></td><td>string</td><td><code>"127.0.0.1"</code></td><td><code>"127.0.0.1"</code> or <code>"localhost"</code>, which is connected to as <code>127.0.0.1</code> (never <code>::1</code>); anything else is refused</td></tr>
-<tr><td><code>auth</code></td><td>string</td><td><code>"token"</code></td><td><code>"token"</code> or <code>"none"</code>; an explicit <code>nil</code> is refused</td></tr>
-<tr><td><code>token_file</code></td><td>string</td><td>—</td><td>required with <code>auth: "token"</code>, refused with <code>auth: "none"</code>; a leading <code>~/</code> expands to <code>$HOME</code></td></tr>
+<tr><td><code>auth</code></td><td>string</td><td><code>"token"</code></td><td><code>"token"</code>, <code>"key"</code> or <code>"none"</code>; an explicit <code>nil</code> is refused</td></tr>
+<tr><td><code>token_file</code></td><td>string</td><td>—</td><td>required with <code>auth: "token"</code> or <code>"key"</code>, refused with <code>auth: "none"</code>; a leading <code>~/</code> expands to <code>$HOME</code>. With <code>key</code> it is the key file, read on every connect; a missing or unusable key is rc 11 before any connect, and the next retry after <code>backoff_s</code> reads it again</td></tr>
 <tr><td><code>timeout_s</code></td><td>number</td><td>5</td><td>(0, 300]: the whole-call deadline</td></tr>
 <tr><td><code>connect_timeout_s</code></td><td>number</td><td>2</td><td>(0, 300]: the connect step, within the deadline</td></tr>
 <tr><td><code>backoff_s</code></td><td>number</td><td>2</td><td>[0, 300]: the pause after a transport failure</td></tr>
@@ -403,6 +404,8 @@ must be administrator-controlled: anyone who can change them picks the code
 that runs as <code>mixos</code>.</p>
 <h2 id="changes">Changes</h2>
 <ul>
+<li>0.2.0 (2026-10-13): additive <code>auth: "key"</code> (<code>params.key</code>, secret read from
+<code>token_file</code> on each connect). Token and none modes are unchanged.</li>
 <li>0.1.0 (2026-10-10): first version.</li>
 </ul>
         </article>

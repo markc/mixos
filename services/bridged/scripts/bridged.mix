@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
--- version: 0.1.0
+-- version: 0.2.0
 -- bridged: a Bus bridge to an external application's line-delimited JSON
 -- control channel, one instance per application. The protocol and logic are
 -- lib/bridge_core.mix; this file is only the Bus surface.
@@ -19,6 +19,8 @@
 -- Config: $BRIDGED_CONFIG, else <etc>/bridge/<app>.conf.mix with <etc> =
 -- $MIXOS_ETC or /etc/mixos. Keys: host, port, auth, token_file, timeout_s,
 -- connect_timeout_s, backoff_s, max_line, instance (docs/spec/bridge/).
+-- auth "key" reads token_file on every connect, not here: the app writes that
+-- file after it starts, so a key path that does not exist yet is not refused.
 -- A refusal at start prints "bridged: refusing to start: CODE: message" and
 -- exits 2 (CODE: NAME_INVALID, NAME_RESERVED, REGISTRY, CONFIG, TOKEN); an
 -- unexpected error at start exits 3. --start otherwise exits with its
@@ -50,7 +52,7 @@ fn refuse($code, $message)
 end
 
 -- Every start check: the name, the registry, the config and the token.
--- Returns {cfg, token}.
+-- Returns {cfg, token}; token is nil for auth "key" and "none".
 fn preflight($name)
   $core.check_runtime(nil)
   $core.check_name($name, $core.registry_path())

@@ -21,7 +21,10 @@ name. An instance named `fakeapp` answers `fakeapp.call`,
 A line-delimited JSON control channel on loopback TCP:
 
 1. Optionally, an auth line first on every connection:
-   `{"id":"auth","method":"auth","params":{"token":"<64 hex>"}}`.
+   `{"id":"auth","method":"auth","params":{"token":"<64 hex>"}}`, or with
+   `auth: "key"`, the same line with `params.key`. A key is written by the
+   application to a file after it starts, and may be rotated; the bridge
+   reads that file on every connect.
 2. Then one request per line, `{"id":N,"method":"...","params":{...}}`.
 3. One reply per line, `{"id":N,"ok":true,"result":...}` or
    `{"id":N,"ok":false,"error":"..."}`, matched to its request by `id`.
@@ -43,7 +46,10 @@ token_file: "/home/user/.config/fakeapp/control.token"
 ```
 
 For an application whose port has no auth step, write `auth: "none"` and no
-`token_file`. Then start the unit:
+`token_file`. For an application that writes its own key file after it
+starts, write `auth: "key"` with the same `token_file` (the key file's path).
+The instance starts before the key exists; calls answer rc 11 until it does.
+Then start the unit:
 
 ```sh
 systemctl start bridged@fakeapp
@@ -150,7 +156,7 @@ Read this before bridging an application.
 
 ## Status
 
-`bridged` is version 0.1.0 (unreleased). Its six verbs are declared in the Bus
+`bridged` is version 0.2.0 (unreleased); 0.2.0 adds `auth: "key"`. Its six verbs are declared in the Bus
 verb registry, `docs/spec/bus/verbs.conf.mix` (schema 3), as the `bridged`
 instance family `<app>.<verb>`. The static registry gate checks the family's
 owner and suffix. Installing the registry is a separate prerequisite: the

@@ -3,15 +3,15 @@
 -- The bridged instance config and wire contract as data (docs/spec/bridge/README.md).
 -- services/bridged/tests/bridge_core_test.mix holds the core against it.
 {
-  status:"draft", version:"0.1.0", service:"bridged",
+  status:"draft", version:"0.2.0", service:"bridged",
   config:{
     path:"<etc>/bridge/<name>.conf.mix", etc_default:"/etc/mixos", etc_env:"MIXOS_ETC", override_env:"BRIDGED_CONFIG",
     required:["port"],
     keys:[
       {key:"host", type:"string", default:"127.0.0.1", values:["127.0.0.1", "localhost"]},
       {key:"port", type:"integer", min:1, max:65535},
-      {key:"auth", type:"string", default:"token", values:["token", "none"]},
-      {key:"token_file", type:"string", note:"required with auth token, refused with auth none; 64 hex characters; ~/ expands"},
+      {key:"auth", type:"string", default:"token", values:["token", "key", "none"]},
+      {key:"token_file", type:"string", note:"required with auth token or key, refused with auth none; 64 hex characters; ~/ expands; key: read on every connect"},
       {key:"timeout_s", type:"number", default:5, min_exclusive:0, max:300},
       {key:"connect_timeout_s", type:"number", default:2, min_exclusive:0, max:300},
       {key:"backoff_s", type:"number", default:2, min:0, max:300},

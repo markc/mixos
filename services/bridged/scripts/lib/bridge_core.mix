@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
--- version: 0.1.0
+-- version: 0.2.0
 -- bridge_core: the stateless core of bridged, the Bus bridge to an external
 -- application's line-delimited JSON control channel. The serve citizen
 -- (bridged.mix) owns one state map and threads it through these functions;
@@ -9,8 +9,10 @@
 -- Wire protocol (app-neutral; docs/spec/bridge/README.md):
 --   TCP to 127.0.0.1:<port>. With auth: "token" (the default) the FIRST line on
 --   every connection is {"id":"auth","method":"auth","params":{"token":"<64 hex>"}};
---   nothing else is sent until that reply is ok. With auth: "none" (apps whose
---   loopback port has no handshake) requests start at once. Each request is one
+--   nothing else is sent until that reply is ok. With auth: "key" the same,
+--   but params.key, and the secret is read from token_file on every connect
+--   (the app writes it after its start, and may rotate it). With auth: "none"
+--   (apps whose loopback port has no handshake) requests start at once. Each request is one
 --   JSON line {"id":N,"method":M,"params":P}; each reply is one JSON line
 --   {"id":N,"ok":true,"result":R} or {"id":N,"ok":false,"error":"..."}.
 --
@@ -82,14 +84,14 @@ fn load_config($path)
   -- instance: an opaque id a launcher sets to recognise ITS bridge in status.
   if has_key($raw, "instance") and (type($raw.instance) != "string" or not re_match($raw.instance, "^[A-Za-z0-9_-]{1,64}$")) then raise("CONFIG", "instance must be 1-64 characters of [A-Za-z0-9_-]") end
   $auth = if has_key($raw, "auth") then $raw.auth else "token" end
-  if type($auth) != "string" or ($auth != "token" and $auth != "none") then raise("CONFIG", "auth must be \"token\" or \"none\"") end
+  if type($auth) != "string" or ($auth != "token" and $auth != "key" and $auth != "none") then raise("CONFIG", "auth must be \"token\", \"key\" or \"none\"") end
   if $auth == "none" then
     -- A token file next to auth: "none" is a contradiction, not a default to ignore.
     if has_key($raw, "token_file") then raise("CONFIG", "token_file is not used with auth: \"none\"; remove it") end
     return merge($cfg, {auth: "none"})
   end
-  if type($cfg.token_file) != "string" or $cfg.token_file == "" then raise("CONFIG", "token_file must be a non-empty path (auth: \"token\")") end
-  return merge($cfg, {auth: "token", token_file: _expand($cfg.token_file)})
+  if type($cfg.token_file) != "string" or $cfg.token_file == "" then raise("CONFIG", "token_file must be a non-empty path (auth: \"" .. $auth .. "\")") end
+  return merge($cfg, {auth: $auth, token_file: _expand($cfg.token_file)})
 end
 
 -- The token file holds exactly one line of 64 hex characters and is readable
@@ -321,10 +323,20 @@ fn _read_reply($h, $want, $deadline, $max)
   end
 end
 
--- Connect and authenticate. Returns {st, err}; on failure the handle is
--- closed and st is returned unchanged.
+-- Connect and authenticate. Returns {st, err}. st.token holds the secret (the
+-- token, or the key read now) in every mode, so redaction covers it. In key
+-- mode the key is read from token_file before any socket opens, so a missing
+-- or unusable key is refused with no connection and no method bytes. On
+-- failure the handle is closed and the returned st keeps whatever was read.
 fn _open($st, $deadline)
   $cfg = $st.cfg
+  if $cfg.auth == "key" then
+    try
+      $st = merge($st, {token: load_token($cfg.token_file)})
+    catch $m
+      return {st: $st, err: "key not usable: " .. $m}
+    end
+  end
   $left = $deadline - monotonic()
   if $left <= 0 then return {st: $st, err: "deadline passed before connect"} end
   $h = nil
@@ -334,9 +346,11 @@ fn _open($st, $deadline)
   catch $m
     $err = "connect failed: " .. $m
   end
-  if $h != nil and $cfg.auth == "token" then
+  if $h != nil and $cfg.auth != "none" then
+    $params = {token: $st.token}
+    if $cfg.auth == "key" then $params = {key: $st.token} end
     try
-      _send($h, json_encode({id: "auth", method: "auth", params: {token: $st.token}}) .. "\n", $deadline)
+      _send($h, json_encode({id: "auth", method: "auth", params: $params}) .. "\n", $deadline)
       $reply = _read_reply($h, "auth", $deadline, $cfg.max_line)
       if $reply.ok != true then $err = "auth refused by app" end
     catch $m, $e

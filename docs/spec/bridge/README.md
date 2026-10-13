@@ -1,6 +1,6 @@
 # Bridge contract
 
-Status: draft, version 0.1.0. Machine-checkable fixture:
+Status: draft, version 0.2.0. Machine-checkable fixture:
 [`bridge.spec.mix`](bridge.spec.mix). Verified by
 `services/bridged/tests/bridge_core_test.mix` (the config contract against
 the fixture, the wire protocol against a stand-in app) and
@@ -19,6 +19,7 @@ rule and the Bus verbs.
 | Transport | TCP on the loopback interface, one port per application. The bridge keeps one connection open and reuses it. |
 | Framing | One JSON object per line, UTF-8, `\n`-terminated (a trailing `\r` is ignored). A line is at most `max_line` bytes. |
 | Auth (`auth: "token"`) | The first line on every connection is `{"id":"auth","method":"auth","params":{"token":"<64 hex>"}}`. The application replies `{"id":"auth","ok":true,...}` or refuses and closes. The bridge sends nothing else until that reply is ok. |
+| Auth (`auth: "key"`) | As `token`, with `params.key`. The application writes the 64-hex secret to the key file after it starts, and may rotate it; the bridge reads the file on every connect, before any bytes are sent. |
 | No auth (`auth: "none"`) | Requests start at once. An application that receives an `auth` line it does not expect should refuse it and close. Any local process can use such a port while it is open. |
 | Request | `{"id":N,"method":"<name>","params":{...}}`, `N` a number the bridge increments per request. |
 | Reply | `{"id":N,"ok":true,"result":<any JSON>}` or `{"id":N,"ok":false,"error":"<text>"}`, matched to the request by `id`. Lines that are not JSON or carry another `id` are skipped. A reply without a boolean `ok` is a transport failure. |
@@ -89,7 +90,7 @@ because its `focus` option can bring the window forward, a change another
 caller sees, even though the verb otherwise only captures. The reasoning is in
 the [decision](../../decisions/2026-10-13-instance-verb-families.md).
 
-## Instance config, version 0.1.0
+## Instance config, version 0.2.0
 
 A strict-data document (`load_data`; never executed).
 
@@ -107,8 +108,8 @@ timeout_s: 20
 |---|---|---|---|
 | `port` | integer | required | 1–65535 |
 | `host` | string | `"127.0.0.1"` | `"127.0.0.1"` or `"localhost"`, which is connected to as `127.0.0.1` (never `::1`); anything else is refused |
-| `auth` | string | `"token"` | `"token"` or `"none"`; an explicit `nil` is refused |
-| `token_file` | string | — | required with `auth: "token"`, refused with `auth: "none"`; a leading `~/` expands to `$HOME` |
+| `auth` | string | `"token"` | `"token"`, `"key"` or `"none"`; an explicit `nil` is refused |
+| `token_file` | string | — | required with `auth: "token"` or `"key"`, refused with `auth: "none"`; a leading `~/` expands to `$HOME`. With `key` it is the key file, read on every connect; a missing or unusable key is rc 11 before any connect, and the next retry after `backoff_s` reads it again |
 | `timeout_s` | number | 5 | (0, 300]: the whole-call deadline |
 | `connect_timeout_s` | number | 2 | (0, 300]: the connect step, within the deadline |
 | `backoff_s` | number | 2 | [0, 300]: the pause after a transport failure |
@@ -191,4 +192,6 @@ that runs as `mixos`.
 
 ## Changes
 
+- 0.2.0 (2026-10-13): additive `auth: "key"` (`params.key`, secret read from
+  `token_file` on each connect). Token and none modes are unchanged.
 - 0.1.0 (2026-10-10): first version.

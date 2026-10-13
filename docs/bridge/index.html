@@ -257,7 +257,10 @@ name. An instance named <code>fakeapp</code> answers <code>fakeapp.call</code>,
 <p>A line-delimited JSON control channel on loopback TCP:</p>
 <ol>
 <li>Optionally, an auth line first on every connection:
-<code>{"id":"auth","method":"auth","params":{"token":"&lt;64 hex&gt;"}}</code>.</li>
+<code>{"id":"auth","method":"auth","params":{"token":"&lt;64 hex&gt;"}}</code>, or with
+<code>auth: "key"</code>, the same line with <code>params.key</code>. A key is written by the
+application to a file after it starts, and may be rotated; the bridge
+reads that file on every connect.</li>
 <li>Then one request per line, <code>{"id":N,"method":"...","params":{...}}</code>.</li>
 <li>One reply per line, <code>{"id":N,"ok":true,"result":...}</code> or
 <code>{"id":N,"ok":false,"error":"..."}</code>, matched to its request by <code>id</code>.</li>
@@ -274,7 +277,10 @@ instance name:</p>
 token_file: "/home/user/.config/fakeapp/control.token"
 </code></pre>
 <p>For an application whose port has no auth step, write <code>auth: "none"</code> and no
-<code>token_file</code>. Then start the unit:</p>
+<code>token_file</code>. For an application that writes its own key file after it
+starts, write <code>auth: "key"</code> with the same <code>token_file</code> (the key file's path).
+The instance starts before the key exists; calls answer rc 11 until it does.
+Then start the unit:</p>
 <pre><code class="language-sh">systemctl start bridged@fakeapp
 </code></pre>
 <p>The unit runs <code>mix bridged.mix --start fakeapp</code>. It checks the instance first,
@@ -369,7 +375,7 @@ name that a registered verb already starts with, and the Bus itself refuses
 a name that is already registered.</li>
 </ul>
 <h2 id="status">Status</h2>
-<p><code>bridged</code> is version 0.1.0 (unreleased). Its six verbs are declared in the Bus
+<p><code>bridged</code> is version 0.2.0 (unreleased); 0.2.0 adds <code>auth: "key"</code>. Its six verbs are declared in the Bus
 verb registry, <code>docs/spec/bus/verbs.conf.mix</code> (schema 3), as the <code>bridged</code>
 instance family <code>&lt;app&gt;.&lt;verb&gt;</code>. The static registry gate checks the family's
 owner and suffix. Installing the registry is a separate prerequisite: the

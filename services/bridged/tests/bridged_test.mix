@@ -133,6 +133,10 @@ try
   check("check: a broker-reserved name, exit 2 NAME_RESERVED", $r.exit == 2 and contains($r.err, "NAME_RESERVED"))
   $r = preflight("fakeapp", $env)
   check("check: fakeapp may start, exit 0", $r.exit == 0 and contains($r.out, "fakeapp may start"))
+  -- auth "key": the key file is read on connect, so a path not yet created passes.
+  write_file($tmp .. "/keyconf.conf.mix", "auth: \"key\",\ntoken_file: \"" .. $tmp .. "/app-not-yet.key\",\nport: 1\n")
+  $r = preflight("fakeapp", merge($env, {BRIDGED_CONFIG: $tmp .. "/keyconf.conf.mix"}))
+  check("check: auth key with a key file not yet created, exit 0", $r.exit == 0 and contains($r.out, "auth key") and not is_file($tmp .. "/app-not-yet.key"))
 
   -- --start against a stand-in mix for the child: it records that it ran.
   $marker = $tmp .. "/child-ran"
@@ -274,6 +278,55 @@ try
   check("stop: SIGTERM to parent and child ends --start with 143 (got " .. $status .. ")", $status == "143")
   check("stop: no serve child is left", len(pids_matching("--serve " .. $citizen .. " --name fakeapp")) == 0 and not process_alive($starter))
   check("start: fakeapp is gone from the Bus", not port_exists("fakeapp"))
+
+  -- The installed key protocol is also driven through the Bus. The app owns
+  -- the key file, which appears after bridge registration and rotates when
+  -- the old connection goes away.
+  $keyfile = $tmp .. "/window-key"
+  $keyportfile = $tmp .. "/key-app.port"
+  push($pids, spawn([$MIX, $fake, "--auth", "key", "--token-file", $keyfile,
+    "--port-file", $keyportfile, "--parent", to_string(pid())],
+    {die_with_parent: true, stdout: {file: $tmp .. "/key-app.log"}, stderr: "stdout"}))
+  $until = monotonic() + 10
+  while not is_file($keyportfile) and monotonic() < $until
+    sleep(0.05)
+  end
+  if not is_file($keyportfile) then raise("KEY_APP", "key fake did not listen") end
+  $keyport = to_number(trim(read_file($keyportfile)))
+  write_file($client.MIXOS_ETC .. "/bridge/fakeapp.conf.mix", data_encode({auth: "key",
+    token_file: $keyfile, port: $keyport, instance: "key-bus-test", timeout_s: 2, backoff_s: 0.2}))
+  push($pids, spawn([$MIX, "--serve", $citizen, "--name", "fakeapp"],
+    {die_with_parent: true, env: $env, stdout: {file: $tmp .. "/key-bridge.log"}, stderr: "stdout"}))
+  $up = false
+  $until = monotonic() + 10
+  while not $up and monotonic() < $until
+    $r = call("fakeapp.status", nil, 2)
+    $up = $r.rc == 0 and $r.v.instance == "key-bus-test"
+    if not $up then sleep(0.05) end
+  end
+  check("key Bus: status before file creation", $up and $r.v.auth == "key" and not is_file($keyfile))
+  $r = call("fakeapp.commands", nil, 5)
+  check("key Bus: a missing key is rc 11", $r.rc == 11)
+  $key = hash_sha256("key-bus-test " .. uuid())
+  write_new($keyfile, $key, 0o600)
+  sleep(0.25)
+  $r = call("fakeapp.commands", nil, 5)
+  check("key Bus: authenticate once with generated key", $r.rc == 0 and contains(json_encode($r.v), "engine.execute"))
+  $r = call("fakeapp.call", {method: "echo", params: {phase: 1}}, 5)
+  check("key Bus: method dispatch after authentication", $r.rc == 0 and $r.v.phase == 1)
+  $r = call("fakeapp.call", {method: "leak_result"}, 5)
+  check("key Bus: result echo is redacted", $r.rc == 0 and not contains(lower($r.text), lower($key)))
+  $r = call("fakeapp.call", {method: "drop"}, 5)
+  check("key Bus: a dropped connection is rc 11", $r.rc == 11)
+  $rotated = hash_sha256("key-bus-rotated " .. uuid())
+  write_new($keyfile .. ".new", $rotated, 0o600)
+  rename($keyfile .. ".new", $keyfile)
+  sleep(0.25)
+  $r = call("fakeapp.call", {method: "echo", params: {phase: 2}}, 5)
+  check("key Bus: reconnect uses rotated key", $r.rc == 0 and $r.v.phase == 2)
+  $r = call("fakeapp.status", nil, 5)
+  check("key Bus: status after rotation has no key", $r.rc == 0 and $r.v.connects == 2
+    and not contains(lower($r.text), lower($key)) and not contains(lower($r.text), lower($rotated)))
 catch $m
   check("harness: " .. $m, false)
 finally
