@@ -67,12 +67,16 @@ pub fn controls(
                 egui::ComboBox::from_id_salt("wallpaper-output")
                     .selected_text(target.clone().unwrap_or_else(|| label("wallpaper-default")))
                     .show_ui(ui, |ui| {
-                        if toolkit::selectable(ui, target.is_none(), label("wallpaper-default")).clicked() {
+                        if toolkit::selectable(ui, target.is_none(), label("wallpaper-default"))
+                            .clicked()
+                        {
                             target = None;
                             ui.close();
                         }
                         for name in &editor.outputs {
-                            if toolkit::selectable(ui, target.as_deref() == Some(name), name).clicked() {
+                            if toolkit::selectable(ui, target.as_deref() == Some(name), name)
+                                .clicked()
+                            {
                                 target = Some(name.clone());
                                 ui.close();
                             }

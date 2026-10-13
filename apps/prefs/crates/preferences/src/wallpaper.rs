@@ -524,8 +524,8 @@ impl WallpaperEditor {
         }
     }
 
-    /// Run one edit against the draft. The draft starts from `current`, or
-    /// from a fresh rebase when a conflict is pending. Any failure sets status.
+    /// Run one edit against the draft. A conflict keeps the draft for review
+    /// until Revert explicitly drops it; editing then starts from current.
     fn edit(
         &mut self,
         change: impl FnOnce(&mut Document, Option<&str>) -> Result<(), &'static str>,
@@ -556,15 +556,11 @@ impl WallpaperEditor {
         {
             return Err("status.unknown_output");
         }
-        let source = if self.conflict {
-            self.current.clone()
-        } else {
-            self.draft.clone().or_else(|| self.current.clone())
-        };
+        let source = self.draft.clone().or_else(|| self.current.clone());
         let mut document = source.map_or(Ok(Document::blank()), parse)?;
         change(&mut document, self.target.as_deref())?;
         document.check()?;
-        if self.draft.is_none() || self.conflict {
+        if self.draft.is_none() {
             self.base = self.current.clone();
         }
         self.conflict = false;
@@ -762,7 +758,7 @@ mod tests {
     }
 
     #[test]
-    fn conflict_keeps_draft_until_re_edit() {
+    fn conflict_keeps_draft_until_revert() {
         let mut editor = loaded(config());
         editor.edit_colour("#445566".into()).unwrap();
         let moved = json!({"schema": 1, "default": {"colour": "#010101"}});

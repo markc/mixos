@@ -76,7 +76,7 @@ enablement. The window is drivable like every MixOS app
 
 For scripted work, call the services directly (`releases.*`,
 `settings.*`): Prefs is their window, not a second implementation.
-# Wallpaper
+## Wallpaper
 
 In **Appearance → Wallpaper**, choose the default or an output, then Theme,
 Colour or Image. Colour accepts a picker or `#RRGGBB`. Browse opens the native
