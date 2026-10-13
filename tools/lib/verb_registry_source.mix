@@ -18,8 +18,13 @@
 --
 -- Limits: a symlink anywhere in a kind's tree outside tests, benches and fuzz
 -- is refused, as is a symlinked component or config, and so is a directory
--- that cannot be listed. Only the top level of an instances directory is
--- read; configs in subdirectories are not collected.
+-- that cannot be listed. The no-follow check covers the last component of the
+-- source root, the kind directories and the instances directory only (trailing
+-- slashes dropped first); a symlink in a directory above them is followed, as
+-- any path is. Config sources are flat by design: only the top level of an
+-- instances directory is read, and *.conf.mix entries in subdirectories, and
+-- any other file, are ignored. None of them is a runtime config, and the gate
+-- neither recurses into them nor reads their contents.
 --
 -- Every helper returns values. Problems are returned as lists of strings,
 -- and nothing is printed here. No config's contents and no source line are
@@ -87,9 +92,15 @@ fn _entries($dir)
 end
 
 -- A directory the checks may list: a plain existing directory, not a symlink.
--- Returns "" when it is one, else why not.
+-- Trailing slashes are dropped before the stat, because a trailing slash makes
+-- the kernel follow a symlink even when the stat does not. Only the last
+-- component of the path is checked without following links; the directories
+-- above it resolve as usual. Returns "" when it is one, else why not.
 fn _plain_dir($path)
-  $info = _info($path)
+  $p = $path
+  if len($p) > 1 then $p = re_replace($p, "/+$", "") end
+  if $p == "" then $p = "/" end
+  $info = _info($p)
   if not $info.ok then return "is missing or unreadable" end
   if $info.link then return "is a symlink; refused" end
   if not $info.dir then return "is not a directory" end

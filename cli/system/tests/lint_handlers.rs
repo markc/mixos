@@ -245,6 +245,83 @@ end
     );
 }
 
+/// Fail unless the fixture parsed as a script: no parse error, and not read as
+/// strict data. A handler count means nothing before this holds.
+fn assert_parsed_as_script(report: &Value) {
+    let codes = codes(report);
+    assert!(
+        !codes.iter().any(|c| c.starts_with("MIX-E100")),
+        "fixture must parse as a script: {codes:?}"
+    );
+    assert!(
+        report["strict_data_files"].as_array().unwrap().is_empty(),
+        "fixture must not fall back to strict data: {report}"
+    );
+}
+
+#[test]
+fn chained_on_reports_command_file_and_line() {
+    let dir = TempDir::new().expect("tempdir");
+    let source = "$ready = 1\non @.call reply(0, \"ok\") end && print(\"registered\")\n";
+    let path = write(&dir, "chained.mix", source);
+    let (_, report) = lint_json(&[path.as_path()]);
+    assert_parsed_as_script(&report);
+    let lines = lines_of(source, "on @.call");
+    assert_eq!(
+        handlers(&report),
+        vec![decl("@.call", &path, lines[0])],
+        "report: {report}"
+    );
+}
+
+#[test]
+fn nested_chain_reports_each_on_once_in_order() {
+    let dir = TempDir::new().expect("tempdir");
+    let source = "$ready = 1\non nested.a reply(0, \"ok\") end && on nested.b reply(0, \"ok\") end && print(\"registered\")\n";
+    let path = write(&dir, "nested-chain.mix", source);
+    let (_, report) = lint_json(&[path.as_path()]);
+    assert_parsed_as_script(&report);
+    let lines = lines_of(source, "on nested.");
+    assert_eq!(
+        handlers(&report),
+        vec![
+            decl("nested.a", &path, lines[0]),
+            decl("nested.b", &path, lines[0]),
+        ],
+        "report: {report}"
+    );
+}
+
+#[test]
+fn piped_on_reports_command_file_and_line() {
+    let dir = TempDir::new().expect("tempdir");
+    let source = "$ready = 1\non piped.cmd reply(0, \"ok\") end | cat\n";
+    let path = write(&dir, "piped.mix", source);
+    let (_, report) = lint_json(&[path.as_path()]);
+    assert_parsed_as_script(&report);
+    let lines = lines_of(source, "on piped.cmd");
+    assert_eq!(
+        handlers(&report),
+        vec![decl("piped.cmd", &path, lines[0])],
+        "report: {report}"
+    );
+}
+
+#[test]
+fn on_inside_an_operand_body_is_reported_once() {
+    let dir = TempDir::new().expect("tempdir");
+    let source = "$ready = 1\nif true then\n  on body.inner reply(0, \"ok\") end\nend && print(\"registered\")\n";
+    let path = write(&dir, "operand-body.mix", source);
+    let (_, report) = lint_json(&[path.as_path()]);
+    assert_parsed_as_script(&report);
+    let lines = lines_of(source, "on body.inner");
+    assert_eq!(
+        handlers(&report),
+        vec![decl("body.inner", &path, lines[0])],
+        "report: {report}"
+    );
+}
+
 #[test]
 fn lint_does_not_run_the_fixture() {
     let dir = TempDir::new().expect("tempdir");

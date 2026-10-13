@@ -197,6 +197,25 @@ fn collect_function_defs(stmts: &[Stmt], out: &mut HashSet<String>) {
 fn walk_stmts(stmts: &[Stmt], visit: &mut dyn FnMut(&Stmt)) {
     for stmt in stmts {
         visit(stmt);
+        // A chain or pipe is a wrapper whose operands are statements of their
+        // own. `stmt_bodies` yields only the operands' BODIES, so an operand
+        // that is itself a statement (an `on` used as `on … end && …` or
+        // `on … end | cat`) was never visited. Walk each operand as a
+        // statement, then stop: the wrapper has no expression of its own (a
+        // pipe's pipeline is data), and `walk_stmt_exprs` would revisit the
+        // operands' expressions and double-visit lambda bodies.
+        match &stmt.kind {
+            StmtKind::Chain { left, right, .. } => {
+                walk_stmts(std::slice::from_ref(left.as_ref()), visit);
+                walk_stmts(std::slice::from_ref(right.as_ref()), visit);
+                continue;
+            }
+            StmtKind::PipeToExternal { stmt: inner, .. } => {
+                walk_stmts(std::slice::from_ref(inner.as_ref()), visit);
+                continue;
+            }
+            _ => {}
+        }
         for body in stmt_bodies(&stmt.kind) {
             walk_stmts(body, visit);
         }

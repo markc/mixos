@@ -337,8 +337,11 @@ entry with <code>stat</code>, recursing by hand. The native <code>glob</code> an
 unreadable directory without an error, so they are not used to prove an
 absence. Test, bench and fuzz directories are skipped before the recursion.
 The source root and each kind directory must be a plain directory (a
-symlink is refused). A symlink anywhere else in a kind's tree is refused,
-and so is a directory that cannot be listed.</li>
+symlink is refused). Trailing slashes are dropped before that check, so a
+symlink named with one is refused too. Only the last component of each such
+path is checked without following links; a symlink in a directory above it
+is followed, as any path is. A symlink anywhere else in a kind's tree is
+refused, and so is a directory that cannot be listed.</li>
 <li>The check is <strong>structural</strong>. It proves that a handler for the suffix sits
 in the owner's code, not that it registers at runtime. The owner's Bus
 suite tests the runtime registration.</li>
@@ -349,10 +352,12 @@ is checked against the Bus name rule, the reserved names (the <code>mixos-</code
 prefix, <code>noded</code> and <code>noded-*</code>, the broker's session-name shape), the first
 segments of concrete verbs and the listed family members. A name that is a
 concrete prefix or a listed member is refused whatever its owner. DIR must be
-a plain directory and an unreadable DIR fails the check. Any path may hold
-glob characters, since <code>ls</code> takes a name, not a pattern. The gate lists the
-top level only, dot files included, so a configuration in a subdirectory is
-not collected. Symlinks, directories and other non-regular files named
+a plain directory (a trailing slash does not get a symlink past this), and an
+unreadable DIR fails the check. Any path may hold glob characters, since <code>ls</code>
+takes a name, not a pattern. Configs are flat by design: the gate lists the
+top level only, dot files included. A <code>*.conf.mix</code> entry in a subdirectory,
+and any other file, is ignored; none of them is a runtime config, and the gate
+neither recurses into them nor reads their contents. Symlinks, directories and other non-regular files named
 <code>*.conf.mix</code> are refused, and so are configs when the registry has no
 instances family. Config contents and tokens are never read.</li>
 <li><strong>Offline.</strong> Neither check touches the network or a running broker. A name

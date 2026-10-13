@@ -21,8 +21,9 @@
 -- - the file is in canonical form: inside `verbs: [ … ]` and `families: [ … ]`
 --   every line is blank or exactly one entry, its fields in the order given
 --   above, each written key:"value" with ", " between them, braces round it
---   and a trailing comma except on the last. No comments inside the blocks,
---   and no line outside the verbs block may contain the text name:" at all.
+--   and a trailing comma except on the last. No comments inside the blocks.
+--   Outside the verbs block no line may contain the exact text name:" (the
+--   key name, its colon and an opening double quote; pattern:" is allowed).
 --   The applications' registry tests read the file line by line, so this is
 --   what keeps them honest.
 --
@@ -128,10 +129,22 @@ fn quoted_list($items)
   return "[" .. join($parts, ", ") .. "]"
 end
 
-$registry = load_data($path)
+-- A file that is not strict data fails here with one line. The parser's own
+-- message can quote the file, so it is never printed.
+$registry = nil
+$read_failed = false
+try
+  $registry = load_data($path)
+catch $m
+  $read_failed = true
+end
+if $read_failed then
+  print("verb_registry: cannot read registry as strict data: " .. $path)
+  exit(1)
+end
 $schema = nil
 if type($registry) == "map" and has_key($registry, "schema") then $schema = $registry.schema end
-if $schema != 2 and $schema != 3 then
+if type($schema) != "number" or ($schema != 2 and $schema != 3) then
   push($problems, "schema must be 2 or 3")
 end
 $has_families = type($registry) == "map" and has_key($registry, "families")

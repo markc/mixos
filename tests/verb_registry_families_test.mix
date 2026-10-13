@@ -9,7 +9,9 @@
 -- lint cases stand in for it to prove each fail-closed path. The
 -- unreadable-directory cases lock a directory to mode 0o000 for their own
 -- case only, restore it in a finally, and are skipped where the process can
--- still list it (root).
+-- still list it (root). A skip is printed as SKIP and never counted as a pass.
+-- Those cases run only as a non-root user, so a root run leaves them
+-- unexercised, by design.
 -- Run from the checkout root: mix tests/verb_registry_families_test.mix
 
 $tool = realpath(dirname(realpath($0)) .. "/../tools/verb_registry.mix")
@@ -220,6 +222,8 @@ try
   expect("legacy: the real registry, data only", [$real], true)
   expect("legacy: the repository registry with its sources", [], true)
   expect("schema 1 is refused", [put(case_dir("schema1") .. "/registry.conf.mix", "-- test\n{\n  schema: 1,\n  verbs: [\n" .. $verbs .. "\n  ]\n}\n")], false)
+  $r = gate([put(case_dir("malformed") .. "/registry.conf.mix", "-- test\n{\n  schema: 3,\n  verbs: [\n")])
+  check("malformed strict data: fails with a diagnostic and no source text", $r.exit_code == 1 and contains($r.stdout, "cannot read registry as strict data") and (not contains($r.stdout, "schema: 3")))
 
   -- Schema 3 shape: valid families and their refusals.
   expect("validschema3: six families", [put(case_dir("valid3") .. "/registry.conf.mix", reg3($verbs, six()))], true)
@@ -285,6 +289,14 @@ try
   $reg = put($c .. "/registry.conf.mix", reg3($verbs, six()))
   put($c .. "/apps/fakeapp/scripts/fakeapp.mix", "-- fixture\non @.call desc \"a\"\n  reply(0, \"a\")\nend; on @.commands desc \"b\"\n  reply(0, \"b\")\nend\n\non    @.execute desc \"c\"\n  reply(0, \"c\")\nend\n" .. handler("inspect") .. handler("screenshot") .. handler("status"))
   expect("semicolons and newlines between declarations", [$reg, "--source", $c], true)
+
+  -- Chained and piped handlers are declarations too: the call family chained
+  -- to another statement, the commands family piped to an external command.
+  -- Lint reads both and runs neither.
+  $c = case_dir("source-chained-piped")
+  $reg = put($c .. "/registry.conf.mix", reg3($verbs, six()))
+  put($c .. "/apps/fakeapp/scripts/fakeapp.mix", "-- fixture\n" .. 'on @.call reply(0, "ok") end && print("registered")' .. "\n" .. 'on @.commands reply(0, "ok") end | cat' .. "\n" .. handlers_for(without(without($suffixes, "call"), "commands")))
+  expect("chained call and piped commands declare their families", [$reg, "--source", $c], true)
 
   $c = case_dir("source-nested")
   $reg = put($c .. "/registry.conf.mix", reg3($verbs, six()))
@@ -375,6 +387,7 @@ try
   $link = $tmp .. "/inst-dir-link"
   run_argv_must(["ln", "-s", $c, $link], {timeout: 30})
   expect("symlink: a symlinked instances directory is refused", [$reg6, "--instances", $link], false)
+  expect("symlink: a symlinked instances directory with a trailing slash is refused", [$reg6, "--instances", $link .. "/"], false)
 
   $reg_listed = put(case_dir("inst-listed") .. "/registry.conf.mix", reg3($verbs, fam("<app>.status", "fakeapp", "[\"demod\"]", "query")))
   $c = case_dir("inst-listed-collide")
