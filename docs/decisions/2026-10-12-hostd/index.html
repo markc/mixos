@@ -222,6 +222,8 @@
                         <a href="#files-hostd-owns" class="toc-h3">Files hostd owns</a>
                         <a href="#why">Why</a>
                         <a href="#consequences">Consequences</a>
+                        <a href="#amendments">Amendments</a>
+                        <a href="#2026-10-13-desk-power-verbs-are-an-exception-to-no-irreversible-verbs" class="toc-h3">2026-10-13: desk power verbs are an exception to &quot;no irreversible verbs&quot;</a>
                     </nav>
                 </div>
             </div>
@@ -261,7 +263,8 @@ schema and does the work natively (writes the file itself, calls
 networkd, resolved, logind or iwd over Varlink or D-Bus).</li>
 <li><strong>Written in Rust.</strong> Mix is the client. A root process that interprets
 scripts is too much attack surface.</li>
-<li><strong>A verb that can't be reversed is not added.</strong></li>
+<li><strong>A verb that can't be reversed is not added.</strong> Exception: the two desk
+power verbs, <code>desk.restart</code> and <code>desk.stop</code> (see Amendments).</li>
 <li><strong>Every new verb is reviewed on its own,</strong> and the verb list stays short.</li>
 </ul>
 <h3 id="callers-and-transport">Callers and transport</h3>
@@ -321,6 +324,29 @@ hostd verb.</li>
 proven through a pidfd. Root inside a container is never root on the
 host, with or without uid remapping.</li>
 </ul>
+<h2 id="amendments">Amendments</h2>
+<h3 id="2026-10-13-desk-power-verbs-are-an-exception-to-no-irreversible-verbs">2026-10-13: desk power verbs are an exception to "no irreversible verbs"</h3>
+<p><code>desk.restart</code> and <code>desk.stop</code> restart or power off one desk machine. A
+powered-off desk cannot be put back by hostd, so no undo can exist. The
+desk must still be able to restart or stop itself, so the two verbs are
+admitted as exceptions to the irreversibility rule. They are not a pattern
+for other verbs.</p>
+<p>Reversibility is replaced by these limits, which apply to both verbs:</p>
+<ul>
+<li><strong>One desk per grant.</strong> The verb takes no machine name. The grant's
+<code>desks</code> limit must name exactly one valid machine, and that machine is the
+only one the verb can touch. A caller with no desk, or two, is refused.</li>
+<li><strong>The host is never powered.</strong> The verbs run <code>machinectl reboot</code> or
+<code>machinectl poweroff</code> on the named machine only.</li>
+<li><strong>A standing grant, rate limited.</strong> Nothing runs without a grant, and a
+grant carries a rate limit and an expiry.</li>
+<li><strong>Freeze applies.</strong> <code>hostd.freeze</code> refuses both verbs.</li>
+<li><strong>Every call is recorded,</strong> as a receipt and in the audit journal. <code>hostd.undo</code>
+refuses both verbs.</li>
+</ul>
+<p>Open: whether <code>desk.*</code> also needs the second signature from an independent
+reviewer that the reboot tier requires. Until that is decided, the grant's
+own rate limit and expiry are the only second check.</p>
         </article>
         <p class="doc-source"><a href="/decisions/2026-10-12-hostd.md"><i data-lucide="file-text"></i> This page as Markdown</a></p>
     </div>
