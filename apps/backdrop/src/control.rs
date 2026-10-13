@@ -74,6 +74,7 @@ pub struct Setup {
 /// What reaches the controller's one channel.
 enum Msg {
     Delivery(Delivery),
+    BusStopped,
     Decoded {
         revision: u64,
         path: PathBuf,
@@ -115,7 +116,8 @@ pub fn start(setup: Setup) -> Result<(), String> {
                         break;
                     }
                 }
-            })
+            });
+            let _ = forward.send(Msg::BusStopped);
         })
         .map_err(|e| format!("bus thread: {e}"))?;
     let Setup {
@@ -200,7 +202,17 @@ impl Controller {
                 Msg::Delivery(Delivery::Command { id, verb, body }) => {
                     self.command(id, &verb, &body)
                 }
+                Msg::Delivery(Delivery::Disconnected) => {
+                    eprintln!("backdrop: Bus disconnected; native supervision is reconnecting");
+                }
+                Msg::Delivery(Delivery::Connected) => {
+                    eprintln!("backdrop: Bus connected");
+                }
                 Msg::Delivery(_) => {}
+                Msg::BusStopped => {
+                    eprintln!("backdrop: native Bus delivery stream stopped");
+                    std::process::exit(1);
+                }
                 Msg::Decoded {
                     revision,
                     path,
@@ -405,7 +417,11 @@ impl Controller {
             images: self.active.clone(),
         });
         lock(&self.shared).view = view;
-        for (_, context) in lock(&self.wakers).iter() {
+        let contexts: Vec<_> = lock(&self.wakers)
+            .iter()
+            .map(|(_, context)| context.clone())
+            .collect();
+        for context in contexts {
             context.request_repaint();
         }
     }
@@ -484,6 +500,9 @@ impl Controller {
 
 /// A Bus body as a validated document: the same rules as the file's.
 fn parse_document(body: &str) -> Result<Config, String> {
+    if body.len() as u64 > crate::MAX_DOCUMENT {
+        return Err(format!("body: over {} bytes", crate::MAX_DOCUMENT));
+    }
     let document: Document = serde_json::from_str(body).map_err(|e| format!("body: {e}"))?;
     Config::from_document(document).map_err(|e| e.to_string())
 }
@@ -611,6 +630,12 @@ mod tests {
             "nothing is ready, so the command is refused and not recorded"
         );
         assert!(registry.take_executed().0.is_empty());
+    }
+
+    #[test]
+    fn an_oversized_bus_document_is_refused_before_parsing() {
+        let body = " ".repeat(crate::MAX_DOCUMENT as usize + 1);
+        assert!(parse_document(&body).unwrap_err().contains("over"));
     }
 
     #[test]

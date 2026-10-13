@@ -15,7 +15,10 @@
 //! Per decode, the most memory is: the compressed bytes ([`MAX_FILE_BYTES`]),
 //! the decoder's allocations ([`MAX_ALLOC_BYTES`]), and the kept RGBA, at most
 //! [`MAX_PIXELS`] × 4 bytes (128 MiB) before the downscale. The downscale brings
-//! the kept image to [`TARGET_SIDE`] on the longest side.
+//! the kept image to [`TARGET_SIDE`] on the longest side (56.25 MiB at most).
+//! These are separate budgets: conversion can overlap the decoder's image,
+//! and resizing can overlap the 128 MiB RGBA buffer. Resident images are
+//! accounted separately by the controller; this is not a process RSS cap.
 
 use image::{ImageFormat, ImageReader, RgbaImage, imageops::FilterType};
 use std::fs::OpenOptions;
@@ -196,6 +199,9 @@ mod tests {
         ihdr.extend_from_slice(&height.to_be_bytes());
         ihdr.extend_from_slice(&[8, 6, 0, 0, 0]); // 8-bit RGBA, no interlace
         chunk(&mut out, b"IHDR", &ihdr);
+        // A valid empty zlib stream lets the PNG reader inspect IDAT and
+        // report dimensions. Pixel decoding is never reached by these tests.
+        chunk(&mut out, b"IDAT", &[0x78, 0x9c, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01]);
         chunk(&mut out, b"IEND", &[]);
         out
     }
@@ -237,7 +243,8 @@ mod tests {
         // Just inside the side limit but over the pixel limit.
         let path = dir.path().join("wide.png");
         std::fs::write(&path, png_header(8_000, 8_000)).unwrap();
-        assert!(load(&path).unwrap_err().contains("pixel limit"));
+        let error = load(&path).unwrap_err();
+        assert!(error.contains("pixel limit"), "{error}");
     }
 
     #[test]

@@ -228,6 +228,20 @@ fn wait_state($secs)
   return nil
 end
 
+fn wait_revision($revision)
+  for $attempt = 1 to 80
+    $state = bcall("backdrop.state", {})
+    if $state.rc == 0 and type($state.result) == "map" then
+      $outs = $state.result.outputs ?? []
+      if len($outs) > 0 and all($outs, fn($out) = $out.presented_revision == $revision) then
+        return true
+      end
+    end
+    sleep(0.25)
+  end
+  return false
+end
+
 -- CPU ticks (user + system) of a process, from /proc.
 fn cpu_ticks($pid)
   $parts = split(read_file("/proc/" .. to_string($pid) .. "/stat"), ") ")
@@ -260,7 +274,7 @@ try
   -- ── a chosen solid colour, over the Bus ───────────────────────────────
   $r = bcall("backdrop.set", doc_colour("#204080"))
   check("backdrop.set colour: accepted", $r.rc == 0 and $r.result.active == 2, json_encode($r))
-  sleep(0.5)
+  check("colour: accepted revision presented", wait_revision(2), "no presentation in 20 s")
   $shot1 = screenshot("colour")
   check("colour: screenshot captured", $shot1 != nil, "testkit-screenshot failed")
   if $shot1 != nil then
@@ -271,7 +285,7 @@ try
   -- ── a PNG, decoded and drawn ─────────────────────────────────────────
   $r = bcall("backdrop.set", doc_image($FIXTURE))
   check("backdrop.set image: accepted", $r.rc == 0 and $r.result.active == 3, json_encode($r))
-  sleep(0.5)
+  check("image: accepted revision presented", wait_revision(3), "no presentation in 20 s")
   $shot2 = screenshot("image")
   check("image: screenshot captured", $shot2 != nil, "testkit-screenshot failed")
   $samples = []
@@ -292,7 +306,7 @@ try
     $after.result.requested == $before.result.requested + 1 and $after.result.active == 3,
     json_encode($after.result))
   check("refused: the state names the reason", $after.result.error != nil, json_encode($after.result))
-  sleep(0.5)
+  check("refused: last good revision presented", wait_revision(3), "last good revision missing")
   $shot3 = screenshot("refused")
   check("refused: screenshot captured", $shot3 != nil, "testkit-screenshot failed")
   if $shot2 != nil and $shot3 != nil then
@@ -307,7 +321,7 @@ try
   -- Revisions: start 1, colour 2, image 3, refused image 4 (numbered, not applied).
   check("rapid sets: revisions apply in order", $r5.result.active == $r4.result.active + 1 and $r4.result.active == 5,
     json_encode([$r4.result, $r5.result]))
-  sleep(0.5)
+  check("rapid: last accepted revision presented", wait_revision(6), "no presentation in 20 s")
   $shot4 = screenshot("rapid")
   check("rapid: screenshot captured", $shot4 != nil, "testkit-screenshot failed")
   if $shot4 != nil then
@@ -340,7 +354,7 @@ try
     $outs[$OUT] = {colour: "#884422"}
     $r = bcall("backdrop.set", {schema: 1, default: {colour: "#607080"}, outputs: $outs})
     check("per-output override: accepted", $r.rc == 0, json_encode($r))
-    sleep(0.5)
+    check("per-output override: accepted revision presented", wait_revision(7), "no presentation in 20 s")
     $shot5 = screenshot("override")
     check("per-output override: screenshot captured", $shot5 != nil, "testkit-screenshot failed")
     if $shot5 != nil then
