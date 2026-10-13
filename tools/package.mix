@@ -68,6 +68,10 @@ for $pkg in sort(keys($PACKAGES))
     copy($source .. "/" .. $d, $top .. "/share/doc/" .. $pkg .. "/" .. $d)
     chmod($top .. "/share/doc/" .. $pkg .. "/" .. $d, 0o644)
   end
+  if $pkg == "mixos-desktop" then
+    run_argv_must(["/opt/mixos/bin/mix", $source .. "/libs/toolkit/scripts/install_licenses.mix",
+      "--root", $top .. "/share"], {timeout: 30})
+  end
   $tar = $out .. "/" .. $name .. ".tar.gz"
   -- Owner-neutral and sorted, so the archive does not depend on the runner.
   run_argv_must(["tar", "--sort=name", "--owner=0", "--group=0", "--numeric-owner",
