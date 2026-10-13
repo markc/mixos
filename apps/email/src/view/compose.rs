@@ -43,17 +43,21 @@ pub fn dialog(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
 /// The dialog's fields. Each edit is one event; the state owns the draft.
 fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiEvent>) {
     let width = ui.available_width();
-    let line = |ui: &mut Ui, label: &str, field: ComposeField, value: &str| {
+    let line = |ui: &mut Ui,
+                label: &str,
+                field: ComposeField,
+                value: &str,
+                events: &mut Vec<UiEvent>| {
         let mut buffer = value.to_owned();
         let response = field::text(ui, &mut buffer, &crate::label(label), width);
         if response.changed() {
             events.push(UiEvent::ComposeField(field, buffer));
         }
     };
-    line(ui, "to", ComposeField::To, &addresses(&compose.draft.to));
-    line(ui, "cc", ComposeField::Cc, &addresses(&compose.draft.cc));
-    line(ui, "bcc", ComposeField::Bcc, &addresses(&compose.draft.bcc));
-    line(ui, "subject", ComposeField::Subject, &compose.draft.subject);
+    line(ui, "to", ComposeField::To, &addresses(&compose.draft.to), events);
+    line(ui, "cc", ComposeField::Cc, &addresses(&compose.draft.cc), events);
+    line(ui, "bcc", ComposeField::Bcc, &addresses(&compose.draft.bcc), events);
+    line(ui, "subject", ComposeField::Subject, &compose.draft.subject, events);
     let mut body = compose.draft.body.clone();
     let editor = TextEdit::multiline(&mut body)
         .desired_rows(8)

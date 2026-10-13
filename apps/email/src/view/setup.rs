@@ -20,12 +20,12 @@ pub fn form(ui: &mut Ui, state: &State, stroke: f32, events: &mut Vec<UiEvent>) 
     panel::group(ui, "setup", &[title.as_str()], |ui, _| {
         ui.add(egui::Label::new(crate::label("setup-body")).wrap());
         let width = ui.available_width();
-        let mut line = |ui: &mut Ui,
-                        label: &str,
-                        setup: SetupField,
-                        value: &str,
-                        secret: bool,
-                        events: &mut Vec<UiEvent>| {
+        let line = |ui: &mut Ui,
+                    label: &str,
+                    setup: SetupField,
+                    value: &str,
+                    secret: bool,
+                    events: &mut Vec<UiEvent>| {
             let mut buffer = value.to_owned();
             let response = if secret {
                 ui.add(

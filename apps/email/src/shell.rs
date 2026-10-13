@@ -142,7 +142,10 @@ impl Shell {
         });
         // The persisted account and window shape, under the poison pill.
         let (config, file) = match config::AppDirs::resolve(APP) {
-            Some(dirs) => crate::config::ConfigFile::load(&dirs.config()),
+            Some(dirs) => {
+                let (config, file) = crate::config::ConfigFile::load(&dirs.config());
+                (config, Some(file))
+            }
             None => {
                 eprintln!("email: no config directory; nothing is persisted");
                 (crate::config::EmailConfig::default(), None)
@@ -239,20 +242,28 @@ impl Shell {
                     Event::Connected(connected)
                 });
             }
-            Work::FetchMailboxes => self.with_client(|client| {
-                self.spawn(async move { Event::Mailboxes(client.mailboxes().await) })
-            }),
-            Work::FetchEmails { mailbox } => self.with_client(|client| {
-                self.spawn(async move {
-                    Event::Page(client.email_page(&mailbox, 0, 100).await)
-                })
-            }),
-            Work::OpenEmail { id } => self.with_client(|client| {
-                self.spawn(async move { Event::Opened(client.email(&id).await) })
-            }),
-            Work::MarkRead { id, read } => self.with_client(|client| {
-                self.spawn(async move { Event::Marked(client.mark_read(&id, read).await) })
-            }),
+            Work::FetchMailboxes => {
+                if let Some(client) = self.client() {
+                    self.spawn(async move { Event::Mailboxes(client.mailboxes().await) });
+                }
+            }
+            Work::FetchEmails { mailbox } => {
+                if let Some(client) = self.client() {
+                    self.spawn(async move {
+                        Event::Page(client.email_page(&mailbox, 0, 100).await)
+                    });
+                }
+            }
+            Work::OpenEmail { id } => {
+                if let Some(client) = self.client() {
+                    self.spawn(async move { Event::Opened(client.email(&id).await) });
+                }
+            }
+            Work::MarkRead { id, read } => {
+                if let Some(client) = self.client() {
+                    self.spawn(async move { Event::Marked(client.mark_read(&id, read).await) });
+                }
+            }
             Work::Send(draft) => {
                 // The send recipe needs the Sent mailbox; without the mail
                 // listing yet, there is nothing to file under.
@@ -262,36 +273,46 @@ impl Shell {
                     ))));
                     return;
                 };
-                self.with_client(|client| {
-                    self.spawn(async move { Event::Sent(client.send(&draft, &sent).await) })
-                });
+                if let Some(client) = self.client() {
+                    self.spawn(async move { Event::Sent(client.send(&draft, &sent).await) });
+                }
             }
-            Work::FetchCalendars => self.with_client(|client| {
-                self.spawn(async move { Event::Calendars(client.calendars().await) })
-            }),
-            Work::FetchEvents { calendar } => self.with_client(|client| {
-                self.spawn(async move { Event::Events(client.calendar_events(&calendar).await) })
-            }),
-            Work::FetchBooks => self.with_client(|client| {
-                self.spawn(async move { Event::Books(client.address_books().await) })
-            }),
-            Work::FetchContacts { book, filter } => self.with_client(|client| {
-                self.spawn(async move { Event::Contacts(client.contacts(&book, &filter).await) })
-            }),
+            Work::FetchCalendars => {
+                if let Some(client) = self.client() {
+                    self.spawn(async move { Event::Calendars(client.calendars().await) });
+                }
+            }
+            Work::FetchEvents { calendar } => {
+                if let Some(client) = self.client() {
+                    self.spawn(async move {
+                        Event::Events(client.calendar_events(&calendar).await)
+                    });
+                }
+            }
+            Work::FetchBooks => {
+                if let Some(client) = self.client() {
+                    self.spawn(async move { Event::Books(client.address_books().await) });
+                }
+            }
+            Work::FetchContacts { book, filter } => {
+                if let Some(client) = self.client() {
+                    self.spawn(async move {
+                        Event::Contacts(client.contacts(&book, &filter).await)
+                    });
+                }
+            }
         }
     }
 
-    /// Run `body` with the connected client, or fail the pending work
-    /// through the state when there is none (the token died, the app
-    /// reconnected, the connect failed).
-    fn with_client(&mut self, body: impl FnOnce(&Client)) {
-        match &self.client {
-            Some(client) => body(client),
-            None => {
-                self.state.status = label("not-connected");
-                self.ctx.request_repaint();
-            }
+    /// The connected client, or a note on the status line when there is
+    /// none (the token died, the app reconnected, the connect failed).
+    /// The clone is cheap: the HTTP pool and the token cell are shared.
+    fn client(&mut self) -> Option<Client> {
+        if self.client.is_none() {
+            self.state.status = label("not-connected");
+            self.ctx.request_repaint();
         }
+        self.client.clone()
     }
 
     /// Apply every finished event, settling after each one, so a later
