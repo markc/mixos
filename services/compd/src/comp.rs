@@ -58,7 +58,7 @@ use std::cell::Cell;
 use std::collections::BTreeSet;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use smithay::reexports::calloop::ping::make_ping;
@@ -66,8 +66,10 @@ use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{LoopHandle, RegistrationToken};
 
 use comp_model::observation::{ObservationRecord, PanelRequest, PointerPosition, PointerSample};
+use comp_model::motion_run::{MotionSpec, MotionTarget};
 use comp_model::reply::ControlReply;
 use comp_model::request::{InputOp, LongOp, WaitSpec, WindowOp};
+use motion::{Glide, Point, Route};
 use comp_model::snapshot::{CompSnapshot, ReadScopes, project_window_row, surface_key};
 use comp_service::{
     CompEngine, LongReply, ObservationProducer, PortContext, PortService, PortWorker,
@@ -190,6 +192,32 @@ enum WaiterKind {
     ForceClose { id: u64, generation: u64 },
 }
 
+/// How often a running `comp.motion.run` glide is stepped. Its position comes
+/// from the clock, not from frames, so a parked VT still completes on time.
+const MOTION_TICK: Duration = Duration::from_millis(10);
+
+/// A running `comp.motion.run`: its glide, the output it moves on, the human
+/// pointer when it began (a real move cancels it), and the reply it owes.
+struct MotionRun {
+    started: Instant,
+    glide: Glide,
+    output: Option<String>,
+    human_at_start: Option<(String, f64, f64)>,
+    reply: LongReply,
+}
+
+fn motion_completed(end: Point) -> ControlReply {
+    ControlReply::Body(json!({
+        "version": 1,
+        "status": "completed",
+        "pointer": {"x": end.x, "y": end.y},
+    }))
+}
+
+fn motion_cancelled(reason: &str) -> ControlReply {
+    ControlReply::Body(json!({"version": 1, "status": "cancelled", "reason": reason}))
+}
+
 /// The engine half of the port, owned by the event loop's closure.
 pub struct Bus {
     port: PortService,
@@ -207,6 +235,9 @@ pub struct Bus {
     /// The running `comp.region.select`'s reply, and its deadline timer.
     region_reply: Option<LongReply>,
     region_timer: OneShot,
+    /// The running `comp.motion.run` glides, and the timer that steps them.
+    motions: Vec<MotionRun>,
+    motion_timer: OneShot,
     sequences: sequence::Sequences,
     pointer: PointerWatch,
     /// The session was paused at the last pass (a pause clears the agent).
@@ -317,6 +348,8 @@ impl Bus {
             panel_timer: OneShot::default(),
             region_reply: None,
             region_timer: OneShot::default(),
+            motions: Vec::new(),
+            motion_timer: OneShot::default(),
             sequences: sequence::Sequences::new(wake),
             pointer: PointerWatch {
                 lease: policy::pointer::PointerLease::default(),
@@ -429,6 +462,7 @@ impl Bus {
                 sequences: &mut self.sequences,
                 pointer_lease: &mut self.pointer.lease,
                 region_reply: &mut self.region_reply,
+                motions: &mut self.motions,
             };
             self.port.service(&mut engine);
         }
@@ -466,6 +500,8 @@ impl Bus {
         }
         self.region_timer
             .rearm(&self.handle, policy_host::region::next_deadline(lp), |_| {});
+        // The `comp.motion.run` glides: step each once, answer the ones done.
+        self.service_motions(lp);
         // The panel holders after everything this dispatch changed.
         let deadline = policy_host::panel::service(lp, Instant::now());
         self.panel_timer.rearm(&self.handle, deadline, |_| {});
@@ -482,6 +518,40 @@ impl Bus {
         if !self.waiters.is_empty() {
             self.settle_waiters(lp);
         }
+    }
+
+    /// Step every running glide once, and answer the ones that ended or were
+    /// stopped. A glide stops when the human pointer moves, when the session
+    /// is paused, or when its caller has gone. Re-arms its timer while any run.
+    fn service_motions(&mut self, lp: &mut Loop) {
+        let now = Instant::now();
+        let human = policy_host::input::human_pointer(lp);
+        let paused = self.paused;
+        let mut still = Vec::with_capacity(self.motions.len());
+        for mut run in std::mem::take(&mut self.motions) {
+            if run.reply.is_closed() {
+                continue;
+            }
+            if paused {
+                run.reply.send(motion_cancelled("session_paused"));
+                continue;
+            }
+            if human != run.human_at_start {
+                run.reply.send(motion_cancelled("human_input"));
+                continue;
+            }
+            let t = now.duration_since(run.started).as_secs_f64();
+            match policy_host::motion::step(lp, &mut run.glide, run.output.as_deref(), t) {
+                policy_host::motion::Step::Moving => still.push(run),
+                policy_host::motion::Step::Arrived => {
+                    run.reply.send(motion_completed(run.glide.target()));
+                }
+                policy_host::motion::Step::Refused(answer) => run.reply.send(answer),
+            }
+        }
+        self.motions = still;
+        let next = (!self.motions.is_empty()).then(|| now + MOTION_TICK);
+        self.motion_timer.rearm(&self.handle, next, |_| {});
     }
 
     /// `pointer.changed` while a watcher holds the lease (comp
@@ -673,9 +743,47 @@ struct Engine<'a> {
     sequences: &'a mut sequence::Sequences,
     pointer_lease: &'a mut policy::pointer::PointerLease,
     region_reply: &'a mut Option<LongReply>,
+    motions: &'a mut Vec<MotionRun>,
 }
 
 impl Engine<'_> {
+    /// Start a `comp.motion.run`: place the pointer at the route's first point
+    /// now, then let `service_motions` glide it and answer when it ends.
+    fn start_motion(&mut self, spec: MotionSpec, reply: LongReply) {
+        let Some(MotionTarget::Pointer {
+            output,
+            path,
+            duration,
+            easing,
+        }) = spec.targets.into_iter().next()
+        else {
+            reply.send(ControlReply::refused("unsupported_target", json!({})));
+            return;
+        };
+        // A one-point path is a glide that stays put.
+        let mut points: Vec<Point> = path.iter().map(|&(x, y)| Point { x, y }).collect();
+        if points.len() == 1 {
+            let only = points[0];
+            points.push(only);
+        }
+        let Ok(route) = Route::new(&points) else {
+            reply.send(ControlReply::refused("bad_path", json!({})));
+            return;
+        };
+        let mut glide = Glide::new(route, easing, 0.0, duration.as_secs_f64());
+        match policy_host::motion::step(self.lp, &mut glide, output.as_deref(), 0.0) {
+            policy_host::motion::Step::Refused(answer) => reply.send(answer),
+            policy_host::motion::Step::Arrived => reply.send(motion_completed(glide.target())),
+            policy_host::motion::Step::Moving => self.motions.push(MotionRun {
+                started: Instant::now(),
+                glide,
+                output,
+                human_at_start: policy_host::input::human_pointer(self.lp),
+                reply,
+            }),
+        }
+    }
+
     /// Admit a wait: refuse an id never handed out, else queue it with a
     /// deadline timer (the timer only marks the Bus pending; the waiter is
     /// answered from `Bus::settle_waiters`, after this dispatch).
@@ -805,6 +913,7 @@ impl CompEngine for Engine<'_> {
                     Err(answer) => reply.send(answer),
                 }
             }
+            LongOp::Motion(spec) => self.start_motion(spec, reply),
             LongOp::Wait(spec) => self.start_wait(spec, reply, admitted),
             LongOp::ForceClose {
                 id,

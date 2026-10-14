@@ -22,6 +22,7 @@ contract = "none"
 # The MixOS etc dir rule.
 config = { workspace = true }
 comp-model.workspace = true
+motion.workspace = true
 decor.workspace = true
 dispatcher.workspace = true
 ledger.workspace = true

@@ -26,6 +26,7 @@ pub mod control;
 pub mod edges;
 pub mod geometry;
 pub mod input;
+pub mod motion;
 pub mod panel;
 pub mod project;
 pub mod region;

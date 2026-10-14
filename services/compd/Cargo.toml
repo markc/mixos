@@ -56,6 +56,7 @@ model = { workspace = true }
 native = { workspace = true, optional = true }
 policy = { workspace = true }
 policy-host = { workspace = true }
+motion = { workspace = true }
 surfaces = { workspace = true }
 render-gles = { workspace = true }
 scenegraph = { workspace = true }
