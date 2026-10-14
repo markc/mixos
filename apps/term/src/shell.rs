@@ -130,11 +130,16 @@ struct FontWrites {
 impl FontWrites {
     fn reset(&mut self, profile_size: f32) {
         // Only correct a write that could replace the profile's size.
-        self.pending = self.sent.filter(|sent| *sent != profile_size).map(|_| profile_size);
+        self.pending = self
+            .sent
+            .filter(|sent| *sent != profile_size)
+            .map(|_| profile_size);
     }
 
     fn next(&self, following: bool) -> Option<f32> {
-        (following && self.sent.is_none()).then_some(self.pending).flatten()
+        (following && self.sent.is_none())
+            .then_some(self.pending)
+            .flatten()
     }
 
     fn answered(&mut self, reply: Option<(u8, String, Option<String>)>) {
@@ -154,9 +159,15 @@ impl FontWrites {
             // successful read supplies a current fence, including reconnect.
             _ => {}
         }
-        if !matches!(status.as_deref(), Some("changed" | "unchanged" | "conflict")) {
+        if !matches!(
+            status.as_deref(),
+            Some("changed" | "unchanged" | "conflict")
+        ) {
             let error = reply.as_ref().and_then(|(_, _, error)| error.as_deref());
-            eprintln!("term: font size not saved: {}", status.as_deref().or(error).unwrap_or("no answer"));
+            eprintln!(
+                "term: font size not saved: {}",
+                status.as_deref().or(error).unwrap_or("no answer")
+            );
         }
     }
 }
@@ -790,8 +801,12 @@ mod font_tests {
             "incarnation":"inc","revision":revision,"design_revision":"1",
             "source_digest":"d","appearance":settings::Appearance::default(),
             "custom_source":false
-        }}).to_string();
-        follower.answered(read.ticket, Some((0, &body, None))).0.unwrap()
+        }})
+        .to_string();
+        follower
+            .answered(read.ticket, Some((0, &body, None)))
+            .0
+            .unwrap()
     }
 
     fn reply(status: &str) -> Option<(u8, String, Option<String>)> {
@@ -800,11 +815,17 @@ mod font_tests {
 
     #[test]
     fn unavailable_and_lost_writes_survive_until_the_first_reconnected_look() {
-        for answer in [None, Some((10, String::new(), Some("not found".into()))),
-            Some((20, String::new(), Some("overloaded".into())))] {
+        for answer in [
+            None,
+            Some((10, String::new(), Some("not found".into()))),
+            Some((20, String::new(), Some("overloaded".into()))),
+        ] {
             let mut follower = Follower::new("example");
             look(&mut follower, "1");
-            let mut font = FontWrites { pending: Some(16.0), sent: Some(16.0) };
+            let mut font = FontWrites {
+                pending: Some(16.0),
+                sent: Some(16.0),
+            };
             font.answered(answer);
             assert_eq!(font.pending, Some(16.0));
             let read = follower.read().unwrap();
@@ -812,7 +833,9 @@ mod font_tests {
             assert_eq!(font.next(follower.following()), None);
             assert!(matches!(look(&mut follower, "1"), Followed::Look { .. }));
             assert_eq!(font.next(follower.following()), Some(16.0));
-            let write = follower.apply("retry", json!({"terminal.font.size":16})).unwrap();
+            let write = follower
+                .apply("retry", json!({"terminal.font.size":16}))
+                .unwrap();
             assert_eq!(write.body["expected_revision"], "1");
         }
     }
@@ -821,10 +844,21 @@ mod font_tests {
     fn a_newer_zoom_is_ready_after_the_first_writes_reply_and_an_unchanged_read() {
         let mut follower = Follower::new("example");
         look(&mut follower, "1");
-        let mut font = FontWrites { pending: Some(18.0), sent: Some(16.0) };
-        assert_eq!(font.next(follower.following()), None, "B's timer while A is in flight");
+        let mut font = FontWrites {
+            pending: Some(18.0),
+            sent: Some(16.0),
+        };
+        assert_eq!(
+            font.next(follower.following()),
+            None,
+            "B's timer while A is in flight"
+        );
         assert!(matches!(look(&mut follower, "2"), Followed::Look { .. }));
-        assert_eq!(font.next(follower.following()), None, "A's summary precedes its reply");
+        assert_eq!(
+            font.next(follower.following()),
+            None,
+            "A's summary precedes its reply"
+        );
         font.answered(reply("changed"));
         assert_eq!(look(&mut follower, "2"), Followed::Unchanged);
         assert_eq!(font.next(follower.following()), Some(18.0));
@@ -832,18 +866,33 @@ mod font_tests {
 
     #[test]
     fn reset_only_corrects_a_different_size_already_in_flight() {
-        let mut font = FontWrites { pending: Some(18.0), sent: None };
+        let mut font = FontWrites {
+            pending: Some(18.0),
+            sent: None,
+        };
         font.reset(13.0);
         assert_eq!(font.next(true), None, "an unwritten zoom is discarded");
         font.sent = Some(13.0);
         font.reset(13.0);
         font.answered(reply("changed"));
-        assert_eq!(font.next(true), None, "no redundant correction of the same size");
+        assert_eq!(
+            font.next(true),
+            None,
+            "no redundant correction of the same size"
+        );
         font.sent = Some(16.0);
         font.reset(13.0);
-        assert_eq!(font.next(true), None, "wait for the write that needs correcting");
+        assert_eq!(
+            font.next(true),
+            None,
+            "wait for the write that needs correcting"
+        );
         font.answered(reply("changed"));
-        assert_eq!(font.next(true), Some(13.0), "only the in-flight zoom is corrected");
+        assert_eq!(
+            font.next(true),
+            Some(13.0),
+            "only the in-flight zoom is corrected"
+        );
         font.sent = Some(13.0);
         font.answered(reply("changed"));
         assert_eq!(font.next(true), None, "the correction writes once");
@@ -851,7 +900,10 @@ mod font_tests {
 
     #[test]
     fn validation_refusal_drops_only_the_refused_zoom() {
-        let mut font = FontWrites { pending: Some(16.0), sent: Some(16.0) };
+        let mut font = FontWrites {
+            pending: Some(16.0),
+            sent: Some(16.0),
+        };
         font.answered(reply("validation_failed"));
         assert_eq!(font.pending, None);
         font.pending = Some(18.0);

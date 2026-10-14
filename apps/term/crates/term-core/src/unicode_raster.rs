@@ -2,7 +2,7 @@
 //! Shaping and colour glyphs, deliberately separate from the ASCII mask loop.
 use std::{
     collections::HashMap,
-    sync::{Arc, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
 };
 use swash::{
     CacheKey, FontRef,
@@ -98,35 +98,46 @@ impl Fonts {
     }
 
     fn fallbacks(&self) -> &Fallbacks {
+        static SHARED: OnceLock<Mutex<HashMap<u16, Arc<Fallbacks>>>> = OnceLock::new();
         self.fallbacks.get_or_init(|| {
-                    Arc::new(Fallbacks {
-                        coverage: super::primary_font::coverage(self.weight)
-                            .into_iter()
-                            .filter_map(|face| Face::at_index(face.data, face.index))
-                            .collect(),
-                        emoji: match super::primary_font::installed_role("emoji") {
-                            Ok(Some(face)) => {
-                                let mut db = fontdb::Database::new();
-                                db.load_system_fonts();
-                                let face = super::primary_font::fallback_weight(&mut db, face, self.weight);
-                                Face::at_index(face.data, face.index)
-                            },
-                            Ok(None) => super::primary_font::fallback_paths(EMOJI_PATHS, self.weight)
-                                .into_iter().find_map(|face| Face::at_index(face.data, face.index)),
-                            Err(error) => {
-                                eprintln!("terminal static emoji: {error}");
-                                None
-                            }
-                        },
-                        symbols: super::primary_font::fallback_paths(&[
-                            "/usr/share/fonts/noto/NotoSansSymbols2-Regular.ttf",
-                            "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
-                            "/usr/share/fonts/google-noto/NotoSansSymbols2-Regular.ttf",
-                            // Covers U+23F5 (⏵) and other Misc Technical arrows that
-                            // no installed asset face has. Last resort, after the Noto set.
-                            "/usr/share/fonts/Adwaita/AdwaitaMono-Regular.ttf",
-                        ], self.weight).into_iter().filter_map(|face| Face::at_index(face.data, face.index)).collect(),
-                    })
+            let mut shared = SHARED.get_or_init(Mutex::default).lock().expect("fallback fonts");
+            shared.entry(self.weight).or_insert_with(|| {
+            Arc::new(Fallbacks {
+                coverage: super::primary_font::coverage(self.weight)
+                    .into_iter()
+                    .filter_map(|face| Face::at_index(face.data, face.index))
+                    .collect(),
+                emoji: match super::primary_font::installed_role("emoji") {
+                    Ok(Some(face)) => {
+                        let mut db = fontdb::Database::new();
+                        db.load_system_fonts();
+                        let face = super::primary_font::fallback_weight(&mut db, face, self.weight);
+                        Face::at_index(face.data, face.index)
+                    }
+                    Ok(None) => super::primary_font::fallback_paths(EMOJI_PATHS, self.weight)
+                        .into_iter()
+                        .find_map(|face| Face::at_index(face.data, face.index)),
+                    Err(error) => {
+                        eprintln!("terminal static emoji: {error}");
+                        None
+                    }
+                },
+                symbols: super::primary_font::fallback_paths(
+                    &[
+                        "/usr/share/fonts/noto/NotoSansSymbols2-Regular.ttf",
+                        "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
+                        "/usr/share/fonts/google-noto/NotoSansSymbols2-Regular.ttf",
+                        // Covers U+23F5 (⏵) and other Misc Technical arrows that
+                        // no installed asset face has. Last resort, after the Noto set.
+                        "/usr/share/fonts/Adwaita/AdwaitaMono-Regular.ttf",
+                    ],
+                    self.weight,
+                )
+                .into_iter()
+                .filter_map(|face| Face::at_index(face.data, face.index))
+                .collect(),
+            })
+            }).clone()
         })
     }
 
@@ -737,41 +748,83 @@ mod tests {
         let primary = super::super::primary_font::discover(None).unwrap();
         let regular = Fonts::discover(primary.data.clone(), primary.index, 400).unwrap();
         let bold = Fonts::discover(primary.data, primary.index, 700).unwrap();
-        let faces = |fonts: &Fonts| fonts.fallbacks().coverage.iter()
-            .chain(&fonts.fallbacks().symbols)
-            .map(|face| (face.data.clone(), face.index, face.font().attributes().weight().0))
-            .collect::<Vec<_>>();
+        let faces = |fonts: &Fonts| {
+            fonts
+                .fallbacks()
+                .coverage
+                .iter()
+                .chain(&fonts.fallbacks().symbols)
+                .map(|face| {
+                    (
+                        face.data.clone(),
+                        face.index,
+                        face.font().attributes().weight().0,
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
         let regular_faces = faces(&regular);
         let bold_faces = faces(&bold);
         // Use real installed coverage, never a renamed or synthetic test font.
         // Look beyond one symbol so this works with different system font sets.
         for ch in (0x80..=0xffff).filter_map(char::from_u32) {
-            if regular.primary.font().charmap().map(ch) != 0 { continue; }
-            fn selected(faces: &[(Arc<[u8]>, u32, u16)], ch: char) -> Option<&(Arc<[u8]>, u32, u16)> {
-                faces.iter().find(|(data, index, _)|
-                    FontRef::from_index(data, *index as usize).unwrap().charmap().map(ch) != 0)
+            if regular.primary.font().charmap().map(ch) != 0 {
+                continue;
             }
-            let (Some(a), Some(b)) = (selected(&regular_faces, ch), selected(&bold_faces, ch)) else { continue };
-            if a.2 == b.2 || (a.0 == b.0 && a.1 == b.1) { continue; }
-            let family = |data: &[u8], index| {
-                FontRef::from_index(data, index).unwrap().localized_strings()
-                    .find_by_id(swash::StringId::Family, None).map(|s| s.chars().collect::<String>())
+            fn selected(
+                faces: &[(Arc<[u8]>, u32, u16)],
+                ch: char,
+            ) -> Option<&(Arc<[u8]>, u32, u16)> {
+                faces.iter().find(|(data, index, _)| {
+                    FontRef::from_index(data, *index as usize)
+                        .unwrap()
+                        .charmap()
+                        .map(ch)
+                        != 0
+                })
+            }
+            let (Some(a), Some(b)) = (selected(&regular_faces, ch), selected(&bold_faces, ch))
+            else {
+                continue;
             };
-            if family(&a.0, a.1 as usize) != family(&b.0, b.1 as usize) { continue; }
+            if a.2 == b.2 || (a.0 == b.0 && a.1 == b.1) {
+                continue;
+            }
+            let family = |data: &[u8], index| {
+                FontRef::from_index(data, index)
+                    .unwrap()
+                    .localized_strings()
+                    .find_by_id(swash::StringId::Family, None)
+                    .map(|s| s.chars().collect::<String>())
+            };
+            if family(&a.0, a.1 as usize) != family(&b.0, b.1 as usize) {
+                continue;
+            }
             let text = ch.to_string();
             for (fonts, expected) in [(regular, a), (bold, b)] {
                 let mut raster = UnicodeRaster::new(fonts);
                 let image = raster.image(&text, 1, 24.0, (30, 40), 30);
                 let key = image.font.expect("fallback ink, not tofu");
-                let face = raster.fonts.fallbacks().coverage.iter()
-                    .chain(&raster.fonts.fallbacks().symbols).find(|face| face.key == key).unwrap();
+                let face = raster
+                    .fonts
+                    .fallbacks()
+                    .coverage
+                    .iter()
+                    .chain(&raster.fonts.fallbacks().symbols)
+                    .find(|face| face.key == key)
+                    .unwrap();
                 assert_eq!(face.data, expected.0);
                 assert_eq!(face.index, expected.1);
             }
-            eprintln!("fallback U+{:04X}: installed weights {} and {}", ch as u32, a.2, b.2);
+            eprintln!(
+                "fallback U+{:04X}: installed weights {} and {}",
+                ch as u32, a.2, b.2
+            );
             return;
         }
-        eprintln!("SKIP fallback weight probe: no installed fallback family covers a missing primary glyph at two different weights");
+        eprintln!(
+            "SKIP fallback weight probe: no installed fallback family covers a missing primary glyph at two different weights"
+        );
     }
 
     #[test]

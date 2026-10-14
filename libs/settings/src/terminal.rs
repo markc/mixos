@@ -365,7 +365,11 @@ pub(crate) fn set(
 ) -> Result<(), Diagnostic> {
     let defaults = Terminal::default();
     match field {
-        [] => *terminal = value.filter(|v| !v.is_null()).map_or(Ok(defaults), |v| typed(path, v))?,
+        [] => {
+            *terminal = value
+                .filter(|v| !v.is_null())
+                .map_or(Ok(defaults), |v| typed(path, v))?
+        }
         ["font", "family"] => terminal.font.family = typed(path, value.unwrap_or(Value::Null))?,
         ["font", "size"] => {
             terminal.font.size = value.map_or(Ok(defaults.font.size), |v| typed(path, v))?
@@ -678,8 +682,17 @@ mod tests {
 
     #[test]
     fn null_resets_the_whole_terminal_group() {
-        let changed = apply("terminal", json!({"padding":8,"font":{"size":20,"weight":700}})).unwrap();
-        let reset = patch(&changed, &BTreeMap::from([("terminal".into(), Value::Null)]), &[]).unwrap();
+        let changed = apply(
+            "terminal",
+            json!({"padding":8,"font":{"size":20,"weight":700}}),
+        )
+        .unwrap();
+        let reset = patch(
+            &changed,
+            &BTreeMap::from([("terminal".into(), Value::Null)]),
+            &[],
+        )
+        .unwrap();
         assert_eq!(reset, Desktop::default());
         resolve(&reset).unwrap();
     }

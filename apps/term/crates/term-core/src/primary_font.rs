@@ -164,8 +164,12 @@ pub(super) fn coverage(weight: u16) -> Vec<Primary> {
             }
         });
     let mut faces: Vec<_> = installed.collect();
-    faces.extend(default_typography(TypographyRole::Terminal).fallbacks.iter()
-        .filter_map(|name| fallback_family(&db, name, weight)));
+    faces.extend(
+        default_typography(TypographyRole::Terminal)
+            .fallbacks
+            .iter()
+            .filter_map(|name| fallback_family(&db, name, weight)),
+    );
     faces
 }
 
@@ -174,20 +178,31 @@ pub(super) fn coverage(weight: u16) -> Vec<Primary> {
 pub(super) fn fallback_paths(paths: &[&str], weight: u16) -> Vec<Primary> {
     let mut db = Database::new();
     db.load_system_fonts();
-    paths.iter().filter_map(|path| {
-        db.load_font_file(path).ok()?;
-        let face = db.faces().find(|face| matches!(&face.source,
-            Source::File(file) | Source::SharedFile(file, _) if file == Path::new(path)))?;
-        let name = face.families.first()?.0.clone();
-        fallback_family(&db, &name, weight)
-    }).collect()
+    paths
+        .iter()
+        .filter_map(|path| {
+            db.load_font_file(path).ok()?;
+            let face = db.faces().find(|face| {
+                matches!(&face.source,
+            Source::File(file) | Source::SharedFile(file, _) if file == Path::new(path))
+            })?;
+            let name = face.families.first()?.0.clone();
+            fallback_family(&db, &name, weight)
+        })
+        .collect()
 }
 
 pub(super) fn fallback_weight(db: &mut Database, face: Primary, weight: u16) -> Primary {
     if db.load_font_file(&face.path).is_ok() {
-        let name = db.faces().find(|f| f.index == face.index && matches!(&f.source,
-            Source::File(path) | Source::SharedFile(path, _) if *path == face.path))
-            .and_then(|f| f.families.first()).map(|(name, _)| name.clone());
+        let name = db
+            .faces()
+            .find(|f| {
+                f.index == face.index
+                    && matches!(&f.source,
+            Source::File(path) | Source::SharedFile(path, _) if *path == face.path)
+            })
+            .and_then(|f| f.families.first())
+            .map(|(name, _)| name.clone());
         if let Some(selected) = name.and_then(|name| fallback_family(db, &name, weight)) {
             return selected;
         }
@@ -196,8 +211,12 @@ pub(super) fn fallback_weight(db: &mut Database, face: Primary, weight: u16) -> 
 }
 
 fn fallback_family(db: &Database, name: &str, weight: u16) -> Option<Primary> {
-    let mut faces: Vec<_> = db.faces().filter(|face| face.style == Style::Normal
-        && face.families.iter().any(|(family, _)| family == name)).collect();
+    let mut faces: Vec<_> = db
+        .faces()
+        .filter(|face| {
+            face.style == Style::Normal && face.families.iter().any(|(family, _)| family == name)
+        })
+        .collect();
     faces.sort_by_key(|face| (face.weight.0.abs_diff(weight), face.weight.0));
     for face in faces {
         let (source, index) = db.face_source(face.id)?;
@@ -205,11 +224,16 @@ fn fallback_family(db: &Database, name: &str, weight: u16) -> Option<Primary> {
             Source::File(path) | Source::SharedFile(path, _) => path,
             Source::Binary(_) => continue,
         };
-        let Ok(data) = std::fs::read(&path) else { continue };
+        let Ok(data) = std::fs::read(&path) else {
+            continue;
+        };
         let data: Arc<[u8]> = data.into();
         if FontRef::from_index(&data, index as usize).is_some_and(metrics_readable) {
             if face.weight.0 != weight {
-                eprintln!("term: fallback {name:?}: requested weight {weight}, nearest available {}", face.weight.0);
+                eprintln!(
+                    "term: fallback {name:?}: requested weight {weight}, nearest available {}",
+                    face.weight.0
+                );
             }
             return Some(Primary { path, index, data });
         }
