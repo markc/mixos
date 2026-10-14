@@ -145,7 +145,6 @@ pub fn controls(
                         {
                             text = format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]);
                             events.push(UiEvent::WallpaperColour(text.clone()));
-                            events.push(UiEvent::Command("wallpaper.apply", Origin::Ui));
                         }
                         let caption = ui.label(label("wallpaper-hex"));
                         let entry = ui
@@ -158,7 +157,7 @@ pub fn controls(
                         if entry.changed() {
                             events.push(UiEvent::WallpaperColour(text));
                         }
-                        if entry.lost_focus() {
+                        if entry.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
                             events.push(UiEvent::Command("wallpaper.apply", Origin::Ui));
                         }
                     });
@@ -181,7 +180,7 @@ pub fn controls(
                     if entry.changed() {
                         events.push(UiEvent::WallpaperImage(path));
                     }
-                    if entry.lost_focus() {
+                    if entry.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
                         events.push(UiEvent::Command("wallpaper.apply", Origin::Ui));
                     }
                     command_button(

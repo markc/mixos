@@ -30,7 +30,8 @@ Appearance also edits backdrop's default and per-output wallpaper: theme,
 solid colour or PNG/JPEG image. The native image browser runs directory I/O
 off the window thread. Apply sends the complete configuration after a fresh
 state check; untouched output overrides are preserved. Presets and browser
-choices apply immediately; finish a hex or path entry with Enter or leave
-the field. A refused image restores the displayed choice and shows the reason.
+choices apply immediately; finish a hex or path entry with Enter, or use Apply
+wallpaper after adjusting the colour picker. A refused image restores the
+displayed choice and shows the reason.
 Backdrop currently reports no fit modes, so Prefs offers no fit selector.
 

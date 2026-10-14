@@ -82,9 +82,9 @@ In **Appearance → Wallpaper**, choose the default or an output, then Theme,
 Colour or Image. Colour accepts presets, a picker or `#RRGGBB`. Browse opens the native
 image browser at the installed wallpaper folder, or Pictures in your home
 folder. It lists PNG/JPEG files and folders without blocking the window.
-Presets, colour-picker and browser choices apply immediately. Finish a hex
-colour or image path with Enter or leave the field to apply it. **Apply wallpaper**
-also applies a valid entry; **Revert wallpaper** drops an unfinished edit;
+Presets and browser choices apply immediately. Finish a hex colour or image
+path with Enter to apply it. **Apply wallpaper** also applies a valid entry
+or a colour-picker adjustment; **Revert wallpaper** drops an unfinished edit;
 **Refresh wallpaper** reads the current state again. The status shows acceptance
 or the refusal reason.
 
