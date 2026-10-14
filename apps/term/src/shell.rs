@@ -383,7 +383,7 @@ impl Shell {
                 custom_source,
                 ..
             }) => {
-                self.look = (!custom_source).then_some(appearance);
+                self.look = (!custom_source).then_some(*appearance);
                 self.set_base();
             }
             Some(settings::follow::Followed::Missing) if self.look.is_some() => {
