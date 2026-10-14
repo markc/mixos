@@ -248,13 +248,13 @@ pub fn resolve_with_embedded_and_accents(
                 ));
             }
         }
-        if let Some(weight) = desktop.appearance.font_weight {
-            if !(100..=900).contains(&weight) || weight % 100 != 0 {
-                return Err(error(
-                    "appearance.font_weight",
-                    "Font weight must be 100 to 900 in steps of 100",
-                ));
-            }
+        if let Some(weight) = desktop.appearance.font_weight
+            && (!(100..=900).contains(&weight) || weight % 100 != 0)
+        {
+            return Err(error(
+                "appearance.font_weight",
+                "Font weight must be 100 to 900 in steps of 100",
+            ));
         }
         for (path, family) in [
             ("appearance.font_family", &desktop.appearance.font_family),

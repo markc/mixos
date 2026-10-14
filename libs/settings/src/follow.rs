@@ -44,7 +44,7 @@ pub enum Followed {
     /// `source` is always `None`; `custom_source` says the profile names a
     /// design source of its own (an app keeps its theme file then).
     Look {
-        appearance: Appearance,
+        appearance: Box<Appearance>,
         custom_source: bool,
         revision: u64,
         /// The person's key bindings, per application
@@ -261,7 +261,7 @@ impl Follower {
         }
         self.seen = Some((incarnation.to_owned(), revision));
         Followed::Look {
-            appearance: summary.appearance,
+            appearance: Box::new(summary.appearance),
             custom_source: summary.custom_source,
             revision: revision.0,
             keymaps: summary.keymaps,
