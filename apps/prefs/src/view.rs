@@ -797,12 +797,14 @@ fn checked_text(
     let refused_id = egui::Id::new(key).with("refused");
     let committed = text_field(ui, key, current, hint).map(|text| setting(&text));
     if let Some(committed) = &committed {
-        match committed.refusal() {
-            Some(refusal) => ui.data_mut(|d| d.insert_temp(refused_id, refusal)),
-            None => ui.data_mut(|d| {
+        ui.data_mut(|d| match committed.refusal() {
+            Some(refusal) => {
+                d.insert_temp(refused_id, refusal);
+            }
+            None => {
                 d.remove::<&'static str>(refused_id);
-            }),
-        }
+            }
+        });
     }
     if let Some(refusal) = ui.data(|d| d.get_temp::<&'static str>(refused_id)) {
         let text = RichText::new(label(refusal)).color(ui.visuals().error_fg_color);
