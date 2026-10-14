@@ -339,7 +339,8 @@ impl App {
     /// Whether the focused pane's cursor is in the shown half of its blink
     /// at `now` (always, while it does not blink).
     pub fn cursor_shown(&self, now: Instant) -> bool {
-        let halves = now.saturating_duration_since(self.blink_epoch).as_millis() / BLINK.as_millis();
+        let halves =
+            now.saturating_duration_since(self.blink_epoch).as_millis() / BLINK.as_millis();
         !self.blinking() || halves.is_multiple_of(2)
     }
 
