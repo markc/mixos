@@ -61,6 +61,10 @@ mod tests {
             contrast: "high".into(),
             decorations: "ssd".into(),
             caption_side: "left".into(),
+            icon_stroke: None,
+            font_family: None,
+            font_weight: None,
+            mono_family: None,
             source: None,
         };
         let theme = theme(&a).expect("drawable");
