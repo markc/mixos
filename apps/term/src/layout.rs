@@ -391,7 +391,10 @@ mod tests {
     #[test]
     fn the_grid_fits_inside_the_border_in_physical_pixels() {
         let edges = Edges::default();
-        assert_eq!(edges.padding, settings::terminal::Terminal::default().padding);
+        assert_eq!(
+            edges.padding,
+            settings::terminal::Terminal::default().padding
+        );
         // 8x16 cells at scale 1 with 8 px padding: 816 wide holds exactly
         // 100 columns, 815 holds 99. The border stays 1 px.
         assert_eq!(edges.border, 1);
