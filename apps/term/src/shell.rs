@@ -474,9 +474,14 @@ impl Shell {
         self.font_ops.1 += 1;
         let id = format!("{}-{}", self.font_ops.0, self.font_ops.1);
         let changes = json!({"terminal.font.size": f64::from(px)});
-        match self.follower.apply(&id, changes) {
-            Some(write) if self.bus.write_settings(write) => self.font_sent = Some(px),
-            _ => self.font_pending = None,
+        let written = self
+            .follower
+            .apply(&id, changes)
+            .is_some_and(|write| self.bus.write_settings(write));
+        if written {
+            self.font_sent = Some(px);
+        } else {
+            self.font_pending = None;
         }
     }
 
