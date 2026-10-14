@@ -28,6 +28,8 @@ pub(crate) enum Event {
         retry: Option<Duration>,
     },
     TimerFired(u64),
+    /// A native repaint timer can wake the window before its Bus is ready.
+    Now,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -235,6 +237,11 @@ impl Persistence {
                     // An early delivery still has a strictly positive delay.
                     self.schedule(at - now, now, &mut actions);
                 } else {
+                    self.retry_at = None;
+                }
+            }
+            Event::Now => {
+                if self.retry_at.is_some_and(|at| now >= at) {
                     self.retry_at = None;
                 }
             }
@@ -541,6 +548,20 @@ mod tests {
             steps,
         ));
 
+        cases.push((
+            "native repaint timer retries while the Bus is unavailable",
+            vec![
+                Input(Event::Zoom(16.0), vec![Timer(400)]),
+                Wait(400),
+                Input(Event::Now, vec![Read]),
+                Input(BAD, vec![Timer(1000)]),
+                Input(Event::Reset(13.0), vec![Cancel]),
+                Wait(1000),
+                Input(Event::Now, vec![]),
+                Pending(None),
+            ],
+        ));
+
         for (name, steps) in cases {
             let mut state = Persistence::default();
             let mut now = Instant::now();
@@ -549,7 +570,12 @@ mod tests {
             for (index, step) in steps.into_iter().enumerate() {
                 let context = format!("{name}, step {index}, {state:?}");
                 let (event, expected) = match step {
-                    Input(event, effects) => (Some(event), effects),
+                    Input(event, effects) => {
+                        if matches!(event, Event::Now) && timer.is_some_and(|(_, at)| now >= at) {
+                            timer = None;
+                        }
+                        (Some(event), effects)
+                    }
                     Wait(millis) => {
                         now += Duration::from_millis(millis);
                         (None, vec![])

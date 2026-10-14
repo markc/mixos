@@ -506,7 +506,11 @@ impl Shell {
                         }
                     }
                 }
-                FontAction::Schedule { delay, generation } => self.bus.font_due(delay, generation),
+                FontAction::Schedule { delay, generation } => {
+                    if !self.bus.font_due(delay, generation) {
+                        self.ctx.request_repaint_after(delay);
+                    }
+                }
                 // Generation checks in Persistence cancel deliveries already
                 // queued by the transport; no retry decision lives here.
                 FontAction::CancelTimer => {}
@@ -550,6 +554,7 @@ impl Shell {
             self.answer(answer.id, answer.rc, answer.body);
         }
         self.pump();
+        self.font_event(FontEvent::Now);
         if self.app.take_wake() && self.app.sync() == Synced::Exit {
             self.close();
         }

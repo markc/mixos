@@ -235,13 +235,14 @@ impl WindowBus {
     }
 
     /// Deliver [`Delivery::FontDue`] with `generation` after `delay`.
-    pub fn font_due(&self, delay: Duration, generation: u64) {
-        self.after(delay, Delivery::FontDue { generation });
+    /// False before the native Bus runtime is ready.
+    pub fn font_due(&self, delay: Duration, generation: u64) -> bool {
+        self.after(delay, Delivery::FontDue { generation })
     }
 
-    fn after(&self, delay: Duration, delivery: Delivery) {
+    fn after(&self, delay: Duration, delivery: Delivery) -> bool {
         let Some(link) = self.link() else {
-            return;
+            return false;
         };
         let (tx, wake) = (self.tx.clone(), self.wake.clone());
         link.runtime.spawn(async move {
@@ -249,6 +250,7 @@ impl WindowBus {
             let _ = tx.send(delivery);
             wake();
         });
+        true
     }
 
     /// Perform a settings write (a [`settings::follow::Follower::apply`]);
