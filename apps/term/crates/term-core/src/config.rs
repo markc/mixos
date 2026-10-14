@@ -31,7 +31,8 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            font_px: design::default_typography(design::TypographyRole::Terminal).font_size as f32,
+            // The size every toolkit app uses (the Ui role), not the Terminal role.
+            font_px: design::default_typography(design::TypographyRole::Ui).font_size as f32,
             // Preserve the history limit previously passed to Crosswords::new.
             scrollback: 1000,
             cursor: Cursor::Underline,
@@ -161,11 +162,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_font_size_is_the_terminal_design_role() {
+    fn default_font_size_is_the_ui_design_role() {
         assert_eq!(
             Config::default().font_px,
-            design::default_typography(design::TypographyRole::Terminal).font_size as f32
+            design::default_typography(design::TypographyRole::Ui).font_size as f32
         );
+        assert_eq!(Config::default().font_px, 12.5);
         assert_eq!(parse("font_px: 21.333").unwrap().font_px, 21.333);
         assert!(valid_font(Config::default().font_px));
     }
