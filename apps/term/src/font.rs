@@ -45,7 +45,7 @@ pub(crate) enum Action {
     RetryLook(Duration),
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct Persistence {
     pub(crate) pending: Option<f32>,
     sent: Option<f32>,
@@ -569,6 +569,8 @@ mod tests {
             let mut cancelled = None;
             for (index, step) in steps.into_iter().enumerate() {
                 let context = format!("{name}, step {index}, {state:?}");
+                let pending_before = state.pending;
+                let sent_before = state.sent;
                 let (event, expected) = match step {
                     Input(event, effects) => {
                         if matches!(event, Event::Now) && timer.is_some_and(|(_, at)| now >= at) {
@@ -621,6 +623,17 @@ mod tests {
                 }
                 assert_eq!(effects, expected, "{context}");
                 assert_eq!(state.retry_at, timer.map(|(_, at)| at), "{context}");
+                if let Some((generation, at)) = timer {
+                    assert_eq!(generation, state.generation, "stale live timer: {context}");
+                    if state.pending.is_some() && state.sent.is_none() && !state.reading {
+                        let mut probe = state.clone();
+                        let due = probe.event(Event::TimerFired(generation), now.max(at));
+                        assert!(
+                            matches!(due.as_slice(), [Action::Read | Action::Write(_)]),
+                            "timer does not produce a request: {context}"
+                        );
+                    }
+                }
                 assert!(
                     state.pending.is_none()
                         || state.sent.is_some()
@@ -630,6 +643,12 @@ mod tests {
                 );
                 if state.pending.is_none() && state.sent.is_none() {
                     assert!(timer.is_none() && !state.refresh, "idle retry: {context}");
+                }
+                if matches!(event, Some(Event::WriteSettled(WriteReply::Refused))) {
+                    assert!(timer.is_none(), "refusal retained a retry: {context}");
+                    if pending_before == sent_before {
+                        assert_eq!(state.pending, None, "refused zoom retained: {context}");
+                    }
                 }
                 assert!(state.attempts <= 6, "{context}");
                 if matches!(
