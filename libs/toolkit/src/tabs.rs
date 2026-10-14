@@ -29,13 +29,13 @@
 
 use crate::button::paint_icon;
 use crate::chrome::Chrome;
-use crate::icons::{self, Icon};
+use crate::icons::Icon;
 use design::family::style::DocumentTabs;
 use egui::emath::GuiRounding;
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
-    Color32, FontFamily, FontId, Frame, Galley, Id, Margin, Popup, Rect, Sense, Stroke, StrokeKind,
-    Ui, WidgetInfo, WidgetType, pos2, vec2,
+    Color32, FontFamily, FontId, Frame, Galley, Id, Margin, Popup, Rect, Sense, Shape, Stroke,
+    StrokeKind, Ui, WidgetInfo, WidgetType, pos2, vec2,
 };
 use std::f32::consts::{FRAC_PI_2, PI};
 use std::sync::Arc;
@@ -481,13 +481,23 @@ fn doc_tab(
         (false, false) => p.text_dim,
     };
     if let Some(turn) = tab.marker {
-        // Both halves are the one shipped icon, turned in place: same bounds, same
-        // stroke, so switching between them cannot change its size.
-        let centre = pos2(rect.left() + left + MARKER / 2.0, rect.center().y);
-        let at = Rect::from_center_size(centre, vec2(MARKER, MARKER)).round_to_pixels(ppp);
-        icons::image(Icon::Contrast, icons::stroke_of(ui.ctx()), MARKER, ink)
-            .rotate(turn, vec2(0.5, 0.5))
-            .paint_at(ui, at);
+        // A ring with a solid half-disc inside it, touching the ring's inner edge
+        // (no gap). The half is turned in place; the ring never moves.
+        let centre = pos2(rect.left() + left + MARKER / 2.0, rect.center().y)
+            .round_to_pixels(ppp);
+        let scale = MARKER / 24.0;
+        let ring = 10.0 * scale;
+        let stroke = 2.0 * scale;
+        painter.circle_stroke(centre, ring, Stroke::new(stroke, ink));
+        let inner = ring - stroke / 2.0;
+        let steps = 16;
+        let mut points = Vec::with_capacity(steps + 2);
+        points.push(centre);
+        for step in 0..=steps {
+            let angle = -FRAC_PI_2 + turn + PI * step as f32 / steps as f32;
+            points.push(centre + vec2(angle.cos(), angle.sin()) * inner);
+        }
+        painter.add(Shape::convex_polygon(points, ink, Stroke::NONE));
     }
     let name_at = pos2(
         rect.left() + left + lead,
