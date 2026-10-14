@@ -756,87 +756,107 @@ mod tests {
     use crate::raster::{PixelFormat, paint_cluster};
 
     #[test]
-    fn fallback_glyph_uses_a_different_installed_face_at_bold_weight() {
+    fn dejavu_fallback_uses_nearest_weight_when_installed_strict_env_requires_pair() {
+        use fontdb::{Database, Style};
+        const FAMILY: &str = "DejaVu Sans Mono";
+        let mut db = Database::new();
+        db.load_system_fonts();
+        // Expectations come from fontdb's installed metadata, independently
+        // of the fallback selector. Never search for a passing selected pair.
+        let available: Vec<_> = db
+            .faces()
+            .filter(|face| {
+                face.style == Style::Normal
+                    && face.families.iter().any(|(name, _)| name == FAMILY)
+            })
+            .collect();
+        if ![400, 700]
+            .iter()
+            .all(|weight| available.iter().any(|face| face.weight.0 == *weight))
+        {
+            let message = "fallback weight test requires installed DejaVu Sans Mono regular (400) and bold (700); set MIXOS_STRICT_FONT_TESTS=1 to require this fixture";
+            assert!(
+                std::env::var("MIXOS_STRICT_FONT_TESTS").as_deref() != Ok("1"),
+                "{message}"
+            );
+            eprintln!("{message}");
+            return;
+        }
         let primary = super::super::primary_font::discover(None).unwrap();
-        let regular = Fonts::discover(primary.data.clone(), primary.index, 400).unwrap();
-        let bold = Fonts::discover(primary.data, primary.index, 700).unwrap();
-        let faces = |fonts: &Fonts| {
-            fonts
+        let mut ids = Vec::new();
+        for requested in [400, 700, 100, 450, 550, 900] {
+            let expected = available
+                .iter()
+                .map(|face| (face.weight.0.abs_diff(requested), face.weight.0))
+                .min()
+                .unwrap();
+            let fonts = Fonts::discover(primary.data.clone(), primary.index, requested).unwrap();
+            let (selected, info) = fonts
                 .fallbacks()
                 .coverage
                 .iter()
-                .chain(&fonts.fallbacks().symbols)
-                .map(|face| {
-                    (
-                        face.data.clone(),
-                        face.index,
-                        face.font().attributes().weight().0,
-                    )
+                .find_map(|selected| {
+                    available.iter().find_map(|info| {
+                        db.with_face_data(info.id, |data, index| {
+                            (index == selected.index && data == selected.data.as_ref())
+                                .then_some((selected, *info))
+                        })
+                        .flatten()
+                    })
                 })
-                .collect::<Vec<_>>()
-        };
-        let regular_faces = faces(&regular);
-        let bold_faces = faces(&bold);
-        // Use real installed coverage, never a renamed or synthetic test font.
-        // Look beyond one symbol so this works with different system font sets.
-        for ch in (0x80..=0xffff).filter_map(char::from_u32) {
-            if regular.primary.font().charmap().map(ch) != 0 {
-                continue;
-            }
-            fn selected(
-                faces: &[(Arc<[u8]>, u32, u16)],
-                ch: char,
-            ) -> Option<&(Arc<[u8]>, u32, u16)> {
-                faces.iter().find(|(data, index, _)| {
-                    FontRef::from_index(data, *index as usize)
-                        .unwrap()
-                        .charmap()
-                        .map(ch)
-                        != 0
+                .expect("DejaVu Sans Mono must be in the fallback coverage chain");
+            assert_eq!(info.weight.0, expected.1, "request {requested}");
+            ids.push(info.id);
+            // Force this real coverage face through the glyph routing path.
+            let coverage = Face::at_index(selected.data.clone(), selected.index).unwrap();
+            let key = coverage.key;
+            let mut isolated = Fonts::without_fallbacks(primary.data.clone(), primary.index);
+            Arc::get_mut(&mut isolated).unwrap().fallbacks = OnceLock::from(Arc::new(Fallbacks {
+                coverage: vec![coverage],
+                ..Default::default()
+            }));
+            let ch = (0x80..=0xffff)
+                .filter_map(char::from_u32)
+                .find(|ch| {
+                    isolated.primary.font().charmap().map(*ch) == 0
+                        && selected.font().charmap().map(*ch) != 0
+                        && ch.is_alphanumeric()
                 })
-            }
-            let (Some(a), Some(b)) = (selected(&regular_faces, ch), selected(&bold_faces, ch))
-            else {
-                continue;
-            };
-            if a.2 == b.2 || (a.0 == b.0 && a.1 == b.1) {
-                continue;
-            }
-            let family = |data: &[u8], index| {
-                FontRef::from_index(data, index)
-                    .unwrap()
-                    .localized_strings()
-                    .find_by_id(swash::StringId::Family, None)
-                    .map(|s| s.chars().collect::<String>())
-            };
-            if family(&a.0, a.1 as usize) != family(&b.0, b.1 as usize) {
-                continue;
-            }
-            let text = ch.to_string();
-            for (fonts, expected) in [(regular, a), (bold, b)] {
-                let mut raster = UnicodeRaster::new(fonts);
-                let image = raster.image(&text, 1, 24.0, (30, 40), 30);
-                let key = image.font.expect("fallback ink, not tofu");
-                let face = raster
-                    .fonts
-                    .fallbacks()
-                    .coverage
-                    .iter()
-                    .chain(&raster.fonts.fallbacks().symbols)
-                    .find(|face| face.key == key)
-                    .unwrap();
-                assert_eq!(face.data, expected.0);
-                assert_eq!(face.index, expected.1);
-            }
-            eprintln!(
-                "fallback U+{:04X}: installed weights {} and {}",
-                ch as u32, a.2, b.2
-            );
-            return;
+                .expect("DejaVu must cover a glyph absent from the bundled primary");
+            let mut raster = UnicodeRaster::new(isolated);
+            let image = raster.image(&ch.to_string(), 1, 24.0, (30, 40), 30);
+            assert_eq!(image.font, Some(key), "request {requested}");
         }
-        eprintln!(
-            "SKIP fallback weight probe: no installed fallback family covers a missing primary glyph at two different weights"
-        );
+        assert_ne!(ids[0], ids[1], "regular and bold must select different faces");
+    }
+
+    #[test]
+    fn single_weight_fallback_keeps_the_same_real_face_for_every_requested_weight() {
+        use fontdb::Database;
+        let fixture = super::super::primary_font::fixture().unwrap();
+        // A database with only the real regular font file makes the family
+        // single-weight without changing its metadata or inventing a face.
+        let mut db = Database::new();
+        db.load_font_file(&fixture.path).unwrap();
+        assert_eq!(db.faces().count(), 1, "single-face DejaVu fixture");
+        let info = db.faces().next().unwrap().clone();
+        assert_eq!(info.weight.0, 400);
+        for requested in 1..=1000 {
+            let selected = super::super::primary_font::fallback_weight(
+                &mut db,
+                fixture.clone(),
+                requested,
+            );
+            assert_eq!(selected.path, fixture.path, "request {requested}");
+            assert_eq!(selected.index, info.index, "request {requested}");
+            assert_eq!(selected.data, fixture.data, "request {requested}");
+            assert_eq!(
+                db.with_face_data(info.id, |data, index| {
+                    data == selected.data.as_ref() && index == selected.index
+                }),
+                Some(true)
+            );
+        }
     }
 
     #[test]

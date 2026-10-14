@@ -125,10 +125,23 @@ const FONT_WRITE_DELAY: Duration = Duration::from_millis(400);
 struct FontWrites {
     pending: Option<f32>,
     sent: Option<f32>,
+    retry_delay: Duration,
+    retry_at: Option<Instant>,
 }
 
 impl FontWrites {
+    fn clear_retry(&mut self) {
+        self.retry_delay = Duration::ZERO;
+        self.retry_at = None;
+    }
+
+    fn queue(&mut self, px: f32) {
+        self.pending = Some(px);
+        self.clear_retry();
+    }
+
     fn reset(&mut self, profile_size: f32) {
+        self.clear_retry();
         // Only correct a write that could replace the profile's size.
         self.pending = self
             .sent
@@ -136,21 +149,33 @@ impl FontWrites {
             .map(|_| profile_size);
     }
 
-    fn next(&self, following: bool) -> Option<f32> {
-        (following && self.sent.is_none())
+    fn next(&self, following: bool, now: Instant) -> Option<f32> {
+        (following && self.sent.is_none() && self.retry_at.is_none_or(|at| now >= at))
             .then_some(self.pending)
             .flatten()
     }
 
-    fn answered(&mut self, reply: Option<(u8, String, Option<String>)>) {
+    fn answered(&mut self, reply: Option<(u8, String, Option<String>)>, now: Instant) {
         let sent = self.sent.take();
         let status = reply
             .as_ref()
             .and_then(|(_, body, _)| serde_json::from_str::<Value>(body).ok())
             .and_then(|body| body["status"].as_str().map(str::to_owned));
-        // Conflict, missing service, broker refusal, malformed or lost
-        // answer: no definite rejection of the value. Keep it until a
-        // successful read supplies a current fence, including reconnect.
+        // An uncertain outcome keeps the zoom, but a readable settingsd
+        // must not turn persistent storage failure into an immediate loop.
+        if matches!(status.as_deref(), Some("changed" | "unchanged")) {
+            self.clear_retry();
+        } else if !matches!(
+            status.as_deref(),
+            Some("conflict" | "validation_failed" | "invalid_request")
+        ) && self.pending.is_some()
+            && self.pending == sent
+        {
+            self.retry_delay = (self.retry_delay * 2)
+                .max(Duration::from_secs(1))
+                .min(Duration::from_secs(30));
+            self.retry_at = Some(now + self.retry_delay);
+        }
         if matches!(
             status.as_deref(),
             Some("changed" | "unchanged" | "validation_failed" | "invalid_request")
@@ -513,7 +538,7 @@ impl Shell {
         let Some(px) = self.app.font_write.take() else {
             return;
         };
-        self.font.pending = Some(px);
+        self.font.queue(px);
         self.font_generation += 1;
         if self.follower.following() {
             self.bus.font_due(FONT_WRITE_DELAY, self.font_generation);
@@ -527,7 +552,7 @@ impl Shell {
         if self.exiting {
             return;
         }
-        let Some(px) = self.font.next(self.follower.following()) else {
+        let Some(px) = self.font.next(self.follower.following(), Instant::now()) else {
             return;
         };
         self.font_ops.1 += 1;
@@ -543,11 +568,17 @@ impl Shell {
     }
 
     /// A size write answered. Changed: the look that follows carries it. A
-    /// conflict (another change landed first) or a lost reply is written
-    /// again on the next look. A refusal is reported and the settings' size
-    /// returns, unless a newer zoom is waiting: that one is written next.
+    /// conflict (another change landed first) is written again on the next
+    /// look. Failed writes wait with backoff. A refusal restores the settings'
+    /// size, unless a newer zoom is waiting: that one is written next.
     fn font_written(&mut self, reply: Option<(u8, String, Option<String>)>) {
-        self.font.answered(reply);
+        let now = Instant::now();
+        self.font.answered(reply, now);
+        if let Some(at) = self.font.retry_at {
+            self.font_generation += 1;
+            self.bus
+                .font_due(at.saturating_duration_since(now), self.font_generation);
+        }
         self.read_look();
     }
 
@@ -813,6 +844,44 @@ mod font_tests {
     }
 
     #[test]
+    fn failed_writes_back_off_until_success_or_a_new_zoom() {
+        let mut follower = Follower::new("example");
+        look(&mut follower, "1");
+        for status in ["storage_failed", "outcome_unknown"] {
+            let mut now = Instant::now();
+            let mut font = FontWrites::default();
+            font.queue(16.0);
+            for seconds in [1, 2, 4, 8, 16, 30, 30] {
+                font.sent = font.next(follower.following(), now);
+                assert_eq!(font.sent, Some(16.0));
+                font.answered(reply(status), now);
+                assert_eq!(look(&mut follower, "1"), Followed::Unchanged);
+                assert_eq!(font.pending, Some(16.0));
+                assert_eq!(font.next(follower.following(), now), None);
+                let due = now + Duration::from_secs(seconds);
+                assert_eq!(font.retry_at, Some(due));
+                assert_eq!(font.next(true, due - Duration::from_millis(1)), None);
+                assert_eq!(font.next(true, due), Some(16.0));
+                now = due;
+            }
+            font.sent = Some(16.0);
+            font.answered(reply("changed"), now);
+            assert_eq!(font.pending, None);
+            assert_eq!(font.retry_at, None);
+            assert_eq!(font.retry_delay, Duration::ZERO);
+
+            font.queue(18.0);
+            font.sent = Some(18.0);
+            font.answered(reply(status), now);
+            assert_eq!(font.retry_delay, Duration::from_secs(1));
+            font.queue(20.0);
+            assert_eq!(font.retry_at, None);
+            assert_eq!(font.retry_delay, Duration::ZERO);
+            assert_eq!(font.next(true, now), Some(20.0));
+        }
+    }
+
+    #[test]
     fn unavailable_and_lost_writes_survive_until_the_first_reconnected_look() {
         for answer in [
             None,
@@ -824,14 +893,18 @@ mod font_tests {
             let mut font = FontWrites {
                 pending: Some(16.0),
                 sent: Some(16.0),
+                ..Default::default()
             };
-            font.answered(answer);
+            font.answered(answer, Instant::now());
             assert_eq!(font.pending, Some(16.0));
             let read = follower.read().unwrap();
             follower.answered(read.ticket, Some((10, "", Some("not found"))));
-            assert_eq!(font.next(follower.following()), None);
+            assert_eq!(font.next(follower.following(), Instant::now()), None);
             assert!(matches!(look(&mut follower, "1"), Followed::Look { .. }));
-            assert_eq!(font.next(follower.following()), Some(16.0));
+            assert_eq!(
+                font.next(follower.following(), Instant::now() + Duration::from_secs(1)),
+                Some(16.0)
+            );
             let write = follower
                 .apply("retry", json!({"terminal.font.size":16}))
                 .unwrap();
@@ -846,21 +919,22 @@ mod font_tests {
         let mut font = FontWrites {
             pending: Some(18.0),
             sent: Some(16.0),
+                ..Default::default()
         };
         assert_eq!(
-            font.next(follower.following()),
+            font.next(follower.following(), Instant::now()),
             None,
             "B's timer while A is in flight"
         );
         assert!(matches!(look(&mut follower, "2"), Followed::Look { .. }));
         assert_eq!(
-            font.next(follower.following()),
+            font.next(follower.following(), Instant::now()),
             None,
             "A's summary precedes its reply"
         );
-        font.answered(reply("changed"));
+        font.answered(reply("changed"), Instant::now());
         assert_eq!(look(&mut follower, "2"), Followed::Unchanged);
-        assert_eq!(font.next(follower.following()), Some(18.0));
+        assert_eq!(font.next(follower.following(), Instant::now()), Some(18.0));
     }
 
     #[test]
@@ -868,33 +942,34 @@ mod font_tests {
         let mut font = FontWrites {
             pending: Some(18.0),
             sent: None,
+            ..Default::default()
         };
         font.reset(13.0);
-        assert_eq!(font.next(true), None, "an unwritten zoom is discarded");
+        assert_eq!(font.next(true, Instant::now()), None, "an unwritten zoom is discarded");
         font.sent = Some(13.0);
         font.reset(13.0);
-        font.answered(reply("changed"));
+        font.answered(reply("changed"), Instant::now());
         assert_eq!(
-            font.next(true),
+            font.next(true, Instant::now()),
             None,
             "no redundant correction of the same size"
         );
         font.sent = Some(16.0);
         font.reset(13.0);
         assert_eq!(
-            font.next(true),
+            font.next(true, Instant::now()),
             None,
             "wait for the write that needs correcting"
         );
-        font.answered(reply("changed"));
+        font.answered(reply("changed"), Instant::now());
         assert_eq!(
-            font.next(true),
+            font.next(true, Instant::now()),
             Some(13.0),
             "only the in-flight zoom is corrected"
         );
         font.sent = Some(13.0);
-        font.answered(reply("changed"));
-        assert_eq!(font.next(true), None, "the correction writes once");
+        font.answered(reply("changed"), Instant::now());
+        assert_eq!(font.next(true, Instant::now()), None, "the correction writes once");
     }
 
     #[test]
@@ -902,12 +977,13 @@ mod font_tests {
         let mut font = FontWrites {
             pending: Some(16.0),
             sent: Some(16.0),
+                ..Default::default()
         };
-        font.answered(reply("validation_failed"));
+        font.answered(reply("validation_failed"), Instant::now());
         assert_eq!(font.pending, None);
         font.pending = Some(18.0);
         font.sent = Some(16.0);
-        font.answered(reply("validation_failed"));
+        font.answered(reply("validation_failed"), Instant::now());
         assert_eq!(font.pending, Some(18.0));
     }
 }

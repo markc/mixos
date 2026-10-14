@@ -742,10 +742,14 @@ fn number(ui: &mut Ui, spec: Numeric, current: f64, range: RangeInclusive<f64>) 
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let field = ValueField::new(&mut value, range.clone()).unit(spec.unit);
             let response = ui.add(field);
-            if response.has_focus() || response.dragged() {
+            let cancelled = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
+            if cancelled {
+                ui.data_mut(|d| d.remove::<f64>(id));
+                value = current;
+            } else if response.has_focus() || response.dragged() {
                 ui.data_mut(|d| d.insert_temp(id, value));
             }
-            if response.lost_focus() || response.drag_stopped() {
+            if !cancelled && (response.lost_focus() || response.drag_stopped()) {
                 commit = true;
             }
             if spec.slider {
@@ -775,7 +779,7 @@ mod numeric_tests {
     use egui_kittest::{Harness, kittest::Queryable};
 
     #[test]
-    fn scrubbing_commits_once_on_release_and_typing_once_on_focus_loss() {
+    fn scrubbing_and_enter_commit_once_and_escape_cancels_typing() {
         #[derive(Default)]
         struct State {
             value: f64,
@@ -833,6 +837,23 @@ mod numeric_tests {
         h.run();
         assert_eq!(h.state().commits.len(), 2);
         assert_eq!(h.state().value, 250.0);
+        h.get_by_role(Role::SpinButton).click();
+        h.run();
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        h.get_by_role(Role::TextInput).type_text("350");
+        h.run();
+        assert_eq!(h.state().commits.len(), 2);
+        h.key_press(egui::Key::Escape);
+        h.run();
+        assert_eq!(h.state().commits.len(), 2, "Escape sends no apply");
+        assert_eq!(h.state().value, 250.0);
+        assert!(h.ctx.data(|d| d.get_temp::<f64>(egui::Id::new("numeric-test"))).is_none());
+        h.get_by_role(Role::SpinButton).click();
+        h.run();
+        assert_eq!(h.get_by_role(Role::TextInput).value().as_deref(), Some("250"));
+        h.key_press(egui::Key::Escape);
+        h.run();
+        assert_eq!(h.state().commits.len(), 2);
     }
 }
 
