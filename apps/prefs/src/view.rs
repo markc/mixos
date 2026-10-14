@@ -28,8 +28,8 @@ use toolkit::command::Origin;
 use toolkit::dialog::{self, Choice};
 use toolkit::field::ValueField;
 use toolkit::slider::Slider;
-use toolkit::toggle::Toggle;
 use toolkit::titlebar::{self, Control};
+use toolkit::toggle::Toggle;
 use toolkit::{Icon, Registry, Strings, bars, icons, panel, tooltip};
 mod wallpaper;
 
@@ -731,12 +731,7 @@ struct Numeric {
 /// A number, typed or dragged. A typed value applies when its field loses
 /// focus, a drag when the pointer lets go, so no keystroke is sent. `Some`
 /// is the value to apply, rounded, when it differs from `current`.
-fn number(
-    ui: &mut Ui,
-    spec: Numeric,
-    current: f64,
-    range: RangeInclusive<f64>,
-) -> Option<f64> {
+fn number(ui: &mut Ui, spec: Numeric, current: f64, range: RangeInclusive<f64>) -> Option<f64> {
     let id = egui::Id::new(spec.key);
     let mut value = ui.data(|d| d.get_temp::<f64>(id)).unwrap_or(current);
     let mut commit = false;
