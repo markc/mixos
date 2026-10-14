@@ -1,5 +1,21 @@
 # settings contract changes
 
+## 0.7.0
+
+Additive, store format unchanged (3):
+
+- `Desktop.terminal` (`terminal::Terminal`): the term's preferences under
+  `terminal.*` (font family/size/weight, padding, scrollback lines, scroll
+  speed, border width, cursor shape/blink, focus ring/strength, copy on
+  select, `TERM`). Every default reproduces the term before the group
+  existed. Omitted at its defaults (and each value within it), so older
+  profiles keep their seals. It does not touch `Effective`, as `keymaps`
+  does not. A profile that sets any of it will not load in a 0.6.0 build:
+  reset `terminal` first.
+- `Summary.terminal` and `Followed::Look.terminal` carry it to followers.
+- `settings.describe` lists each `terminal.*` field with its range and
+  default; `terminal` alone resets or replaces the whole group.
+
 ## 0.6.0
 
 Additive, store format 3 ([decision](../../docs/decisions/2026-10-14-session-icon-stroke-and-type.md)):

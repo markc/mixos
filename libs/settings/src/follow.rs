@@ -50,6 +50,9 @@ pub enum Followed {
         /// The person's key bindings, per application
         /// ([`crate::keymap`]); each app applies its own entry.
         keymaps: crate::keymap::Keymaps,
+        /// The terminal's preferences ([`crate::terminal`]); defaults when
+        /// the summary omits them.
+        terminal: Box<crate::terminal::Terminal>,
     },
     /// The same revision as before: nothing to do.
     Unchanged,
@@ -265,6 +268,7 @@ impl Follower {
             custom_source: summary.custom_source,
             revision: revision.0,
             keymaps: summary.keymaps,
+            terminal: Box::new(summary.terminal),
         }
     }
 }
@@ -320,6 +324,33 @@ mod tests {
             .0
         {
             Some(Followed::Look { keymaps, .. }) => assert!(keymaps.is_empty()),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_look_carries_the_terminal_settings() {
+        let mut f = Follower::new("example");
+        let read = f.read().unwrap();
+        let mut body: Value = serde_json::from_str(&snapshot("i", "3", "studio")).unwrap();
+        body["summary"]["terminal"] = json!({"padding":8.0,"cursor":{"shape":"bar"}});
+        match f
+            .answered(read.ticket, Some((0, &body.to_string(), None)))
+            .0
+        {
+            Some(Followed::Look { terminal, .. }) => {
+                assert_eq!(terminal.padding, 8);
+                assert_eq!(terminal.cursor.shape, crate::terminal::CursorShape::Bar);
+            }
+            other => panic!("{other:?}"),
+        }
+        // A summary without them (an older settingsd) reads as the defaults.
+        let read = f.read().unwrap();
+        match f
+            .answered(read.ticket, Some((0, &snapshot("i", "4", "studio"), None)))
+            .0
+        {
+            Some(Followed::Look { terminal, .. }) => assert!(terminal.is_default()),
             other => panic!("{other:?}"),
         }
     }

@@ -214,10 +214,68 @@ fn public_machine_fixtures_exercise_dispatch_and_restartable_float_settings() {
     .unwrap()["snapshot"]
         .clone();
     assert_eq!(snapshot["desktop"]["ui"]["text_scale"], 1.1);
+    assert_eq!(
+        snapshot["desktop"]["terminal"],
+        json!({"padding":8,"focus":{"ring":"accent"},"env":{"term":"xterm-kitty"}})
+    );
     drop(state);
     let (store, accepted) = Store::open(dir.path(), &binding).unwrap();
     let restored = Authority::new(store, accepted).unwrap();
     assert_eq!(serde_json::to_value(restored.snapshot).unwrap(), snapshot);
+}
+#[test]
+fn describe_lists_every_terminal_field_and_the_summary_carries_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    let described = settingsd::service::dispatch(&mut state, "settings.describe", "").unwrap();
+    for path in [
+        "terminal.font.family",
+        "terminal.font.size",
+        "terminal.font.weight",
+        "terminal.padding",
+        "terminal.scrollback.lines",
+        "terminal.scroll.speed",
+        "terminal.border.width",
+        "terminal.cursor.shape",
+        "terminal.cursor.blink",
+        "terminal.focus.ring",
+        "terminal.focus.strength",
+        "terminal.mouse.copy_on_select",
+        "terminal.env.term",
+    ] {
+        assert!(described["fields"].get(path).is_some(), "{path}");
+    }
+    assert_eq!(described["fields"]["terminal.padding"]["enum"], json!([1, 2, 4, 8, 16]));
+    let mut apply = ApplyRequest {
+        binding: binding(),
+        expected_incarnation: state.accepted.incarnation.clone(),
+        expected_revision: state.accepted.revision,
+        operation_id: "terminal".into(),
+        changes: BTreeMap::from([
+            ("terminal.padding".into(), json!(4)),
+            ("terminal.cursor.blink".into(), json!(true)),
+        ]),
+        reset: vec![],
+        request_digest: None,
+    };
+    state.apply(apply.clone()).unwrap();
+    let summary = settingsd::service::dispatch(
+        &mut state,
+        "settings.get",
+        &json!({"binding":binding(),"view":"summary"}).to_string(),
+    )
+    .unwrap();
+    assert_eq!(
+        summary["summary"]["terminal"],
+        json!({"padding":4,"cursor":{"blink":true}})
+    );
+    // A reset of the group returns the profile to the default bytes.
+    apply.operation_id = "terminal-reset".into();
+    apply.expected_revision = state.accepted.revision;
+    apply.changes.clear();
+    apply.reset = vec!["terminal".into()];
+    state.apply(apply).unwrap();
+    assert!(state.accepted.desktop.terminal.is_default());
 }
 #[test]
 fn the_summary_view_carries_identity_and_appearance_names_only() {

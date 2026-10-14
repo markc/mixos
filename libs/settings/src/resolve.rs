@@ -8,6 +8,17 @@ use std::sync::{Arc, Mutex};
 pub const APPS: &[&str] = &["ced", "dopus", "term", "cap", "busviewer", "scene-editor"];
 
 pub fn describe() -> Value {
+    let mut described = describe_base();
+    if let (Some(fields), Value::Object(terminal)) = (
+        described["fields"].as_object_mut(),
+        crate::terminal::describe(),
+    ) {
+        fields.extend(terminal);
+    }
+    described
+}
+
+fn describe_base() -> Value {
     json!({"version": CONTRACT_VERSION, "schema": SCHEMA,
         "implementation": "headless authority; renderer integrations pending",
         "revision_encoding": "canonical decimal u64 string", "max_receipts": MAX_RECEIPTS,
@@ -226,6 +237,7 @@ pub fn resolve_with_embedded_and_accents(
             }
         }
         crate::keymap::validate(&desktop.keymaps, key)?;
+        crate::terminal::validate(&desktop.terminal)?;
         if design::Decorations::from_name(&desktop.appearance.decorations).is_none() {
             return Err(error("appearance.decorations", "Unknown decorations"));
         }
@@ -541,6 +553,9 @@ fn set(desktop: &mut Desktop, path: &str, value: Option<Value>) -> Result<(), Di
                             }
                         }
                     }
+                }
+                ["terminal", field @ ..] => {
+                    crate::terminal::set(&mut desktop.terminal, path, field, value)?
                 }
                 _ => return Err(error(path, "Unknown field or scope")),
             }

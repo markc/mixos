@@ -143,7 +143,7 @@ pub(crate) fn integer_u32(value: f64) -> Option<u32> {
     (value.is_finite() && (0.0..=f64::from(u32::MAX)).contains(&value) && value.fract() == 0.0)
         .then_some(value as u32)
 }
-fn deserialize_integer_u32<'de, D: serde::Deserializer<'de>>(
+pub(crate) fn deserialize_integer_u32<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<u32, D::Error> {
     integer_u32(f64::deserialize(deserializer)?)
@@ -191,6 +191,10 @@ pub struct Desktop {
     /// so a profile written before it re-serialises as it was written.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub keymaps: crate::keymap::Keymaps,
+    /// The terminal's preferences ([`crate::terminal`]). Omitted at its
+    /// defaults, as `keymaps` is while empty.
+    #[serde(skip_serializing_if = "crate::terminal::Terminal::is_default")]
+    pub terminal: crate::terminal::Terminal,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -267,6 +271,9 @@ pub struct Summary {
     /// The person's key bindings, per application; omitted while empty.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub keymaps: crate::keymap::Keymaps,
+    /// The terminal's preferences; omitted at their defaults.
+    #[serde(default, skip_serializing_if = "crate::terminal::Terminal::is_default")]
+    pub terminal: crate::terminal::Terminal,
 }
 
 /// The summary schema; independent of the snapshot's [`crate::SCHEMA`].
@@ -286,6 +293,7 @@ impl Summary {
             appearance,
             custom_source,
             keymaps: snapshot.desktop.keymaps.clone(),
+            terminal: snapshot.desktop.terminal.clone(),
         }
     }
 }

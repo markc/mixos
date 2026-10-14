@@ -21,7 +21,7 @@ refusal, invalid input or unknown verbs. Domain status is structured in the body
 | Verb | Input and result |
 | --- | --- |
 | `settings.describe` | No mutation; version, fields, ranges, defaults, limits and implemented/deferred capabilities |
-| `settings.get` | `{binding:{instance,profile}, view?, schema?}`; `view` `full` (default): complete accepted snapshot under `snapshot`, in `schema` 1 (default) or 2 (each distinct design projection once under `designs`, contexts naming it by digest; other schemas refused with `unsupported_schema`); `summary`: the profile's `Summary` (schema, binding, incarnation, revision, design revision, source digest, appearance names, `custom_source`, and `keymaps` when any are set; never projections or a source) under `summary`; both with publication/recovery status |
+| `settings.get` | `{binding:{instance,profile}, view?, schema?}`; `view` `full` (default): complete accepted snapshot under `snapshot`, in `schema` 1 (default) or 2 (each distinct design projection once under `designs`, contexts naming it by digest; other schemas refused with `unsupported_schema`); `summary`: the profile's `Summary` (schema, binding, incarnation, revision, design revision, source digest, appearance names, `custom_source`, `keymaps` when any are set, and `terminal` when any value is set; never projections or a source) under `summary`; both with publication/recovery status |
 | `settings.appearance.get` | `{binding:{instance,profile}, schema?}`; read-only appearance projection (`mode`, `contrast`, sRGB `accent`) tagged with incarnation and revisions; the reply also includes the atomic `snapshot` (in `schema` 1 or 2, as for `settings.get`) for shared Consumer validation; `wrong_target` on a foreign binding |
 | `settings.validate` | Fenced apply-shaped body; resolve/compile candidate without a write or receipt; valid with current base identity or diagnostics/conflict |
 | `settings.apply` | Fenced batch described below; durable changed/unchanged receipt |
@@ -278,6 +278,32 @@ keep their seals, and it does not affect the resolved design.
   action, 32 bytes per chord, 64 bytes per action id.
 - **Followers:** the summary carries `keymaps`, and each application applies
   its own entry when the revision changes (`toolkit::Registry::rebind`).
+
+## Terminal
+
+The profile's `terminal` holds the term's preferences. Each default is the
+term's behaviour before the group existed, and each value is omitted at its
+default, so older profiles keep their seals. It does not affect the resolved
+design. Terminal colours are not a setting: they follow the session theme.
+
+| Field | Type and range | Default |
+| --- | --- | --- |
+| `terminal.font.family` | string or null, 1–128 bytes, no control characters | null: `appearance.mono_family` |
+| `terminal.font.size` | number 6–48 | the design's UI type size |
+| `terminal.font.weight` | integer 100–900, step 100 | 400 |
+| `terminal.padding` | integer 1, 2, 4, 8 or 16 (px) | 1 |
+| `terminal.scrollback.lines` | integer 0–1000000 | 1000 |
+| `terminal.scroll.speed` | integer 10–200 (px per wheel step) | 40 |
+| `terminal.border.width` | integer 1–4 (px) | 1 |
+| `terminal.cursor.shape` | `block`, `underline` or `bar` | `underline` |
+| `terminal.cursor.blink` | boolean | false |
+| `terminal.focus.ring` | `neutral` or `accent` | `neutral` |
+| `terminal.focus.strength` | number 0–1, used with `accent` | 0.25 |
+| `terminal.mouse.copy_on_select` | boolean | false |
+| `terminal.env.term` | `[a-z0-9-]{1,64}`; new tabs and panes | `xterm-256color` |
+
+Apply and reset take each path, or `terminal` for the whole group. The
+summary carries `terminal` when any value is set.
 
 ## Topics and storage
 
