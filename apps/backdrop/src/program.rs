@@ -292,7 +292,12 @@ fn current_texture(
     fading: bool,
 ) -> Result<TextureHandle, String> {
     let maximum = ctx.input(|input| input.max_texture_side);
-    if resident.image.size.iter().any(|side| *side as usize > maximum) {
+    if resident
+        .image
+        .size
+        .iter()
+        .any(|side| *side as usize > maximum)
+    {
         slots.clear();
         return Err(format!(
             "image texture {} × {} exceeds the device's {maximum}-pixel side limit",
@@ -830,17 +835,27 @@ mod tests {
     fn a_texture_over_the_device_limit_uses_fallback_without_uploading() {
         let (ctx, mut program) = fixture();
         let mut large = view(1, "a.png", 1);
-        large.images.insert("a.png".into(), Arc::new(Resident {
-            serial: 1,
-            image: Decoded { size: [3840, 1], original_size: [3840, 1], rgba: image::RgbaImage::new(3840, 1) },
-            _resident_bytes: None,
-        }));
+        large.images.insert(
+            "a.png".into(),
+            Arc::new(Resident {
+                serial: 1,
+                image: Decoded {
+                    size: [3840, 1],
+                    original_size: [3840, 1],
+                    rgba: image::RgbaImage::new(3840, 1),
+                },
+                _resident_bytes: None,
+            }),
+        );
         publish(&program, large);
-        let frame = Headless(ctx.run_ui(egui::RawInput {
-            screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(64.0, 64.0))),
-            max_texture_side: Some(2048),
-            ..Default::default()
-        }, |ui| program.show_pass(ui, &surface())));
+        let frame = Headless(ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(64.0, 64.0))),
+                max_texture_side: Some(2048),
+                ..Default::default()
+            },
+            |ui| program.show_pass(ui, &surface()),
+        ));
         assert_eq!(program.shows, "fallback");
         assert!(program.error.as_deref().unwrap().contains("2048"));
         assert_eq!(program.budget.used(), 0);
