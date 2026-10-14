@@ -67,6 +67,13 @@ pub fn definitions(theme: &Theme) -> FontDefinitions {
     if theme.style().faces == design::family::style::Faces::Fixed {
         (ui, display) = (CHROME_WEIGHT, CHROME_WEIGHT + 200);
     }
+    // The session's weight replaces the body's, even where the chrome fixes
+    // its faces; headings keep the design's offset above the body.
+    if let Some(weight) = theme.overlay().weight {
+        let offset = i32::from(display) - i32::from(ui);
+        ui = weight;
+        display = (i32::from(weight) + offset).clamp(100, 900) as u16;
+    }
 
     let mut fonts = FontDefinitions::default();
     let mut add = |(name, bytes): (&'static str, &'static [u8])| {

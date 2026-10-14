@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 {
-  status:"accepted", version:"0.4.0", schema:1,
+  status:"accepted", version:"0.6.0", schema:1,
   service:"settingsd", topic:"settingsd.desktop.changed.default",
   revision_encoding:"canonical_decimal_u64_string",
   limits:{receipts:128,source_bytes:262144,request_bytes:393216,snapshot_bytes:983040},
