@@ -162,6 +162,7 @@ fn gallery(ui: &mut Ui, s: &mut Gallery) {
                 meta: "RGB/16".into(),
                 dirty: true,
                 progress: Some(0.6),
+                marker: None,
             },
         ];
         tabs::documents(ui, Id::new("docs"), &docs, 0, None);
