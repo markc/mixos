@@ -72,7 +72,7 @@ pub struct Document {
     pub outputs: BTreeMap<String, Fill>,
 }
 
-/// One wallpaper as written: exactly one of `colour` or `image`.
+/// One wallpaper as written: exactly one of `colour`, `image` or `slideshow`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Fill {
@@ -80,7 +80,7 @@ pub struct Fill {
     pub colour: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image: Option<String>,
-    /// The colour shown while the image is not decoded yet (an image only).
+    /// Beneath image pixels, including transparent pixels and letterbox bars.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fallback: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -89,7 +89,9 @@ pub struct Fill {
     pub slideshow: Option<Slideshow>,
 }
 
-fn default_interval() -> u64 { 600 }
+fn default_interval() -> u64 {
+    600
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -118,8 +120,7 @@ pub enum Wallpaper {
     Theme,
     /// A solid colour.
     Colour(Rgb),
-    /// An absolute path to a PNG or JPEG, centre-cropped to fill the surface.
-    /// `fallback` shows while the image is not decoded.
+    /// An absolute PNG/JPEG path with explicit placement and fallback colour.
     Image {
         path: PathBuf,
         fallback: Option<Rgb>,
@@ -137,43 +138,87 @@ pub enum Wallpaper {
 impl Wallpaper {
     /// Validate one fill; `field` names it in the error.
     pub fn from_fill(fill: &Fill, field: &str) -> Result<Self, Invalid> {
-        let sources = usize::from(fill.colour.is_some()) + usize::from(fill.image.is_some())
+        let sources = usize::from(fill.colour.is_some())
+            + usize::from(fill.image.is_some())
             + usize::from(fill.slideshow.is_some());
         if sources != 1 {
-            return Err(Invalid::new(field, "name exactly one of colour, image or slideshow"));
+            return Err(Invalid::new(
+                field,
+                "name exactly one of colour, image or slideshow",
+            ));
         }
         if let Some(text) = &fill.colour {
             if fill.fallback.is_some() || fill.fit.is_some() {
-                return Err(Invalid::new(field, "fallback and fit require an image or slideshow"));
+                return Err(Invalid::new(
+                    field,
+                    "fallback and fit require an image or slideshow",
+                ));
             }
-            return Rgb::parse(text).map(Self::Colour)
+            return Rgb::parse(text)
+                .map(Self::Colour)
                 .map_err(|e| Invalid::new(format!("{field}.colour"), e));
         }
-        let fallback = fill.fallback.as_deref().map(Rgb::parse).transpose()
+        let fallback = fill
+            .fallback
+            .as_deref()
+            .map(Rgb::parse)
+            .transpose()
             .map_err(|e| Invalid::new(format!("{field}.fallback"), e))?;
         let fit = fill.fit.unwrap_or_default();
         if let Some(text) = &fill.image {
             let path = image_path(text).map_err(|e| Invalid::new(format!("{field}.image"), e))?;
-            return Ok(Self::Image { path, fallback, fit });
+            return Ok(Self::Image {
+                path,
+                fallback,
+                fit,
+            });
         }
-        let slides = fill.slideshow.as_ref().expect("exactly one source validated");
+        let slides = fill
+            .slideshow
+            .as_ref()
+            .expect("exactly one source validated");
         if slides.interval_s < 5 {
-            return Err(Invalid::new(format!("{field}.slideshow.interval_s"), "must be at least 5"));
+            return Err(Invalid::new(
+                format!("{field}.slideshow.interval_s"),
+                "must be at least 5",
+            ));
         }
         let source = match (&slides.folder, &slides.images) {
-            (Some(folder), None) => SlideSource::Folder(image_path(folder)
-                .map_err(|e| Invalid::new(format!("{field}.slideshow.folder"), e))?),
+            (Some(folder), None) => SlideSource::Folder(
+                image_path(folder)
+                    .map_err(|e| Invalid::new(format!("{field}.slideshow.folder"), e))?,
+            ),
             (None, Some(images)) if !images.is_empty() && images.len() <= MAX_SLIDES => {
-                let paths = images.iter().enumerate().map(|(i, text)| image_path(text)
-                    .map_err(|e| Invalid::new(format!("{field}.slideshow.images[{i}]"), e)))
+                let paths = images
+                    .iter()
+                    .enumerate()
+                    .map(|(i, text)| {
+                        image_path(text)
+                            .map_err(|e| Invalid::new(format!("{field}.slideshow.images[{i}]"), e))
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
                 SlideSource::Images(paths)
             }
-            (None, Some(_)) => return Err(Invalid::new(format!("{field}.slideshow.images"),
-                format!("must contain 1 to {MAX_SLIDES} paths"))),
-            _ => return Err(Invalid::new(format!("{field}.slideshow"), "name exactly one of folder or images")),
+            (None, Some(_)) => {
+                return Err(Invalid::new(
+                    format!("{field}.slideshow.images"),
+                    format!("must contain 1 to {MAX_SLIDES} paths"),
+                ));
+            }
+            _ => {
+                return Err(Invalid::new(
+                    format!("{field}.slideshow"),
+                    "name exactly one of folder or images",
+                ));
+            }
         };
-        Ok(Self::Slideshow { source, interval_s: slides.interval_s, shuffle: slides.shuffle, fallback, fit })
+        Ok(Self::Slideshow {
+            source,
+            interval_s: slides.interval_s,
+            shuffle: slides.shuffle,
+            fallback,
+            fit,
+        })
     }
 
     /// The fill this wallpaper is written as. The theme has none.
@@ -184,19 +229,37 @@ impl Wallpaper {
                 colour: Some(rgb.hex()),
                 ..Fill::default()
             },
-            Self::Image { path, fallback, fit } => Fill {
+            Self::Image {
+                path,
+                fallback,
+                fit,
+            } => Fill {
                 image: Some(path.display().to_string()),
                 fallback: fallback.map(Rgb::hex),
                 fit: (*fit != Fit::Fill).then_some(*fit),
                 ..Fill::default()
             },
-            Self::Slideshow { source, interval_s, shuffle, fallback, fit } => {
+            Self::Slideshow {
+                source,
+                interval_s,
+                shuffle,
+                fallback,
+                fit,
+            } => {
                 let (folder, images) = match source {
                     SlideSource::Folder(path) => (Some(path.display().to_string()), None),
-                    SlideSource::Images(paths) => (None, Some(paths.iter().map(|p| p.display().to_string()).collect())),
+                    SlideSource::Images(paths) => (
+                        None,
+                        Some(paths.iter().map(|p| p.display().to_string()).collect()),
+                    ),
                 };
                 Fill {
-                    slideshow: Some(Slideshow { folder, images, interval_s: *interval_s, shuffle: *shuffle }),
+                    slideshow: Some(Slideshow {
+                        folder,
+                        images,
+                        interval_s: *interval_s,
+                        shuffle: *shuffle,
+                    }),
                     fallback: fallback.map(Rgb::hex),
                     fit: (*fit != Fit::Fill).then_some(*fit),
                     ..Fill::default()
@@ -299,13 +362,17 @@ impl Config {
             );
         }
         let config = Self { default, outputs };
-        let slides = std::iter::once(&config.default).chain(config.outputs.values())
-            .filter(|w| matches!(w, Wallpaper::Slideshow { .. })).count();
+        let slides = std::iter::once(&config.default)
+            .chain(config.outputs.values())
+            .filter(|w| matches!(w, Wallpaper::Slideshow { .. }))
+            .count();
         let images = config.images().len() + slides;
         if images > MAX_IMAGES {
             return Err(Invalid::new(
                 "",
-                format!("at most {MAX_IMAGES} distinct images or slideshow streams, found {images}"),
+                format!(
+                    "at most {MAX_IMAGES} distinct images or slideshow streams, found {images}"
+                ),
             ));
         }
         Ok(config)
@@ -472,11 +539,22 @@ mod tests {
     #[test]
     fn slideshow_defaults_and_fit_round_trip_without_touching_the_source() {
         let config = parse("schema: 1\ndefault: { slideshow: { images: [\"/a.png\", \"/b.jpg\"] }, fit: \"fit\", fallback: \"#010203\" }").unwrap();
-        assert!(matches!(config.default, Wallpaper::Slideshow { interval_s: 600, shuffle: false, fit: Fit::Fit, .. }));
+        assert!(matches!(
+            config.default,
+            Wallpaper::Slideshow {
+                interval_s: 600,
+                shuffle: false,
+                fit: Fit::Fit,
+                ..
+            }
+        ));
         assert_eq!(parse(&config.to_conf_text().unwrap()).unwrap(), config);
         let folder = parse("schema: 1\ndefault: { slideshow: { folder: \"/wallpapers\", interval_s: 5, shuffle: true }, fit: \"tile\" }").unwrap();
         assert_eq!(parse(&folder.to_conf_text().unwrap()).unwrap(), folder);
-        assert!(folder.images().is_empty(), "a slideshow is not eagerly decoded");
+        assert!(
+            folder.images().is_empty(),
+            "a slideshow is not eagerly decoded"
+        );
     }
 
     #[test]
@@ -495,13 +573,23 @@ mod tests {
             r#"{ slideshow: { folder: "/w", interval_s: 5.5 } }"#,
             r#"{ slideshow: { folder: "/w", shuffle: "false" } }"#,
             r#"{ slideshow: { folder: "/w", bogus: true } }"#,
-        ] { assert!(parse(&format!("schema: 1\ndefault: {fill}")).is_err(), "{fill}"); }
+        ] {
+            assert!(
+                parse(&format!("schema: 1\ndefault: {fill}")).is_err(),
+                "{fill}"
+            );
+        }
     }
 
     #[test]
     fn all_fit_modes_are_valid_and_default_fill_keeps_legacy_document_shape() {
         for mode in ["fill", "fit", "centre", "tile", "stretch"] {
-            assert!(parse(&format!("schema: 1\ndefault: {{ image: \"/a.png\", fit: \"{mode}\" }}")).is_ok());
+            assert!(
+                parse(&format!(
+                    "schema: 1\ndefault: {{ image: \"/a.png\", fit: \"{mode}\" }}"
+                ))
+                .is_ok()
+            );
         }
         let old = parse("schema: 1\ndefault: { image: \"/a.png\" }").unwrap();
         assert!(!old.to_conf_text().unwrap().contains("fit"));
@@ -510,10 +598,26 @@ mod tests {
     #[test]
     fn large_slide_lists_are_bounded_but_do_not_count_as_resident_images() {
         let mut doc = Config::default().document();
-        doc.default = Some(Fill { slideshow: Some(Slideshow { folder: None,
-            images: Some((0..MAX_SLIDES).map(|i| format!("/w/{i}.png")).collect()), interval_s: 5, shuffle: false }), ..Fill::default() });
+        doc.default = Some(Fill {
+            slideshow: Some(Slideshow {
+                folder: None,
+                images: Some((0..MAX_SLIDES).map(|i| format!("/w/{i}.png")).collect()),
+                interval_s: 5,
+                shuffle: false,
+            }),
+            ..Fill::default()
+        });
         assert!(Config::from_document(doc.clone()).is_ok());
-        doc.default.as_mut().unwrap().slideshow.as_mut().unwrap().images.as_mut().unwrap().push("/extra.png".into());
+        doc.default
+            .as_mut()
+            .unwrap()
+            .slideshow
+            .as_mut()
+            .unwrap()
+            .images
+            .as_mut()
+            .unwrap()
+            .push("/extra.png".into());
         assert!(Config::from_document(doc).is_err());
     }
 }

@@ -277,7 +277,8 @@ fn current_texture(
     {
         if slot.fit != fit {
             // The wrap mode is fixed at upload, so a changed fit uploads once more.
-            slot.texture.set(upload(&resident.image), texture_options(fit));
+            slot.texture
+                .set(upload(&resident.image), texture_options(fit));
             slot.fit = fit;
         }
         return Ok(slot.texture.clone());
@@ -414,14 +415,19 @@ impl Backdrop {
         let theme = ui.visuals().panel_fill;
         let name = surface.output.as_deref();
         let config = view.config.for_output(name);
-        let outgoing = view.previous_config.as_ref().map(|old| old.for_output(name));
+        let outgoing = view
+            .previous_config
+            .as_ref()
+            .map(|old| old.for_output(name));
         let mut slots = take_slots(&ctx);
         // A fade runs only where this output's image changes path, and only
         // until its time is up; once it has run out the outgoing texture goes.
         let fade = match (view.fade_started, config, outgoing) {
-            (Some(start), Wallpaper::Image { path, .. }, Some(Wallpaper::Image { path: old, .. }))
-                if old != path =>
-            {
+            (
+                Some(start),
+                Wallpaper::Image { path, .. },
+                Some(Wallpaper::Image { path: old, .. }),
+            ) if old != path => {
                 let elapsed = Instant::now().saturating_duration_since(start);
                 Some((elapsed.as_secs_f32() / FADE.as_secs_f32()).min(1.0))
             }
@@ -448,7 +454,11 @@ impl Backdrop {
                 paint(ui, rect, theme);
                 ("fallback", Some("slideshow was not resolved".to_owned()))
             }
-            Wallpaper::Image { path, fallback, fit } => {
+            Wallpaper::Image {
+                path,
+                fallback,
+                fit,
+            } => {
                 // Beneath every image: the fallback, else the theme.
                 let base = fallback.map_or(theme, colour);
                 let mut error = None;
@@ -595,7 +605,10 @@ mod tests {
     fn view(revision: u64, path: &str, serial: u64) -> View {
         View {
             revision,
-            config: Config { default: wallpaper_image(path), outputs: BTreeMap::new() },
+            config: Config {
+                default: wallpaper_image(path),
+                outputs: BTreeMap::new(),
+            },
             images: BTreeMap::from([(PathBuf::from(path), resident(serial))]),
             ..Default::default()
         }
@@ -612,7 +625,10 @@ mod tests {
     ) -> View {
         View {
             previous: BTreeMap::from([(PathBuf::from(old_path), resident(old_serial))]),
-            previous_config: Some(Config { default: wallpaper_image(old_path), outputs: BTreeMap::new() }),
+            previous_config: Some(Config {
+                default: wallpaper_image(old_path),
+                outputs: BTreeMap::new(),
+            }),
             fade_started: Some(started),
             ..view(revision, path, serial)
         }
@@ -679,7 +695,10 @@ mod tests {
         assert_eq!(uploads(&mid), 1, "the new image uploads once");
         assert_eq!(program.budget.used(), 128, "two images while the fade runs");
         // The time is up: the outgoing image goes, even without controller cleanup.
-        publish(&program, fade(2, "b.png", 2, "a.png", 1, Instant::now() - FADE));
+        publish(
+            &program,
+            fade(2, "b.png", 2, "a.png", 1, Instant::now() - FADE),
+        );
         let done = pass(&ctx, &mut program);
         assert_eq!(uploads(&done), 0, "a finished fade uploads nothing");
         assert_eq!(program.budget.used(), 64, "the completed fade frees A");
@@ -719,7 +738,10 @@ mod tests {
         pass(&ctx, &mut program);
         assert_eq!(program.budget.used(), 64);
         let mut solid = view(2, "a.png", 1);
-        solid.config = Config { default: Wallpaper::Colour(Rgb([0, 0, 0])), outputs: BTreeMap::new() };
+        solid.config = Config {
+            default: Wallpaper::Colour(Rgb([0, 0, 0])),
+            outputs: BTreeMap::new(),
+        };
         publish(&program, solid);
         pass(&ctx, &mut program);
         assert_eq!(program.budget.used(), 0, "a solid colour holds no texture");

@@ -33,16 +33,37 @@ pub struct Schedule {
 }
 
 impl Schedule {
-    pub fn new(files: Vec<PathBuf>, interval_s: u64, shuffle: bool, seed: u64, now: Duration) -> Result<Self, String> {
+    pub fn new(
+        files: Vec<PathBuf>,
+        interval_s: u64,
+        shuffle: bool,
+        seed: u64,
+        now: Duration,
+    ) -> Result<Self, String> {
         if files.is_empty() || files.len() > crate::schema::MAX_SLIDES || interval_s < 5 {
-            return Err("slideshow needs a bounded non-empty source and interval of at least 5 seconds".into());
+            return Err(
+                "slideshow needs a bounded non-empty source and interval of at least 5 seconds"
+                    .into(),
+            );
         }
         let mut unique = BTreeSet::new();
-        let files: Vec<_> = files.into_iter().filter(|p| unique.insert(p.clone())).collect();
-        let mut schedule = Self { order: (0..files.len()).collect(), files,
-            current_index: 0, interval_s, shuffle, position: 0,
-            random: if seed == 0 { 0x9e3779b97f4a7c15 } else { seed }, next_due: None };
-        if shuffle { schedule.permute(None); }
+        let files: Vec<_> = files
+            .into_iter()
+            .filter(|p| unique.insert(p.clone()))
+            .collect();
+        let mut schedule = Self {
+            order: (0..files.len()).collect(),
+            files,
+            current_index: 0,
+            interval_s,
+            shuffle,
+            position: 0,
+            random: if seed == 0 { 0x9e3779b97f4a7c15 } else { seed },
+            next_due: None,
+        };
+        if shuffle {
+            schedule.permute(None);
+        }
         schedule.current_index = schedule.order[0];
         schedule.defer(now);
         Ok(schedule)
@@ -60,18 +81,28 @@ impl Schedule {
             let j = (self.random() % (i as u64 + 1)) as usize;
             self.order.swap(i, j);
         }
-        if self.order.len() > 1 && last == Some(self.order[0]) { self.order.swap(0, 1); }
+        if self.order.len() > 1 && last == Some(self.order[0]) {
+            self.order.swap(0, 1);
+        }
     }
 
-    pub fn current(&self) -> &Path { &self.files[self.current_index] }
-    pub fn deadline(&self) -> Option<Duration> { self.next_due }
-    pub fn due(&self, now: Duration) -> bool { self.next_due.is_some_and(|t| t <= now) }
+    pub fn current(&self) -> &Path {
+        &self.files[self.current_index]
+    }
+    pub fn deadline(&self) -> Option<Duration> {
+        self.next_due
+    }
+    pub fn due(&self, now: Duration) -> bool {
+        self.next_due.is_some_and(|t| t <= now)
+    }
 
     pub fn advance(&mut self, now: Duration) {
         self.position += 1;
         if self.position == self.order.len() {
             self.position = 0;
-            if self.shuffle { self.permute(Some(self.current_index)); }
+            if self.shuffle {
+                self.permute(Some(self.current_index));
+            }
         }
         self.current_index = self.order[self.position];
         self.defer(now);
@@ -79,7 +110,11 @@ impl Schedule {
 
     /// Schedule from completion or failure, rather than catching up old ticks.
     pub fn defer(&mut self, now: Duration) {
-        self.next_due = if self.files.len() > 1 { now.checked_add(Duration::from_secs(self.interval_s)) } else { None };
+        self.next_due = if self.files.len() > 1 {
+            now.checked_add(Duration::from_secs(self.interval_s))
+        } else {
+            None
+        };
     }
 }
 
@@ -165,11 +200,18 @@ impl Engine {
 
     /// Stage the worker-selected paths, or relative discovery markers for
     /// slideshow sources. The public configuration keeps its source declarations.
-    pub fn stage_images(&mut self, config: Config, paths: Vec<PathBuf>, resident: impl Fn(&Path) -> bool) -> Staged {
+    pub fn stage_images(
+        &mut self,
+        config: Config,
+        paths: Vec<PathBuf>,
+        resident: impl Fn(&Path) -> bool,
+    ) -> Staged {
         self.requested += 1;
         let revision = self.requested;
         let superseded = self.pending.take().map(|p| p.revision);
-        let jobs: Vec<PathBuf> = paths.into_iter().collect::<BTreeSet<_>>()
+        let jobs: Vec<PathBuf> = paths
+            .into_iter()
+            .collect::<BTreeSet<_>>()
             .into_iter()
             .filter(|path| !resident(path))
             .collect();
@@ -379,7 +421,14 @@ mod tests {
     }
 
     fn schedule(shuffle: bool) -> Schedule {
-        Schedule::new(["/a.png", "/b.png", "/c.png"].map(PathBuf::from).to_vec(), 5, shuffle, 42, Duration::ZERO).unwrap()
+        Schedule::new(
+            ["/a.png", "/b.png", "/c.png"].map(PathBuf::from).to_vec(),
+            5,
+            shuffle,
+            42,
+            Duration::ZERO,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -427,7 +476,14 @@ mod tests {
 
     #[test]
     fn one_image_has_no_timer_but_can_be_refreshed_manually() {
-        let mut s = Schedule::new(vec!["/a.png".into(), "/a.png".into()], 5, true, 0, Duration::ZERO).unwrap();
+        let mut s = Schedule::new(
+            vec!["/a.png".into(), "/a.png".into()],
+            5,
+            true,
+            0,
+            Duration::ZERO,
+        )
+        .unwrap();
         assert_eq!(s.deadline(), None);
         assert!(!s.due(Duration::MAX));
         s.advance(Duration::from_secs(100));

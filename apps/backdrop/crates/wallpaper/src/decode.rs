@@ -154,21 +154,33 @@ pub fn list_folder(path: &Path) -> Result<Vec<PathBuf>, String> {
     let mut paths = Vec::new();
     for (i, entry) in entries.enumerate() {
         if i >= crate::schema::MAX_SLIDES {
-            return Err(format!("{}: more than {} directory entries", path.display(), crate::schema::MAX_SLIDES));
+            return Err(format!(
+                "{}: more than {} directory entries",
+                path.display(),
+                crate::schema::MAX_SLIDES
+            ));
         }
         let entry = entry.map_err(|e| format!("{}: {e}", path.display()))?;
-        if !entry.file_type().map_err(|e| format!("{}: {e}", entry.path().display()))?.is_file() {
+        if !entry
+            .file_type()
+            .map_err(|e| format!("{}: {e}", entry.path().display()))?
+            .is_file()
+        {
             continue;
         }
         let file = entry.path();
-        let supported = file.extension().and_then(|x| x.to_str()).is_some_and(|ext|
-            matches!(ext.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg"));
+        let supported = file
+            .extension()
+            .and_then(|x| x.to_str())
+            .is_some_and(|ext| matches!(ext.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg"));
         if supported {
             paths.push(file);
         }
     }
     paths.sort();
-    if paths.is_empty() { return Err(format!("{}: no PNG or JPEG images", path.display())); }
+    if paths.is_empty() {
+        return Err(format!("{}: no PNG or JPEG images", path.display()));
+    }
     Ok(paths)
 }
 
@@ -323,12 +335,17 @@ mod tests {
     #[test]
     fn folder_discovery_is_sorted_non_recursive_and_skips_symlinks() {
         let dir = dir();
-        for name in ["b.JPG", "a.png", "ignored.txt"] { std::fs::write(dir.path().join(name), b"fixture").unwrap(); }
+        for name in ["b.JPG", "a.png", "ignored.txt"] {
+            std::fs::write(dir.path().join(name), b"fixture").unwrap();
+        }
         let nested = dir.path().join("nested");
         std::fs::create_dir(&nested).unwrap();
         std::fs::write(nested.join("c.png"), b"fixture").unwrap();
         std::os::unix::fs::symlink(dir.path().join("a.png"), dir.path().join("link.png")).unwrap();
-        assert_eq!(list_folder(dir.path()).unwrap(), vec![dir.path().join("a.png"), dir.path().join("b.JPG")]);
+        assert_eq!(
+            list_folder(dir.path()).unwrap(),
+            vec![dir.path().join("a.png"), dir.path().join("b.JPG")]
+        );
     }
 
     #[test]
@@ -336,7 +353,13 @@ mod tests {
         let dir = dir();
         assert!(list_folder(dir.path()).is_err());
         assert!(list_folder(&dir.path().join("missing")).is_err());
-        for i in 0..=crate::schema::MAX_SLIDES { std::fs::write(dir.path().join(format!("{i}.txt")), b"").unwrap(); }
-        assert!(list_folder(dir.path()).unwrap_err().contains("directory entries"));
+        for i in 0..=crate::schema::MAX_SLIDES {
+            std::fs::write(dir.path().join(format!("{i}.txt")), b"").unwrap();
+        }
+        assert!(
+            list_folder(dir.path())
+                .unwrap_err()
+                .contains("directory entries")
+        );
     }
 }

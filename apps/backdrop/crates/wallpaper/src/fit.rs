@@ -26,32 +26,72 @@ pub struct Placement {
     pub uv: Uv,
 }
 
-pub fn placement(image: [u32; 2], surface: [f32; 2], pixels_per_point: f32, mode: Fit) -> Placement {
-    let whole = Placement { min: [0.0; 2], max: surface, uv: FULL };
+pub fn placement(
+    image: [u32; 2],
+    surface: [f32; 2],
+    pixels_per_point: f32,
+    mode: Fit,
+) -> Placement {
+    let whole = Placement {
+        min: [0.0; 2],
+        max: surface,
+        uv: FULL,
+    };
     if image.contains(&0)
         || surface.iter().any(|v| !v.is_finite() || *v <= 0.0)
         || !pixels_per_point.is_finite()
         || pixels_per_point <= 0.0
     {
-        return Placement { min: [0.0; 2], max: [0.0; 2], uv: FULL };
+        return Placement {
+            min: [0.0; 2],
+            max: [0.0; 2],
+            uv: FULL,
+        };
     }
-    let native = [image[0] as f32 / pixels_per_point, image[1] as f32 / pixels_per_point];
+    let native = [
+        image[0] as f32 / pixels_per_point,
+        image[1] as f32 / pixels_per_point,
+    ];
     match mode {
-        Fit::Fill => Placement { uv: centre_crop(image, surface), ..whole },
+        Fit::Fill => Placement {
+            uv: centre_crop(image, surface),
+            ..whole
+        },
         Fit::Stretch => whole,
-        Fit::Tile => Placement { uv: Uv { min: [0.0; 2], max: [surface[0] / native[0], surface[1] / native[1]] }, ..whole },
+        Fit::Tile => Placement {
+            uv: Uv {
+                min: [0.0; 2],
+                max: [surface[0] / native[0], surface[1] / native[1]],
+            },
+            ..whole
+        },
         Fit::Fit | Fit::Centre => {
             let factor = if mode == Fit::Fit {
                 (surface[0] / native[0]).min(surface[1] / native[1])
-            } else { 1.0 };
+            } else {
+                1.0
+            };
             let size = [native[0] * factor, native[1] * factor];
             let origin = [(surface[0] - size[0]) / 2.0, (surface[1] - size[1]) / 2.0];
             let min = [origin[0].max(0.0), origin[1].max(0.0)];
-            let max = [(origin[0] + size[0]).min(surface[0]), (origin[1] + size[1]).min(surface[1])];
-            Placement { min, max, uv: Uv {
-                min: [(min[0] - origin[0]) / size[0], (min[1] - origin[1]) / size[1]],
-                max: [(max[0] - origin[0]) / size[0], (max[1] - origin[1]) / size[1]],
-            } }
+            let max = [
+                (origin[0] + size[0]).min(surface[0]),
+                (origin[1] + size[1]).min(surface[1]),
+            ];
+            Placement {
+                min,
+                max,
+                uv: Uv {
+                    min: [
+                        (min[0] - origin[0]) / size[0],
+                        (min[1] - origin[1]) / size[1],
+                    ],
+                    max: [
+                        (max[0] - origin[0]) / size[0],
+                        (max[1] - origin[1]) / size[1],
+                    ],
+                },
+            }
         }
     }
 }
@@ -122,9 +162,15 @@ mod tests {
     #[test]
     fn fit_letterboxes_wide_and_tall_images() {
         let wide = placement([200, 100], [100.0, 100.0], 1.0, Fit::Fit);
-        assert_eq!((wide.min, wide.max, wide.uv), ([0.0, 25.0], [100.0, 75.0], FULL));
+        assert_eq!(
+            (wide.min, wide.max, wide.uv),
+            ([0.0, 25.0], [100.0, 75.0], FULL)
+        );
         let tall = placement([100, 200], [100.0, 100.0], 2.5, Fit::Fit);
-        assert_eq!((tall.min, tall.max, tall.uv), ([25.0, 0.0], [75.0, 100.0], FULL));
+        assert_eq!(
+            (tall.min, tall.max, tall.uv),
+            ([25.0, 0.0], [75.0, 100.0], FULL)
+        );
     }
 
     #[test]
@@ -133,7 +179,13 @@ mod tests {
         assert_eq!((small.min, small.max), ([40.0, 45.0], [60.0, 55.0]));
         let large = placement([400, 200], [100.0, 100.0], 2.0, Fit::Centre);
         assert_eq!((large.min, large.max), ([0.0, 0.0], [100.0, 100.0]));
-        assert_eq!(large.uv, Uv { min: [0.25, 0.0], max: [0.75, 1.0] });
+        assert_eq!(
+            large.uv,
+            Uv {
+                min: [0.25, 0.0],
+                max: [0.75, 1.0]
+            }
+        );
     }
 
     #[test]

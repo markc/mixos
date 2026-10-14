@@ -280,7 +280,10 @@ mod tests {
         let with_image = args(&["--image", "/a.png", "--fit", "fit"]).unwrap();
         assert!(matches!(
             cli_default(&with_image).unwrap(),
-            Some(Wallpaper::Image { fit: wallpaper::fit::Fit::Fit, .. })
+            Some(Wallpaper::Image {
+                fit: wallpaper::fit::Fit::Fit,
+                ..
+            })
         ));
     }
 
