@@ -137,7 +137,8 @@ impl Op {
             Op::List => "listing",
             Op::Check => "checking",
             Op::Install(_) => "installing",
-            Op::Update(None) | Op::UpdateGroup(_) => "updating-all",
+            Op::Update(None) => "updating-all",
+            Op::UpdateGroup(_) => "updating-group",
             Op::Update(Some(_)) => "updating",
             Op::Rollback(_) => "rolling-back",
             Op::Remove(_) => "removing",
@@ -609,11 +610,15 @@ impl Engine {
             Panel::Applications => self.ui.applications_expanded = true,
         }
         if self.ui.selected.is_some() && self.selected_row().is_none() {
-            self.ui.selected = None;
-            self.notes = None;
-            self.notes_error = None;
-            self.notes_job = None;
+            self.clear_selection();
         }
+    }
+
+    fn clear_selection(&mut self) {
+        self.ui.selected = None;
+        self.notes = None;
+        self.notes_error = None;
+        self.notes_job = None;
     }
 
     pub fn toggle_appearance(&mut self) {
@@ -798,7 +803,9 @@ impl Engine {
 
     /// What an operation acted on, for the status line.
     fn subject(&self, op: &Op) -> String {
-        if op.app().is_empty() {
+        if let Op::UpdateGroup(apps) = op {
+            apps.join(", ")
+        } else if op.app().is_empty() {
             self.label("all-apps", &[])
         } else {
             op.app().to_owned()
@@ -827,6 +834,7 @@ impl Engine {
             Err(Failure::Missing) => {
                 self.releases = Availability::Missing;
                 self.apps.clear();
+                self.clear_selection();
                 self.status = self.label("releases-missing", &[]);
                 self.failed = true;
                 return;
@@ -864,14 +872,8 @@ impl Engine {
                         self.status = self.label("settled", &[("app", &app)]);
                         self.failed = false;
                     }
-                    if self
-                        .ui
-                        .selected
-                        .as_ref()
-                        .is_some_and(|s| !self.apps.iter().any(|r| &r.app == s))
-                    {
-                        self.ui.selected = None;
-                        self.notes = None;
+                    if self.ui.selected.is_some() && self.selected_row().is_none() {
+                        self.clear_selection();
                     }
                     if !quiet {
                         let count = self.apps.len().to_string();
@@ -1817,5 +1819,22 @@ mod tests {
                 |x| matches!(x, Effect::Reply {id:2,rc:10,body} if body["error_code"] == "BUSY")
             )
         );
+    }
+
+    #[test]
+    fn catalogue_regrouping_clears_selection_and_pending_notes() {
+        let mut e = listed();
+        e.select("demo");
+        let notes_ticket = releases(&e.take_effects())[0].0;
+        e.notes_error = Some("old failure".into());
+        e.refresh();
+        let list_ticket = releases(&e.take_effects())[0].0;
+        let mut changed = rows();
+        changed[0]["category"] = json!("creative");
+        e.released(list_ticket, ok(changed));
+        assert!(e.ui.selected.is_none() && e.notes_error.is_none() && !e.busy());
+        e.released(notes_ticket, ok(json!({"app":"demo","tag":"v2","notes":"stale"})));
+        assert!(e.notes.is_none());
+        assert_eq!(e.subject(&Op::UpdateGroup(vec!["a".into(), "b".into()])), "a, b");
     }
 }
