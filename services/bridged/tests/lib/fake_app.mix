@@ -1,0 +1,200 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- fake_app: a stand-in external application for the bridged tests. It offers
+-- a line-delimited JSON control channel on loopback TCP, in Mix (tcp_listen),
+-- with the behaviour the bridge relies on and the failures it must survive.
+--
+-- Run: mix fake_app.mix --auth token|key|none --port-file FILE --parent PID
+--        [--token-file FILE] [--port N]
+--   Listens on 127.0.0.1:N (default 0, an ephemeral port), then writes the
+--   port to --port-file. Exits when --parent is gone, or after 10 minutes.
+--
+-- Protocol: with --auth token the first line must be
+-- {"id":"auth","method":"auth","params":{"token":T}} with T the token file's
+-- content, or the connection is refused and closed. With --auth key the line
+-- is the same with params.key, and K is the key file's content read at each
+-- auth line (so a key written after start, or rotated, is what counts); a
+-- missing or unreadable key file refuses every auth. --auth key does not read
+-- the file at start. With --auth none an auth
+-- line is refused and the connection closed. A line that is not JSON gets an
+-- error with no id and the connection is closed. Methods:
+--   engine.commands  the command list
+--   engine.execute   {command, params}: echoes them; "no.such.command" fails
+--   ui.inspect       a one-window tree
+--   ui.screenshot    {path?, focus?}: writes FAKESHOT to path when given
+--   echo             the params back
+--   fail             ok:false "fake failure text"
+--   slow             replies after 3 s (other connections keep being served)
+--   drop             closes the connection without a reply
+--   leak             ok:false with the secret (token or key) in the error text (lower and upper case)
+--   leak_result      ok:true with the secret in the result
+--   nook             a reply with the right id and no ok field
+--   big_reply        {size}: ok with a result string of size bytes, in one write
+--   stall            replies ok, then never reads this connection again
+--   trickle          replies ok, then reads this connection 1 KiB at a time,
+--                    discarding it (a slow reader)
+-- Single-threaded: one loop polls the listener and every connection.
+
+fn opt($name, $default)
+  $a = args()
+  $i = index_of($a, $name)
+  if $i < 0 or $i + 1 >= len($a) then return $default end
+  return $a[$i + 1]
+end
+
+fn send_line($c, $msg)
+  tcp_send($c.h, json_encode($msg) .. "\n")
+end
+
+-- One request after auth. Returns the connection, or nil to close it.
+fn answer($c, $msg)
+  $m = $msg.method
+  $id = $msg.id
+  $p = $msg.params ?? {}
+  if type($p) != "map" then $p = {} end
+  if $m == "engine.commands" then
+    send_line($c, {id: $id, ok: true, result: ["engine.commands", "engine.execute", "ui.inspect", "ui.screenshot"]})
+  elif $m == "engine.execute" then
+    if $p.command == "no.such.command" then
+      send_line($c, {id: $id, ok: false, error: "unknown command: no.such.command"})
+    else
+      send_line($c, {id: $id, ok: true, result: {echo: $p}})
+    end
+  elif $m == "ui.inspect" then
+    send_line($c, {id: $id, ok: true, result: {windows: [{title: "fakeapp"}]}})
+  elif $m == "ui.screenshot" then
+    $bytes = 0
+    if type($p.path) == "string" then
+      write_file($p.path, "FAKESHOT")
+      $bytes = 8
+    end
+    send_line($c, {id: $id, ok: true, result: {path: $p.path, bytes: $bytes, focus: $p.focus}})
+  elif $m == "echo" then
+    send_line($c, {id: $id, ok: true, result: $p})
+  elif $m == "fail" then
+    send_line($c, {id: $id, ok: false, error: "fake failure text"})
+  elif $m == "slow" then
+    return merge($c, {slow_id: $id, due: monotonic() + 3})
+  elif $m == "drop" then
+    return nil
+  elif $m == "leak" then
+    send_line($c, {id: $id, ok: false, error: "bad request from " .. to_string($c.secret) .. " / " .. upper(to_string($c.secret))})
+  elif $m == "leak_result" then
+    send_line($c, {id: $id, ok: true, result: {seen: $c.secret}})
+  elif $m == "big_reply" then
+    send_line($c, {id: $id, ok: true, result: repeat("y", to_number($p.size ?? 0) ?? 0)})
+  elif $m == "nook" then
+    send_line($c, {id: $id, result: "no ok here"})
+  elif $m == "stall" or $m == "trickle" then
+    send_line($c, {id: $id, ok: true, result: $m})
+    return merge($c, {reader: $m})
+  else
+    send_line($c, {id: $id, ok: false, error: "unknown method"})
+  end
+  return $c
+end
+
+-- The secret an auth line must carry now: the token (read at start), or for
+-- key mode the key file's content as it is at this moment; nil if unreadable.
+fn expected_secret($mode, $token, $token_file)
+  if $mode == "token" then return $token end
+  if $mode != "key" then return nil end
+  $v = nil
+  try
+    $v = trim(read_file($token_file))
+  catch $m
+    $v = nil
+  end
+  return $v
+end
+
+-- One line from a connection. Returns the connection, or nil to close it.
+fn handle_line($c, $line, $mode, $token, $token_file)
+  $msg = nil
+  try
+    $msg = json_parse($line)
+  catch $m
+    $msg = nil
+  end
+  if type($msg) != "map" then
+    send_line($c, {ok: false, error: "not a JSON object, closing the connection"})
+    return nil
+  end
+  if $mode == "none" then
+    if $msg.method == "auth" then
+      send_line($c, {id: $msg.id, ok: false, error: "unknown method `auth`, closing the connection"})
+      return nil
+    end
+    return answer($c, $msg)
+  end
+  if not $c.authed then
+    $given = nil
+    if type($msg.params) == "map" then
+      $given = if $mode == "key" then $msg.params.key else $msg.params.token end
+    end
+    $want = expected_secret($mode, $token, $token_file)
+    if $msg.method != "auth" or $want == nil or $given != $want then
+      send_line($c, {id: "auth", ok: false, error: "bad " .. (if $mode == "key" then "key" else "token" end)})
+      return nil
+    end
+    send_line($c, {id: "auth", ok: true, result: {}})
+    return merge($c, {authed: true, secret: $given})
+  end
+  return answer($c, $msg)
+end
+
+-- Advance one connection without blocking. Returns it, or nil once closed.
+fn advance($c, $mode, $token, $token_file)
+  $next = $c
+  try
+    if $c.reader == "stall" then
+      -- Never read again.
+      $next = $c
+    elif $c.reader == "trickle" then
+      $chunk = tcp_recv($c.h, {timeout: 0.002, max: 1024})
+    elif $c.due != nil then
+      -- Busy with a slow request: answer it when due, read nothing meanwhile.
+      if monotonic() >= $c.due then
+        send_line($c, {id: $c.slow_id, ok: true, result: "late"})
+        $next = merge($c, {due: nil, slow_id: nil})
+      end
+    else
+      $line = tcp_recv_line($c.h, {timeout: 0.002, max: 1048576})
+      if $line != nil then $next = handle_line($c, $line, $mode, $token, $token_file) end
+    end
+  catch $m
+    $next = nil
+  end
+  if $next == nil then tcp_close($c.h) end
+  return $next
+end
+
+$mode = opt("--auth", "token")
+$port_file = opt("--port-file", "")
+$parent = to_number(opt("--parent", "0")) ?? 0
+$token_file = opt("--token-file", "")
+$token = nil
+if $mode == "token" then $token = trim(read_file($token_file)) end
+if $port_file == "" or $parent <= 0 or ($mode != "token" and $mode != "key" and $mode != "none") then
+  eprint("usage: mix fake_app.mix --auth token|key|none --port-file FILE --parent PID [--token-file FILE] [--port N]")
+  exit(2)
+end
+
+$l = tcp_listen("127.0.0.1", to_number(opt("--port", "0")) ?? 0)
+$tmp = $port_file .. ".tmp"
+write_file($tmp, to_string(tcp_local_addr($l).port))
+rename($tmp, $port_file)
+
+$conns = []
+$end = monotonic() + 600
+while monotonic() < $end and process_alive($parent)
+  $wait = if len($conns) == 0 then 0.05 else 0.002 end
+  $h = tcp_accept($l, {timeout: $wait})
+  if $h != nil then push($conns, {h: $h, authed: false, due: nil, slow_id: nil, reader: nil}) end
+  $kept = []
+  for each $c in $conns
+    $n = advance($c, $mode, $token, $token_file)
+    if $n != nil then push($kept, $n) end
+  end
+  $conns = $kept
+end

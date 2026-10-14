@@ -130,6 +130,20 @@ pub struct AnalyzerConfig {
     pub agent: bool,
 }
 
+/// One `on <command>` handler declaration, taken from the parsed AST.
+///
+/// Structural evidence only: a declaration is recorded wherever the parser
+/// placed the `on` statement, but nothing here proves it runs or is
+/// reachable.
+#[derive(Debug, Clone)]
+pub struct HandlerDeclaration {
+    pub command: String,
+    /// The file as the caller named it; `None` when the caller gave no name.
+    pub file: Option<String>,
+    /// 1-based line of the `on` statement.
+    pub line: usize,
+}
+
 /// The result of one file's analysis.
 #[derive(Debug, Clone, Default)]
 pub struct Analysis {
@@ -138,6 +152,9 @@ pub struct Analysis {
     /// (plus "process" for shell constructs and "bus" for messaging) —
     /// reported as data, not warnings (D3).
     pub capabilities: Vec<&'static str>,
+    /// Every `on` declaration in the file, in walker order, duplicates kept.
+    /// Filled by [`analyze`] only; remote `ssh_mix` bodies are not included.
+    pub handlers: Vec<HandlerDeclaration>,
 }
 
 /// Runtime-injected variable names a lint must treat as declared.
@@ -180,6 +197,28 @@ fn collect_function_defs(stmts: &[Stmt], out: &mut HashSet<String>) {
 fn walk_stmts(stmts: &[Stmt], visit: &mut dyn FnMut(&Stmt)) {
     for stmt in stmts {
         visit(stmt);
+        // A chain or pipe is a wrapper whose operands are statements of their
+        // own. `stmt_bodies` yields only the operands' BODIES, so an operand
+        // that is itself a statement (an `on` used as `on … end && …` or
+        // `on … end | cat`) was never visited. Walk each operand as a
+        // statement, then stop: the wrapper has no expression of its own (a
+        // pipe's pipeline is data), and `walk_stmt_exprs` would revisit the
+        // operands' expressions and double-visit lambda bodies.
+        match &stmt.kind {
+            StmtKind::Chain { left, op: _, right } => {
+                walk_stmts(std::slice::from_ref(left.as_ref()), visit);
+                walk_stmts(std::slice::from_ref(right.as_ref()), visit);
+                continue;
+            }
+            StmtKind::PipeToExternal {
+                stmt: inner,
+                command: _,
+            } => {
+                walk_stmts(std::slice::from_ref(inner.as_ref()), visit);
+                continue;
+            }
+            _ => {}
+        }
         for body in stmt_bodies(&stmt.kind) {
             walk_stmts(body, visit);
         }
@@ -390,7 +429,20 @@ fn has_dynamic_include(stmts: &[Stmt]) -> (bool, Option<usize>) {
 
 /// The whole-file analyzer entry point.
 pub fn analyze(stmts: &[Stmt], file: Option<&str>, cfg: &AnalyzerConfig) -> Analysis {
-    analyze_at(stmts, file, cfg, false, false)
+    let mut analysis = analyze_at(stmts, file, cfg, false, false);
+    // Handler declarations come from this file's own AST only. The remote
+    // `ssh_mix` bodies analysed inside `analyze_at` are literal payloads, so
+    // they never reach this walk.
+    walk_stmts(stmts, &mut |stmt| {
+        if let StmtKind::On { command, .. } = &stmt.kind {
+            analysis.handlers.push(HandlerDeclaration {
+                command: command.clone(),
+                file: file.map(str::to_owned),
+                line: stmt.line,
+            });
+        }
+    });
+    analysis
 }
 
 /// [`analyze`], told whether `stmts` is itself an `ssh_mix` remote body.

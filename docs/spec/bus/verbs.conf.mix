@@ -23,7 +23,7 @@
 -- HELP and app.describe are protocol verbs every service answers; they are
 -- not registered per component.
 {
-  schema: 2,
+  schema: 3,
   verbs: [
     {name:"settings.describe", owner:"settingsd", version:"0.1.0", status:"accepted", class:"query"},
     {name:"settings.get", owner:"settingsd", version:"0.4.0", status:"accepted", class:"query"},
@@ -64,6 +64,9 @@
     {name:"busviewer.ui.capture", owner:"busviewer", version:"0.1.1", status:"accepted", class:"query"},
     {name:"busviewer.window", owner:"busviewer", version:"0.1.1", status:"accepted", class:"intent"},
     {name:"busviewer.window.state", owner:"busviewer", version:"0.1.1", status:"accepted", class:"query"},
+    {name:"backdrop.ping", owner:"backdrop", version:"0.1.1", status:"accepted", class:"query"},
+    {name:"backdrop.state", owner:"backdrop", version:"0.1.1", status:"accepted", class:"query"},
+    {name:"backdrop.set", owner:"backdrop", version:"0.1.1", status:"accepted", class:"intent"},
     {name:"releases.status", owner:"releasesd", version:"0.1.0", status:"accepted", class:"query"},
     {name:"releases.list", owner:"releasesd", version:"0.1.0", status:"accepted", class:"query"},
     {name:"releases.check", owner:"releasesd", version:"0.1.0", status:"accepted", class:"intent"},
@@ -269,5 +272,13 @@
     {name:"net.wg.apply", owner:"hostd", version:"0.1.0", status:"draft", class:"intent"},
     {name:"desk.restart", owner:"hostd", version:"0.1.0", status:"draft", class:"intent"},
     {name:"desk.stop", owner:"hostd", version:"0.1.0", status:"draft", class:"intent"}
+  ],
+  families: [
+    {pattern:"<app>.call", owner:"bridged", members:"instances", version:"0.1.0", status:"accepted", class:"intent"},
+    {pattern:"<app>.commands", owner:"bridged", members:"instances", version:"0.1.0", status:"accepted", class:"query"},
+    {pattern:"<app>.execute", owner:"bridged", members:"instances", version:"0.1.0", status:"accepted", class:"intent"},
+    {pattern:"<app>.inspect", owner:"bridged", members:"instances", version:"0.1.0", status:"accepted", class:"query"},
+    {pattern:"<app>.screenshot", owner:"bridged", members:"instances", version:"0.1.0", status:"accepted", class:"intent"},
+    {pattern:"<app>.status", owner:"bridged", members:"instances", version:"0.1.0", status:"accepted", class:"query"}
   ]
 }

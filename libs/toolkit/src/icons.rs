@@ -20,8 +20,9 @@ use design::ResolvedMetricKind;
 use egui::{Color32, Image, ImageSource, Vec2};
 use std::borrow::Cow;
 
-/// Lucide's own stroke width, used when the design authors none.
-pub const DEFAULT_STROKE: f32 = 2.0;
+/// The stroke used when the design authors none: the shipped baseline, which
+/// matches the `icon.stroke_width` token (1.5 on the 24-unit grid).
+pub const DEFAULT_STROKE: f32 = 1.5;
 
 /// The stroke colour the SVG is rasterised in before tinting. White, so
 /// multiplying by the tint yields the tint exactly.

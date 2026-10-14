@@ -76,3 +76,28 @@ enablement. The window is drivable like every MixOS app
 
 For scripted work, call the services directly (`releases.*`,
 `settings.*`): Prefs is their window, not a second implementation.
+## Wallpaper
+
+In **Appearance → Wallpaper**, choose the default or an output, then Theme,
+Colour or Image. Colour accepts a picker or `#RRGGBB`. Browse opens the native
+image browser at the installed wallpaper folder, or Pictures in your home
+folder. It lists PNG/JPEG files and folders without blocking the window.
+Changes stay in Prefs until **Apply wallpaper**. **Revert wallpaper** drops
+them; **Refresh wallpaper** reads the current state again.
+
+An output's **Use default** removes just that override. Editing the default
+preserves every output override. Images currently crop to fill; fit controls
+and slideshows will follow when backdrop supports them.
+
+Backdrop must be running on the same session Bus. A refusal shows its reason,
+keeps the draft and leaves the last good wallpaper in place. Prefs checks for
+intervening changes before sending the whole document; conflicts require
+Revert and a fresh edit. This check is best effort: backdrop does not yet
+provide an atomic compare-and-set operation. A lost reply is checked by a
+state read, never automatically resent.
+
+Wallpaper and browser state are included in `prefs.info`, wallpaper state in
+`prefs.appearance`. Commands `wallpaper.apply`, `wallpaper.revert`,
+`wallpaper.refresh` and `wallpaper.browse` are available through
+`prefs.execute`; the normal `prefs.ui.*` verbs drive the controls and browser.
+

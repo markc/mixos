@@ -1,0 +1,459 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- bridge_core_test: the bridged core offline, no Bus. Config and token rules,
+-- the serve-name guard, the config contract against its spec fixture, and the
+-- line-JSON client against stand-in apps (tests/lib/fake_app.mix on
+-- tcp_listen): auth, pass-through, app errors, timeout, backoff, reconnect,
+-- a mid-request drop, both auth modes against the wrong kind of app, and
+-- auth "key" (a key file written after start, refused and rotated keys).
+-- Run from the checkout root with Mix >= 0.112.1:
+--   mix services/bridged/tests/bridge_core_test.mix
+-- The mix binary for the stand-in apps: $BRIDGED_MIX, else $MIXOS_TEST_MIX, else
+-- /opt/mixos/bin/mix. An empty variable counts as unset.
+-- Writes only under /var/tmp/bridge-core-test.<uuid>; the fakes die with it.
+
+$here = dirname(realpath($0))
+
+-- The mix binary the tests run their processes under: $BRIDGED_MIX when set
+-- (also inherited by bridged --start for its child), else $MIXOS_TEST_MIX
+-- (the runner's fresh build), else the installed one.
+$MIX = env("BRIDGED_MIX") ?? ""
+if $MIX == "" then $MIX = env("MIXOS_TEST_MIX") ?? "" end
+if $MIX == "" then $MIX = "/opt/mixos/bin/mix" end
+$core = require("../scripts/lib/bridge_core.mix")
+$fake = realpath($here .. "/lib/fake_app.mix")
+$checkout = realpath($here .. "/../../..")
+$tmp = "/var/tmp/bridge-core-test." .. uuid()
+$results = []
+$pids = []
+
+fn check($name, $ok)
+  push($results, {name: $name, ok: $ok})
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+
+-- The error code a call raises, or "OK".
+fn code_of($f)
+  try
+    $f()
+  catch $m, $e
+    return $e.code ?? "?"
+  end
+  return "OK"
+end
+
+fn message_of($f)
+  try
+    $f()
+  catch $m
+    return $m
+  end
+  return "OK"
+end
+
+fn conf($name, $lines)
+  $p = $tmp .. "/" .. $name .. ".conf.mix"
+  write_file($p, join($lines, ",\n") .. "\n")
+  return $p
+end
+
+-- Start a fake app; returns its port once it listens.
+fn start_fake($tag, $auth, $token_file)
+  $pf = $tmp .. "/" .. $tag .. ".port"
+  $argv = [$MIX, $fake, "--auth", $auth, "--port-file", $pf, "--parent", to_string(pid())]
+  if $token_file != nil then $argv = concat($argv, ["--token-file", $token_file]) end
+  push($pids, spawn($argv, {die_with_parent: true, stdout: {file: $tmp .. "/" .. $tag .. ".log"}, stderr: "stdout"}))
+  for $i = 1 to 200
+    if is_file($pf) then return to_number(trim(read_file($pf))) end
+    sleep(0.05)
+  end
+  raise("HARNESS", "fake " .. $tag .. " did not listen; see " .. $tmp .. "/" .. $tag .. ".log")
+end
+
+mkdir($tmp, {parents: true})
+try
+  $good = hash_sha256("bridge-core-test good " .. uuid())
+  $wrong = hash_sha256("bridge-core-test wrong " .. uuid())
+  write_new($tmp .. "/good.tok", $good .. "\n", 0o600)
+  write_new($tmp .. "/wrong.tok", $wrong .. "\n", 0o600)
+  $p_good = start_fake("good", "token", $tmp .. "/good.tok")
+  $p_bad = start_fake("bad", "token", $tmp .. "/wrong.tok")
+  $p_none = start_fake("none", "none", nil)
+  -- Key mode: the key file does not exist yet; the fake reads it per auth line.
+  $p_key = start_fake("key", "key", $tmp .. "/key.tok")
+  $p_keybad = start_fake("keybad", "key", $tmp .. "/wrong.tok")
+  -- A port nothing listens on: bind an ephemeral one, then let it go.
+  $l = tcp_listen("127.0.0.1", 0)
+  $p_dead = tcp_local_addr($l).port
+  tcp_close($l)
+
+  -- Token file rules: exact shape, never echoed in the error.
+  write_new($tmp .. "/short.tok", "abc123\n", 0o600)
+  write_new($tmp .. "/nothex.tok", repeat("z", 64) .. "\n", 0o600)
+  check("token: missing file refused", starts_with(message_of(fn() = $core.load_token($tmp .. "/missing.tok")), "token file missing"))
+  check("token: short file refused", contains(message_of(fn() = $core.load_token($tmp .. "/short.tok")), "64 hex"))
+  check("token: non-hex file refused, content not echoed", contains(message_of(fn() = $core.load_token($tmp .. "/nothex.tok")), "64 hex") and not contains(message_of(fn() = $core.load_token($tmp .. "/nothex.tok")), "zzzz"))
+  check("token: 64-hex file accepted with trailing newline", $core.load_token($tmp .. "/good.tok") == $good)
+  write_new($tmp .. "/open.tok", $good .. "\n", 0o644)
+  check("token: a file other users can read is refused", contains(message_of(fn() = $core.load_token($tmp .. "/open.tok")), "chmod 600"))
+  write_new($tmp .. "/group.tok", $good .. "\n", 0o640)
+  check("token: a file the group can read is refused", code_of(fn() = $core.load_token($tmp .. "/group.tok")) == "TOKEN")
+
+  -- Config rules: strict data, loopback only, no unknown keys.
+  $base = ["token_file: \"" .. $tmp .. "/good.tok\"", "port: " .. to_string($p_good), "timeout_s: 1", "backoff_s: 0.3"]
+  $ok_conf = conf("ok", $base)
+  $cfg = $core.load_config($ok_conf)
+  check("config: defaults applied", $cfg.connect_timeout_s == 2 and $cfg.max_line == 1048576 and $cfg.host == "127.0.0.1")
+  check("config: auth defaults to token", $cfg.auth == "token")
+  check("config: missing file refused", starts_with(message_of(fn() = $core.load_config($tmp .. "/absent.conf.mix")), "config file not found"))
+  check("config: no path refused", code_of(fn() = $core.load_config("")) == "CONFIG")
+  check("config: unknown key refused", contains(message_of(fn() = $core.load_config(conf("unknown", concat($base, ["bogus: 1"])))), "unknown config keys: bogus"))
+  $lh = $core.load_config(conf("localhost", concat($base, ["host: \"localhost\""])))
+  check("config: localhost is normalised to 127.0.0.1", $lh.host == "127.0.0.1")
+  $x = $core.call($core.new_state($lh, $good), "engine.commands", {})
+  check("config: a localhost config reaches an app on 127.0.0.1", $x.rc == 0)
+  if $x.st.handle != nil then $closed = tcp_close($x.st.handle) end
+  check("config: non-loopback host refused", contains(message_of(fn() = $core.load_config(conf("remote", concat($base, ["host: \"10.0.0.1\""])))), "loopback"))
+  check("config: missing port refused", contains(message_of(fn() = $core.load_config(conf("noport", ["token_file: \"" .. $tmp .. "/good.tok\""]))), "missing config key: port"))
+  check("config: out-of-range port refused", contains(message_of(fn() = $core.load_config(conf("badport", ["token_file: \"x\"", "port: 70000"]))), "port must be"))
+  check("config: zero timeout refused", contains(message_of(fn() = $core.load_config(conf("zerotime", concat($base, ["connect_timeout_s: 0"])))), "connect_timeout_s must be"))
+  check("config: tiny max_line refused", contains(message_of(fn() = $core.load_config(conf("tinyline", concat($base, ["max_line: 10"])))), "max_line must be"))
+  check("config: not strict data refused", code_of(fn() = $core.load_config(conf("code", ["port: 1 + 1"]))) == "CONFIG")
+  $none_conf = conf("none", ["auth: \"none\"", "port: " .. to_string($p_none), "timeout_s: 1", "backoff_s: 0.3"])
+  $ncfg = $core.load_config($none_conf)
+  check("config: auth none needs no token_file", $ncfg.auth == "none" and not has_key($ncfg, "token_file"))
+  check("config: token_file with auth none refused", contains(message_of(fn() = $core.load_config(conf("none-tok", ["auth: \"none\"", "token_file: \"x\"", "port: 1"]))), "not used with auth"))
+  check("config: an unknown auth mode refused", contains(message_of(fn() = $core.load_config(conf("bogus-auth", ["auth: \"basic\"", "port: 1"]))), "auth must be"))
+  check("config: an explicit nil auth refused, not defaulted", contains(message_of(fn() = $core.load_config(conf("nil-auth", ["auth: nil", "port: 1"]))), "auth must be"))
+  check("config: auth token without token_file refused", contains(message_of(fn() = $core.load_config(conf("tok-missing", ["auth: \"token\"", "port: 1"]))), "token_file must be"))
+  check("config: a malformed instance refused", contains(message_of(fn() = $core.load_config(conf("bad-inst", ["auth: \"none\"", "port: 1", "instance: \"a b\""]))), "instance must be"))
+  $icfg = $core.load_config(conf("inst", ["auth: \"none\"", "port: 1", "instance: \"run-42_a\""]))
+  check("config: instance is echoed by status", $core.status($core.new_state($icfg, nil)).instance == "run-42_a")
+
+  -- The config contract matches its spec fixture.
+  $spec = load_data($checkout .. "/docs/spec/bridge/bridge.spec.mix")
+  $sch = $core.schema()
+  $spec_keys = map($spec.config.keys, fn($k) = $k.key)
+  check("spec: same config keys as the core", deep_eq(sort($spec_keys), sort($sch.keys)))
+  check("spec: same required keys", deep_eq($spec.config.required, $sch.required))
+  check("spec: same serve-name rule", $spec.name.pattern == $sch.name)
+  $drift = filter($spec.config.keys, fn($k) = has_key($k, "default") and not deep_eq($k.default, $sch.defaults[$k.key]))
+  check("spec: same defaults (" .. json_encode(map($drift, fn($k) = $k.key)) .. ")", len($drift) == 0)
+
+  -- The runtime: this Mix bounds writes; the comparison itself.
+  check("runtime: this Mix has tcp_send {timeout} (" .. to_string(mix_version().string) .. ")", code_of(fn() = $core.check_runtime(nil)) == "OK")
+  -- [version, accepted as >= 0.112.1?]
+  $table = [
+    ["0.112.1", true], ["0.112.1+build.7", true], ["v0.112.1", true],
+    ["0.112.1-rc.1", false], ["0.112.1-rc.1+build.7", false], ["0.112.1-alpha", false],
+    ["0.112.0", false], ["0.111.99", false], ["0.112.0-rc.9", false],
+    ["0.112.2", true], ["0.112.2-rc.1", true], ["0.113.0", true], ["0.113.0-beta.2", true],
+    ["1.0.0", true], ["1.0.0-rc.1", true],
+    ["junk", false], ["", false], ["0.112", false], ["0.112.1.4", false], ["mix 0.112.1", false]
+  ]
+  $wrong = filter($table, fn($row) = $core.version_at_least($row[0], "0.112.1") != $row[1])
+  check("runtime: version table, " .. to_string(len($table)) .. " rows (wrong: " .. json_encode(map($wrong, fn($row) = $row[0])) .. ")", len($wrong) == 0)
+  check("runtime: reads mix_version()'s map", $core.version_at_least({string: "0.112.1"}, "0.112.1") and not $core.version_at_least({string: "0.112.1-rc.1"}, "0.112.1"))
+  check("runtime: an old Mix is refused as RUNTIME", code_of(fn() = $core.check_runtime(fn() = {string: "0.112.0"})) == "RUNTIME")
+  check("runtime: a prerelease of the minimum is refused as RUNTIME", code_of(fn() = $core.check_runtime(fn() = {string: "0.112.1-rc.1"})) == "RUNTIME")
+  check("runtime: a Mix that cannot report its version is refused as RUNTIME", code_of(fn() = $core.check_runtime(fn() = raise("FUNCTION_UNDEFINED", "undefined function mix_version"))) == "RUNTIME")
+  check("runtime: a version that is not one is refused as RUNTIME", code_of(fn() = $core.check_runtime(fn() = nil)) == "RUNTIME" and contains(message_of(fn() = $core.check_runtime(fn() = nil)), "does not report"))
+
+  -- Instance config and registry paths.
+  $saved = {c: env("BRIDGED_CONFIG"), e: env("MIXOS_ETC"), v: env("BRIDGED_VERBS")}
+  export BRIDGED_CONFIG=""
+  export MIXOS_ETC=""
+  check("path: default /etc/mixos/bridge/<name>.conf.mix", $core.config_path("fakeapp") == "/etc/mixos/bridge/fakeapp.conf.mix")
+  export MIXOS_ETC="/home/user/session/etc"
+  check("path: MIXOS_ETC/bridge/<name>.conf.mix", $core.config_path("fakeapp") == "/home/user/session/etc/bridge/fakeapp.conf.mix")
+  export BRIDGED_CONFIG="/home/user/x.conf.mix"
+  check("path: BRIDGED_CONFIG wins", $core.config_path("fakeapp") == "/home/user/x.conf.mix")
+  export BRIDGED_VERBS=""
+  check("path: installed registry by default", $core.registry_path() == "/opt/mixos/share/bus/verbs.conf.mix")
+  export BRIDGED_CONFIG=$saved.c
+  export MIXOS_ETC=$saved.e
+  export BRIDGED_VERBS=$saved.v
+
+  -- Serve-name guard against this checkout's registry.
+  $reg = $checkout .. "/docs/spec/bus/verbs.conf.mix"
+  check("guard: fakeapp accepted by the real registry", code_of(fn() = $core.check_name("fakeapp", $reg)) == "OK")
+  check("guard: a concrete verb's first segment refused (settings)", code_of(fn() = $core.check_name("settings", $reg)) == "NAME_RESERVED")
+  check("guard: a concrete verb's first segment refused (releases)", code_of(fn() = $core.check_name("releases", $reg)) == "NAME_RESERVED")
+  check("guard: the refusal names the verb", contains(message_of(fn() = $core.check_name("settings", $reg)), "settings."))
+  for each $bad in ["", "a", "Fake", "a.b", "-x", "9app", "a b", "@", "fake_app", repeat("a", 32)]
+    check("guard: invalid name '" .. $bad .. "' refused", code_of(fn() = $core.check_name($bad, $reg)) == "NAME_INVALID")
+  end
+  for each $bad in ["mixos-fakeapp", "mixos-settings"]
+    check("guard: a mixos- name is refused (" .. $bad .. ")", code_of(fn() = $core.check_name($bad, $reg)) == "NAME_INVALID")
+  end
+  for each $bad in ["noded", "noded-7", "noded-fakeapp", "tab-abcdefghijklmnopqrstuv", "c1-abcdefghijklmnopqrstuv"]
+    check("guard: a broker-reserved name is refused (" .. $bad .. ")", code_of(fn() = $core.check_name($bad, $reg)) == "NAME_RESERVED")
+  end
+  check("guard: a name near the session shape is accepted", code_of(fn() = $core.check_name("tab-short", $reg)) == "OK")
+  check("guard: missing registry fails closed", code_of(fn() = $core.check_name("fakeapp", $tmp .. "/no-registry.conf.mix")) == "REGISTRY")
+  write_file($tmp .. "/code.conf.mix", "{schema: 1, verbs: [1 + 1]}\n")
+  check("guard: a registry that is not strict data fails closed", code_of(fn() = $core.check_name("fakeapp", $tmp .. "/code.conf.mix")) == "REGISTRY")
+  write_file($tmp .. "/noverbs.conf.mix", "{schema: 1}\n")
+  check("guard: a registry with no verbs list fails closed", code_of(fn() = $core.check_name("fakeapp", $tmp .. "/noverbs.conf.mix")) == "REGISTRY")
+  write_file($tmp .. "/noname.conf.mix", "{schema: 1, verbs: [{owner: \"x\"}]}\n")
+  check("guard: an entry without a name fails closed", code_of(fn() = $core.check_name("fakeapp", $tmp .. "/noname.conf.mix")) == "REGISTRY")
+  -- Families (schema 3 and later): <app> patterns, listed and runtime members.
+  write_file($tmp .. "/families.conf.mix", join([
+    "{schema: 3, verbs: [{name: \"shell.status\", owner: \"shell\", version: \"0.1.0\", status: \"accepted\"},",
+    "  {name: \"oldsvc.ping\", owner: \"oldsvc\", version: \"0.1.0\", status: \"retired\"}],",
+    " families: [{pattern: \"<app>.ui.*\", owner: \"toolkit\", version: \"0.1.1\", status: \"accepted\"},",
+    "  {pattern: \"<app>.window\", owner: \"toolkit\", members: [\"viewer\"], version: \"0.1.1\", status: \"accepted\"},",
+    "  {pattern: \"<app>.call\", owner: \"bridged\", members: \"instances\", version: \"0.1.0\", status: \"accepted\"},",
+    "  {pattern: \"toolbox.*\", owner: \"toolbox\", version: \"0.1.0\", status: \"accepted\"}]}"], "\n") .. "\n")
+  $fam = $tmp .. "/families.conf.mix"
+  check("guard: families: fakeapp accepted", code_of(fn() = $core.check_name("fakeapp", $fam)) == "OK")
+  check("guard: families: a concrete verb refused", code_of(fn() = $core.check_name("shell", $fam)) == "NAME_RESERVED")
+  check("guard: families: a retired verb's segment stays reserved", code_of(fn() = $core.check_name("oldsvc", $fam)) == "NAME_RESERVED")
+  check("guard: families: a listed member refused", code_of(fn() = $core.check_name("viewer", $fam)) == "NAME_RESERVED")
+  check("guard: families: a literal first segment refused", code_of(fn() = $core.check_name("toolbox", $fam)) == "NAME_RESERVED")
+  check("guard: families: <app> and instances families reserve nothing", not has_key($core.reserved_names($fam), "app") and not has_key($core.reserved_names($fam), "<app>"))
+  write_file($tmp .. "/badmembers.conf.mix", "{schema: 3, verbs: [], families: [{pattern: \"<app>.x\", owner: \"y\", members: 5}]}\n")
+  check("guard: an unknown members form fails closed", code_of(fn() = $core.check_name("fakeapp", $tmp .. "/badmembers.conf.mix")) == "REGISTRY")
+
+  -- The client against the token fake.
+  $S = $core.new_state($cfg, $good)
+  $r = $core.call($S, "engine.commands", {})
+  $S = $r.st
+  check("call: engine.commands returns the list", $r.rc == 0 and $r.ok and contains(json_encode($r.result), "ui.inspect"))
+  check("call: one persistent connection, authenticated", $S.connects == 1 and $S.connected)
+  $r = $core.call($S, "engine.execute", {command: "app.open", params: {path: "/x/y"}})
+  $S = $r.st
+  check("call: engine.execute passes command and params", $r.rc == 0 and $r.result.echo.command == "app.open" and $r.result.echo.params.path == "/x/y")
+  $shot = $tmp .. "/shot.png"
+  $r = $core.call($S, "ui.screenshot", {path: $shot})
+  $S = $r.st
+  check("call: ui.screenshot writes the file the app named", $r.rc == 0 and is_file($shot) and read_file($shot) == "FAKESHOT")
+  $r = $core.call($S, "fail", {})
+  $S = $r.st
+  check("call: ok:false maps to rc 10 with the app's text", $r.rc == 10 and $r.error == "fake failure text")
+  $r = $core.call($S, "no.such.method", {})
+  $S = $r.st
+  check("call: unknown method is an app error, connection kept", $r.rc == 10 and $r.error == "unknown method" and $S.connects == 1)
+  $r = $core.call($S, "", {})
+  check("call: empty method refused locally, connection untouched", $r.rc == 12 and $r.st.connected)
+  $r = $core.call($S, 5, {})
+  check("call: non-string method refused locally", $r.rc == 12)
+  $st = $core.status($S)
+  check("status: up, latency recorded, one connect", $st.connection == "up" and is_number($st.last_latency_ms) and $st.connects == 1)
+  check("status: never contains the token", not contains(json_encode($st), $good))
+
+  -- Dispatch shapes the Bus reply.
+  $d = $core.dispatch($S, "echo", {a: 1})
+  $S = $d.st
+  check("dispatch: rc 0 body is the result as JSON", $d.rc == 0 and deep_eq(json_parse($d.body), {a: 1}))
+  $d = $core.dispatch($S, "fail", {})
+  $S = $d.st
+  check("dispatch: rc 10 body is the app's text", $d.rc == 10 and $d.body == "fake failure text")
+  check("body: need_string refuses a missing field", $core.need_string({}, "method") != nil and $core.need_string([1], "method") != nil and $core.need_string({method: "x"}, "method") == nil)
+  check("body: optional_params copies only listed keys", deep_eq($core.optional_params({path: "p", other: 1}, ["path", "focus"]), {path: "p"}))
+
+  -- Timeout: the request is bounded by timeout_s and the connection is dropped.
+  $r = $core.call($S, "slow", {})
+  $S = $r.st
+  check("timeout: bounded by timeout_s (1 s), rc 11", $r.rc == 11 and contains($r.error, "no reply") and $r.latency_ms < 2500)
+  check("timeout: connection dropped, not reused", $core.status($S).connection == "down")
+  $r = $core.call($S, "engine.commands", {})
+  $S = $r.st
+  check("backoff: immediate retry refused while backing off", $r.rc == 11 and contains($r.error, "backing off"))
+  sleep(0.4)
+  $r = $core.call($S, "engine.commands", {})
+  $S = $r.st
+  check("reconnect: re-authenticated after backoff, while the old request is still busy", $r.rc == 0 and $S.connects == 2)
+
+  -- Mid-request drop: the app closes without replying.
+  $r = $core.call($S, "drop", {})
+  $S = $r.st
+  check("drop: transport failure is rc 11", $r.rc == 11 and contains($r.error, "transport"))
+  sleep(0.4)
+  $r = $core.call($S, "ui.inspect", {})
+  $S = $r.st
+  check("drop: reconnects after backoff", $r.rc == 0 and $S.connects == 3 and $S.failures == 2)
+
+  -- An app that echoes the token: redacted from the error, last_error and status.
+  $r = $core.call($S, "leak", {})
+  $S = $r.st
+  check("redact: the app's error is rc 10 without the token in either case", $r.rc == 10 and not contains(lower($r.error), $good) and contains($r.error, "[redacted]"))
+  check("redact: last_error and status never hold the token", not contains(lower(json_encode($core.status($S))), $good) and contains($S.last_error, "[redacted]"))
+  $d = $core.dispatch($S, "leak_result", {})
+  $S = $d.st
+  check("redact: a result carrying the token is redacted in the Bus body", $d.rc == 0 and not contains(lower($d.body), $good) and contains($d.body, "[redacted]"))
+  check("redact: nothing to redact without a token", $core.redact(nil, "abc") == "abc")
+
+  -- A reply with our id but no boolean ok: rc 11, and the connection is dropped.
+  $failures = $S.failures
+  $r = $core.call($S, "nook", {})
+  $S = $r.st
+  check("no ok: rc 11", $r.rc == 11 and contains($r.error, "no boolean ok"))
+  check("no ok: connection dropped, failure counted", not $S.connected and $core.status($S).connection == "down" and $S.failures == $failures + 1)
+  $r = $core.call($S, "engine.commands", {})
+  $S = $r.st
+  check("no ok: backing off before a reconnect", $r.rc == 11 and contains($r.error, "backing off"))
+  sleep(0.4)
+  $r = $core.call($S, "engine.commands", {})
+  $S = $r.st
+  check("no ok: a fresh connection after backoff", $r.rc == 0 and $S.connects == 4)
+
+  -- Requests are bounded by max_line, like replies: an oversize one is the
+  -- caller's error (rc 12) and never touches the connection.
+  $connects = $S.connects
+  $r = $core.call($S, "echo", {blob: repeat("x", $S.cfg.max_line)})
+  $S = $r.st
+  check("max_line: a request over max_line is rc 12 (" .. ($r.error ?? "") .. ")", $r.rc == 12 and contains($r.error ?? "", "over max_line"))
+  check("max_line: the connection is untouched", $S.connected and $S.connects == $connects)
+  $r = $core.call($S, "echo", {blob: repeat("x", $S.cfg.max_line - 100)})
+  $S = $r.st
+  check("max_line: a request just under max_line is sent", $r.rc == 0 and len($r.result.blob) == $S.cfg.max_line - 100)
+  -- Replies too, even one that arrives whole in a single read: with max_line
+  -- 4096, an 8 KiB reply line is a transport failure (rc 11, dropped).
+  $small = merge($S, {cfg: merge($S.cfg, {max_line: 4096})})
+  $r = $core.call($small, "big_reply", {size: 3000})
+  $small = $r.st
+  check("max_line: a reply under max_line is accepted", $r.rc == 0 and len($r.result) == 3000)
+  $failures = $small.failures
+  $r = $core.call($small, "big_reply", {size: 8192})
+  $small = $r.st
+  -- The rc and the transport prefix are the contract; the wording of the
+  -- Mix error (tcp_recv_line's, or the bridge's own check) is not.
+  check("max_line: a reply over max_line, in one write, is rc 11 (" .. ($r.error ?? "") .. ")", $r.rc == 11 and starts_with($r.error ?? "", "transport:"))
+  check("max_line: the connection is dropped and backs off", not $small.connected and $small.failures == $failures + 1 and contains($core.call($small, "engine.commands", {}).error ?? "", "backing off"))
+  sleep(0.4)
+  $S = merge($small, {cfg: $S.cfg})
+  $r = $core.call($S, "engine.commands", {})
+  $S = $r.st
+  check("max_line: a normal call works after the backoff", $r.rc == 0)
+
+  -- Writes are bounded by timeout_s (1 s here): tcp_send gets the time left.
+  -- The request (12 MiB, under a raised max_line) is far bigger than the
+  -- loopback socket buffers, so it can only finish if the app reads it.
+  $S = merge($S, {cfg: merge($S.cfg, {max_line: 16777216})})
+  $big = {blob: repeat("x", 12 * 1048576)}
+  for each $reader in ["stall", "trickle"]
+    $r = $core.call($S, $reader, {})
+    $S = $r.st
+    check($reader .. ": the app answers, then " .. (if $reader == "stall" then "stops reading" else "reads 1 KiB at a time" end), $r.rc == 0 and $r.result == $reader)
+    $connects = $S.connects
+    $r = $core.call($S, "echo", $big)
+    $S = $r.st
+    check($reader .. ": a big write times out (TCP_SEND_TIMEOUT), rc 11 at about timeout_s (" .. to_string($r.latency_ms) .. " ms)", $r.rc == 11 and $r.latency_ms >= 800 and $r.latency_ms < 2500 and starts_with($r.error, "transport: write timed out"))
+    check($reader .. ": the connection is dropped", not $S.connected and $core.status($S).connection == "down")
+    $r = $core.call($S, "engine.commands", {})
+    $S = $r.st
+    check($reader .. ": backing off right after", $r.rc == 11 and contains($r.error, "backing off"))
+    sleep(0.4)
+    $r = $core.call($S, "engine.commands", {})
+    $S = $r.st
+    check($reader .. ": a normal call works after the backoff, on a new connection", $r.rc == 0 and $S.connects == $connects + 1)
+  end
+  -- A budget spent on local work (encoding 12 MiB) before the write: refused
+  -- without writing, the connection dropped.
+  $tiny = merge($S, {cfg: merge($S.cfg, {timeout_s: 0.001})})
+  $r = $core.call($tiny, "echo", $big)
+  check("budget: spent before the write, rc 11 without writing (" .. to_string($r.latency_ms) .. " ms)", $r.rc == 11 and contains($r.error, "deadline passed before the write") and not $r.st.connected)
+
+  -- A wrong token.
+  $S2 = $core.new_state(merge($cfg, {port: $p_bad}), $good)
+  $r = $core.call($S2, "engine.commands", {})
+  $S2 = $r.st
+  check("auth: wrong token refused, rc 11", $r.rc == 11 and $r.error == "auth refused by app")
+  check("auth: no connection kept after refusal", $S2.connects == 0 and $core.status($S2).connection == "never-connected")
+  check("auth: token not in status or error after refusal", not contains(json_encode($core.status($S2)), $good) and not contains($r.error, $good))
+
+  -- Nothing listening.
+  $S3 = $core.new_state(merge($cfg, {port: $p_dead}), $good)
+  $r = $core.call($S3, "engine.commands", {})
+  check("connect: refused port is rc 11", $r.rc == 11 and starts_with($r.error, "connect failed"))
+
+  -- auth: "none".
+  $SN = $core.new_state($ncfg, nil)
+  $r = $core.call($SN, "engine.execute", {command: "x", params: {a: 1}})
+  $SN = $r.st
+  check("auth none: requests flow with no auth line", $r.rc == 0 and $r.result.echo.command == "x")
+  $r = $core.call($SN, "ui.inspect", {})
+  $SN = $r.st
+  check("auth none: one persistent connection", $r.rc == 0 and $SN.connects == 1)
+  check("status: reports the auth mode", $core.status($SN).auth == "none")
+  $r = $core.call($core.new_state(merge($cfg, {port: $p_none}), $good), "engine.commands", {})
+  check("auth token against a no-auth app: its auth line is refused and nothing runs (rc " .. to_string($r.rc) .. ")", $r.rc == 11)
+  $r = $core.call($core.new_state(merge($ncfg, {port: $p_good}), nil), "engine.commands", {})
+  check("auth none against a token app: refused, never a silent success (rc " .. to_string($r.rc) .. ")", $r.rc != 0)
+
+  -- auth "key": the secret is a file the app writes after its start. Read
+  -- before any connect, on every connect; rotated by an atomic rename.
+  $key_file = $tmp .. "/key.tok"
+  $kconf = $core.load_config(conf("key", ["auth: \"key\"", "token_file: \"" .. $key_file .. "\"", "port: " .. to_string($p_key), "timeout_s: 1", "backoff_s: 0.3"]))
+  check("key config: auth key is accepted with token_file", $kconf.auth == "key" and $kconf.token_file == $key_file)
+  check("key config: token_file is required", contains(message_of(fn() = $core.load_config(conf("key-notok", ["auth: \"key\"", "port: 1"]))), "token_file must be"))
+  $K = $core.new_state($kconf, nil)
+  check("key: status is available before the key exists, with no key", $core.status($K).connection == "never-connected" and $core.status($K).auth == "key")
+  $r = $core.call($K, "engine.commands", {})
+  $K = $r.st
+  check("key: no key file is rc 11 with no connect (" .. ($r.error ?? "") .. ")", $r.rc == 11 and contains($r.error, "key not usable") and $K.connects == 0 and not $K.connected)
+  $r = $core.call($K, "engine.commands", {})
+  $K = $r.st
+  check("key: backing off after the missing key", $r.rc == 11 and contains($r.error, "backing off"))
+  write_new($key_file, $good .. "\n", 0o600)
+  sleep(0.4)
+  $r = $core.call($K, "engine.commands", {})
+  $K = $r.st
+  check("key: a file written after start is read at the retry", $r.rc == 0 and $K.connects == 1)
+  check("key: status shows the mode and never the key", $core.status($K).auth == "key" and not contains(json_encode($core.status($K)), $good))
+  write_new($tmp .. "/key-open.tok", $good .. "\n", 0o644)
+  $r = $core.call($core.new_state(merge($kconf, {token_file: $tmp .. "/key-open.tok"}), nil), "engine.commands", {})
+  check("key: a key file others can read is refused before any connect (rc " .. to_string($r.rc) .. ")", $r.rc == 11 and contains($r.error, "chmod 600") and $r.st.connects == 0)
+  $KB = $core.new_state(merge($kconf, {port: $p_keybad}), nil)
+  $r = $core.call($KB, "engine.commands", {})
+  $KB = $r.st
+  check("key: a wrong key is refused, rc 11, no connection kept", $r.rc == 11 and $r.error == "auth refused by app" and $KB.connects == 0)
+  check("key: the wrong-key refusal leaks no key", not contains(json_encode($core.status($KB)), $good) and not contains($r.error, $good))
+  $h = tcp_connect("127.0.0.1", $p_key, {timeout: 2})
+  tcp_send($h, "{\"id\":1,\"method\":\"engine.commands\",\"params\":{}}\n")
+  $line = tcp_recv_line($h, {timeout: 2})
+  tcp_close($h)
+  check("key fake: a method before auth is refused", contains($line ?? "", "bad key"))
+  $r = $core.call($K, "engine.execute", {command: "app.open", params: {path: "/k"}})
+  $K = $r.st
+  check("key: requests flow after the key auth", $r.rc == 0 and $r.result.echo.params.path == "/k")
+  $r = $core.call($K, "leak", {})
+  $K = $r.st
+  check("key redact: an app error echoing the key is rc 10, redacted", $r.rc == 10 and not contains(lower($r.error), $good) and contains($r.error, "[redacted]"))
+  check("key redact: last_error and status never hold the key", not contains(lower(json_encode($core.status($K))), $good) and contains($K.last_error, "[redacted]"))
+  $d = $core.dispatch($K, "leak_result", {})
+  $K = $d.st
+  check("key redact: a result carrying the key is redacted in the Bus body", $d.rc == 0 and not contains(lower($d.body), $good) and contains($d.body, "[redacted]"))
+  $r = $core.call($K, "drop", {})
+  $K = $r.st
+  check("key: a drop is rc 11", $r.rc == 11)
+  $rotated = hash_sha256("bridge-core-test rotated " .. uuid())
+  write_new($key_file .. ".new", $rotated .. "\n", 0o600)
+  rename($key_file .. ".new", $key_file)
+  sleep(0.4)
+  $r = $core.call($K, "ui.inspect", {})
+  $K = $r.st
+  check("key rotation: the reconnect reads and uses the rotated key", $r.rc == 0 and $K.connects == 2 and $K.token == $rotated)
+  check("key rotation: the rotated key is not in status", not contains(json_encode($core.status($K)), $rotated))
+  if $K.handle != nil then $closed = tcp_close($K.handle) end
+
+  -- The fake enforces the rule the bridge relies on: nothing before auth.
+  $h = tcp_connect("127.0.0.1", $p_good, {timeout: 2})
+  tcp_send($h, "{\"id\":1,\"method\":\"engine.commands\",\"params\":{}}\n")
+  $line = tcp_recv_line($h, {timeout: 2})
+  tcp_close($h)
+  check("fake: a method before auth is refused", contains($line ?? "", "bad token"))
+catch $m
+  check("harness: " .. $m, false)
+finally
+  for each $p in $pids
+    -- 9: a Mix script blocked in a tcp_accept loop does not act on SIGTERM (mix 0.112.0).
+    if process_alive($p) then $k = kill($p, 9) end
+  end
+  if len(filter($results, fn($x) = not $x.ok)) == 0 then remove_dir($tmp) else print("kept for inspection: " .. $tmp) end
+end
+
+$failed = filter($results, fn($x) = not $x.ok)
+print(to_string(len($results) - len($failed)) .. "/" .. to_string(len($results)) .. " passed")
+if len($failed) > 0 then exit(1) end

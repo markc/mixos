@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Copyright 2026 Mark Constable <mc@mixos.dev>
+# One bridge per external application: bridged@<app>.service serves the Bus
+# service <app> (verbs <app>.call, .commands, .execute, .inspect, .screenshot,
+# .status) from /etc/mixos/bridge/<app>.conf.mix.
+[Unit]
+Description=MixOS Bus bridge for the external application %i
+After=network.target
+# A broken install (a missing or unreadable script exits 1) is a failure,
+# restarted a few times and then left failed, never a silent skip.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=mixos
+# Optional per-instance environment: which Bus to join (MIXOS_NODED_URL and
+# the other MIXOS_* client variables, e.g. a session's) and where its config
+# lives (MIXOS_ETC, or BRIDGED_CONFIG for one file). It must be writable only
+# by the administrator: whoever can change it (BRIDGED_MIX in particular)
+# picks the code that runs as mixos.
+EnvironmentFile=-/etc/mixos/bridge/%i.env
+# --start runs every start check (name, verb registry, config, token) in this
+# process, before the name reaches the Bus. A documented refusal exits 2.
+# Otherwise it runs `mix --serve bridged.mix --name %i` as its child (Mix has
+# no process-replacing exec) and exits with the child's code.
+ExecStart=/opt/mixos/bin/mix /opt/mixos/lib/bridged/bridged.mix --start %i
+# The stop signal reaches the parent and the serve child alike.
+KillMode=control-group
+# A clean stop: Mix records the SIGTERM the parent receives and exits 143,
+# whatever the child returned. (SuccessExitStatus=SIGTERM would not cover
+# the numeric 143.)
+SuccessExitStatus=143
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=2
+# Exit 2 is a refused start: restarting cannot fix it.
+RestartPreventExitStatus=2
+
+# Sandbox. The bridge reads its config, token file and the verb registry,
+# talks TCP to the app on loopback and to the Bus, and writes nothing.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+# Read-only, not hidden: a token file may live in a home directory.
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+DevicePolicy=closed
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+UMask=0077
+# IP traffic to loopback only: the app is on loopback by contract, and so is
+# a local Bus. A Bus endpoint elsewhere (for example a session broker at
+# ws://<container-ip>:<port>) needs a drop-in that adds its address:
+#   systemctl edit bridged@<app>   ->   [Service]
+#                                       IPAddressAllow=<broker-ip>
+IPAddressAllow=localhost
+IPAddressDeny=any

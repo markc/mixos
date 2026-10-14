@@ -582,9 +582,15 @@ dependencies = [
 name = "backdrop"
 version = "0.1.1"
 dependencies = [
+ "citizen",
+ "config",
  "egui",
+ "futures",
+ "image",
+ "libc",
  "serde_json",
  "toolkit",
+ "wallpaper",
 ]
 
 [[package]]
@@ -3388,6 +3394,8 @@ dependencies = [
  "num-traits",
  "png 0.18.1",
  "tiff",
+ "zune-core 0.5.3",
+ "zune-jpeg 0.5.15",
 ]
 
 [[package]]
@@ -8298,6 +8306,18 @@ checksum = "29790946404f91d9c5d06f9874efddea1dc06c5efe94541a7d6863108e3a5e4b"
 dependencies = [
  "same-file",
  "winapi-util",
+]
+
+[[package]]
+name = "wallpaper"
+version = "0.1.1"
+dependencies = [
+ "config",
+ "image",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

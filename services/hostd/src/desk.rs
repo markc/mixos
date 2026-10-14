@@ -70,7 +70,11 @@ pub async fn act(
     grant: &str,
     origin: &Origin,
 ) -> Result<Value, Value> {
-    let action = if verb == RESTART { "reboot" } else { "poweroff" };
+    let action = if verb == RESTART {
+        "reboot"
+    } else {
+        "poweroff"
+    };
     let run = tokio::time::timeout(
         MACHINECTL_BUDGET,
         tokio::process::Command::new("machinectl")
@@ -85,12 +89,7 @@ pub async fn act(
         return Err(json!({"status":"machinectl_failed","verb":verb,"desk":desk,
             "message": String::from_utf8_lossy(&run.stderr).trim()}));
     }
-    let mut receipt = Receipt::new(
-        verb,
-        grant,
-        origin,
-        json!({"desk": desk, "action": action}),
-    );
+    let mut receipt = Receipt::new(verb, grant, origin, json!({"desk": desk, "action": action}));
     receipt.outcome = Outcome::Applied;
     receipt
         .save(state)
@@ -145,8 +144,14 @@ mod tests {
                limits: {{desks: ["desk12"]}}, expires: "2030-01-01T00:00:00Z", rate: {{count: 2, per_s: 60}}}}
             ]}}"#
         ));
-        assert_eq!(target(&p, &caller(SESSION), RESTART, now()), Ok("desk12".into()));
-        assert_eq!(target(&p, &caller(SESSION), STOP, now()), Ok("desk12".into()));
+        assert_eq!(
+            target(&p, &caller(SESSION), RESTART, now()),
+            Ok("desk12".into())
+        );
+        assert_eq!(
+            target(&p, &caller(SESSION), STOP, now()),
+            Ok("desk12".into())
+        );
     }
 
     #[test]
@@ -160,7 +165,10 @@ mod tests {
         let other = "/system.slice/system-apps.slice/apps@4.service";
         assert_eq!(target(&p, &caller(other), STOP, now()), Err("not_granted"));
         // A verb the grant does not list is not granted either.
-        assert_eq!(target(&p, &caller(SESSION), RESTART, now()), Err("not_granted"));
+        assert_eq!(
+            target(&p, &caller(SESSION), RESTART, now()),
+            Err("not_granted")
+        );
     }
 
     #[test]
@@ -171,14 +179,20 @@ mod tests {
                expires: "2030-01-01T00:00:00Z", rate: {{count: 2, per_s: 60}}}}
             ]}}"#
         ));
-        assert_eq!(target(&none, &caller(SESSION), STOP, now()), Err("not_granted"));
+        assert_eq!(
+            target(&none, &caller(SESSION), STOP, now()),
+            Err("not_granted")
+        );
         let two = policy(&format!(
             r#"{{schema: 1, grants: [
               {{name: "topbar", caller: {{cgroup: "{SESSION}"}}, verbs: ["desk.stop"],
                limits: {{desks: ["desk12", "desk13"]}}, expires: "2030-01-01T00:00:00Z", rate: {{count: 2, per_s: 60}}}}
             ]}}"#
         ));
-        assert_eq!(target(&two, &caller(SESSION), STOP, now()), Err("ambiguous_desk"));
+        assert_eq!(
+            target(&two, &caller(SESSION), STOP, now()),
+            Err("ambiguous_desk")
+        );
     }
 
     #[test]

@@ -94,6 +94,11 @@ pub trait LayerProgram {
     fn presented(&mut self, surface: &SurfaceInfo) {
         let _ = surface;
     }
+    /// The surface is going away. Drop textures and wake handles owned by its
+    /// context here; output removal does not necessarily produce a last pass.
+    fn removed(&mut self, ctx: &egui::Context, surface: &SurfaceInfo) {
+        let _ = (ctx, surface);
+    }
 }
 
 /// Run `program` until the connection ends. With [`Outputs::Compositor`] it

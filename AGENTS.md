@@ -317,7 +317,10 @@ applies to every GUI app and to the desktop furniture.
   cadence, but never the guard tests.
 - **Assets:** each file is cleared individually, with its licence and a
   `NOTICE` line. Fonts may be OFL-1.1; everything else must fit the
-  dependency allowlist.
+  dependency allowlist. The pinned egui fallback-font bundle has the
+  version-specific font exceptions recorded in
+  `docs/decisions/2026-10-13-bundled-font-licences.md`; they do not widen the
+  general code-dependency policy.
 
 ## 7. Tests
 

@@ -14,17 +14,16 @@
     <title>Prefs — MixOS</title>
     <link rel="canonical" href="https://mixos.dev/prefs/">
     <link rel="alternate" type="text/markdown" href="/prefs.md" title="Markdown source">
-    <meta name="mixos-build" content="87a61ef09456">
-    <link rel="preload" href="/web/fonts/icons.woff2?v=3a1086a40a" as="font" type="font/woff2" crossorigin>
+    <meta name="mixos-build" content="08493203ff6c">
     <link rel="preload" href="/web/fonts/sans.woff2?v=22f05185ef" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/web/fonts.css?v=b1859e7656"><!-- generated: Inter / Quicksand / JetBrains Mono / emoji cut from the asset set -->
     <!-- FOUC prevention: paint theme/scheme synchronously before first paint (dcs.spa convention). -->
     <script>(function(){var s=JSON.parse(localStorage.getItem('base-state')||'{}'),t=s.theme,c=(s.scheme||'mono'),h=document.documentElement;h.className='preload '+(t||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'))+(c&&c!=='default'?' scheme-'+c:'')+(s.width==='wide'?' wide':(s.width==='narrow'?' narrow':''));})()</script>
     <link rel="stylesheet" href="/web/base.css?v=f7fb8c8f9e">
     <link rel="stylesheet" href="/web/site.css?v=cc5e468d34">
-    <link rel="stylesheet" href="/web/icons.css?v=662ff180d9"><!-- generated: Material Symbols Rounded subset -->
-    <!-- Icons are CSS glyphs keyed on data-lucide/data-icon (web/icons.css), so
-         base.js's lucide.createIcons() calls only need this no-op stand-in. -->
+    <link rel="stylesheet" href="/web/icons.css?v=9c47fc4ada"><!-- generated: Lucide CSS masks -->
+    <!-- Icons are CSS masks keyed on data-lucide (web/icons.css), so base.js's
+         lucide.createIcons() calls only need this no-op stand-in. -->
     <script>window.lucide={createIcons:function(){}};</script>
     <style>
         /* Light-mode hero fix: hero sits over the always-dark backdrop. */
@@ -218,6 +217,7 @@
                         <a href="#applications">Applications</a>
                         <a href="#appearance">Appearance</a>
                         <a href="#for-agents">For agents</a>
+                        <a href="#wallpaper">Wallpaper</a>
                     </nav>
                 </div>
             </div>
@@ -307,6 +307,26 @@ enablement. The window is drivable like every MixOS app
 <code>docs/spec/bus/verbs.conf.mix</code>.</p>
 <p>For scripted work, call the services directly (<code>releases.*</code>,
 <code>settings.*</code>): Prefs is their window, not a second implementation.</p>
+<h2 id="wallpaper">Wallpaper</h2>
+<p>In <strong>Appearance → Wallpaper</strong>, choose the default or an output, then Theme,
+Colour or Image. Colour accepts a picker or <code>#RRGGBB</code>. Browse opens the native
+image browser at the installed wallpaper folder, or Pictures in your home
+folder. It lists PNG/JPEG files and folders without blocking the window.
+Changes stay in Prefs until <strong>Apply wallpaper</strong>. <strong>Revert wallpaper</strong> drops
+them; <strong>Refresh wallpaper</strong> reads the current state again.</p>
+<p>An output's <strong>Use default</strong> removes just that override. Editing the default
+preserves every output override. Images currently crop to fill; fit controls
+and slideshows will follow when backdrop supports them.</p>
+<p>Backdrop must be running on the same session Bus. A refusal shows its reason,
+keeps the draft and leaves the last good wallpaper in place. Prefs checks for
+intervening changes before sending the whole document; conflicts require
+Revert and a fresh edit. This check is best effort: backdrop does not yet
+provide an atomic compare-and-set operation. A lost reply is checked by a
+state read, never automatically resent.</p>
+<p>Wallpaper and browser state are included in <code>prefs.info</code>, wallpaper state in
+<code>prefs.appearance</code>. Commands <code>wallpaper.apply</code>, <code>wallpaper.revert</code>,
+<code>wallpaper.refresh</code> and <code>wallpaper.browse</code> are available through
+<code>prefs.execute</code>; the normal <code>prefs.ui.*</code> verbs drive the controls and browser.</p>
         </article>
         <p class="doc-source"><a href="/prefs.md"><i data-lucide="file-text"></i> This page as Markdown</a></p>
     </div>

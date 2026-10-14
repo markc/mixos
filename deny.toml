@@ -8,6 +8,13 @@ allow = [
   "NCSA", "OpenSSL", "Unicode-DFS-2016", "Unicode-3.0", "Unlicense", "Zlib",
 ]
 
+[[licenses.exceptions]]
+# Bundled font data only; keep the general code-dependency policy unchanged.
+# See docs/decisions/2026-10-13-bundled-font-licences.md.
+name = "epaint_default_fonts"
+version = "=0.36.2"
+allow = ["MIT", "Apache-2.0", "OFL-1.1", "Ubuntu-font-1.0"]
+
 [bans]
 multiple-versions = "warn"
 deny = [

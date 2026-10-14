@@ -22,6 +22,7 @@ use toolkit::command::Origin;
 use toolkit::dialog::{self, Choice};
 use toolkit::titlebar::{self, Control};
 use toolkit::{Icon, Registry, Strings, bars, icons, panel, tooltip};
+mod wallpaper;
 
 /// One interaction from this frame.
 #[derive(Clone, Debug, PartialEq)]
@@ -36,6 +37,13 @@ pub enum UiEvent {
     SetMode(design::Mode),
     /// An edit in the Appearance panel: the whole look it leaves.
     Look(Look),
+    WallpaperTarget(Option<String>),
+    WallpaperKind(preferences::wallpaper::Kind),
+    WallpaperColour(String),
+    WallpaperImage(String),
+    PickerDirectory(String),
+    PickerSelect(String),
+    PickerEnter(String),
 }
 
 const ICON: f32 = 14.0;
@@ -119,9 +127,19 @@ pub fn view(
         .frame(bars::dock_frame(ui.ctx()))
         .show(ui, |ui| match engine.ui.panel {
             Panel::Applications => applications(ui, engine, commands, strings, &mut events),
-            Panel::Appearance => appearance(ui, engine, commands, strings, &mut events),
+            Panel::Appearance => {
+                ScrollArea::vertical()
+                    .id_salt("appearance-page")
+                    .auto_shrink(false)
+                    .show(ui, |ui| {
+                        wallpaper::controls(ui, engine, commands, strings, &mut events);
+                        ui.add_space(ui.spacing().item_spacing.y);
+                        appearance(ui, engine, commands, strings, &mut events);
+                    });
+            }
         });
     dialogs(ui, engine, commands, strings, &mut events);
+    wallpaper::picker(ui, engine, &mut events);
     toolkit::titlebar::edges(ui);
     events
 }
@@ -394,47 +412,43 @@ fn appearance(
             ui.label(RichText::new(label("look-reading")).weak());
             return;
         };
-        ScrollArea::vertical()
-            .id_salt("look")
-            .auto_shrink(false)
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                look_controls(ui, engine, strings, look, events);
-                bars::hairline(ui);
-                let note = |ui: &mut Ui, key: &str, colour: Option<Color32>| {
-                    let mut text = RichText::new(label(key));
-                    text = match colour {
-                        Some(colour) => text.color(colour),
-                        None => text.weak(),
-                    };
-                    ui.add(egui::Label::new(text).wrap());
+        ui.vertical(|ui| {
+            ui.set_width(ui.available_width());
+            look_controls(ui, engine, strings, look, events);
+            bars::hairline(ui);
+            let note = |ui: &mut Ui, key: &str, colour: Option<Color32>| {
+                let mut text = RichText::new(label(key));
+                text = match colour {
+                    Some(colour) => text.color(colour),
+                    None => text.weak(),
                 };
-                if !engine.look.conflicts.is_empty() {
-                    let axes: Vec<String> = engine
-                        .look
-                        .conflicts
-                        .iter()
-                        .map(|a| label(axis_label(*a)))
-                        .collect();
-                    let text = label_with("look-conflicts", &[("axes", &axes.join(", "))]);
-                    ui.add(
-                        egui::Label::new(RichText::new(text).color(ui.visuals().warn_fg_color))
-                            .wrap(),
-                    );
-                }
-                if engine.look.custom_source {
-                    note(ui, "look-custom", None);
-                }
-                note(
-                    ui,
-                    if engine.look.hold {
-                        "look-held"
-                    } else {
-                        "look-current"
-                    },
-                    None,
+                ui.add(egui::Label::new(text).wrap());
+            };
+            if !engine.look.conflicts.is_empty() {
+                let axes: Vec<String> = engine
+                    .look
+                    .conflicts
+                    .iter()
+                    .map(|a| label(axis_label(*a)))
+                    .collect();
+                let text = label_with("look-conflicts", &[("axes", &axes.join(", "))]);
+                ui.add(
+                    egui::Label::new(RichText::new(text).color(ui.visuals().warn_fg_color)).wrap(),
                 );
-            });
+            }
+            if engine.look.custom_source {
+                note(ui, "look-custom", None);
+            }
+            note(
+                ui,
+                if engine.look.hold {
+                    "look-held"
+                } else {
+                    "look-current"
+                },
+                None,
+            );
+        });
     });
 }
 

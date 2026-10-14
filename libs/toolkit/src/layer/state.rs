@@ -329,11 +329,21 @@ impl<P: LayerProgram + 'static> State<P> {
             self.buttons.clear();
         }
         let handle = self.handle.clone();
+        let program = &mut self.program;
         self.surfaces.retain_mut(|s| {
             if gone(s) {
                 if let Some(timer) = s.timer.take() {
                     handle.remove(timer);
                 }
+                program.removed(
+                    &s.ctx,
+                    &SurfaceInfo {
+                        output: s.output_name.clone(),
+                        width: s.size.0,
+                        height: s.size.1,
+                        scale: s.scale,
+                    },
+                );
                 false
             } else {
                 true

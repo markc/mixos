@@ -17,7 +17,7 @@
 
 use std::io::Read;
 
-use mix::analyzer::{self, Analysis, AnalyzerConfig, Diagnostic, Severity};
+use mix::analyzer::{self, Analysis, AnalyzerConfig, Diagnostic, HandlerDeclaration, Severity};
 use mix::error::MixError;
 use mix::token::Token;
 
@@ -119,6 +119,7 @@ pub fn run_lint(args: &[String], version: &str) -> i32 {
 
     let mut all_diags: Vec<Diagnostic> = Vec::new();
     let mut capabilities: Vec<&'static str> = Vec::new();
+    let mut handlers: Vec<HandlerDeclaration> = Vec::new();
     let mut strict_data_files: Vec<String> = Vec::new();
     for file in &files {
         let source = if file == "-" {
@@ -151,6 +152,7 @@ pub fn run_lint(args: &[String], version: &str) -> i32 {
                         capabilities.push(cap);
                     }
                 }
+                handlers.extend(analysis.handlers);
             }
             Ok(LintOutcome::StrictData) => strict_data_files.push(file.clone()),
             Err(diag) => all_diags.push(*diag),
@@ -237,6 +239,7 @@ pub fn run_lint(args: &[String], version: &str) -> i32 {
                 &strict_data_files,
                 &all_diags,
                 &capabilities,
+                &handlers,
                 &summary,
             );
             match format {
@@ -616,12 +619,16 @@ fn report_json(
     strict_data_files: &[String],
     diags: &[Diagnostic],
     capabilities: &[&'static str],
+    handlers: &[HandlerDeclaration],
     summary: &LintSummary,
 ) -> serde_json::Value {
     serde_json::json!({
         // 2 (0.63.0): severity domain gains "note"; summary gains
-        // `notes`. No in-tree consumer parses this report (inventoried
-        // 2026-09-03, zero `lint --json` callers fleet-wide).
+        // `notes`. `handlers` is an additive field under the same version:
+        // always present, empty when a file declares no `on` handler. Its
+        // in-tree consumer is the --source check in tools/verb_registry.mix
+        // (tools/lib/verb_registry_source.mix), which checks every field it
+        // relies on. Existing fields are unchanged.
         "schema_version": 2,
         "tool": "mix lint",
         "mix_version": version,
@@ -637,6 +644,11 @@ fn report_json(
             "hint": d.hint,
         })).collect::<Vec<_>>(),
         "capabilities": capabilities,
+        "handlers": handlers.iter().map(|h| serde_json::json!({
+            "command": h.command,
+            "file": h.file,
+            "line": h.line,
+        })).collect::<Vec<_>>(),
         "summary": {
             "errors": summary.errors,
             "warnings": summary.warnings,

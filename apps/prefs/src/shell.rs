@@ -32,6 +32,8 @@ pub enum Event {
     Delivery(Delivery),
     Released(u64, Result<Reply, CallError>),
     Settled(u64, Result<Reply, CallError>),
+    Backdrop(u64, Result<Reply, CallError>),
+    Browsed(u64, Result<preferences::picker::Listing, String>),
     Shown(u64, Option<u64>, Result<Value, String>),
 }
 
@@ -41,6 +43,8 @@ pub fn apply_event(engine: &mut Engine, event: Event) {
         Event::Delivery(delivery) => engine.delivery(delivery),
         Event::Released(ticket, result) => engine.released(ticket, result),
         Event::Settled(ticket, result) => engine.settled(ticket, result),
+        Event::Backdrop(ticket, result) => engine.wallpaper_finished(ticket, result),
+        Event::Browsed(ticket, result) => engine.browsed(ticket, result),
         Event::Shown(ticket, reply, result) => engine.shown(ticket, reply, result),
     }
 }
@@ -61,6 +65,13 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
             UiEvent::ConfirmRemove => engine.confirm_remove(),
             UiEvent::SetMode(mode) => engine.set_mode(mode),
             UiEvent::Look(look) => engine.edit_look(look),
+            UiEvent::WallpaperTarget(target) => engine.wallpaper_target(target),
+            UiEvent::WallpaperKind(kind) => engine.wallpaper_kind(kind),
+            UiEvent::WallpaperColour(colour) => engine.wallpaper_colour(colour),
+            UiEvent::WallpaperImage(image) => engine.wallpaper_image(image),
+            UiEvent::PickerDirectory(path) => engine.edit_picker_directory(path),
+            UiEvent::PickerSelect(path) => engine.picker_select(&path),
+            UiEvent::PickerEnter(path) => engine.picker_enter(&path),
         }
     }
 }
@@ -253,6 +264,7 @@ impl Shell {
         };
         shell.engine.session = (shell.theme.scheme(), shell.theme.mode());
         shell.engine.start_appearance(&hostname());
+        shell.engine.read_wallpaper();
         shell.settle();
         Ok(shell)
     }
@@ -348,6 +360,24 @@ impl Shell {
 
     fn perform(&mut self, effect: Effect) {
         match effect {
+            Effect::Backdrop { ticket, verb, body } => {
+                let bus = self.bus.clone();
+                self.spawn(async move {
+                    Event::Backdrop(
+                        ticket,
+                        bus.raw_within("backdrop", verb, body.to_string(), Duration::from_secs(60))
+                            .await,
+                    )
+                });
+            }
+            Effect::Browse { ticket, path } => {
+                self.spawn(async move {
+                    let result = tokio::task::spawn_blocking(move || crate::browser::list(path))
+                        .await
+                        .unwrap_or_else(|e| Err(e.to_string()));
+                    Event::Browsed(ticket, result)
+                });
+            }
             Effect::Releases { ticket, verb, body } => {
                 let bus = self.bus.clone();
                 self.spawn(async move {
