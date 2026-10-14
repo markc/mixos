@@ -5149,8 +5149,9 @@ keep their seals, and it does not affect the resolved design.
 ## Terminal
 
 The profile's `terminal` holds the term's preferences. Each default is the
-term's behaviour before the group existed, except the focus ring: `neutral`
-is a deliberately subtler ring than the half-accent one the term drew
+term's behaviour before the group existed, except padding (8 px instead of
+1 px) and the focus ring: `neutral` is a deliberately subtler ring than the
+half-accent one the term drew
 (`accent` at strength 0.5 matches it). Each value is omitted at its
 default, so older profiles keep their seals. It does not affect the resolved
 design. Terminal colours are not a setting: they follow the session theme.
@@ -5160,7 +5161,7 @@ design. Terminal colours are not a setting: they follow the session theme.
 | `terminal.font.family` | string or null, 1–128 bytes, no control characters | null: `appearance.mono_family` |
 | `terminal.font.size` | number 6–48 | the design's UI type size |
 | `terminal.font.weight` | integer 100–900, step 100 | 400 |
-| `terminal.padding` | integer 1, 2, 4, 8 or 16 (px) | 1 |
+| `terminal.padding` | integer 1, 2, 4, 8 or 16 (px) | 8 |
 | `terminal.scrollback.lines` | integer 0–1000000 | 1000 |
 | `terminal.scroll.speed` | integer 10–200 (rows per wheel line, scaled by speed/40; touchpad travel in cell heights at that scale) | 40 |
 | `terminal.border.width` | integer 1–4 (px) | 1 |

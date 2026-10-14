@@ -2,9 +2,9 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The terminal's preferences (`terminal.*`): text, layout, cursor, focus,
 //! mouse and environment. Every default reproduces the term as it was before
-//! these settings existed, except the focus ring: `neutral` by default, a
-//! deliberately subtler ring than the accent one the term drew. Colours are not here: the terminal always follows
-//! the session theme.
+//! these settings existed, except padding (8 px instead of 1 px) and the focus
+//! ring: `neutral` by default, a deliberately subtler ring than the accent one
+//! the term drew. Colours are not here: the terminal always follows the session theme.
 //!
 //! Every value is omitted from the serialised form at its default, and the
 //! whole group while it is all defaults, so a profile written before it
@@ -66,7 +66,7 @@ impl Default for Terminal {
     fn default() -> Self {
         Self {
             font: Font::default(),
-            padding: 1,
+            padding: 8,
             scrollback: Scrollback::default(),
             scroll: Scroll::default(),
             border: Border::default(),
@@ -78,7 +78,7 @@ impl Default for Terminal {
     }
 }
 fn is_default_padding(padding: &u32) -> bool {
-    *padding == 1
+    *padding == 8
 }
 
 impl Terminal {
@@ -332,7 +332,7 @@ pub fn describe() -> Value {
         "terminal.font.family": {"type":"string|null", "max_bytes":FONT_FAMILY_MAX_BYTES, "null":"appearance.mono_family"},
         "terminal.font.size": {"type":"number", "minimum":FONT_SIZE_MIN, "maximum":FONT_SIZE_MAX, "default":default_font_size()},
         "terminal.font.weight": {"type":"integer", "minimum":100, "maximum":900, "step":100, "default":400},
-        "terminal.padding": {"type":"integer", "enum":PADDINGS, "default":1, "unit":"px"},
+        "terminal.padding": {"type":"integer", "enum":PADDINGS, "default":8, "unit":"px"},
         "terminal.scrollback.lines": {"type":"integer", "minimum":0, "maximum":SCROLLBACK_MAX, "default":1000},
         "terminal.scroll.speed": {"type":"integer", "minimum":SCROLL_SPEED_MIN, "maximum":SCROLL_SPEED_MAX, "default":40, "unit":"rows per wheel line, scaled by speed/40"},
         "terminal.border.width": {"type":"integer", "minimum":BORDER_WIDTH_MIN, "maximum":BORDER_WIDTH_MAX, "default":1, "unit":"px"},
@@ -437,7 +437,15 @@ mod tests {
         let old = r#"{"appearance":{"scheme":"forest","mode":"dark","contrast":"normal","source":null},"ui":{"density":1.0,"text_scale":1.0,"reduced_motion":false},"shell":{"panels":{"bottom":{"edge":"bottom","mode":"dock","thickness":40}},"page_order":[]},"apps":{},"keymaps":{"dopus":{"nav.parent":["Ctrl+U"]}}}"#;
         let desktop: Desktop = serde_json::from_str(old).unwrap();
         assert!(desktop.terminal.is_default());
+        assert_eq!(desktop.terminal.padding, 8);
         assert_eq!(serde_json::to_string(&desktop).unwrap(), old);
+        let explicit = format!(
+            r#"{},"terminal":{{"padding":1}}}}"#,
+            old.strip_suffix('}').unwrap()
+        );
+        let desktop: Desktop = serde_json::from_str(&explicit).unwrap();
+        assert_eq!(desktop.terminal.padding, 1);
+        assert_eq!(serde_json::to_string(&desktop).unwrap(), explicit);
         assert!(
             !serde_json::to_string(&Desktop::default())
                 .unwrap()
@@ -447,7 +455,7 @@ mod tests {
     }
 
     #[test]
-    fn defaults_reproduce_the_term_and_round_trip() {
+    fn defaults_round_trip() {
         let t = Terminal::default();
         assert_eq!(t.font.family, None);
         assert_eq!(
@@ -462,7 +470,7 @@ mod tests {
                 t.scroll.speed,
                 t.border.width
             ),
-            (400, 1, 1000, 40, 1)
+            (400, 8, 1000, 40, 1)
         );
         assert_eq!(
             (t.cursor.shape, t.cursor.blink),
@@ -475,7 +483,7 @@ mod tests {
         // Written out in full, every default reads back as the default and
         // serialises away again.
         let full = json!({"font":{"family":null,"size":t.font.size,"weight":400},
-            "padding":1,"scrollback":{"lines":1000},"scroll":{"speed":40},"border":{"width":1},
+            "padding":8,"scrollback":{"lines":1000},"scroll":{"speed":40},"border":{"width":1},
             "cursor":{"shape":"underline","blink":false},"focus":{"ring":"neutral","strength":0.25},
             "mouse":{"copy_on_select":false},"env":{"term":"xterm-256color"}});
         let read: Terminal = serde_json::from_value(full).unwrap();
@@ -484,18 +492,18 @@ mod tests {
         // A changed value round-trips through JSON and Mix data (whole
         // numbers arrive as floats there).
         let mut changed = t.clone();
-        changed.padding = 8;
+        changed.padding = 1;
         changed.cursor.shape = CursorShape::Bar;
         changed.focus.ring = FocusRing::Accent;
         let text = serde_json::to_string(&changed).unwrap();
         assert_eq!(
             text,
-            r#"{"padding":8,"cursor":{"shape":"bar"},"focus":{"ring":"accent"}}"#
+            r#"{"padding":1,"cursor":{"shape":"bar"},"focus":{"ring":"accent"}}"#
         );
         assert_eq!(serde_json::from_str::<Terminal>(&text).unwrap(), changed);
         assert_eq!(
             strict::from_str::<Terminal>(
-                r#"{padding: 8.0, cursor: {shape: "bar"}, focus: {ring: "accent"}}"#
+                r#"{padding: 1.0, cursor: {shape: "bar"}, focus: {ring: "accent"}}"#
             )
             .unwrap(),
             changed
@@ -531,6 +539,7 @@ mod tests {
             "the whole group"
         );
         let described = crate::describe();
+        assert_eq!(described["fields"]["terminal.padding"]["default"], 8);
         for path in paths {
             assert!(described["fields"].get(path).is_some(), "{path}");
         }

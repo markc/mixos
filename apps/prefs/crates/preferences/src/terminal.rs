@@ -267,14 +267,14 @@ mod tests {
     fn an_edit_is_one_fenced_apply_and_waits_for_its_read() {
         let mut e = read();
         assert!(e.can_edit_terminal());
-        e.edit_terminal(Setting::Padding(8));
+        e.edit_terminal(Setting::Padding(1));
         let calls = settings_calls(&mut e);
         assert_eq!(calls.len(), 1);
         let (ticket, verb, body) = calls[0].clone();
         assert_eq!(verb, "settings.apply");
         assert_eq!(body["expected_incarnation"], "inc-1");
         assert_eq!(body["expected_revision"], "7");
-        assert_eq!(body["changes"], json!({"terminal.padding": 8}));
+        assert_eq!(body["changes"], json!({"terminal.padding": 1}));
         assert_eq!(body["reset"], json!([]));
         assert!(!e.can_edit_terminal(), "one apply at a time");
         e.edit_terminal(Setting::Padding(16));
@@ -288,8 +288,8 @@ mod tests {
         assert_eq!(reads.len(), 1);
         assert_eq!(reads[0].1, "settings.get");
         assert!(!e.can_edit_terminal(), "a read must come first");
-        e.settled(reads[0].0, reply(snapshot("8", json!({"padding": 8}))));
-        assert_eq!(e.look.terminal.as_ref().map(|t| t.padding), Some(8));
+        e.settled(reads[0].0, reply(snapshot("8", json!({"padding": 1}))));
+        assert_eq!(e.look.terminal.as_ref().map(|t| t.padding), Some(1));
         assert!(e.can_edit_terminal());
     }
 

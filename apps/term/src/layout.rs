@@ -148,7 +148,7 @@ impl Default for Edges {
     fn default() -> Self {
         Self {
             border: 1,
-            padding: 1,
+            padding: 8,
         }
     }
 }
@@ -391,21 +391,23 @@ mod tests {
     #[test]
     fn the_grid_fits_inside_the_border_in_physical_pixels() {
         let edges = Edges::default();
-        // 8x16 cells at scale 1 with a 1 px border: 802 wide holds exactly
-        // 100 columns, 801 holds 99.
+        assert_eq!(edges.padding, settings::terminal::Terminal::default().padding);
+        // 8x16 cells at scale 1 with 8 px padding: 816 wide holds exactly
+        // 100 columns, 815 holds 99. The border stays 1 px.
+        assert_eq!(edges.border, 1);
         assert_eq!(
-            grid(geometry(0.0, 0.0, 802.0, 482.0), (8, 16), 1.0, edges),
+            grid(geometry(0.0, 0.0, 816.0, 496.0), (8, 16), 1.0, edges),
             (100, 30)
         );
         assert_eq!(
-            grid(geometry(0.0, 0.0, 801.0, 481.0), (8, 16), 1.0, edges),
+            grid(geometry(0.0, 0.0, 815.0, 495.0), (8, 16), 1.0, edges),
             (99, 29)
         );
-        // 2.5x: border is 3 physical (1.2 logical); 20x40 physical cells.
-        // (400 - 2.4) * 2.5 = 994 -> 49 columns.
+        // 2.5x: padding is 20 physical; 20x40 physical cells.
+        // (400 - 16) * 2.5 = 960 -> 48 columns.
         assert_eq!(
             grid(geometry(0.0, 0.0, 400.0, 200.0), (20, 40), 2.5, edges),
-            (49, 12)
+            (48, 11)
         );
         // A pane too small for anything still gets a legal PTY size.
         assert_eq!(

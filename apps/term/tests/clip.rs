@@ -45,8 +45,9 @@ fn a_tiny_pane_never_draws_over_its_neighbour() {
         FontSize::new(13.0),
     );
     app.sync();
-    // Each pane is narrower than two cells plus its border.
-    let width = 2.0 * (cell as f32 + 1.0);
+    // Each pane is narrower than two cells plus its padding.
+    let inset = term::layout::inset(1.0, term::layout::Edges::default());
+    let width = 2.0 * (cell as f32 + inset);
     app.layout(Geometry {
         x: 0.0,
         y: 0.0,
@@ -57,7 +58,7 @@ fn a_tiny_pane_never_draws_over_its_neighbour() {
     assert_eq!(placed.len(), 2);
     let right_pane = placed[1].1;
     assert!(
-        right_pane.x < 2.0 * cell as f32 + 1.0,
+        right_pane.x < 2.0 * cell as f32 + inset,
         "the left grid would reach it"
     );
     app.paint();
@@ -76,7 +77,7 @@ fn a_tiny_pane_never_draws_over_its_neighbour() {
     // The left grid's red, sampled inside it; the right pane must not
     // show it anywhere.
     let pixel = |x: u32, y: u32| image.get_pixel(x, y).0;
-    let ink = pixel(2, 4);
+    let ink = pixel(inset as u32 + 1, inset as u32 + 3);
     let right_inside = pixel(right_pane.x as u32 + 3, 30);
     assert_ne!(
         ink, right_inside,
