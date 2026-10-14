@@ -148,7 +148,10 @@ fn wallpaper_image_pro_light() {
 #[test]
 fn wallpaper_refused_studio_dark() {
     let mut e = appearance_engine();
-    wallpaper_read(&mut e, json!({"schema":1,"default":{"image":"/pictures/good.jpg"}}));
+    wallpaper_read(
+        &mut e,
+        json!({"schema":1,"default":{"image":"/pictures/good.jpg"}}),
+    );
     e.wallpaper_kind(preferences::wallpaper::Kind::Image);
     e.wallpaper_image("/pictures/missing.png".into());
     e.revert_wallpaper();

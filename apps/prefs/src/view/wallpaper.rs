@@ -2,7 +2,10 @@
 use super::{UiEvent, command_button};
 use crate::label;
 use egui::{RichText, Ui};
-use preferences::{Engine, wallpaper::{COLOUR_PRESETS, Kind}};
+use preferences::{
+    Engine,
+    wallpaper::{COLOUR_PRESETS, Kind},
+};
 use toolkit::command::Origin;
 use toolkit::{
     Registry, Strings, bars,
@@ -131,8 +134,12 @@ pub fn controls(
                     ui.horizontal_wrapped(|ui| {
                         ui.label(label("wallpaper-presets"));
                         for (key, colour) in COLOUR_PRESETS {
-                            if toolkit::selectable(ui, text.eq_ignore_ascii_case(colour), label(key))
-                                .clicked()
+                            if toolkit::selectable(
+                                ui,
+                                text.eq_ignore_ascii_case(colour),
+                                label(key),
+                            )
+                            .clicked()
                             {
                                 events.push(UiEvent::WallpaperColour(colour.into()));
                                 events.push(UiEvent::Command("wallpaper.apply", Origin::Ui));
@@ -157,7 +164,9 @@ pub fn controls(
                         if entry.changed() {
                             events.push(UiEvent::WallpaperColour(text));
                         }
-                        if entry.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
+                        if entry.lost_focus()
+                            && ui.input(|input| input.key_pressed(egui::Key::Enter))
+                        {
                             events.push(UiEvent::Command("wallpaper.apply", Origin::Ui));
                         }
                     });

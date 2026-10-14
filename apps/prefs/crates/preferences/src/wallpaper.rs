@@ -809,7 +809,10 @@ mod tests {
             editor
                 .complete(
                     call.ticket,
-                    Ok(reply(10, json!({"error_code": "IMAGE", "message": "could not decode image"}))),
+                    Ok(reply(
+                        10,
+                        json!({"error_code": "IMAGE", "message": "could not decode image"})
+                    )),
                     12
                 )
                 .is_none()
@@ -851,14 +854,21 @@ mod tests {
     fn colour_and_image_calls_send_the_exact_complete_document() {
         for (fill, image) in [
             (json!({"colour": "#AbC123"}), false),
-            (json!({"image": "/opt/mixos/share/wallpapers/hills.jpg"}), true),
+            (
+                json!({"image": "/opt/mixos/share/wallpapers/hills.jpg"}),
+                true,
+            ),
         ] {
             let original = json!({"schema": 1});
             let mut editor = loaded(original.clone());
             if image {
-                editor.edit_image(fill["image"].as_str().unwrap().into()).unwrap();
+                editor
+                    .edit_image(fill["image"].as_str().unwrap().into())
+                    .unwrap();
             } else {
-                editor.edit_colour(fill["colour"].as_str().unwrap().into()).unwrap();
+                editor
+                    .edit_colour(fill["colour"].as_str().unwrap().into())
+                    .unwrap();
             }
             let call = preflight(&mut editor, 10, state(original, Value::Null)).unwrap();
             assert_eq!(call.verb, "backdrop.set");
@@ -871,7 +881,16 @@ mod tests {
         for text in ["#000000", "#ffffff", "#AbC123"] {
             assert!(valid_colour(text), "{text}");
         }
-        for text in ["", "123456", "#fff", "#12345678", "#gg0000", " #123456", "#123456\n", "#é1234"] {
+        for text in [
+            "",
+            "123456",
+            "#fff",
+            "#12345678",
+            "#gg0000",
+            " #123456",
+            "#123456\n",
+            "#é1234",
+        ] {
             assert!(!valid_colour(text), "{text}");
         }
         for (_, text) in COLOUR_PRESETS {
