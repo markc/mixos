@@ -1,0 +1,55 @@
+# term: Terminal, the egui shell around the term-core engine, its grid
+# drawn on the GPU by term-render (AGENTS.md §4.1).
+[package]
+name = "term"
+# Its own version: the term.* verbs are a public contract (CHANGELOG.md).
+description = "Terminal: tabs and split panes over the term-core engine, the grid drawn on the GPU, every action a Bus-reachable command"
+version = "0.4.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "term"
+kind = "app"
+layer = "desktop"
+contract = "public"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+bus = { workspace = true, features = ["native"] }
+buildinfo.workspace = true
+# The outbox for term.command.executed.
+citizen.workspace = true
+config.workspace = true
+eframe.workspace = true
+egui.workspace = true
+serde_json.workspace = true
+settings.workspace = true
+# The Wayland clipboard and primary selection (egui has no primary), on
+# a worker of the window's own with bounded reads (src/selection.rs).
+sctk = { package = "smithay-client-toolkit", version = "=0.20.0", default-features = false, features = ["calloop"] }
+wayland-backend = { version = "=0.3.17", features = ["client_system"] }
+libc.workspace = true
+term-core = { path = "crates/term-core" }
+term-render = { path = "crates/term-render" }
+tokio = { workspace = true, features = ["sync"] }
+toolkit.workspace = true
+# The display handle for the clipboard (raw-window-handle, as wgpu has it).
+wgpu.workspace = true
+
+[dev-dependencies]
+design.workspace = true
+egui-wgpu.workspace = true
+egui_kittest.workspace = true
+term-core = { path = "crates/term-core", features = ["test-support"] }
+# A real broker for the window verbs over the Bus (tests/bus.rs).
+test-broker = { path = "../../libs/test-broker" }
+tokio = { workspace = true, features = ["rt-multi-thread", "time"] }
+
+[build-dependencies]
+buildinfo.workspace = true

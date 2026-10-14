@@ -1,0 +1,30 @@
+# term-render: Term's grid on the GPU — a glyph atlas and instanced cells,
+# drawn by an egui-wgpu paint callback inside the app's own frame.
+[package]
+name = "term-render"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Term's GPU grid renderer: glyph atlas, instanced cells and an egui-wgpu paint callback"
+
+[package.metadata.mixos]
+component = "term"
+kind = "app"
+layer = "desktop"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+egui.workspace = true
+egui-wgpu.workspace = true
+term-core = { path = "../term-core" }
+wgpu.workspace = true
+
+[dev-dependencies]
+egui_kittest.workspace = true
+term-core = { path = "../term-core", features = ["test-support"] }
