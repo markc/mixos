@@ -66,6 +66,7 @@ icons! {
     Circle => "circle",
     CircleAlert => "circle-alert",
     CircleCheck => "circle-check",
+    Contrast => "contrast",
     Copy => "copy",
     Crop => "crop",
     Disc => "disc",

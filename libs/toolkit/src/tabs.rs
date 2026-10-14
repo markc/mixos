@@ -29,7 +29,7 @@
 
 use crate::button::paint_icon;
 use crate::chrome::Chrome;
-use crate::icons::Icon;
+use crate::icons::{self, Icon};
 use design::family::style::DocumentTabs;
 use egui::emath::GuiRounding;
 use egui::text::{LayoutJob, TextWrapping};
@@ -37,6 +37,7 @@ use egui::{
     Color32, FontFamily, FontId, Frame, Galley, Id, Margin, Popup, Rect, Sense, Stroke, StrokeKind,
     Ui, WidgetInfo, WidgetType, pos2, vec2,
 };
+use std::f32::consts::{FRAC_PI_2, PI};
 use std::sync::Arc;
 
 /// The overflow chevron's width, icon size, hover opacity and hover inset
@@ -88,6 +89,11 @@ const PROGRESS: f32 = 2.0;
 
 /// The dirty marker after a document's name, as the window title has it.
 pub const DIRTY: &str = "  •";
+
+/// A status marker's icon side, and the gap between it and the name. Undetermined
+/// by the specification (§5.4): sized to the 11.5 pt Pro title.
+const MARKER: f32 = 11.0;
+const MARKER_GAP: f32 = 5.0;
 
 /// How a strip's tabs fit: each tab's width, or `None` when it moved into
 /// the chevron menu.
@@ -226,6 +232,42 @@ pub struct DocTab {
     pub dirty: bool,
     /// A background job's progress, 0 to 1.
     pub progress: Option<f32>,
+    /// A leading status marker: the turn, in radians, of the half-filled
+    /// disc drawn before the name (see [`split_marker`]).
+    pub marker: Option<f32>,
+}
+
+/// The turn of the half-filled disc for a status glyph, or `None` when
+/// `glyph` is not one. The shipped `contrast` icon is the right half filled,
+/// which is ◑ as drawn; every other glyph is that icon turned a quarter or
+/// half turn, clockwise on screen.
+pub fn half_disc_turn(glyph: char) -> Option<f32> {
+    match glyph {
+        '\u{25D1}' => Some(0.0),             // ◑ right half
+        '\u{25D3}' => Some(FRAC_PI_2),       // ◓ lower half
+        '\u{25D0}' => Some(PI),              // ◐ left half
+        '\u{25D2}' => Some(3.0 * FRAC_PI_2), // ◒ upper half
+        _ => None,
+    }
+}
+
+/// Splits a leading status glyph (a program's spinner) from its title: the
+/// marker's turn and the rest of the title, with its leading spaces removed.
+pub fn split_marker(title: &str) -> (Option<f32>, &str) {
+    let mut chars = title.chars();
+    match chars.next().and_then(half_disc_turn) {
+        Some(turn) => (Some(turn), chars.as_str().trim_start()),
+        None => (None, title),
+    }
+}
+
+/// The room a tab's marker takes before its name, or zero without one.
+fn marker_room(tab: &DocTab) -> f32 {
+    if tab.marker.is_some() {
+        MARKER + MARKER_GAP
+    } else {
+        0.0
+    }
 }
 
 /// What happened on a document strip this frame.
@@ -312,7 +354,7 @@ fn strip_tabs(
             } else {
                 STUDIO_META_GAP + text_width(&t.meta, &meta_font)
             };
-            text_width(name, &name_font) + meta + pad + gap
+            text_width(name, &name_font) + meta + pad + gap + marker_room(t)
         })
         .collect();
     let fit = fit(&naturals, minimum + gap, strip.width(), Some(selected));
@@ -430,15 +472,28 @@ fn doc_tab(
     } else {
         STUDIO_NAME_LEFT
     };
-    let text_room = close_rect.left() - (rect.left() + left);
+    let lead = marker_room(tab);
+    let text_room = close_rect.left() - (rect.left() + left + lead);
     let (galley, cut) = label(ui, name, name_font.clone(), text_room, 0.0);
     let ink = match (pro, selected) {
         (_, true) => p.text,
         (true, false) => p.text_faint,
         (false, false) => p.text_dim,
     };
-    let name_at =
-        pos2(rect.left() + left, rect.center().y - galley.size().y / 2.0).round_to_pixels(ppp);
+    if let Some(turn) = tab.marker {
+        // Both halves are the one shipped icon, turned in place: same bounds, same
+        // stroke, so switching between them cannot change its size.
+        let centre = pos2(rect.left() + left + MARKER / 2.0, rect.center().y);
+        let at = Rect::from_center_size(centre, vec2(MARKER, MARKER)).round_to_pixels(ppp);
+        icons::image(Icon::Contrast, icons::stroke_of(ui.ctx()), MARKER, ink)
+            .rotate(turn, vec2(0.5, 0.5))
+            .paint_at(ui, at);
+    }
+    let name_at = pos2(
+        rect.left() + left + lead,
+        rect.center().y - galley.size().y / 2.0,
+    )
+    .round_to_pixels(ppp);
     let name_right = name_at.x + galley.size().x;
     painter.galley(name_at, galley, ink);
     if !pro && !tab.meta.is_empty() && !cut {
@@ -487,6 +542,21 @@ fn doc_tab(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn status_glyphs_split_off_as_turns() {
+        assert_eq!(split_marker("\u{25D1} build"), (Some(0.0), "build"));
+        assert_eq!(split_marker("\u{25D0}  build"), (Some(PI), "build"));
+        assert_eq!(split_marker("\u{25D3} build"), (Some(FRAC_PI_2), "build"));
+        assert_eq!(split_marker("\u{25D2} build"), (Some(3.0 * FRAC_PI_2), "build"));
+    }
+
+    #[test]
+    fn other_titles_keep_their_text() {
+        assert_eq!(split_marker("build"), (None, "build"));
+        assert_eq!(split_marker("\u{25A1} build"), (None, "\u{25A1} build"));
+        assert_eq!(split_marker(""), (None, ""));
+    }
 
     #[test]
     fn tabs_that_fit_keep_their_natural_widths() {

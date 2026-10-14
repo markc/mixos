@@ -54,10 +54,16 @@ pub fn tab_strip(ui: &mut Ui, app: &App) -> Vec<UiEvent> {
     }
     let shown: Vec<DocTab> = tabs
         .iter()
-        .map(|tab| DocTab {
-            title: tab.title.clone(),
-            name: tab.title.clone(),
-            ..DocTab::default()
+        .map(|tab| {
+            // A program's spinner glyph (Claude Code's status) is drawn as the
+            // shared half-disc icon, not as text the UI font may lack.
+            let (marker, rest) = toolkit::tabs::split_marker(&tab.title);
+            DocTab {
+                title: rest.to_owned(),
+                name: rest.to_owned(),
+                marker,
+                ..DocTab::default()
+            }
         })
         .collect();
     let selected = tabs.iter().position(|tab| tab.active).unwrap_or(0);
