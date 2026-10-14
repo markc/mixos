@@ -14,11 +14,11 @@ What it draws today:
 
 - a **solid colour** per output, or the **session theme's** colour when no
   document names one;
-- a **PNG or JPEG image**, centre-cropped to fill each output (the default
-  and only fit). Each output may have its own.
+- a **PNG or JPEG image**, with fill, fit, centre, tile or stretch sizing;
+- a **slideshow**, from a folder or an explicit image list, with a half-second
+  crossfade. Each output may have its own wallpaper.
 
-Not yet: fit modes other than centre-crop, slideshows, the live folder view
-and preferences UI. The probe (`backdrop --probe`) is still there: it is the
+The live folder view remains planned. The probe (`backdrop --probe`) is the
 regression gate for the surfaces, scale and input, and draws its own labels.
 
 ## The document
@@ -37,9 +37,16 @@ outputs: {
 - `schema` is required and must be `1`.
 - `default` is one wallpaper; without it the session theme's colour fills
   every output.
-- Each wallpaper names exactly one of `colour` (`#RRGGBB`, six hex digits) or
-  `image` (an absolute path). `fallback` (`#RRGGBB`) goes with an image only:
-  it is shown until the image is decoded.
+- Each wallpaper names exactly one of `colour` (`#RRGGBB`, six hex digits),
+  `image` (an absolute path) or `slideshow` (the source and timing below).
+  `fallback` (`#RRGGBB`) goes with an image or slideshow: it shows behind
+  transparent pixels and in letterbox bars. Without it the theme colour shows.
+- `fit` goes with an image or slideshow. It defaults to `fill`, which crops
+  equally from opposite edges to cover the output. `fit` preserves the aspect
+  ratio with letterbox bars; `centre` centres the image at its native pixel
+  size; `tile` repeats at its native pixel size from the top left; `stretch`
+  covers the output without preserving the aspect ratio. Native sizing honours
+  the output scale even when the retained texture has been downscaled.
 - `outputs` maps an output's name (`DP-1`) to its own wallpaper; an output
   without one takes the default.
 - Unknown keys, wrong types, bad colours, relative paths and other shapes
@@ -48,6 +55,29 @@ outputs: {
 Command line: `--colour #RRGGBB` or `--image FILE` replaces the document's
 **default** for this run (it is not stored). `--service NAME` registers the
 Bus name (default `backdrop`).
+
+## Slideshows
+
+```text
+schema: 1
+default: {
+  slideshow: { folder: "/usr/share/wallpapers", interval_s: 600, shuffle: false },
+  fallback: "#101820",
+  fit: "fit",
+}
+```
+
+Replace `folder` with `images: ["/usr/share/wallpapers/a.png",
+"/usr/share/wallpapers/b.jpg"]` for an explicit order. Exactly one source is
+required, all paths are absolute, and an explicit list must be non-empty.
+`interval_s` defaults to 600 and values below 5 are refused. `shuffle` defaults
+to false. Folder discovery is bounded and non-recursive; PNG and JPEG files
+are sorted before scheduling. Discovery and decoding run on the worker.
+
+A slideshow retains its current image while the next decodes. A failed decode
+keeps that image and reports the error; the next timer attempt waits for the
+interval. A successful advance crossfades for about 0.5 seconds, then releases
+the previous image and texture. The configured source is preserved when stored.
 
 ## Images
 
@@ -59,8 +89,9 @@ Bus name (default `backdrop`).
   256 MiB.
 - Decoding runs on one worker thread, one image at a time. The kept image is
   downscaled so its longest side is at most 3840 pixels.
-- At most four distinct images per document, counted after command-line
-  overrides: a `--image` that makes five is refused.
+- At most four resident image sources per document, counted after command-line
+  overrides. A slideshow counts as one source regardless of its list length;
+  only its selected images are decoded.
 - Every image a set names is decoded again, even one already on screen, so a
   file replaced at the same path is picked up by the next set.
 - A set applies only once all its images are decoded. A missing, corrupt,
@@ -85,7 +116,8 @@ still held, so a swap is counted in full. When bytes are released, live outputs
 are woken once so one that was starved draws again; nothing wakes when nothing
 is freed.
 
-- A context owns at most one image texture. Replacing it reserves the new size
+- A context owns one image texture, or two during a slideshow crossfade.
+  Replacing it reserves the new size
   while the old is still held, so the overlap is counted; a texture that does
   not fit leaves that output on its fallback colour, with the reason in its
   `error`. Removing an output, showing a solid colour, or a change of image
@@ -108,6 +140,7 @@ Service `backdrop` (or `--service`). Verbs (registered in
 | `backdrop.ping` | query | `{}` | `{schema, service}` |
 | `backdrop.state` | query | `{}` | the state below |
 | `backdrop.set` | intent | a complete document (above) | the change, once applied |
+| `backdrop.next` | intent | `{}` | full state, once the next images have decoded and applied |
 
 `backdrop.set` replaces the whole document; it does not patch it. A valid
 set waits for its images, is stored in the document's file (atomically,
@@ -121,6 +154,11 @@ through `config::atomic`), and then applies. Its reply is `rc 0` with
   stored but its durability is not confirmed (applied; the reply says so);
 - `SUPERSEDED`: a newer set replaced this one before it applied.
 
+`backdrop.next` advances configured slideshows without changing or storing their
+sources. It refuses a configuration with no slideshow. An advance waiting for
+decode keeps the current pixels; a newer set can supersede it. Refused advances
+are not published as executed commands.
+
 `backdrop.state` answers with no output on screen:
 `{schema, service, requested, active, pending, error, config, config_file,
 outputs}`. `requested` and `active` are revisions: `requested` numbers every request
@@ -131,7 +169,7 @@ shows (`theme`, `colour`, `image` or `fallback`), its `error`, and
 `presented_revision`: the revision that output last drew. Use that field to see
 what is on screen; `active` alone does not mean every output has presented it yet.
 
-Every applied set is one run of `backdrop.set` and is published on
+Every applied Bus set or next is one run of its command and is published on
 `backdrop.command.executed` with origin `bus`. The command line's default is
 not a run: it is the start state.
 
@@ -140,6 +178,10 @@ not a run: it is the start state.
 It costs nothing while nothing changes. A static colour or image draws once
 per output and then sleeps; a set, a decode, a change of output or scale wakes
 it through egui's repaint request.
+
+The slideshow controller waits on its inbox until the next schedule or fade
+deadline. It never polls. Repaints run only while a fade is active, and stop
+when the previous texture is released.
 
 ## Start-up and failure
 

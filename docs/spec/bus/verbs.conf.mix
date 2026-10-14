@@ -67,6 +67,7 @@
     {name:"backdrop.ping", owner:"backdrop", version:"0.1.1", status:"accepted", class:"query"},
     {name:"backdrop.state", owner:"backdrop", version:"0.1.1", status:"accepted", class:"query"},
     {name:"backdrop.set", owner:"backdrop", version:"0.1.1", status:"accepted", class:"intent"},
+    {name:"backdrop.next", owner:"backdrop", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"releases.status", owner:"releasesd", version:"0.1.0", status:"accepted", class:"query"},
     {name:"releases.list", owner:"releasesd", version:"0.1.0", status:"accepted", class:"query"},
     {name:"releases.check", owner:"releasesd", version:"0.1.0", status:"accepted", class:"intent"},

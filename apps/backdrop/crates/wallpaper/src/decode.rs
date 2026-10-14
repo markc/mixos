@@ -24,7 +24,7 @@ use image::{ImageFormat, ImageReader, RgbaImage, imageops::FilterType};
 use std::fs::OpenOptions;
 use std::io::{BufReader, Cursor, Read};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Compressed input larger than this is refused.
 pub const MAX_FILE_BYTES: u64 = 32 * 1024 * 1024;
@@ -41,6 +41,7 @@ pub const TARGET_SIDE: u32 = 3840;
 #[derive(Debug, Clone)]
 pub struct Decoded {
     pub size: [u32; 2],
+    pub original_size: [u32; 2],
     pub rgba: RgbaImage,
 }
 
@@ -135,6 +136,7 @@ pub fn decode_bytes(bytes: &[u8], shown: &str) -> Result<Decoded, String> {
     let rgba = downscale(rgba);
     Ok(Decoded {
         size: [rgba.width(), rgba.height()],
+        original_size: [width, height],
         rgba,
     })
 }
@@ -143,6 +145,31 @@ pub fn decode_bytes(bytes: &[u8], shown: &str) -> Result<Decoded, String> {
 pub fn load(path: &Path) -> Result<Decoded, String> {
     let bytes = read_bounded(path)?;
     decode_bytes(&bytes, &path.display().to_string())
+}
+
+/// Discover a bounded, non-recursive slideshow source on the decode worker.
+/// The cap counts all entries, including skipped files, to bound traversal.
+pub fn list_folder(path: &Path) -> Result<Vec<PathBuf>, String> {
+    let entries = std::fs::read_dir(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut paths = Vec::new();
+    for (i, entry) in entries.enumerate() {
+        if i >= crate::schema::MAX_SLIDES {
+            return Err(format!("{}: more than {} directory entries", path.display(), crate::schema::MAX_SLIDES));
+        }
+        let entry = entry.map_err(|e| format!("{}: {e}", path.display()))?;
+        if !entry.file_type().map_err(|e| format!("{}: {e}", entry.path().display()))?.is_file() {
+            continue;
+        }
+        let file = entry.path();
+        let supported = file.extension().and_then(|x| x.to_str()).is_some_and(|ext|
+            matches!(ext.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg"));
+        if supported {
+            paths.push(file);
+        }
+    }
+    paths.sort();
+    if paths.is_empty() { return Err(format!("{}: no PNG or JPEG images", path.display())); }
+    Ok(paths)
 }
 
 /// `image` scaled down so its longest side is at most [`TARGET_SIDE`].
@@ -230,7 +257,9 @@ mod tests {
         let dir = dir();
         let path = dir.path().join("wide.png");
         RgbaImage::new(4000, 10).save(&path).unwrap();
-        assert_eq!(load(&path).unwrap().size, [TARGET_SIDE, 10]);
+        let decoded = load(&path).unwrap();
+        assert_eq!(decoded.size, [TARGET_SIDE, 10]);
+        assert_eq!(decoded.original_size, [4000, 10]);
     }
 
     #[test]
@@ -289,5 +318,25 @@ mod tests {
         );
         assert!(check_dimensions(8192, 4096).is_ok());
         assert!(check_dimensions(MAX_SIDE, 1).is_ok());
+    }
+
+    #[test]
+    fn folder_discovery_is_sorted_non_recursive_and_skips_symlinks() {
+        let dir = dir();
+        for name in ["b.JPG", "a.png", "ignored.txt"] { std::fs::write(dir.path().join(name), b"fixture").unwrap(); }
+        let nested = dir.path().join("nested");
+        std::fs::create_dir(&nested).unwrap();
+        std::fs::write(nested.join("c.png"), b"fixture").unwrap();
+        std::os::unix::fs::symlink(dir.path().join("a.png"), dir.path().join("link.png")).unwrap();
+        assert_eq!(list_folder(dir.path()).unwrap(), vec![dir.path().join("a.png"), dir.path().join("b.JPG")]);
+    }
+
+    #[test]
+    fn empty_missing_and_excessive_folders_are_refused() {
+        let dir = dir();
+        assert!(list_folder(dir.path()).is_err());
+        assert!(list_folder(&dir.path().join("missing")).is_err());
+        for i in 0..=crate::schema::MAX_SLIDES { std::fs::write(dir.path().join(format!("{i}.txt")), b"").unwrap(); }
+        assert!(list_folder(dir.path()).unwrap_err().contains("directory entries"));
     }
 }

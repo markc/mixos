@@ -3,16 +3,16 @@
 The MixOS desktop background: an egui program on the compositor's
 Background layer, one surface per output, drawn with `toolkit::layer`.
 
-Today it draws a solid colour per output, or a PNG/JPEG image centre-cropped
-to fill it. With no document it uses the session theme's colour. Its
+It draws a solid colour, a PNG/JPEG image or a slideshow per output, with
+fill, fit, centre, tile and stretch modes. With no document it uses the session theme's colour. Its
 document is `backdrop.mx` (strict data, `schema: 1`); its Bus verbs are
-`backdrop.ping`, `backdrop.state` and `backdrop.set`. The full format, the
+`backdrop.ping`, `backdrop.state`, `backdrop.set` and `backdrop.next`. The full format, the
 limits and the verbs are in [`docs/backdrop.md`](../../docs/backdrop.md).
 
 Layout:
 
 - `src/main.rs`: command line, the start-up document, the layer loop;
-- `src/control.rs`: the Bus controller and its one command, `backdrop.set`;
+- `src/control.rs`: the Bus controller, decode worker and slideshow timer;
 - `src/program.rs`: the layer program, which only draws a published view;
 - `src/probe.rs`: `--probe`, the regression probe (JSON lines on stdout);
 - `crates/wallpaper`: the engine: the document, colour, fit, decode limits

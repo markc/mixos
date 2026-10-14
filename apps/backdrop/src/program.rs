@@ -8,25 +8,34 @@
 //!
 //! Texture rules:
 //!
-//! - a context owns at most one image texture, in its own temporary data, so
-//!   one output never reuses another's texture;
+//! - a context holds at most two image textures in its own temporary data: the
+//!   current one, and the outgoing one while a fade runs. One output never
+//!   reuses another's texture;
 //! - every texture is paid for from one aggregate [`Budget`] ([`TEXTURE_BUDGET`]).
 //!   A reservation is held by the slot that owns the texture and released when
 //!   the slot is replaced, removed or its context goes;
-//! - replacing a texture reserves the new size while the old is still held, so
-//!   the overlap is counted. A texture that does not fit leaves its output on
+//! - a new current texture is reserved while the old one is still held, so the
+//!   overlap is counted. An outgoing texture that a new fade no longer needs is
+//!   released before that reservation, so a context never holds a third. A
+//!   texture that does not fit keeps the last good one, or leaves its output on
 //!   its fallback, with the reason in the output's status;
 //! - a fallback or theme colour is painted beneath every image, so an alpha
-//!   image shows what is beneath it, not a hole.
+//!   image shows what is beneath it, not a hole. A fade paints the outgoing
+//!   image over its own fallback, then fades the current fallback and image in.
 
-use egui::{Color32, ColorImage, CornerRadius, Id, Rect, TextureHandle, TextureOptions, pos2};
+use egui::{
+    Color32, ColorImage, CornerRadius, Id, Rect, TextureHandle, TextureOptions, TextureWrapMode,
+    pos2, vec2,
+};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::{Duration, Instant};
 use toolkit::layer::{LayerProgram, SurfaceInfo};
 use wallpaper::decode::Decoded;
-use wallpaper::{Config, Rgb, Wallpaper, fit};
+use wallpaper::fit::{self, Fit};
+use wallpaper::{Config, Rgb, Wallpaper};
 
 /// The most texture memory, in bytes, all outputs' images may hold together,
 /// overlap included. A full-size image (3840 × 3840 × 4 bytes) is 56.25 MiB; a
@@ -36,8 +45,10 @@ pub const TEXTURE_BUDGET: u64 = 512 * 1024 * 1024;
 
 /// The owner key a context carries in its own data: which wakers entry is it.
 const OWNER: &str = "backdrop-owner";
-/// The slot a context keeps its one image texture in.
-const SLOT: &str = "backdrop-wallpaper-texture";
+/// How long a changed slideshow image takes to fade in.
+pub const FADE: Duration = Duration::from_millis(500);
+/// The slots a context keeps its textures in.
+const SLOTS: &str = "backdrop-wallpaper-slots";
 
 /// The egui contexts of the live surfaces, each with its owner token, which the
 /// controller wakes on a change.
@@ -56,6 +67,12 @@ pub struct View {
     pub revision: u64,
     pub config: Config,
     pub images: BTreeMap<PathBuf, Arc<Resident>>,
+    /// The images the previous slide showed, kept for the fade.
+    pub previous: BTreeMap<PathBuf, Arc<Resident>>,
+    /// The configuration before the change a fade is for, `None` when no fade runs.
+    pub previous_config: Option<Config>,
+    /// When the fade started, on the monotonic clock the program reads.
+    pub fade_started: Option<Instant>,
 }
 
 /// One output as the program last drew it.
@@ -147,13 +164,29 @@ impl Drop for Reservation {
     }
 }
 
-/// The image texture a context owns, with the bytes it is paid for in. The
+/// An image texture a context owns, with the bytes it is paid for in. The
 /// reservation is held for its drop: it releases the bytes when the slot goes.
 #[derive(Clone)]
 struct Slot {
     serial: u64,
     texture: TextureHandle,
+    /// The pixel size and fit it was uploaded for, to place it again.
+    original: [u32; 2],
+    fit: Fit,
     _reservation: Arc<Reservation>,
+}
+
+/// A context's textures: the current image and, during a fade, the outgoing one.
+#[derive(Clone, Default)]
+struct Slots {
+    current: Option<Slot>,
+    previous: Option<Slot>,
+}
+
+impl Slots {
+    fn clear(&mut self) {
+        *self = Self::default();
+    }
 }
 
 pub struct Backdrop {
@@ -200,62 +233,110 @@ fn upload(image: &Decoded) -> ColorImage {
     ColorImage::from_rgba_unmultiplied([w as usize, h as usize], image.rgba.as_raw())
 }
 
-/// Draw `resident` over `rect` on `ui`'s context, centre-cropped. Err when the
-/// texture does not fit the budget; the context then holds no image texture.
-fn draw_image(
-    ui: &egui::Ui,
-    resident: &Resident,
-    rect: Rect,
-    budget: &Arc<Budget>,
-) -> Result<(), String> {
-    let ctx = ui.ctx().clone();
-    let slot_id = Id::new(SLOT);
-    let previous = ctx.data(|d| d.get_temp::<Slot>(slot_id));
-    let texture = match previous {
-        Some(slot) if slot.serial == resident.serial => slot.texture,
-        previous => {
-            // The new size is reserved while the old one is still held, so the
-            // overlap is counted against the budget.
-            let bytes = resident.image.bytes();
-            let Some(reservation) = budget.reserve(bytes) else {
-                ctx.data_mut(|d| d.remove::<Slot>(slot_id));
-                return Err(format!(
-                    "texture budget: {bytes} bytes will not fit beside {} of {} bytes in use",
-                    budget.used(),
-                    budget.limit
-                ));
-            };
-            let texture = match previous {
-                Some(mut slot) => {
-                    slot.texture
-                        .set(upload(&resident.image), TextureOptions::LINEAR);
-                    slot.texture
-                }
-                None => ctx.load_texture(
-                    "backdrop-wallpaper",
-                    upload(&resident.image),
-                    TextureOptions::LINEAR,
-                ),
-            };
-            // Replacing the slot drops the old reservation, after the new one.
-            ctx.data_mut(|d| {
-                d.insert_temp(
-                    slot_id,
-                    Slot {
-                        serial: resident.serial,
-                        texture: texture.clone(),
-                        _reservation: Arc::new(reservation),
-                    },
-                )
-            });
-            texture
-        }
+/// Tiles repeat across the surface; every other image clamps at its edge.
+fn texture_options(fit: Fit) -> TextureOptions {
+    let wrap_mode = if fit == Fit::Tile {
+        TextureWrapMode::Repeat
+    } else {
+        TextureWrapMode::ClampToEdge
     };
-    let [w, h] = resident.image.size;
-    let uv = fit::centre_crop([w, h], [rect.width(), rect.height()]);
-    let uv = Rect::from_min_max(pos2(uv.min[0], uv.min[1]), pos2(uv.max[0], uv.max[1]));
-    ui.painter().image(texture.id(), rect, uv, Color32::WHITE);
-    Ok(())
+    TextureOptions {
+        wrap_mode,
+        ..TextureOptions::LINEAR
+    }
+}
+
+/// Take the context's textures out of its data. The caller drops them, so their
+/// bytes return to the budget outside egui's data lock.
+fn take_slots(ctx: &egui::Context) -> Slots {
+    ctx.data_mut(|d| d.remove_temp::<Slots>(Id::new(SLOTS)))
+        .unwrap_or_default()
+}
+
+fn store_slots(ctx: &egui::Context, slots: Slots) {
+    ctx.data_mut(|d| d.insert_temp(Id::new(SLOTS), slots));
+}
+
+/// Make `resident` the context's current texture. Nothing is uploaded while the
+/// current texture already holds it. Otherwise the outgoing texture goes first,
+/// then the new size is reserved while the old current one is still held. A
+/// fade keeps that old one as the outgoing texture; any other change drops it.
+/// On failure the last good current texture stays in place.
+fn current_texture(
+    ctx: &egui::Context,
+    slots: &mut Slots,
+    resident: &Resident,
+    fit: Fit,
+    budget: &Arc<Budget>,
+    fading: bool,
+) -> Result<TextureHandle, String> {
+    if let Some(slot) = slots
+        .current
+        .as_mut()
+        .filter(|slot| slot.serial == resident.serial)
+    {
+        if slot.fit != fit {
+            // The wrap mode is fixed at upload, so a changed fit uploads once more.
+            slot.texture.set(upload(&resident.image), texture_options(fit));
+            slot.fit = fit;
+        }
+        return Ok(slot.texture.clone());
+    }
+    // The outgoing texture of an earlier fade is obsolete now: release it before
+    // the new size is reserved, so the context never holds a third.
+    slots.previous = None;
+    let bytes = resident.image.bytes();
+    let Some(reservation) = budget.reserve(bytes) else {
+        return Err(format!(
+            "texture budget: {bytes} bytes will not fit beside {} of {} bytes in use",
+            budget.used(),
+            budget.limit
+        ));
+    };
+    let texture = ctx.load_texture(
+        "backdrop-wallpaper",
+        upload(&resident.image),
+        texture_options(fit),
+    );
+    let slot = Slot {
+        serial: resident.serial,
+        texture: texture.clone(),
+        original: resident.image.original_size,
+        fit,
+        _reservation: Arc::new(reservation),
+    };
+    // Replacing the current slot drops the old reservation, after the new one.
+    let outgoing = slots.current.replace(slot);
+    slots.previous = if fading { outgoing } else { None };
+    Ok(texture)
+}
+
+/// Paint `texture` over `rect` at `alpha`, placed by `fit` for an image of
+/// `original` pixels on the output's physical scale.
+fn paint_image(
+    ui: &egui::Ui,
+    texture: &TextureHandle,
+    original: [u32; 2],
+    fit: Fit,
+    rect: Rect,
+    alpha: f32,
+) {
+    let place = fit::placement(
+        original,
+        [rect.width(), rect.height()],
+        ui.ctx().pixels_per_point(),
+        fit,
+    );
+    let dest = Rect::from_min_max(
+        rect.min + vec2(place.min[0], place.min[1]),
+        rect.min + vec2(place.max[0], place.max[1]),
+    );
+    let uv = Rect::from_min_max(
+        pos2(place.uv.min[0], place.uv.min[1]),
+        pos2(place.uv.max[0], place.uv.max[1]),
+    );
+    let tint = Color32::from_white_alpha((alpha.clamp(0.0, 1.0) * 255.0).round() as u8);
+    ui.painter().image(texture.id(), dest, uv, tint);
 }
 
 impl LayerProgram for Backdrop {
@@ -298,7 +379,8 @@ impl LayerProgram for Backdrop {
         if let Some(owner) = ctx.data(|d| d.get_temp::<u64>(Id::new(OWNER))) {
             lock(&self.wakers).retain(|(token, _)| *token != owner);
         }
-        ctx.data_mut(|d| d.remove::<Slot>(Id::new(SLOT)));
+        // The textures go with the surface; dropping them releases their bytes.
+        drop(take_slots(ctx));
         if let Some(name) = &surface.output {
             lock(&self.shared).outputs.remove(name);
         }
@@ -327,39 +409,114 @@ impl Backdrop {
     fn show_pass(&mut self, ui: &mut egui::Ui, surface: &SurfaceInfo) {
         let view = lock(&self.shared).view.clone();
         self.revision = view.revision;
+        let ctx = ui.ctx().clone();
         let rect = ui.max_rect();
         let theme = ui.visuals().panel_fill;
-        let mut error = None;
-        self.shows = match view.config.for_output(surface.output.as_deref()) {
+        let name = surface.output.as_deref();
+        let config = view.config.for_output(name);
+        let outgoing = view.previous_config.as_ref().map(|old| old.for_output(name));
+        let mut slots = take_slots(&ctx);
+        // A fade runs only where this output's image changes path, and only
+        // until its time is up; once it has run out the outgoing texture goes.
+        let fade = match (view.fade_started, config, outgoing) {
+            (Some(start), Wallpaper::Image { path, .. }, Some(Wallpaper::Image { path: old, .. }))
+                if old != path =>
+            {
+                let elapsed = Instant::now().saturating_duration_since(start);
+                Some((elapsed.as_secs_f32() / FADE.as_secs_f32()).min(1.0))
+            }
+            _ => None,
+        }
+        .filter(|progress| *progress < 1.0);
+        if fade.is_none() {
+            slots.previous = None;
+        }
+        let (shows, error) = match config {
             Wallpaper::Theme => {
+                slots.clear();
                 paint(ui, rect, theme);
-                "theme"
+                ("theme", None)
             }
             Wallpaper::Colour(rgb) => {
+                slots.clear();
                 paint(ui, rect, colour(*rgb));
-                "colour"
+                ("colour", None)
             }
-            Wallpaper::Image { path, fallback } => {
+            Wallpaper::Slideshow { .. } => {
+                // The controller publishes the resolved image, never a slideshow.
+                slots.clear();
+                paint(ui, rect, theme);
+                ("fallback", Some("slideshow was not resolved".to_owned()))
+            }
+            Wallpaper::Image { path, fallback, fit } => {
                 // Beneath every image: the fallback, else the theme.
-                paint(ui, rect, fallback.map_or(theme, colour));
-                match view.images.get(path) {
-                    Some(resident) => match draw_image(ui, resident, rect, &self.budget) {
-                        Ok(()) => "image",
+                let base = fallback.map_or(theme, colour);
+                let mut error = None;
+                let current = match view.images.get(path) {
+                    None => {
+                        slots.clear();
+                        None
+                    }
+                    Some(resident) => match current_texture(
+                        &ctx,
+                        &mut slots,
+                        resident,
+                        *fit,
+                        &self.budget,
+                        fade.is_some(),
+                    ) {
+                        Ok(texture) => Some((texture, resident.image.original_size, *fit)),
                         Err(reason) => {
                             error = Some(reason);
-                            "fallback"
+                            // The last good texture stays until memory frees up.
+                            slots
+                                .current
+                                .as_ref()
+                                .map(|slot| (slot.texture.clone(), slot.original, slot.fit))
                         }
                     },
-                    None => "fallback",
+                };
+                match (current, fade) {
+                    (None, _) => {
+                        paint(ui, rect, base);
+                        ("fallback", error)
+                    }
+                    (Some((texture, original, fit)), Some(progress)) => {
+                        // The outgoing image, full over its own fallback; then the
+                        // current fallback and image fade in over it.
+                        if let Some(Wallpaper::Image {
+                            path: old_path,
+                            fallback: old_base,
+                            ..
+                        }) = outgoing
+                        {
+                            paint(ui, rect, old_base.map_or(theme, colour));
+                            let held = slots.previous.as_ref().filter(|slot| {
+                                view.previous
+                                    .get(old_path)
+                                    .is_some_and(|old| old.serial == slot.serial)
+                            });
+                            if let Some(slot) = held {
+                                paint_image(ui, &slot.texture, slot.original, slot.fit, rect, 1.0);
+                            }
+                        }
+                        paint(ui, rect, base.gamma_multiply(progress));
+                        paint_image(ui, &texture, original, fit, rect, progress);
+                        // Only a fade that has not run out asks for another pass.
+                        ui.ctx().request_repaint();
+                        ("image", error)
+                    }
+                    (Some((texture, original, fit)), None) => {
+                        paint(ui, rect, base);
+                        paint_image(ui, &texture, original, fit, rect, 1.0);
+                        ("image", error)
+                    }
                 }
             }
         };
+        self.shows = shows;
         self.error = error;
-        // Any shown image that is not this pass's leaves the context: a solid
-        // fill or the theme holds no texture (its memory goes back to the budget).
-        if self.shows != "image" {
-            ui.ctx().data_mut(|d| d.remove::<Slot>(Id::new(SLOT)));
-        }
+        store_slots(&ctx, slots);
     }
 }
 
@@ -409,5 +566,171 @@ mod tests {
         assert!(budget.take_freed(), "the release is reported");
         assert!(!budget.take_freed(), "and reported once");
         assert!(budget.reserve(60).is_some(), "the starved output now fits");
+    }
+
+    const SIDE: u32 = 4;
+
+    fn wallpaper_image(path: &str) -> Wallpaper {
+        Wallpaper::Image {
+            path: PathBuf::from(path),
+            fallback: None,
+            fit: Fit::Fill,
+        }
+    }
+
+    /// A square of `SIDE` pixels: 4 × 4 × 4 bytes.
+    fn resident(serial: u64) -> Arc<Resident> {
+        let rgba = image::RgbaImage::from_pixel(SIDE, SIDE, image::Rgba([200, 30, 30, 255]));
+        Arc::new(Resident {
+            serial,
+            image: Decoded {
+                size: [SIDE, SIDE],
+                original_size: [SIDE, SIDE],
+                rgba,
+            },
+        })
+    }
+
+    /// A view showing `path`, its image at `serial`.
+    fn view(revision: u64, path: &str, serial: u64) -> View {
+        View {
+            revision,
+            config: Config { default: wallpaper_image(path), outputs: BTreeMap::new() },
+            images: BTreeMap::from([(PathBuf::from(path), resident(serial))]),
+            ..Default::default()
+        }
+    }
+
+    /// A view fading `path` in over `old_path`, which fell out at `started`.
+    fn fade(
+        revision: u64,
+        path: &str,
+        serial: u64,
+        old_path: &str,
+        old_serial: u64,
+        started: Instant,
+    ) -> View {
+        View {
+            previous: BTreeMap::from([(PathBuf::from(old_path), resident(old_serial))]),
+            previous_config: Some(Config { default: wallpaper_image(old_path), outputs: BTreeMap::new() }),
+            fade_started: Some(started),
+            ..view(revision, path, serial)
+        }
+    }
+
+    fn surface() -> SurfaceInfo {
+        SurfaceInfo {
+            output: Some("DP-1".to_owned()),
+            width: 64,
+            height: 64,
+            scale: 1.0,
+        }
+    }
+
+    fn fixture() -> (egui::Context, Backdrop) {
+        let shared = Arc::new(Mutex::new(Shared::default()));
+        let program = Backdrop::new(toolkit::Theme::embedded(), shared, Wakers::default());
+        (egui::Context::default(), program)
+    }
+
+    fn publish(program: &Backdrop, view: View) {
+        lock(&program.shared).view = Arc::new(view);
+    }
+
+    /// One headless pass over the output.
+    fn pass(ctx: &egui::Context, program: &mut Backdrop) -> egui::FullOutput {
+        let surface = surface();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(64.0, 64.0))),
+            ..Default::default()
+        };
+        ctx.run(input, |ctx| {
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE)
+                .show(ctx, |ui| program.show_pass(ui, &surface));
+        })
+    }
+
+    /// Uploads in a pass, not counting egui's own font atlas.
+    fn uploads(out: &egui::FullOutput) -> usize {
+        out.textures_delta
+            .set
+            .iter()
+            .filter(|(id, _)| *id != egui::TextureId::default())
+            .count()
+    }
+
+    #[test]
+    fn a_settled_image_is_uploaded_once_and_then_never_again() {
+        let (ctx, mut program) = fixture();
+        publish(&program, view(1, "a.png", 1));
+        let first = pass(&ctx, &mut program);
+        assert_eq!(uploads(&first), 1, "the first pass uploads the image");
+        assert_eq!(program.budget.used(), 64);
+        let steady = pass(&ctx, &mut program);
+        assert_eq!(uploads(&steady), 0, "a steady pass uploads nothing");
+        assert_eq!(program.budget.used(), 64);
+    }
+
+    #[test]
+    fn a_fade_holds_two_images_and_its_end_frees_the_outgoing_one() {
+        let (ctx, mut program) = fixture();
+        publish(&program, view(1, "a.png", 1));
+        pass(&ctx, &mut program);
+        // B fades in over A, which becomes the outgoing image.
+        publish(&program, fade(2, "b.png", 2, "a.png", 1, Instant::now()));
+        let mid = pass(&ctx, &mut program);
+        assert_eq!(uploads(&mid), 1, "the new image uploads once");
+        assert_eq!(program.budget.used(), 128, "two images while the fade runs");
+        // The time is up: the outgoing image goes, even without controller cleanup.
+        publish(&program, fade(2, "b.png", 2, "a.png", 1, Instant::now() - FADE));
+        let done = pass(&ctx, &mut program);
+        assert_eq!(uploads(&done), 0, "a finished fade uploads nothing");
+        assert_eq!(program.budget.used(), 64, "the completed fade frees A");
+    }
+
+    #[test]
+    fn an_interrupted_fade_still_holds_only_two_images() {
+        let (ctx, mut program) = fixture();
+        publish(&program, view(1, "a.png", 1));
+        pass(&ctx, &mut program);
+        publish(&program, fade(2, "b.png", 2, "a.png", 1, Instant::now()));
+        pass(&ctx, &mut program);
+        // C arrives before B's fade ends: A is obsolete, B becomes the outgoing image.
+        publish(&program, fade(3, "c.png", 3, "b.png", 2, Instant::now()));
+        pass(&ctx, &mut program);
+        assert_eq!(program.budget.used(), 128, "never a third image");
+    }
+
+    #[test]
+    fn a_texture_that_does_not_fit_keeps_the_last_good_one() {
+        let (ctx, mut program) = fixture();
+        program.budget = Budget::new(100);
+        publish(&program, view(1, "a.png", 1));
+        pass(&ctx, &mut program);
+        // A second 64-byte image cannot be reserved beside the first.
+        publish(&program, view(2, "b.png", 2));
+        let out = pass(&ctx, &mut program);
+        assert_eq!(program.budget.used(), 64, "the last good image is kept");
+        assert!(program.error.is_some(), "the reason is recorded");
+        assert_eq!(uploads(&out), 0, "a refused texture uploads nothing");
+    }
+
+    #[test]
+    fn a_solid_colour_and_removal_free_the_textures() {
+        let (ctx, mut program) = fixture();
+        publish(&program, view(1, "a.png", 1));
+        pass(&ctx, &mut program);
+        assert_eq!(program.budget.used(), 64);
+        let mut solid = view(2, "a.png", 1);
+        solid.config = Config { default: Wallpaper::Colour(Rgb([0, 0, 0])), outputs: BTreeMap::new() };
+        publish(&program, solid);
+        pass(&ctx, &mut program);
+        assert_eq!(program.budget.used(), 0, "a solid colour holds no texture");
+        publish(&program, view(3, "a.png", 1));
+        pass(&ctx, &mut program);
+        assert_eq!(program.budget.used(), 64);
+        program.removed(&ctx, &surface());
+        assert_eq!(program.budget.used(), 0, "removal frees the texture");
     }
 }
