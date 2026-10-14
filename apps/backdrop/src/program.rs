@@ -644,11 +644,7 @@ mod tests {
             screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(64.0, 64.0))),
             ..Default::default()
         };
-        ctx.run(input, |ctx| {
-            egui::CentralPanel::default()
-                .frame(egui::Frame::NONE)
-                .show(ctx, |ui| program.show_pass(ui, &surface));
-        })
+        ctx.run_ui(input, |ui| program.show_pass(ui, &surface))
     }
 
     /// Uploads in a pass, not counting egui's own font atlas.
@@ -656,7 +652,7 @@ mod tests {
         out.textures_delta
             .set
             .iter()
-            .filter(|(id, _)| *id != egui::TextureId::default())
+            .filter(|(id, _)| **id != egui::TextureId::default())
             .count()
     }
 
