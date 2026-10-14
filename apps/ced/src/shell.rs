@@ -553,7 +553,7 @@ impl Shell {
                 keymaps,
                 ..
             }) => {
-                self.set_look((!custom_source).then_some(appearance));
+                self.set_look((!custom_source).then_some(*appearance));
                 self.set_keymap(keymaps.get(APP).cloned().unwrap_or_default());
             }
             // settingsd gone: the look falls back to the theme file, but the

@@ -11,10 +11,12 @@ Additive, store format 3 ([decision](../../docs/decisions/2026-10-14-session-ico
 - `ChangePlan`: `icon_stroke` is a paint change; the font choices are
   resource and text changes.
 - `CompactEffective` carries the same fields.
-- Rust API: `Followed::Look.appearance` is boxed to keep follower events compact
-  as the optional font settings grow. Borrowed callers use deref coercion.
 - The store writes format 3. A format-2 build refuses a profile that sets
   any of them; reset them first with `settings.reset` or a null value.
+
+Rust API change: `Followed::Look.appearance` is now `Box<Appearance>` to keep
+follower events compact as font settings grow. Borrowed callers use deref
+coercion; callers that take ownership unwrap with `*appearance`.
 
 ## 0.5.0
 

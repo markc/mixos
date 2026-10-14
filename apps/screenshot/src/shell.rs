@@ -589,7 +589,7 @@ impl Shell {
                 keymaps,
                 ..
             }) => {
-                self.look = (!custom_source).then_some(appearance);
+                self.look = (!custom_source).then_some(*appearance);
                 self.set_base();
                 self.set_keymap(keymaps.get(SERVICE).cloned().unwrap_or_default());
             }
