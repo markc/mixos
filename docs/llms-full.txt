@@ -671,8 +671,9 @@ The folder is discovered at startup or on a set; reapply the document to pick up
 folder changes. Repeated paths in a list share one schedule entry.
 
 A slideshow retains its current image while the next decodes. A failed decode
-keeps that image and reports the error; the next timer attempt waits for the
-interval. A successful advance crossfades for about 0.5 seconds, then releases
+keeps that image and reports the error; the failed entry is skipped on the next
+attempt, which waits for the interval. Entries are tried again on later cycles.
+A successful advance crossfades for about 0.5 seconds, then releases
 the previous image and texture. The configured source is preserved when stored.
 A refused replacement also defers active slideshows for another interval, so
 their last good image stays visible after the refusal.
@@ -751,6 +752,9 @@ through `config::atomic`), and then applies. Its reply is `rc 0` with
 - `STORE`: the document could not be stored (nothing changed), or it was
   stored but its durability is not confirmed (applied; the reply says so);
 - `SUPERSEDED`: a newer set replaced this one before it applied.
+- `BUSY`: a next arrived while a set or advance was decoding;
+- `NON_SLIDESHOW`: a next was requested with no applied slideshow;
+- `UNKNOWN`: the requested verb is not implemented.
 
 `backdrop.next` advances configured slideshows without changing or storing their
 sources. It refuses a configuration with no slideshow. An advance waiting for
@@ -767,10 +771,12 @@ outputs, fit, slideshows}`. `fit` is the default image's effective fit (or null
 for a solid fill); outputs also report their effective fit. Each slideshow
 reports its output (null for the default), `current_path`, `index`, `count`,
 `interval_s`, `shuffle`, `pending` and `fading`.
-`requested` and `active` are revisions: `requested` numbers every request
+`requested` and `active` are revisions: `requested` numbers every request,
+including startup and automatic slideshow advances,
 made, and `active` is the revision of the accepted configuration. `pending` is
 the revision still decoding, if any. `error` is the last refused change's
-reason. `outputs` lists each output drawn so far, with its size, scale, what it
+reason until another change applies successfully, including an automatic advance.
+`outputs` lists each output drawn so far, with its size, scale, what it
 shows (`theme`, `colour`, `image` or `fallback`), its `error`, and
 `presented_revision`: the revision that output last drew. Use that field to see
 what is on screen; `active` alone does not mean every output has presented it yet.
@@ -803,6 +809,10 @@ when the previous texture is released.
   named design token. Naming the desktop token is a follow-up.
 - Overlapping sets (one still decoding when the next arrives) are exercised by
   the controller's unit tests; the Mix gate sends its sets one after another.
+- Input limits bound allocations, not filesystem latency. A stalled mount can
+  block the single decode lane until its I/O returns; state, ping, theme and
+  solid-colour controls remain available. Superseded in-flight results are
+  discarded on completion; already queued jobs are withdrawn immediately.
 
 ## Tests
 

@@ -116,6 +116,16 @@ impl Schedule {
             None
         };
     }
+
+    /// Consume a failed proposal's traversal position, while retaining the
+    /// current on-screen image. The next attempt can try the following entry.
+    pub fn skip_failed(&mut self, attempted: &Self, now: Duration) {
+        assert_eq!(self.files, attempted.files, "proposal must use the same source");
+        self.order.clone_from(&attempted.order);
+        self.position = attempted.position;
+        self.random = attempted.random;
+        self.defer(now);
+    }
 }
 
 #[derive(Debug)]
@@ -498,5 +508,18 @@ mod tests {
         let mut s = schedule(false);
         s.defer(Duration::MAX);
         assert_eq!(s.deadline(), None);
+    }
+
+    #[test]
+    fn a_bad_entry_is_skipped_without_changing_the_displayed_image() {
+        let mut active = schedule(false);
+        let mut attempted = active.clone();
+        attempted.advance(Duration::from_secs(5));
+        active.skip_failed(&attempted, Duration::from_secs(5));
+        assert_eq!(active.current(), Path::new("/a.png"));
+        active.advance(Duration::from_secs(10));
+        assert_eq!(active.current(), Path::new("/c.png"));
+        active.advance(Duration::from_secs(15));
+        assert_eq!(active.current(), Path::new("/a.png"));
     }
 }

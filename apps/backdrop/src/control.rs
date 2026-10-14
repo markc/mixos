@@ -595,6 +595,12 @@ impl Controller {
 
     fn decoded(&mut self, revision: u64, path: PathBuf, result: Result<Decoded, String>) {
         self.decoding = false;
+        if self.engine.pending() == Some(revision) && result.is_ok() {
+            // A discovery job can name a path already supplied by a static
+            // image. Its previous candidate is not published and may be released
+            // before accounting for the replacement.
+            self.candidate.remove(&path);
+        }
         let verdict = match &result {
             Ok(image) if self.resident_bytes() + image.bytes() > RESIDENT_BUDGET => Err(format!(
                 "{}: {} bytes resident would exceed the {RESIDENT_BUDGET}-byte budget",
@@ -612,7 +618,7 @@ impl Controller {
                 self.complete();
             }
             Decode::Failed(message) => {
-                self.failed(revision, message);
+                self.failed(revision, message, Some(&path));
             }
         }
         self.next_decode();
@@ -625,6 +631,11 @@ impl Controller {
         result: Result<(Schedule, Decoded), String>,
     ) {
         self.decoding = false;
+        if self.engine.pending() == Some(revision)
+            && let Ok((schedule, _)) = &result
+        {
+            self.candidate.remove(schedule.current());
+        }
         let verdict = match &result {
             Ok((_, image)) if self.resident_bytes() + image.bytes() > RESIDENT_BUDGET => Err(
                 format!("resident image budget exceeds {RESIDENT_BUDGET} bytes"),
@@ -633,7 +644,7 @@ impl Controller {
         };
         match self.engine.decoded(revision, &marker(&key), verdict) {
             Decode::Superseded => {}
-            Decode::Failed(message) => self.failed(revision, message),
+            Decode::Failed(message) => self.failed(revision, message, None),
             outcome => {
                 if let Ok((schedule, image)) = result {
                     self.keep(schedule.current().to_path_buf(), Ok(image));
@@ -649,9 +660,19 @@ impl Controller {
         self.next_decode();
     }
 
-    fn failed(&mut self, revision: u64, message: String) {
+    fn failed(&mut self, revision: u64, message: String, path: Option<&Path>) {
         self.candidate.clear();
         self.queue.clear();
+        if let (Some(path), Some(pending)) = (path, &self.pending_schedules) {
+            let now = self.started.elapsed();
+            for key in &self.advancing {
+                if let Some(attempted) = pending.get(key).filter(|s| s.current() == path)
+                    && let Some(active) = self.schedules.get_mut(key)
+                {
+                    active.skip_failed(attempted, now);
+                }
+            }
+        }
         self.pending_schedules = None;
         self.defer_after_refusal();
         let owed = self.owed.remove(&revision);
@@ -1574,5 +1595,46 @@ mod tests {
             Path::new("/w/c.png")
         );
         assert!(c.registry.take_executed().0.is_empty());
+    }
+
+    #[test]
+    fn next_after_a_failed_image_tries_the_following_entry() {
+        let mut c = controller();
+        let config = Config::from_text("schema: 1\ndefault: { slideshow: { images: [\"/w/a.png\", \"/w/b.png\", \"/w/c.png\"], interval_s: 5 } }").unwrap();
+        c.stage(config, Owed::Startup);
+        c.prepared(1, None, Ok((Schedule::new(vec!["/w/a.png".into(), "/w/b.png".into(), "/w/c.png".into()], 5, false, 1, Duration::ZERO).unwrap(), decoded_ok().unwrap())));
+        c.command(7, NEXT, "{}");
+        c.decoded(2, "/w/b.png".into(), Err("corrupt".into()));
+        assert_eq!(c.schedules[&None].current(), Path::new("/w/a.png"));
+        c.command(8, NEXT, "{}");
+        assert_eq!(c.pending_schedules.as_ref().unwrap()[&None].current(), Path::new("/w/c.png"));
+        c.decoded(3, "/w/c.png".into(), decoded_ok());
+        assert_eq!(c.schedules[&None].current(), Path::new("/w/c.png"));
+        let (runs, _) = c.registry.take_executed();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].id, NEXT);
+    }
+
+    #[test]
+    fn a_repeated_candidate_path_does_not_cause_a_false_budget_refusal() {
+        let mut c = controller();
+        let first = ["/w/1.png", "/w/2.png", "/w/3.png", "/w/4.png"];
+        c.stage(images(&first), Owed::Startup);
+        for path in first { c.decoded(1, path.into(), full_size()); }
+        let old_view = lock(&c.shared).view.clone();
+        let second = ["/w/5.png", "/w/6.png", "/w/7.png", "/w/8.png"];
+        c.stage(images(&second), Owed::Startup);
+        for path in second { c.decoded(2, path.into(), full_size()); }
+        let mut config = images(&["/w/9.png", "/w/10.png"]);
+        config.default = Wallpaper::Slideshow { source: SlideSource::Images(vec!["/w/9.png".into(), "/w/11.png".into()]), interval_s: 5, shuffle: false, fallback: None, fit: wallpaper::fit::Fit::Fill };
+        c.stage(config, Owed::Startup);
+        c.decoded(3, "/w/9.png".into(), full_size());
+        c.prepared(3, None, Ok((Schedule::new(vec!["/w/9.png".into(), "/w/11.png".into()], 5, false, 1, Duration::ZERO).unwrap(), full_size().unwrap())));
+        assert_eq!(c.engine.pending(), Some(3));
+        assert!(c.engine.status().error.is_none());
+        assert_eq!(c.resident_bytes(), 9 * 3840 * 3840 * 4);
+        drop(old_view);
+        c.decoded(3, "/w/10.png".into(), full_size());
+        assert_eq!(c.engine.status().active, 3);
     }
 }

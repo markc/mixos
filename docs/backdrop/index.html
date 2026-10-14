@@ -309,8 +309,9 @@ are sorted before scheduling. Discovery and decoding run on the worker.
 The folder is discovered at startup or on a set; reapply the document to pick up
 folder changes. Repeated paths in a list share one schedule entry.</p>
 <p>A slideshow retains its current image while the next decodes. A failed decode
-keeps that image and reports the error; the next timer attempt waits for the
-interval. A successful advance crossfades for about 0.5 seconds, then releases
+keeps that image and reports the error; the failed entry is skipped on the next
+attempt, which waits for the interval. Entries are tried again on later cycles.
+A successful advance crossfades for about 0.5 seconds, then releases
 the previous image and texture. The configured source is preserved when stored.
 A refused replacement also defers active slideshows for another interval, so
 their last good image stays visible after the refusal.</p>
@@ -381,6 +382,9 @@ through <code>config::atomic</code>), and then applies. Its reply is <code>rc 0<
 <li><code>STORE</code>: the document could not be stored (nothing changed), or it was
 stored but its durability is not confirmed (applied; the reply says so);</li>
 <li><code>SUPERSEDED</code>: a newer set replaced this one before it applied.</li>
+<li><code>BUSY</code>: a next arrived while a set or advance was decoding;</li>
+<li><code>NON_SLIDESHOW</code>: a next was requested with no applied slideshow;</li>
+<li><code>UNKNOWN</code>: the requested verb is not implemented.</li>
 </ul>
 <p><code>backdrop.next</code> advances configured slideshows without changing or storing their
 sources. It refuses a configuration with no slideshow. An advance waiting for
@@ -395,10 +399,12 @@ can interrupt their current fade.</p>
 for a solid fill); outputs also report their effective fit. Each slideshow
 reports its output (null for the default), <code>current_path</code>, <code>index</code>, <code>count</code>,
 <code>interval_s</code>, <code>shuffle</code>, <code>pending</code> and <code>fading</code>.
-<code>requested</code> and <code>active</code> are revisions: <code>requested</code> numbers every request
+<code>requested</code> and <code>active</code> are revisions: <code>requested</code> numbers every request,
+including startup and automatic slideshow advances,
 made, and <code>active</code> is the revision of the accepted configuration. <code>pending</code> is
 the revision still decoding, if any. <code>error</code> is the last refused change's
-reason. <code>outputs</code> lists each output drawn so far, with its size, scale, what it
+reason until another change applies successfully, including an automatic advance.
+<code>outputs</code> lists each output drawn so far, with its size, scale, what it
 shows (<code>theme</code>, <code>colour</code>, <code>image</code> or <code>fallback</code>), its <code>error</code>, and
 <code>presented_revision</code>: the revision that output last drew. Use that field to see
 what is on screen; <code>active</code> alone does not mean every output has presented it yet.</p>
@@ -426,6 +432,10 @@ its texture and its status.</li>
 named design token. Naming the desktop token is a follow-up.</li>
 <li>Overlapping sets (one still decoding when the next arrives) are exercised by
 the controller's unit tests; the Mix gate sends its sets one after another.</li>
+<li>Input limits bound allocations, not filesystem latency. A stalled mount can
+block the single decode lane until its I/O returns; state, ping, theme and
+solid-colour controls remain available. Superseded in-flight results are
+discarded on completion; already queued jobs are withdrawn immediately.</li>
 </ul>
 <h2 id="tests">Tests</h2>
 <ul>
