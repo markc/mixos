@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `comp.motion.run`: one Bus call carries a whole move (plan rule: one call,
-//! one complex move). Phase 2 accepts one pointer target; window targets
-//! follow in phase 3.
+//! one complex move). Phase 3 accepts exactly one target, a pointer or a
+//! window.
 //!
 //! ```text
 //! comp.motion.run {targets: [{pointer: {
@@ -12,10 +12,16 @@
 //!     curve?: "linear" | "ease" | "ease-in" | "ease-out" | "ease-in-out"
 //!           | "min-jerk" | [x1, y1, x2, y2]   // default "ease-in-out"
 //! }}]}
+//! comp.motion.run {targets: [{window: {
+//!     id, generation,
+//!     to: {x?, y?, w?, h?},       // global logical; absent fields stay put
+//!     duration_ms?, curve?        // as for pointer
+//! }}]}
 //! ```
 //!
-//! The glide starts at `path[0]` (the pointer is placed there at once) and
-//! visits the rest in order. The reply waits until the glide ends.
+//! A pointer glide starts at `path[0]` (the pointer is placed there at once)
+//! and visits the rest in order. A window travels from where it is to `to`.
+//! The reply waits until the motion ends.
 
 use std::time::Duration;
 
@@ -26,13 +32,13 @@ use motion::{CubicBezier, Easing};
 use crate::reply::ControlReply;
 use crate::request::{args_object, invalid_argument, present};
 
-/// Longest glide a call may ask for (see the plan's VT decision).
+/// Longest motion a call may ask for (see the plan's VT decision).
 pub const MAX_DURATION_MS: u64 = 10_000;
-/// Default glide length when `duration_ms` is absent.
+/// Default motion length when `duration_ms` is absent.
 pub const DEFAULT_DURATION_MS: u64 = 400;
-/// Most points one glide may visit.
+/// Most points one pointer glide may visit.
 pub const MAX_PATH_POINTS: usize = 64;
-/// Slack the reply gets beyond the glide itself.
+/// Slack the reply gets beyond the motion itself.
 const REPLY_MARGIN: Duration = Duration::from_secs(1);
 
 /// One target of `comp.motion.run`.
@@ -41,6 +47,15 @@ pub enum MotionTarget {
     Pointer {
         output: Option<String>,
         path: Vec<(f64, f64)>,
+        duration: Duration,
+        easing: Easing,
+    },
+    Window {
+        id: u64,
+        generation: u64,
+        /// Target `x, y, w, h` in global logical coordinates; `None` keeps
+        /// the window's current value for that field.
+        to: [Option<f64>; 4],
         duration: Duration,
         easing: Easing,
     },
@@ -58,7 +73,9 @@ impl MotionSpec {
         self.targets
             .iter()
             .map(|target| match target {
-                MotionTarget::Pointer { duration, .. } => *duration,
+                MotionTarget::Pointer { duration, .. } | MotionTarget::Window { duration, .. } => {
+                    *duration
+                }
             })
             .max()
             .unwrap_or_default()
@@ -87,6 +104,8 @@ pub fn parse(args: &Value) -> Result<MotionSpec, ControlReply> {
 }
 
 const POINTER_FIELDS: &[&str] = &["output", "path", "duration_ms", "curve"];
+const WINDOW_FIELDS: &[&str] = &["id", "generation", "to", "duration_ms", "curve"];
+const TO_FIELDS: &[&str] = &["x", "y", "w", "h"];
 
 fn parse_target(value: &Value) -> Result<MotionTarget, ControlReply> {
     let object = match value {
@@ -94,31 +113,38 @@ fn parse_target(value: &Value) -> Result<MotionTarget, ControlReply> {
         _ => {
             return Err(invalid_argument(
                 "targets[0]",
-                "object with one key: pointer",
-                "{pointer: {...}}",
+                "object with one key: pointer or window",
+                "{pointer: {...}} or {window: {...}}",
             ));
         }
     };
-    let Some(Value::Object(pointer)) = object.get("pointer") else {
-        return Err(invalid_argument(
+    match object.get("pointer") {
+        Some(Value::Object(pointer)) => parse_pointer(pointer),
+        Some(_) => Err(invalid_argument(
             "targets[0].pointer",
             "object",
             "{path, duration_ms?, curve?, output?}",
-        ));
-    };
-    if pointer
-        .keys()
-        .any(|key| !POINTER_FIELDS.contains(&key.as_str()))
-    {
+        )),
+        None => match object.get("window") {
+            Some(Value::Object(window)) => parse_window(window),
+            _ => Err(invalid_argument(
+                "targets[0]",
+                "object with one key: pointer or window",
+                "{pointer: {...}} or {window: {...}}",
+            )),
+        },
+    }
+}
+
+fn parse_pointer(pointer: &serde_json::Map<String, Value>) -> Result<MotionTarget, ControlReply> {
+    if pointer.keys().any(|key| !POINTER_FIELDS.contains(&key.as_str())) {
         return Err(invalid_argument(
             "pointer",
             "only output, path, duration_ms and curve",
             "unknown field refused",
         ));
     }
-    let fields = pointer;
-
-    let output = match present(fields, "output") {
+    let output = match present(pointer, "output") {
         None => None,
         Some(Value::String(name)) if !name.is_empty() => Some(name.clone()),
         Some(_) => {
@@ -129,13 +155,11 @@ fn parse_target(value: &Value) -> Result<MotionTarget, ControlReply> {
             ));
         }
     };
-
-    let path = match present(fields, "path") {
-        Some(Value::Array(points))
-            if (1..=MAX_PATH_POINTS).contains(&points.len()) =>
-        {
-            points.iter().map(parse_point).collect::<Result<Vec<_>, _>>()?
-        }
+    let path = match present(pointer, "path") {
+        Some(Value::Array(points)) if (1..=MAX_PATH_POINTS).contains(&points.len()) => points
+            .iter()
+            .map(parse_point)
+            .collect::<Result<Vec<_>, _>>()?,
         _ => {
             return Err(invalid_argument(
                 "pointer.path",
@@ -144,28 +168,102 @@ fn parse_target(value: &Value) -> Result<MotionTarget, ControlReply> {
             ));
         }
     };
+    let (duration, easing) = parse_timing(pointer)?;
+    Ok(MotionTarget::Pointer {
+        output,
+        path,
+        duration,
+        easing,
+    })
+}
 
+fn parse_window(window: &serde_json::Map<String, Value>) -> Result<MotionTarget, ControlReply> {
+    if window.keys().any(|key| !WINDOW_FIELDS.contains(&key.as_str())) {
+        return Err(invalid_argument(
+            "window",
+            "only id, generation, to, duration_ms and curve",
+            "unknown field refused",
+        ));
+    }
+    let id = window
+        .get("id")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| invalid_argument("window.id", "integer", "window id"))?;
+    let generation = window
+        .get("generation")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| invalid_argument("window.generation", "integer", "window generation"))?;
+    let to_object = match present(window, "to") {
+        Some(Value::Object(to)) => to,
+        _ => {
+            return Err(invalid_argument(
+                "window.to",
+                "object with any of x, y, w, h",
+                "global logical coordinates",
+            ));
+        }
+    };
+    if to_object.keys().any(|key| !TO_FIELDS.contains(&key.as_str())) {
+        return Err(invalid_argument(
+            "window.to",
+            "only x, y, w and h",
+            "unknown field refused",
+        ));
+    }
+    let mut to = [None; 4];
+    for (slot, key) in to.iter_mut().zip(TO_FIELDS) {
+        *slot = match to_object.get(*key) {
+            None => None,
+            Some(value) => Some(
+                value
+                    .as_f64()
+                    .filter(|v| v.is_finite())
+                    .ok_or_else(|| invalid_argument("window.to", "finite number", "logical px"))?,
+            ),
+        };
+    }
+    if to.iter().all(Option::is_none) {
+        return Err(invalid_argument(
+            "window.to",
+            "at least one of x, y, w, h",
+            "global logical coordinates",
+        ));
+    }
+    if to[2].is_some_and(|w| w <= 0.0) || to[3].is_some_and(|h| h <= 0.0) {
+        return Err(invalid_argument(
+            "window.to",
+            "w and h above zero",
+            "logical px",
+        ));
+    }
+    let (duration, easing) = parse_timing(window)?;
+    Ok(MotionTarget::Window {
+        id,
+        generation,
+        to,
+        duration,
+        easing,
+    })
+}
+
+/// `duration_ms` and `curve`, shared by both target kinds.
+fn parse_timing(
+    fields: &serde_json::Map<String, Value>,
+) -> Result<(Duration, Easing), ControlReply> {
     let duration_ms = match present(fields, "duration_ms") {
         None => DEFAULT_DURATION_MS,
         Some(value) => value
             .as_u64()
             .filter(|ms| *ms <= MAX_DURATION_MS)
             .ok_or_else(|| {
-                invalid_argument("pointer.duration_ms", "integer 0..=10000", "milliseconds")
+                invalid_argument("duration_ms", "integer 0..=10000", "milliseconds")
             })?,
     };
-
     let easing = match present(fields, "curve") {
         None => Easing::Bezier(CubicBezier::EASE_IN_OUT),
         Some(value) => parse_curve(value)?,
     };
-
-    Ok(MotionTarget::Pointer {
-        output,
-        path,
-        duration: Duration::from_millis(duration_ms),
-        easing,
-    })
+    Ok((Duration::from_millis(duration_ms), easing))
 }
 
 fn parse_point(value: &Value) -> Result<(f64, f64), ControlReply> {
@@ -190,7 +288,7 @@ fn parse_point(value: &Value) -> Result<(f64, f64), ControlReply> {
 fn parse_curve(value: &Value) -> Result<Easing, ControlReply> {
     let bad = || {
         invalid_argument(
-            "pointer.curve",
+            "curve",
             "a curve name or [x1, y1, x2, y2]",
             "linear | ease | ease-in | ease-out | ease-in-out | min-jerk",
         )
@@ -247,11 +345,33 @@ mod tests {
     }
 
     #[test]
+    fn parses_a_window_move_and_resize() {
+        let spec = ok(json!({"targets": [{"window": {
+            "id": 7, "generation": 3,
+            "to": {"x": 100, "w": 640.5, "h": 480},
+            "duration_ms": 900, "curve": "ease-out"
+        }}]}));
+        assert_eq!(
+            spec.targets,
+            vec![MotionTarget::Window {
+                id: 7,
+                generation: 3,
+                to: [Some(100.0), None, Some(640.5), Some(480.0)],
+                duration: Duration::from_millis(900),
+                easing: Easing::Bezier(CubicBezier::EASE_OUT),
+            }]
+        );
+    }
+
+    #[test]
     fn defaults_are_400ms_and_ease_in_out() {
         let spec = ok(json!({"targets": [{"pointer": {"path": [{"x": 1, "y": 2}]}}]}));
         let MotionTarget::Pointer {
             duration, easing, ..
-        } = &spec.targets[0];
+        } = &spec.targets[0]
+        else {
+            panic!("pointer target");
+        };
         assert_eq!(*duration, Duration::from_millis(DEFAULT_DURATION_MS));
         assert_eq!(*easing, Easing::Bezier(CubicBezier::EASE_IN_OUT));
     }
@@ -261,12 +381,14 @@ mod tests {
         let spec = ok(json!({"targets": [{"pointer": {
             "path": [{"x": 0, "y": 0}], "curve": [0.05, 0.9, 0.1, 1.1]
         }}]}));
-        let MotionTarget::Pointer { easing, .. } = &spec.targets[0];
+        let MotionTarget::Pointer { easing, .. } = &spec.targets[0] else {
+            panic!("pointer target");
+        };
         assert!(matches!(easing, Easing::Bezier(_)));
     }
 
     #[test]
-    fn budget_is_the_glide_plus_margin() {
+    fn budget_is_the_motion_plus_margin() {
         let spec = ok(json!({"targets": [{"pointer": {
             "path": [{"x": 0, "y": 0}], "duration_ms": 2000
         }}]}));
@@ -276,7 +398,7 @@ mod tests {
     #[test]
     fn refuses_bad_input() {
         let refused = |args: Value| parse(&args).is_err();
-        // Two targets (phase 2 takes one).
+        // Two targets (phase 3 takes one).
         assert!(refused(json!({"targets": [
             {"pointer": {"path": [{"x": 0, "y": 0}]}},
             {"pointer": {"path": [{"x": 0, "y": 0}]}}
@@ -297,9 +419,22 @@ mod tests {
         }}]})));
         // Non-finite point.
         assert!(refused(json!({"targets": [{"pointer": {"path": [{"x": "a", "y": 0}]}}]})));
-        // Unknown field.
+        // Unknown pointer field.
         assert!(refused(json!({"targets": [{"pointer": {
             "path": [{"x": 0, "y": 0}], "speed": 3
+        }}]})));
+        // Window: missing id, empty `to`, zero width, unknown `to` field.
+        assert!(refused(json!({"targets": [{"window": {
+            "generation": 1, "to": {"x": 1}
+        }}]})));
+        assert!(refused(json!({"targets": [{"window": {
+            "id": 1, "generation": 1, "to": {}
+        }}]})));
+        assert!(refused(json!({"targets": [{"window": {
+            "id": 1, "generation": 1, "to": {"w": 0}
+        }}]})));
+        assert!(refused(json!({"targets": [{"window": {
+            "id": 1, "generation": 1, "to": {"z": 1}
         }}]})));
     }
 }

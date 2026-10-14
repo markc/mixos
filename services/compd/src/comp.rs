@@ -69,7 +69,7 @@ use comp_model::observation::{ObservationRecord, PanelRequest, PointerPosition, 
 use comp_model::motion_run::{MotionSpec, MotionTarget};
 use comp_model::reply::ControlReply;
 use comp_model::request::{InputOp, LongOp, WaitSpec, WindowOp};
-use motion::{Glide, Point, Route};
+use motion::{Glide, Point, Route, Timeline};
 use comp_model::snapshot::{CompSnapshot, ReadScopes, project_window_row, surface_key};
 use comp_service::{
     CompEngine, LongReply, ObservationProducer, PortContext, PortService, PortWorker,
@@ -192,26 +192,55 @@ enum WaiterKind {
     ForceClose { id: u64, generation: u64 },
 }
 
-/// How often a running `comp.motion.run` glide is stepped. Its position comes
-/// from the clock, not from frames, so a parked VT still completes on time.
-const MOTION_TICK: Duration = Duration::from_millis(10);
+/// How often a running `comp.motion.run` is stepped: one frame at 60 Hz, so a
+/// window's configures are throttled to frames. Positions come from the clock,
+/// not from frames, so a parked VT still completes on time.
+const MOTION_TICK: Duration = Duration::from_millis(16);
 
-/// A running `comp.motion.run`: its glide, the output it moves on, the human
-/// pointer when it began (a real move cancels it), and the reply it owes.
+/// What a running `comp.motion.run` moves.
+enum MotionKind {
+    Pointer {
+        glide: Glide,
+        output: Option<String>,
+    },
+    Window {
+        id: u64,
+        generation: u64,
+        from: [f64; 4],
+        to: [Option<f64>; 4],
+        timeline: Timeline,
+    },
+}
+
+/// A running `comp.motion.run`: what it moves, the human pointer when it
+/// began (a real move cancels it), and the reply it owes.
 struct MotionRun {
     started: Instant,
-    glide: Glide,
-    output: Option<String>,
+    kind: MotionKind,
     human_at_start: Option<(String, f64, f64)>,
     reply: LongReply,
 }
 
-fn motion_completed(end: Point) -> ControlReply {
-    ControlReply::Body(json!({
-        "version": 1,
-        "status": "completed",
-        "pointer": {"x": end.x, "y": end.y},
-    }))
+fn motion_completed(kind: &MotionKind) -> ControlReply {
+    let target = match kind {
+        MotionKind::Pointer { glide, .. } => {
+            let end = glide.target();
+            json!({"pointer": {"x": end.x, "y": end.y}})
+        }
+        MotionKind::Window {
+            id,
+            generation,
+            from,
+            to,
+            ..
+        } => {
+            let rect: Vec<f64> = (0..4)
+                .map(|i| to[i].unwrap_or(from[i]))
+                .collect();
+            json!({"window": {"id": id, "generation": generation, "rect": rect}})
+        }
+    };
+    ControlReply::Body(json!({"version": 1, "status": "completed", "target": target}))
 }
 
 fn motion_cancelled(reason: &str) -> ControlReply {
@@ -541,10 +570,30 @@ impl Bus {
                 continue;
             }
             let t = now.duration_since(run.started).as_secs_f64();
-            match policy_host::motion::step(lp, &mut run.glide, run.output.as_deref(), t) {
+            let step = match &mut run.kind {
+                MotionKind::Pointer { glide, output } => {
+                    policy_host::motion::pointer_step(lp, glide, output.as_deref(), t)
+                }
+                MotionKind::Window {
+                    id,
+                    generation,
+                    from,
+                    to,
+                    timeline,
+                } => policy_host::motion::window_step(
+                    lp,
+                    *id,
+                    *generation,
+                    *from,
+                    *to,
+                    timeline,
+                    t,
+                ),
+            };
+            match step {
                 policy_host::motion::Step::Moving => still.push(run),
                 policy_host::motion::Step::Arrived => {
-                    run.reply.send(motion_completed(run.glide.target()));
+                    run.reply.send(motion_completed(&run.kind));
                 }
                 policy_host::motion::Step::Refused(answer) => run.reply.send(answer),
             }
@@ -747,38 +796,78 @@ struct Engine<'a> {
 }
 
 impl Engine<'_> {
-    /// Start a `comp.motion.run`: place the pointer at the route's first point
-    /// now, then let `service_motions` glide it and answer when it ends.
+    /// Start a `comp.motion.run`: take its first step now (a pointer goes to
+    /// its route's first point at once; a window starts from where it is),
+    /// then let `service_motions` carry it on and answer when it ends.
     fn start_motion(&mut self, spec: MotionSpec, reply: LongReply) {
-        let Some(MotionTarget::Pointer {
-            output,
-            path,
-            duration,
-            easing,
-        }) = spec.targets.into_iter().next()
-        else {
-            reply.send(ControlReply::refused("unsupported_target", json!({})));
+        let Some(target) = spec.targets.into_iter().next() else {
+            reply.send(ControlReply::refused("no_target", json!({})));
             return;
         };
-        // A one-point path is a glide that stays put.
-        let mut points: Vec<Point> = path.iter().map(|&(x, y)| Point { x, y }).collect();
-        if points.len() == 1 {
-            let only = points[0];
-            points.push(only);
-        }
-        let Ok(route) = Route::new(&points) else {
-            reply.send(ControlReply::refused("bad_path", json!({})));
-            return;
-        };
-        let mut glide = Glide::new(route, easing, 0.0, duration.as_secs_f64());
-        match policy_host::motion::step(self.lp, &mut glide, output.as_deref(), 0.0) {
-            policy_host::motion::Step::Refused(answer) => reply.send(answer),
-            policy_host::motion::Step::Arrived => reply.send(motion_completed(glide.target())),
-            policy_host::motion::Step::Moving => self.motions.push(MotionRun {
-                started: Instant::now(),
-                glide,
+        let started = Instant::now();
+        let human_at_start = policy_host::input::human_pointer(self.lp);
+        let (kind, step) = match target {
+            MotionTarget::Pointer {
                 output,
-                human_at_start: policy_host::input::human_pointer(self.lp),
+                path,
+                duration,
+                easing,
+            } => {
+                // A one-point path is a glide that stays put.
+                let mut points: Vec<Point> = path.iter().map(|&(x, y)| Point { x, y }).collect();
+                if points.len() == 1 {
+                    let only = points[0];
+                    points.push(only);
+                }
+                let Ok(route) = Route::new(&points) else {
+                    reply.send(ControlReply::refused("bad_path", json!({})));
+                    return;
+                };
+                let mut glide = Glide::new(route, easing, 0.0, duration.as_secs_f64());
+                let step = policy_host::motion::pointer_step(self.lp, &mut glide, output.as_deref(), 0.0);
+                (MotionKind::Pointer { glide, output }, step)
+            }
+            MotionTarget::Window {
+                id,
+                generation,
+                to,
+                duration,
+                easing,
+            } => {
+                let from = match policy_host::control::window_rect(self.lp, id, generation) {
+                    Ok(rect) => rect,
+                    Err(refusal) => {
+                        reply.send(refusal);
+                        return;
+                    }
+                };
+                let mut timeline = Timeline::new(0.0, duration.as_secs_f64(), easing);
+                let step = policy_host::motion::window_step(
+                    self.lp,
+                    id,
+                    generation,
+                    from,
+                    to,
+                    &mut timeline,
+                    0.0,
+                );
+                let kind = MotionKind::Window {
+                    id,
+                    generation,
+                    from,
+                    to,
+                    timeline,
+                };
+                (kind, step)
+            }
+        };
+        match step {
+            policy_host::motion::Step::Refused(answer) => reply.send(answer),
+            policy_host::motion::Step::Arrived => reply.send(motion_completed(&kind)),
+            policy_host::motion::Step::Moving => self.motions.push(MotionRun {
+                started,
+                kind,
+                human_at_start,
                 reply,
             }),
         }
