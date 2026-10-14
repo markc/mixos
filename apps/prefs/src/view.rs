@@ -601,8 +601,8 @@ fn terminal_controls(ui: &mut Ui, term: &Terminal, events: &mut Vec<UiEvent>) {
     panel::section_label(ui, &label("terminal-family"));
     let family = family_text(term.font.family.as_deref());
     let hint = label("terminal-family-system");
-    if let Some(text) = text_field(ui, "terminal-family", &family, &hint) {
-        events.push(UiEvent::Terminal(family_setting(&text)));
+    if let Some(setting) = checked_text(ui, "terminal-family", &family, &hint, family_setting) {
+        events.push(UiEvent::Terminal(setting));
     }
     let size = Numeric {
         key: "terminal-size",
@@ -710,8 +710,9 @@ fn terminal_controls(ui: &mut Ui, term: &Terminal, events: &mut Vec<UiEvent>) {
 
     panel::section_label(ui, &label("terminal-term"));
     let hint = "xterm-256color";
-    if let Some(text) = text_field(ui, "terminal-term", &term.env.term, hint) {
-        events.push(UiEvent::Terminal(Setting::Term(text)));
+    let to_term = |text: &str| Setting::Term(text.to_owned());
+    if let Some(setting) = checked_text(ui, "terminal-term", &term.env.term, hint, to_term) {
+        events.push(UiEvent::Terminal(setting));
     }
     ui.add(egui::Label::new(RichText::new(label("terminal-term-note")).weak()).wrap());
 }
@@ -782,6 +783,30 @@ fn text_field(ui: &mut Ui, key: &'static str, current: &str, hint: &str) -> Opti
         ui.data_mut(|d| d.remove::<String>(id));
     }
     None
+}
+
+/// A [`text_field`] for a terminal setting. Text settingsd would refuse is
+/// not sent: the reason shows under the field until a value is accepted.
+fn checked_text(
+    ui: &mut Ui,
+    key: &'static str,
+    current: &str,
+    hint: &str,
+    setting: impl Fn(&str) -> Setting,
+) -> Option<Setting> {
+    let refused_id = egui::Id::new(key).with("refused");
+    let committed = text_field(ui, key, current, hint).map(|text| setting(&text));
+    if let Some(committed) = &committed {
+        match committed.refusal() {
+            Some(refusal) => ui.data_mut(|d| d.insert_temp(refused_id, refusal)),
+            None => ui.data_mut(|d| d.remove::<&'static str>(refused_id)),
+        }
+    }
+    if let Some(refusal) = ui.data(|d| d.get_temp::<&'static str>(refused_id)) {
+        let text = RichText::new(label(refusal)).color(ui.visuals().error_fg_color);
+        ui.add(egui::Label::new(text).wrap());
+    }
+    committed.filter(|setting| setting.refusal().is_none())
 }
 
 /// The panel label naming `axis`.

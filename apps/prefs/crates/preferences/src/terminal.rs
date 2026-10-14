@@ -62,6 +62,21 @@ impl Setting {
         };
         Edit::Set(path, value)
     }
+
+    /// Why settingsd would refuse this value, as a label key, by the
+    /// settings crate's own rules; `None` when it is sendable. Settingsd
+    /// stays the authority: this only spares a round trip and says why.
+    pub fn refusal(&self) -> Option<&'static str> {
+        match self {
+            Setting::Family(Some(family)) if !settings::terminal::valid_family(family) => {
+                Some("terminal-family-refused")
+            }
+            Setting::Term(term) if !settings::terminal::valid_term(term) => {
+                Some("terminal-term-refused")
+            }
+            _ => None,
+        }
+    }
 }
 
 /// The family a text field names. Blank (after trimming) is the system
@@ -88,8 +103,14 @@ impl Engine {
             && !self.quitting
     }
 
-    /// Apply one terminal control's value at once.
+    /// Apply one terminal control's value at once. A value settingsd would
+    /// refuse is not sent; the status says why.
     pub fn edit_terminal(&mut self, setting: Setting) {
+        if let Some(refusal) = setting.refusal() {
+            self.status = self.label(refusal, &[]);
+            self.failed = true;
+            return;
+        }
         if self.can_edit_terminal() {
             self.send_terminal(setting.edit());
         }
@@ -270,6 +291,38 @@ mod tests {
         e.settled(reads[0].0, reply(snapshot("8", json!({"padding": 8}))));
         assert_eq!(e.look.terminal.as_ref().map(|t| t.padding), Some(8));
         assert!(e.can_edit_terminal());
+    }
+
+    /// Text settingsd would refuse is refused here by the same rules, says
+    /// why, and sends nothing.
+    #[test]
+    fn a_value_settingsd_refuses_is_not_sent() {
+        for setting in [
+            Setting::Term("XTERM".into()),
+            Setting::Term("xterm 256color".into()),
+            Setting::Term(String::new()),
+            Setting::Term("x".repeat(65)),
+            Setting::Family(Some("Mono\u{7}".into())),
+            Setting::Family(Some("x".repeat(129))),
+        ] {
+            assert!(setting.refusal().is_some(), "{setting:?}");
+            let mut e = read();
+            e.edit_terminal(setting.clone());
+            assert!(settings_calls(&mut e).is_empty(), "{setting:?} not sent");
+            assert!(e.failed);
+            assert_eq!(e.status, setting.refusal().unwrap());
+            assert!(e.can_edit_terminal(), "nothing is in flight");
+        }
+        for setting in [
+            Setting::Term("foot".into()),
+            Setting::Family(None),
+            Setting::Family(Some("Iosevka Term".into())),
+        ] {
+            assert_eq!(setting.refusal(), None, "{setting:?}");
+            let mut e = read();
+            e.edit_terminal(setting);
+            assert_eq!(settings_calls(&mut e).len(), 1);
+        }
     }
 
     #[test]

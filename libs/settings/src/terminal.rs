@@ -2,7 +2,8 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The terminal's preferences (`terminal.*`): text, layout, cursor, focus,
 //! mouse and environment. Every default reproduces the term as it was before
-//! these settings existed. Colours are not here: the terminal always follows
+//! these settings existed, except the focus ring: `neutral` by default, a
+//! deliberately subtler ring than the accent one the term drew. Colours are not here: the terminal always follows
 //! the session theme.
 //!
 //! Every value is omitted from the serialised form at its default, and the
@@ -253,15 +254,22 @@ pub fn valid_term(term: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
+/// Whether `family` is a family name this field takes: 1–128 bytes, no
+/// control characters, no surrounding space. Whether it is installed is the
+/// terminal's check.
+pub fn valid_family(family: &str) -> bool {
+    !family.is_empty()
+        && family.len() <= FONT_FAMILY_MAX_BYTES
+        && !family.chars().any(char::is_control)
+        && family.trim() == family
+}
+
 /// Check every range and shape. Enumerated values are checked as they are
 /// read; whether a family is installed is the terminal's check.
 pub fn validate(terminal: &Terminal) -> Result<(), Diagnostic> {
     let font = &terminal.font;
     if let Some(family) = &font.family
-        && (family.is_empty()
-            || family.len() > FONT_FAMILY_MAX_BYTES
-            || family.chars().any(char::is_control)
-            || family.trim() != family.as_str())
+        && !valid_family(family)
     {
         return Err(error(
             "terminal.font.family",
