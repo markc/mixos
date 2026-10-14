@@ -96,7 +96,12 @@ pub fn panes(ui: &Ui, app: &App) {
     for (id, geometry) in app.placed() {
         let outer = layout::rect(geometry);
         let ring = if app.shape.focus_ring(id) {
-            chrome.palette.accent
+            // The theme's accent, muted toward the card border so the
+            // focused pane's ring stays quiet next to the content.
+            chrome
+                .palette
+                .card_border
+                .lerp_to_gamma(chrome.palette.accent, 0.5)
         } else {
             chrome.palette.card_border
         };
