@@ -24,6 +24,7 @@
 pub mod capture;
 pub mod catalogue;
 pub mod diff;
+pub mod motion_run;
 pub mod observation;
 pub mod prop_path;
 pub mod reply;

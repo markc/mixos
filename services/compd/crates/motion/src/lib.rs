@@ -17,6 +17,7 @@
 
 mod bezier;
 mod fitts;
+mod glide;
 mod hermite;
 mod minjerk;
 mod route;
@@ -25,8 +26,9 @@ mod timeline;
 
 pub use bezier::{BezierError, CubicBezier};
 pub use fitts::fitts_ms;
+pub use glide::Glide;
 pub use hermite::Hermite;
 pub use minjerk::min_jerk;
 pub use route::{Point, Route, RouteError};
 pub use spring::{Spring, SpringError, SpringState};
-pub use timeline::{Easing, Status, Timeline};
+pub use timeline::{Easing, MAX_DURATION_S, Status, Timeline};

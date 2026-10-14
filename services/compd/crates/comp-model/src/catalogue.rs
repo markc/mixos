@@ -38,6 +38,7 @@ pub const DIRECT_VERBS: &[&str] = &[
     "comp.props.set",
     "comp.region.select",
     "comp.input.sequence",
+    "comp.motion.run",
     "comp.panel.hold",
     "comp.panel.mode",
     "comp.info",
@@ -116,11 +117,11 @@ mod tests {
 
     #[test]
     fn the_surface_is_37_verbs_and_12_topics() {
-        assert_eq!(DIRECT_VERBS.len(), 15);
+        assert_eq!(DIRECT_VERBS.len(), 16);
         assert_eq!(WINDOW_VERBS.len(), 17);
         assert_eq!(INPUT_VERBS.len(), 5);
         let verbs = all_verbs().collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(verbs.len(), 37, "no verb is in two families");
+        assert_eq!(verbs.len(), 38, "no verb is in two families");
         assert!(verbs.iter().all(|verb| verb.starts_with("comp.")));
         assert!(READ_VERBS.iter().all(|verb| DIRECT_VERBS.contains(verb)));
         assert_eq!(TOPIC_SUFFIXES.len(), 12);

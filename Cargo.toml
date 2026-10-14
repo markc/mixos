@@ -143,6 +143,7 @@ graphics = { path = "services/compd/crates/graphics" }
 kms = { path = "services/compd/crates/kms" }
 ledger = { path = "services/compd/crates/ledger" }
 model = { path = "services/compd/crates/model" }
+motion = { path = "services/compd/crates/motion" }
 policy = { path = "services/compd/crates/policy" }
 render-gles = { path = "services/compd/crates/render-gles" }
 slots = { path = "services/compd/crates/slots" }
