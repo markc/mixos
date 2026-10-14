@@ -157,11 +157,18 @@ pub(super) fn paint_emoji_reference(
         } else {
             1
         };
+        // The bar is the cell's left edge, one point wide; the others
+        // cover every cell of a wide character.
+        let columns = if raster.cursor == Cursor::Bar {
+            col * cw..col * cw + raster.bar_width() as usize
+        } else {
+            col * cw..(col + span) * cw
+        };
         for y in row * ch..(row + 1) * ch {
             if raster.cursor == Cursor::Underline && y + 1 != (row + 1) * ch {
                 continue;
             }
-            for x in col * cw..(col + span) * cw {
+            for x in columns.clone() {
                 let at = y * stride + x * 4;
                 for c in 0..3 {
                     dst[at + c] = if raster.cursor == Cursor::Block {
