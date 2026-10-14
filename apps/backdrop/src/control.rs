@@ -510,7 +510,7 @@ impl Controller {
         let fade = self
             .fade_started
             .map(|start| FADE.saturating_sub(start.elapsed()));
-        let slide = if self.engine.pending().is_none() {
+        let slide = if self.engine.pending().is_none() && self.fade_started.is_none() {
             self.schedules
                 .values()
                 .filter_map(Schedule::deadline)
@@ -529,15 +529,19 @@ impl Controller {
         {
             self.finish_fade();
         }
-        if self.engine.pending().is_none() {
+        if self.engine.pending().is_none() && self.fade_started.is_none() {
             let now = self.started.elapsed();
             let due = self
                 .schedules
                 .iter()
-                .filter(|(_, schedule)| schedule.due(now))
-                .map(|(key, _)| key.clone())
-                .collect();
-            self.advance(due, Owed::Timer);
+                .find(|(_, schedule)| schedule.due(now))
+                .map(|(key, _)| key.clone());
+            if let Some(key) = due {
+                // Automatic advances are independent transactions. Finish the
+                // current fade before starting another output, and let a failed
+                // source defer only its own schedule. Bus NEXT still advances all.
+                self.advance(BTreeSet::from([key]), Owed::Timer);
+            }
         }
     }
 
@@ -1497,5 +1501,34 @@ mod tests {
         assert_eq!(c.engine.status().active, 1);
         assert!(c.engine.status().error.is_some());
         assert!(!c.schedules[&None].due(c.started.elapsed()));
+    }
+
+    #[test]
+    fn automatic_advances_wait_for_other_outputs_fades_and_fail_independently() {
+        let mut c = controller();
+        let mut config = slide_config();
+        config.outputs.insert("DP-1".into(), Wallpaper::Slideshow {
+            source: SlideSource::Images(vec!["/w/c.png".into(), "/w/d.png".into()]),
+            interval_s: 5, shuffle: false, fallback: None, fit: wallpaper::fit::Fit::Fill,
+        });
+        c.stage(config, Owed::Startup);
+        c.prepared(1, None, Ok((Schedule::new(vec!["/w/a.png".into(), "/w/b.png".into()], 5, false, 1, Duration::ZERO).unwrap(), decoded_ok().unwrap())));
+        c.prepared(1, Some("DP-1".into()), Ok((Schedule::new(vec!["/w/c.png".into(), "/w/d.png".into()], 5, false, 1, Duration::ZERO).unwrap(), decoded_ok().unwrap())));
+        c.started = Instant::now() - Duration::from_secs(6);
+        c.tick();
+        assert_eq!(c.advancing, BTreeSet::from([None]));
+        c.decoded(2, "/w/b.png".into(), decoded_ok());
+        let started = c.fade_started.unwrap();
+        c.tick();
+        assert_eq!(c.fade_started, Some(started), "the other output cannot cut this fade");
+        assert_eq!(c.engine.status().requested, 2);
+        assert!(c.next_deadline().unwrap() > Duration::ZERO, "no busy spin on the overdue output");
+        c.fade_started = Some(Instant::now() - FADE);
+        c.tick();
+        assert_eq!(c.advancing, BTreeSet::from([Some("DP-1".into())]));
+        c.decoded(3, "/w/d.png".into(), Err("corrupt".into()));
+        assert_eq!(c.schedules[&None].current(), Path::new("/w/b.png"));
+        assert_eq!(c.schedules[&Some("DP-1".into())].current(), Path::new("/w/c.png"));
+        assert!(c.registry.take_executed().0.is_empty());
     }
 }

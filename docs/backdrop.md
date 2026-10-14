@@ -162,6 +162,10 @@ through `config::atomic`), and then applies. Its reply is `rc 0` with
 sources. It refuses a configuration with no slideshow. An advance waiting for
 decode keeps the current pixels; a newer set can supersede it. Refused advances
 are not published as executed commands.
+Automatic advances run independently for each configured source and wait for
+the active crossfade to finish. A corrupt image on one output does not stop
+other outputs' schedules. A manual next advances all slideshows together and
+can interrupt their current fade.
 
 `backdrop.state` answers with no output on screen:
 `{schema, service, requested, active, pending, error, config, config_file,
