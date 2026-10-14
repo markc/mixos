@@ -112,7 +112,7 @@ design: {
         "lift.disabled": { kind: "ratio", value: 0.09 },
         "lift.ghost.disabled": { kind: "ratio", value: 0.13 },
         "disabled.chroma_reduction": { kind: "ratio", value: 0.50 },
-        "icon.stroke_width": { kind: "px", value: 1.5 },
+        "icon.stroke_width": { kind: "px", value: 2.0 },
         "legacy.control_gap": { kind: "px", value: 8.0 },
         "legacy.corner_radius": { kind: "px", value: 5.0 },
         "legacy.fader_width": { kind: "px", value: 42.0 },
