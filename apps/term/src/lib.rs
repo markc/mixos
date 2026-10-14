@@ -18,6 +18,7 @@ pub mod app;
 pub mod bus;
 pub mod clipboard;
 pub mod commands;
+mod font;
 pub mod ime;
 pub mod input;
 pub mod layout;

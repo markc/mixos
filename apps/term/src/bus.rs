@@ -206,10 +206,11 @@ impl WindowBus {
         });
     }
 
-    /// Perform a session-look read; [`Delivery::Look`] answers it.
-    pub fn read_look(&self, read: settings::follow::Read) {
+    /// Perform a session-look read; [`Delivery::Look`] answers it. False
+    /// with no Bus, so the shell can settle the failed send immediately.
+    pub fn read_look(&self, read: settings::follow::Read) -> bool {
         let Some(link) = self.link() else {
-            return;
+            return false;
         };
         let (client, tx, wake) = (link.client.clone(), self.tx.clone(), self.wake.clone());
         link.runtime.spawn(async move {
@@ -225,6 +226,7 @@ impl WindowBus {
             });
             wake();
         });
+        true
     }
 
     /// Deliver [`Delivery::LookRetry`] with `generation` after `delay`.
