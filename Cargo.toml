@@ -160,6 +160,8 @@ mesh-trust = { path = "services/noded/crates/mesh-trust" }
 dirs-sys = { path = "vendor/dirs-sys" }
 calloop = { path = "vendor/calloop" }
 input = { path = "vendor/input" }
+# Ctrl+V sends a paste even with no text on the clipboard. See vendor/egui-winit/PATCHES.md.
+egui-winit = { path = "vendor/egui-winit" }
 
 # Term's PTY with the child-only session-descriptor handoff
 # (vendor/teletypewriter/PATCHES.md).
