@@ -368,7 +368,10 @@ mod tests {
         assert_eq!(f.apply("op-1", changes.clone()), None, "no look yet");
         assert!(!f.following());
         let read = f.read().unwrap();
-        f.answered(read.ticket, Some((0, &snapshot("inc", "7", "studio"), None)));
+        f.answered(
+            read.ticket,
+            Some((0, &snapshot("inc", "7", "studio"), None)),
+        );
         assert!(f.following());
         let apply = f.apply("op-1", changes.clone()).unwrap();
         assert_eq!((apply.service, apply.verb), (SERVICE, "settings.apply"));

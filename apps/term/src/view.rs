@@ -139,7 +139,9 @@ const NEUTRAL_RING: f32 = 0.25;
 fn focus_ring(chrome: &Chrome, (ring, strength): (FocusRing, f32)) -> Color32 {
     let palette = &chrome.palette;
     match ring {
-        FocusRing::Neutral => palette.card_border.lerp_to_gamma(palette.text, NEUTRAL_RING),
+        FocusRing::Neutral => palette
+            .card_border
+            .lerp_to_gamma(palette.text, NEUTRAL_RING),
         FocusRing::Accent => palette
             .card_border
             .lerp_to_gamma(palette.accent, strength.clamp(0.0, 1.0)),

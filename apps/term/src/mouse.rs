@@ -144,8 +144,7 @@ impl App {
         let cell = self.logical_cell();
         let relative = egui::pos2(position.x - rect.x, position.y - rect.y);
         let inset = self.inset();
-        let (col, row) =
-            crate::input::pointer_cell(relative, inset, cell, *self.grids.get(&pane)?);
+        let (col, row) = crate::input::pointer_cell(relative, inset, cell, *self.grids.get(&pane)?);
         let side = if relative.x - inset - f32::from(col) * cell.0 < cell.0 / 2.0 {
             SelectionSide::Left
         } else {

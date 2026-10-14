@@ -16,15 +16,15 @@ use crate::ime::Composition;
 use crate::input::{self, Action, Wheel};
 use crate::layout::{self, Shape};
 use egui::{Key, Modifiers, Pos2};
+use settings::terminal::{CursorShape, FocusRing, Terminal as TerminalSettings};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use term_core::config::Cursor;
 use term_core::font::FontSize;
 use term_core::panes::Geometry;
 use term_core::raster::Raster;
-use settings::terminal::{CursorShape, FocusRing, Terminal as TerminalSettings};
-use term_core::config::Cursor;
 use term_core::tabs::{self, CompletionNote, Removed, TabSet};
 use term_core::terminal::Key as TerminalKey;
 
@@ -340,7 +340,8 @@ impl App {
     /// at `now` (always, while it does not blink).
     pub fn cursor_shown(&self, now: Instant) -> bool {
         let half = BLINK.as_millis();
-        !self.blinking() || (now.saturating_duration_since(self.blink_epoch).as_millis() / half) % 2 == 0
+        !self.blinking()
+            || (now.saturating_duration_since(self.blink_epoch).as_millis() / half) % 2 == 0
     }
 
     /// How long until the focused pane's cursor next blinks, for a
@@ -536,8 +537,7 @@ impl App {
             }
             let pane = self.panes.entry(id).or_default();
             // A new grid has no rows yet: every row is owed.
-            let mut dirty_rows = if self.force_paint || *self.painted.entry(id).or_default() == 0
-            {
+            let mut dirty_rows = if self.force_paint || *self.painted.entry(id).or_default() == 0 {
                 vec![true; screen.rows]
             } else {
                 snapshot.dirty_rows

@@ -1616,7 +1616,10 @@ mod tests {
         assert_eq!(raster.bar_width(), 1);
         assert_eq!(raster.cursor_pixels(2, 1, 1), (h..2 * h, 2 * w..2 * w + 1));
         raster.set_cursor(Cursor::Underline);
-        assert_eq!(raster.cursor_pixels(2, 1, 2), (2 * h - 1..2 * h, 2 * w..4 * w));
+        assert_eq!(
+            raster.cursor_pixels(2, 1, 2),
+            (2 * h - 1..2 * h, 2 * w..4 * w)
+        );
         raster.set_cursor(Cursor::Block);
         assert_eq!(raster.cursor_pixels(2, 1, 1), (h..2 * h, 2 * w..3 * w));
         let wide = raster.resized(2.5, 13.0).unwrap();

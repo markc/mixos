@@ -998,7 +998,10 @@ fn terminal_settings_apply_and_resize_each_pty_once() {
     settings.env.term = "foot".into();
     app.apply_terminal(&settings, None, false);
     let after = app.grids[&id];
-    assert!(after.0 < before.0 && after.1 < before.1, "{before:?} -> {after:?}");
+    assert!(
+        after.0 < before.0 && after.1 < before.1,
+        "{before:?} -> {after:?}"
+    );
     assert_eq!(app.inset(), 16.0);
     assert_eq!(app.raster.lock().unwrap().cursor(), Cursor::Bar);
     assert_eq!(app.focus_ring, (FocusRing::Accent, 0.25));
@@ -1028,7 +1031,11 @@ fn a_zoom_is_written_back_and_kept_until_it_lands() {
     assert_eq!(app.font_write.take(), Some(zoomed));
     let mut settings = terminal_settings();
     app.apply_terminal(&settings, None, true);
-    assert_eq!(app.font().current(), zoomed, "a pending write keeps the zoom");
+    assert_eq!(
+        app.font().current(),
+        zoomed,
+        "a pending write keeps the zoom"
+    );
     app.apply_terminal(&settings, None, false);
     assert_eq!(app.font().current(), 13.0);
     let cell = app.cell();
@@ -1036,7 +1043,10 @@ fn a_zoom_is_written_back_and_kept_until_it_lands() {
     app.apply_terminal(&settings, None, false);
     assert_eq!(app.font().current(), 20.0);
     assert!(app.cell().1 > cell.1);
-    assert_eq!(app.font_write, None, "the settings' size is not written back");
+    assert_eq!(
+        app.font_write, None,
+        "the settings' size is not written back"
+    );
     finish(app, reaper);
 }
 
@@ -1048,7 +1058,11 @@ fn a_blinking_cursor_asks_for_frames_only_while_it_blinks() {
     let id = app.shape.active_pane;
     let (_terminal, _) = fixture(&mut app, id, 8, 3, b"hi");
     app.paint();
-    assert_eq!(app.next_blink(Instant::now()), None, "blink is off by default");
+    assert_eq!(
+        app.next_blink(Instant::now()),
+        None,
+        "blink is off by default"
+    );
     let mut settings = terminal_settings();
     settings.cursor.blink = true;
     app.apply_terminal(&settings, None, false);

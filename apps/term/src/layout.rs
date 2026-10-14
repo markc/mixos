@@ -439,7 +439,13 @@ mod tests {
         for scale in [1.0, 1.25, 1.5, 2.5] {
             for padding in PADDINGS {
                 for width in 1..=4 {
-                    let inset = inset(scale, Edges { border: width, padding });
+                    let inset = inset(
+                        scale,
+                        Edges {
+                            border: width,
+                            padding,
+                        },
+                    );
                     assert!(on_pixel_grid(inset, scale), "{inset} @{scale}");
                     assert!(inset >= border(scale, width) - 1e-6);
                     assert!(inset * scale >= (padding as f32 * scale).round() - 1e-3);
@@ -456,7 +462,11 @@ mod tests {
                 assert!(border * scale >= 1.0 - 1e-6);
                 assert!(on_pixel_grid(border, scale), "border {border} @{scale}");
             }
-            assert_eq!(border(scale, 1), scale.round().max(1.0) / scale, "as before");
+            assert_eq!(
+                border(scale, 1),
+                scale.round().max(1.0) / scale,
+                "as before"
+            );
         }
     }
 
