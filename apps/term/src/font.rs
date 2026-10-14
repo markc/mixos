@@ -242,7 +242,10 @@ mod tests {
             Wait(400),
             Input(Event::TimerFired, vec![Write(18.0)]),
         ]);
-        cases.push(("read and write answers respect the last zoom debounce", steps));
+        cases.push((
+            "read and write answers respect the last zoom debounce",
+            steps,
+        ));
 
         for trigger in ["look refresh", "settings hint", "reconnect"] {
             let steps = vec![
