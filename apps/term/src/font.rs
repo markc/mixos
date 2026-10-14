@@ -229,6 +229,21 @@ mod tests {
         ]);
         cases.push(("only the last zoom's 400 ms debounce writes", steps));
 
+        let mut steps = ready();
+        steps.extend([
+            Input(Event::ReadRequested, vec![Read]),
+            Input(Event::Zoom(16.0), vec![Debounce]),
+            Input(GOOD, vec![]),
+            Wait(400),
+            Input(Event::TimerFired, vec![Write(16.0)]),
+            Input(Event::Zoom(18.0), vec![Debounce]),
+            Input(Event::WriteSettled(WriteReply::Saved), vec![Read]),
+            Input(GOOD, vec![]),
+            Wait(400),
+            Input(Event::TimerFired, vec![Write(18.0)]),
+        ]);
+        cases.push(("read and write answers respect the last zoom debounce", steps));
+
         for trigger in ["look refresh", "settings hint", "reconnect"] {
             let steps = vec![
                 Input(Event::Zoom(16.0), vec![Debounce]),
@@ -273,7 +288,10 @@ mod tests {
             Input(Event::ReadRequested, vec![Read]),
             Input(GOOD, vec![Write(18.0)]),
         ]);
-        cases.push(("newer zoom in flight then failure waits for next event", steps));
+        cases.push((
+            "newer zoom in flight then failure waits for next event",
+            steps,
+        ));
 
         let mut steps = writing();
         steps.extend([
@@ -315,7 +333,14 @@ mod tests {
                 Input(Event::Zoom(18.0), vec![Debounce]),
                 Input(Event::Reset(profile), vec![]),
                 Input(Event::WriteSettled(WriteReply::Saved), vec![Read]),
-                Input(GOOD, if profile == 16.0 { vec![] } else { vec![Write(profile)] }),
+                Input(
+                    GOOD,
+                    if profile == 16.0 {
+                        vec![]
+                    } else {
+                        vec![Write(profile)]
+                    },
+                ),
             ]);
             if profile != 16.0 {
                 steps.extend([
@@ -349,7 +374,10 @@ mod tests {
             Input(Event::ReadRequested, vec![Read]),
             Input(GOOD, vec![Write(16.0)]),
         ]);
-        cases.push(("conflict reads fresh fence; failed read waits for event", steps));
+        cases.push((
+            "conflict reads fresh fence; failed read waits for event",
+            steps,
+        ));
 
         let mut steps = writing();
         steps.extend([
@@ -383,7 +411,14 @@ mod tests {
             Input(Event::Zoom(16.0), vec![Debounce]),
             Wait(400),
             Input(Event::TimerFired, vec![Read]),
-            Input(Event::ReadAnswered { usable: false, following: false, continued: true }, vec![Read]),
+            Input(
+                Event::ReadAnswered {
+                    usable: false,
+                    following: false,
+                    continued: true,
+                },
+                vec![Read],
+            ),
             Input(GOOD, vec![Write(16.0)]),
         ];
         cases.push(("retargeted settings read supplies the fence", steps));
@@ -399,7 +434,12 @@ mod tests {
                 let debounce_before = state.debounce_at;
                 let event = match step {
                     Input(event, expected) => {
-                        if matches!(event, Event::Zoom(_) | Event::Reset(_) | Event::ReadAnswered { usable: true, .. }) {
+                        if matches!(
+                            event,
+                            Event::Zoom(_)
+                                | Event::Reset(_)
+                                | Event::ReadAnswered { usable: true, .. }
+                        ) {
                             failed = false;
                         }
                         let actions = state.event(event, now);
@@ -411,10 +451,20 @@ mod tests {
                                     assert_eq!(state.debounce_at, Some(now + QUIET), "{context}");
                                 }
                                 Write(_) => {
-                                    assert!(sent_before.is_none(), "write still outstanding: {context}");
-                                    assert!(!reading_before || matches!(event, Event::ReadAnswered { .. }), "read still outstanding: {context}");
+                                    assert!(
+                                        sent_before.is_none(),
+                                        "write still outstanding: {context}"
+                                    );
+                                    assert!(
+                                        !reading_before
+                                            || matches!(event, Event::ReadAnswered { .. }),
+                                        "read still outstanding: {context}"
+                                    );
                                     assert!(!state.reading && state.sent.is_some(), "{context}");
-                                    assert!(!failed, "write after failure without an event: {context}");
+                                    assert!(
+                                        !failed,
+                                        "write after failure without an event: {context}"
+                                    );
                                 }
                                 Read => assert!(state.reading && state.sent.is_none(), "{context}"),
                             }
@@ -431,26 +481,59 @@ mod tests {
                     }
                 };
                 if let Some(at) = state.debounce_at {
-                    assert!(matches!(event, Some(Event::Zoom(_))) || Some(at) == debounce_before, "timer created without zoom key: {context}");
+                    assert!(
+                        matches!(event, Some(Event::Zoom(_))) || Some(at) == debounce_before,
+                        "timer created without zoom key: {context}"
+                    );
                 }
-                if matches!(event, Some(Event::WriteSettled(WriteReply::Failed | WriteReply::Refused)) | Some(Event::ReadAnswered { usable: false, continued: false, .. })) {
+                if matches!(
+                    event,
+                    Some(Event::WriteSettled(
+                        WriteReply::Failed | WriteReply::Refused
+                    )) | Some(Event::ReadAnswered {
+                        usable: false,
+                        continued: false,
+                        ..
+                    })
+                ) {
                     failed = true;
-                    assert!(state.debounce_at.is_none(), "failure retained timer: {context}");
+                    assert!(
+                        state.debounce_at.is_none(),
+                        "failure retained timer: {context}"
+                    );
                 }
-                if matches!(event, Some(Event::WriteSettled(WriteReply::Failed | WriteReply::Refused))) {
+                if matches!(
+                    event,
+                    Some(Event::WriteSettled(
+                        WriteReply::Failed | WriteReply::Refused
+                    ))
+                ) {
                     assert!(state.unsaved, "missing unsaved status: {context}");
                 }
                 if matches!(event, Some(Event::WriteSettled(WriteReply::Refused))) {
-                    assert!(state.pending.is_none(), "refusal retained pending: {context}");
+                    assert!(
+                        state.pending.is_none(),
+                        "refusal retained pending: {context}"
+                    );
                 }
                 if let Some(Event::Reset(profile)) = event {
-                    assert_eq!(state.pending, sent_before.filter(|size| *size != profile).map(|_| profile), "{context}");
+                    assert_eq!(
+                        state.pending,
+                        sent_before.filter(|size| *size != profile).map(|_| profile),
+                        "{context}"
+                    );
                     assert!(state.debounce_at.is_none(), "{context}");
                 }
                 if matches!(event, Some(Event::WriteSettled(WriteReply::Conflict))) {
-                    assert!(state.reading && state.sent.is_none() && !state.fence_ready, "{context}");
+                    assert!(
+                        state.reading && state.sent.is_none() && !state.fence_ready,
+                        "{context}"
+                    );
                 }
-                assert!(!(state.reading && state.sent.is_some()), "overlapping requests: {context}");
+                assert!(
+                    !(state.reading && state.sent.is_some()),
+                    "overlapping requests: {context}"
+                );
                 // Pending with no request or timer is deliberately valid.
             }
         }
@@ -470,14 +553,23 @@ mod tests {
             .to_string()
         }
 
-        fn answer(state: &mut Persistence, follower: &mut Follower, ticket: u64, body: Option<&str>, now: Instant) -> Vec<Action> {
+        fn answer(
+            state: &mut Persistence,
+            follower: &mut Follower,
+            ticket: u64,
+            body: Option<&str>,
+            now: Instant,
+        ) -> Vec<Action> {
             let (followed, next) = follower.answered(ticket, body.map(|body| (0, body, None)));
             assert!(next.is_none(), "the persistence machine owns coalescing");
-            state.event(Event::ReadAnswered {
-                usable: matches!(followed, Some(Followed::Look { .. } | Followed::Unchanged)),
-                following: follower.following(),
-                continued: false,
-            }, now)
+            state.event(
+                Event::ReadAnswered {
+                    usable: matches!(followed, Some(Followed::Look { .. } | Followed::Unchanged)),
+                    following: follower.following(),
+                    continued: false,
+                },
+                now,
+            )
         }
 
         let mut state = Persistence::default();
@@ -485,22 +577,51 @@ mod tests {
         let mut now = Instant::now();
         assert_eq!(state.event(Event::ReadRequested, now), [Action::Read]);
         let read = follower.read().unwrap();
-        assert!(answer(&mut state, &mut follower, read.ticket, Some(&summary("1")), now).is_empty());
+        assert!(
+            answer(
+                &mut state,
+                &mut follower,
+                read.ticket,
+                Some(&summary("1")),
+                now
+            )
+            .is_empty()
+        );
         state.event(Event::Zoom(16.0), now);
         now += QUIET;
         assert_eq!(state.event(Event::TimerFired, now), [Action::Write(16.0)]);
-        let write = follower.apply("first", serde_json::json!({"terminal.font.size":16})).unwrap();
+        let write = follower
+            .apply("first", serde_json::json!({"terminal.font.size":16}))
+            .unwrap();
         assert_eq!(write.body["expected_revision"], "1");
 
         assert!(state.event(Event::ReadRequested, now).is_empty());
-        assert_eq!(state.event(Event::WriteSettled(WriteReply::Conflict), now), [Action::Read]);
+        assert_eq!(
+            state.event(Event::WriteSettled(WriteReply::Conflict), now),
+            [Action::Read]
+        );
         let fresh = follower.read().unwrap();
         assert!(answer(&mut state, &mut follower, fresh.ticket, None, now).is_empty());
-        assert!(state.event(Event::Now, now + Duration::from_secs(60)).is_empty());
+        assert!(
+            state
+                .event(Event::Now, now + Duration::from_secs(60))
+                .is_empty()
+        );
         assert_eq!(state.event(Event::ReadRequested, now), [Action::Read]);
         let read = follower.read().unwrap();
-        assert_eq!(answer(&mut state, &mut follower, read.ticket, Some(&summary("2")), now), [Action::Write(16.0)]);
-        let write = follower.apply("retry", serde_json::json!({"terminal.font.size":16})).unwrap();
+        assert_eq!(
+            answer(
+                &mut state,
+                &mut follower,
+                read.ticket,
+                Some(&summary("2")),
+                now
+            ),
+            [Action::Write(16.0)]
+        );
+        let write = follower
+            .apply("retry", serde_json::json!({"terminal.font.size":16}))
+            .unwrap();
         assert_eq!(write.body["expected_revision"], "2");
         assert_eq!(write.body["expected_incarnation"], "inc");
     }

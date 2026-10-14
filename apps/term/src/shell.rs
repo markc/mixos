@@ -462,12 +462,7 @@ impl Shell {
             .as_ref()
             .and_then(|(_, body, _)| serde_json::from_str::<Value>(body).ok())
             .and_then(|body| body["status"].as_str().map(str::to_owned));
-        let outcome = match status.as_deref() {
-            Some("changed" | "unchanged") => WriteReply::Saved,
-            Some("conflict") => WriteReply::Conflict,
-            Some("validation_failed" | "invalid_request") => WriteReply::Refused,
-            _ => WriteReply::Failed,
-        };
+        let outcome = write_outcome(status.as_deref());
         if matches!(outcome, WriteReply::Refused | WriteReply::Failed) {
             let error = reply.as_ref().and_then(|(_, _, error)| error.as_deref());
             eprintln!(
@@ -731,6 +726,15 @@ fn closing() -> (u8, String) {
     )
 }
 
+fn write_outcome(status: Option<&str>) -> WriteReply {
+    match status {
+        Some("changed" | "unchanged") => WriteReply::Saved,
+        Some("conflict") => WriteReply::Conflict,
+        Some("validation_failed" | "invalid_request") => WriteReply::Refused,
+        _ => WriteReply::Failed,
+    }
+}
+
 impl eframe::App for Shell {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         Shell::logic(self, ctx);
@@ -738,5 +742,24 @@ impl eframe::App for Shell {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         Shell::ui(self, ui);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn write_answers_distinguish_failures_and_validation_refusals() {
+        for status in [None, Some("storage_failed"), Some("outcome_unknown")] {
+            assert_eq!(write_outcome(status), WriteReply::Failed);
+        }
+        for status in ["validation_failed", "invalid_request"] {
+            assert_eq!(write_outcome(Some(status)), WriteReply::Refused);
+        }
+        assert_eq!(write_outcome(Some("conflict")), WriteReply::Conflict);
+        for status in ["changed", "unchanged"] {
+            assert_eq!(write_outcome(Some(status)), WriteReply::Saved);
+        }
     }
 }

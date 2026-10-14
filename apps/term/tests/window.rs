@@ -6,6 +6,7 @@
 
 use design::{DesignContext, Mode, Scheme};
 use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
 use egui_kittest::wgpu::{WgpuTestRenderer, create_render_state, default_wgpu_setup};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -128,7 +129,13 @@ fn two_tabs_and_a_split_studio_dark() {
     harness.snapshot("two_tabs_and_a_split_studio_dark");
 
     // Exercise the real offline debounce and show its persistent notice.
-    harness.state_mut().shell.as_mut().unwrap().app.zoom(FontSize::increase);
+    harness
+        .state_mut()
+        .shell
+        .as_mut()
+        .unwrap()
+        .app
+        .zoom(FontSize::increase);
     harness.run_steps(2);
     std::thread::sleep(std::time::Duration::from_millis(410));
     harness.run_steps(2);
@@ -136,7 +143,10 @@ fn two_tabs_and_a_split_studio_dark() {
     harness.snapshot("unsaved_zoom_studio_dark");
     let zoom = harness.state().shell.as_ref().unwrap().app.font().current();
     harness.run_steps(2);
-    assert_eq!(harness.state().shell.as_ref().unwrap().app.font().current(), zoom);
+    assert_eq!(
+        harness.state().shell.as_ref().unwrap().app.font().current(),
+        zoom
+    );
     harness.state_mut().shell.as_mut().unwrap().app.reset_font();
     harness.run_steps(2);
 
