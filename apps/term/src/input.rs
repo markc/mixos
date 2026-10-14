@@ -723,6 +723,10 @@ mod tests {
     fn touchpad_history_uses_cell_height_while_zoom_keeps_forty_points() {
         let speed = DEFAULT_SCROLL_SPEED;
         for height in [13.0, 17.0, 24.0] {
+            assert_eq!(scroll_steps(&mut 0.0, Wheel::Lines(1.0), height, speed), 1,
+                "default wheel travel is one row at every cell height");
+            assert_eq!(scroll_steps(&mut 0.0, Wheel::Lines(1.0), height, 80.0), 2,
+                "speed scales rows, not a fixed pixel distance");
             let mut pending = 0.0;
             let half = Wheel::Points(height / 2.0);
             assert_eq!(scroll_steps(&mut pending, half, height, speed), 0);

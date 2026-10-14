@@ -423,7 +423,8 @@ impl Raster {
         let override_path = std::env::var_os("TERM_SPIKE_FONT");
         let override_path = override_path.as_deref().map(Path::new);
         let primary = primary_font::discover_face(override_path, family, weight)?;
-        let raster = Self::from_font(primary.data, primary.index, scale, logical_px, cursor)?;
+        let fonts = Fonts::discover(primary.data.clone(), primary.index, weight).ok_or("Invalid primary font")?;
+        let raster = Self::from_fonts(primary.data, fonts, scale, logical_px, cursor)?;
         eprintln!(
             "DIAGNOSTIC font={} face={} weight={} scale={} cell={}x{} (physical px); bold=regular+brighter colour",
             primary.path.display(),
@@ -463,6 +464,7 @@ impl Raster {
         )
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     fn from_font(
         data: Arc<[u8]>,
         index: u32,
@@ -470,7 +472,8 @@ impl Raster {
         logical_px: f32,
         cursor: crate::config::Cursor,
     ) -> Result<Self, String> {
-        let fonts = Fonts::discover(data.clone(), index).ok_or("Invalid primary font")?;
+        let weight = swash::FontRef::from_index(&data, index as usize).ok_or("Invalid primary font")?.attributes().weight().0;
+        let fonts = Fonts::discover(data.clone(), index, weight).ok_or("Invalid primary font")?;
         Self::from_fonts(data, fonts, scale, logical_px, cursor)
     }
 

@@ -19,6 +19,10 @@ Additive, store format unchanged (3):
 - `Summary.terminal` and `Followed::Look.terminal` carry it to followers.
 - `settings.describe` lists each `terminal.*` field with its range and
   default; `terminal` alone resets or replaces the whole group.
+- `terminal: null` resets the whole terminal group, as advertised.
+- Correct the scroll speed unit: rows per wheel line, scaled by speed/40;
+  touchpad travel counts in cell heights at that scale. Default 40 keeps
+  the existing one-row-per-wheel-line behaviour; it is not a pixel distance.
 
 ## 0.6.0
 

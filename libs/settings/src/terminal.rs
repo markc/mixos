@@ -150,8 +150,8 @@ impl Default for Scrollback {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Scroll {
-    /// Logical pixels per wheel step, [`SCROLL_SPEED_MIN`] to
-    /// [`SCROLL_SPEED_MAX`].
+    /// Rows per wheel line, scaled by speed / 40, [`SCROLL_SPEED_MIN`] to
+    /// [`SCROLL_SPEED_MAX`]. Touchpad travel uses cell heights at the same scale.
     #[serde(deserialize_with = "deserialize_integer_u32")]
     pub speed: u32,
 }
@@ -334,7 +334,7 @@ pub fn describe() -> Value {
         "terminal.font.weight": {"type":"integer", "minimum":100, "maximum":900, "step":100, "default":400},
         "terminal.padding": {"type":"integer", "enum":PADDINGS, "default":1, "unit":"px"},
         "terminal.scrollback.lines": {"type":"integer", "minimum":0, "maximum":SCROLLBACK_MAX, "default":1000},
-        "terminal.scroll.speed": {"type":"integer", "minimum":SCROLL_SPEED_MIN, "maximum":SCROLL_SPEED_MAX, "default":40, "unit":"px per wheel step"},
+        "terminal.scroll.speed": {"type":"integer", "minimum":SCROLL_SPEED_MIN, "maximum":SCROLL_SPEED_MAX, "default":40, "unit":"rows per wheel line, scaled by speed/40"},
         "terminal.border.width": {"type":"integer", "minimum":BORDER_WIDTH_MIN, "maximum":BORDER_WIDTH_MAX, "default":1, "unit":"px"},
         "terminal.cursor.shape": {"type":"string", "enum":["block","underline","bar"], "default":"underline"},
         "terminal.cursor.blink": {"type":"boolean", "default":false},
@@ -365,7 +365,7 @@ pub(crate) fn set(
 ) -> Result<(), Diagnostic> {
     let defaults = Terminal::default();
     match field {
-        [] => *terminal = value.map_or(Ok(defaults), |v| typed(path, v))?,
+        [] => *terminal = value.filter(|v| !v.is_null()).map_or(Ok(defaults), |v| typed(path, v))?,
         ["font", "family"] => terminal.font.family = typed(path, value.unwrap_or(Value::Null))?,
         ["font", "size"] => {
             terminal.font.size = value.map_or(Ok(defaults.font.size), |v| typed(path, v))?
@@ -674,6 +674,14 @@ mod tests {
         assert!(apply("terminal", json!({"padding":4})).is_ok());
         assert!(apply("terminal", json!({"padding":4,"typo":1})).is_err());
         assert!(apply("terminal", json!({"padding":3})).is_err());
+    }
+
+    #[test]
+    fn null_resets_the_whole_terminal_group() {
+        let changed = apply("terminal", json!({"padding":8,"font":{"size":20,"weight":700}})).unwrap();
+        let reset = patch(&changed, &BTreeMap::from([("terminal".into(), Value::Null)]), &[]).unwrap();
+        assert_eq!(reset, Desktop::default());
+        resolve(&reset).unwrap();
     }
 
     #[test]

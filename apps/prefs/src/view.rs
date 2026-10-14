@@ -646,7 +646,7 @@ fn terminal_controls(ui: &mut Ui, term: &Terminal, events: &mut Vec<UiEvent>) {
     let speed = Numeric {
         key: "terminal-scroll-speed",
         title: label("terminal-scroll-speed"),
-        unit: "px",
+        unit: "",
         places: 0,
         slider: true,
     };
@@ -741,7 +741,11 @@ fn number(ui: &mut Ui, spec: Numeric, current: f64, range: RangeInclusive<f64>) 
     ui.horizontal(|ui| {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let field = ValueField::new(&mut value, range.clone()).unit(spec.unit);
-            if ui.add(field).lost_focus() {
+            let response = ui.add(field);
+            if response.has_focus() || response.dragged() {
+                ui.data_mut(|d| d.insert_temp(id, value));
+            }
+            if response.lost_focus() || response.drag_stopped() {
                 commit = true;
             }
             if spec.slider {
@@ -762,6 +766,53 @@ fn number(ui: &mut Ui, spec: Numeric, current: f64, range: RangeInclusive<f64>) 
     let scale = 10f64.powi(spec.places);
     let rounded = (value * scale).round() / scale;
     (rounded != (current * scale).round() / scale).then_some(rounded)
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::*;
+    use egui::accesskit::Role;
+    use egui_kittest::{Harness, kittest::Queryable};
+
+    #[test]
+    fn scrubbing_commits_once_on_release_and_typing_once_on_focus_loss() {
+        #[derive(Default)]
+        struct State { value: f64, commits: Vec<f64> }
+        let mut h = Harness::builder().with_size(egui::vec2(640.0, 200.0))
+            .build_ui_state(|ui, state: &mut State| {
+                let spec = Numeric { key:"numeric-test", title:"Number".into(), unit:"",
+                    places:0, slider:false };
+                if let Some(value) = number(ui, spec, state.value, 0.0..=1000.0) {
+                    state.value = value;
+                    state.commits.push(value);
+                }
+            }, State { value:100.0, ..Default::default() });
+        toolkit::install(&h.ctx, &toolkit::Theme::embedded());
+        h.run();
+        let from = h.get_by_role(Role::SpinButton).rect().center();
+        let to = from + egui::vec2(30.0, 0.0);
+        h.hover_at(from);
+        h.run();
+        h.drag_at(from);
+        h.run();
+        h.hover_at(to);
+        h.run();
+        assert!(h.state().commits.is_empty(), "dragging never applies per frame");
+        h.drop_at(to);
+        h.run();
+        assert_eq!(h.state().commits.len(), 1, "one release, one apply");
+        assert!(h.state().value > 100.0, "the dragged value survives the release frame");
+        h.get_by_role(Role::SpinButton).click();
+        h.run();
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        h.get_by_role(Role::TextInput).type_text("250");
+        h.run();
+        assert_eq!(h.state().commits.len(), 1, "typing waits for focus loss");
+        h.key_press(egui::Key::Enter);
+        h.run();
+        assert_eq!(h.state().commits.len(), 2);
+        assert_eq!(h.state().value, 250.0);
+    }
 }
 
 /// A text field that applies when Enter is pressed or it loses focus, not

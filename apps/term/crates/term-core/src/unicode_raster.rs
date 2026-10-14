@@ -28,6 +28,7 @@ pub(super) struct Face {
 }
 
 impl Face {
+    #[cfg(test)]
     fn new(data: Arc<[u8]>) -> Option<Self> {
         Self::at_index(data, 0)
     }
@@ -55,6 +56,7 @@ impl Face {
 
 pub(super) struct Fonts {
     pub(super) primary: Face,
+    weight: u16,
     fallbacks: OnceLock<Arc<Fallbacks>>,
 }
 
@@ -62,7 +64,7 @@ pub(super) struct Fonts {
 struct Fallbacks {
     coverage: Vec<Face>,
     emoji: Option<Face>,
-    symbols: Option<Face>,
+    symbols: Vec<Face>,
 }
 
 pub(super) const EMOJI_PATHS: &[&str] = &[
@@ -73,6 +75,7 @@ pub(super) const EMOJI_PATHS: &[&str] = &[
 
 /// The first readable face among `paths`. A damaged file is refused here, as
 /// primary faces are, rather than panicking later in the shaper.
+#[cfg(test)]
 pub(super) fn optional(paths: &[&str]) -> Option<Face> {
     paths.iter().find_map(|path| {
         let face = Face::new(std::fs::read(path).ok()?.into())?;
@@ -86,42 +89,44 @@ pub(super) fn optional(paths: &[&str]) -> Option<Face> {
 }
 
 impl Fonts {
-    pub(super) fn discover(primary: Arc<[u8]>, index: u32) -> Option<Arc<Self>> {
+    pub(super) fn discover(primary: Arc<[u8]>, index: u32, weight: u16) -> Option<Arc<Self>> {
         Some(Arc::new(Self {
             primary: Face::at_index(primary, index)?,
+            weight,
             fallbacks: OnceLock::new(),
         }))
     }
 
     fn fallbacks(&self) -> &Fallbacks {
-        static SHARED: OnceLock<Arc<Fallbacks>> = OnceLock::new();
         self.fallbacks.get_or_init(|| {
-            SHARED
-                .get_or_init(|| {
                     Arc::new(Fallbacks {
-                        coverage: super::primary_font::coverage()
+                        coverage: super::primary_font::coverage(self.weight)
                             .into_iter()
                             .filter_map(|face| Face::at_index(face.data, face.index))
                             .collect(),
                         emoji: match super::primary_font::installed_role("emoji") {
-                            Ok(Some(face)) => Face::at_index(face.data, face.index),
-                            Ok(None) => optional(EMOJI_PATHS),
+                            Ok(Some(face)) => {
+                                let mut db = fontdb::Database::new();
+                                db.load_system_fonts();
+                                let face = super::primary_font::fallback_weight(&mut db, face, self.weight);
+                                Face::at_index(face.data, face.index)
+                            },
+                            Ok(None) => super::primary_font::fallback_paths(EMOJI_PATHS, self.weight)
+                                .into_iter().find_map(|face| Face::at_index(face.data, face.index)),
                             Err(error) => {
                                 eprintln!("terminal static emoji: {error}");
                                 None
                             }
                         },
-                        symbols: optional(&[
+                        symbols: super::primary_font::fallback_paths(&[
                             "/usr/share/fonts/noto/NotoSansSymbols2-Regular.ttf",
                             "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
                             "/usr/share/fonts/google-noto/NotoSansSymbols2-Regular.ttf",
                             // Covers U+23F5 (⏵) and other Misc Technical arrows that
                             // no installed asset face has. Last resort, after the Noto set.
                             "/usr/share/fonts/Adwaita/AdwaitaMono-Regular.ttf",
-                        ]),
+                        ], self.weight).into_iter().filter_map(|face| Face::at_index(face.data, face.index)).collect(),
                     })
-                })
-                .clone()
         })
     }
 
@@ -129,6 +134,7 @@ impl Fonts {
     pub(super) fn without_fallbacks(primary: Arc<[u8]>, index: u32) -> Arc<Self> {
         Arc::new(Self {
             primary: Face::at_index(primary, index).unwrap(),
+            weight: 400,
             fallbacks: OnceLock::from(Arc::new(Fallbacks::default())),
         })
     }
@@ -238,11 +244,11 @@ impl UnicodeRaster {
                 [
                     Some(&self.fonts.primary),
                     self.fonts.fallbacks().emoji.as_ref(),
-                    self.fonts.fallbacks().symbols.as_ref(),
                 ]
                 .into_iter()
                 .flatten()
                 .chain(&self.fonts.fallbacks().coverage)
+                .chain(&self.fonts.fallbacks().symbols)
                 .any(|face| face.key == key)
             }));
             let bytes = image.layers.iter().map(Layer::bytes).sum::<usize>();
@@ -276,7 +282,8 @@ impl UnicodeRaster {
             && (text.contains('\u{fe0f}') || (span == 2 && text.chars().any(|c| c.is_emoji())));
         let primary = Some(&self.fonts.primary);
         // Only a non-ASCII cache miss reaches this path in production.
-        // All rasters share these immutable bytes and stable font identities.
+        // Resized rasters share immutable bytes and stable font identities;
+        // each requested weight has its own lazy fallback selection.
         let fallbacks = self.fonts.fallbacks();
         let faces = emoji
             .then_some(fallbacks.emoji.as_ref())
@@ -285,7 +292,7 @@ impl UnicodeRaster {
             .chain(primary)
             .chain(&fallbacks.coverage)
             .chain((!emoji).then_some(fallbacks.emoji.as_ref()).flatten())
-            .chain(fallbacks.symbols.as_ref());
+            .chain(&fallbacks.symbols);
         for face in faces {
             let font = face.font();
             if !covers(font, text, script) {
@@ -717,13 +724,55 @@ mod tests {
         let installed = super::super::primary_font::installed_role("emoji")
             .unwrap()
             .expect("installed emoji");
-        let fonts = super::Fonts::discover(primary.data, primary.index).unwrap();
+        let fonts = super::Fonts::discover(primary.data, primary.index, 400).unwrap();
         let selected = fonts.fallbacks().emoji.as_ref().expect("selected emoji");
         assert_eq!(selected.data.as_ref(), installed.data.as_ref());
         assert_eq!(selected.index, installed.index);
     }
     use super::*;
     use crate::raster::{PixelFormat, paint_cluster};
+
+    #[test]
+    fn fallback_glyph_uses_a_different_installed_face_at_bold_weight() {
+        let primary = super::super::primary_font::discover(None).unwrap();
+        let regular = Fonts::discover(primary.data.clone(), primary.index, 400).unwrap();
+        let bold = Fonts::discover(primary.data, primary.index, 700).unwrap();
+        let faces = |fonts: &Fonts| fonts.fallbacks().coverage.iter()
+            .chain(&fonts.fallbacks().symbols)
+            .map(|face| (face.data.clone(), face.index, face.font().attributes().weight().0))
+            .collect::<Vec<_>>();
+        let regular_faces = faces(&regular);
+        let bold_faces = faces(&bold);
+        // Use real installed coverage, never a renamed or synthetic test font.
+        // Look beyond one symbol so this works with different system font sets.
+        for ch in (0x80..=0xffff).filter_map(char::from_u32) {
+            if regular.primary.font().charmap().map(ch) != 0 { continue; }
+            fn selected(faces: &[(Arc<[u8]>, u32, u16)], ch: char) -> Option<&(Arc<[u8]>, u32, u16)> {
+                faces.iter().find(|(data, index, _)|
+                    FontRef::from_index(data, *index as usize).unwrap().charmap().map(ch) != 0)
+            }
+            let (Some(a), Some(b)) = (selected(&regular_faces, ch), selected(&bold_faces, ch)) else { continue };
+            if a.2 == b.2 || (a.0 == b.0 && a.1 == b.1) { continue; }
+            let family = |data: &[u8], index| {
+                FontRef::from_index(data, index).unwrap().localized_strings()
+                    .find_by_id(swash::StringId::Family, None).map(|s| s.chars().collect::<String>())
+            };
+            if family(&a.0, a.1 as usize) != family(&b.0, b.1 as usize) { continue; }
+            let text = ch.to_string();
+            for (fonts, expected) in [(regular, a), (bold, b)] {
+                let mut raster = UnicodeRaster::new(fonts);
+                let image = raster.image(&text, 1, 24.0, (30, 40), 30);
+                let key = image.font.expect("fallback ink, not tofu");
+                let face = raster.fonts.fallbacks().coverage.iter()
+                    .chain(&raster.fonts.fallbacks().symbols).find(|face| face.key == key).unwrap();
+                assert_eq!(face.data, expected.0);
+                assert_eq!(face.index, expected.1);
+            }
+            eprintln!("fallback U+{:04X}: installed weights {} and {}", ch as u32, a.2, b.2);
+            return;
+        }
+        eprintln!("SKIP fallback weight probe: no installed fallback family covers a missing primary glyph at two different weights");
+    }
 
     #[test]
     fn sf_primary_uses_dejavu_coverage_and_keeps_ascii_and_emoji_priority() {
