@@ -576,6 +576,24 @@ fn a_space_base_does_not_hide_its_combining_mark() {
 }
 
 #[test]
+fn media_triangle_is_not_tofu() {
+    // U+23F5 (⏵, Claude Code's "bypass permissions" marker) sits in no asset
+    // face; only the symbols fallback can shape it.
+    let mut raster = raster_with(Cursor::Block);
+    let image = raster.unicode.image(
+        "⏵",
+        1,
+        raster.px,
+        (raster.width, raster.height),
+        raster.baseline,
+    );
+    assert_eq!(
+        image.glyphs, 1,
+        "⏵ must shape from a symbols face, not tofu; install Adwaita Mono"
+    );
+}
+
+#[test]
 fn interner_generation_invalidates_reused_ids_but_append_does_not() {
     let mut raster = raster_with(Cursor::Block);
     let mut grid = screen(4, 1, ' ');

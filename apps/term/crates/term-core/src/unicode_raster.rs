@@ -115,6 +115,9 @@ impl Fonts {
                             "/usr/share/fonts/noto/NotoSansSymbols2-Regular.ttf",
                             "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
                             "/usr/share/fonts/google-noto/NotoSansSymbols2-Regular.ttf",
+                            // Covers U+23F5 (⏵) and other Misc Technical arrows that
+                            // no installed asset face has. Last resort, after the Noto set.
+                            "/usr/share/fonts/Adwaita/AdwaitaMono-Regular.ttf",
                         ]),
                     })
                 })
