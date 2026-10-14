@@ -9,7 +9,7 @@
 //! design package of its own (`source`), or a name this build does not know,
 //! the app's session theme stands, so a newer or custom desktop never
 //! breaks an older app.
-use crate::theme::Theme;
+use crate::theme::{Overlay, Theme};
 use design::{CaptionSide, Contrast, Decorations, DesignContext, Mode, Scheme, Style};
 use settings::model::Appearance;
 
@@ -33,7 +33,13 @@ pub fn theme(appearance: &Appearance) -> Option<Theme> {
     };
     let decorations = Decorations::from_name(&appearance.decorations)?;
     let captions = CaptionSide::from_name(&appearance.caption_side)?;
-    Some(Theme::for_context(context).framed(decorations, captions))
+    // The icon and type choices ride on the theme, so every app that installs
+    // this look draws with them; a choice left unset keeps the design's value.
+    Some(
+        Theme::for_context(context)
+            .framed(decorations, captions)
+            .with_overlay(Overlay::from_appearance(appearance)),
+    )
 }
 
 /// [`theme`], or `session` when the appearance cannot be drawn.
@@ -106,5 +112,42 @@ mod tests {
             assert!(theme(&a).is_none(), "{a:?}");
             assert_eq!(theme_or(&a, &session).scheme(), Scheme::Ocean);
         }
+    }
+
+    #[test]
+    fn unset_choices_leave_the_design_alone() {
+        let plain = theme(&appearance("forest")).unwrap();
+        assert_eq!(plain.overlay(), &Overlay::default());
+        assert_eq!(
+            crate::icons::stroke_width(&plain),
+            crate::icons::stroke_width(&Theme::for_context(DesignContext {
+                scheme: Scheme::Forest,
+                ..DesignContext::default()
+            })),
+        );
+    }
+
+    #[test]
+    fn a_chosen_stroke_and_weight_reach_the_theme() {
+        let a = Appearance {
+            icon_stroke: Some(2.5),
+            font_weight: Some(500),
+            ..appearance("forest")
+        };
+        let theme = theme(&a).unwrap();
+        assert_eq!(crate::icons::stroke_width(&theme), 2.5);
+        assert_eq!(theme.overlay().weight, Some(500));
+    }
+
+    #[test]
+    fn out_of_range_choices_degrade_to_the_design() {
+        let bad = Appearance {
+            icon_stroke: Some(2.1),
+            font_weight: Some(350),
+            ..appearance("forest")
+        };
+        let overlay = Overlay::from_appearance(&bad);
+        assert_eq!(overlay, Overlay::default());
+        assert!(theme(&bad).is_some(), "a bad choice never breaks the theme");
     }
 }
