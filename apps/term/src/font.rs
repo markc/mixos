@@ -63,9 +63,8 @@ impl Persistence {
         if self.sent.is_some() || self.reading {
             return;
         }
-        if self.read_again {
-            self.read(actions);
-        } else if let Some(size) = self.pending
+        // A fresh fence must retry a ready zoom before another queued read.
+        if let Some(size) = self.pending
             && self.debounce_at.is_none()
         {
             if self.fence_ready {
@@ -74,6 +73,8 @@ impl Persistence {
             } else {
                 self.read(actions);
             }
+        } else if self.read_again {
+            self.read(actions);
         }
     }
 
@@ -363,8 +364,9 @@ mod tests {
             Input(Event::TimerFired, vec![]),
             Input(Event::WriteSettled(WriteReply::Saved), vec![Read]),
             Input(Event::ReadRequested, vec![]), // Coalesce another hint.
-            Input(GOOD, vec![Read]),
             Input(GOOD, vec![Write(18.0)]),
+            Input(Event::WriteSettled(WriteReply::Saved), vec![Read]),
+            Input(GOOD, vec![]),
         ]);
         cases.push(("outstanding requests settle before the next write", steps));
 
@@ -540,6 +542,41 @@ mod tests {
                 // Pending with no request or timer is deliberately valid.
             }
         }
+    }
+
+    #[test]
+    fn successful_read_retries_pending_zoom_before_queued_read() {
+        let mut state = Persistence::default();
+        let mut now = Instant::now();
+        assert_eq!(state.event(Event::Zoom(16.0), now), [Action::Debounce]);
+        now += QUIET;
+        assert_eq!(state.event(Event::TimerFired, now), [Action::Read]);
+        assert!(state.event(BAD, now).is_empty());
+        assert_eq!(state.pending, Some(16.0));
+        assert!(state.debounce_at.is_none());
+
+        assert_eq!(state.event(Event::ReadRequested, now), [Action::Read]); // A
+        assert!(state.event(Event::ReadRequested, now).is_empty()); // Queue B.
+        assert!(state.read_again);
+        assert_eq!(state.event(GOOD, now), [Action::Write(16.0)]);
+        assert!(!state.reading);
+        assert_eq!(state.sent, Some(16.0));
+
+        // The queued read waits for the write, even when that write fails.
+        assert_eq!(
+            state.event(Event::WriteSettled(WriteReply::Failed), now),
+            [Action::Read]
+        );
+        assert!(state.event(BAD, now).is_empty());
+        assert_eq!(state.pending, Some(16.0));
+        assert!(state.unsaved);
+        assert!(state.sent.is_none() && !state.reading);
+        assert!(state.debounce_at.is_none());
+        now += Duration::from_secs(60);
+        assert!(state.event(Event::TimerFired, now).is_empty());
+        assert!(state.event(Event::Now, now).is_empty());
+        assert_eq!(state.pending, Some(16.0));
+        assert!(state.debounce_at.is_none());
     }
 
     #[test]
