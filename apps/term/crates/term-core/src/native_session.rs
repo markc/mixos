@@ -2680,7 +2680,7 @@ pub(crate) mod tests {
             "--manifest-path",
             "Cargo.toml",
             "-p",
-            "mix-shell",
+            "system",
             "--test",
             "native_session_pty",
             "--",

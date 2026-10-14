@@ -3099,7 +3099,7 @@ name = "hostd"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64",
+ "base64 0.22.1",
  "blake3",
  "buildinfo",
  "bus",
@@ -7308,7 +7308,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "signal-hook",
+ "signal-hook 0.3.18",
  "tempfile",
  "test-broker",
  "tokio",
