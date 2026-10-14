@@ -99,7 +99,9 @@ impl Section {
 /// their groups; unrecognised rows stay accessible under Other.
 pub fn application_section(row: &AppRow) -> Section {
     if let Some(category) = row.category.as_deref() {
-        return Section::from_name(category).filter(|s| s.panel() == Panel::Applications).unwrap_or(Section::Other);
+        return Section::from_name(category)
+            .filter(|s| s.panel() == Panel::Applications)
+            .unwrap_or(Section::Other);
     }
     match row.app.as_str() {
         "mixos-desktop" => Section::Desktop,

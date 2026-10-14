@@ -128,18 +128,20 @@ pub fn view(
     egui::CentralPanel::default()
         .frame(bars::dock_frame(ui.ctx()))
         .show(ui, |ui| match engine.section() {
-            Section::Desktop | Section::Server | Section::Creative | Section::Other => applications(ui, engine, commands, strings, &mut events),
+            Section::Desktop | Section::Server | Section::Creative | Section::Other => {
+                applications(ui, engine, commands, strings, &mut events)
+            }
             section => {
                 ScrollArea::vertical()
                     .id_salt(section.name())
                     .auto_shrink(false)
-                    .show(ui, |ui| {
-                        match section {
-                            Section::Themes => appearance(ui, engine, commands, strings, &mut events),
-                            Section::Wallpapers => wallpaper::controls(ui, engine, commands, strings, &mut events),
-                            Section::Fonts => fonts(ui),
-                            _ => unreachable!(),
+                    .show(ui, |ui| match section {
+                        Section::Themes => appearance(ui, engine, commands, strings, &mut events),
+                        Section::Wallpapers => {
+                            wallpaper::controls(ui, engine, commands, strings, &mut events)
                         }
+                        Section::Fonts => fonts(ui),
+                        _ => unreachable!(),
                     });
             }
         });
@@ -159,31 +161,67 @@ fn editors(
 ) {
     let title = label("panels");
     panel::group(ui, "editors", &[title.as_str()], |ui, _| {
-        ScrollArea::vertical().id_salt("navigation-tree").show(ui, |ui| {
-            for (parent, heading, expanded, toggle) in [
-                (Panel::Appearance, "panel-appearance", engine.ui.appearance_expanded, "view.tree.appearance"),
-                (Panel::Applications, "panel-applications", engine.ui.applications_expanded, "view.tree.applications"),
-            ] {
-                let enabled = commands.get(toggle).is_some_and(|c| (c.enabled)(engine));
-                let shown = ui.add_enabled_ui(enabled, |ui| {
-                    egui::CollapsingHeader::new(label(heading)).id_salt(heading).open(Some(expanded)).show(ui, |ui| {
-                        for section in Section::ALL.into_iter().filter(|s| s.panel() == parent) {
-                            if section == Section::Other && !engine.apps.iter().any(|r| Section::Other.matches(r)) { continue; }
-                            let command = commands.get(section.command()).expect("section command");
-                            ui.horizontal(|ui| {
-                                ui.add(icons::image(command.icon.expect("section icon"), stroke, ICON, ui.visuals().text_color()));
-                                if toolkit::selectable(ui, engine.section() == section, section_title(engine, section)).clicked() {
-                                    events.push(UiEvent::Command(section.command(), Origin::Ui));
+        ScrollArea::vertical()
+            .id_salt("navigation-tree")
+            .show(ui, |ui| {
+                for (parent, heading, expanded, toggle) in [
+                    (
+                        Panel::Appearance,
+                        "panel-appearance",
+                        engine.ui.appearance_expanded,
+                        "view.tree.appearance",
+                    ),
+                    (
+                        Panel::Applications,
+                        "panel-applications",
+                        engine.ui.applications_expanded,
+                        "view.tree.applications",
+                    ),
+                ] {
+                    let enabled = commands.get(toggle).is_some_and(|c| (c.enabled)(engine));
+                    let shown = ui.add_enabled_ui(enabled, |ui| {
+                        egui::CollapsingHeader::new(label(heading))
+                            .id_salt(heading)
+                            .open(Some(expanded))
+                            .show(ui, |ui| {
+                                for section in
+                                    Section::ALL.into_iter().filter(|s| s.panel() == parent)
+                                {
+                                    if section == Section::Other
+                                        && !engine.apps.iter().any(|r| Section::Other.matches(r))
+                                    {
+                                        continue;
+                                    }
+                                    let command =
+                                        commands.get(section.command()).expect("section command");
+                                    ui.horizontal(|ui| {
+                                        ui.add(icons::image(
+                                            command.icon.expect("section icon"),
+                                            stroke,
+                                            ICON,
+                                            ui.visuals().text_color(),
+                                        ));
+                                        if toolkit::selectable(
+                                            ui,
+                                            engine.section() == section,
+                                            section_title(engine, section),
+                                        )
+                                        .clicked()
+                                        {
+                                            events.push(UiEvent::Command(
+                                                section.command(),
+                                                Origin::Ui,
+                                            ));
+                                        }
+                                    });
                                 }
-                            });
-                        }
-                    })
-                });
-                if shown.inner.header_response.clicked() {
-                    events.push(UiEvent::Command(toggle, Origin::Ui));
+                            })
+                    });
+                    if shown.inner.header_response.clicked() {
+                        events.push(UiEvent::Command(toggle, Origin::Ui));
+                    }
                 }
-            }
-        });
+            });
     });
 }
 
@@ -231,7 +269,10 @@ fn status_text(ui: &Ui, row: &AppRow) -> RichText {
 }
 
 fn section_title(engine: &Engine, section: Section) -> String {
-    engine.category_label(section).map(str::to_owned).unwrap_or_else(|| label(section.label()))
+    engine
+        .category_label(section)
+        .map(str::to_owned)
+        .unwrap_or_else(|| label(section.label()))
 }
 
 /// Preview the actual face stacks installed on this rendering context.
@@ -240,16 +281,32 @@ fn fonts(ui: &mut Ui) {
     panel::group(ui, "fonts", &[title.as_str()], |ui, _| {
         let faces = ui.ctx().fonts(|fonts| {
             let defs = fonts.definitions();
-            [egui::FontFamily::Proportional, egui::FontFamily::Name(toolkit::fonts::HEADING.into()), egui::FontFamily::Monospace]
-                .map(|family| defs.families.get(&family).and_then(|stack| stack.first()).cloned().unwrap_or_default())
+            [
+                egui::FontFamily::Proportional,
+                egui::FontFamily::Name(toolkit::fonts::HEADING.into()),
+                egui::FontFamily::Monospace,
+            ]
+            .map(|family| {
+                defs.families
+                    .get(&family)
+                    .and_then(|stack| stack.first())
+                    .cloned()
+                    .unwrap_or_default()
+            })
         });
-        egui::Grid::new("font-faces").num_columns(2).spacing([24.0, 14.0]).show(ui, |ui| {
-            for (key, face) in ["fonts-interface", "fonts-headings", "fonts-monospace"].into_iter().zip(faces) {
-                panel::section_label(ui, &label(key));
-                ui.label(face);
-                ui.end_row();
-            }
-        });
+        egui::Grid::new("font-faces")
+            .num_columns(2)
+            .spacing([24.0, 14.0])
+            .show(ui, |ui| {
+                for (key, face) in ["fonts-interface", "fonts-headings", "fonts-monospace"]
+                    .into_iter()
+                    .zip(faces)
+                {
+                    panel::section_label(ui, &label(key));
+                    ui.label(face);
+                    ui.end_row();
+                }
+            });
         bars::hairline(ui);
         ui.heading(label("fonts-preview"));
         ui.label(label("fonts-sample"));

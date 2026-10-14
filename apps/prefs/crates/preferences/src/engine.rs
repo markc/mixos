@@ -216,8 +216,12 @@ impl Default for UiState {
     }
 }
 
-fn default_section() -> Section { Section::Creative }
-fn expanded() -> bool { true }
+fn default_section() -> Section {
+    Section::Creative
+}
+fn expanded() -> bool {
+    true
+}
 
 /// The theme choice saved by name ("forest", "dark"): the design's
 /// [`Scheme`] and [`Mode`] carry no serde of their own.
@@ -418,8 +422,11 @@ impl Engine {
 
     /// Legacy state can hold just a parent panel. Resolve it to its default leaf.
     pub fn section(&self) -> Section {
-        if self.ui.section.panel() == self.ui.panel { self.ui.section }
-        else { Section::default_for(self.ui.panel) }
+        if self.ui.section.panel() == self.ui.panel {
+            self.ui.section
+        } else {
+            Section::default_for(self.ui.panel)
+        }
     }
 
     pub fn visible_apps(&self) -> impl Iterator<Item = &AppRow> {
@@ -427,12 +434,19 @@ impl Engine {
     }
 
     pub fn category_label(&self, section: Section) -> Option<&str> {
-        self.apps.iter().find(|row| section.matches(row)).and_then(|row| row.category_label.as_deref()).filter(|label| !label.trim().is_empty())
+        self.apps
+            .iter()
+            .find(|row| section.matches(row))
+            .and_then(|row| row.category_label.as_deref())
+            .filter(|label| !label.trim().is_empty())
     }
 
     // ---- enablement (the command registry asks these) ---------------------
 
     pub fn can_refresh(&self) -> bool {
+        if self.picker.open {
+            return false;
+        }
         match self.ui.panel {
             Panel::Applications => self.idle(),
             Panel::Appearance => {
@@ -447,7 +461,9 @@ impl Engine {
     }
 
     pub fn can_check(&self) -> bool {
-        self.ui.panel == Panel::Applications && self.idle() && !self.picker.open
+        self.ui.panel == Panel::Applications
+            && self.idle()
+            && !self.picker.open
             && self.releases != Availability::Missing
             && !self.apps.is_empty()
             && self.uncertain.is_none()
@@ -522,8 +538,14 @@ impl Engine {
     }
 
     pub fn update_all(&mut self) {
-        let apps: Vec<_> = self.visible_apps().filter(|r| r.installed()).map(|r| r.app.clone()).collect();
-        if !apps.is_empty() { self.start(Op::UpdateGroup(apps)); }
+        let apps: Vec<_> = self
+            .visible_apps()
+            .filter(|r| r.installed())
+            .map(|r| r.app.clone())
+            .collect();
+        if !apps.is_empty() {
+            self.start(Op::UpdateGroup(apps));
+        }
     }
 
     /// Install the selected app, or update it when it is installed.
@@ -577,7 +599,9 @@ impl Engine {
     }
 
     pub fn set_section(&mut self, section: Section) {
-        if self.ui.dialog.is_some() || self.picker.open || self.quitting { return; }
+        if self.ui.dialog.is_some() || self.picker.open || self.quitting {
+            return;
+        }
         self.ui.panel = section.panel();
         self.ui.section = section;
         match section.panel() {
@@ -592,8 +616,12 @@ impl Engine {
         }
     }
 
-    pub fn toggle_appearance(&mut self) { self.ui.appearance_expanded = !self.ui.appearance_expanded; }
-    pub fn toggle_applications(&mut self) { self.ui.applications_expanded = !self.ui.applications_expanded; }
+    pub fn toggle_appearance(&mut self) {
+        self.ui.appearance_expanded = !self.ui.appearance_expanded;
+    }
+    pub fn toggle_applications(&mut self) {
+        self.ui.applications_expanded = !self.ui.applications_expanded;
+    }
 
     /// Select `app` and load its release notes. Selection is refused under
     /// a dialog, and while an operation runs (it acts on the selection).
@@ -604,7 +632,8 @@ impl Engine {
         if !self.apps.iter().any(|r| r.app == app) {
             return;
         }
-        let section = application_section(self.apps.iter().find(|r| r.app == app).expect("known app"));
+        let section =
+            application_section(self.apps.iter().find(|r| r.app == app).expect("known app"));
         self.set_section(section);
         if self.ui.selected.as_deref() == Some(app)
             && (self.notes.is_some() || self.notes_job.is_some())
@@ -1013,7 +1042,10 @@ impl Engine {
                 }
             }
             "prefs.section" => {
-                let section = args.get("name").and_then(Value::as_str).and_then(Section::from_name);
+                let section = args
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .and_then(Section::from_name);
                 match section {
                     None => self.error(id, "ARGUMENT", "name must be a section name"),
                     Some(_) if self.ui.dialog.is_some() || self.picker.open || self.quitting => {
@@ -1033,7 +1065,11 @@ impl Engine {
                 if !self.apps.iter().any(|r| r.app == app) {
                     return self.error(id, "ARGUMENT", "no app has that name");
                 }
-                if self.ui.dialog.is_some() || self.job.is_some() || self.picker.open || self.quitting {
+                if self.ui.dialog.is_some()
+                    || self.job.is_some()
+                    || self.picker.open
+                    || self.quitting
+                {
                     let message = self.label("busy", &[]);
                     return self.error(id, "BUSY", &message);
                 }
@@ -1722,7 +1758,16 @@ mod tests {
     #[test]
     fn group_updates_never_include_another_branch_or_send_empty_all() {
         let mut e = listed();
-        e.apps.push(AppRow { app: "mixos-server".into(), repo: "markc/mixos".into(), category: None, category_label: None, installed: Some("1".into()), latest: Some("2".into()), published: None, status: "update".into() });
+        e.apps.push(AppRow {
+            app: "mixos-server".into(),
+            repo: "markc/mixos".into(),
+            category: None,
+            category_label: None,
+            installed: Some("1".into()),
+            latest: Some("2".into()),
+            published: None,
+            status: "update".into(),
+        });
         e.set_section(Section::Server);
         assert!(e.can_update_all());
         e.update_all();
@@ -1742,7 +1787,10 @@ mod tests {
         let notes_ticket = releases(&e.take_effects())[0].0;
         e.set_section(Section::Server);
         assert!(e.ui.selected.is_none() && !e.can_install() && !e.can_remove());
-        e.released(notes_ticket, ok(json!({"app":"demo","tag":"v2","notes":"stale"})));
+        e.released(
+            notes_ticket,
+            ok(json!({"app":"demo","tag":"v2","notes":"stale"})),
+        );
         assert!(e.notes.is_none());
         e.command(1, "prefs.select", r#"{"app":"demo"}"#);
         assert_eq!(e.section(), Section::Other);
@@ -1764,6 +1812,10 @@ mod tests {
         e.picker.open = true;
         e.command(2, "prefs.section", r#"{"name":"themes"}"#);
         assert_eq!(e.section(), Section::Wallpapers);
-        assert!(e.take_effects().iter().any(|x| matches!(x, Effect::Reply {id:2,rc:10,body} if body["error_code"] == "BUSY")));
+        assert!(
+            e.take_effects().iter().any(
+                |x| matches!(x, Effect::Reply {id:2,rc:10,body} if body["error_code"] == "BUSY")
+            )
+        );
     }
 }

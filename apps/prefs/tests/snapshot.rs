@@ -79,12 +79,19 @@ fn fonts_studio_dark() {
 #[test]
 fn creative_studio_dark() {
     let mut e = Engine::new(label_with);
-    answer(&mut e, json!([
-        {"app":"canvas","repo":"example/canvas","category":"creative","installed":"0.8.0","latest":"0.9.0","published":"2026-10-10","status":"update"},
-        {"app":"drawing","repo":"example/drawing","category":"creative","installed":null,"latest":"0.9.0","published":"2026-10-10","status":"not installed"}
-    ]));
+    answer(
+        &mut e,
+        json!([
+            {"app":"canvas","repo":"example/canvas","category":"creative","installed":"0.8.0","latest":"0.9.0","published":"2026-10-10","status":"update"},
+            {"app":"drawing","repo":"example/drawing","category":"creative","installed":null,"latest":"0.9.0","published":"2026-10-10","status":"not installed"}
+        ]),
+    );
     e.set_section(Section::Creative);
-    draw(chrome(Scheme::Studio, Mode::Dark), "creative_studio_dark", e);
+    draw(
+        chrome(Scheme::Studio, Mode::Dark),
+        "creative_studio_dark",
+        e,
+    );
 }
 
 #[test]
@@ -92,7 +99,11 @@ fn desktop_studio_light() {
     let mut e = engine();
     e.set_section(Section::Desktop);
     e.ui.appearance_expanded = false;
-    draw(chrome(Scheme::Studio, Mode::Light), "desktop_studio_light", e);
+    draw(
+        chrome(Scheme::Studio, Mode::Light),
+        "desktop_studio_light",
+        e,
+    );
 }
 
 /// The window, optionally with `dialog` open.
