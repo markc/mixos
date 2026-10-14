@@ -80,10 +80,11 @@ fn fonts_studio_dark() {
 fn terminal_weights_studio_dark() {
     let mut e = appearance_engine();
     e.look.terminal = Some(Default::default());
-    draw(
+    draw_at_size(
         chrome(Scheme::Studio, Mode::Dark),
         "terminal_weights_studio_dark",
         e,
+        egui::vec2(980.0, 960.0),
     );
 }
 
@@ -238,11 +239,15 @@ fn wallpaper_picker_studio_dark() {
 }
 
 fn draw(theme: Theme, name: &str, engine: Engine) {
+    draw_at_size(theme, name, engine, egui::vec2(980.0, 640.0));
+}
+
+fn draw_at_size(theme: Theme, name: &str, engine: Engine, size: egui::Vec2) {
     let registry = commands::registry();
     let strings = strings();
     let stroke = icons::stroke_width(&theme);
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(980.0, 640.0))
+        .with_size(size)
         .wgpu()
         .build_ui(move |ui| {
             let _ = view(ui, &engine, &registry, &strings, stroke);

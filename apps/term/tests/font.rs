@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use term::app::App;
 use term_core::config::{Config, Cursor, Settings};
 use term_core::font::FontSize;
+use term_core::panes::Geometry;
 use term_core::raster::Raster;
 use term_core::tabs::{Cleanup, TabSet};
 
@@ -34,7 +35,19 @@ fn weight_only_settings_change_rebuilds_the_raster() {
     let mut settings = settings::terminal::Terminal::default();
     settings.font.size = 13.0;
     app.apply_terminal(&settings, None, false);
+    app.sync();
+    app.layout(Geometry {
+        x: 0.0,
+        y: 0.0,
+        w: 640.0,
+        h: 240.0,
+    });
     for weight in [300, 400, 500] {
+        app.paint();
+        assert!(
+            !app.grids.is_empty(),
+            "paint populated the old raster's grids"
+        );
         let before = app.raster.lock().unwrap().identity();
         let size = app.font().current();
         settings.font.weight = weight;
