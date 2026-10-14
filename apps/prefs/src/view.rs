@@ -16,8 +16,8 @@ use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
 use preferences::appearance::{Availability as Settings, Axis};
 use preferences::terminal::{
     BORDER_WIDTH_MAX, BORDER_WIDTH_MIN, CursorShape, FONT_SIZE_MAX, FONT_SIZE_MIN, FocusRing,
-    PADDINGS, SCROLL_SPEED_MAX, SCROLL_SPEED_MIN, SCROLLBACK_MAX, Setting, Terminal, family_setting,
-    family_text,
+    PADDINGS, SCROLL_SPEED_MAX, SCROLL_SPEED_MIN, SCROLLBACK_MAX, Setting, Terminal,
+    family_setting, family_text,
 };
 use preferences::{AppRow, Availability, Dialog, Engine, Look, Panel, RowState, Section};
 use std::collections::HashMap;

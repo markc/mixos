@@ -245,7 +245,10 @@ mod tests {
         assert_eq!(body["reset"], json!([]));
         assert!(!e.can_edit_terminal(), "one apply at a time");
         e.edit_terminal(Setting::Padding(16));
-        assert!(settings_calls(&mut e).is_empty(), "an edit mid-apply is not sent");
+        assert!(
+            settings_calls(&mut e).is_empty(),
+            "an edit mid-apply is not sent"
+        );
 
         e.settled(ticket, reply(json!({"status":"changed","receipt":{}})));
         let reads = settings_calls(&mut e);
