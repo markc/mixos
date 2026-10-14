@@ -54,7 +54,10 @@ fn weight_only_settings_change_rebuilds_the_raster() {
         app.apply_terminal(&settings, None, false);
         assert!(!app.raster.lock().unwrap().same_identity(&before));
         assert_eq!(app.font().current(), size);
-        assert!(app.grids.is_empty());
+        assert!(
+            !app.grids.is_empty(),
+            "the replacement relayout resizes the PTY"
+        );
         let after = app.raster.lock().unwrap().identity();
         app.apply_terminal(&settings, None, false);
         assert!(app.raster.lock().unwrap().same_identity(&after));
