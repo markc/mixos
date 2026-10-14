@@ -1833,8 +1833,14 @@ mod tests {
         changed[0]["category"] = json!("creative");
         e.released(list_ticket, ok(changed));
         assert!(e.ui.selected.is_none() && e.notes_error.is_none() && !e.busy());
-        e.released(notes_ticket, ok(json!({"app":"demo","tag":"v2","notes":"stale"})));
+        e.released(
+            notes_ticket,
+            ok(json!({"app":"demo","tag":"v2","notes":"stale"})),
+        );
         assert!(e.notes.is_none());
-        assert_eq!(e.subject(&Op::UpdateGroup(vec!["a".into(), "b".into()])), "a, b");
+        assert_eq!(
+            e.subject(&Op::UpdateGroup(vec!["a".into(), "b".into()])),
+            "a, b"
+        );
     }
 }
