@@ -77,6 +77,13 @@ fn fonts_studio_dark() {
 }
 
 #[test]
+fn terminal_weights_studio_dark() {
+    let mut e = appearance_engine();
+    e.look.terminal = Some(Default::default());
+    draw(chrome(Scheme::Studio, Mode::Dark), "terminal_weights_studio_dark", e);
+}
+
+#[test]
 fn creative_studio_dark() {
     let mut e = Engine::new(label_with);
     answer(

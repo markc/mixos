@@ -616,10 +616,11 @@ fn terminal_controls(ui: &mut Ui, term: &Terminal, events: &mut Vec<UiEvent>) {
     }
 
     panel::section_label(ui, &label("terminal-weight"));
-    let weights: Vec<(u32, String)> = (100..=900)
-        .step_by(100)
-        .map(|w| (w, w.to_string()))
-        .collect();
+    let weights = [
+        (300, label("terminal-weight-light")),
+        (400, label("terminal-weight-regular")),
+        (500, label("terminal-weight-medium")),
+    ];
     if let Some(weight) = choices(ui, term.font.weight, &weights) {
         events.push(UiEvent::Terminal(Setting::Weight(weight)));
     }

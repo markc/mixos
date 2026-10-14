@@ -60,6 +60,40 @@ fn raster(primary: &Primary) -> Raster {
     .unwrap()
 }
 
+#[test]
+fn bundled_weights_select_distinct_faces_and_change_ascii_and_unicode_ink() {
+    let mut previous: Option<Vec<u8>> = None;
+    for (weight, name) in [
+        (300, "Light"),
+        (400, "Regular"),
+        (500, "Medium"),
+    ] {
+        let primary = primary_font::discover_face(None, None, weight).unwrap();
+        assert_eq!(primary.path, Path::new(&format!("bundled/JetBrainsMono-{name}.ttf")));
+        let mut raster = raster(&primary);
+        assert_face(&primary, &raster, "JetBrains Mono", weight);
+        let mut row = screen(2, 1, 'M');
+        row.cells[1].c = 'é';
+        let pixels = raster.render(&row);
+        if let Some(previous) = previous {
+            let cell_bytes = raster.width as usize * 4;
+            let stride = cell_bytes * 2;
+            for column in 0..2 {
+                assert!(pixels.chunks_exact(stride).zip(previous.chunks_exact(stride)).any(
+                    |(a, b)| a[column * cell_bytes..(column + 1) * cell_bytes]
+                        != b[column * cell_bytes..(column + 1) * cell_bytes]
+                ), "column {column} must change weight");
+            }
+        }
+        previous = Some(pixels);
+        write_row(&primary, name, "JetBrains Mono", weight);
+    }
+    for (requested, expected) in [(200, 300), (375, 400), (475, 500), (900, 500)] {
+        let primary = primary_font::discover_face(None, None, requested).unwrap();
+        assert_face(&primary, &raster(&primary), "JetBrains Mono", expected);
+    }
+}
+
 fn write_row(primary: &Primary, name: &str, family: &str, weight: u16) {
     let mut raster = raster(primary);
     assert_face(primary, &raster, family, weight);
@@ -100,7 +134,7 @@ fn write_row(primary: &Primary, name: &str, family: &str, weight: u16) {
 }
 
 #[test]
-fn discovers_sf_mono_light_and_renders_row_at_2_5x() {
+fn discovers_sf_mono_regular_and_renders_row_at_2_5x() {
     let mut db = Database::new();
     db.load_system_fonts();
     if db
@@ -110,11 +144,11 @@ fn discovers_sf_mono_light_and_renders_row_at_2_5x() {
         })
         .is_none()
     {
-        eprintln!("SKIP SF Mono Light probe: fontdb cannot find SF Mono");
+        eprintln!("SKIP SF Mono Regular probe: fontdb cannot find SF Mono");
         return;
     }
     let primary = primary_font::from_database(&mut db).expect("terminal primary face");
-    write_row(&primary, "sf", "SF Mono", 300);
+    write_row(&primary, "sf", "SF Mono", 400);
 }
 
 #[test]
@@ -326,7 +360,7 @@ fn damaged_candidate_is_removed_before_selecting_next_face() {
         let mut db = Database::new();
         let mut bad = template.clone();
         bad.source = fontdb::Source::File(path.clone());
-        bad.weight = Weight::LIGHT;
+        bad.weight = Weight::NORMAL;
         let bad_id = db.push_face_info(bad);
         db.push_face_info(template.clone());
         let primary = primary_font::from_database(&mut db).unwrap();

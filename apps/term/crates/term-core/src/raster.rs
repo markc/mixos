@@ -422,16 +422,13 @@ impl Raster {
     ) -> Result<Self, String> {
         let override_path = std::env::var_os("TERM_SPIKE_FONT");
         let override_path = override_path.as_deref().map(Path::new);
-        let primary = if family.is_none() && weight == DEFAULT_WEIGHT {
-            primary_font::discover(override_path)?
-        } else {
-            primary_font::discover_face(override_path, family, weight)?
-        };
+        let primary = primary_font::discover_face(override_path, family, weight)?;
         let raster = Self::from_font(primary.data, primary.index, scale, logical_px, cursor)?;
         eprintln!(
-            "DIAGNOSTIC font={} face={} scale={} cell={}x{} (physical px); bold=regular+brighter colour",
+            "DIAGNOSTIC font={} face={} weight={} scale={} cell={}x{} (physical px); bold=regular+brighter colour",
             primary.path.display(),
             primary.index,
+            raster.unicode.fonts.primary.font().attributes().weight().0,
             raster.scale,
             raster.width,
             raster.height

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Validated terminal face discovery. Fallback routing stays in unicode_raster.
-use design::{TypographyGeneric, TypographyRole, default_typography};
+#[cfg(test)]
+use design::TypographyGeneric;
+use design::{TypographyRole, default_typography};
 use fontdb::{Database, Family, Query, Source, Style, Weight};
 use std::{
     path::{Path, PathBuf},
@@ -13,6 +15,7 @@ use swash::{
     zeno::Format,
 };
 
+#[cfg(any(test, feature = "test-support"))]
 const LEGACY_PATHS: &[&str] = &[
     "/usr/share/fonts/TTF/DejaVuSansMono.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
@@ -44,6 +47,7 @@ fn installed_assets() -> Result<Option<&'static assets::AssetSet>, &'static str>
     }
 }
 
+#[cfg(test)]
 pub(super) fn discover(override_path: Option<&Path>) -> Result<Primary, String> {
     // An explicit path is authoritative, including an error for a bad file.
     if let Some(path) = override_path {
@@ -51,35 +55,11 @@ pub(super) fn discover(override_path: Option<&Path>) -> Result<Primary, String> 
     }
     static SHARED: OnceLock<Result<Primary, String>> = OnceLock::new();
     SHARED
-        .get_or_init(|| {
-            // The installed mono role precedes platform discovery. An explicit
-            // TERM_SPIKE_FONT above remains authoritative, including errors.
-            match installed_assets() {
-                Ok(Some(set)) => {
-                    if let Some(path) = set.font_path("mono") {
-                        return from_path(&path);
-                    }
-                }
-                Ok(None) => {}
-                Err(error) => return Err(format!("terminal static assets: {error}")),
-            }
-            let mut db = Database::new();
-            db.load_system_fonts();
-            from_database(&mut db)
-                .or_else(|| {
-                    LEGACY_PATHS
-                        .iter()
-                        .find_map(|path| from_path(Path::new(path)).ok())
-                })
-                .ok_or_else(|| {
-                    "No monospace font found; set TERM_SPIKE_FONT=/path/to/font.ttf".into()
-                })
-        })
+        .get_or_init(|| discover_face(None, None, DEFAULT_WEIGHT))
         .clone()
 }
 
-/// The CSS weight the terminal's settings call regular: the face
-/// [`discover`] picks.
+/// The CSS weight the terminal's settings call regular.
 pub const DEFAULT_WEIGHT: u16 = 400;
 
 /// A chosen face: `family` nearest `weight` when it is installed and
@@ -105,22 +85,23 @@ pub(super) fn discover_face(
             }
         }
     }
-    // The same order as [`discover`]: the installed mono role, the role's
-    // families and generic, then the legacy paths. Only the weight differs.
-    if let Ok(Some(set)) = installed_assets()
-        && let Some(path) = set.font_path("mono")
-    {
-        return from_path_weight(&path, weight).or_else(|_| from_path(&path));
-    }
-    let mut db = Database::new();
-    db.load_system_fonts();
-    select_weight(&mut db, &role_families(), weight)
-        .or_else(|| {
-            LEGACY_PATHS
-                .iter()
-                .find_map(|path| from_path_weight(Path::new(path), weight).ok())
-        })
-        .ok_or_else(|| "No monospace font found; set TERM_SPIKE_FONT=/path/to/font.ttf".into())
+    // All default weights use the same bundled family. Installed mono roles
+    // and system families can be single static faces, so cannot implement
+    // a weight choice reliably. Named installed families above stay explicit.
+    bundled(weight.0)
+}
+
+fn bundled(weight: u16) -> Result<Primary, String> {
+    let (name, bytes) = assets::mixos::mono_face(weight);
+    let font = FontRef::from_index(bytes, 0)
+        .filter(|font| usable(*font))
+        .ok_or_else(|| format!("bundled font {name} cannot be drawn"))?;
+    debug_assert_eq!(font.attributes().style(), swash::Style::Normal);
+    Ok(Primary {
+        path: PathBuf::from(format!("bundled/{name}.ttf")),
+        index: 0,
+        data: Arc::from(bytes),
+    })
 }
 
 /// Installed family `name`, the face nearest `weight`, when it is monospace
@@ -138,28 +119,6 @@ fn named(db: &Database, name: &str, weight: Weight) -> Result<Primary, &'static 
         return Err("is not monospace");
     }
     load_face(db, id).ok_or("cannot be drawn")
-}
-
-/// A font file's face nearest `weight`.
-fn from_path_weight(path: &Path, weight: Weight) -> Result<Primary, String> {
-    let mut db = Database::new();
-    db.load_font_file(path)
-        .map_err(|e| format!("font {}: {e}", path.display()))?;
-    let names: Vec<_> = db
-        .faces()
-        .flat_map(|face| face.families.iter())
-        .map(|(name, _)| name.clone())
-        .collect();
-    let families: Vec<_> = names.iter().map(|name| Family::Name(name)).collect();
-    let query = Query {
-        families: &families,
-        weight,
-        style: Style::Normal,
-        ..Query::default()
-    };
-    db.query(&query)
-        .and_then(|id| load_face(&db, id))
-        .ok_or_else(|| format!("font {} has no usable face", path.display()))
 }
 
 /// Called only when the shared Unicode fallback set is first needed.
@@ -214,12 +173,14 @@ pub(super) fn coverage() -> Vec<Primary> {
         .collect()
 }
 
+#[cfg(test)]
 pub(super) fn from_database(db: &mut Database) -> Option<Primary> {
-    select(db, &role_families())
+    select_weight(db, &role_families(), Weight(DEFAULT_WEIGHT))
 }
 
 /// The terminal role's family, its fallbacks, then its generic family: the
 /// order every primary face is looked up in.
+#[cfg(test)]
 fn role_families() -> Vec<Family<'static>> {
     let role = default_typography(TypographyRole::Terminal);
     std::iter::once(&role.family)
@@ -394,9 +355,12 @@ mod tests {
 
     #[test]
     #[ignore = "requires a bootstrapped static asset set"]
-    fn installed_mono_is_primary_and_emoji_is_coverage() {
+    fn bundled_regular_is_primary_and_installed_emoji_is_coverage() {
         let set = assets::mixos::discover().unwrap().expect("installed set");
-        assert_eq!(discover(None).unwrap().path, set.font_path("mono").unwrap());
+        assert_eq!(
+            discover(None).unwrap().path,
+            Path::new("bundled/JetBrainsMono-Regular.ttf")
+        );
         assert_eq!(
             installed_role("emoji").unwrap().unwrap().path,
             set.font_path("emoji").unwrap()
@@ -412,7 +376,7 @@ mod tests {
     }
 
     #[test]
-    fn light_queries_reject_thin_and_extra_light_even_via_generic_alias() {
+    fn regular_queries_do_not_inherit_the_terminal_roles_light_weight() {
         let fixture = fixture().unwrap();
         let mut source = Database::new();
         source.load_font_file(&fixture.path).unwrap();
@@ -434,9 +398,8 @@ mod tests {
                     face.weight = Weight(*weight);
                     db.push_face_info(face);
                 }
-                let id = query_family(&mut db, &family, Weight::LIGHT).unwrap();
-                let expected = if weights.contains(&300) { 300 } else { 400 };
-                assert_eq!(db.face(id).unwrap().weight, Weight(expected));
+                let id = query_family(&mut db, &family, Weight(DEFAULT_WEIGHT)).unwrap();
+                assert_eq!(db.face(id).unwrap().weight, Weight::NORMAL);
             }
         }
     }
