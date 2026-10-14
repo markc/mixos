@@ -696,7 +696,8 @@ their last good image stays visible after the refusal.
 - A set applies only once all its images are decoded. A missing, corrupt,
   oversize or unsupported image refuses the whole change: the last applied
   backdrop stays on screen, and the reason is in `backdrop.state`. Images being
-  decoded for a refused or superseded set are dropped at once.
+  kept for a refused or superseded set are dropped at once; in-flight results
+  are discarded on completion.
 
 ### Memory budgets
 
@@ -707,6 +708,11 @@ totals.
 |---|---|---|
 | Decoded RGBA held by the controller (applied and candidate images together) | 512 MiB (`RESIDENT_BUDGET`) | a decode that would take the total over it is refused (`IMAGE`); the last applied images stay until a whole candidate set applies |
 | Accounted wallpaper texture bytes, across all outputs, overlap included (`TEXTURE_BUDGET`) | 512 MiB | four full-size outputs swapping (four old and four new textures) |
+
+Each output keeps its own texture at the decoded size, capped at 3840 pixels
+a side. The budget can leave additional outputs on fallback when there is no
+room for their textures. An image over the device's texture-size limit also
+shows fallback, with the limit reported in that output's `error`.
 
 A full-size image is 3840 × 3840 × 4 bytes = 56.25 MiB, the largest kept. Four
 applied plus four candidates is 450 MiB, which fits the 512 MiB resident budget.

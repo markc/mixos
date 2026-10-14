@@ -333,7 +333,8 @@ file replaced at the same path is picked up by the next set.</li>
 <li>A set applies only once all its images are decoded. A missing, corrupt,
 oversize or unsupported image refuses the whole change: the last applied
 backdrop stays on screen, and the reason is in <code>backdrop.state</code>. Images being
-decoded for a refused or superseded set are dropped at once.</li>
+kept for a refused or superseded set are dropped at once; in-flight results
+are discarded on completion.</li>
 </ul>
 <h3 id="memory-budgets">Memory budgets</h3>
 <p>Two aggregate budgets, both enforced; the per-image limits above are not
@@ -342,6 +343,10 @@ totals.</p>
 <tr><td>Decoded RGBA held by the controller (applied and candidate images together)</td><td>512 MiB (<code>RESIDENT_BUDGET</code>)</td><td>a decode that would take the total over it is refused (<code>IMAGE</code>); the last applied images stay until a whole candidate set applies</td></tr>
 <tr><td>Accounted wallpaper texture bytes, across all outputs, overlap included (<code>TEXTURE_BUDGET</code>)</td><td>512 MiB</td><td>four full-size outputs swapping (four old and four new textures)</td></tr>
 </tbody></table>
+<p>Each output keeps its own texture at the decoded size, capped at 3840 pixels
+a side. The budget can leave additional outputs on fallback when there is no
+room for their textures. An image over the device's texture-size limit also
+shows fallback, with the limit reported in that output's <code>error</code>.</p>
 <p>A full-size image is 3840 × 3840 × 4 bytes = 56.25 MiB, the largest kept. Four
 applied plus four candidates is 450 MiB, which fits the 512 MiB resident budget.
 Textures are accounted as the bytes of the new size reserved while the old is
