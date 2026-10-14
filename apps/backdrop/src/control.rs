@@ -142,6 +142,27 @@ fn prepare(wallpaper: Wallpaper, revision: u64) -> Result<(Schedule, Decoded), S
     Ok((schedule, image))
 }
 
+/// Always return a completion when the worker unwinds. An abort profile still
+/// terminates the process, rather than leaving a live controller wedged.
+fn guarded_job(job: Job, work: impl FnOnce(Job) -> Msg) -> Msg {
+    let fallback = job.clone();
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work(job))) {
+        Ok(msg) => msg,
+        Err(_) => match fallback {
+            Job::Load(revision, path) => Msg::Decoded {
+                revision,
+                path,
+                result: Err("decoder panicked".into()),
+            },
+            Job::Resolve(revision, key, _) => Msg::Prepared {
+                revision,
+                key,
+                result: Err("decoder panicked".into()),
+            },
+        },
+    }
+}
+
 fn resolved(config: &Config, schedules: &BTreeMap<Option<String>, Schedule>) -> Config {
     let resolve = |key: Option<String>, wallpaper: &Wallpaper| match wallpaper {
         Wallpaper::Slideshow { fallback, fit, .. } => {
@@ -542,7 +563,7 @@ impl Controller {
         let spawned = std::thread::Builder::new()
             .name("backdrop-decode".into())
             .spawn(move || {
-                let msg = match job {
+                let msg = guarded_job(job, |job| match job {
                     Job::Load(revision, path) => {
                         let result = wallpaper::decode::load(&path);
                         Msg::Decoded {
@@ -556,7 +577,7 @@ impl Controller {
                         key,
                         result: prepare(wallpaper, revision),
                     },
-                };
+                });
                 let _ = results.send(msg);
             });
         if let Err(error) = spawned {
@@ -628,17 +649,22 @@ impl Controller {
         self.candidate.clear();
         self.queue.clear();
         self.pending_schedules = None;
-        let now = self.started.elapsed();
-        for key in std::mem::take(&mut self.advancing) {
-            if let Some(schedule) = self.schedules.get_mut(&key) {
-                schedule.defer(now);
-            }
-        }
+        self.defer_after_refusal();
         let owed = self.owed.remove(&revision);
         if matches!(owed, Some(Owed::Startup)) {
             eprintln!("backdrop: {message}; the session theme stays");
         }
         self.answer(owed, 10, refusal("IMAGE", message));
+    }
+
+    fn defer_after_refusal(&mut self) {
+        let now = self.started.elapsed();
+        for (key, schedule) in &mut self.schedules {
+            if self.advancing.is_empty() || self.advancing.contains(key) {
+                schedule.defer(now);
+            }
+        }
+        self.advancing.clear();
     }
 
     /// Bytes of decoded RGBA held: the applied images and the candidate's.
@@ -669,6 +695,9 @@ impl Controller {
     /// make its candidates the active images, wake the surfaces, publish the
     /// run and answer.
     fn complete(&mut self) {
+        if !self.engine.ready() {
+            return;
+        }
         let Some(revision) = self.engine.pending() else {
             return;
         };
@@ -685,6 +714,7 @@ impl Controller {
                     self.pending_schedules = None;
                     self.queue.clear();
                     self.engine.refuse(revision, reason.clone());
+                    self.defer_after_refusal();
                     self.answer(owed, 10, refusal("STORE", reason));
                     return;
                 }
@@ -730,6 +760,7 @@ impl Controller {
                 revision,
                 "command registry refused the ready request".into(),
             );
+            self.defer_after_refusal();
         }
         self.advancing.clear();
         self.queue.clear();
@@ -1405,5 +1436,64 @@ mod tests {
         assert!(c.engine.status().error.is_some());
         drop(old_view);
         assert_eq!(c.resident_bytes(), 4 * 3840 * 3840 * 4);
+    }
+
+    #[test]
+    fn a_refused_set_keeps_overdue_slideshows_stable_for_another_interval() {
+        let mut c = controller();
+        start_slide(&mut c);
+        c.started = Instant::now() - Duration::from_secs(6);
+        c.stage(images(&["/w/missing.png"]), Owed::Bus(7));
+        c.decoded(2, "/w/missing.png".into(), Err("missing".into()));
+        c.tick();
+        assert_eq!(c.engine.status().requested, 2);
+        assert_eq!(c.schedules[&None].current(), Path::new("/w/a.png"));
+        assert!(!c.schedules[&None].due(c.started.elapsed()));
+    }
+
+    #[test]
+    fn a_panicking_worker_reports_failure_and_does_not_wedge_later_sets() {
+        let mut c = controller();
+        c.stage(images(&["/w/a.png"]), Owed::Bus(7));
+        let msg = guarded_job(Job::Load(1, "/w/a.png".into()), |_| panic!("injected decoder panic"));
+        let Msg::Decoded {
+            revision,
+            path,
+            result,
+        } = msg
+        else {
+            panic!("image completion required")
+        };
+        c.decoded(revision, path, result);
+        assert!(c.engine.pending().is_none());
+        assert!(!c.decoding);
+        assert!(
+            c.engine
+                .status()
+                .error
+                .as_deref()
+                .unwrap()
+                .contains("panicked")
+        );
+        c.stage(Config::default(), Owed::Startup);
+        assert_eq!(c.engine.status().active, 2);
+        let msg = guarded_job(Job::Resolve(3, None, slide_config().default), |_| {
+            panic!("injected discovery panic")
+        });
+        assert!(matches!(msg, Msg::Prepared { result: Err(_), .. }));
+    }
+
+    #[test]
+    fn store_refusal_defers_overdue_slideshows_without_applying_the_set() {
+        let mut c = controller();
+        start_slide(&mut c);
+        c.store = Some("/dev/null/backdrop.mx".into());
+        c.started = Instant::now() - Duration::from_secs(6);
+        c.stage(Config::default(), Owed::Bus(7));
+        c.tick();
+        assert_eq!(c.engine.status().requested, 2);
+        assert_eq!(c.engine.status().active, 1);
+        assert!(c.engine.status().error.is_some());
+        assert!(!c.schedules[&None].due(c.started.elapsed()));
     }
 }

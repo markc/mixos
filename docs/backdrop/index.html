@@ -311,7 +311,9 @@ folder changes. Repeated paths in a list share one schedule entry.</p>
 <p>A slideshow retains its current image while the next decodes. A failed decode
 keeps that image and reports the error; the next timer attempt waits for the
 interval. A successful advance crossfades for about 0.5 seconds, then releases
-the previous image and texture. The configured source is preserved when stored.</p>
+the previous image and texture. The configured source is preserved when stored.
+A refused replacement also defers active slideshows for another interval, so
+their last good image stays visible after the refusal.</p>
 <h2 id="images">Images</h2>
 <ul>
 <li>PNG and JPEG only. The file is opened once, without blocking (a FIFO or
