@@ -245,7 +245,10 @@ fn describe_lists_every_terminal_field_and_the_summary_carries_them() {
     ] {
         assert!(described["fields"].get(path).is_some(), "{path}");
     }
-    assert_eq!(described["fields"]["terminal.padding"]["enum"], json!([1, 2, 4, 8, 16]));
+    assert_eq!(
+        described["fields"]["terminal.padding"]["enum"],
+        json!([1, 2, 4, 8, 16])
+    );
     let mut apply = ApplyRequest {
         binding: binding(),
         expected_incarnation: state.accepted.incarnation.clone(),

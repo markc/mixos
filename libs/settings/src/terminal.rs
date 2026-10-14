@@ -133,7 +133,6 @@ impl Default for Font {
     }
 }
 
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Scrollback {
@@ -282,7 +281,10 @@ pub fn validate(terminal: &Terminal) -> Result<(), Diagnostic> {
         ));
     }
     if !PADDINGS.contains(&terminal.padding) {
-        return Err(error("terminal.padding", "Padding must be 1, 2, 4, 8 or 16"));
+        return Err(error(
+            "terminal.padding",
+            "Padding must be 1, 2, 4, 8 or 16",
+        ));
     }
     if terminal.scrollback.lines > SCROLLBACK_MAX {
         return Err(error(
@@ -363,9 +365,7 @@ pub(crate) fn set(
         ["font", "weight"] => {
             terminal.font.weight = value.map_or(Ok(defaults.font.weight), |v| whole(path, v))?
         }
-        ["padding"] => {
-            terminal.padding = value.map_or(Ok(defaults.padding), |v| whole(path, v))?
-        }
+        ["padding"] => terminal.padding = value.map_or(Ok(defaults.padding), |v| whole(path, v))?,
         ["scrollback", "lines"] => {
             terminal.scrollback.lines =
                 value.map_or(Ok(defaults.scrollback.lines), |v| whole(path, v))?
@@ -452,7 +452,10 @@ mod tests {
             ),
             (400, 1, 1000, 40, 1)
         );
-        assert_eq!((t.cursor.shape, t.cursor.blink), (CursorShape::Underline, false));
+        assert_eq!(
+            (t.cursor.shape, t.cursor.blink),
+            (CursorShape::Underline, false)
+        );
         assert_eq!((t.focus.ring, t.focus.strength), (FocusRing::Neutral, 0.25));
         assert!(!t.mouse.copy_on_select);
         assert_eq!(t.env.term, "xterm-256color");
@@ -473,11 +476,16 @@ mod tests {
         changed.cursor.shape = CursorShape::Bar;
         changed.focus.ring = FocusRing::Accent;
         let text = serde_json::to_string(&changed).unwrap();
-        assert_eq!(text, r#"{"padding":8,"cursor":{"shape":"bar"},"focus":{"ring":"accent"}}"#);
+        assert_eq!(
+            text,
+            r#"{"padding":8,"cursor":{"shape":"bar"},"focus":{"ring":"accent"}}"#
+        );
         assert_eq!(serde_json::from_str::<Terminal>(&text).unwrap(), changed);
         assert_eq!(
-            strict::from_str::<Terminal>(r#"{padding: 8.0, cursor: {shape: "bar"}, focus: {ring: "accent"}}"#)
-                .unwrap(),
+            strict::from_str::<Terminal>(
+                r#"{padding: 8.0, cursor: {shape: "bar"}, focus: {ring: "accent"}}"#
+            )
+            .unwrap(),
             changed
         );
         // Each leaf resets to its default.
@@ -517,22 +525,109 @@ mod tests {
     #[test]
     fn boundaries_are_accepted_and_one_step_outside_refused() {
         for (path, inside, outside) in [
-            ("terminal.font.size", vec![json!(6.0), json!(48.0), json!(12)], vec![json!(5.9), json!(48.1), json!("12")]),
-            ("terminal.font.weight", vec![json!(100), json!(900), json!(400.0)], vec![json!(0), json!(1000), json!(450), json!(400.5)]),
-            ("terminal.padding", vec![json!(1), json!(2), json!(4), json!(8), json!(16), json!(16.0)], vec![json!(0), json!(3), json!(5), json!(32), json!(1.5), json!(-1)]),
-            ("terminal.scrollback.lines", vec![json!(0), json!(1_000_000)], vec![json!(1_000_001), json!(-1), json!(0.5)]),
-            ("terminal.scroll.speed", vec![json!(10), json!(200)], vec![json!(9), json!(201)]),
-            ("terminal.border.width", vec![json!(1), json!(4)], vec![json!(0), json!(5), json!(1.5)]),
-            ("terminal.cursor.shape", vec![json!("block"), json!("underline"), json!("bar")], vec![json!("beam"), json!("Block"), json!(1)]),
-            ("terminal.cursor.blink", vec![json!(true), json!(false)], vec![json!("yes"), json!(1)]),
-            ("terminal.focus.ring", vec![json!("neutral"), json!("accent")], vec![json!("violet"), json!(null)]),
-            ("terminal.focus.strength", vec![json!(0.0), json!(1.0), json!(0.5)], vec![json!(-0.01), json!(1.01)]),
-            ("terminal.mouse.copy_on_select", vec![json!(true)], vec![json!("true")]),
-            ("terminal.font.family", vec![json!(null), json!("Iosevka Term"), json!("x".repeat(128))], vec![json!(""), json!("Mono\u{7}"), json!("Mono\n"), json!(" Mono"), json!("x".repeat(129))]),
-            ("terminal.env.term", vec![json!("xterm-256color"), json!("foot"), json!("a"), json!("x".repeat(64))], vec![json!(""), json!("XTERM"), json!("xterm 256color"), json!("xterm_256"), json!("x".repeat(65)), json!(null)]),
+            (
+                "terminal.font.size",
+                vec![json!(6.0), json!(48.0), json!(12)],
+                vec![json!(5.9), json!(48.1), json!("12")],
+            ),
+            (
+                "terminal.font.weight",
+                vec![json!(100), json!(900), json!(400.0)],
+                vec![json!(0), json!(1000), json!(450), json!(400.5)],
+            ),
+            (
+                "terminal.padding",
+                vec![
+                    json!(1),
+                    json!(2),
+                    json!(4),
+                    json!(8),
+                    json!(16),
+                    json!(16.0),
+                ],
+                vec![
+                    json!(0),
+                    json!(3),
+                    json!(5),
+                    json!(32),
+                    json!(1.5),
+                    json!(-1),
+                ],
+            ),
+            (
+                "terminal.scrollback.lines",
+                vec![json!(0), json!(1_000_000)],
+                vec![json!(1_000_001), json!(-1), json!(0.5)],
+            ),
+            (
+                "terminal.scroll.speed",
+                vec![json!(10), json!(200)],
+                vec![json!(9), json!(201)],
+            ),
+            (
+                "terminal.border.width",
+                vec![json!(1), json!(4)],
+                vec![json!(0), json!(5), json!(1.5)],
+            ),
+            (
+                "terminal.cursor.shape",
+                vec![json!("block"), json!("underline"), json!("bar")],
+                vec![json!("beam"), json!("Block"), json!(1)],
+            ),
+            (
+                "terminal.cursor.blink",
+                vec![json!(true), json!(false)],
+                vec![json!("yes"), json!(1)],
+            ),
+            (
+                "terminal.focus.ring",
+                vec![json!("neutral"), json!("accent")],
+                vec![json!("violet"), json!(null)],
+            ),
+            (
+                "terminal.focus.strength",
+                vec![json!(0.0), json!(1.0), json!(0.5)],
+                vec![json!(-0.01), json!(1.01)],
+            ),
+            (
+                "terminal.mouse.copy_on_select",
+                vec![json!(true)],
+                vec![json!("true")],
+            ),
+            (
+                "terminal.font.family",
+                vec![json!(null), json!("Iosevka Term"), json!("x".repeat(128))],
+                vec![
+                    json!(""),
+                    json!("Mono\u{7}"),
+                    json!("Mono\n"),
+                    json!(" Mono"),
+                    json!("x".repeat(129)),
+                ],
+            ),
+            (
+                "terminal.env.term",
+                vec![
+                    json!("xterm-256color"),
+                    json!("foot"),
+                    json!("a"),
+                    json!("x".repeat(64)),
+                ],
+                vec![
+                    json!(""),
+                    json!("XTERM"),
+                    json!("xterm 256color"),
+                    json!("xterm_256"),
+                    json!("x".repeat(65)),
+                    json!(null),
+                ],
+            ),
         ] {
             for value in inside {
-                assert!(apply(path, value.clone()).is_ok(), "{path} = {value} accepted");
+                assert!(
+                    apply(path, value.clone()).is_ok(),
+                    "{path} = {value} accepted"
+                );
             }
             for value in outside {
                 let refused = apply(path, value.clone());
@@ -552,9 +647,17 @@ mod tests {
             json!({"terminal":{"font":{"bold_bright":true}}}),
             json!({"terminal":{"cursor":{"style":"bar"}}}),
         ] {
-            assert!(serde_json::from_value::<Desktop>(value.clone()).is_err(), "{value}");
+            assert!(
+                serde_json::from_value::<Desktop>(value.clone()).is_err(),
+                "{value}"
+            );
         }
-        for path in ["terminal.colours", "terminal.font", "terminal.font.bold_bright", "terminal.cursor"] {
+        for path in [
+            "terminal.colours",
+            "terminal.font",
+            "terminal.font.bold_bright",
+            "terminal.cursor",
+        ] {
             assert!(apply(path, json!(1)).is_err(), "{path}");
         }
         // The whole group takes a complete record, strictly.
