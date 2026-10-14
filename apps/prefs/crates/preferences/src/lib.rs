@@ -11,6 +11,7 @@ pub mod engine;
 pub mod model;
 pub mod navigation;
 pub mod picker;
+pub mod terminal;
 pub mod wallpaper;
 
 pub use appearance::Look;

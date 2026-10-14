@@ -310,6 +310,17 @@ pub fn registry() -> Registry<Engine> {
         run: Engine::recheck_look,
     })
     .add(Command {
+        id: "terminal.reset",
+        submenu: None,
+        group: 2,
+        label: "reset-terminal",
+        menu: None,
+        shortcut: None,
+        icon: None,
+        enabled: Engine::can_reset_terminal,
+        run: Engine::reset_terminal,
+    })
+    .add(Command {
         id: "help.shortcuts",
         submenu: None,
         group: 0,
