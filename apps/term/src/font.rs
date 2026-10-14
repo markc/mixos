@@ -3,8 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-const QUIET: Duration = Duration::from_millis(400);
-const MAX_BACKOFF: Duration = Duration::from_secs(30);
+pub(crate) const QUIET: Duration = Duration::from_millis(400);
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum WriteReply {
@@ -25,10 +24,9 @@ pub(crate) enum Event {
         following: bool,
         /// The follower retargeted and has already prepared another read.
         continued: bool,
-        retry: Option<Duration>,
     },
-    TimerFired(u64),
-    /// A native repaint timer can wake the window before its Bus is ready.
+    TimerFired,
+    /// A native repaint can deliver the debounce before the Bus is ready.
     Now,
 }
 
@@ -36,82 +34,46 @@ pub(crate) enum Event {
 pub(crate) enum Action {
     Write(f32),
     Read,
-    Schedule {
-        delay: Duration,
-        generation: u64,
-    },
-    CancelTimer,
-    /// Ordinary appearance following, separate from zoom persistence.
-    RetryLook(Duration),
+    Debounce,
 }
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Persistence {
     pub(crate) pending: Option<f32>,
+    pub(crate) unsaved: bool,
     sent: Option<f32>,
-    following: bool,
+    fence_ready: bool,
     reading: bool,
     read_again: bool,
-    /// Only a read started after the conflict can supply its fresh fence.
-    fresh_read: bool,
-    persistence_read: bool,
-    refresh: bool,
-    attempts: u32,
-    retry_at: Option<Instant>,
-    generation: u64,
+    debounce_at: Option<Instant>,
 }
 
 impl Persistence {
-    fn cancel_timer(&mut self, actions: &mut Vec<Action>) {
-        if self.retry_at.take().is_some() {
-            self.generation = self.generation.wrapping_add(1);
-            actions.push(Action::CancelTimer);
-        }
-    }
-
-    fn schedule(&mut self, delay: Duration, now: Instant, actions: &mut Vec<Action>) {
-        self.cancel_timer(actions);
-        self.generation = self.generation.wrapping_add(1);
-        self.retry_at = Some(now + delay);
-        actions.push(Action::Schedule {
-            delay,
-            generation: self.generation,
-        });
-    }
-
-    fn back_off(&mut self, now: Instant, actions: &mut Vec<Action>) {
-        self.attempts = (self.attempts + 1).min(6);
-        let delay = Duration::from_secs(1 << (self.attempts - 1)).min(MAX_BACKOFF);
-        self.schedule(delay, now, actions);
-    }
-
     fn read(&mut self, actions: &mut Vec<Action>) {
-        if self.reading {
+        if self.reading || self.sent.is_some() {
             self.read_again = true;
         } else {
+            self.read_again = false;
             self.reading = true;
-            self.fresh_read = self.refresh;
-            self.persistence_read = self.pending.is_some();
             actions.push(Action::Read);
         }
     }
 
     fn advance(&mut self, actions: &mut Vec<Action>) {
-        if self.pending.is_none() {
-            self.cancel_timer(actions);
-            self.refresh = false;
+        if self.sent.is_some() || self.reading {
             return;
         }
-        // One live path owns the pending zoom. A due but undelivered timer
-        // remains live until TimerFired consumes it; wall time never cancels it.
-        if self.sent.is_some() || self.reading || self.retry_at.is_some() {
-            return;
-        }
-        if self.refresh || !self.following {
+        if self.read_again {
             self.read(actions);
-        } else {
-            self.sent = self.pending;
-            actions.push(Action::Write(self.sent.expect("pending zoom")));
+        } else if let Some(size) = self.pending
+            && self.debounce_at.is_none()
+        {
+            if self.fence_ready {
+                self.sent = Some(size);
+                actions.push(Action::Write(size));
+            } else {
+                self.read(actions);
+            }
         }
     }
 
@@ -120,27 +82,17 @@ impl Persistence {
         match event {
             Event::Zoom(size) => {
                 self.pending = Some(size);
-                self.attempts = 0;
-                self.cancel_timer(&mut actions);
-                if self.sent.is_none() && !self.reading {
-                    self.schedule(QUIET, now, &mut actions);
-                }
+                self.debounce_at = Some(now + QUIET);
+                actions.push(Action::Debounce);
             }
             Event::Reset(profile_size) => {
                 self.pending = self
                     .sent
                     .filter(|size| *size != profile_size)
                     .map(|_| profile_size);
-                self.attempts = 0;
-                self.cancel_timer(&mut actions);
-                if self.pending.is_none() {
-                    if self.refresh {
-                        self.following = false;
-                    }
-                    self.refresh = false;
-                    // Discard a conflict's coalesced retry, not the active read.
-                    self.read_again = false;
-                }
+                self.unsaved = false;
+                self.debounce_at = None;
+                self.advance(&mut actions);
             }
             Event::WriteSettled(reply) => {
                 let Some(sent) = self.sent.take() else {
@@ -148,105 +100,71 @@ impl Persistence {
                 };
                 match reply {
                     WriteReply::Saved => {
-                        self.attempts = 0;
-                        self.cancel_timer(&mut actions);
+                        self.unsaved = false;
                         if self.pending == Some(sent) {
                             self.pending = None;
                         }
-                        // Read the committed revision before correcting an
-                        // in-flight A with B (or the profile size after reset).
-                        self.refresh = self.pending.is_some();
-                        self.fresh_read = false;
+                        // The receipt has no fence. Read the committed revision
+                        // before writing a newer zoom or a Ctrl+0 correction.
+                        self.fence_ready = false;
                         self.read(&mut actions);
                     }
                     WriteReply::Conflict => {
-                        self.cancel_timer(&mut actions);
+                        self.fence_ready = false;
                         if self.pending.is_some() {
-                            self.refresh = true;
-                            self.fresh_read = false;
                             self.read(&mut actions);
                         }
                     }
                     WriteReply::Refused => {
-                        if self.pending == Some(sent) {
-                            self.pending = None;
-                        }
-                        self.attempts = 0;
-                        self.cancel_timer(&mut actions);
-                        // A newer zoom was not refused and may still be saved.
-                        // Also restore a refused zoom from the profile's look.
+                        self.pending = None;
+                        self.debounce_at = None;
+                        self.unsaved = true;
                         self.read(&mut actions);
                     }
                     WriteReply::Failed => {
-                        if self.pending == Some(sent) {
-                            self.back_off(now, &mut actions);
+                        self.unsaved = true;
+                        self.fence_ready = false;
+                        self.debounce_at = None;
+                        // A queued hint may read, but the failure itself never
+                        // retries, even when a newer zoom arrived in flight.
+                        if self.read_again {
+                            self.read(&mut actions);
                         }
                     }
                 }
             }
-            Event::ReadRequested => {
-                // Hints cannot bypass a failed refresh's backoff. Once reset
-                // discards the zoom, ordinary following is free to read again.
-                if !(self.refresh && self.retry_at.is_some()) {
-                    self.read(&mut actions);
-                }
-            }
+            Event::ReadRequested => self.read(&mut actions),
             Event::ReadAnswered {
                 usable,
                 following,
                 continued,
-                retry,
             } => {
-                self.following = following;
+                if !self.reading {
+                    return actions;
+                }
+                self.fence_ready = usable && following;
                 if continued {
-                    // Retargeting stays on the same fresh-read path.
                     actions.push(Action::Read);
                     return actions;
                 }
                 self.reading = false;
-                let again = std::mem::take(&mut self.read_again);
                 if usable {
-                    self.attempts = 0;
-                    if self.refresh && self.fresh_read && !again {
-                        self.refresh = false;
-                        self.cancel_timer(&mut actions);
-                    }
-                    if again || (self.refresh && !self.fresh_read) {
+                    self.advance(&mut actions);
+                } else {
+                    self.debounce_at = None;
+                    self.unsaved |= self.pending.is_some();
+                    if self.read_again {
                         self.read(&mut actions);
                     }
-                } else if self.pending.is_some() {
-                    // A cached fence is no substitute for the failed refresh.
-                    self.refresh = true;
-                    if self.sent.is_none() {
-                        self.back_off(now, &mut actions);
-                    }
-                } else if again {
-                    self.read(&mut actions);
-                } else if !self.persistence_read
-                    && let Some(delay) = retry
-                {
-                    actions.push(Action::RetryLook(delay));
                 }
             }
-            Event::TimerFired(generation) => {
-                if generation != self.generation || self.retry_at.is_none() {
-                    return actions;
-                }
-                let at = self.retry_at.expect("scheduled timer");
-                if now < at {
-                    // An early delivery still has a strictly positive delay.
-                    self.schedule(at - now, now, &mut actions);
-                } else {
-                    self.retry_at = None;
-                }
-            }
-            Event::Now => {
-                if self.retry_at.is_some_and(|at| now >= at) {
-                    self.retry_at = None;
+            Event::TimerFired | Event::Now => {
+                if self.debounce_at.is_some_and(|at| now >= at) {
+                    self.debounce_at = None;
+                    self.advance(&mut actions);
                 }
             }
         }
-        self.advance(&mut actions);
         actions
     }
 }
@@ -259,36 +177,23 @@ mod tests {
         usable: true,
         following: true,
         continued: false,
-        retry: None,
     };
     const BAD: Event = Event::ReadAnswered {
         usable: false,
-        // A lost call/overload leaves the follower's cached fence present.
+        // A lost reply can leave the follower's old fence cached.
         following: true,
         continued: false,
-        retry: Some(Duration::from_millis(250)),
     };
 
-    #[derive(Debug, PartialEq)]
-    enum Effect {
-        Write(f32),
-        Read,
-        Timer(u64),
-        Cancel,
-        LookRetry(u64),
-    }
-
     enum Step {
-        Input(Event, Vec<Effect>),
+        Input(Event, Vec<Action>),
         Wait(u64),
-        Fire(Vec<Effect>),
-        Stale,
         Pending(Option<f32>),
     }
 
     fn ready() -> Vec<Step> {
         vec![
-            Step::Input(Event::ReadRequested, vec![Effect::Read]),
+            Step::Input(Event::ReadRequested, vec![Action::Read]),
             Step::Input(GOOD, vec![]),
         ]
     }
@@ -296,137 +201,121 @@ mod tests {
     fn writing() -> Vec<Step> {
         let mut steps = ready();
         steps.extend([
-            Step::Input(Event::Zoom(16.0), vec![Effect::Timer(400)]),
+            Step::Input(Event::Zoom(16.0), vec![Action::Debounce]),
             Step::Wait(400),
-            Step::Fire(vec![Effect::Write(16.0)]),
-        ]);
-        steps
-    }
-
-    fn failed_refresh() -> Vec<Step> {
-        let mut steps = writing();
-        steps.extend([
-            Step::Input(
-                Event::WriteSettled(WriteReply::Conflict),
-                vec![Effect::Read],
-            ),
-            Step::Input(BAD, vec![Effect::Timer(1000)]),
+            Step::Input(Event::TimerFired, vec![Action::Write(16.0)]),
         ]);
         steps
     }
 
     #[test]
-    fn persistence_sequences_preserve_live_paths_and_retry_invariants() {
-        use Effect::{Cancel, Read, Timer, Write};
-        use Step::{Fire, Input, Pending, Stale, Wait};
+    fn persistence_sequences_obey_event_driven_retry_policy() {
+        use Action::{Debounce, Read, Write};
+        use Step::{Input, Pending, Wait};
         let mut cases = Vec::new();
-
-        let mut steps = failed_refresh();
-        steps.extend([
-            Input(Event::Reset(13.0), vec![Cancel]),
-            Pending(None),
-            Input(Event::Zoom(18.0), vec![Timer(400)]),
-            Stale,
-            Wait(400),
-            Fire(vec![Read]),
-            Input(GOOD, vec![Write(18.0)]),
-        ]);
-        cases.push(("finding 1: reset then zoom before FontDue", steps));
-
-        let mut steps = failed_refresh();
-        steps.extend([
-            Wait(2000), // Deadline passed, but FontDue is still in the queue.
-            Input(Event::Zoom(18.0), vec![Cancel, Timer(400)]),
-            Stale,
-            Wait(400),
-            Fire(vec![Read]),
-            Input(GOOD, vec![Write(18.0)]),
-        ]);
-        cases.push(("finding 1: zoom after deadline before FontDue", steps));
-
-        let mut steps = failed_refresh();
-        for millis in [1000, 2000, 4000, 8000, 16000] {
-            steps.extend([
-                Wait(millis),
-                Fire(vec![Read]),
-                Input(BAD, vec![Timer((millis * 2).min(30000))]),
-            ]);
-        }
-        steps.extend([
-            Input(Event::Reset(13.0), vec![Cancel]),
-            Pending(None),
-            Wait(60000),
-            Stale,
-        ]);
-        cases.push((
-            "finding 2: reset cancels idle 30 second refresh loop",
-            steps,
-        ));
 
         let mut steps = ready();
         steps.extend([
-            Input(Event::ReadRequested, vec![Read]),
-            Input(
-                Event::ReadAnswered {
-                    usable: false,
-                    following: false,
-                    continued: false,
-                    retry: None,
-                },
-                vec![],
-            ),
-            Input(Event::Zoom(16.0), vec![Timer(400)]),
-            Wait(400),
-            Fire(vec![Read]),
-            Input(BAD, vec![Timer(1000)]),
-            Pending(Some(16.0)),
-            Wait(1000),
-            Fire(vec![Read]),
-            Input(GOOD, vec![Write(16.0)]),
+            Input(Event::Zoom(16.0), vec![Debounce]),
+            Wait(200),
+            Input(Event::Zoom(18.0), vec![Debounce]),
+            Wait(200),
+            Input(Event::TimerFired, vec![]), // The first debounce woke early.
+            Wait(200),
+            Input(Event::Now, vec![Write(18.0)]),
             Input(Event::WriteSettled(WriteReply::Saved), vec![Read]),
-            Pending(None),
             Input(GOOD, vec![]),
+            Pending(None),
         ]);
-        cases.push(("outage retains zoom until reconnected look", steps));
+        cases.push(("only the last zoom's 400 ms debounce writes", steps));
+
+        for trigger in ["look refresh", "settings hint", "reconnect"] {
+            let steps = vec![
+                Input(Event::Zoom(16.0), vec![Debounce]),
+                Wait(400),
+                Input(Event::Now, vec![Read]), // Native repaint, no Bus yet.
+                Input(BAD, vec![]),
+                Pending(Some(16.0)),
+                Wait(60000),
+                Input(Event::TimerFired, vec![]), // Early wake-up with no timer.
+                Input(Event::Now, vec![]),
+                Input(Event::ReadRequested, vec![Read]),
+                Input(GOOD, vec![Write(16.0)]),
+                Input(Event::WriteSettled(WriteReply::Saved), vec![Read]),
+                Input(GOOD, vec![]),
+                Pending(None),
+            ];
+            cases.push((trigger, steps));
+        }
 
         let mut steps = writing();
         steps.extend([
-            Input(Event::Zoom(18.0), vec![]),
-            Input(Event::ReadRequested, vec![Read]),
-            Input(GOOD, vec![]), // A's summary arrives before its receipt.
-            Pending(Some(18.0)),
-            Input(Event::WriteSettled(WriteReply::Saved), vec![Read]),
-            Input(GOOD, vec![Write(18.0)]), // Unchanged is also a fresh fence.
-            Input(Event::WriteSettled(WriteReply::Saved), vec![Read]),
-            Input(GOOD, vec![]),
-            Pending(None),
+            Input(Event::WriteSettled(WriteReply::Failed), vec![]),
+            Pending(Some(16.0)),
+            Input(Event::Now, vec![]),
+            Input(Event::Zoom(18.0), vec![Debounce]),
+            Wait(400),
+            Input(Event::TimerFired, vec![Read]),
+            Input(GOOD, vec![Write(18.0)]),
         ]);
-        cases.push(("write A in flight while B arrives", steps));
+        cases.push(("zoom key retries a failed write after debounce", steps));
+
+        let mut steps = writing();
+        steps.extend([
+            Input(Event::Zoom(18.0), vec![Debounce]),
+            Wait(400),
+            Input(Event::TimerFired, vec![]),
+            Input(Event::WriteSettled(WriteReply::Failed), vec![]),
+            Pending(Some(18.0)),
+            Wait(60000),
+            Input(Event::TimerFired, vec![]),
+            Input(Event::Now, vec![]),
+            Input(Event::ReadRequested, vec![Read]),
+            Input(GOOD, vec![Write(18.0)]),
+        ]);
+        cases.push(("newer zoom in flight then failure waits for next event", steps));
+
+        let mut steps = writing();
+        steps.extend([
+            Input(Event::Zoom(18.0), vec![Debounce]),
+            Input(Event::WriteSettled(WriteReply::Failed), vec![]),
+            Wait(400),
+            Input(Event::TimerFired, vec![]),
+            Pending(Some(18.0)),
+            Input(Event::Zoom(20.0), vec![Debounce]),
+            Wait(400),
+            Input(Event::TimerFired, vec![Read]),
+            Input(GOOD, vec![Write(20.0)]),
+        ]);
+        cases.push(("failure cancels even a newer undelivered debounce", steps));
 
         let mut steps = ready();
         steps.extend([
+            Input(Event::Zoom(16.0), vec![Debounce]),
             Input(Event::Reset(13.0), vec![]),
-            Input(Event::Zoom(16.0), vec![Timer(400)]),
-            Input(Event::Reset(13.0), vec![Cancel]),
-            Stale,
+            Wait(400),
+            Input(Event::TimerFired, vec![]),
             Pending(None),
         ]);
         cases.push(("Ctrl+0 discards an unwritten zoom", steps));
 
+        let mut steps = writing();
+        steps.extend([
+            Input(Event::WriteSettled(WriteReply::Failed), vec![]),
+            Input(Event::Reset(13.0), vec![]),
+            Pending(None),
+            Input(Event::ReadRequested, vec![Read]),
+            Input(GOOD, vec![]),
+        ]);
+        cases.push(("Ctrl+0 drops failed pending zoom without writing", steps));
+
         for profile in [13.0, 16.0] {
             let mut steps = writing();
             steps.extend([
-                Input(Event::Zoom(18.0), vec![]),
+                Input(Event::Zoom(18.0), vec![Debounce]),
                 Input(Event::Reset(profile), vec![]),
                 Input(Event::WriteSettled(WriteReply::Saved), vec![Read]),
-                Input(
-                    GOOD,
-                    if profile == 16.0 {
-                        vec![]
-                    } else {
-                        vec![Write(profile)]
-                    },
-                ),
+                Input(GOOD, if profile == 16.0 { vec![] } else { vec![Write(profile)] }),
             ]);
             if profile != 16.0 {
                 steps.extend([
@@ -440,227 +329,129 @@ mod tests {
 
         let mut steps = writing();
         steps.extend([
-            Input(Event::ReadRequested, vec![Read]),
-            Input(Event::WriteSettled(WriteReply::Conflict), vec![]),
-            Input(GOOD, vec![Read]), // The pre-conflict read is insufficient.
-            Input(Event::ReadRequested, vec![]), // Coalesced hint also finishes first.
-            Input(GOOD, vec![Read]),
-            Input(GOOD, vec![Write(16.0)]),
-        ]);
-        cases.push((
-            "conflict waits for a fresh fence and coalesced reads",
-            steps,
-        ));
-
-        let mut steps = failed_refresh();
-        steps.extend([
-            Input(Event::ReadRequested, vec![]), // Hint cannot bypass backoff.
-            Wait(1000),
-            Fire(vec![Read]),
-            Input(Event::Reset(13.0), vec![]),
-            Input(BAD, vec![]), // Already active retry must not reschedule.
-            Pending(None),
-        ]);
-        cases.push((
-            "reset during refresh suppresses retry after its answer",
-            steps,
-        ));
-
-        let mut steps = writing();
-        for millis in [1000, 2000, 4000, 8000, 16000, 30000, 30000] {
-            steps.extend([
-                Input(Event::WriteSettled(WriteReply::Failed), vec![Timer(millis)]),
-                Pending(Some(16.0)),
-                Wait(millis),
-                Fire(vec![Write(16.0)]),
-            ]);
-        }
-        steps.extend([
-            Input(Event::WriteSettled(WriteReply::Failed), vec![Timer(30000)]),
-            Input(Event::Zoom(18.0), vec![Cancel, Timer(400)]),
-            Stale,
+            Input(Event::ReadRequested, vec![]), // A hint queues behind A.
+            Input(Event::Zoom(18.0), vec![Debounce]),
             Wait(400),
-            Fire(vec![Write(18.0)]),
-            Input(Event::WriteSettled(WriteReply::Failed), vec![Timer(1000)]),
-            Wait(1000),
-            Fire(vec![Write(18.0)]),
+            Input(Event::TimerFired, vec![]),
             Input(Event::WriteSettled(WriteReply::Saved), vec![Read]),
-            Input(GOOD, vec![]),
-            Pending(None),
-        ]);
-        cases.push((
-            "failed writes cap at 30 seconds and new zoom resets backoff",
-            steps,
-        ));
-
-        let mut steps = writing();
-        steps.extend([
-            Input(Event::WriteSettled(WriteReply::Failed), vec![Timer(1000)]),
-            Wait(1000),
-            Fire(vec![Write(16.0)]),
-            Input(Event::WriteSettled(WriteReply::Refused), vec![Read]),
-            Input(GOOD, vec![]),
-            Pending(None),
-            Input(Event::TimerFired(0), vec![]),
-        ]);
-        cases.push(("validation refusal clears pending and retry", steps));
-
-        let mut steps = writing();
-        steps.extend([
-            Input(Event::Zoom(18.0), vec![]),
-            Input(Event::WriteSettled(WriteReply::Refused), vec![Read]),
+            Input(Event::ReadRequested, vec![]), // Coalesce another hint.
+            Input(GOOD, vec![Read]),
             Input(GOOD, vec![Write(18.0)]),
-            Pending(Some(18.0)),
         ]);
-        cases.push(("refusal of A does not refuse newer B", steps));
+        cases.push(("outstanding requests settle before the next write", steps));
 
-        let mut steps = failed_refresh();
+        let mut steps = writing();
         steps.extend([
-            Wait(1000),
-            Fire(vec![Read]),
-            Input(
-                Event::ReadAnswered {
-                    usable: false,
-                    following: false,
-                    continued: true,
-                    retry: None,
-                },
-                vec![Read],
-            ),
+            Input(Event::WriteSettled(WriteReply::Conflict), vec![Read]),
+            Input(BAD, vec![]),
+            Pending(Some(16.0)),
+            Input(Event::TimerFired, vec![]),
+            Input(Event::ReadRequested, vec![Read]),
             Input(GOOD, vec![Write(16.0)]),
         ]);
-        cases.push(("retargeted read stays on the fresh fence path", steps));
+        cases.push(("conflict reads fresh fence; failed read waits for event", steps));
 
         let mut steps = writing();
         steps.extend([
-            Input(Event::WriteSettled(WriteReply::Failed), vec![Timer(1000)]),
-            Wait(2000),
-            Fire(vec![Write(16.0)]),
-            Input(Event::WriteSettled(WriteReply::Conflict), vec![Read]),
-            Input(BAD, vec![Timer(2000)]),
-            Input(Event::Zoom(18.0), vec![Cancel, Timer(400)]),
-            Wait(400),
-            Fire(vec![Read]),
-            Input(GOOD, vec![Write(18.0)]),
+            Input(Event::ReadRequested, vec![]),
+            Input(Event::WriteSettled(WriteReply::Failed), vec![Read]),
+            Input(BAD, vec![]),
+            Input(Event::Now, vec![]),
+            Input(Event::ReadRequested, vec![Read]),
+            Input(GOOD, vec![Write(16.0)]),
         ]);
-        cases.push((
-            "conflict after overdue write retry never schedules zero delay",
-            steps,
-        ));
+        cases.push(("queued hint may read after failure but cannot write", steps));
 
-        cases.push((
-            "native repaint timer retries while the Bus is unavailable",
-            vec![
-                Input(Event::Zoom(16.0), vec![Timer(400)]),
-                Wait(400),
-                Input(Event::Now, vec![Read]),
-                Input(BAD, vec![Timer(1000)]),
-                Input(Event::Reset(13.0), vec![Cancel]),
-                Wait(1000),
-                Input(Event::Now, vec![]),
+        for newer in [false, true] {
+            let mut steps = writing();
+            if newer {
+                steps.push(Input(Event::Zoom(18.0), vec![Debounce]));
+            }
+            steps.extend([
+                Input(Event::WriteSettled(WriteReply::Refused), vec![Read]),
                 Pending(None),
-            ],
-        ));
+                Input(GOOD, vec![]),
+                Wait(400),
+                Input(Event::TimerFired, vec![]),
+                Input(Event::ReadRequested, vec![Read]),
+                Input(GOOD, vec![]),
+            ]);
+            cases.push(("validation refusal clears pending zoom", steps));
+        }
+
+        let steps = vec![
+            Input(Event::Zoom(16.0), vec![Debounce]),
+            Wait(400),
+            Input(Event::TimerFired, vec![Read]),
+            Input(Event::ReadAnswered { usable: false, following: false, continued: true }, vec![Read]),
+            Input(GOOD, vec![Write(16.0)]),
+        ];
+        cases.push(("retargeted settings read supplies the fence", steps));
 
         for (name, steps) in cases {
             let mut state = Persistence::default();
             let mut now = Instant::now();
-            let mut timer = None;
-            let mut cancelled = None;
+            let mut failed = false;
             for (index, step) in steps.into_iter().enumerate() {
                 let context = format!("{name}, step {index}, {state:?}");
-                let pending_before = state.pending;
                 let sent_before = state.sent;
-                let (event, expected) = match step {
-                    Input(event, effects) => {
-                        if matches!(event, Event::Now) && timer.is_some_and(|(_, at)| now >= at) {
-                            timer = None;
+                let reading_before = state.reading;
+                let debounce_before = state.debounce_at;
+                let event = match step {
+                    Input(event, expected) => {
+                        if matches!(event, Event::Zoom(_) | Event::Reset(_) | Event::ReadAnswered { usable: true, .. }) {
+                            failed = false;
                         }
-                        (Some(event), effects)
+                        let actions = state.event(event, now);
+                        assert_eq!(actions, expected, "{context}");
+                        for action in actions {
+                            match action {
+                                Debounce => {
+                                    assert!(matches!(event, Event::Zoom(_)), "{context}");
+                                    assert_eq!(state.debounce_at, Some(now + QUIET), "{context}");
+                                }
+                                Write(_) => {
+                                    assert!(sent_before.is_none(), "write still outstanding: {context}");
+                                    assert!(!reading_before || matches!(event, Event::ReadAnswered { .. }), "read still outstanding: {context}");
+                                    assert!(!state.reading && state.sent.is_some(), "{context}");
+                                    assert!(!failed, "write after failure without an event: {context}");
+                                }
+                                Read => assert!(state.reading && state.sent.is_none(), "{context}"),
+                            }
+                        }
+                        Some(event)
                     }
                     Wait(millis) => {
                         now += Duration::from_millis(millis);
-                        (None, vec![])
+                        None
                     }
-                    Fire(effects) => {
-                        let (generation, at) = timer.take().expect(&context);
-                        assert!(now >= at, "{context}");
-                        (Some(Event::TimerFired(generation)), effects)
-                    }
-                    Stale => (Some(Event::TimerFired(cancelled.expect(&context))), vec![]),
                     Pending(size) => {
                         assert_eq!(state.pending, size, "{context}");
-                        (None, vec![])
+                        None
                     }
                 };
-                let actions = event.map_or_else(Vec::new, |event| state.event(event, now));
-                let mut effects = Vec::new();
-                for action in actions {
-                    effects.push(match action {
-                        Action::Write(size) => {
-                            assert!(!state.refresh && !state.reading, "{context}");
-                            Write(size)
-                        }
-                        Action::Read => {
-                            assert!(state.reading, "{context}");
-                            if state.persistence_read {
-                                assert!(state.pending.is_some(), "{context}");
-                            }
-                            Read
-                        }
-                        Action::Schedule { delay, generation } => {
-                            assert!(!delay.is_zero() && delay <= MAX_BACKOFF, "{context}");
-                            assert!(timer.is_none(), "two live timers: {context}");
-                            timer = Some((generation, now + delay));
-                            Timer(delay.as_millis() as u64)
-                        }
-                        Action::CancelTimer => {
-                            cancelled = timer.take().map(|(generation, _)| generation);
-                            Cancel
-                        }
-                        Action::RetryLook(delay) => Effect::LookRetry(delay.as_millis() as u64),
-                    });
+                if let Some(at) = state.debounce_at {
+                    assert!(matches!(event, Some(Event::Zoom(_))) || Some(at) == debounce_before, "timer created without zoom key: {context}");
                 }
-                assert_eq!(effects, expected, "{context}");
-                assert_eq!(state.retry_at, timer.map(|(_, at)| at), "{context}");
-                if let Some((generation, at)) = timer {
-                    assert_eq!(generation, state.generation, "stale live timer: {context}");
-                    if state.pending.is_some() && state.sent.is_none() && !state.reading {
-                        let mut probe = state.clone();
-                        let due = probe.event(Event::TimerFired(generation), now.max(at));
-                        assert!(
-                            matches!(due.as_slice(), [Action::Read | Action::Write(_)]),
-                            "timer does not produce a request: {context}"
-                        );
-                    }
+                if matches!(event, Some(Event::WriteSettled(WriteReply::Failed | WriteReply::Refused)) | Some(Event::ReadAnswered { usable: false, continued: false, .. })) {
+                    failed = true;
+                    assert!(state.debounce_at.is_none(), "failure retained timer: {context}");
                 }
-                assert!(
-                    state.pending.is_none()
-                        || state.sent.is_some()
-                        || state.reading
-                        || timer.is_some(),
-                    "pending zoom has no live path: {context}"
-                );
-                if state.pending.is_none() && state.sent.is_none() {
-                    assert!(timer.is_none() && !state.refresh, "idle retry: {context}");
+                if matches!(event, Some(Event::WriteSettled(WriteReply::Failed | WriteReply::Refused))) {
+                    assert!(state.unsaved, "missing unsaved status: {context}");
                 }
                 if matches!(event, Some(Event::WriteSettled(WriteReply::Refused))) {
-                    assert!(timer.is_none(), "refusal retained a retry: {context}");
-                    if pending_before == sent_before {
-                        assert_eq!(state.pending, None, "refused zoom retained: {context}");
-                    }
+                    assert!(state.pending.is_none(), "refusal retained pending: {context}");
                 }
-                assert!(state.attempts <= 6, "{context}");
-                if matches!(
-                    event,
-                    Some(
-                        Event::Zoom(_)
-                            | Event::WriteSettled(WriteReply::Saved | WriteReply::Refused)
-                    )
-                ) || matches!(event, Some(Event::ReadAnswered { usable: true, .. }))
-                {
-                    assert_eq!(state.attempts, 0, "backoff did not reset: {context}");
+                if let Some(Event::Reset(profile)) = event {
+                    assert_eq!(state.pending, sent_before.filter(|size| *size != profile).map(|_| profile), "{context}");
+                    assert!(state.debounce_at.is_none(), "{context}");
                 }
+                if matches!(event, Some(Event::WriteSettled(WriteReply::Conflict))) {
+                    assert!(state.reading && state.sent.is_none() && !state.fence_ready, "{context}");
+                }
+                assert!(!(state.reading && state.sent.is_some()), "overlapping requests: {context}");
+                // Pending with no request or timer is deliberately valid.
             }
         }
     }
@@ -679,24 +470,14 @@ mod tests {
             .to_string()
         }
 
-        fn answer(
-            state: &mut Persistence,
-            follower: &mut Follower,
-            ticket: u64,
-            body: Option<&str>,
-            now: Instant,
-        ) -> Vec<Action> {
+        fn answer(state: &mut Persistence, follower: &mut Follower, ticket: u64, body: Option<&str>, now: Instant) -> Vec<Action> {
             let (followed, next) = follower.answered(ticket, body.map(|body| (0, body, None)));
             assert!(next.is_none(), "the persistence machine owns coalescing");
-            state.event(
-                Event::ReadAnswered {
-                    usable: matches!(followed, Some(Followed::Look { .. } | Followed::Unchanged)),
-                    following: follower.following(),
-                    continued: false,
-                    retry: follower.retry_delay(),
-                },
-                now,
-            )
+            state.event(Event::ReadAnswered {
+                usable: matches!(followed, Some(Followed::Look { .. } | Followed::Unchanged)),
+                following: follower.following(),
+                continued: false,
+            }, now)
         }
 
         let mut state = Persistence::default();
@@ -704,76 +485,22 @@ mod tests {
         let mut now = Instant::now();
         assert_eq!(state.event(Event::ReadRequested, now), [Action::Read]);
         let read = follower.read().unwrap();
-        assert!(
-            answer(
-                &mut state,
-                &mut follower,
-                read.ticket,
-                Some(&summary("1")),
-                now
-            )
-            .is_empty()
-        );
+        assert!(answer(&mut state, &mut follower, read.ticket, Some(&summary("1")), now).is_empty());
         state.event(Event::Zoom(16.0), now);
         now += QUIET;
-        assert_eq!(
-            state.event(Event::TimerFired(state.generation), now),
-            [Action::Write(16.0)]
-        );
-        let write = follower
-            .apply("first", serde_json::json!({"terminal.font.size":16}))
-            .unwrap();
+        assert_eq!(state.event(Event::TimerFired, now), [Action::Write(16.0)]);
+        let write = follower.apply("first", serde_json::json!({"terminal.font.size":16})).unwrap();
         assert_eq!(write.body["expected_revision"], "1");
 
-        assert_eq!(state.event(Event::ReadRequested, now), [Action::Read]);
-        let old = follower.read().unwrap();
-        assert!(
-            state
-                .event(Event::WriteSettled(WriteReply::Conflict), now)
-                .is_empty()
-        );
-        assert_eq!(
-            answer(
-                &mut state,
-                &mut follower,
-                old.ticket,
-                Some(&summary("1")),
-                now
-            ),
-            [Action::Read]
-        );
+        assert!(state.event(Event::ReadRequested, now).is_empty());
+        assert_eq!(state.event(Event::WriteSettled(WriteReply::Conflict), now), [Action::Read]);
         let fresh = follower.read().unwrap();
-        assert!(
-            matches!(answer(&mut state, &mut follower, fresh.ticket, None, now).as_slice(),
-            [Action::Schedule { delay, .. }] if *delay == Duration::from_secs(1))
-        );
-
-        let old_generation = state.generation;
-        state.event(Event::Zoom(18.0), now);
-        assert!(
-            state
-                .event(Event::TimerFired(old_generation), now)
-                .is_empty()
-        );
-        now += QUIET;
-        assert_eq!(
-            state.event(Event::TimerFired(state.generation), now),
-            [Action::Read]
-        );
+        assert!(answer(&mut state, &mut follower, fresh.ticket, None, now).is_empty());
+        assert!(state.event(Event::Now, now + Duration::from_secs(60)).is_empty());
+        assert_eq!(state.event(Event::ReadRequested, now), [Action::Read]);
         let read = follower.read().unwrap();
-        assert_eq!(
-            answer(
-                &mut state,
-                &mut follower,
-                read.ticket,
-                Some(&summary("2")),
-                now
-            ),
-            [Action::Write(18.0)]
-        );
-        let write = follower
-            .apply("retry", serde_json::json!({"terminal.font.size":18}))
-            .unwrap();
+        assert_eq!(answer(&mut state, &mut follower, read.ticket, Some(&summary("2")), now), [Action::Write(16.0)]);
+        let write = follower.apply("retry", serde_json::json!({"terminal.font.size":16})).unwrap();
         assert_eq!(write.body["expected_revision"], "2");
         assert_eq!(write.body["expected_incarnation"], "inc");
     }

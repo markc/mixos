@@ -25,7 +25,7 @@
 use crate::app::{App, Effect, Synced};
 use crate::bus::{APP, Delivery, WindowBus};
 use crate::clipboard::Clipboard;
-use crate::font::{Action as FontAction, Event as FontEvent, Persistence, WriteReply};
+use crate::font::{Action as FontAction, Event as FontEvent, Persistence, QUIET, WriteReply};
 use crate::input::{Action, Wheel};
 use crate::layout;
 use crate::mouse::Pointer;
@@ -97,7 +97,6 @@ pub struct Shell {
     look: Option<settings::Appearance>,
     follower: settings::follow::Follower,
     look_topic: String,
-    look_retry: u64,
     /// A read already prepared by the follower after retargeting.
     look_prepared: Option<settings::follow::Read>,
     installed: Option<toolkit::theme_menu::Choice>,
@@ -139,7 +138,6 @@ impl Shell {
             look: None,
             follower: settings::follow::Follower::new(&hostname()),
             look_topic: settings::summary_topic(settings::follow::PROFILE),
-            look_retry: 0,
             look_prepared: None,
             installed: None,
             bus,
@@ -212,15 +210,8 @@ impl Shell {
                 }
                 Delivery::Connected => self.read_look(),
                 Delivery::Look { ticket, reply } => self.looked(ticket, reply),
-                Delivery::LookRetry { generation } => {
-                    if generation == self.look_retry && !self.exiting {
-                        self.read_look();
-                    }
-                }
                 Delivery::Written { reply } => self.font_written(reply),
-                Delivery::FontDue { generation } => {
-                    self.font_event(FontEvent::TimerFired(generation));
-                }
+                Delivery::FontDue => self.font_event(FontEvent::TimerFired),
             }
         }
         for (pane, read) in self.clipboard.take() {
@@ -388,8 +379,7 @@ impl Shell {
     }
 
     /// A look read answered: a new look is installed at once; without
-    /// settingsd the theme file stands; a transient fault is retried with
-    /// backoff, the last look standing.
+    /// settingsd the last look stands until a hint or reconnection asks again.
     fn looked(&mut self, ticket: u64, reply: Option<(u8, String, Option<String>)>) {
         if self.exiting || self.follower.pending() != Some(ticket) {
             return;
@@ -428,7 +418,6 @@ impl Shell {
             usable,
             following: self.follower.following(),
             continued,
-            retry: self.follower.retry_delay(),
         });
     }
 
@@ -466,8 +455,8 @@ impl Shell {
 
     /// A size write answered. Changed: the look that follows carries it. A
     /// conflict (another change landed first) is written again on the next
-    /// look. Failed writes wait with backoff. A refusal restores the settings'
-    /// size, unless a newer zoom is waiting: that one is written next.
+    /// look. Failed writes wait for another zoom or successful settings read.
+    /// A refusal clears the pending zoom and restores the settings' size.
     fn font_written(&mut self, reply: Option<(u8, String, Option<String>)>) {
         let status = reply
             .as_ref()
@@ -498,7 +487,6 @@ impl Shell {
             match action {
                 FontAction::Write(px) => self.write_font(px),
                 FontAction::Read => {
-                    self.look_retry += 1;
                     if let Some(read) = self.look_prepared.take().or_else(|| self.follower.read()) {
                         let ticket = read.ticket;
                         if !self.bus.read_look(read) {
@@ -506,17 +494,10 @@ impl Shell {
                         }
                     }
                 }
-                FontAction::Schedule { delay, generation } => {
-                    if !self.bus.font_due(delay, generation) {
-                        self.ctx.request_repaint_after(delay);
+                FontAction::Debounce => {
+                    if !self.bus.font_due(QUIET) {
+                        self.ctx.request_repaint_after(QUIET);
                     }
-                }
-                // Generation checks in Persistence cancel deliveries already
-                // queued by the transport; no retry decision lives here.
-                FontAction::CancelTimer => {}
-                FontAction::RetryLook(delay) => {
-                    self.look_retry += 1;
-                    self.bus.retry_look(delay, self.look_retry);
                 }
             }
         }
@@ -666,7 +647,7 @@ impl Shell {
             .frame(egui::Frame::new().fill(canvas))
             .show(ui, |ui| {
                 events.extend(view::tab_strip(ui, &self.app));
-                view::notice(ui, &self.app);
+                view::notice(ui, &self.app, self.font.unsaved);
                 let area = ui.available_rect_before_wrap();
                 let response = ui.interact(area, self.focus, egui::Sense::click_and_drag());
                 let focused = ctx.memory(|m| m.focused());

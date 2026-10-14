@@ -78,15 +78,13 @@ pub enum Delivery {
         ticket: u64,
         reply: Option<(u8, String, Option<String>)>,
     },
-    /// A look retry is due.
-    LookRetry { generation: u64 },
     /// The answer to a settings write ([`WindowBus::write_settings`]), as
     /// [`Delivery::Look`]'s.
     Written {
         reply: Option<(u8, String, Option<String>)>,
     },
     /// A font size write is due (the zoom keys have paused).
-    FontDue { generation: u64 },
+    FontDue,
     /// The connection came (back) up.
     Connected,
 }
@@ -229,15 +227,10 @@ impl WindowBus {
         true
     }
 
-    /// Deliver [`Delivery::LookRetry`] with `generation` after `delay`.
-    pub fn retry_look(&self, delay: Duration, generation: u64) {
-        self.after(delay, Delivery::LookRetry { generation });
-    }
-
-    /// Deliver [`Delivery::FontDue`] with `generation` after `delay`.
+    /// Deliver [`Delivery::FontDue`] after the zoom debounce.
     /// False before the native Bus runtime is ready.
-    pub fn font_due(&self, delay: Duration, generation: u64) -> bool {
-        self.after(delay, Delivery::FontDue { generation })
+    pub fn font_due(&self, delay: Duration) -> bool {
+        self.after(delay, Delivery::FontDue)
     }
 
     fn after(&self, delay: Duration, delivery: Delivery) -> bool {

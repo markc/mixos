@@ -79,9 +79,10 @@ pub fn tab_strip(ui: &mut Ui, app: &App) -> Vec<UiEvent> {
     events
 }
 
-/// A refused paste says so until the next paste succeeds.
-pub fn notice(ui: &mut Ui, app: &App) {
-    if let Some(notice) = &app.paste_notice {
+/// Refused pastes and unsaved zooms stay visible until resolved.
+pub fn notice(ui: &mut Ui, app: &App, font_unsaved: bool) {
+    let font_notice = font_unsaved.then(|| label("font-not-saved"));
+    for notice in app.paste_notice.iter().chain(font_notice.iter()) {
         let chrome = Chrome::of(ui.ctx());
         egui::Frame::new()
             .fill(chrome.palette.card)

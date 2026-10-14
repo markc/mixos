@@ -127,6 +127,19 @@ fn two_tabs_and_a_split_studio_dark() {
     }
     harness.snapshot("two_tabs_and_a_split_studio_dark");
 
+    // Exercise the real offline debounce and show its persistent notice.
+    harness.state_mut().shell.as_mut().unwrap().app.zoom(FontSize::increase);
+    harness.run_steps(2);
+    std::thread::sleep(std::time::Duration::from_millis(410));
+    harness.run_steps(2);
+    harness.get_by_label("Zoom is not saved");
+    harness.snapshot("unsaved_zoom_studio_dark");
+    let zoom = harness.state().shell.as_ref().unwrap().app.font().current();
+    harness.run_steps(2);
+    assert_eq!(harness.state().shell.as_ref().unwrap().app.font().current(), zoom);
+    harness.state_mut().shell.as_mut().unwrap().app.reset_font();
+    harness.run_steps(2);
+
     // Selecting the first tab from the strip shows its one pane.
     harness
         .state_mut()
