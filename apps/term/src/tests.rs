@@ -988,7 +988,7 @@ fn terminal_settings_apply_and_resize_each_pty_once() {
     let mut settings = terminal_settings();
     app.apply_terminal(&settings, None, false);
     assert_eq!(app.grids[&id], before, "the defaults change nothing");
-    assert_eq!(app.inset(), 1.0);
+    assert_eq!(app.inset(), 8.0);
     assert_eq!(app.raster.lock().unwrap().cursor(), Cursor::Underline);
     settings.padding = 16;
     settings.border.width = 2;
