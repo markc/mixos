@@ -59,6 +59,8 @@ pub type Wakers = Arc<Mutex<Vec<(u64, egui::Context)>>>;
 pub struct Resident {
     pub serial: u64,
     pub image: Decoded,
+    /// CPU bytes remain reserved until every view snapshot releases the pixels.
+    pub _resident_bytes: Option<Arc<Reservation>>,
 }
 
 /// What the program shows: the applied configuration and the images it names.
@@ -655,6 +657,7 @@ mod tests {
         let rgba = image::RgbaImage::from_pixel(SIDE, SIDE, image::Rgba([200, 30, 30, 255]));
         Arc::new(Resident {
             serial,
+            _resident_bytes: None,
             image: Decoded {
                 size: [SIDE, SIDE],
                 original_size: [SIDE, SIDE],

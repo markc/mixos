@@ -27,7 +27,7 @@
 //! A change wakes the surfaces through their contexts. Slideshow and fade
 //! deadlines drive timed waits on the inbox; a static wallpaper blocks there.
 
-use crate::program::{FADE, Resident, Shared, View, Wakers, lock};
+use crate::program::{Budget, FADE, Resident, Shared, View, Wakers, lock};
 use citizen::{Delivery, Handle};
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -226,6 +226,7 @@ pub fn start(setup: Setup) -> Result<(), String> {
                 active: BTreeMap::new(),
                 candidate: BTreeMap::new(),
                 serial: 0,
+                memory: Budget::new(RESIDENT_BUDGET),
                 queue: VecDeque::new(),
                 decoding: false,
                 owed: BTreeMap::new(),
@@ -291,6 +292,7 @@ struct Controller {
     /// The pending request's decoded images: not yet applied.
     candidate: BTreeMap<PathBuf, Arc<Resident>>,
     serial: u64,
+    memory: Arc<Budget>,
     /// The pending request's decodes still to run, in order: one at a time.
     queue: VecDeque<Job>,
     decoding: bool,
@@ -641,25 +643,23 @@ impl Controller {
 
     /// Bytes of decoded RGBA held: the applied images and the candidate's.
     fn resident_bytes(&self) -> u64 {
-        let mut seen = BTreeSet::new();
-        self.active
-            .values()
-            .chain(self.candidate.values())
-            .chain(self.previous.values())
-            .filter(|resident| seen.insert(resident.serial))
-            .map(|resident| resident.image.bytes())
-            .sum()
+        self.memory.used()
     }
 
     /// Keep a decoded image as a candidate of the request it was decoded for.
     fn keep(&mut self, path: PathBuf, result: Result<Decoded, String>) {
         if let Ok(image) = result {
+            let reservation = self
+                .memory
+                .reserve(image.bytes())
+                .expect("the single controller checked the resident budget before keeping pixels");
             self.serial += 1;
             self.candidate.insert(
                 path,
                 Arc::new(Resident {
                     serial: self.serial,
                     image,
+                    _resident_bytes: Some(Arc::new(reservation)),
                 }),
             );
         }
@@ -940,6 +940,7 @@ mod tests {
             active: BTreeMap::new(),
             candidate: BTreeMap::new(),
             serial: 0,
+            memory: Budget::new(RESIDENT_BUDGET),
             queue: VecDeque::new(),
             decoding: false,
             owed: BTreeMap::new(),
@@ -1376,5 +1377,33 @@ mod tests {
         assert_eq!(c.engine.status().active, 2);
         assert!(c.schedules.is_empty());
         assert!(c.active.is_empty());
+    }
+
+    #[test]
+    fn retained_view_snapshots_still_count_towards_the_cpu_budget() {
+        let mut c = controller();
+        let first = ["/w/1.png", "/w/2.png", "/w/3.png", "/w/4.png"];
+        c.stage(images(&first), Owed::Startup);
+        for path in first {
+            c.decoded(1, path.into(), full_size());
+        }
+        let old_view = lock(&c.shared).view.clone();
+        let second = ["/w/5.png", "/w/6.png", "/w/7.png", "/w/8.png"];
+        c.stage(images(&second), Owed::Startup);
+        for path in second {
+            c.decoded(2, path.into(), full_size());
+        }
+        assert_eq!(c.resident_bytes(), 8 * 3840 * 3840 * 4);
+        c.stage(images(&["/w/9.png", "/w/10.png"]), Owed::Startup);
+        c.decoded(3, "/w/9.png".into(), full_size());
+        c.decoded(3, "/w/10.png".into(), full_size());
+        assert_eq!(
+            c.engine.status().active,
+            2,
+            "the retained view prevents an over-budget commit"
+        );
+        assert!(c.engine.status().error.is_some());
+        drop(old_view);
+        assert_eq!(c.resident_bytes(), 4 * 3840 * 3840 * 4);
     }
 }
