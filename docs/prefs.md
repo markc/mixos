@@ -79,18 +79,21 @@ For scripted work, call the services directly (`releases.*`,
 ## Wallpaper
 
 In **Appearance → Wallpaper**, choose the default or an output, then Theme,
-Colour or Image. Colour accepts a picker or `#RRGGBB`. Browse opens the native
+Colour or Image. Colour accepts presets, a picker or `#RRGGBB`. Browse opens the native
 image browser at the installed wallpaper folder, or Pictures in your home
 folder. It lists PNG/JPEG files and folders without blocking the window.
-Changes stay in Prefs until **Apply wallpaper**. **Revert wallpaper** drops
-them; **Refresh wallpaper** reads the current state again.
+Presets, colour-picker and browser choices apply immediately. Finish a hex
+colour or image path with Enter or leave the field to apply it. **Apply wallpaper**
+also applies a valid entry; **Revert wallpaper** drops an unfinished edit;
+**Refresh wallpaper** reads the current state again. The status shows acceptance
+or the refusal reason.
 
 An output's **Use default** removes just that override. Editing the default
-preserves every output override. Images currently crop to fill; fit controls
-and slideshows will follow when backdrop supports them.
+preserves every output override. Images currently crop to fill. Backdrop reports
+no fit modes, so there is no fit selector. Slideshow controls are not yet available.
 
 Backdrop must be running on the same session Bus. A refusal shows its reason,
-keeps the draft and leaves the last good wallpaper in place. Prefs checks for
+restores the displayed choice and leaves the last good wallpaper in place. Prefs checks for
 intervening changes before sending the whole document; conflicts require
 Revert and a fresh edit. This check is best effort: backdrop does not yet
 provide an atomic compare-and-set operation. A lost reply is checked by a

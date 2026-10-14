@@ -123,6 +123,7 @@ impl Engine {
                 self.picker_cancel();
                 self.wallpaper_kind(crate::wallpaper::Kind::Image);
                 self.wallpaper_image(path);
+                self.apply_wallpaper();
             }
             self.picker_cancel();
         }

@@ -2,7 +2,7 @@
 use super::{UiEvent, command_button};
 use crate::label;
 use egui::{RichText, Ui};
-use preferences::{Engine, wallpaper::Kind};
+use preferences::{Engine, wallpaper::{COLOUR_PRESETS, Kind}};
 use toolkit::command::Origin;
 use toolkit::{
     Registry, Strings, bars,
@@ -104,6 +104,9 @@ pub fn controls(
                     if toolkit::selectable(ui, kind == value, label(key)).clicked() && kind != value
                     {
                         events.push(UiEvent::WallpaperKind(value));
+                        if value == Kind::Theme {
+                            events.push(UiEvent::Command("wallpaper.apply", Origin::Ui));
+                        }
                     }
                 }
             });
@@ -125,24 +128,38 @@ pub fn controls(
                         .clone()
                         .or_else(|| fill["colour"].as_str().map(str::to_owned))
                         .unwrap_or_else(|| "#000000".into());
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(label("wallpaper-presets"));
+                        for (key, colour) in COLOUR_PRESETS {
+                            if toolkit::selectable(ui, text.eq_ignore_ascii_case(colour), label(key))
+                                .clicked()
+                            {
+                                events.push(UiEvent::WallpaperColour(colour.into()));
+                                events.push(UiEvent::Command("wallpaper.apply", Origin::Ui));
+                            }
+                        }
+                    });
                     ui.horizontal(|ui| {
                         if let Some(mut rgb) = rgb(&text)
                             && ui.color_edit_button_srgb(&mut rgb).changed()
                         {
                             text = format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]);
                             events.push(UiEvent::WallpaperColour(text.clone()));
+                            events.push(UiEvent::Command("wallpaper.apply", Origin::Ui));
                         }
                         let caption = ui.label(label("wallpaper-hex"));
-                        if ui
+                        let entry = ui
                             .add(
                                 egui::TextEdit::singleline(&mut text)
                                     .desired_width(ui.spacing().interact_size.x * 3.0)
                                     .hint_text("#RRGGBB"),
                             )
-                            .labelled_by(caption.id)
-                            .changed()
-                        {
+                            .labelled_by(caption.id);
+                        if entry.changed() {
                             events.push(UiEvent::WallpaperColour(text));
+                        }
+                        if entry.lost_focus() {
+                            events.push(UiEvent::Command("wallpaper.apply", Origin::Ui));
                         }
                     });
                 }
@@ -154,16 +171,18 @@ pub fn controls(
                         .or_else(|| fill["image"].as_str().map(str::to_owned))
                         .unwrap_or_default();
                     let caption = ui.label(label("wallpaper-path"));
-                    if ui
+                    let entry = ui
                         .add(
                             egui::TextEdit::singleline(&mut path)
                                 .desired_width(ui.available_width())
                                 .hint_text(label("wallpaper-path-hint")),
                         )
-                        .labelled_by(caption.id)
-                        .changed()
-                    {
+                        .labelled_by(caption.id);
+                    if entry.changed() {
                         events.push(UiEvent::WallpaperImage(path));
+                    }
+                    if entry.lost_focus() {
+                        events.push(UiEvent::Command("wallpaper.apply", Origin::Ui));
                     }
                     command_button(
                         ui,

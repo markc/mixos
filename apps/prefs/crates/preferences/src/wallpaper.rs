@@ -19,6 +19,14 @@ const MAX_IMAGES: usize = 4;
 const MAX_DOCUMENT: usize = 64 * 1024;
 const MAX_PATH: usize = 4096;
 
+/// Wallpaper content choices, independent of the window's chrome colours.
+pub const COLOUR_PRESETS: [(&str, &str); 4] = [
+    ("wallpaper-slate", "#25354a"),
+    ("wallpaper-ocean", "#1b3d4b"),
+    ("wallpaper-forest", "#243c2d"),
+    ("wallpaper-plum", "#3f293e"),
+];
+
 /// One Bus call to send. The coordinator answers it with `complete`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Call {
@@ -182,6 +190,8 @@ pub struct WallpaperEditor {
     unavailable: bool,
     #[serde(skip)]
     refusal: bool,
+    #[serde(skip)]
+    accepted: bool,
     /// A state read was requested while a job ran; it runs once the job ends.
     #[serde(skip)]
     deferred: bool,
@@ -204,6 +214,7 @@ impl Default for WallpaperEditor {
             pending: false,
             unavailable: false,
             refusal: false,
+            accepted: false,
             deferred: false,
         }
     }
@@ -374,6 +385,7 @@ impl WallpaperEditor {
         self.base = None;
         self.conflict = false;
         self.refusal = false;
+        self.accepted = false;
         self.detail = None;
         self.settle();
     }
@@ -486,7 +498,8 @@ impl WallpaperEditor {
                 let accepted = serde_json::from_str::<Value>(&reply.body)
                     .ok()
                     .is_some_and(|b| {
-                        b["active"].as_u64().is_some() && b["requested"].as_u64().is_some()
+                        b["active"].as_u64().is_some()
+                            && b["active"].as_u64() == b["requested"].as_u64()
                     });
                 if !accepted {
                     self.uncertain = true;
@@ -498,11 +511,15 @@ impl WallpaperEditor {
                 self.base = None;
                 self.uncertain = false;
                 self.detail = None;
+                self.accepted = true;
                 self.settle();
                 self.reread(next_ticket, true)
             }
             Ok(reply) => {
-                // Refused: nothing changed, so current and draft stay as they were.
+                // Refused: show the last accepted choice, never the refused image.
+                self.draft = None;
+                self.base = None;
+                self.accepted = false;
                 self.detail = serde_json::from_str::<Value>(&reply.body)
                     .ok()
                     .as_ref()
@@ -565,6 +582,7 @@ impl WallpaperEditor {
         }
         self.conflict = false;
         self.refusal = false;
+        self.accepted = false;
         self.detail = None;
         self.draft = Some(serde_json::to_value(&document).map_err(|_| "status.too_large")?);
         self.settle();
@@ -586,6 +604,8 @@ impl WallpaperEditor {
             "status.refused"
         } else if self.dirty() {
             "status.edited"
+        } else if self.accepted {
+            "status.accepted"
         } else {
             "status.ready"
         };
@@ -779,25 +799,27 @@ mod tests {
     }
 
     #[test]
-    fn refused_set_keeps_current_and_draft() {
+    fn refused_image_restores_the_displayed_choice_and_shows_the_reason() {
         let mut editor = loaded(config());
-        editor.edit_colour("#445566".into()).unwrap();
-        let draft = editor.draft.clone();
+        editor.select_target(Some("DP-1".into()));
+        editor.edit_image("/missing.png".into()).unwrap();
         let call = preflight(&mut editor, 10, state(config(), Value::Null)).expect("set");
         assert_eq!(call.verb, VERB_SET);
         assert!(
             editor
                 .complete(
                     call.ticket,
-                    Ok(reply(10, json!({"message": "no such output"}))),
+                    Ok(reply(10, json!({"error_code": "IMAGE", "message": "could not decode image"}))),
                     12
                 )
                 .is_none()
         );
         assert_eq!(editor.current, Some(config()));
-        assert_eq!(editor.draft, draft);
+        assert!(editor.draft.is_none());
+        assert_eq!(editor.fill(), config()["outputs"]["DP-1"]);
+        assert!(!editor.can_apply());
         assert_eq!(editor.status, "status.refused");
-        assert_eq!(editor.detail.as_deref(), Some("no such output"));
+        assert_eq!(editor.detail.as_deref(), Some("could not decode image"));
         assert!(editor.failed);
     }
 
@@ -815,10 +837,46 @@ mod tests {
             .expect("reread");
         assert_eq!(reread.verb, VERB_STATE);
         assert!(editor.draft.is_none());
+        assert_eq!(editor.status, "status.accepted");
         assert_eq!(
             editor.current.as_ref().unwrap()["default"]["colour"],
             "#445566"
         );
+        let applied = editor.current.clone().unwrap();
+        editor.complete(12, state(applied, Value::Null), 13);
+        assert_eq!(editor.status, "status.accepted");
+    }
+
+    #[test]
+    fn colour_and_image_calls_send_the_exact_complete_document() {
+        for (fill, image) in [
+            (json!({"colour": "#AbC123"}), false),
+            (json!({"image": "/opt/mixos/share/wallpapers/hills.jpg"}), true),
+        ] {
+            let original = json!({"schema": 1});
+            let mut editor = loaded(original.clone());
+            if image {
+                editor.edit_image(fill["image"].as_str().unwrap().into()).unwrap();
+            } else {
+                editor.edit_colour(fill["colour"].as_str().unwrap().into()).unwrap();
+            }
+            let call = preflight(&mut editor, 10, state(original, Value::Null)).unwrap();
+            assert_eq!(call.verb, "backdrop.set");
+            assert_eq!(call.body, json!({"schema": 1, "default": fill}));
+        }
+    }
+
+    #[test]
+    fn hex_requires_exactly_six_ascii_digits_and_a_hash() {
+        for text in ["#000000", "#ffffff", "#AbC123"] {
+            assert!(valid_colour(text), "{text}");
+        }
+        for text in ["", "123456", "#fff", "#12345678", "#gg0000", " #123456", "#123456\n", "#é1234"] {
+            assert!(!valid_colour(text), "{text}");
+        }
+        for (_, text) in COLOUR_PRESETS {
+            assert!(valid_colour(text));
+        }
     }
 
     #[test]
