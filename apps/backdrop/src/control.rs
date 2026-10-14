@@ -1602,12 +1602,29 @@ mod tests {
         let mut c = controller();
         let config = Config::from_text("schema: 1\ndefault: { slideshow: { images: [\"/w/a.png\", \"/w/b.png\", \"/w/c.png\"], interval_s: 5 } }").unwrap();
         c.stage(config, Owed::Startup);
-        c.prepared(1, None, Ok((Schedule::new(vec!["/w/a.png".into(), "/w/b.png".into(), "/w/c.png".into()], 5, false, 1, Duration::ZERO).unwrap(), decoded_ok().unwrap())));
+        c.prepared(
+            1,
+            None,
+            Ok((
+                Schedule::new(
+                    vec!["/w/a.png".into(), "/w/b.png".into(), "/w/c.png".into()],
+                    5,
+                    false,
+                    1,
+                    Duration::ZERO,
+                )
+                .unwrap(),
+                decoded_ok().unwrap(),
+            )),
+        );
         c.command(7, NEXT, "{}");
         c.decoded(2, "/w/b.png".into(), Err("corrupt".into()));
         assert_eq!(c.schedules[&None].current(), Path::new("/w/a.png"));
         c.command(8, NEXT, "{}");
-        assert_eq!(c.pending_schedules.as_ref().unwrap()[&None].current(), Path::new("/w/c.png"));
+        assert_eq!(
+            c.pending_schedules.as_ref().unwrap()[&None].current(),
+            Path::new("/w/c.png")
+        );
         c.decoded(3, "/w/c.png".into(), decoded_ok());
         assert_eq!(c.schedules[&None].current(), Path::new("/w/c.png"));
         let (runs, _) = c.registry.take_executed();
@@ -1620,16 +1637,40 @@ mod tests {
         let mut c = controller();
         let first = ["/w/1.png", "/w/2.png", "/w/3.png", "/w/4.png"];
         c.stage(images(&first), Owed::Startup);
-        for path in first { c.decoded(1, path.into(), full_size()); }
+        for path in first {
+            c.decoded(1, path.into(), full_size());
+        }
         let old_view = lock(&c.shared).view.clone();
         let second = ["/w/5.png", "/w/6.png", "/w/7.png", "/w/8.png"];
         c.stage(images(&second), Owed::Startup);
-        for path in second { c.decoded(2, path.into(), full_size()); }
+        for path in second {
+            c.decoded(2, path.into(), full_size());
+        }
         let mut config = images(&["/w/9.png", "/w/10.png"]);
-        config.default = Wallpaper::Slideshow { source: SlideSource::Images(vec!["/w/9.png".into(), "/w/11.png".into()]), interval_s: 5, shuffle: false, fallback: None, fit: wallpaper::fit::Fit::Fill };
+        config.default = Wallpaper::Slideshow {
+            source: SlideSource::Images(vec!["/w/9.png".into(), "/w/11.png".into()]),
+            interval_s: 5,
+            shuffle: false,
+            fallback: None,
+            fit: wallpaper::fit::Fit::Fill,
+        };
         c.stage(config, Owed::Startup);
         c.decoded(3, "/w/9.png".into(), full_size());
-        c.prepared(3, None, Ok((Schedule::new(vec!["/w/9.png".into(), "/w/11.png".into()], 5, false, 1, Duration::ZERO).unwrap(), full_size().unwrap())));
+        c.prepared(
+            3,
+            None,
+            Ok((
+                Schedule::new(
+                    vec!["/w/9.png".into(), "/w/11.png".into()],
+                    5,
+                    false,
+                    1,
+                    Duration::ZERO,
+                )
+                .unwrap(),
+                full_size().unwrap(),
+            )),
+        );
         assert_eq!(c.engine.pending(), Some(3));
         assert!(c.engine.status().error.is_none());
         assert_eq!(c.resident_bytes(), 9 * 3840 * 3840 * 4);

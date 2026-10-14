@@ -120,7 +120,10 @@ impl Schedule {
     /// Consume a failed proposal's traversal position, while retaining the
     /// current on-screen image. The next attempt can try the following entry.
     pub fn skip_failed(&mut self, attempted: &Self, now: Duration) {
-        assert_eq!(self.files, attempted.files, "proposal must use the same source");
+        assert_eq!(
+            self.files, attempted.files,
+            "proposal must use the same source"
+        );
         self.order.clone_from(&attempted.order);
         self.position = attempted.position;
         self.random = attempted.random;
