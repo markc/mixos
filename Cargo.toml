@@ -161,6 +161,11 @@ dirs-sys = { path = "vendor/dirs-sys" }
 calloop = { path = "vendor/calloop" }
 input = { path = "vendor/input" }
 
+# Term's PTY with the child-only session-descriptor handoff
+# (vendor/teletypewriter/PATCHES.md).
+[patch."https://github.com/raphamorim/rio"]
+teletypewriter = { path = "vendor/teletypewriter" }
+
 [profile.release]
 codegen-units = 1
 debug = "line-tables-only"
