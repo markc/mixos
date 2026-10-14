@@ -193,6 +193,13 @@ pub(super) fn fallback_paths(paths: &[&str], weight: u16) -> Vec<Primary> {
 }
 
 pub(super) fn fallback_weight(db: &mut Database, face: Primary, weight: u16) -> Primary {
+    // Keep the pinned asset when it already has the requested weight; a
+    // system copy of the same family must not replace its verified bytes.
+    if FontRef::from_index(&face.data, face.index as usize)
+        .is_some_and(|font| font.attributes().weight().0 == weight)
+    {
+        return face;
+    }
     if db.load_font_file(&face.path).is_ok() {
         let name = db
             .faces()
