@@ -1455,7 +1455,9 @@ mod tests {
     fn a_panicking_worker_reports_failure_and_does_not_wedge_later_sets() {
         let mut c = controller();
         c.stage(images(&["/w/a.png"]), Owed::Bus(7));
-        let msg = guarded_job(Job::Load(1, "/w/a.png".into()), |_| panic!("injected decoder panic"));
+        let msg = guarded_job(Job::Load(1, "/w/a.png".into()), |_| {
+            panic!("injected decoder panic")
+        });
         let Msg::Decoded {
             revision,
             path,
