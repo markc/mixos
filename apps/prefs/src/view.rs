@@ -740,9 +740,10 @@ fn number(ui: &mut Ui, spec: Numeric, current: f64, range: RangeInclusive<f64>) 
     panel::section_label(ui, &spec.title);
     ui.horizontal(|ui| {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let escaped = ui.input(|i| i.key_pressed(egui::Key::Escape));
             let field = ValueField::new(&mut value, range.clone()).unit(spec.unit);
             let response = ui.add(field);
-            let cancelled = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
+            let cancelled = response.lost_focus() && escaped;
             if cancelled {
                 ui.data_mut(|d| d.remove::<f64>(id));
                 value = current;
