@@ -234,16 +234,20 @@ fn paint(ui: &egui::Ui, rect: Rect, fill: Color32) {
 fn upload(image: &Decoded, fallback: Color32) -> ColorImage {
     let [w, h] = image.size;
     let base: egui::Rgba = fallback.into();
-    let pixels = image.rgba.as_raw().chunks_exact(4).map(|p| {
-        match p[3] {
+    let pixels = image
+        .rgba
+        .as_raw()
+        .chunks_exact(4)
+        .map(|p| match p[3] {
             255 => Color32::from_rgb(p[0], p[1], p[2]),
             0 => fallback,
             _ => {
-                let source: egui::Rgba = Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3]).into();
+                let source: egui::Rgba =
+                    Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3]).into();
                 Color32::from(source + base * (1.0 - source.a()))
             }
-        }
-    }).collect();
+        })
+        .collect();
     ColorImage::new([w as usize, h as usize], pixels)
 }
 
@@ -361,7 +365,12 @@ fn paint_image(
 /// Fade the fallback only in the incoming image's bars. Inside its rectangle
 /// the opaque incoming texture alone blends with the outgoing image.
 fn paint_bars(ui: &egui::Ui, rect: Rect, original: [u32; 2], mode: Fit, fill: Color32) {
-    let place = fit::placement(original, [rect.width(), rect.height()], ui.ctx().pixels_per_point(), mode);
+    let place = fit::placement(
+        original,
+        [rect.width(), rect.height()],
+        ui.ctx().pixels_per_point(),
+        mode,
+    );
     let min = rect.min + vec2(place.min[0], place.min[1]);
     let max = rect.min + vec2(place.max[0], place.max[1]);
     for bar in [
@@ -370,7 +379,9 @@ fn paint_bars(ui: &egui::Ui, rect: Rect, original: [u32; 2], mode: Fit, fill: Co
         Rect::from_min_max(pos2(rect.min.x, min.y), pos2(min.x, max.y)),
         Rect::from_min_max(pos2(max.x, min.y), pos2(rect.max.x, max.y)),
     ] {
-        if bar.width() > 0.0 && bar.height() > 0.0 { paint(ui, bar, fill); }
+        if bar.width() > 0.0 && bar.height() > 0.0 {
+            paint(ui, bar, fill);
+        }
     }
 }
 
@@ -584,8 +595,16 @@ mod tests {
 
     #[test]
     fn transparent_pixels_are_composited_once_before_crossfading() {
-        let image = Decoded { size: [3, 1], original_size: [3, 1], rgba: image::RgbaImage::from_raw(3, 1,
-            vec![255, 0, 0, 0, 255, 0, 0, 128, 255, 0, 0, 255]).unwrap() };
+        let image = Decoded {
+            size: [3, 1],
+            original_size: [3, 1],
+            rgba: image::RgbaImage::from_raw(
+                3,
+                1,
+                vec![255, 0, 0, 0, 255, 0, 0, 128, 255, 0, 0, 255],
+            )
+            .unwrap(),
+        };
         let base = Color32::from_rgb(0, 0, 255);
         let pixels = upload(&image, base).pixels;
         assert!(pixels.iter().all(|p| p.a() == 255));
