@@ -97,6 +97,8 @@ pub struct Shell {
     follower: settings::follow::Follower,
     look_topic: String,
     look_retry: u64,
+    /// A coalesced read held until a failed conflict refresh's backoff ends.
+    look_deferred: Option<settings::follow::Read>,
     installed: Option<toolkit::theme_menu::Choice>,
     bus: WindowBus,
     held: VecDeque<Held>,
@@ -127,6 +129,8 @@ struct FontWrites {
     sent: Option<f32>,
     retry_delay: Duration,
     retry_at: Option<Instant>,
+    /// A conflict invalidated the fence; retain the zoom until a fresh read.
+    refresh: bool,
 }
 
 impl FontWrites {
@@ -137,7 +141,9 @@ impl FontWrites {
 
     fn queue(&mut self, px: f32) {
         self.pending = Some(px);
-        self.clear_retry();
+        if !self.refresh {
+            self.clear_retry();
+        }
     }
 
     fn reset(&mut self, profile_size: f32) {
@@ -149,10 +155,56 @@ impl FontWrites {
             .map(|_| profile_size);
     }
 
-    fn next(&self, following: bool, now: Instant) -> Option<f32> {
-        (following && self.sent.is_none() && self.retry_at.is_none_or(|at| now >= at))
+    fn consume_retry(&mut self, now: Instant) {
+        if self.retry_at.is_some_and(|at| now >= at) {
+            self.retry_at = None;
+        }
+    }
+
+    fn back_off(&mut self, now: Instant) {
+        self.retry_delay = (self.retry_delay * 2)
+            .max(Duration::from_secs(1))
+            .min(Duration::from_secs(30));
+        self.retry_at = Some(now + self.retry_delay);
+    }
+
+    fn timer_delay(&self, now: Instant) -> Option<Duration> {
+        self.retry_at
+            .and_then(|at| at.checked_duration_since(now))
+            .filter(|delay| !delay.is_zero())
+    }
+
+    fn next(&mut self, following: bool, now: Instant) -> Option<f32> {
+        self.consume_retry(now);
+        (following && !self.refresh && self.sent.is_none() && self.retry_at.is_none())
             .then_some(self.pending)
             .flatten()
+    }
+
+    /// A read after the conflict, including an unchanged read, supplies the
+    /// fence. Coalesced reads must finish before any write can follow them.
+    fn refreshed(
+        &mut self,
+        followed: Option<&settings::follow::Followed>,
+        reading: bool,
+        now: Instant,
+    ) -> bool {
+        use settings::follow::Followed;
+        if !self.refresh {
+            return false;
+        }
+        match followed {
+            Some(Followed::Look { .. } | Followed::Unchanged) if !reading => {
+                self.refresh = false;
+                self.retry_at = None;
+            }
+            Some(Followed::Missing | Followed::Fault { .. }) => {
+                self.back_off(now);
+                return true;
+            }
+            _ => {}
+        }
+        false
     }
 
     fn answered(&mut self, reply: Option<(u8, String, Option<String>)>, now: Instant) {
@@ -165,16 +217,16 @@ impl FontWrites {
         // must not turn persistent storage failure into an immediate loop.
         if matches!(status.as_deref(), Some("changed" | "unchanged")) {
             self.clear_retry();
+        } else if status.as_deref() == Some("conflict") {
+            self.refresh = true;
+            self.retry_at = None;
         } else if !matches!(
             status.as_deref(),
             Some("conflict" | "validation_failed" | "invalid_request")
         ) && self.pending.is_some()
             && self.pending == sent
         {
-            self.retry_delay = (self.retry_delay * 2)
-                .max(Duration::from_secs(1))
-                .min(Duration::from_secs(30));
-            self.retry_at = Some(now + self.retry_delay);
+            self.back_off(now);
         }
         if matches!(
             status.as_deref(),
@@ -219,6 +271,7 @@ impl Shell {
             follower: settings::follow::Follower::new(&hostname()),
             look_topic: settings::summary_topic(settings::follow::PROFILE),
             look_retry: 0,
+            look_deferred: None,
             installed: None,
             bus,
             held: VecDeque::new(),
@@ -299,7 +352,12 @@ impl Shell {
                 Delivery::Written { reply } => self.font_written(reply),
                 Delivery::FontDue { generation } => {
                     if generation == self.font_generation {
-                        self.write_font();
+                        self.font.consume_retry(Instant::now());
+                        if self.font.refresh {
+                            self.read_look();
+                        } else {
+                            self.write_font();
+                        }
                     }
                 }
             }
@@ -465,10 +523,10 @@ impl Shell {
     }
 
     fn read_look(&mut self) {
-        if self.exiting {
+        if self.exiting || (self.font.refresh && self.font.timer_delay(Instant::now()).is_some()) {
             return;
         }
-        if let Some(read) = self.follower.read() {
+        if let Some(read) = self.look_deferred.take().or_else(|| self.follower.read()) {
             self.look_retry += 1;
             self.bus.read_look(read);
         }
@@ -485,6 +543,8 @@ impl Shell {
             .as_ref()
             .map(|(rc, body, error)| (*rc, body.as_str(), error.as_deref()));
         let (followed, next) = self.follower.answered(ticket, answer);
+        let now = Instant::now();
+        let refresh_failed = self.font.refreshed(followed.as_ref(), next.is_some(), now);
         match followed {
             Some(settings::follow::Followed::Look {
                 appearance,
@@ -510,6 +570,14 @@ impl Shell {
                 self.set_base();
             }
             _ => {}
+        }
+        if refresh_failed {
+            // Even a hint coalesced during the failed read waits. The follower
+            // has already issued its ticket, so retain that read for the timer.
+            self.look_deferred = next;
+            self.look_retry += 1;
+            self.retry_font(now);
+            return;
         }
         match next {
             Some(read) => {
@@ -539,9 +607,13 @@ impl Shell {
             return;
         };
         self.font.queue(px);
-        self.font_generation += 1;
-        if self.follower.following() {
-            self.bus.font_due(FONT_WRITE_DELAY, self.font_generation);
+        if self.font.refresh {
+            self.retry_font(Instant::now());
+        } else {
+            self.font_generation += 1;
+            if self.follower.following() {
+                self.bus.font_due(FONT_WRITE_DELAY, self.font_generation);
+            }
         }
     }
 
@@ -552,7 +624,8 @@ impl Shell {
         if self.exiting {
             return;
         }
-        let Some(px) = self.font.next(self.follower.following(), Instant::now()) else {
+        let following = self.follower.following() && self.follower.pending().is_none();
+        let Some(px) = self.font.next(following, Instant::now()) else {
             return;
         };
         self.font_ops.1 += 1;
@@ -574,12 +647,16 @@ impl Shell {
     fn font_written(&mut self, reply: Option<(u8, String, Option<String>)>) {
         let now = Instant::now();
         self.font.answered(reply, now);
-        if let Some(at) = self.font.retry_at {
-            self.font_generation += 1;
-            self.bus
-                .font_due(at.saturating_duration_since(now), self.font_generation);
-        }
+        self.retry_font(now);
         self.read_look();
+    }
+
+    fn retry_font(&mut self, now: Instant) {
+        // Invalidate earlier zoom/backoff timers even when no retry is due.
+        self.font_generation += 1;
+        if let Some(delay) = self.font.timer_delay(now) {
+            self.bus.font_due(delay, self.font_generation);
+        }
     }
 
     fn follow_theme(&mut self) {
@@ -824,15 +901,19 @@ mod font_tests {
     use super::*;
     use settings::follow::{Followed, Follower};
 
-    fn look(follower: &mut Follower, revision: &str) -> Followed {
-        let read = follower.read().unwrap();
-        let body = json!({"status":"current","summary":{
+    fn look_body(revision: &str) -> String {
+        json!({"status":"current","summary":{
             "schema":1,"binding":{"instance":"example","profile":"default"},
             "incarnation":"inc","revision":revision,"design_revision":"1",
             "source_digest":"d","appearance":settings::Appearance::default(),
             "custom_source":false
         }})
-        .to_string();
+        .to_string()
+    }
+
+    fn look(follower: &mut Follower, revision: &str) -> Followed {
+        let read = follower.read().unwrap();
+        let body = look_body(revision);
         follower
             .answered(read.ticket, Some((0, &body, None)))
             .0
@@ -841,6 +922,115 @@ mod font_tests {
 
     fn reply(status: &str) -> Option<(u8, String, Option<String>)> {
         Some((0, json!({"status":status}).to_string(), None))
+    }
+
+    #[test]
+    fn conflict_waits_for_a_successful_read_and_failed_refreshes_back_off() {
+        let mut follower = Follower::new("example");
+        look(&mut follower, "1");
+        let mut font = FontWrites::default();
+        let mut now = Instant::now();
+        font.queue(16.0);
+        font.sent = font.next(follower.following(), now);
+        let first = follower
+            .apply("first", json!({"terminal.font.size":16}))
+            .unwrap();
+        assert_eq!(first.body["expected_revision"], "1");
+        font.answered(reply("conflict"), now);
+        assert_eq!(font.timer_delay(now), None, "conflict schedules no FontDue");
+        let mut read = follower.read().unwrap();
+
+        for seconds in [1, 2, 4, 8, 16, 30, 30] {
+            // The refresh can remain in flight longer than any write timer.
+            now += Duration::from_secs(60);
+            assert!(follower.following(), "the cached fence still exists");
+            assert_eq!(font.next(follower.following(), now), None);
+            assert_eq!(font.timer_delay(now), None);
+            let failure = if seconds == 1 {
+                None
+            } else {
+                Some((20, "", Some("overloaded")))
+            };
+            let (followed, next) = follower.answered(read.ticket, failure);
+            assert!(next.is_none());
+            assert!(font.refreshed(followed.as_ref(), false, now));
+            let delay = Duration::from_secs(seconds);
+            assert_eq!(font.timer_delay(now), Some(delay));
+            assert_eq!(font.pending, Some(16.0));
+            assert_eq!(font.next(follower.following(), now), None);
+            assert_eq!(font.next(true, now + delay - Duration::from_millis(1)), None);
+            now += delay;
+            font.consume_retry(now);
+            assert_eq!(font.retry_at, None);
+            assert_eq!(font.next(follower.following(), now), None);
+            read = follower.read().unwrap();
+        }
+
+        let body = look_body("2");
+        let (followed, next) = follower.answered(read.ticket, Some((0, &body, None)));
+        assert!(next.is_none());
+        assert!(!font.refreshed(followed.as_ref(), false, now));
+        font.sent = font.next(follower.following(), now);
+        assert_eq!(font.sent, Some(16.0));
+        let write = follower
+            .apply("retry", json!({"terminal.font.size":16}))
+            .unwrap();
+        assert_eq!(write.body["expected_revision"], "2");
+        assert_eq!(font.next(follower.following(), now), None, "write once");
+    }
+
+    #[test]
+    fn conflict_after_an_expired_deadline_schedules_no_zero_delay_font_due() {
+        let now = Instant::now();
+        let mut font = FontWrites::default();
+        font.queue(16.0);
+        font.sent = font.next(true, now);
+        font.answered(reply("storage_failed"), now);
+        let due = font.retry_at.unwrap();
+        font.sent = font.next(true, due);
+        assert_eq!(font.sent, Some(16.0));
+        assert_eq!(font.retry_at, None, "the write consumes its deadline");
+        font.answered(reply("conflict"), due);
+        assert_eq!(font.timer_delay(due), None);
+        assert_eq!(font.retry_at, None);
+        assert_eq!(font.next(true, due), None, "refresh before another write");
+
+        // Also discard an old deadline if a conflict arrives through another
+        // path, rather than relying only on the timer having consumed it.
+        font.retry_at = Some(due);
+        font.sent = Some(16.0);
+        font.answered(reply("conflict"), due + Duration::from_secs(1));
+        assert_eq!(font.timer_delay(due + Duration::from_secs(1)), None);
+        assert_eq!(font.retry_at, None);
+    }
+
+    #[test]
+    fn a_read_started_before_conflict_finishes_its_coalesced_refresh_first() {
+        let mut follower = Follower::new("example");
+        look(&mut follower, "1");
+        let mut font = FontWrites::default();
+        let now = Instant::now();
+        font.queue(16.0);
+        font.sent = font.next(true, now);
+        let read = follower.read().unwrap();
+        font.answered(reply("conflict"), now);
+        assert!(follower.read().is_none(), "refresh follows the old read");
+        let body = look_body("1");
+        let (followed, next) = follower.answered(read.ticket, Some((0, &body, None)));
+        assert!(!font.refreshed(followed.as_ref(), next.is_some(), now));
+        assert_eq!(font.next(true, now), None);
+        let next = next.unwrap();
+        let body = look_body("2");
+        let (followed, next) = follower.answered(next.ticket, Some((0, &body, None)));
+        assert!(!font.refreshed(followed.as_ref(), next.is_some(), now));
+        assert_eq!(font.next(true, now), Some(16.0));
+        assert_eq!(
+            follower
+                .apply("retry", json!({"terminal.font.size":16}))
+                .unwrap()
+                .body["expected_revision"],
+            "2"
+        );
     }
 
     #[test]
