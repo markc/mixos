@@ -141,15 +141,27 @@ mod tests {
             (Setting::Size(14.5), "terminal.font.size", json!(14.5)),
             (Setting::Weight(700), "terminal.font.weight", json!(700)),
             (Setting::Padding(16), "terminal.padding", json!(16)),
-            (Setting::Scrollback(0), "terminal.scrollback.lines", json!(0)),
-            (Setting::ScrollSpeed(200), "terminal.scroll.speed", json!(200)),
+            (
+                Setting::Scrollback(0),
+                "terminal.scrollback.lines",
+                json!(0),
+            ),
+            (
+                Setting::ScrollSpeed(200),
+                "terminal.scroll.speed",
+                json!(200),
+            ),
             (Setting::BorderWidth(4), "terminal.border.width", json!(4)),
             (
                 Setting::CursorShape(CursorShape::Bar),
                 "terminal.cursor.shape",
                 json!("bar"),
             ),
-            (Setting::CursorBlink(true), "terminal.cursor.blink", json!(true)),
+            (
+                Setting::CursorBlink(true),
+                "terminal.cursor.blink",
+                json!(true),
+            ),
             (
                 Setting::FocusRing(FocusRing::Accent),
                 "terminal.focus.ring",
