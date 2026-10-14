@@ -9,7 +9,7 @@
 //! design package of its own (`source`), or a name this build does not know,
 //! the app's session theme stands, so a newer or custom desktop never
 //! breaks an older app.
-use crate::theme::Theme;
+use crate::theme::{Overlay, Theme};
 use design::{CaptionSide, Contrast, Decorations, DesignContext, Mode, Scheme, Style};
 use settings::model::Appearance;
 
@@ -33,7 +33,13 @@ pub fn theme(appearance: &Appearance) -> Option<Theme> {
     };
     let decorations = Decorations::from_name(&appearance.decorations)?;
     let captions = CaptionSide::from_name(&appearance.caption_side)?;
-    Some(Theme::for_context(context).framed(decorations, captions))
+    // The icon and type choices ride on the theme, so every app that installs
+    // this look draws with them; a choice left unset keeps the design's value.
+    Some(
+        Theme::for_context(context)
+            .framed(decorations, captions)
+            .with_overlay(Overlay::from_appearance(appearance)),
+    )
 }
 
 /// [`theme`], or `session` when the appearance cannot be drawn.
