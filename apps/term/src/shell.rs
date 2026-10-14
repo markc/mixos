@@ -148,16 +148,15 @@ impl FontWrites {
             .as_ref()
             .and_then(|(_, body, _)| serde_json::from_str::<Value>(body).ok())
             .and_then(|body| body["status"].as_str().map(str::to_owned));
-        match status.as_deref() {
-            Some("changed" | "unchanged" | "validation_failed" | "invalid_request") => {
-                if self.pending == sent {
-                    self.pending = None;
-                }
-            }
-            // Conflict, missing service, broker refusal, malformed or lost
-            // answer: no definite rejection of the value. Keep it until a
-            // successful read supplies a current fence, including reconnect.
-            _ => {}
+        // Conflict, missing service, broker refusal, malformed or lost
+        // answer: no definite rejection of the value. Keep it until a
+        // successful read supplies a current fence, including reconnect.
+        if matches!(
+            status.as_deref(),
+            Some("changed" | "unchanged" | "validation_failed" | "invalid_request")
+        ) && self.pending == sent
+        {
+            self.pending = None;
         }
         if !matches!(
             status.as_deref(),
