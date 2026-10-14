@@ -222,10 +222,10 @@ impl Persistence {
                     }
                 } else if again {
                     self.read(&mut actions);
-                } else if !self.persistence_read {
-                    if let Some(delay) = retry {
-                        actions.push(Action::RetryLook(delay));
-                    }
+                } else if !self.persistence_read
+                    && let Some(delay) = retry
+                {
+                    actions.push(Action::RetryLook(delay));
                 }
             }
             Event::TimerFired(generation) => {
