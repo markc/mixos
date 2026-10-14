@@ -18,6 +18,10 @@ pub fn describe() -> Value {
             "appearance.mode": {"type":"string", "enum":["light","dark"]},
             "appearance.decorations": {"type":"string", "enum":["csd","ssd"]},
             "appearance.caption_side": {"type":"string", "enum":["right","left"]},
+            "appearance.icon_stroke": {"type":"number|null", "minimum":1.0, "maximum":3.0, "step":0.25, "null":"the design's own icon.stroke_width token"},
+            "appearance.font_family": {"type":"string|null", "max_bytes":128, "null":"Inter"},
+            "appearance.font_weight": {"type":"integer|null", "minimum":100, "maximum":900, "step":100, "null":"the scheme's own weight"},
+            "appearance.mono_family": {"type":"string|null", "max_bytes":128, "null":"JetBrains Mono"},
             "appearance.contrast": {"type":"string", "enum":["normal","high"]},
             "appearance.source": {"type":"string|null", "max_bytes":MAX_SOURCE_BYTES},
             "ui.density": {"type":"number", "minimum":0.5, "maximum":2.0},
@@ -228,6 +232,46 @@ pub fn resolve_with_embedded_and_accents(
         if design::CaptionSide::from_name(&desktop.appearance.caption_side).is_none() {
             return Err(error("appearance.caption_side", "Unknown caption side"));
         }
+        if let Some(stroke) = desktop.appearance.icon_stroke {
+            // Quarter steps only: a stroke that is not on the grid is refused,
+            // so every client quantises the same way.
+            bounded(
+                stroke,
+                ICON_STROKE_MIN,
+                ICON_STROKE_MAX,
+                "appearance.icon_stroke",
+            )?;
+            if !stroke.is_finite() || (stroke / ICON_STROKE_STEP).fract() != 0.0 {
+                return Err(error(
+                    "appearance.icon_stroke",
+                    "Icon stroke must be a multiple of 0.25",
+                ));
+            }
+        }
+        if let Some(weight) = desktop.appearance.font_weight {
+            if !(100..=900).contains(&weight) || weight % 100 != 0 {
+                return Err(error(
+                    "appearance.font_weight",
+                    "Font weight must be 100 to 900 in steps of 100",
+                ));
+            }
+        }
+        for (path, family) in [
+            ("appearance.font_family", &desktop.appearance.font_family),
+            ("appearance.mono_family", &desktop.appearance.mono_family),
+        ] {
+            if let Some(family) = family {
+                // Existence is not checked: settingsd cannot know a client's
+                // installed fonts. Shape only.
+                if family.is_empty()
+                    || family.len() > 128
+                    || family.chars().any(char::is_control)
+                    || family.trim() != family.as_str()
+                {
+                    return Err(error(path, "Font family must be a plain name"));
+                }
+            }
+        }
         if desktop
             .appearance
             .source
@@ -331,6 +375,10 @@ pub fn resolve_with_embedded_and_accents(
                 contrast: appearance.contrast,
                 decorations: appearance.decorations,
                 caption_side: appearance.caption_side,
+                icon_stroke: appearance.icon_stroke,
+                font_family: appearance.font_family,
+                font_weight: appearance.font_weight,
+                mono_family: appearance.mono_family,
                 ui,
                 design: projection,
                 provenance,
@@ -391,6 +439,20 @@ fn set(desktop: &mut Desktop, path: &str, value: Option<Value>) -> Result<(), Di
                 path,
                 value.unwrap_or(json!(defaults.appearance.caption_side)),
             )?
+        }
+        // Each type setting is optional: null (or a reset) clears it back to
+        // the design's own value.
+        "appearance.icon_stroke" => {
+            desktop.appearance.icon_stroke = typed(path, value.unwrap_or(Value::Null))?
+        }
+        "appearance.font_family" => {
+            desktop.appearance.font_family = typed(path, value.unwrap_or(Value::Null))?
+        }
+        "appearance.font_weight" => {
+            desktop.appearance.font_weight = typed(path, value.unwrap_or(Value::Null))?
+        }
+        "appearance.mono_family" => {
+            desktop.appearance.mono_family = typed(path, value.unwrap_or(Value::Null))?
         }
         "appearance.source" => {
             desktop.appearance.source = typed(path, value.unwrap_or(Value::Null))?

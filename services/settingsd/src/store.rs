@@ -19,7 +19,12 @@ use std::path::{Path, PathBuf};
 /// - 2: the record seals its format; settings 0.3.5 adds `appearance.style`,
 ///   `appearance.decorations` and `appearance.caption_side` (authored,
 ///   omitted at their defaults) and their resolved values in `Effective`.
-pub const FORMAT: u32 = 2;
+/// - 3: settings 0.6.0 adds `appearance.icon_stroke`, `appearance.font_family`,
+///   `appearance.font_weight` and `appearance.mono_family` (authored and
+///   omitted when unset) and their resolved values in `Effective`. A profile
+///   that sets any of them will not load in a format-2 build: reset them
+///   first with `settings.reset` or a null value.
+pub const FORMAT: u32 = 3;
 
 const MAX_STORE_BYTES: u64 = 2 * 1024 * 1024;
 #[derive(Clone, Debug, Serialize, Deserialize)]
