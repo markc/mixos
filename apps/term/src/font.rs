@@ -34,7 +34,10 @@ pub(crate) enum Event {
 pub(crate) enum Action {
     Write(f32),
     Read,
-    Schedule { delay: Duration, generation: u64 },
+    Schedule {
+        delay: Duration,
+        generation: u64,
+    },
     CancelTimer,
     /// Ordinary appearance following, separate from zoom persistence.
     RetryLook(Duration),
@@ -122,7 +125,10 @@ impl Persistence {
                 }
             }
             Event::Reset(profile_size) => {
-                self.pending = self.sent.filter(|size| *size != profile_size).map(|_| profile_size);
+                self.pending = self
+                    .sent
+                    .filter(|size| *size != profile_size)
+                    .map(|_| profile_size);
                 self.attempts = 0;
                 self.cancel_timer(&mut actions);
                 if self.pending.is_none() {
@@ -183,7 +189,12 @@ impl Persistence {
                     self.read(&mut actions);
                 }
             }
-            Event::ReadAnswered { usable, following, continued, retry } => {
+            Event::ReadAnswered {
+                usable,
+                following,
+                continued,
+                retry,
+            } => {
                 self.following = following;
                 if continued {
                     // Retargeting stays on the same fresh-read path.
@@ -288,7 +299,10 @@ mod tests {
     fn failed_refresh() -> Vec<Step> {
         let mut steps = writing();
         steps.extend([
-            Step::Input(Event::WriteSettled(WriteReply::Conflict), vec![Effect::Read]),
+            Step::Input(
+                Event::WriteSettled(WriteReply::Conflict),
+                vec![Effect::Read],
+            ),
             Step::Input(BAD, vec![Effect::Timer(1000)]),
         ]);
         steps
@@ -337,14 +351,23 @@ mod tests {
             Wait(60000),
             Stale,
         ]);
-        cases.push(("finding 2: reset cancels idle 30 second refresh loop", steps));
+        cases.push((
+            "finding 2: reset cancels idle 30 second refresh loop",
+            steps,
+        ));
 
         let mut steps = ready();
         steps.extend([
             Input(Event::ReadRequested, vec![Read]),
-            Input(Event::ReadAnswered {
-                usable: false, following: false, continued: false, retry: None,
-            }, vec![]),
+            Input(
+                Event::ReadAnswered {
+                    usable: false,
+                    following: false,
+                    continued: false,
+                    retry: None,
+                },
+                vec![],
+            ),
             Input(Event::Zoom(16.0), vec![Timer(400)]),
             Wait(400),
             Fire(vec![Read]),
@@ -389,7 +412,14 @@ mod tests {
                 Input(Event::Zoom(18.0), vec![]),
                 Input(Event::Reset(profile), vec![]),
                 Input(Event::WriteSettled(WriteReply::Saved), vec![Read]),
-                Input(GOOD, if profile == 16.0 { vec![] } else { vec![Write(profile)] }),
+                Input(
+                    GOOD,
+                    if profile == 16.0 {
+                        vec![]
+                    } else {
+                        vec![Write(profile)]
+                    },
+                ),
             ]);
             if profile != 16.0 {
                 steps.extend([
@@ -410,7 +440,10 @@ mod tests {
             Input(GOOD, vec![Read]),
             Input(GOOD, vec![Write(16.0)]),
         ]);
-        cases.push(("conflict waits for a fresh fence and coalesced reads", steps));
+        cases.push((
+            "conflict waits for a fresh fence and coalesced reads",
+            steps,
+        ));
 
         let mut steps = failed_refresh();
         steps.extend([
@@ -421,7 +454,10 @@ mod tests {
             Input(BAD, vec![]), // Already active retry must not reschedule.
             Pending(None),
         ]);
-        cases.push(("reset during refresh suppresses retry after its answer", steps));
+        cases.push((
+            "reset during refresh suppresses retry after its answer",
+            steps,
+        ));
 
         let mut steps = writing();
         for millis in [1000, 2000, 4000, 8000, 16000, 30000, 30000] {
@@ -445,7 +481,10 @@ mod tests {
             Input(GOOD, vec![]),
             Pending(None),
         ]);
-        cases.push(("failed writes cap at 30 seconds and new zoom resets backoff", steps));
+        cases.push((
+            "failed writes cap at 30 seconds and new zoom resets backoff",
+            steps,
+        ));
 
         let mut steps = writing();
         steps.extend([
@@ -472,12 +511,32 @@ mod tests {
         steps.extend([
             Wait(1000),
             Fire(vec![Read]),
-            Input(Event::ReadAnswered {
-                usable: false, following: false, continued: true, retry: None,
-            }, vec![Read]),
+            Input(
+                Event::ReadAnswered {
+                    usable: false,
+                    following: false,
+                    continued: true,
+                    retry: None,
+                },
+                vec![Read],
+            ),
             Input(GOOD, vec![Write(16.0)]),
         ]);
         cases.push(("retargeted read stays on the fresh fence path", steps));
+
+        let mut steps = writing();
+        steps.extend([
+            Input(Event::WriteSettled(WriteReply::Failed), vec![Timer(1000)]),
+            Wait(2000),
+            Fire(vec![Write(16.0)]),
+            Input(Event::WriteSettled(WriteReply::Conflict), vec![Read]),
+            Input(BAD, vec![Timer(2000)]),
+            Input(Event::Zoom(18.0), vec![Cancel, Timer(400)]),
+            Wait(400),
+            Fire(vec![Read]),
+            Input(GOOD, vec![Write(18.0)]),
+        ]);
+        cases.push(("conflict after overdue write retry never schedules zero delay", steps));
 
         for (name, steps) in cases {
             let mut state = Persistence::default();
@@ -534,19 +593,93 @@ mod tests {
                 assert_eq!(effects, expected, "{context}");
                 assert_eq!(state.retry_at, timer.map(|(_, at)| at), "{context}");
                 assert!(
-                    state.pending.is_none() || state.sent.is_some() || state.reading || timer.is_some(),
+                    state.pending.is_none()
+                        || state.sent.is_some()
+                        || state.reading
+                        || timer.is_some(),
                     "pending zoom has no live path: {context}"
                 );
                 if state.pending.is_none() && state.sent.is_none() {
                     assert!(timer.is_none() && !state.refresh, "idle retry: {context}");
                 }
                 assert!(state.attempts <= 6, "{context}");
-                if matches!(event, Some(Event::Zoom(_) | Event::WriteSettled(WriteReply::Saved | WriteReply::Refused)))
-                    || matches!(event, Some(Event::ReadAnswered { usable: true, .. }))
+                if matches!(
+                    event,
+                    Some(
+                        Event::Zoom(_)
+                            | Event::WriteSettled(WriteReply::Saved | WriteReply::Refused)
+                    )
+                ) || matches!(event, Some(Event::ReadAnswered { usable: true, .. }))
                 {
                     assert_eq!(state.attempts, 0, "backoff did not reset: {context}");
                 }
             }
         }
+    }
+
+    #[test]
+    fn conflict_retry_writes_with_the_native_followers_fresh_revision() {
+        use settings::follow::{Followed, Follower};
+
+        fn summary(revision: &str) -> String {
+            serde_json::json!({"status":"current","summary":{
+                "schema":1,"binding":{"instance":"example","profile":"default"},
+                "incarnation":"inc","revision":revision,"design_revision":"1",
+                "source_digest":"d","appearance":settings::Appearance::default(),
+                "custom_source":false
+            }})
+            .to_string()
+        }
+
+        fn answer(
+            state: &mut Persistence,
+            follower: &mut Follower,
+            ticket: u64,
+            body: Option<&str>,
+            now: Instant,
+        ) -> Vec<Action> {
+            let (followed, next) = follower.answered(ticket, body.map(|body| (0, body, None)));
+            assert!(next.is_none(), "the persistence machine owns coalescing");
+            state.event(
+                Event::ReadAnswered {
+                    usable: matches!(followed, Some(Followed::Look { .. } | Followed::Unchanged)),
+                    following: follower.following(),
+                    continued: false,
+                    retry: follower.retry_delay(),
+                },
+                now,
+            )
+        }
+
+        let mut state = Persistence::default();
+        let mut follower = Follower::new("example");
+        let mut now = Instant::now();
+        assert_eq!(state.event(Event::ReadRequested, now), [Action::Read]);
+        let read = follower.read().unwrap();
+        assert!(answer(&mut state, &mut follower, read.ticket, Some(&summary("1")), now).is_empty());
+        state.event(Event::Zoom(16.0), now);
+        now += QUIET;
+        assert_eq!(state.event(Event::TimerFired(state.generation), now), [Action::Write(16.0)]);
+        let write = follower.apply("first", serde_json::json!({"terminal.font.size":16})).unwrap();
+        assert_eq!(write.body["expected_revision"], "1");
+
+        assert_eq!(state.event(Event::ReadRequested, now), [Action::Read]);
+        let old = follower.read().unwrap();
+        assert!(state.event(Event::WriteSettled(WriteReply::Conflict), now).is_empty());
+        assert_eq!(answer(&mut state, &mut follower, old.ticket, Some(&summary("1")), now), [Action::Read]);
+        let fresh = follower.read().unwrap();
+        assert!(matches!(answer(&mut state, &mut follower, fresh.ticket, None, now).as_slice(),
+            [Action::Schedule { delay, .. }] if *delay == Duration::from_secs(1)));
+
+        let old_generation = state.generation;
+        state.event(Event::Zoom(18.0), now);
+        assert!(state.event(Event::TimerFired(old_generation), now).is_empty());
+        now += QUIET;
+        assert_eq!(state.event(Event::TimerFired(state.generation), now), [Action::Read]);
+        let read = follower.read().unwrap();
+        assert_eq!(answer(&mut state, &mut follower, read.ticket, Some(&summary("2")), now), [Action::Write(18.0)]);
+        let write = follower.apply("retry", serde_json::json!({"terminal.font.size":18})).unwrap();
+        assert_eq!(write.body["expected_revision"], "2");
+        assert_eq!(write.body["expected_incarnation"], "inc");
     }
 }
