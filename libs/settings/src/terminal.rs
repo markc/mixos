@@ -274,7 +274,7 @@ pub fn validate(terminal: &Terminal) -> Result<(), Diagnostic> {
             format!("Expected {FONT_SIZE_MIN}..{FONT_SIZE_MAX}"),
         ));
     }
-    if !(100..=900).contains(&font.weight) || font.weight % 100 != 0 {
+    if !(100..=900).contains(&font.weight) || !font.weight.is_multiple_of(100) {
         return Err(error(
             "terminal.font.weight",
             "Font weight must be 100 to 900 in steps of 100",
@@ -504,8 +504,10 @@ mod tests {
             "terminal.mouse.copy_on_select",
             "terminal.env.term",
         ];
-        let mut desktop = Desktop::default();
-        desktop.terminal = changed;
+        let desktop = Desktop {
+            terminal: changed,
+            ..Default::default()
+        };
         let reset: Vec<String> = paths.iter().map(|p| (*p).into()).collect();
         assert_eq!(
             patch(&desktop, &BTreeMap::new(), &reset).unwrap(),
