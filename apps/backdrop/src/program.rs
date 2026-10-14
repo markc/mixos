@@ -173,6 +173,7 @@ struct Slot {
     /// The pixel size and fit it was uploaded for, to place it again.
     original: [u32; 2],
     fit: Fit,
+    base: Color32,
     _reservation: Arc<Reservation>,
 }
 
@@ -227,10 +228,23 @@ fn paint(ui: &egui::Ui, rect: Rect, fill: Color32) {
     ui.painter().rect_filled(rect, CornerRadius::ZERO, fill);
 }
 
-/// The decoded pixels as egui's image (one copy, made when a context uploads).
-fn upload(image: &Decoded) -> ColorImage {
+/// One upload copy, composited over this output's fallback. Making the texture
+/// opaque lets two ordinary egui images crossfade without applying alpha twice
+/// to transparent pixels. Source decoding still runs exclusively on the worker.
+fn upload(image: &Decoded, fallback: Color32) -> ColorImage {
     let [w, h] = image.size;
-    ColorImage::from_rgba_unmultiplied([w as usize, h as usize], image.rgba.as_raw())
+    let base: egui::Rgba = fallback.into();
+    let pixels = image.rgba.as_raw().chunks_exact(4).map(|p| {
+        match p[3] {
+            255 => Color32::from_rgb(p[0], p[1], p[2]),
+            0 => fallback,
+            _ => {
+                let source: egui::Rgba = Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3]).into();
+                Color32::from(source + base * (1.0 - source.a()))
+            }
+        }
+    }).collect();
+    ColorImage::new([w as usize, h as usize], pixels)
 }
 
 /// Tiles repeat across the surface; every other image clamps at its edge.
@@ -267,6 +281,7 @@ fn current_texture(
     slots: &mut Slots,
     resident: &Resident,
     fit: Fit,
+    base: Color32,
     budget: &Arc<Budget>,
     fading: bool,
 ) -> Result<TextureHandle, String> {
@@ -275,11 +290,11 @@ fn current_texture(
         .as_mut()
         .filter(|slot| slot.serial == resident.serial)
     {
-        if slot.fit != fit {
-            // The wrap mode is fixed at upload, so a changed fit uploads once more.
+        if slot.fit != fit || slot.base != base {
             slot.texture
-                .set(upload(&resident.image), texture_options(fit));
+                .set(upload(&resident.image, base), texture_options(fit));
             slot.fit = fit;
+            slot.base = base;
         }
         return Ok(slot.texture.clone());
     }
@@ -298,7 +313,7 @@ fn current_texture(
     };
     let texture = ctx.load_texture(
         "backdrop-wallpaper",
-        upload(&resident.image),
+        upload(&resident.image, base),
         texture_options(fit),
     );
     let slot = Slot {
@@ -306,6 +321,7 @@ fn current_texture(
         texture: texture.clone(),
         original: resident.image.original_size,
         fit,
+        base,
         _reservation: Arc::new(reservation),
     };
     // Replacing the current slot drops the old reservation, after the new one.
@@ -340,6 +356,22 @@ fn paint_image(
     );
     let tint = Color32::from_white_alpha((alpha.clamp(0.0, 1.0) * 255.0).round() as u8);
     ui.painter().image(texture.id(), dest, uv, tint);
+}
+
+/// Fade the fallback only in the incoming image's bars. Inside its rectangle
+/// the opaque incoming texture alone blends with the outgoing image.
+fn paint_bars(ui: &egui::Ui, rect: Rect, original: [u32; 2], mode: Fit, fill: Color32) {
+    let place = fit::placement(original, [rect.width(), rect.height()], ui.ctx().pixels_per_point(), mode);
+    let min = rect.min + vec2(place.min[0], place.min[1]);
+    let max = rect.min + vec2(place.max[0], place.max[1]);
+    for bar in [
+        Rect::from_min_max(rect.min, pos2(rect.max.x, min.y)),
+        Rect::from_min_max(pos2(rect.min.x, max.y), rect.max),
+        Rect::from_min_max(pos2(rect.min.x, min.y), pos2(min.x, max.y)),
+        Rect::from_min_max(pos2(max.x, min.y), pos2(rect.max.x, max.y)),
+    ] {
+        if bar.width() > 0.0 && bar.height() > 0.0 { paint(ui, bar, fill); }
+    }
 }
 
 impl LayerProgram for Backdrop {
@@ -474,6 +506,7 @@ impl Backdrop {
                         &mut slots,
                         resident,
                         *fit,
+                        base,
                         &self.budget,
                         fade.is_some(),
                     ) {
@@ -508,7 +541,7 @@ impl Backdrop {
                                 paint_image(ui, &slot.texture, slot.original, slot.fit, rect, 1.0);
                             }
                         }
-                        paint(ui, rect, base.gamma_multiply(progress));
+                        paint_bars(ui, rect, original, fit, base.gamma_multiply(progress));
                         paint_image(ui, &texture, original, fit, rect, progress);
                         // Only a fade that has not run out asks for another pass.
                         ui.ctx().request_repaint();
@@ -547,6 +580,18 @@ mod tests {
         assert!(budget.reserve(51).is_none(), "the limit still holds");
         assert!(budget.reserve(50).is_some(), "exactly the limit is allowed");
         drop(new);
+    }
+
+    #[test]
+    fn transparent_pixels_are_composited_once_before_crossfading() {
+        let image = Decoded { size: [3, 1], original_size: [3, 1], rgba: image::RgbaImage::from_raw(3, 1,
+            vec![255, 0, 0, 0, 255, 0, 0, 128, 255, 0, 0, 255]).unwrap() };
+        let base = Color32::from_rgb(0, 0, 255);
+        let pixels = upload(&image, base).pixels;
+        assert!(pixels.iter().all(|p| p.a() == 255));
+        assert_eq!(pixels[0], base);
+        assert!(pixels[1].r() > 0 && pixels[1].b() > 0);
+        assert_eq!(pixels[2], Color32::from_rgb(255, 0, 0));
     }
 
     #[test]

@@ -667,6 +667,8 @@ required, all paths are absolute, and an explicit list must be non-empty.
 `interval_s` defaults to 600 and values below 5 are refused. `shuffle` defaults
 to false. Folder discovery is bounded and non-recursive; PNG and JPEG files
 are sorted before scheduling. Discovery and decoding run on the worker.
+The folder is discovered at startup or on a set; reapply the document to pick up
+folder changes. Repeated paths in a list share one schedule entry.
 
 A slideshow retains its current image while the next decodes. A failed decode
 keeps that image and reports the error; the next timer attempt waits for the
@@ -755,7 +757,11 @@ are not published as executed commands.
 
 `backdrop.state` answers with no output on screen:
 `{schema, service, requested, active, pending, error, config, config_file,
-outputs}`. `requested` and `active` are revisions: `requested` numbers every request
+outputs, fit, slideshows}`. `fit` is the default image's effective fit (or null
+for a solid fill); outputs also report their effective fit. Each slideshow
+reports its output (null for the default), `current_path`, `index`, `count`,
+`interval_s`, `shuffle`, `pending` and `fading`.
+`requested` and `active` are revisions: `requested` numbers every request
 made, and `active` is the revision of the accepted configuration. `pending` is
 the revision still decoding, if any. `error` is the last refused change's
 reason. `outputs` lists each output drawn so far, with its size, scale, what it

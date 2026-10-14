@@ -305,7 +305,9 @@ default: {
 required, all paths are absolute, and an explicit list must be non-empty.
 <code>interval_s</code> defaults to 600 and values below 5 are refused. <code>shuffle</code> defaults
 to false. Folder discovery is bounded and non-recursive; PNG and JPEG files
-are sorted before scheduling. Discovery and decoding run on the worker.</p>
+are sorted before scheduling. Discovery and decoding run on the worker.
+The folder is discovered at startup or on a set; reapply the document to pick up
+folder changes. Repeated paths in a list share one schedule entry.</p>
 <p>A slideshow retains its current image while the next decodes. A failed decode
 keeps that image and reports the error; the next timer attempt waits for the
 interval. A successful advance crossfades for about 0.5 seconds, then releases
@@ -383,7 +385,11 @@ sources. It refuses a configuration with no slideshow. An advance waiting for
 decode keeps the current pixels; a newer set can supersede it. Refused advances
 are not published as executed commands.</p>
 <p><code>backdrop.state</code> answers with no output on screen:
-<code>{schema, service, requested, active, pending, error, config, config_file, outputs}</code>. <code>requested</code> and <code>active</code> are revisions: <code>requested</code> numbers every request
+<code>{schema, service, requested, active, pending, error, config, config_file, outputs, fit, slideshows}</code>. <code>fit</code> is the default image's effective fit (or null
+for a solid fill); outputs also report their effective fit. Each slideshow
+reports its output (null for the default), <code>current_path</code>, <code>index</code>, <code>count</code>,
+<code>interval_s</code>, <code>shuffle</code>, <code>pending</code> and <code>fading</code>.
+<code>requested</code> and <code>active</code> are revisions: <code>requested</code> numbers every request
 made, and <code>active</code> is the revision of the accepted configuration. <code>pending</code> is
 the revision still decoding, if any. <code>error</code> is the last refused change's
 reason. <code>outputs</code> lists each output drawn so far, with its size, scale, what it
