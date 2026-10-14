@@ -958,7 +958,10 @@ mod font_tests {
             assert_eq!(font.timer_delay(now), Some(delay));
             assert_eq!(font.pending, Some(16.0));
             assert_eq!(font.next(follower.following(), now), None);
-            assert_eq!(font.next(true, now + delay - Duration::from_millis(1)), None);
+            assert_eq!(
+                font.next(true, now + delay - Duration::from_millis(1)),
+                None
+            );
             now += delay;
             font.consume_retry(now);
             assert_eq!(font.retry_at, None);
