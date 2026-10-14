@@ -536,7 +536,10 @@ mod tests {
             Fire(vec![Read]),
             Input(GOOD, vec![Write(18.0)]),
         ]);
-        cases.push(("conflict after overdue write retry never schedules zero delay", steps));
+        cases.push((
+            "conflict after overdue write retry never schedules zero delay",
+            steps,
+        ));
 
         for (name, steps) in cases {
             let mut state = Persistence::default();
@@ -656,29 +659,76 @@ mod tests {
         let mut now = Instant::now();
         assert_eq!(state.event(Event::ReadRequested, now), [Action::Read]);
         let read = follower.read().unwrap();
-        assert!(answer(&mut state, &mut follower, read.ticket, Some(&summary("1")), now).is_empty());
+        assert!(
+            answer(
+                &mut state,
+                &mut follower,
+                read.ticket,
+                Some(&summary("1")),
+                now
+            )
+            .is_empty()
+        );
         state.event(Event::Zoom(16.0), now);
         now += QUIET;
-        assert_eq!(state.event(Event::TimerFired(state.generation), now), [Action::Write(16.0)]);
-        let write = follower.apply("first", serde_json::json!({"terminal.font.size":16})).unwrap();
+        assert_eq!(
+            state.event(Event::TimerFired(state.generation), now),
+            [Action::Write(16.0)]
+        );
+        let write = follower
+            .apply("first", serde_json::json!({"terminal.font.size":16}))
+            .unwrap();
         assert_eq!(write.body["expected_revision"], "1");
 
         assert_eq!(state.event(Event::ReadRequested, now), [Action::Read]);
         let old = follower.read().unwrap();
-        assert!(state.event(Event::WriteSettled(WriteReply::Conflict), now).is_empty());
-        assert_eq!(answer(&mut state, &mut follower, old.ticket, Some(&summary("1")), now), [Action::Read]);
+        assert!(
+            state
+                .event(Event::WriteSettled(WriteReply::Conflict), now)
+                .is_empty()
+        );
+        assert_eq!(
+            answer(
+                &mut state,
+                &mut follower,
+                old.ticket,
+                Some(&summary("1")),
+                now
+            ),
+            [Action::Read]
+        );
         let fresh = follower.read().unwrap();
-        assert!(matches!(answer(&mut state, &mut follower, fresh.ticket, None, now).as_slice(),
-            [Action::Schedule { delay, .. }] if *delay == Duration::from_secs(1)));
+        assert!(
+            matches!(answer(&mut state, &mut follower, fresh.ticket, None, now).as_slice(),
+            [Action::Schedule { delay, .. }] if *delay == Duration::from_secs(1))
+        );
 
         let old_generation = state.generation;
         state.event(Event::Zoom(18.0), now);
-        assert!(state.event(Event::TimerFired(old_generation), now).is_empty());
+        assert!(
+            state
+                .event(Event::TimerFired(old_generation), now)
+                .is_empty()
+        );
         now += QUIET;
-        assert_eq!(state.event(Event::TimerFired(state.generation), now), [Action::Read]);
+        assert_eq!(
+            state.event(Event::TimerFired(state.generation), now),
+            [Action::Read]
+        );
         let read = follower.read().unwrap();
-        assert_eq!(answer(&mut state, &mut follower, read.ticket, Some(&summary("2")), now), [Action::Write(18.0)]);
-        let write = follower.apply("retry", serde_json::json!({"terminal.font.size":18})).unwrap();
+        assert_eq!(
+            answer(
+                &mut state,
+                &mut follower,
+                read.ticket,
+                Some(&summary("2")),
+                now
+            ),
+            [Action::Write(18.0)]
+        );
+        let write = follower
+            .apply("retry", serde_json::json!({"terminal.font.size":18}))
+            .unwrap();
         assert_eq!(write.body["expected_revision"], "2");
         assert_eq!(write.body["expected_incarnation"], "inc");
     }
