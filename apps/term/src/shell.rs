@@ -902,7 +902,10 @@ mod font_tests {
             assert_eq!(font.next(follower.following(), Instant::now()), None);
             assert!(matches!(look(&mut follower, "1"), Followed::Look { .. }));
             assert_eq!(
-                font.next(follower.following(), Instant::now() + Duration::from_secs(1)),
+                font.next(
+                    follower.following(),
+                    Instant::now() + Duration::from_secs(1)
+                ),
                 Some(16.0)
             );
             let write = follower
@@ -919,7 +922,7 @@ mod font_tests {
         let mut font = FontWrites {
             pending: Some(18.0),
             sent: Some(16.0),
-                ..Default::default()
+            ..Default::default()
         };
         assert_eq!(
             font.next(follower.following(), Instant::now()),
@@ -945,7 +948,11 @@ mod font_tests {
             ..Default::default()
         };
         font.reset(13.0);
-        assert_eq!(font.next(true, Instant::now()), None, "an unwritten zoom is discarded");
+        assert_eq!(
+            font.next(true, Instant::now()),
+            None,
+            "an unwritten zoom is discarded"
+        );
         font.sent = Some(13.0);
         font.reset(13.0);
         font.answered(reply("changed"), Instant::now());
@@ -969,7 +976,11 @@ mod font_tests {
         );
         font.sent = Some(13.0);
         font.answered(reply("changed"), Instant::now());
-        assert_eq!(font.next(true, Instant::now()), None, "the correction writes once");
+        assert_eq!(
+            font.next(true, Instant::now()),
+            None,
+            "the correction writes once"
+        );
     }
 
     #[test]
@@ -977,7 +988,7 @@ mod font_tests {
         let mut font = FontWrites {
             pending: Some(16.0),
             sent: Some(16.0),
-                ..Default::default()
+            ..Default::default()
         };
         font.answered(reply("validation_failed"), Instant::now());
         assert_eq!(font.pending, None);

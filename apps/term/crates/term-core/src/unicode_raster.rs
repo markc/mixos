@@ -766,8 +766,7 @@ mod tests {
         let available: Vec<_> = db
             .faces()
             .filter(|face| {
-                face.style == Style::Normal
-                    && face.families.iter().any(|(name, _)| name == FAMILY)
+                face.style == Style::Normal && face.families.iter().any(|(name, _)| name == FAMILY)
             })
             .collect();
         if ![400, 700]
@@ -827,7 +826,10 @@ mod tests {
             let image = raster.image(&ch.to_string(), 1, 24.0, (30, 40), 30);
             assert_eq!(image.font, Some(key), "request {requested}");
         }
-        assert_ne!(ids[0], ids[1], "regular and bold must select different faces");
+        assert_ne!(
+            ids[0], ids[1],
+            "regular and bold must select different faces"
+        );
     }
 
     #[test]
@@ -842,11 +844,8 @@ mod tests {
         let info = db.faces().next().unwrap().clone();
         assert_eq!(info.weight.0, 400);
         for requested in 1..=1000 {
-            let selected = super::super::primary_font::fallback_weight(
-                &mut db,
-                fixture.clone(),
-                requested,
-            );
+            let selected =
+                super::super::primary_font::fallback_weight(&mut db, fixture.clone(), requested);
             assert_eq!(selected.path, fixture.path, "request {requested}");
             assert_eq!(selected.index, info.index, "request {requested}");
             assert_eq!(selected.data, fixture.data, "request {requested}");

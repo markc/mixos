@@ -847,10 +847,17 @@ mod numeric_tests {
         h.run();
         assert_eq!(h.state().commits.len(), 2, "Escape sends no apply");
         assert_eq!(h.state().value, 250.0);
-        assert!(h.ctx.data(|d| d.get_temp::<f64>(egui::Id::new("numeric-test"))).is_none());
+        assert!(
+            h.ctx
+                .data(|d| d.get_temp::<f64>(egui::Id::new("numeric-test")))
+                .is_none()
+        );
         h.get_by_role(Role::SpinButton).click();
         h.run();
-        assert_eq!(h.get_by_role(Role::TextInput).value().as_deref(), Some("250"));
+        assert_eq!(
+            h.get_by_role(Role::TextInput).value().as_deref(),
+            Some("250")
+        );
         h.key_press(egui::Key::Escape);
         h.run();
         assert_eq!(h.state().commits.len(), 2);
