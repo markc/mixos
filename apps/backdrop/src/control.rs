@@ -1507,28 +1507,72 @@ mod tests {
     fn automatic_advances_wait_for_other_outputs_fades_and_fail_independently() {
         let mut c = controller();
         let mut config = slide_config();
-        config.outputs.insert("DP-1".into(), Wallpaper::Slideshow {
-            source: SlideSource::Images(vec!["/w/c.png".into(), "/w/d.png".into()]),
-            interval_s: 5, shuffle: false, fallback: None, fit: wallpaper::fit::Fit::Fill,
-        });
+        config.outputs.insert(
+            "DP-1".into(),
+            Wallpaper::Slideshow {
+                source: SlideSource::Images(vec!["/w/c.png".into(), "/w/d.png".into()]),
+                interval_s: 5,
+                shuffle: false,
+                fallback: None,
+                fit: wallpaper::fit::Fit::Fill,
+            },
+        );
         c.stage(config, Owed::Startup);
-        c.prepared(1, None, Ok((Schedule::new(vec!["/w/a.png".into(), "/w/b.png".into()], 5, false, 1, Duration::ZERO).unwrap(), decoded_ok().unwrap())));
-        c.prepared(1, Some("DP-1".into()), Ok((Schedule::new(vec!["/w/c.png".into(), "/w/d.png".into()], 5, false, 1, Duration::ZERO).unwrap(), decoded_ok().unwrap())));
+        c.prepared(
+            1,
+            None,
+            Ok((
+                Schedule::new(
+                    vec!["/w/a.png".into(), "/w/b.png".into()],
+                    5,
+                    false,
+                    1,
+                    Duration::ZERO,
+                )
+                .unwrap(),
+                decoded_ok().unwrap(),
+            )),
+        );
+        c.prepared(
+            1,
+            Some("DP-1".into()),
+            Ok((
+                Schedule::new(
+                    vec!["/w/c.png".into(), "/w/d.png".into()],
+                    5,
+                    false,
+                    1,
+                    Duration::ZERO,
+                )
+                .unwrap(),
+                decoded_ok().unwrap(),
+            )),
+        );
         c.started = Instant::now() - Duration::from_secs(6);
         c.tick();
         assert_eq!(c.advancing, BTreeSet::from([None]));
         c.decoded(2, "/w/b.png".into(), decoded_ok());
         let started = c.fade_started.unwrap();
         c.tick();
-        assert_eq!(c.fade_started, Some(started), "the other output cannot cut this fade");
+        assert_eq!(
+            c.fade_started,
+            Some(started),
+            "the other output cannot cut this fade"
+        );
         assert_eq!(c.engine.status().requested, 2);
-        assert!(c.next_deadline().unwrap() > Duration::ZERO, "no busy spin on the overdue output");
+        assert!(
+            c.next_deadline().unwrap() > Duration::ZERO,
+            "no busy spin on the overdue output"
+        );
         c.fade_started = Some(Instant::now() - FADE);
         c.tick();
         assert_eq!(c.advancing, BTreeSet::from([Some("DP-1".into())]));
         c.decoded(3, "/w/d.png".into(), Err("corrupt".into()));
         assert_eq!(c.schedules[&None].current(), Path::new("/w/b.png"));
-        assert_eq!(c.schedules[&Some("DP-1".into())].current(), Path::new("/w/c.png"));
+        assert_eq!(
+            c.schedules[&Some("DP-1".into())].current(),
+            Path::new("/w/c.png")
+        );
         assert!(c.registry.take_executed().0.is_empty());
     }
 }
