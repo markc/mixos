@@ -14,7 +14,7 @@ use crate::{label, label_with};
 use design::{CaptionSide, Contrast, Decorations, Mode, Scheme, Style};
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
 use preferences::appearance::{Availability as Settings, Axis};
-use preferences::{AppRow, Availability, Dialog, Engine, Look, Panel, RowState};
+use preferences::{AppRow, Availability, Dialog, Engine, Look, Panel, RowState, Section};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use toolkit::button::PushButton;
@@ -119,22 +119,27 @@ pub fn view(
         }
     });
     egui::Panel::left("editors")
-        .resizable(false)
-        .default_size(176.0)
+        .resizable(true)
+        .default_size(220.0)
+        .min_size(184.0)
+        .max_size(320.0)
         .frame(bars::dock_frame(ui.ctx()))
         .show(ui, |ui| editors(ui, engine, commands, stroke, &mut events));
     egui::CentralPanel::default()
         .frame(bars::dock_frame(ui.ctx()))
-        .show(ui, |ui| match engine.ui.panel {
-            Panel::Applications => applications(ui, engine, commands, strings, &mut events),
-            Panel::Appearance => {
+        .show(ui, |ui| match engine.section() {
+            Section::Desktop | Section::Server | Section::Creative | Section::Other => applications(ui, engine, commands, strings, &mut events),
+            section => {
                 ScrollArea::vertical()
-                    .id_salt("appearance-page")
+                    .id_salt(section.name())
                     .auto_shrink(false)
                     .show(ui, |ui| {
-                        wallpaper::controls(ui, engine, commands, strings, &mut events);
-                        ui.add_space(ui.spacing().item_spacing.y);
-                        appearance(ui, engine, commands, strings, &mut events);
+                        match section {
+                            Section::Themes => appearance(ui, engine, commands, strings, &mut events),
+                            Section::Wallpapers => wallpaper::controls(ui, engine, commands, strings, &mut events),
+                            Section::Fonts => fonts(ui),
+                            _ => unreachable!(),
+                        }
                     });
             }
         });
@@ -144,7 +149,7 @@ pub fn view(
     events
 }
 
-/// The sidebar: one row per editor, as the Prefs drawer held one tool each.
+/// A tree whose selection and expansion live in the serialisable engine.
 fn editors(
     ui: &mut Ui,
     engine: &Engine,
@@ -154,30 +159,31 @@ fn editors(
 ) {
     let title = label("panels");
     panel::group(ui, "editors", &[title.as_str()], |ui, _| {
-        for panel in Panel::ALL {
-            let (command, icon, text) = match panel {
-                Panel::Applications => (
-                    "view.panel.applications",
-                    Icon::Package,
-                    label("panel-applications"),
-                ),
-                Panel::Appearance => (
-                    "view.panel.appearance",
-                    Icon::Palette,
-                    label("panel-appearance"),
-                ),
-            };
-            let enabled = commands.get(command).is_some_and(|c| (c.enabled)(engine));
-            ui.horizontal(|ui| {
-                let colour = ui.visuals().text_color();
-                ui.add(icons::image(icon, stroke, ICON, colour));
-                let selected = engine.ui.panel == panel;
-                let row = ui.add_enabled_ui(enabled, |ui| toolkit::selectable(ui, selected, text));
-                if row.inner.clicked() {
-                    events.push(UiEvent::Command(command, Origin::Ui));
+        ScrollArea::vertical().id_salt("navigation-tree").show(ui, |ui| {
+            for (parent, heading, expanded, toggle) in [
+                (Panel::Appearance, "panel-appearance", engine.ui.appearance_expanded, "view.tree.appearance"),
+                (Panel::Applications, "panel-applications", engine.ui.applications_expanded, "view.tree.applications"),
+            ] {
+                let enabled = commands.get(toggle).is_some_and(|c| (c.enabled)(engine));
+                let shown = ui.add_enabled_ui(enabled, |ui| {
+                    egui::CollapsingHeader::new(label(heading)).id_salt(heading).open(Some(expanded)).show(ui, |ui| {
+                        for section in Section::ALL.into_iter().filter(|s| s.panel() == parent) {
+                            if section == Section::Other && !engine.apps.iter().any(|r| Section::Other.matches(r)) { continue; }
+                            let command = commands.get(section.command()).expect("section command");
+                            ui.horizontal(|ui| {
+                                ui.add(icons::image(command.icon.expect("section icon"), stroke, ICON, ui.visuals().text_color()));
+                                if toolkit::selectable(ui, engine.section() == section, section_title(engine, section)).clicked() {
+                                    events.push(UiEvent::Command(section.command(), Origin::Ui));
+                                }
+                            });
+                        }
+                    })
+                });
+                if shown.inner.header_response.clicked() {
+                    events.push(UiEvent::Command(toggle, Origin::Ui));
                 }
-            });
-        }
+            }
+        });
     });
 }
 
@@ -224,6 +230,35 @@ fn status_text(ui: &Ui, row: &AppRow) -> RichText {
     }
 }
 
+fn section_title(engine: &Engine, section: Section) -> String {
+    engine.category_label(section).map(str::to_owned).unwrap_or_else(|| label(section.label()))
+}
+
+/// Preview the actual face stacks installed on this rendering context.
+fn fonts(ui: &mut Ui) {
+    let title = label("section-fonts");
+    panel::group(ui, "fonts", &[title.as_str()], |ui, _| {
+        let faces = ui.ctx().fonts(|fonts| {
+            let defs = fonts.definitions();
+            [egui::FontFamily::Proportional, egui::FontFamily::Name(toolkit::fonts::HEADING.into()), egui::FontFamily::Monospace]
+                .map(|family| defs.families.get(&family).and_then(|stack| stack.first()).cloned().unwrap_or_default())
+        });
+        egui::Grid::new("font-faces").num_columns(2).spacing([24.0, 14.0]).show(ui, |ui| {
+            for (key, face) in ["fonts-interface", "fonts-headings", "fonts-monospace"].into_iter().zip(faces) {
+                panel::section_label(ui, &label(key));
+                ui.label(face);
+                ui.end_row();
+            }
+        });
+        bars::hairline(ui);
+        ui.heading(label("fonts-preview"));
+        ui.label(label("fonts-sample"));
+        ui.monospace(label("fonts-mono-sample"));
+        bars::hairline(ui);
+        ui.add(egui::Label::new(RichText::new(label("fonts-note")).weak()).wrap());
+    });
+}
+
 fn applications(
     ui: &mut Ui,
     engine: &Engine,
@@ -232,7 +267,7 @@ fn applications(
     events: &mut Vec<UiEvent>,
 ) {
     let height = ui.available_height();
-    let title = label("apps-title");
+    let title = section_title(engine, engine.section());
     // The table takes the upper part; the selected app's notes the rest.
     ui.allocate_ui(egui::vec2(ui.available_width(), height * 0.55), |ui| {
         panel::group(ui, "applications", &[title.as_str()], |ui, _| {
@@ -256,9 +291,9 @@ fn applications(
                 ui.add(egui::Label::new(RichText::new(label("missing")).weak()).wrap());
                 return;
             }
-            if engine.apps.is_empty() {
+            if engine.visible_apps().next().is_none() {
                 if engine.working().is_none() {
-                    ui.add(egui::Label::new(RichText::new(label("empty")).weak()).wrap());
+                    ui.add(egui::Label::new(RichText::new(label("group-empty")).weak()).wrap());
                 }
                 return;
             }
@@ -380,7 +415,7 @@ fn appearance(
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
-    let title = label("look-title");
+    let title = label("section-themes");
     panel::group(ui, "appearance", &[title.as_str()], |ui, _| {
         ui.horizontal(|ui| {
             // Changes apply as they are made; these appear only when an
@@ -583,7 +618,7 @@ fn table(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                 panel::section_label(ui, &label(key));
             }
             ui.end_row();
-            for row in &engine.apps {
+            for row in engine.visible_apps() {
                 let selected = engine.ui.selected.as_deref() == Some(row.app.as_str());
                 if toolkit::selectable(ui, selected, &row.app).clicked() {
                     events.push(UiEvent::Select(row.app.clone()));

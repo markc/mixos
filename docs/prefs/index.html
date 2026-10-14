@@ -243,17 +243,19 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="prefs">Prefs</h1>
-<p>Prefs holds MixOS's preference editors in one window: a sidebar of editors
-on the left, the selected editor on the right. The name is a nod to the
+<p>Prefs holds MixOS's preference editors in one window: an expandable tree
+on the left, the selected section on the right. Appearance contains Themes,
+Fonts and Wallpapers; Applications contains MixOS Desktop, MixOS Server and
+Creative. The sidebar can be resized. The name is a nod to the
 Prefs drawer of AmigaOS, where each setting had its own small editor.</p>
 <h2 id="applications">Applications</h2>
-<p>Applications shows the apps you follow, from the <a href="/releases/">releases
+<p>Each Applications section shows its followed apps, from the <a href="/releases/">releases
 service</a>: each app's installed version, the latest release,
 when it was published, and its status (up to date, update available, not
 installed, not checked, or check failed).</p>
 <ul>
 <li><strong>Check for updates</strong> (Ctrl+Shift+R) asks GitHub about every followed app.</li>
-<li><strong>Update all</strong> installs every newer release.</li>
+<li><strong>Update group</strong> installs newer releases for installed apps in the selected group.</li>
 <li>Select an app to see its latest <strong>release notes</strong>, then:
 <ul>
 <li><strong>Install or update</strong> (Ctrl+I) installs it, or updates it if it is
@@ -262,8 +264,16 @@ installed;</li>
 <li><strong>Remove…</strong> asks first; Cancel is the default, so Enter never removes.</li>
 </ul>
 </li>
-<li><strong>Refresh list</strong> (Ctrl+R) reads the list again without asking GitHub.</li>
+<li><strong>Refresh</strong> (Ctrl+R) reads the list again without asking GitHub.</li>
 </ul>
+<p>MixOS's <code>mixos-desktop</code> and <code>mixos-server</code> catalogue entries have their own
+sections. A catalogue entry's optional <code>category</code> selects <code>mixos-desktop</code>,
+<code>mixos-server</code>, <code>creative</code> or <code>other</code>; application names and publishers remain
+catalogue data. The catalogue's top-level <code>categories</code> map can label a group,
+for example <code>categories: {creative: "Graphics"}</code>.
+Unrecognised catalogue entries remain accessible under an additional <strong>Other</strong>
+section. Changing groups clears the previous selection and its release notes;
+selecting an app through the Bus opens its group automatically.</p>
 <p>One operation runs at a time; the status bar says what is happening and how
 it ended. Installs are per user, verified against the checksums each release
 publishes, and the previous version is kept for rolling back: see
@@ -272,7 +282,7 @@ publishes, and the previous version is kept for rolling back: see
 empty list. You follow apps by listing them in
 <code>~/.config/mixos/releases.mx</code>.</p>
 <h2 id="appearance">Appearance</h2>
-<p>Appearance sets the session's look through the settings service
+<p><strong>Appearance → Themes</strong> sets the session's look through the settings service
 (settingsd): the <strong>colour scheme</strong> (each shown with its accent), the
 <strong>style</strong> (the scheme's own, or Plain, Pro, Studio or Classic), <strong>light or
 dark</strong>, <strong>contrast</strong>, and the <strong>window frame</strong>: a title bar drawn by the app
@@ -292,6 +302,9 @@ it never lands on a change you have not seen. If its answer is
 lost, Prefs asks settingsd for the change's receipt before anything else is
 applied (<strong>Check again</strong> asks now); if settingsd no longer holds one, the
 session's current state decides what the status line says.</p>
+<p><strong>Appearance → Fonts</strong> shows the interface, heading and monospace faces currently
+installed on the window, with previews. Font family and size selection is not
+available yet; these faces follow the session design.</p>
 <h2 id="for-agents">For agents</h2>
 <p>Prefs answers on the Bus as <code>prefs</code>. <code>prefs.info</code> reports the whole state;
 <code>prefs.apps</code> the rows, selection and notes; <code>prefs.appearance</code> the session
@@ -299,7 +312,10 @@ look, the expected look while a change settles, any held or conflicting
 edits and the revision read; <code>prefs.appearance.set</code>
 changes it at once (<code>scheme</code>, <code>style</code> with <code>own</code> for the scheme's own, <code>mode</code>,
 <code>contrast</code>, <code>decorations</code>, <code>caption_side</code>); <code>prefs.select {app}</code> and
-<code>prefs.panel {name}</code> select; <code>prefs.execute {id}</code> runs any command a button
+<code>prefs.section {name}</code> selects <code>themes</code>, <code>fonts</code>, <code>wallpapers</code>, <code>mixos-desktop</code>,
+<code>mixos-server</code>, <code>creative</code> or <code>other</code> and expands its parent. <code>prefs.panel {name}</code>
+remains compatible, opening the default Themes or Creative section.
+<code>prefs.execute {id}</code> runs any command a button
 or menu would (<code>apps.check</code>, <code>apps.install</code>, <code>appearance.apply</code>,
 <code>appearance.revert</code>, …), and <code>prefs.commands</code> lists them with their
 enablement. The window is drivable like every MixOS app
@@ -308,7 +324,7 @@ enablement. The window is drivable like every MixOS app
 <p>For scripted work, call the services directly (<code>releases.*</code>,
 <code>settings.*</code>): Prefs is their window, not a second implementation.</p>
 <h2 id="wallpaper">Wallpaper</h2>
-<p>In <strong>Appearance → Wallpaper</strong>, choose the default or an output, then Theme,
+<p>In <strong>Appearance → Wallpapers</strong>, choose the default or an output, then Theme,
 Colour or Image. Colour accepts a picker or <code>#RRGGBB</code>. Browse opens the native
 image browser at the installed wallpaper folder, or Pictures in your home
 folder. It lists PNG/JPEG files and folders without blocking the window.

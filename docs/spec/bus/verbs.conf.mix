@@ -83,6 +83,7 @@
     {name:"prefs.execute", owner:"prefs", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"prefs.quit", owner:"prefs", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"prefs.panel", owner:"prefs", version:"0.1.0", status:"accepted", class:"intent"},
+    {name:"prefs.section", owner:"prefs", version:"0.1.1", status:"accepted", class:"intent"},
     {name:"prefs.select", owner:"prefs", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"prefs.apps", owner:"prefs", version:"0.1.0", status:"accepted", class:"query"},
     {name:"prefs.appearance", owner:"prefs", version:"0.1.0", status:"accepted", class:"query"},

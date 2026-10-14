@@ -4,11 +4,11 @@
 //! the Bus verbs `prefs.commands` / `prefs.execute` all come from this
 //! registry.
 use egui::{Key, KeyboardShortcut, Modifiers};
-use preferences::{Dialog, Engine, Panel};
+use preferences::{Dialog, Engine, Panel, Section};
 use toolkit::{Command, Icon, Registry};
 
 fn undialogued(e: &Engine) -> bool {
-    e.ui.dialog.is_none() && !e.picker.open
+    e.ui.dialog.is_none() && !e.picker.open && !e.quitting
 }
 
 const fn key(modifiers: Modifiers, key: Key) -> Option<KeyboardShortcut> {
@@ -61,6 +61,23 @@ pub fn registry() -> Registry<Engine> {
         enabled: Engine::can_refresh,
         run: Engine::refresh,
     });
+    for (section, icon, run) in [
+        (Section::Themes, Icon::Palette, (|e: &mut Engine| e.set_section(Section::Themes)) as fn(&mut Engine)),
+        (Section::Fonts, Icon::Type, (|e: &mut Engine| e.set_section(Section::Fonts)) as fn(&mut Engine)),
+        (Section::Wallpapers, Icon::Image, (|e: &mut Engine| e.set_section(Section::Wallpapers)) as fn(&mut Engine)),
+        (Section::Desktop, Icon::Monitor, (|e: &mut Engine| e.set_section(Section::Desktop)) as fn(&mut Engine)),
+        (Section::Server, Icon::Server, (|e: &mut Engine| e.set_section(Section::Server)) as fn(&mut Engine)),
+        (Section::Creative, Icon::Palette, (|e: &mut Engine| e.set_section(Section::Creative)) as fn(&mut Engine)),
+        (Section::Other, Icon::Package, (|e: &mut Engine| e.set_section(Section::Other)) as fn(&mut Engine)),
+    ] {
+        r.add(Command {id: section.command(), label: section.label(), menu: Some("view"), submenu: Some(if section.panel() == Panel::Appearance {"panel-appearance"} else {"panel-applications"}), group: 0, shortcut: None, icon: Some(icon), enabled: undialogued, run });
+    }
+    for (id, label, run) in [
+        ("view.tree.appearance", "tree-appearance", Engine::toggle_appearance as fn(&mut Engine)),
+        ("view.tree.applications", "tree-applications", Engine::toggle_applications as fn(&mut Engine)),
+    ] {
+        r.add(Command {id, label, run, menu: None, submenu: None, group: 0, shortcut: None, icon: None, enabled: undialogued });
+    }
     // View › Theme: any scheme, style, mode and framing, in this window only.
     for (id, label, menu, enabled, run) in [
         (
