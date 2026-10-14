@@ -14,12 +14,21 @@ use crate::{label, label_with};
 use design::{CaptionSide, Contrast, Decorations, Mode, Scheme, Style};
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
 use preferences::appearance::{Availability as Settings, Axis};
+use preferences::terminal::{
+    BORDER_WIDTH_MAX, BORDER_WIDTH_MIN, CursorShape, FONT_SIZE_MAX, FONT_SIZE_MIN, FocusRing,
+    PADDINGS, SCROLL_SPEED_MAX, SCROLL_SPEED_MIN, SCROLLBACK_MAX, Setting, Terminal, family_setting,
+    family_text,
+};
 use preferences::{AppRow, Availability, Dialog, Engine, Look, Panel, RowState, Section};
 use std::collections::HashMap;
+use std::ops::RangeInclusive;
 use std::sync::{Mutex, OnceLock};
 use toolkit::button::PushButton;
 use toolkit::command::Origin;
 use toolkit::dialog::{self, Choice};
+use toolkit::field::ValueField;
+use toolkit::slider::Slider;
+use toolkit::toggle::Toggle;
 use toolkit::titlebar::{self, Control};
 use toolkit::{Icon, Registry, Strings, bars, icons, panel, tooltip};
 mod wallpaper;
@@ -37,6 +46,8 @@ pub enum UiEvent {
     SetMode(design::Mode),
     /// An edit in the Appearance panel: the whole look it leaves.
     Look(Look),
+    /// An edit in the Terminal group: one `terminal.*` field.
+    Terminal(Setting),
     WallpaperTarget(Option<String>),
     WallpaperKind(preferences::wallpaper::Kind),
     WallpaperColour(String),
@@ -542,6 +553,240 @@ fn appearance(
             );
         });
     });
+    terminal(ui, engine, commands, strings, events);
+}
+
+/// The Terminal group: one control per `terminal.*` field, each applied as
+/// it is made. The values are settingsd's, as its last read gave them.
+fn terminal(
+    ui: &mut Ui,
+    engine: &Engine,
+    commands: &Registry<Engine>,
+    strings: &Strings,
+    events: &mut Vec<UiEvent>,
+) {
+    let title = label("section-terminal");
+    panel::group(ui, "terminal", &[title.as_str()], |ui, _| {
+        ui.horizontal(|ui| {
+            command_button(
+                ui,
+                engine,
+                commands,
+                strings,
+                "terminal.reset",
+                false,
+                events,
+            );
+        });
+        bars::hairline(ui);
+        if engine.look.settings == Settings::Missing {
+            ui.add(egui::Label::new(RichText::new(label("look-missing")).weak()).wrap());
+            return;
+        }
+        let Some(term) = engine.look.terminal.clone() else {
+            ui.label(RichText::new(label("look-reading")).weak());
+            return;
+        };
+        ui.add_enabled_ui(engine.can_edit_terminal(), |ui| {
+            ui.vertical(|ui| {
+                ui.set_width(ui.available_width());
+                terminal_controls(ui, &term, events);
+            });
+        });
+    });
+}
+
+/// The controls for each field, in the order the settings are read.
+fn terminal_controls(ui: &mut Ui, term: &Terminal, events: &mut Vec<UiEvent>) {
+    panel::section_label(ui, &label("terminal-family"));
+    let family = family_text(term.font.family.as_deref());
+    let hint = label("terminal-family-system");
+    if let Some(text) = text_field(ui, "terminal-family", &family, &hint) {
+        events.push(UiEvent::Terminal(family_setting(&text)));
+    }
+    let size = Numeric {
+        key: "terminal-size",
+        title: label("terminal-size"),
+        unit: "px",
+        places: 1,
+        slider: true,
+    };
+    if let Some(value) = number(ui, size, term.font.size, FONT_SIZE_MIN..=FONT_SIZE_MAX) {
+        events.push(UiEvent::Terminal(Setting::Size(value)));
+    }
+
+    panel::section_label(ui, &label("terminal-weight"));
+    let weights: Vec<(u32, String)> = (100..=900)
+        .step_by(100)
+        .map(|w| (w, w.to_string()))
+        .collect();
+    if let Some(weight) = choices(ui, term.font.weight, &weights) {
+        events.push(UiEvent::Terminal(Setting::Weight(weight)));
+    }
+
+    panel::section_label(ui, &label("terminal-padding"));
+    let paddings: Vec<(u32, String)> = PADDINGS.iter().map(|&p| (p, p.to_string())).collect();
+    if let Some(padding) = choices(ui, term.padding, &paddings) {
+        events.push(UiEvent::Terminal(Setting::Padding(padding)));
+    }
+
+    let scrollback = Numeric {
+        key: "terminal-scrollback",
+        title: label("terminal-scrollback"),
+        unit: "",
+        places: 0,
+        slider: false,
+    };
+    let range = 0.0..=f64::from(SCROLLBACK_MAX);
+    if let Some(lines) = number(ui, scrollback, f64::from(term.scrollback.lines), range) {
+        events.push(UiEvent::Terminal(Setting::Scrollback(lines as u32)));
+    }
+
+    let speed = Numeric {
+        key: "terminal-scroll-speed",
+        title: label("terminal-scroll-speed"),
+        unit: "px",
+        places: 0,
+        slider: true,
+    };
+    let range = f64::from(SCROLL_SPEED_MIN)..=f64::from(SCROLL_SPEED_MAX);
+    if let Some(value) = number(ui, speed, f64::from(term.scroll.speed), range) {
+        events.push(UiEvent::Terminal(Setting::ScrollSpeed(value as u32)));
+    }
+
+    panel::section_label(ui, &label("terminal-border"));
+    let widths: Vec<(u32, String)> = (BORDER_WIDTH_MIN..=BORDER_WIDTH_MAX)
+        .map(|w| (w, w.to_string()))
+        .collect();
+    if let Some(width) = choices(ui, term.border.width, &widths) {
+        events.push(UiEvent::Terminal(Setting::BorderWidth(width)));
+    }
+
+    panel::section_label(ui, &label("terminal-cursor-shape"));
+    let shapes = [
+        (CursorShape::Block, label("terminal-cursor-block")),
+        (CursorShape::Underline, label("terminal-cursor-underline")),
+        (CursorShape::Bar, label("terminal-cursor-bar")),
+    ];
+    if let Some(shape) = choices(ui, term.cursor.shape, &shapes) {
+        events.push(UiEvent::Terminal(Setting::CursorShape(shape)));
+    }
+    let mut blink = term.cursor.blink;
+    if ui
+        .add(Toggle::new(&mut blink, label("terminal-cursor-blink")))
+        .changed()
+    {
+        events.push(UiEvent::Terminal(Setting::CursorBlink(blink)));
+    }
+
+    panel::section_label(ui, &label("terminal-focus-ring"));
+    let rings = [
+        (FocusRing::Neutral, label("terminal-focus-neutral")),
+        (FocusRing::Accent, label("terminal-focus-accent")),
+    ];
+    if let Some(ring) = choices(ui, term.focus.ring, &rings) {
+        events.push(UiEvent::Terminal(Setting::FocusRing(ring)));
+    }
+    if term.focus.ring == FocusRing::Accent {
+        let strength = Numeric {
+            key: "terminal-focus-strength",
+            title: label("terminal-focus-strength"),
+            unit: "",
+            places: 2,
+            slider: true,
+        };
+        if let Some(value) = number(ui, strength, term.focus.strength, 0.0..=1.0) {
+            events.push(UiEvent::Terminal(Setting::FocusStrength(value)));
+        }
+    }
+
+    let mut copy = term.mouse.copy_on_select;
+    if ui
+        .add(Toggle::new(&mut copy, label("terminal-copy-on-select")))
+        .changed()
+    {
+        events.push(UiEvent::Terminal(Setting::CopyOnSelect(copy)));
+    }
+
+    panel::section_label(ui, &label("terminal-term"));
+    let hint = "xterm-256color";
+    if let Some(text) = text_field(ui, "terminal-term", &term.env.term, hint) {
+        events.push(UiEvent::Terminal(Setting::Term(text)));
+    }
+    ui.add(egui::Label::new(RichText::new(label("terminal-term-note")).weak()).wrap());
+}
+
+/// A numeric control's identity and how it draws and rounds its value.
+struct Numeric {
+    /// The memory key for a drag in progress.
+    key: &'static str,
+    title: String,
+    unit: &'static str,
+    /// Decimal places the value is rounded to when it is applied.
+    places: i32,
+    /// A slider beside the typed value, or the typed value alone.
+    slider: bool,
+}
+
+/// A number, typed or dragged. A typed value applies when its field loses
+/// focus, a drag when the pointer lets go, so no keystroke is sent. `Some`
+/// is the value to apply, rounded, when it differs from `current`.
+fn number(
+    ui: &mut Ui,
+    spec: Numeric,
+    current: f64,
+    range: RangeInclusive<f64>,
+) -> Option<f64> {
+    let id = egui::Id::new(spec.key);
+    let mut value = ui.data(|d| d.get_temp::<f64>(id)).unwrap_or(current);
+    let mut commit = false;
+    panel::section_label(ui, &spec.title);
+    ui.horizontal(|ui| {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let field = ValueField::new(&mut value, range.clone()).unit(spec.unit);
+            if ui.add(field).lost_focus() {
+                commit = true;
+            }
+            if spec.slider {
+                let slider = Slider::new(&mut value, range.clone()).label(spec.title.as_str());
+                let response = ui.add(slider);
+                if response.dragged() {
+                    ui.data_mut(|d| d.insert_temp(id, value));
+                } else if response.drag_stopped() || response.changed() {
+                    commit = true;
+                }
+            }
+        });
+    });
+    if !commit {
+        return None;
+    }
+    ui.data_mut(|d| d.remove::<f64>(id));
+    let scale = 10f64.powi(spec.places);
+    let rounded = (value * scale).round() / scale;
+    (rounded != (current * scale).round() / scale).then_some(rounded)
+}
+
+/// A text field that applies when Enter is pressed or it loses focus, not
+/// per keystroke. While it is not being edited it shows `current`. `Some`
+/// is the trimmed text to apply when it differs from `current`.
+fn text_field(ui: &mut Ui, key: &'static str, current: &str, hint: &str) -> Option<String> {
+    let id = egui::Id::new(key);
+    let mut text = ui
+        .data(|d| d.get_temp::<String>(id))
+        .unwrap_or_else(|| current.to_owned());
+    let response = toolkit::field::text(ui, &mut text, hint, 240.0);
+    if response.lost_focus() {
+        ui.data_mut(|d| d.remove::<String>(id));
+        let text = text.trim();
+        return (text != current.trim()).then(|| text.to_owned());
+    }
+    if response.has_focus() {
+        ui.data_mut(|d| d.insert_temp(id, text));
+    } else {
+        ui.data_mut(|d| d.remove::<String>(id));
+    }
+    None
 }
 
 /// The panel label naming `axis`.
