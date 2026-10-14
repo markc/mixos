@@ -17,7 +17,7 @@
 //! - a new current texture is reserved while the old one is still held, so the
 //!   overlap is counted. An outgoing texture that a new fade no longer needs is
 //!   released before that reservation, so a context never holds a third. A
-//!   texture that does not fit keeps the last good one, or leaves its output on
+//!   texture that does not fit releases its old slot and leaves its output on
 //!   its fallback, with the reason in the output's status;
 //! - a fallback or theme colour is painted beneath every image, so an alpha
 //!   image shows what is beneath it, not a hole. A fade paints the outgoing
@@ -261,7 +261,7 @@ fn store_slots(ctx: &egui::Context, slots: Slots) {
 /// current texture already holds it. Otherwise the outgoing texture goes first,
 /// then the new size is reserved while the old current one is still held. A
 /// fade keeps that old one as the outgoing texture; any other change drops it.
-/// On failure the last good current texture stays in place.
+/// On failure release old slots so a full budget can make progress on retry.
 fn current_texture(
     ctx: &egui::Context,
     slots: &mut Slots,
@@ -288,11 +288,13 @@ fn current_texture(
     slots.previous = None;
     let bytes = resident.image.bytes();
     let Some(reservation) = budget.reserve(bytes) else {
-        return Err(format!(
+        let reason = format!(
             "texture budget: {bytes} bytes will not fit beside {} of {} bytes in use",
             budget.used(),
             budget.limit
-        ));
+        );
+        slots.clear();
+        return Err(reason);
     };
     let texture = ctx.load_texture(
         "backdrop-wallpaper",
@@ -478,11 +480,7 @@ impl Backdrop {
                         Ok(texture) => Some((texture, resident.image.original_size, *fit)),
                         Err(reason) => {
                             error = Some(reason);
-                            // The last good texture stays until memory frees up.
-                            slots
-                                .current
-                                .as_ref()
-                                .map(|slot| (slot.texture.clone(), slot.original, slot.fit))
+                            None
                         }
                     },
                 };
@@ -653,14 +651,30 @@ mod tests {
         lock(&program.shared).view = Arc::new(view);
     }
 
+    /// Headless tests intentionally discard GPU deltas after inspecting them.
+    struct Headless(egui::FullOutput);
+
+    impl std::ops::Deref for Headless {
+        type Target = egui::FullOutput;
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl Drop for Headless {
+        fn drop(&mut self) {
+            self.0.textures_delta.clear();
+        }
+    }
+
     /// One headless pass over the output.
-    fn pass(ctx: &egui::Context, program: &mut Backdrop) -> egui::FullOutput {
+    fn pass(ctx: &egui::Context, program: &mut Backdrop) -> Headless {
         let surface = surface();
         let input = egui::RawInput {
             screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(64.0, 64.0))),
             ..Default::default()
         };
-        ctx.run_ui(input, |ui| program.show_pass(ui, &surface))
+        Headless(ctx.run_ui(input, |ui| program.show_pass(ui, &surface)))
     }
 
     /// Uploads in a pass, not counting egui's own font atlas.
@@ -718,7 +732,7 @@ mod tests {
     }
 
     #[test]
-    fn a_texture_that_does_not_fit_keeps_the_last_good_one() {
+    fn a_budget_refusal_releases_old_slots_so_a_retry_can_make_progress() {
         let (ctx, mut program) = fixture();
         program.budget = Budget::new(100);
         publish(&program, view(1, "a.png", 1));
@@ -726,9 +740,15 @@ mod tests {
         // A second 64-byte image cannot be reserved beside the first.
         publish(&program, view(2, "b.png", 2));
         let out = pass(&ctx, &mut program);
-        assert_eq!(program.budget.used(), 64, "the last good image is kept");
+        assert_eq!(program.budget.used(), 0, "the old slot is released");
         assert!(program.error.is_some(), "the reason is recorded");
+        assert_eq!(program.shows, "fallback");
         assert_eq!(uploads(&out), 0, "a refused texture uploads nothing");
+        drop(out);
+        let retry = pass(&ctx, &mut program);
+        assert_eq!(uploads(&retry), 1);
+        assert_eq!(program.budget.used(), 64);
+        assert!(program.error.is_none());
     }
 
     #[test]

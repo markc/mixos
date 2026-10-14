@@ -169,6 +169,10 @@ pub fn list_folder(path: &Path) -> Result<Vec<PathBuf>, String> {
             continue;
         }
         let file = entry.path();
+        // The document and Bus use UTF-8 paths; skip unrepresentable entries.
+        if file.to_str().is_none() {
+            continue;
+        }
         let supported = file
             .extension()
             .and_then(|x| x.to_str())
@@ -342,6 +346,9 @@ mod tests {
         std::fs::create_dir(&nested).unwrap();
         std::fs::write(nested.join("c.png"), b"fixture").unwrap();
         std::os::unix::fs::symlink(dir.path().join("a.png"), dir.path().join("link.png")).unwrap();
+        use std::os::unix::ffi::OsStringExt;
+        let invalid = std::ffi::OsString::from_vec(b"\xff.png".to_vec());
+        std::fs::write(dir.path().join(invalid), b"fixture").unwrap();
         assert_eq!(
             list_folder(dir.path()).unwrap(),
             vec![dir.path().join("a.png"), dir.path().join("b.JPG")]
