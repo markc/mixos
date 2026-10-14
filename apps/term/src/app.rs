@@ -116,6 +116,9 @@ pub struct App {
     /// The face the raster draws: family (None is the bundled font) and
     /// CSS weight.
     face: (Option<String>, u32),
+    /// A face whose raster could not be built, reported once; the next
+    /// look retries it.
+    face_failed: Option<(Option<String>, u32)>,
     /// Points of touchpad travel, or wheel lines × this / 40, per history
     /// line ([`input::scroll_steps`]).
     scroll_speed: f32,
@@ -129,9 +132,14 @@ pub struct App {
     blink_epoch: Instant,
     /// The pane last drawn with its cursor blinked off.
     blink_hidden: Option<u64>,
+    /// The instant the last paint chose the blink phase at.
+    painted: Instant,
     /// A size the person zoomed to, for the shell to write to the
     /// settings (`terminal.font.size`).
     pub font_write: Option<f32>,
+    /// The person reset the size to the settings' own: the shell drops a
+    /// zoom not yet written rather than writing anything new.
+    pub font_reset: bool,
 }
 
 /// Half a blink cycle: the cursor is shown, then hidden, this long each.
@@ -190,13 +198,16 @@ impl App {
             noted: Vec::new(),
             edges: layout::Edges::default(),
             face: (None, u32::from(term_core::raster::DEFAULT_WEIGHT)),
+            face_failed: None,
             scroll_speed: input::DEFAULT_SCROLL_SPEED,
             copy_on_select: false,
             focus_ring: (FocusRing::Neutral, 0.25),
             blink: false,
             blink_epoch: Instant::now(),
             blink_hidden: None,
+            painted: Instant::now(),
             font_write: None,
+            font_reset: false,
         }
     }
 
@@ -250,40 +261,55 @@ impl App {
         family: Option<&str>,
         keep_size: bool,
     ) {
-        // The font: one raster rebuild for a new face, size or both.
+        // The font: one raster rebuild for a new face, size or both. The
+        // settings' size is what reset returns to, even while a zoom stands.
         let mut font = self.font;
-        let resized = !keep_size && font.set(terminal.font.size as f32);
+        let resized = if keep_size {
+            font.configure(terminal.font.size as f32);
+            false
+        } else {
+            font.set(terminal.font.size as f32)
+        };
         let face = (family.map(str::to_owned), terminal.font.weight);
-        let rebuilt = if face != self.face {
-            // Recorded even if the rebuild fails: the same face is not
-            // retried on every look.
-            self.face = face;
+        let mut rebuilt = None;
+        if face != self.face {
             let weight = u16::try_from(terminal.font.weight).unwrap_or(400);
             let cursor = self.raster.lock().expect("raster").cursor();
-            Some(Raster::with_face(
-                self.scale,
-                font.current(),
-                cursor,
-                family,
-                weight,
-            ))
-        } else if resized {
-            Some(
+            match Raster::with_face(self.scale, font.current(), cursor, family, weight) {
+                Ok(raster) => {
+                    self.face = face;
+                    self.face_failed = None;
+                    rebuilt = Some(Ok(raster));
+                }
+                Err(error) => {
+                    // Not recorded as current, so the next look retries it;
+                    // reported once per face. The size still applies.
+                    if self.face_failed.as_ref() != Some(&face) {
+                        eprintln!("term: font face: {error}");
+                        self.face_failed = Some(face);
+                    }
+                }
+            }
+        }
+        if rebuilt.is_none() && resized {
+            rebuilt = Some(
                 self.raster
                     .lock()
                     .expect("raster")
                     .resized(self.scale, font.current()),
-            )
-        } else {
-            None
-        };
+            );
+        }
         match rebuilt {
             Some(Ok(raster)) => {
                 self.font = font;
                 self.replace_raster(raster);
             }
-            Some(Err(error)) => eprintln!("term: font: {error}"),
-            None => {}
+            Some(Err(error)) => {
+                // The drawn size stands; the reset target is the settings'.
+                eprintln!("term: font: {error}");
+                self.font.configure(font.configured());
+            }
+            None => self.font = font,
         }
         let cursor = match terminal.cursor.shape {
             CursorShape::Block => Cursor::Block,
@@ -344,17 +370,23 @@ impl App {
         !self.blinking() || halves.is_multiple_of(2)
     }
 
-    /// How long until the focused pane's cursor next blinks, for a
-    /// scheduled repaint; None while nothing blinks (blink off, no
+    /// How long from `now` until the focused pane's cursor next blinks, for
+    /// a scheduled repaint; None while nothing blinks (blink off, no
     /// keyboard, or the program hid its cursor), so nothing repaints.
+    ///
+    /// Counted from the phase the last paint drew, not the phase at `now`:
+    /// a paint just before an edge and this call just after it must still
+    /// wake for that edge (at once), not a half cycle later.
     pub fn next_blink(&self, now: Instant) -> Option<Duration> {
         let visible = matches!(self.cursors.get(&self.shape.active_pane), Some(Some(_)));
         if !self.blinking() || !visible {
             return None;
         }
-        let half = BLINK.as_millis();
-        let into = now.saturating_duration_since(self.blink_epoch).as_millis() % half;
-        Some(Duration::from_millis((half - into) as u64))
+        let drawn = self.painted.min(now);
+        let half = BLINK.as_nanos();
+        let halves = drawn.saturating_duration_since(self.blink_epoch).as_nanos() / half;
+        let edge = self.blink_epoch + Duration::from_nanos(((halves + 1) * half) as u64);
+        Some(edge.saturating_duration_since(now))
     }
 
     /// Every visible pane's outer rectangle, in tree order.
@@ -485,7 +517,8 @@ impl App {
     pub fn paint(&mut self) {
         // The focused pane's cursor in the hidden half of its blink; a pane
         // whose blink phase changed repaints with no new output.
-        let hide = (!self.cursor_shown(Instant::now())).then_some(self.shape.active_pane);
+        self.painted = Instant::now();
+        let hide = (!self.cursor_shown(self.painted)).then_some(self.shape.active_pane);
         let blinked = std::mem::replace(&mut self.blink_hidden, hide);
         let terminals: Vec<_> = {
             let tabs = self.tabs.lock().expect("tabs");
@@ -577,7 +610,7 @@ impl App {
             Action::Copy | Action::Paste => self.clipboard_action(action),
             Action::FontIncrease => self.zoom(FontSize::increase),
             Action::FontDecrease => self.zoom(FontSize::decrease),
-            Action::FontReset => self.zoom(FontSize::reset),
+            Action::FontReset => self.reset_font(),
             _ => {
                 if !matches!(action, Action::Scroll(_)) {
                     self.cancel_mouse_gesture();
@@ -625,6 +658,15 @@ impl App {
             }
             Err(error) => eprintln!("term: font resize: {error}"),
         }
+    }
+
+    /// Back to the settings' size (`terminal.font.size`, or the startup
+    /// size before settingsd has answered). Nothing new is written: the
+    /// settings already hold that size.
+    pub fn reset_font(&mut self) {
+        self.zoom(FontSize::reset);
+        self.font_write = None;
+        self.font_reset = true;
     }
 
     /// Rebuild the raster for the window's device scale, at the CURRENT

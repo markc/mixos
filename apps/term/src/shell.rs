@@ -449,21 +449,28 @@ impl Shell {
     }
 
     /// A zoom since the last frame: write its size to the settings once
-    /// the zoom keys rest. Without settingsd the size stays the window's.
+    /// the zoom keys rest. Without settingsd the size stays pending, the
+    /// window's own, and is written by the first look after it returns.
     fn queue_font(&mut self) {
+        if std::mem::take(&mut self.app.font_reset) {
+            // Back to the settings' size: an unwritten zoom is dropped. One
+            // already in flight will land, so the size is written back
+            // after it.
+            self.font_pending = self.font_sent.map(|_| self.app.font().current());
+        }
         let Some(px) = self.app.font_write.take() else {
             return;
         };
-        if !self.follower.following() {
-            return;
-        }
         self.font_pending = Some(px);
         self.font_generation += 1;
-        self.bus.font_due(FONT_WRITE_DELAY, self.font_generation);
+        if self.follower.following() {
+            self.bus.font_due(FONT_WRITE_DELAY, self.font_generation);
+        }
     }
 
     /// Write the pending size, fenced on the last look read: one write in
-    /// flight at a time.
+    /// flight at a time. Without settingsd it stays pending for the next
+    /// look.
     fn write_font(&mut self) {
         if self.font_sent.is_some() || self.exiting {
             return;
@@ -480,14 +487,13 @@ impl Shell {
             .is_some_and(|write| self.bus.write_settings(write));
         if written {
             self.font_sent = Some(px);
-        } else {
-            self.font_pending = None;
         }
     }
 
     /// A size write answered. Changed: the look that follows carries it. A
-    /// conflict (another change landed first) is written again on the next
-    /// look. Anything else is reported and the settings' size returns.
+    /// conflict (another change landed first) or a lost reply is written
+    /// again on the next look. A refusal is reported and the settings' size
+    /// returns, unless a newer zoom is waiting: that one is written next.
     fn font_written(&mut self, reply: Option<(u8, String, Option<String>)>) {
         let sent = self.font_sent.take();
         let status = reply
@@ -500,13 +506,20 @@ impl Shell {
             }
             // A newer size waits for the look at this write's revision.
             Some("changed" | "unchanged" | "conflict") => {}
+            // Lost (settingsd gone mid-write): kept, and written again by
+            // the look after it returns.
+            None if reply.is_none() => {
+                eprintln!("term: font size not saved yet: no answer");
+            }
             other => {
                 let error = reply.as_ref().and_then(|(_, _, error)| error.as_deref());
                 eprintln!(
                     "term: font size not saved: {}",
                     other.or(error).unwrap_or("no answer")
                 );
-                self.font_pending = None;
+                if self.font_pending == sent {
+                    self.font_pending = None;
+                }
             }
         }
         self.read_look();

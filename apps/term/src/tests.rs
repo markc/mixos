@@ -1039,14 +1039,49 @@ fn a_zoom_is_written_back_and_kept_until_it_lands() {
     app.apply_terminal(&settings, None, false);
     assert_eq!(app.font().current(), 13.0);
     let cell = app.cell();
+    let id = app.shape.active_pane;
+    let grid = app.grids[&id];
     settings.font.size = 20.0;
     app.apply_terminal(&settings, None, false);
     assert_eq!(app.font().current(), 20.0);
     assert!(app.cell().1 > cell.1);
+    let after = app.grids[&id];
+    assert!(
+        after.0 < grid.0 && after.1 < grid.1,
+        "a size alone recomputes the grid: {grid:?} -> {after:?}"
+    );
     assert_eq!(
         app.font_write, None,
         "the settings' size is not written back"
     );
+    finish(app, reaper);
+}
+
+/// Ctrl+0 returns to the profile's `terminal.font.size`, not the startup
+/// size, and writes nothing: the profile already holds that size.
+#[test]
+fn reset_returns_to_the_profile_size_and_writes_nothing() {
+    let (mut app, reaper) = test_app();
+    let mut settings = terminal_settings();
+    settings.font.size = 20.0;
+    app.apply_terminal(&settings, None, false);
+    app.act(Action::FontIncrease);
+    assert!(app.font().current() > 20.0);
+    app.act(Action::FontReset);
+    assert_eq!(app.font().current(), 20.0, "the profile's size");
+    assert_eq!(app.font_write, None, "a reset writes nothing");
+    assert!(std::mem::take(&mut app.font_reset));
+
+    // A look while a zoom is unwritten keeps the zoom but moves the reset
+    // target to the profile's size.
+    app.act(Action::FontIncrease);
+    let zoomed = app.font().current();
+    settings.font.size = 16.0;
+    app.apply_terminal(&settings, None, true);
+    assert_eq!(app.font().current(), zoomed);
+    app.act(Action::FontReset);
+    assert_eq!(app.font().current(), 16.0);
+    assert_eq!(app.font_write, None);
     finish(app, reaper);
 }
 
@@ -1073,6 +1108,16 @@ fn a_blinking_cursor_asks_for_frames_only_while_it_blinks() {
     assert!(next > Duration::ZERO && next <= BLINK);
     assert!(!app.cursor_shown(start + BLINK));
     assert!(app.cursor_shown(start + BLINK * 2));
+    // Counted from the phase the paint drew: asked just past that phase's
+    // edge, the repaint is due at once, not a half cycle later.
+    app.paint();
+    let painted = Instant::now();
+    assert_eq!(
+        app.next_blink(painted + BLINK + Duration::from_millis(1)),
+        Some(Duration::ZERO)
+    );
+    let next = app.next_blink(painted).expect("a blinking cursor");
+    assert!(next > Duration::ZERO && next <= BLINK);
     app.unfocused();
     assert_eq!(app.next_blink(start), None, "steady without the keyboard");
     assert!(app.cursor_shown(start + BLINK));

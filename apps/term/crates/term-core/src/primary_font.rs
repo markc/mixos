@@ -105,6 +105,8 @@ pub(super) fn discover_face(
             }
         }
     }
+    // The same order as [`discover`]: the installed mono role, the role's
+    // families and generic, then the legacy paths. Only the weight differs.
     if let Ok(Some(set)) = installed_assets()
         && let Some(path) = set.font_path("mono")
     {
@@ -112,13 +114,13 @@ pub(super) fn discover_face(
     }
     let mut db = Database::new();
     db.load_system_fonts();
-    let role = default_typography(TypographyRole::Terminal);
-    let families: Vec<_> = std::iter::once(&role.family)
-        .chain(&role.fallbacks)
-        .map(|name| Family::Name(name.as_str()))
-        .chain([Family::Monospace])
-        .collect();
-    select_weight(&mut db, &families, weight).map_or_else(|| discover(None), Ok)
+    select_weight(&mut db, &role_families(), weight)
+        .or_else(|| {
+            LEGACY_PATHS
+                .iter()
+                .find_map(|path| from_path_weight(Path::new(path), weight).ok())
+        })
+        .ok_or_else(|| "No monospace font found; set TERM_SPIKE_FONT=/path/to/font.ttf".into())
 }
 
 /// Installed family `name`, the face nearest `weight`, when it is monospace
@@ -213,16 +215,21 @@ pub(super) fn coverage() -> Vec<Primary> {
 }
 
 pub(super) fn from_database(db: &mut Database) -> Option<Primary> {
+    select(db, &role_families())
+}
+
+/// The terminal role's family, its fallbacks, then its generic family: the
+/// order every primary face is looked up in.
+fn role_families() -> Vec<Family<'static>> {
     let role = default_typography(TypographyRole::Terminal);
-    let mut families: Vec<_> = std::iter::once(&role.family)
+    std::iter::once(&role.family)
         .chain(&role.fallbacks)
         .map(|name| Family::Name(name.as_str()))
-        .collect();
-    families.push(match role.generic {
-        TypographyGeneric::Monospace => Family::Monospace,
-        TypographyGeneric::SansSerif => Family::SansSerif,
-    });
-    select(db, &families)
+        .chain([match role.generic {
+            TypographyGeneric::Monospace => Family::Monospace,
+            TypographyGeneric::SansSerif => Family::SansSerif,
+        }])
+        .collect()
 }
 
 pub(super) fn from_path(path: &Path) -> Result<Primary, String> {
