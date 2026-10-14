@@ -99,6 +99,11 @@ fn view(effective: &Effective) -> &DesignReadProjection {
         contrast: _,
         decorations: _,
         caption_side: _,
+        // Their classes are in `compare`: stroke paints, fonts reshape text.
+        icon_stroke: _,
+        font_family: _,
+        font_weight: _,
+        mono_family: _,
         ui,
         design,
         provenance: _,
@@ -126,11 +131,16 @@ fn view(effective: &Effective) -> &DesignReadProjection {
 fn compare(old: &Effective, new: &Effective) -> ChangePlan {
     let a = view(old);
     let b = view(new);
-    let resources = !a
-        .typography
-        .iter()
-        .map(|(k, r)| (k, font_key(r)))
-        .eq(b.typography.iter().map(|(k, r)| (k, font_key(r))));
+    // The session font choices change the faces the text is drawn with.
+    let fonts = old.font_family != new.font_family
+        || old.font_weight != new.font_weight
+        || old.mono_family != new.mono_family;
+    let resources = fonts
+        || !a
+            .typography
+            .iter()
+            .map(|(k, r)| (k, font_key(r)))
+            .eq(b.typography.iter().map(|(k, r)| (k, font_key(r))));
     let text = resources
         || old.ui.text_scale != new.ui.text_scale
         || !a
@@ -151,6 +161,7 @@ fn compare(old: &Effective, new: &Effective) -> ChangePlan {
     let style = old.style != new.style;
     let framing = old.decorations != new.decorations || old.caption_side != new.caption_side;
     let paint = style
+        || old.icon_stroke != new.icon_stroke
         || old.scheme != new.scheme
         || old.mode != new.mode
         || old.contrast != new.contrast

@@ -1,5 +1,19 @@
 # settings contract changes
 
+## 0.6.0
+
+Additive, store format 3 ([decision](../../docs/decisions/2026-10-14-session-icon-stroke-and-type.md)):
+
+- `Appearance` and `Effective` gain four optional session choices:
+  `icon_stroke` (1.0 to 3.0 in quarter steps), `font_family`,
+  `font_weight` (100 to 900 in steps of 100) and `mono_family`. Each is
+  omitted when unset, so profiles without them keep their digests.
+- `ChangePlan`: `icon_stroke` is a paint change; the font choices are
+  resource and text changes.
+- `CompactEffective` carries the same fields.
+- The store writes format 3. A format-2 build refuses a profile that sets
+  any of them; reset them first with `settings.reset` or a null value.
+
 ## 0.5.0
 
 Authority verbs 0.3.0 (additive): snapshot schema 2

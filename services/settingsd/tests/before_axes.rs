@@ -53,7 +53,7 @@ fn the_fixtures_are_format_one() {
         !PRIMARY.contains("\"format\""),
         "format 1 has no format field"
     );
-    assert_eq!(FORMAT, 2);
+    assert_eq!(FORMAT, 3);
 }
 
 #[test]
