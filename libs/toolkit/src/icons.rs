@@ -204,9 +204,7 @@ mod tests {
     }
 
     #[test]
-    fn the_shipped_design_uses_lucide_default_stroke() {
-        // 1.5 on the 24-unit grid draws at under one device pixel at the
-        // toolkit's icon sizes: faint. Lucide's own 2.0 is the shipped default.
-        assert_eq!(stroke_width(&Theme::embedded()), DEFAULT_STROKE);
+    fn the_shipped_design_authors_the_lighter_stroke_baseline() {
+        assert_eq!(stroke_width(&Theme::embedded()), 1.5);
     }
 }
