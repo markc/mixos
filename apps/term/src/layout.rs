@@ -14,7 +14,9 @@
 //!   grid. The core's ratios are kept; only the edge is snapped.
 //! - **Each pane has a border of a whole number of physical pixels** on all
 //!   sides, focused or not; only its colour marks focus. So moving focus
-//!   never changes a pane's interior, and never reflows its PTY.
+//!   never changes a pane's interior, and never reflows its PTY. Its width
+//!   and the padding inside it are settings ([`Edges`]); changing either
+//!   resizes each PTY once.
 //!
 //! The view draws from [`panes`] and the PTYs are sized from [`panes`] and
 //! [`grid`], so the two cannot disagree.
@@ -130,10 +132,38 @@ fn snap(value: f32, scale: f32) -> f32 {
     (value * scale).round() / scale
 }
 
-/// A pane border: one point, rounded to whole physical pixels and never
-/// zero.
-pub fn border(scale: f32) -> f32 {
-    scale.round().max(1.0) / scale
+/// A pane's edge, from `terminal.border.width` and `terminal.padding`, in
+/// whole logical pixels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Edges {
+    /// The border's width.
+    pub border: u32,
+    /// The space between the pane's outer edge and its text. The border
+    /// lies inside it: the text never starts nearer the edge than the
+    /// border's inner side.
+    pub padding: u32,
+}
+
+impl Default for Edges {
+    fn default() -> Self {
+        Self {
+            border: 1,
+            padding: 1,
+        }
+    }
+}
+
+/// A pane border of `width` points, rounded to whole physical pixels and
+/// never zero.
+pub fn border(scale: f32, width: u32) -> f32 {
+    (width as f32 * scale).round().max(1.0) / scale
+}
+
+/// From a pane's outer edge to its text, in points: the padding in whole
+/// physical pixels, and never less than the border.
+pub fn inset(scale: f32, edges: Edges) -> f32 {
+    let padding = (edges.padding as f32 * scale).round() / scale;
+    padding.max(border(scale, edges.border))
 }
 
 /// The pane area inside `area` (points), shrunk to whole physical pixels on
@@ -199,15 +229,15 @@ fn place(node: &Node, bounds: Geometry, scale: f32, out: &mut Vec<(u64, Geometry
     }
 }
 
-/// Columns and rows that fit inside a pane's border, for a PHYSICAL cell of
-/// `cell` pixels.
+/// Columns and rows that fit inside a pane's border and padding, for a
+/// PHYSICAL cell of `cell` pixels.
 ///
 /// Computed in physical pixels, not by dividing logical sizes: `cell / scale`
 /// is rarely exact, and a width of exactly 80 cells must give 80 columns, not
 /// 79 because 80 × (19 / 2.5) came out a hair over the width.
-pub fn grid(pane: Geometry, cell: (u32, u32), scale: f32) -> (u16, u16) {
+pub fn grid(pane: Geometry, cell: (u32, u32), scale: f32, edges: Edges) -> (u16, u16) {
     let (cell_width, cell_height) = (cell.0.max(1), cell.1.max(1));
-    let inset = 2.0 * border(scale);
+    let inset = 2.0 * inset(scale, edges);
     let fit = |logical: f32, cell: u32| {
         (((logical - inset).max(0.0) * scale + 0.01) / cell as f32) as u32
     };
@@ -218,13 +248,19 @@ pub fn grid(pane: Geometry, cell: (u32, u32), scale: f32) -> (u16, u16) {
     (cols as u16, rows as u16)
 }
 
-/// Where pane `pane`'s grid is drawn: inside its border, `grid` cells of
-/// `cell` physical pixels, in points. Starts on a whole physical pixel
-/// whenever the pane does.
-pub fn grid_rect(pane: Geometry, grid: (u16, u16), cell: (u32, u32), scale: f32) -> egui::Rect {
-    let border = border(scale);
+/// Where pane `pane`'s grid is drawn: inside its border and padding, `grid`
+/// cells of `cell` physical pixels, in points. Starts on a whole physical
+/// pixel whenever the pane does.
+pub fn grid_rect(
+    pane: Geometry,
+    grid: (u16, u16),
+    cell: (u32, u32),
+    scale: f32,
+    edges: Edges,
+) -> egui::Rect {
+    let inset = inset(scale, edges);
     egui::Rect::from_min_size(
-        egui::pos2(pane.x + border, pane.y + border),
+        egui::pos2(pane.x + inset, pane.y + inset),
         egui::vec2(
             f32::from(grid.0) * cell.0 as f32 / scale,
             f32::from(grid.1) * cell.1 as f32 / scale,
@@ -245,7 +281,7 @@ pub fn test_tabs() -> TabSet {
     TabSet::with_session(
         term_core::config::Settings {
             config: term_core::config::Config::default(),
-            term: "xterm-256color",
+            term: "xterm-256color".into(),
         },
         None,
     )
@@ -255,6 +291,7 @@ pub fn test_tabs() -> TabSet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use settings::terminal::PADDINGS;
 
     fn geometry(x: f32, y: f32, w: f32, h: f32) -> Geometry {
         Geometry { x, y, w, h }
@@ -309,9 +346,12 @@ mod tests {
             assert!(c.x >= area.min.x && c.y >= area.min.y);
             assert!(c.x + c.w <= area.max.x + 1e-4 && c.y + c.h <= area.max.y + 1e-4);
             let pane = panes(&Node::Leaf(1), c, scale)[0].1;
-            let r = grid_rect(pane, (10, 3), (19, 40), scale);
-            assert!(on_pixel_grid(r.min.x, scale) && on_pixel_grid(r.min.y, scale));
-            assert!((r.width() * scale - 190.0).abs() < 1e-3);
+            for padding in PADDINGS {
+                let edges = Edges { border: 1, padding };
+                let r = grid_rect(pane, (10, 3), (19, 40), scale, edges);
+                assert!(on_pixel_grid(r.min.x, scale) && on_pixel_grid(r.min.y, scale));
+                assert!((r.width() * scale - 190.0).abs() < 1e-3);
+            }
         }
     }
 
@@ -350,41 +390,73 @@ mod tests {
 
     #[test]
     fn the_grid_fits_inside_the_border_in_physical_pixels() {
+        let edges = Edges::default();
         // 8x16 cells at scale 1 with a 1 px border: 802 wide holds exactly
         // 100 columns, 801 holds 99.
         assert_eq!(
-            grid(geometry(0.0, 0.0, 802.0, 482.0), (8, 16), 1.0),
+            grid(geometry(0.0, 0.0, 802.0, 482.0), (8, 16), 1.0, edges),
             (100, 30)
         );
         assert_eq!(
-            grid(geometry(0.0, 0.0, 801.0, 481.0), (8, 16), 1.0),
+            grid(geometry(0.0, 0.0, 801.0, 481.0), (8, 16), 1.0, edges),
             (99, 29)
         );
         // 2.5x: border is 3 physical (1.2 logical); 20x40 physical cells.
         // (400 - 2.4) * 2.5 = 994 -> 49 columns.
         assert_eq!(
-            grid(geometry(0.0, 0.0, 400.0, 200.0), (20, 40), 2.5),
+            grid(geometry(0.0, 0.0, 400.0, 200.0), (20, 40), 2.5, edges),
             (49, 12)
         );
         // A pane too small for anything still gets a legal PTY size.
-        assert_eq!(grid(geometry(0.0, 0.0, 3.0, 3.0), (8, 16), 1.0), (2, 1));
+        assert_eq!(
+            grid(geometry(0.0, 0.0, 3.0, 3.0), (8, 16), 1.0, edges),
+            (2, 1)
+        );
         // And a huge one is held under the texture limit.
         assert_eq!(
-            grid(geometry(0.0, 0.0, 9000.0, 9000.0), (8, 16), 1.0),
+            grid(geometry(0.0, 0.0, 9000.0, 9000.0), (8, 16), 1.0, edges),
             (240, 100)
         );
         assert_eq!(
-            grid(geometry(0.0, 0.0, 9000.0, 9000.0), (40, 80), 1.0),
+            grid(geometry(0.0, 0.0, 9000.0, 9000.0), (40, 80), 1.0, edges),
             (102, 51)
         );
+    }
+
+    /// Padding is measured from the pane's outer edge; the border lies
+    /// inside it, so the text is never nearer the edge than the border.
+    #[test]
+    fn padding_and_border_shrink_the_grid_in_whole_physical_pixels() {
+        let pane = geometry(0.0, 0.0, 832.0, 512.0);
+        let fit = |border, padding| grid(pane, (8, 16), 1.0, Edges { border, padding });
+        assert_eq!(fit(1, 1), (103, 31));
+        // 16 each side: 800 x 480 inside.
+        assert_eq!(fit(1, 16), (100, 30));
+        // A border wider than the padding sets the inset.
+        assert_eq!(fit(4, 1), fit(4, 4));
+        assert_eq!(fit(4, 2), (103, 31));
+        assert_eq!(fit(1, 8), (102, 31));
+        for scale in [1.0, 1.25, 1.5, 2.5] {
+            for padding in PADDINGS {
+                for width in 1..=4 {
+                    let inset = inset(scale, Edges { border: width, padding });
+                    assert!(on_pixel_grid(inset, scale), "{inset} @{scale}");
+                    assert!(inset >= border(scale, width) - 1e-6);
+                    assert!(inset * scale >= (padding as f32 * scale).round() - 1e-3);
+                }
+            }
+        }
     }
 
     #[test]
     fn a_border_is_whole_physical_pixels_and_never_zero() {
         for scale in [0.5, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0] {
-            let border = border(scale);
-            assert!(border * scale >= 1.0 - 1e-6);
-            assert!(on_pixel_grid(border, scale), "border {border} @{scale}");
+            for width in 1..=4 {
+                let border = border(scale, width);
+                assert!(border * scale >= 1.0 - 1e-6);
+                assert!(on_pixel_grid(border, scale), "border {border} @{scale}");
+            }
+            assert_eq!(border(scale, 1), scale.round().max(1.0) / scale, "as before");
         }
     }
 

@@ -116,7 +116,7 @@ fn p0i_01_production_term_spawn_enrols_real_mix_and_exit_revokes() {
     let terminal = crate::terminal::Terminal::start_session_e2e(
         crate::config::Settings {
             config: crate::config::Config::default(),
-            term: "xterm-256color",
+            term: "xterm-256color".into(),
         },
         &supervisor.handle,
         binary.to_str().unwrap(),

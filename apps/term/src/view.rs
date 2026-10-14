@@ -9,6 +9,7 @@ use crate::app::App;
 use crate::label;
 use crate::layout;
 use egui::{Color32, FontId, Ui};
+use settings::terminal::FocusRing;
 use toolkit::chrome::Chrome;
 use toolkit::command::Origin;
 use toolkit::dialog::{self, Choice, Role};
@@ -98,16 +99,12 @@ pub fn panes(ui: &Ui, app: &App) {
     let chrome = Chrome::of(ui.ctx());
     let painter = ui.painter();
     let scale = app.scale();
-    let border = layout::border(scale);
+    let border = layout::border(scale, app.edges().border);
+    let inset = app.inset();
     for (id, geometry) in app.placed() {
         let outer = layout::rect(geometry);
         let ring = if app.shape.focus_ring(id) {
-            // The theme's accent, muted toward the card border so the
-            // focused pane's ring stays quiet next to the content.
-            chrome
-                .palette
-                .card_border
-                .lerp_to_gamma(chrome.palette.accent, 0.5)
+            focus_ring(&chrome, app.focus_ring)
         } else {
             chrome.palette.card_border
         };
@@ -117,7 +114,7 @@ pub fn panes(ui: &Ui, app: &App) {
         painter.rect_filled(outer.shrink(border), 0.0, chrome.palette.canvas);
         if let (Some(pane), Some(&(width, height))) = (app.panes.get(&id), app.targets.get(&id)) {
             let rect = egui::Rect::from_min_size(
-                outer.min + egui::vec2(border, border),
+                outer.min + egui::vec2(inset, inset),
                 egui::vec2(width as f32 / scale, height as f32 / scale),
             );
             // A pane smaller than its smallest grid (two columns, one
@@ -130,6 +127,23 @@ pub fn panes(ui: &Ui, app: &App) {
         }
     }
     preedit(ui, app, &chrome);
+}
+
+/// How far the neutral ring moves from the card border toward the text: a
+/// quiet grey step, no hue.
+const NEUTRAL_RING: f32 = 0.25;
+
+/// The focused pane's ring (`terminal.focus`): neutral is the card border
+/// stepped toward the text colour; accent is the card border taking
+/// `strength` of the theme's accent.
+fn focus_ring(chrome: &Chrome, (ring, strength): (FocusRing, f32)) -> Color32 {
+    let palette = &chrome.palette;
+    match ring {
+        FocusRing::Neutral => palette.card_border.lerp_to_gamma(palette.text, NEUTRAL_RING),
+        FocusRing::Accent => palette
+            .card_border
+            .lerp_to_gamma(palette.accent, strength.clamp(0.0, 1.0)),
+    }
 }
 
 /// The input method's composition, over the caret until it commits.

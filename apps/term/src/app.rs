@@ -23,6 +23,8 @@ use std::time::{Duration, Instant};
 use term_core::font::FontSize;
 use term_core::panes::Geometry;
 use term_core::raster::Raster;
+use settings::terminal::{CursorShape, FocusRing, Terminal as TerminalSettings};
+use term_core::config::Cursor;
 use term_core::tabs::{self, CompletionNote, Removed, TabSet};
 use term_core::terminal::Key as TerminalKey;
 
@@ -109,7 +111,31 @@ pub struct App {
     /// Commands the window ran itself (a click focusing a pane), for the
     /// shell to publish.
     pub noted: Vec<&'static str>,
+    /// Each pane's border and padding.
+    edges: layout::Edges,
+    /// The face the raster draws: family (None is the bundled font) and
+    /// CSS weight.
+    face: (Option<String>, u32),
+    /// Points of touchpad travel, or wheel lines × this / 40, per history
+    /// line ([`input::scroll_steps`]).
+    scroll_speed: f32,
+    /// A finished mouse selection is copied to the clipboard as well.
+    pub(crate) copy_on_select: bool,
+    /// The focused pane's ring, and how much of the accent it takes.
+    pub focus_ring: (FocusRing, f32),
+    /// The cursor blinks while the window has the keyboard.
+    blink: bool,
+    /// When the blink cycle (shown first) began: typing restarts it.
+    blink_epoch: Instant,
+    /// The pane last drawn with its cursor blinked off.
+    blink_hidden: Option<u64>,
+    /// A size the person zoomed to, for the shell to write to the
+    /// settings (`terminal.font.size`).
+    pub font_write: Option<f32>,
 }
+
+/// Half a blink cycle: the cursor is shown, then hidden, this long each.
+pub const BLINK: Duration = Duration::from_millis(530);
 
 impl App {
     pub fn new(
@@ -162,6 +188,15 @@ impl App {
             target_tab: None,
             target_pane: None,
             noted: Vec::new(),
+            edges: layout::Edges::default(),
+            face: (None, u32::from(term_core::raster::DEFAULT_WEIGHT)),
+            scroll_speed: input::DEFAULT_SCROLL_SPEED,
+            copy_on_select: false,
+            focus_ring: (FocusRing::Neutral, 0.25),
+            blink: false,
+            blink_epoch: Instant::now(),
+            blink_hidden: None,
+            font_write: None,
         }
     }
 
@@ -193,6 +228,132 @@ impl App {
 
     pub fn area(&self) -> Geometry {
         self.area
+    }
+
+    pub fn edges(&self) -> layout::Edges {
+        self.edges
+    }
+
+    /// From a pane's outer edge to its grid, in points.
+    pub fn inset(&self) -> f32 {
+        layout::inset(self.scale, self.edges)
+    }
+
+    /// Apply the profile's `terminal.*` settings. `family` is the face they
+    /// name (the terminal's own, else the session's monospace family).
+    /// With `keep_size` the window's size stands: a zoom not yet written
+    /// back. Shells already running keep their history capacity and
+    /// `TERM`; the next tab or pane starts with the new ones.
+    pub fn apply_terminal(
+        &mut self,
+        terminal: &TerminalSettings,
+        family: Option<&str>,
+        keep_size: bool,
+    ) {
+        // The font: one raster rebuild for a new face, size or both.
+        let mut font = self.font;
+        let resized = !keep_size && font.set(terminal.font.size as f32);
+        let face = (family.map(str::to_owned), terminal.font.weight);
+        let rebuilt = if face != self.face {
+            // Recorded even if the rebuild fails: the same face is not
+            // retried on every look.
+            self.face = face;
+            let weight = u16::try_from(terminal.font.weight).unwrap_or(400);
+            let cursor = self.raster.lock().expect("raster").cursor();
+            Some(Raster::with_face(
+                self.scale,
+                font.current(),
+                cursor,
+                family,
+                weight,
+            ))
+        } else if resized {
+            Some(
+                self.raster
+                    .lock()
+                    .expect("raster")
+                    .resized(self.scale, font.current()),
+            )
+        } else {
+            None
+        };
+        match rebuilt {
+            Some(Ok(raster)) => {
+                self.font = font;
+                self.replace_raster(raster);
+            }
+            Some(Err(error)) => eprintln!("term: font: {error}"),
+            None => {}
+        }
+        let cursor = match terminal.cursor.shape {
+            CursorShape::Block => Cursor::Block,
+            CursorShape::Underline => Cursor::Underline,
+            CursorShape::Bar => Cursor::Bar,
+        };
+        {
+            let mut raster = self.raster.lock().expect("raster");
+            if raster.cursor() != cursor {
+                raster.set_cursor(cursor);
+                self.force_paint = true;
+            }
+        }
+        // A new border or padding resizes every PTY once.
+        let edges = layout::Edges {
+            border: terminal.border.width,
+            padding: terminal.padding,
+        };
+        if edges != self.edges {
+            self.edges = edges;
+            self.grids.clear();
+            self.relayout();
+            self.force_paint = true;
+        }
+        self.blink = terminal.cursor.blink;
+        self.focus_ring = (terminal.focus.ring, terminal.focus.strength as f32);
+        self.copy_on_select = terminal.mouse.copy_on_select;
+        self.scroll_speed = terminal.scroll.speed as f32;
+        let mut tabs = self.tabs.lock().expect("tabs");
+        let mut next = tabs.settings().clone();
+        next.config.scrollback = terminal.scrollback.lines as usize;
+        next.config.cursor = cursor;
+        next.config.font_px = self.font.current();
+        if settings::terminal::valid_term(&terminal.env.term) {
+            next.term.clone_from(&terminal.env.term);
+        } else {
+            eprintln!(
+                "term: TERM {:?} refused; new shells keep {}",
+                terminal.env.term, next.term
+            );
+        }
+        if *tabs.settings() != next {
+            tabs.set_settings(next);
+        }
+    }
+
+    /// Whether the cursor blinks: blink is on and the window has the
+    /// keyboard. Otherwise it is steady.
+    fn blinking(&self) -> bool {
+        self.blink && self.keyboard_focus
+    }
+
+    /// Whether the focused pane's cursor is in the shown half of its blink
+    /// at `now` (always, while it does not blink).
+    pub fn cursor_shown(&self, now: Instant) -> bool {
+        let half = BLINK.as_millis();
+        !self.blinking() || (now.saturating_duration_since(self.blink_epoch).as_millis() / half) % 2 == 0
+    }
+
+    /// How long until the focused pane's cursor next blinks, for a
+    /// scheduled repaint; None while nothing blinks (blink off, no
+    /// keyboard, or the program hid its cursor), so nothing repaints.
+    pub fn next_blink(&self, now: Instant) -> Option<Duration> {
+        let visible = matches!(self.cursors.get(&self.shape.active_pane), Some(Some(_)));
+        if !self.blinking() || !visible {
+            return None;
+        }
+        let half = BLINK.as_millis();
+        let into = now.saturating_duration_since(self.blink_epoch).as_millis() % half;
+        Some(Duration::from_millis((half - into) as u64))
     }
 
     /// Every visible pane's outer rectangle, in tree order.
@@ -292,7 +453,7 @@ impl App {
                         ..*geometry
                     },
                 );
-                let grid = layout::grid(*geometry, cell, scale);
+                let grid = layout::grid(*geometry, cell, scale, self.edges);
                 if self.grids.get(id) != Some(&grid)
                     && let Some(terminal) = tabs.pane_by_id(*id)
                 {
@@ -321,6 +482,10 @@ impl App {
     /// of them after a zoom or a new raster). A clean pane costs one damage
     /// check.
     pub fn paint(&mut self) {
+        // The focused pane's cursor in the hidden half of its blink; a pane
+        // whose blink phase changed repaints with no new output.
+        let hide = (!self.cursor_shown(Instant::now())).then_some(self.shape.active_pane);
+        let blinked = std::mem::replace(&mut self.blink_hidden, hide);
         let terminals: Vec<_> = {
             let tabs = self.tabs.lock().expect("tabs");
             self.shape
@@ -342,7 +507,8 @@ impl App {
             // Consume before capture: a write racing capture is either in
             // this snapshot, or wakes the window again.
             let dirty = terminal.take_damage();
-            if !dirty && !self.force_paint && self.panes.contains_key(&id) {
+            let blink = (hide == Some(id)) != (blinked == Some(id));
+            if !dirty && !self.force_paint && !blink && self.panes.contains_key(&id) {
                 if let Some(prepare) = prepare {
                     let mut stats = terminal.stats.lock().expect("metrics");
                     stats.gpu = true;
@@ -357,23 +523,31 @@ impl App {
             terminal.stats.lock().expect("metrics").gpu_frame(prepare);
             drop(terminal);
             self.prepared.insert(id);
-            let screen = snapshot.screen;
+            let mut screen = snapshot.screen;
             let target = self.raster.lock().expect("raster").target_size(&screen);
             self.targets.insert(id, target);
-            self.cursors.insert(
-                id,
-                (screen.cursor_visible
-                    && screen.cursor.0 < screen.cols
-                    && screen.cursor.1 < screen.rows)
-                    .then_some(screen.cursor),
-            );
+            let cursor = (screen.cursor_visible
+                && screen.cursor.0 < screen.cols
+                && screen.cursor.1 < screen.rows)
+                .then_some(screen.cursor);
+            self.cursors.insert(id, cursor);
+            if hide == Some(id) {
+                screen.cursor_visible = false;
+            }
             let pane = self.panes.entry(id).or_default();
             // A new grid has no rows yet: every row is owed.
-            let dirty_rows = if self.force_paint || *self.painted.entry(id).or_default() == 0 {
+            let mut dirty_rows = if self.force_paint || *self.painted.entry(id).or_default() == 0
+            {
                 vec![true; screen.rows]
             } else {
                 snapshot.dirty_rows
             };
+            if blink
+                && let Some((_, row)) = cursor
+                && let Some(dirty) = dirty_rows.get_mut(row)
+            {
+                *dirty = true;
+            }
             pane.update(screen, dirty_rows);
             *self.painted.entry(id).or_default() += 1;
         }
@@ -387,11 +561,11 @@ impl App {
         let pane = self.placed().into_iter().find(|(p, _)| *p == id)?.1;
         let (col, row) = (*self.cursors.get(&id)?)?;
         let (cw, ch) = self.logical_cell();
-        let border = layout::border(self.scale);
+        let inset = self.inset();
         Some(egui::Rect::from_min_size(
             egui::pos2(
-                pane.x + border + col as f32 * cw,
-                pane.y + border + row as f32 * ch,
+                pane.x + inset + col as f32 * cw,
+                pane.y + inset + row as f32 * ch,
             ),
             egui::vec2(cw, ch),
         ))
@@ -446,6 +620,8 @@ impl App {
             Ok(raster) => {
                 self.font = font;
                 self.replace_raster(raster);
+                // The person's size: the shell writes it to the settings.
+                self.font_write = Some(font.current());
             }
             Err(error) => eprintln!("term: font resize: {error}"),
         }
@@ -506,6 +682,8 @@ impl App {
         // The focused pane of the active tab.
         let terminal = tabs.active_terminal();
         drop(tabs);
+        // Typing shows a blinking cursor at once.
+        self.blink_epoch = Instant::now();
         let terminal = terminal.lock().expect("terminal");
         if let Err(error) = terminal.keys(&keys, Instant::now()) {
             eprintln!("term input: {error}");
@@ -645,13 +823,18 @@ impl App {
             return;
         };
         let cell_height = self.logical_cell().1;
-        let lines = input::scroll_steps(&mut self.scroll_wheel, wheel, cell_height);
+        let lines = input::scroll_steps(
+            &mut self.scroll_wheel,
+            wheel,
+            cell_height,
+            self.scroll_speed,
+        );
         if lines == 0 {
             return;
         }
         let (col, row) = input::pointer_cell(
             egui::pos2(position.x - pane.x, position.y - pane.y),
-            layout::border(self.scale),
+            self.inset(),
             self.logical_cell(),
             grid,
         );
@@ -712,6 +895,7 @@ impl App {
     pub fn focused(&mut self) {
         self.tabs.lock().expect("tabs").user_activity();
         self.keyboard_focus = true;
+        self.blink_epoch = Instant::now();
     }
 
     /// The window lost the keyboard. A release that happens while another

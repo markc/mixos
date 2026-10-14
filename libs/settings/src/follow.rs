@@ -28,7 +28,8 @@ pub const SERVICE: &str = "settingsd";
 /// The desktop profile an app follows.
 pub const PROFILE: &str = "default";
 
-/// One `settings.get` to perform.
+/// One settingsd call to perform: a `settings.get` read, or a
+/// [`Follower::apply`] (whose ticket is 0: no answer is awaited).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Read {
     pub ticket: u64,
@@ -170,6 +171,38 @@ impl Follower {
             verb: "settings.get",
             body: json!({"binding":self.binding,"view":"summary"}),
         }
+    }
+
+    /// Whether a look has been read and settingsd has not gone missing
+    /// since: what [`Follower::apply`] needs.
+    pub fn following(&self) -> bool {
+        self.seen.is_some() && !self.lost
+    }
+
+    /// A `settings.apply` of `changes` (`{path: value}`), fenced on the last
+    /// look this follower read, so a change made meanwhile elsewhere is
+    /// refused as a `conflict` rather than overwritten. `None` until a look
+    /// has been read, or while settingsd is missing. `operation_id` names
+    /// the change in settingsd's receipts: unique per change, 1–128 of
+    /// ASCII letters, digits, `-` and `_`. The reply needs no follower: the
+    /// change comes back as a new look through the summary topic.
+    pub fn apply(&self, operation_id: &str, changes: Value) -> Option<Read> {
+        if !self.following() {
+            return None;
+        }
+        let (incarnation, revision) = self.seen.as_ref()?;
+        Some(Read {
+            ticket: 0,
+            service: SERVICE,
+            verb: "settings.apply",
+            body: json!({
+                "binding": self.binding,
+                "expected_incarnation": incarnation,
+                "expected_revision": revision,
+                "operation_id": operation_id,
+                "changes": changes,
+            }),
+        })
     }
 
     /// The reply to read `ticket`: `rc`, its body, and the broker's error
@@ -326,6 +359,31 @@ mod tests {
             Some(Followed::Look { keymaps, .. }) => assert!(keymaps.is_empty()),
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn an_apply_is_fenced_on_the_last_look_read() {
+        let mut f = Follower::new("example");
+        let changes = json!({"terminal.font.size": 14.0});
+        assert_eq!(f.apply("op-1", changes.clone()), None, "no look yet");
+        assert!(!f.following());
+        let read = f.read().unwrap();
+        f.answered(read.ticket, Some((0, &snapshot("inc", "7", "studio"), None)));
+        assert!(f.following());
+        let apply = f.apply("op-1", changes.clone()).unwrap();
+        assert_eq!((apply.service, apply.verb), (SERVICE, "settings.apply"));
+        let request: crate::model::ApplyRequest =
+            serde_json::from_value(apply.body.clone()).unwrap();
+        assert_eq!(request.binding, *f.binding());
+        assert_eq!(request.expected_incarnation, "inc");
+        assert_eq!(request.expected_revision, Revision(7));
+        assert_eq!(request.operation_id, "op-1");
+        assert_eq!(request.changes["terminal.font.size"], 14.0);
+        // Gone missing: nothing to fence on.
+        let read = f.read().unwrap();
+        f.answered(read.ticket, Some((10, "", Some("not found"))));
+        assert!(!f.following());
+        assert_eq!(f.apply("op-2", changes), None);
     }
 
     #[test]

@@ -17,7 +17,10 @@
 //!
 //! The session theme is the look settingsd holds for the desktop profile,
 //! followed through a [`settings::follow::Follower`]; without settingsd the
-//! theme file's stands. The window's own choice lays over either.
+//! theme file's stands. The window's own choice lays over either. The same
+//! read carries the terminal's settings (`terminal.*`); without settingsd
+//! their defaults stand. A zoom writes `terminal.font.size` back through
+//! `settings.apply`, once the zoom keys rest.
 
 use crate::app::{App, Effect, Synced};
 use crate::bus::{APP, Delivery, WindowBus};
@@ -29,7 +32,7 @@ use crate::view::{self, UiEvent};
 use egui::Event;
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use term_core::bus::WindowEvent;
 use toolkit::command::{CommandError, Origin};
 use toolkit::{Registry, Strings, Theme, drive};
@@ -48,6 +51,15 @@ fn hostname() -> String {
     std::fs::read_to_string("/proc/sys/kernel/hostname")
         .map(|name| name.trim().to_owned())
         .unwrap_or_default()
+}
+
+/// The start of this process's settings operation ids: its pid and start
+/// time, so a restarted term never reuses one settingsd remembers.
+fn operation_prefix() -> String {
+    let started = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_millis());
+    format!("term-font-{}-{started}", std::process::id())
 }
 
 /// Whether a `noded.props.changed` body may mean a service (settingsd)
@@ -95,7 +107,20 @@ pub struct Shell {
     ctx: egui::Context,
     /// The panes' widget: it holds the keyboard while nothing else does.
     focus: egui::Id,
+    /// A zoomed font size not yet written to `terminal.font.size`; while
+    /// one is, looks keep the window's size.
+    font_pending: Option<f32>,
+    /// The size a write in flight carries.
+    font_sent: Option<f32>,
+    /// The latest zoom's write timer; an older one is stale.
+    font_generation: u64,
+    /// Names each write for settingsd's receipts: this process and a count.
+    font_ops: (String, u64),
 }
+
+/// How long the zoom keys rest before the size is written, so a held key
+/// writes once.
+const FONT_WRITE_DELAY: Duration = Duration::from_millis(400);
 
 impl Shell {
     pub fn new(
@@ -129,6 +154,10 @@ impl Shell {
             clipboard,
             ctx,
             focus: egui::Id::new("term.panes"),
+            font_pending: None,
+            font_sent: None,
+            font_generation: 0,
+            font_ops: (operation_prefix(), 0),
         }
     }
 
@@ -192,6 +221,12 @@ impl Shell {
                 Delivery::LookRetry { generation } => {
                     if generation == self.look_retry && !self.exiting {
                         self.read_look();
+                    }
+                }
+                Delivery::Written { reply } => self.font_written(reply),
+                Delivery::FontDue { generation } => {
+                    if generation == self.font_generation {
+                        self.write_font();
                     }
                 }
             }
@@ -381,10 +416,17 @@ impl Shell {
             Some(settings::follow::Followed::Look {
                 appearance,
                 custom_source,
+                terminal,
                 ..
             }) => {
+                // The terminal's settings apply whatever the look's source.
+                let family = terminal.font_family(&appearance).map(str::to_owned);
+                self.app
+                    .apply_terminal(&terminal, family.as_deref(), self.font_pending.is_some());
                 self.look = (!custom_source).then_some(*appearance);
                 self.set_base();
+                // A zoom waiting on this look's revision can be written now.
+                self.write_font();
             }
             Some(settings::follow::Followed::Missing) if self.look.is_some() => {
                 self.look = None;
@@ -404,6 +446,65 @@ impl Shell {
                 }
             }
         }
+    }
+
+    /// A zoom since the last frame: write its size to the settings once
+    /// the zoom keys rest. Without settingsd the size stays the window's.
+    fn queue_font(&mut self) {
+        let Some(px) = self.app.font_write.take() else {
+            return;
+        };
+        if !self.follower.following() {
+            return;
+        }
+        self.font_pending = Some(px);
+        self.font_generation += 1;
+        self.bus.font_due(FONT_WRITE_DELAY, self.font_generation);
+    }
+
+    /// Write the pending size, fenced on the last look read: one write in
+    /// flight at a time.
+    fn write_font(&mut self) {
+        if self.font_sent.is_some() || self.exiting {
+            return;
+        }
+        let Some(px) = self.font_pending else {
+            return;
+        };
+        self.font_ops.1 += 1;
+        let id = format!("{}-{}", self.font_ops.0, self.font_ops.1);
+        let changes = json!({"terminal.font.size": f64::from(px)});
+        match self.follower.apply(&id, changes) {
+            Some(write) if self.bus.write_settings(write) => self.font_sent = Some(px),
+            _ => self.font_pending = None,
+        }
+    }
+
+    /// A size write answered. Changed: the look that follows carries it. A
+    /// conflict (another change landed first) is written again on the next
+    /// look. Anything else is reported and the settings' size returns.
+    fn font_written(&mut self, reply: Option<(u8, String, Option<String>)>) {
+        let sent = self.font_sent.take();
+        let status = reply
+            .as_ref()
+            .and_then(|(_, body, _)| serde_json::from_str::<Value>(body).ok())
+            .and_then(|body| body["status"].as_str().map(str::to_owned));
+        match status.as_deref() {
+            Some("changed" | "unchanged") if self.font_pending == sent => {
+                self.font_pending = None;
+            }
+            // A newer size waits for the look at this write's revision.
+            Some("changed" | "unchanged" | "conflict") => {}
+            other => {
+                let error = reply.as_ref().and_then(|(_, _, error)| error.as_deref());
+                eprintln!(
+                    "term: font size not saved: {}",
+                    other.or(error).unwrap_or("no answer")
+                );
+                self.font_pending = None;
+            }
+        }
+        self.read_look();
     }
 
     fn follow_theme(&mut self) {
@@ -442,6 +543,7 @@ impl Shell {
             self.close();
         }
         self.app.rescale(ctx.pixels_per_point());
+        self.queue_font();
         self.follow_theme();
         if ctx.input(|i| i.viewport().close_requested()) {
             // The window's close box closes every tab, as Quit does.
@@ -574,6 +676,11 @@ impl Shell {
                 self.app.layout(layout::content(area, self.app.scale()));
                 self.input(area, ui.layer_id(), keyboard);
                 self.app.paint();
+                // A blinking cursor asks for the frame its next phase
+                // needs, and nothing while it is steady or hidden.
+                if let Some(delay) = self.app.next_blink(Instant::now()) {
+                    ctx.request_repaint_after(delay);
+                }
                 view::panes(ui, &self.app);
                 if keyboard
                     && self.app.keyboard_focus
@@ -613,6 +720,7 @@ impl Shell {
         if self.app.keys_dialog && view::keys_dialog(&ctx, &self.commands, &self.strings) {
             self.app.keys_dialog = false;
         }
+        self.queue_font();
         self.perform();
         self.release();
         self.publish_executed();

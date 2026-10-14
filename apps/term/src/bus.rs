@@ -80,6 +80,13 @@ pub enum Delivery {
     },
     /// A look retry is due.
     LookRetry { generation: u64 },
+    /// The answer to a settings write ([`WindowBus::write_settings`]), as
+    /// [`Delivery::Look`]'s.
+    Written {
+        reply: Option<(u8, String, Option<String>)>,
+    },
+    /// A font size write is due (the zoom keys have paused).
+    FontDue { generation: u64 },
     /// The connection came (back) up.
     Connected,
 }
@@ -222,15 +229,44 @@ impl WindowBus {
 
     /// Deliver [`Delivery::LookRetry`] with `generation` after `delay`.
     pub fn retry_look(&self, delay: Duration, generation: u64) {
+        self.after(delay, Delivery::LookRetry { generation });
+    }
+
+    /// Deliver [`Delivery::FontDue`] with `generation` after `delay`.
+    pub fn font_due(&self, delay: Duration, generation: u64) {
+        self.after(delay, Delivery::FontDue { generation });
+    }
+
+    fn after(&self, delay: Duration, delivery: Delivery) {
         let Some(link) = self.link() else {
             return;
         };
         let (tx, wake) = (self.tx.clone(), self.wake.clone());
         link.runtime.spawn(async move {
             tokio::time::sleep(delay).await;
-            let _ = tx.send(Delivery::LookRetry { generation });
+            let _ = tx.send(delivery);
             wake();
         });
+    }
+
+    /// Perform a settings write (a [`settings::follow::Follower::apply`]);
+    /// [`Delivery::Written`] answers it. False with no Bus.
+    pub fn write_settings(&self, write: settings::follow::Read) -> bool {
+        let Some(link) = self.link() else {
+            return false;
+        };
+        let (client, tx, wake) = (link.client.clone(), self.tx.clone(), self.wake.clone());
+        link.runtime.spawn(async move {
+            let (body, headers) = (write.body.to_string(), BTreeMap::new());
+            let call = client.call_with_headers_raw(write.service, write.verb, &headers, &body);
+            let reply = match tokio::time::timeout(LOOK_BUDGET, call).await {
+                Ok(Ok(answer)) => Some(answer),
+                _ => None,
+            };
+            let _ = tx.send(Delivery::Written { reply });
+            wake();
+        });
+        true
     }
 
     /// Queue `bodies` for publishing on `<name>.<suffix>`.

@@ -22,7 +22,7 @@ fn a_tiny_pane_never_draws_over_its_neighbour() {
     }
     let settings = Settings {
         config: Config::default(),
-        term: "xterm-256color",
+        term: "xterm-256color".into(),
     };
     let mut tabs = TabSet::with_session(settings, None).expect("a Mix PTY");
     let left = tabs.active_tab().active_pane;

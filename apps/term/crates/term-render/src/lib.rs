@@ -620,10 +620,11 @@ impl PaneState {
             let rect = match shape {
                 Cursor::Block => [x, top, width, cell_h as f32],
                 Cursor::Underline => [x, top + cell_h as f32 - 1.0, width, 1.0],
+                Cursor::Bar => [x, top, raster.bar_width() as f32, cell_h as f32],
             };
             let colour = match shape {
                 Cursor::Block => [255; 4],
-                Cursor::Underline => UNDERLINE,
+                Cursor::Underline | Cursor::Bar => UNDERLINE,
             };
             queue.write_buffer(
                 &gpu.cursor,
@@ -765,7 +766,7 @@ impl egui_wgpu::CallbackTrait for PaneCallback {
         if let Some((shape, _)) = state.cursor {
             pass.set_pipeline(match shape {
                 Cursor::Block => &renderer.invert,
-                Cursor::Underline => &renderer.solid,
+                Cursor::Underline | Cursor::Bar => &renderer.solid,
             });
             pass.set_vertex_buffer(0, gpu.cursor.slice(..));
             pass.draw(0..6, 0..1);

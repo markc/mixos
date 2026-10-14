@@ -25,7 +25,8 @@ const SERVICE: &str = "term";
 
 const HELP: &str = "term — Terminal, the MixOS terminal: tabs, split panes, a GPU-drawn grid\n\
 Usage: term [--headless] [--print-config]\n\
-Font: TERM_SPIKE_FONT=/path/to/font.ttf, TERM_FONT_PX=<6..48>\n\
+Settings: the desktop profile's terminal.* (settingsd; Prefs), defaults without it\n\
+Font: TERM_SPIKE_FONT=/path/to/font.ttf, TERM_FONT_PX=<6..48> until settingsd answers\n\
 Keys: Ctrl+Shift+T/W new/close tab, Ctrl+PageUp/PageDown change tab,\n\
 \x20     Ctrl+Shift+E/O split side by side/stacked, Ctrl+Shift+X close pane,\n\
 \x20     Ctrl+Shift+arrows move focus, Ctrl+Shift+Q quit,\n\
@@ -44,7 +45,7 @@ TERM_NOTIFY=0: no desktop notification when a pane's shell exits\n\
 Bus: serves `term` / `term.*`, the term.ui.* drive verbs, term.commands and term.execute";
 
 fn main() {
-    // First, before the inherited-fd quarantine, the config read and the
+    // First, before the inherited-fd quarantine, the TERM probe and the
     // window: `--version` reports the version and the build hash and does
     // nothing else, whether or not a term is running or a display exists.
     buildinfo::exit_on_version!(leading);
@@ -61,10 +62,10 @@ fn main() {
         eprintln!("term: unknown option {unknown} (see --help)");
         std::process::exit(2);
     }
+    // The defaults until settingsd's `terminal.*` settings arrive (the
+    // window follows them; --headless keeps these).
     let settings = resolve_config(
-        config::load(Some(
-            &::config::path(::config::Dir::Etc).join("term.conf.mix"),
-        )),
+        config::Config::default(),
         std::env::var("TERM_FONT_PX").ok().as_deref(),
         config::selected_term(),
     );
@@ -99,7 +100,10 @@ fn resolve_config(
     {
         config.font_px = px;
     }
-    config::Settings { config, term }
+    config::Settings {
+        config,
+        term: term.to_owned(),
+    }
 }
 
 /// Whether a pane's shell exiting sends a desktop notification.
@@ -115,7 +119,8 @@ fn run(settings: config::Settings) -> Result<(), String> {
     // resolution. Building it here means a missing font fails before a
     // window appears.
     let raster = Raster::new(1.0, settings.config.font_px, settings.config.cursor)?;
-    let tabs = Arc::new(Mutex::new(TabSet::starting(settings)));
+    let font = FontSize::new(settings.config.font_px);
+    let tabs = Arc::new(Mutex::new(TabSet::starting(settings.clone())));
     let (cleanup, reaper) = tabs::Cleanup::start().map_err(|e| format!("cleanup worker: {e}"))?;
 
     // Every PTY, resize, pane exit and Bus mutation wakes the window: one
@@ -180,7 +185,6 @@ fn run(settings: config::Settings) -> Result<(), String> {
             .with_min_inner_size([320.0, 200.0]),
         ..eframe::NativeOptions::default()
     };
-    let font = FontSize::new(settings.config.font_px);
     let notify = notify_enabled().then_some(notify_tx);
     let (app_tabs, app_cleanup) = (tabs.clone(), cleanup.clone());
     let result = eframe::run_native(
@@ -233,7 +237,7 @@ fn run(settings: config::Settings) -> Result<(), String> {
 /// they opened at, and exited shells are reaped as they go. Ends when the
 /// last tab closes (`term.tab.close`).
 fn headless(settings: config::Settings) -> Result<(), String> {
-    let tabs = Arc::new(Mutex::new(TabSet::starting(settings)));
+    let tabs = Arc::new(Mutex::new(TabSet::starting(settings.clone())));
     let (cleanup, reaper) = tabs::Cleanup::start().map_err(|e| format!("cleanup worker: {e}"))?;
     let woken = Arc::new(AtomicBool::new(true));
     let thread = std::thread::current();

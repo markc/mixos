@@ -49,7 +49,7 @@ fn replace(tabs: &TabSet, id: u64, text: &str) {
 fn two_tabs_and_a_split_studio_dark() {
     let settings = Settings {
         config: Config::default(),
-        term: "xterm-256color",
+        term: "xterm-256color".into(),
     };
     let mut tabs = TabSet::with_session(settings, None).expect("a Mix PTY");
     let first_tab = tabs.active_id();

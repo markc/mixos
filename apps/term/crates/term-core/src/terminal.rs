@@ -936,7 +936,7 @@ impl Terminal {
         };
         let spawn = |dir: String| {
             let mut env = launch_settings.environment.clone();
-            env.push(("TERM".into(), settings.term.into()));
+            env.push(("TERM".into(), settings.term.clone()));
             let mut args = vec!["-u".into(), "TERM_CWD".into()];
             // Never propagate a marker inherited by Term itself. The one
             // current launch marker is supplied explicitly after env's unsets.

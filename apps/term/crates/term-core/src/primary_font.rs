@@ -78,6 +78,88 @@ pub(super) fn discover(override_path: Option<&Path>) -> Result<Primary, String> 
         .clone()
 }
 
+/// The CSS weight the terminal's settings call regular: the face
+/// [`discover`] picks.
+pub const DEFAULT_WEIGHT: u16 = 400;
+
+/// A chosen face: `family` nearest `weight` when it is installed and
+/// monospace, else the bundled monospace font nearest `weight`. Each
+/// fallback is logged; it runs once per change of family or weight. An
+/// explicit override path stays authoritative.
+pub(super) fn discover_face(
+    override_path: Option<&Path>,
+    family: Option<&str>,
+    weight: u16,
+) -> Result<Primary, String> {
+    if let Some(path) = override_path {
+        return from_path(path);
+    }
+    let weight = Weight(weight);
+    if let Some(name) = family {
+        let mut db = Database::new();
+        db.load_system_fonts();
+        match named(&db, name, weight) {
+            Ok(primary) => return Ok(primary),
+            Err(reason) => {
+                eprintln!("term: font family {name:?} {reason}; using the bundled monospace font")
+            }
+        }
+    }
+    if let Ok(Some(set)) = installed_assets()
+        && let Some(path) = set.font_path("mono")
+    {
+        return from_path_weight(&path, weight).or_else(|_| from_path(&path));
+    }
+    let mut db = Database::new();
+    db.load_system_fonts();
+    let role = default_typography(TypographyRole::Terminal);
+    let families: Vec<_> = std::iter::once(&role.family)
+        .chain(&role.fallbacks)
+        .map(|name| Family::Name(name.as_str()))
+        .chain([Family::Monospace])
+        .collect();
+    select_weight(&mut db, &families, weight).map_or_else(|| discover(None), Ok)
+}
+
+/// Installed family `name`, the face nearest `weight`, when it is monospace
+/// and drawable.
+fn named(db: &Database, name: &str, weight: Weight) -> Result<Primary, &'static str> {
+    let family = [Family::Name(name)];
+    let query = Query {
+        families: &family,
+        weight,
+        style: Style::Normal,
+        ..Query::default()
+    };
+    let id = db.query(&query).ok_or("is not installed")?;
+    if !db.face(id).is_some_and(|face| face.monospaced) {
+        return Err("is not monospace");
+    }
+    load_face(db, id).ok_or("cannot be drawn")
+}
+
+/// A font file's face nearest `weight`.
+fn from_path_weight(path: &Path, weight: Weight) -> Result<Primary, String> {
+    let mut db = Database::new();
+    db.load_font_file(path)
+        .map_err(|e| format!("font {}: {e}", path.display()))?;
+    let names: Vec<_> = db
+        .faces()
+        .flat_map(|face| face.families.iter())
+        .map(|(name, _)| name.clone())
+        .collect();
+    let families: Vec<_> = names.iter().map(|name| Family::Name(name)).collect();
+    let query = Query {
+        families: &families,
+        weight,
+        style: Style::Normal,
+        ..Query::default()
+    };
+    db.query(&query)
+        .and_then(|id| load_face(&db, id))
+        .ok_or_else(|| format!("font {} has no usable face", path.display()))
+}
+
 /// Called only when the shared Unicode fallback set is first needed.
 pub(super) fn installed_role(role: &str) -> Result<Option<Primary>, String> {
     let Some(set) = installed_assets().map_err(str::to_owned)? else {
@@ -174,18 +256,7 @@ fn select(db: &mut Database, families: &[Family<'_>]) -> Option<Primary> {
 fn select_weight(db: &mut Database, families: &[Family<'_>], weight: Weight) -> Option<Primary> {
     for family in families {
         while let Some(id) = query_family(db, family, weight) {
-            let loaded = db.face_source(id).and_then(|(source, index)| {
-                let path = match source {
-                    Source::File(path) | Source::SharedFile(path, _) => path,
-                    Source::Binary(_) => return None,
-                };
-                let data: Arc<[u8]> = std::fs::read(&path).ok()?.into();
-                let font = FontRef::from_index(&data, index as usize)?;
-                if !usable(font) {
-                    return None;
-                }
-                Some(Primary { path, index, data })
-            });
+            let loaded = load_face(db, id);
             if loaded.is_some() {
                 return loaded;
             }
@@ -195,6 +266,22 @@ fn select_weight(db: &mut Database, families: &[Family<'_>], weight: Weight) -> 
         }
     }
     None
+}
+
+/// Face `id`'s file, when Swash can draw it.
+fn load_face(db: &Database, id: fontdb::ID) -> Option<Primary> {
+    db.face_source(id).and_then(|(source, index)| {
+        let path = match source {
+            Source::File(path) | Source::SharedFile(path, _) => path,
+            Source::Binary(_) => return None,
+        };
+        let data: Arc<[u8]> = std::fs::read(&path).ok()?.into();
+        let font = FontRef::from_index(&data, index as usize)?;
+        if !usable(font) {
+            return None;
+        }
+        Some(Primary { path, index, data })
+    })
 }
 
 fn query_family(db: &mut Database, family: &Family<'_>, weight: Weight) -> Option<fontdb::ID> {

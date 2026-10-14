@@ -25,7 +25,6 @@ bus = { workspace = true, features = ["native"] }
 buildinfo.workspace = true
 # The outbox for term.command.executed.
 citizen.workspace = true
-config.workspace = true
 eframe.workspace = true
 egui.workspace = true
 serde_json.workspace = true

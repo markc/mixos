@@ -9,7 +9,6 @@
 
 use crate::app::{App, Effect};
 use crate::input::Wheel;
-use crate::layout;
 use egui::{PointerButton, Pos2};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -144,10 +143,10 @@ impl App {
         })?;
         let cell = self.logical_cell();
         let relative = egui::pos2(position.x - rect.x, position.y - rect.y);
-        let border = layout::border(self.scale());
+        let inset = self.inset();
         let (col, row) =
-            crate::input::pointer_cell(relative, border, cell, *self.grids.get(&pane)?);
-        let side = if relative.x - border - f32::from(col) * cell.0 < cell.0 / 2.0 {
+            crate::input::pointer_cell(relative, inset, cell, *self.grids.get(&pane)?);
+        let side = if relative.x - inset - f32::from(col) * cell.0 < cell.0 / 2.0 {
             SelectionSide::Left
         } else {
             SelectionSide::Right
@@ -304,6 +303,14 @@ impl App {
                     self.mouse.clicks = None;
                 }
                 if released && let Some(text) = terminal.selection_finish() {
+                    // terminal.mouse.copy_on_select: the clipboard as well
+                    // as the primary selection, as Ctrl+Shift+C would.
+                    if self.copy_on_select {
+                        self.effects.push(Effect::Write {
+                            text: text.clone(),
+                            primary: false,
+                        });
+                    }
                     self.effects.push(Effect::Write {
                         text,
                         primary: true,
