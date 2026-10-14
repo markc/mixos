@@ -63,13 +63,12 @@ fn raster(primary: &Primary) -> Raster {
 #[test]
 fn bundled_weights_select_distinct_faces_and_change_ascii_and_unicode_ink() {
     let mut previous: Option<Vec<u8>> = None;
-    for (weight, name) in [
-        (300, "Light"),
-        (400, "Regular"),
-        (500, "Medium"),
-    ] {
+    for (weight, name) in [(300, "Light"), (400, "Regular"), (500, "Medium")] {
         let primary = primary_font::discover_face(None, None, weight).unwrap();
-        assert_eq!(primary.path, Path::new(&format!("bundled/JetBrainsMono-{name}.ttf")));
+        assert_eq!(
+            primary.path,
+            Path::new(&format!("bundled/JetBrainsMono-{name}.ttf"))
+        );
         let mut raster = raster(&primary);
         assert_face(&primary, &raster, "JetBrains Mono", weight);
         let mut row = screen(2, 1, 'M');
@@ -79,10 +78,14 @@ fn bundled_weights_select_distinct_faces_and_change_ascii_and_unicode_ink() {
             let cell_bytes = raster.width as usize * 4;
             let stride = cell_bytes * 2;
             for column in 0..2 {
-                assert!(pixels.chunks_exact(stride).zip(previous.chunks_exact(stride)).any(
-                    |(a, b)| a[column * cell_bytes..(column + 1) * cell_bytes]
-                        != b[column * cell_bytes..(column + 1) * cell_bytes]
-                ), "column {column} must change weight");
+                assert!(
+                    pixels
+                        .chunks_exact(stride)
+                        .zip(previous.chunks_exact(stride))
+                        .any(|(a, b)| a[column * cell_bytes..(column + 1) * cell_bytes]
+                            != b[column * cell_bytes..(column + 1) * cell_bytes]),
+                    "column {column} must change weight"
+                );
             }
         }
         previous = Some(pixels);
