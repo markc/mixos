@@ -100,44 +100,56 @@ impl Fonts {
     fn fallbacks(&self) -> &Fallbacks {
         static SHARED: OnceLock<Mutex<HashMap<u16, Arc<Fallbacks>>>> = OnceLock::new();
         self.fallbacks.get_or_init(|| {
-            let mut shared = SHARED.get_or_init(Mutex::default).lock().expect("fallback fonts");
-            shared.entry(self.weight).or_insert_with(|| {
-            Arc::new(Fallbacks {
-                coverage: super::primary_font::coverage(self.weight)
-                    .into_iter()
-                    .filter_map(|face| Face::at_index(face.data, face.index))
-                    .collect(),
-                emoji: match super::primary_font::installed_role("emoji") {
-                    Ok(Some(face)) => {
-                        let mut db = fontdb::Database::new();
-                        db.load_system_fonts();
-                        let face = super::primary_font::fallback_weight(&mut db, face, self.weight);
-                        Face::at_index(face.data, face.index)
-                    }
-                    Ok(None) => super::primary_font::fallback_paths(EMOJI_PATHS, self.weight)
+            let mut shared = SHARED
+                .get_or_init(Mutex::default)
+                .lock()
+                .expect("fallback fonts");
+            shared
+                .entry(self.weight)
+                .or_insert_with(|| {
+                    Arc::new(Fallbacks {
+                        coverage: super::primary_font::coverage(self.weight)
+                            .into_iter()
+                            .filter_map(|face| Face::at_index(face.data, face.index))
+                            .collect(),
+                        emoji: match super::primary_font::installed_role("emoji") {
+                            Ok(Some(face)) => {
+                                let mut db = fontdb::Database::new();
+                                db.load_system_fonts();
+                                let face = super::primary_font::fallback_weight(
+                                    &mut db,
+                                    face,
+                                    self.weight,
+                                );
+                                Face::at_index(face.data, face.index)
+                            }
+                            Ok(None) => {
+                                super::primary_font::fallback_paths(EMOJI_PATHS, self.weight)
+                                    .into_iter()
+                                    .find_map(|face| Face::at_index(face.data, face.index))
+                            }
+                            Err(error) => {
+                                eprintln!("terminal static emoji: {error}");
+                                None
+                            }
+                        },
+                        symbols: super::primary_font::fallback_paths(
+                            &[
+                                "/usr/share/fonts/noto/NotoSansSymbols2-Regular.ttf",
+                                "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
+                                "/usr/share/fonts/google-noto/NotoSansSymbols2-Regular.ttf",
+                                // Covers U+23F5 (⏵) and other Misc Technical arrows that
+                                // no installed asset face has. Last resort, after the Noto set.
+                                "/usr/share/fonts/Adwaita/AdwaitaMono-Regular.ttf",
+                            ],
+                            self.weight,
+                        )
                         .into_iter()
-                        .find_map(|face| Face::at_index(face.data, face.index)),
-                    Err(error) => {
-                        eprintln!("terminal static emoji: {error}");
-                        None
-                    }
-                },
-                symbols: super::primary_font::fallback_paths(
-                    &[
-                        "/usr/share/fonts/noto/NotoSansSymbols2-Regular.ttf",
-                        "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
-                        "/usr/share/fonts/google-noto/NotoSansSymbols2-Regular.ttf",
-                        // Covers U+23F5 (⏵) and other Misc Technical arrows that
-                        // no installed asset face has. Last resort, after the Noto set.
-                        "/usr/share/fonts/Adwaita/AdwaitaMono-Regular.ttf",
-                    ],
-                    self.weight,
-                )
-                .into_iter()
-                .filter_map(|face| Face::at_index(face.data, face.index))
-                .collect(),
-            })
-            }).clone()
+                        .filter_map(|face| Face::at_index(face.data, face.index))
+                        .collect(),
+                    })
+                })
+                .clone()
         })
     }
 
