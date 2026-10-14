@@ -799,7 +799,9 @@ fn checked_text(
     if let Some(committed) = &committed {
         match committed.refusal() {
             Some(refusal) => ui.data_mut(|d| d.insert_temp(refused_id, refusal)),
-            None => ui.data_mut(|d| d.remove::<&'static str>(refused_id)),
+            None => ui.data_mut(|d| {
+                d.remove::<&'static str>(refused_id);
+            }),
         }
     }
     if let Some(refusal) = ui.data(|d| d.get_temp::<&'static str>(refused_id)) {

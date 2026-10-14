@@ -133,7 +133,7 @@ pub struct App {
     /// The pane last drawn with its cursor blinked off.
     blink_hidden: Option<u64>,
     /// The instant the last paint chose the blink phase at.
-    painted: Instant,
+    blink_painted: Instant,
     /// A size the person zoomed to, for the shell to write to the
     /// settings (`terminal.font.size`).
     pub font_write: Option<f32>,
@@ -205,7 +205,7 @@ impl App {
             blink: false,
             blink_epoch: Instant::now(),
             blink_hidden: None,
-            painted: Instant::now(),
+            blink_painted: Instant::now(),
             font_write: None,
             font_reset: false,
         }
@@ -382,7 +382,7 @@ impl App {
         if !self.blinking() || !visible {
             return None;
         }
-        let drawn = self.painted.min(now);
+        let drawn = self.blink_painted.min(now);
         let half = BLINK.as_nanos();
         let halves = drawn.saturating_duration_since(self.blink_epoch).as_nanos() / half;
         let edge = self.blink_epoch + Duration::from_nanos(((halves + 1) * half) as u64);
@@ -517,8 +517,8 @@ impl App {
     pub fn paint(&mut self) {
         // The focused pane's cursor in the hidden half of its blink; a pane
         // whose blink phase changed repaints with no new output.
-        self.painted = Instant::now();
-        let hide = (!self.cursor_shown(self.painted)).then_some(self.shape.active_pane);
+        self.blink_painted = Instant::now();
+        let hide = (!self.cursor_shown(self.blink_painted)).then_some(self.shape.active_pane);
         let blinked = std::mem::replace(&mut self.blink_hidden, hide);
         let terminals: Vec<_> = {
             let tabs = self.tabs.lock().expect("tabs");
