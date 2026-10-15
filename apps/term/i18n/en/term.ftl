@@ -32,6 +32,12 @@ tab-prev = Previous Tab
 tab-select = Select Tab
 pane-focus = Focus Pane
 help-keys = Keyboard Shortcuts
+help-about = About
+
+about-title = About Terminal
+about-description = The MixOS terminal.
+about-settings-connected = Settings source: settingsd connected
+about-settings-disconnected = Settings source: settingsd not connected
 
 keys-title = Keyboard Shortcuts
 close = Close

@@ -3,8 +3,8 @@
 //! The terminal's preferences (`terminal.*`): text, layout, cursor, focus,
 //! mouse and environment. Every default reproduces the term as it was before
 //! these settings existed, except padding (8 px instead of 1 px) and the focus
-//! ring: `neutral` by default, a deliberately subtler ring than the accent one
-//! the term drew. Colours are not here: the terminal always follows the session theme.
+//! ring: `accent` at strength 0.25 by default, subtler than the half-accent
+//! ring the term drew. Colours are not here: the terminal follows the session theme.
 //!
 //! Every value is omitted from the serialised form at its default, and the
 //! whole group while it is all defaults, so a profile written before it
@@ -209,7 +209,7 @@ fn is_default_focus_strength(strength: &f64) -> bool {
 impl Default for Focus {
     fn default() -> Self {
         Self {
-            ring: FocusRing::Neutral,
+            ring: FocusRing::Accent,
             strength: 0.25,
         }
     }
@@ -219,8 +219,8 @@ impl Default for Focus {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FocusRing {
-    #[default]
     Neutral,
+    #[default]
     Accent,
 }
 
@@ -338,7 +338,7 @@ pub fn describe() -> Value {
         "terminal.border.width": {"type":"integer", "minimum":BORDER_WIDTH_MIN, "maximum":BORDER_WIDTH_MAX, "default":1, "unit":"px"},
         "terminal.cursor.shape": {"type":"string", "enum":["block","underline","bar"], "default":"underline"},
         "terminal.cursor.blink": {"type":"boolean", "default":false},
-        "terminal.focus.ring": {"type":"string", "enum":["neutral","accent"], "default":"neutral"},
+        "terminal.focus.ring": {"type":"string", "enum":["neutral","accent"], "default":"accent"},
         "terminal.focus.strength": {"type":"number", "minimum":0.0, "maximum":1.0, "default":0.25, "used_when":"terminal.focus.ring is accent"},
         "terminal.mouse.copy_on_select": {"type":"boolean", "default":false},
         "terminal.env.term": {"type":"string", "pattern":"[a-z0-9-]{1,64}", "default":"xterm-256color", "applies":"to tabs and panes opened afterwards"}
@@ -476,7 +476,7 @@ mod tests {
             (t.cursor.shape, t.cursor.blink),
             (CursorShape::Underline, false)
         );
-        assert_eq!((t.focus.ring, t.focus.strength), (FocusRing::Neutral, 0.25));
+        assert_eq!((t.focus.ring, t.focus.strength), (FocusRing::Accent, 0.25));
         assert!(!t.mouse.copy_on_select);
         assert_eq!(t.env.term, "xterm-256color");
         validate(&t).unwrap();
@@ -484,7 +484,7 @@ mod tests {
         // serialises away again.
         let full = json!({"font":{"family":null,"size":t.font.size,"weight":400},
             "padding":8,"scrollback":{"lines":1000},"scroll":{"speed":40},"border":{"width":1},
-            "cursor":{"shape":"underline","blink":false},"focus":{"ring":"neutral","strength":0.25},
+            "cursor":{"shape":"underline","blink":false},"focus":{"ring":"accent","strength":0.25},
             "mouse":{"copy_on_select":false},"env":{"term":"xterm-256color"}});
         let read: Terminal = serde_json::from_value(full).unwrap();
         assert_eq!(read, t);
@@ -494,16 +494,16 @@ mod tests {
         let mut changed = t.clone();
         changed.padding = 1;
         changed.cursor.shape = CursorShape::Bar;
-        changed.focus.ring = FocusRing::Accent;
+        changed.focus.ring = FocusRing::Neutral;
         let text = serde_json::to_string(&changed).unwrap();
         assert_eq!(
             text,
-            r#"{"padding":1,"cursor":{"shape":"bar"},"focus":{"ring":"accent"}}"#
+            r#"{"padding":1,"cursor":{"shape":"bar"},"focus":{"ring":"neutral"}}"#
         );
         assert_eq!(serde_json::from_str::<Terminal>(&text).unwrap(), changed);
         assert_eq!(
             strict::from_str::<Terminal>(
-                r#"{padding: 1.0, cursor: {shape: "bar"}, focus: {ring: "accent"}}"#
+                r#"{padding: 1.0, cursor: {shape: "bar"}, focus: {ring: "neutral"}}"#
             )
             .unwrap(),
             changed

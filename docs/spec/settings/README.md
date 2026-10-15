@@ -283,9 +283,9 @@ keep their seals, and it does not affect the resolved design.
 
 The profile's `terminal` holds the term's preferences. Each default is the
 term's behaviour before the group existed, except padding (8 px instead of
-1 px) and the focus ring: `neutral` is a deliberately subtler ring than the
-half-accent one the term drew
-(`accent` at strength 0.5 matches it). Each value is omitted at its
+1 px) and the focus ring: `accent` at strength 0.25 gives a quiet tint from
+the current theme accent. `neutral` remains available; `accent` at strength
+0.5 matches the earlier half-accent ring. Each value is omitted at its
 default, so older profiles keep their seals. It does not affect the resolved
 design. Terminal colours are not a setting: they follow the session theme.
 
@@ -300,7 +300,7 @@ design. Terminal colours are not a setting: they follow the session theme.
 | `terminal.border.width` | integer 1–4 (px) | 1 |
 | `terminal.cursor.shape` | `block`, `underline` or `bar` | `underline` |
 | `terminal.cursor.blink` | boolean | false |
-| `terminal.focus.ring` | `neutral` or `accent` | `neutral` |
+| `terminal.focus.ring` | `neutral` or `accent` | `accent` |
 | `terminal.focus.strength` | number 0–1, used with `accent` | 0.25 |
 | `terminal.mouse.copy_on_select` | boolean | false |
 | `terminal.env.term` | `[a-z0-9-]{1,64}`; new tabs and panes | `xterm-256color` |

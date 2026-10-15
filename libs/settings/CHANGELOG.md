@@ -9,10 +9,10 @@ Additive, store format unchanged (3):
   speed, border width, cursor shape/blink, focus ring/strength, copy on
   select, `TERM`). Every default reproduces the term before the group
   existed except padding (8 px instead of 1 px) and the focus ring: its
-  default, `neutral`, draws the focused pane's border as the card border
-  moved a quarter toward the
-  text colour, where the term drew it halfway to the accent before. That
-  change is intentional (a subtler ring); `accent` with strength 0.5
+  default, `accent` at strength 0.25, draws the focused pane's border as the
+  card border moved a quarter toward the theme accent, where the term drew
+  it halfway before. That change is intentional (a subtler tinted ring);
+  `neutral` remains available, and `accent` with strength 0.5
   gives the old look. Omitted at its defaults (and each value within it), so older
   profiles keep their seals. It does not touch `Effective`, as `keymaps`
   does not. A profile that sets any of it will not load in a 0.6.0 build:

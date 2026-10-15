@@ -18,6 +18,21 @@ pub fn describe() -> Value {
     described
 }
 
+#[cfg(test)]
+#[test]
+fn described_terminal_focus_defaults_match_the_profile() {
+    let described = describe();
+    let focus = crate::terminal::Terminal::default().focus;
+    assert_eq!(
+        described["fields"]["terminal.focus.ring"]["default"],
+        serde_json::to_value(focus.ring).unwrap()
+    );
+    assert_eq!(
+        described["fields"]["terminal.focus.strength"]["default"],
+        focus.strength
+    );
+}
+
 fn describe_base() -> Value {
     json!({"version": CONTRACT_VERSION, "schema": SCHEMA,
         "implementation": "headless authority; renderer integrations pending",

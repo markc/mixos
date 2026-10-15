@@ -79,12 +79,13 @@ fn fonts_studio_dark() {
 #[test]
 fn terminal_weights_studio_dark() {
     let mut e = appearance_engine();
+    e.set_section(Section::Terminal);
     e.look.terminal = Some(Default::default());
     draw_at_size(
         chrome(Scheme::Studio, Mode::Dark),
         "terminal_weights_studio_dark",
         e,
-        egui::vec2(980.0, 960.0),
+        egui::vec2(980.0, 1120.0),
     );
 }
 

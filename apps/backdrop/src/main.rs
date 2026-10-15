@@ -176,6 +176,7 @@ fn revalidate(config: &Config) -> Result<Config, String> {
 }
 
 fn main() {
+    buildinfo::exit_on_version!();
     let args = match parse(std::env::args().skip(1)) {
         Ok(args) => args,
         Err(error) => {

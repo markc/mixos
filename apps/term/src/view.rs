@@ -136,7 +136,7 @@ const NEUTRAL_RING: f32 = 0.25;
 
 /// The focused pane's ring (`terminal.focus`): neutral is the card border
 /// stepped toward the text colour; accent is the card border taking
-/// `strength` of the theme's accent.
+/// `strength` of the current theme's accent (a quarter by default).
 fn focus_ring(chrome: &Chrome, (ring, strength): (FocusRing, f32)) -> Color32 {
     let palette = &chrome.palette;
     match ring {
@@ -199,4 +199,52 @@ pub fn keys_dialog(ctx: &egui::Context, commands: &Registry<App>, strings: &Stri
                 });
         });
     response.chosen.is_some() || response.dismissed
+}
+
+/// Build provenance and the live settings source, shared by the dialog and tests.
+pub fn about_text(settings_connected: bool) -> String {
+    let info = buildinfo::build_info!();
+    let source = label(if settings_connected {
+        "about-settings-connected"
+    } else {
+        "about-settings-disconnected"
+    });
+    format!(
+        "{}\n{}\n{}\nMIT OR Apache-2.0\n{}",
+        label("title"),
+        info.line(),
+        label("about-description"),
+        source
+    )
+}
+
+/// The toolkit's standard About dialog; true when it was closed.
+pub fn about_dialog(ctx: &egui::Context, settings_connected: bool) -> bool {
+    let response = dialog::Dialog::new(egui::Id::new("term.about"), label("about-title"))
+        .buttons(vec![Choice::new(label("close"), Role::Default)])
+        .show(ctx, |ui| {
+            ui.add(egui::Label::new(about_text(settings_connected)).wrap());
+        });
+    response.chosen.is_some() || response.dismissed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn about_contains_build_provenance_and_settings_source() {
+        let info = buildinfo::build_info!();
+        for connected in [false, true] {
+            let text = about_text(connected);
+            for expected in ["Terminal", info.version, info.git_sha, info.build_time, "MIT OR Apache-2.0"] {
+                assert!(text.contains(expected), "{text}");
+            }
+            assert!(text.contains(&label(if connected {
+                "about-settings-connected"
+            } else {
+                "about-settings-disconnected"
+            })));
+        }
+    }
 }

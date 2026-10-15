@@ -650,6 +650,7 @@ impl Shell {
                 let keyboard = !elsewhere
                     && !toolkit::menu::is_open(&ctx)
                     && !self.app.keys_dialog
+                    && !self.app.about_dialog
                     && !self.exiting;
                 if keyboard && !response.has_focus() {
                     response.request_focus();
@@ -711,6 +712,11 @@ impl Shell {
         }
         if self.app.keys_dialog && view::keys_dialog(&ctx, &self.commands, &self.strings) {
             self.app.keys_dialog = false;
+        }
+        if self.app.about_dialog
+            && view::about_dialog(&ctx, self.bus.connected() && self.follower.following())
+        {
+            self.app.about_dialog = false;
         }
         self.queue_font();
         self.perform();

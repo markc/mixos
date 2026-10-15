@@ -165,6 +165,18 @@ fn two_tabs_and_a_split_studio_dark() {
     assert_eq!(app.shape.visible().len(), 1);
     assert!(!app.shape.focus_ring(app.shape.active_pane));
 
+    // Help's About command opens the standard dialog without handing keys
+    // to the PTY, and names the build and the offline settings source.
+    harness.get_by_label("Help").click();
+    harness.run_steps(2);
+    harness.get_by_label("About").click();
+    harness.run_steps(2);
+    harness.get_by_label(&term::view::about_text(false));
+    assert!(harness.state().shell.as_ref().unwrap().app.about_dialog);
+    harness.get_by_label("Close").click();
+    harness.run_steps(2);
+    assert!(!harness.state().shell.as_ref().unwrap().app.about_dialog);
+
     drop(harness);
     let removed = tabs.lock().unwrap().shutdown();
     cleanup.submit(removed);

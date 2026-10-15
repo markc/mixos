@@ -101,6 +101,8 @@ pub struct App {
     pub theme: toolkit::theme_menu::Choice,
     /// The Keyboard Shortcuts dialog is open.
     pub keys_dialog: bool,
+    /// The About dialog is open.
+    pub about_dialog: bool,
     /// Text the platform read for a Ctrl+Shift+V, for the paste command.
     pasted: Option<String>,
     /// The tab or pane a targeted command (tab.select, tab.close,
@@ -192,6 +194,7 @@ impl App {
             effects: Vec::new(),
             theme: Default::default(),
             keys_dialog: false,
+            about_dialog: false,
             pasted: None,
             target_tab: None,
             target_pane: None,
@@ -201,7 +204,10 @@ impl App {
             face_failed: None,
             scroll_speed: input::DEFAULT_SCROLL_SPEED,
             copy_on_select: false,
-            focus_ring: (FocusRing::Neutral, 0.25),
+            focus_ring: {
+                let focus = TerminalSettings::default().focus;
+                (focus.ring, focus.strength as f32)
+            },
             blink: false,
             blink_epoch: Instant::now(),
             blink_hidden: None,

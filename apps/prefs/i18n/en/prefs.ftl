@@ -109,6 +109,7 @@ look-uncertain = The appearance change may or may not have been applied ({ $mess
 look-unconfirmed = Prefs could not confirm the appearance change: the session does not show it. Apply tries again.
 look-failed = Appearance: { $message }
 section-terminal = Terminal
+nav-terminal = Terminal
 terminal-family = Font family
 terminal-family-system = System
 terminal-size = Font size

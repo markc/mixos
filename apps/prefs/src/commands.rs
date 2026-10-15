@@ -78,6 +78,11 @@ pub fn registry() -> Registry<Engine> {
             (|e: &mut Engine| e.set_section(Section::Wallpapers)) as fn(&mut Engine),
         ),
         (
+            Section::Terminal,
+            Icon::FileTerminal,
+            (|e: &mut Engine| e.set_section(Section::Terminal)) as fn(&mut Engine),
+        ),
+        (
             Section::Desktop,
             Icon::Monitor,
             (|e: &mut Engine| e.set_section(Section::Desktop)) as fn(&mut Engine),

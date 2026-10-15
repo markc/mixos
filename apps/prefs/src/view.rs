@@ -148,6 +148,7 @@ pub fn view(
                     .auto_shrink(false)
                     .show(ui, |ui| match section {
                         Section::Themes => appearance(ui, engine, commands, strings, &mut events),
+                        Section::Terminal => terminal(ui, engine, commands, strings, &mut events),
                         Section::Wallpapers => {
                             wallpaper::controls(ui, engine, commands, strings, &mut events)
                         }
@@ -553,7 +554,6 @@ fn appearance(
             );
         });
     });
-    terminal(ui, engine, commands, strings, events);
 }
 
 /// The Terminal group: one control per `terminal.*` field, each applied as
