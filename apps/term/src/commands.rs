@@ -129,6 +129,17 @@ pub fn registry() -> Registry<App> {
         enabled: always,
         run: |a: &mut App| a.keys_dialog = true,
     });
+    r.add(Command {
+        id: "help.about",
+        label: "help-about",
+        menu: Some("help"),
+        submenu: None,
+        group: 1,
+        shortcut: None,
+        icon: None,
+        enabled: always,
+        run: |a: &mut App| a.about_dialog = true,
+    });
     // View › Theme: any scheme, style, mode and framing, in this window only.
     r.theme_menu("view", |a: &App| a.theme, |a: &mut App, c| a.theme = c);
     r.search_menu("help");

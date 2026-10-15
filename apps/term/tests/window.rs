@@ -6,6 +6,7 @@
 
 use design::{DesignContext, Mode, Scheme};
 use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
 use egui_kittest::wgpu::{WgpuTestRenderer, create_render_state, default_wgpu_setup};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -49,7 +50,7 @@ fn replace(tabs: &TabSet, id: u64, text: &str) {
 fn two_tabs_and_a_split_studio_dark() {
     let settings = Settings {
         config: Config::default(),
-        term: "xterm-256color",
+        term: "xterm-256color".into(),
     };
     let mut tabs = TabSet::with_session(settings, None).expect("a Mix PTY");
     let first_tab = tabs.active_id();
@@ -127,6 +128,28 @@ fn two_tabs_and_a_split_studio_dark() {
     }
     harness.snapshot("two_tabs_and_a_split_studio_dark");
 
+    // Exercise the real offline debounce and show its persistent notice.
+    harness
+        .state_mut()
+        .shell
+        .as_mut()
+        .unwrap()
+        .app
+        .zoom(FontSize::increase);
+    harness.run_steps(2);
+    std::thread::sleep(std::time::Duration::from_millis(410));
+    harness.run_steps(2);
+    harness.get_by_label("Zoom is not saved");
+    harness.snapshot("unsaved_zoom_studio_dark");
+    let zoom = harness.state().shell.as_ref().unwrap().app.font().current();
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().shell.as_ref().unwrap().app.font().current(),
+        zoom
+    );
+    harness.state_mut().shell.as_mut().unwrap().app.reset_font();
+    harness.run_steps(2);
+
     // Selecting the first tab from the strip shows its one pane.
     harness
         .state_mut()
@@ -141,6 +164,18 @@ fn two_tabs_and_a_split_studio_dark() {
     let app = &harness.state().shell.as_ref().unwrap().app;
     assert_eq!(app.shape.visible().len(), 1);
     assert!(!app.shape.focus_ring(app.shape.active_pane));
+
+    // Help's About command opens the standard dialog without handing keys
+    // to the PTY, and names the build and the offline settings source.
+    harness.get_by_label("Help").click();
+    harness.run_steps(2);
+    harness.get_by_label("About").click();
+    harness.run_steps(2);
+    harness.get_by_label(&term::view::about_text(false));
+    assert!(harness.state().shell.as_ref().unwrap().app.about_dialog);
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    assert!(!harness.state().shell.as_ref().unwrap().app.about_dialog);
 
     drop(harness);
     let removed = tabs.lock().unwrap().shutdown();

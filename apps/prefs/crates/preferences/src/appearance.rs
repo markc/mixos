@@ -23,11 +23,13 @@
 //! receipt lookups; nothing needs to survive a restart, since the fence and
 //! a fresh read already make any later apply safe.
 use crate::engine::{Effect, Engine};
+use crate::terminal::Edit;
 use citizen::{CallError, Reply};
 use design::{CaptionSide, Contrast, Decorations, DesignContext, Mode, Scheme, Style};
 use serde::Serialize;
 use serde_json::{Value, json};
 use settings::model::{Appearance as Stored, ApplyRequest, Binding, Revision};
+use settings::terminal::Terminal as TerminalPrefs;
 use std::collections::BTreeMap;
 
 /// The Bus service behind the Appearance panel.
@@ -273,6 +275,8 @@ pub(crate) enum Call {
     Apply(Submitted),
     /// Settle an apply whose reply was lost, by its receipt.
     Receipt(Submitted),
+    /// One terminal edit (the Terminal group), under its operation id.
+    Terminal(String, Edit),
 }
 
 impl Call {
@@ -281,6 +285,8 @@ impl Call {
             Call::Read => "settings.get",
             Call::Apply(_) => "settings.apply",
             Call::Receipt(_) => "settings.status",
+            Call::Terminal(_, Edit::Reset) => "settings.reset",
+            Call::Terminal(_, Edit::Set(..)) => "settings.apply",
         }
     }
 }
@@ -299,6 +305,9 @@ pub struct Appearance {
     pub settings: Availability,
     /// The look settingsd holds.
     pub current: Option<Look>,
+    /// The terminal's preferences as settingsd holds them, from the same
+    /// read as the look; the Terminal group shows these, never a copy.
+    pub terminal: Option<TerminalPrefs>,
     /// The profile names a design package of its own (`appearance.source`):
     /// the window keeps the session theme rather than the embedded design.
     pub custom_source: bool,
@@ -352,6 +361,7 @@ impl Default for Appearance {
             retargeted: false,
             settings: Availability::Unknown,
             current: None,
+            terminal: None,
             custom_source: false,
             keymaps: Default::default(),
             fence: None,
@@ -445,6 +455,31 @@ impl Appearance {
     /// An apply is in flight: the controls wait for its answer.
     pub fn applying(&self) -> bool {
         matches!(self.job, Some((_, Call::Apply(_))))
+    }
+
+    /// A fresh operation id for one apply, unique to this process and run.
+    pub(crate) fn operation(&mut self) -> String {
+        self.applies += 1;
+        format!(
+            "prefs-{}-{}-{}",
+            std::process::id(),
+            self.applies,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_millis())
+        )
+    }
+
+    /// A terminal edit may go out: settingsd read, its fence current, and
+    /// nothing in flight, uncertain or awaiting a read.
+    pub(crate) fn terminal_ready(&self) -> bool {
+        self.settings == Availability::Available
+            && self.current.is_some()
+            && self.fence.is_some()
+            && self.job.is_none()
+            && self.uncertain.is_none()
+            && self.confirm.is_none()
+            && !self.syncing
     }
 
     /// The revision the panel was read at.
@@ -566,7 +601,17 @@ fn refusal(value: &Value) -> String {
 /// The fence and look in a `settings.get` reply (its `summary` view).
 fn snapshot(
     value: &Value,
-) -> Result<(String, Revision, Look, bool, settings::keymap::Keymaps), String> {
+) -> Result<
+    (
+        String,
+        Revision,
+        Look,
+        bool,
+        settings::keymap::Keymaps,
+        TerminalPrefs,
+    ),
+    String,
+> {
     let summary: settings::Summary =
         serde_json::from_value(value["summary"].clone()).map_err(|e| format!("summary: {e}"))?;
     let look = Look::from_stored(&summary.appearance)?;
@@ -576,6 +621,7 @@ fn snapshot(
         look,
         summary.custom_source,
         summary.keymaps,
+        summary.terminal,
     ))
 }
 
@@ -626,12 +672,32 @@ impl Engine {
         }
     }
 
-    fn call_settings(&mut self, call: Call) {
+    pub(crate) fn call_settings(&mut self, call: Call) {
         let ticket = self.next();
         let body = match &call {
             Call::Read => json!({"binding":self.look.binding,"view":"summary"}),
             Call::Receipt(submitted) => {
                 json!({"binding":self.look.binding,"operation_id":submitted.operation})
+            }
+            Call::Terminal(operation, edit) => {
+                let (incarnation, revision) = self.look.fence.clone().expect("a fenced apply");
+                let (changes, reset) = match edit {
+                    Edit::Set(path, value) => (
+                        BTreeMap::from([((*path).to_owned(), value.clone())]),
+                        Vec::new(),
+                    ),
+                    Edit::Reset => (BTreeMap::new(), vec!["terminal".to_owned()]),
+                };
+                serde_json::to_value(ApplyRequest {
+                    binding: self.look.binding.clone(),
+                    expected_incarnation: incarnation,
+                    expected_revision: revision,
+                    operation_id: operation.clone(),
+                    changes,
+                    reset,
+                    request_digest: None,
+                })
+                .expect("an apply request serialises")
             }
             Call::Apply(submitted) => {
                 let (incarnation, revision) = self.look.fence.clone().expect("a fenced apply");
@@ -829,15 +895,7 @@ impl Engine {
         let Some(draft) = self.look.draft.take() else {
             return;
         };
-        self.look.applies += 1;
-        let operation = format!(
-            "prefs-{}-{}-{}",
-            std::process::id(),
-            self.look.applies,
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_millis())
-        );
+        let operation = self.look.operation();
         self.status = self.label("applying-look", &[]);
         self.failed = false;
         let submitted = Submitted {
@@ -905,6 +963,7 @@ impl Engine {
                 Call::Read => self.read_answered(answer),
                 Call::Apply(submitted) => self.apply_answered(submitted, answer),
                 Call::Receipt(submitted) => self.receipt_answered(submitted, answer),
+                Call::Terminal(..) => self.terminal_answered(answer),
             }
         }
         if self.look.reread && self.look.job.is_none() {
@@ -921,11 +980,12 @@ impl Engine {
     fn read_answered(&mut self, answer: Answer) {
         match answer {
             Answer::Ok(value) => match snapshot(&value) {
-                Ok((incarnation, revision, look, custom, keymaps)) => {
+                Ok((incarnation, revision, look, custom, keymaps, terminal)) => {
                     self.look.settings = Availability::Available;
                     self.look.keymaps = keymaps;
                     self.look.fence = Some((incarnation, revision));
                     self.look.current = Some(look);
+                    self.look.terminal = Some(terminal);
                     self.look.custom_source = custom;
                     // A recovering settingsd may not show a write it has
                     // already taken: it cannot decide pinned axes, and
@@ -1066,6 +1126,34 @@ impl Engine {
     fn look_failed(&mut self, message: &str) {
         self.status = self.label("look-failed", &[("message", message)]);
         self.failed = true;
+    }
+
+    /// A terminal edit settled. Whatever the answer, the session is read
+    /// again before the next apply: the read shows whether the edit landed
+    /// (a lost reply is no verdict), and it gives the fence for the next.
+    fn terminal_answered(&mut self, answer: Answer) {
+        match answer {
+            Answer::Ok(_) => {
+                self.status = self.label("applied-terminal", &[]);
+                self.failed = false;
+            }
+            Answer::Refused(value) if value["status"] == "conflict" => {
+                self.status = self.label("terminal-conflict", &[]);
+                self.failed = true;
+            }
+            Answer::Refused(value) => {
+                let message = refusal(&value);
+                self.status = self.label("terminal-failed", &[("message", message.as_str())]);
+                self.failed = true;
+            }
+            Answer::NotSent(message) | Answer::Lost(message) => {
+                self.status = self.label("terminal-failed", &[("message", message.as_str())]);
+                self.failed = true;
+            }
+            Answer::Missing => return,
+        }
+        self.look.syncing = true;
+        self.look.reread = true;
     }
 
     /// The panel as `prefs.appearance` answers it.

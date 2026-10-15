@@ -103,7 +103,7 @@ fn compare(gpu: &[u8], cpu: &[u8], width: usize, label: &str) -> (usize, usize) 
 #[test]
 fn gpu_grid_matches_the_cpu_painter_at_every_scale() {
     for scale in [1.0, 1.25, 2.5] {
-        for cursor in [Cursor::Block, Cursor::Underline] {
+        for cursor in [Cursor::Block, Cursor::Underline, Cursor::Bar] {
             let label = format!("scale {scale} {cursor:?}");
             let raster = Raster::for_test(scale, 13.0, cursor).unwrap();
             let raster = Arc::new(Mutex::new(raster));

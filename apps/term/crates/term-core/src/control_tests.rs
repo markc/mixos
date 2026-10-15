@@ -334,10 +334,10 @@ impl Fixture {
         }
         let settings = crate::config::Settings {
             config: crate::config::Config::default(),
-            term: "xterm-256color",
+            term: "xterm-256color".into(),
         };
         let tabs = Arc::new(Mutex::new(
-            TabSet::with_initial(settings, Some(supervisor.handle.clone()), || {
+            TabSet::with_initial(settings.clone(), Some(supervisor.handle.clone()), || {
                 crate::terminal::Terminal::start_session_e2e(
                     settings,
                     &supervisor.handle,
@@ -444,7 +444,7 @@ impl Fixture {
         super::tests::wait_ready(self.native(), 2);
         let settings = crate::config::Settings {
             config: crate::config::Config::default(),
-            term: "xterm-256color",
+            term: "xterm-256color".into(),
         };
         let native = self.native().clone();
         let program = self.program.clone();
@@ -836,7 +836,7 @@ fn p0i_10_unbound_pane_has_no_control() {
         // A real TabSet pane with no native launch handle is graphics-only.
         let settings = crate::config::Settings {
             config: crate::config::Config::default(),
-            term: "xterm-256color",
+            term: "xterm-256color".into(),
         };
         fixture
             .tabs
@@ -1300,11 +1300,11 @@ fn p0i_10_parent_bootstrap_outage_has_only_diagnostic_lane() {
     supervisor.wait_startup();
     let settings = crate::config::Settings {
         config: crate::config::Config::default(),
-        term: "xterm-256color",
+        term: "xterm-256color".into(),
     };
     let home = broker.endpoint.parent().unwrap().display().to_string();
     let tabs = Arc::new(Mutex::new(
-        TabSet::with_initial(settings, Some(supervisor.handle.clone()), || {
+        TabSet::with_initial(settings.clone(), Some(supervisor.handle.clone()), || {
             crate::terminal::Terminal::start_session_e2e(
                 settings,
                 &supervisor.handle,

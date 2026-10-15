@@ -32,11 +32,19 @@ it) and answers:
 
 ## Configuration
 
-`term.conf.mix`, found by the shared MixOS directory rule (`MIXOS_ETC`,
-then `$MIXOS/etc`, then the user or system configuration directory). The
-example is `crates/term-core/term.example.conf.mix`. `TERM_FONT_PX` and
-`TERM_SPIKE_FONT` override the size and the font; `term --print-config`
-prints what was resolved.
+The desktop profile's `terminal.*` settings, held by settingsd and edited
+in Prefs: font family, size and weight, padding, border width, history
+lines, scroll speed, cursor shape and blink, the focus ring, copy on
+select, and `TERM`. The window follows them as they change; Ctrl+plus and
+minus write `terminal.font.size` back 400 ms after the last zoom key.
+Ctrl+0 returns to the profile size without writing, except to correct a
+write already in flight. An unsaved zoom stays pending in memory until
+another zoom key or a successful settings read; a validation refusal
+discards it. Failures schedule no retry timers. History lines and `TERM`
+apply to tabs and panes opened afterwards. Without settingsd the defaults
+stand, and zoom stays the window's own. `TERM_FONT_PX` sets the size until
+settingsd answers, and `TERM_SPIKE_FONT` overrides the font file;
+`term --print-config` prints the startup values.
 
 ## Keys
 

@@ -3,11 +3,12 @@
 //! Bus: keys, the input method, the pointer, the wheel, zoom, wakes and the
 //! chords, each against the bytes a pane's PTY would receive.
 
-use crate::app::{App, Effect, Synced, apply};
+use crate::app::{App, BLINK, Effect, Synced, apply};
 use crate::input::{Action, PIXELS_PER_STEP, Wheel};
 use crate::layout;
 use crate::mouse::Pointer;
 use egui::{ImeEvent, Key, Modifiers, PointerButton, Pos2, pos2};
+use settings::terminal::{CursorShape, FocusRing, Terminal as TerminalSettings};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -80,7 +81,7 @@ fn active_pane(tabs: &TabSet) -> u64 {
 /// The first cell of the first (or only) pane, a little way in.
 fn first_cell(app: &App) -> Pos2 {
     let (cw, ch) = app.logical_cell();
-    let border = layout::border(app.scale());
+    let border = app.inset();
     pos2(border + cw * 0.1, AREA.y + border + ch * 0.5)
 }
 
@@ -526,7 +527,7 @@ fn cancelled_local_drag_clears_and_a_new_pane_selection_is_exclusive() {
         .unwrap()
         .1;
     let (cw, ch) = app.logical_cell();
-    let border = layout::border(app.scale());
+    let border = app.inset();
     let start = pos2(rect.x + border + cw * 0.1, rect.y + border + ch * 0.5);
     let end = pos2(start.x + cw * 3.8, start.y);
     app.pointer_event(
@@ -966,6 +967,197 @@ fn clicks_and_the_strip_run_targeted_commands() {
         ]
     );
     finish(app, reaper);
+}
+
+/// The settings at the size the test raster draws, so applying them
+/// rebuilds nothing by itself.
+fn terminal_settings() -> TerminalSettings {
+    let mut settings = TerminalSettings::default();
+    settings.font.size = 13.0;
+    settings
+}
+
+/// settingsd's terminal settings: a new border or padding resizes each PTY
+/// once; the cursor shape, ring, history and TERM for new shells follow;
+/// a TERM the schema refuses is never used.
+#[test]
+fn terminal_settings_apply_and_resize_each_pty_once() {
+    let (mut app, reaper) = test_app();
+    let id = app.shape.active_pane;
+    let before = app.grids[&id];
+    let mut settings = terminal_settings();
+    app.apply_terminal(&settings, None, false);
+    assert_eq!(app.grids[&id], before, "the defaults change nothing");
+    assert_eq!(app.inset(), 8.0);
+    assert_eq!(app.raster.lock().unwrap().cursor(), Cursor::Underline);
+    settings.padding = 16;
+    settings.border.width = 2;
+    settings.cursor.shape = CursorShape::Bar;
+    settings.focus.ring = FocusRing::Accent;
+    settings.scrollback.lines = 5000;
+    settings.env.term = "foot".into();
+    app.apply_terminal(&settings, None, false);
+    let after = app.grids[&id];
+    assert!(
+        after.0 < before.0 && after.1 < before.1,
+        "{before:?} -> {after:?}"
+    );
+    assert_eq!(app.inset(), 16.0);
+    assert_eq!(app.raster.lock().unwrap().cursor(), Cursor::Bar);
+    assert_eq!(app.focus_ring, (FocusRing::Accent, 0.25));
+    {
+        let tabs = app.tabs.lock().unwrap();
+        assert_eq!(tabs.settings().config.scrollback, 5000);
+        assert_eq!(tabs.settings().term, "foot");
+    }
+    // The same edges again lay nothing out: a stale grid stays stale.
+    app.grids.insert(id, (7, 7));
+    settings.env.term = "Not A TERM".into();
+    app.apply_terminal(&settings, None, false);
+    assert_eq!(app.grids[&id], (7, 7));
+    assert_eq!(app.tabs.lock().unwrap().settings().term, "foot");
+    finish(app, reaper);
+}
+
+/// A zoom is the person's size: written back to the settings, and kept
+/// against a look while the write is pending. A size from the settings is
+/// never written back.
+#[test]
+fn a_zoom_is_written_back_and_kept_until_it_lands() {
+    let (mut app, reaper) = test_app();
+    app.act(Action::FontIncrease);
+    let zoomed = app.font().current();
+    assert!(zoomed > 13.0);
+    assert_eq!(app.font_write.take(), Some(zoomed));
+    let mut settings = terminal_settings();
+    app.apply_terminal(&settings, None, true);
+    assert_eq!(
+        app.font().current(),
+        zoomed,
+        "a pending write keeps the zoom"
+    );
+    app.apply_terminal(&settings, None, false);
+    assert_eq!(app.font().current(), 13.0);
+    let cell = app.cell();
+    let id = app.shape.active_pane;
+    let grid = app.grids[&id];
+    settings.font.size = 20.0;
+    app.apply_terminal(&settings, None, false);
+    assert_eq!(app.font().current(), 20.0);
+    assert!(app.cell().1 > cell.1);
+    let after = app.grids[&id];
+    assert!(
+        after.0 < grid.0 && after.1 < grid.1,
+        "a size alone recomputes the grid: {grid:?} -> {after:?}"
+    );
+    assert_eq!(
+        app.font_write, None,
+        "the settings' size is not written back"
+    );
+    finish(app, reaper);
+}
+
+/// Ctrl+0 returns to the profile's `terminal.font.size`, not the startup
+/// size, and writes nothing: the profile already holds that size.
+#[test]
+fn reset_returns_to_the_profile_size_and_writes_nothing() {
+    let (mut app, reaper) = test_app();
+    let mut settings = terminal_settings();
+    settings.font.size = 20.0;
+    app.apply_terminal(&settings, None, false);
+    app.act(Action::FontIncrease);
+    assert!(app.font().current() > 20.0);
+    app.act(Action::FontReset);
+    assert_eq!(app.font().current(), 20.0, "the profile's size");
+    assert_eq!(app.font_write, None, "a reset writes nothing");
+    assert!(std::mem::take(&mut app.font_reset));
+
+    // A look while a zoom is unwritten keeps the zoom but moves the reset
+    // target to the profile's size.
+    app.act(Action::FontIncrease);
+    let zoomed = app.font().current();
+    settings.font.size = 16.0;
+    app.apply_terminal(&settings, None, true);
+    assert_eq!(app.font().current(), zoomed);
+    app.act(Action::FontReset);
+    assert_eq!(app.font().current(), 16.0);
+    assert_eq!(app.font_write, None);
+    finish(app, reaper);
+}
+
+/// Blink alternates every half cycle while the window has the keyboard,
+/// and asks for no frame while it is off or the window lost the keyboard.
+#[test]
+fn a_blinking_cursor_asks_for_frames_only_while_it_blinks() {
+    let (mut app, reaper) = test_app();
+    let id = app.shape.active_pane;
+    let (_terminal, _) = fixture(&mut app, id, 8, 3, b"hi");
+    app.paint();
+    assert_eq!(
+        app.next_blink(Instant::now()),
+        None,
+        "blink is off by default"
+    );
+    let mut settings = terminal_settings();
+    settings.cursor.blink = true;
+    app.apply_terminal(&settings, None, false);
+    app.focused();
+    let start = Instant::now();
+    assert!(app.cursor_shown(start));
+    let next = app.next_blink(start).expect("a blinking cursor");
+    assert!(next > Duration::ZERO && next <= BLINK);
+    assert!(!app.cursor_shown(start + BLINK));
+    assert!(app.cursor_shown(start + BLINK * 2));
+    // Counted from the phase the paint drew: asked just past that phase's
+    // edge, the repaint is due at once, not a half cycle later.
+    app.paint();
+    let painted = Instant::now();
+    assert_eq!(
+        app.next_blink(painted + BLINK + Duration::from_millis(1)),
+        Some(Duration::ZERO)
+    );
+    let next = app.next_blink(painted).expect("a blinking cursor");
+    assert!(next > Duration::ZERO && next <= BLINK);
+    app.unfocused();
+    assert_eq!(app.next_blink(start), None, "steady without the keyboard");
+    assert!(app.cursor_shown(start + BLINK));
+    finish(app, reaper);
+}
+
+/// With copy-on-select a finished selection goes to the clipboard as well
+/// as the primary selection; without it, to the primary selection only.
+#[test]
+fn copy_on_select_copies_a_finished_selection_to_the_clipboard() {
+    for copy in [false, true] {
+        let (mut app, reaper) = test_app();
+        let id = app.shape.active_pane;
+        let (terminal, _) = fixture(&mut app, id, 8, 3, b"word");
+        let mut settings = terminal_settings();
+        settings.mouse.copy_on_select = copy;
+        app.apply_terminal(&settings, None, false);
+        let start = first_cell(&app);
+        let end = pos2(start.x + app.logical_cell().0 * 3.8, start.y);
+        let now = Instant::now();
+        app.pointer_event(Pointer::Pressed(start, PointerButton::Primary), now);
+        app.pointer_event(Pointer::Moved(end), now);
+        app.pointer_event(Pointer::Released(end, PointerButton::Primary), now);
+        let writes: Vec<_> = app
+            .effects
+            .iter()
+            .filter_map(|effect| match effect {
+                Effect::Write { text, primary } => Some((text.as_str(), *primary)),
+                _ => None,
+            })
+            .collect();
+        let expected = if copy {
+            vec![("word", false), ("word", true)]
+        } else {
+            vec![("word", true)]
+        };
+        assert_eq!(writes, expected, "copy_on_select {copy}");
+        drop(terminal);
+        finish(app, reaper);
+    }
 }
 
 /// Quit queues the window's close, and the closed tab set syncs to Exit.

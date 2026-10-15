@@ -2,7 +2,7 @@
 //! Shaping and colour glyphs, deliberately separate from the ASCII mask loop.
 use std::{
     collections::HashMap,
-    sync::{Arc, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
 };
 use swash::{
     CacheKey, FontRef,
@@ -28,6 +28,7 @@ pub(super) struct Face {
 }
 
 impl Face {
+    #[cfg(test)]
     fn new(data: Arc<[u8]>) -> Option<Self> {
         Self::at_index(data, 0)
     }
@@ -55,6 +56,7 @@ impl Face {
 
 pub(super) struct Fonts {
     pub(super) primary: Face,
+    weight: u16,
     fallbacks: OnceLock<Arc<Fallbacks>>,
 }
 
@@ -62,7 +64,7 @@ pub(super) struct Fonts {
 struct Fallbacks {
     coverage: Vec<Face>,
     emoji: Option<Face>,
-    symbols: Option<Face>,
+    symbols: Vec<Face>,
 }
 
 pub(super) const EMOJI_PATHS: &[&str] = &[
@@ -73,6 +75,7 @@ pub(super) const EMOJI_PATHS: &[&str] = &[
 
 /// The first readable face among `paths`. A damaged file is refused here, as
 /// primary faces are, rather than panicking later in the shaper.
+#[cfg(test)]
 pub(super) fn optional(paths: &[&str]) -> Option<Face> {
     paths.iter().find_map(|path| {
         let face = Face::new(std::fs::read(path).ok()?.into())?;
@@ -86,39 +89,64 @@ pub(super) fn optional(paths: &[&str]) -> Option<Face> {
 }
 
 impl Fonts {
-    pub(super) fn discover(primary: Arc<[u8]>, index: u32) -> Option<Arc<Self>> {
+    pub(super) fn discover(primary: Arc<[u8]>, index: u32, weight: u16) -> Option<Arc<Self>> {
         Some(Arc::new(Self {
             primary: Face::at_index(primary, index)?,
+            weight,
             fallbacks: OnceLock::new(),
         }))
     }
 
     fn fallbacks(&self) -> &Fallbacks {
-        static SHARED: OnceLock<Arc<Fallbacks>> = OnceLock::new();
+        static SHARED: OnceLock<Mutex<HashMap<u16, Arc<Fallbacks>>>> = OnceLock::new();
         self.fallbacks.get_or_init(|| {
-            SHARED
-                .get_or_init(|| {
+            let mut shared = SHARED
+                .get_or_init(Mutex::default)
+                .lock()
+                .expect("fallback fonts");
+            shared
+                .entry(self.weight)
+                .or_insert_with(|| {
                     Arc::new(Fallbacks {
-                        coverage: super::primary_font::coverage()
+                        coverage: super::primary_font::coverage(self.weight)
                             .into_iter()
                             .filter_map(|face| Face::at_index(face.data, face.index))
                             .collect(),
                         emoji: match super::primary_font::installed_role("emoji") {
-                            Ok(Some(face)) => Face::at_index(face.data, face.index),
-                            Ok(None) => optional(EMOJI_PATHS),
+                            Ok(Some(face)) => {
+                                let mut db = fontdb::Database::new();
+                                db.load_system_fonts();
+                                let face = super::primary_font::fallback_weight(
+                                    &mut db,
+                                    face,
+                                    self.weight,
+                                );
+                                Face::at_index(face.data, face.index)
+                            }
+                            Ok(None) => {
+                                super::primary_font::fallback_paths(EMOJI_PATHS, self.weight)
+                                    .into_iter()
+                                    .find_map(|face| Face::at_index(face.data, face.index))
+                            }
                             Err(error) => {
                                 eprintln!("terminal static emoji: {error}");
                                 None
                             }
                         },
-                        symbols: optional(&[
-                            "/usr/share/fonts/noto/NotoSansSymbols2-Regular.ttf",
-                            "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
-                            "/usr/share/fonts/google-noto/NotoSansSymbols2-Regular.ttf",
-                            // Covers U+23F5 (⏵) and other Misc Technical arrows that
-                            // no installed asset face has. Last resort, after the Noto set.
-                            "/usr/share/fonts/Adwaita/AdwaitaMono-Regular.ttf",
-                        ]),
+                        symbols: super::primary_font::fallback_paths(
+                            &[
+                                "/usr/share/fonts/noto/NotoSansSymbols2-Regular.ttf",
+                                "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
+                                "/usr/share/fonts/google-noto/NotoSansSymbols2-Regular.ttf",
+                                // Covers U+23F5 (⏵) and other Misc Technical arrows that
+                                // no installed asset face has. Last resort, after the Noto set.
+                                "/usr/share/fonts/Adwaita/AdwaitaMono-Regular.ttf",
+                            ],
+                            self.weight,
+                        )
+                        .into_iter()
+                        .filter_map(|face| Face::at_index(face.data, face.index))
+                        .collect(),
                     })
                 })
                 .clone()
@@ -129,6 +157,7 @@ impl Fonts {
     pub(super) fn without_fallbacks(primary: Arc<[u8]>, index: u32) -> Arc<Self> {
         Arc::new(Self {
             primary: Face::at_index(primary, index).unwrap(),
+            weight: 400,
             fallbacks: OnceLock::from(Arc::new(Fallbacks::default())),
         })
     }
@@ -238,11 +267,11 @@ impl UnicodeRaster {
                 [
                     Some(&self.fonts.primary),
                     self.fonts.fallbacks().emoji.as_ref(),
-                    self.fonts.fallbacks().symbols.as_ref(),
                 ]
                 .into_iter()
                 .flatten()
                 .chain(&self.fonts.fallbacks().coverage)
+                .chain(&self.fonts.fallbacks().symbols)
                 .any(|face| face.key == key)
             }));
             let bytes = image.layers.iter().map(Layer::bytes).sum::<usize>();
@@ -276,7 +305,8 @@ impl UnicodeRaster {
             && (text.contains('\u{fe0f}') || (span == 2 && text.chars().any(|c| c.is_emoji())));
         let primary = Some(&self.fonts.primary);
         // Only a non-ASCII cache miss reaches this path in production.
-        // All rasters share these immutable bytes and stable font identities.
+        // Resized rasters share immutable bytes and stable font identities;
+        // each requested weight has its own lazy fallback selection.
         let fallbacks = self.fonts.fallbacks();
         let faces = emoji
             .then_some(fallbacks.emoji.as_ref())
@@ -285,7 +315,7 @@ impl UnicodeRaster {
             .chain(primary)
             .chain(&fallbacks.coverage)
             .chain((!emoji).then_some(fallbacks.emoji.as_ref()).flatten())
-            .chain(fallbacks.symbols.as_ref());
+            .chain(&fallbacks.symbols);
         for face in faces {
             let font = face.font();
             if !covers(font, text, script) {
@@ -717,13 +747,116 @@ mod tests {
         let installed = super::super::primary_font::installed_role("emoji")
             .unwrap()
             .expect("installed emoji");
-        let fonts = super::Fonts::discover(primary.data, primary.index).unwrap();
+        let fonts = super::Fonts::discover(primary.data, primary.index, 400).unwrap();
         let selected = fonts.fallbacks().emoji.as_ref().expect("selected emoji");
         assert_eq!(selected.data.as_ref(), installed.data.as_ref());
         assert_eq!(selected.index, installed.index);
     }
     use super::*;
     use crate::raster::{PixelFormat, paint_cluster};
+
+    #[test]
+    fn dejavu_fallback_uses_nearest_weight_when_installed_strict_env_requires_pair() {
+        use fontdb::{Database, Style};
+        const FAMILY: &str = "DejaVu Sans Mono";
+        let mut db = Database::new();
+        db.load_system_fonts();
+        // Expectations come from fontdb's installed metadata, independently
+        // of the fallback selector. Never search for a passing selected pair.
+        let available: Vec<_> = db
+            .faces()
+            .filter(|face| {
+                face.style == Style::Normal && face.families.iter().any(|(name, _)| name == FAMILY)
+            })
+            .collect();
+        if ![400, 700]
+            .iter()
+            .all(|weight| available.iter().any(|face| face.weight.0 == *weight))
+        {
+            let message = "fallback weight test requires installed DejaVu Sans Mono regular (400) and bold (700); set MIXOS_STRICT_FONT_TESTS=1 to require this fixture";
+            assert!(
+                std::env::var("MIXOS_STRICT_FONT_TESTS").as_deref() != Ok("1"),
+                "{message}"
+            );
+            eprintln!("{message}");
+            return;
+        }
+        let primary = super::super::primary_font::discover(None).unwrap();
+        let mut ids = Vec::new();
+        for requested in [400, 700, 100, 450, 550, 900] {
+            let expected = available
+                .iter()
+                .map(|face| (face.weight.0.abs_diff(requested), face.weight.0))
+                .min()
+                .unwrap();
+            let fonts = Fonts::discover(primary.data.clone(), primary.index, requested).unwrap();
+            let (selected, info) = fonts
+                .fallbacks()
+                .coverage
+                .iter()
+                .find_map(|selected| {
+                    available.iter().find_map(|info| {
+                        db.with_face_data(info.id, |data, index| {
+                            (index == selected.index && data == selected.data.as_ref())
+                                .then_some((selected, *info))
+                        })
+                        .flatten()
+                    })
+                })
+                .expect("DejaVu Sans Mono must be in the fallback coverage chain");
+            assert_eq!(info.weight.0, expected.1, "request {requested}");
+            ids.push(info.id);
+            // Force this real coverage face through the glyph routing path.
+            let coverage = Face::at_index(selected.data.clone(), selected.index).unwrap();
+            let key = coverage.key;
+            let mut isolated = Fonts::without_fallbacks(primary.data.clone(), primary.index);
+            Arc::get_mut(&mut isolated).unwrap().fallbacks = OnceLock::from(Arc::new(Fallbacks {
+                coverage: vec![coverage],
+                ..Default::default()
+            }));
+            let ch = (0x80..=0xffff)
+                .filter_map(char::from_u32)
+                .find(|ch| {
+                    isolated.primary.font().charmap().map(*ch) == 0
+                        && selected.font().charmap().map(*ch) != 0
+                        && ch.is_alphanumeric()
+                })
+                .expect("DejaVu must cover a glyph absent from the bundled primary");
+            let mut raster = UnicodeRaster::new(isolated);
+            let image = raster.image(&ch.to_string(), 1, 24.0, (30, 40), 30);
+            assert_eq!(image.font, Some(key), "request {requested}");
+        }
+        assert_ne!(
+            ids[0], ids[1],
+            "regular and bold must select different faces"
+        );
+    }
+
+    #[test]
+    fn single_weight_fallback_keeps_the_same_real_face_for_every_requested_weight() {
+        use fontdb::Database;
+        let fixture = super::super::primary_font::fixture().unwrap();
+        // A database with only the real regular font file makes the family
+        // single-weight without changing its metadata or inventing a face.
+        let mut db = Database::new();
+        db.load_font_file(&fixture.path).unwrap();
+        assert_eq!(db.faces().count(), 1, "single-face DejaVu fixture");
+        let info = db.faces().next().unwrap().clone();
+        assert_eq!(info.weight.0, 400);
+        for requested in 1..=1000 {
+            let selected =
+                super::super::primary_font::fallback_weight(&mut db, fixture.clone(), requested);
+            assert_eq!(selected.path, fixture.path, "request {requested}");
+            assert_eq!(selected.index, info.index, "request {requested}");
+            assert_eq!(selected.data, fixture.data, "request {requested}");
+            assert_eq!(
+                db.with_face_data(info.id, |data, index| {
+                    data == selected.data.as_ref() && index == selected.index
+                }),
+                Some(true)
+            );
+        }
+    }
 
     #[test]
     fn sf_primary_uses_dejavu_coverage_and_keeps_ascii_and_emoji_priority() {

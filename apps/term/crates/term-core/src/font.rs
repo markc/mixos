@@ -20,35 +20,59 @@ use crate::config::valid_font;
 /// One `font-increase` / `font-decrease`: 0.5 pt, in logical pixels.
 pub const STEP_PX: f32 = 0.5 * 96.0 / 72.0;
 
-/// The configured size and how far the user has zoomed from it.
+/// The configured size (the settings' value, which `reset` returns to), the
+/// size zoom steps count from, and how far the user has zoomed from that.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FontSize {
     configured: f32,
+    base: f32,
     steps: i32,
 }
 
 impl FontSize {
-    /// `configured` is the startup size, already validated by the config
-    /// loader; it is what `reset` returns to.
+    /// `configured` is the startup size, already validated; it is what
+    /// `reset` returns to until the settings name another.
     pub fn new(configured: f32) -> Self {
         Self {
             configured,
+            base: configured,
             steps: 0,
         }
     }
 
     /// The size to rasterise at now, in logical pixels.
     pub fn current(&self) -> f32 {
-        self.configured + self.steps as f32 * STEP_PX
+        self.base + self.steps as f32 * STEP_PX
     }
 
     pub fn configured(&self) -> f32 {
         self.configured
     }
 
+    /// Draw at `px` (a size the settings chose): it becomes the configured
+    /// size, and zoom steps count from it. False when the size drawn does
+    /// not change; out of range, nothing changes.
+    pub fn set(&mut self, px: f32) -> bool {
+        if !valid_font(px) {
+            return false;
+        }
+        let changed = px != self.current();
+        (self.configured, self.base, self.steps) = (px, px, 0);
+        changed
+    }
+
+    /// Record `px` (the settings' size) as the size `reset` returns to,
+    /// leaving the size drawn alone: a zoom not yet written back stands.
+    /// Out of range, nothing changes.
+    pub fn configure(&mut self, px: f32) {
+        if valid_font(px) {
+            self.configured = px;
+        }
+    }
+
     /// One step larger. False, and no change, when the next step would leave
-    /// the range the config accepts — the same bounds a hand-written
-    /// `font_px` is held to, so zoom cannot reach a size the file could not.
+    /// the range `terminal.font.size` accepts, so zoom cannot reach a size
+    /// the settings could not hold.
     pub fn increase(&mut self) -> bool {
         self.step(1)
     }
@@ -60,7 +84,9 @@ impl FontSize {
 
     /// Back to the configured size. False if already there.
     pub fn reset(&mut self) -> bool {
-        std::mem::replace(&mut self.steps, 0) != 0
+        let changed = self.current() != self.configured;
+        (self.base, self.steps) = (self.configured, 0);
+        changed
     }
 
     /// Apply `steps` single steps in one direction (a wheel that reports
@@ -81,7 +107,7 @@ impl FontSize {
         let Some(next) = self.steps.checked_add(direction) else {
             return false;
         };
-        if !valid_font(self.configured + next as f32 * STEP_PX) {
+        if !valid_font(self.base + next as f32 * STEP_PX) {
             return false;
         }
         self.steps = next;
@@ -135,8 +161,53 @@ mod tests {
         assert_eq!(size.configured(), 13.0);
     }
 
-    /// The bounds are the config's own: zoom must not reach a size that a
-    /// hand-written `font_px` would be refused for.
+    /// A size the settings chose is where zoom steps count from, and where
+    /// reset returns: the profile's size, not the startup size.
+    #[test]
+    fn a_set_size_is_the_base_for_steps_and_the_reset_target() {
+        let mut size = FontSize::new(12.5);
+        assert!(size.increase());
+        assert!(size.set(14.0));
+        assert_eq!(size.current(), 14.0);
+        assert_eq!(size.configured(), 14.0);
+        assert!(!size.set(14.0), "already current");
+        assert!(!size.set(5.0) && !size.set(f32::NAN), "out of range");
+        assert_eq!(size.configured(), 14.0);
+        assert!(size.increase());
+        assert!((size.current() - (14.0 + STEP_PX)).abs() < 1e-5);
+        assert!(size.decrease());
+        assert_eq!(size.current(), 14.0);
+        assert!(size.step_by(3));
+        assert!(size.reset());
+        assert_eq!(size.current(), 14.0, "the profile's size");
+        assert!(!size.reset());
+
+        // The settings landing on the size already drawn (a zoom written
+        // back) make it the reset target without redrawing.
+        assert!(size.step_by(2));
+        let zoomed = size.current();
+        assert!(!size.set(zoomed));
+        assert_eq!(size.configured(), zoomed);
+        assert!(!size.reset());
+    }
+
+    /// `configure` moves the reset target and leaves the drawn size (a zoom
+    /// not yet written back) alone.
+    #[test]
+    fn configure_moves_only_the_reset_target() {
+        let mut size = FontSize::new(12.5);
+        assert!(size.step_by(2));
+        let zoomed = size.current();
+        size.configure(16.0);
+        assert_eq!((size.current(), size.configured()), (zoomed, 16.0));
+        size.configure(100.0);
+        assert_eq!(size.configured(), 16.0, "out of range is ignored");
+        assert!(size.reset());
+        assert_eq!(size.current(), 16.0);
+    }
+
+    /// The bounds are the settings' own: zoom must not reach a size that
+    /// `terminal.font.size` would be refused for.
     #[test]
     fn stepping_stops_inside_the_configured_range() {
         let mut size = FontSize::new(47.5);

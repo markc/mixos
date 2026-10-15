@@ -7,7 +7,7 @@ description: MixOS's preferences window — a sidebar of editors: Applications f
 
 Prefs holds MixOS's preference editors in one window: an expandable tree
 on the left, the selected section on the right. Appearance contains Themes,
-Fonts and Wallpapers; Applications contains MixOS Desktop, MixOS Server and
+Fonts, Wallpapers and Terminal; Applications contains MixOS Desktop, MixOS Server and
 Creative. The sidebar can be resized. The name is a nod to the
 Prefs drawer of AmigaOS, where each setting had its own small editor.
 
@@ -74,6 +74,12 @@ session's current state decides what the status line says.
 installed on the window, with previews. Font family and size selection is not
 available yet; these faces follow the session design.
 
+**Appearance → Terminal** holds the terminal's font, layout, cursor, focus ring,
+mouse and environment settings, plus Reset terminal. Each change uses
+settingsd and applies as it is made. Themes contains only the session theme
+controls. See the [terminal settings](spec/settings/README.md#terminal) for
+the defaults and ranges.
+
 ## For agents
 
 Prefs answers on the Bus as `prefs`. `prefs.info` reports the whole state;
@@ -82,7 +88,7 @@ look, the expected look while a change settles, any held or conflicting
 edits and the revision read; `prefs.appearance.set`
 changes it at once (`scheme`, `style` with `own` for the scheme's own, `mode`,
 `contrast`, `decorations`, `caption_side`); `prefs.select {app}` and
-`prefs.section {name}` selects `themes`, `fonts`, `wallpapers`, `mixos-desktop`,
+`prefs.section {name}` selects `themes`, `fonts`, `wallpapers`, `terminal`, `mixos-desktop`,
 `mixos-server`, `creative` or `other` and expands its parent. `prefs.panel {name}`
 remains compatible, opening the default Themes or Creative section.
 `prefs.execute {id}` runs any command a button

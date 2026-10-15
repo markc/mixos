@@ -324,7 +324,7 @@ impl TabSet {
     pub fn new() -> Result<Self, String> {
         Self::with_settings(crate::config::Settings {
             config: crate::config::Config::default(),
-            term: "xterm-256color",
+            term: "xterm-256color".into(),
         })
     }
 
@@ -338,8 +338,9 @@ impl TabSet {
         native: Option<crate::native_session::NativeSession>,
     ) -> Result<Self, String> {
         let launch = native.clone();
+        let first = settings.clone();
         Self::with_initial(settings, native, move || {
-            Terminal::start_session(settings, launch.as_ref(), 1)
+            Terminal::start_session(first, launch.as_ref(), 1)
         })
     }
 
@@ -397,12 +398,25 @@ impl TabSet {
         self.starting
     }
 
+    /// What tabs and panes opened from now on start with.
+    pub fn settings(&self) -> &crate::config::Settings {
+        &self.settings
+    }
+
+    /// Start later tabs and panes with `settings`; running ones keep theirs.
+    pub fn set_settings(&mut self, settings: crate::config::Settings) {
+        self.settings = settings;
+    }
+
     pub(crate) fn finish_startup(&mut self, mut ready: Self) {
         if self.closing {
             drop(ready.shutdown());
             return;
         }
         ready.wake = self.wake.take();
+        // Settings the frontend changed while the first shell started are
+        // the ones later panes start with.
+        std::mem::swap(&mut ready.settings, &mut self.settings);
         ready.emptied = self.emptied.clone();
         ready.observer = self.observer.take();
         ready.watching = self.watching;
@@ -435,7 +449,7 @@ impl TabSet {
         if let Some(cwd) = &cwd {
             crate::terminal::validate_cwd(cwd)?;
         }
-        let settings = self.settings;
+        let settings = self.settings.clone();
         let native = self.native.clone();
         let id = self.next_pane_id;
         let tab =
@@ -649,7 +663,7 @@ impl TabSet {
         }
     }
     pub fn split_active(&mut self, dir: SplitDir) -> Result<u64, String> {
-        let settings = self.settings;
+        let settings = self.settings.clone();
         let native = self.native.clone();
         let pane_id = self.next_pane_id;
         let pane =
@@ -1002,9 +1016,9 @@ mod tests {
     fn closing_during_startup_cannot_reopen_the_window() {
         let settings = crate::config::Settings {
             config: crate::config::Config::default(),
-            term: "xterm-256color",
+            term: "xterm-256color".into(),
         };
-        let mut tabs = TabSet::starting(settings);
+        let mut tabs = TabSet::starting(settings.clone());
         assert!(tabs.open().is_err());
         drop(tabs.shutdown());
         let ready =

@@ -269,15 +269,35 @@ impl Wheel {
 /// deltas adds up to steps instead of rounding each to zero; turning round
 /// discards what was accumulated the other way.
 pub fn wheel_steps(pending: &mut f32, wheel: Wheel) -> i32 {
-    scroll_steps(pending, wheel, PIXELS_PER_STEP)
+    steps(
+        pending,
+        match wheel {
+            Wheel::Lines(y) => y,
+            Wheel::Points(y) => y / PIXELS_PER_STEP,
+        },
+    )
 }
 
-/// Scrollback travel: touchpad points count in cell heights.
-pub fn scroll_steps(pending: &mut f32, wheel: Wheel, cell_height: f32) -> i32 {
-    let amount = match wheel {
-        Wheel::Lines(y) => y,
-        Wheel::Points(y) => y / cell_height,
-    };
+/// `terminal.scroll.speed`'s default: history moves a line per wheel line,
+/// and a line per cell height of touchpad travel.
+pub const DEFAULT_SCROLL_SPEED: f32 = 40.0;
+
+/// Scrollback travel: touchpad points count in cell heights, and both
+/// scale by `speed` against [`DEFAULT_SCROLL_SPEED`].
+pub fn scroll_steps(pending: &mut f32, wheel: Wheel, cell_height: f32, speed: f32) -> i32 {
+    let rate = speed / DEFAULT_SCROLL_SPEED;
+    steps(
+        pending,
+        match wheel {
+            Wheel::Lines(y) => y * rate,
+            Wheel::Points(y) => y / cell_height * rate,
+        },
+    )
+}
+
+/// Whole steps of `amount` travel, the fraction kept in `pending` for the
+/// next event in the same direction.
+fn steps(pending: &mut f32, amount: f32) -> i32 {
     if !amount.is_finite() || amount == 0.0 {
         return 0;
     }
@@ -701,17 +721,36 @@ mod tests {
 
     #[test]
     fn touchpad_history_uses_cell_height_while_zoom_keeps_forty_points() {
+        let speed = DEFAULT_SCROLL_SPEED;
         for height in [13.0, 17.0, 24.0] {
+            assert_eq!(
+                scroll_steps(&mut 0.0, Wheel::Lines(1.0), height, speed),
+                1,
+                "default wheel travel is one row at every cell height"
+            );
+            assert_eq!(
+                scroll_steps(&mut 0.0, Wheel::Lines(1.0), height, 80.0),
+                2,
+                "speed scales rows, not a fixed pixel distance"
+            );
             let mut pending = 0.0;
             let half = Wheel::Points(height / 2.0);
-            assert_eq!(scroll_steps(&mut pending, half, height), 0);
-            assert_eq!(scroll_steps(&mut pending, half, height), 1);
+            assert_eq!(scroll_steps(&mut pending, half, height, speed), 0);
+            assert_eq!(scroll_steps(&mut pending, half, height, speed), 1);
             assert_eq!(
-                scroll_steps(&mut pending, Wheel::Points(-height), height),
+                scroll_steps(&mut pending, Wheel::Points(-height), height, speed),
                 -1
             );
         }
         assert_eq!(wheel_steps(&mut 0.0, Wheel::Points(40.0)), 1);
+        // terminal.scroll.speed scales history travel, never zoom travel.
+        assert_eq!(scroll_steps(&mut 0.0, Wheel::Lines(1.0), 13.0, 80.0), 2);
+        assert_eq!(scroll_steps(&mut 0.0, Wheel::Points(26.0), 13.0, 80.0), 4);
+        let mut pending = 0.0;
+        assert_eq!(scroll_steps(&mut pending, Wheel::Lines(1.0), 13.0, 20.0), 0);
+        assert_eq!(scroll_steps(&mut pending, Wheel::Lines(1.0), 13.0, 20.0), 1);
+        assert_eq!(scroll_steps(&mut 0.0, Wheel::Lines(3.0), 13.0, 10.0), 0);
+        assert_eq!(scroll_steps(&mut 0.0, Wheel::Lines(-1.0), 13.0, 200.0), -5);
         assert_eq!(
             Wheel::of(MouseWheelUnit::Line, egui::vec2(0.0, 2.0)),
             Wheel::Lines(2.0)

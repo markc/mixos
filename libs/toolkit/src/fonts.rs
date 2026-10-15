@@ -38,7 +38,6 @@ const INTER_LIGHT: &[u8] = include_bytes!("../assets/fonts/Inter-Light.ttf");
 const INTER_REGULAR: &[u8] = include_bytes!("../assets/fonts/Inter-Regular.ttf");
 const INTER_MEDIUM: &[u8] = include_bytes!("../assets/fonts/Inter-Medium.ttf");
 const INTER_SEMIBOLD: &[u8] = include_bytes!("../assets/fonts/Inter-SemiBold.ttf");
-const JETBRAINS_MONO: &[u8] = include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf");
 
 /// The embedded static Inter face nearest `weight` (CSS numbers): 300, 400,
 /// 500 or 600, with lighter requests taking Light and heavier SemiBold.
@@ -54,7 +53,7 @@ pub fn inter_face(weight: u16) -> (&'static str, &'static [u8]) {
 /// The embedded monospace face (JetBrains Mono Regular), for consumers that
 /// shape text themselves, such as the compositor's window titles.
 pub fn mono_face() -> (&'static str, &'static [u8]) {
-    ("JetBrainsMono-Regular", JETBRAINS_MONO)
+    assets::mixos::mono_face(400)
 }
 
 /// The font definitions for `theme`.
@@ -85,7 +84,7 @@ pub fn definitions(theme: &Theme) -> FontDefinitions {
     let body = add(inter_face(ui));
     let medium = add(inter_face(ui.saturating_add(100)));
     let heading = add(inter_face(display));
-    let mono = add(("JetBrainsMono-Regular", JETBRAINS_MONO));
+    let mono = add(mono_face());
 
     fonts
         .families

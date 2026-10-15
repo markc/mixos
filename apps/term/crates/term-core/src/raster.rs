@@ -2,6 +2,7 @@
 use crate::terminal::{Cell, CellWidth, Screen};
 #[path = "primary_font.rs"]
 mod primary_font;
+pub use primary_font::DEFAULT_WEIGHT;
 #[cfg(test)]
 #[path = "primary_font_tests.rs"]
 mod primary_font_tests;
@@ -405,13 +406,31 @@ pub struct Raster {
 }
 impl Raster {
     pub fn new(scale: f32, logical_px: f32, cursor: crate::config::Cursor) -> Result<Self, String> {
+        Self::with_face(scale, logical_px, cursor, None, DEFAULT_WEIGHT)
+    }
+
+    /// The raster for a chosen face: `family` (None is the bundled
+    /// monospace font) at CSS `weight`. A family that is not installed or
+    /// not monospace falls back to the bundled font, and says so.
+    /// `TERM_SPIKE_FONT` overrides both.
+    pub fn with_face(
+        scale: f32,
+        logical_px: f32,
+        cursor: crate::config::Cursor,
+        family: Option<&str>,
+        weight: u16,
+    ) -> Result<Self, String> {
         let override_path = std::env::var_os("TERM_SPIKE_FONT");
-        let primary = primary_font::discover(override_path.as_deref().map(Path::new))?;
-        let raster = Self::from_font(primary.data, primary.index, scale, logical_px, cursor)?;
+        let override_path = override_path.as_deref().map(Path::new);
+        let primary = primary_font::discover_face(override_path, family, weight)?;
+        let fonts = Fonts::discover(primary.data.clone(), primary.index, weight)
+            .ok_or("Invalid primary font")?;
+        let raster = Self::from_fonts(primary.data, fonts, scale, logical_px, cursor)?;
         eprintln!(
-            "DIAGNOSTIC font={} face={} scale={} cell={}x{} (physical px); bold=regular+brighter colour",
+            "DIAGNOSTIC font={} face={} weight={} scale={} cell={}x{} (physical px); bold=regular+brighter colour",
             primary.path.display(),
             primary.index,
+            raster.unicode.fonts.primary.font().attributes().weight().0,
             raster.scale,
             raster.width,
             raster.height
@@ -446,6 +465,7 @@ impl Raster {
         )
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     fn from_font(
         data: Arc<[u8]>,
         index: u32,
@@ -453,7 +473,12 @@ impl Raster {
         logical_px: f32,
         cursor: crate::config::Cursor,
     ) -> Result<Self, String> {
-        let fonts = Fonts::discover(data.clone(), index).ok_or("Invalid primary font")?;
+        let weight = swash::FontRef::from_index(&data, index as usize)
+            .ok_or("Invalid primary font")?
+            .attributes()
+            .weight()
+            .0;
+        let fonts = Fonts::discover(data.clone(), index, weight).ok_or("Invalid primary font")?;
         Self::from_fonts(data, fonts, scale, logical_px, cursor)
     }
 
@@ -1106,13 +1131,9 @@ impl Raster {
         if let Some((cx, cy)) = cursor
             && (full || changed[cy * screen.cols + cx])
         {
-            let bottom = (cy + 1) * self.height as usize;
-            let top = match self.cursor {
-                crate::config::Cursor::Block => cy * self.height as usize,
-                crate::config::Cursor::Underline => bottom - 1,
-            };
-            for y in top..bottom {
-                for x in cx * self.width as usize..(cx + span) * self.width as usize {
+            let (rows, columns) = self.cursor_pixels(cx, cy, span);
+            for y in rows {
+                for x in columns.clone() {
                     let offset = y * stride + x * 4;
                     match self.cursor {
                         crate::config::Cursor::Block => {
@@ -1120,7 +1141,7 @@ impl Raster {
                                 *channel = 255 - *channel;
                             }
                         }
-                        crate::config::Cursor::Underline => {
+                        crate::config::Cursor::Underline | crate::config::Cursor::Bar => {
                             rgba[offset..offset + 4]
                                 .copy_from_slice(&destination_pixel([220, 220, 220]));
                         }
@@ -1260,13 +1281,9 @@ impl Raster {
         let (cx, cy) = screen.cursor;
         let drawn = screen.cursor_visible && cx < screen.cols && cy < rows;
         if drawn {
-            let bottom = (cy + 1) * self.height as usize;
-            let top = match self.cursor {
-                crate::config::Cursor::Block => cy * self.height as usize,
-                crate::config::Cursor::Underline => bottom - 1,
-            };
-            for y in top..bottom {
-                for x in cx * self.width as usize..(cx + 1) * self.width as usize {
+            let (rows, columns) = self.cursor_pixels(cx, cy, 1);
+            for y in rows {
+                for x in columns.clone() {
                     let offset = y * stride + x * 4;
                     match self.cursor {
                         crate::config::Cursor::Block => {
@@ -1274,7 +1291,7 @@ impl Raster {
                                 *channel = 255 - *channel;
                             }
                         }
-                        crate::config::Cursor::Underline => {
+                        crate::config::Cursor::Underline | crate::config::Cursor::Bar => {
                             rgba[offset..offset + 4].copy_from_slice(&[220, 220, 220, 255]);
                         }
                     }
@@ -1433,6 +1450,37 @@ impl Raster {
         self.cursor
     }
 
+    /// Draw the cursor as `cursor` from the next paint on; the caller
+    /// repaints every pane.
+    pub fn set_cursor(&mut self, cursor: crate::config::Cursor) {
+        self.cursor = cursor;
+    }
+
+    /// Width of the bar cursor in physical pixels: one point, whole pixels,
+    /// never wider than a cell.
+    pub fn bar_width(&self) -> u32 {
+        (self.scale.round().max(1.0) as u32).min(self.width)
+    }
+
+    /// The physical rows and columns the cursor covers in cell `(cx, cy)`,
+    /// `span` cells wide.
+    fn cursor_pixels(
+        &self,
+        cx: usize,
+        cy: usize,
+        span: usize,
+    ) -> (std::ops::Range<usize>, std::ops::Range<usize>) {
+        let (width, height) = (self.width as usize, self.height as usize);
+        let (left, bottom) = (cx * width, (cy + 1) * height);
+        match self.cursor {
+            crate::config::Cursor::Block => (cy * height..bottom, left..left + span * width),
+            crate::config::Cursor::Underline => (bottom - 1..bottom, left..left + span * width),
+            crate::config::Cursor::Bar => {
+                (cy * height..bottom, left..left + self.bar_width() as usize)
+            }
+        }
+    }
+
     /// True when `other` is this raster or one sharing its glyph cache state:
     /// the same font, size and scale. A frontend's glyph atlas is valid for
     /// exactly one raster identity.
@@ -1564,6 +1612,26 @@ mod tests {
         }
     }
 
+    /// The bar is one point wide in whole physical pixels at the left of
+    /// the cell, full height; block and underline keep their geometry.
+    #[test]
+    fn the_bar_cursor_is_a_thin_full_height_left_edge() {
+        let mut raster = raster_with(Cursor::Bar);
+        let (w, h) = (raster.width as usize, raster.height as usize);
+        assert_eq!(raster.bar_width(), 1);
+        assert_eq!(raster.cursor_pixels(2, 1, 1), (h..2 * h, 2 * w..2 * w + 1));
+        raster.set_cursor(Cursor::Underline);
+        assert_eq!(
+            raster.cursor_pixels(2, 1, 2),
+            (2 * h - 1..2 * h, 2 * w..4 * w)
+        );
+        raster.set_cursor(Cursor::Block);
+        assert_eq!(raster.cursor_pixels(2, 1, 1), (h..2 * h, 2 * w..3 * w));
+        let wide = raster.resized(2.5, 13.0).unwrap();
+        assert_eq!(wide.bar_width(), 3, "2.5 rounds to 3 physical pixels");
+        assert_eq!(wide.cursor(), Cursor::Block, "a resize keeps the shape");
+    }
+
     #[test]
     fn fully_changed_rows_record_cells_for_the_next_partial_paint() {
         for format in [PixelFormat::Rgba, PixelFormat::Bgra] {
@@ -1691,7 +1759,7 @@ mod tests {
             seed ^= seed << 17;
             seed
         };
-        for style in [Cursor::Block, Cursor::Underline] {
+        for style in [Cursor::Block, Cursor::Underline, Cursor::Bar] {
             let mut raster = raster_with(style);
             let mut grid = screen(13, 7, 'M');
             let mut state = PaintState::default();

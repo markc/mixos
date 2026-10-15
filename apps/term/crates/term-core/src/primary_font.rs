@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Validated terminal face discovery. Fallback routing stays in unicode_raster.
-use design::{TypographyGeneric, TypographyRole, default_typography};
+#[cfg(test)]
+use design::TypographyGeneric;
+use design::{TypographyRole, default_typography};
 use fontdb::{Database, Family, Query, Source, Style, Weight};
 use std::{
     path::{Path, PathBuf},
@@ -13,6 +15,7 @@ use swash::{
     zeno::Format,
 };
 
+#[cfg(any(test, feature = "test-support"))]
 const LEGACY_PATHS: &[&str] = &[
     "/usr/share/fonts/TTF/DejaVuSansMono.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
@@ -44,6 +47,7 @@ fn installed_assets() -> Result<Option<&'static assets::AssetSet>, &'static str>
     }
 }
 
+#[cfg(test)]
 pub(super) fn discover(override_path: Option<&Path>) -> Result<Primary, String> {
     // An explicit path is authoritative, including an error for a bad file.
     if let Some(path) = override_path {
@@ -51,31 +55,70 @@ pub(super) fn discover(override_path: Option<&Path>) -> Result<Primary, String> 
     }
     static SHARED: OnceLock<Result<Primary, String>> = OnceLock::new();
     SHARED
-        .get_or_init(|| {
-            // The installed mono role precedes platform discovery. An explicit
-            // TERM_SPIKE_FONT above remains authoritative, including errors.
-            match installed_assets() {
-                Ok(Some(set)) => {
-                    if let Some(path) = set.font_path("mono") {
-                        return from_path(&path);
-                    }
-                }
-                Ok(None) => {}
-                Err(error) => return Err(format!("terminal static assets: {error}")),
-            }
-            let mut db = Database::new();
-            db.load_system_fonts();
-            from_database(&mut db)
-                .or_else(|| {
-                    LEGACY_PATHS
-                        .iter()
-                        .find_map(|path| from_path(Path::new(path)).ok())
-                })
-                .ok_or_else(|| {
-                    "No monospace font found; set TERM_SPIKE_FONT=/path/to/font.ttf".into()
-                })
-        })
+        .get_or_init(|| discover_face(None, None, DEFAULT_WEIGHT))
         .clone()
+}
+
+/// The CSS weight the terminal's settings call regular.
+pub const DEFAULT_WEIGHT: u16 = 400;
+
+/// A chosen face: `family` nearest `weight` when it is installed and
+/// monospace, else the bundled monospace font nearest `weight`. Each
+/// fallback is logged; it runs once per change of family or weight. An
+/// explicit override path stays authoritative.
+pub(super) fn discover_face(
+    override_path: Option<&Path>,
+    family: Option<&str>,
+    weight: u16,
+) -> Result<Primary, String> {
+    if let Some(path) = override_path {
+        return from_path(path);
+    }
+    let weight = Weight(weight);
+    if let Some(name) = family {
+        let mut db = Database::new();
+        db.load_system_fonts();
+        match named(&db, name, weight) {
+            Ok(primary) => return Ok(primary),
+            Err(reason) => {
+                eprintln!("term: font family {name:?} {reason}; using the bundled monospace font")
+            }
+        }
+    }
+    // All default weights use the same bundled family. Installed mono roles
+    // and system families can be single static faces, so cannot implement
+    // a weight choice reliably. Named installed families above stay explicit.
+    bundled(weight.0)
+}
+
+fn bundled(weight: u16) -> Result<Primary, String> {
+    let (name, bytes) = assets::mixos::mono_face(weight);
+    let font = FontRef::from_index(bytes, 0)
+        .filter(|font| usable(*font))
+        .ok_or_else(|| format!("bundled font {name} cannot be drawn"))?;
+    debug_assert_eq!(font.attributes().style(), swash::Style::Normal);
+    Ok(Primary {
+        path: PathBuf::from(format!("bundled/{name}.ttf")),
+        index: 0,
+        data: Arc::from(bytes),
+    })
+}
+
+/// Installed family `name`, the face nearest `weight`, when it is monospace
+/// and drawable.
+fn named(db: &Database, name: &str, weight: Weight) -> Result<Primary, &'static str> {
+    let family = [Family::Name(name)];
+    let query = Query {
+        families: &family,
+        weight,
+        style: Style::Normal,
+        ..Query::default()
+    };
+    let id = db.query(&query).ok_or("is not installed")?;
+    if !db.face(id).is_some_and(|face| face.monospaced) {
+        return Err("is not monospace");
+    }
+    load_face(db, id).ok_or("cannot be drawn")
 }
 
 /// Called only when the shared Unicode fallback set is first needed.
@@ -106,7 +149,7 @@ pub(super) fn installed_role(role: &str) -> Result<Option<Primary>, String> {
 }
 
 /// Called only when the shared Unicode fallback set is first needed.
-pub(super) fn coverage() -> Vec<Primary> {
+pub(super) fn coverage(weight: u16) -> Vec<Primary> {
     let mut db = Database::new();
     db.load_system_fonts();
     // Emoji has a dedicated lane in UnicodeRaster. Every general coverage
@@ -114,33 +157,115 @@ pub(super) fn coverage() -> Vec<Primary> {
     let installed = ["sans", "serif"]
         .into_iter()
         .filter_map(|role| match installed_role(role) {
-            Ok(face) => face,
+            Ok(face) => face.map(|face| fallback_weight(&mut db, face, weight)),
             Err(error) => {
                 eprintln!("terminal static coverage: {error}");
                 None
             }
         });
-    installed
-        .chain(
-            default_typography(TypographyRole::Terminal)
-                .fallbacks
-                .iter()
-                .filter_map(|name| select(&mut db, &[Family::Name(name)])),
-        )
+    let mut faces: Vec<_> = installed.collect();
+    faces.extend(
+        default_typography(TypographyRole::Terminal)
+            .fallbacks
+            .iter()
+            .filter_map(|name| fallback_family(&db, name, weight)),
+    );
+    faces
+}
+
+/// Symbol/emoji faces may lack ASCII. Validate their metrics, without the
+/// primary font's monospace/ASCII requirements, and query their own family.
+pub(super) fn fallback_paths(paths: &[&str], weight: u16) -> Vec<Primary> {
+    let mut db = Database::new();
+    db.load_system_fonts();
+    paths
+        .iter()
+        .filter_map(|path| {
+            db.load_font_file(path).ok()?;
+            let face = db.faces().find(|face| {
+                matches!(&face.source,
+            Source::File(file) | Source::SharedFile(file, _) if file == Path::new(path))
+            })?;
+            let name = face.families.first()?.0.clone();
+            fallback_family(&db, &name, weight)
+        })
         .collect()
 }
 
+pub(super) fn fallback_weight(db: &mut Database, face: Primary, weight: u16) -> Primary {
+    // Keep the pinned asset when it already has the requested weight; a
+    // system copy of the same family must not replace its verified bytes.
+    if FontRef::from_index(&face.data, face.index as usize)
+        .is_some_and(|font| font.attributes().weight().0 == weight)
+    {
+        return face;
+    }
+    if db.load_font_file(&face.path).is_ok() {
+        let name = db
+            .faces()
+            .find(|f| {
+                f.index == face.index
+                    && matches!(&f.source,
+            Source::File(path) | Source::SharedFile(path, _) if *path == face.path)
+            })
+            .and_then(|f| f.families.first())
+            .map(|(name, _)| name.clone());
+        if let Some(selected) = name.and_then(|name| fallback_family(db, &name, weight)) {
+            return selected;
+        }
+    }
+    face
+}
+
+fn fallback_family(db: &Database, name: &str, weight: u16) -> Option<Primary> {
+    let mut faces: Vec<_> = db
+        .faces()
+        .filter(|face| {
+            face.style == Style::Normal && face.families.iter().any(|(family, _)| family == name)
+        })
+        .collect();
+    faces.sort_by_key(|face| (face.weight.0.abs_diff(weight), face.weight.0));
+    for face in faces {
+        let (source, index) = db.face_source(face.id)?;
+        let path = match source {
+            Source::File(path) | Source::SharedFile(path, _) => path,
+            Source::Binary(_) => continue,
+        };
+        let Ok(data) = std::fs::read(&path) else {
+            continue;
+        };
+        let data: Arc<[u8]> = data.into();
+        if FontRef::from_index(&data, index as usize).is_some_and(metrics_readable) {
+            if face.weight.0 != weight {
+                eprintln!(
+                    "term: fallback {name:?}: requested weight {weight}, nearest available {}",
+                    face.weight.0
+                );
+            }
+            return Some(Primary { path, index, data });
+        }
+    }
+    None
+}
+
+#[cfg(test)]
 pub(super) fn from_database(db: &mut Database) -> Option<Primary> {
+    select_weight(db, &role_families(), Weight(DEFAULT_WEIGHT))
+}
+
+/// The terminal role's family, its fallbacks, then its generic family: the
+/// order every primary face is looked up in.
+#[cfg(test)]
+fn role_families() -> Vec<Family<'static>> {
     let role = default_typography(TypographyRole::Terminal);
-    let mut families: Vec<_> = std::iter::once(&role.family)
+    std::iter::once(&role.family)
         .chain(&role.fallbacks)
         .map(|name| Family::Name(name.as_str()))
-        .collect();
-    families.push(match role.generic {
-        TypographyGeneric::Monospace => Family::Monospace,
-        TypographyGeneric::SansSerif => Family::SansSerif,
-    });
-    select(db, &families)
+        .chain([match role.generic {
+            TypographyGeneric::Monospace => Family::Monospace,
+            TypographyGeneric::SansSerif => Family::SansSerif,
+        }])
+        .collect()
 }
 
 pub(super) fn from_path(path: &Path) -> Result<Primary, String> {
@@ -174,18 +299,7 @@ fn select(db: &mut Database, families: &[Family<'_>]) -> Option<Primary> {
 fn select_weight(db: &mut Database, families: &[Family<'_>], weight: Weight) -> Option<Primary> {
     for family in families {
         while let Some(id) = query_family(db, family, weight) {
-            let loaded = db.face_source(id).and_then(|(source, index)| {
-                let path = match source {
-                    Source::File(path) | Source::SharedFile(path, _) => path,
-                    Source::Binary(_) => return None,
-                };
-                let data: Arc<[u8]> = std::fs::read(&path).ok()?.into();
-                let font = FontRef::from_index(&data, index as usize)?;
-                if !usable(font) {
-                    return None;
-                }
-                Some(Primary { path, index, data })
-            });
+            let loaded = load_face(db, id);
             if loaded.is_some() {
                 return loaded;
             }
@@ -195,6 +309,22 @@ fn select_weight(db: &mut Database, families: &[Family<'_>], weight: Weight) -> 
         }
     }
     None
+}
+
+/// Face `id`'s file, when Swash can draw it.
+fn load_face(db: &Database, id: fontdb::ID) -> Option<Primary> {
+    db.face_source(id).and_then(|(source, index)| {
+        let path = match source {
+            Source::File(path) | Source::SharedFile(path, _) => path,
+            Source::Binary(_) => return None,
+        };
+        let data: Arc<[u8]> = std::fs::read(&path).ok()?.into();
+        let font = FontRef::from_index(&data, index as usize)?;
+        if !usable(font) {
+            return None;
+        }
+        Some(Primary { path, index, data })
+    })
 }
 
 fn query_family(db: &mut Database, family: &Family<'_>, weight: Weight) -> Option<fontdb::ID> {
@@ -300,15 +430,18 @@ mod tests {
 
     #[test]
     #[ignore = "requires a bootstrapped static asset set"]
-    fn installed_mono_is_primary_and_emoji_is_coverage() {
+    fn bundled_regular_is_primary_and_installed_emoji_is_coverage() {
         let set = assets::mixos::discover().unwrap().expect("installed set");
-        assert_eq!(discover(None).unwrap().path, set.font_path("mono").unwrap());
+        assert_eq!(
+            discover(None).unwrap().path,
+            Path::new("bundled/JetBrainsMono-Regular.ttf")
+        );
         assert_eq!(
             installed_role("emoji").unwrap().unwrap().path,
             set.font_path("emoji").unwrap()
         );
         assert!(
-            coverage()
+            coverage(DEFAULT_WEIGHT)
                 .iter()
                 .any(|face| face.path == set.font_path("sans").unwrap())
         );
@@ -318,7 +451,7 @@ mod tests {
     }
 
     #[test]
-    fn light_queries_reject_thin_and_extra_light_even_via_generic_alias() {
+    fn regular_queries_do_not_inherit_the_terminal_roles_light_weight() {
         let fixture = fixture().unwrap();
         let mut source = Database::new();
         source.load_font_file(&fixture.path).unwrap();
@@ -340,9 +473,8 @@ mod tests {
                     face.weight = Weight(*weight);
                     db.push_face_info(face);
                 }
-                let id = query_family(&mut db, &family, Weight::LIGHT).unwrap();
-                let expected = if weights.contains(&300) { 300 } else { 400 };
-                assert_eq!(db.face(id).unwrap().weight, Weight(expected));
+                let id = query_family(&mut db, &family, Weight(DEFAULT_WEIGHT)).unwrap();
+                assert_eq!(db.face(id).unwrap().weight, Weight::NORMAL);
             }
         }
     }

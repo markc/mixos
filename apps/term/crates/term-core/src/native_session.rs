@@ -1727,7 +1727,7 @@ pub(crate) mod tests {
     fn settings() -> crate::config::Settings {
         crate::config::Settings {
             config: crate::config::Config::default(),
-            term: "xterm-256color",
+            term: "xterm-256color".into(),
         }
     }
 
@@ -2229,7 +2229,7 @@ pub(crate) mod tests {
         let terminal = crate::terminal::Terminal::start_session(
             crate::config::Settings {
                 config: crate::config::Config::default(),
-                term: "xterm-256color",
+                term: "xterm-256color".into(),
             },
             Some(&supervisor.handle),
             2,
@@ -2378,7 +2378,7 @@ pub(crate) mod tests {
         let terminal = crate::terminal::Terminal::start_session(
             crate::config::Settings {
                 config: crate::config::Config::default(),
-                term: "xterm-256color",
+                term: "xterm-256color".into(),
             },
             Some(&supervisor.handle),
             1,
@@ -2403,7 +2403,7 @@ pub(crate) mod tests {
         let supervisor = Supervisor::with_options(broker.options(), broker.url.clone()).unwrap();
         let settings = crate::config::Settings {
             config: crate::config::Config::default(),
-            term: "xterm-256color",
+            term: "xterm-256color".into(),
         };
         wait_ready(&supervisor.handle, 1);
         let mut tabs =

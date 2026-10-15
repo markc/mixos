@@ -9,6 +9,7 @@ use crate::app::App;
 use crate::label;
 use crate::layout;
 use egui::{Color32, FontId, Ui};
+use settings::terminal::FocusRing;
 use toolkit::chrome::Chrome;
 use toolkit::command::Origin;
 use toolkit::dialog::{self, Choice, Role};
@@ -78,9 +79,10 @@ pub fn tab_strip(ui: &mut Ui, app: &App) -> Vec<UiEvent> {
     events
 }
 
-/// A refused paste says so until the next paste succeeds.
-pub fn notice(ui: &mut Ui, app: &App) {
-    if let Some(notice) = &app.paste_notice {
+/// Refused pastes and unsaved zooms stay visible until resolved.
+pub fn notice(ui: &mut Ui, app: &App, font_unsaved: bool) {
+    let font_notice = font_unsaved.then(|| label("font-not-saved"));
+    for notice in app.paste_notice.iter().chain(font_notice.iter()) {
         let chrome = Chrome::of(ui.ctx());
         egui::Frame::new()
             .fill(chrome.palette.card)
@@ -98,16 +100,12 @@ pub fn panes(ui: &Ui, app: &App) {
     let chrome = Chrome::of(ui.ctx());
     let painter = ui.painter();
     let scale = app.scale();
-    let border = layout::border(scale);
+    let border = layout::border(scale, app.edges().border);
+    let inset = app.inset();
     for (id, geometry) in app.placed() {
         let outer = layout::rect(geometry);
         let ring = if app.shape.focus_ring(id) {
-            // The theme's accent, muted toward the card border so the
-            // focused pane's ring stays quiet next to the content.
-            chrome
-                .palette
-                .card_border
-                .lerp_to_gamma(chrome.palette.accent, 0.5)
+            focus_ring(&chrome, app.focus_ring)
         } else {
             chrome.palette.card_border
         };
@@ -117,7 +115,7 @@ pub fn panes(ui: &Ui, app: &App) {
         painter.rect_filled(outer.shrink(border), 0.0, chrome.palette.canvas);
         if let (Some(pane), Some(&(width, height))) = (app.panes.get(&id), app.targets.get(&id)) {
             let rect = egui::Rect::from_min_size(
-                outer.min + egui::vec2(border, border),
+                outer.min + egui::vec2(inset, inset),
                 egui::vec2(width as f32 / scale, height as f32 / scale),
             );
             // A pane smaller than its smallest grid (two columns, one
@@ -130,6 +128,25 @@ pub fn panes(ui: &Ui, app: &App) {
         }
     }
     preedit(ui, app, &chrome);
+}
+
+/// How far the neutral ring moves from the card border toward the text: a
+/// quiet grey step, no hue.
+const NEUTRAL_RING: f32 = 0.25;
+
+/// The focused pane's ring (`terminal.focus`): neutral is the card border
+/// stepped toward the text colour; accent is the card border taking
+/// `strength` of the current theme's accent (a quarter by default).
+fn focus_ring(chrome: &Chrome, (ring, strength): (FocusRing, f32)) -> Color32 {
+    let palette = &chrome.palette;
+    match ring {
+        FocusRing::Neutral => palette
+            .card_border
+            .lerp_to_gamma(palette.text, NEUTRAL_RING),
+        FocusRing::Accent => palette
+            .card_border
+            .lerp_to_gamma(palette.accent, strength.clamp(0.0, 1.0)),
+    }
 }
 
 /// The input method's composition, over the caret until it commits.
@@ -182,4 +199,58 @@ pub fn keys_dialog(ctx: &egui::Context, commands: &Registry<App>, strings: &Stri
                 });
         });
     response.chosen.is_some() || response.dismissed
+}
+
+/// Build provenance and the live settings source, shared by the dialog and tests.
+pub fn about_text(settings_connected: bool) -> String {
+    let info = buildinfo::build_info!();
+    let source = label(if settings_connected {
+        "about-settings-connected"
+    } else {
+        "about-settings-disconnected"
+    });
+    format!(
+        "{}\n{}\n{}\nMIT OR Apache-2.0\n{}",
+        label("title"),
+        info.line(),
+        label("about-description"),
+        source
+    )
+}
+
+/// The toolkit's standard About dialog; true when it was closed.
+pub fn about_dialog(ctx: &egui::Context, settings_connected: bool) -> bool {
+    let response = dialog::Dialog::new(egui::Id::new("term.about"), label("about-title"))
+        .buttons(vec![Choice::new(label("close"), Role::Default)])
+        .show(ctx, |ui| {
+            ui.add(egui::Label::new(about_text(settings_connected)).wrap());
+        });
+    response.chosen.is_some() || response.dismissed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn about_contains_build_provenance_and_settings_source() {
+        let info = buildinfo::build_info!();
+        for connected in [false, true] {
+            let text = about_text(connected);
+            for expected in [
+                "Terminal",
+                info.version,
+                info.git_sha,
+                info.build_time,
+                "MIT OR Apache-2.0",
+            ] {
+                assert!(text.contains(expected), "{text}");
+            }
+            assert!(text.contains(&label(if connected {
+                "about-settings-connected"
+            } else {
+                "about-settings-disconnected"
+            })));
+        }
+    }
 }

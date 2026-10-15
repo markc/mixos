@@ -78,6 +78,11 @@ pub fn registry() -> Registry<Engine> {
             (|e: &mut Engine| e.set_section(Section::Wallpapers)) as fn(&mut Engine),
         ),
         (
+            Section::Terminal,
+            Icon::FileTerminal,
+            (|e: &mut Engine| e.set_section(Section::Terminal)) as fn(&mut Engine),
+        ),
+        (
             Section::Desktop,
             Icon::Monitor,
             (|e: &mut Engine| e.set_section(Section::Desktop)) as fn(&mut Engine),
@@ -308,6 +313,17 @@ pub fn registry() -> Registry<Engine> {
         icon: Some(Icon::RefreshCw),
         enabled: Engine::can_recheck_look,
         run: Engine::recheck_look,
+    })
+    .add(Command {
+        id: "terminal.reset",
+        submenu: None,
+        group: 2,
+        label: "reset-terminal",
+        menu: None,
+        shortcut: None,
+        icon: None,
+        enabled: Engine::can_reset_terminal,
+        run: Engine::reset_terminal,
     })
     .add(Command {
         id: "help.shortcuts",

@@ -38,9 +38,10 @@ impl NativeLane {
                 let native = lane.supervisor.as_ref().map(|s| s.handle.clone());
                 let launch = native.clone();
                 let titles = tabs.lock().unwrap().titles_changed();
+                let first = settings.clone();
                 let ready =
                     tabs::TabSet::with_initial_notifier(settings, native, titles, move || {
-                        crate::terminal::Terminal::start_session(settings, launch.as_ref(), 1)
+                        crate::terminal::Terminal::start_session(first, launch.as_ref(), 1)
                     });
                 lane.attach(&tabs, ready);
                 lane.install_control(tabs, cleanup);
@@ -119,9 +120,9 @@ mod tests {
     fn first_pane_failure_survives_teardown_as_an_error() {
         let settings = config::Settings {
             config: config::Config::default(),
-            term: "xterm-256color",
+            term: "xterm-256color".into(),
         };
-        let tabs = Mutex::new(tabs::TabSet::starting(settings));
+        let tabs = Mutex::new(tabs::TabSet::starting(settings.clone()));
         let mut lane = NativeLane::from_startup(Err("fixture offline".into()));
         let ready =
             tabs::TabSet::with_initial(settings, None, || Err("fixture spawn failed".into()));

@@ -17,11 +17,15 @@
 //!
 //! The session theme is the look settingsd holds for the desktop profile,
 //! followed through a [`settings::follow::Follower`]; without settingsd the
-//! theme file's stands. The window's own choice lays over either.
+//! theme file's stands. The window's own choice lays over either. The same
+//! read carries the terminal's settings (`terminal.*`); without settingsd
+//! their defaults stand. A zoom writes `terminal.font.size` back through
+//! `settings.apply`, once the zoom keys rest.
 
 use crate::app::{App, Effect, Synced};
 use crate::bus::{APP, Delivery, WindowBus};
 use crate::clipboard::Clipboard;
+use crate::font::{Action as FontAction, Event as FontEvent, Persistence, QUIET, WriteReply};
 use crate::input::{Action, Wheel};
 use crate::layout;
 use crate::mouse::Pointer;
@@ -48,6 +52,15 @@ fn hostname() -> String {
     std::fs::read_to_string("/proc/sys/kernel/hostname")
         .map(|name| name.trim().to_owned())
         .unwrap_or_default()
+}
+
+/// The start of this process's settings operation ids: its pid and start
+/// time, so a restarted term never reuses one settingsd remembers.
+fn operation_prefix() -> String {
+    let started = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_millis());
+    format!("term-font-{}-{started}", std::process::id())
 }
 
 /// Whether a `noded.props.changed` body may mean a service (settingsd)
@@ -84,7 +97,8 @@ pub struct Shell {
     look: Option<settings::Appearance>,
     follower: settings::follow::Follower,
     look_topic: String,
-    look_retry: u64,
+    /// A read already prepared by the follower after retargeting.
+    look_prepared: Option<settings::follow::Read>,
     installed: Option<toolkit::theme_menu::Choice>,
     bus: WindowBus,
     held: VecDeque<Held>,
@@ -95,6 +109,11 @@ pub struct Shell {
     ctx: egui::Context,
     /// The panes' widget: it holds the keyboard while nothing else does.
     focus: egui::Id,
+    /// A zoomed font size not yet written to `terminal.font.size`; while
+    /// one is, looks keep the window's size.
+    font: Persistence,
+    /// Names each write for settingsd's receipts: this process and a count.
+    font_ops: (String, u64),
 }
 
 impl Shell {
@@ -119,7 +138,7 @@ impl Shell {
             look: None,
             follower: settings::follow::Follower::new(&hostname()),
             look_topic: settings::summary_topic(settings::follow::PROFILE),
-            look_retry: 0,
+            look_prepared: None,
             installed: None,
             bus,
             held: VecDeque::new(),
@@ -129,6 +148,8 @@ impl Shell {
             clipboard,
             ctx,
             focus: egui::Id::new("term.panes"),
+            font: Persistence::default(),
+            font_ops: (operation_prefix(), 0),
         }
     }
 
@@ -189,11 +210,8 @@ impl Shell {
                 }
                 Delivery::Connected => self.read_look(),
                 Delivery::Look { ticket, reply } => self.looked(ticket, reply),
-                Delivery::LookRetry { generation } => {
-                    if generation == self.look_retry && !self.exiting {
-                        self.read_look();
-                    }
-                }
+                Delivery::Written { reply } => self.font_written(reply),
+                Delivery::FontDue => self.font_event(FontEvent::TimerFired),
             }
         }
         for (pane, read) in self.clipboard.take() {
@@ -357,18 +375,11 @@ impl Shell {
     }
 
     fn read_look(&mut self) {
-        if self.exiting {
-            return;
-        }
-        if let Some(read) = self.follower.read() {
-            self.look_retry += 1;
-            self.bus.read_look(read);
-        }
+        self.font_event(FontEvent::ReadRequested);
     }
 
     /// A look read answered: a new look is installed at once; without
-    /// settingsd the theme file stands; a transient fault is retried with
-    /// backoff, the last look standing.
+    /// settingsd the last look stands until a hint or reconnection asks again.
     fn looked(&mut self, ticket: u64, reply: Option<(u8, String, Option<String>)>) {
         if self.exiting || self.follower.pending() != Some(ticket) {
             return;
@@ -377,12 +388,21 @@ impl Shell {
             .as_ref()
             .map(|(rc, body, error)| (*rc, body.as_str(), error.as_deref()));
         let (followed, next) = self.follower.answered(ticket, answer);
+        let usable = matches!(
+            followed,
+            Some(settings::follow::Followed::Look { .. } | settings::follow::Followed::Unchanged)
+        );
         match followed {
             Some(settings::follow::Followed::Look {
                 appearance,
                 custom_source,
+                terminal,
                 ..
             }) => {
+                // The terminal's settings apply whatever the look's source.
+                let family = terminal.font_family(&appearance).map(str::to_owned);
+                self.app
+                    .apply_terminal(&terminal, family.as_deref(), self.font.pending.is_some());
                 self.look = (!custom_source).then_some(*appearance);
                 self.set_base();
             }
@@ -392,15 +412,87 @@ impl Shell {
             }
             _ => {}
         }
-        match next {
-            Some(read) => {
-                self.look_retry += 1;
-                self.bus.read_look(read);
-            }
-            None => {
-                if let Some(delay) = self.follower.retry_delay() {
-                    self.look_retry += 1;
-                    self.bus.retry_look(delay, self.look_retry);
+        let continued = next.is_some();
+        self.look_prepared = next;
+        self.font_event(FontEvent::ReadAnswered {
+            usable,
+            following: self.follower.following(),
+            continued,
+        });
+    }
+
+    /// A zoom since the last frame: write its size to the settings once
+    /// the zoom keys rest. Without settingsd the size stays pending, the
+    /// window's own, and is written by the first look after it returns.
+    fn queue_font(&mut self) {
+        if std::mem::take(&mut self.app.font_reset) {
+            // Back to the settings' size: an unwritten zoom is dropped. One
+            // already in flight will land, so the size is written back
+            // after it.
+            self.font_event(FontEvent::Reset(self.app.font().current()));
+        }
+        let Some(px) = self.app.font_write.take() else {
+            return;
+        };
+        self.font_event(FontEvent::Zoom(px));
+    }
+
+    /// Write the pending size, fenced on the last look read: one write in
+    /// flight at a time. Without settingsd it stays pending for the next
+    /// look.
+    fn write_font(&mut self, px: f32) {
+        self.font_ops.1 += 1;
+        let id = format!("{}-{}", self.font_ops.0, self.font_ops.1);
+        let changes = json!({"terminal.font.size": f64::from(px)});
+        let written = self
+            .follower
+            .apply(&id, changes)
+            .is_some_and(|write| self.bus.write_settings(write));
+        if !written {
+            self.font_event(FontEvent::WriteSettled(WriteReply::Failed));
+        }
+    }
+
+    /// A size write answered. Changed: the look that follows carries it. A
+    /// conflict (another change landed first) is written again on the next
+    /// look. Failed writes wait for another zoom or successful settings read.
+    /// A refusal clears the pending zoom and restores the settings' size.
+    fn font_written(&mut self, reply: Option<(u8, String, Option<String>)>) {
+        let status = reply
+            .as_ref()
+            .and_then(|(_, body, _)| serde_json::from_str::<Value>(body).ok())
+            .and_then(|body| body["status"].as_str().map(str::to_owned));
+        let outcome = write_outcome(status.as_deref());
+        if matches!(outcome, WriteReply::Refused | WriteReply::Failed) {
+            let error = reply.as_ref().and_then(|(_, _, error)| error.as_deref());
+            eprintln!(
+                "term: font size not saved: {}",
+                status.as_deref().or(error).unwrap_or("no answer")
+            );
+        }
+        self.font_event(FontEvent::WriteSettled(outcome));
+    }
+
+    /// Translate pure persistence actions to the native Bus and its timers.
+    fn font_event(&mut self, event: FontEvent) {
+        if self.exiting {
+            return;
+        }
+        for action in self.font.event(event, Instant::now()) {
+            match action {
+                FontAction::Write(px) => self.write_font(px),
+                FontAction::Read => {
+                    if let Some(read) = self.look_prepared.take().or_else(|| self.follower.read()) {
+                        let ticket = read.ticket;
+                        if !self.bus.read_look(read) {
+                            self.looked(ticket, None);
+                        }
+                    }
+                }
+                FontAction::Debounce => {
+                    if !self.bus.font_due(QUIET) {
+                        self.ctx.request_repaint_after(QUIET);
+                    }
                 }
             }
         }
@@ -438,10 +530,12 @@ impl Shell {
             self.answer(answer.id, answer.rc, answer.body);
         }
         self.pump();
+        self.font_event(FontEvent::Now);
         if self.app.take_wake() && self.app.sync() == Synced::Exit {
             self.close();
         }
         self.app.rescale(ctx.pixels_per_point());
+        self.queue_font();
         self.follow_theme();
         if ctx.input(|i| i.viewport().close_requested()) {
             // The window's close box closes every tab, as Quit does.
@@ -548,7 +642,7 @@ impl Shell {
             .frame(egui::Frame::new().fill(canvas))
             .show(ui, |ui| {
                 events.extend(view::tab_strip(ui, &self.app));
-                view::notice(ui, &self.app);
+                view::notice(ui, &self.app, self.font.unsaved);
                 let area = ui.available_rect_before_wrap();
                 let response = ui.interact(area, self.focus, egui::Sense::click_and_drag());
                 let focused = ctx.memory(|m| m.focused());
@@ -556,6 +650,7 @@ impl Shell {
                 let keyboard = !elsewhere
                     && !toolkit::menu::is_open(&ctx)
                     && !self.app.keys_dialog
+                    && !self.app.about_dialog
                     && !self.exiting;
                 if keyboard && !response.has_focus() {
                     response.request_focus();
@@ -574,6 +669,11 @@ impl Shell {
                 self.app.layout(layout::content(area, self.app.scale()));
                 self.input(area, ui.layer_id(), keyboard);
                 self.app.paint();
+                // A blinking cursor asks for the frame its next phase
+                // needs, and nothing while it is steady or hidden.
+                if let Some(delay) = self.app.next_blink(Instant::now()) {
+                    ctx.request_repaint_after(delay);
+                }
                 view::panes(ui, &self.app);
                 if keyboard
                     && self.app.keyboard_focus
@@ -613,6 +713,12 @@ impl Shell {
         if self.app.keys_dialog && view::keys_dialog(&ctx, &self.commands, &self.strings) {
             self.app.keys_dialog = false;
         }
+        if self.app.about_dialog
+            && view::about_dialog(&ctx, self.bus.connected() && self.follower.following())
+        {
+            self.app.about_dialog = false;
+        }
+        self.queue_font();
         self.perform();
         self.release();
         self.publish_executed();
@@ -626,6 +732,15 @@ fn closing() -> (u8, String) {
     )
 }
 
+fn write_outcome(status: Option<&str>) -> WriteReply {
+    match status {
+        Some("changed" | "unchanged") => WriteReply::Saved,
+        Some("conflict") => WriteReply::Conflict,
+        Some("validation_failed" | "invalid_request") => WriteReply::Refused,
+        _ => WriteReply::Failed,
+    }
+}
+
 impl eframe::App for Shell {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         Shell::logic(self, ctx);
@@ -633,5 +748,24 @@ impl eframe::App for Shell {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         Shell::ui(self, ui);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn write_answers_distinguish_failures_and_validation_refusals() {
+        for status in [None, Some("storage_failed"), Some("outcome_unknown")] {
+            assert_eq!(write_outcome(status), WriteReply::Failed);
+        }
+        for status in ["validation_failed", "invalid_request"] {
+            assert_eq!(write_outcome(Some(status)), WriteReply::Refused);
+        }
+        assert_eq!(write_outcome(Some("conflict")), WriteReply::Conflict);
+        for status in ["changed", "unchanged"] {
+            assert_eq!(write_outcome(Some(status)), WriteReply::Saved);
+        }
     }
 }

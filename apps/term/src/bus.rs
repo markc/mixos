@@ -78,8 +78,13 @@ pub enum Delivery {
         ticket: u64,
         reply: Option<(u8, String, Option<String>)>,
     },
-    /// A look retry is due.
-    LookRetry { generation: u64 },
+    /// The answer to a settings write ([`WindowBus::write_settings`]), as
+    /// [`Delivery::Look`]'s.
+    Written {
+        reply: Option<(u8, String, Option<String>)>,
+    },
+    /// A font size write is due (the zoom keys have paused).
+    FontDue,
     /// The connection came (back) up.
     Connected,
 }
@@ -199,10 +204,11 @@ impl WindowBus {
         });
     }
 
-    /// Perform a session-look read; [`Delivery::Look`] answers it.
-    pub fn read_look(&self, read: settings::follow::Read) {
+    /// Perform a session-look read; [`Delivery::Look`] answers it. False
+    /// with no Bus, so the shell can settle the failed send immediately.
+    pub fn read_look(&self, read: settings::follow::Read) -> bool {
         let Some(link) = self.link() else {
-            return;
+            return false;
         };
         let (client, tx, wake) = (link.client.clone(), self.tx.clone(), self.wake.clone());
         link.runtime.spawn(async move {
@@ -218,19 +224,46 @@ impl WindowBus {
             });
             wake();
         });
+        true
     }
 
-    /// Deliver [`Delivery::LookRetry`] with `generation` after `delay`.
-    pub fn retry_look(&self, delay: Duration, generation: u64) {
+    /// Deliver [`Delivery::FontDue`] after the zoom debounce.
+    /// False before the native Bus runtime is ready.
+    pub fn font_due(&self, delay: Duration) -> bool {
+        self.after(delay, Delivery::FontDue)
+    }
+
+    fn after(&self, delay: Duration, delivery: Delivery) -> bool {
         let Some(link) = self.link() else {
-            return;
+            return false;
         };
         let (tx, wake) = (self.tx.clone(), self.wake.clone());
         link.runtime.spawn(async move {
             tokio::time::sleep(delay).await;
-            let _ = tx.send(Delivery::LookRetry { generation });
+            let _ = tx.send(delivery);
             wake();
         });
+        true
+    }
+
+    /// Perform a settings write (a [`settings::follow::Follower::apply`]);
+    /// [`Delivery::Written`] answers it. False with no Bus.
+    pub fn write_settings(&self, write: settings::follow::Read) -> bool {
+        let Some(link) = self.link() else {
+            return false;
+        };
+        let (client, tx, wake) = (link.client.clone(), self.tx.clone(), self.wake.clone());
+        link.runtime.spawn(async move {
+            let (body, headers) = (write.body.to_string(), BTreeMap::new());
+            let call = client.call_with_headers_raw(write.service, write.verb, &headers, &body);
+            let reply = match tokio::time::timeout(LOOK_BUDGET, call).await {
+                Ok(Ok(answer)) => Some(answer),
+                _ => None,
+            };
+            let _ = tx.send(Delivery::Written { reply });
+            wake();
+        });
+        true
     }
 
     /// Queue `bodies` for publishing on `<name>.<suffix>`.

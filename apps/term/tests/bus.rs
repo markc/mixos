@@ -62,7 +62,7 @@ fn the_window_answers_its_verbs_over_a_real_broker() {
 
     let settings = Settings {
         config: Config::default(),
-        term: "xterm-256color",
+        term: "xterm-256color".into(),
     };
     let tabs = Arc::new(Mutex::new(
         TabSet::with_session(settings, None).expect("a Mix PTY"),

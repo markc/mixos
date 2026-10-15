@@ -582,6 +582,7 @@ dependencies = [
 name = "backdrop"
 version = "0.1.1"
 dependencies = [
+ "buildinfo",
  "citizen",
  "config",
  "egui",
@@ -6693,7 +6694,7 @@ dependencies = [
 
 [[package]]
 name = "settings"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "blake3",
  "bus",
@@ -7366,7 +7367,6 @@ dependencies = [
  "buildinfo",
  "bus",
  "citizen",
- "config",
  "design",
  "eframe",
  "egui",
@@ -7393,7 +7393,6 @@ dependencies = [
  "buildinfo",
  "bus",
  "citizen",
- "config",
  "design",
  "ed25519-dalek",
  "fontdb",
@@ -7803,6 +7802,7 @@ checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 name = "toolkit"
 version = "0.1.1"
 dependencies = [
+ "assets",
  "config",
  "design",
  "egui",

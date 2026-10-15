@@ -14,6 +14,7 @@ pub enum Section {
     Themes,
     Fonts,
     Wallpapers,
+    Terminal,
     #[serde(rename = "mixos-desktop")]
     Desktop,
     #[serde(rename = "mixos-server")]
@@ -23,10 +24,11 @@ pub enum Section {
 }
 
 impl Section {
-    pub const ALL: [Section; 7] = [
+    pub const ALL: [Section; 8] = [
         Section::Themes,
         Section::Fonts,
         Section::Wallpapers,
+        Section::Terminal,
         Section::Desktop,
         Section::Server,
         Section::Creative,
@@ -38,6 +40,7 @@ impl Section {
             Section::Themes => "themes",
             Section::Fonts => "fonts",
             Section::Wallpapers => "wallpapers",
+            Section::Terminal => "terminal",
             Section::Desktop => "mixos-desktop",
             Section::Server => "mixos-server",
             Section::Creative => "creative",
@@ -52,7 +55,9 @@ impl Section {
     /// The panel that shows this section.
     pub fn panel(self) -> Panel {
         match self {
-            Section::Themes | Section::Fonts | Section::Wallpapers => Panel::Appearance,
+            Section::Themes | Section::Fonts | Section::Wallpapers | Section::Terminal => {
+                Panel::Appearance
+            }
             _ => Panel::Applications,
         }
     }
@@ -62,6 +67,7 @@ impl Section {
             Section::Themes => "section-themes",
             Section::Fonts => "section-fonts",
             Section::Wallpapers => "section-wallpapers",
+            Section::Terminal => "nav-terminal",
             Section::Desktop => "section-desktop",
             Section::Server => "section-server",
             Section::Creative => "section-creative",
@@ -74,6 +80,7 @@ impl Section {
             Section::Themes => "view.section.themes",
             Section::Fonts => "view.section.fonts",
             Section::Wallpapers => "view.section.wallpapers",
+            Section::Terminal => "view.section.terminal",
             Section::Desktop => "view.section.desktop",
             Section::Server => "view.section.server",
             Section::Creative => "view.section.creative",
@@ -141,6 +148,7 @@ mod tests {
     #[test]
     fn sections_map_to_their_panel_and_default() {
         assert_eq!(Section::Fonts.panel(), Panel::Appearance);
+        assert_eq!(Section::Terminal.panel(), Panel::Appearance);
         assert_eq!(Section::Server.panel(), Panel::Applications);
         assert_eq!(Section::default_for(Panel::Appearance), Section::Themes);
         assert_eq!(Section::default_for(Panel::Applications), Section::Creative);

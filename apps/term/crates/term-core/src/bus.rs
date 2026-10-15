@@ -1486,7 +1486,7 @@ mod tests {
     fn scroll_viewport_selectors_events_replay_and_refusals() {
         let settings = crate::config::Settings {
             config: crate::config::Config::default(),
-            term: "xterm-256color",
+            term: "xterm-256color".into(),
         };
         let fixture = || {
             Ok(crate::terminal::Terminal::from_test_vt(
@@ -1657,7 +1657,7 @@ mod tests {
         use crate::terminal::{ScrollRequest, Terminal};
         let settings = crate::config::Settings {
             config: crate::config::Config::default(),
-            term: "xterm-256color",
+            term: "xterm-256color".into(),
         };
         let fixture = || {
             Ok(Terminal::from_test_vt(
@@ -2085,9 +2085,9 @@ mod tests {
     fn startup_mutations_are_retryable_and_attach_notifies_watchers() {
         let settings = crate::config::Settings {
             config: crate::config::Config::default(),
-            term: "xterm-256color",
+            term: "xterm-256color".into(),
         };
-        let set = Mutex::new(TabSet::starting(settings));
+        let set = Mutex::new(TabSet::starting(settings.clone()));
         let (cleanup, worker) = Cleanup::start().unwrap();
         let mut replies = ReplyCache::default();
         let mut events = set.lock().unwrap().observe();
