@@ -120,7 +120,7 @@ impl NativeIncomingSender {
                 if command.id.is_none() {
                     if bytes > 65536 {
                         gap.store(true, Ordering::Release);
-                        return true;
+                        return NativeSend::Accepted;
                     }
                     return match commands.try_send(
                         crate::native_client::unix::VerifiedCommand::new(command, _principal),
@@ -759,10 +759,15 @@ impl NodedClient {
         // these arms). The success path calls `guard.disarm()` so the
         // drop is a no-op — the response path already removed the
         // entry via `reader_loop`.
-        self.pending
-            .lock()
-            .expect("pending mutex poisoned")
-            .insert(id.clone(), tx);
+        // Insert only while `connected` holds. `close` stores false before it
+        // takes this lock, so an insert after close's clear sees false here.
+        {
+            let mut pending = self.pending.lock().expect("pending mutex poisoned");
+            if !self.connected.load(Ordering::Acquire) {
+                return Err(crate::ClientError::Closed.into());
+            }
+            pending.insert(id.clone(), tx);
+        }
         let mut guard = PendingGuard::arm(self.pending.clone(), id.clone());
 
         let mut msg = BusMessage::new()
@@ -967,10 +972,14 @@ impl NodedClient {
         // per-`send` `timeout=<sec>` wraps Mix `send` through this
         // method when the target expects headers; without the guard,
         // an outer-timeout drop would leak the pending slot.
-        self.pending
-            .lock()
-            .expect("pending mutex poisoned")
-            .insert(id.clone(), tx);
+        // Same fence as `call_typed`: no insert once `close` has published false.
+        {
+            let mut pending = self.pending.lock().expect("pending mutex poisoned");
+            if !self.connected.load(Ordering::Acquire) {
+                return Err(crate::ClientError::Closed.into());
+            }
+            pending.insert(id.clone(), tx);
+        }
         let mut guard = PendingGuard::arm(self.pending.clone(), id.clone());
 
         let mut msg = BusMessage::new();
@@ -1022,10 +1031,14 @@ impl NodedClient {
         crate::native_session::parse_bootstrap(msg.to_wire().as_bytes())
             .map_err(|_| anyhow::anyhow!("invalid session arguments"))?;
         let (tx, rx) = oneshot::channel();
-        self.pending
-            .lock()
-            .expect("pending mutex poisoned")
-            .insert(id.clone(), tx);
+        // Same fence as `call_typed`: no insert once `close` has published false.
+        {
+            let mut pending = self.pending.lock().expect("pending mutex poisoned");
+            if !self.connected.load(Ordering::Acquire) {
+                return Err(crate::ClientError::Closed.into());
+            }
+            pending.insert(id.clone(), tx);
+        }
         let mut guard = PendingGuard::arm(self.pending.clone(), id.clone());
         self.send_raw(&msg).await?;
         let response = tokio::time::timeout(std::time::Duration::from_secs(60), rx)
@@ -1293,7 +1306,9 @@ impl NodedClient {
         // Reflect the teardown in `is_connected()` before any await so
         // a concurrent observer never reads a closing connection as
         // live.
-        self.connected.store(false, Ordering::Relaxed);
+        // Release pairs with the Acquire load under the pending lock at every
+        // insertion site: a call that inserts after this clear sees `false`.
+        self.connected.store(false, Ordering::Release);
         // Clear in-flight correlation before any await, so a close that is
         // cancelled while waiting on the sink cannot leave callers parked.
         self.pending.lock().expect("pending mutex poisoned").clear();
@@ -1515,7 +1530,7 @@ impl NodedClient {
                         if !matches!(written, Ok(Ok(()))) {
                             // Fail the connection before any further await, so
                             // no caller parks on a reply that will never come.
-                            connected.store(false, Ordering::Relaxed);
+                            connected.store(false, Ordering::Release);
                             pending.lock().expect("pending mutex poisoned").clear();
                             let _ = tokio::time::timeout(BUSY_REFUSAL_WRITE_LIMIT, async {
                                 sink.lock().await.close().await
@@ -1528,7 +1543,7 @@ impl NodedClient {
             }
         }
 
-        connected.store(false, Ordering::Relaxed);
+        connected.store(false, Ordering::Release);
         tracing::info!("{service_name}: disconnected from broker");
 
         // Resolve all pending requests with an error
@@ -1629,8 +1644,14 @@ mod verified_bound_tests {
             body: "{}".into(),
             headers: Default::default(),
         };
-        assert!(sender.send(command(Some("1".into())), None).await);
-        assert!(sender.send(command(Some("2".into())), None).await);
+        assert!(matches!(
+            sender.send(command(Some("1".into())), None).await,
+            NativeSend::Accepted
+        ));
+        assert!(matches!(
+            sender.send(command(Some("2".into())), None).await,
+            NativeSend::Accepted
+        ));
         // The reader hands the overflowed request to the receive owner instead
         // of writing to the sink it does not own.
         let refused = refusals.recv().await.unwrap();
@@ -1642,14 +1663,20 @@ mod verified_bound_tests {
         assert!(!gap.load(Ordering::Acquire));
         // A dropped id-less notice is a delivery gap, not a refusal: nothing is
         // queued for reply and the reader still does not block on a full lane.
-        assert!(sender.send(command(None), None).await);
+        assert!(matches!(
+            sender.send(command(None), None).await,
+            NativeSend::Accepted
+        ));
         assert!(gap.swap(false, Ordering::AcqRel));
         assert!(refusals.try_recv().is_err(), "notices are never refused");
         assert_eq!(
             commands.recv().await.unwrap().command().id.as_deref(),
             Some("1")
         );
-        assert!(sender.send(command(None), None).await);
+        assert!(matches!(
+            sender.send(command(None), None).await,
+            NativeSend::Accepted
+        ));
         assert!(commands.recv().await.unwrap().command().id.is_none());
         assert!(!gap.load(Ordering::Acquire));
     }
@@ -2041,5 +2068,247 @@ mod registration_rejection_classification_tests {
             named.to_string(),
             "Bus registration rejected with rc 10: held"
         );
+    }
+}
+
+#[cfg(test)]
+mod native_ingress_regression_tests {
+    //! Deterministic regressions for the bounded RPC lane and `close()`. The
+    //! lane tests use an in-memory WebSocket pair, so they run on every
+    //! platform and need no timing: each step waits on the event it depends on.
+    use super::*;
+    use std::time::Duration;
+
+    fn lane_command(id: Option<&str>, topic: Option<&str>) -> IncomingCommand {
+        let mut headers = BTreeMap::new();
+        if let Some(topic) = topic {
+            headers.insert("topic".to_string(), topic.to_string());
+        }
+        IncomingCommand {
+            generation: 0,
+            from: "caller".into(),
+            command: "shell.status".into(),
+            id: id.map(str::to_string),
+            args: serde_json::Value::Null,
+            body: "{}".into(),
+            headers,
+        }
+    }
+
+    #[tokio::test]
+    async fn full_rpc_lane_refuses_only_id_bearing_requests() {
+        let (sender, _receiver) = incoming_channel(Some(1), true);
+        assert!(matches!(
+            sender.send(lane_command(Some("1"), None), None).await,
+            NativeSend::Accepted
+        ));
+        match sender.send(lane_command(Some("2"), None), None).await {
+            NativeSend::Refused(refused) => assert_eq!(refused.id.as_deref(), Some("2")),
+            _ => panic!("an overfull RPC request must be handed back for BUSY"),
+        }
+        // Topic frames and id-less frames are never refused, even when they
+        // overflow the lane.
+        assert!(matches!(
+            sender
+                .send(lane_command(Some("3"), Some("desk.event")), None)
+                .await,
+            NativeSend::Accepted
+        ));
+        assert!(matches!(
+            sender.send(lane_command(None, None), None).await,
+            NativeSend::Accepted
+        ));
+    }
+
+    #[tokio::test]
+    async fn full_rpc_lane_answers_busy_on_the_socket_and_still_resolves_replies() {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            use tokio_tungstenite::tungstenite::protocol::Role;
+            let (local, peer) = tokio::io::duplex(1 << 16);
+            let socket = WebSocketStream::from_raw_socket(local, Role::Client, None).await;
+            let mut peer = WebSocketStream::from_raw_socket(peer, Role::Server, None).await;
+            let (sink, stream) = socket.split();
+            let sink: Arc<Mutex<WsSink>> = Arc::new(Mutex::new(Box::pin(sink)));
+            let (incoming_tx, incoming_rx) = incoming_channel(Some(1), true);
+            let pending: Arc<StdMutex<PendingMap>> = Arc::new(StdMutex::new(HashMap::new()));
+            let (reply_tx, reply_rx) = oneshot::channel();
+            pending.lock().unwrap().insert("9".to_string(), reply_tx);
+            let reader = tokio::spawn(NodedClient::reader_loop(
+                stream,
+                pending.clone(),
+                incoming_tx,
+                Arc::new(AtomicBool::new(true)),
+                Arc::new(RwLock::new("owner".to_string())),
+                sink,
+                Arc::new(RwLock::new(None)),
+            ));
+
+            let request = |id: &str| {
+                BusMessage::new()
+                    .with_header("command", "shell.status")
+                    .with_header("type", "request")
+                    .with_header("from", "caller")
+                    .with_header("to", "owner")
+                    .with_header("id", id)
+            };
+            // The first request fills the lane; the second finds it full.
+            peer.send(Message::Text(request("1").to_wire().into()))
+                .await
+                .unwrap();
+            peer.send(Message::Text(request("2").to_wire().into()))
+                .await
+                .unwrap();
+
+            // BUSY is written on this socket, correlated to the refused request.
+            let wire = peer.next().await.unwrap().unwrap().into_text().unwrap();
+            let busy = crate::parse(&wire).unwrap();
+            assert_eq!(busy.get("type"), Some("response"));
+            assert_eq!(busy.get("command"), Some("shell.status"));
+            assert_eq!(busy.get("from"), Some("owner"));
+            assert_eq!(busy.get("to"), Some("caller"));
+            assert_eq!(busy.get("id"), Some("2"));
+            assert_eq!(busy.get("rc"), Some("10"));
+            assert_eq!(busy.get("error"), Some("BUSY"));
+            assert_eq!(busy.body, BUSY_REFUSAL_BODY);
+
+            // The lane is still full, and a reply matching a pending id still
+            // resolves its caller: replies never wait for lane capacity.
+            let reply = BusMessage::new()
+                .with_header("type", "response")
+                .with_header("rc", "0")
+                .with_header("id", "9")
+                .with_body("{\"ok\":true}");
+            peer.send(Message::Text(reply.to_wire().into()))
+                .await
+                .unwrap();
+            assert_eq!(reply_rx.await.unwrap().body, "{\"ok\":true}");
+
+            // Only the first request was retained. The overflow marker comes
+            // first, as it does for any dropped command on this lane.
+            let NativeIncomingReceiver::Bounded(mut retained) = incoming_rx else {
+                panic!("bounded lane expected");
+            };
+            assert!(matches!(
+                retained.recv().await,
+                Some(BoundedIncomingEvent::Overflow { dropped: 1 })
+            ));
+            assert!(matches!(
+                retained.recv().await,
+                Some(BoundedIncomingEvent::Command(command)) if command.id.as_deref() == Some("1")
+            ));
+            assert!(retained.try_recv().is_none());
+            assert_eq!(retained.overflow_count(), 1);
+
+            peer.close(None).await.unwrap();
+            reader.await.unwrap();
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn close_clears_pending_before_a_blocked_sink_is_released() {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let pending: Arc<StdMutex<PendingMap>> = Arc::new(StdMutex::new(HashMap::new()));
+            let (tx, mut rx) = oneshot::channel();
+            pending.lock().unwrap().insert("1".to_string(), tx);
+            let sink: WsSink = Box::pin(
+                futures_util::sink::drain::<Message>().sink_map_err(
+                    |never: std::convert::Infallible| -> tokio_tungstenite::tungstenite::Error {
+                        match never {}
+                    },
+                ),
+            );
+            let client = NodedClient {
+                service_name: Arc::new(RwLock::new("close-test".to_string())),
+                verbs: Arc::new(RwLock::new(None)),
+                sink: Arc::new(Mutex::new(sink)),
+                pending: pending.clone(),
+                incoming_rx: Mutex::new(None),
+                next_id: AtomicU64::new(1),
+                connected: Arc::new(AtomicBool::new(true)),
+                reader_handle: Mutex::new(None),
+                provenance: None,
+            };
+
+            // Hold the sink so `close()` parks on it after its synchronous steps.
+            let held = client.sink.lock().await;
+            let mut closing = Box::pin(client.close());
+            assert!(futures_util::poll!(closing.as_mut()).is_pending());
+            assert!(!client.is_connected());
+            assert!(pending.lock().unwrap().is_empty());
+            assert!(matches!(
+                rx.try_recv(),
+                Err(oneshot::error::TryRecvError::Closed)
+            ));
+
+            drop(held);
+            closing.await;
+        })
+        .await
+        .unwrap();
+    }
+
+    /// A client over a sink that accepts every write, so only the pending
+    /// fence decides whether a call can register and wait.
+    fn drained_client() -> NodedClient {
+        let sink: WsSink = Box::pin(futures_util::sink::drain::<Message>().sink_map_err(
+            |never: std::convert::Infallible| -> tokio_tungstenite::tungstenite::Error {
+                match never {}
+            },
+        ));
+        NodedClient {
+            service_name: Arc::new(RwLock::new("post-close-test".to_string())),
+            verbs: Arc::new(RwLock::new(None)),
+            sink: Arc::new(Mutex::new(sink)),
+            pending: Arc::new(StdMutex::new(HashMap::new())),
+            incoming_rx: Mutex::new(None),
+            next_id: AtomicU64::new(1),
+            connected: Arc::new(AtomicBool::new(true)),
+            reader_handle: Mutex::new(None),
+            provenance: None,
+        }
+    }
+
+    fn assert_closed(error: Option<anyhow::Error>) {
+        let error = error.expect("a call after close must fail");
+        assert!(matches!(
+            error.downcast_ref::<crate::ClientError>(),
+            Some(crate::ClientError::Closed)
+        ));
+    }
+
+    /// Calls made after `close()` fail at once and never park: the fence stops
+    /// the insert, so nothing waits out the 60 s response limit.
+    #[tokio::test]
+    async fn post_close_calls_cannot_insert_or_wait() {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let client = drained_client();
+            client.close().await;
+            assert!(!client.is_connected());
+
+            let typed = tokio::time::timeout(
+                Duration::from_secs(1),
+                client.call_typed("peer", "post.close", serde_json::Value::Null),
+            )
+            .await
+            .expect("a post-close call_typed must not park");
+            assert_closed(typed.err());
+
+            let raw = tokio::time::timeout(
+                Duration::from_secs(1),
+                client.call_with_headers_raw("peer", "post.close", &BTreeMap::new(), ""),
+            )
+            .await
+            .expect("a post-close raw call must not park");
+            assert_closed(raw.err());
+
+            assert!(
+                client.pending.lock().unwrap().is_empty(),
+                "no post-close call may leave a pending entry behind"
+            );
+        })
+        .await
+        .unwrap();
     }
 }

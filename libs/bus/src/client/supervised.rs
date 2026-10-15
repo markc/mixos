@@ -41,7 +41,8 @@ use crate::native_client::bounded::{
     is_rpc_request,
 };
 
-/// Bound on one `BUSY` refusal write, and on closing the connection it failed on.
+/// Bound on one `BUSY` refusal write, on closing the connection it failed on,
+/// and on closing a dead connection before a redial.
 const REFUSAL_LIMIT: Duration = Duration::from_millis(100);
 
 /// Attempt budget for the initial connect-and-register. Exhausting it is a
@@ -205,6 +206,11 @@ impl SupervisedConnectOptions {
     /// a correlated `rc 10` `BUSY` reply, so the caller can retry. Topic
     /// frames and frames without an id stay lossy and are reported as
     /// `Overflow` only.
+    ///
+    /// In this mode, when the connection drops, the supervisor closes it
+    /// best-effort, within 100 ms, and releases its handle before redialling.
+    /// That is not a guarantee of physical close: another holder of the
+    /// connection can keep it open past the bound.
     pub fn bounded_incoming_rpc(mut self, capacity: usize) -> Self {
         assert!(capacity > 0, "bounded incoming capacity must be non-zero");
         self.connection.capacity = Some(capacity);
@@ -947,6 +953,21 @@ async fn refuse_overflowed(ctx: &SupervisorCtx, refused: &IncomingCommand) -> bo
     false
 }
 
+/// Take the dead connection out of `ctx.inner` before a redial, so its
+/// registered name is released before the new registration is attempted.
+///
+/// Best effort: the close is bounded by [`REFUSAL_LIMIT`], and this function
+/// always releases the supervisor's handle before it returns. The supervisor is
+/// the only writer of `inner`, and the write lock is held only for the `take`,
+/// so no replacement connection is touched here. Physical close is not promised
+/// within the bound when another holder still references the connection.
+async fn detach_stale_connection(ctx: &SupervisorCtx) {
+    let stale = ctx.inner.write().await.take();
+    if let Some(stale) = stale {
+        let _ = tokio::time::timeout(REFUSAL_LIMIT, stale.close()).await;
+    }
+}
+
 /// `true` once a stop has been requested (an explicit shutdown, or the
 /// `SupervisedClient` and so the watch sender was dropped).
 fn stop_requested(rx: &watch::Receiver<bool>) -> bool {
@@ -1068,6 +1089,12 @@ async fn supervisor_run(ctx: &mut SupervisorCtx, mut current_rx: Option<NativeIn
         let initial = ctx.connection_generation.load(Ordering::SeqCst) == 0;
         if !initial {
             publish_state(&ctx.state_tx, &ctx.state_publish, ConnState::Disconnected);
+        }
+        // Only the RPC lane detaches here: a dead connection left in `inner`
+        // would keep its registered name while every redial collided with it.
+        // This also covers a refusal write that failed and already closed it.
+        if ctx.connection_options.refuse_overflowed_requests {
+            detach_stale_connection(ctx).await;
         }
         let down_since = Instant::now();
         tracing::warn!(
@@ -1340,5 +1367,112 @@ mod tests {
         reconnect.join().expect("reconnect publisher");
 
         assert_eq!(*state_rx.borrow(), ConnState::ShuttingDown);
+    }
+
+    fn request(
+        id: Option<&str>,
+        generation: u64,
+        headers: BTreeMap<String, String>,
+    ) -> IncomingCommand {
+        IncomingCommand {
+            generation,
+            from: "caller".to_owned(),
+            command: "game.move".to_owned(),
+            id: id.map(str::to_owned),
+            args: serde_json::Value::Null,
+            body: String::new(),
+            headers,
+        }
+    }
+
+    #[test]
+    fn builder_policy_last_call_wins() {
+        let options = || SupervisedClient::connect_options("svc", "tcp://broker");
+        let policy = |o: SupervisedConnectOptions| {
+            (o.connection.capacity, o.connection.refuse_overflowed_requests)
+        };
+        assert_eq!(policy(options()), (None, false));
+        assert_eq!(policy(options().bounded_incoming_rpc(2)), (Some(2), true));
+        assert_eq!(
+            policy(options().bounded_incoming_rpc(2).bounded_incoming(3)),
+            (Some(3), false)
+        );
+        assert_eq!(
+            policy(options().bounded_incoming(3).bounded_incoming_rpc(4)),
+            (Some(4), true)
+        );
+    }
+
+    #[test]
+    fn full_rpc_lane_refusal_keeps_the_original_request() {
+        let (sender, mut receiver) = bounded_incoming_channel(1);
+        let lane = SupervisorOutgoing::Bounded(sender);
+        let first = request(Some("one"), 7, BTreeMap::new());
+        let second = request(Some("two"), 7, BTreeMap::new());
+        assert!(matches!(
+            lane.forward(BoundedIncomingEvent::Command(first), true),
+            ForwardOutcome::Sent
+        ));
+        let ForwardOutcome::Refused(refused) =
+            lane.forward(BoundedIncomingEvent::Command(second), true)
+        else {
+            panic!("a full RPC lane must refuse an id-bearing request");
+        };
+        assert_eq!(refused.id.as_deref(), Some("two"));
+        assert_eq!(refused.generation, 7);
+        assert_eq!(refused.from, "caller");
+        assert_eq!(refused.command, "game.move");
+
+        assert_eq!(receiver.overflow_count(), 1);
+        assert!(matches!(
+            receiver.try_recv(),
+            Some(BoundedIncomingEvent::Overflow { dropped: 1 })
+        ));
+        assert!(matches!(
+            receiver.try_recv(),
+            Some(BoundedIncomingEvent::Command(c)) if c.id.as_deref() == Some("one")
+        ));
+        assert!(receiver.try_recv().is_none(), "the refused request is not retained");
+    }
+
+    #[test]
+    fn only_full_id_bearing_plain_requests_are_refused() {
+        let topic = BTreeMap::from([("topic".to_string(), "x".to_string())]);
+        let cases = [
+            ("lossy default", false, Some("two"), BTreeMap::new()),
+            ("topic with id", true, Some("two"), topic),
+            ("idless", true, None, BTreeMap::new()),
+        ];
+        for (case, refuse_rpc, id, headers) in cases {
+            // A fresh lane per case, so each overflow starts from an empty queue.
+            let (sender, mut receiver) = bounded_incoming_channel(1);
+            let lane = SupervisorOutgoing::Bounded(sender);
+            let first = request(Some("one"), 7, BTreeMap::new());
+            let second = request(id, 7, headers);
+            assert!(
+                matches!(
+                    lane.forward(BoundedIncomingEvent::Command(first), refuse_rpc),
+                    ForwardOutcome::Sent
+                ),
+                "{case}: first frame"
+            );
+            assert!(
+                matches!(
+                    lane.forward(BoundedIncomingEvent::Command(second), refuse_rpc),
+                    ForwardOutcome::Sent
+                ),
+                "{case}: second frame must stay lossy, not refused"
+            );
+            assert_eq!(receiver.overflow_count(), 1, "{case}");
+            assert!(matches!(
+                receiver.try_recv(),
+                Some(BoundedIncomingEvent::Overflow { dropped: 1 })
+            ));
+            assert!(matches!(
+                receiver.try_recv(),
+                Some(BoundedIncomingEvent::Command(c)) if c.id.as_deref() == Some("one")
+            ));
+            assert!(receiver.try_recv().is_none(), "{case}: only the first is retained");
+        }
     }
 }

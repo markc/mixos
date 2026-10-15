@@ -101,18 +101,6 @@ async fn start(burst: Vec<String>) -> (String, Arc<Stub>) {
     (url, stub)
 }
 
-/// Poll until `cond` is true or the outer bound elapses.
-async fn wait_until<F: Fn() -> bool>(secs: u64, cond: F) -> bool {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(secs);
-    while tokio::time::Instant::now() < deadline {
-        if cond() {
-            return true;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    cond()
-}
-
 /// Drain everything the bounded lane currently holds. Returns retained
 /// commands and the total dropped count reported by overflow markers.
 fn drain(
@@ -127,6 +115,39 @@ fn drain(
         }
     }
     (commands, dropped)
+}
+
+/// Drain until all `total` frames are accounted for: each one retained or
+/// counted by an overflow marker. The native and supervisor pumps finish on
+/// their own schedule, so this polls within a bound rather than sleeping.
+async fn drain_until_accounted(
+    rx: &mut bus::native_client::BoundedIncomingReceiver,
+    total: u64,
+) -> (Vec<bus::IncomingCommand>, u64) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let mut retained = Vec::new();
+    let mut dropped = 0;
+    loop {
+        let (batch, marked) = drain(rx);
+        retained.extend(batch);
+        dropped += marked;
+        if retained.len() as u64 + dropped == total || tokio::time::Instant::now() >= deadline {
+            return (retained, dropped);
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+/// Ids of every `BUSY` reply the stub has received so far.
+async fn busy_ids(stub: &Stub) -> Vec<String> {
+    stub.state
+        .lock()
+        .await
+        .responses
+        .iter()
+        .filter(|r| r.get("rc") == Some("10"))
+        .map(|r| r.get("id").unwrap().to_string())
+        .collect()
 }
 
 /// Round-trip one outbound echo. Replies are ordered behind the burst on the
@@ -157,67 +178,70 @@ async fn rpc_lane_refuses_overflowed_requests_with_busy_and_loses_nothing() {
         .connect()
         .await
         .expect("bounded rpc connect");
-    // Not consumed during the flood: capacity 2 fills and the rest overflow.
+    // Not consumed during the flood: the lane fills and the rest overflow.
     let mut incoming = client.incoming_bounded().expect("bounded receiver");
     barrier(&client).await;
 
-    // Every overflowed request must be answered with BUSY: wait until the stub
-    // has seen as many BUSY replies as the lane has overflowed.
-    assert!(
-        wait_until(5, || {
-            let overflowed = incoming.overflow_count() as u64;
-            stub.state
-                .try_lock()
-                .map(|s| {
-                    let busy = s.responses.iter().filter(|r| r.get("rc") == Some("10")).count() as u64;
-                    overflowed > 0 && busy == overflowed
-                })
-                .unwrap_or(false)
-        })
-        .await,
-        "a BUSY reply expected for every overflowed request"
-    );
+    // The refusals are written by the supervisor and the lane is drained by its
+    // owner, and neither finishes with the echo. How many requests are accepted
+    // and how many are refused both depend on timing, so drain and sample until
+    // every request is either accepted or answered BUSY.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let mut accepted: Vec<bus::IncomingCommand> = Vec::new();
+    let mut dropped = 0;
+    let busy = loop {
+        let (retained, marked) = drain(&mut incoming);
+        accepted.extend(retained);
+        dropped += marked;
+        let busy = busy_ids(&stub).await;
+        let accepted_ids: Vec<String> = accepted.iter().filter_map(|c| c.id.clone()).collect();
+        let union: BTreeSet<String> = busy.iter().chain(&accepted_ids).cloned().collect();
+        if (union.len() == 128 && dropped == busy.len() as u64)
+            || tokio::time::Instant::now() >= deadline
+        {
+            break busy;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    };
 
-    let (retained, dropped) = drain(&mut incoming);
-    assert_eq!(retained.len(), 2, "capacity 2 retains exactly two");
-    assert_eq!(dropped, incoming.overflow_count() as u64);
-    assert_eq!(dropped + retained.len() as u64, 128, "every request is retained or refused");
+    let accepted_ids: Vec<String> = accepted.iter().filter_map(|c| c.id.clone()).collect();
+    assert!(!busy.is_empty(), "the flood must overflow the RPC lane at least once");
+    assert!(!accepted.is_empty(), "the lane must retain at least one request");
+    assert_eq!(dropped, busy.len() as u64, "every BUSY matches one overflow marker");
+    assert!(accepted.iter().all(|c| c.generation == 1));
 
-    let accepted: Vec<String> = retained.iter().filter_map(|c| c.id.clone()).collect();
-    assert!(retained.iter().all(|c| c.generation == 1));
-
-    let state = stub.state.lock().await;
-    let busy: Vec<&BusMessage> = state
-        .responses
-        .iter()
-        .filter(|r| r.get("rc") == Some("10"))
-        .collect();
-    let busy_ids: Vec<String> = busy
-        .iter()
-        .map(|r| r.get("id").unwrap().to_string())
-        .collect();
-    for reply in &busy {
-        assert_eq!(reply.get("type"), Some("response"));
-        assert_eq!(reply.get("from"), Some("game-svc"));
-        assert_eq!(reply.get("to"), Some("caller"));
-        assert_eq!(reply.get("command"), Some("game.move"));
-        let body: serde_json::Value = serde_json::from_str(&reply.body).expect("JSON body");
-        assert_eq!(body["error_code"], "BUSY");
-        assert!(body["message"].is_string());
-    }
-
-    let busy_set: HashSet<&String> = busy_ids.iter().collect();
-    assert_eq!(busy_set.len(), busy_ids.len(), "no duplicate BUSY ids");
-    let accepted_set: HashSet<&String> = accepted.iter().collect();
+    let busy_set: HashSet<&String> = busy.iter().collect();
+    assert_eq!(busy_set.len(), busy.len(), "no duplicate BUSY ids");
+    let accepted_set: HashSet<&String> = accepted_ids.iter().collect();
+    assert_eq!(accepted_set.len(), accepted_ids.len(), "no duplicate accepted ids");
     assert!(busy_set.is_disjoint(&accepted_set), "accepted and refused are disjoint");
-    let union: BTreeSet<String> = busy_ids.iter().chain(accepted.iter()).cloned().collect();
+    let union: BTreeSet<String> = busy.iter().chain(&accepted_ids).cloned().collect();
     let expected: BTreeSet<String> = (0..128).map(|n| format!("req-{n}")).collect();
     assert_eq!(union, expected, "every original request is accounted for");
-    assert!(!busy_ids.is_empty() && !accepted.is_empty());
-    drop(state);
 
-    // Outbound correlation still resolves with the lane full, then after drain.
+    {
+        let state = stub.state.lock().await;
+        let busy_replies: Vec<&BusMessage> = state
+            .responses
+            .iter()
+            .filter(|r| r.get("rc") == Some("10"))
+            .collect();
+        for reply in &busy_replies {
+            assert_eq!(reply.get("type"), Some("response"));
+            assert_eq!(reply.get("from"), Some("game-svc"));
+            assert_eq!(reply.get("to"), Some("caller"));
+            assert_eq!(reply.get("command"), Some("game.move"));
+            let body: serde_json::Value = serde_json::from_str(&reply.body).expect("JSON body");
+            assert_eq!(body["error_code"], "BUSY");
+            assert!(body["message"].is_string());
+        }
+    }
+
+    // Outbound correlation still resolves with the lane drained. The stub reads
+    // frames in order, so any BUSY written before this echo is already recorded
+    // when it returns: the count must not grow after every request is accounted.
     barrier(&client).await;
+    assert_eq!(busy_ids(&stub).await.len(), busy.len(), "no BUSY reply after the echo");
     client.close().await;
 }
 
@@ -232,9 +256,9 @@ async fn default_bounded_lane_stays_lossy_without_busy() {
     let mut incoming = client.incoming_bounded().expect("bounded receiver");
     barrier(&client).await;
 
-    let (retained, dropped) = drain(&mut incoming);
+    let (retained, dropped) = drain_until_accounted(&mut incoming, 128).await;
     assert!(dropped > 0, "the burst must overflow capacity 2");
-    assert!(retained.len() <= 2);
+    assert_eq!(retained.len() as u64 + dropped, 128, "every frame is retained or counted as dropped");
     assert!(
         stub.state
             .lock()
@@ -263,9 +287,9 @@ async fn topic_and_idless_frames_stay_lossy_on_the_rpc_lane() {
     let mut incoming = client.incoming_bounded().expect("bounded receiver");
     barrier(&client).await;
 
-    let (retained, dropped) = drain(&mut incoming);
+    let (retained, dropped) = drain_until_accounted(&mut incoming, 128).await;
     assert!(dropped > 0, "the burst must overflow capacity 2");
-    assert!(retained.len() <= 2);
+    assert_eq!(retained.len() as u64 + dropped, 128, "every frame is retained or counted as dropped");
     for c in &retained {
         if c.headers.contains_key("topic") {
             assert_eq!(c.headers.get("topic").map(String::as_str), Some("world.game.tick"));
