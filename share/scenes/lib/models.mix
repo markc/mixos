@@ -719,18 +719,21 @@ fn vol_stream($streams, $selected)
   return length($streams) > 0 ? $streams[0] : nil
 end
 
--- True when a snapshot lists devices but not their default (no sink is
--- the default, or sources exist and none is). The popup then writes
--- nothing, the stream controls included, until a default is picked.
-fn vol_missing_default($snap)
-  if $snap == nil or $snap.ok != true then return false end
-  $sources = $snap.sources ?? []
-  return vol_default($snap.sinks ?? []) == nil or (length($sources) > 0 and vol_default($sources) == nil)
+-- The volume popup's one write guard: true only when pactl's raw read (see
+-- audio.from_pactl) has the default sink and, when it lists any source,
+-- the default source. Anything else fails closed: no snapshot, a failed or
+-- unparseable read, a field missing or of the wrong type. Every write
+-- handler in volume/behaviour.mix checks it before building a pactl argv,
+-- and the model shows no control card while it is false.
+fn vol_writes_allowed($snap)
+  if type($snap) != "map" or $snap.ok != true then return false end
+  if $snap.default_sink_found != true or type($snap.raw_sources) != "number" then return false end
+  return $snap.raw_sources == 0 or $snap.default_source_found == true
 end
 
--- The stream the controls act on: nil while a default is missing.
+-- The stream the controls act on: nil while writes are not allowed.
 fn vol_stream_target($snap, $selected)
-  if $snap == nil or $snap.ok != true or vol_missing_default($snap) then return nil end
+  if not vol_writes_allowed($snap) then return nil end
   return vol_stream($snap.streams ?? [], $selected)
 end
 
@@ -740,20 +743,22 @@ fn volume($snap, $ui = nil)
   $sinks = $ok ? $snap.sinks ?? [] : []
   $sources = $ok ? $snap.sources ?? [] : []
   $streams = $ok ? $snap.streams ?? [] : []
-  $sink = vol_default($sinks)
-  $source = vol_default($sources)
+  -- No control card while the write guard is false: nothing to click.
+  $allowed = vol_writes_allowed($snap)
+  $sink = $allowed ? vol_default($sinks) : nil
+  $source = $allowed ? vol_default($sources) : nil
   $stream = vol_stream_target($snap, $ui.selected)
   $status = ""
   if $snap != nil and not $ok then
     $status = text("vol_unavailable")
   elif $ok and length($sinks) == 0 then
     $status = text("vol_no_device")
-  elif $ok and $sink == nil then
+  elif $ok and $snap.default_sink_found != true then
     $status = text("vol_no_default_out")
   elif $ok then
-    $status = $sink.description
+    $status = vol_default($sinks) != nil ? vol_default($sinks).description : ""
   end
-  if $ok and $source == nil and length($sources) > 0 then $status = $status .. " · " .. text("vol_no_default_in") end
+  if $ok and not (($snap.raw_sources ?? -1) == 0 or $snap.default_source_found == true) then $status = $status .. " · " .. text("vol_no_default_in") end
   $rows = []
   for each $s in $streams
     push($rows, {id: "si_" .. to_string($s.index), cells: [], name: $s.name, sub: $s.media,
@@ -765,10 +770,10 @@ fn volume($snap, $ui = nil)
     down_label: text("vol_down"), up_label: text("vol_up"),
     out_label: text("vol_output"), has_out: $sink != nil,
     out: vol_control($sink, $sink != nil ? $sink.description : ""),
-    outputs: vol_rows($sinks, "sink_"), has_outputs: length($sinks) > 1 or ($sink == nil and length($sinks) > 0),
+    outputs: vol_rows($sinks, "sink_"), has_outputs: length($sinks) > 1,
     in_label: text("vol_input"), has_in: $source != nil,
     inp: vol_control($source, $source != nil ? $source.description : ""),
-    inputs: vol_rows($sources, "source_"), has_inputs: length($sources) > 1 or ($source == nil and length($sources) > 0),
+    inputs: vol_rows($sources, "source_"), has_inputs: length($sources) > 1,
     apps_label: text("vol_apps"), has_streams: length($rows) > 0, streams: $rows,
     stream: vol_control($stream, $stream != nil ? $stream.name : "")}
 end

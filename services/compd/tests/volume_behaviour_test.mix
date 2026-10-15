@@ -253,6 +253,47 @@ fn external($list, $match, $fields)
   append_file($tmp .. "/pactl/events", "Event 'change' on sink #58\n")
 end
 
+-- A fresh stand-in state for the write-guard cases: sinks output_1 and
+-- output_2, the named sources (input_1, input_2, "monitor" for the
+-- fixture's monitor), the fixture's streams, and the two default names.
+fn set_case($sink, $source, $sources)
+  $fx = json_parse(read_file($root .. "/services/compd/tests/fixtures/scenes/volume-pactl.json"))
+  $s = json_parse(read_file($tmp .. "/pactl/state.json"))
+  $s.sinks = [merge($fx.sinks[0], {index: 301, name: "output_1", description: "Output 1"}),
+    merge($fx.sinks[0], {index: 302, name: "output_2", description: "Output 2"})]
+  $list = []
+  for each $name in $sources
+    if $name == "monitor" then
+      push($list, $fx.sources[0])
+    else
+      push($list, merge($fx.sources[1], {index: $name == "input_1" ? 401 : 402, name: $name, description: "Input " .. slice($name, 6, 7)}))
+    end
+  end
+  $s.sources = $list
+  $s.sink_inputs = $fx.sink_inputs
+  $s.info.default_sink_name = $sink
+  $s.info.default_source_name = $source
+  write_file($tmp .. "/pactl/state.json", json_encode($s))
+  append_file($tmp .. "/pactl/events", "Event 'change' on server\n")
+end
+
+-- Every write handler once, as relayed clicks: output, input and stream
+-- level, -/+ and mute, then a device row of each list. The player stream
+-- (4600) is chosen first; choosing writes nothing.
+fn drive_all($what)
+  expect_rc(ui_event("vol_stream_pick", "v_streams", {id: "si_4600"}), 0, $what .. ": choose the player")
+  $prefixes = {out: "vo", in: "vi", stream: "vs"}
+  for each $kind in ["out", "in", "stream"]
+    $p = $prefixes[$kind]
+    expect_rc(ui_event("vol_" .. $kind .. "_set", $p .. "_bar", {id: "v50", pct: 50}), 0, $what .. ": " .. $kind .. " bar")
+    expect_rc(ui_event("vol_" .. $kind .. "_up", $p .. "_up"), 0, $what .. ": " .. $kind .. " +")
+    expect_rc(ui_event("vol_" .. $kind .. "_down", $p .. "_down"), 0, $what .. ": " .. $kind .. " -")
+    expect_rc(ui_event("vol_" .. $kind .. "_mute", $p .. "_mute"), 0, $what .. ": " .. $kind .. " mute")
+  end
+  expect_rc(ui_event("vol_output_pick", "v_outs", {id: "sink_302"}), 0, $what .. ": pick output_2")
+  expect_rc(ui_event("vol_input_pick", "v_ins", {id: "source_402"}), 0, $what .. ": pick input_2")
+end
+
 try
   write_fixtures()
   write_file($tmp .. "/shell-stub.mix", $SHELL_STUB)
@@ -366,33 +407,39 @@ try
   wait_model("read back at 150 %", "out.level_text", "150%")
   $w = writes()
   check(length($w) == $before + 1 and deep_eq($w[length($w) - 1], ["set-sink-volume", "output_18", "150%"]), "the write goes to the default, at most 150 %: " .. json_encode(slice($w, $before, length($w))))
-  -- H1: the default is not in the read: the popup says so, and no control
-  -- writes to another device.
-  $s = json_parse(read_file($tmp .. "/pactl/state.json"))
-  $s.info.default_sink_name = "gone"
-  $s.info.default_source_name = "gone"
-  write_file($tmp .. "/pactl/state.json", json_encode($s))
-  append_file($tmp .. "/pactl/events", "Event 'change' on server\n")
-  $m = wait_model("no default in the read", "status", "Default output not found · Default input not found")
-  check(not $m.has_out and not $m.has_in and $m.has_outputs and $m.has_inputs, "no default: no card, the lists to pick one")
-  check($m.has_streams and not $m.stream.shown, "no default: the streams are listed, no stream card")
+  -- H1: the one write guard. Both defaults present: every write handler
+  -- writes once (the guard is not always false). Then each missing default
+  -- on its own: every write handler writes nothing.
+  set_case("output_1", "input_1", ["input_1", "input_2", "monitor"])
+  wait_model("both defaults", "status", "Output 1")
   $before = length(writes())
-  for each $handler in ["vol_out_up", "vol_out_down", "vol_out_mute", "vol_in_up", "vol_in_mute", "vol_stream_up", "vol_stream_down", "vol_stream_mute"]
-    expect_rc(ui_event($handler, "v"), 0, $handler .. " with no default")
+  drive_all("both defaults")
+  $w = slice(writes(), $before, length(writes()))
+  check(deep_eq(map($w, function ($c) = $c[0]), ["set-sink-volume", "set-sink-volume", "set-sink-volume", "set-sink-mute",
+    "set-source-volume", "set-source-volume", "set-source-volume", "set-source-mute",
+    "set-sink-input-volume", "set-sink-input-volume", "set-sink-input-volume", "set-sink-input-mute",
+    "set-default-sink", "set-default-source"]), "both defaults: each write handler writes once: " .. json_encode($w))
+  check($w[0][1] == "output_1" and $w[4][1] == "input_1" and $w[8][1] == "4600" and $w[12][1] == "output_2" and $w[13][1] == "input_2", "both defaults: the writes name the defaults, the chosen stream and the picked rows: " .. json_encode($w))
+
+  for each $case in [
+      {what: "only the default sink missing", sink: "gone", source: "input_1", sources: ["input_1", "input_2", "monitor"], status: "Default output not found"},
+      {what: "only the default source missing", sink: "output_1", source: "gone", sources: ["input_1", "input_2", "monitor"], status: "Output 1 · Default input not found"},
+      {what: "the default source missing behind monitors", sink: "output_2", source: "gone", sources: ["monitor"], status: "Output 2 · Default input not found"}]
+    set_case($case.sink, $case.source, $case.sources)
+    $m = wait_model($case.what, "status", $case.status)
+    check(not $m.has_out and not $m.has_in and not $m.stream.shown and $m.has_streams, $case.what .. ": no control card, the streams listed")
+    $before = length(writes())
+    drive_all($case.what)
+    check(length(writes()) == $before, $case.what .. ": a control wrote to pactl: " .. json_encode(slice(writes(), $before, length(writes()))))
+    check(not last_model().stream.shown, $case.what .. ": a chosen stream still gets no card")
   end
-  expect_rc(ui_event("vol_out_set", "vo_bar", {id: "v50", pct: 50}), 0, "a bar click with no default")
-  expect_rc(ui_event("vol_stream_pick", "v_streams", {id: "si_4514"}), 0, "choose a stream with no default")
-  expect_rc(ui_event("vol_stream_set", "vs_bar", {id: "v50", pct: 50}), 0, "a stream bar click with no default")
-  expect_rc(ui_event("vol_stream_mute", "vs_mute"), 0, "a stream mute with no default")
-  check(not last_model().stream.shown, "no default: a chosen stream still gets no card")
-  check(length(writes()) == $before, "no default: a control wrote to pactl: " .. json_encode(slice(writes(), $before, length(writes()))))
   -- H: the server goes away: the popup says so.
   write_file($tmp .. "/pactl/down", "")
   append_file($tmp .. "/pactl/events", "Event 'change' on server\n")
   $m = wait_model("the server gone", "status", "Audio service unavailable")
   check(not $m.has_out and not $m.has_in and not $m.has_streams, "with no server every card is hidden")
 
-  print("PASS volume behaviour: output, input and stream levels and mute, default devices, the 125 % ceiling, a refused write read back, UI-only writes, outside changes by event, the default past the device cut, the 150 % write ceiling, no write without a default, server gone")
+  print("PASS volume behaviour: output, input and stream levels and mute, default devices, the 125 % ceiling, a refused write read back, UI-only writes, outside changes by event, the default past the device cut, the 150 % write ceiling, one write guard (every handler writes with both defaults, none with either missing), server gone")
 finally
   stop_pid($scene_pid)
   stop_pid($scenes_pid)

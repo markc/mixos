@@ -140,12 +140,19 @@ end
 
 -- ── writes (pactl, on relayed clicks only) ──────────────────────────────
 
--- The device or stream a control acts on, from the last snapshot. A device
--- control acts only on the default: with none in the read, nil (no write).
--- While either default is missing the stream controls write nothing too.
+-- The one write guard ($m.vol_writes_allowed on the last snapshot). Every
+-- write path checks it before building a pactl argv: level, step and mute
+-- through target(), a device row in pick_default(), and apply() again as
+-- the last line. While it is false, nothing is written anywhere.
+fn writable()
+  return $m.vol_writes_allowed($state.snap)
+end
+
+-- The device or stream a control acts on, from the last snapshot: the
+-- default device, or the chosen stream. nil (no write) unless writable().
 fn target($kind)
+  if not writable() then return nil end
   $snap = $state.snap
-  if $snap == nil or $snap.ok != true then return nil end
   if $kind == "out" then return $m.vol_default($snap.sinks) end
   if $kind == "in" then return $m.vol_default($snap.sources) end
   return $m.vol_stream_target($snap, $state.selected)
@@ -162,6 +169,7 @@ end
 -- Run one write, then read everything back and publish: the model shows
 -- PipeWire's value whether the write took or not.
 fn apply($argv)
+  if not writable() then return republish() end
   $w = $a.write($PW_RUNTIME, $argv)
   $state.note = $w.ok ? "" : $m.text("vol_failed", {why: $w.message})
   $state.sequence = $state.sequence + 1
@@ -248,9 +256,11 @@ on vol_stream_mute async
 end
 
 -- A device row: make it the default. Rows are matched against the last
--- snapshot by index, so only a listed device can be chosen.
+-- snapshot by index, so only a listed device can be chosen. Guarded like
+-- every other write: no change while writable() is false.
 fn pick_default($event, $prefix, $list_key, $verb)
   if not from_ui($event) then $r.respond(ui_only()); return end
+  if not writable() then $r.respond(republish()); return end
   $id = $r.item_id($event)
   if $id == nil or not starts_with($id, $prefix) then $r.respond($r.failure("invalid_args", "item.id must be a device row")); return end
   $index = to_number(slice($id, length($prefix), length($id)))

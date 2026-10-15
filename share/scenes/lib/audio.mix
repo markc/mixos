@@ -62,8 +62,20 @@ fn devices($raw, $default, $sources)
   return $list
 end
 
+-- Whether pactl's raw list (before any monitor or cap filter) names $default.
+fn raw_has($raw, $default)
+  if $default == "" or type($raw) != "list" then return false end
+  for each $d in $raw
+    if type($d) == "map" and to_string($d.name) == $default then return true end
+  end
+  return false
+end
+
 -- from_pactl: pactl's four JSON documents (info, sinks, sources, sink-inputs) as one
--- snapshot: {ok, default_sink, default_source, sinks, sources, streams}.
+-- snapshot: {ok, default_sink, default_source, sinks, sources, streams,
+-- default_sink_found, default_source_found, raw_sources}. The last three
+-- come from the raw read, before any filter: models.vol_writes_allowed
+-- reads them, so a filter can never hide a missing default.
 -- Each device is {index, name, description, level, muted, default}; each
 -- stream {index, name, media, level, muted, sink}. Monitors are left out of
 -- the sources, except a monitor that is the default. Anything that is not the expected shape counts as empty.
@@ -74,6 +86,10 @@ fn from_pactl($info, $sinks, $sources, $inputs)
   $out = {ok: true, default_sink: $default_sink, default_source: $default_source, sinks: [], sources: [], streams: []}
   $out.sinks = devices($sinks, $default_sink, false)
   $out.sources = devices($sources, $default_source, true)
+  $out.default_sink_found = raw_has($sinks, $default_sink)
+  $out.default_source_found = raw_has($sources, $default_source)
+  -- nil when the sources read is not a list: the guard then fails closed.
+  $out.raw_sources = type($sources) == "list" ? length(filter($sources, function ($d) = type($d) == "map")) : nil
   $list = []
   for each $s in type($inputs) == "list" ? $inputs : []
     if type($s) != "map" or length($list) >= $MAX_STREAMS then continue end
