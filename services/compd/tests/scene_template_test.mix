@@ -384,6 +384,27 @@ check($models.topbar_apps({"start-here": $partial.themed["start-here"]}).icon ==
 $bare = $models.topbar_apps({})
 check(not $bare.has_icon and $bare.icon == "" and $bare.label == "Apps", "top bar apps button without any icon shows its label")
 check(deep_eq(sort(keys($bare)), sort(keys(json_parse(header(read_file($root .. "/share/scenes/topbar/scene.mix"), "model")).apps))), "top bar apps model has the keys its scene declares")
+
+-- Top bar power: the countdown and a refusal show on the bar, not only in the tip.
+$pw = {label: "Restart", icon: "/icons/restart.svg", desk: "desk32", vt: "3", left: 0, sent: false, notice: ""}
+$rest = $models.topbar_power($pw)
+check($rest.has_icon and not $rest.show_label and $rest.background == nil and $rest.tip.title == "Restart desk32 (VT3)", "power button at rest is its icon")
+$pw.left = 4
+$armed = $models.topbar_power($pw)
+check($armed.show_label and $armed.label == "Click again to restart (4)" and $armed.background == "#c0392b", "armed power button counts down on the bar")
+$pw.left = 0
+$pw.notice = "unavailable"
+$failed = $models.topbar_power($pw)
+check($failed.show_label and $failed.label == "Restart failed: unavailable" and $failed.background != nil, "refused power button says so on the bar")
+$pw.notice = ""
+$pw.sent = true
+check($models.topbar_power($pw).label == "Restarting…", "sent restart says so")
+$off = $models.topbar_power({label: "Shutdown", icon: "", desk: "desk32", vt: "3", left: 0, sent: false, notice: ""})
+check($off.show_label and $off.label == "Shutdown", "power button without an icon shows its label")
+$topbar_model = json_parse(header(read_file($root .. "/share/scenes/topbar/scene.mix"), "model"))
+for each $k in ["restart", "poweroff"]
+  check(deep_eq(sort(keys($off)), sort(keys($topbar_model[$k]))), "top bar " .. $k .. " model has the keys its scene declares")
+end
 check($panel_models["panel-empty"].clock.time == "12:00 am" and $busy.clock.time == "9:05 pm" and $busy.clock.date == "Thu 29 Feb", "displayed time from the fixed clock")
 
 -- Real click payloads: the renderer sends the owning list's node and the

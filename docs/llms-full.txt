@@ -3282,12 +3282,30 @@ from the Bus.
 | `net.link.apply` | write | configure one link through networkd, rolled back unless it comes up |
 | `hostd.undo` | write | put back what an applied change replaced; needs no grant of its own (see below) |
 | `net.wg.apply` | write | configure a WireGuard link through networkd, rolled back unless it comes up and its peers complete a handshake |
-| `desk.restart` | write | restart the desk machine that the caller's grant names (`machinectl reboot`); the host stays up; no undo |
-| `desk.stop` | write | power off the desk machine that the caller's grant names (`machinectl poweroff`); the host stays up; no undo |
+| `desk.restart` | write | restart the desk machine that the caller's grant names, session and console included (starts `desk-restart@DESK.service`); the host stays up; no undo |
+| `desk.stop` | write | power off the desk machine that the caller's grant names and give the console back (starts `desk-stop@DESK.service`); the host stays up; no undo |
 
 The desk verbs take no machine name. A grant gives the caller one desk through
 its `desks` limit, which must name exactly one machine. A grant with no desk,
 or with two, is refused.
+
+A desk power action is a cycle that outlives the caller: a restart stops the
+desk's session, reboots the machine, starts the session again and switches
+the console back to the desk's VT if it was in front (returning it to the
+previous VT if the compositor does not come up); a stop returns the console
+to the VT that was in front, stops the session and powers the machine off.
+hostd runs none of these steps. It starts the host's template unit for the
+action with `systemctl start --no-block`, records a receipt that the cycle
+started, and answers. The host installs `desk-restart@.service` and
+`desk-stop@.service`; the unit's journal says how the cycle ended. If either
+unit is missing, the verb is refused `unit_failed`.
+
+Only hostd on the host can do this. A hostd running inside a desk refuses
+both verbs `in_container`. The desk reaches the host's hostd through its
+socket bound into the machine, so the grant names the caller by its cgroup as
+the host sees it, under the machine's payload:
+`/machine.slice/systemd-nspawn@DESK.service/payload/system.slice/system-scenes.slice/scenes@VT.service/*`.
+Every refusal is logged at warn under `hostd::audit`.
 | `net.wifi.scan` | write | scan for Wi-Fi networks on one device (iwd). It changes nothing durable, but it drives the radio, so it needs a grant |
 | `net.wifi.connect` | write | connect a Wi-Fi device to a network (iwd), put back unless connected in time |
 

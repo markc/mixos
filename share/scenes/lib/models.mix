@@ -109,6 +109,33 @@ fn topbar_apps($themed)
   return {label: "Apps", icon: $apps.icon, has_icon: $apps.has_icon, background: nil, tip: {title: "Applications"}}
 end
 
+-- A top bar power button. $p: {label, icon (a path or ""), desk, vt, left
+-- (whole seconds left to confirm; 0 when not armed), sent (hostd took it),
+-- notice (hostd's refusal, or "")}. At rest the button is its icon. Armed,
+-- sent or refused, it also shows text on the bar itself, so the countdown
+-- and a refusal never hide in the tip.
+fn topbar_power($p)
+  $what = $p.label .. " " .. $p.desk .. " (VT" .. $p.vt .. ")"
+  $m = {label: $p.label, icon: $p.icon, has_icon: $p.icon != "", show_label: $p.icon == "",
+    background: nil, tip: {title: $what}}
+  if $p.left > 0 then
+    $m.label = "Click again to " .. lower($p.label) .. " (" .. to_string($p.left) .. ")"
+    $m.show_label = true
+    $m.background = "#c0392b"
+    $m.tip = {title: $what, subtitle: "Click again within " .. to_string($p.left) .. " s to confirm"}
+  elif $p.sent then
+    $m.label = $p.label == "Restart" ? "Restarting…" : "Shutting down…"
+    $m.show_label = true
+    $m.tip = {title: $what, subtitle: "Sent to hostd"}
+  elif ($p.notice ?? "") != "" then
+    $m.label = $p.label .. " failed: " .. $p.notice
+    $m.show_label = true
+    $m.background = "#9a6700"
+    $m.tip = {title: $what, subtitle: "hostd refused: " .. $p.notice}
+  end
+  return $m
+end
+
 -- ── hover tips (scene `tooltip` ports: {title, subtitle?, lines?}) ──────
 -- The host draws each on a card beside the panel after a short hover, as
 -- Plasma's panel tips do; the buttons themselves stay icon- or number-only.

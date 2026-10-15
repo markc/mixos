@@ -1,4 +1,4 @@
--- version: 0.2.0
+-- version: 0.3.0
 -- The top bar's behaviour: launches and popup toggles in, one complete model
 -- out through the loader (scenes.model). Icons come from the apps citizen; a
 -- missing icon shows its label. Power is two clicks: the first arms the
@@ -25,8 +25,11 @@ $LAUNCH = {term: {app: "dev.mixos.term", icon: "dev.mixos.term-symbolic", label:
 -- only, never the host. Writes go only through hostd.
 $POWER = {restart: "desk.restart", poweroff: "desk.stop"}
 $CONFIRM_S = 5
+-- How long a refusal, or a sent action, stays on the bar.
+$NOTICE_S = 30
 
-$state = {ready: false, clock_armed: false, icons: {}, themed: {}, armed: nil, armed_at: 0, notice: {}}
+$state = {ready: false, clock_armed: false, ticking: false, icons: {}, themed: {}, armed: nil, armed_at: 0,
+  notice: {}}
 
 -- This desk's identity, written into its root by desk_identity.mix: DESK=name,
 -- VT=number. Read here, never inferred from the hostname or the foreground VT.
@@ -84,13 +87,24 @@ fn button($label, $icon, $tip)
   return {label: $label, icon: $path, has_icon: $path != "", background: nil, tip: {title: $tip}}
 end
 
+-- Whole seconds left to confirm $key; 0 when it is not armed.
+fn armed_left($key)
+  if $state.armed != $key then return 0 end
+  $left = $CONFIRM_S - (monotonic() - $state.armed_at)
+  return $left > 0 ? ceil($left) : 0
+end
+
+-- $state.notice[$key]: {text, sent, at} for the last answer, shown $NOTICE_S.
+fn notice($key)
+  $n = $state.notice[$key]
+  if $n == nil or monotonic() - $n.at > $NOTICE_S then return {text: "", sent: false} end
+  return $n
+end
+
 fn power_model($key, $label, $icon)
-  $armed = $state.armed == $key and monotonic() - $state.armed_at <= $CONFIRM_S
-  $text = $label .. " " .. $IDENTITY.desk .. " (VT" .. $IDENTITY.vt .. ")"
-  if $armed then $text = "Click again to confirm: " .. $text end
-  if ($state.notice[$key] ?? "") != "" then $text = $text .. " (" .. $state.notice[$key] .. ")" end
-  $path = icon_path($icon)
-  return {label: $label, icon: $path, has_icon: $path != "", background: $armed ? "#c0392b" : nil, tip: {title: $text}}
+  $n = notice($key)
+  return $models.topbar_power({label: $label, icon: icon_path($icon), desk: $IDENTITY.desk, vt: $IDENTITY.vt,
+    left: armed_left($key), sent: $n.sent, notice: $n.text})
 end
 
 fn build_model()
@@ -124,18 +138,47 @@ fn launch($key)
   return $r.call($APPS, "apps.launch", {id: $LAUNCH[$key].app})
 end
 
+-- The countdown and the notices change with time, not events: one
+-- in-process task re-publishes each second while any is showing, then ends.
+fn start_tick()
+  if $state.ticking then return end
+  $state.ticking = true
+  try
+    task_start("power.tick", "{}")
+  catch $message
+    $state.ticking = false
+    eprint("topbar power: countdown not scheduled: " .. to_string($message))
+  end
+end
+
+fn power_live()
+  if armed_left("restart") > 0 or armed_left("poweroff") > 0 then return true end
+  return notice("restart").at != nil or notice("poweroff").at != nil
+end
+
 fn power($key)
   $now = monotonic()
-  if $state.armed != $key or $now - $state.armed_at > $CONFIRM_S then
+  if armed_left($key) == 0 then
     $state.armed = $key
     $state.armed_at = $now
+    $state.notice = {}
     push_model()
+    start_tick()
     return {ok: true, rc: 0, value: {armed: $key}}
   end
   $state.armed = nil
+  -- hostd answers once the host has queued the cycle; the desk goes down after.
   $out = $h.call($POWER[$key], {}, 15)
-  $state.notice[$key] = $out.ok ? "" : ($out.status ?? "refused")
+  if $out.ok then
+    eprint("topbar power: " .. $POWER[$key] .. " sent: " .. json_encode($out.body))
+    $state.notice[$key] = {text: "", sent: true, at: monotonic()}
+  else
+    $status = $out.status ?? "refused"
+    eprint("topbar power: " .. $POWER[$key] .. " refused: " .. $status .. " " .. json_encode($out.body ?? {message: $out.message}))
+    $state.notice[$key] = {text: $status, sent: false, at: monotonic()}
+  end
   push_model()
+  start_tick()
   if $out.ok then return {ok: true, rc: 0, value: {ran: $key}} end
   return $r.failure("power_refused", "hostd refused " .. $POWER[$key] .. ": " .. ($out.status ?? "unavailable"))
 end
@@ -185,6 +228,19 @@ on restart async
 end
 on poweroff async
   $r.respond(power("poweroff"))
+end
+
+on power.tick async
+  if len(keys($event.headers)) != 0 then return end
+  try
+    while power_live()
+      sleep(1)
+      if $state.armed != nil and armed_left($state.armed) == 0 then $state.armed = nil end
+      push_model()
+    end
+  finally
+    $state.ticking = false
+  end
 end
 
 fn start_clock()
