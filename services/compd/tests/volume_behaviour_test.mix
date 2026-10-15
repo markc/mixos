@@ -1,0 +1,360 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- The volume popup's behaviour (share/scenes/volume/behaviour.mix), run as
+-- its own --serve citizen on a private broker. Real: the behaviour,
+-- models.mix, runtime.mix, audio.mix and Mix's audio_watch. Stand-ins: the
+-- scene host (shell-stub; its ui.forward sends each UI event as itself, so
+-- the behaviour sees headers.from = shell-stub), the loader (scenes-stub,
+-- which keeps every published model) and pactl itself: a Mix script first
+-- on the citizen's PATH that answers `-f json` reads from a state file,
+-- applies each write to it, logs every call, and, as `pactl subscribe`,
+-- prints one change event per line the test appends to its events file.
+-- Every wait is bounded. Bus callers (cli.mix) are not the host: every
+-- write verb must refuse them.
+--
+--   mix services/compd/tests/volume_behaviour_test.mix
+--
+-- Needs a fresh mix and noded: MIXOS_TEST_MIX and MIXOS_TEST_NODED when set,
+-- else /opt/mixos/bin/mix and /opt/mixos/bin/noded.
+
+$root = env("MIXOS") != "" ? env("MIXOS") : realpath(dirname(realpath($0)) .. "/../../..")
+$pb = require("../../../tests/lib/private_bus.mix")
+$mix = env("MIXOS_TEST_MIX") != "" ? env("MIXOS_TEST_MIX") : "/opt/mixos/bin/mix"
+$noded = env("MIXOS_TEST_NODED") != "" ? env("MIXOS_TEST_NODED") : "/opt/mixos/bin/noded"
+$behaviour = $root .. "/share/scenes/volume/behaviour.mix"
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-volume-behaviour-test.XXXXXXXX"]))
+$bus = nil
+$env = nil
+$shell_pid = nil
+$scenes_pid = nil
+$scene_pid = nil
+
+$OUT = "alsa_output.usb-Example_Interface-00.pro-output-0"
+$OUT2 = "alsa_output.pci-0000_00_1f.3.analog-stereo"
+$IN = "alsa_input.usb-Example_Interface-00.pro-input-0"
+
+-- The pactl stand-in. State: PACTL_STATE/state.json (the fixture's shape:
+-- info, sinks, sources, sink_inputs). PACTL_STATE/fail makes every write
+-- fail; PACTL_STATE/down makes every read fail (the server is gone).
+$PACTL = join([
+  "#!" .. $mix,
+  "-- The pactl stand-in for volume_behaviour_test.mix.",
+  "$dir = env('PACTL_STATE')",
+  "$argv = args()",
+  "append_file($dir .. '/calls.jsonl', json_encode($argv) .. chr(10))",
+  "if length($argv) >= 1 and $argv[0] == 'subscribe' then",
+  "  $seen = 0",
+  "  while true",
+  "    $lines = is_file($dir .. '/events') ? read_lines($dir .. '/events') : []",
+  "    while $seen < length($lines)",
+  "      print($lines[$seen])",
+  "      $seen = $seen + 1",
+  "    end",
+  "    sleep(0.1)",
+  "  end",
+  "end",
+  "$s = json_parse(read_file($dir .. '/state.json'))",
+  "if length($argv) >= 2 and $argv[0] == '-f' then",
+  "  if is_file($dir .. '/down') then",
+  "    eprint('Connection failure: Connection refused')",
+  "    exit(1)",
+  "  end",
+  "  $what = $argv[2]",
+  "  if $what == 'info' then print(json_encode($s.info)); exit(0) end",
+  "  $key = $argv[3] == 'sink-inputs' ? 'sink_inputs' : $argv[3]",
+  "  print(json_encode($s[$key]))",
+  "  exit(0)",
+  "end",
+  "if is_file($dir .. '/fail') then",
+  "  eprint('Failure: Access denied')",
+  "  exit(1)",
+  "end",
+  "$verb = $argv[0]",
+  "$list = contains($verb, 'sink-input') ? 'sink_inputs' : (contains($verb, 'source') ? 'sources' : 'sinks')",
+  "if $verb == 'set-default-sink' then $s.info.default_sink_name = $argv[1] end",
+  "if $verb == 'set-default-source' then $s.info.default_source_name = $argv[1] end",
+  "$items = $s[$list]",
+  "for $i = 0 to length($items) - 1",
+  "  $d = $items[$i]",
+  "  $hit = $list == 'sink_inputs' ? to_string($d.index) == $argv[1] : $d.name == $argv[1]",
+  "  if not $hit then continue end",
+  "  if ends_with($verb, '-mute') then $d.mute = ($argv[2] == 'toggle') ? (not $d.mute) : ($argv[2] == '1') end",
+  "  if ends_with($verb, '-volume') then",
+  "    $value = round(to_number(replace($argv[2], '%', '')) * 65536 / 100)",
+  "    for each $ch in keys($d.volume)",
+  "      $d.volume[$ch].value = $value",
+  "    end",
+  "  end",
+  "  $items[$i] = $d",
+  "end",
+  "$s[$list] = $items",
+  "write_file($dir .. '/state.json', json_encode($s))",
+  "exit(0)",
+  ""
+], "\n")
+
+-- The scene host stand-in. It answers the host verbs the behaviour calls
+-- and forwards a UI event as itself: the broker stamps this citizen's name.
+$SHELL_STUB = join([
+  "-- SPDX-License-Identifier: MIT OR Apache-2.0",
+  "-- The scene host stand-in: answers the host verbs, and forwards UI events",
+  "-- to the behaviour as this citizen (headers.from = shell-stub).",
+  "on shell.scene.describe",
+  "  reply(0, json_encode([{path: 'flow', enum: ['vertical', 'horizontal']}, {path: 'hidden', type: 'bool'}]))",
+  "end",
+  "on ui.forward",
+  "  $to = $event.args.to",
+  "  $verb = $event.args.verb",
+  "  $body = json_encode($event.args.event)",
+  "  send $to $verb body=$body timeout=8",
+  "  $code = $rc < 0 ? 20 : $rc",
+  "  reply($code, json_encode($result))",
+  "end",
+  ""
+], "\n")
+
+-- The loader stand-in: it accepts the scene and keeps every published model.
+$SCENES_STUB = join([
+  "-- SPDX-License-Identifier: MIT OR Apache-2.0",
+  "-- The loader stand-in: ready, and each published model appended to",
+  "-- STUB_OUT/out/models.jsonl.",
+  "on scenes.ready",
+  "  reply(0, '{}')",
+  "end",
+  "on scenes.model",
+  "  append_file(env('STUB_OUT') .. '/out/models.jsonl', json_encode($event.args.value) .. chr(10))",
+  "  reply(0, '{}')",
+  "end",
+  ""
+], "\n")
+
+-- The Bus client: one send, one JSON line. The broker stamps its name, not a host's.
+$CLI = join([
+  "send $1 $2 timeout=12 body=$3",
+  "print(json_encode({rc: $rc, result: $result}))",
+  ""
+], "\n")
+
+fn check($ok, $message)
+  if not $ok then raise("VOLUME_BEHAVIOUR_TEST", $message) end
+end
+
+fn write_fixtures()
+  mkdir($tmp .. "/pactl", {parents: true})
+  mkdir($tmp .. "/bin", {parents: true})
+  mkdir($tmp .. "/out", {parents: true})
+  mkdir($tmp .. "/home", {parents: true})
+  $fixture = json_parse(read_file($root .. "/services/compd/tests/fixtures/scenes/volume-pactl.json"))
+  write_file($tmp .. "/pactl/state.json", json_encode($fixture))
+  write_file($tmp .. "/bin/pactl", $PACTL)
+  chmod($tmp .. "/bin/pactl", 0o755)
+end
+
+-- Every pactl call (its argv), in order.
+fn calls()
+  $out = []
+  $file = $tmp .. "/pactl/calls.jsonl"
+  if is_file($file) then
+    for each $line in read_lines($file)
+      if trim($line) != "" then push($out, json_parse($line)) end
+    end
+  end
+  return $out
+end
+
+-- Only the writes (anything but -f json reads and subscribe).
+fn writes()
+  return filter(calls(), function ($c) = $c[0] != "-f" and $c[0] != "subscribe")
+end
+
+fn last_model()
+  $file = $tmp .. "/out/models.jsonl"
+  if not is_file($file) then return nil end
+  $lines = filter(read_lines($file), function ($l) = trim($l) != "")
+  if length($lines) == 0 then return nil end
+  return json_parse($lines[length($lines) - 1])
+end
+
+-- The value at a dotted path of the newest model.
+fn at($m, $path)
+  $v = $m
+  for each $part in split($path, ".")
+    $v = type($v) == "map" ? $v[$part] : nil
+  end
+  return $v
+end
+
+-- Bounded wait (about 15 s) for the newest model to have $value at $path.
+fn wait_model($what, $path, $value)
+  $m = nil
+  for $i = 1 to 150
+    $m = last_model()
+    if $m != nil and deep_eq(at($m, $path), $value) then return $m end
+    sleep(0.1)
+  end
+  raise("VOLUME_BEHAVIOUR_TEST", "timed out waiting for " .. $what .. ": " .. $path .. " is " .. json_encode($m != nil ? at($m, $path) : nil))
+end
+
+-- One Bus request from a plain client (not the host).
+fn direct($target, $verb, $body)
+  $r = run_argv([$mix, $tmp .. "/cli.mix", $target, $verb, json_encode($body)], {clear_env: true, env: $env, timeout: 25})
+  check($r.ok, "client " .. $verb .. " did not run: " .. ($r.stderr ?? ""))
+  return json_parse(trim($r.stdout))
+end
+
+-- A UI event, as the scene host relays a click.
+fn ui_event($handler, $node, $item = nil)
+  $ev = {scene: "volume", node: $node, kind: "click"}
+  if $item != nil then $ev.item = $item end
+  return direct("shell-stub", "ui.forward", {to: "scene-volume", verb: $handler, event: $ev})
+end
+
+fn expect_rc($r, $rc, $what)
+  check($r.rc == $rc, $what .. ": rc " .. to_string($r.rc) .. " " .. json_encode($r.result))
+end
+
+fn wait_reply($target, $verb, $body)
+  for $i = 1 to 150
+    $r = direct($target, $verb, $body)
+    if $r.rc == 0 then return $r end
+    sleep(0.1)
+  end
+  raise("VOLUME_BEHAVIOUR_TEST", "no reply from " .. $target .. " " .. $verb)
+end
+
+-- A citizen from its own source file, on the private broker.
+fn start_citizen($name, $file, $extra)
+  $vars = merge($pb.client_env($bus), {MIX_STATS: "off", PATH: "/usr/bin:/bin", HOME: $tmp .. "/home"})
+  return spawn([$mix, "--serve", $file, "--name", $name],
+    {detach: true, clear_env: true, env: merge($vars, $extra), stdout: {file: $tmp .. "/" .. $name .. ".log"}, stderr: "stdout"})
+end
+
+-- Terminate a citizen: TERM, a bounded wait, then KILL.
+fn stop_pid($pid)
+  if $pid == nil or not process_alive($pid) then return nil end
+  $_term = kill($pid, 15)
+  for $wait = 1 to 40
+    if not process_alive($pid) then return nil end
+    sleep(0.05)
+  end
+  $_kill = kill($pid, 9)
+  return nil
+end
+
+-- Change the stand-in's state as another app would, then raise an event.
+fn external($list, $match, $fields)
+  $s = json_parse(read_file($tmp .. "/pactl/state.json"))
+  $items = $s[$list]
+  for $i = 0 to length($items) - 1
+    if $items[$i].name == $match then $items[$i] = merge($items[$i], $fields) end
+  end
+  $s[$list] = $items
+  write_file($tmp .. "/pactl/state.json", json_encode($s))
+  append_file($tmp .. "/pactl/events", "Event 'change' on sink #58\n")
+end
+
+try
+  write_fixtures()
+  write_file($tmp .. "/shell-stub.mix", $SHELL_STUB)
+  write_file($tmp .. "/scenes-stub.mix", $SCENES_STUB)
+  write_file($tmp .. "/cli.mix", $CLI)
+
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "volume-behaviour-test", noded: $noded})
+  $env = merge($pb.client_env($bus), {MIX_STATS: "off", PATH: "/usr/bin:/bin", HOME: $tmp .. "/home"})
+  $shell_pid = start_citizen("shell-stub", $tmp .. "/shell-stub.mix", {})
+  $scenes_pid = start_citizen("scenes-stub", $tmp .. "/scenes-stub.mix", {STUB_OUT: $tmp})
+  wait_reply("shell-stub", "shell.scene.describe", {family: "list"})
+  wait_reply("scenes-stub", "scenes.ready", {})
+  $scene_pid = start_citizen("scene-volume", $behaviour, {
+    SCENE_NAME: "volume", SCENE_GENERATION: "1", SCENE_HOST: "shell-stub",
+    SCENES_SERVICE: "scenes-stub", SCENES_LIB: $root .. "/share/scenes/lib",
+    PATH: $tmp .. "/bin:/usr/bin:/bin", PACTL_STATE: $tmp .. "/pactl",
+    PIPEWIRE_RUNTIME_DIR: $tmp .. "/home"})
+
+  -- Setup: the first snapshot, from the fixture.
+  $m = wait_model("the first snapshot", "status", "Example Interface Pro")
+  check($m.out.level_text == "70%" and $m.inp.level_text == "100%" and length($m.streams) == 2 and length($m.outputs) == 2, "the first model: " .. json_encode({out: $m.out.level_text, inp: $m.inp.level_text, streams: length($m.streams)}))
+  for $i = 1 to 50
+    if length(filter(calls(), function ($c) = $c[0] == "subscribe")) > 0 then break end
+    sleep(0.1)
+  end
+  check(length(filter(calls(), function ($c) = $c[0] == "subscribe")) == 1, "one pactl subscribe stream")
+
+  -- A: a bar segment sets the output level; -/+ step it; mute toggles.
+  expect_rc(ui_event("vol_out_set", "vo_bar", {id: "v40", pct: 40}), 0, "output to 40 %")
+  wait_model("output 40 %", "out.level_text", "40%")
+  expect_rc(ui_event("vol_out_up", "vo_up"), 0, "output +5")
+  wait_model("output 45 %", "out.level_text", "45%")
+  expect_rc(ui_event("vol_out_down", "vo_down"), 0, "output -5")
+  wait_model("output 40 % again", "out.level_text", "40%")
+  expect_rc(ui_event("vol_out_mute", "vo_mute"), 0, "output mute")
+  $m = wait_model("output muted", "out.level_text", "Muted")
+  check($m.out.mute_label == "Unmute", "a muted output offers Unmute")
+  expect_rc(ui_event("vol_out_mute", "vo_mute"), 0, "output unmute")
+  wait_model("output unmuted", "out.level_text", "40%")
+  check(deep_eq(writes(), [["set-sink-volume", $OUT, "40%"], ["set-sink-volume", $OUT, "45%"], ["set-sink-volume", $OUT, "40%"],
+    ["set-sink-mute", $OUT, "toggle"], ["set-sink-mute", $OUT, "toggle"]]), "the output writes pactl received: " .. json_encode(writes()))
+
+  -- B: a device row makes it the default; a level above 100 % stays the
+  -- ceiling, and the bar runs to 150 %.
+  expect_rc(ui_event("vol_output_pick", "v_outs", {id: "sink_58"}), 0, "pick the built-in output")
+  $m = wait_model("the built-in output is the default", "status", "Built-in Audio Analog Stereo")
+  check($m.outputs[1].sub == "Default" and $m.outputs[0].sub == "" and length($m.out.bar) == 30, "the default marker moved; the 125 % bar: " .. json_encode($m.outputs))
+  expect_rc(ui_event("vol_out_mute", "vo_mute"), 0, "unmute the built-in output")
+  wait_model("built-in unmuted at 125 %", "out.level_text", "125%")
+  expect_rc(ui_event("vol_out_up", "vo_up"), 0, "+5 above 100 %")
+  wait_model("still 125 %", "out.level_text", "125%")
+  $w = writes()
+  check(deep_eq($w[5], ["set-default-sink", $OUT2]) and deep_eq($w[length($w) - 1], ["set-sink-volume", $OUT2, "125%"]), "default switch and the clamp: " .. json_encode($w))
+
+  -- C: the input card and list.
+  expect_rc(ui_event("vol_in_set", "vi_bar", {id: "v60", pct: 60}), 0, "input to 60 %")
+  wait_model("input 60 %", "inp.level_text", "60%")
+  expect_rc(ui_event("vol_input_pick", "v_ins", {id: "source_63"}), 0, "pick the built-in input")
+  wait_model("built-in input", "inp.name", "Built-in Audio Analog Stereo")
+
+  -- D: a stream row gets the controls; its level and mute.
+  expect_rc(ui_event("vol_stream_pick", "v_streams", {id: "si_4600"}), 0, "choose the player")
+  wait_model("player chosen", "stream.name", "example-player")
+  expect_rc(ui_event("vol_stream_set", "vs_bar", {id: "v30", pct: 30}), 0, "player to 30 %")
+  expect_rc(ui_event("vol_stream_mute", "vs_mute"), 0, "player unmute")
+  wait_model("player at 30 %", "stream.level_text", "30%")
+  $w = writes()
+  check(deep_eq(slice($w, length($w) - 2, length($w)), [["set-sink-input-volume", "4600", "30%"], ["set-sink-input-mute", "4600", "toggle"]]), "the stream writes: " .. json_encode($w))
+
+  -- E: a failed write shows one plain line and the real level.
+  write_file($tmp .. "/pactl/fail", "")
+  expect_rc(ui_event("vol_out_set", "vo_bar", {id: "v10", pct: 10}), 0, "a refused write")
+  $m = wait_model("the failure line", "note", "Change failed: Failure: Access denied")
+  check($m.out.level_text == "125%" and $m.has_note, "after a refused write the bar shows PipeWire's level")
+  remove($tmp .. "/pactl/fail")
+
+  -- F: a Bus caller is refused for every write verb, a forged header in
+  -- its body included; nothing reaches pactl.
+  $before = length(writes())
+  for each $handler in ["vol_out_set", "vol_in_set", "vol_stream_set", "vol_out_down", "vol_out_up", "vol_in_down", "vol_in_up",
+      "vol_stream_down", "vol_stream_up", "vol_out_mute", "vol_in_mute", "vol_stream_mute", "vol_output_pick", "vol_input_pick", "vol_stream_pick"]
+    $r = direct("scene-volume", $handler, {item: {id: "sink_56", pct: 100}, headers: {from: "shell-stub"}, from: "shell-stub"})
+    check($r.rc == 10 and $r.result.error_code == "ui_only", $handler .. " from a Bus caller: " .. json_encode($r))
+  end
+  check(length(writes()) == $before, "a Bus caller reached pactl: " .. json_encode(writes()))
+  $st = direct("scene-volume", "volume.state", {})
+  check($st.rc == 0 and $st.result.output.name == "Built-in Audio Analog Stereo" and $st.result.streams == 2, "volume.state reads: " .. json_encode($st))
+
+  -- G: a change made by another app arrives through the event stream.
+  external("sinks", $OUT2, {volume: {"front-left": {value: 32768}, "front-right": {value: 32768}}})
+  wait_model("an outside change", "out.level_text", "50%")
+  -- H: the server goes away: the popup says so.
+  write_file($tmp .. "/pactl/down", "")
+  append_file($tmp .. "/pactl/events", "Event 'change' on server\n")
+  $m = wait_model("the server gone", "status", "Audio service unavailable")
+  check(not $m.has_out and not $m.has_in and not $m.has_streams, "with no server every card is hidden")
+
+  print("PASS volume behaviour: output, input and stream levels and mute, default devices, the 125 % ceiling, a refused write read back, UI-only writes, outside changes by event, server gone")
+finally
+  stop_pid($scene_pid)
+  stop_pid($scenes_pid)
+  stop_pid($shell_pid)
+  if $bus != nil then $pb.stop($bus) end
+  remove_dir($tmp)
+end

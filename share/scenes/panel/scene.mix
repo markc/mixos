@@ -3,7 +3,7 @@ scene: 1
 name: panel
 citizen: scene-panel
 window: {"chrome":false,"edge":"bottom","h":52,"kind":"edge","title":"Panel"}
-model: {"clock":{"background":null,"date":"","time":""},"launcher":{"background":null,"has_icon":false,"icon":""},"network":{"background":null,"has_icon":false,"icon":""},"notes":{"background":null,"count":"","has_count":false,"has_icon":false,"icon":""},"tasks":[],"tray":[],"tray_empty":true,"volume":{"has_icon":false,"icon":"","shown":false},"workspaces":[]}
+model: {"clock":{"background":null,"date":"","time":""},"launcher":{"background":null,"has_icon":false,"icon":""},"network":{"background":null,"has_icon":false,"icon":""},"notes":{"background":null,"count":"","has_count":false,"has_icon":false,"icon":""},"tasks":[],"tray":[],"tray_empty":true,"volume":{"background":null,"has_icon":false,"icon":"","shown":false},"workspaces":[]}
 ---
 ```mix
 root: {"align":"center","background":"#202326f2","children":["launcher_btn","gap1","pager","gap2","tasks","fill","tray","status","clock"],"fill":true,"gap":4,"padding":4,"widget":"row"}
@@ -29,7 +29,7 @@ st_notes: {"align":"center","background":"= $model.notes.background","children":
 st_notes_i: {"h":20,"hidden":"= not $model.notes.has_icon","src":"= $model.notes.icon","w":20,"widget":"image"}
 st_notes_f: {"color":"#a1a9b1","hidden":"= $model.notes.has_icon","size":14,"text":"•","widget":"text"}
 st_notes_n: {"bold":true,"color":"#3daee9","hidden":"= not $model.notes.has_count","size":11,"text":"= $model.notes.count","widget":"text"}
-st_vol: {"align":"center","children":["st_vol_i","st_vol_f"],"height":36,"hidden":"= not $model.volume.shown","hover":"#ffffff1a","on_click":"vol_mute","padding":7,"radius":6,"tooltip":"= $model.volume.tip","widget":"row"}
+st_vol: {"align":"center","background":"= $model.volume.background","children":["st_vol_i","st_vol_f"],"height":36,"hidden":"= not $model.volume.shown","hover":"#ffffff1a","on_click":"volume","padding":7,"radius":6,"tooltip":"= $model.volume.tip","widget":"row"}
 st_vol_i: {"h":20,"hidden":"= not $model.volume.has_icon","src":"= $model.volume.icon","w":20,"widget":"image"}
 st_vol_f: {"color":"#a1a9b1","hidden":"= $model.volume.has_icon","size":14,"text":"•","widget":"text"}
 st_net: {"align":"center","background":"= $model.network.background","children":["st_net_i","st_net_f"],"height":36,"hover":"#ffffff1a","on_click":"network","padding":7,"radius":6,"tooltip":"= $model.network.tip","widget":"row"}

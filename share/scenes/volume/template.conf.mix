@@ -1,0 +1,8 @@
+schema: 1
+name: "volume"
+title: "Volume"
+behaviour: "behaviour.mix"
+description: "PipeWire output and input levels, devices and application streams"
+recommended: true
+order: 47
+requires: []

@@ -1,4 +1,4 @@
--- version: 0.1.0
+-- version: 0.1.1
 -- Sync this checkout's shared scene catalogue into the one a session reads,
 -- then reload the enabled scenes that use a changed shared helper.
 -- usage: mix share/scenes/sync.mix [--env FILE] [--apply]
@@ -31,7 +31,7 @@ end
 
 -- The same shipped set install.mix copies.
 $groups = [
-  ["lib", ["data.mix", "hostd.mix", "models.mix", "network.mix", "runtime.mix", "taskbar.mix"]],
+  ["lib", ["audio.mix", "data.mix", "hostd.mix", "models.mix", "network.mix", "runtime.mix", "taskbar.mix"]],
   ["panel", ["scene.mix", "behaviour.mix", "template.conf.mix", "settings.conf.mix"]],
   ["topbar", ["scene.mix", "behaviour.mix", "template.conf.mix"]],
   ["workspace-rename", ["scene.mix", "behaviour.mix", "template.conf.mix"]],
@@ -39,6 +39,7 @@ $groups = [
   ["calendar", ["scene.mix", "behaviour.mix", "template.conf.mix"]],
   ["notes", ["scene.mix", "behaviour.mix", "template.conf.mix"]],
   ["network", ["scene.mix", "behaviour.mix", "template.conf.mix"]],
+  ["volume", ["scene.mix", "behaviour.mix", "template.conf.mix"]],
   ["settings", ["scene.mix", "behaviour.mix", "template.conf.mix"]],
   ["editor", ["scene.mix", "behaviour.mix", "template.conf.mix", "lib.mix"]]
 ]

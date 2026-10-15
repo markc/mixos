@@ -101,7 +101,11 @@ $TEXT = {
   current: "current", more: "{n} more", window: "Window", minimised: "Minimised", on_workspace: "On workspace {n}",
   status_item: "Status item",
   notes_title: "Notifications", notes_none: "No new notifications", notes_one: "1 notification", notes_many: "{n} notifications",
-  volume_title: "Volume", muted: "Muted", level: "{n}%", unmute: "Click to unmute", mute: "Click to mute",
+  volume_title: "Volume", muted: "Muted", level: "{n}%", volume_hint: "Click for audio controls",
+  vol_output: "Output", vol_input: "Input", vol_apps: "Applications", vol_default: "Default",
+  vol_mute: "Mute", vol_unmute: "Unmute", vol_down: "−", vol_up: "+",
+  vol_no_device: "No audio device", vol_unavailable: "Audio service unavailable",
+  vol_failed: "Change failed: {why}",
   network_title: "Network", wireless: "Connected (wireless)", wired: "Connected (wired)", offline: "Offline",
   network_hint: "Click for network details",
   net_connected: "Connected via {name} ({kind})", net_no_route: "Connected, no default route",
@@ -271,7 +275,7 @@ end
 --         tasks_scope ("all" | "current"; absent = "current", what a
 --         behaviour copy older than the setting draws), tray,
 --         notes_count, net:{up,wireless}, vol:{ok,level,muted},
---         open:{launcher,calendar,notes,network}}
+--         open:{launcher,calendar,notes,network,volume}}
 -- $icons: {themed:{name:path} (dark status theme), plain:{name:path}
 --          (tray icons), windows:{app_id:path}, names:{app_id:name}
 --          (desktop-entry names)} -- cache hits only.
@@ -343,7 +347,8 @@ fn panel($snap, $icons, $now)
   end
   $volume = icon_choice($themed, $vol_icon, "audio-card")
   $volume.shown = $vol.ok
-  $volume.tip = tip(text("volume_title"), $vol.muted ? text("muted") : text("level", {n: $vol.level}), [text($vol.muted ? "unmute" : "mute")])
+  $volume.background = ($open.volume ?? false) ? $C.accent_bg : nil
+  $volume.tip = tip(text("volume_title"), $vol.muted ? text("muted") : text("level", {n: $vol.level}), [text("volume_hint")])
 
   $net = $snap.net ?? {up: false, wireless: false}
   $network = icon_choice($themed, $net.up ? ($net.wireless ? "network-wireless-signal-excellent" : "network-wired-activated") : "network-offline", "network-wired")
@@ -648,6 +653,104 @@ fn net_refusal($status, $link, $body)
   if $status == "bad_request" then return text("hostd_bad_request", {message: to_string($body.message ?? "")}) end
   if $TEXT[$key] != nil then return text($key, {link: $link}) end
   return text("hostd_refused", {status: to_string($status)})
+end
+
+-- ── the volume popup (share/scenes/volume) ──────────────────────────────
+-- $snap: lib/audio.mix snapshot() ({ok:false, reason} when pactl did not
+-- answer), or nil before the first one. $ui (optional): {selected: the
+-- chosen stream's index, note: the last write's error line}. The output and
+-- input cards control the default sink and source; their lists pick the
+-- default. Streams are listed; the chosen one (the first by default) gets
+-- the controls under the list. Every key is always present.
+$VOL_STEP = 5
+
+-- A level bar: one clickable segment per 5 %, to 100 %, or to 150 % while
+-- PipeWire reports the level above 100 %. Segment widths fill a 344 px card.
+fn vol_bar($level, $muted)
+  $top = $level > 100 ? 150 : 100
+  $n = $top / $VOL_STEP
+  $w = $n == 20 ? 15 : 9
+  $bar = []
+  for $i = 1 to $n
+    $pct = $i * $VOL_STEP
+    $on = $pct <= $level
+    push($bar, {id: "v" .. to_string($pct), cells: [], pct: $pct, w: $w,
+      background: $on ? ($muted ? $C.faint : $C.accent) : $C.task_bg})
+  end
+  return $bar
+end
+
+-- One control card: a device or a stream ($d nil: an empty, hidden card).
+fn vol_control($d, $name)
+  if $d == nil then
+    return {shown: false, name: "", level_text: "", mute_label: text("vol_mute"), mute_bg: $C.task_bg, mute_color: $C.fg, bar: []}
+  end
+  $chip = chip($d.muted)
+  return {shown: true, name: $name, level_text: $d.muted ? text("muted") : text("level", {n: $d.level}),
+    mute_label: text($d.muted ? "vol_unmute" : "vol_mute"), mute_bg: $chip.bg, mute_color: $chip.color,
+    bar: vol_bar($d.level, $d.muted)}
+end
+
+-- The default device of a list, or the first one when none is marked.
+fn vol_default($devices)
+  for each $d in $devices
+    if $d.default then return $d end
+  end
+  return length($devices) > 0 ? $devices[0] : nil
+end
+
+fn vol_rows($devices, $prefix)
+  $rows = []
+  for each $d in $devices
+    push($rows, {id: $prefix .. to_string($d.index), cells: [], name: $d.description,
+      mark: $d.default ? "●" : "○", sub: $d.default ? text("vol_default") : "",
+      background: $d.default ? $C.accent_bg : $C.card})
+  end
+  return $rows
+end
+
+-- The chosen stream: $selected if it still plays, else the first.
+fn vol_stream($streams, $selected)
+  for each $s in $streams
+    if $s.index == $selected then return $s end
+  end
+  return length($streams) > 0 ? $streams[0] : nil
+end
+
+fn volume($snap, $ui = nil)
+  $ui = $ui ?? {}
+  $ok = $snap != nil and $snap.ok == true
+  $sinks = $ok ? $snap.sinks ?? [] : []
+  $sources = $ok ? $snap.sources ?? [] : []
+  $streams = $ok ? $snap.streams ?? [] : []
+  $sink = vol_default($sinks)
+  $source = vol_default($sources)
+  $stream = vol_stream($streams, $ui.selected)
+  $status = ""
+  if $snap != nil and not $ok then
+    $status = text("vol_unavailable")
+  elif $ok and $sink == nil then
+    $status = text("vol_no_device")
+  elif $sink != nil then
+    $status = $sink.description
+  end
+  $rows = []
+  for each $s in $streams
+    push($rows, {id: "si_" .. to_string($s.index), cells: [], name: $s.name, sub: $s.media,
+      level_text: $s.muted ? text("muted") : text("level", {n: $s.level}),
+      background: ($stream != nil and $s.index == $stream.index) ? $C.accent_bg : $C.card})
+  end
+  $note = to_string($ui.note ?? "")
+  return {title: text("volume_title"), status: $status, note: $note, has_note: $note != "",
+    down_label: text("vol_down"), up_label: text("vol_up"),
+    out_label: text("vol_output"), has_out: $sink != nil,
+    out: vol_control($sink, $sink != nil ? $sink.description : ""),
+    outputs: vol_rows($sinks, "sink_"), has_outputs: length($sinks) > 1,
+    in_label: text("vol_input"), has_in: $source != nil,
+    inp: vol_control($source, $source != nil ? $source.description : ""),
+    inputs: vol_rows($sources, "source_"), has_inputs: length($sources) > 1,
+    apps_label: text("vol_apps"), has_streams: length($rows) > 0, streams: $rows,
+    stream: vol_control($stream, $stream != nil ? $stream.name : "")}
 end
 
 -- Settings/Appearance from Quoin's shell.settings.get snapshot (or the
