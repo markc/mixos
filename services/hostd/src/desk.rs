@@ -130,8 +130,9 @@ async fn act_with(
     if !run.status.success() {
         let message = String::from_utf8_lossy(&run.stderr).trim().to_owned();
         tracing::warn!(target: "hostd::audit", verb, desk, %unit, %message, "desk power unit did not start");
-        return Err(json!({"status":"unit_failed","verb":verb,"desk":desk,"unit":unit,
-            "message": message}));
+        return Err(
+            json!({"status":"unit_failed","verb":verb,"desk":desk,"unit":unit,"message":message}),
+        );
     }
     let action = if verb == RESTART { "restart" } else { "stop" };
     let mut receipt = Receipt::new(
@@ -301,9 +302,17 @@ mod tests {
     async fn a_started_unit_is_recorded_and_never_undoable() {
         let dir = fixture();
         let state = dir.path().join("state");
-        let out = act_with("true", dir.path(), &state, RESTART, "desk32", "g", &origin())
-            .await
-            .expect("started");
+        let out = act_with(
+            "true",
+            dir.path(),
+            &state,
+            RESTART,
+            "desk32",
+            "g",
+            &origin(),
+        )
+        .await
+        .expect("started");
         assert_eq!(out["unit"], "desk-restart@desk32.service");
         assert_eq!(out["action"], "restart");
         let receipt = Receipt::load(&state, out["receipt"].as_str().unwrap()).expect("saved");
@@ -332,9 +341,17 @@ mod tests {
         let state = dir.path().join("state");
         // A program that would fail proves it never ran: the refusal is
         // in_container, not unit_failed.
-        let err = act_with("false", dir.path(), &state, RESTART, "desk12", "g", &origin())
-            .await
-            .unwrap_err();
+        let err = act_with(
+            "false",
+            dir.path(),
+            &state,
+            RESTART,
+            "desk12",
+            "g",
+            &origin(),
+        )
+        .await
+        .unwrap_err();
         assert_eq!(err["status"], "in_container");
     }
 }
