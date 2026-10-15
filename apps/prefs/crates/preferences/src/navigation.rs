@@ -55,7 +55,9 @@ impl Section {
     /// The panel that shows this section.
     pub fn panel(self) -> Panel {
         match self {
-            Section::Themes | Section::Fonts | Section::Wallpapers | Section::Terminal => Panel::Appearance,
+            Section::Themes | Section::Fonts | Section::Wallpapers | Section::Terminal => {
+                Panel::Appearance
+            }
             _ => Panel::Applications,
         }
     }

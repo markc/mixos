@@ -237,7 +237,13 @@ mod tests {
         let info = buildinfo::build_info!();
         for connected in [false, true] {
             let text = about_text(connected);
-            for expected in ["Terminal", info.version, info.git_sha, info.build_time, "MIT OR Apache-2.0"] {
+            for expected in [
+                "Terminal",
+                info.version,
+                info.git_sha,
+                info.build_time,
+                "MIT OR Apache-2.0",
+            ] {
                 assert!(text.contains(expected), "{text}");
             }
             assert!(text.contains(&label(if connected {
