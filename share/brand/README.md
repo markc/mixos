@@ -16,7 +16,7 @@ to Mark Constable's instructions.
 |---|---|
 | `logos/mixos-black-transparent.svg` | black mark, transparent background and node holes |
 | `logos/mixos-white-transparent.svg` | white mark, transparent background and node holes |
-| `logos/alien-cyclops.svg` | the default launcher icon, Alien Cyclops (the MixOS desktop's character): the one-eyed alien "C", white ring and red eye on transparent, 512 × 512; Mark Constable's earlier desktop launcher mark, kept byte for byte |
+| `logos/alien-cyclops.svg` | Alien Cyclops, the MixOS Desktop mascot and default launcher icon: the one-eyed alien "C", white ring and red eye on transparent, 512 × 512. MIT OR Apache-2.0, © 2026 Mark Constable (SPDX header in the file); `install.mix` pins its sha256 |
 | `favicons/black-on-white/` | opaque square set: black mark on white |
 | `favicons/white-on-black/` | opaque square set: white mark on black |
 | `preview.png` | both treatments side by side |

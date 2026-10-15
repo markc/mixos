@@ -1,5 +1,5 @@
 #!/opt/mixos/bin/mix
--- version: 0.2.0
+-- version: 0.2.1
 -- Install the MixOS brand icons into the shared icon tree.
 -- Default root: $MIXOS_SHARE, otherwise /opt/mixos/share. --root for a sandbox.
 --
@@ -63,12 +63,17 @@ $icons = {
   "icons/mixos/symbolic/apps/dev.mixos-symbolic.svg": "logos/mixos-black-transparent.svg"
 }
 $INDEX_DIRS = ["scalable/apps", "symbolic/apps"]
+-- The mascot is pinned: a changed file must change this hash on purpose.
+$PINNED = {"logos/alien-cyclops.svg": "1bccb2791c607d0a9bf3c72532b1d5dd5162b97a67cd2da2a1becd94a0fd2d13"}
 $hicolor_src = read_file($brand .. "/hicolor-index.theme")
 $mixos_src = read_file($brand .. "/../icons/index.theme")
 check_index("hicolor-index.theme", $hicolor_src, $INDEX_DIRS)
 check_index("../icons/index.theme", $mixos_src, $INDEX_DIRS)
 for each $src in sort(values($icons))
   check_svg($src, read_file($brand .. "/" .. $src))
+  if has_key($PINNED, $src) and hash_file($brand .. "/" .. $src, "sha256") != $PINNED[$src] then
+    raise("BRAND_HASH", $src .. " does not match its pinned sha256")
+  end
 end
 if $g.opts.check then
   print("brand: " .. to_string(len(keys($icons))) .. " icons and 2 theme indexes validated; nothing written")
