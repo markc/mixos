@@ -262,22 +262,31 @@ mod tests {
     /// cgroup path sits under its nspawn unit's payload.
     const HOST_VIEW: &str = "/machine.slice/systemd-nspawn@desk32.service/payload/system.slice/system-scenes.slice/scenes@3.service";
 
+    /// desk32 is an isolated VT: its topbar runs as uid 1000 (its own `mixos`
+    /// user, PrivateUsers=no), not the shared markc uid 1002 that desk12 uses.
+    /// A grant naming the wrong uid never matches, so the bar's click is refused.
     #[test]
     fn the_host_matches_a_desk_session_by_its_full_cgroup() {
         let p = policy(&format!(
             r#"{{schema: 1, grants: [
-              {{name: "desk32-power", caller: {{uid: 1002, cgroup: "{HOST_VIEW}/*"}}, verbs: ["desk.restart", "desk.stop"],
+              {{name: "desk32-power", caller: {{uid: 1000, cgroup: "{HOST_VIEW}/*"}}, verbs: ["desk.restart", "desk.stop"],
                limits: {{desks: ["desk32"]}}, rate: {{count: 2, per_s: 60}}}}
             ]}}"#
         ));
+        let topbar = Caller {
+            uid: 1000,
+            ..caller(HOST_VIEW)
+        };
+        assert_eq!(target(&p, &topbar, RESTART, now()), Ok("desk32".into()));
+        // The same cgroup under the shared uid does not match: the grant names the uid.
         assert_eq!(
             target(&p, &caller(HOST_VIEW), RESTART, now()),
-            Ok("desk32".into())
+            Err("not_granted")
         );
         // The same session's path as seen inside the desk does not match.
         let inside = "/system.slice/system-scenes.slice/scenes@3.service";
         assert_eq!(
-            target(&p, &caller(inside), RESTART, now()),
+            target(&p, &Caller { uid: 1000, ..caller(inside) }, RESTART, now()),
             Err("not_granted")
         );
     }
