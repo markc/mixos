@@ -1,0 +1,352 @@
+-- deploy_lib.mix — the shared half of every mesh deploy and provision script.
+--
+--   $d = require("../_lib/deploy_lib.mix")      -- from any script under _bin/
+--
+-- Isolated module (require): nothing here touches the caller's scope, and every
+-- function takes what it needs as arguments. Names starting with `_` are private.
+--
+-- Nothing here names a project. Every name a deploy touches is derived from
+-- project(), which comes from configuration, so a fork relabels the whole
+-- tree by changing one value:
+--
+--   project()   $MESH_PROJECT, else the hub's _etc/mesh/project.mix, else "mesh"
+--
+-- Roots, both from the environment and never guessed:
+--   hub_root()      $MESH_HUB — the directory that holds _etc/mesh/ (site state)
+--   project_root()  $MESH_SRC — the project's source checkout (for built binaries)
+--
+-- Derived names (all use project()):
+--   project_bin(n)    release binary <project>-<n> in the build directory
+--   installed_bin(n)  <prefix>/bin/<project>-<n>, prefix = $MESH_PREFIX else /opt/<project>
+--   etc_dir(n)        /etc/<project>/<n>
+--   state_dir(n)      /var/lib/<project>/<n>
+--   group_name(n)     <project>-<n>
+
+fn project()
+  $e = env("MESH_PROJECT")
+  if $e != "" then
+    return $e
+  end
+  $p = hub_root() .. "/_etc/mesh/project.mix"
+  if is_file($p) then
+    return load_data($p)["project"]["name"]
+  end
+  return "mesh"
+end
+
+fn hub_root()
+  $h = env("MESH_HUB")
+  if $h == "" then
+    print("  ERROR: set MESH_HUB to the directory that holds _etc/mesh/")
+    exit(2)
+  end
+  return $h
+end
+
+fn project_root()
+  $r = env("MESH_SRC")
+  if $r == "" then
+    print("  ERROR: set MESH_SRC to the project's source checkout")
+    exit(2)
+  end
+  return $r
+end
+
+-- Built binary for a bin target. MESH_BIN_DIR wins, then CARGO_TARGET_DIR, then
+-- the checkout's own target/release, exactly as cargo would have placed it.
+fn project_bin($name)
+  $bd = env("MESH_BIN_DIR")
+  if $bd != "" then
+    return $bd .. "/" .. project() .. "-" .. $name
+  end
+  $ct = env("CARGO_TARGET_DIR")
+  if $ct != "" then
+    return $ct .. "/release/" .. project() .. "-" .. $name
+  end
+  return project_root() .. "/target/release/" .. project() .. "-" .. $name
+end
+
+fn installed_prefix()
+  $p = env("MESH_PREFIX")
+  if $p != "" then
+    return $p
+  end
+  return "/opt/" .. project()
+end
+
+fn installed_bin($name)
+  return installed_prefix() .. "/bin/" .. project() .. "-" .. $name
+end
+
+fn etc_root()
+  return "/etc/" .. project()
+end
+
+fn state_root()
+  return "/var/lib/" .. project()
+end
+
+fn etc_dir($name)
+  return etc_root() .. "/" .. $name
+end
+
+fn state_dir($name)
+  return state_root() .. "/" .. $name
+end
+
+-- The systemd unit, service and process name for a component: <project>-<name>.
+fn unit_name($name)
+  return project() .. "-" .. $name
+end
+
+-- The system group a component runs as: also <project>-<name>.
+fn group_name($name)
+  return project() .. "-" .. $name
+end
+
+-- The interpreter to hand to child mix processes: $MESH_MIX, else the one on PATH.
+fn mix_bin()
+  $m = env("MESH_MIX")
+  if $m != "" then
+    return $m
+  end
+  $w = which("mix")
+  if $w != nil and $w != "" then
+    return $w
+  end
+  print("  ERROR: no mix on PATH; set MESH_MIX to one")
+  exit(2)
+end
+
+fn die_if($cond, $msg)
+  if $cond then
+    print("  ERROR: " .. $msg)
+    exit(1)
+  end
+end
+
+fn _is_in($list, $x)
+  for each $e in $list
+    if $e == $x then
+      return true
+    end
+  end
+  return false
+end
+
+-- {mesh: [...], foreign: [...], all: [...]} from the hub's fleet roster. The
+-- roster is site state; a hub without one cannot deploy, and says so.
+fn roster()
+  $p = hub_root() .. "/_etc/fleet-roster.conf.mix"
+  if not is_file($p) then
+    print("  ERROR: no fleet roster at " .. $p .. " — create it (mesh: [...], foreign: [...]) before deploying")
+    exit(2)
+  end
+  $r = load_data($p)["fleet_roster"]
+  $all = []
+  for each $n in $r["mesh"]
+    push($all, $n)
+  end
+  for each $n in $r["foreign"]
+    push($all, $n)
+  end
+  return {mesh: $r["mesh"], foreign: $r["foreign"], all: $all, order: $r["rollout_order"]}
+end
+
+fn is_foreign($roster, $host)
+  return _is_in($roster["foreign"], $host)
+end
+
+fn assert_node($roster, $host)
+  if not _is_in($roster["all"], $host) then
+    print("  ERROR: unknown node '" .. $host .. "' — valid: " .. join($roster["all"], " "))
+    exit(2)
+  end
+end
+
+-- Node list from argv: no args = every node in the roster; each named node is
+-- asserted. Flags the caller handles are passed in `known_flags` and stripped.
+--   {nodes: [...], flags: {"--allow-downgrade": true, ...}}
+fn parse_nodes($roster, $argv, $known_flags)
+  $flags = {}
+  $rest = []
+  for each $a in $argv
+    if _is_in($known_flags, $a) then
+      $flags[$a] = true
+    else
+      push($rest, $a)
+    end
+  end
+  $nodes = []
+  if len($rest) == 0 then
+    for each $n in $roster["all"]
+      push($nodes, $n)
+    end
+  else
+    for each $a in $rest
+      assert_node($roster, $a)
+      push($nodes, $a)
+    end
+  end
+  return {nodes: $nodes, flags: $flags}
+end
+
+-- Copy a binary to a private temp path before the per-node loop, so a rebuild
+-- landing mid-deploy cannot make node N+1 receive different bytes from node N.
+-- The caller removes it when done.
+fn snapshot_bin($bin)
+  $mk = run_argv(["mktemp", "/tmp/" .. project() .. "-deploy-XXXXXX"])
+  $snap = trim($mk["stdout"])
+  if $mk["exit_code"] != 0 or $snap == "" then
+    print("  ERROR: mktemp failed for binary snapshot: " .. trim($mk["stderr"]))
+    exit(1)
+  end
+  $cp = run_argv(["cp", "-f", $bin, $snap])
+  if $cp["exit_code"] != 0 then
+    $_rm = run_argv(["rm", "-f", $snap])
+    print("  ERROR: binary snapshot cp failed: " .. trim($cp["stderr"]))
+    exit(1)
+  end
+  chmod($snap, 0o755)
+  return $snap
+end
+
+-- The FIRST dotted-numeric token of a --version line -> [major, minor, patch]:
+-- "tool 0.61.1" and "daemon 0.8.1 (abc123, built 2026-08-30)" both work.
+-- Daemons print build provenance after the version; the last token is not it.
+fn ver_tuple($s)
+  $v = ""
+  for each $tok in split(trim($s), " ")
+    -- a leading v ("tool v1.2.3") is tolerated
+    if $v == "" and re_match($tok, "^v?[0-9]+([.][0-9]+)+$") then
+      $v = re_replace($tok, "^v", "")
+    end
+  end
+  if $v == "" then
+    print("  ERROR: no version number in: " .. trim($s))
+    exit(1)
+  end
+  $out = []
+  for each $p in split($v, ".")
+    push($out, to_number($p))
+  end
+  return $out
+end
+
+fn ver_lt($a, $b)
+  $i = 0
+  while $i < 3
+    $x = $i < len($a) ? $a[$i] : 0
+    $y = $i < len($b) ? $b[$i] : 0
+    if $x < $y then
+      return true
+    end
+    if $x > $y then
+      return false
+    end
+    $i = $i + 1
+  end
+  return false
+end
+
+-- Refuse to push an older build over a newer node unless the caller opted in.
+-- `current` is the node's --version output (may be blank: nothing installed).
+fn assert_not_downgrade($host, $current, $local_ver, $allow)
+  if trim($current) == "" then
+    return nil
+  end
+  if not ver_lt(ver_tuple($local_ver), ver_tuple($current)) then
+    return nil
+  end
+  die_if(not $allow,
+    $host .. " REFUSING DOWNGRADE: node runs " .. trim($current) ..
+    ", local build is " .. $local_ver .. " -- is the source checkout behind its branch?" ..
+    " Pass --allow-downgrade if a rollback is intended.")
+  print("  !! DOWNGRADE (--allow-downgrade): " .. trim($current) .. " -> " .. $local_ver)
+end
+
+-- ── mesh inventory ──────────────────────────────────────────────────────
+-- The authored inventory ($MESH_HUB/_etc/mesh/inventory.mix) is the roster's
+-- source of addresses. These lookups read it each call (it is small) and
+-- refuse loudly when a node is not an active member.
+
+fn _inventory()
+  $p = hub_root() .. "/_etc/mesh/inventory.mix"
+  if not is_file($p) then
+    print("  ERROR: no mesh inventory at " .. $p .. " — this deploy needs mesh addresses")
+    exit(2)
+  end
+  return load_data($p)["inventory"]
+end
+
+-- Active members only: [{name, mesh_ip, bus, status}, …]
+fn mesh_members()
+  $out = []
+  for each $m in _inventory()["members"]
+    if $m["status"] == "active" then
+      push($out, $m)
+    end
+  end
+  return $out
+end
+
+fn mesh_nodes()
+  $out = []
+  for each $m in mesh_members()
+    push($out, $m["name"])
+  end
+  return $out
+end
+
+fn mesh_ip($node)
+  for each $m in mesh_members()
+    if $m["name"] == $node then
+      return $m["mesh_ip"]
+    end
+  end
+  print("  ERROR: '" .. $node .. "' is not an active member of the mesh inventory")
+  exit(2)
+end
+
+-- The inventory's hub node(s) — the broker(s) every other node talks through;
+-- a rollout touches them LAST.
+fn mesh_hubs()
+  return _inventory()["hub"]
+end
+
+-- Rollout order for a mesh-wide change: the roster's `rollout_order` when the
+-- hub defines one, else the roster's mesh list with the inventory hubs moved
+-- to the end. Either way, hubs last.
+fn rollout_order($roster)
+  if $roster["order"] != nil then
+    return $roster["order"]
+  end
+  $hubs = mesh_hubs()
+  $head = []
+  $tail = []
+  for each $n in $roster["mesh"]
+    if _is_in($hubs, $n) then
+      push($tail, $n)
+    else
+      push($head, $n)
+    end
+  end
+  return concat($head, $tail)
+end
+
+-- The rollout order restricted to a given subset of nodes (still hubs last).
+fn order_subset($roster, $nodes)
+  $out = []
+  for each $n in rollout_order($roster)
+    if _is_in($nodes, $n) then
+      push($out, $n)
+    end
+  end
+  -- nodes absent from the rollout order (roster drift) go last, unordered
+  for each $n in $nodes
+    if not _is_in($out, $n) then
+      push($out, $n)
+    end
+  end
+  return $out
+end
