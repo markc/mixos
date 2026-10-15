@@ -34,10 +34,15 @@ use tokio::sync::{Mutex as TokioMutex, RwLock, mpsc, watch};
 use super::IncomingCommand;
 use super::connection::{Connection, ConnectionOptions};
 use super::error::{ClientError, RegistrationRejected, SupervisedError};
+use crate::BusMessage;
 use crate::native_client::NativeIncomingReceiver;
 use crate::native_client::bounded::{
     BoundedIncomingEvent, BoundedIncomingReceiver, BoundedIncomingSender, bounded_incoming_channel,
+    is_rpc_request,
 };
+
+/// Bound on one `BUSY` refusal write, and on closing the connection it failed on.
+const REFUSAL_LIMIT: Duration = Duration::from_millis(100);
 
 /// Attempt budget for the initial connect-and-register. Exhausting it is a
 /// typed fatal: a misconfigured service must fail fast rather than spin
@@ -181,9 +186,29 @@ impl SupervisedConnectOptions {
         self
     }
 
+    /// Bound the incoming lane to `capacity` and drop overflow lossily.
+    ///
+    /// Dropped frames are counted and reported as an `Overflow` marker. A
+    /// dropped request gets no reply. Setting this clears any earlier
+    /// [`bounded_incoming_rpc`](Self::bounded_incoming_rpc) choice.
     pub fn bounded_incoming(mut self, capacity: usize) -> Self {
         assert!(capacity > 0, "bounded incoming capacity must be non-zero");
         self.connection.capacity = Some(capacity);
+        self.connection.refuse_overflowed_requests = false;
+        self
+    }
+
+    /// Bound the incoming lane like [`bounded_incoming`](Self::bounded_incoming),
+    /// and answer requests it cannot retain.
+    ///
+    /// A dropped id-bearing request frame (one with no topic header) receives
+    /// a correlated `rc 10` `BUSY` reply, so the caller can retry. Topic
+    /// frames and frames without an id stay lossy and are reported as
+    /// `Overflow` only.
+    pub fn bounded_incoming_rpc(mut self, capacity: usize) -> Self {
+        assert!(capacity > 0, "bounded incoming capacity must be non-zero");
+        self.connection.capacity = Some(capacity);
+        self.connection.refuse_overflowed_requests = true;
         self
     }
     /// Treat a broker registration rejection (collision or admission) as
@@ -812,23 +837,54 @@ impl SupervisorOutgoing {
         }
     }
 
-    fn forward(&self, event: BoundedIncomingEvent) -> bool {
+    /// `refuse_rpc` is the connection's RPC policy. In that mode a request the
+    /// bounded lane cannot retain comes back as [`ForwardOutcome::Refused`],
+    /// so the supervisor can answer it on the connection it arrived on.
+    fn forward(&self, event: BoundedIncomingEvent, refuse_rpc: bool) -> ForwardOutcome {
         match (self, event) {
             (Self::Unbounded(sender), BoundedIncomingEvent::Command(command)) => {
-                sender.send(command).is_ok()
+                if sender.send(command).is_ok() {
+                    ForwardOutcome::Sent
+                } else {
+                    ForwardOutcome::Stopped
+                }
             }
             (Self::Unbounded(_), BoundedIncomingEvent::Overflow { .. }) => {
                 unreachable!("unbounded native lane cannot overflow")
             }
+            (Self::Bounded(sender), BoundedIncomingEvent::Command(command))
+                if refuse_rpc && is_rpc_request(&command) =>
+            {
+                match sender.try_send_or_return(command) {
+                    Ok(()) => ForwardOutcome::Sent,
+                    Err(mpsc::error::TrySendError::Full(command)) => {
+                        ForwardOutcome::Refused(command)
+                    }
+                    Err(mpsc::error::TrySendError::Closed(_)) => ForwardOutcome::Stopped,
+                }
+            }
             (Self::Bounded(sender), BoundedIncomingEvent::Command(command)) => {
-                sender.try_send(command)
+                if sender.try_send(command) {
+                    ForwardOutcome::Sent
+                } else {
+                    ForwardOutcome::Stopped
+                }
             }
             (Self::Bounded(sender), BoundedIncomingEvent::Overflow { dropped }) => {
                 sender.record_overflow(dropped);
-                true
+                ForwardOutcome::Sent
             }
         }
     }
+}
+
+/// What the supervisor does next with one frame it forwarded.
+enum ForwardOutcome {
+    Sent,
+    /// The consumer is gone; the supervisor stops.
+    Stopped,
+    /// An RPC request the bounded lane could not retain.
+    Refused(IncomingCommand),
 }
 
 /// Everything the detached supervisor task owns.
@@ -847,6 +903,48 @@ struct SupervisorCtx {
     fatal_on_registration_rejection: bool,
     connection_options: ConnectionOptions,
     first_rx: Option<NativeIncomingReceiver>,
+}
+
+/// Answer a request the bounded RPC lane refused with `BUSY`, on the
+/// connection it arrived on. Returns `false` when that write failed: the
+/// captured connection is then closed and the forward phase must end.
+///
+/// A request from an older generation has no connection left to answer on,
+/// so it is dropped and counted as overflow only.
+async fn refuse_overflowed(ctx: &SupervisorCtx, refused: &IncomingCommand) -> bool {
+    let connection = {
+        let live = ctx.inner.read().await;
+        if ctx.connection_generation.load(Ordering::SeqCst) == refused.generation {
+            live.clone()
+        } else {
+            None
+        }
+    };
+    let Some(connection) = connection else {
+        return true;
+    };
+    let mut reply = BusMessage::new()
+        .with_header("command", &refused.command)
+        .with_header("from", connection.name())
+        .with_header("to", &refused.from)
+        .with_header("type", "response")
+        .with_header("rc", "10")
+        .with_header("error", "BUSY")
+        .with_body(r#"{"error_code":"BUSY","message":"incoming command queue is full"}"#);
+    if let Some(id) = &refused.id {
+        reply = reply.with_header("id", id);
+    }
+    let written = tokio::time::timeout(REFUSAL_LIMIT, connection.send_raw(&reply)).await;
+    if matches!(written, Ok(Ok(()))) {
+        return true;
+    }
+    tracing::warn!(
+        event = "supervised_refusal_failed",
+        service = %ctx.service_name,
+        "BUSY refusal could not be written; closing this connection"
+    );
+    let _ = tokio::time::timeout(REFUSAL_LIMIT, connection.close()).await;
+    false
 }
 
 /// `true` once a stop has been requested (an explicit shutdown, or the
@@ -932,13 +1030,23 @@ async fn supervisor_run(ctx: &mut SupervisorCtx, mut current_rx: Option<NativeIn
                             if let BoundedIncomingEvent::Command(incoming) = &mut command {
                                 incoming.generation = ctx.connection_generation.load(Ordering::SeqCst);
                             }
-                            if !ctx.out_tx.forward(command) {
-                                tracing::info!(
-                                    event = "supervised_stop",
-                                    service = %ctx.service_name,
-                                    "supervisor stopping (incoming consumer dropped)"
-                                );
-                                return;
+                            let refuse_rpc = ctx.connection_options.refuse_overflowed_requests;
+                            match ctx.out_tx.forward(command, refuse_rpc) {
+                                ForwardOutcome::Sent => {}
+                                ForwardOutcome::Stopped => {
+                                    tracing::info!(
+                                        event = "supervised_stop",
+                                        service = %ctx.service_name,
+                                        "supervisor stopping (incoming consumer dropped)"
+                                    );
+                                    return;
+                                }
+                                ForwardOutcome::Refused(refused) => {
+                                    if !refuse_overflowed(ctx, &refused).await {
+                                        // The connection is closed; reconnect.
+                                        break;
+                                    }
+                                }
                             }
                         }
                         None => break,

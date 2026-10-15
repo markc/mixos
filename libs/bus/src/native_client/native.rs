@@ -28,6 +28,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::native_client::bounded::{
     BoundedIncomingEvent, BoundedIncomingReceiver, BoundedIncomingSender, bounded_incoming_channel,
+    is_rpc_request,
 };
 use crate::native_client::types::IncomingCommand;
 
@@ -62,6 +63,18 @@ enum NativeIncomingSender {
     },
     Unbounded(mpsc::UnboundedSender<IncomingCommand>),
     Bounded(BoundedIncomingSender),
+    /// Bounded like `Bounded`, but a request the lane cannot retain is handed
+    /// back to the reader so it can answer `BUSY` on the same socket.
+    RpcBounded(BoundedIncomingSender),
+}
+
+/// What the reader does next with one frame it handed to the owner's lane.
+enum NativeSend {
+    Accepted,
+    /// The owner is gone; the reader stops.
+    Closed,
+    /// An RPC request the bounded lane could not retain.
+    Refused(IncomingCommand),
 }
 
 impl NativeIncomingSender {
@@ -69,14 +82,21 @@ impl NativeIncomingSender {
         &self,
         command: IncomingCommand,
         _principal: Option<crate::native_session::BrokerPrincipal>,
-    ) -> bool {
+    ) -> NativeSend {
         match self {
             #[cfg(unix)]
-            Self::Verified(tx) => tx
-                .send(crate::native_client::unix::VerifiedCommand::new(
-                    command, _principal,
-                ))
-                .is_ok(),
+            Self::Verified(tx) => {
+                if tx
+                    .send(crate::native_client::unix::VerifiedCommand::new(
+                        command, _principal,
+                    ))
+                    .is_ok()
+                {
+                    NativeSend::Accepted
+                } else {
+                    NativeSend::Closed
+                }
+            }
             // This arm runs on the reader task, which owns response delivery
             // for every in-flight RPC on this connection. It therefore never
             // writes to the shared sink and never waits for lane capacity:
@@ -105,12 +125,12 @@ impl NativeIncomingSender {
                     return match commands.try_send(
                         crate::native_client::unix::VerifiedCommand::new(command, _principal),
                     ) {
-                        Ok(()) => true,
+                        Ok(()) => NativeSend::Accepted,
                         Err(mpsc::error::TrySendError::Full(_)) => {
                             gap.store(true, Ordering::Release);
-                            true
+                            NativeSend::Accepted
                         }
-                        Err(mpsc::error::TrySendError::Closed(_)) => false,
+                        Err(mpsc::error::TrySendError::Closed(_)) => NativeSend::Closed,
                     };
                 }
                 let event = crate::native_client::unix::VerifiedCommand::new(command, _principal);
@@ -118,8 +138,8 @@ impl NativeIncomingSender {
                     event
                 } else {
                     match commands.try_send(event) {
-                        Ok(()) => return true,
-                        Err(mpsc::error::TrySendError::Closed(_)) => return false,
+                        Ok(()) => return NativeSend::Accepted,
+                        Err(mpsc::error::TrySendError::Closed(_)) => return NativeSend::Closed,
                         Err(mpsc::error::TrySendError::Full(event)) => event,
                     }
                 };
@@ -127,24 +147,53 @@ impl NativeIncomingSender {
                 // already handed over, so writing more cannot help; the caller
                 // still has its own deadline.
                 let _ = refusals.try_send(refused.refusal());
-                true
+                NativeSend::Accepted
             }
-            Self::Unbounded(sender) => sender.send(command).is_ok(),
-            Self::Bounded(sender) => sender.try_send(command),
+            Self::Unbounded(sender) => {
+                if sender.send(command).is_ok() {
+                    NativeSend::Accepted
+                } else {
+                    NativeSend::Closed
+                }
+            }
+            Self::Bounded(sender) => {
+                if sender.try_send(command) {
+                    NativeSend::Accepted
+                } else {
+                    NativeSend::Closed
+                }
+            }
+            // Only id-bearing requests can be answered, so only they take the
+            // refusal path. Topic frames and id-less frames stay lossy.
+            Self::RpcBounded(sender) if !is_rpc_request(&command) => {
+                if sender.try_send(command) {
+                    NativeSend::Accepted
+                } else {
+                    NativeSend::Closed
+                }
+            }
+            Self::RpcBounded(sender) => match sender.try_send_or_return(command) {
+                Ok(()) => NativeSend::Accepted,
+                Err(mpsc::error::TrySendError::Full(command)) => NativeSend::Refused(command),
+                Err(mpsc::error::TrySendError::Closed(_)) => NativeSend::Closed,
+            },
         }
     }
 }
 
 fn incoming_channel(
     bounded_capacity: Option<usize>,
+    refuse_rpc: bool,
 ) -> (NativeIncomingSender, NativeIncomingReceiver) {
     match bounded_capacity {
         Some(capacity) => {
             let (sender, receiver) = bounded_incoming_channel(capacity);
-            (
-                NativeIncomingSender::Bounded(sender),
-                NativeIncomingReceiver::Bounded(receiver),
-            )
+            let sender = if refuse_rpc {
+                NativeIncomingSender::RpcBounded(sender)
+            } else {
+                NativeIncomingSender::Bounded(sender)
+            };
+            (sender, NativeIncomingReceiver::Bounded(receiver))
         }
         None => {
             let (sender, receiver) = mpsc::unbounded_channel();
@@ -348,6 +397,12 @@ impl std::fmt::Display for RegistrationRejected {
 
 impl std::error::Error for RegistrationRejected {}
 
+/// Body of the `BUSY` reply to an RPC request the bounded incoming lane refuses.
+const BUSY_REFUSAL_BODY: &str = r#"{"error_code":"BUSY","message":"incoming command queue is full"}"#;
+
+/// Bound on writing one `BUSY` reply, including waiting for the shared sink.
+const BUSY_REFUSAL_WRITE_LIMIT: std::time::Duration = std::time::Duration::from_millis(100);
+
 /// The largest `noded.register` rejection body this client will decode.
 /// Real rejection bodies are ~100 bytes; anything larger is not a
 /// structured rejection and classifies as [`RegistrationRejectionKind::Unknown`]
@@ -511,16 +566,26 @@ impl NodedClient {
         noded_url: &str,
         provenance: Option<crate::RegisterProvenance>,
     ) -> Result<Self> {
-        Self::connect_with_provenance_and_capacity(service_name, noded_url, provenance, None, None)
-            .await
+        Self::connect_with_provenance_and_capacity(
+            service_name,
+            noded_url,
+            provenance,
+            None,
+            None,
+            false,
+        )
+        .await
     }
 
+    /// `refuse_rpc` selects the bounded RPC lane: a request the lane cannot
+    /// retain is answered `BUSY` instead of being dropped.
     pub(crate) async fn connect_with_provenance_and_capacity(
         service_name: &str,
         noded_url: &str,
         provenance: Option<crate::RegisterProvenance>,
         bounded_capacity: Option<usize>,
         manifest: Option<Vec<crate::VerbDescriptor>>,
+        refuse_rpc: bool,
     ) -> Result<Self> {
         let (ws_stream, _) = tokio_tungstenite::connect_async(noded_url)
             .await
@@ -530,7 +595,7 @@ impl NodedClient {
         let sink = Arc::new(Mutex::new(Box::pin(sink) as WsSink));
         let pending: Arc<StdMutex<PendingMap>> = Arc::new(StdMutex::new(HashMap::new()));
         let connected = Arc::new(AtomicBool::new(true));
-        let (incoming_tx, incoming_rx) = incoming_channel(bounded_capacity);
+        let (incoming_tx, incoming_rx) = incoming_channel(bounded_capacity, refuse_rpc);
         let service_name = Arc::new(RwLock::new(service_name.to_string()));
         let verbs = Arc::new(RwLock::new(manifest.map(|verbs| {
             serde_json::to_string(&verbs).expect("verb descriptors serialize")
@@ -598,7 +663,7 @@ impl NodedClient {
         let sink = Arc::new(Mutex::new(Box::pin(sink) as WsSink));
         let pending: Arc<StdMutex<PendingMap>> = Arc::new(StdMutex::new(HashMap::new()));
         let connected = Arc::new(AtomicBool::new(true));
-        let (incoming_tx, incoming_rx) = incoming_channel(None);
+        let (incoming_tx, incoming_rx) = incoming_channel(None, false);
         let service_name = Arc::new(RwLock::new("anonymous".to_string()));
         let verbs = Arc::new(RwLock::new(None));
 
@@ -1229,6 +1294,9 @@ impl NodedClient {
         // a concurrent observer never reads a closing connection as
         // live.
         self.connected.store(false, Ordering::Relaxed);
+        // Clear in-flight correlation before any await, so a close that is
+        // cancelled while waiting on the sink cannot leave callers parked.
+        self.pending.lock().expect("pending mutex poisoned").clear();
         // Abort the detached reader before awaiting any network I/O. Even if a
         // bounded caller abandons close while the WebSocket sink is wedged,
         // the read half can no longer retain the socket and registered name by
@@ -1244,10 +1312,6 @@ impl NodedClient {
             let _ = sink.send(Message::Close(None)).await;
             let _ = sink.close().await;
         }
-        // The reader's normal exit drains `pending`; on abort that
-        // never runs, so do it here — any parked caller gets a
-        // closed-channel error now instead of a 60s timeout.
-        self.pending.lock().expect("pending mutex poisoned").clear();
     }
 
     /// Send a raw Bus message to the broker (no request/response framing).
@@ -1417,9 +1481,49 @@ impl NodedClient {
                     }
                     continue;
                 }
-                if !incoming_tx.send(cmd, principal).await {
-                    tracing::debug!("{service_name}: incoming channel closed");
-                    break;
+                match incoming_tx.send(cmd, principal).await {
+                    NativeSend::Accepted => {}
+                    NativeSend::Closed => {
+                        tracing::debug!("{service_name}: incoming channel closed");
+                        break;
+                    }
+                    NativeSend::Refused(refused) => {
+                        // Answer on this socket only: a replacement connection
+                        // must never receive a reply to this request.
+                        let name = live_service_name
+                            .read()
+                            .expect("service name lock poisoned")
+                            .clone();
+                        let mut reply = BusMessage::new()
+                            .with_header("command", &refused.command)
+                            .with_header("from", &name)
+                            .with_header("to", &refused.from)
+                            .with_header("type", "response")
+                            .with_header("rc", "10")
+                            .with_header("error", "BUSY")
+                            .with_body(BUSY_REFUSAL_BODY);
+                        if let Some(id) = &refused.id {
+                            reply = reply.with_header("id", id);
+                        }
+                        let written = tokio::time::timeout(BUSY_REFUSAL_WRITE_LIMIT, async {
+                            sink.lock()
+                                .await
+                                .send(Message::Text(reply.to_wire().into()))
+                                .await
+                        })
+                        .await;
+                        if !matches!(written, Ok(Ok(()))) {
+                            // Fail the connection before any further await, so
+                            // no caller parks on a reply that will never come.
+                            connected.store(false, Ordering::Relaxed);
+                            pending.lock().expect("pending mutex poisoned").clear();
+                            let _ = tokio::time::timeout(BUSY_REFUSAL_WRITE_LIMIT, async {
+                                sink.lock().await.close().await
+                            })
+                            .await;
+                            break;
+                        }
+                    }
                 }
             }
         }

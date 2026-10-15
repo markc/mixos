@@ -149,13 +149,26 @@ impl BoundedIncomingSender {
 
     /// Returns `false` only when the consumer has gone away.
     pub(crate) fn try_send(&self, command: IncomingCommand) -> bool {
-        match self.sender.try_send(command) {
+        match self.try_send_or_return(command) {
             Ok(()) => true,
-            Err(mpsc::error::TrySendError::Full(_)) => {
-                self.record_overflow(1);
-                true
-            }
+            Err(mpsc::error::TrySendError::Full(_)) => true,
             Err(mpsc::error::TrySendError::Closed(_)) => false,
+        }
+    }
+
+    /// Never waits. On `Full` the overflow is recorded and the original command
+    /// is returned in the error, so the caller can answer it.
+    pub(crate) fn try_send_or_return(
+        &self,
+        command: IncomingCommand,
+    ) -> Result<(), mpsc::error::TrySendError<IncomingCommand>> {
+        match self.sender.try_send(command) {
+            Ok(()) => Ok(()),
+            Err(error @ mpsc::error::TrySendError::Full(_)) => {
+                self.record_overflow(1);
+                Err(error)
+            }
+            Err(error @ mpsc::error::TrySendError::Closed(_)) => Err(error),
         }
     }
 
@@ -185,6 +198,13 @@ pub fn bounded_incoming_injector(
 ) -> (BoundedIncomingInjector, BoundedIncomingReceiver) {
     let (sender, receiver) = bounded_incoming_channel(capacity);
     (BoundedIncomingInjector(sender), receiver)
+}
+
+/// An id-bearing request that is not a topic delivery. The bounded RPC lane
+/// answers these with `BUSY` when it cannot retain them; everything else is
+/// lossy.
+pub(crate) fn is_rpc_request(command: &IncomingCommand) -> bool {
+    command.id.is_some() && !command.headers.contains_key("topic")
 }
 
 pub(crate) fn bounded_incoming_channel(

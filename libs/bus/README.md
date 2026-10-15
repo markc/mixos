@@ -27,6 +27,14 @@ generation one. The single incoming receiver remains usable across outages.
 `connect().await` retains its five-attempt initial budget for callers that need
 bounded startup. Neither API queues outbound work.
 
+`bounded_incoming(capacity)` drops overflow silently, reported only as an
+`Overflow` marker. `bounded_incoming_rpc(capacity)` opts into refusal: an
+id-bearing request with no `topic` header that the full lane cannot retain gets
+an `rc 10` `BUSY` reply on the same connection it arrived on, so the caller can
+retry. Topic deliveries and id-less frames remain lossy. If that refusal cannot
+be written within 100 ms, only that old connection is closed and the supervisor
+reconnects; no reply is ever sent through the replacement connection.
+
 With `fatal_on_registration_rejection(true)`, `registration_rejection()` retains
 the broker's exact return code and diagnostic before publishing `Fatal`, for both
 initial registration and reconnect. Sampling it is non-consuming; transport
