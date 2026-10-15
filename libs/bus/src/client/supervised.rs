@@ -37,8 +37,8 @@ use super::error::{ClientError, RegistrationRejected, SupervisedError};
 use crate::BusMessage;
 use crate::native_client::NativeIncomingReceiver;
 use crate::native_client::bounded::{
-    BoundedIncomingEvent, BoundedIncomingReceiver, BoundedIncomingSender, bounded_incoming_channel,
-    is_rpc_request,
+    BoundedIncomingEvent, BoundedIncomingReceiver, BoundedIncomingSender, BoundedSendResult,
+    bounded_incoming_channel, is_rpc_request,
 };
 
 /// Bound on one `BUSY` refusal write, on closing the connection it failed on,
@@ -862,11 +862,9 @@ impl SupervisorOutgoing {
                 if refuse_rpc && is_rpc_request(&command) =>
             {
                 match sender.try_send_or_return(command) {
-                    Ok(()) => ForwardOutcome::Sent,
-                    Err(mpsc::error::TrySendError::Full(command)) => {
-                        ForwardOutcome::Refused(command)
-                    }
-                    Err(mpsc::error::TrySendError::Closed(_)) => ForwardOutcome::Stopped,
+                    BoundedSendResult::Sent => ForwardOutcome::Sent,
+                    BoundedSendResult::Full(command) => ForwardOutcome::Refused(command),
+                    BoundedSendResult::Closed => ForwardOutcome::Stopped,
                 }
             }
             (Self::Bounded(sender), BoundedIncomingEvent::Command(command)) => {

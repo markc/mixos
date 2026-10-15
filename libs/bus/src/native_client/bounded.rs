@@ -23,6 +23,14 @@ pub enum BoundedIncomingEvent {
     Overflow { dropped: u64 },
 }
 
+/// Outcome of a non-waiting send into a bounded lane. `Full` carries the
+/// command back so the caller can answer it.
+pub(crate) enum BoundedSendResult {
+    Sent,
+    Full(IncomingCommand),
+    Closed,
+}
+
 #[derive(Default)]
 struct OverflowState {
     total: AtomicU64,
@@ -150,25 +158,21 @@ impl BoundedIncomingSender {
     /// Returns `false` only when the consumer has gone away.
     pub(crate) fn try_send(&self, command: IncomingCommand) -> bool {
         match self.try_send_or_return(command) {
-            Ok(()) => true,
-            Err(mpsc::error::TrySendError::Full(_)) => true,
-            Err(mpsc::error::TrySendError::Closed(_)) => false,
+            BoundedSendResult::Sent | BoundedSendResult::Full(_) => true,
+            BoundedSendResult::Closed => false,
         }
     }
 
     /// Never waits. On `Full` the overflow is recorded and the original command
-    /// is returned in the error, so the caller can answer it.
-    pub(crate) fn try_send_or_return(
-        &self,
-        command: IncomingCommand,
-    ) -> Result<(), mpsc::error::TrySendError<IncomingCommand>> {
+    /// is returned in the result, so the caller can answer it.
+    pub(crate) fn try_send_or_return(&self, command: IncomingCommand) -> BoundedSendResult {
         match self.sender.try_send(command) {
-            Ok(()) => Ok(()),
-            Err(error @ mpsc::error::TrySendError::Full(_)) => {
+            Ok(()) => BoundedSendResult::Sent,
+            Err(mpsc::error::TrySendError::Full(command)) => {
                 self.record_overflow(1);
-                Err(error)
+                BoundedSendResult::Full(command)
             }
-            Err(error @ mpsc::error::TrySendError::Closed(_)) => Err(error),
+            Err(mpsc::error::TrySendError::Closed(_)) => BoundedSendResult::Closed,
         }
     }
 

@@ -27,8 +27,8 @@ use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::native_client::bounded::{
-    BoundedIncomingEvent, BoundedIncomingReceiver, BoundedIncomingSender, bounded_incoming_channel,
-    is_rpc_request,
+    BoundedIncomingEvent, BoundedIncomingReceiver, BoundedIncomingSender, BoundedSendResult,
+    bounded_incoming_channel, is_rpc_request,
 };
 use crate::native_client::types::IncomingCommand;
 
@@ -173,9 +173,9 @@ impl NativeIncomingSender {
                 }
             }
             Self::RpcBounded(sender) => match sender.try_send_or_return(command) {
-                Ok(()) => NativeSend::Accepted,
-                Err(mpsc::error::TrySendError::Full(command)) => NativeSend::Refused(command),
-                Err(mpsc::error::TrySendError::Closed(_)) => NativeSend::Closed,
+                BoundedSendResult::Sent => NativeSend::Accepted,
+                BoundedSendResult::Full(command) => NativeSend::Refused(command),
+                BoundedSendResult::Closed => NativeSend::Closed,
             },
         }
     }
