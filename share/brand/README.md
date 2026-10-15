@@ -16,6 +16,7 @@ to Mark Constable's instructions.
 |---|---|
 | `logos/mixos-black-transparent.svg` | black mark, transparent background and node holes |
 | `logos/mixos-white-transparent.svg` | white mark, transparent background and node holes |
+| `logos/quoin-icon.svg` | the default launcher icon: the one-eyed alien "C", white ring and red eye on transparent, 512 × 512; Mark Constable's earlier desktop launcher mark, kept byte for byte |
 | `favicons/black-on-white/` | opaque square set: black mark on white |
 | `favicons/white-on-black/` | opaque square set: white mark on black |
 | `preview.png` | both treatments side by side |
@@ -38,12 +39,18 @@ and vector/raster consistency, but not on physical Apple devices.
 
 ## Using it on the desktop
 
-`mix share/brand/install.mix --root /opt/mixos/share` installs the transparent
-M as `dev.mixos-symbolic` in MixOS and hicolor. A fresh image gets the small theme
-indexes needed for lookup; an existing hicolor index is preserved. MixOS resolves
-the M directly even when that existing index omits symbolic apps. Include the share root in
-`XDG_DATA_DIRS`. Scene-host tints the symbolic SVG with the foreground colour,
-and the panel prefers it over legacy launcher icons.
+`mix share/brand/install.mix --root /opt/mixos/share` installs
+`logos/quoin-icon.svg` as the full-colour `dev.mixos` (in `scalable/apps`) and the
+transparent M as `dev.mixos-symbolic` (in `symbolic/apps`), in MixOS and hicolor.
+`--check` validates the sources and indexes and writes nothing. A fresh image
+gets the small theme indexes needed for lookup; an existing index is preserved,
+with a warning when it omits a directory the installer writes. Include the
+share root in `XDG_DATA_DIRS`.
+
+`dev.mixos` is the launcher on both bars: the bottom panel's launcher button
+and the top bar's apps button ask for it first, then `dev.mixos-symbolic`, then
+the start-here icons. It is deliberately not symbolic: scene-host tints
+`*-symbolic` SVGs with the foreground colour, which would lose the red eye.
 
 Install [`share/icons`](../icons/README.md) alongside it for the bundled
 Lucide icons used by panel controls and core application entries.

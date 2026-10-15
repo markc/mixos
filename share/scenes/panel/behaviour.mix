@@ -1,4 +1,4 @@
--- version: 0.7.0
+-- version: 0.7.1
 -- The bottom panel's behaviour: compositor, tray, notification and popup
 -- state in; one complete model out through the loader (scenes.model). The
 -- layout is static in scene.mix. Clicks arrive as {scene,node,kind,item?};
@@ -288,12 +288,16 @@ end
 
 fn resolve_icons()
   if length(keys($state.icons.windows)) + length(keys($state.icons.plain)) >= 512 then $state.icons = empty_icons() end
-  if not has_key($state.icons.themed,"dev.mixos") then
-    -- apps.icon matches the exact name (no suffix rule), so the symbolic M
-    -- mark is asked for explicitly when the full-colour brand is not installed.
-    $brand = apps_icon("dev.mixos",48,$ICON_THEME)
-    if $brand == "" then $brand = apps_icon("dev.mixos-symbolic",48,$ICON_THEME) end
-    $state.icons.themed["dev.mixos"] = $brand
+  -- The launcher mark, shared with the top bar: apps.icon matches the exact
+  -- name (no suffix rule), so every spelling is asked for in turn.
+  for each $l in $m.LAUNCHER_ICONS
+    if not has_key($state.icons.themed, $l.key) then
+      $path = ""
+      for each $name in $l.names
+        if $path == "" then $path = apps_icon($name, $m.LAUNCHER_ICON_SIZE, $ICON_THEME) end
+      end
+      $state.icons.themed[$l.key] = $path
+    end
   end
   for each $name in $m.PANEL_THEMED_ICONS
     if not has_key($state.icons.themed, $name) then

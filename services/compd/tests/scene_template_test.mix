@@ -365,6 +365,25 @@ $changed = $panel_models["panel-tray-change"]
 check($changed.tray[0].id == $busy.tray[1].id and $changed.tray[1].id == "tr_i3", "tray change keeps surviving item ids")
 check($changed.notes.icon == $partial.themed.notifications and $changed.volume.icon == $partial.themed["audio-card"] and not $changed.network.has_icon, "status icon fallback name, then text stand-in")
 check($changed.launcher.icon == $partial.themed["start-here"], "launcher icon fallback name")
+
+-- The launcher mark on both bars: the brand dev.mixos when resolved, else the
+-- start-here fallbacks; the top bar's apps button takes it from the same map.
+$brand = "/usr/share/icons/example/dev.mixos.svg"
+$with_brand = themed_all()
+$with_brand["dev.mixos"] = $brand
+$brand_snap = {windows: [], ws_count: 1, ws_current: 1, tray: [], notes_count: 0, net: {up: false, wireless: false}, vol: {ok: false, level: 0, muted: false}, open: {}}
+$brand_panel = $models.panel($brand_snap, {themed: $with_brand, plain: {}, windows: {}}, 0)
+check($brand_panel.launcher.icon == $brand and $brand_panel.launcher.has_icon, "panel launcher prefers dev.mixos over start-here")
+$brand_top = $models.topbar_apps($with_brand)
+check($brand_top.icon == $brand and $brand_top.has_icon and $brand_top.label == "Apps", "top bar apps button shows dev.mixos and keeps its label")
+$no_brand = themed_all()
+$no_brand["dev.mixos"] = ""
+check($models.panel($brand_snap, {themed: $no_brand, plain: {}, windows: {}}, 0).launcher.icon == $no_brand["start-here-kde"], "panel launcher falls back to start-here-kde")
+check($models.topbar_apps($no_brand).icon == $no_brand["start-here-kde"], "top bar apps button falls back like the panel")
+check($models.topbar_apps({"start-here": $partial.themed["start-here"]}).icon == $partial.themed["start-here"], "top bar apps button falls back to start-here")
+$bare = $models.topbar_apps({})
+check(not $bare.has_icon and $bare.icon == "" and $bare.label == "Apps", "top bar apps button without any icon shows its label")
+check(deep_eq(sort(keys($bare)), sort(keys(json_parse(header(read_file($root .. "/share/scenes/topbar/scene.mix"), "model")).apps))), "top bar apps model has the keys its scene declares")
 check($panel_models["panel-empty"].clock.time == "12:00 am" and $busy.clock.time == "9:05 pm" and $busy.clock.date == "Thu 29 Feb", "displayed time from the fixed clock")
 
 -- Real click payloads: the renderer sends the owning list's node and the
