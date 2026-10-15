@@ -12,7 +12,7 @@
     {name:"invalid_layout",changes:{"appearance.mode":"light","shell.panels.bottom.thickness":999},expected:"validation_failed"},
     {name:"keymap",changes:{"keymaps.dopus.nav.parent":["Ctrl+U"],"keymaps.dopus.file.delete":[]},reset:[]},
     {name:"invalid_chord",changes:{"keymaps.dopus.nav.back":["Hyper+X"]},expected:"validation_failed"},
-    {name:"terminal",changes:{"terminal.padding":8.0,"terminal.focus.ring":"accent","terminal.env.term":"xterm-kitty"},reset:[]},
+    {name:"terminal",changes:{"terminal.padding":8.0,"terminal.focus.ring":"neutral","terminal.env.term":"xterm-kitty"},reset:[]},
     {name:"invalid_padding",changes:{"terminal.padding":3},expected:"validation_failed"},
     {name:"reset_app",changes:{},reset:["apps.term"]}
   ],

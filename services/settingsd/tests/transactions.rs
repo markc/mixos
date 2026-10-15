@@ -216,7 +216,7 @@ fn public_machine_fixtures_exercise_dispatch_and_restartable_float_settings() {
     assert_eq!(snapshot["desktop"]["ui"]["text_scale"], 1.1);
     assert_eq!(
         snapshot["desktop"]["terminal"],
-        json!({"focus":{"ring":"accent"},"env":{"term":"xterm-kitty"}})
+        json!({"focus":{"ring":"neutral"},"env":{"term":"xterm-kitty"}})
     );
     drop(state);
     let (store, accepted) = Store::open(dir.path(), &binding).unwrap();

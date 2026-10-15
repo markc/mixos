@@ -173,7 +173,7 @@ fn two_tabs_and_a_split_studio_dark() {
     harness.run_steps(2);
     harness.get_by_label(&term::view::about_text(false));
     assert!(harness.state().shell.as_ref().unwrap().app.about_dialog);
-    harness.get_by_label("Close").click();
+    harness.key_press(egui::Key::Escape);
     harness.run_steps(2);
     assert!(!harness.state().shell.as_ref().unwrap().app.about_dialog);
 
