@@ -719,6 +719,21 @@ fn vol_stream($streams, $selected)
   return length($streams) > 0 ? $streams[0] : nil
 end
 
+-- True when a snapshot lists devices but not their default (no sink is
+-- the default, or sources exist and none is). The popup then writes
+-- nothing, the stream controls included, until a default is picked.
+fn vol_missing_default($snap)
+  if $snap == nil or $snap.ok != true then return false end
+  $sources = $snap.sources ?? []
+  return vol_default($snap.sinks ?? []) == nil or (length($sources) > 0 and vol_default($sources) == nil)
+end
+
+-- The stream the controls act on: nil while a default is missing.
+fn vol_stream_target($snap, $selected)
+  if $snap == nil or $snap.ok != true or vol_missing_default($snap) then return nil end
+  return vol_stream($snap.streams ?? [], $selected)
+end
+
 fn volume($snap, $ui = nil)
   $ui = $ui ?? {}
   $ok = $snap != nil and $snap.ok == true
@@ -727,7 +742,7 @@ fn volume($snap, $ui = nil)
   $streams = $ok ? $snap.streams ?? [] : []
   $sink = vol_default($sinks)
   $source = vol_default($sources)
-  $stream = vol_stream($streams, $ui.selected)
+  $stream = vol_stream_target($snap, $ui.selected)
   $status = ""
   if $snap != nil and not $ok then
     $status = text("vol_unavailable")

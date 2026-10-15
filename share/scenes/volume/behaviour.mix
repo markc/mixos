@@ -142,12 +142,13 @@ end
 
 -- The device or stream a control acts on, from the last snapshot. A device
 -- control acts only on the default: with none in the read, nil (no write).
+-- While either default is missing the stream controls write nothing too.
 fn target($kind)
   $snap = $state.snap
   if $snap == nil or $snap.ok != true then return nil end
   if $kind == "out" then return $m.vol_default($snap.sinks) end
   if $kind == "in" then return $m.vol_default($snap.sources) end
-  return $m.vol_stream($snap.streams, $state.selected)
+  return $m.vol_stream_target($snap, $state.selected)
 end
 
 -- The pactl verbs per control: devices by name, streams by index.

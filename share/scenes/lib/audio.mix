@@ -46,13 +46,15 @@ fn stream_name($s)
 end
 
 -- One device list: up to $MAX_DEVICES other devices, plus the default
--- wherever pactl lists it. $sources leaves the monitors out.
+-- wherever pactl lists it. $sources leaves the monitors out, unless the
+-- monitor is the default source.
 fn devices($raw, $default, $sources)
   $list = []
   $others = 0
   for each $d in type($raw) == "list" ? $raw : []
-    if type($d) != "map" or ($sources and is_monitor($d)) then continue end
+    if type($d) != "map" then continue end
     $is_default = $default != "" and to_string($d.name) == $default
+    if not $is_default and $sources and is_monitor($d) then continue end
     if not $is_default and $others >= $MAX_DEVICES then continue end
     if not $is_default then $others = $others + 1 end
     push($list, device($d, $default))
@@ -64,7 +66,7 @@ end
 -- snapshot: {ok, default_sink, default_source, sinks, sources, streams}.
 -- Each device is {index, name, description, level, muted, default}; each
 -- stream {index, name, media, level, muted, sink}. Monitors are left out of
--- the sources. Anything that is not the expected shape counts as empty.
+-- the sources, except a monitor that is the default. Anything that is not the expected shape counts as empty.
 fn from_pactl($info, $sinks, $sources, $inputs)
   $info = type($info) == "map" ? $info : {}
   $default_sink = to_string($info.default_sink_name ?? "")

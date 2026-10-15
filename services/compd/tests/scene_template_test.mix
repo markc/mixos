@@ -906,6 +906,17 @@ check($models.vol_default($vs_many.sinks).name == "output_18" and $models.vol_de
 check($models.volume($vs_many).out.name == "Output 18" and $models.volume($vs_many).inp.name == "Input 20", "the cards show the defaults past the cut")
 check(deep_eq(map($audio.from_pactl({default_sink_name: "output_3"}, $many_sinks, [], []).sinks, function ($d) = $d.name), map(slice($many_sinks, 0, 17), function ($d) = $d.name)), "the cap counts the other devices: a default inside it, 16 others beside it")
 check(length($audio.from_pactl({}, $many_sinks, [], []).sinks) == 16 and $models.vol_default($audio.from_pactl({default_sink_name: "gone"}, $many_sinks, [], []).sinks) == nil, "no default in the read: 16 rows, no control target")
+-- A missing default locks the stream controls too: no card, no target.
+$vs_nodef_streams = $audio.from_pactl({}, $pj.sinks, $pj.sources, $pj.sink_inputs)
+check(not $models.volume($vs_nodef_streams).stream.shown and $models.vol_stream_target($vs_nodef_streams, nil) == nil and $models.volume($vs_nodef_streams).has_streams, "no default: the streams are listed, none gets controls")
+$vs_nosrc = $audio.from_pactl({default_sink_name: $pj.info.default_sink_name, default_source_name: "gone"}, $pj.sinks, $pj.sources, $pj.sink_inputs)
+check($models.vol_missing_default($vs_nosrc) and $models.vol_stream_target($vs_nosrc, 4514) == nil and $models.volume($vs_nosrc).has_out, "only the default source missing: the output card stays, the streams lock")
+check($models.vol_stream_target($vs, 4600).index == 4600 and not $models.vol_missing_default($vs), "both defaults present: the chosen stream is the target")
+-- A monitor as the default source is kept and gets the input card.
+$vs_mon = $audio.from_pactl({default_sink_name: $pj.info.default_sink_name, default_source_name: $pj.sources[0].name}, $pj.sinks, $pj.sources, [])
+check(length($vs_mon.sources) == 3 and $vs_mon.sources[0].name == $pj.sources[0].name and $vs_mon.sources[0].default, "a default monitor source keeps its row: " .. json_encode(map($vs_mon.sources, function ($d) = $d.name)))
+check($models.volume($vs_mon).has_in and $models.volume($vs_mon).inp.name == "Monitor of Example Interface Pro", "a default monitor source gets the input card")
+check(length($audio.from_pactl($pj.info, $pj.sinks, $pj.sources, []).sources) == 2, "a monitor that is not the default stays out")
 check($audio.percent(195, 200) == "150%" and $audio.percent(205, 200) == "150%" and $audio.percent(200, 1000) == "150%", "no write is ever above 150 %")
 -- One sink: no device list to choose from.
 check(not $models.volume($audio.from_pactl($pj.info, [$pj.sinks[0]], [], [])).has_outputs, "a single output shows no device list")

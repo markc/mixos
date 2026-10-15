@@ -375,12 +375,17 @@ try
   append_file($tmp .. "/pactl/events", "Event 'change' on server\n")
   $m = wait_model("no default in the read", "status", "Default output not found · Default input not found")
   check(not $m.has_out and not $m.has_in and $m.has_outputs and $m.has_inputs, "no default: no card, the lists to pick one")
+  check($m.has_streams and not $m.stream.shown, "no default: the streams are listed, no stream card")
   $before = length(writes())
-  for each $handler in ["vol_out_up", "vol_out_down", "vol_out_mute", "vol_in_up", "vol_in_mute"]
+  for each $handler in ["vol_out_up", "vol_out_down", "vol_out_mute", "vol_in_up", "vol_in_mute", "vol_stream_up", "vol_stream_down", "vol_stream_mute"]
     expect_rc(ui_event($handler, "v"), 0, $handler .. " with no default")
   end
   expect_rc(ui_event("vol_out_set", "vo_bar", {id: "v50", pct: 50}), 0, "a bar click with no default")
-  check(length(writes()) == $before, "no default: a control wrote to another device: " .. json_encode(slice(writes(), $before, length(writes()))))
+  expect_rc(ui_event("vol_stream_pick", "v_streams", {id: "si_4514"}), 0, "choose a stream with no default")
+  expect_rc(ui_event("vol_stream_set", "vs_bar", {id: "v50", pct: 50}), 0, "a stream bar click with no default")
+  expect_rc(ui_event("vol_stream_mute", "vs_mute"), 0, "a stream mute with no default")
+  check(not last_model().stream.shown, "no default: a chosen stream still gets no card")
+  check(length(writes()) == $before, "no default: a control wrote to pactl: " .. json_encode(slice(writes(), $before, length(writes()))))
   -- H: the server goes away: the popup says so.
   write_file($tmp .. "/pactl/down", "")
   append_file($tmp .. "/pactl/events", "Event 'change' on server\n")
