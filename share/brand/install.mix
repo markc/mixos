@@ -7,7 +7,7 @@
 --   mix share/brand/install.mix --check    validate the sources; write nothing
 --
 --   icons/{mixos,hicolor}/scalable/apps/dev.mixos.svg
---     The launcher icon (logos/quoin-icon.svg), full colour. It is not
+--     The launcher icon (logos/alien-cyclops.svg), full colour. It is not
 --     *-symbolic on purpose: a symbolic icon is drawn in the theme ink and
 --     would lose the red eye. The panel and the top bar ask for dev.mixos first.
 --   icons/{mixos,hicolor}/symbolic/apps/dev.mixos-symbolic.svg
@@ -57,8 +57,8 @@ fn check_index($name, $text, $want)
 end
 
 $icons = {
-  "icons/hicolor/scalable/apps/dev.mixos.svg": "logos/quoin-icon.svg",
-  "icons/mixos/scalable/apps/dev.mixos.svg": "logos/quoin-icon.svg",
+  "icons/hicolor/scalable/apps/dev.mixos.svg": "logos/alien-cyclops.svg",
+  "icons/mixos/scalable/apps/dev.mixos.svg": "logos/alien-cyclops.svg",
   "icons/hicolor/symbolic/apps/dev.mixos-symbolic.svg": "logos/mixos-black-transparent.svg",
   "icons/mixos/symbolic/apps/dev.mixos-symbolic.svg": "logos/mixos-black-transparent.svg"
 }

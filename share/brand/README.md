@@ -16,7 +16,7 @@ to Mark Constable's instructions.
 |---|---|
 | `logos/mixos-black-transparent.svg` | black mark, transparent background and node holes |
 | `logos/mixos-white-transparent.svg` | white mark, transparent background and node holes |
-| `logos/quoin-icon.svg` | the default launcher icon: the one-eyed alien "C", white ring and red eye on transparent, 512 × 512; Mark Constable's earlier desktop launcher mark, kept byte for byte |
+| `logos/alien-cyclops.svg` | the default launcher icon, Alien Cyclops (the MixOS desktop's character): the one-eyed alien "C", white ring and red eye on transparent, 512 × 512; Mark Constable's earlier desktop launcher mark, kept byte for byte |
 | `favicons/black-on-white/` | opaque square set: black mark on white |
 | `favicons/white-on-black/` | opaque square set: white mark on black |
 | `preview.png` | both treatments side by side |
@@ -40,7 +40,7 @@ and vector/raster consistency, but not on physical Apple devices.
 ## Using it on the desktop
 
 `mix share/brand/install.mix --root /opt/mixos/share` installs
-`logos/quoin-icon.svg` as the full-colour `dev.mixos` (in `scalable/apps`) and the
+`logos/alien-cyclops.svg` as the full-colour `dev.mixos` (in `scalable/apps`) and the
 transparent M as `dev.mixos-symbolic` (in `symbolic/apps`), in MixOS and hicolor.
 `--check` validates the sources and indexes and writes nothing. A fresh image
 gets the small theme indexes needed for lookup; an existing index is preserved,
