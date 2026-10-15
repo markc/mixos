@@ -1389,7 +1389,10 @@ mod tests {
     fn builder_policy_last_call_wins() {
         let options = || SupervisedClient::connect_options("svc", "tcp://broker");
         let policy = |o: SupervisedConnectOptions| {
-            (o.connection.capacity, o.connection.refuse_overflowed_requests)
+            (
+                o.connection.capacity,
+                o.connection.refuse_overflowed_requests,
+            )
         };
         assert_eq!(policy(options()), (None, false));
         assert_eq!(policy(options().bounded_incoming_rpc(2)), (Some(2), true));
@@ -1432,7 +1435,10 @@ mod tests {
             receiver.try_recv(),
             Some(BoundedIncomingEvent::Command(c)) if c.id.as_deref() == Some("one")
         ));
-        assert!(receiver.try_recv().is_none(), "the refused request is not retained");
+        assert!(
+            receiver.try_recv().is_none(),
+            "the refused request is not retained"
+        );
     }
 
     #[test]
@@ -1472,7 +1478,10 @@ mod tests {
                 receiver.try_recv(),
                 Some(BoundedIncomingEvent::Command(c)) if c.id.as_deref() == Some("one")
             ));
-            assert!(receiver.try_recv().is_none(), "{case}: only the first is retained");
+            assert!(
+                receiver.try_recv().is_none(),
+                "{case}: only the first is retained"
+            );
         }
     }
 }

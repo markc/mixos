@@ -32,8 +32,10 @@ bounded startup. Neither API queues outbound work.
 id-bearing request with no `topic` header that the full lane cannot retain gets
 an `rc 10` `BUSY` reply on the same connection it arrived on, so the caller can
 retry. Topic deliveries and id-less frames remain lossy. If that refusal cannot
-be written within 100 ms, only that old connection is closed and the supervisor
-reconnects; no reply is ever sent through the replacement connection.
+be written within 100 ms, the old connection gets a best-effort close within a
+further 100 ms, and the supervisor detaches its handle before redialling; the
+physical close may follow later if another holder still references it. No reply
+is ever sent through the replacement connection.
 
 With `fatal_on_registration_rejection(true)`, `registration_rejection()` retains
 the broker's exact return code and diagnostic before publishing `Fatal`, for both

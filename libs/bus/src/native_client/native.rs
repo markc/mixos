@@ -398,7 +398,8 @@ impl std::fmt::Display for RegistrationRejected {
 impl std::error::Error for RegistrationRejected {}
 
 /// Body of the `BUSY` reply to an RPC request the bounded incoming lane refuses.
-const BUSY_REFUSAL_BODY: &str = r#"{"error_code":"BUSY","message":"incoming command queue is full"}"#;
+const BUSY_REFUSAL_BODY: &str =
+    r#"{"error_code":"BUSY","message":"incoming command queue is full"}"#;
 
 /// Bound on writing one `BUSY` reply, including waiting for the shared sink.
 const BUSY_REFUSAL_WRITE_LIMIT: std::time::Duration = std::time::Duration::from_millis(100);
@@ -2212,13 +2213,11 @@ mod native_ingress_regression_tests {
             let pending: Arc<StdMutex<PendingMap>> = Arc::new(StdMutex::new(HashMap::new()));
             let (tx, mut rx) = oneshot::channel();
             pending.lock().unwrap().insert("1".to_string(), tx);
-            let sink: WsSink = Box::pin(
-                futures_util::sink::drain::<Message>().sink_map_err(
-                    |never: std::convert::Infallible| -> tokio_tungstenite::tungstenite::Error {
-                        match never {}
-                    },
-                ),
-            );
+            let sink: WsSink = Box::pin(futures_util::sink::drain::<Message>().sink_map_err(
+                |never: std::convert::Infallible| -> tokio_tungstenite::tungstenite::Error {
+                    match never {}
+                },
+            ));
             let client = NodedClient {
                 service_name: Arc::new(RwLock::new("close-test".to_string())),
                 verbs: Arc::new(RwLock::new(None)),

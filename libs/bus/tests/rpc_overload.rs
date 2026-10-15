@@ -62,7 +62,9 @@ async fn run_stub(listener: TcpListener, stub: Arc<Stub>) {
     let Ok((tcp, _)) = listener.accept().await else {
         return;
     };
-    let ws = tokio_tungstenite::accept_async(tcp).await.expect("handshake");
+    let ws = tokio_tungstenite::accept_async(tcp)
+        .await
+        .expect("handshake");
     let (mut sink, mut stream) = ws.split();
     while let Some(Ok(Message::Text(text))) = stream.next().await {
         let Ok(req) = bus::parse(&text) else { continue };
@@ -103,9 +105,7 @@ async fn start(burst: Vec<String>) -> (String, Arc<Stub>) {
 
 /// Drain everything the bounded lane currently holds. Returns retained
 /// commands and the total dropped count reported by overflow markers.
-fn drain(
-    rx: &mut bus::native_client::BoundedIncomingReceiver,
-) -> (Vec<bus::IncomingCommand>, u64) {
+fn drain(rx: &mut bus::native_client::BoundedIncomingReceiver) -> (Vec<bus::IncomingCommand>, u64) {
     let mut commands = Vec::new();
     let mut dropped = 0;
     while let Some(event) = rx.try_recv() {
@@ -205,16 +205,33 @@ async fn rpc_lane_refuses_overflowed_requests_with_busy_and_loses_nothing() {
     };
 
     let accepted_ids: Vec<String> = accepted.iter().filter_map(|c| c.id.clone()).collect();
-    assert!(!busy.is_empty(), "the flood must overflow the RPC lane at least once");
-    assert!(!accepted.is_empty(), "the lane must retain at least one request");
-    assert_eq!(dropped, busy.len() as u64, "every BUSY matches one overflow marker");
+    assert!(
+        !busy.is_empty(),
+        "the flood must overflow the RPC lane at least once"
+    );
+    assert!(
+        !accepted.is_empty(),
+        "the lane must retain at least one request"
+    );
+    assert_eq!(
+        dropped,
+        busy.len() as u64,
+        "every BUSY matches one overflow marker"
+    );
     assert!(accepted.iter().all(|c| c.generation == 1));
 
     let busy_set: HashSet<&String> = busy.iter().collect();
     assert_eq!(busy_set.len(), busy.len(), "no duplicate BUSY ids");
     let accepted_set: HashSet<&String> = accepted_ids.iter().collect();
-    assert_eq!(accepted_set.len(), accepted_ids.len(), "no duplicate accepted ids");
-    assert!(busy_set.is_disjoint(&accepted_set), "accepted and refused are disjoint");
+    assert_eq!(
+        accepted_set.len(),
+        accepted_ids.len(),
+        "no duplicate accepted ids"
+    );
+    assert!(
+        busy_set.is_disjoint(&accepted_set),
+        "accepted and refused are disjoint"
+    );
     let union: BTreeSet<String> = busy.iter().chain(&accepted_ids).cloned().collect();
     let expected: BTreeSet<String> = (0..128).map(|n| format!("req-{n}")).collect();
     assert_eq!(union, expected, "every original request is accounted for");
@@ -241,7 +258,11 @@ async fn rpc_lane_refuses_overflowed_requests_with_busy_and_loses_nothing() {
     // frames in order, so any BUSY written before this echo is already recorded
     // when it returns: the count must not grow after every request is accounted.
     barrier(&client).await;
-    assert_eq!(busy_ids(&stub).await.len(), busy.len(), "no BUSY reply after the echo");
+    assert_eq!(
+        busy_ids(&stub).await.len(),
+        busy.len(),
+        "no BUSY reply after the echo"
+    );
     client.close().await;
 }
 
@@ -258,7 +279,11 @@ async fn default_bounded_lane_stays_lossy_without_busy() {
 
     let (retained, dropped) = drain_until_accounted(&mut incoming, 128).await;
     assert!(dropped > 0, "the burst must overflow capacity 2");
-    assert_eq!(retained.len() as u64 + dropped, 128, "every frame is retained or counted as dropped");
+    assert_eq!(
+        retained.len() as u64 + dropped,
+        128,
+        "every frame is retained or counted as dropped"
+    );
     assert!(
         stub.state
             .lock()
@@ -275,7 +300,12 @@ async fn default_bounded_lane_stays_lossy_without_busy() {
 async fn topic_and_idless_frames_stay_lossy_on_the_rpc_lane() {
     let mut burst = Vec::new();
     for n in 0..64 {
-        burst.push(request("world.game.tick", "publisher", Some(&format!("t-{n}")), Some("world.game.tick")));
+        burst.push(request(
+            "world.game.tick",
+            "publisher",
+            Some(&format!("t-{n}")),
+            Some("world.game.tick"),
+        ));
         burst.push(request("game.tick", "publisher", None, None));
     }
     let (url, stub) = start(burst).await;
@@ -289,10 +319,17 @@ async fn topic_and_idless_frames_stay_lossy_on_the_rpc_lane() {
 
     let (retained, dropped) = drain_until_accounted(&mut incoming, 128).await;
     assert!(dropped > 0, "the burst must overflow capacity 2");
-    assert_eq!(retained.len() as u64 + dropped, 128, "every frame is retained or counted as dropped");
+    assert_eq!(
+        retained.len() as u64 + dropped,
+        128,
+        "every frame is retained or counted as dropped"
+    );
     for c in &retained {
         if c.headers.contains_key("topic") {
-            assert_eq!(c.headers.get("topic").map(String::as_str), Some("world.game.tick"));
+            assert_eq!(
+                c.headers.get("topic").map(String::as_str),
+                Some("world.game.tick")
+            );
         } else {
             assert_eq!(c.id, None, "idless frames are the only other retained kind");
         }
