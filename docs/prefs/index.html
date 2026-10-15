@@ -245,7 +245,7 @@
 <h1 id="prefs">Prefs</h1>
 <p>Prefs holds MixOS's preference editors in one window: an expandable tree
 on the left, the selected section on the right. Appearance contains Themes,
-Fonts and Wallpapers; Applications contains MixOS Desktop, MixOS Server and
+Fonts, Wallpapers and Terminal; Applications contains MixOS Desktop, MixOS Server and
 Creative. The sidebar can be resized. The name is a nod to the
 Prefs drawer of AmigaOS, where each setting had its own small editor.</p>
 <h2 id="applications">Applications</h2>
@@ -305,6 +305,11 @@ session's current state decides what the status line says.</p>
 <p><strong>Appearance → Fonts</strong> shows the interface, heading and monospace faces currently
 installed on the window, with previews. Font family and size selection is not
 available yet; these faces follow the session design.</p>
+<p><strong>Appearance → Terminal</strong> holds the terminal's font, layout, cursor, focus ring,
+mouse and environment settings, plus Reset terminal. Each change uses
+settingsd and applies as it is made. Themes contains only the session theme
+controls. See the <a href="/spec/settings/#terminal">terminal settings</a> for
+the defaults and ranges.</p>
 <h2 id="for-agents">For agents</h2>
 <p>Prefs answers on the Bus as <code>prefs</code>. <code>prefs.info</code> reports the whole state;
 <code>prefs.apps</code> the rows, selection and notes; <code>prefs.appearance</code> the session
@@ -312,7 +317,7 @@ look, the expected look while a change settles, any held or conflicting
 edits and the revision read; <code>prefs.appearance.set</code>
 changes it at once (<code>scheme</code>, <code>style</code> with <code>own</code> for the scheme's own, <code>mode</code>,
 <code>contrast</code>, <code>decorations</code>, <code>caption_side</code>); <code>prefs.select {app}</code> and
-<code>prefs.section {name}</code> selects <code>themes</code>, <code>fonts</code>, <code>wallpapers</code>, <code>mixos-desktop</code>,
+<code>prefs.section {name}</code> selects <code>themes</code>, <code>fonts</code>, <code>wallpapers</code>, <code>terminal</code>, <code>mixos-desktop</code>,
 <code>mixos-server</code>, <code>creative</code> or <code>other</code> and expands its parent. <code>prefs.panel {name}</code>
 remains compatible, opening the default Themes or Creative section.
 <code>prefs.execute {id}</code> runs any command a button

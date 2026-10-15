@@ -1799,6 +1799,10 @@ mod tests {
         assert_eq!(e.ui.selected.as_deref(), Some("demo"));
         e.set_section(Section::Fonts);
         assert!(!e.can_check() && !e.can_update_all());
+        e.command(2, "prefs.section", r#"{"name":"terminal"}"#);
+        assert_eq!(e.section(), Section::Terminal);
+        assert_eq!(e.ui.panel, Panel::Appearance);
+        assert!(!e.can_check() && !e.can_update_all());
     }
 
     #[test]

@@ -85,7 +85,7 @@ fn terminal_weights_studio_dark() {
         chrome(Scheme::Studio, Mode::Dark),
         "terminal_weights_studio_dark",
         e,
-        egui::vec2(980.0, 1120.0),
+        egui::vec2(980.0, 960.0),
     );
 }
 
