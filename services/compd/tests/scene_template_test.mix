@@ -883,9 +883,30 @@ check($vm2.has_note and $vm2.note == "Change failed: example", "a failed write s
 check($models.volume($vs, {selected: 999}).stream.name == "Example Browser", "a chosen stream that stopped falls back to the first")
 $loud = $models.vol_control($vs.sinks[1], "x")
 check(length($loud.bar) == 30 and $loud.bar[29].id == "v150" and $loud.bar[0].w == 9 and $loud.bar[24].background == "#6e7680" and $loud.bar[25].background == "#ffffff0f", "above 100 %: the bar runs to 150 %")
--- No default marked: the first device stands in.
-$vs_nodef = $audio.from_pactl({}, $pj.sinks, [], [])
-check($models.volume($vs_nodef).out.name == "Example Interface Pro" and not $models.volume($vs_nodef).has_in and not $models.volume($vs_nodef).has_streams, "no default sink: the first; no sources or streams: those sections hidden")
+-- No default in the read: no device stands in. The card is hidden, the
+-- status says so and the list stays so one can be picked.
+$vs_nodef = $audio.from_pactl({}, $pj.sinks, $pj.sources, [])
+$vm_nodef = $models.volume($vs_nodef)
+check($models.vol_default($vs_nodef.sinks) == nil and not $vm_nodef.has_out and not $vm_nodef.has_in and not $vm_nodef.has_streams, "no default sink or source: no control card")
+check($vm_nodef.status == "Default output not found · Default input not found" and $vm_nodef.has_outputs and $vm_nodef.has_inputs, "no default: the status says so, the lists stay: " .. $vm_nodef.status)
+check(not $models.volume($audio.from_pactl({}, [$pj.sinks[0]], [], [])).out.shown and $models.volume($audio.from_pactl({}, [$pj.sinks[0]], [], [])).has_outputs, "one sink, not the default: its row to pick, no card")
+-- More devices than the cap, the default past the cut: the default is kept
+-- and is the control target.
+$many_sinks = []
+for $i = 1 to 20
+  push($many_sinks, merge($pj.sinks[0], {index: 100 + $i, name: "output_" .. to_string($i), description: "Output " .. to_string($i)}))
+end
+$many_sources = [$pj.sources[0]]
+for $i = 1 to 20
+  push($many_sources, merge($pj.sources[1], {index: 200 + $i, name: "input_" .. to_string($i), description: "Input " .. to_string($i)}))
+end
+$vs_many = $audio.from_pactl({default_sink_name: "output_18", default_source_name: "input_20"}, $many_sinks, $many_sources, [])
+check(length($vs_many.sinks) == 17 and $vs_many.sinks[16].name == "output_18" and $vs_many.sinks[16].default and $vs_many.sinks[15].name == "output_16", "the default past the cap is kept after 16 others: " .. json_encode(map($vs_many.sinks, function ($d) = $d.name)))
+check($models.vol_default($vs_many.sinks).name == "output_18" and $models.vol_default($vs_many.sources).name == "input_20", "the control target is the default, not the first device")
+check($models.volume($vs_many).out.name == "Output 18" and $models.volume($vs_many).inp.name == "Input 20", "the cards show the defaults past the cut")
+check(deep_eq(map($audio.from_pactl({default_sink_name: "output_3"}, $many_sinks, [], []).sinks, function ($d) = $d.name), map(slice($many_sinks, 0, 17), function ($d) = $d.name)), "the cap counts the other devices: a default inside it, 16 others beside it")
+check(length($audio.from_pactl({}, $many_sinks, [], []).sinks) == 16 and $models.vol_default($audio.from_pactl({default_sink_name: "gone"}, $many_sinks, [], []).sinks) == nil, "no default in the read: 16 rows, no control target")
+check($audio.percent(195, 200) == "150%" and $audio.percent(205, 200) == "150%" and $audio.percent(200, 1000) == "150%", "no write is ever above 150 %")
 -- One sink: no device list to choose from.
 check(not $models.volume($audio.from_pactl($pj.info, [$pj.sinks[0]], [], [])).has_outputs, "a single output shows no device list")
 -- Empty sinks: PipeWire answers but has no device.

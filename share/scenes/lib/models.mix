@@ -105,6 +105,7 @@ $TEXT = {
   vol_output: "Output", vol_input: "Input", vol_apps: "Applications", vol_default: "Default",
   vol_mute: "Mute", vol_unmute: "Unmute", vol_down: "−", vol_up: "+",
   vol_no_device: "No audio device", vol_unavailable: "Audio service unavailable",
+  vol_no_default_out: "Default output not found", vol_no_default_in: "Default input not found",
   vol_failed: "Change failed: {why}",
   network_title: "Network", wireless: "Connected (wireless)", wired: "Connected (wired)", offline: "Offline",
   network_hint: "Click for network details",
@@ -691,12 +692,13 @@ fn vol_control($d, $name)
     bar: vol_bar($d.level, $d.muted)}
 end
 
--- The default device of a list, or the first one when none is marked.
+-- The default device of a list, or nil when none is marked: the controls
+-- never stand another device in for a default the read did not find.
 fn vol_default($devices)
   for each $d in $devices
     if $d.default then return $d end
   end
-  return length($devices) > 0 ? $devices[0] : nil
+  return nil
 end
 
 fn vol_rows($devices, $prefix)
@@ -729,11 +731,14 @@ fn volume($snap, $ui = nil)
   $status = ""
   if $snap != nil and not $ok then
     $status = text("vol_unavailable")
-  elif $ok and $sink == nil then
+  elif $ok and length($sinks) == 0 then
     $status = text("vol_no_device")
-  elif $sink != nil then
+  elif $ok and $sink == nil then
+    $status = text("vol_no_default_out")
+  elif $ok then
     $status = $sink.description
   end
+  if $ok and $source == nil and length($sources) > 0 then $status = $status .. " · " .. text("vol_no_default_in") end
   $rows = []
   for each $s in $streams
     push($rows, {id: "si_" .. to_string($s.index), cells: [], name: $s.name, sub: $s.media,
@@ -745,10 +750,10 @@ fn volume($snap, $ui = nil)
     down_label: text("vol_down"), up_label: text("vol_up"),
     out_label: text("vol_output"), has_out: $sink != nil,
     out: vol_control($sink, $sink != nil ? $sink.description : ""),
-    outputs: vol_rows($sinks, "sink_"), has_outputs: length($sinks) > 1,
+    outputs: vol_rows($sinks, "sink_"), has_outputs: length($sinks) > 1 or ($sink == nil and length($sinks) > 0),
     in_label: text("vol_input"), has_in: $source != nil,
     inp: vol_control($source, $source != nil ? $source.description : ""),
-    inputs: vol_rows($sources, "source_"), has_inputs: length($sources) > 1,
+    inputs: vol_rows($sources, "source_"), has_inputs: length($sources) > 1 or ($source == nil and length($sources) > 0),
     apps_label: text("vol_apps"), has_streams: length($rows) > 0, streams: $rows,
     stream: vol_control($stream, $stream != nil ? $stream.name : "")}
 end

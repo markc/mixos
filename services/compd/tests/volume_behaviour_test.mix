@@ -344,13 +344,50 @@ try
   -- G: a change made by another app arrives through the event stream.
   external("sinks", $OUT2, {volume: {"front-left": {value: 32768}, "front-right": {value: 32768}}})
   wait_model("an outside change", "out.level_text", "50%")
+
+  -- H0: twenty sinks, the default (at 200 %) past the 16-device cut. The
+  -- card shows it at PipeWire's 200 %; +5 writes it, not the first device,
+  -- and at no more than 150 %.
+  $s = json_parse(read_file($tmp .. "/pactl/state.json"))
+  $sinks = []
+  for $i = 1 to 20
+    $value = $i == 18 ? 131072 : 32768
+    push($sinks, merge($s.sinks[0], {index: 300 + $i, name: "output_" .. to_string($i), description: "Output " .. to_string($i), mute: false,
+      volume: {"front-left": {value: $value}, "front-right": {value: $value}}}))
+  end
+  $s.sinks = $sinks
+  $s.info.default_sink_name = "output_18"
+  write_file($tmp .. "/pactl/state.json", json_encode($s))
+  append_file($tmp .. "/pactl/events", "Event 'change' on sink #318\n")
+  $m = wait_model("the default past the cut", "status", "Output 18")
+  check($m.out.level_text == "200%" and length($m.outputs) == 17, "the default at 200 %, kept past the cut: " .. json_encode({level: $m.out.level_text, rows: length($m.outputs)}))
+  $before = length(writes())
+  expect_rc(ui_event("vol_out_up", "vo_up"), 0, "+5 at 200 %")
+  wait_model("read back at 150 %", "out.level_text", "150%")
+  $w = writes()
+  check(length($w) == $before + 1 and deep_eq($w[length($w) - 1], ["set-sink-volume", "output_18", "150%"]), "the write goes to the default, at most 150 %: " .. json_encode(slice($w, $before, length($w))))
+  -- H1: the default is not in the read: the popup says so, and no control
+  -- writes to another device.
+  $s = json_parse(read_file($tmp .. "/pactl/state.json"))
+  $s.info.default_sink_name = "gone"
+  $s.info.default_source_name = "gone"
+  write_file($tmp .. "/pactl/state.json", json_encode($s))
+  append_file($tmp .. "/pactl/events", "Event 'change' on server\n")
+  $m = wait_model("no default in the read", "status", "Default output not found · Default input not found")
+  check(not $m.has_out and not $m.has_in and $m.has_outputs and $m.has_inputs, "no default: no card, the lists to pick one")
+  $before = length(writes())
+  for each $handler in ["vol_out_up", "vol_out_down", "vol_out_mute", "vol_in_up", "vol_in_mute"]
+    expect_rc(ui_event($handler, "v"), 0, $handler .. " with no default")
+  end
+  expect_rc(ui_event("vol_out_set", "vo_bar", {id: "v50", pct: 50}), 0, "a bar click with no default")
+  check(length(writes()) == $before, "no default: a control wrote to another device: " .. json_encode(slice(writes(), $before, length(writes()))))
   -- H: the server goes away: the popup says so.
   write_file($tmp .. "/pactl/down", "")
   append_file($tmp .. "/pactl/events", "Event 'change' on server\n")
   $m = wait_model("the server gone", "status", "Audio service unavailable")
   check(not $m.has_out and not $m.has_in and not $m.has_streams, "with no server every card is hidden")
 
-  print("PASS volume behaviour: output, input and stream levels and mute, default devices, the 125 % ceiling, a refused write read back, UI-only writes, outside changes by event, server gone")
+  print("PASS volume behaviour: output, input and stream levels and mute, default devices, the 125 % ceiling, a refused write read back, UI-only writes, outside changes by event, the default past the device cut, the 150 % write ceiling, no write without a default, server gone")
 finally
   stop_pid($scene_pid)
   stop_pid($scenes_pid)

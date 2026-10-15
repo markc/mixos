@@ -5,9 +5,12 @@
 
 -- pactl's volume unit: 65536 is 100 %.
 $NORM = 65536
--- The most rows each list shows.
+-- The most rows each list shows. The default device is kept on top of the
+-- device cap: the controls act on it, so a cut must never drop it.
 $MAX_DEVICES = 16
 $MAX_STREAMS = 32
+-- The loudest level any write sends, whatever PipeWire reports now.
+$MAX_LEVEL = 150
 
 -- A pactl volume map ({channel: {value, ...}}) as one percentage: the
 -- loudest channel, as Plasma's applet shows it. 0 when unreadable.
@@ -42,6 +45,21 @@ fn stream_name($s)
   return $name
 end
 
+-- One device list: up to $MAX_DEVICES other devices, plus the default
+-- wherever pactl lists it. $sources leaves the monitors out.
+fn devices($raw, $default, $sources)
+  $list = []
+  $others = 0
+  for each $d in type($raw) == "list" ? $raw : []
+    if type($d) != "map" or ($sources and is_monitor($d)) then continue end
+    $is_default = $default != "" and to_string($d.name) == $default
+    if not $is_default and $others >= $MAX_DEVICES then continue end
+    if not $is_default then $others = $others + 1 end
+    push($list, device($d, $default))
+  end
+  return $list
+end
+
 -- from_pactl: pactl's four JSON documents (info, sinks, sources, sink-inputs) as one
 -- snapshot: {ok, default_sink, default_source, sinks, sources, streams}.
 -- Each device is {index, name, description, level, muted, default}; each
@@ -52,16 +70,8 @@ fn from_pactl($info, $sinks, $sources, $inputs)
   $default_sink = to_string($info.default_sink_name ?? "")
   $default_source = to_string($info.default_source_name ?? "")
   $out = {ok: true, default_sink: $default_sink, default_source: $default_source, sinks: [], sources: [], streams: []}
-  $list = []
-  for each $d in type($sinks) == "list" ? $sinks : []
-    if type($d) == "map" and length($list) < $MAX_DEVICES then push($list, device($d, $default_sink)) end
-  end
-  $out.sinks = $list
-  $list = []
-  for each $d in type($sources) == "list" ? $sources : []
-    if type($d) == "map" and not is_monitor($d) and length($list) < $MAX_DEVICES then push($list, device($d, $default_source)) end
-  end
-  $out.sources = $list
+  $out.sinks = devices($sinks, $default_sink, false)
+  $out.sources = devices($sources, $default_source, true)
   $list = []
   for each $s in type($inputs) == "list" ? $inputs : []
     if type($s) != "map" or length($list) >= $MAX_STREAMS then continue end
@@ -105,7 +115,8 @@ fn write($runtime_dir, $argv)
   return {ok: false, message: $why != "" ? $why : "pactl " .. $argv[0] .. " failed"}
 end
 
--- A level clamped to 0..$max, as pactl's "N%" argument.
+-- A level clamped to 0..$max, and never above $MAX_LEVEL, as pactl's "N%"
+-- argument.
 fn percent($level, $max)
-  return to_string(max(0, min(round($level), $max))) .. "%"
+  return to_string(max(0, min(round($level), min($max, $MAX_LEVEL)))) .. "%"
 end

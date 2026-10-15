@@ -140,7 +140,8 @@ end
 
 -- ── writes (pactl, on relayed clicks only) ──────────────────────────────
 
--- The device or stream a control acts on, from the last snapshot.
+-- The device or stream a control acts on, from the last snapshot. A device
+-- control acts only on the default: with none in the read, nil (no write).
 fn target($kind)
   $snap = $state.snap
   if $snap == nil or $snap.ok != true then return nil end
@@ -168,11 +169,13 @@ fn apply($argv)
 end
 
 -- A level for $kind's control. Up to 100 %, or up to the current level
--- when PipeWire already reports it above 100 %.
+-- when PipeWire already reports it above 100 %, and never above 150 %
+-- ($a.MAX_LEVEL): a device at 200 % is written at most 150 %. The card keeps
+-- PipeWire's own value until the read-back.
 fn set_level($kind, $level)
   $t = target($kind)
   if $t == nil then return republish() end
-  return apply([$VERBS[$kind][0], key_of($t, $kind), $a.percent($level, max(100, $t.level))])
+  return apply([$VERBS[$kind][0], key_of($t, $kind), $a.percent($level, min($a.MAX_LEVEL, max(100, $t.level)))])
 end
 
 fn nudge($kind, $delta)
