@@ -34,6 +34,7 @@ $groups = [
   ["lib", ["data.mix", "hostd.mix", "models.mix", "network.mix", "runtime.mix", "taskbar.mix"]],
   ["panel", ["scene.mix", "behaviour.mix", "template.conf.mix", "settings.conf.mix"]],
   ["topbar", ["scene.mix", "behaviour.mix", "template.conf.mix"]],
+  ["workspace-rename", ["scene.mix", "behaviour.mix", "template.conf.mix"]],
   ["launcher", ["scene.mix", "behaviour.mix", "template.conf.mix"]],
   ["calendar", ["scene.mix", "behaviour.mix", "template.conf.mix"]],
   ["notes", ["scene.mix", "behaviour.mix", "template.conf.mix"]],
