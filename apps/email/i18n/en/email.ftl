@@ -134,6 +134,7 @@ form-account-changed = The account changed: close this and open it again
 closing-unknown = Email closed before this finished; it may or may not have happened
 closing-cancelled = Email closed before this was done
 migration-still-running = Email is still migrating this account; remove it once migration finishes
+open-superseded = Another email was opened in the reader before this one loaded
 no-launcher = Can't open Prefs: no launcher
 prefs-silent = Prefs did not open its Email settings
 about-body = A pure JMAP client: mail, calendar and contacts over HTTPS to any RFC 8620/8621-shaped server. Mail is read, composed and sent; calendars and contacts are listed and shown.
