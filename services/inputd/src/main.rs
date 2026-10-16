@@ -182,11 +182,12 @@ async fn serve(
         build.build_time,
         buildinfo::now_rfc3339(),
     );
-    let client = SupervisedClient::connect_options(SERVICE, &bus::client_helpers::resolve_noded_url())
-        .fatal_on_registration_rejection(true)
-        .with_verbs(service::verb_manifest())
-        .with_provenance(provenance)
-        .start();
+    let client =
+        SupervisedClient::connect_options(SERVICE, &bus::client_helpers::resolve_noded_url())
+            .fatal_on_registration_rejection(true)
+            .with_verbs(service::verb_manifest())
+            .with_provenance(provenance)
+            .start();
     let mut incoming = client
         .incoming()
         .ok_or_else(|| anyhow::anyhow!("incoming stream already taken"))?;
@@ -271,7 +272,10 @@ mod tests {
     #[test]
     fn an_explicit_service_is_the_target_and_the_verb_is_unchanged() {
         let f = fired("desktop.clipboard.menu", Some("desktop-vt1"));
-        assert_eq!(fire_target(&f), Some(("desktop-vt1", "desktop.clipboard.menu")));
+        assert_eq!(
+            fire_target(&f),
+            Some(("desktop-vt1", "desktop.clipboard.menu"))
+        );
     }
 
     #[test]
@@ -303,11 +307,23 @@ mod tests {
 
     #[test]
     fn the_cli_takes_a_vt_list_and_refuses_bad_combinations() {
-        let args = Args::try_parse_from(["inputd", "--grab-name", "keyd virtual keyboard", "--vt", "1,4"])
-            .unwrap();
+        let args = Args::try_parse_from([
+            "inputd",
+            "--grab-name",
+            "keyd virtual keyboard",
+            "--vt",
+            "1,4",
+        ])
+        .unwrap();
         assert_eq!(args.vt, Some(vec![1, 4]));
-        assert!(Args::try_parse_from(["inputd", "--grab", "/dev/input/event1", "--grab-name", "x"]).is_err());
-        assert!(Args::try_parse_from(["inputd", "--observe", "/dev/input/event1", "--grab", "x"]).is_err());
+        assert!(
+            Args::try_parse_from(["inputd", "--grab", "/dev/input/event1", "--grab-name", "x"])
+                .is_err()
+        );
+        assert!(
+            Args::try_parse_from(["inputd", "--observe", "/dev/input/event1", "--grab", "x"])
+                .is_err()
+        );
         let plain = Args::try_parse_from(["inputd"]).unwrap();
         assert!(plain.vt.is_none() && plain.grab.is_none() && plain.keymap.is_none());
     }

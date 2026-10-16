@@ -104,12 +104,14 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
         }
     }
 
-    pub fn is_grabbed(&self) -> bool {
+    #[cfg(test)]
+    fn is_grabbed(&self) -> bool {
         self.grabbed
     }
 
     /// True when the grab follows the active console.
-    pub fn follows_console(&self) -> bool {
+    #[cfg(test)]
+    fn follows_console(&self) -> bool {
         self.vts.is_some()
     }
 
@@ -301,7 +303,9 @@ mod tests {
             if self.fail {
                 return Err(io::Error::other("uinput gone"));
             }
-            self.log.borrow_mut().push(format!("emit {kind} {code} {value}"));
+            self.log
+                .borrow_mut()
+                .push(format!("emit {kind} {code} {value}"));
             Ok(())
         }
     }
@@ -345,7 +349,10 @@ mod tests {
         }
 
         fn key(&mut self, code: u16, value: i32) -> &mut Self {
-            let fire = self.grabber.event(&self.resolver, EV_KEY, code, value).unwrap();
+            let fire = self
+                .grabber
+                .event(&self.resolver, EV_KEY, code, value)
+                .unwrap();
             if let Some(fire) = fire {
                 self.fired.push(fire.verb.as_str());
             }
@@ -390,7 +397,10 @@ mod tests {
         assert!(rig.grabber.is_grabbed());
         assert_eq!(rig.take_log(), ["grab 1", "drain"]);
         rig.grabber.console(Some(3), rig.now).unwrap();
-        assert!(rig.grabber.is_grabbed(), "no VT set: the console is irrelevant");
+        assert!(
+            rig.grabber.is_grabbed(),
+            "no VT set: the console is irrelevant"
+        );
         assert!(rig.take_log().is_empty());
     }
 
@@ -405,12 +415,18 @@ mod tests {
         assert!(rig.grabber.is_grabbed());
         assert_eq!(rig.take_log(), ["grab 1", "drain"]);
         rig.console(&mut console);
-        assert!(rig.take_log().is_empty(), "a wake on the same VT changes nothing");
+        assert!(
+            rig.take_log().is_empty(),
+            "a wake on the same VT changes nothing"
+        );
         rig.console(&mut console);
         assert!(!rig.grabber.is_grabbed());
         assert_eq!(rig.take_log(), ["grab 0"]);
         rig.console(&mut console);
-        assert!(!rig.grabber.is_grabbed(), "an unreadable console never grabs");
+        assert!(
+            !rig.grabber.is_grabbed(),
+            "an unreadable console never grabs"
+        );
     }
 
     #[test]
@@ -418,7 +434,10 @@ mod tests {
         let mut rig = Rig::new(Some(vec![1]), 0);
         rig.grabber.console(Some(4), rig.now).unwrap();
         rig.key(KEY_A, 1).key(KEY_F5, 1).key(KEY_A, 0);
-        let fire = rig.grabber.event(&rig.resolver, EV_SYN, SYN_REPORT, 0).unwrap();
+        let fire = rig
+            .grabber
+            .event(&rig.resolver, EV_SYN, SYN_REPORT, 0)
+            .unwrap();
         assert!(fire.is_none());
         assert!(rig.take_log().is_empty(), "nothing reached the re-emitter");
         assert!(rig.fired.is_empty());
@@ -434,12 +453,24 @@ mod tests {
         rig.take_log();
         // Held: a letter, a bare F5 (unbound, so swallowed) and Right Shift +
         // ↑ (the person's passthrough).
-        rig.key(KEY_A, 1).key(KEY_F5, 1).key(KEY_RIGHTSHIFT, 1).key(KEY_UP, 1);
-        assert_eq!(rig.take_log(), ["emit 1 30 1", "emit 1 54 1", "emit 1 103 1"]);
+        rig.key(KEY_A, 1)
+            .key(KEY_F5, 1)
+            .key(KEY_RIGHTSHIFT, 1)
+            .key(KEY_UP, 1);
+        assert_eq!(
+            rig.take_log(),
+            ["emit 1 30 1", "emit 1 54 1", "emit 1 103 1"]
+        );
         rig.grabber.console(Some(4), rig.now).unwrap();
         assert_eq!(
             rig.take_log(),
-            ["emit 1 30 0", "emit 1 54 0", "emit 1 103 0", "emit 0 0 0", "grab 0"],
+            [
+                "emit 1 30 0",
+                "emit 1 54 0",
+                "emit 1 103 0",
+                "emit 0 0 0",
+                "grab 0"
+            ],
             "synthetic releases for emitted keys only, then the grab goes"
         );
         assert!(!rig.grabber.is_grabbed());
@@ -468,8 +499,13 @@ mod tests {
         rig.grabber.device_mut().held = SideModifiers::RIGHT_CTRL;
         rig.grabber.console(Some(1), rig.now).unwrap();
         rig.take_log();
-        rig.key(KEY_RIGHT, 1).key(KEY_RIGHT, 0).key(KEY_RIGHTCTRL, 0);
-        assert!(rig.take_log().is_empty(), "Right Ctrl + → is swallowed; its Ctrl release is an orphan");
+        rig.key(KEY_RIGHT, 1)
+            .key(KEY_RIGHT, 0)
+            .key(KEY_RIGHTCTRL, 0);
+        assert!(
+            rig.take_log().is_empty(),
+            "Right Ctrl + → is swallowed; its Ctrl release is an orphan"
+        );
     }
 
     #[test]
@@ -482,7 +518,10 @@ mod tests {
             .bind_physical(passthrough(KEY_F5, SideModifiers::NONE))
             .unwrap();
         rig.key(KEY_F5, 2).key(KEY_F5, 0);
-        assert!(rig.take_log().is_empty(), "swallowed at press, swallowed to release");
+        assert!(
+            rig.take_log().is_empty(),
+            "swallowed at press, swallowed to release"
+        );
         rig.key(KEY_F5, 1).key(KEY_F5, 0);
         assert_eq!(rig.take_log(), ["emit 1 63 1", "emit 1 63 0"]);
     }
@@ -506,7 +545,10 @@ mod tests {
         let ms: Vec<u128> = waits.iter().map(Duration::as_millis).collect();
         assert_eq!(ms, [50, 100, 200, 400, 800, 1600, 2000]);
         assert_eq!(rig.grabber.deadline(), None);
-        assert_eq!(rig.take_log().iter().filter(|l| *l == "grab busy").count(), 7);
+        assert_eq!(
+            rig.take_log().iter().filter(|l| *l == "grab busy").count(),
+            7
+        );
     }
 
     #[test]

@@ -33,9 +33,9 @@ pub enum ScopeError {
 fn validate_scope_name(name: &str) -> Result<(), ScopeError> {
     if name.is_empty()
         || name.len() > 64
-        || !name
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b':' | b'/'))
+        || !name.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b':' | b'/')
+        })
     {
         return Err(ScopeError::InvalidName(name.to_owned()));
     }
@@ -119,7 +119,13 @@ mod tests {
 
     #[test]
     fn repeat_policy_spellings() {
-        assert_eq!(serde_json::to_string(&RepeatPolicy::Ignore).unwrap(), "\"ignore\"");
-        assert_eq!(serde_json::to_string(&RepeatPolicy::Allow).unwrap(), "\"allow\"");
+        assert_eq!(
+            serde_json::to_string(&RepeatPolicy::Ignore).unwrap(),
+            "\"ignore\""
+        );
+        assert_eq!(
+            serde_json::to_string(&RepeatPolicy::Allow).unwrap(),
+            "\"allow\""
+        );
     }
 }

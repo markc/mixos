@@ -51,12 +51,20 @@ fn personal() -> Resolver {
     let mut r = Resolver::new(default_keymap());
     r.bind_physical(PhysicalBinding {
         repeat: RepeatPolicy::Allow,
-        ..row(KEY_RIGHT, SideModifiers::RIGHT_CTRL, "desktop.workspace.next")
+        ..row(
+            KEY_RIGHT,
+            SideModifiers::RIGHT_CTRL,
+            "desktop.workspace.next",
+        )
     })
     .unwrap();
     r.bind_physical(PhysicalBinding {
         repeat: RepeatPolicy::Allow,
-        ..row(KEY_LEFT, SideModifiers::RIGHT_CTRL, "desktop.workspace.prev")
+        ..row(
+            KEY_LEFT,
+            SideModifiers::RIGHT_CTRL,
+            "desktop.workspace.prev",
+        )
     })
     .unwrap();
     r
@@ -68,7 +76,10 @@ fn personal() -> Resolver {
 fn a_bound_stroke_fires_and_swallows() {
     let r = personal();
     let out = r.resolve(KEY_RIGHT, SideModifiers::RIGHT_CTRL, Edge::Press);
-    assert_eq!(out.verb.map(ActionId::as_str), Some("desktop.workspace.next"));
+    assert_eq!(
+        out.verb.map(ActionId::as_str),
+        Some("desktop.workspace.next")
+    );
     assert!(out.swallow);
     let release = r.resolve(KEY_RIGHT, SideModifiers::RIGHT_CTRL, Edge::Release);
     assert_eq!(release.verb, None, "verbs fire on press, not release");
@@ -78,15 +89,26 @@ fn a_bound_stroke_fires_and_swallows() {
 #[test]
 fn matching_is_side_exact() {
     let r = personal();
-    assert_eq!(r.resolve(KEY_RIGHT, mods(&["lctrl"]), Edge::Press), Resolution::PASS);
-    assert_eq!(r.resolve(KEY_RIGHT, SideModifiers::NONE, Edge::Press), Resolution::PASS);
+    assert_eq!(
+        r.resolve(KEY_RIGHT, mods(&["lctrl"]), Edge::Press),
+        Resolution::PASS
+    );
+    assert_eq!(
+        r.resolve(KEY_RIGHT, SideModifiers::NONE, Edge::Press),
+        Resolution::PASS
+    );
 }
 
 #[test]
 fn repeat_honours_the_policy() {
     let mut r = personal();
-    assert!(r.resolve(KEY_RIGHT, SideModifiers::RIGHT_CTRL, Edge::Repeat).verb.is_some());
-    r.bind_physical(row(KEY_F5, SideModifiers::NONE, "term.snapshot")).unwrap();
+    assert!(
+        r.resolve(KEY_RIGHT, SideModifiers::RIGHT_CTRL, Edge::Repeat)
+            .verb
+            .is_some()
+    );
+    r.bind_physical(row(KEY_F5, SideModifiers::NONE, "term.snapshot"))
+        .unwrap();
     let f5 = r.resolve(KEY_F5, SideModifiers::NONE, Edge::Repeat);
     assert_eq!(f5.verb, None, "ignore-policy rows do not repeat");
     assert!(f5.swallow);
@@ -95,23 +117,35 @@ fn repeat_honours_the_policy() {
 #[test]
 fn a_passthrough_row_re_emits() {
     let mut r = Resolver::new(default_keymap());
-    r.bind_physical(passthrough(KEY_RIGHT, SideModifiers::RIGHT_SHIFT)).unwrap();
-    assert_eq!(r.resolve(KEY_RIGHT, SideModifiers::RIGHT_SHIFT, Edge::Press), Resolution::PASS);
+    r.bind_physical(passthrough(KEY_RIGHT, SideModifiers::RIGHT_SHIFT))
+        .unwrap();
+    assert_eq!(
+        r.resolve(KEY_RIGHT, SideModifiers::RIGHT_SHIFT, Edge::Press),
+        Resolution::PASS
+    );
 }
 
 #[test]
 fn transparent_mode_passes_everything_including_user_keys() {
     let mut r = personal();
     r.set_mode(InputMode::Transparent);
-    assert_eq!(r.resolve(KEY_RIGHT, SideModifiers::RIGHT_CTRL, Edge::Press), Resolution::PASS);
-    assert_eq!(r.resolve(KEY_F5, SideModifiers::NONE, Edge::Press), Resolution::PASS);
+    assert_eq!(
+        r.resolve(KEY_RIGHT, SideModifiers::RIGHT_CTRL, Edge::Press),
+        Resolution::PASS
+    );
+    assert_eq!(
+        r.resolve(KEY_F5, SideModifiers::NONE, Edge::Press),
+        Resolution::PASS
+    );
 }
 
 #[test]
 fn rebind_and_unbind() {
     let mut r = Resolver::new(default_keymap());
     let g0 = r.generation();
-    let g = r.bind_physical(row(KEY_F5, SideModifiers::NONE, "term.snapshot")).unwrap();
+    let g = r
+        .bind_physical(row(KEY_F5, SideModifiers::NONE, "term.snapshot"))
+        .unwrap();
     assert!(g > g0);
     let out = r.resolve(KEY_F5, SideModifiers::NONE, Edge::Press);
     assert_eq!(out.verb.map(ActionId::as_str), Some("term.snapshot"));
@@ -159,19 +193,34 @@ fn admission_refuses_bad_args_and_targets() {
         ..base.clone()
     };
     assert_eq!(r.bind_physical(bare), Err(BindError::InvalidArgs));
-    for name in ["", "a", "Desktop", "1desk", "-desk", "desk.vt1", "desk_vt1", "desk vt1", &"a".repeat(32)] {
+    for name in [
+        "",
+        "a",
+        "Desktop",
+        "1desk",
+        "-desk",
+        "desk.vt1",
+        "desk_vt1",
+        "desk vt1",
+        &"a".repeat(32),
+    ] {
         let bad = PhysicalBinding {
             service: Some(name.to_string()),
             ..base.clone()
         };
-        assert_eq!(r.bind_physical(bad), Err(BindError::InvalidService), "{name:?}");
+        assert_eq!(
+            r.bind_physical(bad),
+            Err(BindError::InvalidService),
+            "{name:?}"
+        );
     }
     for name in ["desktop-vt1", "ab", "a-1", &"a".repeat(31)] {
         let good = PhysicalBinding {
             service: Some(name.to_string()),
             ..base.clone()
         };
-        r.bind_physical(good).unwrap_or_else(|e| panic!("{name:?}: {e:?}"));
+        r.bind_physical(good)
+            .unwrap_or_else(|e| panic!("{name:?}: {e:?}"));
         let out = r.resolve(KEY_F5, SideModifiers::NONE, Edge::Press);
         assert_eq!(out.service.as_deref(), Some(name));
     }
@@ -181,14 +230,16 @@ fn admission_refuses_bad_args_and_targets() {
 fn capacity_is_bounded() {
     let mut r = Resolver::new(InputKeymap::default());
     for code in 0..MAX_PHYSICAL_ROWS as u16 {
-        r.bind_physical(row(1000 + code, SideModifiers::NONE, "x.y")).unwrap();
+        r.bind_physical(row(1000 + code, SideModifiers::NONE, "x.y"))
+            .unwrap();
     }
     assert_eq!(
         r.bind_physical(row(5000, SideModifiers::NONE, "x.y")),
         Err(BindError::AtCapacity)
     );
     // Replacing an existing stroke is still allowed at capacity.
-    r.bind_physical(row(1000, SideModifiers::NONE, "x.z")).unwrap();
+    r.bind_physical(row(1000, SideModifiers::NONE, "x.z"))
+        .unwrap();
 }
 
 // ── The shipped keymap ──
@@ -245,7 +296,11 @@ fn the_scene_editor_chord_is_side_exact() {
         assert_eq!(press.verb.map(ActionId::as_str), Some("scenes.editor.open"));
         assert!(press.swallow);
         let repeat = r.resolve(SCENE_EDITOR_KEY, held, Edge::Repeat);
-        assert_eq!((repeat.verb, repeat.swallow), (None, true), "no flap on repeat");
+        assert_eq!(
+            (repeat.verb, repeat.swallow),
+            (None, true),
+            "no flap on repeat"
+        );
     }
     for held in [
         mods(&["lctrl", "ralt"]),
@@ -256,7 +311,11 @@ fn the_scene_editor_chord_is_side_exact() {
         mods(&["lctrl", "lalt", "lshift"]),
         mods(&["lctrl", "lalt", "lsuper"]),
     ] {
-        assert_eq!(r.resolve(SCENE_EDITOR_KEY, held, Edge::Press), Resolution::PASS, "{held:?}");
+        assert_eq!(
+            r.resolve(SCENE_EDITOR_KEY, held, Edge::Press),
+            Resolution::PASS,
+            "{held:?}"
+        );
     }
 }
 
@@ -314,7 +373,10 @@ impl Run {
         for &(code, value) in &self.emitted {
             match value {
                 1 => assert!(down.insert(code), "double press of {code}"),
-                0 => assert!(down.remove(&code), "orphan release of {code} reached the re-emitter"),
+                0 => assert!(
+                    down.remove(&code),
+                    "orphan release of {code} reached the re-emitter"
+                ),
                 _ => assert!(down.contains(&code), "repeat of {code} without its press"),
             }
         }
@@ -361,8 +423,7 @@ fn a_bound_user_key_fires_and_never_reaches_the_re_emitter() {
     let mut run = Run::new(personal());
     run.tap_chord(&[KEY_RIGHTCTRL], KEY_RIGHT);
     assert_eq!(
-        run.fired,
-        ["desktop.workspace.next"; 3],
+        run.fired, ["desktop.workspace.next"; 3],
         "press plus two allowed repeats"
     );
     assert!(!run.emitted_codes().contains(&KEY_RIGHT));
@@ -407,7 +468,13 @@ fn a_modifier_pressed_mid_hold_never_changes_the_latch() {
     assert!(run.fired.is_empty());
     assert_eq!(
         run.emitted,
-        [(KEY_LEFT, 1), (KEY_RIGHTCTRL, 1), (KEY_LEFT, 2), (KEY_LEFT, 0), (KEY_RIGHTCTRL, 0)]
+        [
+            (KEY_LEFT, 1),
+            (KEY_RIGHTCTRL, 1),
+            (KEY_LEFT, 2),
+            (KEY_LEFT, 0),
+            (KEY_RIGHTCTRL, 0)
+        ]
     );
     run.assert_balanced();
 }
@@ -418,7 +485,9 @@ fn a_rebind_while_held_applies_from_the_next_press() {
     // swallowed; the next press is emitted.
     let mut run = Run::new(Resolver::new(default_keymap()));
     run.feed(KEY_F5, 1);
-    run.resolver.bind_physical(passthrough(KEY_F5, SideModifiers::NONE)).unwrap();
+    run.resolver
+        .bind_physical(passthrough(KEY_F5, SideModifiers::NONE))
+        .unwrap();
     run.feed(KEY_F5, 2).feed(KEY_F5, 0);
     assert!(run.emitted.is_empty(), "leaked {:?}", run.emitted);
     run.feed(KEY_F5, 1).feed(KEY_F5, 0);
@@ -445,8 +514,13 @@ fn a_rebind_while_held_applies_from_the_next_press() {
         .bind_physical(row(KEY_RIGHT, SideModifiers::RIGHT_CTRL, "other.verb"))
         .unwrap();
     run.feed(KEY_RIGHT, 2).feed(KEY_RIGHT, 0);
-    assert_eq!(run.fired, ["desktop.workspace.next", "desktop.workspace.next"]);
-    run.feed(KEY_RIGHT, 1).feed(KEY_RIGHT, 0).feed(KEY_RIGHTCTRL, 0);
+    assert_eq!(
+        run.fired,
+        ["desktop.workspace.next", "desktop.workspace.next"]
+    );
+    run.feed(KEY_RIGHT, 1)
+        .feed(KEY_RIGHT, 0)
+        .feed(KEY_RIGHTCTRL, 0);
     assert_eq!(run.fired.last(), Some(&"other.verb"));
     run.assert_balanced();
 }
@@ -454,10 +528,15 @@ fn a_rebind_while_held_applies_from_the_next_press() {
 #[test]
 fn a_hand_off_while_held_releases_only_what_was_emitted() {
     let mut run = Run::new(Resolver::new(default_keymap()));
-    run.resolver.bind_physical(passthrough(KEY_UP, SideModifiers::RIGHT_SHIFT)).unwrap();
+    run.resolver
+        .bind_physical(passthrough(KEY_UP, SideModifiers::RIGHT_SHIFT))
+        .unwrap();
     // Held at switch-away: an ordinary letter, a bare F5 (unbound, so
     // swallowed), and Right Shift + ↑ passed through by the person's choice.
-    run.feed(KEY_A, 1).feed(KEY_F5, 1).feed(KEY_RIGHTSHIFT, 1).feed(KEY_UP, 1);
+    run.feed(KEY_A, 1)
+        .feed(KEY_F5, 1)
+        .feed(KEY_RIGHTSHIFT, 1)
+        .feed(KEY_UP, 1);
     assert!(run.keys.is_swallowed(KEY_F5));
     let to_release = run.keys.end();
     assert_eq!(to_release, [KEY_A, KEY_RIGHTSHIFT, KEY_UP]);
@@ -471,8 +550,17 @@ fn a_hand_off_while_held_releases_only_what_was_emitted() {
     // orphans and reach nothing.
     run.keys.begin(SideModifiers::NONE);
     let before = run.emitted.len();
-    run.feed(KEY_UP, 2).feed(KEY_UP, 0).feed(KEY_RIGHTSHIFT, 0).feed(KEY_A, 0).feed(KEY_F5, 0);
-    assert_eq!(run.emitted.len(), before, "orphans leaked: {:?}", &run.emitted[before..]);
+    run.feed(KEY_UP, 2)
+        .feed(KEY_UP, 0)
+        .feed(KEY_RIGHTSHIFT, 0)
+        .feed(KEY_A, 0)
+        .feed(KEY_F5, 0);
+    assert_eq!(
+        run.emitted.len(),
+        before,
+        "orphans leaked: {:?}",
+        &run.emitted[before..]
+    );
     assert!(run.fired.is_empty());
 }
 
@@ -482,7 +570,9 @@ fn a_modifier_held_across_the_grab_still_forms_the_chord() {
     // key, and the Right Ctrl release is an orphan.
     let mut run = Run::new(personal());
     run.keys.begin(SideModifiers::RIGHT_CTRL);
-    run.feed(KEY_RIGHT, 1).feed(KEY_RIGHT, 0).feed(KEY_RIGHTCTRL, 0);
+    run.feed(KEY_RIGHT, 1)
+        .feed(KEY_RIGHT, 0)
+        .feed(KEY_RIGHTCTRL, 0);
     assert_eq!(run.fired, ["desktop.workspace.next"]);
     assert!(run.emitted.is_empty(), "{:?}", run.emitted);
     assert!(run.keys.mods().is_empty());
@@ -491,7 +581,8 @@ fn a_modifier_held_across_the_grab_still_forms_the_chord() {
 #[test]
 fn ordinary_typing_passes_untouched() {
     let mut run = Run::new(personal());
-    run.tap_chord(&[KEY_LEFTSHIFT], KEY_A).tap_chord(&[KEY_LEFTCTRL], KEY_RIGHT);
+    run.tap_chord(&[KEY_LEFTSHIFT], KEY_A)
+        .tap_chord(&[KEY_LEFTCTRL], KEY_RIGHT);
     assert!(run.fired.is_empty());
     assert_eq!(run.emitted.len(), 12, "{:?}", run.emitted);
     run.assert_balanced();
@@ -504,7 +595,14 @@ fn a_second_press_without_release_keeps_the_first_decision() {
     assert_eq!(run.emitted, [(KEY_A, 1), (KEY_A, 1), (KEY_A, 0)]);
     assert!(!run.keys.is_emitted(KEY_A), "one release clears the latch");
     let mut run = Run::new(personal());
-    run.feed(KEY_RIGHTCTRL, 1).feed(KEY_RIGHT, 1).feed(KEY_RIGHT, 1).feed(KEY_RIGHT, 0);
-    assert_eq!(run.fired.len(), 2, "the re-press fired as an allowed repeat");
+    run.feed(KEY_RIGHTCTRL, 1)
+        .feed(KEY_RIGHT, 1)
+        .feed(KEY_RIGHT, 1)
+        .feed(KEY_RIGHT, 0);
+    assert_eq!(
+        run.fired.len(),
+        2,
+        "the re-press fired as an allowed repeat"
+    );
     assert!(!run.emitted_codes().contains(&KEY_RIGHT));
 }

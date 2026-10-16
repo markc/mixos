@@ -81,7 +81,10 @@ pub enum BindError {
 /// keymap load.
 pub fn service_is_valid(name: &str) -> bool {
     (2..=31).contains(&name.len())
-        && name.bytes().next().is_some_and(|byte| byte.is_ascii_lowercase())
+        && name
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_lowercase())
         && name
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
@@ -184,7 +187,11 @@ impl Resolver {
         if ActionId::validate_str(binding.action.as_str()).is_err() {
             return Err(BindError::InvalidAction);
         }
-        if binding.service.as_deref().is_some_and(|name| !service_is_valid(name)) {
+        if binding
+            .service
+            .as_deref()
+            .is_some_and(|name| !service_is_valid(name))
+        {
             return Err(BindError::InvalidService);
         }
         if let Some(args) = &binding.args {

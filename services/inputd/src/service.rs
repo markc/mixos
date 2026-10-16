@@ -19,8 +19,8 @@ use inputd_core::Resolver;
 use inputd_schema::{BindingRow, InputMode, KeyInjection, PhysicalStroke, verbs};
 use serde_json::{Value, json};
 
-use crate::keymap_file;
 use crate::inject::{Injection, Injector};
+use crate::keymap_file;
 
 pub fn verb_manifest() -> Vec<bus::VerbDescriptor> {
     use bus::VerbDescriptor;
@@ -132,7 +132,10 @@ impl Store {
     }
 
     fn disabled(&self) -> Option<String> {
-        self.persist_disabled.lock().expect("store poisoned").clone()
+        self.persist_disabled
+            .lock()
+            .expect("store poisoned")
+            .clone()
     }
 }
 
@@ -201,7 +204,9 @@ fn pointer(injector: &mut Injector, verb: &str, body: &str) -> (u8, String) {
 /// `persist_error` (the save itself failed). A successful save, or no
 /// configured path, leaves the reply unchanged.
 fn persist(resolver: &Shared, store: &Store, reply: &mut Value) {
-    let Some(path) = store.path.as_deref() else { return };
+    let Some(path) = store.path.as_deref() else {
+        return;
+    };
     if let Some(reason) = store.disabled() {
         tracing::warn!("rebind not persisted: {reason}");
         reply["persisted"] = json!(false);
@@ -363,7 +368,11 @@ fn reload(resolver: &Shared, store: &Store) -> (u8, String) {
             // The configured file is usable again (the operator fixed it, or
             // the file that reappeared at startup is valid): rebinds may be
             // written from here on.
-            let was = store.persist_disabled.lock().expect("store poisoned").take();
+            let was = store
+                .persist_disabled
+                .lock()
+                .expect("store poisoned")
+                .take();
             let mut reply =
                 json!({ "ok": true, "generation": generation, "dropped": loaded.dropped });
             if let Some(reason) = was {
@@ -444,9 +453,7 @@ mod tests {
     }
 
     fn resolver() -> Shared {
-        Arc::new(Mutex::new(Resolver::new(
-            inputd_core::default_keymap(),
-        )))
+        Arc::new(Mutex::new(Resolver::new(inputd_core::default_keymap())))
     }
 
     #[test]
@@ -728,8 +735,17 @@ mod tests {
         let (rc, reply) = run_as(&resolver, &store, mesh, verbs::UNBIND, json!({"code":63}));
         assert_eq!(rc, 0, "{reply}");
         assert!(reply["generation"].as_u64().unwrap() > bound, "{reply}");
-        assert!(reply.get("removed").is_none(), "a live row was removed: {reply}");
-        let (rc, reply) = run_as(&resolver, &store, mesh, verbs::MODE, json!({"mode":"transparent"}));
+        assert!(
+            reply.get("removed").is_none(),
+            "a live row was removed: {reply}"
+        );
+        let (rc, reply) = run_as(
+            &resolver,
+            &store,
+            mesh,
+            verbs::MODE,
+            json!({"mode":"transparent"}),
+        );
         assert_eq!(rc, 0, "{reply}");
         assert_eq!(reply["mode"], "transparent");
         let (rc, reply) = run_as(&resolver, &store, mesh, verbs::RELOAD, json!({}));
@@ -747,9 +763,18 @@ mod tests {
         let before = resolver.lock().unwrap().generation();
         let bad = json!({"layer":"physical","stroke":{"code":63},"action":"x","service":"Desktop"});
         for origin in [Some("mesh"), Some("local")] {
-            let (rc, reply) = run_as(&resolver, &Store::default(), origin, verbs::BIND, bad.clone());
+            let (rc, reply) = run_as(
+                &resolver,
+                &Store::default(),
+                origin,
+                verbs::BIND,
+                bad.clone(),
+            );
             assert_eq!(rc, 10, "{origin:?}: {reply}");
-            assert!(reply["error"].as_str().unwrap().contains("rebind refused"), "{reply}");
+            assert!(
+                reply["error"].as_str().unwrap().contains("rebind refused"),
+                "{reply}"
+            );
         }
         assert_eq!(resolver.lock().unwrap().generation(), before);
     }
@@ -763,7 +788,10 @@ mod tests {
         let rows_before = resolver.lock().unwrap().physical_rows().to_vec();
         for (verb, body) in [
             (verbs::BIND, bind_row()),
-            (verbs::UNBIND, json!({"code":106,"modifiers":{"right_ctrl":true}})),
+            (
+                verbs::UNBIND,
+                json!({"code":106,"modifiers":{"right_ctrl":true}}),
+            ),
             (verbs::MODE, json!({"mode":"transparent"})),
             (verbs::RELOAD, json!({})),
         ] {
@@ -797,7 +825,10 @@ mod tests {
             for origin in [None, Some("peer"), Some("")] {
                 let (rc, reply) = run_as(&resolver, &store, origin, verbs::BIND, bind_row());
                 assert_eq!(rc, 10, "{origin:?}: {reply}");
-                assert!(reply["error"].as_str().unwrap().contains("broker-stamped"), "{reply}");
+                assert!(
+                    reply["error"].as_str().unwrap().contains("broker-stamped"),
+                    "{reply}"
+                );
             }
             assert_eq!(resolver.lock().unwrap().generation(), 0);
         }
@@ -870,7 +901,10 @@ mod tests {
             json!({"layer":"semantic","chord":"Ctrl+T","action":"term.tab.new"}),
         );
         assert_eq!(rc, 10);
-        assert!(reply["error"].as_str().unwrap().contains("semantic"), "{reply}");
+        assert!(
+            reply["error"].as_str().unwrap().contains("semantic"),
+            "{reply}"
+        );
     }
 
     #[test]
@@ -900,8 +934,7 @@ mod tests {
 
     #[test]
     fn reload_reports_dropped_rows_and_keeps_the_good_ones() {
-        let dir =
-            std::env::temp_dir().join(format!("inputd-reload-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("inputd-reload-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("keymap.json");
         std::fs::write(
@@ -916,7 +949,12 @@ mod tests {
         let mut injector = Injector::default();
         let resolver = resolver();
         let cmd = command(verbs::RELOAD, json!({}), Some("local"));
-        let (rc, reply) = dispatch(&resolver, &Store::new(Some(path.clone()), None, None), &mut injector, &cmd);
+        let (rc, reply) = dispatch(
+            &resolver,
+            &Store::new(Some(path.clone()), None, None),
+            &mut injector,
+            &cmd,
+        );
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(rc, 0, "{reply}");
         let reply: Value = serde_json::from_str(&reply).unwrap();
@@ -1022,7 +1060,10 @@ mod tests {
         let (rc, reply) = run(&resolver(), &store, verbs::BIND, bind_row());
         assert_eq!(rc, 0, "{reply}");
         assert_eq!(reply["persisted"], false);
-        assert!(reply["persist_error"].as_str().unwrap().contains("save"), "{reply}");
+        assert!(
+            reply["persist_error"].as_str().unwrap().contains("save"),
+            "{reply}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1076,8 +1117,13 @@ mod tests {
         std::fs::write(&path, &newer).unwrap();
         let (rc, reply) = run(&resolver, &store, verbs::RELOAD, json!({}));
         assert_eq!(rc, 10, "{reply}");
-        assert!(reply["error"].as_str().unwrap().contains("is newer than"), "{reply}");
-        let disabled = reply["persist_disabled"].as_str().expect("writing turned off");
+        assert!(
+            reply["error"].as_str().unwrap().contains("is newer than"),
+            "{reply}"
+        );
+        let disabled = reply["persist_disabled"]
+            .as_str()
+            .expect("writing turned off");
         assert!(disabled.contains(&path.display().to_string()), "{disabled}");
         assert!(disabled.contains("is newer than"), "{disabled}");
         // bind/unbind still change the live table but never touch the file.
@@ -1085,12 +1131,20 @@ mod tests {
         assert_eq!(rc, 0, "{reply}");
         assert_eq!(reply["persisted"], false);
         assert_eq!(reply["persist_disabled"], disabled);
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), newer, "unchanged after bind");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            newer,
+            "unchanged after bind"
+        );
         let (rc, reply) = run(&resolver, &store, verbs::UNBIND, json!({"code":63}));
         assert_eq!(rc, 0, "{reply}");
         assert_eq!(reply["persisted"], false);
         assert_eq!(reply["persist_disabled"], disabled);
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), newer, "unchanged after unbind");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            newer,
+            "unchanged after unbind"
+        );
         // The operator restores a current-version file: reload re-enables.
         std::fs::write(&path, current).unwrap();
         let (rc, reply) = run(&resolver, &store, verbs::RELOAD, json!({}));
@@ -1138,10 +1192,18 @@ mod tests {
         let resolver = resolver();
         let (rc, reply) = run(&resolver, &store, verbs::RELOAD, json!({}));
         assert_eq!(rc, 10, "{reply}");
-        let disabled = reply["persist_disabled"].as_str().expect("writing turned off");
-        assert!(disabled.starts_with(&path.display().to_string()), "{disabled}");
+        let disabled = reply["persist_disabled"]
+            .as_str()
+            .expect("writing turned off");
+        assert!(
+            disabled.starts_with(&path.display().to_string()),
+            "{disabled}"
+        );
         assert!(disabled.contains("unreadable (open failed"), "{disabled}");
-        assert!(disabled.ends_with("left in place by input.reload"), "{disabled}");
+        assert!(
+            disabled.ends_with("left in place by input.reload"),
+            "{disabled}"
+        );
         let (rc, reply) = run(&resolver, &store, verbs::BIND, bind_row());
         assert_eq!(rc, 0, "{reply}");
         assert_eq!(reply["persisted"], false);
@@ -1169,7 +1231,13 @@ mod tests {
         let resolver = resolver();
         let (rc, reply) = run(&resolver, &store, verbs::RELOAD, json!({}));
         assert_eq!(rc, 10, "{reply}");
-        assert!(reply["error"].as_str().unwrap().ends_with("could not be read: absent"), "{reply}");
+        assert!(
+            reply["error"]
+                .as_str()
+                .unwrap()
+                .ends_with("could not be read: absent"),
+            "{reply}"
+        );
         assert!(reply.get("persist_disabled").is_none(), "{reply}");
         let (rc, reply) = run(&resolver, &store, verbs::BIND, bind_row());
         assert_eq!(rc, 0, "{reply}");

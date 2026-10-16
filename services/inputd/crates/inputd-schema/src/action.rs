@@ -168,13 +168,19 @@ mod tests {
         let b = ActionId::intern("inputd.test.intern").unwrap();
         assert_eq!(a, b);
         assert!(std::ptr::eq(a.as_str(), b.as_str()), "one allocation");
-        assert_eq!(ActionId::intern("bad id"), Err(ActionIdError::InvalidCharacter));
+        assert_eq!(
+            ActionId::intern("bad id"),
+            Err(ActionIdError::InvalidCharacter)
+        );
     }
 
     #[test]
     fn serde_is_a_plain_string() {
         let id = ActionId::from_static("scenes.editor.open");
-        assert_eq!(serde_json::to_string(&id).unwrap(), "\"scenes.editor.open\"");
+        assert_eq!(
+            serde_json::to_string(&id).unwrap(),
+            "\"scenes.editor.open\""
+        );
         let back: ActionId = serde_json::from_str("\"scenes.editor.open\"").unwrap();
         assert_eq!(back, id);
         assert!(serde_json::from_str::<ActionId>("\"no spaces\"").is_err());

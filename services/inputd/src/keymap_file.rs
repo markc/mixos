@@ -281,7 +281,11 @@ fn open_attempt(
                 if may_retry {
                     return open_attempt(path, stamp, hook, false);
                 }
-                return disabled(path, "replaced repeatedly while being recovered".to_string(), None);
+                return disabled(
+                    path,
+                    "replaced repeatedly while being recovered".to_string(),
+                    None,
+                );
             }
             tracing::warn!(
                 "keymap {} unusable ({reason}); moved to {} and seeding defaults",
@@ -296,7 +300,11 @@ fn open_attempt(
 /// Create the defaults at a vacant path. Exclusive: a file that appeared since
 /// the path was found vacant is never overwritten (persistence is disabled
 /// instead, and the next `input.reload` loads that file).
-fn seed(path: &Path, recovered_from: Option<PathBuf>, hook: &mut dyn FnMut(Stage, &Path)) -> Opened {
+fn seed(
+    path: &Path,
+    recovered_from: Option<PathBuf>,
+    hook: &mut dyn FnMut(Stage, &Path),
+) -> Opened {
     let rows = defaults();
     hook(Stage::BeforeSeed, path);
     match save_new(path, &rows) {
@@ -357,9 +365,8 @@ fn backup_unusable(
 fn rename_noreplace(from: &Path, to: &Path) -> std::io::Result<()> {
     use std::os::unix::ffi::OsStrExt;
     const RENAME_NOREPLACE: libc::c_uint = 1;
-    let cstr = |p: &Path| {
-        std::ffi::CString::new(p.as_os_str().as_bytes()).map_err(std::io::Error::other)
-    };
+    let cstr =
+        |p: &Path| std::ffi::CString::new(p.as_os_str().as_bytes()).map_err(std::io::Error::other);
     let (c_from, c_to) = (cstr(from)?, cstr(to)?);
     // SAFETY: both pointers are valid NUL-terminated strings for the call.
     let rc = unsafe {
@@ -376,7 +383,10 @@ fn rename_noreplace(from: &Path, to: &Path) -> std::io::Result<()> {
         return Ok(());
     }
     let error = std::io::Error::last_os_error();
-    if !matches!(error.raw_os_error(), Some(libc::EINVAL) | Some(libc::ENOSYS)) {
+    if !matches!(
+        error.raw_os_error(),
+        Some(libc::EINVAL) | Some(libc::ENOSYS)
+    ) {
         return Err(error);
     }
     link_move(from, to, &mut |_| {}, &mut |p| std::fs::remove_file(p))
@@ -473,8 +483,7 @@ fn migrate_legacy_clipboard_row(row: &mut PhysicalBinding) -> bool {
     let Some(verb) = row.action.as_str().strip_prefix(LEGACY_CLIPBOARD_PREFIX) else {
         return false;
     };
-    let Ok(action) = inputd_schema::ActionId::intern(&format!("desktop.clipboard.{verb}"))
-    else {
+    let Ok(action) = inputd_schema::ActionId::intern(&format!("desktop.clipboard.{verb}")) else {
         return false;
     };
     row.action = action;
@@ -509,10 +518,7 @@ fn parse(text: &str, path: &Path) -> Result<Loaded, String> {
     let mut dropped = Vec::new();
     let mut drop_row = |raw: &serde_json::Value, reason: String| {
         let record = dropped_record(raw, &reason);
-        tracing::warn!(
-            "keymap {}: row dropped: {record}",
-            path.display()
-        );
+        tracing::warn!("keymap {}: row dropped: {record}", path.display());
         dropped.push(record);
     };
     let mut physical = Vec::with_capacity(parsed.physical.len());
@@ -556,7 +562,9 @@ fn parse(text: &str, path: &Path) -> Result<Loaded, String> {
     for row in &mut physical {
         let bad = row.args.as_ref().is_some_and(|args| {
             !args.is_object()
-                || serde_json::to_string(args).map(|s| s.len()).unwrap_or(usize::MAX)
+                || serde_json::to_string(args)
+                    .map(|s| s.len())
+                    .unwrap_or(usize::MAX)
                     > inputd_core::MAX_ARGS_BYTES
         });
         if bad {
@@ -621,8 +629,7 @@ pub(crate) mod tests {
 
     const MENU_WITH: &str = r#"{"stroke":{"code":108,"modifiers":{"right_ctrl":true}},
         "action":"desktop.clipboard.menu","service":"desktop-vt1"}"#;
-    const NEXT_WITHOUT: &str =
-        r#"{"stroke":{"code":106,"modifiers":{"right_ctrl":true}},"action":"desktop.workspace.next"}"#;
+    const NEXT_WITHOUT: &str = r#"{"stroke":{"code":106,"modifiers":{"right_ctrl":true}},"action":"desktop.workspace.next"}"#;
 
     fn load_str(text: &str) -> Loaded {
         parse(text, Path::new("t")).expect("document parses")
@@ -654,7 +661,10 @@ pub(crate) mod tests {
             assert_eq!(record["action"], "desktop.clipboard.menu");
             assert_eq!(record["service"], bad);
             assert!(
-                record["reason"].as_str().unwrap().contains("invalid service"),
+                record["reason"]
+                    .as_str()
+                    .unwrap()
+                    .contains("invalid service"),
                 "{record}"
             );
         }
@@ -721,9 +731,7 @@ pub(crate) mod tests {
             "desktop-vt1.desktop.workspace.next",
             "desktop-vt5.desktop.clipboard.menu",
         ] {
-            let row = format!(
-                r#"{{"stroke":{{"code":63}},"action":"{action}"}}"#
-            );
+            let row = format!(r#"{{"stroke":{{"code":63}},"action":"{action}"}}"#);
             let loaded = load_str(&doc(&row));
             assert_eq!(loaded.rows.len(), 1);
             assert_eq!(loaded.rows[0].action.as_str(), action);
@@ -732,7 +740,10 @@ pub(crate) mod tests {
         // A legacy-prefixed row that already names a service is left alone.
         let row = r#"{"stroke":{"code":63},"action":"desktop-vt1.desktop.clipboard.menu","service":"other-svc"}"#;
         let loaded = load_str(&doc(row));
-        assert_eq!(loaded.rows[0].action.as_str(), "desktop-vt1.desktop.clipboard.menu");
+        assert_eq!(
+            loaded.rows[0].action.as_str(),
+            "desktop-vt1.desktop.clipboard.menu"
+        );
         assert_eq!(loaded.rows[0].service.as_deref(), Some("other-svc"));
     }
 
@@ -766,7 +777,10 @@ pub(crate) mod tests {
         let dir = scratch("legacy-bytes");
         let path = dir.join(FILE_NAME);
         save(&path, &loaded.rows).unwrap();
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), LEGACY_FILE.trim_end());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            LEGACY_FILE.trim_end()
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -782,16 +796,16 @@ pub(crate) mod tests {
             Path::new("/state/a/keymap.json")
         );
         for unset in [None, Some("".as_ref())] {
-            assert_eq!(state_path(unset, var), Path::new("/var/lib/mixos/inputd/keymap.json"));
+            assert_eq!(
+                state_path(unset, var),
+                Path::new("/var/lib/mixos/inputd/keymap.json")
+            );
         }
     }
 
     /// A fresh, empty directory unique to one test.
     fn scratch(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "inputd-open-{tag}-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("inputd-open-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -836,12 +850,20 @@ pub(crate) mod tests {
             std::fs::write(&path, text).unwrap();
             let opened = open(&path, "20260924-101112");
             let backup = dir.join("keymap.json.bad-20260924-101112");
-            assert_eq!(opened.recovered_from.as_deref(), Some(backup.as_path()), "{tag}");
+            assert_eq!(
+                opened.recovered_from.as_deref(),
+                Some(backup.as_path()),
+                "{tag}"
+            );
             assert!(opened.persist_disabled.is_none(), "{tag}");
             assert_eq!(opened.rows, defaults, "{tag}: defaults served");
             // The user's bytes survive verbatim; the live path holds the defaults.
             assert_eq!(std::fs::read_to_string(&backup).unwrap(), text, "{tag}");
-            assert_eq!(load(&path).unwrap().rows, defaults, "{tag}: defaults seeded");
+            assert_eq!(
+                load(&path).unwrap().rows,
+                defaults,
+                "{tag}: defaults seeded"
+            );
             assert_eq!(
                 dir_names(&dir),
                 vec!["keymap.json", "keymap.json.bad-20260924-101112"],
@@ -857,10 +879,12 @@ pub(crate) mod tests {
         // bind persisted it back as version 1 — a silent downgrade.
         let newer = KEYMAP_SCHEMA_VERSION + 1;
         let text = format!(r#"{{"version":{newer},"physical":[{NEXT_WITHOUT}]}}"#);
-        let expected = format!(
-            "keymap version {newer} is newer than this inputd's {KEYMAP_SCHEMA_VERSION}"
+        let expected =
+            format!("keymap version {newer} is newer than this inputd's {KEYMAP_SCHEMA_VERSION}");
+        assert_eq!(
+            parse(&text, Path::new("t")).err().as_deref(),
+            Some(expected.as_str())
         );
-        assert_eq!(parse(&text, Path::new("t")).err().as_deref(), Some(expected.as_str()));
         let dir = scratch("newer-version");
         let path = dir.join("keymap.json");
         std::fs::write(&path, &text).unwrap();
@@ -887,18 +911,24 @@ pub(crate) mod tests {
     #[test]
     fn a_reshaped_newer_document_reports_its_version_not_its_shape() {
         let newer = KEYMAP_SCHEMA_VERSION + 1;
-        let expected = format!(
-            "keymap version {newer} is newer than this inputd's {KEYMAP_SCHEMA_VERSION}"
-        );
+        let expected =
+            format!("keymap version {newer} is newer than this inputd's {KEYMAP_SCHEMA_VERSION}");
         for text in [
             format!(r#"{{"version":{newer}}}"#),
             format!(r#"{{"version":{newer},"bindings":{{}}}}"#),
             format!(r#"{{"version":{newer},"physical":{{}}}}"#),
         ] {
-            assert_eq!(parse(&text, Path::new("t")).err().as_deref(), Some(expected.as_str()), "{text}");
+            assert_eq!(
+                parse(&text, Path::new("t")).err().as_deref(),
+                Some(expected.as_str()),
+                "{text}"
+            );
         }
         // A version that is not a u32 still reports as a bad document.
-        for text in [r#"{"version":"2","physical":[]}"#, r#"{"version":4294967296,"physical":[]}"#] {
+        for text in [
+            r#"{"version":"2","physical":[]}"#,
+            r#"{"version":4294967296,"physical":[]}"#,
+        ] {
             let reason = parse(text, Path::new("t")).err().expect("refused");
             assert!(reason.starts_with("bad document"), "{text}: {reason}");
         }
@@ -908,7 +938,9 @@ pub(crate) mod tests {
     fn an_older_version_takes_the_same_recovery_path() {
         // No older version exists (1 is the first); 0 exercises the hook.
         let text = format!(r#"{{"version":0,"physical":[{NEXT_WITHOUT}]}}"#);
-        let reason = parse(&text, Path::new("t")).err().expect("version 0 refused");
+        let reason = parse(&text, Path::new("t"))
+            .err()
+            .expect("version 0 refused");
         assert!(
             reason.starts_with(&format!(
                 "keymap version 0 is older than this inputd's {KEYMAP_SCHEMA_VERSION}"
@@ -927,9 +959,7 @@ pub(crate) mod tests {
 
     #[test]
     fn the_current_version_loads_unchanged() {
-        let text = format!(
-            r#"{{"version":{KEYMAP_SCHEMA_VERSION},"physical":[{NEXT_WITHOUT}]}}"#
-        );
+        let text = format!(r#"{{"version":{KEYMAP_SCHEMA_VERSION},"physical":[{NEXT_WITHOUT}]}}"#);
         let loaded = parse(&text, Path::new("t")).expect("current version loads");
         assert_eq!(loaded.rows.len(), 1);
         assert!(loaded.dropped.is_empty());
@@ -1043,10 +1073,26 @@ pub(crate) mod tests {
             std::thread::sleep(std::time::Duration::from_millis(50));
         };
         let (mut out, mut err) = (String::new(), String::new());
-        child.stdout.take().unwrap().read_to_string(&mut out).unwrap();
-        child.stderr.take().unwrap().read_to_string(&mut err).unwrap();
-        assert!(status.success(), "{name}: child failed ({status})\n{out}\n{err}");
-        assert!(out.contains("1 passed"), "{name}: child test did not run\n{out}\n{err}");
+        child
+            .stdout
+            .take()
+            .unwrap()
+            .read_to_string(&mut out)
+            .unwrap();
+        child
+            .stderr
+            .take()
+            .unwrap()
+            .read_to_string(&mut err)
+            .unwrap();
+        assert!(
+            status.success(),
+            "{name}: child failed ({status})\n{out}\n{err}"
+        );
+        assert!(
+            out.contains("1 passed"),
+            "{name}: child test did not run\n{out}\n{err}"
+        );
     }
 
     /// In a child started by [`run_perm_child`] for `name`: drop to 65534 if
@@ -1065,7 +1111,11 @@ pub(crate) mod tests {
                     && libc::setresgid(65534, 65534, 65534) == 0
                     && libc::setresuid(65534, 65534, 65534) == 0
             };
-            assert!(dropped, "privilege drop failed: {}", std::io::Error::last_os_error());
+            assert!(
+                dropped,
+                "privilege drop failed: {}",
+                std::io::Error::last_os_error()
+            );
             assert_eq!(unsafe { libc::geteuid() }, 65534);
         }
         Some(dir)
@@ -1118,9 +1168,14 @@ pub(crate) mod tests {
 
     #[test]
     fn perm_child_eacces_file() {
-        let Some(dir) = perm_child("perm_child_eacces_file") else { return };
+        let Some(dir) = perm_child("perm_child_eacces_file") else {
+            return;
+        };
         let opened = open(&dir.join("keymap.json"), STAMP);
-        assert!(opened.recovered_from.is_none(), "EACCES file was moved aside");
+        assert!(
+            opened.recovered_from.is_none(),
+            "EACCES file was moved aside"
+        );
         let reason = opened.persist_disabled.expect("persistence disabled");
         assert!(reason.contains("open failed"), "{reason}");
         // The child could list the directory, so it could also have moved.
@@ -1146,7 +1201,9 @@ pub(crate) mod tests {
 
     #[test]
     fn perm_child_readonly_dir() {
-        let Some(dir) = perm_child("perm_child_readonly_dir") else { return };
+        let Some(dir) = perm_child("perm_child_readonly_dir") else {
+            return;
+        };
         let opened = open(&dir.join("keymap.json"), STAMP);
         assert!(opened.recovered_from.is_none());
         let reason = opened.persist_disabled.expect("persistence disabled");
@@ -1197,7 +1254,10 @@ pub(crate) mod tests {
             &mut |p| std::fs::remove_file(p),
         )
         .unwrap_err();
-        assert!(error.to_string().contains("replaced during backup"), "{error}");
+        assert!(
+            error.to_string().contains("replaced during backup"),
+            "{error}"
+        );
         assert!(!to.exists(), "the link to the old bytes was removed");
         assert_eq!(std::fs::read_to_string(&from).unwrap(), "valid");
         let _ = std::fs::remove_dir_all(&dir);
@@ -1271,7 +1331,11 @@ pub(crate) mod tests {
         assert_eq!(opened.rows.len(), 1);
         assert_eq!(opened.rows[0].action.as_str(), "desktop.workspace.next");
         assert_eq!(std::fs::read_to_string(&path).unwrap(), doc(NEXT_WITHOUT));
-        assert_eq!(dir_names(&dir), vec!["keymap.json"], "no backup of the good file");
+        assert_eq!(
+            dir_names(&dir),
+            vec!["keymap.json"],
+            "no backup of the good file"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1293,7 +1357,10 @@ pub(crate) mod tests {
         assert_eq!(std::fs::read_to_string(&backup).unwrap(), "not json");
         assert_eq!(
             dir_names(&dir),
-            vec!["keymap.json".to_string(), format!("keymap.json.bad-{STAMP}")],
+            vec![
+                "keymap.json".to_string(),
+                format!("keymap.json.bad-{STAMP}")
+            ],
             "no temp file left behind"
         );
         let _ = std::fs::remove_dir_all(&dir);
@@ -1304,6 +1371,11 @@ pub(crate) mod tests {
         let stamp = local_stamp();
         assert_eq!(stamp.len(), 15, "{stamp}");
         assert_eq!(stamp.as_bytes()[8], b'-');
-        assert!(stamp.bytes().enumerate().all(|(i, b)| i == 8 || b.is_ascii_digit()));
+        assert!(
+            stamp
+                .bytes()
+                .enumerate()
+                .all(|(i, b)| i == 8 || b.is_ascii_digit())
+        );
     }
 }

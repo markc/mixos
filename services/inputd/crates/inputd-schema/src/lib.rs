@@ -429,7 +429,10 @@ mod tests {
             }
         }
         // Other keys are never user keys, whatever is held.
-        assert!(!is_user_key(&stroke(codes::KEY_P, SideModifiers::RIGHT_CTRL)));
+        assert!(!is_user_key(&stroke(
+            codes::KEY_P,
+            SideModifiers::RIGHT_CTRL
+        )));
         assert!(!is_user_key(&stroke(codes::KEY_P, SideModifiers::NONE)));
     }
 
@@ -460,30 +463,44 @@ mod tests {
         assert_eq!(row.args, None);
         assert_eq!(row.service, None);
         let json = serde_json::to_string(&row).unwrap();
-        assert!(!json.contains("args") && !json.contains("service"), "{json}");
+        assert!(
+            !json.contains("args") && !json.contains("service"),
+            "{json}"
+        );
         let targeted = r#"{"stroke":{"code":108,"modifiers":{"right_ctrl":true}},"action":"desktop.clipboard.menu","args":{"x":1},"service":"desktop-vt1"}"#;
         let row: PhysicalBinding = serde_json::from_str(targeted).unwrap();
         assert_eq!(row.service.as_deref(), Some("desktop-vt1"));
         assert_eq!(row.args, Some(serde_json::json!({"x": 1})));
-        let back: PhysicalBinding = serde_json::from_str(&serde_json::to_string(&row).unwrap()).unwrap();
+        let back: PhysicalBinding =
+            serde_json::from_str(&serde_json::to_string(&row).unwrap()).unwrap();
         assert_eq!(back, row);
     }
 
     #[test]
     fn binding_rows_are_tagged_by_layer() {
-        let row: BindingRow =
-            serde_json::from_str(r#"{"layer":"physical","stroke":{"code":63},"action":"user.f05"}"#).unwrap();
+        let row: BindingRow = serde_json::from_str(
+            r#"{"layer":"physical","stroke":{"code":63},"action":"user.f05"}"#,
+        )
+        .unwrap();
         assert!(matches!(row, BindingRow::Physical(_)));
         let json = serde_json::to_string(&row).unwrap();
         assert!(json.contains("\"layer\":\"physical\""), "{json}");
-        let row: BindingRow =
-            serde_json::from_str(r#"{"layer":"semantic","chord":"Ctrl+T","action":"term.tab.new"}"#).unwrap();
+        let row: BindingRow = serde_json::from_str(
+            r#"{"layer":"semantic","chord":"Ctrl+T","action":"term.tab.new"}"#,
+        )
+        .unwrap();
         assert!(matches!(row, BindingRow::Semantic(_)));
     }
 
     #[test]
     fn mode_spellings() {
-        assert_eq!(serde_json::to_string(&InputMode::Transparent).unwrap(), "\"transparent\"");
-        assert_eq!(serde_json::to_string(&InputMode::Normal).unwrap(), "\"normal\"");
+        assert_eq!(
+            serde_json::to_string(&InputMode::Transparent).unwrap(),
+            "\"transparent\""
+        );
+        assert_eq!(
+            serde_json::to_string(&InputMode::Normal).unwrap(),
+            "\"normal\""
+        );
     }
 }

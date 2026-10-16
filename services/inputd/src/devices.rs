@@ -158,7 +158,11 @@ impl UinputDevice {
         const REL_Y: u16 = 0x01;
         const REL_HWHEEL: u16 = 0x06;
         const REL_WHEEL: u16 = 0x08;
-        Self::create(b"inputd virtual pointer", 2, &[REL_X, REL_Y, REL_WHEEL, REL_HWHEEL])
+        Self::create(
+            b"inputd virtual pointer",
+            2,
+            &[REL_X, REL_Y, REL_WHEEL, REL_HWHEEL],
+        )
     }
 
     fn create(name: &[u8], product: u16, axes: &[u16]) -> io::Result<Self> {
@@ -328,7 +332,10 @@ mod tests {
         };
         assert_eq!(EVIOCGRAB, ioc(1, b'E', 0x90, 4));
         assert_eq!(EVIOCGKEY, ioc(2, b'E', 0x18, 96));
-        assert_eq!(UI_DEV_SETUP, ioc(1, b'U', 3, std::mem::size_of::<UinputSetup>() as u64));
+        assert_eq!(
+            UI_DEV_SETUP,
+            ioc(1, b'U', 3, std::mem::size_of::<UinputSetup>() as u64)
+        );
         assert_eq!(UI_SET_EVBIT, ioc(1, b'U', 100, 4));
         assert_eq!(UI_SET_KEYBIT, ioc(1, b'U', 101, 4));
         assert_eq!(UI_SET_RELBIT, ioc(1, b'U', 102, 4));
