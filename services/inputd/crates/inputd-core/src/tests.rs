@@ -678,7 +678,10 @@ fn a_quarantined_modifier_holds_back_the_app_keys_that_depend_on_it() {
     assert!(run.emitted.is_empty());
     // A modifier pressed now is emitted as usual; the keys after it are
     // still held back while Left Shift is quarantined.
-    run.feed(KEY_LEFTCTRL, 1).feed(KEY_A, 1).feed(KEY_A, 0).feed(KEY_LEFTCTRL, 0);
+    run.feed(KEY_LEFTCTRL, 1)
+        .feed(KEY_A, 1)
+        .feed(KEY_A, 0)
+        .feed(KEY_LEFTCTRL, 0);
     assert_eq!(run.emitted, [(KEY_LEFTCTRL, 1), (KEY_LEFTCTRL, 0)]);
     // Once Left Shift is released the quarantine ends.
     run.feed(KEY_LEFTSHIFT, 0).feed(KEY_A, 1).feed(KEY_A, 0);
