@@ -21,10 +21,16 @@
 
 use std::collections::BTreeMap;
 
-use jmap::{AddressBook, Calendar, CalendarEvent, Composed, Contact, Email, EmailAddress, Mailbox};
+use jmap::{
+    AddressBook, Calendar, CalendarEvent, Composed, Contact, Email, EmailAddress, Mailbox,
+    SortProperty,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use settings::email::{AccountEntry, Email as EmailSettings};
+use toolkit::datatable::{
+    Align, Column, Order, PageMove, SelectionMode, Sort, TableEvent, TableState, Total, Width,
+};
 
 use crate::secrets::Secrets;
 use crate::work::{Login, Work};
@@ -113,7 +119,7 @@ pub enum ComposeField {
 }
 
 /// The mail surface.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct MailState {
     pub mailboxes: Vec<Mailbox>,
     pub selected: Option<String>,
@@ -123,9 +129,92 @@ pub struct MailState {
     /// How the open email's text body is shown, and its cached parse.
     pub reader: crate::reader::Reader,
     pub busy: bool,
+    /// The message list's sort, page and selection: the server sorts and
+    /// pages, this says which page of which order is shown.
+    pub table: TableState,
+}
+
+impl Default for MailState {
+    fn default() -> Self {
+        Self {
+            mailboxes: Vec::new(),
+            selected: None,
+            emails: Vec::new(),
+            total: 0,
+            open: None,
+            reader: crate::reader::Reader::default(),
+            busy: false,
+            table: list_default(),
+        }
+    }
+}
+
+/// The message list's column ids.
+pub const COLUMN_FROM: &str = "from";
+pub const COLUMN_SUBJECT: &str = "subject";
+pub const COLUMN_DATE: &str = "date";
+
+/// The message list's columns: From (a resizable 30%), Subject (the rest)
+/// and Date (`date_width` points, right-aligned). All three sort on the
+/// server, a date newest first.
+pub fn list_columns(date_width: f32) -> Vec<Column> {
+    vec![
+        Column::new(COLUMN_FROM, "column-from")
+            .width(Width::Share {
+                share: 0.3,
+                min: 80.0,
+            })
+            .sortable(Order::Ascending),
+        Column::new(COLUMN_SUBJECT, "column-subject")
+            .width(Width::Remainder { min: 120.0 })
+            .sortable(Order::Ascending),
+        Column::new(COLUMN_DATE, "column-date")
+            .width(Width::Fixed(date_width))
+            .align(Align::End)
+            .sortable(Order::Descending),
+    ]
+}
+
+/// A fresh message list: the newest first.
+pub fn list_default() -> TableState {
+    TableState::sorted(Sort::new(COLUMN_DATE, Order::Descending))
+}
+
+/// The server's sort for the list's: Date is `receivedAt`; no sort is the
+/// newest first.
+pub fn email_sort(sort: Option<&Sort>) -> jmap::EmailSort {
+    let Some(sort) = sort else {
+        return jmap::EmailSort::default();
+    };
+    let property = match sort.column.as_str() {
+        COLUMN_FROM => SortProperty::From,
+        COLUMN_SUBJECT => SortProperty::Subject,
+        _ => SortProperty::ReceivedAt,
+    };
+    jmap::EmailSort::new(property, sort.order == Order::Ascending)
+}
+
+/// The list's sort for a server sort (the inverse of [`email_sort`]).
+pub fn list_sort(sort: jmap::EmailSort) -> Sort {
+    let column = match sort.property {
+        SortProperty::From => COLUMN_FROM,
+        SortProperty::Subject => COLUMN_SUBJECT,
+        SortProperty::ReceivedAt => COLUMN_DATE,
+    };
+    let order = if sort.ascending {
+        Order::Ascending
+    } else {
+        Order::Descending
+    };
+    Sort::new(column, order)
 }
 
 impl MailState {
+    /// The whole mailbox's size, as the pager reads it.
+    pub fn total_rows(&self) -> Total {
+        Total::Known(self.total)
+    }
+
     /// The selected mailbox, when it is still in the list.
     pub fn selected_mailbox(&self) -> Option<&Mailbox> {
         self.selected
@@ -307,28 +396,38 @@ impl AccountView {
         self.entry.id.clone()
     }
 
-    /// Select a mailbox and fetch its first page.
-    fn select_mailbox(&mut self, id: String, limit: u32, work: &mut Vec<Work>) {
+    /// Select a mailbox and fetch its first page under `sort` (the list's
+    /// remembered one): a new mailbox starts at its first page with nothing
+    /// selected.
+    fn select_mailbox(&mut self, id: String, limit: u32, sort: Option<Sort>, work: &mut Vec<Work>) {
         self.mail.selected = Some(id.clone());
         self.mail.open = None;
         // The old mailbox's rows go at once, so none of them can be opened
         // under the new selection while its page loads.
         self.mail.emails.clear();
         self.mail.total = 0;
+        self.mail.table = TableState {
+            sort,
+            ..list_default()
+        };
         // An open still in flight belongs to the old mailbox.
         self.tickets.open += 1;
         self.mail.busy = true;
         self.fetch_emails(id, limit, work);
     }
 
-    /// Queue a page fetch; only the newest one's answer is applied.
+    /// Queue a fetch of the list's page in its sort, `limit` emails a page;
+    /// only the newest one's answer is applied.
     fn fetch_emails(&mut self, mailbox: String, limit: u32, work: &mut Vec<Work>) {
         self.tickets.page += 1;
+        self.mail.table.page_size = limit.max(1);
         work.push(Work::FetchEmails {
             account: self.work(),
             ticket: self.tickets.page,
             mailbox,
             limit,
+            position: self.mail.table.offset(),
+            sort: email_sort(self.mail.table.sort.as_ref()),
         });
     }
 
@@ -638,6 +737,9 @@ pub struct UiState {
     pub expanded: BTreeMap<String, bool>,
     /// The tree row the keyboard is on.
     pub cursor: Option<Node>,
+    /// The message list as remembered (persisted): the sort a mailbox opens
+    /// in, the dragged column widths, the density.
+    pub list: TableState,
 }
 
 impl Default for UiState {
@@ -649,6 +751,7 @@ impl Default for UiState {
             theme: ThemeChoice::default(),
             expanded: BTreeMap::new(),
             cursor: None,
+            list: list_default(),
         }
     }
 }
@@ -1347,6 +1450,8 @@ impl State {
                 if view.phase == Phase::Ready
                     && let Some(mailbox) = view.mail.selected.clone()
                 {
+                    // Pages of another size: back to the first.
+                    view.mail.table.page = 0;
                     view.fetch_emails(mailbox, limit, &mut self.work);
                 }
             }
@@ -2088,7 +2193,8 @@ impl State {
                         if let Some(id) = selected
                             && view.mail.selected.as_deref() != Some(id.as_str())
                         {
-                            view.select_mailbox(id, limit, &mut self.work);
+                            let sort = self.ui.list.sort.clone();
+                            view.select_mailbox(id, limit, sort, &mut self.work);
                         }
                     }
                     Done::Page(ticket, _) if ticket != view.tickets.page => {}
@@ -2096,6 +2202,21 @@ impl State {
                         view.mail.busy = false;
                         view.mail.emails = page.emails;
                         view.mail.total = page.total;
+                        let keys: Vec<String> =
+                            view.mail.emails.iter().map(|e| e.id.clone()).collect();
+                        view.mail.table.rows_changed(&keys);
+                        // A page past the end (emails went since it was
+                        // asked for): the last page that exists instead.
+                        let table = &mut view.mail.table;
+                        if let Some(last) = table.last_page(Total::Known(page.total))
+                            && keys.is_empty()
+                            && table.page > last
+                            && let Some(mailbox) = view.mail.selected.clone()
+                        {
+                            table.page = last;
+                            view.mail.busy = true;
+                            view.fetch_emails(mailbox, limit, &mut self.work);
+                        }
                         let emails = view.mail.emails.clone();
                         self.remember_recipients(&tag.account, &emails);
                     }
@@ -2272,7 +2393,7 @@ impl State {
         if !view.mail.mailboxes.iter().any(|m| m.id == id) {
             return false;
         }
-        view.select_mailbox(id, limit, &mut self.work);
+        view.select_mailbox(id, limit, self.ui.list.sort.clone(), &mut self.work);
         self.focus(account);
         self.set_mode_only(Mode::Mail);
         true
@@ -2350,8 +2471,94 @@ impl State {
                 read: true,
             });
         }
+        // The list selects the row it opened.
+        let index = view.mail.emails.iter().position(|e| e.id == id);
+        view.mail.table.selection = vec![id.clone()];
+        view.mail.table.focus = index;
         view.open_email(id, None, &mut self.work);
         true
+    }
+
+    /// The message list reported `event` on `account`'s view: a sort or a
+    /// page is a new server query (its page, its order); a selection or an
+    /// activation opens the email; a dragged width is remembered.
+    pub fn mail_table(&mut self, account: &str, event: TableEvent) {
+        let limit = self.settings.mail.page_size;
+        let Some(view) = self.accounts.iter_mut().find(|v| v.entry.id == account) else {
+            return;
+        };
+        match &event {
+            TableEvent::SortChanged(_) | TableEvent::PageChanged(_)
+                if view.phase == Phase::Ready =>
+            {
+                let Some(mailbox) = view.mail.selected.clone() else {
+                    return;
+                };
+                view.mail.table.apply(&event, SelectionMode::Single);
+                if let TableEvent::SortChanged(sort) = &event {
+                    self.ui.list.sort = sort.clone();
+                    self.config_dirty = true;
+                }
+                view.mail.busy = true;
+                view.fetch_emails(mailbox, limit, &mut self.work);
+            }
+            TableEvent::Selected { key, .. } | TableEvent::Activated { key, .. } => {
+                let opened = view.mail.open.as_ref().is_some_and(|e| e.id == *key);
+                view.mail.table.apply(&event, SelectionMode::Single);
+                if !opened {
+                    self.open_email(account, key.clone());
+                }
+            }
+            TableEvent::ColumnResized { column, width } => {
+                self.ui.list.widths.insert(column.clone(), *width);
+                self.config_dirty = true;
+            }
+            // The page size is a setting (email.mail.page_size), not the
+            // list's; and nothing pages while disconnected.
+            TableEvent::PageSizeChanged(_)
+            | TableEvent::SortChanged(_)
+            | TableEvent::PageChanged(_) => {}
+        }
+    }
+
+    /// Sort the current account's list by `column`, as its header click
+    /// would: another column starts in its own first order, the same one
+    /// reverses.
+    pub fn sort_mail(&mut self, column: &str) {
+        let Some(view) = self.current() else {
+            return;
+        };
+        let account = view.entry.id.clone();
+        if let Some(sort) = view.mail.table.next_sort(&list_columns(0.0), column, false) {
+            self.mail_table(&account, TableEvent::SortChanged(sort));
+        }
+    }
+
+    /// Move the current account's list to another page.
+    pub fn page_mail(&mut self, to: PageMove) {
+        let Some(view) = self.current() else {
+            return;
+        };
+        let account = view.entry.id.clone();
+        if let Some(event) = view.mail.table.page_event(to, view.mail.total_rows()) {
+            self.mail_table(&account, event);
+        }
+    }
+
+    /// Whether the current account's list can move `to` that page.
+    pub fn can_page_mail(&self, to: PageMove) -> bool {
+        self.current().is_some_and(|v| {
+            v.phase == Phase::Ready
+                && v.mail.selected.is_some()
+                && v.mail.table.can(to, v.mail.total_rows())
+        })
+    }
+
+    /// Whether the current account's list is sorted by `column`.
+    pub fn mail_sorted_by(&self, column: &str) -> bool {
+        self.current()
+            .and_then(|v| v.mail.table.sort.as_ref())
+            .is_some_and(|s| s.column == column)
     }
 
     /// `email.open`: show `account`'s email `id` in the reader, whether or
@@ -2941,7 +3148,8 @@ impl State {
                                 "from": e.from_display(),
                                 "date": e.date.as_ref().or(e.received_at.as_ref()),
                                 "read": e.is_read(),
-                                "flagged": e.keywords.as_ref().and_then(|k| k.get("$flagged")).and_then(Value::as_bool).unwrap_or(false),
+                                "flagged": e.is_flagged(),
+                                "attachment": e.has_attachment == Some(true),
                             })
                         })
                         .collect()
@@ -2954,6 +3162,11 @@ impl State {
                     "open": view.mail.open.as_ref().map(|e| &e.id),
                     "reader": view.mail.open.as_ref().map(|e| view.mail.reader.info(e)),
                     "busy": view.mail.busy,
+                    "table": view.mail.table.describe(
+                        &list_columns(0.0),
+                        view.mail.total_rows(),
+                        view.mail.emails.len(),
+                    ),
                 });
                 out["calendar"] = json!({
                     "calendars": view.calendars.calendars,
@@ -3022,6 +3235,7 @@ impl State {
                 "cursor": self.ui.cursor.as_ref().map(Node::key),
                 "expanded": self.ui.expanded,
                 "theme_mode": self.ui.theme.mode.map(|m| format!("{m:?}").to_lowercase()),
+                "list": self.ui.list,
             },
             "migrating": self.migration.is_some(),
             "exiting": self.exiting,
@@ -3452,6 +3666,7 @@ impl State {
             UiEvent::OpenEmail(account, id) => {
                 self.open_email(&account, id);
             }
+            UiEvent::MailTable(account, event) => self.mail_table(&account, event),
             UiEvent::SelectEvent(account, index) => {
                 if let Some(view) = self.account_mut(&account) {
                     view.calendars.open = Some(index);
@@ -3930,6 +4145,172 @@ pub(crate) mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    /// Answer page fetch `ticket` of account a with `shown` emails (E0, E1,
+    /// …) of `total`.
+    fn answer(state: &mut State, ticket: u64, shown: usize, total: u64) {
+        let emails = (0..shown)
+            .map(|i| {
+                serde_json::from_value(json!({ "id": format!("E{i}"), "keywords": {} })).unwrap()
+            })
+            .collect();
+        done(
+            state,
+            "a",
+            Done::Page(ticket, Ok(jmap::EmailPage { emails, total })),
+        );
+    }
+
+    /// Account a with an inbox and a folder, the inbox's first page of
+    /// 100 (the default page size) shown out of `total`.
+    fn listed(total: u64) -> State {
+        let mut state = connected();
+        done(
+            &mut state,
+            "a",
+            Done::Mailboxes(Ok(vec![
+                mailbox("in", Some("inbox"), 0),
+                mailbox("folder", None, 0),
+            ])),
+        );
+        state.take_work();
+        answer(&mut state, 1, total.min(100) as usize, total);
+        state
+    }
+
+    /// The page fetches in `work`: position, limit and sort.
+    fn fetches(work: &[Work]) -> Vec<(u64, u32, jmap::EmailSort)> {
+        work.iter()
+            .filter_map(|w| match w {
+                Work::FetchEmails {
+                    position,
+                    limit,
+                    sort,
+                    ..
+                } => Some((*position, *limit, *sort)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_sort_refetches_the_first_page_on_the_server_and_is_remembered() {
+        let mut state = listed(250);
+        state.mail_table("a", TableEvent::PageChanged(2));
+        let newest = jmap::EmailSort::default();
+        assert_eq!(fetches(&state.take_work()), [(200, 100, newest)]);
+        state.mail_table(
+            "a",
+            TableEvent::SortChanged(Some(Sort::new(COLUMN_SUBJECT, Order::Ascending))),
+        );
+        assert_eq!(state.account("a").unwrap().mail.table.page, 0);
+        let subject = jmap::EmailSort::new(SortProperty::Subject, true);
+        assert_eq!(fetches(&state.take_work()), [(0, 100, subject)]);
+        assert_eq!(
+            state.ui.list.sort,
+            Some(Sort::new(COLUMN_SUBJECT, Order::Ascending))
+        );
+        assert!(state.config_dirty());
+        // The command on the sorted column reverses it, as a header does.
+        state.sort_mail(COLUMN_SUBJECT);
+        let reversed = jmap::EmailSort::new(SortProperty::Subject, false);
+        assert_eq!(fetches(&state.take_work()), [(0, 100, reversed)]);
+        assert!(state.mail_sorted_by(COLUMN_SUBJECT) && !state.mail_sorted_by(COLUMN_DATE));
+    }
+
+    #[test]
+    fn a_new_mailbox_opens_at_its_first_page_in_the_remembered_sort() {
+        let mut state = listed(250);
+        state.sort_mail(COLUMN_FROM);
+        state.take_work();
+        answer(&mut state, 2, 100, 250);
+        state.page_mail(PageMove::Next);
+        state.take_work();
+        assert_eq!(state.account("a").unwrap().mail.table.page, 1);
+        assert!(state.select_mailbox("a", "folder".into()));
+        let table = &state.account("a").unwrap().mail.table;
+        assert_eq!((table.page, table.focus), (0, None));
+        assert!(table.selection.is_empty());
+        let from = jmap::EmailSort::new(SortProperty::From, true);
+        assert_eq!(fetches(&state.take_work()), [(0, 100, from)]);
+    }
+
+    #[test]
+    fn a_late_page_is_dropped_and_one_past_the_end_steps_back() {
+        let mut state = listed(250);
+        assert!(state.can_page_mail(PageMove::Last));
+        state.page_mail(PageMove::Last); // ticket 2
+        state.page_mail(PageMove::First); // ticket 3
+        state.take_work();
+        // The last page's answer arrives after the first page was asked for.
+        answer(&mut state, 2, 50, 250);
+        assert_eq!(state.account("a").unwrap().mail.emails.len(), 100);
+        answer(&mut state, 3, 100, 250);
+        assert!(!state.account("a").unwrap().mail.busy);
+        // Emails went meanwhile: page 2 of 150 is past the end.
+        state.page_mail(PageMove::Last); // ticket 4
+        state.take_work();
+        answer(&mut state, 4, 0, 150);
+        assert_eq!(state.account("a").unwrap().mail.table.page, 1);
+        assert_eq!(
+            fetches(&state.take_work()),
+            [(100, 100, jmap::EmailSort::default())]
+        );
+    }
+
+    #[test]
+    fn a_selected_row_opens_and_leaves_the_selection_when_it_goes() {
+        let mut state = listed(3);
+        state.mail_table(
+            "a",
+            TableEvent::Selected {
+                index: 1,
+                key: "E1".into(),
+                pick: toolkit::datatable::Pick::Only,
+            },
+        );
+        let work = state.take_work();
+        assert!(
+            work.iter()
+                .any(|w| matches!(w, Work::OpenEmail { id, .. } if id == "E1"))
+        );
+        let table = &state.account("a").unwrap().mail.table;
+        assert_eq!(table.selection, ["E1"]);
+        assert_eq!(table.focus, Some(1));
+        // A refresh without E1: the selection goes, the focus stays on the page.
+        state.refresh();
+        state.take_work();
+        answer(&mut state, 2, 1, 1);
+        let table = &state.account("a").unwrap().mail.table;
+        assert!(table.selection.is_empty());
+        assert_eq!(table.focus, Some(0));
+        // A dragged width is remembered for every account's list.
+        state.config_saved();
+        state.mail_table(
+            "a",
+            TableEvent::ColumnResized {
+                column: COLUMN_FROM.into(),
+                width: 210.0,
+            },
+        );
+        assert_eq!(state.ui.list.widths.get(COLUMN_FROM), Some(&210.0));
+        assert!(state.config_dirty());
+    }
+
+    #[test]
+    fn the_list_sort_maps_to_the_server_and_back() {
+        for property in SortProperty::ALL {
+            for ascending in [true, false] {
+                let sort = jmap::EmailSort::new(property, ascending);
+                assert_eq!(email_sort(Some(&list_sort(sort))), sort);
+            }
+        }
+        assert_eq!(email_sort(None), jmap::EmailSort::default());
+        assert_eq!(
+            list_default().sort,
+            Some(list_sort(jmap::EmailSort::default()))
+        );
     }
 
     #[test]

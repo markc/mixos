@@ -40,6 +40,9 @@ pub enum UiEvent {
     TreeKey(TreeKey),
     /// Open an account's email (also marks it read through the state).
     OpenEmail(String, String),
+    /// The message list of an account reported a sort, page, selection,
+    /// activation or column width.
+    MailTable(String, toolkit::datatable::TableEvent),
     SelectEvent(String, usize),
     SelectContact(String, usize),
     ContactFilter(String, String),
@@ -251,7 +254,7 @@ fn centre(
     events: &mut Vec<UiEvent>,
 ) {
     match state.mode {
-        Mode::Mail => mail::list(ui, state, view, commands, strings, stroke, events),
+        Mode::Mail => mail::list(ui, state, view, commands, strings, events),
         Mode::Calendar => calendar::list(ui, view, stroke, events),
         Mode::Contacts => contacts::list(ui, view, stroke, events),
     }

@@ -220,6 +220,7 @@
                         <a href="#applications">Applications</a>
                         <a href="#appearance">Appearance</a>
                         <a href="#app-settings--email">App Settings → Email</a>
+                        <a href="#every-control-and-its-bus-verb" class="toc-h3">Every control and its Bus verb</a>
                         <a href="#for-agents">For agents</a>
                         <a href="#wallpaper">Wallpaper</a>
                         <a href="#running-and-testing">Running and testing</a>
@@ -320,7 +321,12 @@ the defaults and ranges.</p>
 the settings service like the session's look. It is separate from
 Applications, which installs apps. Its first section is <strong>Email</strong>, the
 <a href="/email/">email app</a>'s accounts and mail options (<code>email.*</code> in
-settingsd; see the <a href="/docs/spec/settings/">email settings</a>).</p>
+settingsd; see the <a href="/docs/spec/settings/">email settings</a>).
+It has four tabs, <strong>Accounts</strong>, <strong>Mail</strong>, <strong>Reader</strong> and <strong>Compose</strong>; an
+agent opens one with <code>prefs.section {name:"email", tab:"reader"}</code>, and
+<code>prefs.section {name:"email", tab:"accounts", account:"&lt;id&gt;"}</code> also
+selects that account (Email's <strong>Account Settings…</strong> does this; an
+unknown id selects none).</p>
 <ul>
 <li><strong>Accounts</strong> lists the accounts in the order Email's folder tree shows
 them, marking the default and any that are disabled. <strong>Add account</strong>
@@ -335,7 +341,14 @@ is checked by the settings service's own rules first, and a field it
 would refuse is named under the field and nothing is sent. <strong>Enabled</strong>
 applies at once.</li>
 <li><strong>Mail</strong> holds messages per page (10 to 500), marking messages read when
-opened, and asking before deleting them; each applies at once. <strong>Reset
+opened, and asking before deleting them; each applies at once.</li>
+<li><strong>Reader</strong> sets the text size of the message reader, 10 to 32 points
+in half-point steps (default 15), and its <strong>colours</strong>: Follow window,
+Light or Dark. A line set at that size, on those colours, shows it;
+<strong>Default size</strong> puts the size back. Each applies at once.</li>
+<li><strong>Compose</strong>: <strong>Quote the original when replying</strong>, <strong>Write my reply</strong>
+above or below the quote (only while quoting), and <strong>Autosave drafts</strong>.
+Each applies at once. <strong>Reset
 email settings…</strong> asks first, then puts every email setting back to its
 default, which means no accounts.</li>
 </ul>
@@ -380,19 +393,47 @@ send prefs prefs.email.set body='{"op":"default","id":"acct-0f3a2b1c9d8e"}'
 send prefs prefs.email.set body='{"op":"move","id":"acct-0f3a2b1c9d8e","direction":"up"}'
 send prefs prefs.email.set body='{"op":"enable","id":"acct-0f3a2b1c9d8e","enabled":false}'
 
--- A mail option.
+-- A mail option, and the reader's text size.
 send prefs prefs.email.set body='{"path":"email.mail.page_size","value":50}'
+send prefs prefs.email.set body='{"path":"email.reader.font_size","value":18.5}'
 
 -- Hand a password to Email (answered once Email has), or forget it.
 send prefs prefs.email.password body='{"id":"acct-0f3a2b1c9d8e","password":"…"}'
 send prefs prefs.email.password body='{"id":"acct-0f3a2b1c9d8e","forget":true}'
 </code></pre>
 <p><code>prefs.email.set</code> takes <code>op</code> <code>add</code>, <code>update</code>, <code>remove</code>, <code>move</code>, <code>default</code>
-or <code>enable</code>, or <code>path</code> and <code>value</code> for a mail option. Over the Bus,
+or <code>enable</code>, or <code>path</code> and <code>value</code> for a mail option or <code>email.reader.font_size</code>. Over the Bus,
 <code>remove</code> removes at once: the confirmation belongs to the window. A field
 the settings service would refuse is answered with <code>ARGUMENT</code>, naming it.
 For scripts that do not need Prefs open, call <code>settings.apply</code> on the
 <code>email.*</code> paths directly, and <code>email.account.password.set</code> on Email.</p>
+<h3 id="every-control-and-its-bus-verb">Every control and its Bus verb</h3>
+<p>Every option in the section can be reached by an agent. <code>prefs.email</code>
+lists the settings paths it takes as <code>paths</code>; <code>prefs.email.set {path, value}</code> sets any of them and <code>prefs.email.reset {path}</code> puts one back to
+its default (no <code>path</code>: the whole group).</p>
+<table><thead><tr><th>Control</th><th>Settings path</th><th>Bus</th></tr></thead><tbody>
+<tr><td>Account list, order</td><td><code>email.accounts</code></td><td><code>prefs.email.set</code> <code>op</code> <code>add</code>/<code>update</code>/<code>remove</code>/<code>move</code>/<code>enable</code>, or <code>{path:"email.accounts"}</code> (a list that drops an account is refused: removals go through <code>op remove</code>)</td></tr>
+<tr><td>Make default</td><td><code>email.default_account</code></td><td><code>prefs.email.set {op:"default", id}</code> or <code>{path}</code>; <code>prefs.execute email.account.default</code></td></tr>
+<tr><td>Messages per page</td><td><code>email.mail.page_size</code></td><td><code>prefs.email.set {path, value}</code></td></tr>
+<tr><td>Mark messages read when opened</td><td><code>email.mail.mark_read_on_open</code></td><td><code>prefs.email.set {path, value}</code></td></tr>
+<tr><td>Ask before deleting messages</td><td><code>email.mail.confirm_delete</code></td><td><code>prefs.email.set {path, value}</code></td></tr>
+<tr><td>Reader text size, Default size</td><td><code>email.reader.font_size</code></td><td><code>prefs.email.set {path, value}</code>, <code>prefs.email.reset {path}</code>; <code>prefs.execute email.reader.reset</code></td></tr>
+<tr><td>Reader colours (Follow window, Light, Dark)</td><td><code>email.reader.theme</code> (<code>auto</code>, <code>light</code>, <code>dark</code>)</td><td><code>prefs.email.set {path, value}</code>, <code>prefs.email.reset {path}</code></td></tr>
+<tr><td>Quote the original when replying</td><td><code>email.compose.quote_on_reply</code></td><td><code>prefs.email.set {path, value}</code>, <code>prefs.email.reset {path}</code></td></tr>
+<tr><td>Write my reply above / below the quote</td><td><code>email.compose.reply_position</code> (<code>above</code>, <code>below</code>)</td><td><code>prefs.email.set {path, value}</code>, <code>prefs.email.reset {path}</code></td></tr>
+<tr><td>Autosave drafts</td><td><code>email.compose.autosave</code></td><td><code>prefs.email.set {path, value}</code>, <code>prefs.email.reset {path}</code></td></tr>
+<tr><td>Reset email settings…</td><td><code>email</code></td><td><code>prefs.email.reset</code> (refused while Email runs and holds accounts); <code>prefs.execute email.reset</code>, then <code>dialog.confirm</code></td></tr>
+</tbody></table>
+<table><thead><tr><th>Button</th><th>Command (<code>prefs.execute {id}</code>)</th></tr></thead><tbody>
+<tr><td>Add account, Save, Revert</td><td><code>email.account.add</code>, <code>email.account.save</code>, <code>email.account.revert</code></td></tr>
+<tr><td>Remove…</td><td><code>email.account.remove</code>, then <code>dialog.confirm</code> (or <code>prefs.email.set {op:"remove", id}</code>)</td></tr>
+<tr><td>Move up, Move down, Make default, Enabled</td><td><code>email.account.up</code>, <code>email.account.down</code>, <code>email.account.default</code>, <code>email.account.enable</code></td></tr>
+<tr><td>Set password, Forget password…, Connect now</td><td><code>email.password.set</code>, <code>email.password.forget</code> then <code>dialog.confirm</code>, <code>email.account.connect</code> (or <code>prefs.email.password {id, password}</code> / <code>{id, forget:true}</code>)</td></tr>
+<tr><td>The Accounts, Mail, Reader and Compose tabs</td><td><code>view.email.accounts</code>, <code>view.email.mail</code>, <code>view.email.reader</code>, <code>view.email.compose</code> (or <code>prefs.section {name:"email", tab}</code>)</td></tr>
+<tr><td>A confirmation's Confirm / Cancel</td><td><code>dialog.confirm</code>, <code>dialog.cancel</code> (<code>prefs.dialog {open:null}</code> also cancels)</td></tr>
+</tbody></table>
+<p>The form's fields are typed through the window (<code>prefs.ui.type</code>), or set
+in one call with <code>prefs.email.set {op:"update", id, …}</code>.</p>
 <h2 id="for-agents">For agents</h2>
 <p>Prefs answers on the Bus as <code>prefs</code>. <code>prefs.info</code> reports the whole state;
 <code>prefs.apps</code> the rows, selection and notes; <code>prefs.appearance</code> the session

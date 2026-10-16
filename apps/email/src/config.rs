@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 
 use jmap::Account;
 use serde::{Deserialize, Serialize};
+use toolkit::datatable::TableState;
 
 use crate::state::{Mode, State};
 
@@ -84,6 +85,9 @@ pub struct UiConfig {
     /// Tree nodes by key (`crate::state::Node::key`); absent is expanded.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub expanded: BTreeMap<String, bool>,
+    /// The message list: its sort, dragged column widths and density (the
+    /// page and the selection are a session's, never saved).
+    pub list: TableState,
 }
 
 impl Default for UiConfig {
@@ -94,13 +98,36 @@ impl Default for UiConfig {
             mode: Mode::Mail,
             account: None,
             expanded: BTreeMap::new(),
+            list: crate::state::list_default(),
         }
+    }
+}
+
+/// What of the message list is saved: its sort (one of the list's own
+/// columns, else the default), widths that are real lengths, the density.
+fn saved_list(list: &TableState) -> TableState {
+    let columns = crate::state::list_columns(0.0);
+    let sort = list
+        .sort
+        .clone()
+        .filter(|s| columns.iter().any(|c| c.id == s.column && c.sortable));
+    TableState {
+        sort: sort.or_else(|| crate::state::list_default().sort),
+        widths: list
+            .widths
+            .iter()
+            .filter(|(id, w)| w.is_finite() && **w >= 1.0 && columns.iter().any(|c| c.id == *id))
+            .map(|(id, w)| (id.clone(), *w))
+            .collect(),
+        density: list.density,
+        ..crate::state::list_default()
     }
 }
 
 impl UiConfig {
     fn normalised(self) -> Self {
         Self {
+            list: saved_list(&self.list),
             places: if self.places.is_finite() {
                 self.places.clamp(0.1, 0.35)
             } else {
@@ -333,6 +360,7 @@ impl From<&State> for EmailConfig {
                 mode: state.mode,
                 account: state.selected.clone(),
                 expanded: state.ui.expanded.clone(),
+                list: saved_list(&state.ui.list),
             },
             cache: state.cache(),
         }
@@ -394,6 +422,32 @@ mod tests {
         assert_eq!(loaded.config.ui.places, 0.25);
         assert_eq!(loaded.config.ui.reader, UiConfig::default().reader);
         assert!(loaded.config.cache.accounts.is_empty());
+    }
+
+    #[test]
+    fn the_list_keeps_its_sort_and_widths_but_never_its_page() {
+        use toolkit::datatable::{Order, Sort};
+        let dir = tempfile::tempdir().unwrap();
+        let (_, file) = ConfigFile::load(dir.path());
+        let mut config = EmailConfig::default();
+        config.ui.list.sort = Some(Sort::new("subject", Order::Ascending));
+        config.ui.list.widths.insert("from".into(), 210.0);
+        assert!(file.save(&config).unwrap());
+        let (loaded, _) = ConfigFile::load(dir.path());
+        assert_eq!(loaded.config.ui.list, config.ui.list);
+        // A sort by no column of the list, a nonsense width and a page are
+        // dropped on load.
+        std::fs::write(
+            &file.path,
+            "schema_version: 2\nui: {list: {sort: {column: \"size\", order: \"ascending\"}, widths: {from: -3, subject: 120}, page: 4}}\n",
+        )
+        .unwrap();
+        let (loaded, _) = ConfigFile::load(dir.path());
+        let list = loaded.config.ui.list;
+        assert_eq!(list.sort, crate::state::list_default().sort);
+        assert_eq!(list.page, 0);
+        assert_eq!(list.widths.get("subject"), Some(&120.0));
+        assert!(!list.widths.contains_key("from"));
     }
 
     #[test]

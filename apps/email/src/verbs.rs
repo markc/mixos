@@ -78,7 +78,7 @@ pub const VERBS: &[Verb] = &[
         "email.info",
         true,
         "{}",
-        "The whole window state: accounts (no secret), selection, mode, lists shown, compose, dialogs and UI shape",
+        "The whole window state: accounts (no secret), selection, mode, lists shown (the message list's sort, page and selection under mail.table), compose, dialogs and UI shape",
     ),
     verb(
         "email.commands",
@@ -101,8 +101,8 @@ pub const VERBS: &[Verb] = &[
     verb(
         "email.list",
         true,
-        r#"{"account":"optional account id","mailbox":"optional mailbox id (default the selected one)","offset":"optional integer","limit":"optional integer 1..500 (default the page size)","query":"optional text to match"}"#,
-        "One page of a mailbox, newest first, with the total count",
+        r#"{"account":"optional account id","mailbox":"optional mailbox id (default the selected one)","sort":"optional received|subject|from (default received)","order":"optional asc|desc (default desc for received, asc otherwise)","page":"optional integer page, 0-based, of limit emails (or offset)","offset":"optional integer (or page)","limit":"optional integer 1..500 (default the page size)","query":"optional text to match"}"#,
+        "One page of a mailbox in the order asked for (newest first by default), with the total count, the page and the sort",
     ),
     verb(
         "email.search",
@@ -378,6 +378,7 @@ pub enum Query {
         text: Option<String>,
         offset: u64,
         limit: u64,
+        sort: jmap::EmailSort,
     },
     Get {
         id: String,
@@ -510,11 +511,19 @@ pub async fn run_query(client: &Client, query: Query) -> Result<Value, jmap::Err
             text,
             offset,
             limit,
+            sort,
         } => {
             let page = client
-                .email_query(mailbox.as_deref(), text.as_deref(), offset, limit)
+                .email_query_sorted(mailbox.as_deref(), text.as_deref(), sort, offset, limit)
                 .await?;
-            json!({ "emails": to_value(page.emails), "total": page.total, "offset": offset })
+            json!({
+                "emails": to_value(page.emails),
+                "total": page.total,
+                "offset": offset,
+                "page": offset / limit.max(1),
+                "sort": sort.property.name(),
+                "order": if sort.ascending { "asc" } else { "desc" },
+            })
         }
         Query::Get { id } => {
             let email = client.email(&id).await?;
@@ -652,6 +661,24 @@ fn flag(args: &Value, key: &str) -> Checked<Option<bool>> {
         Some(Value::Bool(b)) => Ok(Some(*b)),
         Some(_) => Err(invalid(format!("{key} must be true or false"))),
     }
+}
+
+/// `email.list`'s `sort` (`received`, `subject` or `from`; default
+/// `received`) and `order` (`asc` or `desc`; default newest first for a
+/// date, A to Z otherwise).
+fn list_sort(args: &Value) -> Checked<jmap::EmailSort> {
+    let property = match text(args, "sort")? {
+        None => jmap::SortProperty::ReceivedAt,
+        Some(name) => jmap::SortProperty::from_name(&name)
+            .ok_or_else(|| invalid("sort must be received, subject or from"))?,
+    };
+    let ascending = match text(args, "order")?.as_deref() {
+        None => property.ascending_first(),
+        Some("asc") => true,
+        Some("desc") => false,
+        Some(_) => return Err(invalid("order must be asc or desc")),
+    };
+    Ok(jmap::EmailSort::new(property, ascending))
 }
 
 /// A whole number (Mix sends 10 or 10.0).
@@ -855,12 +882,21 @@ fn dispatch(
                     .account(&account)
                     .and_then(|v| v.mail.selected.clone())
             });
-            let limit = number(args, "limit")?.unwrap_or(u64::from(state.settings.mail.page_size));
+            let limit = number(args, "limit")?
+                .unwrap_or(u64::from(state.settings.mail.page_size))
+                .clamp(1, 500);
+            let offset = match (number(args, "offset")?, number(args, "page")?) {
+                (Some(_), Some(_)) => return Err(invalid("give offset or page, not both")),
+                (Some(offset), None) => offset,
+                (None, Some(page)) => page.saturating_mul(limit),
+                (None, None) => 0,
+            };
             let list = Query::List {
                 mailbox: Some(mailbox.ok_or_else(|| invalid("mailbox is required"))?),
                 text: text(args, "query")?.filter(|t| !t.is_empty()),
-                offset: number(args, "offset")?.unwrap_or(0),
-                limit: limit.clamp(1, 500),
+                offset,
+                limit,
+                sort: list_sort(args)?,
             };
             query(state, account, list);
         }
@@ -873,6 +909,7 @@ fn dispatch(
                 limit: number(args, "limit")?
                     .unwrap_or(u64::from(state.settings.mail.page_size))
                     .clamp(1, 500),
+                sort: jmap::EmailSort::default(),
             };
             query(state, account, search);
         }
@@ -1419,6 +1456,61 @@ mod tests {
             state.take_replies().is_empty(),
             "answered once the server does"
         );
+    }
+
+    #[test]
+    fn a_list_asks_the_server_for_its_sort_and_page() {
+        let mut state = connected_many(&["a"]);
+        run(
+            &mut state,
+            "email.list",
+            json!({"mailbox": "m", "sort": "subject", "page": 2, "limit": 20}),
+        );
+        match state.take_work().as_slice() {
+            [
+                Work::Query {
+                    query:
+                        Query::List {
+                            offset: 40,
+                            limit: 20,
+                            sort,
+                            ..
+                        },
+                    ..
+                },
+            ] => assert_eq!(
+                *sort,
+                jmap::EmailSort::new(jmap::SortProperty::Subject, true)
+            ),
+            other => panic!("{other:?}"),
+        }
+        // No sort is the newest first; an order flips it.
+        run(
+            &mut state,
+            "email.list",
+            json!({"mailbox": "m", "order": "asc"}),
+        );
+        assert!(matches!(
+            state.take_work().as_slice(),
+            [Work::Query {
+                query: Query::List { offset: 0, sort, .. },
+                ..
+            }] if *sort == jmap::EmailSort::new(jmap::SortProperty::ReceivedAt, true)
+        ));
+        for bad in [
+            json!({"mailbox": "m", "sort": "size"}),
+            json!({"mailbox": "m", "order": "up"}),
+            json!({"mailbox": "m", "page": 1, "offset": 5}),
+            json!({"mailbox": "m", "page": -1}),
+        ] {
+            run(&mut state, "email.list", bad.clone());
+            assert_eq!(
+                state.take_replies()[0].body["error_code"],
+                code::INVALID_ARGUMENT,
+                "{bad}"
+            );
+        }
+        assert!(state.take_work().is_empty());
     }
 
     #[test]
