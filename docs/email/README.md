@@ -45,7 +45,19 @@ and **confirm before delete**. Every change applies at once:
 - a change to the URL, address or CA path reconnects;
 - a rename relabels;
 - turning an account off disconnects it;
-- a removed account's client, view and password go.
+- a removed account's client and view go.
+
+A settings read never deletes a password. Only **Email** forgets one: an
+account removed with `email.account.remove`, or an empty
+`email.account.password.set`. An account removed elsewhere (in Prefs, or
+by a settings reset) leaves its entry in `secrets.conf.mix`, unused.
+
+settingsd omits the `email` group at its defaults, so a read with no
+accounts cannot be told apart from a settingsd that does not carry the
+group. When such a read arrives while accounts are shown, Email keeps
+them (views, connections, passwords) and says so in the status line. It
+stops keeping them at the next read that lists accounts, or when an
+account is removed through Email.
 
 If settingsd is not running, the window opens the accounts it last saw
 (cached in its config) read-only, and the status line says so.
@@ -57,9 +69,13 @@ the same button.
 **Upgrading from the single-account version.** The old `config.conf.mix`
 (schema 1, with the password inline) migrates once, losing nothing:
 
-1. The password moves to `secrets.conf.mix`, and an inline CA bundle to
-   `ca-<id>.pem` beside it.
-2. The account is added to settingsd and made the default.
+1. The password is written to `secrets.conf.mix`, and an inline CA bundle
+   to `ca-<id>.pem` beside it. Nothing else happens until that save has
+   landed. A user name and password inside the old server URL are
+   removed (the status line says so, without the URL).
+2. The account is added to settingsd and made the default. When
+   settingsd already holds it under another id, the password is written
+   under that id, and that save must land too.
 3. Only then is the file rewritten as schema 2: the window shape and the
    accounts cache, with no secret.
 

@@ -35,7 +35,7 @@ use toolkit::command::{CommandError, Origin};
 use toolkit::{Registry, Strings, drive};
 
 use crate::state::{Mode, Phase, State, code};
-use crate::writer::Change;
+use crate::writer::{AccountPatch, Change};
 use crate::{APP, APP_ID};
 
 pub const SCHEMA: &str = "email.v1";
@@ -748,7 +748,11 @@ pub fn end_after(start: &str, duration: &str) -> Result<String, String> {
     if rest.is_empty() || (time.is_empty() && rest.contains('T')) {
         return Err(bad());
     }
-    let end = begin + chrono::Duration::seconds(seconds);
+    // Fallible all the way: a Bus caller's duration must never panic the
+    // window, however large.
+    let end = chrono::Duration::try_seconds(seconds)
+        .and_then(|span| begin.checked_add_signed(span))
+        .ok_or_else(|| format!("duration {duration:?} goes past the representable dates"))?;
     Ok(end.to_rfc3339())
 }
 
@@ -1172,49 +1176,58 @@ fn dispatch(
 /// one, written to settingsd; the password, if any, to the secrets file
 /// once settingsd has the account.
 fn account_set(state: &mut State, id: u64, args: &Value) -> Checked<()> {
-    let existing = match text(args, "id")? {
-        Some(account) => Some(state.settings.account(&account).cloned().ok_or_else(|| {
-            Bad(
-                code::UNKNOWN_ACCOUNT,
-                crate::label_with("unknown-account", &[("id", &account)]),
-            )
-        })?),
-        None => None,
-    };
-    let field = |key: &str, current: Option<&str>| -> Checked<String> {
-        match (text(args, key)?, current) {
-            (Some(value), _) => Ok(value.trim().to_owned()),
-            (None, Some(current)) => Ok(current.to_owned()),
-            (None, None) => Err(invalid(format!("{key} is required"))),
-        }
-    };
     let ca_path = match args.get("ca_path") {
-        None => existing.as_ref().and_then(|e| e.ca_path.clone()),
-        Some(Value::Null) => None,
-        Some(Value::String(path)) if path.trim().is_empty() => None,
-        Some(Value::String(path)) => Some(path.trim().to_owned()),
+        None => None,
+        Some(Value::Null) => Some(None),
+        Some(Value::String(path)) if path.trim().is_empty() => Some(None),
+        Some(Value::String(path)) => Some(Some(path.trim().to_owned())),
         Some(_) => return Err(invalid("ca_path must be a string or null")),
     };
-    let entry = AccountEntry {
-        id: existing
-            .as_ref()
-            .map(|e| e.id.clone())
-            .unwrap_or_else(|| settings::email::mint_account_id(&state.settings.accounts)),
-        name: field("name", existing.as_ref().map(|e| e.name.as_str()))?,
-        url: field("url", existing.as_ref().map(|e| e.url.as_str()))?
-            .trim_end_matches('/')
-            .to_owned(),
-        email: field("email", existing.as_ref().map(|e| e.email.as_str()))?,
+    let trimmed = |key: &str| -> Checked<Option<String>> {
+        Ok(text(args, key)?.map(|v| v.trim().to_owned()))
+    };
+    let patch = AccountPatch {
+        name: trimmed("name")?,
+        url: trimmed("url")?.map(|u| u.trim_end_matches('/').to_owned()),
+        email: trimmed("email")?,
         ca_path,
-        enabled: flag(args, "enabled")?
-            .or(existing.as_ref().map(|e| e.enabled))
-            .unwrap_or(true),
-        signature: text(args, "signature")?
-            .or(existing.as_ref().map(|e| e.signature.clone()))
-            .unwrap_or_default(),
+        enabled: flag(args, "enabled")?,
+        signature: text(args, "signature")?,
     };
     let password = text(args, "password")?.filter(|p| !p.is_empty());
-    state.change_accounts(Change::Upsert(entry), Some(id), password);
+    let change = match text(args, "id")? {
+        // An update names only what it changes: a retry after a conflict
+        // reapplies just those fields to the fresh read.
+        Some(account) => {
+            if state.settings.account(&account).is_none() {
+                return Err(Bad(
+                    code::UNKNOWN_ACCOUNT,
+                    crate::label_with("unknown-account", &[("id", &account)]),
+                ));
+            }
+            Change::Update(account, patch)
+        }
+        None => {
+            let required = |value: &Option<String>, key: &str| -> Checked<String> {
+                value
+                    .clone()
+                    .filter(|v| !v.is_empty())
+                    .ok_or_else(|| invalid(format!("{key} is required")))
+            };
+            let mut entry = AccountEntry {
+                id: settings::email::mint_account_id(&state.settings.accounts),
+                name: required(&patch.name, "name")?,
+                url: required(&patch.url, "url")?,
+                email: required(&patch.email, "email")?,
+                ca_path: None,
+                enabled: true,
+                signature: String::new(),
+            };
+            patch.apply(&mut entry);
+            Change::Upsert(entry)
+        }
+    };
+    state.change_accounts(change, Some(id), password);
     Ok(())
 }
 
@@ -1471,6 +1484,22 @@ mod tests {
         assert!(end_after("2026-10-14T08:00:00Z", "1H").is_err());
         assert!(end_after("2026-10-14T08:00:00Z", "PT").is_err());
         assert!(end_after("tomorrow", "PT1H").is_err());
+    }
+
+    /// Review finding 6: a huge duration is refused, never a panic, and the
+    /// verb answers INVALID_ARGUMENT.
+    #[test]
+    fn an_overflowing_duration_is_refused_not_a_panic() {
+        assert!(end_after("2026-10-14T08:00:00Z", "PT9223372036854775807S").is_err());
+        assert!(end_after("2026-10-14T08:00:00Z", "P9000000000W").is_err());
+        let mut state = connected_many(&["a"]);
+        run(
+            &mut state,
+            "email.event.create",
+            json!({"calendar": "C1", "title": "x", "start": "2026-10-14T08:00:00Z", "duration": "PT9223372036854775807S"}),
+        );
+        let reply = &state.take_replies()[0];
+        assert_eq!(reply.body["error_code"], code::INVALID_ARGUMENT);
     }
 
     #[test]
