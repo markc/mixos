@@ -8,6 +8,26 @@ generated: by docs/_build/gen-site.mix from libs/settings/CHANGELOG.md; do not e
 
 > Mirrored from [`libs/settings/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/libs/settings/CHANGELOG.md), where releases update it. The component's page is [settings](README.md). This page describes the current `main` branch of MixOS.
 
+## 0.8.0
+
+Additive, store format unchanged (3):
+
+- `Desktop.email` (`email::Email`): the email app's JMAP accounts
+  (`email.accounts`, replaced whole, in tree order: id, name, url, email,
+  ca_path, enabled, signature), `email.default_account` and the mail options
+  `email.mail.page_size` (10–500, default 100), `mark_read_on_open` and
+  `confirm_delete` (both default true). Omitted at its defaults, so older
+  profiles keep their seals; it does not touch `Effective`. A profile that
+  sets any of it will not load in a 0.7.0 build: reset `email` first.
+- Nothing in it is secret: an account has no password field and every
+  record refuses unknown keys, so `settings.apply` refuses an account that
+  carries `password`.
+- `Summary.email` and `Followed::Look.email` carry it to followers;
+  `email::from_snapshot`, `email::from_summary` and `Email::from_account`
+  read it; `email::mint_account_id` mints a new unique `acct-` id.
+- `settings.describe` lists each `email.*` path; `email` alone resets or
+  replaces the whole group.
+
 ## 0.7.0
 
 Additive, store format unchanged (3):
