@@ -50,16 +50,17 @@ fn directory(path: &Path, create: bool) -> io::Result<File> {
             {
                 return Err(io::Error::last_os_error());
             }
-            // The new entry lives in the parent: sync it so a crash cannot drop
-            // the directory after a save that reported success. A racing
-            // creator may not have synced yet, so `AlreadyExists` syncs too.
-            // The new directory is synced in turn as the next parent, or by
-            // `replace` when the file lands in it.
-            directory.sync_all()?;
             fd = unsafe { libc::openat(directory.as_raw_fd(), name.as_ptr(), flags) };
         }
         if fd < 0 {
             return Err(io::Error::last_os_error());
+        }
+        if create {
+            // Each entry lives in its parent: sync the parent so a crash cannot
+            // drop the directory after a save that reported success. Found or
+            // made alike, since a racing creator may not have synced it yet.
+            // The leaf is synced by `replace` when the file lands in it.
+            directory.sync_all()?;
         }
         directory = unsafe { File::from_raw_fd(fd) };
     }
