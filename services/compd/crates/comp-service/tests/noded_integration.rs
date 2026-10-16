@@ -73,6 +73,7 @@ impl CompEngine for Engine {
                 enabled: true,
                 profile: "nested",
                 table: Vec::new(),
+                user: Vec::new(),
             },
             input: InputSnapshot {
                 seats: None,

@@ -13,9 +13,9 @@ use std::os::unix::net::UnixStream;
 use wayland_client::backend::WaylandError;
 use wayland_client::protocol::wl_output::WlOutput;
 use wayland_client::protocol::{
-    wl_buffer::WlBuffer, wl_callback::WlCallback, wl_compositor::WlCompositor, wl_pointer,
-    wl_pointer::WlPointer, wl_registry::WlRegistry, wl_seat::WlSeat, wl_shm, wl_shm::WlShm,
-    wl_shm_pool::WlShmPool, wl_surface::WlSurface,
+    wl_buffer::WlBuffer, wl_callback::WlCallback, wl_compositor::WlCompositor, wl_keyboard,
+    wl_keyboard::WlKeyboard, wl_pointer, wl_pointer::WlPointer, wl_registry::WlRegistry,
+    wl_seat::WlSeat, wl_shm, wl_shm::WlShm, wl_shm_pool::WlShmPool, wl_surface::WlSurface,
 };
 use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle, delegate_noop};
 use wayland_protocols::xdg::shell::client::{
@@ -61,6 +61,9 @@ pub struct ClientState {
     pub frames: Vec<FrameEvents>,
     /// Dock-facing handles and their advertised app IDs.
     pub foreign_toplevels: Vec<(ZwlrForeignToplevelHandleV1, String)>,
+    /// Every `wl_keyboard.key` received after [`TestClient::bind_keyboards`]:
+    /// `(evdev key, pressed)`.
+    pub keys: Vec<(u32, bool)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -211,6 +214,14 @@ impl TestClient {
     /// The bound seat with this index (see [`ClientState::buttons`]).
     pub fn seat(&self, index: usize) -> &WlSeat {
         &self.seats[index].0
+    }
+
+    /// A `wl_keyboard` on every bound seat, recording keys in
+    /// [`ClientState::keys`]. Opt-in: most tests never touch the keyboard.
+    pub fn bind_keyboards(&mut self) {
+        for (seat, _) in &self.seats {
+            seat.get_keyboard(&self.qh, ());
+        }
     }
 
     /// Bind the dock protocol on demand; ordinary fixtures need no mirror.
@@ -628,6 +639,30 @@ impl Dispatch<WlPointer, usize> for ClientState {
                 state.buttons.push((serial, button, pressed, *seat));
             }
             _ => {}
+        }
+    }
+}
+
+impl Dispatch<WlKeyboard, ()> for ClientState {
+    fn event(
+        state: &mut Self,
+        _keyboard: &WlKeyboard,
+        event: wl_keyboard::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+    ) {
+        if let wl_keyboard::Event::Key {
+            key,
+            state: pressed,
+            ..
+        } = event
+        {
+            let pressed = matches!(
+                pressed,
+                wayland_client::WEnum::Value(wl_keyboard::KeyState::Pressed)
+            );
+            state.keys.push((key, pressed));
         }
     }
 }

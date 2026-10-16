@@ -293,6 +293,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize loop state
     let mut state = Loop::new(inner, &display.handle(), None, event_loop.handle());
 
+    // The user keys (bare F1–F12, Right Ctrl/Alt/Shift + arrows): the
+    // session user's keymap, loaded before the first key and followed live.
+    world::comp::bindings::start_user_keys(&mut state);
+
     // KernelData: hand systems the smithay wiring handles (read-only tokens).
     {
         let pointer = state

@@ -256,6 +256,7 @@ fn fixture() -> CompSnapshot {
                 chord: "Super+Q".into(),
                 action: "close-focused",
             }],
+            user: Vec::new(),
         },
         input: InputSnapshot {
             seats: Some(BTreeMap::from([

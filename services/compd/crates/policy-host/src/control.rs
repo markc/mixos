@@ -1690,6 +1690,9 @@ pub fn apply_client_requests(lp: &mut Loop) {
 pub fn apply_bindings(lp: &mut Loop) {
     use comp_model::request::WorkspaceIndex;
     use policy::bindings::BindingAction;
+    for fire in lp.inner.comp.bindings.take_comp_fires() {
+        run_user_fire(lp, &fire);
+    }
     for action in lp.inner.comp.bindings.take_pending() {
         match action {
             BindingAction::RequestCloseFocused => {
@@ -1758,6 +1761,36 @@ pub fn apply_bindings(lp: &mut Loop) {
             | BindingAction::ExitNestedCompositor
             | BindingAction::SendBusKey => {}
         }
+    }
+}
+
+/// A user key's `comp.*` verb: parsed by the Bus path's own `classify` and
+/// run by the code the matching verb runs (the engine's `set`, `window` and
+/// `input`), so `comp.workspace.switch {index:"next"}` from a key is exactly
+/// the Bus request. A verb that replies later or reads (`window.wait`,
+/// `motion.run`, `panel.*`, the reads) has no meaning without a caller and
+/// is not run. A refusal is a no-op: a key press has nobody to reply to.
+fn run_user_fire(lp: &mut Loop, fire: &policy::user_keys::UserFire) {
+    use comp_model::request::{Request, classify};
+    match classify(fire.verb, &fire.body, false) {
+        Ok(Request::Window(op)) => {
+            let _ = window(lp, &op);
+        }
+        Ok(Request::Set {
+            path,
+            value,
+            generation,
+        }) => {
+            let _ = set(lp, &path, &value, generation);
+        }
+        Ok(Request::Input(op)) => {
+            let _ = crate::input::input(lp, &op);
+        }
+        Ok(_) => model::warn!(
+            "user key: {} is not a one-shot comp verb; not run",
+            fire.verb
+        ),
+        Err((rc, body)) => model::warn!("user key: {} refused ({rc}): {body}", fire.verb),
     }
 }
 

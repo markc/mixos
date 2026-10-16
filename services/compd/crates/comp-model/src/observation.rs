@@ -17,8 +17,8 @@ use surfaces::StackBand;
 
 use crate::reply::ControlReply;
 use crate::snapshot::{
-    BindingRowSnapshot, OutputSnapshot, SurfaceSnapshot, WindowSnapshot, WorkspaceRowSnapshot,
-    volatile_path,
+    BindingRowSnapshot, OutputSnapshot, SurfaceSnapshot, UserKeyRowSnapshot, WindowSnapshot,
+    WorkspaceRowSnapshot, volatile_path,
 };
 
 pub const PROPS_TOPIC_SUFFIX: &str = "props.changed";
@@ -303,6 +303,7 @@ pub enum PropValue {
     String(String),
     U64List(Vec<u64>),
     BindingRows(Vec<BindingRowSnapshot>),
+    UserKeyRows(Vec<UserKeyRowSnapshot>),
     WorkspaceRows(Vec<WorkspaceRowSnapshot>),
     OutputRow(Box<OutputSnapshot>),
     SurfaceRow(Box<SurfaceSnapshot>),

@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use comp_model::snapshot::{
-    CompSnapshot, CornersSnapshot, DecorationSnapshot, DmabufFailureRecord,
+    BindingsSnapshot, CompSnapshot, CornersSnapshot, DecorationSnapshot, DmabufFailureRecord,
     DmabufLedgerSnapshot, FocusSnapshot, FocusWindowSnapshot,
     FullTreeCache, HostInputSnapshot, InfoSnapshot, InputSnapshot, LayerSnapshot, OcclusionCounters,
     OcclusionProps, OcclusionSnapshot, OutputSnapshot, PortSnapshot,
@@ -226,16 +226,21 @@ pub fn project(lp: &Loop, identity: Identity, scopes: &ReadScopes) -> CompSnapsh
         },
         // The binding filter and tables. Before the first Bus pass
         // builds the state, the profile's default table, enabled.
-        bindings: lp.inner.comp.bindings.state().map_or_else(
-            || {
-                policy::bindings::BindingState::for_profile(
-                    policy::bindings::BindingProfile::from_name(binding_profile),
-                    true,
-                )
-                .snapshot()
-            },
-            policy::bindings::BindingState::snapshot,
-        ),
+        // `user`: the user's own rows on the user keys, from the layer
+        // ahead of the table.
+        bindings: BindingsSnapshot {
+            user: lp.inner.comp.bindings.user.snapshot(),
+            ..lp.inner.comp.bindings.state().map_or_else(
+                || {
+                    policy::bindings::BindingState::for_profile(
+                        policy::bindings::BindingProfile::from_name(binding_profile),
+                        true,
+                    )
+                    .snapshot()
+                },
+                policy::bindings::BindingState::snapshot,
+            )
+        },
         // `input.*`: the seats (volatile, scoped), which seat moved
         // last, and the nested host passthrough leaf.
         input: InputSnapshot {
