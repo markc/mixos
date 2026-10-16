@@ -394,8 +394,9 @@ contact with that id.</li>
 </ul>
 <p>The other codes are <code>INVALID_ARGUMENT</code>, <code>NOT_CONNECTED</code>, <code>UNAVAILABLE</code>
 (settingsd absent), <code>CONFLICT</code>, <code>TIMEOUT</code> (settingsd did not answer a
-write within 60 s), <code>STALE</code> (the account reconnected while a reply or
-forward was pending), <code>MIGRATION_PENDING</code> (the account is still moving
+write within 60 s), <code>STALE</code> (the account reconnected while the request
+was pending, so its answer would come from the old connection),
+<code>SUPERSEDED</code> (a newer <code>email.open</code> replaced this one before it loaded), <code>MIGRATION_PENDING</code> (the account is still moving
 from the old config, so its password cannot change, and it cannot be
 removed, until that finishes), <code>CANCELLED</code> (Email closed before the
 request ran; a write that may have run answers <code>OUTCOME_UNKNOWN</code>),

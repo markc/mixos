@@ -675,6 +675,9 @@ pub mod code {
     /// The account reconnected (a new URL or login) while the request was
     /// pending: its answer is not used under the new connection.
     pub const STALE: &str = "STALE";
+    /// A newer open (or a mailbox change) replaced this one in the reader
+    /// before it loaded.
+    pub const SUPERSEDED: &str = "SUPERSEDED";
     /// settingsd is absent: the accounts are read-only.
     pub const UNAVAILABLE: &str = "UNAVAILABLE";
     pub const CONFLICT: &str = "CONFLICT";
@@ -1990,7 +1993,20 @@ impl State {
             // reconnected since: the person must hear whether it went.
             Event::Account(tag, Done::Sent(ticket, result)) => self.sent(&tag, ticket, result),
             Event::Account(tag, Done::Opened(ticket, Some(reply), result)) => {
+                // The caller hears "loaded" only if the reader will show it:
+                // the same connection, and still the latest open.
+                let view = self.account(&tag.account);
+                let current = view.is_some_and(|v| v.generation == tag.generation);
+                let latest = view.is_some_and(|v| {
+                    v.tickets.open == ticket && v.tickets.open_mailbox == v.mail.selected
+                });
                 match result.as_ref() {
+                    _ if !current => {
+                        self.refuse(reply, code::STALE, &crate::label("stale-connection"))
+                    }
+                    _ if !latest => {
+                        self.refuse(reply, code::SUPERSEDED, &crate::label("open-superseded"))
+                    }
                     Ok(email) => self.reply(
                         reply,
                         0,
@@ -2371,6 +2387,11 @@ impl State {
         result: Result<Value, jmap::Error>,
     ) {
         use crate::verbs::Then;
+        // An answer from a connection the account has left since (a new URL
+        // or login) is not the account's answer any more.
+        if self.account(&tag.account).map(AccountView::generation) != Some(tag.generation) {
+            return self.refuse(reply, code::STALE, &crate::label("stale-connection"));
+        }
         let value = match result {
             Ok(value) => value,
             Err(error) => {
@@ -4957,8 +4978,11 @@ pub(crate) mod tests {
                 Err(jmap::Error::method("notFound", None)),
             ),
         ));
+        // Both callers hear: the query refused as STALE (its data came from
+        // the old connection), the write with its real outcome.
         let replies = state.take_replies();
-        assert_eq!((replies[0].id, replies[0].rc), (8, 0));
+        assert_eq!((replies[0].id, replies[0].rc), (8, 10));
+        assert_eq!(replies[0].body["error_code"], code::STALE);
         assert_eq!((replies[1].id, replies[1].rc), (9, 10));
         assert_eq!(replies[1].body["error_code"], code::NOT_FOUND);
     }
@@ -6043,6 +6067,73 @@ pub(crate) mod tests {
             .filter_map(|a| a["id"].as_str())
             .collect();
         assert!(ids.contains(&"acct-legacy"), "replanned: {ids:?}");
+    }
+
+    /// Final review: an email.open answers "loaded" only when the reader
+    /// shows it: an answer over an old connection is STALE, one a newer
+    /// open replaced is SUPERSEDED, and neither changes the reader.
+    #[test]
+    fn final_an_open_reply_matches_what_the_reader_shows() {
+        let mut state = reading();
+        state.open_by_bus("a", "E2".into(), 6);
+        let first = state
+            .take_work()
+            .iter()
+            .find_map(|w| match w {
+                Work::OpenEmail {
+                    ticket, reply: Some(6), ..
+                } => Some(*ticket),
+                _ => None,
+            })
+            .unwrap();
+        // A newer open replaces it.
+        state.open_by_bus("a", "E1".into(), 7);
+        state.take_work();
+        state.account_mut("a").unwrap().mail.open = None;
+        done(
+            &mut state,
+            "a",
+            Done::Opened(first, Some(6), Box::new(Ok(unread_email("E2")))),
+        );
+        let reply = &state.take_replies()[0];
+        assert_eq!(
+            (reply.id, reply.body["error_code"].clone()),
+            (6, json!("SUPERSEDED"))
+        );
+        assert!(state.account("a").unwrap().mail.open.is_none());
+        // The account reconnects before the newer one loads.
+        let old = tag(&state, "a");
+        let latest = state.account("a").unwrap().tickets.open;
+        state.reconnect("a");
+        state.apply(Event::Account(
+            old,
+            Done::Opened(latest, Some(7), Box::new(Ok(unread_email("E1")))),
+        ));
+        let reply = &state.take_replies()[0];
+        assert_eq!(
+            (reply.id, reply.body["error_code"].clone()),
+            (7, json!(code::STALE))
+        );
+    }
+
+    /// Final review: a query answered over a connection the account has
+    /// since left is STALE, not data from the old server.
+    #[test]
+    fn final_a_query_answer_from_an_old_connection_is_stale() {
+        let mut state = connected();
+        let old = tag(&state, "a");
+        let mut next = settings(&["a"]);
+        next.accounts[0].url = "https://moved.example.invalid".into();
+        state.set_settings(next);
+        state.apply(Event::Account(
+            old,
+            Done::Answered(5, Then::Answer, Ok(json!({"mailboxes": [{"id": "old"}]}))),
+        ));
+        let reply = &state.take_replies()[0];
+        assert_eq!(
+            (reply.id, reply.body["error_code"].clone()),
+            (5, json!(code::STALE))
+        );
     }
 
     /// Round 5, #26: removing an account whose earlier forget never
