@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-// Vendored into cosmix-edit-core from microsoft/edit@826b4c0 crates/edit/src/simd/mod.rs; see vendor/msedit/README.md.
+// Vendored into MixOS (for libs/edit) from microsoft/edit@826b4c0 crates/edit/src/simd/mod.rs; see vendor/msedit/buffer/README.md.
 // Patched: `memchr2` is not vendored in E0 (it serves navigation, which lands in E1).
 
 //! Provides various high-throughput utilities.

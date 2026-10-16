@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Line-by-line highlighting over a [`LineSource`], adapted from msedit
-//! `crates/edit/src/lsh/highlighter.rs` (reference copy in
-//! `vendor/edit-lsh/highlighter.rs`).
+//! `crates/edit/src/lsh/highlighter.rs` at microsoft/edit@826b4c0:
+//! <https://github.com/microsoft/edit/blob/826b4c097b6f14ba0a846dc56f2f0223a3aaf73a/crates/edit/src/lsh/highlighter.rs>.
 //!
 //! Contract: keep upstream's multi-chunk line assembly
 //! and `MAX_LINE_LEN`; newline scanning is plain byte scanning (no dependency on

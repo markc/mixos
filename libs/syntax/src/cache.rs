@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Checkpointed random access over a [`Highlighter`], adapted from msedit
-//! `crates/edit/src/lsh/cache.rs` (reference copy in `vendor/edit-lsh/cache.rs`).
+//! `crates/edit/src/lsh/cache.rs` at microsoft/edit@826b4c0:
+//! <https://github.com/microsoft/edit/blob/826b4c097b6f14ba0a846dc56f2f0223a3aaf73a/crates/edit/src/lsh/cache.rs>.
 //!
 //! Contract: a checkpoint every [`INTERVAL`] lines,
 //! pinned in every build profile; `parse_line` of line L restores the nearest

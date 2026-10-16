@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-// Vendored into cosmix-edit-core from microsoft/edit@826b4c0 crates/edit/src/unicode/measurement.rs; see vendor/msedit/README.md.
+// Vendored into MixOS (for libs/edit) from microsoft/edit@826b4c0 crates/edit/src/unicode/measurement.rs; see vendor/msedit/buffer/README.md.
 // Patched (ced E1 plan §1.3(1)): the process-global `static mut AMBIGUOUS_WIDTH`
 // + `setup_ambiguous_width` became a per-measurement `MeasurementConfig` field.
 
@@ -63,7 +63,7 @@ impl<'doc> MeasurementConfig<'doc> {
 
     /// Sets the width of "ambiguous" width characters as per "UAX #11: East Asian Width".
     ///
-    /// Defaults to 1. (cosmix patch: per measurement, not a process global.)
+    /// Defaults to 1. (MixOS patch: per measurement, not a process global.)
     pub fn with_ambiguous_width(mut self, ambiguous_width: CoordType) -> Self {
         self.ambiguous_width = ambiguous_width.clamp(1, 2) as usize;
         self

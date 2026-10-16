@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-// Vendored into cosmix-lsh from microsoft/edit@826b4c0 crates/stdext/src/arena/scratch.rs; see cosmix-lsh/vendor/README.md.
+// Vendored into MixOS (for libs/syntax) from microsoft/edit@826b4c0 crates/stdext/src/arena/scratch.rs; see vendor/msedit/README.md.
 
 use std::io;
 #[cfg(debug_assertions)]
@@ -68,7 +68,7 @@ impl Deref for ScratchArena<'_> {
     }
 }
 
-// cosmix patch (ced E1 plan §1.2(1)): upstream's `mod single_threaded` kept the
+// MixOS patch (ced E1 plan §1.2(1)): upstream's `mod single_threaded` kept the
 // scratch arenas in a mutable static (behind the `single-threaded` feature). It
 // is deleted; only the thread-local variant below exists.
 
