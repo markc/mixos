@@ -223,6 +223,7 @@
                         <a href="#programs-and-documents">Programs and documents</a>
                         <a href="#exit-status">Exit status</a>
                         <a href="#design-docs--specs">Design docs &amp; specs</a>
+                        <a href="#the-library">The library</a>
                         <a href="#see-also">See also</a>
                     </nav>
                 </div>
@@ -367,6 +368,16 @@ its graceful shutdown behaviour.</p>
 <p>Design docs, background rationale, and the formal specs (04 language
 reference, 18 citizen runtime) all live in the operator control repo since
 2026-07-23; this manual is the complete public reference.</p>
+<h2 id="the-library">The library</h2>
+<p>The <code>mix</code> component is the language library
+(<a href="https://github.com/markc/mixos/tree/main/libs/mix"><code>libs/mix</code></a>): lexer,
+parser, evaluator, builtin contracts and embedded handler interfaces.
+Features select the optional data, networking and cryptographic
+facilities; the interpreter's core stays independent of the Bus and
+desktop. It was transplanted from <code>cosmix-lib-mix</code> at cosmix
+<code>e0297242305f3a3c3de09f1ca01e8faa771768da</code>, retaining its regression corpus
+and public language version. The shell is <a href="https://mixos.dev/mix-shell/">mix-shell</a>,
+and the <code>mix</code> binary is built by <a href="https://mixos.dev/system/">system</a>.</p>
 <h2 id="see-also">See also</h2>
 <pre><code>mix help              the full categorized builtin reference
 mix builtins [CAT]    list builtins, optionally by category

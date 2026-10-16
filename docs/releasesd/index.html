@@ -219,6 +219,7 @@
                         <a href="#what-an-install-does">What an install does</a>
                         <a href="#on-the-bus">On the Bus</a>
                         <a href="#sharing-one-install-with-a-container">Sharing one install with a container</a>
+                        <a href="#source-and-tests">Source and tests</a>
                     </nav>
                 </div>
             </div>
@@ -323,6 +324,25 @@ file types into that session's data directory (<code>MIXOS_RELEASES_SHARE</code>
 its own record of what it made. Nothing is downloaded twice, and an update on
 the host reaches the container at once. When the container sees the files at
 another path, <code>MIXOS_RELEASES_VIEW</code> says where.</p>
+<h2 id="source-and-tests">Source and tests</h2>
+<p><code>releasesd</code> is a Mix component
+(<a href="/docs/decisions/2026-10-10-mix-components/">decision</a>): no Cargo
+package, identity in <code>component.mx</code>. The source is
+<a href="https://github.com/markc/mixos/tree/main/services/releasesd"><code>services/releasesd</code></a>:</p>
+<table><thead><tr><th>Path</th><th>What</th></tr></thead><tbody>
+<tr><td><code>scripts/lib/releases.mix</code></td><td>all of the logic, as a module</td></tr>
+<tr><td><code>scripts/releasesd.mix</code></td><td>the Bus service (<code>mix --serve … --name releases</code>)</td></tr>
+<tr><td><code>scripts/releases.mix</code></td><td>the command line, same logic in-process</td></tr>
+<tr><td><code>units/releasesd@.service</code></td><td>the session unit</td></tr>
+<tr><td><code>tests/releases_test.mix</code></td><td>offline: validation, verification, install, rollback, links</td></tr>
+<tr><td><code>tests/releasesd_test.mix</code></td><td>every verb over a private broker and a stand-in API</td></tr>
+</tbody></table>
+<p>Run the tests from the checkout root. They need <code>bsdtar</code>; the Bus test
+needs a <code>noded</code>, by default <code>/opt/mixos/bin/noded</code>, or <code>--noded &lt;path&gt;</code>:</p>
+<pre><code class="language-sh">mix services/releasesd/tests/releases_test.mix
+mix services/releasesd/tests/releasesd_test.mix
+</code></pre>
+<p>The verbs are registered in <code>docs/docs/spec/bus/verbs.conf.mix</code>.</p>
         </article>
         <p class="doc-source"><a href="/releasesd/README.md"><i data-lucide="file-text"></i> This page as Markdown</a></p>
     </div>

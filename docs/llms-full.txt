@@ -595,6 +595,176 @@ and, as tie-breaker, Gemini.
 
 ---
 
+<!-- page: https://mixos.dev/assets/ (source: https://mixos.dev/assets/README.md) -->
+
+# assets
+
+The resolver for a pinned, immutable set of fonts, icons and emoji on the
+local disk. No downloader, daemon or storage service: an installer
+publishes a set as `<root>/sets/<id>` and points `<root>/current` at it;
+this crate finds, checks and reads it.
+
+The source is [`libs/assets`](https://github.com/markc/mixos/tree/main/libs/assets).
+
+## A published set
+
+```
+<root>/
+  current -> sets/2026-10-04-core-3      the activation link
+  sets/2026-10-04-core-3/
+    manifest.conf.mix                    strict data, schema mixos.static-assets.v1
+    fonts.css                            generated stylesheet, text locked as web_css
+    fonts/  icons/  emoji/  web/  licences/
+```
+
+The manifest (`Manifest`) names the schema, the set ID, the font roles
+(`sans`, `serif`, `mono`, `icons`, `emoji`, `display`, `serif_italic`,
+`mono_italic`, …) and the family each role declares (`font_families`),
+and locks every file (`AssetFile`: path, HTTPS url and upstream, revision,
+licence, size, SHA-256, BLAKE3). The `icons` role's font has a
+`.codepoints` catalogue beside it (`name hex` per line) that becomes the
+`icon(name)` table.
+
+Opening a set checks the layout (no symlinks, no escapes, no extra
+components), the manifest against the rules in `manifest.rs`, every size
+and the stylesheet text. `verify` streams every file through both hashes.
+A set, once opened, is pinned to its `sets/<id>` directory: swapping
+`current` changes what the next reader selects, not what this one holds.
+
+## The generic API
+
+Nothing in the core knows which project is asking. A `Lookup` is an ordered
+list of asset roots the caller names:
+
+```rust
+use assets::{AssetSet, Lookup, XdgData};
+
+// Roots from the XDG data directories (user first), then a system root
+// from an environment variable with a default.
+let lookup = Lookup::new()
+    .xdg("example/assets")                                   // $XDG_DATA_HOME/…, each $XDG_DATA_DIRS/…
+    .root_from_env("EXAMPLE_ASSETS", "/usr/share/example/assets");
+let set: Option<AssetSet> = lookup.discover()?;              // first root with `current`, verified
+let set: Option<AssetSet> = lookup.select()?;                // the same, sizes checked but no hashing
+
+// Explicit inputs for a test, or a lookup assembled some other way.
+let lookup = Lookup::new().xdg_in("example/assets", &XdgData::default()).root("/srv/assets");
+let lookup: Lookup = vec![std::path::PathBuf::from("/srv/assets")].into_iter().collect();
+
+// Reading.
+let sans = set.font_path("sans");          // Option<PathBuf>
+let family = set.family("sans");           // Option<&str>
+let glyph = set.icon("delete");            // Option<char>
+let css = set.file_path("fonts.css")?;     // Result<Option<PathBuf>>: only locked files resolve
+set.verify()?;                             // sizes, SHA-256 and BLAKE3 of every file
+
+// An installer opens its own root directly, before activating.
+let set = AssetSet::open(root, "2026-10-04-core-3")?;
+let set = AssetSet::current(root)?;        // follow `current` once; None when absent
+```
+
+Lookup rules: unset or empty XDG variables take their defaults
+(`~/.local/share`, `/usr/local/share:/usr/share`); relative entries are
+ignored; a root without `current` falls through; a root whose `current` is
+dangling or whose set is malformed is an error, so a broken override is
+reported rather than silently replaced by a system set.
+
+The core depends on [strict](../strict/README.md) (the manifest parser),
+`serde`, `sha2`, `blake3`, `hex` and `thiserror`. With
+`default-features = false` that is all it depends on, and another project
+can take it as is. The `verified` feature (pulled in by the default `mixos`
+feature) adds [config](../config/README.md), whose `config::atomic` module
+provides the descriptor-safe directory walk the verified reads use.
+
+## Verified byte reads
+
+`AssetSet::read_verified(limits)` re-reads a set into a `VerifiedSet`
+that owns every byte, instead of answering paths:
+
+```rust
+let set = assets::mixos::discover()?.unwrap();               // opened, hashed once
+let verified = set.read_verified(ReadLimits::default())?;    // read once, owned
+let sans: &[u8] = verified.font("sans").unwrap().bytes();    // never reopened
+```
+
+What the read guarantees:
+
+- **Descriptor-relative, symlink-free.** The set directory is opened
+  through `config::atomic::open_directory` (no symlink in any component of
+  the absolute path) and every file through `config::atomic::open_nested`
+  (no symlink in any intermediate component or in the final file, which
+  must be a regular file). The manifest is opened and read exactly once,
+  through the descriptor.
+- **Strict reparse.** The manifest is parsed and validated again from its
+  own bytes; the verified set never trusts an earlier `AssetSet::open`.
+  Manifest parse errors stay `Error::Manifest`, icon catalogue errors stay
+  `Error::Invalid`, content differences stay `Error::Mismatch`.
+- **One read, exact length, both digests.** Each locked file is
+  descriptor-opened once, its metadata length must equal the locked size,
+  it is read exactly once, and the SHA-256 and BLAKE3 are computed over
+  the same owned bytes that are retained (`VerifiedFile::bytes`). A file
+  that grows or shrinks while being read is refused.
+- **Bounded capture.** `ReadLimits` bounds the manifest, each file and the
+  total captured bytes (defaults: 256 KiB manifest, 64 MiB per file,
+  128 MiB in all). Every bound is capped by a hard limit
+  (`ReadLimits::MAX_MANIFEST_BYTES`, `MAX_FILE_BYTES`, `MAX_TOTAL_BYTES`:
+  256 KiB, 256 MiB, 512 MiB), so no request can capture unbounded bytes;
+  the total is a bound on captured source bytes, deliberately not
+  `MAX_FILES × MAX_FILE_BYTES`. It is not a process-heap limit: the
+  parsed manifest, the icon table and the one-time bounded read and
+  conversion scratch are outside it.
+- **The identity pins bytes, not a path.** `VerifiedSet::identity()` is a
+  `SetIdentity`: the set ID plus the BLAKE3 of the exact manifest bytes
+  the set was read from. Two directories that share an ID but hold
+  different manifests are different identities, and the digest can be
+  recomputed from `manifest_bytes()`.
+
+Replacement semantics: once the set directory descriptor is opened, reads
+are bound to that inode. Swapping or removing `sets/<id>` afterwards
+changes what the next reader sees, never what a captured `VerifiedSet`
+holds. Nothing is reopened later; the directory descriptor is retained
+for the life of the set.
+
+## The MixOS defaults
+
+`assets::mixos` (the default `mixos` feature) is the MixOS search path, kept
+apart from the core the way [bus](../bus/README.md) keeps `noded_url()`:
+
+| Order | Root |
+|---|---|
+| 1 | `$XDG_DATA_HOME/mixos/assets` (`~/.local/share/mixos/assets`) |
+| 2 | each `$XDG_DATA_DIRS` entry's `mixos/assets` (`/usr/local/share`, `/usr/share`) |
+| 3 | `assets` under `config::path(Dir::Share)`: `$MIXOS_SHARE/assets`, default `/opt/mixos/share/assets` |
+
+```rust
+let set = assets::mixos::discover()?;              // once, at startup, hashes verified
+let set = assets::mixos::select()?;                // once, at startup, no hashing (compd)
+let lookup = assets::mixos::lookup();              // the roots, for diagnostics
+let lookup = assets::mixos::lookup_in(&xdg, &share); // explicit inputs
+```
+
+The lock and installer for the MixOS set live in
+[`share/assets/`](https://github.com/markc/mixos/tree/main/share/assets)
+(`core.conf.mix`, `install.mix`), which publishes to
+`/opt/mixos/share/assets`.
+
+## Testing
+
+`cargo test -p assets`. The unit tests cover the validators, the catalogue
+parser, the read limits and the lookup order; `tests/sets.rs` the public
+behaviour on fixture sets in a temporary directory (pinning across a
+`current` swap, XDG precedence, tampering, symlinks, escapes, bad
+manifests); `tests/verified.rs` the verified reads (owned bytes surviving
+path replacement and removal, descriptor pinning across a substitution,
+symlink escapes, staging limits, length and digest refusals, malformed
+manifests and catalogues); `tests/layout.rs` the installed
+`2026-10-04-core-3` layout rebuilt with stand-in bytes and resolved
+through the MixOS search path, plus the real installation when the
+machine has one. `config::atomic::open_nested`'s walker refusals are
+tested in `libs/config/src/atomic.rs`.
+
+---
+
 <!-- page: https://mixos.dev/backdrop/ (source: https://mixos.dev/backdrop/README.md) -->
 
 # Backdrop
@@ -750,16 +920,41 @@ it through egui's repaint request.
 - Overlapping sets (one still decoding when the next arrives) are exercised by
   the controller's unit tests; the Mix gate sends its sets one after another.
 
+## Running it
+
+Run it inside a MixOS session: `backdrop`, or `backdrop --colour #1e1e2e`,
+or `backdrop --image /abs/path.jpg --service backdrop-test`.
+
+## Source layout
+
+The source is
+[`apps/backdrop`](https://github.com/markc/mixos/tree/main/apps/backdrop):
+
+- `src/main.rs`: command line, the start-up document, the layer loop;
+- `src/control.rs`: the Bus controller and its one command, `backdrop.set`;
+- `src/program.rs`: the layer program, which only draws a published view;
+- `src/probe.rs`: `--probe`, the regression probe (JSON lines on stdout);
+- `crates/wallpaper`: the engine: the document, colour, fit, decode limits
+  and revisions. Pure data, no Bus and no window.
+
 ## Tests
+
+Building and the cargo tests are not in this tree's checks yet; the cargo
+gate runs on a build worker. `cargo build -p backdrop` enables toolkit's
+`layer` feature.
 
 - `tests/desktop/wallpaper_gate.mix` runs the wallpaper on a private broker and
   a private nested compd, takes screenshots of a solid colour and a PNG
   (`share/brand`'s favicon), and checks `backdrop.set` and `backdrop.state`: a
   refused image keeps the last good pixels and revision, rapid sets apply in
   order, a non-document is refused, the accepted document is stored, and the
-  process is idle. `--shot-out DIR` keeps the PPMs.
+  process is idle. Run it from the checkout; `--image-fixture PATH` names a
+  different PNG and `--shot-out DIR` keeps the PPMs.
 - `tests/desktop/backdrop_gate.mix` is the `--probe` regression gate: input,
-  paint and occlusion.
+  paint and occlusion. It runs the probe on a private nested compd and
+  checks the band, the paint, the screen, click delivery and occlusion:
+  `mix tests/desktop/backdrop_gate.mix --bin <compd> --config-file tests/desktop/smoke-settings.json`.
+  On a build worker add `--software --private-bus --noded <noded>`.
 - Unit tests (`cargo test -p wallpaper`, `cargo test -p backdrop`) cover the
   document, colour, fit, decoder limits (including an oversized header and a
   FIFO), revisions, candidate and active images, the texture budget and the
@@ -929,8 +1124,508 @@ owner and suffix. Installing the registry is a separate prerequisite: the
 scripts and the registry must come from the same revision, and the registry
 must be at `/opt/mixos/share/bus/verbs.conf.mix` or named by `BRIDGED_VERBS`
 in `/etc/mixos/bridge/<app>.env`. Otherwise every start is refused. This
-source tree is not a live deployment. The component is `services/bridged/`
-in the source tree.
+source tree is not a live deployment, and nothing in it installs the
+registry for you.
+
+The family is declared with `members: "instances"`, so the running
+instances are not listed. `tools/verb_registry.mix --instances DIR` checks
+only the private file-stem naming and collisions; it reads no config token.
+Mesh access is unchanged: the Bus still gives every member every verb. The
+runtime guard reads the verbs and families lists. It does not enforce the
+full canonical format (field order, spacing); the static gate does that.
+
+**Verb classes.** `<app>.call` and `<app>.execute` are `intent`;
+`<app>.commands`, `<app>.inspect` and `<app>.status` are `query`.
+`<app>.screenshot` is `intent`: its `focus` option can bring the window
+forward, a change another caller sees, so it is not a query even though it
+only captures. See the
+[instance verb families decision](../docs/decisions/2026-10-13-instance-verb-families.md).
+
+## Source and tests
+
+`bridged` is a Mix component
+([decision](../docs/decisions/2026-10-10-mix-components.md)): no Cargo
+package, identity in `component.mx`. The source is
+[`services/bridged`](https://github.com/markc/mixos/tree/main/services/bridged):
+
+| Path | What |
+|---|---|
+| `scripts/lib/bridge_core.mix` | the stateless core: config, token, serve-name guard, line-JSON client |
+| `scripts/bridged.mix` | the Bus service (`mix --serve … --name <app>`); `--start <app>` (the unit: checks, then the service as a child); `--check <app>` (the checks alone) |
+| `units/bridged@.service` | one unit per application; config `/etc/mixos/bridge/<app>.conf.mix` |
+| `tests/lib/fake_app.mix` | a stand-in application on `tcp_listen` (token, key or no auth, slow and dropping methods) |
+| `tests/bridge_core_test.mix` | offline: config, token, guard, spec fixture, the client against stand-in apps |
+| `tests/bridged_test.mix` | every verb over a private broker, the start refusals, `--start` (no child on a refusal, the child's exit code passed through), the app dying and coming back |
+
+Run the tests from the checkout root with Mix 0.112.1 or later. The mix
+binary the tests run under is `BRIDGED_MIX`, else `MIXOS_TEST_MIX`, else
+`/opt/mixos/bin/mix`. The Bus test needs a `noded`: `--noded <path>`, else
+`MIXOS_TEST_NODED`, else `/opt/mixos/bin/noded`. An empty variable counts as
+unset. `tools/mix_tests.mix` sets `MIXOS_TEST_MIX`, `MIXOS_TEST_NODED` and
+`BRIDGED_MIX` to the fresh build:
+
+```sh
+mix services/bridged/tests/bridge_core_test.mix
+mix services/bridged/tests/bridged_test.mix
+```
+
+---
+
+<!-- page: https://mixos.dev/buildinfo/ (source: https://mixos.dev/buildinfo/README.md) -->
+
+# buildinfo
+
+Compile-time build provenance for MixOS binaries: package name, version,
+git sha (short and full), dirty bit and build time, plus the `--version`
+contract every binary answers.
+
+- `emit()` runs in a consumer's `build.rs` and captures the consumer
+  repository's HEAD into `MIXOS_GIT_SHA`, `MIXOS_GIT_SHA_FULL`,
+  `MIXOS_GIT_DIRTY`, `MIXOS_BUILD_TIME` and the embedded
+  `MIXOS_BUILDINFO_MARKER`.
+- `build_info!()` expands in the consumer crate and reads those variables
+  into a `BuildInfo`.
+- `exit_on_version!()` is `main`'s first statement: it answers
+  `--version`/`-V` (and `--json`) and exits 0, or falls through.
+- The binary also carries `MIXOS-BUILDINFO:1:{…}` as bytes, so an inventory
+  can read provenance without running it (`find_markers`).
+
+No dependencies. `SOURCE_DATE_EPOCH` pins the build time for reproducible
+builds.
+
+Test: `cargo test -p buildinfo`.
+
+The source is [`libs/buildinfo`](https://github.com/markc/mixos/tree/main/libs/buildinfo).
+
+---
+
+<!-- page: https://mixos.dev/bus/ (source: https://mixos.dev/bus/README.md) -->
+
+# bus
+
+The Bus wire format and the broker client.
+
+- `bus::wire` (always built): `BusMessage`, `parse`, `parse_strict`,
+  `parse_lenient` and the size caps. A message is `---`-fenced `key: value`
+  headers (sorted) plus an optional body. The format is a frozen contract
+  with every running peer.
+- `bus::client` (the default `client` feature): `Connection`, one registered
+  WebSocket to the broker ([noded](../noded/README.md)); `SupervisedClient`,
+  the same under a reconnect supervisor whose incoming stream survives
+  broker restarts and which replays every recorded topic subscription before
+  reporting `Connected`; `IncomingCommand`; and `noded_url()`, which finds
+  the broker (`MIXOS_NODED_URL`, then `node.conf.mix` via
+  `MIXOS_NODE_CONFIG`, `$MIXOS_ETC`, `~/.config/mixos` or `/etc/mixos`, then
+  `ws://127.0.0.1:4200/ws`).
+
+A wire-only consumer depends on `bus` with `default-features = false` and
+pulls in nothing but `serde_json`.
+
+The source is [`libs/bus`](https://github.com/markc/mixos/tree/main/libs/bus).
+
+## Starting without a broker
+
+Resident GUI hosts can use `SupervisedClient::connect_options(name, url).start()`
+inside their existing Tokio runtime to return immediately while the broker is
+unavailable. The same supervisor handles initial dial, registration, topic
+replay and later reconnects. Until first success the state is `Connecting`,
+generation is zero and outbound work fails fast; first complete
+registration and replay publishes generation one. The single incoming
+receiver remains usable across outages. `connect().await` retains its
+five-attempt initial budget for callers that need bounded startup. Neither
+API queues outbound work.
+
+## Bounded incoming lanes
+
+`bounded_incoming(capacity)` drops overflow silently, reported only as an
+`Overflow` marker. `bounded_incoming_rpc(capacity)` opts into refusal: an
+id-bearing request with no `topic` header that the full lane cannot retain
+gets an `rc 10` `BUSY` reply on the same connection it arrived on, so the
+caller can retry. Topic deliveries and id-less frames remain lossy. If that
+refusal cannot be written within 100 ms, the old connection gets a
+best-effort close within a further 100 ms, and the supervisor detaches its
+handle before redialling; the physical close may follow later if another
+holder still references it. No reply is ever sent through the replacement
+connection.
+
+## Registration rejections
+
+With `fatal_on_registration_rejection(true)`, `registration_rejection()`
+retains the broker's exact return code and diagnostic before publishing
+`Fatal`, for both initial registration and reconnect. Sampling it is
+non-consuming; transport failure has no refusal diagnostic. Close,
+shutdown, deregister and drop are safe before a first socket exists and
+fence late registration publication. These are client lifecycle APIs; the
+frozen ABP wire format is unchanged.
+
+A broker rejection is typed: `RegistrationRejected` keeps the public `rc`
+and `message` fields. Field reads and the tuple accessors stay
+source-compatible, but old two-field struct literals no longer compile
+(construct with `RegistrationRejected::new`). It adds `kind()`, which
+decodes the structured rejection body
+(`{"schema": "noded.registration-rejection.v1", "error_code": "NAME_TAKEN", "message": …}`,
+sent alongside the unchanged `rc=10` and `error` header).
+`RegistrationRejectionKind::NameTaken` is produced only from that body; an
+admission refusal, a legacy text-only broker, or a missing, malformed,
+oversized or unrecognised body is `Unknown`: classification never
+string-matches the wording. `ClientError::registration_rejection_typed()`
+and `SupervisedError::registration_rejection_typed()` expose the typed
+value, and the `(rc, message)` tuple accessors remain for compatibility.
+
+## Tests
+
+`cargo test -p bus`. The integration test drives a stub broker in process;
+no noded is needed.
+
+---
+
+<!-- page: https://mixos.dev/ced/ (source: https://mixos.dev/ced/README.md) -->
+
+# Ced
+
+Ced is the MixOS Editor: a desktop editor over the `edit` Bus service
+([editd](../editd/README.md)). A document lives in the service, not in the
+window, so several people and agents can edit it at once. Ced shows their
+carets, selections and changes as they happen, and keeps typing instant by
+applying it locally first.
+
+## Running
+
+```
+ced [PATH[:LINE[:COL]]…]   open paths (in the running ced, if there is one)
+ced --headless             every verb, no window
+ced --service NAME         register as NAME (tests)
+```
+
+The edit service must be running. Ced registers on the Bus as `ced`; a
+second `ced` hands its paths to the first and exits.
+
+## The window
+
+- **Menus, shortcuts and Bus actions are one registry.** Every action has
+  the same id in the menu bar, as a shortcut (Notepad++ conventions: see
+  Help › Keyboard Shortcuts) and in `ced.action {id}`.
+- **Tabs** show unsaved changes, and ◆ when another origin edited the
+  document since you last looked at it.
+- **The notice strip** keeps warnings, edits that could not be applied
+  (re-insert them at the caret or dismiss them), and a document that lost
+  its connection to the service (keep your copy or take the service's).
+- **Find** (Ctrl+F, Ctrl+H) runs in the service, so it searches the shared
+  text, not a local copy.
+- **Markdown and commit messages wrap**; code scrolls sideways.
+- **Problems** (Ctrl+Shift+M) lists the document's diagnostics.
+- View › Theme picks this window's scheme, style and mode.
+
+## Bus
+
+`ced.*` (schema `ced.v1`): `ping`, `info`, `open`, `new`, `tabs`, `focus`,
+`state`, `type`, `select`, `action`, `actions`, `wait`, `layout`, `stats`,
+`diagnostics`, `problems`, plus `app.describe` and `app.quit`; and the
+toolkit drive verbs (`ced.ui.*`, `ced.window`, `ced.window.state`; see
+[driving an app](../docs/drive.md)). A Bus caller's edits carry its own
+origin (`agent:ced.<caller>`), so they show as an agent's, and its undo is
+its own.
+
+## Source
+
+- `crates/documents`: the engine, with no UI toolkit. Open documents (one
+  tab per buffer of the edit service, each a mirror with its editing model,
+  highlighting and diagnostics), every action, the `ced.*` verbs and their
+  waiters, reconnects and reattaches, the session.
+- `src/`: the shell. The Bus thread, `ced --headless`, and the egui window
+  around the shared [editor](../editor/README.md) text view.
+
+The source is [`apps/ced`](https://github.com/markc/mixos/tree/main/apps/ced).
+
+## Tests
+
+`cargo test -p documents -p ced`: the engine's unit and golden verb-fixture
+tests, and `tests/window.rs`, which runs the real window against the fake
+edit service in-process (no Bus): typing reaches the service, and two
+offscreen snapshots. Regenerate them with `UPDATE_SNAPSHOTS=1` and look at
+them before committing.
+
+## Not yet
+
+- Macros and the Output panel's content.
+- Linting Mix files on save (the Problems panel shows diagnostics other
+  tools send with `ced.diagnostics`).
+- Paste from the menu asks the platform for the clipboard; the primary
+  selection (middle click) is the compositor's, not ced's.
+
+---
+
+<!-- page: https://mixos.dev/citizen/ (source: https://mixos.dev/citizen/README.md) -->
+
+# citizen
+
+An app's supervised native Bus connection, shared by the MixOS apps
+(BusViewer, [Prefs](../prefs/README.md)). Headless: no UI dependency.
+
+- `start(app, service, url)`: register as `service` and receive
+  `Delivery`s: commands for the app, `Changed` (service registration),
+  `Theme`, `Connected` and `Disconnected`.
+- `Handle`: `raw`/`call` other services (30 s), or `raw_within` with a
+  longer limit for work that legitimately runs long; `reply` once to each
+  command; `quit`, which answers every accepted command
+  (`BUSY: <app> is closing`) before the connection closes; `wait_done`.
+- `probe`/`forward`: single-instance launch through `<app>.ping` and
+  `<app>.show`; `noded_url()`: the broker this session uses.
+- `show(handle, comp, app_id)`: restore and focus this process's window
+  through [compd](../compd/README.md).
+- With the `testing` feature: `Handle::sink()`, a handle with no connection
+  that logs its calls, replies and quit.
+
+Promoted from BusViewer's engine when Prefs became its second owner (see
+[AGENTS.md](https://github.com/markc/mixos/blob/main/AGENTS.md) §2.2). Test
+with `cargo test -p citizen`.
+
+The source is [`libs/citizen`](https://github.com/markc/mixos/tree/main/libs/citizen).
+
+---
+
+<!-- page: https://mixos.dev/compd/ (source: https://mixos.dev/compd/README.md) -->
+
+# compd
+
+The MixOS Wayland compositor.
+
+compd owns KMS scanout, the GLES renderer and one shared wgpu device, its
+own egui surfaces (capture overlays, notifications, the Mix Scenes shell),
+the Xwayland window manager, frame pacing, fractional scale, input devices
+and capture. On top of that sits the MixOS policy layer: the agent seat,
+the `comp` Bus service (verbs, topics and the props tree), the frame and
+presentation ledgers, panel holders and hot corners, and strict idle
+discipline (no frames on a static screen).
+
+Bevy, when enabled, may render effects on the shared wgpu device. It never
+owns the frame loop, scheduling, compositing or protocol handling.
+
+## Settings at startup
+
+Quoin prepares cached or embedded settings while its existing Bus
+supervisor registers. Its persistent cache is service-owned under the
+configured variable data directory at `compd/cache/settings`; all
+validation and filesystem work runs on the scene host's Bus worker
+(`scene-host` `lane`). `shell.props.get` exposes `settings` and
+`settings_cache` evidence. A cache persistence receipt must match the
+current applied identity before it describes that presentation. Transport
+outages and terminal registration refusal preserve usable appearance. Only
+explicit initial refusal permits the configured scene service override; an
+established shell identity never switches names. Shutdown drains the newest
+activated capture and closes the worker under one two-second budget with a
+bounded completion margin. Timeouts report failure without claiming
+persistence.
+
+The settings come from [settingsd](../settingsd/README.md) through the
+[settings](../settings/README.md) library.
+
+## Layout
+
+| Path | What |
+|---|---|
+| `src/` | the `compd` binary: CLI, event loop, Bus and scene wiring |
+| `crates/` | compd's private crates (engine, protocols, policy, backends) |
+| `layers.conf.mix` | the private crates' dependency order, checked by `tools/layering_gate.mix` |
+| `tests/` | integration tests |
+
+The source is
+[`services/compd`](https://github.com/markc/mixos/tree/main/services/compd).
+The desktop-tier gates that run compd nested or on hardware live in
+[`tests/desktop/`](https://github.com/markc/mixos/tree/main/tests/desktop)
+at the repository root.
+
+## Build
+
+```
+cargo build --profile release-fast -p compd                     # nested backend
+cargo build --profile release-fast -p compd --no-default-features \
+    --features backend-native                                   # KMS backend
+cargo build --profile release-fast -p compd --features backend-all   # both
+```
+
+`capture-ffmpeg` adds hardware video capture through libav; the default
+build links no FFmpeg.
+
+`desktop-dbus` explicitly enables the optional desktop compatibility
+adapters. The default native session has no D-Bus client or portal
+dependency. It passes environment directly to children; delegated cgroup
+placement before exec and `cgroup.kill` provide complete cleanup when
+`MIXOS_CONTAIN_CHILDREN=1`.
+
+## Run
+
+Nested, inside another Wayland session:
+
+```
+compd --nested --socket wayland-compd --config-file=settings.json
+```
+
+On a VT, through the seat (libseat/seatd):
+
+```
+compd kms-live --device /dev/dri/card1 --connector HDMI-A-1 --scale 2.5
+```
+
+compd waits for its own VT to become active and never switches VT itself.
+`--bus-service NAME` and `--scene-service NAME` override the Bus names
+(default `comp`); `compd --help` lists every flag. Settings are read from
+`--config-file`, else `~/.config/compd/settings.json`. Preferences are read
+from `preferences.json` beside it.
+
+`cursor_sensitivity` in `preferences.json` is a speed multiplier on top of
+the output scale: compd multiplies each relative pointer delta by both, so
+`1.0` moves the cursor at the same logical speed at every scale. Clients
+asking for relative motion get the raw deltas.
+
+## Workspaces
+
+Every output has a current workspace; windows belong to one. Verbs on the
+`comp` service:
+
+| Verb | Arguments | Reply |
+|---|---|---|
+| `comp.workspaces.list` | none | `{count, current, o_<key>: {current}, list: [{index, windows, name}]}`, the same object as `comp.props.get {path: "workspaces"}`; `name` is null when unnamed |
+| `comp.workspace.switch` | `{index, output?, wrap?}` | `{output, from, to}` |
+| `comp.window.send_to_workspace` | `{id, generation, index, follow?}` | the window |
+| `comp.workspaces.set_count` | `{count: 1..=16, persist?}` | `{from, count, persisted?, persist_error?}` |
+| `comp.workspace.rename` | `{index, name, persist?}` | `{index, name, previous, persisted?}` |
+
+`index` is 1-based; switch and send also take `"next"` and `"prev"`.
+Shrinking the count moves every window above it to the last workspace and
+drops the removed workspaces' names. A name is trimmed, at most 64
+characters, with no control characters; `""` clears it. `persist` defaults
+to true: the count and the names are written to `preferences.json`
+(`workspaces_count`, `workspace_names`) and compd starts with them. If the
+file cannot be written, the change still applies and the reply has
+`persisted: false` and `persist_error`. A session lock refuses every
+workspace change and hides the names (and window counts) from readers.
+
+Topic `comp.workspace.changed` (`<service>.workspace.changed`) carries
+`{version: 1, count, current, outputs: {o_<key>: current}, names, event_seq}`
+whenever the count, a current workspace or a name changes. `names` has one
+entry per workspace, null when unnamed. Window counts are not in it;
+`comp.props.changed` on `workspaces.list` carries them. The two topics are
+sequenced separately, so a subscriber may see one before the other.
+
+## Test
+
+```
+cargo test --workspace
+mix tests/desktop/nested_smoke.mix --help
+mix tests/desktop/parity_suite.mix --help
+```
+
+---
+
+<!-- page: https://mixos.dev/config/ (source: https://mixos.dev/config/README.md) -->
+
+# config
+
+Where MixOS keeps its files, and how a `*.conf.mix` file is read.
+
+- `config::path(Dir::Etc | Var | Run | Share)`: one rule for every
+  directory. A `MIXOS_ETC` / `MIXOS_VAR` / `MIXOS_RUN` / `MIXOS_SHARE`
+  override wins; else `$MIXOS/etc`, `/var`, `/run` when a root is set; else
+  the XDG directory for a user (`~/.config/mixos`, `~/.local/share/mixos`,
+  `$XDG_RUNTIME_DIR/mixos`) or the system directory for root (`/etc/mixos`,
+  `/var/lib/mixos`, `/run/mixos`). `Share` is installed read-only data at
+  `/opt/mixos/share` whatever the root or user. Resolved once per process
+  and cached; `Dirs::resolve(&Environment)` applies the rule to explicit
+  inputs for tests.
+- `config::parse` / `config::parse_file` and `Value`, `Map`, `Error`,
+  `ErrorKind`: the [strict](../strict/README.md) crate's strict-data
+  loader, re-exported so a config reader needs one dependency. Typed
+  loading is `strict::from_file`.
+
+No dependency on the Mix language. Test with `cargo test -p config`.
+
+The source is [`libs/config`](https://github.com/markc/mixos/tree/main/libs/config).
+
+## Application directories
+
+`AppDirs` shares the existing Ced/Dopus per-application root, config, state
+and cache rules. First absolute root wins: `MIXOS_APP_HOME`, then
+`MIXOS_APPS_HOME/<component>`, `MIXOS_VAR/apps/<component>` (or
+`MIXOS/var/apps/<component>`), `XDG_STATE_HOME/mixos/apps/<component>`,
+then `HOME/.local/state/mixos/apps/<component>`. An invalid component or
+absent absolute root returns `None`. Resolution performs no I/O. App-owned
+filenames stay in their owners; this promotion preserves existing paths and
+lets other native settings consumers use the same isolated cache policy.
+`resolve_with` injects inputs for tests without mutating process
+environment.
+
+## Atomic directories
+
+`atomic::open_directory` refuses symlinks in every component.
+`atomic::create_directory` uses the same held-descriptor walk and provisions
+missing components with mode 0700. It validates the entire absolute path
+before creation, refuses parent traversal and leaves existing permissions
+unchanged.
+
+---
+
+<!-- page: https://mixos.dev/davproto/ (source: https://mixos.dev/davproto/README.md) -->
+
+# davproto
+
+CalDAV and CardDAV codecs: the wire-format side of a DAV server or client,
+with no transport and no storage.
+
+- `ical`: JSCalendar (RFC 8984) to iCalendar VEVENT (RFC 5545), and the
+  reverse mapping for a DAV PUT. A verbatim iCalendar body is kept under a
+  data key so a GET returns it unchanged.
+- `vcard`: JSContact (RFC 9553) to vCard 4.0 (RFC 6350), with the same
+  verbatim round-trip.
+- `etag`: strong ETags, a BLAKE3 hash of the content, so an ETag changes
+  exactly when the content does.
+
+The crate is a pure library. It does not open sockets, read files or touch
+a database. Callers (maild's DAV server, a future DAV client) own those.
+
+The source is [`libs/davproto`](https://github.com/markc/mixos/tree/main/libs/davproto).
+
+## Test
+
+Run the unit tests on a build worker, not locally:
+
+    cargo test -p davproto --locked
+    cargo clippy -p davproto --all-targets --locked -- -D warnings
+    cargo fmt -p davproto -- --check
+
+---
+
+<!-- page: https://mixos.dev/design/ (source: https://mixos.dev/design/README.md) -->
+
+# design
+
+The MixOS design-token system. A design source is a strict-data document
+(`theme.conf.mix`) holding OKLCH colour primitives, metrics, type scales,
+semantic text pairs and the button family's mapping rules, plus modifier
+blocks per scheme and mode. The compiler flattens it for one
+`DesignContext` (scheme, mode, contrast, optional app) into a resolved
+design: gamut-mapped colours with WCAG contrast checked, resolved metrics
+and typography, and a total button table keyed by variant, size,
+interaction and focus. Every failure is a stable, source-addressed
+diagnostic.
+
+The crate is headless and has no renderer dependency. Its only
+dependencies are [strict](../strict/README.md) (the source format) and
+`serde`.
+
+- `parse_design_source` / `parse_legacy_v0_source` read a source; the
+  embedded default is `EMBEDDED_DEFAULT_SOURCE`.
+- `compile_design` produces a `DesignCompileResult`; `apply_compiled_design`
+  stamps a revision onto an accepted candidate.
+- `Scheme`, `Mode`, `Contrast` are the closed selection axes;
+  `active_typography` reads a typography role with embedded defaults.
+- The default selection, used when nothing chooses a theme, is studio,
+  dark. `DesignContext::revision_one()` is revision one's ocean, light,
+  which the v0 equivalence gate and the revision-one parity tests pin.
+
+Build and test with `cargo test -p design`.
+
+The source is [`libs/design`](https://github.com/markc/mixos/tree/main/libs/design).
 
 ---
 
@@ -4512,13 +5207,36 @@ accepted `dopus.action` runs on `<service>.command.executed` too.
 
 ---
 
+<!-- page: https://mixos.dev/edit/ (source: https://mixos.dev/edit/README.md) -->
+
+# Edit
+
+Shared headless text buffers used by [editd](../editd/README.md) and
+[Ced](../ced/README.md). This promotion has two external owners: the
+service is the authoritative buffer store; the app uses the same revision,
+operation, anchor and position contracts for local echo and rebasing. No
+Bus connection, clock, renderer or async runtime is required by this
+library.
+
+The Microsoft Edit buffer implementation remains in
+[`vendor/msedit`](https://github.com/markc/mixos/tree/main/vendor/msedit),
+with its licence, upstream revision and retained commit-failure, Unicode
+and convergence tests. This library supplies the revision CAS,
+transactions, single-authority OT, per-origin undo, anchors and search API
+above it.
+
+Source: frozen cosmix revision `e0297242305f3a3c3de09f1ca01e8faa771768da`.
+The source is [`libs/edit`](https://github.com/markc/mixos/tree/main/libs/edit).
+
+---
+
 <!-- page: https://mixos.dev/editd/ (source: https://mixos.dev/editd/README.md) -->
 
 # Edit service
 
-`editd` registers the `edit` service and serves the `edit.v1` contract. Ced
-and agents share its buffers through native ABP. The service is headless and
-requires no compositor or D-Bus session.
+`editd` registers the `edit` service and serves the `edit.v1` contract.
+[Ced](../ced/README.md) and agents share its buffers through native ABP.
+The service is headless and requires no compositor or D-Bus session.
 
 `edit.open`, `edit.list` and `edit.get` discover buffers and page their
 contents. `edit.insert`, `edit.delete`, `edit.replace` and `edit.apply` change
@@ -4533,11 +5251,144 @@ silently reinterpret an old identifier. Paged snapshots remain tied to their
 captured revision while later edits arrive. Slow work on one buffer does not
 block operations on another.
 
-Recovery defaults beneath `MIXOS_VAR/edit/recovery`.
-`MIXOS_EDIT_RECOVERY_DIR` selects an absolute recovery directory; `0` disables
-durable recovery. The session supplies its own state root. See
-[the component](https://github.com/markc/mixos/blob/main/services/editd/README.md) and
-[the shared contract](https://github.com/markc/mixos/blob/main/libs/edit/README.md).
+## Buffers and recovery
+
+The buffer model is the [edit](../edit/README.md) library, shared with Ced:
+revision CAS, per-origin undo, anchors, atomic save, external-change
+detection and a recoverable change feed. This service owns its actors,
+filesystem watching and the recovery writer.
+
+Discovery uses the shared node configuration. Recovery defaults beneath
+`MIXOS_VAR/edit/recovery`, following the MixOS Var directory rule.
+`MIXOS_EDIT_RECOVERY_DIR` selects an absolute recovery directory, and
+`MIXOS_EDIT_RECOVERY=0` disables durable recovery. The session supplies its
+own state root.
+
+## Tests
+
+The retained integration tests exercise dispatch, recovery and the actual
+service over a private native noded, rather than a substitute control
+socket.
+
+The source is
+[`services/editd`](https://github.com/markc/mixos/tree/main/services/editd).
+
+---
+
+<!-- page: https://mixos.dev/editor/ (source: https://mixos.dev/editor/README.md) -->
+
+# editor
+
+The shared plain-text editor for MixOS egui applications: a monospace,
+virtualised view over the headless editing model (`editor-model`,
+[edit](../edit/README.md)). [Ced](../ced/README.md) is built on it, and so
+is any application that needs a text editor: a Markdown editor, a notes
+pane, a config field.
+
+- **Only visible rows are measured and drawn.** A multi-megabyte file, or a
+  multi-megabyte line, costs about the same per frame as a short one.
+- **Soft wrap is a view option** (`Wrap::Words`): rows break after
+  whitespace, inside a word only when it is longer than a row.
+- **The widget never edits text.** It turns keys, pointer, clipboard and
+  input-method events into `Event`s (mostly `EditCommand`s) for the
+  document's owner to apply.
+- **Colours come from the theme**, through the toolkit's chrome roles, with
+  every highlight class kept at 3:1 contrast or better.
+
+The source is [`libs/editor`](https://github.com/markc/mixos/tree/main/libs/editor).
+
+## A local document
+
+`local::Document` is the editor without a daemon: an `edit::buffer::Buffer`
+with open and save (byte-order mark and line endings kept), undo and redo,
+and highlighting for the 25 lsh languages, Markdown included.
+
+```rust
+let mut doc = editor::local::Document::open("notes.md")?;
+let palette = editor::Palette::from_theme(&theme);
+let view = editor::View::prose(); // soft wrap, no line numbers
+
+// each frame
+doc.show(ui, &palette, &view);
+if doc.is_dirty() { /* offer to save: doc.save()? */ }
+```
+
+## A shared buffer
+
+Ced applies the same events to a buffer shared through the edit service
+(`editor_model::mirror`) and passes other origins' carets, selections and
+change markers through the same `Doc`. Any application can move from a
+local document to a shared one without changing its UI code.
+
+## Saving
+
+`save` writes a new temporary file beside the real one (created
+exclusively, so no existing file or link is followed), gives it the
+original's permissions, flushes it and renames it into place. Saving
+through a symbolic link writes the link's target; the link stays a link.
+Edits the buffer refuses (a paste over the 1 MiB request limit) are kept
+for `take_refusal`. `set_contents` is a reload: it has no request limit,
+and Undo does not take it back.
+
+## Tests
+
+`cargo test -p editor`: measurement, rows and wrapping, geometry, keys, the
+input-method guard, palettes in every scheme, the local document, and
+`tests/snapshot.rs`, which drives a real document through egui (typing,
+selection, undo, read-only) and keeps offscreen snapshots. Regenerate the
+snapshots with `UPDATE_SNAPSHOTS=1` and look at them before committing.
+
+## Known limits
+
+- One monospace grid: proportional text is a separate, larger piece of work.
+- With soft wrap, the scrollbar counts visual rows for documents up to
+  256 KiB and lines beyond that.
+- In lines over 64 KiB, which break every row width, a tab wider than a
+  whole row can leave an empty row before it.
+- A text area under two cells wide wraps at two cells (the widest cluster
+  but a tab), so its second cell is clipped.
+- A row's end and the next row's start are the same offset, and a caret has
+  no affinity yet: Up or Down onto a row that breaks inside a word stops
+  before its last character, so the caret stays on that row.
+- Glyphs come from the theme's faces; scripts they do not cover (CJK, for
+  one) draw as boxes until the font set gains a fallback.
+- Without wrap, Home and End are logical; with wrap, Up and Down move by
+  rows and Home and End stay logical.
+- Mix-family buffers are highlighted by the Mix lexer only when the `mix`
+  feature is on and the owner runs the relex (Ced does).
+
+---
+
+<!-- page: https://mixos.dev/expr/ (source: https://mixos.dev/expr/README.md) -->
+
+# expr
+
+The pure expression language of Mix Scenes bindings. A scene binds a port
+to an expression such as `= $model.rows`, `= not $model.volume.has_icon` or
+`= $model.prefix .. $item.cells[0]`; this crate compiles the expression,
+reports which globals it reads, and evaluates it over `serde_json::Value`
+globals under size and time limits.
+
+The language is the expression subset of [Mix](../mix/README.md) with every
+builtin denied: literals, `$name` globals with field and index access,
+arithmetic, `..` concatenation, comparisons, `and`/`or`/`??`, the ternary
+and the `if … then … else … end` expression. Calls, assignments, statements
+and shell or Bus forms are refused at compile time with
+`ErrorKind::NotAllowed`. The crate does not depend on the Mix interpreter.
+
+```rust
+let model = serde_json::json!({"prefix": "live ", "rows": [{"cells": ["one"]}]});
+let binding = expr::compile("$model.prefix .. $model.rows[0].cells[0]")?;
+assert_eq!(binding.roots().iter().collect::<Vec<_>>(), ["model"]);
+let text = binding.eval(&[("model", &model)], &expr::Limits::default())?;
+assert_eq!(text, "live one");
+```
+
+Test: `cargo test -p expr`. The semantics are pinned in
+`tests/semantics.rs`; the crate documentation in `src/lib.rs` lists what is
+accepted, refused and how errors are classified.
+
+The source is [`libs/expr`](https://github.com/markc/mixos/tree/main/libs/expr).
 
 ---
 
@@ -4577,6 +5428,15 @@ hostd call net.link.apply '{"link":"eth1","config":{"mode":"dhcp"}}'
 
 Read verbs are also on the Bus, owned by `hostd`. Changes are never taken
 from the Bus.
+
+There is one hostd per host, run as root and socket-activated:
+
+```text
+hostd serve                      # local socket, plus the Bus when noded is up
+hostd serve --no-bus             # local socket only
+```
+
+`hostd serve` refuses to take over a socket another hostd is serving.
 
 ## Verbs
 
@@ -4841,6 +5701,115 @@ host itself thaws it, never root inside a container.
 | `recovery_pending` | an unfinished change is being retried and hasn't finished yet; writes wait |
 | `timeout`, `busy` | too slow, or too many requests at once |
 
+## Source layout
+
+The source is
+[`services/hostd`](https://github.com/markc/mixos/tree/main/services/hostd):
+
+| File | What |
+|---|---|
+| `src/local.rs` | the local socket: NUL-framed JSON, per-uid and per-connection limits |
+| `src/caller.rs` | caller identity from `SO_PEERCRED`, a held pidfd, cgroup and namespaces, read per request |
+| `src/service.rs` | the verb table, tiers, dispatch and the `authorise` gate |
+| `src/policy.rs` | grants: loading (one `O_NOFOLLOW` open, root-only), matching, rate limits |
+| `src/freeze.rs` | the kill switch, failing closed |
+| `src/receipt.rs` | receipts, durable atomic writes, restore, the circuit breaker |
+| `src/txn.rs` | the transaction every write runs through: receipt first, conclude (keep or put back, breaker, durable outcome), recovery, undo |
+| `src/link.rs` | `net.link.apply`: validation, rendering, the change, its proof |
+| `src/wg.rs` | `net.wg.apply`: WireGuard netdev, network and key files, the handshake proof |
+| `src/wgnl.rs` | WireGuard generic netlink (peer handshakes) and deleting a link |
+| `src/wifi.rs` | `net.wifi.scan` and `net.wifi.connect` through iwd: the one-connect passphrase agent, runtime put-back |
+| `src/networkd.rs` | networkd over D-Bus and Varlink, the event-driven health wait |
+| `src/net.rs`, `src/info.rs` | the read verbs |
+| `units/` | `hostd.socket`, `hostd.service` (sandboxed), `sysusers.conf` |
+
+## Adding a write verb
+
+1. A typed request with `deny_unknown_fields`, validated into a plan before
+   anything else happens. Anything the plan reads from the host (a key, a
+   file) is read inside the writer lock.
+2. `service::write(host, origin, peer, verb, limits, ...)` with the
+   allow-list keys the verb checks: it gates the call, takes the writer
+   lock, gates it again and runs the change in its own task.
+3. The change through `txn`: `FileChange::backup` for every file (with the
+   mode and group a new file needs), `txn::begin`, the change and its proof,
+   then `txn::conclude`. Never order the breaker or the receipt by hand.
+4. A `reapply` for the verb in `txn::put_back`, so rollback, recovery and
+   undo can make the host use the restored files. Without it the verb
+   doesn't ship.
+5. The paths it writes added to `ReadWritePaths=`, and any capability it
+   needs to `CapabilityBoundingSet=`, in `units/hostd.service`, with the
+   reason beside it.
+6. Registered in `docs/docs/spec/bus/verbs.conf.mix` (class `intent`), in
+   this page, and reviewed on its own.
+
+## Tests
+
+`cargo test -p hostd`: no test needs root. The live gate for network writes
+runs as root on a disposable networkd host, on dummy links only, and
+removes everything it made.
+
+---
+
+<!-- page: https://mixos.dev/logging/ (source: https://mixos.dev/logging/README.md) -->
+
+# logging
+
+Shared tracing, sink selection, reload handles and process statistics for
+MixOS services and the Mix shell. The default build has no Bus or HTTP
+listener; `bus-handlers` and `prometheus` are explicit features. Log files
+use the directory rule in [config](../config/README.md), including isolated
+session roots.
+
+Transplanted from `cosmix-lib-log` at cosmix
+`e0297242305f3a3c3de09f1ca01e8faa771768da`. Production callers are Mix and
+[noded](../noded/README.md).
+
+The source is [`libs/logging`](https://github.com/markc/mixos/tree/main/libs/logging).
+
+---
+
+<!-- page: https://mixos.dev/mix-shell/ (source: https://mixos.dev/mix-shell/README.md) -->
+
+# mix-shell
+
+The Mix shell: interactive line and editor facilities, the strict command
+classifier, the native-session bootstrap and the ABP citizen runtime. All
+application calls go through noded; the retired per-application socket fast
+path is omitted. The client supervisor is the shared implementation in
+[bus](../bus/README.md).
+
+The language itself is the [mix](../mix/README.md) library, and its manual
+is at [/mix/](../mix/README.md).
+
+## The binary
+
+This package is a library. The `mix` binary is built by
+[system](../system/README.md), which runs `mix_shell::main` when started as
+`mix` ([decision](../docs/decisions/2026-10-12-one-system-binary.md)):
+`cargo build -p system`. The shell's process-level tests live in
+`cli/system/tests` and run that binary (`cargo test -p system`); the unit
+tests and library-only tests stay here.
+
+## Session and manuals
+
+The bootstrap retains the frozen `COSMIX_SESSION_FD` marker, sealed memfd
+name and native-session transcripts. Ordinary shells initialise no grant
+owner. Bundled manuals are available offline and use the same directory
+rule as the session's other installed resources. Explicit remote manual
+selection remains available.
+
+## Provenance
+
+Transplanted from `src/crates/cosmix-mix` at cosmix
+`e0297242305f3a3c3de09f1ca01e8faa771768da`, with the complete regression
+corpus. The native integration fixture compiles noded's production modules
+and Term's production sealed-FD implementation, rather than simulating
+session RPCs.
+
+The source is
+[`cli/mix-shell`](https://github.com/markc/mixos/tree/main/cli/mix-shell).
+
 ---
 
 <!-- page: https://mixos.dev/mix/ (source: https://mixos.dev/mix/README.md) -->
@@ -4980,6 +5949,18 @@ its graceful shutdown behaviour.
 Design docs, background rationale, and the formal specs (04 language
 reference, 18 citizen runtime) all live in the operator control repo since
 2026-07-23; this manual is the complete public reference.
+
+## The library
+
+The `mix` component is the language library
+([`libs/mix`](https://github.com/markc/mixos/tree/main/libs/mix)): lexer,
+parser, evaluator, builtin contracts and embedded handler interfaces.
+Features select the optional data, networking and cryptographic
+facilities; the interpreter's core stays independent of the Bus and
+desktop. It was transplanted from `cosmix-lib-mix` at cosmix
+`e0297242305f3a3c3de09f1ca01e8faa771768da`, retaining its regression corpus
+and public language version. The shell is [mix-shell](https://mixos.dev/mix-shell/),
+and the `mix` binary is built by [system](https://mixos.dev/system/).
 
 ## See also
 
@@ -26443,14 +27424,51 @@ uses ABP peer connections between brokers.
 Native applications connect to the broker's configured Unix endpoint.
 Credential checks and native session proofs identify the caller; a service
 name alone does not confer authority. Mesh admission verifies signed
-inventory and an unchanged cross-version admission transcript.
+inventory and an unchanged cross-version admission transcript. Mesh peers
+use the same frozen ABP wire and signed-inventory admission contract as
+existing nodes.
+
+The broker does not require a D-Bus session. Run `noded --version` to
+inspect the package version and build provenance. noded is one of the
+personalities of the [system](../system/README.md) binary.
+
+## Configuration
 
 Configuration is strict data in `node.conf.mix`, resolved beneath `MIXOS` or
-an explicit `MIXOS_ETC`. Isolated roots never fall back to host configuration.
-Run `noded --version` to inspect the package version and build provenance.
+an explicit `MIXOS_ETC`. Isolated roots never fall back to host
+configuration. Set `MIXOS` to an isolated runtime root and supply
+`etc/node.conf.mix`, for example:
 
-The broker does not require a D-Bus session. See the component README for
-configuration, optional monitor/logger switches and test commands.
+```text
+node: "example"
+noded: { port: 4200, unix_socket: "/run/mixos/noded/bus.sock" }
+```
+
+## Running it
+
+Run `noded serve`; `--no-monitor --no-log` disables its optional observation
+clients. The Unix broker endpoint verifies peer credentials before
+accepting native session proofs. The operating system supervises the
+process; application requests and node-to-node control use ABP.
+
+## Tests
+
+Tests cover broker verbs, scope isolation, replay refusal, authority
+reload, mesh admission and recovery. Run
+`cargo test -p noded -p bus -p config -p props -p mesh -p mesh-trust` on a
+configured build worker.
+
+## Provenance
+
+This source was transplanted from the noded, mesh and mesh-trust
+components of Cosmix at `e0297242305f3a3c3de09f1ca01e8faa771768da`.
+Cryptographic domain bytes remain unchanged. Version 0.18.3 adds the
+structured registration-rejection body (additive only; see the
+[changelog](https://github.com/markc/mixos/blob/main/services/noded/CHANGELOG.md));
+the Bus contracts otherwise match 0.18.2.
+
+The source is
+[`services/noded`](https://github.com/markc/mixos/tree/main/services/noded).
 
 ---
 
@@ -26546,14 +27564,40 @@ it keeps `DBUS_SESSION_BUS_ADDRESS`.
 portald serve --instance <name> [--profile default] [--state-dir DIR]
 ```
 
+It needs `DBUS_SESSION_BUS_ADDRESS`. `--state-dir` defaults to
+`$STATE_DIRECTORY`, which systemd sets from `StateDirectory=portald`.
+
 ## Status for agents
 
-The bus verb `portald.status` is read-only. It reports the origin of the held
+`HELP` returns the verb manifest. The bus verb `portald.status` is read-only. It reports the origin of the held
 values (defaults, cache or settingsd), whether the name is owned, the identity
 of the held projection, the last fault and the counters. Its
 `settings_generation` reports the Consumer's connection generation, or null
 while disconnected. It is registered in
 `docs/docs/spec/bus/verbs.conf.mix`.
+
+## Tests
+
+The source is
+[`services/portald`](https://github.com/markc/mixos/tree/main/services/portald).
+
+```text
+cargo test --locked -p portald
+```
+
+Unit tests cover value mapping, iterative matching and acceptance.
+`tests/portal.rs` runs a private `dbus-daemon` and checks version 2, Read
+and ReadOne nesting, empty and adversarial ReadAll filters, NotFound,
+changed-only signals, cache isolation and single ownership. It launches the
+production binary against a silent authority and requires a complete Read
+reply within 250 ms, including cached startup and profile switching.
+
+Native tests embed the real noded via [test-broker](../test-broker/README.md)
+and run the production settingsd loop. They cover initial fetch, live
+update without reconnect, settingsd restart at unchanged revision, and
+broker recovery after the initial attempt budget is exhausted. These tests
+run by default; the build cluster needs `dbus-daemon` and the pinned Rust
+dependencies.
 
 ## Not yet
 
@@ -26666,6 +27710,7 @@ enablement. The window is drivable like every MixOS app
 
 For scripted work, call the services directly (`releases.*`,
 `settings.*`): Prefs is their window, not a second implementation.
+
 ## Wallpaper
 
 In **Appearance → Wallpapers**, choose the default or an output, then Theme,
@@ -26690,6 +27735,44 @@ Wallpaper and browser state are included in `prefs.info`, wallpaper state in
 `prefs.appearance`. Commands `wallpaper.apply`, `wallpaper.revert`,
 `wallpaper.refresh` and `wallpaper.browse` are available through
 `prefs.execute`; the normal `prefs.ui.*` verbs drive the controls and browser.
+
+## Running and testing
+
+Run with `prefs [--noded-url URL]`; a second launch raises the first window
+(`prefs.show`). The Bus connection is [citizen](../citizen/README.md).
+
+The source is [`apps/prefs`](https://github.com/markc/mixos/tree/main/apps/prefs):
+
+| Path | What |
+|---|---|
+| `crates/preferences` | the headless engine: panels, rows, notes, one operation at a time, the `prefs.*` verbs |
+| `crates/preferences/src/appearance.rs` | the Appearance panel: the look, its draft, fenced applies, receipts for lost replies |
+| `src/commands.rs` | every action as a registered command (menus, buttons, shortcuts, `prefs.execute`) |
+| `src/view.rs` | the egui rendering; returns what the person did |
+| `src/shell.rs` | events in, effects out, in order; drained shutdown |
+| `i18n/en/prefs.ftl` | the strings |
+
+Test with `cargo test -p preferences -p prefs`. Regenerate the snapshots
+with `UPDATE_SNAPSHOTS=1` and look at the images before committing them.
+
+---
+
+<!-- page: https://mixos.dev/props/ (source: https://mixos.dev/props/README.md) -->
+
+# props
+
+Shared property read types, revision handling and optional ABP publication
+builders. [noded](../noded/README.md) and subsequent Mix and
+[editd](../editd/README.md) consumers share this surface without a database
+or a second control transport.
+
+The default feature set contains pure types and in-memory revisions. The
+`bus` feature adds read dispatch and publication envelopes.
+
+Transplanted from `cosmix-lib-props-core` at
+`e0297242305f3a3c3de09f1ca01e8faa771768da`, under MIT OR Apache-2.0.
+
+The source is [`libs/props`](https://github.com/markc/mixos/tree/main/libs/props).
 
 ---
 
@@ -26795,6 +27878,78 @@ file types into that session's data directory (`MIXOS_RELEASES_SHARE`), with
 its own record of what it made. Nothing is downloaded twice, and an update on
 the host reaches the container at once. When the container sees the files at
 another path, `MIXOS_RELEASES_VIEW` says where.
+
+## Source and tests
+
+`releasesd` is a Mix component
+([decision](../docs/decisions/2026-10-10-mix-components.md)): no Cargo
+package, identity in `component.mx`. The source is
+[`services/releasesd`](https://github.com/markc/mixos/tree/main/services/releasesd):
+
+| Path | What |
+|---|---|
+| `scripts/lib/releases.mix` | all of the logic, as a module |
+| `scripts/releasesd.mix` | the Bus service (`mix --serve … --name releases`) |
+| `scripts/releases.mix` | the command line, same logic in-process |
+| `units/releasesd@.service` | the session unit |
+| `tests/releases_test.mix` | offline: validation, verification, install, rollback, links |
+| `tests/releasesd_test.mix` | every verb over a private broker and a stand-in API |
+
+Run the tests from the checkout root. They need `bsdtar`; the Bus test
+needs a `noded`, by default `/opt/mixos/bin/noded`, or `--noded <path>`:
+
+```sh
+mix services/releasesd/tests/releases_test.mix
+mix services/releasesd/tests/releasesd_test.mix
+```
+
+The verbs are registered in `docs/docs/spec/bus/verbs.conf.mix`.
+
+---
+
+<!-- page: https://mixos.dev/scene/ (source: https://mixos.dev/scene/README.md) -->
+
+# scene
+
+The Mix Scenes document core, with no renderer and no interpreter. A scene
+is a `---` envelope of headers followed by one ```` ```mix ```` fence
+holding a strict-data map of nodes:
+
+````text
+---
+scene: 1
+name: about-panel
+citizen: about-citizen
+model: {"title":"About"}
+---
+```mix
+root: {widget: "column", gap: 8, children: ["title"]}
+title: {widget: "text", text: "= $model.title", size: 18, bold: true}
+```
+````
+
+The crate provides:
+
+- `parse` to a `SceneDocument`, `lint` for every diagnostic (codes in
+  `ALL_CODES`), `resolve` to a `ResolvedScene` with defaults filled and
+  bindings evaluated, `diff` between two resolved trees, `describe` for a
+  family's ports, and `to_source` to write a document back out;
+- `bindings`: `= expression` ports compiled once (`compile`), re-evaluated
+  on a model patch (`reevaluate`) and instantiated per list row
+  (`template_instantiate_with`);
+- `evaluator`: the `Evaluator` trait the bindings go through, implemented
+  by `ExprEvaluator` over the [expr](../expr/README.md) crate and used by
+  default;
+- `fixtures`: the test documents, exported for hosts' tests.
+
+The node fence is parsed by [strict](../strict/README.md) and never
+executed. A binding may read `$model` anywhere and `$item` inside a list
+template; calls, assignments, statements and shell or Bus forms are refused
+at compile time with `binding-policy`.
+
+Test: `cargo test -p scene`.
+
+The source is [`libs/scene`](https://github.com/markc/mixos/tree/main/libs/scene).
 
 ---
 
@@ -27010,6 +28165,29 @@ seconds; if it still fails, the shot is kept, the answer carries
 with Print Screen, `screenshot.show` or the taskbar; nothing restores it
 later on its own.
 
+## Source and tests
+
+The source is
+[`apps/screenshot`](https://github.com/markc/mixos/tree/main/apps/screenshot)
+(app id `dev.mixos.screenshot`):
+
+- `crates/annotation`: the headless engine (document, painter, viewport,
+  screenshots folder, ledger).
+- `src/`: the egui shell (`app` state and rules, `commands` registry,
+  `capture` over compd, `jobs`, `view`, `shell`, `headless`). The instance
+  names per compositor are in `src/names.rs`.
+
+Test it on a build worker:
+
+```
+cargo test -p screenshot -p annotation
+```
+
+`tests/native_bus.rs` runs the headless binary against an in-process
+broker and a fixture compositor; `tests/snapshot.rs` renders the window
+offscreen (regenerate with `UPDATE_SNAPSHOTS=1` and look at the images);
+`tests/registry.rs` checks the verb registry.
+
 ## Notes
 
 - Copy image goes through the desktop's X11 clipboard (XWayland), so
@@ -27030,3 +28208,400 @@ later on its own.
   agents alike.
 - A region selection may take up to 70 seconds (Cap allowed 38).
 - Raw shots are deleted when no longer needed, and the folder is pruned.
+
+---
+
+<!-- page: https://mixos.dev/settings/ (source: https://mixos.dev/settings/README.md) -->
+
+# settings
+
+Headless desktop settings types, validation and resolution, and the shared
+consumer. Shared by the authority ([settingsd](../settingsd/README.md)) and
+the app and compositor adapters. Library API: 0.3.0; the authority wire and
+schema contract remains 0.1.0, schema 1.
+
+See [the settings contract](../docs/spec/settings/README.md). The source is
+[`libs/settings`](https://github.com/markc/mixos/tree/main/libs/settings).
+
+## The consumer
+
+`consumer::Consumer` owns ordering, bounded bootstrap buffering, one active
+subscribe/read job, pending-only recovery and fenced staged/application
+state. `domains::ChangePlan` compares one effective context for paint,
+text, layout, resource and motion work; shell hosts opt into shell
+geometry. Provenance and source/revision metadata alone do not cause
+rendering work. Construct apps with `Consumer::for_app(binding, "ced")` and
+shell hosts with `Consumer::for_shell(binding)`. `context()` returns the
+canonical projection key (`app:ced` or `desktop`); adapters use it without
+repeating key construction.
+
+## Native execution
+
+The optional `native` feature executes actions over an **existing**
+`bus::native_client::SupervisedClient`. It does not connect, spawn a task or
+take the incoming receiver. The host multiplexes work futures with its
+current incoming lane and connection state, feeding the sampled connection
+generation even when a state watch coalesces a disconnect/reconnect. Feed
+queue loss through `lost()` before using further queued data. There is one
+pending retry deadline, from 250 ms capped at 30 seconds; remove it after
+success/disconnect and never arm an idle timer. Unsupported, wrong-target
+and protocol refusals await a new event or explicit refresh rather than
+automatically retrying unchanged bad data. `retry_deadline()` is absolute
+and remains fixed during malformed-event storms; `retry_delay()` returns
+its remaining duration, not a new per-event delay. Inspect `is_confirmed()`
+to distinguish fresh authority evidence from preserved usable data during
+loss/recovery. Captured read baselines expose same-incarnation rollback
+while allowing an older read that legitimately raced a newer event. Cancel
+an old executor future when `current_work()` changes or disappears;
+superseded work must not become a second active host job. Reconcile the
+pending timer from `retry_deadline()` after every engine input and
+completion, including successful RPC replies: a delivery anomaly may have
+scheduled recovery while that otherwise successful read was in flight.
+Timer scheduling follows engine state, not just the last RPC result.
+
+## Bootstrap and fallback
+
+Each native call has a one-second bound. Pass the same initial deadline to
+`native::execute_until` for subscribe and read to bound their combined
+bootstrap to one second before presenting a labelled fallback; complete
+cancelled work as a timeout so the engine can recover. After that deadline
+the host may capture `fallback_request()` and run `Request::prepare` on its
+worker, passing a loaded cache candidate and a resource readiness callback.
+Retained bootstrap data is tried first, then cache, then embedded defaults.
+Every candidate must pass the callback for all references used by its
+context/host. If none is usable, preparation returns diagnostics.
+`complete_fallback` fences the completion before producing the usual UI
+stage; the usual synchronous pre-swap check and acknowledgement still
+apply. Resource loading and real renderer integration remain host work.
+
+## Applying a change
+
+Readback advances `current()`, not `applied()`. Prepare every changed
+resource before entering the renderer loop. Check `is_current(update)`
+immediately before the synchronous swap, then activate and
+`acknowledge(update)` with no intervening await; a stale completion must
+never mutate the renderer. Failed activation preserves last-good applied
+data. Identical render inputs advance evidence without a swap. Neither
+readback nor application proves a presented frame. Profiles and contexts
+are immutable for one consumer lifetime. A host rebind cancels its old
+work, retires the old subscription via `unsubscribe_topic`, and creates a
+new consumer; unique consumer tickets reject completions from retired
+hosts.
+
+`presentation_kind()` labels installed data as Current, Retained, Cached,
+LastGood or Embedded. Fallback never enters `current()` or supplies
+mutation fences. Embedded/cached fallback cannot be saved as
+authority-derived data. An unchanged fresh authority projection promotes
+evidence without a swap. `fault()` reports authority/current-resource
+faults; `fallback_fault()` reports fallback preparation/activation failure.
+A usable fallback clears its own fault while preserving an ongoing
+authority outage or unavailable live resources.
+
+## The presentation cache
+
+The optional `cache` feature provides bounded presentation-cache I/O over
+`config::atomic` ([config](../config/README.md)). The caller supplies an
+existing absolute directory inside its isolated session; no paths are
+created and no host preferences are touched. Reads reject symlinks in every
+path component, non-regular files and oversized data. A versioned,
+digest-bound envelope also binds instance/profile, context, shell
+capability and interpretation; the whole projection must match a current
+recompilation. An unavailable old pinned package source is refused
+visibly. JSON parsing preserves floating-point round trips for exact
+projection checks. Digests detect corruption; they do not authenticate
+local files. Local cache never supplies authority evidence, even when its
+data is valid.
+
+`cache_target()` captures the immutable producer/binding/context/capability
+descriptor for `load_for` and `Writer::open_for`; the private producer fence
+does not enter the persistent filename. `Save::same_capture` allows bounded
+worker deduplication. `Request::prepare_with_cache` loads lazily after
+retained resource validation and preserves load failures in its prepared
+diagnostics.
+
+Capture `cache_save()` only after activation (or unchanged evidence
+advancement), then submit it to the host's one serial `cache::Writer` off
+the UI loop. Captures carry immutable applied data and an activation
+serial. A stable advisory lock excludes duplicate writers; superseded saves
+cannot replace newer attempts. The latest failed save can retry, while
+post-rename sync failure reports `cache_write_ambiguous`. Do not delete
+corrupt or ambiguous data automatically. Retire the writer when retiring
+its producer consumer. The held directory inode is the I/O boundary;
+renaming it cannot redirect a write elsewhere, but may make the cache
+unavailable under the new path. That is a fallback/cache miss, never an
+authority rollback. Cache failure does not change applied renderer state.
+
+---
+
+<!-- page: https://mixos.dev/settingsd/ (source: https://mixos.dev/settingsd/README.md) -->
+
+# settingsd
+
+The headless native ABP desktop settings authority, contract 0.1.0. An
+established profile has one writer and durable whole-document settings and
+operation receipts. Native publication is retained and owner-stamped by
+[noded](../noded/README.md). [Ced](../ced/README.md) and
+[compd](../compd/README.md)'s scene-host consume shared appearance jobs on
+their existing Bus lifetimes. Full desktop integration, panel geometry and
+native frame acceptance remain in development.
+
+See [the settings contract](../docs/spec/settings/README.md). Clients use
+the [settings](../settings/README.md) library. The source is
+[`services/settingsd`](https://github.com/markc/mixos/tree/main/services/settingsd).
+
+## Running it
+
+```text
+settingsd init --instance example
+settingsd seed --allow-create --instance example
+settingsd serve --instance example
+```
+
+Init explicitly initialises new state. An installer can explicitly seed a
+first-run session profile with `--allow-create`. Plain seed validates an
+existing profile unchanged and refuses a wholly missing root; a retained
+writer lock prevents seed from recreating an established missing primary,
+including without a backup. Serve fails for a missing or unsupported
+established store. Both accept `--profile` and `--root` for an explicit
+binding or test directory. Use an isolated broker when testing.
+
+## Profiles and upgrades
+
+Profiles pin their initial package design source. Reload checks a content
+digest; a binary upgrade cannot change effective settings within the same
+revision. An effective interpretation digest fences compiler drift for
+explicit migration. The accepted record's format (`store::FORMAT`, now 2)
+is that migration: an older record whose seal verifies as stored is
+re-derived and re-sealed on open by `Accepted::upgrade`, whose doc comment
+says how to add the next field.
+
+Present corrupt primary data can restore a validated backup under a new
+incarnation. A missing primary fails visibly, including when a backup
+exists. I/O faults and intact unsupported documents fail without automatic
+rollback.
+
+## The unit
+
+The packaged unit binds the instance to its machine hostname; its
+session/VT number is a supervision attribute and never a second instance
+identity. The session target wants and upholds the authority. The unit
+validates with plain seed before serving, and application and compositor
+startup does not wait for settings readiness. An image must provision its
+service account's writable `MIXOS_ETC/settings` root and explicitly seed
+once during first installation. Automatic startup never receives
+`--allow-create`, so lost mounts or directories do not silently become new
+default profiles.
+
+## Tests
+
+Worker tests: `cargo test -p settingsd`. The native ABP gate and the
+compositor fixtures arrive with the desktop test harness.
+
+---
+
+<!-- page: https://mixos.dev/strict/ (source: https://mixos.dev/strict/README.md) -->
+
+# strict
+
+The MixOS strict-data format: the grammar of `*.conf.mix` and `*.data.mix`
+files. A document is a JSON-shaped tree (nil, bool, number, string, list,
+map) with bare keys, optional top-level braces, `#` / `--` comments and
+trailing commas. It is loaded as data and never executed: anything that
+could run (a variable, a call, a command substitution, interpolation, a
+semicolon) is refused with a line-numbered error naming the construct.
+
+The crate has no dependency on the Mix language. It provides:
+
+- `parse` / `parse_file` to a `Value` tree;
+- `from_str` / `from_value` / `from_file` into a `#[derive(Deserialize)]`
+  type, and `to_string` / `to_string_pretty` / `to_value` back out;
+- `encode` / `encode_pretty` for a `Value`, in text that reads back
+  unchanged;
+- `to_json` / `from_json` for consumers that work on `serde_json::Value`.
+
+Build and test with `cargo test -p strict`. The grammar tests live in
+`tests/grammar.rs`, the serde bridge in `tests/serde_bridge.rs`.
+
+The source is [`libs/strict`](https://github.com/markc/mixos/tree/main/libs/strict).
+
+---
+
+<!-- page: https://mixos.dev/system/ (source: https://mixos.dev/system/README.md) -->
+
+# system
+
+The system binary, `mix`: the Mix shell and every headless MixOS daemon in
+one file ([decision](../docs/decisions/2026-10-12-one-system-binary.md)).
+
+The binary picks a personality from the basename of argv[0]. Started as
+`mix` it is the shell ([mix-shell](../mix-shell/README.md),
+`mix_shell::main`); started through a symlink named `noded` it is the node
+daemon ([noded](../noded/README.md), `noded::main`). Each daemon still runs
+as its own process, under its own unit and journal identity. This package
+holds only the dispatcher and the global allocator (mimalloc); each
+component keeps its own crate, tests, version and units.
+
+```text
+cargo build --profile release-fast -p system   # target/release-fast/mix
+mix --personalities                            # each personality and its component version
+ln -s mix noded                                # noded, as its own process
+```
+
+An unknown name exits 2 and prints the personalities. A login shell's
+`-mix` is the shell.
+
+The Mix language is documented in the [Mix manual](../mix/README.md).
+
+## Tests
+
+`cargo test -p system` runs the identity test (`tests/personalities.rs`) and
+the shell's process-level tests, which moved here from `cli/mix-shell` so
+they test the shipped binary. Their scripts moved with them
+(`tests/scripts`); the manual they check is the site source
+([`docs/mix`](../mix/README.md)), and the source guards read
+`cli/mix-shell/src`.
+
+The source is [`cli/system`](https://github.com/markc/mixos/tree/main/cli/system).
+
+---
+
+<!-- page: https://mixos.dev/term/ (source: https://mixos.dev/term/README.md) -->
+
+# Terminal
+
+`term` is the MixOS terminal (app id `dev.mixos.term`): tabs, split panes,
+and a grid drawn on the GPU. It is an egui shell (see
+[AGENTS.md](https://github.com/markc/mixos/blob/main/AGENTS.md) §4.1) around
+two private crates:
+
+- `crates/term-core`: the engine. PTYs, the VT grid, tabs and panes,
+  selection, mouse reporting, configuration, the native session and the
+  `term.*` Bus verbs.
+- `crates/term-render`: the grid on the GPU. A glyph atlas and instanced
+  cells drawn by an egui-wgpu paint callback per pane. The CPU raster in
+  term-core is its test oracle.
+
+The shell adds the window: the toolkit title bar and menus, the tab strip,
+pane borders on whole physical pixels, the keyboard and input method, the
+pointer (selection, mouse reporting, middle-click paste of the primary
+selection), the clipboard, and font zoom. Every action is a command on the
+toolkit registry, published on `term.command.executed`.
+
+The source is [`apps/term`](https://github.com/markc/mixos/tree/main/apps/term).
+
+## Bus
+
+The window registers `term` (or `term-<pid>` when another instance holds
+it) and answers:
+
+- the terminal's verbs, served by term-core (`HELP` lists them):
+  `term.session`, `term.tabs`, `term.tab.*`, `term.panes`, `term.pane.*`,
+  `term.snapshot`, `term.scroll`, `term.type`, `term.props.watch`;
+- the window's own: `term.commands`, `term.execute`, `app.describe`, and the
+  toolkit drive verbs (`term.ui.*`, `term.window`, `term.window.state`).
+
+`term --headless` serves the terminal's verbs with no window.
+
+## Configuration
+
+The desktop profile's `terminal.*` settings, held by
+[settingsd](../settingsd/README.md) and edited in [Prefs](../prefs/README.md):
+font family, size and weight, padding, border width, history lines, scroll
+speed, cursor shape and blink, the focus ring, copy on select, and `TERM`.
+The window follows them as they change; Ctrl+plus and minus write
+`terminal.font.size` back 400 ms after the last zoom key. Ctrl+0 returns to
+the profile size without writing, except to correct a write already in
+flight. An unsaved zoom stays pending in memory until another zoom key or a
+successful settings read; a validation refusal discards it. Failures
+schedule no retry timers. History lines and `TERM` apply to tabs and panes
+opened afterwards. Without settingsd the defaults stand, and zoom stays the
+window's own. `TERM_FONT_PX` sets the size until settingsd answers, and
+`TERM_SPIKE_FONT` overrides the font file; `term --print-config` prints the
+startup values.
+
+## Keys
+
+`term --help` lists them. Tabs: Ctrl+Shift+T/W, Ctrl+PageUp/PageDown.
+Panes: Ctrl+Shift+E/O split, Ctrl+Shift+X close, Ctrl+Shift+arrows,
+Tab/Shift+Tab or Ctrl+Tab between split panes. Clipboard: Ctrl+Shift+C/V,
+Shift+Insert. Font: Ctrl+plus/minus/0 and Ctrl+wheel. History:
+Shift+PageUp/PageDown/Home/End. Alt is Meta (ESC before the key; Alt+cursor
+keys send xterm's CSI 1;3 sequences). Right-hand modifier chords are the
+person's own on MixOS and are not bound.
+
+## Building and testing
+
+On an authorised build worker at a pushed commit:
+
+```
+cargo test --locked -p term-core -p term-render -p term
+cargo build --locked --profile release-fast -p term
+```
+
+`tests/window.rs` takes an offscreen snapshot of the window with two tabs
+and a split; regenerate it with `UPDATE_SNAPSHOTS=1` and look at it. The
+PTY tests need the Mix binary at `/opt/mixos/bin/mix`.
+
+---
+
+<!-- page: https://mixos.dev/test-broker/ (source: https://mixos.dev/test-broker/README.md) -->
+
+# test-broker
+
+Development fixture for the Term-to-Mix native session acceptance tests.
+It includes the actual [noded](../noded/README.md) modules from their owning
+service and a copy of Term's sealed-FD implementation
+(`src/session_fd.rs`, from term-core; it returns to term-core when Term is
+ported to egui). It has no broker copy or simulated session transport. The
+fixture controls an isolated broker runtime, verified Unix ingress, restart
+and pause boundaries.
+
+The source is [`libs/test-broker`](https://github.com/markc/mixos/tree/main/libs/test-broker).
+
+---
+
+<!-- page: https://mixos.dev/thumbs/ (source: https://mixos.dev/thumbs/README.md) -->
+
+# thumbs
+
+File thumbnails the way the freedesktop desktops make them. A thumbnail
+lives in the shared cache (`$XDG_CACHE_HOME/thumbnails`, the Thumbnail
+Managing Standard), so one made by another file manager shows at once, and
+the reverse. A missing one is made by a thumbnailer installed on the system
+(a `.thumbnailer` entry, the contract GNOME, COSMIC and glycin share). It
+runs as a plain argv in its own process group under a timeout, and its
+output is checked before it is cached. Thumbnailers reach every format the
+system knows, and keep decoders MixOS cannot ship under its licences
+(FFmpeg-backed video, for one) in their own process.
+
+The crate is headless: no toolkit, no pixels. Showing a cached thumbnail is
+`toolkit::thumbnail`'s part.
+
+- `Pool<K>` makes thumbnails off the caller's thread. Each `Request` has a
+  `lane` (a new request replaces the one waiting in its lane) and a
+  `Ticket` (a shared generation counter: bump it when the view moves on,
+  and its requests are dropped or their runs killed). Replies go to the
+  callback given to `Pool::new`, which also names the app the cache is
+  written as.
+- `generate::Generator` makes one thumbnail. Everything that touches the
+  file before its thumbnailer runs happens on a probe thread under a
+  deadline, so a hung filesystem strands a thread, never a worker.
+- `mounts` refuses network, FUSE and automounted files from the mount table
+  before anything touches them.
+- `cache`, `png` and `registry` are the cache, the few PNG facts it needs,
+  and the installed thumbnailers.
+
+Users: [DOpus](../dopus/README.md) (the Properties preview). Build and test
+with `cargo test -p thumbs`.
+
+The source is [`libs/thumbs`](https://github.com/markc/mixos/tree/main/libs/thumbs).
+
+## Known limits
+
+- Output is checked structurally, never decoded (no decoders here), so a
+  well-formed PNG with corrupt image data is cached as ready. The display
+  side shows the type icon for it until the file changes.
+- There is no way to withdraw one lane's waiting request short of making
+  its ticket stale. A folder view that scrolls will want one; it can be
+  added without changing what exists.
+- The PNG and mountinfo parsers have unit tests but no fuzz targets yet.

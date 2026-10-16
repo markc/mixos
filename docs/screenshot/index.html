@@ -220,6 +220,7 @@
                         <a href="#handing-a-shot-to-an-agent">Handing a shot to an agent</a>
                         <a href="#for-agents">For agents</a>
                         <a href="#from-the-command-line">From the command line</a>
+                        <a href="#source-and-tests">Source and tests</a>
                         <a href="#notes">Notes</a>
                         <a href="#changes-from-cap">Changes from Cap</a>
                     </nav>
@@ -424,6 +425,24 @@ seconds; if it still fails, the shot is kept, the answer carries
 <code>restore_failed: true</code> and the status line says so. Bring the window back
 with Print Screen, <code>screenshot.show</code> or the taskbar; nothing restores it
 later on its own.</p>
+<h2 id="source-and-tests">Source and tests</h2>
+<p>The source is
+<a href="https://github.com/markc/mixos/tree/main/apps/screenshot"><code>apps/screenshot</code></a>
+(app id <code>dev.mixos.screenshot</code>):</p>
+<ul>
+<li><code>crates/annotation</code>: the headless engine (document, painter, viewport,
+screenshots folder, ledger).</li>
+<li><code>src/</code>: the egui shell (<code>app</code> state and rules, <code>commands</code> registry,
+<code>capture</code> over compd, <code>jobs</code>, <code>view</code>, <code>shell</code>, <code>headless</code>). The instance
+names per compositor are in <code>src/names.rs</code>.</li>
+</ul>
+<p>Test it on a build worker:</p>
+<pre><code>cargo test -p screenshot -p annotation
+</code></pre>
+<p><code>tests/native_bus.rs</code> runs the headless binary against an in-process
+broker and a fixture compositor; <code>tests/snapshot.rs</code> renders the window
+offscreen (regenerate with <code>UPDATE_SNAPSHOTS=1</code> and look at the images);
+<code>tests/registry.rs</code> checks the verb registry.</p>
 <h2 id="notes">Notes</h2>
 <ul>
 <li>Copy image goes through the desktop's X11 clipboard (XWayland), so

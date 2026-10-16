@@ -100,6 +100,7 @@ enablement. The window is drivable like every MixOS app
 
 For scripted work, call the services directly (`releases.*`,
 `settings.*`): Prefs is their window, not a second implementation.
+
 ## Wallpaper
 
 In **Appearance → Wallpapers**, choose the default or an output, then Theme,
@@ -125,3 +126,21 @@ Wallpaper and browser state are included in `prefs.info`, wallpaper state in
 `wallpaper.refresh` and `wallpaper.browse` are available through
 `prefs.execute`; the normal `prefs.ui.*` verbs drive the controls and browser.
 
+## Running and testing
+
+Run with `prefs [--noded-url URL]`; a second launch raises the first window
+(`prefs.show`). The Bus connection is [citizen](../citizen/README.md).
+
+The source is [`apps/prefs`](https://github.com/markc/mixos/tree/main/apps/prefs):
+
+| Path | What |
+|---|---|
+| `crates/preferences` | the headless engine: panels, rows, notes, one operation at a time, the `prefs.*` verbs |
+| `crates/preferences/src/appearance.rs` | the Appearance panel: the look, its draft, fenced applies, receipts for lost replies |
+| `src/commands.rs` | every action as a registered command (menus, buttons, shortcuts, `prefs.execute`) |
+| `src/view.rs` | the egui rendering; returns what the person did |
+| `src/shell.rs` | events in, effects out, in order; drained shutdown |
+| `i18n/en/prefs.ftl` | the strings |
+
+Test with `cargo test -p preferences -p prefs`. Regenerate the snapshots
+with `UPDATE_SNAPSHOTS=1` and look at the images before committing them.

@@ -213,6 +213,29 @@ seconds; if it still fails, the shot is kept, the answer carries
 with Print Screen, `screenshot.show` or the taskbar; nothing restores it
 later on its own.
 
+## Source and tests
+
+The source is
+[`apps/screenshot`](https://github.com/markc/mixos/tree/main/apps/screenshot)
+(app id `dev.mixos.screenshot`):
+
+- `crates/annotation`: the headless engine (document, painter, viewport,
+  screenshots folder, ledger).
+- `src/`: the egui shell (`app` state and rules, `commands` registry,
+  `capture` over compd, `jobs`, `view`, `shell`, `headless`). The instance
+  names per compositor are in `src/names.rs`.
+
+Test it on a build worker:
+
+```
+cargo test -p screenshot -p annotation
+```
+
+`tests/native_bus.rs` runs the headless binary against an in-process
+broker and a fixture compositor; `tests/snapshot.rs` renders the window
+offscreen (regenerate with `UPDATE_SNAPSHOTS=1` and look at the images);
+`tests/registry.rs` checks the verb registry.
+
 ## Notes
 
 - Copy image goes through the desktop's X11 clipboard (XWayland), so
