@@ -120,6 +120,28 @@ the output scale: compd multiplies each relative pointer delta by both, so
 `1.0` moves the cursor at the same logical speed at every scale. Clients
 asking for relative motion get the raw deltas.
 
+## Session activity
+
+`comp.session.get {}` is a draft query returning
+`{"version":1,"active":true,"vt":3,"since_ms":1792108800123}`. `active`
+describes this compositor's libseat session, including while paused after a
+console VT switch. `since_ms` is Unix milliseconds at the last transition,
+or at compd's Bus startup before the first transition.
+
+Topic `<service>.session.changed` (normally `comp.session.changed`) publishes
+`{"version":1,"active":false,"vt":3,"since_ms":1792108800456,"event_seq":42}`
+once at startup and once on each pause or resume. It uses the shared
+observation sequence, outbox and gap reporting. The publisher runs on its
+own Bus worker, so pause events do not wait for rendering or resumption.
+Subscribe before querying to establish the current state without polling;
+on an observation gap, query again. Across desks, the most recent
+`active:true` transition identifies the desk the human is viewing.
+
+The session unit supplies `MIXOS_VT=%i`. compd reads it once when starting
+its Bus service; `vt` is a u32 or `null` when the variable is absent or
+cannot be parsed. A nested compositor with no supplied VT reports `null`.
+The VT is never inferred from a runtime path or display name.
+
 ## Workspaces
 
 Every output has a current workspace; windows belong to one. Verbs on the

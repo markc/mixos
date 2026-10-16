@@ -217,6 +217,7 @@ fn fixture() -> CompSnapshot {
         },
     );
     CompSnapshot {
+        session: None,
         occlusion: Default::default(),
         info: InfoSnapshot {
             service: Arc::from("comp-nested"),
@@ -876,6 +877,43 @@ fn workspaces_list_is_the_workspaces_subtree() {
 }
 
 // The read verbs, on the model alone.
+#[test]
+fn session_get_returns_the_last_transition_with_a_nullable_vt() {
+    let mut snapshot = fixture();
+    assert_eq!(
+        dispatch_read(&snapshot, "comp.session.get", &Value::Null).0,
+        10,
+        "a missing session snapshot is busy"
+    );
+    for (active, vt) in [(true, Some(3)), (false, Some(3)), (true, None)] {
+        snapshot.session = Some(SessionSnapshot {
+            active,
+            vt,
+            since_ms: 1_792_108_800_123,
+        });
+        let (rc, body) = dispatch_read(&snapshot, "comp.session.get", &json!({}));
+        assert_eq!(rc, 0);
+        assert_eq!(
+            serde_json::from_str::<Value>(&body).unwrap(),
+            json!({
+                "version": 1, "active": active, "vt": vt,
+                "since_ms": 1_792_108_800_123_u64,
+            })
+        );
+        assert_ne!(
+            dispatch_read_with_limit(&snapshot, "comp.session.get", &json!({}), 8).0,
+            0,
+            "session replies obey the read reply limit"
+        );
+        assert!(
+            serde_json::to_value(&snapshot)
+                .unwrap()
+                .get("session")
+                .is_none()
+        );
+    }
+}
+
 #[test]
 fn info_and_windows_list_bodies_are_comps() {
     let snapshot = fixture();
