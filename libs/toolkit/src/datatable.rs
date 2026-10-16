@@ -47,8 +47,8 @@ pub use model::{
 use egui::accesskit::{Role, SortDirection};
 use egui::text::{LayoutJob, TextFormat, TextWrapping};
 use egui::{
-    Color32, EventFilter, FontId, Id, Key, Layout, Modifiers, Rect, Sense, StrokeKind, TextStyle,
-    Ui, UiBuilder, WidgetInfo, WidgetType, pos2, vec2,
+    Color32, EventFilter, FontId, Id, Key, Layout, Modifiers, Rect, Sense, Stroke, StrokeKind,
+    TextStyle, Ui, UiBuilder, WidgetInfo, WidgetType, pos2, vec2,
 };
 use egui_extras::TableBuilder;
 use serde_json::{Value, json};
@@ -361,6 +361,11 @@ impl<'a> DataTable<'a> {
         let pad = ui.spacing().item_spacing.x / 2.0;
         // Rows abut: the selection and hover fills meet.
         ui.spacing_mut().item_spacing.y = 0.0;
+        // The rules are the header's own; a column edge shows only while
+        // its resize handle is hovered or dragged.
+        let rule = ui.visuals().widgets.noninteractive.bg_stroke;
+        ui.visuals_mut().widgets.noninteractive.bg_stroke.color = Color32::TRANSPARENT;
+        let last = self.columns.len().saturating_sub(1);
         let available = ui.available_width();
         let mut builder = TableBuilder::new(ui)
             .id_salt(("toolkit.datatable.columns", self.id))
@@ -381,7 +386,7 @@ impl<'a> DataTable<'a> {
         let focus = focus_id(self.id);
         let output = builder
             .header(height, |mut header| {
-                for column in self.columns {
+                for (n, column) in self.columns.iter().enumerate() {
                     let sorted = self
                         .state
                         .sort
@@ -389,11 +394,15 @@ impl<'a> DataTable<'a> {
                         .filter(|s| s.column == column.id)
                         .map(|s| s.order);
                     let label = self.label(column.label);
-                    let (_, response) = header.col(|ui| header_cell(ui, column, &label, sorted, pad));
+                    let mut whole = Rect::NOTHING;
+                    let (_, response) = header.col(|ui| {
+                        whole = ui.max_rect();
+                        header_cell(ui, column, &label, sorted, pad, rule, n < last);
+                    });
                     response.widget_info(|| {
                         WidgetInfo::labeled(WidgetType::Button, column.sortable, &label)
                     });
-                    ui_sort_direction(&response, sorted);
+                    header_node(&response, whole, sorted);
                     if column.sortable && response.clicked() {
                         events.extend(self.state.header_clicked(
                             self.columns,
@@ -412,10 +421,12 @@ impl<'a> DataTable<'a> {
                     row.set_selected(selected);
                     let style = rows.style(index);
                     let mut texts = Vec::new();
+                    let mut whole = Rect::NOTHING;
                     for column in self.columns {
                         let cell = rows.cell(index, column.id);
                         let mut elided = false;
                         let (_, response) = row.col(|ui| {
+                            whole = whole.union(ui.max_rect());
                             if !rows.custom(ui, index, column.id) {
                                 elided = paint_cell(ui, &cell, column, style, selected, pad);
                             }
@@ -432,8 +443,11 @@ impl<'a> DataTable<'a> {
                     response.widget_info(|| {
                         WidgetInfo::selected(WidgetType::Button, true, selected, &label)
                     });
+                    // The whole row, this pass: the cells' own responses
+                    // carry the last pass's content rects.
                     response.ctx.accesskit_node_builder(response.id, |node| {
                         node.set_role(Role::Row);
+                        node.set_bounds(bounds(whole));
                     });
                     if response.double_clicked() {
                         events.push(TableEvent::Activated {
@@ -456,7 +470,7 @@ impl<'a> DataTable<'a> {
                     if focused && self.state.focus == Some(index) && !selected {
                         let visuals = &response.ctx.global_style().visuals;
                         response.ctx.layer_painter(response.layer_id).rect_stroke(
-                            response.rect,
+                            whole,
                             visuals.widgets.inactive.corner_radius,
                             visuals.selection.stroke,
                             StrokeKind::Inside,
@@ -606,16 +620,27 @@ fn egui_column(column: &Column, state: &TableState, available: f32) -> egui_extr
     out.clip(true)
 }
 
-/// Carry a header's sort on its accessible node.
-fn ui_sort_direction(response: &egui::Response, sorted: Option<Order>) {
-    if let Some(order) = sorted {
-        response.ctx.accesskit_node_builder(response.id, |node| {
+/// `rect` as AccessKit bounds.
+fn bounds(rect: Rect) -> egui::accesskit::Rect {
+    egui::accesskit::Rect {
+        x0: rect.min.x.into(),
+        y0: rect.min.y.into(),
+        x1: rect.max.x.into(),
+        y1: rect.max.y.into(),
+    }
+}
+
+/// A header's accessible node: the whole cell this pass, and its sort.
+fn header_node(response: &egui::Response, whole: Rect, sorted: Option<Order>) {
+    response.ctx.accesskit_node_builder(response.id, |node| {
+        node.set_bounds(bounds(whole));
+        if let Some(order) = sorted {
             node.set_sort_direction(match order {
                 Order::Ascending => SortDirection::Ascending,
                 Order::Descending => SortDirection::Descending,
             });
-        });
-    }
+        }
+    });
 }
 
 /// `text` laid out on one line in `font` and `colour`, cut to `width` with
@@ -640,8 +665,17 @@ fn start(align: Align, left: f32, right: f32, width: f32) -> f32 {
 }
 
 /// A header cell: its label (strong while sorted), the sort arrow after it,
-/// the hover fill when it sorts, and the rule under the header.
-fn header_cell(ui: &mut Ui, column: &Column, label: &str, sorted: Option<Order>, pad: f32) {
+/// the hover fill when it sorts, the rule under the header and, unless it
+/// is the last column, a short divider at its end.
+fn header_cell(
+    ui: &mut Ui,
+    column: &Column,
+    label: &str,
+    sorted: Option<Order>,
+    pad: f32,
+    rule: Stroke,
+    divider: bool,
+) {
     let rect = ui.max_rect();
     let visuals = ui.visuals().clone();
     let gap = ui.spacing().item_spacing.x;
@@ -672,11 +706,15 @@ fn header_cell(ui: &mut Ui, column: &Column, label: &str, sorted: Option<Order>,
         let centre = pos2(text_right + pad + side / 2.0, rect.center().y);
         paint_icon(ui, icon, centre, side, colour);
     }
-    ui.painter().hline(
-        whole.x_range(),
-        rect.bottom() - 0.5,
-        visuals.widgets.noninteractive.bg_stroke,
-    );
+    ui.painter().hline(whole.x_range(), rect.bottom() - 0.5, rule);
+    if divider {
+        let inset = rect.height() / 4.0;
+        ui.painter().vline(
+            whole.right(),
+            (rect.top() + inset)..=(rect.bottom() - inset),
+            rule,
+        );
+    }
 }
 
 /// A body cell's text and marker icons; `true` when the text was elided.
