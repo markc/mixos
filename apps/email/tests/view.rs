@@ -208,7 +208,7 @@ fn harness_with(state: State, theme: &Theme) -> Harness<'static, Window> {
     toolkit::install(&h.ctx, theme);
     // Friday 2026-10-16 09:30 UTC: the list's dates do not move with the
     // clock.
-    email::view::mail::pin_clock(&h.ctx, NOW);
+    email::view::mail::pin_clock(&h.ctx, NOW, 0);
     h.run();
     h
 }
@@ -428,6 +428,15 @@ fn each_email_is_one_row_of_from_subject_and_a_compact_date() {
     );
     // The pager reads the server's total.
     assert!(h.query_by_label("1–6 of 236").is_some());
+}
+
+#[test]
+fn dates_show_in_the_clock_zone() {
+    // Ten hours east: Bob's 01:02 UTC Tuesday is 11:02 there.
+    let mut h = harness(fixture());
+    email::view::mail::pin_clock(&h.ctx, NOW, 10 * 3600);
+    h.run();
+    assert!(list_rows(&h)[0].ends_with("Tue 11:02"), "{:?}", list_rows(&h));
 }
 
 #[test]

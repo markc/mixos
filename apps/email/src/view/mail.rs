@@ -5,7 +5,7 @@
 
 use std::fmt::Write as _;
 
-use chrono::{DateTime, Datelike, Local, TimeZone};
+use chrono::{DateTime, Datelike, FixedOffset, Local, TimeZone};
 use egui::{RichText, ScrollArea, Ui};
 use jmap::Email;
 use toolkit::button::PushButton;
@@ -79,7 +79,7 @@ pub fn list(
 /// strong, a read row's date weak.
 struct EmailRows<'a> {
     emails: &'a [Email],
-    now: DateTime<Local>,
+    now: DateTime<FixedOffset>,
 }
 
 impl Rows for EmailRows<'_> {
@@ -123,24 +123,26 @@ fn clock_id() -> egui::Id {
     egui::Id::new("email.clock")
 }
 
-/// Draw dates as if it were `unix` (seconds): snapshots stay still.
-pub fn pin_clock(ctx: &egui::Context, unix: i64) {
-    ctx.data_mut(|d| d.insert_temp(clock_id(), unix));
+/// Draw dates as if it were `unix` (seconds) at `offset` seconds east of
+/// UTC: snapshots stay still whatever the clock and the process's zone.
+pub fn pin_clock(ctx: &egui::Context, unix: i64, offset: i32) {
+    ctx.data_mut(|d| d.insert_temp(clock_id(), (unix, offset)));
 }
 
-/// The time dates are drawn against: the pinned one, else now.
-fn clock(ctx: &egui::Context) -> DateTime<Local> {
-    ctx.data(|d| d.get_temp::<i64>(clock_id()))
-        .and_then(|unix| Local.timestamp_opt(unix, 0).single())
-        .unwrap_or_else(Local::now)
+/// The time dates are drawn against, in the zone they are shown in: the
+/// pinned one, else now in the local zone.
+fn clock(ctx: &egui::Context) -> DateTime<FixedOffset> {
+    ctx.data(|d| d.get_temp::<(i64, i32)>(clock_id()))
+        .and_then(|(unix, offset)| FixedOffset::east_opt(offset)?.timestamp_opt(unix, 0).single())
+        .unwrap_or_else(|| Local::now().fixed_offset())
 }
 
 /// When `email` arrived (else its Date header), in the list's compact
-/// form against `now`: the time today, the weekday and time in the six
-/// days before, the day and month this year, else the full date. The
-/// patterns are the catalogue's (`date-today`, `date-week`, `date-year`,
-/// `date-older`).
-pub fn compact_date(email: &Email, now: DateTime<Local>) -> String {
+/// form against `now` and in its zone: the time today, the weekday and
+/// time in the six days before, the day and month this year, else the full
+/// date. The patterns are the catalogue's (`date-today`, `date-week`,
+/// `date-year`, `date-older`).
+pub fn compact_date(email: &Email, now: DateTime<FixedOffset>) -> String {
     let Some(when) = email
         .received_at
         .as_deref()
@@ -149,7 +151,7 @@ pub fn compact_date(email: &Email, now: DateTime<Local>) -> String {
     else {
         return String::new();
     };
-    let when = when.with_timezone(&Local);
+    let when = when.with_timezone(now.offset());
     let days = (now.date_naive() - when.date_naive()).num_days();
     let key = match days {
         0 => "date-today",
@@ -165,7 +167,7 @@ const DATE_FORMS: [&str; 4] = ["date-today", "date-week", "date-year", "date-old
 
 /// `when` in the catalogue pattern `key`; a pattern chrono refuses gives
 /// the plain date rather than a panic.
-fn format_date(when: &DateTime<Local>, key: &str) -> String {
+fn format_date(when: &DateTime<FixedOffset>, key: &str) -> String {
     let mut out = String::new();
     if write!(out, "{}", when.format(&crate::label(key))).is_err() {
         out = when.format("%Y-%m-%d").to_string();
@@ -179,7 +181,8 @@ fn date_width(ui: &Ui) -> f32 {
     let size = egui::TextStyle::Body.resolve(ui.style()).size;
     let font = toolkit::fonts::bound(ui.ctx(), toolkit::fonts::medium(size));
     // A wide weekday, day and month: Wednesday 28 May 2025, 23:58.
-    let widest = Local.with_ymd_and_hms(2025, 5, 28, 23, 58, 0).single();
+    let widest = FixedOffset::east_opt(0)
+        .and_then(|utc| utc.with_ymd_and_hms(2025, 5, 28, 23, 58, 0).single());
     let colour = ui.visuals().text_color();
     let width = |text: String| {
         ui.painter()

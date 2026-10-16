@@ -67,6 +67,9 @@ fn several(state: &State) -> bool {
     undialogued(state) && state.accounts.len() > 1
 }
 
+/// One View › Sort By command: id, label, column, the Alt chord's key, run.
+type SortCommand = (&'static str, &'static str, &'static str, Key, fn(&mut State));
+
 const fn key(modifiers: Modifiers, key: Key) -> Option<KeyboardShortcut> {
     Some(KeyboardShortcut::new(modifiers, key))
 }
@@ -276,13 +279,7 @@ pub fn registry() -> Registry<State> {
     });
     // View › Sort By: the list's server-side sort, ticked on the column in
     // force; choosing it again reverses it, as its header does.
-    let sorts: [(
-        &'static str,
-        &'static str,
-        &'static str,
-        Key,
-        fn(&mut State),
-    ); 3] = [
+    let sorts: [SortCommand; 3] = [
         (
             "view.sort_from",
             "column-from",
