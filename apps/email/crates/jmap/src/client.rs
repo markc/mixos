@@ -569,7 +569,10 @@ mod tests {
         assert!(check_confirmed(&reply, "created", &["c0".to_owned()]).is_ok());
         for (key, id) in [("created", "c1"), ("updated", "V1")] {
             match check_confirmed(&reply, key, &[id.to_owned()]) {
-                Err(Error::Method { error_type, description }) => {
+                Err(Error::Method {
+                    error_type,
+                    description,
+                }) => {
                     assert_eq!(error_type, "serverFail");
                     assert!(description.contains("did not confirm"), "{description}");
                 }
