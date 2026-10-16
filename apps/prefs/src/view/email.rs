@@ -19,6 +19,9 @@ use toolkit::{Registry, Strings, bars, field, panel};
 const LIST_WIDTH: f32 = 220.0;
 /// The widest a form field grows.
 const FIELD_WIDTH: f32 = 380.0;
+/// The form's label column, shared by the password row so they line up.
+const LABEL_WIDTH: f32 = 84.0;
+const GRID_GAP: [f32; 2] = [18.0, 10.0];
 /// The signature field's height, in lines.
 const SIGNATURE_ROWS: usize = 4;
 
@@ -29,8 +32,10 @@ pub fn section(
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
-    let title = label("email-accounts");
-    panel::group(ui, "email-accounts", &[title.as_str()], |ui, _| {
+    // One group: a dock group fills the height left, so a second one
+    // would start below the fold.
+    let title = label("section-email");
+    panel::group(ui, "email", &[title.as_str()], |ui, _| {
         ui.horizontal(|ui| {
             for (id, primary) in [
                 ("email.account.add", false),
@@ -75,15 +80,9 @@ pub fn section(
                 }
             });
         });
-    });
-    let title = label("email-mail");
-    panel::group(ui, "email-mail", &[title.as_str()], |ui, _| {
-        let Some(email) = engine.email() else {
-            ui.label(RichText::new(label("email-reading")).weak());
-            return;
-        };
-        mail_options(ui, engine, email, events);
         bars::hairline(ui);
+        ui.strong(label("email-mail"));
+        mail_options(ui, engine, email, events);
         ui.horizontal(|ui| {
             command_button(ui, engine, commands, strings, "email.reset", false, events);
             ui.add(egui::Label::new(RichText::new(label("email-note")).weak()).wrap());
@@ -94,6 +93,7 @@ pub fn section(
 /// The accounts in tree order, each with its address and what marks it:
 /// the default, disabled.
 fn accounts(ui: &mut Ui, engine: &Engine, email: &Email, events: &mut Vec<UiEvent>) {
+    panel::section_label(ui, &label("email-accounts"));
     if email.accounts.is_empty() {
         ui.label(RichText::new(label("email-no-accounts")).weak());
     }
@@ -133,13 +133,15 @@ fn account(
     events: &mut Vec<UiEvent>,
 ) {
     let saved = engine.email_account();
-    let heading = saved.map_or_else(|| label("email-new-account"), |a| a.name.clone());
-    ui.strong(heading);
-    let width = ui.available_width().min(FIELD_WIDTH);
+    if saved.is_none() {
+        ui.strong(label("email-new-account"));
+    }
+    let width = (ui.available_width() - LABEL_WIDTH - GRID_GAP[0]).min(FIELD_WIDTH);
     ui.add_enabled_ui(engine.can_edit_email(), |ui| {
         egui::Grid::new("email-form")
             .num_columns(2)
-            .spacing([18.0, 10.0])
+            .min_col_width(LABEL_WIDTH)
+            .spacing(GRID_GAP)
             .show(ui, |ui| {
                 for (field, key, hint) in [
                     (Field::Name, "email-name", "email-name-hint"),
@@ -208,7 +210,8 @@ fn password(
 ) {
     egui::Grid::new("email-password")
         .num_columns(2)
-        .spacing([18.0, 10.0])
+        .min_col_width(LABEL_WIDTH)
+        .spacing(GRID_GAP)
         .show(ui, |ui| {
             panel::section_label(ui, &label("email-password"));
             ui.vertical(|ui| {
