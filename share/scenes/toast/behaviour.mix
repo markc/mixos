@@ -14,7 +14,7 @@ $NOTIFY = env("NOTIFY_SERVICE", "notify")
 $FLASH_S = 6
 -- flash: the passive notification on show and when it hides (time()).
 $state = {ready: false, queued: false, sequence: 0, shown_id: 0, actions: [], visible: false,
-  flash: nil, seen: 0}
+  flash: nil}
 
 fn schedule()
   $state.sequence = $state.sequence + 1
@@ -54,10 +54,11 @@ fn model_of($note, $more)
     more: if $more > 0 then "+" .. to_string($more) .. " more" else "" end}
 end
 
--- The seat height: the body and the button row add to the bare toast.
+-- The seat height: the body (about 48 characters a line at 12 px in the
+-- 360 px card, up to 8 lines) and the button row add to the bare toast.
 fn height_of($m)
   $h = 64
-  if $m.has_body then $h = $h + 24 end
+  if $m.has_body then $h = $h + 6 + 18 * min(8, ceil(len($m.body) / 48)) end
   if $m.shown[0] then $h = $h + 34 end
   return $h
 end
@@ -112,12 +113,9 @@ end
 -- A new passive notification flashes; the hide is a local timer task.
 on notification.created
   $a = $r.event_args($event)
-  if type($a.id) == "number" and $a.id > $state.seen then
-    $state.seen = $a.id
-    if len($a.actions ?? []) == 0 then
-      $state.flash = {id: $a.id, until: time() + $FLASH_S}
-      task_start("toast.flash_end", json_encode({id: $a.id}))
-    end
+  if type($a.id) == "number" and len($a.actions ?? []) == 0 then
+    $state.flash = {id: $a.id, until: time() + $FLASH_S}
+    task_start("toast.flash_end", json_encode({id: $a.id}))
   end
   schedule()
 end
