@@ -892,6 +892,84 @@ mod tests {
         assert!(next.get("service").is_none(), "{next}");
     }
 
+    /// The exact bodies `inputctl.mix` sends (Mix `json_encode`, keys
+    /// sorted, a chord of `none` as `modifiers: {}`) and the reply fields it
+    /// reads. A change here breaks that client.
+    #[test]
+    fn the_inputctl_wire_keeps_working() {
+        let resolver = resolver();
+        let store = Store::default();
+        // set p scenes.editor.open lctrl+lalt '{"safe":true}' service=scenes
+        let (rc, reply) = run(
+            &resolver,
+            &store,
+            verbs::BIND,
+            json!({"action":"scenes.editor.open","args":{"safe":true},"layer":"physical",
+                "service":"scenes","stroke":{"code":25,"modifiers":{"left_alt":true,"left_ctrl":true}}}),
+        );
+        assert_eq!(rc, 0, "{reply}");
+        assert!(reply["generation"].is_u64(), "{reply}");
+        // set f7 launch.run '{"command":"kcalc"}' (chord none)
+        let (rc, reply) = run(
+            &resolver,
+            &store,
+            verbs::BIND,
+            json!({"action":"launch.run","args":{"command":"kcalc"},"layer":"physical",
+                "stroke":{"code":65,"modifiers":{}}}),
+        );
+        assert_eq!(rc, 0, "{reply}");
+        // A passthrough row, as the panel writes it.
+        let (rc, reply) = run(
+            &resolver,
+            &store,
+            verbs::BIND,
+            json!({"action":"input.passthrough","layer":"physical","passthrough":true,
+                "stroke":{"code":105,"modifiers":{"right_shift":true}}}),
+        );
+        assert_eq!(rc, 0, "{reply}");
+        // list / json: mode, generation, and per row stroke.code,
+        // stroke.modifiers (every side spelled out), action, passthrough,
+        // and args/service only when set.
+        let (rc, query) = run(&resolver, &store, verbs::QUERY, json!({}));
+        assert_eq!(rc, 0);
+        assert_eq!(query["mode"], "normal");
+        assert!(query["generation"].is_u64());
+        let rows = query["physical"].as_array().unwrap();
+        let f7 = rows.iter().find(|r| r["stroke"]["code"] == 65).unwrap();
+        assert_eq!(f7["action"], "launch.run");
+        assert_eq!(f7["args"], json!({"command":"kcalc"}));
+        assert!(f7.get("service").is_none(), "{f7}");
+        assert_eq!(f7["passthrough"], false);
+        assert_eq!(f7["stroke"]["modifiers"].as_object().unwrap().len(), 8);
+        let left = rows.iter().find(|r| r["stroke"]["code"] == 105).unwrap();
+        assert_eq!(left["passthrough"], true);
+        assert_eq!(left["stroke"]["modifiers"]["right_shift"], true);
+        // clear f7 (chord none)
+        let (rc, reply) = run(
+            &resolver,
+            &store,
+            verbs::UNBIND,
+            json!({"code":65,"modifiers":{}}),
+        );
+        assert_eq!(rc, 0, "{reply}");
+        assert!(reply["generation"].is_u64());
+        // mode transparent | normal, and a bare `mode` (empty body) toggles.
+        for (body, want) in [
+            (Some(json!({"mode":"transparent"})), "transparent"),
+            (Some(json!({"mode":"normal"})), "normal"),
+            (None, "transparent"),
+        ] {
+            let mut injector = Injector::default();
+            let mut cmd = command(verbs::MODE, json!({}), Some("local"));
+            cmd.body = body.map_or_else(String::new, |b| b.to_string());
+            let (rc, reply) = dispatch(&resolver, &store, &mut injector, &cmd);
+            assert_eq!(rc, 0, "{reply}");
+            let reply: Value = serde_json::from_str(&reply).unwrap();
+            assert_eq!(reply["mode"], want);
+            assert!(reply["generation"].is_u64());
+        }
+    }
+
     #[test]
     fn a_semantic_row_is_refused_by_name() {
         let (rc, reply) = run(
