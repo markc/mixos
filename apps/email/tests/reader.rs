@@ -205,8 +205,17 @@ fn reader_info(state: &State) -> serde_json::Value {
 
 #[test]
 fn a_markdown_written_body_renders_as_markdown() {
-    let h = harness(opened("text/plain", MARKDOWN), &theme(Scheme::Pro, Mode::Light));
-    for text in ["What changed", "Running it", "worker", "cbc3", "fixtures stay small"] {
+    let h = harness(
+        opened("text/plain", MARKDOWN),
+        &theme(Scheme::Pro, Mode::Light),
+    );
+    for text in [
+        "What changed",
+        "Running it",
+        "worker",
+        "cbc3",
+        "fixtures stay small",
+    ] {
         assert!(h.query_by_label(text).is_some(), "{text}");
     }
     assert!(h.query_by_label(&label("show-source")).is_some());
@@ -220,7 +229,10 @@ fn a_markdown_written_body_renders_as_markdown() {
 
 #[test]
 fn the_toggle_shows_the_source_and_back() {
-    let mut h = harness(opened("text/plain", MARKDOWN), &theme(Scheme::Pro, Mode::Light));
+    let mut h = harness(
+        opened("text/plain", MARKDOWN),
+        &theme(Scheme::Pro, Mode::Light),
+    );
     let registry = commands::registry();
     h.get_by_label(&label("show-source")).click();
     h.run();
@@ -252,14 +264,20 @@ fn the_toggle_shows_the_source_and_back() {
 
 #[test]
 fn a_text_markdown_part_renders_whatever_it_holds() {
-    let h = harness(opened("text/markdown", "Plain words *only*."), &theme(Scheme::Pro, Mode::Light));
+    let h = harness(
+        opened("text/markdown", "Plain words *only*."),
+        &theme(Scheme::Pro, Mode::Light),
+    );
     assert_eq!(reader_info(&h.state().0)["format"], "markdown");
     assert!(h.query_by_label("Plain words only.").is_some());
 }
 
 #[test]
 fn a_plain_body_stays_plain() {
-    let h = harness(opened("text/plain", PLAIN), &theme(Scheme::Pro, Mode::Light));
+    let h = harness(
+        opened("text/plain", PLAIN),
+        &theme(Scheme::Pro, Mode::Light),
+    );
     assert!(h.query_by_label(PLAIN).is_some(), "one label, verbatim");
     assert!(h.query_by_label(&label("show-source")).is_none());
     assert!(h.query_by_label(&label("render-markdown")).is_none());
@@ -274,7 +292,11 @@ fn an_html_text_body_is_never_markdown() {
     let state = opened("text/html", "<h1>Hi</h1>\n\n# not markdown\n\n## either\n");
     assert_eq!(reader_info(&state)["format"], "plain");
     let registry = commands::registry();
-    assert!(registry.execute("view.reader.markdown", &mut { state }, Origin::Bus).is_err());
+    assert!(
+        registry
+            .execute("view.reader.markdown", &mut { state }, Origin::Bus)
+            .is_err()
+    );
 }
 
 fn snapshot(name: &str, state: State, theme: &Theme) {

@@ -235,7 +235,8 @@ impl View {
                 ..TextFormat::default()
             };
             if marks.code {
-                format.font_id = FontId::new(base.font.size * INLINE_CODE_SCALE, self.mono.family.clone());
+                format.font_id =
+                    FontId::new(base.font.size * INLINE_CODE_SCALE, self.mono.family.clone());
                 format.background = self.code_bg;
             }
             if marks.strike {
@@ -350,7 +351,7 @@ impl View {
         let rect = row.response.rect;
         let rule = Rect::from_min_size(rect.min, vec2(QUOTE_RULE, rect.height()));
         ui.painter()
-            .rect_filled(rule, QUOTE_RULE / 2.0, self.palette.separator);
+            .rect_filled(rule, QUOTE_RULE / 2.0, self.palette.text_faint);
     }
 
     fn list(&mut self, ui: &mut Ui, start: Option<u64>, items: &[Item], depth: usize) {

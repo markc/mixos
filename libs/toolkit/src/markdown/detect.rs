@@ -427,7 +427,10 @@ Looks fine to me. The file is my_notes_final.txt in the share.
             ("ascii art", ASCII_ART),
             ("one line", "Sandwiches?"),
             ("a url", "Have a look: https://example.invalid/a_b_c"),
-            ("one dash", "Two things:\n- the car is ready\nand that is all."),
+            (
+                "one dash",
+                "Two things:\n- the car is ready\nand that is all.",
+            ),
             ("empty", ""),
         ] {
             assert!(!looks_like_markdown(text), "{name}: {:?}", signals(text));

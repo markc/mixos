@@ -17,7 +17,7 @@
 //! | emphasis, strong, strikethrough | slanted, the heading face's weight, struck |
 //! | inline code | the `Monospace` style on `code_bg_color` |
 //! | code blocks | the `Monospace` style on the `field` surface, scrolled sideways, never wrapped |
-//! | block quotes | indented after a `separator` rule, in `text_dim`; nested quotes nest |
+//! | block quotes | indented after a `text_faint` rule, in `text_dim`; nested quotes nest |
 //! | lists | bullets or numbers in a gutter; a task's read-only box as [`crate::toggle`] draws it |
 //! | tables | a grid with a strong header row and `separator` lines |
 //! | rules | a `separator` hairline |

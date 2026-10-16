@@ -1251,7 +1251,10 @@ fn open_links(ctx: &egui::Context) {
         .into_iter()
         .filter(|url| toolkit::markdown::openable(url))
     {
-        match std::process::Command::new("xdg-open").arg(url.trim()).spawn() {
+        match std::process::Command::new("xdg-open")
+            .arg(url.trim())
+            .spawn()
+        {
             Ok(mut child) => {
                 // Reaped off the UI thread, so it never lingers as a zombie.
                 let reaped = std::thread::Builder::new()

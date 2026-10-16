@@ -364,7 +364,11 @@ mod tests {
         assert_eq!(items[0].task, Some(true));
         assert_eq!(items[0].blocks, vec![Block::Paragraph(text("done"))]);
         assert_eq!(items[1].task, Some(false));
-        let Block::List { start, items: inner } = &items[1].blocks[1] else {
+        let Block::List {
+            start,
+            items: inner,
+        } = &items[1].blocks[1]
+        else {
             panic!("{:?}", items[1]);
         };
         assert_eq!(*start, Some(1));
@@ -374,7 +378,9 @@ mod tests {
             panic!("{doc:?}");
         };
         assert_eq!(quote[0], Block::Paragraph(text("outer")));
-        assert!(matches!(&quote[1], Block::Quote(inner) if inner[0] == Block::Paragraph(text("inner"))));
+        assert!(
+            matches!(&quote[1], Block::Quote(inner) if inner[0] == Block::Paragraph(text("inner")))
+        );
     }
 
     #[test]
@@ -403,7 +409,10 @@ mod tests {
             }
         );
         assert_eq!(doc.blocks[1], Block::Rule);
-        assert_eq!(doc.blocks[2], Block::Html("<div onclick=\"x\">hi</div>".into()));
+        assert_eq!(
+            doc.blocks[2],
+            Block::Html("<div onclick=\"x\">hi</div>".into())
+        );
         assert_eq!(
             doc.blocks[3],
             Block::Paragraph(text("an <b>inline</b> tag"))

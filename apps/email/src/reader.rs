@@ -47,7 +47,13 @@ fn text_body(email: &Email) -> Option<(&str, String)> {
         .as_ref()
         .and_then(|parts| parts.first())
         .and_then(|part| part.content_type.as_deref())
-        .map(|t| t.split(';').next().unwrap_or("").trim().to_ascii_lowercase())
+        .map(|t| {
+            t.split(';')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_ascii_lowercase()
+        })
         .unwrap_or_default();
     Some((body, kind))
 }
@@ -55,11 +61,11 @@ fn text_body(email: &Email) -> Option<(&str, String)> {
 /// The format `email`'s text body is shown in unless the person chooses.
 pub fn detect(email: &Email) -> Format {
     match text_body(email) {
-        Some((_, kind)) if kind == "text/markdown" || kind == "text/x-markdown" => {
-            Format::Markdown
-        }
+        Some((_, kind)) if kind == "text/markdown" || kind == "text/x-markdown" => Format::Markdown,
         // A server that leaves the type out means plain text.
-        Some((body, kind)) if (kind == "text/plain" || kind.is_empty()) && looks_like_markdown(body) => {
+        Some((body, kind))
+            if (kind == "text/plain" || kind.is_empty()) && looks_like_markdown(body) =>
+        {
             Format::Markdown
         }
         _ => Format::Plain,
@@ -178,14 +184,23 @@ mod tests {
 
     #[test]
     fn the_part_type_and_the_detector_choose_the_format() {
-        assert_eq!(detect(&email("a", Some("text/markdown"), "hi")), Format::Markdown);
+        assert_eq!(
+            detect(&email("a", Some("text/markdown"), "hi")),
+            Format::Markdown
+        );
         assert_eq!(
             detect(&email("a", Some("text/markdown; charset=utf-8"), "hi")),
             Format::Markdown
         );
-        assert_eq!(detect(&email("a", Some("text/plain"), MD)), Format::Markdown);
+        assert_eq!(
+            detect(&email("a", Some("text/plain"), MD)),
+            Format::Markdown
+        );
         assert_eq!(detect(&email("a", None, MD)), Format::Markdown);
-        assert_eq!(detect(&email("a", Some("text/plain"), "Lunch?")), Format::Plain);
+        assert_eq!(
+            detect(&email("a", Some("text/plain"), "Lunch?")),
+            Format::Plain
+        );
         // An HTML part standing in as the text body is never Markdown.
         assert_eq!(detect(&email("a", Some("text/html"), MD)), Format::Plain);
         assert!(!has_text(&email("a", Some("text/html"), MD)));
@@ -198,7 +213,10 @@ mod tests {
         reader.open(&a);
         let first = reader.document.clone().unwrap();
         reader.open(&a);
-        assert!(Arc::ptr_eq(&first, reader.document.as_ref().unwrap()), "not reparsed");
+        assert!(
+            Arc::ptr_eq(&first, reader.document.as_ref().unwrap()),
+            "not reparsed"
+        );
         // A changed body is a new key.
         let edited = email("a", Some("text/plain"), "# Plan\n\n## Two\n");
         reader.open(&edited);
