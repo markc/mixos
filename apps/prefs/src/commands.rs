@@ -51,6 +51,17 @@ pub fn registry() -> Registry<Engine> {
         run: |e| e.set_panel(Panel::Appearance),
     })
     .add(Command {
+        id: "view.panel.app-settings",
+        submenu: None,
+        group: 0,
+        label: "panel-app-settings",
+        menu: Some("view"),
+        shortcut: key(Modifiers::COMMAND, Key::Num3),
+        icon: Some(Icon::AppWindow),
+        enabled: undialogued,
+        run: |e| e.set_panel(Panel::AppSettings),
+    })
+    .add(Command {
         id: "view.refresh",
         submenu: None,
         group: 1,
@@ -102,15 +113,20 @@ pub fn registry() -> Registry<Engine> {
             Icon::Package,
             (|e: &mut Engine| e.set_section(Section::Other)) as fn(&mut Engine),
         ),
+        (
+            Section::Email,
+            Icon::Mail,
+            (|e: &mut Engine| e.set_section(Section::Email)) as fn(&mut Engine),
+        ),
     ] {
         r.add(Command {
             id: section.command(),
             label: section.label(),
             menu: Some("view"),
-            submenu: Some(if section.panel() == Panel::Appearance {
-                "panel-appearance"
-            } else {
-                "panel-applications"
+            submenu: Some(match section.panel() {
+                Panel::Appearance => "panel-appearance",
+                Panel::Applications => "panel-applications",
+                Panel::AppSettings => "panel-app-settings",
             }),
             group: 0,
             shortcut: None,
@@ -129,6 +145,11 @@ pub fn registry() -> Registry<Engine> {
             "view.tree.applications",
             "tree-applications",
             Engine::toggle_applications as fn(&mut Engine),
+        ),
+        (
+            "view.tree.app-settings",
+            "tree-app-settings",
+            Engine::toggle_app_settings as fn(&mut Engine),
         ),
     ] {
         r.add(Command {
@@ -324,8 +345,100 @@ pub fn registry() -> Registry<Engine> {
         icon: None,
         enabled: Engine::can_reset_terminal,
         run: Engine::reset_terminal,
-    })
-    .add(Command {
+    });
+    // App Settings → Email: each acts on the selected account, as its button.
+    for (id, label, group, enabled, run) in [
+        (
+            "email.account.add",
+            "email-add",
+            0,
+            Engine::can_add_email_account as fn(&Engine) -> bool,
+            Engine::new_email_account as fn(&mut Engine),
+        ),
+        (
+            "email.account.save",
+            "email-save",
+            0,
+            Engine::can_save_email_account,
+            Engine::save_email_account,
+        ),
+        (
+            "email.account.revert",
+            "email-revert",
+            0,
+            Engine::can_revert_email_account,
+            Engine::revert_email_account,
+        ),
+        (
+            "email.account.remove",
+            "email-remove",
+            1,
+            Engine::can_remove_email_account,
+            Engine::remove_email_account,
+        ),
+        (
+            "email.account.up",
+            "email-move-up",
+            1,
+            Engine::can_move_email_account_up,
+            Engine::move_email_account_up,
+        ),
+        (
+            "email.account.down",
+            "email-move-down",
+            1,
+            Engine::can_move_email_account_down,
+            Engine::move_email_account_down,
+        ),
+        (
+            "email.account.default",
+            "email-make-default",
+            1,
+            Engine::can_default_email_account,
+            Engine::default_email_account,
+        ),
+        (
+            "email.account.enable",
+            "email-toggle-enabled",
+            1,
+            Engine::can_enable_email_account,
+            Engine::toggle_email_account,
+        ),
+        (
+            "email.password.set",
+            "email-set-password",
+            2,
+            Engine::can_set_email_password,
+            Engine::set_email_password,
+        ),
+        (
+            "email.account.connect",
+            "email-connect",
+            2,
+            Engine::can_connect_email_account,
+            Engine::connect_email_account,
+        ),
+        (
+            "email.reset",
+            "email-reset",
+            3,
+            Engine::can_reset_email,
+            Engine::reset_email,
+        ),
+    ] {
+        r.add(Command {
+            id,
+            label,
+            menu: None,
+            submenu: None,
+            group,
+            shortcut: None,
+            icon: None,
+            enabled,
+            run,
+        });
+    }
+    r.add(Command {
         id: "help.shortcuts",
         submenu: None,
         group: 0,
