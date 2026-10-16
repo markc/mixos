@@ -15,8 +15,8 @@ use scene::{ResolvedScene, SceneDocument, Severity};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-use crate::mount::{dialog_geometry, is_dialog, page_id, scene_edge};
-use crate::seat::{DialogError, DialogSeat, DialogSlot, Edge, PageRegistry, PageSeat};
+use crate::mount::{dialog_geometry, is_dialog, is_overlay, is_toast, page_id, scene_edge, toast_geometry};
+use crate::seat::{DialogError, DialogSeat, DialogSlot, Edge, PageRegistry, PageSeat, ToastSeat, ToastSlot};
 use crate::templates::{PreparedLists, validate_templates};
 use crate::verb::SceneVerb;
 
@@ -162,6 +162,8 @@ pub struct SceneStore {
     pub(crate) pages: PageRegistry,
     /// The host's one dialog seat. A dialog-kind load takes it, never a page.
     pub(crate) dialog: DialogSlot,
+    /// Toasts reserve this seat on show and release it on hide.
+    pub(crate) toast: ToastSlot,
     /// Notices for displaced or departed owners, published before the
     /// request's own summary.
     pub(crate) notices: Vec<Value>,
@@ -192,6 +194,48 @@ impl SceneStore {
         self.dialog.seat()
     }
 
+    pub fn toast_seat(&self) -> Option<&ToastSeat> {
+        self.toast.seat()
+    }
+
+    /// Show a loaded toast, or hide it and release its seat. A refused show
+    /// leaves the incumbent and its geometry untouched.
+    pub fn set_toast_visible(
+        &mut self,
+        name: &str,
+        visible: bool,
+        output: &str,
+        height: Option<f32>,
+    ) -> Result<(), Value> {
+        let entry = self.scenes.get(name).ok_or_else(|| json!({
+            "error_code":"NOT_FOUND", "message":format!("no scene named {name} is loaded"), "scene":name
+        }))?;
+        if !is_toast(&entry.tree) {
+            return Err(json!({"error_code":"NOT_TOAST", "message":format!("scene {name} is not a toast"), "scene":name}));
+        }
+        if visible {
+            let owner = entry.owner.as_ref().ok_or_else(|| json!({
+                "error_code":"SCENE_REFUSED", "message":"toast has no loader reservation", "scene":name
+            }))?;
+            let (w, h, title, chrome) = toast_geometry(&entry.tree);
+            let h = height.or_else(|| self.toast.seat().filter(|seat| seat.scene == name).map(|seat| seat.h)).unwrap_or(h);
+            self.toast.register(ToastSeat {
+                scene: name.to_owned(),
+                owner: owner.citizen.clone(),
+                accepted_at: owner.accepted_at,
+                output: output.to_owned(),
+                w,
+                h: h.clamp(60.0, 2048.0),
+                title,
+                chrome,
+            }).map_err(|error| toast_refusal(name, error))?;
+        } else {
+            self.toast.release(name);
+        }
+        self.scenes.get_mut(name).expect("loaded toast").visible = visible;
+        Ok(())
+    }
+
     /// `Some(true)` for a loaded dialog scene, `Some(false)` for an edge
     /// scene, `None` when no scene of that name is loaded.
     pub fn is_dialog(&self, name: &str) -> Option<bool> {
@@ -203,7 +247,7 @@ impl SceneStore {
     pub fn edge_page(&self, name: &str) -> Option<(String, Edge)> {
         self.scenes
             .get(name)
-            .filter(|entry| !is_dialog(&entry.tree))
+            .filter(|entry| !is_overlay(&entry.tree))
             .map(|entry| (page_id(&entry.tree), scene_edge(&entry.tree)))
     }
 
@@ -223,7 +267,7 @@ impl SceneStore {
     pub fn apply_offscreen(&mut self, output: &str, drawn: impl Fn(&str) -> bool) {
         let pages = &self.pages;
         for (name, entry) in self.scenes.iter_mut() {
-            if !is_dialog(&entry.tree)
+            if !is_overlay(&entry.tree)
                 && !drawn(name)
                 && entry.matching_seat(pages, output).is_some()
             {
@@ -284,10 +328,11 @@ impl SceneStore {
                 .iter()
                 .map(|(name, entry)| {
                     let applied = entry.applied;
-                    if is_dialog(&entry.tree) {
+                    if is_overlay(&entry.tree) {
+                        let toast = is_toast(&entry.tree);
                         return json!({
                             "name": name,
-                            "kind": "dialog",
+                            "kind": if toast { "toast" } else { "dialog" },
                             "page": null,
                             "edge": null,
                             "citizen": entry.document.citizen,
@@ -297,7 +342,10 @@ impl SceneStore {
                             "diagnostics": entry.diagnostics(),
                             "model_generation": entry.model_generation,
                             "digest": digest(&entry.tree),
-                            "registered": entry.holds_dialog_seat(&self.dialog),
+                            "registered": if toast {
+                                self.toast.seat().is_some_and(|seat| seat.scene == *name
+                                    && entry.owner.as_ref().is_some_and(|owner| seat.owner == owner.citizen && seat.accepted_at == owner.accepted_at))
+                            } else { entry.holds_dialog_seat(&self.dialog) },
                         });
                     }
                     let seat = entry.matching_seat(&self.pages, output);
@@ -513,8 +561,11 @@ impl SceneStore {
                     if page_id(&result.tree) != page_id(&entry.tree)
                         || scene_edge(&result.tree) != scene_edge(&entry.tree)
                         || is_dialog(&result.tree) != is_dialog(&entry.tree)
+                        || is_toast(&result.tree) != is_toast(&entry.tree)
                         || (is_dialog(&entry.tree)
                             && dialog_geometry(&result.tree) != dialog_geometry(&entry.tree))
+                        || (is_toast(&entry.tree)
+                            && toast_geometry(&result.tree) != toast_geometry(&entry.tree))
                     {
                         return Err(json!({"scene":name,"error_code":"SUBPANEL_COLLISION",
                             "message":"model patch cannot move a scene mount; unload before moving it"}));
@@ -568,6 +619,8 @@ impl SceneStore {
                     if entry.holds_dialog_seat(&self.dialog) {
                         let _ = self.dialog.release(name);
                     }
+                } else if is_toast(&entry.tree) {
+                    self.toast.release(name);
                 } else if mount.is_some() {
                     self.pages.forget(&page_id(&entry.tree));
                 }
@@ -580,6 +633,8 @@ impl SceneStore {
             | SceneVerb::List
             | SceneVerb::DialogShow
             | SceneVerb::DialogHide
+            | SceneVerb::ToastShow
+            | SceneVerb::ToastHide
             | SceneVerb::Ping
             | SceneVerb::Info
             | SceneVerb::PropsGet
@@ -648,6 +703,8 @@ impl SceneStore {
             if let Some(entry) = self.scenes.remove(name) {
                 if entry.holds_dialog_seat(&self.dialog) {
                     let _ = self.dialog.release(name);
+                } else if is_toast(&entry.tree) {
+                    self.toast.release(name);
                 } else if !is_dialog(&entry.tree) {
                     self.pages.forget(&page_id(&entry.tree));
                 }
@@ -690,11 +747,12 @@ impl SceneStore {
         // the editor.
         let page = page_id(&tree);
         let dialog = is_dialog(&tree);
-        if !dialog
+        let toast = is_toast(&tree);
+        if !is_overlay(&tree)
             && self
                 .scenes
                 .iter()
-                .filter(|(_, entry)| !is_dialog(&entry.tree))
+                .filter(|(_, entry)| !is_overlay(&entry.tree))
                 .any(|(name, entry)| {
                     (name != &tree.name && page_id(&entry.tree) == page)
                         || (name == &tree.name && page_id(&entry.tree) != page)
@@ -711,16 +769,17 @@ impl SceneStore {
         if self
             .scenes
             .get(&tree.name)
-            .is_some_and(|old| is_dialog(&old.tree) != dialog)
+            .is_some_and(|old| is_dialog(&old.tree) != dialog || is_toast(&old.tree) != toast)
         {
             let Some(caller) = mount.as_deref().filter(|_| dialog && preempt) else {
                 return Err(
                     json!({"scene": tree.name, "error_code": "SUBPANEL_COLLISION",
-                    "error": "a loaded scene cannot switch between dialog and edge; unload it first"}),
+                    "error": "a loaded scene cannot switch mount kind; unload it first"}),
                 );
             };
             let by_owner = caller.owner.to_owned();
             if let Some(old) = self.scenes.remove(&tree.name) {
+                self.toast.release(&tree.name);
                 self.pages.forget(&page_id(&old.tree));
                 if let Some(mounted) = old.mounted {
                     self.removed.push(mounted);
@@ -754,6 +813,16 @@ impl SceneStore {
             };
             if dialog {
                 self.seat_dialog(&tree, &owner, mount.output, preempt)?;
+            } else if toast {
+                if let Some(held) = self.toast.seat().filter(|seat| seat.scene == tree.name) {
+                    let (w, h, title, chrome) = toast_geometry(&tree);
+                    let seat = ToastSeat {
+                        scene: tree.name.clone(), owner: owner.citizen.clone(),
+                        accepted_at: owner.accepted_at, output: held.output.clone(),
+                        w, h, title, chrome,
+                    };
+                    self.toast.register(seat).map_err(|error| toast_refusal(&tree.name, error))?;
+                }
             } else {
                 self.pages
                     .mount(&page_id(&tree), mount.output, scene_edge(&tree), &owner.citizen, owner.accepted_at)
@@ -855,6 +924,17 @@ impl SceneStore {
             }));
         }
         Ok(())
+    }
+}
+
+fn toast_refusal(name: &str, error: DialogError) -> Value {
+    match error {
+        DialogError::Busy { scene, owner } => json!({
+            "scene":name, "error_code":"TOAST_BUSY",
+            "message":"the toast seat is held by another scene",
+            "holder":{"scene":scene, "owner":owner},
+        }),
+        other => json!({"scene":name, "error_code":"SCENE_REFUSED", "message":other.to_string()}),
     }
 }
 

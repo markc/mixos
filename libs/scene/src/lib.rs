@@ -234,13 +234,15 @@ pub const DIALOG_MAX_PX: f64 = 2048.0;
 /// Validate a window declaration: the envelope `window` header (`node:
 /// false`) or a window-family node (`node: true`).
 ///
-/// - `kind` is `edge` or `dialog`; it is required on a node (the schema says
+/// - `kind` is `edge`, `dialog` or `toast`; it is required on a node (the schema says
 ///   so) and optional on the header, where absence means `edge`.
 /// - `edge` must be one of the four edges; `w`/`h` non-negative numbers;
 ///   `title` a string.
 /// - A `dialog` takes no `edge` or `panel` (`window-dialog-edge`): it is
 ///   centred, not on an edge, and has no carousel page. It needs numeric `w`
 ///   and `h` in `DIALOG_MIN_PX..=DIALOG_MAX_PX`.
+/// - A `toast` uses non-negative authored dimensions, clamped by the host,
+///   and defaults to no chrome.
 fn check_window_declaration<'a>(
     get: impl Fn(&str) -> Option<&'a JsonValue>,
     line: usize,
@@ -251,12 +253,12 @@ fn check_window_declaration<'a>(
         None if node => return, // missing-port is reported by the schema check
         None => "edge",
         Some(value) => match value.as_str() {
-            Some(k @ ("edge" | "dialog")) => k,
+            Some(k @ ("edge" | "dialog" | "toast")) => k,
             _ => {
                 out.push(Diagnostic::error(
                     "window-kind",
                     line,
-                    "window kind must be edge or dialog",
+                    "window kind must be edge, dialog or toast",
                 ));
                 return;
             }
@@ -827,6 +829,11 @@ pub fn resolve(doc: &SceneDocument) -> Result<ResolvedScene, Vec<Diagnostic>> {
                     .map(|v| (p.name.into(), normalize_number(v)))
             })
             .collect();
+        if r.widget == "window" && ports.get("kind").is_some_and(|kind| kind == "toast")
+            && !r.ports.contains_key("chrome")
+        {
+            ports.insert("chrome".into(), JsonValue::Bool(false));
+        }
         for p in ps {
             if let Some(value) = prepared.values.get(&format!("{id}.{}", p.name)) {
                 bindings::set_port(&mut ports, p.name, value.clone());

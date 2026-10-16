@@ -41,6 +41,12 @@ executed. A binding may read `$model` anywhere and `$item` inside a list
 template; calls, assignments, statements and shell or Bus forms are refused
 at compile time with `binding-policy`.
 
+Window declarations accept `kind:"edge"`, `kind:"dialog"` and
+`kind:"toast"`. Toasts are pointer-only overlays in compd, with optional
+`w`, `h`, `title` and `chrome` (false by default). The host clamps their
+geometry and manages visibility through its
+[toast verbs](../compd/README.md#toast-scenes).
+
 Test: `cargo test -p scene`.
 
 The source is [`libs/scene`](https://github.com/markc/mixos/tree/main/libs/scene).

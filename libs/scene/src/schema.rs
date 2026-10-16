@@ -88,7 +88,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
     static EDGE: &[&str] = &["right", "left", "top", "bottom"];
     static ALIGN: &[&str] = &["start", "center", "end", "stretch"];
     static TONE: &[&str] = &["normal", "danger", "primary"];
-    static KIND: &[&str] = &["edge", "dialog"];
+    static KIND: &[&str] = &["edge", "dialog", "toast"];
     static WINDOW: [Port; 6] = [
         Port {
             name: "kind",

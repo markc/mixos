@@ -458,7 +458,7 @@ impl ui::UiProgram for SceneUi {
                 SceneMessage::EscapeEdge
             });
         }
-        if !self.content.dialog {
+        if !crate::mount::is_overlay(&self.content.tree) {
             let focused = ctx.input(|input| input.focused);
             if self.focused.is_some_and(|was| was != focused) {
                 emit.push(SceneMessage::EdgeFocus(focused));

@@ -239,6 +239,8 @@
     {name:"shell.scenes.list", owner:"compd", version:"0.2.0", status:"accepted", class:"query"},
     {name:"shell.dialog.show", owner:"compd", version:"0.2.0", status:"accepted", class:"intent"},
     {name:"shell.dialog.hide", owner:"compd", version:"0.2.0", status:"accepted", class:"intent"},
+    {name:"shell.toast.show", owner:"compd", version:"0.1.0", status:"draft", class:"intent"},
+    {name:"shell.toast.hide", owner:"compd", version:"0.1.0", status:"draft", class:"intent"},
     {name:"shell.ping", owner:"compd", version:"0.2.0", status:"accepted", class:"query"},
     {name:"shell.info", owner:"compd", version:"0.2.0", status:"accepted", class:"query"},
     {name:"shell.props.get", owner:"compd", version:"0.2.0", status:"accepted", class:"query"},

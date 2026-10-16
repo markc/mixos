@@ -112,7 +112,7 @@ fn dialog_window_kind_is_described_and_accepted() {
     let kind = window.iter().find(|p| p.path == "kind").unwrap();
     assert_eq!(
         kind.enum_values,
-        Some(vec!["edge".to_string(), "dialog".to_string()])
+        Some(vec!["edge".to_string(), "dialog".to_string(), "toast".to_string()])
     );
     let mut document = doc("root: {widget: \"column\", children: []}");
     document.window =
@@ -121,6 +121,22 @@ fn dialog_window_kind_is_described_and_accepted() {
     assert!(resolve(&document).is_ok());
     let node = doc("root: {widget: \"window\", kind: \"dialog\", w: 880, h: 620}");
     assert!(codes(&node).is_empty(), "{:?}", lint(&node));
+}
+
+#[test]
+fn toast_kind_accepts_header_and_node_with_chrome_opt_in() {
+    let mut document = doc("root: {widget: \"column\", children: []}");
+    document.window = Some(json!({"kind":"toast","w":360,"h":60}));
+    assert!(codes(&document).is_empty(), "{:?}", lint(&document));
+    assert!(resolve(&document).is_ok());
+    for chrome in [None, Some(false), Some(true)] {
+        let mut document = doc("root: {widget: \"window\", kind: \"toast\", w: 360, h: 120}");
+        if let Some(chrome) = chrome {
+            document.nodes.get_mut("root").unwrap().ports.insert("chrome".into(), json!(chrome));
+        }
+        let tree = resolve(&document).unwrap();
+        assert_eq!(tree.nodes["root"].ports["chrome"], chrome.unwrap_or(false));
+    }
 }
 
 #[test]
