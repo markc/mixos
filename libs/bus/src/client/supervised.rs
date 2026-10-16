@@ -34,10 +34,16 @@ use tokio::sync::{Mutex as TokioMutex, RwLock, mpsc, watch};
 use super::IncomingCommand;
 use super::connection::{Connection, ConnectionOptions};
 use super::error::{ClientError, RegistrationRejected, SupervisedError};
+use crate::BusMessage;
 use crate::native_client::NativeIncomingReceiver;
 use crate::native_client::bounded::{
-    BoundedIncomingEvent, BoundedIncomingReceiver, BoundedIncomingSender, bounded_incoming_channel,
+    BoundedIncomingEvent, BoundedIncomingReceiver, BoundedIncomingSender, BoundedSendResult,
+    bounded_incoming_channel, is_rpc_request,
 };
+
+/// Bound on one `BUSY` refusal write, on closing the connection it failed on,
+/// and on closing a dead connection before a redial.
+const REFUSAL_LIMIT: Duration = Duration::from_millis(100);
 
 /// Attempt budget for the initial connect-and-register. Exhausting it is a
 /// typed fatal: a misconfigured service must fail fast rather than spin
@@ -181,9 +187,34 @@ impl SupervisedConnectOptions {
         self
     }
 
+    /// Bound the incoming lane to `capacity` and drop overflow lossily.
+    ///
+    /// Dropped frames are counted and reported as an `Overflow` marker. A
+    /// dropped request gets no reply. Setting this clears any earlier
+    /// [`bounded_incoming_rpc`](Self::bounded_incoming_rpc) choice.
     pub fn bounded_incoming(mut self, capacity: usize) -> Self {
         assert!(capacity > 0, "bounded incoming capacity must be non-zero");
         self.connection.capacity = Some(capacity);
+        self.connection.refuse_overflowed_requests = false;
+        self
+    }
+
+    /// Bound the incoming lane like [`bounded_incoming`](Self::bounded_incoming),
+    /// and answer requests it cannot retain.
+    ///
+    /// A dropped id-bearing request frame (one with no topic header) receives
+    /// a correlated `rc 10` `BUSY` reply, so the caller can retry. Topic
+    /// frames and frames without an id stay lossy and are reported as
+    /// `Overflow` only.
+    ///
+    /// In this mode, when the connection drops, the supervisor closes it
+    /// best-effort, within 100 ms, and releases its handle before redialling.
+    /// That is not a guarantee of physical close: another holder of the
+    /// connection can keep it open past the bound.
+    pub fn bounded_incoming_rpc(mut self, capacity: usize) -> Self {
+        assert!(capacity > 0, "bounded incoming capacity must be non-zero");
+        self.connection.capacity = Some(capacity);
+        self.connection.refuse_overflowed_requests = true;
         self
     }
     /// Treat a broker registration rejection (collision or admission) as
@@ -812,23 +843,52 @@ impl SupervisorOutgoing {
         }
     }
 
-    fn forward(&self, event: BoundedIncomingEvent) -> bool {
+    /// `refuse_rpc` is the connection's RPC policy. In that mode a request the
+    /// bounded lane cannot retain comes back as [`ForwardOutcome::Refused`],
+    /// so the supervisor can answer it on the connection it arrived on.
+    fn forward(&self, event: BoundedIncomingEvent, refuse_rpc: bool) -> ForwardOutcome {
         match (self, event) {
             (Self::Unbounded(sender), BoundedIncomingEvent::Command(command)) => {
-                sender.send(command).is_ok()
+                if sender.send(command).is_ok() {
+                    ForwardOutcome::Sent
+                } else {
+                    ForwardOutcome::Stopped
+                }
             }
             (Self::Unbounded(_), BoundedIncomingEvent::Overflow { .. }) => {
                 unreachable!("unbounded native lane cannot overflow")
             }
+            (Self::Bounded(sender), BoundedIncomingEvent::Command(command))
+                if refuse_rpc && is_rpc_request(&command) =>
+            {
+                match sender.try_send_or_return(command) {
+                    BoundedSendResult::Sent => ForwardOutcome::Sent,
+                    BoundedSendResult::Full(command) => ForwardOutcome::Refused(command),
+                    BoundedSendResult::Closed => ForwardOutcome::Stopped,
+                }
+            }
             (Self::Bounded(sender), BoundedIncomingEvent::Command(command)) => {
-                sender.try_send(command)
+                if sender.try_send(command) {
+                    ForwardOutcome::Sent
+                } else {
+                    ForwardOutcome::Stopped
+                }
             }
             (Self::Bounded(sender), BoundedIncomingEvent::Overflow { dropped }) => {
                 sender.record_overflow(dropped);
-                true
+                ForwardOutcome::Sent
             }
         }
     }
+}
+
+/// What the supervisor does next with one frame it forwarded.
+enum ForwardOutcome {
+    Sent,
+    /// The consumer is gone; the supervisor stops.
+    Stopped,
+    /// An RPC request the bounded lane could not retain.
+    Refused(IncomingCommand),
 }
 
 /// Everything the detached supervisor task owns.
@@ -847,6 +907,63 @@ struct SupervisorCtx {
     fatal_on_registration_rejection: bool,
     connection_options: ConnectionOptions,
     first_rx: Option<NativeIncomingReceiver>,
+}
+
+/// Answer a request the bounded RPC lane refused with `BUSY`, on the
+/// connection it arrived on. Returns `false` when that write failed: the
+/// captured connection is then closed and the forward phase must end.
+///
+/// A request from an older generation has no connection left to answer on,
+/// so it is dropped and counted as overflow only.
+async fn refuse_overflowed(ctx: &SupervisorCtx, refused: &IncomingCommand) -> bool {
+    let connection = {
+        let live = ctx.inner.read().await;
+        if ctx.connection_generation.load(Ordering::SeqCst) == refused.generation {
+            live.clone()
+        } else {
+            None
+        }
+    };
+    let Some(connection) = connection else {
+        return true;
+    };
+    let mut reply = BusMessage::new()
+        .with_header("command", &refused.command)
+        .with_header("from", connection.name())
+        .with_header("to", &refused.from)
+        .with_header("type", "response")
+        .with_header("rc", "10")
+        .with_header("error", "BUSY")
+        .with_body(r#"{"error_code":"BUSY","message":"incoming command queue is full"}"#);
+    if let Some(id) = &refused.id {
+        reply = reply.with_header("id", id);
+    }
+    let written = tokio::time::timeout(REFUSAL_LIMIT, connection.send_raw(&reply)).await;
+    if matches!(written, Ok(Ok(()))) {
+        return true;
+    }
+    tracing::warn!(
+        event = "supervised_refusal_failed",
+        service = %ctx.service_name,
+        "BUSY refusal could not be written; closing this connection"
+    );
+    let _ = tokio::time::timeout(REFUSAL_LIMIT, connection.close()).await;
+    false
+}
+
+/// Take the dead connection out of `ctx.inner` before a redial, so its
+/// registered name is released before the new registration is attempted.
+///
+/// Best effort: the close is bounded by [`REFUSAL_LIMIT`], and this function
+/// always releases the supervisor's handle before it returns. The supervisor is
+/// the only writer of `inner`, and the write lock is held only for the `take`,
+/// so no replacement connection is touched here. Physical close is not promised
+/// within the bound when another holder still references the connection.
+async fn detach_stale_connection(ctx: &SupervisorCtx) {
+    let stale = ctx.inner.write().await.take();
+    if let Some(stale) = stale {
+        let _ = tokio::time::timeout(REFUSAL_LIMIT, stale.close()).await;
+    }
 }
 
 /// `true` once a stop has been requested (an explicit shutdown, or the
@@ -932,13 +1049,23 @@ async fn supervisor_run(ctx: &mut SupervisorCtx, mut current_rx: Option<NativeIn
                             if let BoundedIncomingEvent::Command(incoming) = &mut command {
                                 incoming.generation = ctx.connection_generation.load(Ordering::SeqCst);
                             }
-                            if !ctx.out_tx.forward(command) {
-                                tracing::info!(
-                                    event = "supervised_stop",
-                                    service = %ctx.service_name,
-                                    "supervisor stopping (incoming consumer dropped)"
-                                );
-                                return;
+                            let refuse_rpc = ctx.connection_options.refuse_overflowed_requests;
+                            match ctx.out_tx.forward(command, refuse_rpc) {
+                                ForwardOutcome::Sent => {}
+                                ForwardOutcome::Stopped => {
+                                    tracing::info!(
+                                        event = "supervised_stop",
+                                        service = %ctx.service_name,
+                                        "supervisor stopping (incoming consumer dropped)"
+                                    );
+                                    return;
+                                }
+                                ForwardOutcome::Refused(refused) => {
+                                    if !refuse_overflowed(ctx, &refused).await {
+                                        // The connection is closed; reconnect.
+                                        break;
+                                    }
+                                }
                             }
                         }
                         None => break,
@@ -960,6 +1087,12 @@ async fn supervisor_run(ctx: &mut SupervisorCtx, mut current_rx: Option<NativeIn
         let initial = ctx.connection_generation.load(Ordering::SeqCst) == 0;
         if !initial {
             publish_state(&ctx.state_tx, &ctx.state_publish, ConnState::Disconnected);
+        }
+        // Only the RPC lane detaches here: a dead connection left in `inner`
+        // would keep its registered name while every redial collided with it.
+        // This also covers a refusal write that failed and already closed it.
+        if ctx.connection_options.refuse_overflowed_requests {
+            detach_stale_connection(ctx).await;
         }
         let down_since = Instant::now();
         tracing::warn!(
@@ -1232,5 +1365,121 @@ mod tests {
         reconnect.join().expect("reconnect publisher");
 
         assert_eq!(*state_rx.borrow(), ConnState::ShuttingDown);
+    }
+
+    fn request(
+        id: Option<&str>,
+        generation: u64,
+        headers: BTreeMap<String, String>,
+    ) -> IncomingCommand {
+        IncomingCommand {
+            generation,
+            from: "caller".to_owned(),
+            command: "game.move".to_owned(),
+            id: id.map(str::to_owned),
+            args: serde_json::Value::Null,
+            body: String::new(),
+            headers,
+        }
+    }
+
+    #[test]
+    fn builder_policy_last_call_wins() {
+        let options = || SupervisedClient::connect_options("svc", "tcp://broker");
+        let policy = |o: SupervisedConnectOptions| {
+            (
+                o.connection.capacity,
+                o.connection.refuse_overflowed_requests,
+            )
+        };
+        assert_eq!(policy(options()), (None, false));
+        assert_eq!(policy(options().bounded_incoming_rpc(2)), (Some(2), true));
+        assert_eq!(
+            policy(options().bounded_incoming_rpc(2).bounded_incoming(3)),
+            (Some(3), false)
+        );
+        assert_eq!(
+            policy(options().bounded_incoming(3).bounded_incoming_rpc(4)),
+            (Some(4), true)
+        );
+    }
+
+    #[test]
+    fn full_rpc_lane_refusal_keeps_the_original_request() {
+        let (sender, mut receiver) = bounded_incoming_channel(1);
+        let lane = SupervisorOutgoing::Bounded(sender);
+        let first = request(Some("one"), 7, BTreeMap::new());
+        let second = request(Some("two"), 7, BTreeMap::new());
+        assert!(matches!(
+            lane.forward(BoundedIncomingEvent::Command(first), true),
+            ForwardOutcome::Sent
+        ));
+        let ForwardOutcome::Refused(refused) =
+            lane.forward(BoundedIncomingEvent::Command(second), true)
+        else {
+            panic!("a full RPC lane must refuse an id-bearing request");
+        };
+        assert_eq!(refused.id.as_deref(), Some("two"));
+        assert_eq!(refused.generation, 7);
+        assert_eq!(refused.from, "caller");
+        assert_eq!(refused.command, "game.move");
+
+        assert_eq!(receiver.overflow_count(), 1);
+        assert!(matches!(
+            receiver.try_recv(),
+            Some(BoundedIncomingEvent::Overflow { dropped: 1 })
+        ));
+        assert!(matches!(
+            receiver.try_recv(),
+            Some(BoundedIncomingEvent::Command(c)) if c.id.as_deref() == Some("one")
+        ));
+        assert!(
+            receiver.try_recv().is_none(),
+            "the refused request is not retained"
+        );
+    }
+
+    #[test]
+    fn only_full_id_bearing_plain_requests_are_refused() {
+        let topic = BTreeMap::from([("topic".to_string(), "x".to_string())]);
+        let cases = [
+            ("lossy default", false, Some("two"), BTreeMap::new()),
+            ("topic with id", true, Some("two"), topic),
+            ("idless", true, None, BTreeMap::new()),
+        ];
+        for (case, refuse_rpc, id, headers) in cases {
+            // A fresh lane per case, so each overflow starts from an empty queue.
+            let (sender, mut receiver) = bounded_incoming_channel(1);
+            let lane = SupervisorOutgoing::Bounded(sender);
+            let first = request(Some("one"), 7, BTreeMap::new());
+            let second = request(id, 7, headers);
+            assert!(
+                matches!(
+                    lane.forward(BoundedIncomingEvent::Command(first), refuse_rpc),
+                    ForwardOutcome::Sent
+                ),
+                "{case}: first frame"
+            );
+            assert!(
+                matches!(
+                    lane.forward(BoundedIncomingEvent::Command(second), refuse_rpc),
+                    ForwardOutcome::Sent
+                ),
+                "{case}: second frame must stay lossy, not refused"
+            );
+            assert_eq!(receiver.overflow_count(), 1, "{case}");
+            assert!(matches!(
+                receiver.try_recv(),
+                Some(BoundedIncomingEvent::Overflow { dropped: 1 })
+            ));
+            assert!(matches!(
+                receiver.try_recv(),
+                Some(BoundedIncomingEvent::Command(c)) if c.id.as_deref() == Some("one")
+            ));
+            assert!(
+                receiver.try_recv().is_none(),
+                "{case}: only the first is retained"
+            );
+        }
     }
 }

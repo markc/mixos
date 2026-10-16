@@ -1,4 +1,4 @@
--- version: 0.1.0
+-- version: 0.3.0
 -- The top bar's behaviour: launches and popup toggles in, one complete model
 -- out through the loader (scenes.model). Icons come from the apps citizen; a
 -- missing icon shows its label. Power is two clicks: the first arms the
@@ -6,6 +6,7 @@
 $LIB = env("SCENES_LIB", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mixos/scenes/lib")
 $r = require($LIB .. "/runtime.mix")
 $p = require($LIB .. "/data.mix")
+$models = require($LIB .. "/models.mix")
 $h = require($LIB .. "/hostd.mix")
 $ctx = $r.scene_context("topbar")
 $APPS = env("APPS_SERVICE", "apps")
@@ -24,8 +25,11 @@ $LAUNCH = {term: {app: "dev.mixos.term", icon: "dev.mixos.term-symbolic", label:
 -- only, never the host. Writes go only through hostd.
 $POWER = {restart: "desk.restart", poweroff: "desk.stop"}
 $CONFIRM_S = 5
+-- How long a refusal, or a sent action, stays on the bar.
+$NOTICE_S = 30
 
-$state = {ready: false, clock_armed: false, icons: {}, armed: nil, armed_at: 0, notice: {}}
+$state = {ready: false, clock_armed: false, ticking: false, icons: {}, themed: {}, armed: nil, armed_at: 0,
+  notice: {}}
 
 -- This desk's identity, written into its root by desk_identity.mix: DESK=name,
 -- VT=number. Read here, never inferred from the hostname or the foreground VT.
@@ -44,17 +48,38 @@ fn identity()
 end
 $IDENTITY = identity()
 
-fn icon_path($name)
-  if has_key($state.icons, $name) then return $state.icons[$name] end
-  $req = {name: $name, size: 24}
+-- Misses are cached too; apps.changed, an apps restart and a reconnect clear
+-- the cache, so icons installed after the bar started still appear.
+fn apps_icon($name, $size)
+  $req = {name: $name, size: $size}
   if $ICON_THEME != "" then $req.theme = $ICON_THEME end
   $hit = $r.call($APPS, "apps.icon", $req)
-  $path = ""
-  if $hit.ok and type($hit.value) == "map" and type($hit.value.path) == "string" then
-    $path = $hit.value.path
+  if $hit.ok and type($hit.value) == "map" and type($hit.value.path) == "string" then return $hit.value.path end
+  return ""
+end
+
+fn icon_path($name)
+  if not has_key($state.icons, $name) then $state.icons[$name] = apps_icon($name, 24) end
+  return $state.icons[$name]
+end
+
+-- The launcher mark, by the panel's lookup (models.mix LAUNCHER_ICONS).
+fn launcher_themed()
+  for each $l in $models.LAUNCHER_ICONS
+    if not has_key($state.themed, $l.key) then
+      $path = ""
+      for each $name in $l.names
+        if $path == "" then $path = apps_icon($name, $models.LAUNCHER_ICON_SIZE) end
+      end
+      $state.themed[$l.key] = $path
+    end
   end
-  $state.icons[$name] = $path
-  return $path
+  return $state.themed
+end
+
+fn forget_icons()
+  $state.icons = {}
+  $state.themed = {}
 end
 
 fn button($label, $icon, $tip)
@@ -62,13 +87,24 @@ fn button($label, $icon, $tip)
   return {label: $label, icon: $path, has_icon: $path != "", background: nil, tip: {title: $tip}}
 end
 
+-- Whole seconds left to confirm $key; 0 when it is not armed.
+fn armed_left($key)
+  if $state.armed != $key then return 0 end
+  $left = $CONFIRM_S - (monotonic() - $state.armed_at)
+  return $left > 0 ? ceil($left) : 0
+end
+
+-- $state.notice[$key]: {text, sent, at} for the last answer, shown $NOTICE_S.
+fn notice($key)
+  $n = $state.notice[$key]
+  if $n == nil or monotonic() - $n.at > $NOTICE_S then return {text: "", sent: false} end
+  return $n
+end
+
 fn power_model($key, $label, $icon)
-  $armed = $state.armed == $key and monotonic() - $state.armed_at <= $CONFIRM_S
-  $text = $label .. " " .. $IDENTITY.desk .. " (VT" .. $IDENTITY.vt .. ")"
-  if $armed then $text = "Click again to confirm: " .. $text end
-  if ($state.notice[$key] ?? "") != "" then $text = $text .. " (" .. $state.notice[$key] .. ")" end
-  $path = icon_path($icon)
-  return {label: $label, icon: $path, has_icon: $path != "", background: $armed ? "#c0392b" : nil, tip: {title: $text}}
+  $n = notice($key)
+  return $models.topbar_power({label: $label, icon: icon_path($icon), desk: $IDENTITY.desk, vt: $IDENTITY.vt,
+    left: armed_left($key), sent: $n.sent, notice: $n.text})
 end
 
 fn build_model()
@@ -76,7 +112,7 @@ fn build_model()
   $m = {}
   $m.clock = {time: $p.clock_text($now),
     tip: {title: date_format($now, "%A %-d %B %Y")}}
-  $m.apps = button("Apps", "dev.mixos", "Applications")
+  $m.apps = $models.topbar_apps(launcher_themed())
   for each $key in ["term", "files", "shot", "settings"]
     $a = $LAUNCH[$key]
     $m[$key] = button($a.label, $a.icon, $a.label)
@@ -102,18 +138,47 @@ fn launch($key)
   return $r.call($APPS, "apps.launch", {id: $LAUNCH[$key].app})
 end
 
+-- The countdown and the notices change with time, not events: one
+-- in-process task re-publishes each second while any is showing, then ends.
+fn start_tick()
+  if $state.ticking then return end
+  $state.ticking = true
+  try
+    task_start("power.tick", "{}")
+  catch $message
+    $state.ticking = false
+    eprint("topbar power: countdown not scheduled: " .. to_string($message))
+  end
+end
+
+fn power_live()
+  if armed_left("restart") > 0 or armed_left("poweroff") > 0 then return true end
+  return notice("restart").at != nil or notice("poweroff").at != nil
+end
+
 fn power($key)
   $now = monotonic()
-  if $state.armed != $key or $now - $state.armed_at > $CONFIRM_S then
+  if armed_left($key) == 0 then
     $state.armed = $key
     $state.armed_at = $now
+    $state.notice = {}
     push_model()
+    start_tick()
     return {ok: true, rc: 0, value: {armed: $key}}
   end
   $state.armed = nil
+  -- hostd answers once the host has queued the cycle; the desk goes down after.
   $out = $h.call($POWER[$key], {}, 15)
-  $state.notice[$key] = $out.ok ? "" : ($out.status ?? "refused")
+  if $out.ok then
+    eprint("topbar power: " .. $POWER[$key] .. " sent: " .. json_encode($out.body))
+    $state.notice[$key] = {text: "", sent: true, at: monotonic()}
+  else
+    $status = $out.status ?? "refused"
+    eprint("topbar power: " .. $POWER[$key] .. " refused: " .. $status .. " " .. json_encode($out.body ?? {message: $out.message}))
+    $state.notice[$key] = {text: $status, sent: false, at: monotonic()}
+  end
   push_model()
+  start_tick()
   if $out.ok then return {ok: true, rc: 0, value: {ran: $key}} end
   return $r.failure("power_refused", "hostd refused " .. $POWER[$key] .. ": " .. ($out.status ?? "unavailable"))
 end
@@ -144,11 +209,38 @@ on settings async
   $r.respond(launch("settings"))
 end
 
+on apps.changed
+  forget_icons()
+  push_model()
+end
+
+on bus.connected
+  if len(keys($event.headers)) != 0 then return end
+  forget_icons()
+  $state.ready = false
+  $ready = $r.ready($ctx)
+  $state.ready = $ready.ok
+  push_model()
+end
+
 on restart async
   $r.respond(power("restart"))
 end
 on poweroff async
   $r.respond(power("poweroff"))
+end
+
+on power.tick async
+  if len(keys($event.headers)) != 0 then return end
+  try
+    while power_live()
+      sleep(1)
+      if $state.armed != nil and armed_left($state.armed) == 0 then $state.armed = nil end
+      push_model()
+    end
+  finally
+    $state.ticking = false
+  end
 end
 
 fn start_clock()
@@ -179,6 +271,7 @@ on clock.deadline async
   end
 end
 
+subscribe($APPS .. ".changed")
 $ready = $r.ready($ctx)
 if not $ready.ok then raise("SCENE_READY", json_encode($ready.value)) end
 $state.ready = true

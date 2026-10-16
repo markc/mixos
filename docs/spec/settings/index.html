@@ -218,6 +218,7 @@
                         <a href="#initial-data-and-resolution">Initial data and resolution</a>
                         <a href="#shell-panel-preferences">Shell panel preferences</a>
                         <a href="#key-bindings">Key bindings</a>
+                        <a href="#terminal">Terminal</a>
                         <a href="#topics-and-storage">Topics and storage</a>
                         <a href="#validation-and-remaining-scope">Validation and remaining scope</a>
                     </nav>
@@ -261,7 +262,7 @@ responses preserve ordinary ABP rc conventions: 0 for handled results and 10 for
 refusal, invalid input or unknown verbs. Domain status is structured in the body.</p>
 <table><thead><tr><th>Verb</th><th>Input and result</th></tr></thead><tbody>
 <tr><td><code>settings.describe</code></td><td>No mutation; version, fields, ranges, defaults, limits and implemented/deferred capabilities</td></tr>
-<tr><td><code>settings.get</code></td><td><code>{binding:{instance,profile}, view?, schema?}</code>; <code>view</code> <code>full</code> (default): complete accepted snapshot under <code>snapshot</code>, in <code>schema</code> 1 (default) or 2 (each distinct design projection once under <code>designs</code>, contexts naming it by digest; other schemas refused with <code>unsupported_schema</code>); <code>summary</code>: the profile's <code>Summary</code> (schema, binding, incarnation, revision, design revision, source digest, appearance names, <code>custom_source</code>, and <code>keymaps</code> when any are set; never projections or a source) under <code>summary</code>; both with publication/recovery status</td></tr>
+<tr><td><code>settings.get</code></td><td><code>{binding:{instance,profile}, view?, schema?}</code>; <code>view</code> <code>full</code> (default): complete accepted snapshot under <code>snapshot</code>, in <code>schema</code> 1 (default) or 2 (each distinct design projection once under <code>designs</code>, contexts naming it by digest; other schemas refused with <code>unsupported_schema</code>); <code>summary</code>: the profile's <code>Summary</code> (schema, binding, incarnation, revision, design revision, source digest, appearance names, <code>custom_source</code>, <code>keymaps</code> when any are set, and <code>terminal</code> when any value is set; never projections or a source) under <code>summary</code>; both with publication/recovery status</td></tr>
 <tr><td><code>settings.appearance.get</code></td><td><code>{binding:{instance,profile}, schema?}</code>; read-only appearance projection (<code>mode</code>, <code>contrast</code>, sRGB <code>accent</code>) tagged with incarnation and revisions; the reply also includes the atomic <code>snapshot</code> (in <code>schema</code> 1 or 2, as for <code>settings.get</code>) for shared Consumer validation; <code>wrong_target</code> on a foreign binding</td></tr>
 <tr><td><code>settings.validate</code></td><td>Fenced apply-shaped body; resolve/compile candidate without a write or receipt; valid with current base identity or diagnostics/conflict</td></tr>
 <tr><td><code>settings.apply</code></td><td>Fenced batch described below; durable changed/unchanged receipt</td></tr>
@@ -497,6 +498,31 @@ action, 32 bytes per chord, 64 bytes per action id.</li>
 <li><strong>Followers:</strong> the summary carries <code>keymaps</code>, and each application applies
 its own entry when the revision changes (<code>toolkit::Registry::rebind</code>).</li>
 </ul>
+<h2 id="terminal">Terminal</h2>
+<p>The profile's <code>terminal</code> holds the term's preferences. Each default is the
+term's behaviour before the group existed, except padding (8 px instead of
+1 px) and the focus ring: <code>accent</code> at strength 0.25 gives a quiet tint from
+the current theme accent. <code>neutral</code> remains available; <code>accent</code> at strength
+0.5 matches the earlier half-accent ring. Each value is omitted at its
+default, so older profiles keep their seals. It does not affect the resolved
+design. Terminal colours are not a setting: they follow the session theme.</p>
+<table><thead><tr><th>Field</th><th>Type and range</th><th>Default</th></tr></thead><tbody>
+<tr><td><code>terminal.font.family</code></td><td>string or null, 1–128 bytes, no control characters</td><td>null: <code>appearance.mono_family</code></td></tr>
+<tr><td><code>terminal.font.size</code></td><td>number 6–48</td><td>the design's UI type size</td></tr>
+<tr><td><code>terminal.font.weight</code></td><td>integer 100–900, step 100</td><td>400</td></tr>
+<tr><td><code>terminal.padding</code></td><td>integer 1, 2, 4, 8 or 16 (px)</td><td>8</td></tr>
+<tr><td><code>terminal.scrollback.lines</code></td><td>integer 0–1000000</td><td>1000</td></tr>
+<tr><td><code>terminal.scroll.speed</code></td><td>integer 10–200 (rows per wheel line, scaled by speed/40; touchpad travel in cell heights at that scale)</td><td>40</td></tr>
+<tr><td><code>terminal.border.width</code></td><td>integer 1–4 (px)</td><td>1</td></tr>
+<tr><td><code>terminal.cursor.shape</code></td><td><code>block</code>, <code>underline</code> or <code>bar</code></td><td><code>underline</code></td></tr>
+<tr><td><code>terminal.cursor.blink</code></td><td>boolean</td><td>false</td></tr>
+<tr><td><code>terminal.focus.ring</code></td><td><code>neutral</code> or <code>accent</code></td><td><code>accent</code></td></tr>
+<tr><td><code>terminal.focus.strength</code></td><td>number 0–1, used with <code>accent</code></td><td>0.25</td></tr>
+<tr><td><code>terminal.mouse.copy_on_select</code></td><td>boolean</td><td>false</td></tr>
+<tr><td><code>terminal.env.term</code></td><td><code>[a-z0-9-]{1,64}</code>; new tabs and panes</td><td><code>xterm-256color</code></td></tr>
+</tbody></table>
+<p>Apply and reset take each path, or <code>terminal</code> for the whole group. The
+summary carries <code>terminal</code> when any value is set.</p>
 <h2 id="topics-and-storage">Topics and storage</h2>
 <p>Publish retained <code>settingsd.desktop.changed.&lt;profile&gt;</code> (the snapshot in schema
 1), then retained <code>settingsd.desktop.compact.&lt;profile&gt;</code> (schema 2), then

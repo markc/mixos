@@ -1,4 +1,4 @@
--- version: 0.6.0
+-- version: 0.7.1
 -- The bottom panel's behaviour: compositor, tray, notification and popup
 -- state in; one complete model out through the loader (scenes.model). The
 -- layout is static in scene.mix. Clicks arrive as {scene,node,kind,item?};
@@ -23,7 +23,7 @@ $PW_RUNTIME = env("PIPEWIRE_RUNTIME_DIR", "/run/user/" .. to_string(uid()))
 -- The loader-owned popup scenes the panel's buttons toggle.
 $POPUPS = {launcher: env("PANEL_LAUNCHER_SCENE", "launcher"),
   calendar: env("PANEL_CALENDAR_SCENE", "calendar"), notes: env("PANEL_NOTES_SCENE", "notes"),
-  network: env("PANEL_NETWORK_SCENE", "network")}
+  network: env("PANEL_NETWORK_SCENE", "network"), volume: env("PANEL_VOLUME_SCENE", "volume")}
 
 -- The panel's own settings, beside its scene (SCENE_DIR, the user copy on a
 -- live desktop), canonicalised because inotify reports canonical paths.
@@ -78,7 +78,7 @@ end
 
 $state = {ready: false, windows: [], ws_count: 1, ws_current: 1, ws_names: [], tray: [], notes_count: 0,
   net: {up: false, wireless: false}, vol: {ok: false, level: 0, muted: false},
-  open: {launcher: false, calendar: false, notes: false, network: false},
+  open: {launcher: false, calendar: false, notes: false, network: false, volume: false},
   icons: empty_icons(), services: [], dirty: false, rebuilding: false, clock_armed: false, status_refreshing: false,
   net_watch: nil, net_started: 0, net_retry: 5, net_retrying: false,
   audio_watch: nil, audio_started: 0, audio_retry: 5, audio_retrying: false, audio_unavailable: false,
@@ -164,13 +164,6 @@ fn retry_audio()
   end
 end
 
-fn toggle_mute()
-  $w = run_argv(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"], {timeout: 2, env: {XDG_RUNTIME_DIR: $PW_RUNTIME}})
-  if not $w.ok then return $r.failure("mute_failed", "wpctl set-mute failed: " .. trim($w.stderr ?? "")) end
-  return {ok: true, rc: 0, value: {}}
-end
-
-
 -- Each source re-reads only its own state: a link event forks no wpctl and
 -- an audio event runs no netlink dump.
 fn apply_net()
@@ -243,7 +236,7 @@ end
 -- scenes.changed. The panel only tints the matching button.
 fn apply_scenes($inventory)
   if type($inventory) != "map" or type($inventory.scenes) != "list" then return false end
-  $open = {launcher: false, calendar: false, notes: false, network: false}
+  $open = {launcher: false, calendar: false, notes: false, network: false, volume: false}
   for each $row in $inventory.scenes
     for each $key, $scene in $POPUPS
       if type($row) == "map" and $row.name == $scene and $row.open == true then $open[$key] = true end
@@ -295,12 +288,16 @@ end
 
 fn resolve_icons()
   if length(keys($state.icons.windows)) + length(keys($state.icons.plain)) >= 512 then $state.icons = empty_icons() end
-  if not has_key($state.icons.themed,"dev.mixos") then
-    -- apps.icon matches the exact name (no suffix rule), so the symbolic M
-    -- mark is asked for explicitly when the full-colour brand is not installed.
-    $brand = apps_icon("dev.mixos",48,$ICON_THEME)
-    if $brand == "" then $brand = apps_icon("dev.mixos-symbolic",48,$ICON_THEME) end
-    $state.icons.themed["dev.mixos"] = $brand
+  -- The launcher mark, shared with the top bar: apps.icon matches the exact
+  -- name (no suffix rule), so every spelling is asked for in turn.
+  for each $l in $m.LAUNCHER_ICONS
+    if not has_key($state.icons.themed, $l.key) then
+      $path = ""
+      for each $name in $l.names
+        if $path == "" then $path = apps_icon($name, $m.LAUNCHER_ICON_SIZE, $ICON_THEME) end
+      end
+      $state.icons.themed[$l.key] = $path
+    end
   end
   for each $name in $m.PANEL_THEMED_ICONS
     if not has_key($state.icons.themed, $name) then
@@ -481,7 +478,7 @@ fn toggle_popup($key)
   end
   if $out.ok and type($out.value) == "map" then
     -- The loader keeps one popup open at a time.
-    $open = {launcher: false, calendar: false, notes: false, network: false}
+    $open = {launcher: false, calendar: false, notes: false, network: false, volume: false}
     $open[$key] = $out.value.open == true
     $state.open = $open
     schedule()
@@ -500,6 +497,10 @@ on notes async
 end
 on network async
   $r.respond(toggle_popup("network"))
+end
+-- The volume popup owns every audio control, mute included.
+on volume async
+  $r.respond(toggle_popup("volume"))
 end
 
 -- A right click on a pager button: the rename dialog for that workspace.
@@ -583,13 +584,6 @@ on tray async
   $key = $t.tray_key($r.event_args($event).item)
   if $key == nil then $r.respond($r.failure("invalid_args", "item.key must name a tray item")); return end
   $r.respond($r.call($TRAY, "tray.activate", {id: $key}))
-end
-
-on vol_mute async
-  $out = toggle_mute()
-  apply_volume()
-  schedule()
-  $r.respond($out)
 end
 
 on panel.state desc "panel model {model}; the last model the loader accepted"

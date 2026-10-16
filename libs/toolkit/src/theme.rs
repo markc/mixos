@@ -81,6 +81,49 @@ impl std::error::Error for Error {
     }
 }
 
+/// The session's icon and type choices, laid over a theme's design tokens.
+/// Each `None` keeps the design's own value. The design is never patched:
+/// the choices travel beside it, so the design file stays the same.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Overlay {
+    /// The icon stroke on the 24-unit grid.
+    pub stroke: Option<f32>,
+    /// The interface family, or `None` for the bundled Inter.
+    pub family: Option<String>,
+    /// The interface weight (100 to 900 in steps of 100).
+    pub weight: Option<u16>,
+    /// The monospace family, or `None` for the bundled JetBrains Mono.
+    pub mono: Option<String>,
+}
+
+impl Overlay {
+    /// The overlay a profile's appearance names. A value outside its range
+    /// degrades to `None` (the design's own), so a bad stored value cannot
+    /// break a theme.
+    pub fn from_appearance(appearance: &settings::model::Appearance) -> Self {
+        let stroke = appearance.icon_stroke.filter(|s| {
+            s.is_finite()
+                && (settings::model::ICON_STROKE_MIN..=settings::model::ICON_STROKE_MAX)
+                    .contains(s)
+                && (s / settings::model::ICON_STROKE_STEP).fract() == 0.0
+        });
+        let weight = appearance
+            .font_weight
+            .filter(|w| (100..=900).contains(w) && w % 100 == 0);
+        let family = |name: &Option<String>| {
+            name.as_deref()
+                .filter(|n| !n.trim().is_empty())
+                .map(str::to_owned)
+        };
+        Self {
+            stroke: stroke.map(|s| s as f32),
+            family: family(&appearance.font_family),
+            weight,
+            mono: family(&appearance.mono_family),
+        }
+    }
+}
+
 /// The resolved design for one context, and how its windows are framed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Theme {
@@ -89,6 +132,7 @@ pub struct Theme {
     style: ResolvedStyle,
     decorations: Decorations,
     captions: CaptionSide,
+    overlay: Overlay,
 }
 
 /// The selection a selection-only file or a full document's legacy record
@@ -249,6 +293,7 @@ impl Theme {
                     style,
                     decorations: Decorations::default(),
                     captions: CaptionSide::default(),
+                    overlay: Overlay::default(),
                 })
             }
             DesignCompileResult::Fatal(failure) => Err(Error::Compile(failure.diagnostics)),
@@ -275,6 +320,8 @@ impl Theme {
                 });
                 theme.decorations = self.decorations;
                 theme.captions = self.captions;
+                // A rebuilt design drops the session's choices; carry them across.
+                theme.overlay = self.overlay.clone();
                 theme
             };
         theme.decorations = choice.decorations.unwrap_or(theme.decorations);
@@ -287,6 +334,17 @@ impl Theme {
         self.decorations = decorations;
         self.captions = captions;
         self
+    }
+
+    /// `self` with the session's icon and type choices laid over it.
+    pub fn with_overlay(mut self, overlay: Overlay) -> Self {
+        self.overlay = overlay;
+        self
+    }
+
+    /// The session's icon and type choices on this theme.
+    pub fn overlay(&self) -> &Overlay {
+        &self.overlay
     }
 
     pub fn context(&self) -> &DesignContext {

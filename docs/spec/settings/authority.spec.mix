@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 {
-  status:"accepted", version:"0.4.0", schema:1,
+  status:"accepted", version:"0.7.0", schema:1,
   service:"settingsd", topic:"settingsd.desktop.changed.default",
   revision_encoding:"canonical_decimal_u64_string",
   limits:{receipts:128,source_bytes:262144,request_bytes:393216,snapshot_bytes:983040},
@@ -12,6 +12,8 @@
     {name:"invalid_layout",changes:{"appearance.mode":"light","shell.panels.bottom.thickness":999},expected:"validation_failed"},
     {name:"keymap",changes:{"keymaps.dopus.nav.parent":["Ctrl+U"],"keymaps.dopus.file.delete":[]},reset:[]},
     {name:"invalid_chord",changes:{"keymaps.dopus.nav.back":["Hyper+X"]},expected:"validation_failed"},
+    {name:"terminal",changes:{"terminal.padding":8.0,"terminal.focus.ring":"neutral","terminal.env.term":"xterm-kitty"},reset:[]},
+    {name:"invalid_padding",changes:{"terminal.padding":3},expected:"validation_failed"},
     {name:"reset_app",changes:{},reset:["apps.term"]}
   ],
   deferred:["gui_delivery","candidate_import","artifacts","preview","replication"]

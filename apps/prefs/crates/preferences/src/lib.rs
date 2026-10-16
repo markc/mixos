@@ -9,9 +9,12 @@ pub mod appearance;
 mod background;
 pub mod engine;
 pub mod model;
+pub mod navigation;
 pub mod picker;
+pub mod terminal;
 pub mod wallpaper;
 
 pub use appearance::Look;
 pub use engine::{Availability, Dialog, Effect, Engine, Op, UiState};
 pub use model::{AppRow, Notes, Panel, RowState};
+pub use navigation::Section;

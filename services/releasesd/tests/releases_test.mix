@@ -74,6 +74,23 @@ try
   refuses("bad app name", "USAGE", fn() = $r.app_by_name($ctx, "../etc"))
 
   -- Catalogue.
+  for $category in ["mixos-desktop", "mixos-server", "creative", "other"]
+    write_file($tmp .. "/category.mx", data_encode({schema:1, apps:[{name:"grouped", repo:"example/grouped", category:$category}]}))
+    $grouped = $r.load_catalogue($tmp .. "/category.mx")[0]
+    check("catalogue: category " .. $category .. " reaches rows", $r.row($ctx, $grouped).category == $category)
+  end
+  for $bad in ["themes", "unknown", 3, []]
+    write_file($tmp .. "/badcategory.mx", data_encode({schema:1, apps:[{name:"grouped", repo:"example/grouped", category:$bad}]}))
+    refuses("catalogue: invalid category " .. json_encode($bad), "CATALOGUE", fn() = $r.load_catalogue($tmp .. "/badcategory.mx"))
+  end
+  check("row: old catalogue omits category", $r.row($ctx, $app).category == nil)
+  write_file($tmp .. "/labelled.mx", data_encode({schema:1, categories:{creative:"Graphics"}, apps:[{name:"grouped",repo:"example/grouped",category:"creative"}]}))
+  $labelled = $r.load_catalogue($tmp .. "/labelled.mx")[0]
+  check("catalogue: group label reaches rows", $r.row($ctx, $labelled).category_label == "Graphics")
+  for $labels in [{unknown:"Unknown"}, {creative:""}, {creative:3}, {creative:"line\nbreak"}, []]
+    write_file($tmp .. "/badlabels.mx", data_encode({schema:1,categories:$labels,apps:[]}))
+    refuses("catalogue: invalid category labels", "CATALOGUE", fn() = $r.load_catalogue($tmp .. "/badlabels.mx"))
+  end
   check("catalogue: missing file follows MixOS itself",
     deep_eq(map($r.load_catalogue($tmp .. "/absent.mx"), fn($a) = $a.name), ["mixos-desktop", "mixos-server"]))
   write_file($tmp .. "/bad1.mx", "{schema: 2, apps: []}\n")

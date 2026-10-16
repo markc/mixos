@@ -4,16 +4,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Mix is the MixOS shell and scripting language. The interpreter lives in the mix library; cli/mix-shell owns the interactive shell and native ABP citizen…">
+    <meta name="description" content="The reference manual for the Mix language, one page per topic. The canonical home of these pages is docs/mix/ in the public markc/mixos monorepo; add a page by…">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=c34fdc68c4" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/web/favicon.svg?v=51993ccf9f">
     <link rel="icon" type="image/png" sizes="32x32" href="/web/brand/favicon-32-light.png?v=b7dd291dfa" media="(prefers-color-scheme: light)">
     <link rel="icon" type="image/png" sizes="32x32" href="/web/brand/favicon-32-dark.png?v=e6873d12a3" media="(prefers-color-scheme: dark)">
     <link rel="apple-touch-icon" sizes="180x180" href="/web/brand/apple-touch-icon.png?v=d578c3d9bb">
-    <title>Mix — MixOS</title>
+    <title>Mix — manual — MixOS</title>
     <link rel="canonical" href="https://mixos.dev/mix/">
-    <link rel="alternate" type="text/markdown" href="/mix.md" title="Markdown source">
+    <link rel="alternate" type="text/markdown" href="/mix/README.md" title="Markdown source">
     <meta name="mixos-build" content="08493203ff6c">
     <link rel="preload" href="/web/fonts/sans.woff2?v=22f05185ef" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/web/fonts.css?v=b1859e7656"><!-- generated: Inter / Quicksand / JetBrains Mono / emoji cut from the asset set -->
@@ -214,7 +214,16 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
+                        <a href="#start-here">Start here</a>
+                        <a href="#the-language">The language</a>
+                        <a href="#builtins--io">Builtins &amp; I/O</a>
+                        <a href="#mesh--runtime">Mesh &amp; runtime</a>
+                        <a href="#reference">Reference</a>
+                        <a href="#where-mix-lives">Where Mix lives</a>
                         <a href="#programs-and-documents">Programs and documents</a>
+                        <a href="#exit-status">Exit status</a>
+                        <a href="#design-docs--specs">Design docs &amp; specs</a>
+                        <a href="#see-also">See also</a>
                     </nav>
                 </div>
             </div>
@@ -239,7 +248,79 @@
 <main id="content" tabindex="-1">
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
-<h1 id="mix">Mix</h1>
+<h1 id="mix--manual">Mix — manual</h1>
+<p>The reference manual for the <strong>Mix</strong> language, one page per topic. The canonical
+home of these pages is
+<a href="https://github.com/markc/mixos/tree/main/docs/mix"><code>docs/mix/</code></a> in the public
+<a href="https://github.com/markc/mixos">markc/mixos</a> monorepo; add a page by dropping
+<code>TOPIC.md</code> there. The same files render everywhere:</p>
+<ul>
+<li><strong>Terminal</strong> — <code>mix man TOPIC</code> (<code>mix man</code> alone prints this index). Online
+source with a local <code>$MIXOS/docs/mix</code> fallback and a 24 h cache at
+<code>~/.cache/mixos/man/</code>.</li>
+<li><strong>Web</strong> — <a href="https://mixos.dev/mix/overview">mixos.dev/mix</a> serves this
+directory.</li>
+<li><strong>GitHub</strong> — browse <a href="https://github.com/markc/mixos/tree/main/docs/mix"><code>docs/mix/</code></a>
+directly; this file doubles as the directory README.</li>
+<li><strong>Local clone</strong> — plain markdown with relative links; any editor or viewer
+works.</li>
+</ul>
+<p><strong>New to Mix, or coming from bash/Python/JS? Read <a href="/mix/gotchas/">gotchas</a> first</strong> —
+it is the errata against every other language's reflexes, and every row of its
+table is executed by <code>cargo test -p system --test man_gotchas</code>, so it cannot
+rot. <code>mix man syntax</code> is the mental model; gotchas is the corrections.</p>
+<h2 id="start-here">Start here</h2>
+<ul>
+<li><strong><a href="/mix/overview/">overview</a></strong> — what Mix is, why it exists, where it came from.</li>
+<li><strong><a href="/mix/invocation/">invocation &amp; CLI</a></strong> — <code>mix file</code>, <code>-c</code>, <code>-</code>, <code>-i</code>, login shell, <code>--serve</code>, flags.</li>
+<li><strong><a href="/mix/cli/">the mix command</a></strong> — <code>mix help</code>/<code>man</code>/<code>builtins</code>/<code>what</code>/<code>status</code>/<code>trace</code>/… meta-commands.</li>
+<li><strong><a href="/mix/syntax/">syntax &amp; the classifier</a></strong> — tokens, the newline rule, shell-vs-Mix dispatch.</li>
+<li><strong><a href="/mix/gotchas/">gotchas</a></strong> — the guesses from bash/Python/JS that are silently wrong here. Read it first.</li>
+</ul>
+<h2 id="the-language">The language</h2>
+<ul>
+<li><strong><a href="/mix/variables/">variables, sigils &amp; scope</a></strong> — <code>$</code> sigils, <code>${...}</code>, function-local binding.</li>
+<li><strong><a href="/mix/strings/">strings</a></strong> — <code>'raw'</code> vs <code>"interp"</code>, <code>..</code> concat, codepoint/byte/grapheme ops.</li>
+<li><strong><a href="/mix/numbers/">numbers</a></strong> — f64, radix literals, ordering, coercion.</li>
+<li><strong><a href="/mix/operators/">operators</a></strong> — arithmetic, comparison, <code>and</code>/<code>or</code>/<code>not</code>, <code>..</code>, <code>?:</code>, <code>??</code>.</li>
+<li><strong><a href="/mix/control-flow/">control flow</a></strong> — <code>if</code>/<code>while</code>/<code>for</code>/<code>loop</code>, if-as-expression, <code>break</code>/<code>continue</code>.</li>
+<li><strong><a href="/mix/functions/">functions, lambdas &amp; modules</a></strong> — <code>fn</code>, closures, the pass-in/return/reassign triad.</li>
+<li><strong><a href="/mix/modules/">modules — require/include/source</a></strong> — <code>require()</code> isolated module loading vs the splice loaders.</li>
+<li><strong><a href="/mix/collections/">lists &amp; maps</a></strong> — literals, indexing, <code>push</code>/<code>pop</code>, the base footguns.</li>
+<li><strong><a href="/mix/hof/">higher-order functions</a></strong> — <code>map</code>/<code>filter</code>/<code>reduce</code>/<code>sort_by</code>/<code>group_by</code>/…</li>
+<li><strong><a href="/mix/errors/">errors &amp; exit handling</a></strong> — <code>try</code>/<code>catch</code>/<code>die</code>/<code>panic</code>, <code>run_rc().rc</code>, timeouts.</li>
+</ul>
+<h2 id="builtins--io">Builtins &amp; I/O</h2>
+<ul>
+<li><strong><a href="/mix/math/">math</a></strong> — rounding, powers, logs, trig, <code>min</code>/<code>max</code>/<code>clamp</code>, constants.</li>
+<li><strong><a href="/mix/io/">files &amp; I/O</a></strong> — <code>read_file</code>/<code>write_file</code>/<code>glob</code>/<code>stat</code>/<code>chmod</code>/<code>walk</code>/…</li>
+<li><strong><a href="/mix/system/">processes &amp; system</a></strong> — <code>run</code>/<code>run_rc</code>/<code>run_stream</code>/<code>spawn</code>/<code>env</code>/<code>exit</code>/…</li>
+<li><strong><a href="/mix/job-control/">job control</a></strong> — foreground/background jobs, suspension, resume (interactive).</li>
+<li><strong><a href="/mix/data/">data &amp; serialization</a></strong> — JSON, TOML, <code>jq</code>, <code>data_encode</code>, strict-data <code>.mix</code>.</li>
+<li><strong><a href="/mix/buffer/">byte buffers</a></strong> — <code>buffer</code>/<code>buffer_push</code>/<code>freeze</code>, the one reference-semantic type.</li>
+<li><strong><a href="/mix/regex/">regular expressions</a></strong> — <code>re_match</code>/<code>re_find</code>/<code>re_replace</code>/<code>re_split</code>/<code>grep_lines</code> (subject first).</li>
+<li><strong><a href="/mix/datetime/">dates &amp; time</a></strong> — <code>time</code>/<code>date_format</code>/<code>now_iso</code>/<code>duration_format</code>.</li>
+<li><strong><a href="/mix/http/">http</a></strong> — <code>http_get</code>/<code>http_post</code>/<code>http_request</code>, deadlines.</li>
+<li><strong><a href="/mix/datastar/">datastar</a></strong> — <code>ds_*</code> SSE event framing.</li>
+</ul>
+<h2 id="mesh--runtime">Mesh &amp; runtime</h2>
+<ul>
+<li><strong><a href="/mix/bus/">Bus messaging</a></strong> — <code>send</code>/<code>emit</code>/<code>address</code>/<code>on</code>, <code>$result</code>/<code>$rc</code> bands, the mesh.</li>
+<li><strong><a href="/mix/serve/">serving as a citizen</a></strong> — <code>mix --serve service.mix</code>, the supervised runtime.</li>
+<li><strong><a href="/mix/remote/">remote execution (ssh)</a></strong> — <code>ssh_run</code>/<code>ssh_must</code>/<code>ssh_mix</code>, env transports.</li>
+<li><strong><a href="/mix/capabilities/">capabilities &amp; embedding</a></strong> — the capability classes + sandbox model.</li>
+<li><strong><a href="/mix/expr-eval/">expression evaluation mode</a></strong> — <code>eval_expr_string()</code>, the single-expression rule, the static deny walk.</li>
+</ul>
+<h2 id="reference">Reference</h2>
+<ul>
+<li><strong><a href="/mix/builtins/">builtin index</a></strong> — every builtin by category.</li>
+<li><strong><a href="/mix/lint/">lint diagnostics</a></strong> — every MIX-XXXX code and its story.</li>
+<li><strong><a href="/mix/keywords/">reserved words</a></strong> — the keyword set, keywords-as-names.</li>
+<li><strong><a href="/mix/shell-mode/">shell-dispatch mode</a></strong> — pipes, <code>&amp;&amp;</code>, brace expansion, <code>$(...)</code>, redirects.</li>
+<li><strong><a href="/mix/owned-editor/">owned interactive editor</a></strong> — <code>MIX_EDITOR=owned</code> (preview).</li>
+<li><strong><a href="/mix/stats/">usage statistics</a></strong> — runtime modes, report windows, persistence, kill switch, static coverage.</li>
+</ul>
+<h2 id="where-mix-lives">Where Mix lives</h2>
 <p>Mix is the MixOS shell and scripting language. The interpreter lives in the
 <code>mix</code> library; <code>cli/mix-shell</code> owns the interactive shell and native ABP
 citizen runtime, and <code>cli/system</code> builds the <code>mix</code> binary. The current language
@@ -271,8 +352,9 @@ and pure bindings initially. Readers upgrade before files and writers; rollback
 includes compatible binaries, scripts and documents.</p>
 <p>New purposes use existing programs or versioned document schemas. Another file
 family or evaluation mode requires an architectural decision. See the
-<a href="/decisions/2026-10-08-mix-programs-and-documents/">decision</a> and
-<a href="/spec/mix/2026-10-08-programs-and-documents/">file-family contract</a>.</p>
+<a href="https://mixos.dev/decisions/2026-10-08-mix-programs-and-documents/">decision</a> and
+<a href="https://mixos.dev/spec/mix/2026-10-08-programs-and-documents/">file-family contract</a>.</p>
+<h2 id="exit-status">Exit status</h2>
 <p>Uncaught script errors print a diagnostic and exit 1, including messages with
 <code>interrupted:false</code> or the word <code>interrupted</code>. Signal outcomes come from actual
 SIGINT/SIGTERM delivery: non-interactive scripts and <code>-c</code> exit 130/143. SIGINT
@@ -281,8 +363,21 @@ A caught interrupt still takes precedence over the evaluation's result;
 <code>--result-fd</code> emits an error frame rather than a successful value.
 Script-defined error codes do not impersonate OS signals; <code>--serve</code> retains
 its graceful shutdown behaviour.</p>
+<h2 id="design-docs--specs">Design docs &amp; specs</h2>
+<p>Design docs, background rationale, and the formal specs (04 language
+reference, 18 citizen runtime) all live in the operator control repo since
+2026-07-23; this manual is the complete public reference.</p>
+<h2 id="see-also">See also</h2>
+<pre><code>mix help              the full categorized builtin reference
+mix builtins [CAT]    list builtins, optionally by category
+mix what NAME         one-line description of a builtin or keyword
+mix man TOPIC         read any of the pages above in the terminal
+</code></pre>
+<p>For AI agents: <a href="https://github.com/markc/mixos/blob/main/AGENTS.md"><code>AGENTS.md</code></a> at
+the repo root is a short orientation sheet whose canonical reference is this
+manual.</p>
         </article>
-        <p class="doc-source"><a href="/mix.md"><i data-lucide="file-text"></i> This page as Markdown</a></p>
+        <p class="doc-source"><a href="/mix/README.md"><i data-lucide="file-text"></i> This page as Markdown</a></p>
     </div>
 </main>
 <script src="/web/base.js?v=2652b9bc10"></script>

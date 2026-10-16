@@ -11,7 +11,7 @@ fn check($ok, $message)
   if not $ok then raise("SCENE_TEMPLATE_TEST", $message) end
 end
 check(date_format(0, "%z") == "+0000", "UTC timezone was not applied")
-for each $name in ["launcher", "calendar", "notes", "network"]
+for each $name in ["launcher", "calendar", "notes", "network", "volume"]
   $directory = $root .. "/share/scenes/" .. $name
   $metadata = data_parse(read_file($directory .. "/template.conf.mix"))
   check($metadata.name == $name and $metadata.behaviour == "behaviour.mix", "strict metadata: " .. $name)
@@ -365,6 +365,46 @@ $changed = $panel_models["panel-tray-change"]
 check($changed.tray[0].id == $busy.tray[1].id and $changed.tray[1].id == "tr_i3", "tray change keeps surviving item ids")
 check($changed.notes.icon == $partial.themed.notifications and $changed.volume.icon == $partial.themed["audio-card"] and not $changed.network.has_icon, "status icon fallback name, then text stand-in")
 check($changed.launcher.icon == $partial.themed["start-here"], "launcher icon fallback name")
+
+-- The launcher mark on both bars: the brand dev.mixos when resolved, else the
+-- start-here fallbacks; the top bar's apps button takes it from the same map.
+$brand = "/usr/share/icons/example/dev.mixos.svg"
+$with_brand = themed_all()
+$with_brand["dev.mixos"] = $brand
+$brand_snap = {windows: [], ws_count: 1, ws_current: 1, tray: [], notes_count: 0, net: {up: false, wireless: false}, vol: {ok: false, level: 0, muted: false}, open: {}}
+$brand_panel = $models.panel($brand_snap, {themed: $with_brand, plain: {}, windows: {}}, 0)
+check($brand_panel.launcher.icon == $brand and $brand_panel.launcher.has_icon, "panel launcher prefers dev.mixos over start-here")
+$brand_top = $models.topbar_apps($with_brand)
+check($brand_top.icon == $brand and $brand_top.has_icon and $brand_top.label == "Apps", "top bar apps button shows dev.mixos and keeps its label")
+$no_brand = themed_all()
+$no_brand["dev.mixos"] = ""
+check($models.panel($brand_snap, {themed: $no_brand, plain: {}, windows: {}}, 0).launcher.icon == $no_brand["start-here-kde"], "panel launcher falls back to start-here-kde")
+check($models.topbar_apps($no_brand).icon == $no_brand["start-here-kde"], "top bar apps button falls back like the panel")
+check($models.topbar_apps({"start-here": $partial.themed["start-here"]}).icon == $partial.themed["start-here"], "top bar apps button falls back to start-here")
+$bare = $models.topbar_apps({})
+check(not $bare.has_icon and $bare.icon == "" and $bare.label == "Apps", "top bar apps button without any icon shows its label")
+check(deep_eq(sort(keys($bare)), sort(keys(json_parse(header(read_file($root .. "/share/scenes/topbar/scene.mix"), "model")).apps))), "top bar apps model has the keys its scene declares")
+
+-- Top bar power: the countdown and a refusal show on the bar, not only in the tip.
+$pw = {label: "Restart", icon: "/icons/restart.svg", desk: "desk32", vt: "3", left: 0, sent: false, notice: ""}
+$rest = $models.topbar_power($pw)
+check($rest.has_icon and not $rest.show_label and $rest.background == nil and $rest.tip.title == "Restart desk32 (VT3)", "power button at rest is its icon")
+$pw.left = 4
+$armed = $models.topbar_power($pw)
+check($armed.show_label and $armed.label == "Click again to restart (4)" and $armed.background == "#c0392b", "armed power button counts down on the bar")
+$pw.left = 0
+$pw.notice = "unavailable"
+$failed = $models.topbar_power($pw)
+check($failed.show_label and $failed.label == "Restart failed: unavailable" and $failed.background != nil, "refused power button says so on the bar")
+$pw.notice = ""
+$pw.sent = true
+check($models.topbar_power($pw).label == "Restarting…", "sent restart says so")
+$off = $models.topbar_power({label: "Shutdown", icon: "", desk: "desk32", vt: "3", left: 0, sent: false, notice: ""})
+check($off.show_label and $off.label == "Shutdown", "power button without an icon shows its label")
+$topbar_model = json_parse(header(read_file($root .. "/share/scenes/topbar/scene.mix"), "model"))
+for each $k in ["restart", "poweroff"]
+  check(deep_eq(sort(keys($off)), sort(keys($topbar_model[$k]))), "top bar " .. $k .. " model has the keys its scene declares")
+end
 check($panel_models["panel-empty"].clock.time == "12:00 am" and $busy.clock.time == "9:05 pm" and $busy.clock.date == "Thu 29 Feb", "displayed time from the fixed clock")
 
 -- Real click payloads: the renderer sends the owning list's node and the
@@ -836,4 +876,136 @@ $write_task = before(after($net_behaviour, "on net.write async\n"), "\nend\n\n")
 check(contains($write_task, "$state.wg_last = delete($state.wg_last, $link)") and length(split($write_task, "$state.wg_last = delete($state.wg_last, $link)")) == 3, "undo and an unknown outcome both forget the tunnel form")
 $wg_apply = before(after($net_behaviour, "  elif $e.kind == \"wg\" then\n"), "\n  else\n    $req = $h.link_request(")
 check(index_of($wg_apply, "$state.edit.confirmed = false") >= 0 and index_of($wg_apply, "$state.edit.confirmed = false") < index_of($wg_apply, "start_write("), "a replacement confirmation is consumed when it starts")
+
+-- ── the volume popup: PipeWire devices and streams through pactl ────────
+$audio = require($root .. "/share/scenes/lib/audio.mix")
+$vol_dir = $root .. "/share/scenes/volume"
+$vol_meta = data_parse(read_file($vol_dir .. "/template.conf.mix"))
+check($vol_meta.name == "volume" and $vol_meta.behaviour == "behaviour.mix" and $vol_meta.recommended == true and $vol_meta.hidden == nil, "volume metadata: listed, recommended, with a behaviour")
+$vol_src = read_file($vol_dir .. "/scene.mix")
+check(header($vol_src, "citizen") == "scene-volume" and json_parse(header($vol_src, "window")).kind == "edge" and json_parse(header($vol_src, "window")).edge == "right", "volume is a right-edge popup with its own citizen")
+$vol_nodes = fence($vol_src)
+check($vol_nodes.root.widget == "column", "volume root is a column")
+for each $id, $node in $vol_nodes
+  check($node.text == nil or bound($node.text), "volume text is model-bound (the strings table): " .. $id)
+  check($node.label == nil or bound($node.label), "volume labels are model-bound: " .. $id)
+end
+check(deep_eq(sort(keys(json_parse(header($vol_src, "model")))), sort(keys($models.volume(nil)))), "the volume default model declares every key")
+check(deep_eq(json_parse(header($vol_src, "model")), $models.volume(nil)), "the volume default model is the model before the first snapshot")
+check(fence($panel_source).st_vol.on_click == "volume", "the panel's volume button opens the popup")
+check($models.panel({open: {volume: true}}, {}, 0).volume.background != nil and $models.panel({}, {}, 0).volume.background == nil, "the volume button tints while its popup is open")
+$panel_behaviour = read_file($root .. "/share/scenes/panel/behaviour.mix")
+check(not contains($panel_behaviour, "on vol_mute") and not contains($panel_behaviour, "wpctl\", \"set-mute"), "the panel's mute-only handler is gone: the popup owns mute")
+check(contains($panel_behaviour, "volume: env(\"PANEL_VOLUME_SCENE\", \"volume\")") and contains($panel_behaviour, "toggle_popup(\"volume\")"), "the panel toggles the volume popup through the loader")
+
+-- pactl -f json, trimmed: two sinks (one muted above 100 %), a monitor and
+-- two inputs, two streams (one named only by node.name).
+$pj = json_parse(read_file($fixtures .. "/volume-pactl.json"))
+$vs = $audio.from_pactl($pj.info, $pj.sinks, $pj.sources, $pj.sink_inputs)
+check($vs.ok and length($vs.sinks) == 2 and length($vs.sources) == 2 and length($vs.streams) == 2, "pactl JSON: sinks, sources without the monitor, streams")
+check(deep_eq($vs.sinks[0], {index: 56, name: "alsa_output.usb-Example_Interface-00.pro-output-0", description: "Example Interface Pro", level: 70, muted: false, default: true}), "a sink: the loudest channel's level, the default marked")
+check($vs.sinks[1].level == 125 and $vs.sinks[1].muted and not $vs.sinks[1].default, "a muted sink above 100 %")
+check($vs.sources[0].index == 59 and $vs.sources[0].default and not $vs.sources[1].default and $vs.sources[1].level == 50, "sources: the default input marked, the monitor left out")
+check(deep_eq($vs.streams[0], {index: 4514, name: "Example Browser", media: "Example video", level: 70, muted: false, sink: 56}) and $vs.streams[1].name == "example-player" and $vs.streams[1].muted, "streams: application name, else node name")
+check($audio.level_of(nil) == 0 and $audio.level_of({x: "y"}) == 0, "an unreadable volume is 0")
+check($audio.percent(104, 100) == "100%" and $audio.percent(-5, 100) == "0%" and $audio.percent(130, 125) == "125%" and $audio.percent(62.4, 100) == "62%", "levels clamp to 0..max as pactl percentages")
+
+$vm = $models.volume($vs)
+check($vm.status == "Example Interface Pro" and $vm.has_out and $vm.has_in and $vm.has_streams and not $vm.has_note, "a full snapshot: the default sink names the popup")
+check($vm.out.name == "Example Interface Pro" and $vm.out.level_text == "70%" and $vm.out.mute_label == "Mute", "the output card is the default sink")
+check(length($vm.out.bar) == 20 and $vm.out.bar[13].id == "v70" and $vm.out.bar[13].background == "#3daee9" and $vm.out.bar[14].background == "#ffffff0f" and $vm.out.bar[0].w == 15, "the output bar: 5 % segments to 100 %, filled to the level")
+check(deep_eq(map($vm.outputs, function ($r) = [$r.id, $r.mark, $r.sub]), [["sink_56", "●", "Default"], ["sink_58", "○", ""]]) and $vm.has_outputs, "the output list marks the default device")
+check($vm.inp.name == "Example Interface Pro" and $vm.inp.level_text == "100%" and $vm.inputs[0].id == "source_59" and $vm.has_inputs, "the input card is the default source")
+check($vm.stream.name == "Example Browser" and $vm.streams[0].background == "#3daee940" and $vm.streams[1].background == "#2a2e32", "with no stream chosen, the first gets the controls")
+$vm2 = $models.volume($vs, {selected: 4600, note: "Change failed: example"})
+check($vm2.stream.name == "example-player" and $vm2.stream.level_text == "Muted" and $vm2.stream.mute_label == "Unmute" and $vm2.stream.bar[9].background == "#6e7680", "the chosen stream: muted, a dimmed bar")
+check($vm2.has_note and $vm2.note == "Change failed: example", "a failed write shows one plain line")
+check($models.volume($vs, {selected: 999}).stream.name == "Example Browser", "a chosen stream that stopped falls back to the first")
+$loud = $models.vol_control($vs.sinks[1], "x")
+check(length($loud.bar) == 30 and $loud.bar[29].id == "v150" and $loud.bar[0].w == 9 and $loud.bar[24].background == "#6e7680" and $loud.bar[25].background == "#ffffff0f", "above 100 %: the bar runs to 150 %")
+-- No default in the read: no device stands in. The cards are hidden and
+-- the status says so.
+$vs_nodef = $audio.from_pactl({}, $pj.sinks, $pj.sources, [])
+$vm_nodef = $models.volume($vs_nodef)
+check($models.vol_default($vs_nodef.sinks) == nil and not $vm_nodef.has_out and not $vm_nodef.has_in and not $vm_nodef.has_streams, "no default sink or source: no control card")
+check($vm_nodef.status == "Default output not found · Default input not found", "no default: the status says so: " .. $vm_nodef.status)
+check(not $models.volume($audio.from_pactl({}, [$pj.sinks[0]], [], [])).out.shown, "one sink, not the default: no card")
+-- More devices than the cap, the default past the cut: the default is kept
+-- and is the control target.
+$many_sinks = []
+for $i = 1 to 20
+  push($many_sinks, merge($pj.sinks[0], {index: 100 + $i, name: "output_" .. to_string($i), description: "Output " .. to_string($i)}))
+end
+$many_sources = [$pj.sources[0]]
+for $i = 1 to 20
+  push($many_sources, merge($pj.sources[1], {index: 200 + $i, name: "input_" .. to_string($i), description: "Input " .. to_string($i)}))
+end
+$vs_many = $audio.from_pactl({default_sink_name: "output_18", default_source_name: "input_20"}, $many_sinks, $many_sources, [])
+check(length($vs_many.sinks) == 17 and $vs_many.sinks[16].name == "output_18" and $vs_many.sinks[16].default and $vs_many.sinks[15].name == "output_16", "the default past the cap is kept after 16 others: " .. json_encode(map($vs_many.sinks, function ($d) = $d.name)))
+check($models.vol_default($vs_many.sinks).name == "output_18" and $models.vol_default($vs_many.sources).name == "input_20", "the control target is the default, not the first device")
+check($models.volume($vs_many).out.name == "Output 18" and $models.volume($vs_many).inp.name == "Input 20", "the cards show the defaults past the cut")
+check(deep_eq(map($audio.from_pactl({default_sink_name: "output_3"}, $many_sinks, [], []).sinks, function ($d) = $d.name), map(slice($many_sinks, 0, 17), function ($d) = $d.name)), "the cap counts the other devices: a default inside it, 16 others beside it")
+check(length($audio.from_pactl({}, $many_sinks, [], []).sinks) == 16 and $models.vol_default($audio.from_pactl({default_sink_name: "gone"}, $many_sinks, [], []).sinks) == nil, "no default in the read: 16 rows, no control target")
+-- The one write guard, from the raw read: either default missing locks
+-- every control (no card, no target); a filter cannot hide a missing one.
+check($models.vol_writes_allowed($vs) and $models.vol_stream_target($vs, 4600).index == 4600, "both defaults present: writes allowed, the chosen stream is the target")
+$vs_nodef_streams = $audio.from_pactl({}, $pj.sinks, $pj.sources, $pj.sink_inputs)
+check(not $models.vol_writes_allowed($vs_nodef_streams) and not $models.volume($vs_nodef_streams).stream.shown and $models.vol_stream_target($vs_nodef_streams, nil) == nil and $models.volume($vs_nodef_streams).has_streams, "no defaults: the streams are listed, none gets controls")
+$vs_nosink = $audio.from_pactl({default_sink_name: "gone", default_source_name: $pj.info.default_source_name}, $pj.sinks, $pj.sources, $pj.sink_inputs)
+$vm_nosink = $models.volume($vs_nosink)
+check(not $models.vol_writes_allowed($vs_nosink) and not $vm_nosink.has_out and not $vm_nosink.has_in and not $vm_nosink.stream.shown and $vm_nosink.status == "Default output not found", "only the default sink missing: every card hidden: " .. $vm_nosink.status)
+$vs_nosrc = $audio.from_pactl({default_sink_name: $pj.info.default_sink_name, default_source_name: "gone"}, $pj.sinks, $pj.sources, $pj.sink_inputs)
+$vm_nosrc = $models.volume($vs_nosrc)
+check(not $models.vol_writes_allowed($vs_nosrc) and not $vm_nosrc.has_out and not $vm_nosrc.has_in and not $vm_nosrc.stream.shown and $vm_nosrc.status == "Example Interface Pro · Default input not found", "only the default source missing: every card hidden: " .. $vm_nosrc.status)
+-- The default source names an absent device and the only sources left are
+-- monitors: the filtered list is empty, but the raw read still locks writes.
+$vs_monly = $audio.from_pactl({default_sink_name: $pj.info.default_sink_name, default_source_name: "gone"}, $pj.sinks, [$pj.sources[0]], $pj.sink_inputs)
+check(length($vs_monly.sources) == 0 and $vs_monly.raw_sources == 1 and not $models.vol_writes_allowed($vs_monly) and $models.vol_stream_target($vs_monly, 4514) == nil and not $models.volume($vs_monly).has_out, "a missing default behind filtered monitors still locks writes")
+-- No sources at all: the sink alone allows writes.
+check($models.vol_writes_allowed($audio.from_pactl({default_sink_name: $pj.info.default_sink_name}, $pj.sinks, [], [])), "no sources: the default sink alone allows writes")
+-- Fail closed: no snapshot, a failed read, an unparseable list, a hand-built
+-- snapshot without the raw fields.
+check(not $models.vol_writes_allowed(nil) and not $models.vol_writes_allowed({ok: false}) and not $models.vol_writes_allowed($audio.from_pactl($pj.info, $pj.sinks, "x", [])) and not $models.vol_writes_allowed($audio.from_pactl($pj.info, "x", [], [])) and not $models.vol_writes_allowed({ok: true, sinks: $vs.sinks, sources: [], streams: []}), "the guard fails closed")
+-- A monitor as the default source is kept and gets the input card.
+$vs_mon = $audio.from_pactl({default_sink_name: $pj.info.default_sink_name, default_source_name: $pj.sources[0].name}, $pj.sinks, $pj.sources, [])
+check(length($vs_mon.sources) == 3 and $vs_mon.sources[0].name == $pj.sources[0].name and $vs_mon.sources[0].default, "a default monitor source keeps its row: " .. json_encode(map($vs_mon.sources, function ($d) = $d.name)))
+check($models.volume($vs_mon).has_in and $models.volume($vs_mon).inp.name == "Monitor of Example Interface Pro", "a default monitor source gets the input card")
+check(length($audio.from_pactl($pj.info, $pj.sinks, $pj.sources, []).sources) == 2, "a monitor that is not the default stays out")
+check($audio.percent(195, 200) == "150%" and $audio.percent(205, 200) == "150%" and $audio.percent(200, 1000) == "150%", "no write is ever above 150 %")
+-- One sink: no device list to choose from.
+check(not $models.volume($audio.from_pactl($pj.info, [$pj.sinks[0]], [], [])).has_outputs, "a single output shows no device list")
+-- Empty sinks: PipeWire answers but has no device.
+$none = $models.volume($audio.from_pactl($pj.info, [], [], []))
+check($none.status == "No audio device" and not $none.has_out and not $none.has_in and not $none.has_streams, "no sinks: No audio device, every card hidden")
+-- No PipeWire: pactl missing or not answering.
+$down = $models.volume({ok: false, reason: "Connection failure: Connection refused"})
+check($down.status == "Audio service unavailable" and not $down.has_out and not $down.has_streams, "pactl not answering: Audio service unavailable")
+check($audio.from_pactl(nil, "x", nil, 7).ok and length($audio.from_pactl(nil, "x", nil, 7).sinks) == 0, "malformed pactl output is empty, not an error")
+$fresh_vol = $models.volume(nil)
+check($fresh_vol.status == "" and not $fresh_vol.has_out, "before the first snapshot: nothing shown")
+
+-- Writes: every write handler checks the relayed click first, and the
+-- popup's Bus verbs are only open/close/toggle/state.
+$vol_behaviour = read_file($vol_dir .. "/behaviour.mix")
+for each $fname in ["fn bar_click(", "fn ui_step(", "fn ui_mute(", "fn pick_default(", "on vol_stream_pick\n"]
+  check(contains(before(after($vol_behaviour, $fname), "\nend\n"), "if not from_ui($event) then $r.respond(ui_only()); return end"), "a write path refuses anything but a relayed click: " .. $fname)
+end
+$on_names = []
+for each $line in split($vol_behaviour, "\n")
+  if starts_with($line, "on ") then push($on_names, split(after($line, "on "), " ")[0]) end
+end
+for each $h in $on_names
+  if starts_with($h, "vol_") then
+    $body = before(after($vol_behaviour, "on " .. $h), "\nend\n")
+    check(contains($body, "bar_click($event") or contains($body, "ui_step($event") or contains($body, "ui_mute($event") or contains($body, "pick_default($event") or contains($body, "from_ui($event)"), "click handler goes through a from_ui gate: " .. $h)
+  end
+end
+check(contains($vol_behaviour, "$state.snap = $a.snapshot($PW_RUNTIME)") and contains(before(after($vol_behaviour, "fn apply($argv)"), "\nend\n"), "$a.snapshot("), "every write is read back")
+check(contains($vol_behaviour, "\"sink-input\"") and contains($vol_behaviour, "audio_watch({facilities: $FACILITIES"), "stream events are watched too")
+-- Every click handler the scene names exists in the behaviour.
+for each $id, $node in $vol_nodes
+  for each $port in ["on_click", "on_change", "on_submit"]
+    if $node[$port] != nil then check(contains($on_names, $node[$port]), "the behaviour handles " .. $node[$port] .. " (" .. $id .. ")") end
+  end
+end
 print("scene-template-test: exact captures, models, caps, payloads and capabilities OK")

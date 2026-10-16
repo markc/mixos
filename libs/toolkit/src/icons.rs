@@ -143,9 +143,13 @@ icons! {
     ZoomOut => "zoom-out",
 }
 
-/// The icon stroke width for `theme`: metric `icon.stroke_width` in px on
+/// The icon stroke width for `theme`: the session's choice when one is set
+/// (see [`crate::theme::Overlay`]), else metric `icon.stroke_width` in px on
 /// Lucide's 24 px grid, else [`DEFAULT_STROKE`].
 pub fn stroke_width(theme: &Theme) -> f32 {
+    if let Some(stroke) = theme.overlay().stroke {
+        return stroke;
+    }
     theme
         .dictionary()
         .metrics

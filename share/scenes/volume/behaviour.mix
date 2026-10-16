@@ -1,0 +1,332 @@
+-- version: 0.1.0
+-- The volume popup: PipeWire's sinks, sources and application streams, as
+-- Plasma's audio applet shows them. The output and input cards set the
+-- default device's level (a segment bar and -/+ steps) and mute; their
+-- lists pick the default device (`pactl set-default-sink`, and PipeWire
+-- moves the streams that follow the default). The chosen stream gets the
+-- same level and mute controls. Every write is a pactl call, made only on a
+-- click the scene host relays; a Bus caller gets ui_only. After each write
+-- the whole state is read back, so a refused change shows the real level.
+-- A `pactl subscribe` stream (audio_watch) re-reads the snapshot on every
+-- batch (events are hints, state is truth). There is no polling fallback.
+$LIB = env("SCENES_LIB", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mixos/scenes/lib")
+$r = require($LIB .. "/runtime.mix")
+$m = require($LIB .. "/models.mix")
+$a = require($LIB .. "/audio.mix")
+$n = require($LIB .. "/network.mix")
+$ctx = $r.scene_context("volume")
+-- PipeWire lives in the login session's runtime dir, not the desktop's.
+$PW_RUNTIME = env("PIPEWIRE_RUNTIME_DIR", "/run/user/" .. to_string(uid()))
+-- Streams come and go with every app that plays a sound, so they are
+-- watched as well as devices.
+$FACILITIES = ["sink", "source", "sink-input", "server", "card"]
+$state = {ready: false, queued: false, sequence: 0, model: $m.volume(nil), snap: nil,
+  selected: nil, note: "", open: false,
+  watch: nil, started: 0, retry: 5, retrying: false, unavailable: false}
+
+fn republish()
+  if not $state.ready then return $r.failure("scene_not_ready", "Waiting for loader readiness") end
+  $state.model = $m.volume($state.snap, {selected: $state.selected, note: $state.note})
+  return $r.publish_model($ctx, $state.model)
+end
+
+-- A click relayed by the scene host; the broker sets `from` to the
+-- sender's authenticated name. Anything else is refused for writes.
+fn from_ui($event)
+  return type($event.headers) == "map" and $event.headers.from == $ctx.host
+end
+
+fn ui_only()
+  return $r.failure("ui_only", $m.text("hostd_ui_only"))
+end
+
+fn schedule()
+  $state.sequence = $state.sequence + 1
+  if $state.ready and not $state.queued then
+    $state.queued = true
+    emit $ctx.citizen refresh
+  end
+end
+
+fn refresh()
+  if not $state.ready then return $r.failure("scene_not_ready", "Waiting for loader readiness") end
+  $sequence = $state.sequence
+  $snap = $state.unavailable ? {ok: false, reason: "audio service unavailable"} : $a.snapshot($PW_RUNTIME)
+  if not $state.ready or $sequence != $state.sequence then return $r.failure("superseded", "A newer audio event replaced this snapshot") end
+  $state.snap = $snap
+  return republish()
+end
+
+-- A host without pactl (AUDIO_UNAVAILABLE) will never answer: the popup
+-- says so for this behaviour's life, with no retry timer. Only an I/O
+-- failure is retried (a local backoff).
+fn start_watch()
+  if $state.watch != nil or $state.unavailable then return end
+  if not has_builtin("audio_watch") then
+    eprint("volume: audio events unavailable: this mix has no audio_watch")
+    return
+  end
+  try
+    $state.watch = audio_watch({facilities: $FACILITIES, runtime_dir: $PW_RUNTIME})
+    $state.started = monotonic()
+  catch $message, $error
+    eprint("volume: audio_watch failed: " .. to_string($message))
+    if $error.code == "AUDIO_UNAVAILABLE" then
+      $state.unavailable = true
+    elif $error.code == "AUDIO_WATCH_IO" then
+      retry_watch()
+    end
+  end
+end
+
+-- PipeWire's server went away or is not up yet: subscribe again after a
+-- delay doubling to five minutes. A reconnect backoff, not a state poll.
+fn retry_watch()
+  if $state.retrying then return end
+  $state.retrying = true
+  try
+    task_start("audio.retry", "{}")
+  catch $message
+    $state.retrying = false
+    eprint("volume: audio retry not scheduled: " .. to_string($message))
+  end
+end
+
+on refresh async
+  $state.queued = false
+  $r.respond(refresh())
+end
+
+-- A closed batch from the live handle re-subscribes after the backoff; one
+-- from an older handle (already replaced) changes nothing.
+on audio.changed async
+  if len(keys($event.headers)) != 0 then return end
+  $batch = type($event.args) == "map" ? $event.args : {}
+  if type($batch.closed) == "map" then
+    eprint("volume: audio events ended: " .. to_string($batch.closed.message))
+    if $batch.watch != $state.watch then return end
+    try
+      audio_unwatch($batch.watch)
+    catch $e
+    end
+    $state.watch = nil
+    if monotonic() - $state.started >= $state.retry then $state.retry = 5 end
+    retry_watch()
+  end
+  schedule()
+end
+
+on audio.retry async
+  if len(keys($event.headers)) != 0 then return end
+  try
+    sleep($state.retry)
+    $state.retry = min($state.retry * 2, 300)
+  finally
+    $state.retrying = false
+  end
+  start_watch()
+  schedule()
+end
+
+-- Opening the popup re-reads too, and clears the last error line.
+on scenes.changed
+  $open = $n.popup_open($r.event_args($event), $ctx.name) ?? false
+  if $open and not $state.open then
+    $state.note = ""
+    schedule()
+  end
+  $state.open = $open
+end
+
+-- ── writes (pactl, on relayed clicks only) ──────────────────────────────
+
+-- The one write guard ($m.vol_writes_allowed on the last snapshot). Every
+-- write path checks it before building a pactl argv: level, step and mute
+-- through target(), a device row in pick_default(), and apply() again as
+-- the last line. While it is false, nothing is written anywhere.
+fn writable()
+  return $m.vol_writes_allowed($state.snap)
+end
+
+-- The device or stream a control acts on, from the last snapshot: the
+-- default device, or the chosen stream. nil (no write) unless writable().
+fn target($kind)
+  if not writable() then return nil end
+  $snap = $state.snap
+  if $kind == "out" then return $m.vol_default($snap.sinks) end
+  if $kind == "in" then return $m.vol_default($snap.sources) end
+  return $m.vol_stream_target($snap, $state.selected)
+end
+
+-- The pactl verbs per control: devices by name, streams by index.
+$VERBS = {out: ["set-sink-volume", "set-sink-mute"], in: ["set-source-volume", "set-source-mute"],
+  stream: ["set-sink-input-volume", "set-sink-input-mute"]}
+
+fn key_of($t, $kind)
+  return $kind == "stream" ? to_string($t.index) : $t.name
+end
+
+-- Run one write, then read everything back and publish: the model shows
+-- PipeWire's value whether the write took or not.
+fn apply($argv)
+  if not writable() then return republish() end
+  $w = $a.write($PW_RUNTIME, $argv)
+  $state.note = $w.ok ? "" : $m.text("vol_failed", {why: $w.message})
+  $state.sequence = $state.sequence + 1
+  $state.snap = $a.snapshot($PW_RUNTIME)
+  return republish()
+end
+
+-- A level for $kind's control. Up to 100 %, or up to the current level
+-- when PipeWire already reports it above 100 %, and never above 150 %
+-- ($a.MAX_LEVEL): a device at 200 % is written at most 150 %. The card keeps
+-- PipeWire's own value until the read-back.
+fn set_level($kind, $level)
+  $t = target($kind)
+  if $t == nil then return republish() end
+  return apply([$VERBS[$kind][0], key_of($t, $kind), $a.percent($level, min($a.MAX_LEVEL, max(100, $t.level)))])
+end
+
+fn nudge($kind, $delta)
+  $t = target($kind)
+  if $t == nil then return republish() end
+  return set_level($kind, $t.level + $delta)
+end
+
+fn toggle_mute($kind)
+  $t = target($kind)
+  if $t == nil then return republish() end
+  return apply([$VERBS[$kind][1], key_of($t, $kind), "toggle"])
+end
+
+-- A segment of a level bar: item {pct}.
+fn bar_click($event, $kind)
+  if not from_ui($event) then $r.respond(ui_only()); return end
+  $item = $r.event_args($event).item
+  $pct = type($item) == "map" ? $item.pct : nil
+  if type($pct) != "number" then $r.respond($r.failure("invalid_args", "item.pct must be a level")); return end
+  $r.respond(set_level($kind, $pct))
+end
+
+fn ui_step($event, $kind, $delta)
+  if not from_ui($event) then $r.respond(ui_only()); return end
+  $r.respond(nudge($kind, $delta))
+end
+
+fn ui_mute($event, $kind)
+  if not from_ui($event) then $r.respond(ui_only()); return end
+  $r.respond(toggle_mute($kind))
+end
+
+on vol_out_set async
+  bar_click($event, "out")
+end
+on vol_in_set async
+  bar_click($event, "in")
+end
+on vol_stream_set async
+  bar_click($event, "stream")
+end
+on vol_out_down async
+  ui_step($event, "out", -$m.VOL_STEP)
+end
+on vol_out_up async
+  ui_step($event, "out", $m.VOL_STEP)
+end
+on vol_in_down async
+  ui_step($event, "in", -$m.VOL_STEP)
+end
+on vol_in_up async
+  ui_step($event, "in", $m.VOL_STEP)
+end
+on vol_stream_down async
+  ui_step($event, "stream", -$m.VOL_STEP)
+end
+on vol_stream_up async
+  ui_step($event, "stream", $m.VOL_STEP)
+end
+on vol_out_mute async
+  ui_mute($event, "out")
+end
+on vol_in_mute async
+  ui_mute($event, "in")
+end
+on vol_stream_mute async
+  ui_mute($event, "stream")
+end
+
+-- A device row: make it the default. Rows are matched against the last
+-- snapshot by index, so only a listed device can be chosen. Guarded like
+-- every other write: no change while writable() is false.
+fn pick_default($event, $prefix, $list_key, $verb)
+  if not from_ui($event) then $r.respond(ui_only()); return end
+  if not writable() then $r.respond(republish()); return end
+  $id = $r.item_id($event)
+  if $id == nil or not starts_with($id, $prefix) then $r.respond($r.failure("invalid_args", "item.id must be a device row")); return end
+  $index = to_number(slice($id, length($prefix), length($id)))
+  $snap = $state.snap ?? {}
+  for each $d in $snap[$list_key] ?? []
+    if $d.index == $index then
+      if $d.default then $r.respond(republish()); return end
+      $r.respond(apply([$verb, $d.name])); return
+    end
+  end
+  $r.respond(republish())
+end
+
+on vol_output_pick async
+  pick_default($event, "sink_", "sinks", "set-default-sink")
+end
+on vol_input_pick async
+  pick_default($event, "source_", "sources", "set-default-source")
+end
+
+-- A stream row: give it the controls under the list. No write.
+on vol_stream_pick
+  if not from_ui($event) then $r.respond(ui_only()); return end
+  $id = $r.item_id($event)
+  if $id == nil or not starts_with($id, "si_") then $r.respond($r.failure("invalid_args", "item.id must be a stream row")); return end
+  $state.selected = to_number(slice($id, 3, length($id)))
+  $r.respond(republish())
+end
+
+on volume.open
+  $r.respond($r.popup($ctx, "open"))
+end
+on volume.close
+  $r.respond($r.popup($ctx, "close"))
+end
+on volume
+  $r.respond($r.popup($ctx, "toggle"))
+end
+-- Read-only state for agents and tests: the status line, the default
+-- devices' levels and the streams.
+on volume.state
+  $mod = $state.model
+  reply(0, json_encode({status: $mod.status, note: $mod.note,
+    output: $mod.has_out ? {name: $mod.out.name, level: $mod.out.level_text} : nil,
+    input: $mod.has_in ? {name: $mod.inp.name, level: $mod.inp.level_text} : nil,
+    streams: length($mod.streams)}))
+end
+on props.changed
+  $args = $r.event_args($event)
+  if not $state.ready and $args.path == "services.registered" then
+    $ready = $r.ready($ctx)
+    $state.ready = $ready.ok
+    if $state.ready then schedule() end
+  end
+end
+on bus.connected
+  if len(keys($event.headers)) != 0 then return end
+  $state.ready = false
+  $ready = $r.ready($ctx)
+  $state.ready = $ready.ok
+  schedule()
+end
+subscribe(env("NODED_SERVICE", "noded") .. ".props.changed")
+subscribe("scenes.changed")
+$ready = $r.ready($ctx)
+if not $ready.ok then raise("SCENE_READY", json_encode($ready.value)) end
+$state.ready = true
+start_watch()
+schedule()

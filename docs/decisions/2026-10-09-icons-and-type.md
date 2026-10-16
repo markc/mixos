@@ -26,7 +26,9 @@ Status: accepted 2026-10-09.
   500 Medium, 600 SemiBold). A light profile, with body text at 300, is a
   change to the design's weights and nothing else.
 - **Icon stroke is a design token.** The design metric `icon.stroke_width`
-  sets the stroke every icon is drawn with (default 2, Lucide's own), so a
+  sets the stroke every icon is drawn with (default 1.5, the approved
+  baseline; a session choice may override it, see
+  [session icon stroke and type](2026-10-14-session-icon-stroke-and-type.md)), so a
   lighter icon set accompanies a lighter type profile without new assets.
 - **Colour comes from the theme.** Icons take the colour of the text around
   them; no icon carries a colour of its own.

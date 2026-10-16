@@ -94,8 +94,8 @@ end
 -- markc/mixos): the desktop and the headless services, one tarball each.
 -- A catalogue file replaces this list; keep these entries in it to keep them.
 $DEFAULT_APPS = [
-  {name: "mixos-desktop", repo: "markc/mixos"},
-  {name: "mixos-server", repo: "markc/mixos"}
+  {name: "mixos-desktop", repo: "markc/mixos", category: "mixos-desktop"},
+  {name: "mixos-server", repo: "markc/mixos", category: "mixos-server"}
 ]
 
 fn load_catalogue($path)
@@ -105,18 +105,33 @@ fn load_catalogue($path)
     raise("CATALOGUE", $path .. ": expected {schema: 1, apps: [...]}")
   end
   $seen = []
+  $categories = $doc.categories ?? {}
+  if type($categories) != "map" then raise("CATALOGUE", $path .. ": categories must be a map") end
+  for $category in keys($categories)
+    $label = $categories[$category]
+    if not contains(["mixos-desktop", "mixos-server", "creative", "other"], $category) or type($label) != "string" or trim($label) == "" or len($label) > 64 or re_match($label, "[\\x00-\\x1f\\x7f]") then
+      raise("CATALOGUE", $path .. ": categories need supported group keys and non-empty labels of at most 64 characters without control characters")
+    end
+  end
+  $out = []
   for $a in $doc.apps
     if type($a) != "map" or not valid_name($a.name) or type($a.repo) != "string" or not re_match($a.repo, $REPO_RE) then
       raise("CATALOGUE", $path .. ": each app needs a name matching " .. $NAME_RE .. " and a repo owner/name: " .. json_encode($a))
     end
     if $a.asset != nil and type($a.asset) != "string" then raise("CATALOGUE", $path .. ": " .. $a.name .. ".asset must be a regex string") end
+    if $a.category != nil and not contains(["mixos-desktop", "mixos-server", "creative", "other"], $a.category) then
+      raise("CATALOGUE", $path .. ": " .. $a.name .. ".category must be mixos-desktop, mixos-server, creative or other")
+    end
     if $a.exec_wrapper != nil and not valid_wrapper($a.exec_wrapper) then
       raise("CATALOGUE", $path .. ": " .. $a.name .. ".exec_wrapper must be a list of 1 to 32 strings without control characters, the first an absolute path without =")
     end
     if contains($seen, $a.name) then raise("CATALOGUE", $path .. ": duplicate app " .. $a.name) end
     push($seen, $a.name)
+    -- Project labels from the catalogue, never from individual app entries.
+    $a.category_label = $categories[$a.category ?? ""] ?? nil
+    push($out, $a)
   end
-  return $doc.apps
+  return $out
 end
 
 fn _github_token()
@@ -874,7 +889,7 @@ fn row($ctx, $app)
     elif $inst == nil then "not installed"
     elif $inst == $latest then "current"
     else "update" end
-  return {app: $app.name, repo: $app.repo, installed: $inst, latest: $latest,
+  return {app: $app.name, repo: $app.repo, category: $app.category, category_label: $app.category_label, installed: $inst, latest: $latest,
     published: if $st.latest != nil then slice($st.latest.published ?? "", 0, 10) else nil end,
     checked: $st.checked, status: $status}
 end

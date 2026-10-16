@@ -196,11 +196,27 @@ fn capture_pen_key(
     true // swallow every key while capturing (no forward, no shortcuts)
 }
 
+/// `COMPD_KEY_TRACE=1` prints one `key-trace` line per key edge that reaches
+/// the seat, with its keycode, state, keysyms and whether it went to the
+/// focused client. Read once per process; lines go to stderr, which the
+/// session unit sends to the journal. Off by default: it logs every key.
+fn key_trace_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("COMPD_KEY_TRACE").is_some_and(|v| v == "1"))
+}
+
 pub fn input_received<I: InputBackend>(event: &I::KeyboardKeyEvent, _loop: &mut Loop) {
     let serial = SERIAL_COUNTER.next_serial();
     let time = Event::time_msec(event);
     let key_state = event.state();
     let key_code = event.key_code();
+    if key_trace_enabled() {
+        eprintln!(
+            "key-trace raw code={} state={:?} time={time}",
+            key_code.raw(),
+            key_state,
+        );
+    }
 
     {
         // World input bus first (phase 3); Pass falls through to legacy routing.
@@ -286,14 +302,24 @@ pub fn input_received<I: InputBackend>(event: &I::KeyboardKeyEvent, _loop: &mut 
         return;
     }
 
-    if should_forward::<I>(
+    let forward = should_forward::<I>(
         _loop,
         key_code.raw(),
         keysym,
         shortcut_sym,
         key_state,
         &modifiers,
-    ) {
+    );
+    if key_trace_enabled() {
+        eprintln!(
+            "key-trace seat code={} state={:?} keysym={:#x} shortcut={:#x} forward={forward}",
+            key_code.raw(),
+            key_state,
+            keysym.raw(),
+            shortcut_sym.raw(),
+        );
+    }
+    if forward {
         keyboard.input_forward(
             &mut _loop.state,
             key_code,

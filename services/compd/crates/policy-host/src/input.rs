@@ -707,6 +707,20 @@ fn move_agent_pointer(
     Ok(())
 }
 
+/// One agent pointer step of a `comp.motion.run` glide, to output-local
+/// `(x, y)` on `output` (the default output when `None`). It is the agent
+/// seat's own output move, so a grab or an unknown output refuses here as it
+/// would for a single `comp.input.pointer.move`.
+pub fn glide_step(lp: &mut Loop, output: Option<&str>, x: f64, y: f64) -> Result<(), ControlReply> {
+    let target = PointerMoveTarget::Output {
+        output: output.map(str::to_string),
+        x,
+        y,
+    };
+    let time = now_ms(lp);
+    move_agent_pointer(lp, &target, time)
+}
+
 /// Where an agent move lands and what it hits,
 /// without moving anything (the delivery and the coalescing preview share
 /// it, so a discarded preview never changes focus).

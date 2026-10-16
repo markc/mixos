@@ -207,6 +207,7 @@ fn tabs(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
                 meta,
                 dirty: mirror.is_some_and(|m| m.meta().dirty),
                 progress: opening.then_some(0.0),
+                marker: None,
             }
         })
         .collect();

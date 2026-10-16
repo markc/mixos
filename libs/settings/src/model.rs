@@ -76,9 +76,28 @@ pub struct Appearance {
     /// Where a client-side title bar puts its captions: `right` or `left`.
     #[serde(skip_serializing_if = "is_default_caption_side")]
     pub caption_side: String,
+    /// The session icon stroke on Lucide's 24-unit grid, in quarter steps
+    /// from [`ICON_STROKE_MIN`] to [`ICON_STROKE_MAX`]. None is the design's
+    /// own `icon.stroke_width` token. Omitted at the default (see above).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_stroke: Option<f64>,
+    /// A UI family name, or None for the bundled Inter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_family: Option<String>,
+    /// A CSS weight, 100 to 900 in steps of 100, or None for the scheme's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_weight: Option<u16>,
+    /// A monospace family name, or None for the bundled JetBrains Mono.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mono_family: Option<String>,
     /// None selects the profile-pinned package source; Some is complete strict data.
     pub source: Option<String>,
 }
+
+/// The icon stroke range, in grid units, and its step.
+pub const ICON_STROKE_MIN: f64 = 1.0;
+pub const ICON_STROKE_MAX: f64 = 3.0;
+pub const ICON_STROKE_STEP: f64 = 0.25;
 impl Default for Appearance {
     fn default() -> Self {
         Self {
@@ -88,6 +107,10 @@ impl Default for Appearance {
             contrast: "normal".into(),
             decorations: "csd".into(),
             caption_side: "right".into(),
+            icon_stroke: None,
+            font_family: None,
+            font_weight: None,
+            mono_family: None,
             source: None,
         }
     }
@@ -120,7 +143,7 @@ pub(crate) fn integer_u32(value: f64) -> Option<u32> {
     (value.is_finite() && (0.0..=f64::from(u32::MAX)).contains(&value) && value.fract() == 0.0)
         .then_some(value as u32)
 }
-fn deserialize_integer_u32<'de, D: serde::Deserializer<'de>>(
+pub(crate) fn deserialize_integer_u32<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<u32, D::Error> {
     integer_u32(f64::deserialize(deserializer)?)
@@ -168,6 +191,10 @@ pub struct Desktop {
     /// so a profile written before it re-serialises as it was written.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub keymaps: crate::keymap::Keymaps,
+    /// The terminal's preferences ([`crate::terminal`]). Omitted at its
+    /// defaults, as `keymaps` is while empty.
+    #[serde(skip_serializing_if = "crate::terminal::Terminal::is_default")]
+    pub terminal: crate::terminal::Terminal,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -244,6 +271,9 @@ pub struct Summary {
     /// The person's key bindings, per application; omitted while empty.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub keymaps: crate::keymap::Keymaps,
+    /// The terminal's preferences; omitted at their defaults.
+    #[serde(default, skip_serializing_if = "crate::terminal::Terminal::is_default")]
+    pub terminal: crate::terminal::Terminal,
 }
 
 /// The summary schema; independent of the snapshot's [`crate::SCHEMA`].
@@ -263,6 +293,7 @@ impl Summary {
             appearance,
             custom_source,
             keymaps: snapshot.desktop.keymaps.clone(),
+            terminal: snapshot.desktop.terminal.clone(),
         }
     }
 }
@@ -323,6 +354,15 @@ pub struct Effective {
         skip_serializing_if = "is_default_caption_side"
     )]
     pub caption_side: String,
+    // The session type and stroke choices, omitted when unset (see above).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_stroke: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_family: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_weight: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mono_family: Option<String>,
     pub ui: CommonUi,
     pub design: design::DesignReadProjection,
     pub provenance: BTreeMap<String, String>,

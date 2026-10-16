@@ -1,0 +1,14 @@
+{"info":{"server_name":"PulseAudio (on PipeWire 1.6.9)","default_sink_name":"alsa_output.usb-Example_Interface-00.pro-output-0","default_source_name":"alsa_input.usb-Example_Interface-00.pro-input-0"},
+"sinks":[
+{"index":56,"state":"SUSPENDED","name":"alsa_output.usb-Example_Interface-00.pro-output-0","description":"Example Interface Pro","mute":false,"volume":{"aux0":{"value":45875,"value_percent":"70%","db":"-9.29 dB"},"aux1":{"value":42598,"value_percent":"65%","db":"-11.23 dB"}},"properties":{"device.class":"sound","media.class":"Audio/Sink"}},
+{"index":58,"state":"IDLE","name":"alsa_output.pci-0000_00_1f.3.analog-stereo","description":"Built-in Audio Analog Stereo","mute":true,"volume":{"front-left":{"value":81920,"value_percent":"125%","db":"5.81 dB"},"front-right":{"value":81920,"value_percent":"125%","db":"5.81 dB"}},"properties":{"device.class":"sound","media.class":"Audio/Sink"}}
+],
+"sources":[
+{"index":57,"name":"alsa_output.usb-Example_Interface-00.pro-output-0.monitor","description":"Monitor of Example Interface Pro","mute":false,"volume":{"aux0":{"value":65536,"value_percent":"100%","db":"0.00 dB"}},"properties":{"device.class":"monitor"}},
+{"index":59,"name":"alsa_input.usb-Example_Interface-00.pro-input-0","description":"Example Interface Pro","mute":false,"volume":{"aux0":{"value":65536,"value_percent":"100%","db":"0.00 dB"},"aux1":{"value":65536,"value_percent":"100%","db":"0.00 dB"}},"properties":{"device.class":"sound"}},
+{"index":63,"name":"alsa_input.pci-0000_00_1f.3.analog-stereo","description":"Built-in Audio Analog Stereo","mute":true,"volume":{"front-left":{"value":32768,"value_percent":"50%","db":"-18.06 dB"}},"properties":{"device.class":"sound"}}
+],
+"sink_inputs":[
+{"index":4514,"sink":56,"corked":false,"mute":false,"volume":{"front-left":{"value":45875,"value_percent":"70%","db":"-9.29 dB"},"front-right":{"value":45875,"value_percent":"70%","db":"-9.29 dB"}},"properties":{"application.name":"Example Browser","media.name":"Example video","node.name":"Example Browser"}},
+{"index":4600,"sink":56,"corked":false,"mute":true,"volume":{"mono":{"value":32768,"value_percent":"50%","db":"-18.06 dB"}},"properties":{"node.name":"example-player"}}
+]}

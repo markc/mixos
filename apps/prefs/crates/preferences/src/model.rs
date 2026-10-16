@@ -48,6 +48,12 @@ pub enum RowState {
 pub struct AppRow {
     pub app: String,
     pub repo: String,
+    /// Optional catalogue section; old releases services omit this field.
+    #[serde(default)]
+    pub category: Option<String>,
+    /// Optional catalogue display label for the category.
+    #[serde(default)]
+    pub category_label: Option<String>,
     pub installed: Option<String>,
     pub latest: Option<String>,
     pub published: Option<String>,
@@ -101,7 +107,7 @@ pub struct Notes {
 
 /// Every verb the engine answers itself. The window-level verbs
 /// (`prefs.ui.*`, `prefs.window*`) belong to the toolkit drive layer.
-pub const VERBS: [&str; 15] = [
+pub const VERBS: [&str; 16] = [
     "HELP",
     "app.describe",
     "prefs.ping",
@@ -111,6 +117,7 @@ pub const VERBS: [&str; 15] = [
     "prefs.execute",
     "prefs.quit",
     "prefs.panel",
+    "prefs.section",
     "prefs.select",
     "prefs.apps",
     "prefs.appearance",
@@ -131,6 +138,7 @@ pub fn describe() -> Value {
         {"name":"prefs.execute","args":{"id":"string"},"description":"Run one app command by id, as its menu item, button or shortcut would (file.quit, view.refresh, view.panel.applications, view.panel.appearance, appearance.apply, appearance.revert, appearance.keep, appearance.recheck, apps.check, apps.update_all, apps.install, apps.rollback, apps.remove, help.shortcuts, help.about); the operation it starts is visible in prefs.info","read_only":false},
         {"name":"prefs.quit","description":"Close once the operation in progress finishes","read_only":false},
         {"name":"prefs.panel","args":{"name":"\"applications\" or \"appearance\""},"description":"Show a panel","read_only":false},
+        {"name":"prefs.section","args":{"name":"themes, fonts, wallpapers, terminal, mixos-desktop, mixos-server, creative or other"},"description":"Select a preference section and expand its parent in the navigation tree","read_only":false},
         {"name":"prefs.select","args":{"app":"an app name from prefs.apps"},"description":"Select an app in the Applications panel and load its release notes","read_only":false},
         {"name":"prefs.apps","description":"The Applications panel's rows, selection and notes","read_only":true},
         {"name":"prefs.appearance","description":"The Appearance panel: the session look settingsd holds (current), the unapplied edits (draft, and the axes edited), axes another writer changed under them (conflicts: nothing applies until appearance.keep or appearance.revert), what the window shows, the revision read, and whether an apply is in flight or uncertain","read_only":true},
@@ -177,6 +185,8 @@ mod tests {
         let row = AppRow {
             app: "a".into(),
             repo: "o/a".into(),
+            category: None,
+            category_label: None,
             installed: Some("1.0".into()),
             latest: None,
             published: None,

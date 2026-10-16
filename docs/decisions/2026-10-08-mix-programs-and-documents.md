@@ -62,7 +62,7 @@ app-local `config/macros/` and global `/opt/mixos/mix` hold executable macros;
 documents remain in their owning component/app directories.
 
 The [file-family contract](../spec/mix/2026-10-08-programs-and-documents.md)
-specifies boundaries and acceptance. The [Mix guide](../mix.md) distinguishes
+specifies boundaries and acceptance. The [Mix guide](../mix/README.md) distinguishes
 current behaviour from the target. This decision updates the source-layout
 file conventions and the macro contract's planned data-fixture spelling while
 preserving their existing compatibility obligations.

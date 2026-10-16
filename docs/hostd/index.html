@@ -283,12 +283,28 @@ from the Bus.</p>
 <tr><td><code>net.link.apply</code></td><td>write</td><td>configure one link through networkd, rolled back unless it comes up</td></tr>
 <tr><td><code>hostd.undo</code></td><td>write</td><td>put back what an applied change replaced; needs no grant of its own (see below)</td></tr>
 <tr><td><code>net.wg.apply</code></td><td>write</td><td>configure a WireGuard link through networkd, rolled back unless it comes up and its peers complete a handshake</td></tr>
-<tr><td><code>desk.restart</code></td><td>write</td><td>restart the desk machine that the caller's grant names (<code>machinectl reboot</code>); the host stays up; no undo</td></tr>
-<tr><td><code>desk.stop</code></td><td>write</td><td>power off the desk machine that the caller's grant names (<code>machinectl poweroff</code>); the host stays up; no undo</td></tr>
+<tr><td><code>desk.restart</code></td><td>write</td><td>restart the desk machine that the caller's grant names, session and console included (starts <code>desk-restart@DESK.service</code>); the host stays up; no undo</td></tr>
+<tr><td><code>desk.stop</code></td><td>write</td><td>power off the desk machine that the caller's grant names and give the console back (starts <code>desk-stop@DESK.service</code>); the host stays up; no undo</td></tr>
 </tbody></table>
 <p>The desk verbs take no machine name. A grant gives the caller one desk through
 its <code>desks</code> limit, which must name exactly one machine. A grant with no desk,
-or with two, is refused.
+or with two, is refused.</p>
+<p>A desk power action is a cycle that outlives the caller: a restart stops the
+desk's session, reboots the machine, starts the session again and switches
+the console back to the desk's VT if it was in front (returning it to the
+previous VT if the compositor does not come up); a stop returns the console
+to the VT that was in front, stops the session and powers the machine off.
+hostd runs none of these steps. It starts the host's template unit for the
+action with <code>systemctl start --no-block</code>, records a receipt that the cycle
+started, and answers. The host installs <code>desk-restart@.service</code> and
+<code>desk-stop@.service</code>; the unit's journal says how the cycle ended. If either
+unit is missing, the verb is refused <code>unit_failed</code>.</p>
+<p>Only hostd on the host can do this. A hostd running inside a desk refuses
+both verbs <code>in_container</code>. The desk reaches the host's hostd through its
+socket bound into the machine, so the grant names the caller by its cgroup as
+the host sees it, under the machine's payload:
+<code>/machine.slice/systemd-nspawn@DESK.service/payload/system.slice/system-scenes.slice/scenes@VT.service/*</code>.
+Every refusal is logged at warn under <code>hostd::audit</code>.
 | <code>net.wifi.scan</code> | write | scan for Wi-Fi networks on one device (iwd). It changes nothing durable, but it drives the radio, so it needs a grant |
 | <code>net.wifi.connect</code> | write | connect a Wi-Fi device to a network (iwd), put back unless connected in time |</p>
 <p><code>host.info</code> is also published as the retained topic <code>hostd.info</code>.</p>

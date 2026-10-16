@@ -287,7 +287,7 @@ async fn serve(
                 name,
                 vec![(desk::LIMIT.to_owned(), desk)],
                 move |host, origin, grant| async move {
-                    desk::act(&host.state, &verb, &run_desk, &grant, &origin).await
+                    desk::act(&host.root, &host.state, &verb, &run_desk, &grant, &origin).await
                 },
             )
             .await
@@ -664,12 +664,14 @@ fn gate(
 
 /// One journald record per call. Bodies are not logged: write verbs will
 /// add the fields they declare non-secret.
+/// Every request, with its outcome. Refusals log at warn, so a refused
+/// write (a power click among them) stands out in the journal.
 fn audit(verb: &str, origin: &Origin, result: &Result<Value, Value>) {
     let origin = serde_json::to_string(origin).unwrap_or_default();
     match result {
         Ok(_) => tracing::info!(target: "hostd::audit", verb, %origin, outcome = "ok"),
         Err(error) => {
-            tracing::info!(target: "hostd::audit", verb, %origin, outcome = "refused", %error)
+            tracing::warn!(target: "hostd::audit", verb, %origin, outcome = "refused", %error)
         }
     }
 }

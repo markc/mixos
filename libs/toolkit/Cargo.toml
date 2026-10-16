@@ -20,6 +20,7 @@ contract = "none"
 mod_module_files = "deny"
 
 [dependencies]
+assets.workspace = true
 config.workspace = true
 design.workspace = true
 egui.workspace = true

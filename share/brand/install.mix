@@ -1,28 +1,85 @@
 #!/opt/mixos/bin/mix
--- version: 0.1.1
+-- version: 0.2.1
 -- Install the MixOS brand icons into the shared icon tree.
 -- Default root: $MIXOS_SHARE, otherwise /opt/mixos/share. --root for a sandbox.
 --
---   icons/hicolor/symbolic/apps/dev.mixos-symbolic.svg
---     The transparent mark. A *-symbolic icon is drawn in the theme's ink,
---     so the panel launcher follows light and dark mode from this one file.
---   icons/hicolor/index.theme (hicolor-index.theme), when none exists
+--   mix share/brand/install.mix [--root /absolute/share]
+--   mix share/brand/install.mix --check    validate the sources; write nothing
 --
+--   icons/{mixos,hicolor}/scalable/apps/dev.mixos.svg
+--     The launcher icon (logos/alien-cyclops.svg), full colour. It is not
+--     *-symbolic on purpose: a symbolic icon is drawn in the theme ink and
+--     would lose the red eye. The panel and the top bar ask for dev.mixos first.
+--   icons/{mixos,hicolor}/symbolic/apps/dev.mixos-symbolic.svg
+--     The transparent M. A *-symbolic icon is drawn in the theme's ink,
+--     so it follows light and dark mode from this one file.
+--   icons/hicolor/index.theme (hicolor-index.theme), when none exists
+--   icons/mixos/index.theme (../icons/index.theme), when none exists
+--
+-- Either order with share/icons/install.mix works: that installer publishes
+-- the same mixos index.theme (which lists scalable/apps and symbolic/apps) and
+-- never touches files it does not own, so it leaves these icons in place.
 -- The session must have the root in XDG_DATA_DIRS for icon lookup to find it.
 
-$g = getopt(args(), {help: {short: "h"}, root: {arg: true}})
+$g = getopt(args(), {help: {short: "h"}, root: {arg: true}, check: {}})
 if len($g.errors) != 0 or len($g.rest) != 0 then
   raise("BRAND_ARGS", "Unexpected arguments: " .. join(concat($g.errors, $g.rest), "; "))
 end
 if $g.opts.help then
-  print("usage: mix share/brand/install.mix [--root /absolute/share]")
+  print("usage: mix share/brand/install.mix [--root /absolute/share] [--check]")
   exit(0)
 end
 $root = $g.opts.root ?? env("MIXOS_SHARE", "/opt/mixos/share")
-if not starts_with($root, "/") or $root == "/" then
+if not $g.opts.check and (not starts_with($root, "/") or $root == "/") then
   raise("BRAND_ROOT", "Destination must be an absolute share directory")
 end
 $brand = dirname(realpath($0))
+
+fn check_svg($name, $svg)
+  -- One root element with a viewBox, and nothing that loads or runs anything.
+  if count_of($svg, '<svg') != 1 then raise("BRAND_SVG", $name .. ": needs exactly one <svg> element") end
+  if count_of($svg, 'viewBox="') != 1 then raise("BRAND_SVG", $name .. ": needs one viewBox") end
+  for each $banned in ['<script', '<!ENTITY', '<!DOCTYPE', '<image', '<style', 'href', '<foreignObject']
+    if count_of($svg, $banned) != 0 then raise("BRAND_SVG", $name .. ": contains " .. $banned) end
+  end
+end
+
+fn check_index($name, $text, $want)
+  -- The theme index must list every directory this installer writes into.
+  $ini = ini_parse($text)
+  if not has_key($ini, "Icon Theme") then raise("BRAND_INDEX", $name .. " has no [Icon Theme] section") end
+  $dirs = split(get_or($ini["Icon Theme"], "Directories", ""), ",")
+  for each $d in $want
+    if not contains($dirs, $d) or not has_key($ini, $d) then
+      raise("BRAND_INDEX", $name .. " does not declare " .. $d)
+    end
+  end
+end
+
+$icons = {
+  "icons/hicolor/scalable/apps/dev.mixos.svg": "logos/alien-cyclops.svg",
+  "icons/mixos/scalable/apps/dev.mixos.svg": "logos/alien-cyclops.svg",
+  "icons/hicolor/symbolic/apps/dev.mixos-symbolic.svg": "logos/mixos-black-transparent.svg",
+  "icons/mixos/symbolic/apps/dev.mixos-symbolic.svg": "logos/mixos-black-transparent.svg"
+}
+$INDEX_DIRS = ["scalable/apps", "symbolic/apps"]
+-- The mascot is pinned: a changed file must change this hash on purpose.
+$PINNED = {"logos/alien-cyclops.svg": "1bccb2791c607d0a9bf3c72532b1d5dd5162b97a67cd2da2a1becd94a0fd2d13"}
+$hicolor_src = read_file($brand .. "/hicolor-index.theme")
+$mixos_src = read_file($brand .. "/../icons/index.theme")
+check_index("hicolor-index.theme", $hicolor_src, $INDEX_DIRS)
+check_index("../icons/index.theme", $mixos_src, $INDEX_DIRS)
+for each $src in sort(values($icons))
+  check_svg($src, read_file($brand .. "/" .. $src))
+  if has_key($PINNED, $src) and hash_file($brand .. "/" .. $src, "sha256") != $PINNED[$src] then
+    raise("BRAND_HASH", $src .. " does not match its pinned sha256")
+  end
+end
+if $g.opts.check then
+  print("brand: " .. to_string(len(keys($icons))) .. " icons and 2 theme indexes validated; nothing written")
+  exit(0)
+end
+
 $theme=$root .. "/icons/hicolor"
 -- A self-contained image need not have a distro-owned hicolor index, so
 -- write one that declares the standard application directories: icon lookup
@@ -34,27 +91,32 @@ $old_hicolor = "[Icon Theme]\nName=Hicolor\nDirectories=symbolic/apps\n\n[symbol
 $hicolor_index = $theme .. "/index.theme"
 if not is_file($hicolor_index) or read_file($hicolor_index) == $old_hicolor then
   mkdir($theme,{parents:true})
-  write_atomic($hicolor_index,read_file($brand .. "/hicolor-index.theme"),{mode:0o644})
+  write_atomic($hicolor_index,$hicolor_src,{mode:0o644})
   print("installed " .. $hicolor_index)
 end
 $native_theme=$root .. "/icons/mixos"
 if not is_file($native_theme .. "/index.theme") then
   mkdir($native_theme,{parents:true})
-  write_atomic($native_theme .. "/index.theme",read_file($brand .. "/../icons/index.theme"),{mode:0o644})
+  write_atomic($native_theme .. "/index.theme",$mixos_src,{mode:0o644})
+  print("installed " .. $native_theme .. "/index.theme")
 end
-$icons = {
-  "icons/hicolor/symbolic/apps/dev.mixos-symbolic.svg": "logos/mixos-black-transparent.svg",
-  "icons/mixos/symbolic/apps/dev.mixos-symbolic.svg": "logos/mixos-black-transparent.svg"
-}
 for each $dest in sort(keys($icons))
   $src = $brand .. "/" .. $icons[$dest]
   $path = $root .. "/" .. $dest
-  mkdir(dirname($path))
+  mkdir(dirname($path),{parents:true})
   if is_file($path) and hash_file($path, "sha256") == hash_file($src, "sha256") then
     print("unchanged " .. $path)
   else
     copy($src, $path)
     chmod($path, 0o644)
     print("installed " .. $path)
+  end
+end
+-- An existing index that omits a directory written above hides that icon.
+for each $index in [$hicolor_index, $native_theme .. "/index.theme"]
+  try
+    check_index($index, read_file($index), $INDEX_DIRS)
+  catch $message
+    eprint("warning: " .. $message .. "; the icons there are not found until it does")
   end
 end

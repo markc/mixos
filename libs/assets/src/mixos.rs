@@ -22,6 +22,26 @@ pub const XDG_SUBDIR: &str = "mixos/assets";
 /// The subdirectory under the share directory.
 pub const SHARE_SUBDIR: &str = "assets";
 
+/// The embedded JetBrains Mono face nearest the requested CSS weight.
+/// Light (300), Regular (400) and Medium (500) share the toolkit's cleared
+/// source files. Midpoint ties choose the heavier face.
+pub fn mono_face(weight: u16) -> (&'static str, &'static [u8]) {
+    match weight {
+        0..=349 => (
+            "JetBrainsMono-Light",
+            include_bytes!("../../toolkit/assets/fonts/JetBrainsMono-Light.ttf"),
+        ),
+        350..=449 => (
+            "JetBrainsMono-Regular",
+            include_bytes!("../../toolkit/assets/fonts/JetBrainsMono-Regular.ttf"),
+        ),
+        _ => (
+            "JetBrainsMono-Medium",
+            include_bytes!("../../toolkit/assets/fonts/JetBrainsMono-Medium.ttf"),
+        ),
+    }
+}
+
 /// The MixOS lookup, from the process environment.
 pub fn lookup() -> Lookup {
     lookup_in(&XdgData::current(), &config::path(Dir::Share))
