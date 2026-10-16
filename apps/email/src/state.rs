@@ -774,7 +774,10 @@ enum CredentialOp {
         password: Option<String>,
     },
     /// `email.account.password.set` with a password.
-    Password { password: String, reply: Option<u64> },
+    Password {
+        password: String,
+        reply: Option<u64>,
+    },
     /// `email.account.password.set` with an empty password.
     Forget { reply: u64 },
 }
@@ -1207,7 +1210,11 @@ impl State {
                 address: view.entry.email.clone(),
             });
         }
-        if self.form.as_ref().is_some_and(|f| form_account(f) == view.entry.id) {
+        if self
+            .form
+            .as_ref()
+            .is_some_and(|f| form_account(f) == view.entry.id)
+        {
             self.form_note = Some(crate::label("form-account-changed"));
         }
     }
@@ -1419,7 +1426,9 @@ impl State {
             self.mark(id);
         }
         self.reconcile();
-        let then = holds.clone().map_or(AfterSave::Nothing, AfterSave::Credential);
+        let then = holds
+            .clone()
+            .map_or(AfterSave::Nothing, AfterSave::Credential);
         if forgot || self.unsaved.contains_key(id) {
             self.save_secrets_then(reply.map(|reply| (reply, body)), then);
         } else {
@@ -5589,7 +5598,10 @@ pub(crate) mod tests {
         let second = state.secrets_snapshot().0;
         assert!(second > first);
         state.secrets_saved(ticket, first, Ok(true));
-        assert!(!state.unsaved.contains_key("a"), "pw-1 was in the saved snapshot");
+        assert!(
+            !state.unsaved.contains_key("a"),
+            "pw-1 was in the saved snapshot"
+        );
         assert!(state.unsaved.contains_key("b"), "pw-2 is not durable yet");
         let work = state.take_work();
         land(&mut state, &work, Ok(true));
@@ -5693,7 +5705,10 @@ pub(crate) mod tests {
         state.set_settings(next);
         state.take_work();
         state.apply_ui(UiEvent::FormSubmit(None));
-        assert!(writes(&mut state).is_empty(), "no delete through the new server");
+        assert!(
+            writes(&mut state).is_empty(),
+            "no delete through the new server"
+        );
     }
 
     /// Round 4, #21: the migration (and its password lock) is not finished
@@ -5767,7 +5782,11 @@ pub(crate) mod tests {
         assert!(state.take_migrated());
         state.migration_rewritten(Err("read-only file system".into()));
         assert!(state.migrating() && state.migration_locks("legacy"));
-        assert!(state.status.contains("read-only file system"), "{}", state.status);
+        assert!(
+            state.status.contains("read-only file system"),
+            "{}",
+            state.status
+        );
         // A later confirmation for a stopped migration changes nothing.
         state.migration_rewritten(Ok(true));
         assert!(state.migrating());
@@ -5811,11 +5830,7 @@ pub(crate) mod tests {
         settings_ticket(&mut state);
         state.set_password("a", "pw-2", Some(2));
         state.query("a".into(), 3, crate::verbs::Query::Mailboxes, Then::Answer);
-        state.write_server(
-            "a".into(),
-            Some(4),
-            Write::DeleteMailbox { id: "m".into() },
-        );
+        state.write_server("a".into(), Some(4), Write::DeleteMailbox { id: "m".into() });
         state.take_work();
         state.close_out();
         let codes: Vec<(u64, String)> = state
