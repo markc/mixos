@@ -409,7 +409,7 @@ never waits on them.</p>
 <tr><td><code>email.mode {name}</code>, <code>email.refresh {account?}</code></td><td>intent</td><td>switch surface; fetch again (a failed account reconnects)</td></tr>
 <tr><td><code>email.account.set {id?, name, url, email, password?, ca_path?, enabled?, signature?}</code></td><td>intent</td><td>create or update in settingsd; answers <code>{id}</code> once settingsd accepts</td></tr>
 <tr><td><code>email.account.remove {id}</code>, <code>email.account.default {id}</code></td><td>intent</td><td>through settingsd, fenced</td></tr>
-<tr><td><code>email.account.password.set {id, password}</code></td><td>intent</td><td>write-only: the secrets file, then reconnect</td></tr>
+<tr><td><code>email.account.password.set {id, password}</code></td><td>intent</td><td>write-only: the secrets file, then reconnect; an empty password forgets it for any account id, even one settingsd no longer holds (<code>{forgotten}</code>)</td></tr>
 <tr><td><code>email.account.connect {id}</code>, <code>email.account.select {id}</code></td><td>intent</td><td>reconnect; show</td></tr>
 <tr><td><code>email.mailbox.select/create/rename/delete</code></td><td>intent</td><td><code>create</code> answers <code>{id}</code></td></tr>
 <tr><td><code>email.open {id}</code></td><td>intent</td><td>show an email in the reader; answers once loaded</td></tr>

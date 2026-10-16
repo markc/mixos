@@ -46,9 +46,16 @@ impl ContactDraft {
             "uid": uid,
             "addressBookId": address_book,
             "name": { "full": self.name },
-            "emails": numbered("e", &self.emails, |address| json!({ "address": address })),
-            "phones": numbered("p", &self.phones, |number| json!({ "number": number })),
         });
+        // RFC 9553 §1.4.1: an empty map is omitted, never sent as {}.
+        let emails = numbered("e", &self.emails, |address| json!({ "address": address }));
+        if !is_empty_map(&emails) {
+            card["emails"] = emails;
+        }
+        let phones = numbered("p", &self.phones, |number| json!({ "number": number }));
+        if !is_empty_map(&phones) {
+            card["phones"] = phones;
+        }
         if let Some(organization) = non_empty(self.organization.as_deref()) {
             card["organizations"] = organization_map(organization);
         }
@@ -66,11 +73,13 @@ impl ContactPatch {
         if let Some(name) = &self.name {
             patch["name"] = json!({ "full": name });
         }
+        // A list that leaves nothing clears the property (null): RFC 9553
+        // §1.4.1 forbids an empty map.
         if let Some(emails) = &self.emails {
-            patch["emails"] = numbered("e", emails, |address| json!({ "address": address }));
+            patch["emails"] = or_null(numbered("e", emails, |address| json!({ "address": address })));
         }
         if let Some(phones) = &self.phones {
-            patch["phones"] = numbered("p", phones, |number| json!({ "number": number }));
+            patch["phones"] = or_null(numbered("p", phones, |number| json!({ "number": number })));
         }
         if let Some(organization) = &self.organization {
             patch["organizations"] = match non_empty(Some(organization)) {
@@ -95,6 +104,16 @@ fn numbered(prefix: &str, values: &[String], entry: impl Fn(&str) -> Value) -> V
         .map(|(index, value)| (format!("{prefix}{}", index + 1), entry(value)))
         .collect();
     Value::Object(entries)
+}
+
+/// Whether `value` is a map with no entries.
+fn is_empty_map(value: &Value) -> bool {
+    value.as_object().is_some_and(serde_json::Map::is_empty)
+}
+
+/// `value`, or `null` when it is an empty map.
+fn or_null(value: Value) -> Value {
+    if is_empty_map(&value) { Value::Null } else { value }
 }
 
 /// The one-entry `organizations` map JSContact gives a single name.
@@ -311,6 +330,49 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    /// RFC 9553 §1.4.1: a create with no (or only blank) emails or phones
+    /// omits the map rather than sending `{}`.
+    #[test]
+    fn a_draft_omits_empty_maps() {
+        let draft = ContactDraft {
+            name: "Ann".into(),
+            emails: vec!["  ".into()],
+            phones: Vec::new(),
+            ..ContactDraft::default()
+        };
+        let card = draft.to_jscontact("uid-1", "book-1");
+        assert!(card.get("emails").is_none(), "{card}");
+        assert!(card.get("phones").is_none(), "{card}");
+        let draft = ContactDraft {
+            emails: vec!["ann@example.invalid".into()],
+            ..draft
+        };
+        let card = draft.to_jscontact("uid-1", "book-1");
+        assert_eq!(card["emails"]["e1"]["address"], "ann@example.invalid");
+    }
+
+    /// RFC 9553 §1.4.1: a patch whose list leaves nothing clears the
+    /// property with `null`, never `{}`.
+    #[test]
+    fn a_patch_clears_an_emptied_map_with_null() {
+        let patch = ContactPatch {
+            emails: Some(Vec::new()),
+            phones: Some(vec![" ".into()]),
+            ..ContactPatch::default()
+        }
+        .to_patch();
+        assert_eq!(patch["emails"], Value::Null);
+        assert_eq!(patch["phones"], Value::Null);
+        assert!(patch.as_object().unwrap().contains_key("emails"));
+        let patch = ContactPatch {
+            phones: Some(vec!["+61 7 5555 0100".into()]),
+            ..ContactPatch::default()
+        }
+        .to_patch();
+        assert_eq!(patch["phones"]["p1"]["number"], "+61 7 5555 0100");
+        assert!(patch.get("emails").is_none());
+    }
+
     #[test]
     fn reads_the_maild_contact_shape() {
         let contact: Contact = serde_json::from_value(json!({
@@ -384,15 +446,15 @@ mod tests {
     }
 
     #[test]
-    fn a_blank_draft_has_empty_maps_and_no_optional_fields() {
+    fn a_blank_draft_has_no_empty_maps_and_no_optional_fields() {
         let card = ContactDraft {
             name: "Bob".into(),
             organization: Some(" ".into()),
             ..ContactDraft::default()
         }
         .to_jscontact("uid-2", "B1");
-        assert_eq!(card["emails"], json!({}));
-        assert_eq!(card["phones"], json!({}));
+        assert!(card.get("emails").is_none());
+        assert!(card.get("phones").is_none());
         assert!(card.get("organizations").is_none());
         assert!(card.get("notes").is_none());
     }
@@ -425,7 +487,7 @@ mod tests {
                 "accountId": "A1",
                 "update": {
                     "P1": {
-                        "emails": {},
+                        "emails": null,
                         "phones": { "p1": { "number": "0400 000 000" } },
                         "organizations": null,
                         "notes": "Moved"

@@ -187,8 +187,8 @@ pub const VERBS: &[Verb] = &[
     verb(
         "email.account.password.set",
         false,
-        r#"{"id":"account id","password":"string (empty forgets it)"}"#,
-        "Keep an account's password in the app's secrets file and reconnect; write-only",
+        r#"{"id":"account id (for a forget, any account id, one settingsd no longer holds included)","password":"string; empty forgets it"}"#,
+        "Keep an account's password in the app's secrets file and reconnect; write-only. An empty password forgets it and answers {forgotten: bool}",
     ),
     verb(
         "email.account.connect",
@@ -934,9 +934,20 @@ fn dispatch(
             state.change_accounts(Change::Remove(account), Some(id), None);
         }
         "email.account.password.set" => {
-            let account = account_id(state, args)?;
             let password = text(args, "password")?.ok_or_else(|| invalid("password is required"))?;
-            state.set_password(&account, &password, Some(id));
+            if password.is_empty() {
+                // A forget works for any well-formed id, an orphan whose
+                // account settingsd no longer holds included (Prefs cleans
+                // up after a removal this way).
+                let account = required(args, "id")?;
+                if !settings::email::valid_id(&account) {
+                    return Err(invalid("id is not an account id"));
+                }
+                state.forget_password(&account, id);
+            } else {
+                let account = account_id(state, args)?;
+                state.set_password(&account, &password, Some(id));
+            }
         }
         "email.account.connect" => {
             let account = account_id(state, args)?;
@@ -1417,6 +1428,39 @@ mod tests {
             state.take_replies()[0].body["error_code"],
             code::UNKNOWN_ACCOUNT
         );
+    }
+
+    /// A forget (empty password) works for any well-formed id, an orphan
+    /// settingsd no longer holds included, and answers whether one was
+    /// held; a real password for an unknown id is still refused.
+    #[test]
+    fn a_forget_works_for_an_orphaned_id() {
+        // b's account is gone from settingsd, its secret is not.
+        let mut orphaned = connected_many(&["a", "b"]);
+        orphaned.set_settings(crate::state::tests::settings(&["a"]));
+        orphaned.take_work();
+        assert!(orphaned.account("b").is_none() && orphaned.has_password("b"));
+        run(&mut orphaned, "email.account.password.set", json!({"id": "b", "password": ""}));
+        let work = orphaned.take_work();
+        assert!(!orphaned.has_password("b"));
+        assert!(orphaned.take_replies().is_empty(), "answered once saved");
+        for w in &work {
+            if let Work::SaveSecrets { ticket } = w {
+                orphaned.secrets_saved(*ticket, Ok(true));
+            }
+        }
+        let reply = &orphaned.take_replies()[0];
+        assert_eq!(reply.rc, 0);
+        assert_eq!(reply.body["forgotten"], true);
+        // Nothing held: still rc 0, forgotten false.
+        run(&mut orphaned, "email.account.password.set", json!({"id": "zz", "password": ""}));
+        let reply = &orphaned.take_replies()[0];
+        assert_eq!((reply.rc, reply.body["forgotten"].clone()), (0, json!(false)));
+        // A malformed id, or a real password for an unknown one, is refused.
+        run(&mut orphaned, "email.account.password.set", json!({"id": "NO GOOD", "password": ""}));
+        assert_eq!(orphaned.take_replies()[0].body["error_code"], code::INVALID_ARGUMENT);
+        run(&mut orphaned, "email.account.password.set", json!({"id": "zz", "password": "pw"}));
+        assert_eq!(orphaned.take_replies()[0].body["error_code"], code::UNKNOWN_ACCOUNT);
     }
 
     #[test]

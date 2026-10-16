@@ -1417,6 +1417,24 @@ impl State {
         true
     }
 
+    /// Forget account `id`'s password, whether or not an account has that
+    /// id now, answering `reply` with `forgotten` (whether one was held)
+    /// once the secrets file no longer has it.
+    pub fn forget_password(&mut self, id: &str, reply: u64) {
+        let body = |forgotten: bool| json!({ "id": id, "has_password": false, "forgotten": forgotten });
+        if !self.secrets.has(id) && !self.unsaved.contains(id) {
+            return self.reply(reply, 0, body(false));
+        }
+        let held = self.secrets.has(id);
+        self.hold(id, "");
+        self.unsaved.insert(id.to_owned());
+        self.save_secrets(Some((reply, body(held))));
+        // A shown account has no password from now on.
+        if self.account(id).is_some() {
+            self.reconnect(id);
+        }
+    }
+
     /// Queue a secrets save that answers `reply` when it lands.
     fn save_secrets(&mut self, reply: Option<(u64, Value)>) {
         self.save_secrets_then(reply, AfterSave::Nothing);
