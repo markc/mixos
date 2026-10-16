@@ -3,7 +3,7 @@ scene: 1
 name: toast
 citizen: scene-toast
 window: {"chrome":false,"h":132,"kind":"toast","title":"Notification","w":360}
-model: {"app":"","body":"","has_body":false,"id":0,"labels":["","","",""],"more":"","shown":[false,false,false,false],"summary":""}
+model: {"app":"","body":"","has_body":false,"lines":["","","","","",""],"line_shown":[false,false,false,false,false,false],"id":0,"labels":["","","",""],"more":"","shown":[false,false,false,false],"summary":""}
 ---
 ```mix
 root: {"background":"#2a2e32","children":["card"],"fill":true,"padding":14,"radius":10,"widget":"row"}
@@ -13,8 +13,14 @@ t_app: {"color":"#a1a9b1","elide":true,"size":11,"text":"= $model.app","widget":
 t_more: {"color":"#6e7680","size":11,"text":"= $model.more","widget":"text"}
 head_fill: {"widget":"spacer"}
 t_close: {"label":"×","on_click":"toast.dismiss","widget":"button"}
-t_sum: {"bold":true,"color":"#fcfcfc","size":14,"text":"= $model.summary","widget":"text"}
-t_body: {"color":"#c8ced4","hidden":"= not $model.has_body","size":12,"text":"= $model.body","widget":"text"}
+t_sum: {"bold":true,"color":"#fcfcfc","elide":true,"fill":true,"size":14,"text":"= $model.summary","widget":"text"}
+t_body: {"children":["t_l0","t_l1","t_l2","t_l3","t_l4","t_l5"],"gap":2,"hidden":"= not $model.has_body","widget":"column"}
+t_l0: {"color":"#c8ced4","elide":true,"fill":true,"hidden":"= not $model.line_shown[0]","size":12,"text":"= $model.lines[0]","widget":"text"}
+t_l1: {"color":"#c8ced4","elide":true,"fill":true,"hidden":"= not $model.line_shown[1]","size":12,"text":"= $model.lines[1]","widget":"text"}
+t_l2: {"color":"#c8ced4","elide":true,"fill":true,"hidden":"= not $model.line_shown[2]","size":12,"text":"= $model.lines[2]","widget":"text"}
+t_l3: {"color":"#c8ced4","elide":true,"fill":true,"hidden":"= not $model.line_shown[3]","size":12,"text":"= $model.lines[3]","widget":"text"}
+t_l4: {"color":"#c8ced4","elide":true,"fill":true,"hidden":"= not $model.line_shown[4]","size":12,"text":"= $model.lines[4]","widget":"text"}
+t_l5: {"color":"#c8ced4","elide":true,"fill":true,"hidden":"= not $model.line_shown[5]","size":12,"text":"= $model.lines[5]","widget":"text"}
 t_actions: {"align":"center","children":["t_fill","b0","b1","b2","b3"],"gap":8,"widget":"row"}
 t_fill: {"widget":"spacer"}
 b0: {"hidden":"= not $model.shown[0]","label":"= $model.labels[0]","on_click":"toast.press0","tone":"primary","widget":"button"}
