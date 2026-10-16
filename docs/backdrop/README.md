@@ -117,8 +117,9 @@ totals.
 
 Each output keeps its own texture at the decoded size, capped at 3840 pixels
 a side. The budget can leave additional outputs on fallback when there is no
-room for their textures. An image over the device's texture-size limit also
-shows fallback, with the limit reported in that output's `error`.
+room for their textures. An image over the device's texture-size limit keeps
+the output's last good image on screen, or shows fallback when there is none,
+with the limit reported in that output's `error`.
 
 A full-size image is 3840 × 3840 × 4 bytes = 56.25 MiB, the largest kept. Four
 applied plus four candidates is 450 MiB, which fits the 512 MiB resident budget.

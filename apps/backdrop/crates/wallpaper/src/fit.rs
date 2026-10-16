@@ -57,12 +57,7 @@ pub fn placement(
     if finite { placed } else { empty }
 }
 
-fn placement_of(
-    image: [u32; 2],
-    surface: [f32; 2],
-    pixels_per_point: f32,
-    mode: Fit,
-) -> Placement {
+fn placement_of(image: [u32; 2], surface: [f32; 2], pixels_per_point: f32, mode: Fit) -> Placement {
     let whole = Placement {
         min: [0.0; 2],
         max: surface,
