@@ -103,8 +103,7 @@ impl Overlay {
     pub fn from_appearance(appearance: &settings::model::Appearance) -> Self {
         let stroke = appearance.icon_stroke.filter(|s| {
             s.is_finite()
-                && (settings::model::ICON_STROKE_MIN..=settings::model::ICON_STROKE_MAX)
-                    .contains(s)
+                && (settings::model::ICON_STROKE_MIN..=settings::model::ICON_STROKE_MAX).contains(s)
                 && (s / settings::model::ICON_STROKE_STEP).fract() == 0.0
         });
         let weight = appearance
