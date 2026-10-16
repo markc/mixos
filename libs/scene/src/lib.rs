@@ -242,7 +242,8 @@ pub const DIALOG_MAX_PX: f64 = 2048.0;
 ///   centred, not on an edge, and has no carousel page. It needs numeric `w`
 ///   and `h` in `DIALOG_MIN_PX..=DIALOG_MAX_PX`.
 /// - A `toast` uses non-negative authored dimensions, clamped by the host,
-///   and defaults to no chrome.
+///   and defaults to no chrome. Like a dialog it holds a seat, so it takes
+///   no `edge` or `panel` (`window-dialog-edge`).
 fn check_window_declaration<'a>(
     get: impl Fn(&str) -> Option<&'a JsonValue>,
     line: usize,
@@ -291,7 +292,7 @@ fn check_window_declaration<'a>(
             ));
         }
     }
-    if kind != "dialog" {
+    if kind == "edge" {
         return;
     }
     for key in ["edge", "panel"] {
@@ -299,9 +300,12 @@ fn check_window_declaration<'a>(
             out.push(Diagnostic::error(
                 "window-dialog-edge",
                 line,
-                format!("a dialog window takes no {key}: it is centred, not mounted on an edge"),
+                format!("a {kind} window takes no {key}: it holds a seat, not an edge page"),
             ));
         }
+    }
+    if kind != "dialog" {
+        return;
     }
     for key in ["w", "h"] {
         match get(key).and_then(JsonValue::as_f64) {
