@@ -48,7 +48,7 @@ pub const APP: &str = "backdrop";
 pub const SET: &str = "backdrop.set";
 pub const NEXT: &str = "backdrop.next";
 /// The verbs this service answers, with their classes
-/// (docs/spec/bus/verbs.conf.mix).
+/// (docs/docs/spec/bus/verbs.conf.mix).
 #[cfg(test)]
 pub const VERBS: &[(&str, &str)] = &[
     ("backdrop.ping", "query"),
@@ -988,7 +988,7 @@ mod tests {
     use super::*;
     use wallpaper::Wallpaper;
 
-    const REGISTRY: &str = include_str!("../../../docs/spec/bus/verbs.conf.mix");
+    const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/verbs.conf.mix");
 
     /// A field of one registry line: `key:"value"`.
     fn field<'a>(line: &'a str, key: &str) -> Option<&'a str> {

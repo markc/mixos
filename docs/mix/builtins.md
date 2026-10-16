@@ -25,7 +25,7 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
 - **Argument type gate and nil** (0.103.x): the evaluator checks argument types against the contract for the side-effect classes (fs/process/network/bus) in every mode, and for pure builtins under strict mode. A `nil` VALUE is checked like any other value — there is no blanket nil exemption, so `write_file(nil, "x")` and `mkdir(nil)` raise TYPE_MISMATCH instead of coercing nil into a literal `"nil"` path. An optional argument that intentionally treats an explicit `nil` as "omitted/default" declares it in the contract as `any_of(…, nil)` (e.g. `run_argv`/`exists`/`write_atomic`/`stat`/`walk` opts, `hash_file` algo, `bytes_to_string` opts, `normalize` form, `slice` end); that is the ONLY way a nil reaches the builtin. `any` args accept nil because they accept everything. A nil in a plain `string`/`number`/`map` slot raises in the same modes as any other wrong type.
 
 > Every table category is listed below (0.63.0 — the index is regenerated
-> from `mix builtins --json` by `docs/build/gen-builtins-md.mix`; the
+> from `mix builtins --json` by `docs/_build/gen-builtins-md.mix`; the
 > previously-unbucketed `db`/`jmap`/`bus`/`datastar` families now have
 > sections). The Bus-layer callables `noded_register`, `subscribe`,
 > `unsubscribe`, `bus_reconnect`, and `reply(...)` (inside `on` handlers)

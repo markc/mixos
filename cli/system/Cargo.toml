@@ -8,7 +8,7 @@ repository.workspace = true
 publish = false
 description = "The system binary: the mix shell and the headless daemons, chosen by argv[0]"
 
-# docs/decisions/2026-10-12-one-system-binary.md. The one package allowed a
+# docs/docs/decisions/2026-10-12-one-system-binary.md. The one package allowed a
 # non-dev dependency on a `kind = "cli"` package (AGENTS.md §6), and the one
 # whose principal binary is not named after its directory (§2.3).
 [package.metadata.mixos]

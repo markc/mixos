@@ -2,8 +2,8 @@
 
 The host service: information about the host, and privileged host changes
 through closed, typed verbs behind standing grants, receipts and rollback
-([decision](../../docs/decisions/2026-10-12-hostd.md),
-[manual](../../docs/hostd.md)). One per host, run as root, socket-activated.
+([decision](../../docs/docs/decisions/2026-10-12-hostd.md),
+[manual](../../docs/hostd/README.md)). One per host, run as root, socket-activated.
 
 ```text
 hostd serve                      # local socket, plus the Bus when noded is up
@@ -50,7 +50,7 @@ hostd call net.link.apply '{"link":"eth1","config":{"mode":"dhcp"}}'
 5. The paths it writes added to `ReadWritePaths=`, and any capability it
    needs to `CapabilityBoundingSet=`, in `units/hostd.service`, with the
    reason beside it.
-6. Registered in `docs/spec/bus/verbs.conf.mix` (class `intent`), in the
+6. Registered in `docs/docs/spec/bus/verbs.conf.mix` (class `intent`), in the
    manual, and reviewed on its own.
 
 ## Tests

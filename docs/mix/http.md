@@ -540,7 +540,7 @@ listener binds, never a truthiness read.
 > **Serving a subdirectory of a larger site?** A page that references
 > root-absolute assets (`/web/style.css`) 404s them when the served root
 > is a subdirectory — the assets are above it. Serve the **site root**, or
-> pre-render a self-contained copy (see `docs/build/gen-static-site.mix`
+> pre-render a self-contained copy (see `docs/_build/gen-static-site.mix`
 > for the pattern: each page carries its own inline CSS and needs no
 > external asset, so it works from any root, `curl`, `wget`, or `file://`).
 

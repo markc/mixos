@@ -15544,7 +15544,7 @@ impl Evaluator {
             // the same line works until the map is non-empty.
             //
             // That case is not hypothetical: it broke this repo's own
-            // `docs/build/gen-builtins-md.mix:70` the first time the wider
+            // `docs/_build/gen-builtins-md.mix:70` the first time the wider
             // rule ran. The static D3007 inventory could never have caught it
             // — the note only fired on PROVABLE collection operands, as its
             // own comment admitted — so "zero D3007 sites" was evidence for

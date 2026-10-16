@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The Bus verb registry (`docs/spec/bus/verbs.conf.mix`, AGENTS.md §5)
+//! The Bus verb registry (`docs/docs/spec/bus/verbs.conf.mix`, AGENTS.md §5)
 //! lists exactly the `shell.*` verbs the scene host serves under its default
 //! service name: `SceneVerb::names`, which is also what `shell.info` lists.
 use scene_host::{DEFAULT_SERVICE, SceneVerb};
 use std::collections::BTreeSet;
 
-const REGISTRY: &str = include_str!("../../../../../docs/spec/bus/verbs.conf.mix");
+const REGISTRY: &str = include_str!("../../../../../docs/docs/spec/bus/verbs.conf.mix");
 
 /// The registry's `shell.*` names owned by compd, from its one-entry-per-line
 /// form.
@@ -41,7 +41,7 @@ fn every_served_verb_is_registered_and_nothing_else() {
 }
 
 /// A verb that can change what is mounted or drawn is an intent; the rest
-/// are queries (docs/decisions/2026-10-11-verb-classes.md).
+/// are queries (docs/docs/decisions/2026-10-11-verb-classes.md).
 #[test]
 fn classes_follow_mutation() {
     for name in SceneVerb::names(DEFAULT_SERVICE) {

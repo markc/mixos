@@ -6,7 +6,7 @@
 -- (bridged.mix) owns one state map and threads it through these functions;
 -- this module keeps no state of its own.
 --
--- Wire protocol (app-neutral; docs/spec/bridge/README.md):
+-- Wire protocol (app-neutral; docs/docs/spec/bridge/README.md):
 --   TCP to 127.0.0.1:<port>. With auth: "token" (the default) the FIRST line on
 --   every connection is {"id":"auth","method":"auth","params":{"token":"<64 hex>"}};
 --   nothing else is sent until that reply is ok. With auth: "key" the same,
@@ -34,7 +34,7 @@ $_REQUIRED = ["port"]
 $_NAME = "^[a-z][a-z0-9-]{1,30}$"
 
 -- The config contract as data, so a test can hold it against the spec fixture
--- (docs/spec/bridge/bridge.spec.mix).
+-- (docs/docs/spec/bridge/bridge.spec.mix).
 fn schema()
   return {keys: $_KNOWN, required: $_REQUIRED, defaults: merge($_DEFAULTS, {auth: "token"}), name: $_NAME}
 end
@@ -123,7 +123,7 @@ end
 -- not be the first segment of any verb the registry already gives to someone
 -- else. Returns {<segment>: <an example verb or pattern>}.
 --
--- Registry shapes read (docs/spec/bus/verbs.conf.mix):
+-- Registry shapes read (docs/docs/spec/bus/verbs.conf.mix):
 --   verbs:    [{name, ...}]               every entry reserves its first segment,
 --                                         whatever its status (retired names stay
 --                                         reserved forever).

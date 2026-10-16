@@ -4,8 +4,8 @@ The MixOS Settings portal. It serves `org.freedesktop.portal.Desktop` on the
 session bus, object `/org/freedesktop/portal/desktop`, interface
 `org.freedesktop.portal.Settings` version 2, and answers the
 `org.freedesktop.appearance` namespace from the settings authority (settingsd).
-The manual is in [docs/portal.md](../../docs/portal.md); the contract is in
-[docs/spec/portal](../../docs/spec/portal/README.md).
+The manual is in [docs/portald/README.md](../../docs/portald/README.md); the contract is in
+[docs/docs/spec/portal](../../docs/docs/spec/portal/README.md).
 
 ```text
 portald serve --instance example [--profile default] [--state-dir DIR]

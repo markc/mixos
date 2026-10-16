@@ -627,9 +627,7 @@ impl Bus {
             self.motions
                 .iter()
                 .map(|run| {
-                    run.started
-                        + Duration::from_secs_f64(run.kind.end())
-                        + Duration::from_millis(1)
+                    run.started + Duration::from_secs_f64(run.kind.end()) + Duration::from_millis(1)
                 })
                 .min()
         } else {

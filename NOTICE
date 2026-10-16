@@ -70,15 +70,15 @@ writes copies with stroke-width changed from 2 to 1.5 into the MixOS icon theme;
 the sources are never changed, and each is pinned by SHA-256 in
 share/icons/manifest.conf.mix.
 
-Site assets (docs/web)
+Site assets (docs/_web)
 ----------------------
 
-The mixos.dev web fonts are subsets cut by docs/build/gen-site.mix from the
-pinned asset set; each keeps its upstream licence beside it in docs/web/fonts:
+The mixos.dev web fonts are subsets cut by docs/_build/gen-site.mix from the
+pinned asset set; each keeps its upstream licence beside it in docs/_web/fonts:
 Inter, JetBrains Mono and Quicksand (SIL OFL 1.1), Noto Color Emoji
 (SIL OFL 1.1).
 
 Website interface icons are generated from the pinned, unmodified Lucide SVG
 sources. The distributed SVG copies change stroke-width from 2 to 1.5 and add
 a generated-by comment. CSS masks paint those copies in the current colour; the
-Lucide ISC and Feather-derived MIT notices ship in docs/web/icons/LICENSE-Lucide.txt.
+Lucide ISC and Feather-derived MIT notices ship in docs/_web/icons/LICENSE-Lucide.txt.

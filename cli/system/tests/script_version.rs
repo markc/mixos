@@ -497,7 +497,7 @@ fn lint_gates_serve_citizens_and_script_directories() {
         "real/desktop-session.mix",
         "-- version: 0.1.0\non ping\n  reply(0, \"pong\")\nend\n",
     );
-    let site = root.join("docs/build/gen-site.mix");
+    let site = root.join("docs/_build/gen-site.mix");
     for p in [&versioned, &site] {
         let (code, out) = lint(&["--require-version", "--deny-warnings", p.to_str().unwrap()]);
         assert_eq!(code, 0, "{}: {out}", p.display());

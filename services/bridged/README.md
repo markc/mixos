@@ -3,11 +3,11 @@
 A Bus bridge to an external application's line-delimited JSON control
 channel, one instance per application: `bridged@<app>` answers
 `<app>.call`, `.commands`, `.execute`, `.inspect`, `.screenshot` and
-`.status`. The manual is [docs/bridge.md](../../docs/bridge.md); the
+`.status`. The manual is [docs/bridged/README.md](../../docs/bridged/README.md); the
 contract (control channel, config schema, verbs, rc bands, start checks) is
-[docs/spec/bridge/README.md](../../docs/spec/bridge/README.md).
+[docs/docs/spec/bridge/README.md](../../docs/docs/spec/bridge/README.md).
 
-A Mix component ([decision](../../docs/decisions/2026-10-10-mix-components.md)):
+A Mix component ([decision](../../docs/docs/decisions/2026-10-10-mix-components.md)):
 no Cargo package, identity in `component.mx`.
 
 | Path | What |
@@ -37,7 +37,7 @@ control channel allows. Read the manual's Security section before bridging
 anything.
 
 **Verb registration.** The six verbs are declared in
-`docs/spec/bus/verbs.conf.mix` (registry schema 3) as the `bridged` instance
+`docs/docs/spec/bus/verbs.conf.mix` (registry schema 3) as the `bridged` instance
 family: `<app>.call`, `.commands`, `.execute`, `.inspect`, `.screenshot` and
 `.status`, with `members: "instances"`, so the running instances are not
 listed. The static gate `tools/verb_registry.mix` checks each family's owner
@@ -49,7 +49,7 @@ unchanged: the Bus still gives every member every verb.
 `<app>.commands`, `<app>.inspect` and `<app>.status` are `query`.
 `<app>.screenshot` is `intent`: its `focus` option can bring the window
 forward, a change another caller sees, so it is not a query even though it
-only captures. See the [decision](../../docs/decisions/2026-10-13-instance-verb-families.md).
+only captures. See the [decision](../../docs/docs/decisions/2026-10-13-instance-verb-families.md).
 
 Registry installation is a separate, deployed prerequisite. The scripts and
 the registry must come from the same revision, and the registry must be at
