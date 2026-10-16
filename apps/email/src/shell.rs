@@ -124,6 +124,8 @@ pub struct Shell {
     held: std::collections::VecDeque<(u64, String, String)>,
     /// The compositor's Bus service, for `email.show`.
     comp: String,
+    /// `email.show` requests forwarded to the compositor, not yet answered.
+    shows: std::collections::BTreeSet<u64>,
 }
 
 /// This host's name: the settingsd instance to try first (settingsd runs
@@ -185,7 +187,7 @@ fn legacy_entry(
     account: &jmap::Account,
     dir: &Path,
 ) -> Result<(settings::email::AccountEntry, bool), String> {
-    let (url, stripped) = without_userinfo(account.url.trim().trim_end_matches('/'));
+    let (url, stripped) = sanitised_url(account.url.trim());
     let email = account.email.trim().to_owned();
     let id = crate::writer::legacy_id(&url, &email);
     let ca_path = match &account.ca_pem {
@@ -213,6 +215,17 @@ fn legacy_entry(
         },
         stripped,
     ))
+}
+
+/// The legacy URL as an account may hold it: no userinfo, and no query or
+/// fragment (settings refuses both, and a query can carry credentials too:
+/// `?password=…`), no trailing slash. Whether anything was removed comes
+/// back as well; the schema-1 source itself is left as it was.
+pub fn sanitised_url(url: &str) -> (String, bool) {
+    let (url, mut stripped) = without_userinfo(url);
+    let end = url.find(['?', '#']).unwrap_or(url.len());
+    stripped |= end < url.len();
+    (url[..end].trim_end_matches('/').to_owned(), stripped)
 }
 
 /// `url` without credentials in its authority (`https://user:pw@host`):
@@ -265,6 +278,34 @@ fn saver(file: SecretsFile, events: mpsc::Sender<Event>, wake: egui::Context) ->
         }
     };
     (tx, thread)
+}
+
+/// What closing does with an event that arrived during its drain.
+#[derive(Debug, PartialEq)]
+enum Closing {
+    /// A completion: applied, so whoever waits on it hears.
+    Apply,
+    /// A Bus command arriving while closing: answered CANCELLED.
+    Cancel(u64),
+    /// A Show finishing: answered with its result.
+    Shown,
+    /// Nothing waits on it.
+    Ignore,
+}
+
+fn closing(event: &Event) -> Closing {
+    match event {
+        Event::Connected(..)
+        | Event::Account(..)
+        | Event::Settled(..)
+        | Event::SecretsSaved(..)
+        | Event::WriteDeadline(_) => Closing::Apply,
+        Event::Delivery(citizen::Delivery::Command { id, .. }) => Closing::Cancel(*id),
+        Event::Shown(..) => Closing::Shown,
+        Event::Delivery(_) | Event::Look(..) | Event::LookRetry(_) | Event::PrefsOpened(_) => {
+            Closing::Ignore
+        }
+    }
 }
 
 /// How long closing waits for the secrets saver to finish its queue.
@@ -394,6 +435,7 @@ impl Shell {
             applies: 0,
             held: std::collections::VecDeque::new(),
             comp: std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into()),
+            shows: std::collections::BTreeSet::new(),
         };
         shell.read_look();
         shell.settle();
@@ -822,12 +864,7 @@ impl Shell {
                 continue;
             }
             if let Event::Shown(id, result) = event {
-                match result {
-                    Ok(body) => self.bus.reply(id, 0, body),
-                    Err(error) => self
-                        .bus
-                        .reply(id, 10, crate::state::refusal("SHOW", &error)),
-                }
+                self.shown(id, result);
                 continue;
             }
             self.state.apply(event);
@@ -852,10 +889,44 @@ impl Shell {
                 eprintln!("email: the secrets saver did not finish in time");
             }
         }
+        // Nothing that arrived meanwhile is dropped: completions are
+        // applied (their callers hear), a command is cancelled, a Show is
+        // answered; then any Show still waiting is cancelled.
         while let Ok(event) = self.rx.try_recv() {
-            if let Event::SecretsSaved(..) = event {
-                self.state.apply(event);
+            match closing(&event) {
+                Closing::Apply => self.state.apply(event),
+                Closing::Cancel(id) => self.bus.reply(
+                    id,
+                    10,
+                    crate::state::refusal(code::CANCELLED, &label("closing-cancelled")),
+                ),
+                Closing::Shown => {
+                    if let Event::Shown(id, result) = event {
+                        self.shown(id, result);
+                    }
+                }
+                Closing::Ignore => {}
             }
+        }
+        for id in std::mem::take(&mut self.shows) {
+            self.bus.reply(
+                id,
+                10,
+                crate::state::refusal(code::CANCELLED, &label("closing-cancelled")),
+            );
+        }
+    }
+
+    /// `email.show` (request `id`) finished: its caller hears.
+    fn shown(&mut self, id: u64, result: Result<Value, String>) {
+        if !self.shows.remove(&id) {
+            return;
+        }
+        match result {
+            Ok(body) => self.bus.reply(id, 0, body),
+            Err(error) => self
+                .bus
+                .reply(id, 10, crate::state::refusal("SHOW", &error)),
         }
     }
 
@@ -900,6 +971,7 @@ impl Shell {
                 }
             }
             Some(Forward::Show { id }) => {
+                self.shows.insert(id);
                 let (bus, comp) = (self.bus.clone(), self.comp.clone());
                 self.spawn(async move { Event::Shown(id, citizen::show(bus, comp, APP_ID).await) });
             }
@@ -1367,6 +1439,41 @@ mod tests {
 
     /// Review finding 5 (the migration's part): credentials in the old
     /// account's URL never reach settingsd, and the note never echoes them.
+    #[test]
+    fn round5_23_the_close_drain_drops_nothing_that_waits() {
+        let command = Event::Delivery(citizen::Delivery::Command {
+            id: 9,
+            verb: "email.ping".into(),
+            body: "{}".into(),
+        });
+        assert_eq!(closing(&command), Closing::Cancel(9));
+        assert_eq!(closing(&Event::Shown(3, Ok(json!({})))), Closing::Shown);
+        assert_eq!(closing(&Event::SecretsSaved(1, 1, Ok(true))), Closing::Apply);
+        assert_eq!(
+            closing(&Event::Settled(1, Settled::Accepted)),
+            Closing::Apply
+        );
+        assert_eq!(closing(&Event::LookRetry(1)), Closing::Ignore);
+    }
+
+    #[test]
+    fn round5_5_a_legacy_query_credential_never_reaches_a_reply() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("config");
+        std::fs::create_dir(&dir).unwrap();
+        let raw = "schema_version: 1\naccount: {url: \"https://mail.example.invalid/jmap?password=hunter2#frag\", email: \"admin@example.invalid\", password: \"pw\"}\n";
+        std::fs::write(dir.join("config.conf.mix"), raw).unwrap();
+        let (state, _, _) = start(Some(&dir));
+        assert_eq!(state.accounts[0].entry.url, "https://mail.example.invalid/jmap");
+        assert!(!state.accounts_view().to_string().contains("hunter2"));
+        assert!(!state.info().to_string().contains("hunter2"));
+        // The schema-1 source is left as it was.
+        assert_eq!(
+            std::fs::read_to_string(dir.join("config.conf.mix")).unwrap(),
+            raw
+        );
+    }
+
     #[test]
     fn review_5_userinfo_is_stripped_from_the_migrated_url() {
         assert_eq!(
