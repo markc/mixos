@@ -496,19 +496,22 @@ pub enum Service {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
     Password(String, Secret),
+    /// Delete the account's saved password: `email.account.password.set`
+    /// with an empty password, the only path that sends one.
+    Forget(String),
     Connect(String),
 }
 
 impl Action {
     fn id(&self) -> &str {
         match self {
-            Action::Password(id, _) | Action::Connect(id) => id,
+            Action::Password(id, _) | Action::Forget(id) | Action::Connect(id) => id,
         }
     }
 
     fn verb(&self) -> &'static str {
         match self {
-            Action::Password(..) => "email.account.password.set",
+            Action::Password(..) | Action::Forget(_) => "email.account.password.set",
             Action::Connect(_) => "email.account.connect",
         }
     }
@@ -516,6 +519,7 @@ impl Action {
     fn kind(&self) -> &'static str {
         match self {
             Action::Password(..) => "password",
+            Action::Forget(_) => "forget",
             Action::Connect(_) => "connect",
         }
     }
@@ -545,6 +549,12 @@ pub struct Task {
     waits: usize,
     /// The `prefs.email.password` command that asked, answered when it ends.
     reply: Option<u64>,
+    /// Email may be launched for it; a forget after a removal only tries an
+    /// Email already running.
+    may_launch: bool,
+    /// The account's name when the action began (a removed account has
+    /// none to look up afterwards).
+    name: String,
 }
 
 /// The Email section's own state; the settings themselves are
@@ -565,6 +575,11 @@ pub struct EmailEditor {
     pub task: Option<Task>,
     /// How the last password or connect ended, and whether it failed.
     pub outcome: Option<(String, bool)>,
+    /// A sent Remove, by id and name: once a read shows it gone, Email is
+    /// asked to forget the account's password.
+    removed: Option<(String, String)>,
+    /// Forgets waiting for the action in progress to end.
+    forgets: Vec<(String, String)>,
 }
 
 /// The `has_password` per account in an `email.accounts` answer: a list of
@@ -630,6 +645,10 @@ impl Engine {
             form.errors.clear();
         }
         self.email.added = planned.added.clone();
+        self.email.removed = match &change {
+            Change::Remove(id) => Some((id.clone(), self.account_name(id))),
+            _ => None,
+        };
         self.send_email(planned.edit.clone());
         Ok(planned)
     }
@@ -679,18 +698,26 @@ impl Engine {
             }
             Answer::Refused(value) if value["status"] == "conflict" => {
                 self.email.added = None;
+                self.email.removed = None;
                 self.status = self.label("email-conflict", &[]);
                 self.failed = true;
             }
             Answer::Refused(value) => {
                 self.email.added = None;
+                self.email.removed = None;
                 let message = refusal(&value);
                 self.status = self.label("email-failed", &[("message", message.as_str())]);
                 self.failed = true;
             }
-            // A lost reply is no verdict: the read shows whether the Add
-            // landed, so its id is kept until then.
-            Answer::NotSent(message) | Answer::Lost(message) => {
+            Answer::NotSent(message) => {
+                self.email.added = None;
+                self.email.removed = None;
+                self.status = self.label("email-failed", &[("message", message.as_str())]);
+                self.failed = true;
+            }
+            // A lost reply is no verdict: the read shows whether the Add or
+            // Remove landed, so its id is kept until then.
+            Answer::Lost(message) => {
                 self.status = self.label("email-failed", &[("message", message.as_str())]);
                 self.failed = true;
             }
@@ -704,6 +731,16 @@ impl Engine {
     /// account's form, and an account gone from the list leaves the form.
     pub(crate) fn email_read(&mut self, email: Email) {
         let before = self.look.email.replace(email);
+        // A removal settingsd shows: Email forgets the account's password.
+        if let Some((id, name)) = self.email.removed.take()
+            && self
+                .look
+                .email
+                .as_ref()
+                .is_some_and(|e| e.account(&id).is_none())
+        {
+            self.forget_removed(id, name);
+        }
         let email = self.look.email.as_ref().expect("just read");
         // A sent Add not in the read did not land (or another writer was
         // first): its typed form stays.
@@ -914,6 +951,12 @@ impl Engine {
                 self.ui.dialog = None;
                 let _ = self.change_email(Change::Remove(id));
             }
+            Some(Dialog::ForgetPassword(id)) => {
+                self.ui.dialog = None;
+                if self.can_connect_email_account() {
+                    self.start_email_action(Action::Forget(id), None);
+                }
+            }
             Some(Dialog::ResetEmail) => {
                 self.ui.dialog = None;
                 if self.can_edit_email() {
@@ -978,10 +1021,48 @@ impl Engine {
             .map_or_else(|| id.to_owned(), |a| a.name.clone())
     }
 
+    pub fn can_forget_email_password(&self) -> bool {
+        self.can_connect_email_account()
+    }
+
+    /// Ask before Email forgets the selected account's saved password.
+    pub fn forget_email_password(&mut self) {
+        if self.can_forget_email_password()
+            && let Some(id) = self.ui.email_account.clone()
+        {
+            self.open(Dialog::ForgetPassword(id));
+        }
+    }
+
+    /// settingsd shows account `id` removed: ask an Email already running to
+    /// forget its password, best effort. Email is not launched for this; if
+    /// it is not running, or refuses, a note says the password may stay.
+    fn forget_removed(&mut self, id: String, name: String) {
+        if self.email.service == Service::Absent {
+            let message = self.label("email-not-running", &[]);
+            let text = self.label(
+                "email-forget-after-remove-failed",
+                &[("account", &name), ("message", &message)],
+            );
+            self.email.outcome = Some((text.clone(), true));
+            self.status = text;
+            self.failed = true;
+        } else if self.email.task.is_some() {
+            self.email.forgets.push((id, name));
+        } else {
+            self.begin_action(Action::Forget(id), None, false, name);
+        }
+    }
+
     fn start_email_action(&mut self, action: Action, reply: Option<u64>) {
         let name = self.account_name(action.id());
+        self.begin_action(action, reply, true, name);
+    }
+
+    fn begin_action(&mut self, action: Action, reply: Option<u64>, may_launch: bool, name: String) {
         let key = match action {
             Action::Password(..) => "email-password-sending",
+            Action::Forget(_) => "email-password-forgetting",
             Action::Connect(_) => "email-connecting",
         };
         self.status = self.label(key, &[("account", &name)]);
@@ -995,6 +1076,8 @@ impl Engine {
             launched: false,
             waits: 0,
             reply,
+            may_launch,
+            name,
         });
         self.send_action();
     }
@@ -1011,9 +1094,14 @@ impl Engine {
         task.stage = Stage::Sending;
         let secret = match &task.action {
             Action::Password(_, password) => Some(password.clone()),
-            Action::Connect(_) => None,
+            Action::Forget(_) | Action::Connect(_) => None,
         };
-        let (verb, body) = (task.action.verb(), json!({"id":task.action.id()}));
+        let verb = task.action.verb();
+        // The one empty password sent: a forget, never a typed Set password.
+        let body = match &task.action {
+            Action::Forget(id) => json!({"id":id,"password":""}),
+            action => json!({"id":action.id()}),
+        };
         self.effects.push(Effect::Mail {
             ticket,
             service: EMAIL,
@@ -1102,11 +1190,16 @@ impl Engine {
     }
 
     fn action_answered(&mut self, task: Task, answer: Answer) {
-        let name = self.account_name(task.action.id());
+        let name = task.name.clone();
+        // A forget after a removal: best effort, on an Email already up.
+        if !task.may_launch && !matches!(answer, Answer::Ok(_)) {
+            return self.follow_up_failed(task, answer);
+        }
         match answer {
             Answer::Ok(value) => {
                 let key = match task.action {
                     Action::Password(..) => "email-password-set",
+                    Action::Forget(_) => "email-password-forgotten",
                     Action::Connect(_) => "email-connect-asked",
                 };
                 let detail = value["message"]
@@ -1123,7 +1216,7 @@ impl Engine {
                 self.email.service = Service::Running;
                 self.query_email_accounts();
             }
-            Answer::Missing if !task.launched => self.launch_email(task),
+            Answer::Missing if !task.launched && task.may_launch => self.launch_email(task),
             Answer::Missing => self.wait_for_email(task),
             Answer::Refused(value) if unknown_verb(&value) => {
                 let text = self.label("email-unsupported", &[]);
@@ -1154,6 +1247,29 @@ impl Engine {
                 self.end_action(task, Err(("OUTCOME_UNKNOWN", text)), Value::Null);
             }
         }
+    }
+
+    /// A forget after a removal was not done. Email not knowing the
+    /// account means it held nothing to forget; anything else is a note
+    /// that the password may stay with Email.
+    fn follow_up_failed(&mut self, task: Task, answer: Answer) {
+        let name = task.name.clone();
+        let message = match answer {
+            Answer::Refused(value) if value["error_code"] == "UNKNOWN_ACCOUNT" => {
+                let text = self.label("email-password-forgotten", &[("account", &name)]);
+                return self.end_action(task, Ok(text), Value::Null);
+            }
+            Answer::Refused(value) if unknown_verb(&value) => self.label("email-unsupported", &[]),
+            Answer::Refused(value) => refusal(&value),
+            Answer::Missing => self.label("email-not-running", &[]),
+            Answer::NotSent(message) | Answer::Lost(message) => message,
+            Answer::Ok(_) => String::new(),
+        };
+        let text = self.label(
+            "email-forget-after-remove-failed",
+            &[("account", &name), ("message", &message)],
+        );
+        self.end_action(task, Err(("NOT_FORGOTTEN", text)), Value::Null);
     }
 
     /// Email is not on the Bus: launch it, once per task.
@@ -1257,6 +1373,10 @@ impl Engine {
                 }),
             }
         }
+        // A removal's forget that waited for this action goes now.
+        if let Some((id, name)) = self.email.forgets.pop() {
+            self.begin_action(Action::Forget(id), None, false, name);
+        }
     }
 
     // ---- the Bus surface ---------------------------------------------------
@@ -1330,17 +1450,29 @@ impl Engine {
     /// `prefs.email.password`: hand `password` for account `id` to Email,
     /// answered once Email has (launching it first when it is absent).
     pub(crate) fn email_password(&mut self, id: u64, args: &Value) {
-        let (Some(account), Some(password)) = (
-            args.get("id").and_then(Value::as_str),
-            args.get("password").and_then(Value::as_str),
-        ) else {
-            return self.effects.push(Effect::Reply {
+        let argument = |e: &mut Engine, message: &str| {
+            e.effects.push(Effect::Reply {
                 id,
                 rc: 10,
-                body: json!({"error_code":"ARGUMENT","message":"id and password must be strings"}),
+                body: json!({"error_code":"ARGUMENT","message":message}),
             });
         };
-        let password = Secret::new(password);
+        let Some(account) = args.get("id").and_then(Value::as_str) else {
+            return argument(self, "id must be an account id");
+        };
+        // `forget: true` deletes the saved password: the one empty password
+        // sent. Any id is taken, so a removed account's can be forgotten.
+        let forget = match args.get("forget") {
+            None | Some(Value::Bool(false)) => false,
+            Some(Value::Bool(true)) => true,
+            Some(_) => return argument(self, "forget must be true or false"),
+        };
+        let password = match (forget, args.get("password")) {
+            (true, None) => None,
+            (true, Some(_)) => return argument(self, "give password or forget, not both"),
+            (false, Some(Value::String(password))) => Some(Secret::new(password.as_str())),
+            (false, _) => return argument(self, "password must be a string"),
+        };
         let refuse = |e: &mut Engine, code: &str, key: &str| {
             let message = e.label(key, &[]);
             e.effects.push(Effect::Reply {
@@ -1349,16 +1481,22 @@ impl Engine {
                 body: json!({"error_code":code,"message":message}),
             });
         };
-        if password.is_empty() {
+        if password.as_ref().is_some_and(Secret::is_empty) {
             return refuse(self, "ARGUMENT", "email-password-empty");
         }
-        if self.email().is_some_and(|e| e.account(account).is_none()) {
+        if !settings::email::valid_id(account)
+            || (password.is_some() && self.email().is_some_and(|e| e.account(account).is_none()))
+        {
             return refuse(self, "ARGUMENT", "email-unknown-account");
         }
         if self.email.task.is_some() || !self.connected || self.quitting {
             return refuse(self, "BUSY", "busy");
         }
-        self.start_email_action(Action::Password(account.to_owned(), password), Some(id));
+        let action = match password {
+            Some(password) => Action::Password(account.to_owned(), password),
+            None => Action::Forget(account.to_owned()),
+        };
+        self.start_email_action(action, Some(id));
     }
 }
 
@@ -1992,6 +2130,137 @@ mod tests {
         assert!(e.failed && e.status == "email-unsupported");
         assert!(mail_calls(&e.take_effects()).is_empty());
         assert!(e.can_connect_email_account());
+    }
+
+    /// Forget password asks first (Cancel the default), then sends the one
+    /// empty password, launching Email when it is absent like Set password.
+    #[test]
+    fn forget_asks_first_then_sends_an_empty_password_through_the_launch_path() {
+        let mut e = read();
+        e.select_email_account("a");
+        e.forget_email_password();
+        assert_eq!(e.ui.dialog, Some(Dialog::ForgetPassword("a".into())));
+        assert!(mail_calls(&e.take_effects()).is_empty(), "nothing before the confirm");
+        e.close_dialog();
+        e.confirm_email();
+        assert!(mail_calls(&e.take_effects()).is_empty());
+        e.forget_email_password();
+        e.confirm_email();
+        let calls = mail_calls(&e.take_effects());
+        assert_eq!(calls[0].2, "email.account.password.set");
+        assert_eq!(calls[0].3, json!({"id":"a","password":""}));
+        assert!(!calls[0].4, "no secret rides with a forget");
+        e.mailed(calls[0].0, missing());
+        let calls = mail_calls(&e.take_effects());
+        assert_eq!((calls[0].1, calls[0].2), (APPS, "apps.launch"));
+        e.mailed(calls[0].0, reply(0, json!({"argv":[],"id":EMAIL_APP_ID,"pid":7})));
+        let wait = e
+            .take_effects()
+            .into_iter()
+            .find_map(|x| match x {
+                Effect::Wait { ticket, .. } => Some(ticket),
+                _ => None,
+            })
+            .unwrap();
+        e.waited(wait);
+        let calls = mail_calls(&e.take_effects());
+        assert_eq!(calls[0].3, json!({"id":"a","password":""}));
+        e.mailed(calls[0].0, reply(0, json!({"id":"a","has_password":false})));
+        assert!(!e.failed);
+        assert!(e.status.starts_with("email-password-forgotten"), "{}", e.status);
+    }
+
+    /// An empty password goes out only as a forget: typed Set password and
+    /// `prefs.email.password` with an empty password refuse it.
+    #[test]
+    fn an_empty_password_is_only_ever_a_forget() {
+        let mut e = read();
+        e.select_email_account("a");
+        e.edit_email_password(Secret::new(""));
+        assert!(!e.can_set_email_password());
+        e.set_email_password();
+        assert!(mail_calls(&e.take_effects()).is_empty());
+        let refused = |e: &mut Engine, id: u64| {
+            e.take_effects().iter().any(
+                |x| matches!(x, Effect::Reply { id: i, rc: 10, body } if *i == id && body["error_code"] == "ARGUMENT"),
+            )
+        };
+        e.command(1, "prefs.email.password", r#"{"id":"a","password":""}"#);
+        assert!(refused(&mut e, 1));
+        e.command(2, "prefs.email.password", r#"{"id":"a","forget":true,"password":"x"}"#);
+        assert!(refused(&mut e, 2));
+        e.command(3, "prefs.email.password", r#"{"id":"a","forget":"yes"}"#);
+        assert!(refused(&mut e, 3));
+        // A forget takes any valid id, a removed account's too.
+        e.command(4, "prefs.email.password", r#"{"id":"acct-gone","forget":true}"#);
+        let calls = mail_calls(&e.take_effects());
+        assert_eq!(calls[0].3, json!({"id":"acct-gone","password":""}));
+        e.mailed(calls[0].0, reply(0, json!({"id":"acct-gone","has_password":false})));
+        assert!(
+            e.take_effects()
+                .iter()
+                .any(|x| matches!(x, Effect::Reply { id: 4, rc: 0, .. }))
+        );
+    }
+
+    /// Remove an account and settingsd shows it gone: a running Email is
+    /// asked to forget its password, never launched for it; a failure is a
+    /// note, and Email not knowing the account is nothing to report.
+    #[test]
+    fn a_removed_account_s_password_is_forgotten_by_a_running_email() {
+        let removed = |e: &mut Engine| {
+            e.select_email_account("b");
+            e.remove_email_account();
+            e.confirm_email();
+            let calls = settings_calls(e);
+            e.settled(calls[0].0, reply(0, json!({"status":"changed"})));
+            let mut after = two();
+            after.accounts.remove(1);
+            settle_read(e, "8", json!(after));
+        };
+        let mut e = read();
+        removed(&mut e);
+        let calls = mail_calls(&e.take_effects());
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].3, json!({"id":"b","password":""}));
+        e.mailed(calls[0].0, missing());
+        assert!(
+            mail_calls(&e.take_effects()).is_empty(),
+            "Email is not launched for it"
+        );
+        assert!(e.failed);
+        assert!(
+            e.status.starts_with("email-forget-after-remove-failed account=Home"),
+            "{}",
+            e.status
+        );
+        // Email no longer knowing the account held nothing to forget.
+        let mut e = read();
+        removed(&mut e);
+        let calls = mail_calls(&e.take_effects());
+        e.mailed(
+            calls[0].0,
+            reply(10, json!({"error_code":"UNKNOWN_ACCOUNT","message":"no such account"})),
+        );
+        assert!(!e.failed, "{}", e.status);
+        // Email known to be away: a note, no call.
+        let mut e = read();
+        e.email.service = Service::Absent;
+        removed(&mut e);
+        assert!(mail_calls(&e.take_effects()).is_empty());
+        assert!(e.failed && e.email.outcome.as_ref().is_some_and(|(_, f)| *f));
+    }
+
+    #[test]
+    fn a_refused_removal_forgets_nothing() {
+        let mut e = read();
+        e.select_email_account("b");
+        e.remove_email_account();
+        e.confirm_email();
+        let calls = settings_calls(&mut e);
+        e.settled(calls[0].0, reply(10, json!({"status":"invalid","message":"no"})));
+        settle_read(&mut e, "7", json!(two()));
+        assert!(mail_calls(&e.take_effects()).is_empty());
     }
 
     #[test]

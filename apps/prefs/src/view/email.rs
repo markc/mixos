@@ -281,6 +281,15 @@ fn password(
             false,
             events,
         );
+        command_button(
+            ui,
+            engine,
+            commands,
+            strings,
+            "email.password.forget",
+            false,
+            events,
+        );
     });
     if let Some((text, failed)) = &engine.email.outcome {
         let text = if *failed {
@@ -361,6 +370,19 @@ pub fn confirmation(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                 label_with("email-remove-title", &args),
                 label_with("email-remove-body", &args),
                 label("remove-confirm"),
+            )
+        }
+        Some(preferences::Dialog::ForgetPassword(id)) => {
+            let name = engine
+                .email()
+                .and_then(|e| e.account(id))
+                .map_or_else(|| id.clone(), |a| a.name.clone());
+            let args = [("account", name.as_str())];
+            (
+                "forget-password",
+                label_with("email-forget-title", &args),
+                label_with("email-forget-body", &args),
+                label("email-forget-confirm"),
             )
         }
         Some(preferences::Dialog::ResetEmail) => (
