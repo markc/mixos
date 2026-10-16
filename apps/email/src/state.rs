@@ -117,6 +117,8 @@ pub struct MailState {
     pub emails: Vec<Email>,
     pub total: u64,
     pub open: Option<Email>,
+    /// How the open email's text body is shown, and its cached parse.
+    pub reader: crate::reader::Reader,
     pub busy: bool,
 }
 
@@ -2065,7 +2067,10 @@ impl State {
                         if ticket != view.tickets.open
                             || view.tickets.open_mailbox != view.mail.selected => {}
                     Done::Opened(_, _, result) => match *result {
-                        Ok(email) => view.mail.open = Some(email),
+                        Ok(email) => {
+                            view.mail.reader.open(&email);
+                            view.mail.open = Some(email);
+                        }
                         Err(ref error) => self.status = error.to_string(),
                     },
                     Done::Marked(Ok(())) => self.work.push(Work::FetchMailboxes {
@@ -2883,6 +2888,7 @@ impl State {
                     "emails": shown(&view.mail.emails),
                     "total": view.mail.total,
                     "open": view.mail.open.as_ref().map(|e| &e.id),
+                    "reader": view.mail.open.as_ref().map(|e| view.mail.reader.info(e)),
                     "busy": view.mail.busy,
                 });
                 out["calendar"] = json!({
@@ -3661,6 +3667,19 @@ impl State {
     /// The mode this window is drawing: the choice's, else the session's.
     pub fn effective_mode(&self) -> design::Mode {
         self.ui.theme.mode.unwrap_or(self.session_mode)
+    }
+
+    /// Show the open email's text body as Markdown or as its source, the
+    /// other way from now (`view.reader.markdown`).
+    pub fn toggle_reader(&mut self) {
+        let Some(id) = self.selected.clone() else {
+            return;
+        };
+        if let Some(view) = self.account_mut(&id)
+            && let Some(open) = &view.mail.open
+        {
+            view.mail.reader.toggle(open);
+        }
     }
 
     /// The title bar's light/dark toggle: invert the drawn mode.

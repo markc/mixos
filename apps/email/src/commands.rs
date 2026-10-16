@@ -52,6 +52,16 @@ fn reading(state: &State) -> bool {
         && state.current().is_some_and(|v| v.mail.open.is_some())
 }
 
+/// The open email has a text body the reader can show as Markdown or as
+/// its source.
+fn readable(state: &State) -> bool {
+    reading(state)
+        && state
+            .current()
+            .and_then(|v| v.mail.open.as_ref())
+            .is_some_and(crate::reader::has_text)
+}
+
 /// More than one account to step through.
 fn several(state: &State) -> bool {
     undialogued(state) && state.accounts.len() > 1
@@ -263,6 +273,18 @@ pub fn registry() -> Registry<State> {
         icon: None,
         enabled: several,
         run: |state| state.step_account(false),
+    })
+    .add(Command {
+        id: "view.reader.markdown",
+        submenu: Some("message"),
+        group: 2,
+        label: "reader-markdown",
+        menu: Some("view"),
+        // No chord: Ctrl+U is the text fields' delete-to-line-start.
+        shortcut: None,
+        icon: Some(Icon::FileCode),
+        enabled: readable,
+        run: State::toggle_reader,
     })
     .add(Command {
         id: "help.shortcuts",

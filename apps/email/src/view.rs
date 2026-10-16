@@ -216,7 +216,7 @@ fn window(
             .resizable(true)
             .default_size(remaining * state.ui.reader)
             .frame(bars::dock_frame(ui.ctx()))
-            .show(ui, |ui| reader(ui, state, view));
+            .show(ui, |ui| reader(ui, state, view, events));
         let split = right.response.rect.width() / remaining.max(1.0);
         if (split - state.ui.reader).abs() > 0.005 {
             events.push(UiEvent::SplitReader(split));
@@ -251,10 +251,10 @@ fn centre(
 }
 
 /// The reader panel: the open email, event or contact.
-fn reader(ui: &mut egui::Ui, state: &State, view: &AccountView) {
+fn reader(ui: &mut egui::Ui, state: &State, view: &AccountView, events: &mut Vec<UiEvent>) {
     let title = crate::label("reader");
     panel::group(ui, "reader", &[title.as_str()], |ui, _| match state.mode {
-        Mode::Mail => mail::reader(ui, view),
+        Mode::Mail => mail::reader(ui, view, events),
         Mode::Calendar => calendar::reader(ui, view),
         Mode::Contacts => contacts::reader(ui, view),
     });
