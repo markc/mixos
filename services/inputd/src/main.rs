@@ -348,9 +348,24 @@ mod tests {
 
     #[test]
     fn a_zero_grab_timeout_is_refused() {
-        assert!(Args::try_parse_from(["inputd", "--grab", "/dev/input/event1", "--grab-timeout", "0"]).is_err());
-        let args =
-            Args::try_parse_from(["inputd", "--grab", "/dev/input/event1", "--grab-timeout", "30"]).unwrap();
+        assert!(
+            Args::try_parse_from([
+                "inputd",
+                "--grab",
+                "/dev/input/event1",
+                "--grab-timeout",
+                "0"
+            ])
+            .is_err()
+        );
+        let args = Args::try_parse_from([
+            "inputd",
+            "--grab",
+            "/dev/input/event1",
+            "--grab-timeout",
+            "30",
+        ])
+        .unwrap();
         assert_eq!(args.grab_timeout, Some(30));
     }
 
