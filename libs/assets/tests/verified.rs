@@ -16,6 +16,48 @@ use assets::{
 };
 use sha2::Digest;
 
+#[cfg(feature = "mixos")]
+#[test]
+fn bundled_mono_faces_have_pinned_hashes_and_nearest_weights() {
+    for (weight, name, digest) in [
+        (
+            300,
+            "JetBrainsMono-Light",
+            "60c18d7dd58d81b3bbd12e8ce32744a8771bfe2b5280574082b0eaed46c60d24",
+        ),
+        (
+            400,
+            "JetBrainsMono-Regular",
+            "a0bf60ef0f83c5ed4d7a75d45838548b1f6873372dfac88f71804491898d138f",
+        ),
+        (
+            500,
+            "JetBrainsMono-Medium",
+            "31c92d01a8a08528b718a43addf0ad3df0af2ca4b7b3290a452f70f358e14d3d",
+        ),
+    ] {
+        let (actual, bytes) = assets::mixos::mono_face(weight);
+        assert_eq!(actual, name);
+        assert_eq!(&bytes[..4], b"\0\x01\0\0");
+        assert_eq!(hex::encode(sha2::Sha256::digest(bytes)), digest);
+    }
+    for (requested, nearest) in [
+        (100, 300),
+        (349, 300),
+        (350, 400),
+        (375, 400),
+        (449, 400),
+        (450, 500),
+        (475, 500),
+        (900, 500),
+    ] {
+        assert_eq!(
+            assets::mixos::mono_face(requested),
+            assets::mixos::mono_face(nearest)
+        );
+    }
+}
+
 /// One locked-file entry for the manifest, with the bytes written.
 fn write_file(dir: &Path, relative: &str, bytes: &[u8]) -> serde_json::Value {
     let path = dir.join(relative);

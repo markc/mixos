@@ -11,10 +11,11 @@ Canonical, read-only template directories live here:
 `scene.mix` is an AMP scene document, not an executable script.
 `template.conf.mix` is a strict-data map. Only `behaviour.mix` executes.
 Reusable behaviour helpers are shipped in `lib/` (`data.mix`, `models.mix`,
-`runtime.mix`, `taskbar.mix`, and `network.mix`, the network popup's snapshot).
+`runtime.mix`, `taskbar.mix`, `network.mix`, the network popup's snapshot, and
+`audio.mix`, the volume popup's pactl reads and writes).
 
 Templates: `topbar` (top bar, page `scene-topbar`), `panel` (bottom panel, page `scene-panel`), `launcher`, `calendar`,
-`notes`, `network` and `settings`. The loader copies a template into the user's scenes directory
+`notes`, `network`, `volume` and `settings`. The loader copies a template into the user's scenes directory
 only on `scenes.install`; it never enables discovered directories
 automatically. Installed under their own names these reuse the legacy panel
 citizen's page IDs, so the loader keeps them unmounted while `quoin-panel` is
@@ -51,10 +52,12 @@ node block here and nowhere else. The template mounts on the right edge; edit
 | `requires` | list of Bus service names | shown as "needs …" while not registered |
 | `hidden` | bool | not listed by `scenes.templates` |
 
-The seven shipped templates are the Recommended set: `topbar` (order 5,
+The eight shipped templates are the Recommended set: `topbar` (order 5,
 requires `comp` and `apps`), `panel` (order 10, requires `comp` and `apps`),
 `launcher` (20, `apps`), `calendar` (30), `notes` (40, `notify`), `network`
-(45) and `settings` (50).
+(45), `volume` (47) and `settings` (50). `volume` requires no Bus service: it
+talks to PipeWire through `pactl`, and says so in the popup when that does
+not answer.
 
 The top bar's power buttons send `power.suspend`, `power.reboot` and
 `power.poweroff` to hostd. Each needs a hostd grant. A refusal is shown in the
@@ -68,6 +71,15 @@ a link can be configured (DHCP or static) through hostd's `net.link.apply`,
 which keeps a change only if the link comes up, and the last change undone
 (`lib/hostd.mix`, `docs/hostd.md`). Those handlers act only on clicks the
 scene host relays, never on a Bus caller.
+
+`volume` is the bottom panel's audio popup. It shows the default output and
+input with a level bar (one segment per 5 %, to 150 % only while PipeWire
+reports the level above 100 %), -/+ steps and mute; the output and input
+device lists, where a click makes a device the default; and the application
+streams, where a click gives a stream the same controls. Reads and writes
+are `pactl` calls (`lib/audio.mix`), every write is read back, and a
+`pactl subscribe` stream (`audio_watch`) keeps it current. The writes act
+only on clicks the scene host relays.
 
 ## The editor helpers and legacy template
 

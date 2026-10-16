@@ -53,9 +53,12 @@ the user has no icon preference:
   `MinSize`..`MaxSize` bounds and its own `Context`. The theme must not
   `Inherits` another theme.
 
-The brand mark is not in the bundle. `share/brand/install.mix` owns
-`icons/mixos/symbolic/apps/dev.mixos-symbolic.svg` and creates `index.theme`
-only when none exists. The bundle's index includes `symbolic/apps` for that mark.
+The brand icons are not in the bundle. `share/brand/install.mix` owns
+`icons/mixos/scalable/apps/dev.mixos.svg` (the full-colour launcher icon) and
+`icons/mixos/symbolic/apps/dev.mixos-symbolic.svg`, and creates `index.theme`
+only when none exists. The bundle's index lists both directories, and this
+installer never touches files it does not own, so the two installers can run
+in either order.
 
 ## Transaction and safety
 

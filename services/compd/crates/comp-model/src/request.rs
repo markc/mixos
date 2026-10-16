@@ -363,12 +363,15 @@ pub enum LongOp {
         generation: u64,
         timeout: Duration,
     },
+    /// `comp.motion.run`: a glide on the agent seat, answered when it ends.
+    Motion(crate::motion_run::MotionSpec),
 }
 
 impl LongOp {
     /// When the compositor must have answered by.
     pub fn budget(&self) -> Duration {
         match self {
+            Self::Motion(spec) => spec.budget(),
             Self::CaptureFrame(_) => Duration::from_secs(3),
             // Reserve four seconds after interaction for an acknowledged clean
             // frame (55s + 4s = 59s), strictly inside LONG_VERB_MAX's 60s.
@@ -932,7 +935,7 @@ pub const BTN_MIDDLE: u32 = 0x112;
 /// evdev `KEY_MAX`: every key and button code is at most this.
 const EVDEV_CODE_MAX: u64 = 0x2ff;
 
-fn args_object<'a>(
+pub(crate) fn args_object<'a>(
     args: &'a Value,
     empty: &'a serde_json::Map<String, Value>,
     allowed: &'static [&'static str],
@@ -954,7 +957,10 @@ fn args_object<'a>(
     Ok(object)
 }
 
-fn present<'a>(object: &'a serde_json::Map<String, Value>, name: &str) -> Option<&'a Value> {
+pub(crate) fn present<'a>(
+    object: &'a serde_json::Map<String, Value>,
+    name: &str,
+) -> Option<&'a Value> {
     object.get(name).filter(|value| !value.is_null())
 }
 
@@ -1748,6 +1754,14 @@ pub fn classify(command: &str, args: &Value, malformed: bool) -> Result<Request,
         }
         return crate::capture::parse(args)
             .map(|spec| Request::Long(LongOp::CaptureFrame(spec)))
+            .map_err(ControlReply::into_wire);
+    }
+    if command == "comp.motion.run" {
+        if malformed {
+            return Err(invalid_argument("args", "JSON object", "{targets}").into_wire());
+        }
+        return crate::motion_run::parse(args)
+            .map(|spec| Request::Long(LongOp::Motion(spec)))
             .map_err(ControlReply::into_wire);
     }
     if command == "comp.ping" {

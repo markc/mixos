@@ -9,7 +9,7 @@
 use citizen::Reply;
 use design::{CaptionSide, DesignContext, Mode, Scheme, Style};
 use egui_kittest::Harness;
-use preferences::{Dialog, Effect, Engine, Look, Panel};
+use preferences::{Dialog, Effect, Engine, Look, Panel, Section};
 use prefs::{commands, label_with, strings, view::view};
 use serde_json::json;
 use toolkit::{Theme, icons};
@@ -69,6 +69,56 @@ fn chrome(scheme: Scheme, mode: Mode) -> Theme {
     })
 }
 
+#[test]
+fn fonts_studio_dark() {
+    let mut e = appearance_engine();
+    e.set_section(Section::Fonts);
+    draw(chrome(Scheme::Studio, Mode::Dark), "fonts_studio_dark", e);
+}
+
+#[test]
+fn terminal_weights_studio_dark() {
+    let mut e = appearance_engine();
+    e.set_section(Section::Terminal);
+    e.look.terminal = Some(Default::default());
+    draw_at_size(
+        chrome(Scheme::Studio, Mode::Dark),
+        "terminal_weights_studio_dark",
+        e,
+        egui::vec2(980.0, 960.0),
+    );
+}
+
+#[test]
+fn creative_studio_dark() {
+    let mut e = Engine::new(label_with);
+    answer(
+        &mut e,
+        json!([
+            {"app":"canvas","repo":"example/canvas","category":"creative","installed":"0.8.0","latest":"0.9.0","published":"2026-10-10","status":"update"},
+            {"app":"drawing","repo":"example/drawing","category":"creative","installed":null,"latest":"0.9.0","published":"2026-10-10","status":"not installed"}
+        ]),
+    );
+    e.set_section(Section::Creative);
+    draw(
+        chrome(Scheme::Studio, Mode::Dark),
+        "creative_studio_dark",
+        e,
+    );
+}
+
+#[test]
+fn desktop_studio_light() {
+    let mut e = engine();
+    e.set_section(Section::Desktop);
+    e.ui.appearance_expanded = false;
+    draw(
+        chrome(Scheme::Studio, Mode::Light),
+        "desktop_studio_light",
+        e,
+    );
+}
+
 /// The window, optionally with `dialog` open.
 fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
     let mut engine = engine();
@@ -122,6 +172,7 @@ fn wallpaper_read(e: &mut Engine, config: serde_json::Value) {
 #[test]
 fn wallpaper_colour_studio_dark() {
     let mut e = appearance_engine();
+    e.set_section(Section::Wallpapers);
     e.wallpaper_kind(preferences::wallpaper::Kind::Colour);
     e.wallpaper_colour("#25354a".into());
     draw(
@@ -134,6 +185,7 @@ fn wallpaper_colour_studio_dark() {
 #[test]
 fn wallpaper_image_pro_light() {
     let mut e = appearance_engine();
+    e.set_section(Section::Wallpapers);
     wallpaper_read(
         &mut e,
         json!({"schema":1,"default":{"image":"/opt/mixos/share/wallpapers/landscape.jpg"}}),
@@ -148,6 +200,7 @@ fn wallpaper_image_pro_light() {
 #[test]
 fn wallpaper_refused_studio_dark() {
     let mut e = appearance_engine();
+    e.set_section(Section::Wallpapers);
     e.wallpaper_kind(preferences::wallpaper::Kind::Image);
     e.wallpaper_image("/pictures/missing.png".into());
     e.wallpaper.status = "status.refused".into();
@@ -163,6 +216,7 @@ fn wallpaper_refused_studio_dark() {
 #[test]
 fn wallpaper_picker_studio_dark() {
     let mut e = appearance_engine();
+    e.set_section(Section::Wallpapers);
     e.picker.open = true;
     e.picker.directory = "/opt/mixos/share/wallpapers".into();
     e.picker.entries = vec![
@@ -186,11 +240,15 @@ fn wallpaper_picker_studio_dark() {
 }
 
 fn draw(theme: Theme, name: &str, engine: Engine) {
+    draw_at_size(theme, name, engine, egui::vec2(980.0, 640.0));
+}
+
+fn draw_at_size(theme: Theme, name: &str, engine: Engine, size: egui::Vec2) {
     let registry = commands::registry();
     let strings = strings();
     let stroke = icons::stroke_width(&theme);
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(980.0, 640.0))
+        .with_size(size)
         .wgpu()
         .build_ui(move |ui| {
             let _ = view(ui, &engine, &registry, &strings, stroke);

@@ -1,0 +1,199 @@
+{
+  "files": [
+    {
+      "blake3": "23c7a5412e9fc7cceeaf3b4406696d41b902478298c7507e9c2f04b05a111290",
+      "bytes": 2049096,
+      "licence": "OFL-1.1",
+      "path": "fonts/NotoSans.ttf",
+      "revision": "9710da1eacb3be272583c3224dcb70f9da6eadbb",
+      "sha256": "bfb7bb691513f12e734dc346c03a03f784912432d7e3fa8e56efcf906fe86b3d",
+      "upstream": "https://github.com/google/fonts",
+      "url": "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be272583c3224dcb70f9da6eadbb/ofl/notosans/NotoSans%5Bwdth,wght%5D.ttf"
+    },
+    {
+      "blake3": "84319c4a51884960c3225583f574e19f97bbba93acd87210f5a8995a2e84c4ec",
+      "bytes": 2322640,
+      "licence": "OFL-1.1",
+      "path": "fonts/NotoSans-Italic.ttf",
+      "revision": "9710da1eacb3be272583c3224dcb70f9da6eadbb",
+      "sha256": "58e6e0ebd1931b29a365aa2d3e2ee9a9e831a3af7cf3ad1462d4e72154f0b291",
+      "upstream": "https://github.com/google/fonts",
+      "url": "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be272583c3224dcb70f9da6eadbb/ofl/notosans/NotoSans-Italic%5Bwdth,wght%5D.ttf"
+    },
+    {
+      "blake3": "347bf2f0c4992ecf0abebdb585068899983a1f7b8aced2613ea4ce261d1be8d1",
+      "bytes": 4396,
+      "licence": "OFL-1.1",
+      "path": "licences/NotoSans-OFL.txt",
+      "revision": "9710da1eacb3be272583c3224dcb70f9da6eadbb",
+      "sha256": "cee9892f9f0cc8fe882c9e9537ee6a89621d86ee7ceaf70b02e2b2b1c25c061a",
+      "upstream": "https://github.com/google/fonts",
+      "url": "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be272583c3224dcb70f9da6eadbb/ofl/notosans/OFL.txt"
+    },
+    {
+      "blake3": "273f86e03d009a0ba65d109cf6ed8931560e98289ce1da5bede6c27f36758bf9",
+      "bytes": 879708,
+      "licence": "OFL-1.1",
+      "path": "fonts/InterVariable.ttf",
+      "revision": "353b61b9f4430d5f420d56605a6e7993e0941470",
+      "sha256": "4989b125924991b90d05b2d16e0e388c48f7d5bb8b30539bbf9c755278d0ccaf",
+      "upstream": "https://github.com/rsms/inter",
+      "url": "https://raw.githubusercontent.com/rsms/inter/353b61b9f4430d5f420d56605a6e7993e0941470/docs/font-files/InterVariable.ttf"
+    },
+    {
+      "blake3": "b42cd608c35da362a163e5c8c151e96424052169267f9c69b0ae5a3b280a0cdc",
+      "bytes": 352240,
+      "licence": "OFL-1.1",
+      "path": "web/InterVariable.woff2",
+      "revision": "353b61b9f4430d5f420d56605a6e7993e0941470",
+      "sha256": "693b77d4f32ee9b8bfc995589b5fad5e99adf2832738661f5402f9978429a8e3",
+      "upstream": "https://github.com/rsms/inter",
+      "url": "https://raw.githubusercontent.com/rsms/inter/353b61b9f4430d5f420d56605a6e7993e0941470/docs/font-files/InterVariable.woff2"
+    },
+    {
+      "blake3": "54aa13ccba78c48b2b473f52adb37c68dc2bcb4e0c1af88d9e2f147ba0674561",
+      "bytes": 4380,
+      "licence": "OFL-1.1",
+      "path": "licences/Inter-OFL.txt",
+      "revision": "353b61b9f4430d5f420d56605a6e7993e0941470",
+      "sha256": "262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a",
+      "upstream": "https://github.com/rsms/inter",
+      "url": "https://raw.githubusercontent.com/rsms/inter/353b61b9f4430d5f420d56605a6e7993e0941470/LICENSE.txt"
+    },
+    {
+      "blake3": "00a26751f5073cf0057af971b277830bb30740ffb5583c322d5eb577f6d26d9b",
+      "bytes": 303144,
+      "licence": "OFL-1.1",
+      "path": "fonts/JetBrainsMono.ttf",
+      "revision": "cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9",
+      "sha256": "662a196d58f1183bf2d77428b6d5283fe3f45161ab021bea4036bc98e5cac016",
+      "upstream": "https://github.com/JetBrains/JetBrainsMono",
+      "url": "https://raw.githubusercontent.com/JetBrains/JetBrainsMono/cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9/fonts/variable/JetBrainsMono%5Bwght%5D.ttf"
+    },
+    {
+      "blake3": "06f7dd2b3c9e6e6765d309a4ae7c9ac1705996fe42eead844804883392a4defd",
+      "bytes": 308888,
+      "licence": "OFL-1.1",
+      "path": "fonts/JetBrainsMono-Italic.ttf",
+      "revision": "cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9",
+      "sha256": "f115aaa12113718c02ce72864fe6823b87241bc23d3e44cf1220155f861063f2",
+      "upstream": "https://github.com/JetBrains/JetBrainsMono",
+      "url": "https://raw.githubusercontent.com/JetBrains/JetBrainsMono/cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9/fonts/variable/JetBrainsMono-Italic%5Bwght%5D.ttf"
+    },
+    {
+      "blake3": "4ad21e838c2a993c5cabc052011205bdda92a83189805e75d163ef27bebc2d5e",
+      "bytes": 4399,
+      "licence": "OFL-1.1",
+      "path": "licences/JetBrainsMono-OFL.txt",
+      "revision": "cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9",
+      "sha256": "30f0c136e3c88e422d0791acd97238870f9054a9729bc34cf2ff0d4ed8cac4ad",
+      "upstream": "https://github.com/JetBrains/JetBrainsMono",
+      "url": "https://raw.githubusercontent.com/JetBrains/JetBrainsMono/cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9/OFL.txt"
+    },
+    {
+      "blake3": "db06b083b266b9292cdb52c946f8142d9fc2f22e955fecb6be75e8109e723301",
+      "bytes": 1887192,
+      "licence": "OFL-1.1",
+      "path": "fonts/NotoSerif.ttf",
+      "revision": "9710da1eacb3be272583c3224dcb70f9da6eadbb",
+      "sha256": "4d8e6761424656867019081a1a01336f3cb086982682698714054fc33f782713",
+      "upstream": "https://github.com/google/fonts",
+      "url": "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be272583c3224dcb70f9da6eadbb/ofl/notoserif/NotoSerif%5Bwdth,wght%5D.ttf"
+    },
+    {
+      "blake3": "36f250dd3caf9ecfc9681b4bb1f8cc39b08cb421decd63d5a853da8ac9655b93",
+      "bytes": 2448496,
+      "licence": "OFL-1.1",
+      "path": "fonts/NotoSerif-Italic.ttf",
+      "revision": "9710da1eacb3be272583c3224dcb70f9da6eadbb",
+      "sha256": "e87acbc6c0efd0d9a20d6a8cbbda2b266c14be3a3a6f5af8ec9d7b2460570ad1",
+      "upstream": "https://github.com/google/fonts",
+      "url": "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be272583c3224dcb70f9da6eadbb/ofl/notoserif/NotoSerif-Italic%5Bwdth,wght%5D.ttf"
+    },
+    {
+      "blake3": "347bf2f0c4992ecf0abebdb585068899983a1f7b8aced2613ea4ce261d1be8d1",
+      "bytes": 4396,
+      "licence": "OFL-1.1",
+      "path": "licences/NotoSerif-OFL.txt",
+      "revision": "9710da1eacb3be272583c3224dcb70f9da6eadbb",
+      "sha256": "cee9892f9f0cc8fe882c9e9537ee6a89621d86ee7ceaf70b02e2b2b1c25c061a",
+      "upstream": "https://github.com/google/fonts",
+      "url": "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be272583c3224dcb70f9da6eadbb/ofl/notoserif/OFL.txt"
+    },
+    {
+      "blake3": "b61dcf1dec7fe5cf666b22b4276be1c6d4c39f2a56a2a10453184b680eed73c1",
+      "bytes": 10673480,
+      "licence": "OFL-1.1",
+      "path": "emoji/NotoColorEmoji.ttf",
+      "revision": "8998f5dd683424a73e2314a8c1f1e359c19e8742",
+      "sha256": "72a635cb3d2f3524c51620cdde406b217204e8a6a06c6a096ff8ed4b5fd6e27b",
+      "upstream": "https://github.com/googlefonts/noto-emoji",
+      "url": "https://raw.githubusercontent.com/googlefonts/noto-emoji/8998f5dd683424a73e2314a8c1f1e359c19e8742/fonts/NotoColorEmoji.ttf"
+    },
+    {
+      "blake3": "7074dc90f728d93e9226e8309f4df52f5db2059fd722ff6c7747c49d6689f9d7",
+      "bytes": 4301,
+      "licence": "OFL-1.1",
+      "path": "licences/NotoColorEmoji-OFL.txt",
+      "revision": "8998f5dd683424a73e2314a8c1f1e359c19e8742",
+      "sha256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2",
+      "upstream": "https://github.com/googlefonts/noto-emoji",
+      "url": "https://raw.githubusercontent.com/googlefonts/noto-emoji/8998f5dd683424a73e2314a8c1f1e359c19e8742/fonts/LICENSE"
+    },
+    {
+      "blake3": "6d4ca553fccc1e408d4bdadef76a4909d99558d3a18097b097df3263f95f2b6f",
+      "bytes": 124824,
+      "licence": "OFL-1.1",
+      "path": "fonts/Quicksand.ttf",
+      "revision": "9710da1eacb3be272583c3224dcb70f9da6eadbb",
+      "sha256": "39c9b64223561f56aaff6062a6f04063c4fc86809ad6768722c06614d977e1cc",
+      "upstream": "https://github.com/google/fonts",
+      "url": "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be272583c3224dcb70f9da6eadbb/ofl/quicksand/Quicksand%5Bwght%5D.ttf"
+    },
+    {
+      "blake3": "47eb5a59464e50019b90648d6a1a14a3f7f7e508cefd14637529d42dd1379776",
+      "bytes": 4445,
+      "licence": "OFL-1.1",
+      "path": "licences/Quicksand-OFL.txt",
+      "revision": "9710da1eacb3be272583c3224dcb70f9da6eadbb",
+      "sha256": "14d28541780d90f6577bb7abcc6f005bf6969614294e75c82abb8758a696ad46",
+      "upstream": "https://github.com/google/fonts",
+      "url": "https://raw.githubusercontent.com/google/fonts/9710da1eacb3be272583c3224dcb70f9da6eadbb/ofl/quicksand/OFL.txt"
+    },
+    {
+      "blake3": "2723043870fcdc315e8a8ea004b539009ebc9b29336c4671a488b638290b091c",
+      "bytes": 4991984,
+      "licence": "OFL-1.1",
+      "path": "web/NotoColorEmoji-COLRv1.ttf",
+      "revision": "8998f5dd683424a73e2314a8c1f1e359c19e8742",
+      "sha256": "0ae57fe58645638523ba35f388d93739d292539a9acb84df5700c81b1e1a28d2",
+      "upstream": "https://github.com/googlefonts/noto-emoji",
+      "url": "https://raw.githubusercontent.com/googlefonts/noto-emoji/8998f5dd683424a73e2314a8c1f1e359c19e8742/fonts/Noto-COLRv1.ttf"
+    }
+  ],
+  "font_families": {
+    "display": "Quicksand",
+    "emoji": "Noto Color Emoji",
+    "mono": "JetBrains Mono",
+    "mono_italic": "JetBrains Mono",
+    "sans": "Inter Variable",
+    "serif": "Noto Serif",
+    "serif_italic": "Noto Serif",
+    "ui": "Noto Sans",
+    "ui_italic": "Noto Sans"
+  },
+  "fonts": {
+    "display": "fonts/Quicksand.ttf",
+    "emoji": "emoji/NotoColorEmoji.ttf",
+    "mono": "fonts/JetBrainsMono.ttf",
+    "mono_italic": "fonts/JetBrainsMono-Italic.ttf",
+    "sans": "fonts/InterVariable.ttf",
+    "serif": "fonts/NotoSerif.ttf",
+    "serif_italic": "fonts/NotoSerif-Italic.ttf",
+    "ui": "fonts/NotoSans.ttf",
+    "ui_italic": "fonts/NotoSans-Italic.ttf"
+  },
+  "schema": "mixos.static-assets.v1",
+  "set_id": "2026-10-14-core-5",
+  "web_css": "/* Relative URLs keep this stylesheet bound to its immutable asset set. */\n@font-face { font-family: \"MixOS Sans\"; src: url(\"web/InterVariable.woff2\") format(\"woff2\"); font-style: normal; font-weight: 100 900; font-display: swap; }\n@font-face { font-family: \"MixOS Serif\"; src: url(\"fonts/NotoSerif.ttf\") format(\"truetype\"); font-style: normal; font-weight: 100 900; font-display: swap; }\n@font-face { font-family: \"MixOS Serif\"; src: url(\"fonts/NotoSerif-Italic.ttf\") format(\"truetype\"); font-style: italic; font-weight: 100 900; font-display: swap; }\n@font-face { font-family: \"MixOS Mono\"; src: url(\"fonts/JetBrainsMono.ttf\") format(\"truetype\"); font-style: normal; font-weight: 100 800; font-display: swap; }\n@font-face { font-family: \"MixOS Mono\"; src: url(\"fonts/JetBrainsMono-Italic.ttf\") format(\"truetype\"); font-style: italic; font-weight: 100 800; font-display: swap; }\n@font-face { font-family: \"MixOS Display\"; src: url(\"fonts/Quicksand.ttf\") format(\"truetype\"); font-style: normal; font-weight: 300 700; font-display: swap; }\n@font-face { font-family: \"MixOS Emoji\"; src: url(\"web/NotoColorEmoji-COLRv1.ttf\") format(\"truetype\"); font-display: swap; }\n"
+}

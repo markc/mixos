@@ -1,10 +1,14 @@
 # prefs
 
-MixOS's preferences: one window with a sidebar of editors, in the spirit of
-the AmigaOS Prefs drawer. The first editor is **Applications**, over the
+MixOS's preferences: one window with an expandable, resizable navigation tree,
+in the spirit of the AmigaOS Prefs drawer. **Appearance** contains Themes,
+Fonts (current faces and previews) and Wallpapers. **Applications** groups
+MixOS Desktop, MixOS Server and creative applications using catalogue metadata,
+with catalogue-supplied display labels and Other for unclassified entries.
+It works over the
 `releases` service (`services/releasesd`): the followed apps, installed
 against latest, release notes, and Install or update, Roll back, Remove
-(after a confirmation), Check for updates and Update all. The second is
+(after a confirmation), Check for updates and Update group. Themes is
 **Appearance**, over settingsd: the session's scheme, style, mode, contrast
 and window frame, previewed in the window and applied in one fenced
 `settings.apply`. The manual is

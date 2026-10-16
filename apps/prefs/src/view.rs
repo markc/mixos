@@ -14,13 +14,22 @@ use crate::{label, label_with};
 use design::{CaptionSide, Contrast, Decorations, Mode, Scheme, Style};
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
 use preferences::appearance::{Availability as Settings, Axis};
-use preferences::{AppRow, Availability, Dialog, Engine, Look, Panel, RowState};
+use preferences::terminal::{
+    BORDER_WIDTH_MAX, BORDER_WIDTH_MIN, CursorShape, FONT_SIZE_MAX, FONT_SIZE_MIN, FocusRing,
+    PADDINGS, SCROLL_SPEED_MAX, SCROLL_SPEED_MIN, SCROLLBACK_MAX, Setting, Terminal,
+    family_setting, family_text,
+};
+use preferences::{AppRow, Availability, Dialog, Engine, Look, Panel, RowState, Section};
 use std::collections::HashMap;
+use std::ops::RangeInclusive;
 use std::sync::{Mutex, OnceLock};
 use toolkit::button::PushButton;
 use toolkit::command::Origin;
 use toolkit::dialog::{self, Choice};
+use toolkit::field::ValueField;
+use toolkit::slider::Slider;
 use toolkit::titlebar::{self, Control};
+use toolkit::toggle::Toggle;
 use toolkit::{Icon, Registry, Strings, bars, icons, panel, tooltip};
 mod wallpaper;
 
@@ -37,6 +46,8 @@ pub enum UiEvent {
     SetMode(design::Mode),
     /// An edit in the Appearance panel: the whole look it leaves.
     Look(Look),
+    /// An edit in the Terminal group: one `terminal.*` field.
+    Terminal(Setting),
     WallpaperTarget(Option<String>),
     WallpaperKind(preferences::wallpaper::Kind),
     WallpaperColour(String),
@@ -119,22 +130,30 @@ pub fn view(
         }
     });
     egui::Panel::left("editors")
-        .resizable(false)
-        .default_size(176.0)
+        .resizable(true)
+        .default_size(220.0)
+        .min_size(184.0)
+        .max_size(320.0)
         .frame(bars::dock_frame(ui.ctx()))
         .show(ui, |ui| editors(ui, engine, commands, stroke, &mut events));
     egui::CentralPanel::default()
         .frame(bars::dock_frame(ui.ctx()))
-        .show(ui, |ui| match engine.ui.panel {
-            Panel::Applications => applications(ui, engine, commands, strings, &mut events),
-            Panel::Appearance => {
+        .show(ui, |ui| match engine.section() {
+            Section::Desktop | Section::Server | Section::Creative | Section::Other => {
+                applications(ui, engine, commands, strings, &mut events)
+            }
+            section => {
                 ScrollArea::vertical()
-                    .id_salt("appearance-page")
+                    .id_salt(section.name())
                     .auto_shrink(false)
-                    .show(ui, |ui| {
-                        wallpaper::controls(ui, engine, commands, strings, &mut events);
-                        ui.add_space(ui.spacing().item_spacing.y);
-                        appearance(ui, engine, commands, strings, &mut events);
+                    .show(ui, |ui| match section {
+                        Section::Themes => appearance(ui, engine, commands, strings, &mut events),
+                        Section::Terminal => terminal(ui, engine, commands, strings, &mut events),
+                        Section::Wallpapers => {
+                            wallpaper::controls(ui, engine, commands, strings, &mut events)
+                        }
+                        Section::Fonts => fonts(ui),
+                        _ => unreachable!(),
                     });
             }
         });
@@ -144,7 +163,7 @@ pub fn view(
     events
 }
 
-/// The sidebar: one row per editor, as the Prefs drawer held one tool each.
+/// A tree whose selection and expansion live in the serialisable engine.
 fn editors(
     ui: &mut Ui,
     engine: &Engine,
@@ -154,30 +173,67 @@ fn editors(
 ) {
     let title = label("panels");
     panel::group(ui, "editors", &[title.as_str()], |ui, _| {
-        for panel in Panel::ALL {
-            let (command, icon, text) = match panel {
-                Panel::Applications => (
-                    "view.panel.applications",
-                    Icon::Package,
-                    label("panel-applications"),
-                ),
-                Panel::Appearance => (
-                    "view.panel.appearance",
-                    Icon::Palette,
-                    label("panel-appearance"),
-                ),
-            };
-            let enabled = commands.get(command).is_some_and(|c| (c.enabled)(engine));
-            ui.horizontal(|ui| {
-                let colour = ui.visuals().text_color();
-                ui.add(icons::image(icon, stroke, ICON, colour));
-                let selected = engine.ui.panel == panel;
-                let row = ui.add_enabled_ui(enabled, |ui| toolkit::selectable(ui, selected, text));
-                if row.inner.clicked() {
-                    events.push(UiEvent::Command(command, Origin::Ui));
+        ScrollArea::vertical()
+            .id_salt("navigation-tree")
+            .show(ui, |ui| {
+                for (parent, heading, expanded, toggle) in [
+                    (
+                        Panel::Appearance,
+                        "panel-appearance",
+                        engine.ui.appearance_expanded,
+                        "view.tree.appearance",
+                    ),
+                    (
+                        Panel::Applications,
+                        "panel-applications",
+                        engine.ui.applications_expanded,
+                        "view.tree.applications",
+                    ),
+                ] {
+                    let enabled = commands.get(toggle).is_some_and(|c| (c.enabled)(engine));
+                    let shown = ui.add_enabled_ui(enabled, |ui| {
+                        egui::CollapsingHeader::new(label(heading))
+                            .id_salt(heading)
+                            .open(Some(expanded))
+                            .show(ui, |ui| {
+                                for section in
+                                    Section::ALL.into_iter().filter(|s| s.panel() == parent)
+                                {
+                                    if section == Section::Other
+                                        && !engine.apps.iter().any(|r| Section::Other.matches(r))
+                                    {
+                                        continue;
+                                    }
+                                    let command =
+                                        commands.get(section.command()).expect("section command");
+                                    ui.horizontal(|ui| {
+                                        ui.add(icons::image(
+                                            command.icon.expect("section icon"),
+                                            stroke,
+                                            ICON,
+                                            ui.visuals().text_color(),
+                                        ));
+                                        if toolkit::selectable(
+                                            ui,
+                                            engine.section() == section,
+                                            section_title(engine, section),
+                                        )
+                                        .clicked()
+                                        {
+                                            events.push(UiEvent::Command(
+                                                section.command(),
+                                                Origin::Ui,
+                                            ));
+                                        }
+                                    });
+                                }
+                            })
+                    });
+                    if shown.inner.header_response.clicked() {
+                        events.push(UiEvent::Command(toggle, Origin::Ui));
+                    }
                 }
             });
-        }
     });
 }
 
@@ -224,6 +280,54 @@ fn status_text(ui: &Ui, row: &AppRow) -> RichText {
     }
 }
 
+fn section_title(engine: &Engine, section: Section) -> String {
+    engine
+        .category_label(section)
+        .map(str::to_owned)
+        .unwrap_or_else(|| label(section.label()))
+}
+
+/// Preview the actual face stacks installed on this rendering context.
+fn fonts(ui: &mut Ui) {
+    let title = label("section-fonts");
+    panel::group(ui, "fonts", &[title.as_str()], |ui, _| {
+        let faces = ui.ctx().fonts(|fonts| {
+            let defs = fonts.definitions();
+            [
+                egui::FontFamily::Proportional,
+                egui::FontFamily::Name(toolkit::fonts::HEADING.into()),
+                egui::FontFamily::Monospace,
+            ]
+            .map(|family| {
+                defs.families
+                    .get(&family)
+                    .and_then(|stack| stack.first())
+                    .cloned()
+                    .unwrap_or_default()
+            })
+        });
+        egui::Grid::new("font-faces")
+            .num_columns(2)
+            .spacing([24.0, 14.0])
+            .show(ui, |ui| {
+                for (key, face) in ["fonts-interface", "fonts-headings", "fonts-monospace"]
+                    .into_iter()
+                    .zip(faces)
+                {
+                    panel::section_label(ui, &label(key));
+                    ui.label(face);
+                    ui.end_row();
+                }
+            });
+        bars::hairline(ui);
+        ui.heading(label("fonts-preview"));
+        ui.label(label("fonts-sample"));
+        ui.monospace(label("fonts-mono-sample"));
+        bars::hairline(ui);
+        ui.add(egui::Label::new(RichText::new(label("fonts-note")).weak()).wrap());
+    });
+}
+
 fn applications(
     ui: &mut Ui,
     engine: &Engine,
@@ -232,7 +336,7 @@ fn applications(
     events: &mut Vec<UiEvent>,
 ) {
     let height = ui.available_height();
-    let title = label("apps-title");
+    let title = section_title(engine, engine.section());
     // The table takes the upper part; the selected app's notes the rest.
     ui.allocate_ui(egui::vec2(ui.available_width(), height * 0.55), |ui| {
         panel::group(ui, "applications", &[title.as_str()], |ui, _| {
@@ -256,9 +360,9 @@ fn applications(
                 ui.add(egui::Label::new(RichText::new(label("missing")).weak()).wrap());
                 return;
             }
-            if engine.apps.is_empty() {
+            if engine.visible_apps().next().is_none() {
                 if engine.working().is_none() {
-                    ui.add(egui::Label::new(RichText::new(label("empty")).weak()).wrap());
+                    ui.add(egui::Label::new(RichText::new(label("group-empty")).weak()).wrap());
                 }
                 return;
             }
@@ -380,7 +484,7 @@ fn appearance(
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
-    let title = label("look-title");
+    let title = label("section-themes");
     panel::group(ui, "appearance", &[title.as_str()], |ui, _| {
         ui.horizontal(|ui| {
             // Changes apply as they are made; these appear only when an
@@ -450,6 +554,365 @@ fn appearance(
             );
         });
     });
+}
+
+/// The Terminal group: one control per `terminal.*` field, each applied as
+/// it is made. The values are settingsd's, as its last read gave them.
+fn terminal(
+    ui: &mut Ui,
+    engine: &Engine,
+    commands: &Registry<Engine>,
+    strings: &Strings,
+    events: &mut Vec<UiEvent>,
+) {
+    let title = label("section-terminal");
+    panel::group(ui, "terminal", &[title.as_str()], |ui, _| {
+        ui.horizontal(|ui| {
+            command_button(
+                ui,
+                engine,
+                commands,
+                strings,
+                "terminal.reset",
+                false,
+                events,
+            );
+        });
+        bars::hairline(ui);
+        if engine.look.settings == Settings::Missing {
+            ui.add(egui::Label::new(RichText::new(label("look-missing")).weak()).wrap());
+            return;
+        }
+        let Some(term) = engine.look.terminal.clone() else {
+            ui.label(RichText::new(label("look-reading")).weak());
+            return;
+        };
+        ui.add_enabled_ui(engine.can_edit_terminal(), |ui| {
+            ui.vertical(|ui| {
+                ui.set_width(ui.available_width());
+                terminal_controls(ui, &term, events);
+            });
+        });
+    });
+}
+
+/// The controls for each field, in the order the settings are read.
+fn terminal_controls(ui: &mut Ui, term: &Terminal, events: &mut Vec<UiEvent>) {
+    panel::section_label(ui, &label("terminal-family"));
+    let family = family_text(term.font.family.as_deref());
+    let hint = label("terminal-family-system");
+    if let Some(setting) = checked_text(ui, "terminal-family", &family, &hint, family_setting) {
+        events.push(UiEvent::Terminal(setting));
+    }
+    let size = Numeric {
+        key: "terminal-size",
+        title: label("terminal-size"),
+        unit: "px",
+        places: 1,
+        slider: true,
+    };
+    if let Some(value) = number(ui, size, term.font.size, FONT_SIZE_MIN..=FONT_SIZE_MAX) {
+        events.push(UiEvent::Terminal(Setting::Size(value)));
+    }
+
+    panel::section_label(ui, &label("terminal-weight"));
+    let weights = [
+        (300, label("terminal-weight-light")),
+        (400, label("terminal-weight-regular")),
+        (500, label("terminal-weight-medium")),
+    ];
+    if let Some(weight) = choices(ui, term.font.weight, &weights) {
+        events.push(UiEvent::Terminal(Setting::Weight(weight)));
+    }
+
+    panel::section_label(ui, &label("terminal-padding"));
+    let paddings: Vec<(u32, String)> = PADDINGS.iter().map(|&p| (p, p.to_string())).collect();
+    if let Some(padding) = choices(ui, term.padding, &paddings) {
+        events.push(UiEvent::Terminal(Setting::Padding(padding)));
+    }
+
+    let scrollback = Numeric {
+        key: "terminal-scrollback",
+        title: label("terminal-scrollback"),
+        unit: "",
+        places: 0,
+        slider: false,
+    };
+    let range = 0.0..=f64::from(SCROLLBACK_MAX);
+    if let Some(lines) = number(ui, scrollback, f64::from(term.scrollback.lines), range) {
+        events.push(UiEvent::Terminal(Setting::Scrollback(lines as u32)));
+    }
+
+    let speed = Numeric {
+        key: "terminal-scroll-speed",
+        title: label("terminal-scroll-speed"),
+        unit: "",
+        places: 0,
+        slider: true,
+    };
+    let range = f64::from(SCROLL_SPEED_MIN)..=f64::from(SCROLL_SPEED_MAX);
+    if let Some(value) = number(ui, speed, f64::from(term.scroll.speed), range) {
+        events.push(UiEvent::Terminal(Setting::ScrollSpeed(value as u32)));
+    }
+
+    panel::section_label(ui, &label("terminal-border"));
+    let widths: Vec<(u32, String)> = (BORDER_WIDTH_MIN..=BORDER_WIDTH_MAX)
+        .map(|w| (w, w.to_string()))
+        .collect();
+    if let Some(width) = choices(ui, term.border.width, &widths) {
+        events.push(UiEvent::Terminal(Setting::BorderWidth(width)));
+    }
+
+    panel::section_label(ui, &label("terminal-cursor-shape"));
+    let shapes = [
+        (CursorShape::Block, label("terminal-cursor-block")),
+        (CursorShape::Underline, label("terminal-cursor-underline")),
+        (CursorShape::Bar, label("terminal-cursor-bar")),
+    ];
+    if let Some(shape) = choices(ui, term.cursor.shape, &shapes) {
+        events.push(UiEvent::Terminal(Setting::CursorShape(shape)));
+    }
+    let mut blink = term.cursor.blink;
+    if ui
+        .add(Toggle::new(&mut blink, label("terminal-cursor-blink")))
+        .changed()
+    {
+        events.push(UiEvent::Terminal(Setting::CursorBlink(blink)));
+    }
+
+    panel::section_label(ui, &label("terminal-focus-ring"));
+    let rings = [
+        (FocusRing::Neutral, label("terminal-focus-neutral")),
+        (FocusRing::Accent, label("terminal-focus-accent")),
+    ];
+    if let Some(ring) = choices(ui, term.focus.ring, &rings) {
+        events.push(UiEvent::Terminal(Setting::FocusRing(ring)));
+    }
+    if term.focus.ring == FocusRing::Accent {
+        let strength = Numeric {
+            key: "terminal-focus-strength",
+            title: label("terminal-focus-strength"),
+            unit: "",
+            places: 2,
+            slider: true,
+        };
+        if let Some(value) = number(ui, strength, term.focus.strength, 0.0..=1.0) {
+            events.push(UiEvent::Terminal(Setting::FocusStrength(value)));
+        }
+    }
+
+    let mut copy = term.mouse.copy_on_select;
+    if ui
+        .add(Toggle::new(&mut copy, label("terminal-copy-on-select")))
+        .changed()
+    {
+        events.push(UiEvent::Terminal(Setting::CopyOnSelect(copy)));
+    }
+
+    panel::section_label(ui, &label("terminal-term"));
+    let hint = "xterm-256color";
+    let to_term = |text: &str| Setting::Term(text.to_owned());
+    if let Some(setting) = checked_text(ui, "terminal-term", &term.env.term, hint, to_term) {
+        events.push(UiEvent::Terminal(setting));
+    }
+    ui.add(egui::Label::new(RichText::new(label("terminal-term-note")).weak()).wrap());
+}
+
+/// A numeric control's identity and how it draws and rounds its value.
+struct Numeric {
+    /// The memory key for a drag in progress.
+    key: &'static str,
+    title: String,
+    unit: &'static str,
+    /// Decimal places the value is rounded to when it is applied.
+    places: i32,
+    /// A slider beside the typed value, or the typed value alone.
+    slider: bool,
+}
+
+/// A number, typed or dragged. A typed value applies when its field loses
+/// focus, a drag when the pointer lets go, so no keystroke is sent. `Some`
+/// is the value to apply, rounded, when it differs from `current`.
+fn number(ui: &mut Ui, spec: Numeric, current: f64, range: RangeInclusive<f64>) -> Option<f64> {
+    let id = egui::Id::new(spec.key);
+    let mut value = ui.data(|d| d.get_temp::<f64>(id)).unwrap_or(current);
+    let mut commit = false;
+    panel::section_label(ui, &spec.title);
+    ui.horizontal(|ui| {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let escaped = ui.input(|i| i.key_pressed(egui::Key::Escape));
+            let field = ValueField::new(&mut value, range.clone()).unit(spec.unit);
+            let response = ui.add(field);
+            let cancelled = response.lost_focus() && escaped;
+            if cancelled {
+                ui.data_mut(|d| d.remove::<f64>(id));
+                value = current;
+            } else if response.has_focus() || response.dragged() {
+                ui.data_mut(|d| d.insert_temp(id, value));
+            }
+            if !cancelled && (response.lost_focus() || response.drag_stopped()) {
+                commit = true;
+            }
+            if spec.slider {
+                let slider = Slider::new(&mut value, range.clone()).label(spec.title.as_str());
+                let response = ui.add(slider);
+                if response.dragged() {
+                    ui.data_mut(|d| d.insert_temp(id, value));
+                } else if response.drag_stopped() || response.changed() {
+                    commit = true;
+                }
+            }
+        });
+    });
+    if !commit {
+        return None;
+    }
+    ui.data_mut(|d| d.remove::<f64>(id));
+    let scale = 10f64.powi(spec.places);
+    let rounded = (value * scale).round() / scale;
+    (rounded != (current * scale).round() / scale).then_some(rounded)
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::*;
+    use egui::accesskit::Role;
+    use egui_kittest::{Harness, kittest::Queryable};
+
+    #[test]
+    fn scrubbing_and_enter_commit_once_and_escape_cancels_typing() {
+        #[derive(Default)]
+        struct State {
+            value: f64,
+            commits: Vec<f64>,
+        }
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(640.0, 200.0))
+            .build_ui_state(
+                |ui, state: &mut State| {
+                    let spec = Numeric {
+                        key: "numeric-test",
+                        title: "Number".into(),
+                        unit: "",
+                        places: 0,
+                        slider: false,
+                    };
+                    if let Some(value) = number(ui, spec, state.value, 0.0..=1000.0) {
+                        state.value = value;
+                        state.commits.push(value);
+                    }
+                },
+                State {
+                    value: 100.0,
+                    ..Default::default()
+                },
+            );
+        toolkit::install(&h.ctx, &toolkit::Theme::embedded());
+        h.run();
+        let from = h.get_by_role(Role::SpinButton).rect().center();
+        let to = from + egui::vec2(30.0, 0.0);
+        h.hover_at(from);
+        h.run();
+        h.drag_at(from);
+        h.run();
+        h.hover_at(to);
+        h.run();
+        assert!(
+            h.state().commits.is_empty(),
+            "dragging never applies per frame"
+        );
+        h.drop_at(to);
+        h.run();
+        assert_eq!(h.state().commits.len(), 1, "one release, one apply");
+        assert!(
+            h.state().value > 100.0,
+            "the dragged value survives the release frame"
+        );
+        h.get_by_role(Role::SpinButton).click();
+        h.run();
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        h.get_by_role(Role::TextInput).type_text("250");
+        h.run();
+        assert_eq!(h.state().commits.len(), 1, "typing waits for focus loss");
+        h.key_press(egui::Key::Enter);
+        h.run();
+        assert_eq!(h.state().commits.len(), 2);
+        assert_eq!(h.state().value, 250.0);
+        h.get_by_role(Role::SpinButton).click();
+        h.run();
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        h.get_by_role(Role::TextInput).type_text("350");
+        h.run();
+        assert_eq!(h.state().commits.len(), 2);
+        h.key_press(egui::Key::Escape);
+        h.run();
+        assert_eq!(h.state().commits.len(), 2, "Escape sends no apply");
+        assert_eq!(h.state().value, 250.0);
+        assert!(
+            h.ctx
+                .data(|d| d.get_temp::<f64>(egui::Id::new("numeric-test")))
+                .is_none()
+        );
+        h.get_by_role(Role::SpinButton).click();
+        h.run();
+        assert_eq!(
+            h.get_by_role(Role::TextInput).value().as_deref(),
+            Some("250")
+        );
+        h.key_press(egui::Key::Escape);
+        h.run();
+        assert_eq!(h.state().commits.len(), 2);
+    }
+}
+
+/// A text field that applies when Enter is pressed or it loses focus, not
+/// per keystroke. While it is not being edited it shows `current`. `Some`
+/// is the trimmed text to apply when it differs from `current`.
+fn text_field(ui: &mut Ui, key: &'static str, current: &str, hint: &str) -> Option<String> {
+    let id = egui::Id::new(key);
+    let mut text = ui
+        .data(|d| d.get_temp::<String>(id))
+        .unwrap_or_else(|| current.to_owned());
+    let response = toolkit::field::text(ui, &mut text, hint, 240.0);
+    if response.lost_focus() {
+        ui.data_mut(|d| d.remove::<String>(id));
+        let text = text.trim();
+        return (text != current.trim()).then(|| text.to_owned());
+    }
+    if response.has_focus() {
+        ui.data_mut(|d| d.insert_temp(id, text));
+    } else {
+        ui.data_mut(|d| d.remove::<String>(id));
+    }
+    None
+}
+
+/// A [`text_field`] for a terminal setting. Text settingsd would refuse is
+/// not sent: the reason shows under the field until a value is accepted.
+fn checked_text(
+    ui: &mut Ui,
+    key: &'static str,
+    current: &str,
+    hint: &str,
+    setting: impl Fn(&str) -> Setting,
+) -> Option<Setting> {
+    let refused_id = egui::Id::new(key).with("refused");
+    let committed = text_field(ui, key, current, hint).map(|text| setting(&text));
+    if let Some(committed) = &committed {
+        ui.data_mut(|d| match committed.refusal() {
+            Some(refusal) => {
+                d.insert_temp(refused_id, refusal);
+            }
+            None => {
+                d.remove::<&'static str>(refused_id);
+            }
+        });
+    }
+    if let Some(refusal) = ui.data(|d| d.get_temp::<&'static str>(refused_id)) {
+        let text = RichText::new(label(refusal)).color(ui.visuals().error_fg_color);
+        ui.add(egui::Label::new(text).wrap());
+    }
+    committed.filter(|setting| setting.refusal().is_none())
 }
 
 /// The panel label naming `axis`.
@@ -583,7 +1046,7 @@ fn table(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                 panel::section_label(ui, &label(key));
             }
             ui.end_row();
-            for row in &engine.apps {
+            for row in engine.visible_apps() {
                 let selected = engine.ui.selected.as_deref() == Some(row.app.as_str());
                 if toolkit::selectable(ui, selected, &row.app).clicked() {
                     events.push(UiEvent::Select(row.app.clone()));

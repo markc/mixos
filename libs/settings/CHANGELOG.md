@@ -1,5 +1,48 @@
 # settings contract changes
 
+## 0.7.0
+
+Additive, store format unchanged (3):
+
+- `Desktop.terminal` (`terminal::Terminal`): the term's preferences under
+  `terminal.*` (font family/size/weight, padding, scrollback lines, scroll
+  speed, border width, cursor shape/blink, focus ring/strength, copy on
+  select, `TERM`). Every default reproduces the term before the group
+  existed except padding (8 px instead of 1 px) and the focus ring: its
+  default, `accent` at strength 0.25, draws the focused pane's border as the
+  card border moved a quarter toward the theme accent, where the term drew
+  it halfway before. That change is intentional (a subtler tinted ring);
+  `neutral` remains available, and `accent` with strength 0.5
+  gives the old look. Omitted at its defaults (and each value within it), so older
+  profiles keep their seals. It does not touch `Effective`, as `keymaps`
+  does not. A profile that sets any of it will not load in a 0.6.0 build:
+  reset `terminal` first.
+- `Summary.terminal` and `Followed::Look.terminal` carry it to followers.
+- `settings.describe` lists each `terminal.*` field with its range and
+  default; `terminal` alone resets or replaces the whole group.
+- `terminal: null` resets the whole terminal group, as advertised.
+- Correct the scroll speed unit: rows per wheel line, scaled by speed/40;
+  touchpad travel counts in cell heights at that scale. Default 40 keeps
+  the existing one-row-per-wheel-line behaviour; it is not a pixel distance.
+
+## 0.6.0
+
+Additive, store format 3 ([decision](../../docs/decisions/2026-10-14-session-icon-stroke-and-type.md)):
+
+- `Appearance` and `Effective` gain four optional session choices:
+  `icon_stroke` (1.0 to 3.0 in quarter steps), `font_family`,
+  `font_weight` (100 to 900 in steps of 100) and `mono_family`. Each is
+  omitted when unset, so profiles without them keep their digests.
+- `ChangePlan`: `icon_stroke` is a paint change; the font choices are
+  resource and text changes.
+- `CompactEffective` carries the same fields.
+- The store writes format 3. A format-2 build refuses a profile that sets
+  any of them; reset them first with `settings.reset` or a null value.
+
+Rust API change: `Followed::Look.appearance` is now `Box<Appearance>` to keep
+follower events compact as font settings grow. Borrowed callers use deref
+coercion; callers that take ownership unwrap with `*appearance`.
+
 ## 0.5.0
 
 Authority verbs 0.3.0 (additive): snapshot schema 2

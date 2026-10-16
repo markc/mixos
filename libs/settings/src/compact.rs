@@ -77,6 +77,14 @@ pub struct CompactEffective {
         skip_serializing_if = "is_default_caption_side"
     )]
     pub caption_side: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_stroke: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_family: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_weight: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mono_family: Option<String>,
     pub ui: CommonUi,
     /// The digest of this context's projection.
     pub design: String,
@@ -101,6 +109,10 @@ pub fn encode(snapshot: &Snapshot) -> Result<CompactSnapshot, serde_json::Error>
                 contrast: e.contrast.clone(),
                 decorations: e.decorations.clone(),
                 caption_side: e.caption_side.clone(),
+                icon_stroke: e.icon_stroke,
+                font_family: e.font_family.clone(),
+                font_weight: e.font_weight,
+                mono_family: e.mono_family.clone(),
                 ui: e.ui.clone(),
                 design: digest,
                 provenance: e.provenance.clone(),
@@ -142,6 +154,10 @@ impl CompactSnapshot {
                     contrast: e.contrast,
                     decorations: e.decorations,
                     caption_side: e.caption_side,
+                    icon_stroke: e.icon_stroke,
+                    font_family: e.font_family,
+                    font_weight: e.font_weight,
+                    mono_family: e.mono_family,
                     ui: e.ui,
                     design: design.clone(),
                     provenance: e.provenance,

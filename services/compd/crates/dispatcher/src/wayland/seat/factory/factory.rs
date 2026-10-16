@@ -50,7 +50,10 @@ where
     let layout = protocols::seat::xkb::xkb::load();
     let csv = protocols::seat::xkb::xkb::layout_csv(&layout);
     let cfg = protocols::seat::xkb::xkb::checked_config(&layout, &csv);
-    let keyboard = seat.add_keyboard(cfg, 200, 25).unwrap();
+    // Repeat after 600 ms, then 25 a second. At 200 ms a deliberate press of
+    // 200 ms or more (common for a space) repeated and typed a second
+    // character; the toolkit's own key repeat already uses 600 ms.
+    let keyboard = seat.add_keyboard(cfg, 600, 25).unwrap();
     let mut mods = keyboard.modifier_state();
     mods.num_lock = true;
     keyboard.set_modifier_state(mods);

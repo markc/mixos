@@ -1,0 +1,19 @@
+-- name_gate.mix — fail when a project or site name is written literally in the
+-- mesh tooling. Every name must come from deploy_lib (project()) or the hub's
+-- configuration, so a fork can relabel the tree by changing one value.
+--
+--   mix tools/mesh/_bin/name_gate.mix
+--
+-- Exit 0: clean. Exit 1: literal names found (each printed with its location).
+-- The README is exempt: it documents the configuration keys.
+
+$here = dirname(dirname(realpath($0)))
+$hits = run_argv(["grep", "-rnI", "-i", "-e", "cosmix", "-e", "mixos", "-e", "markc", "--exclude=README.md", "--exclude=name_gate.mix", $here],
+  {timeout: 60, stderr: "stdout"})
+if trim($hits["stdout"]) == "" then
+  print("name_gate: clean — no literal project or site names under " .. $here)
+  exit(0)
+end
+print("name_gate: literal names found:")
+print($hits["stdout"])
+exit(1)

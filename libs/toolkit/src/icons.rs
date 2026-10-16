@@ -20,8 +20,9 @@ use design::ResolvedMetricKind;
 use egui::{Color32, Image, ImageSource, Vec2};
 use std::borrow::Cow;
 
-/// Lucide's own stroke width, used when the design authors none.
-pub const DEFAULT_STROKE: f32 = 2.0;
+/// The stroke used when the design authors none: the shipped baseline, which
+/// matches the `icon.stroke_width` token (1.5 on the 24-unit grid).
+pub const DEFAULT_STROKE: f32 = 1.5;
 
 /// The stroke colour the SVG is rasterised in before tinting. White, so
 /// multiplying by the tint yields the tint exactly.
@@ -133,9 +134,13 @@ icons! {
     ZoomOut => "zoom-out",
 }
 
-/// The icon stroke width for `theme`: metric `icon.stroke_width` in px on
+/// The icon stroke width for `theme`: the session's choice when one is set
+/// (see [`crate::theme::Overlay`]), else metric `icon.stroke_width` in px on
 /// Lucide's 24 px grid, else [`DEFAULT_STROKE`].
 pub fn stroke_width(theme: &Theme) -> f32 {
+    if let Some(stroke) = theme.overlay().stroke {
+        return stroke;
+    }
     theme
         .dictionary()
         .metrics

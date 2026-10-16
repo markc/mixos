@@ -46,9 +46,9 @@ struct Row {
 }
 
 fn page_path() -> PathBuf {
-    // The component owns the installed offline manual.
+    // The manual lives in docs/mix, the same files mixos.dev/mix serves.
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../mix-shell/share/man/gotchas.md")
+        .join("../../docs/mix/gotchas.md")
         .canonicalize()
         .expect("docs/mix/gotchas.md must exist — it is the page mix man reads")
 }

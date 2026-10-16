@@ -2645,7 +2645,7 @@ fn local_man_dirs() -> Vec<PathBuf> {
     let root = crate::paths::mixos_root();
     let mut candidates = vec![config::path(config::Dir::Share).join("mix/man")];
     candidates.extend(man_dir_candidates(home.as_deref(), root.as_deref()));
-    candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("share/man"));
+    candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/mix"));
     candidates
 }
 

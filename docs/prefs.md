@@ -5,25 +5,36 @@ description: MixOS's preferences window — a sidebar of editors: Applications f
 
 # Prefs
 
-Prefs holds MixOS's preference editors in one window: a sidebar of editors
-on the left, the selected editor on the right. The name is a nod to the
+Prefs holds MixOS's preference editors in one window: an expandable tree
+on the left, the selected section on the right. Appearance contains Themes,
+Fonts, Wallpapers and Terminal; Applications contains MixOS Desktop, MixOS Server and
+Creative. The sidebar can be resized. The name is a nod to the
 Prefs drawer of AmigaOS, where each setting had its own small editor.
 
 ## Applications
 
-Applications shows the apps you follow, from the [releases
+Each Applications section shows its followed apps, from the [releases
 service](releases.md): each app's installed version, the latest release,
 when it was published, and its status (up to date, update available, not
 installed, not checked, or check failed).
 
 - **Check for updates** (Ctrl+Shift+R) asks GitHub about every followed app.
-- **Update all** installs every newer release.
+- **Update group** installs newer releases for installed apps in the selected group.
 - Select an app to see its latest **release notes**, then:
   - **Install or update** (Ctrl+I) installs it, or updates it if it is
     installed;
   - **Roll back** returns to the previous version;
   - **Remove…** asks first; Cancel is the default, so Enter never removes.
-- **Refresh list** (Ctrl+R) reads the list again without asking GitHub.
+- **Refresh** (Ctrl+R) reads the list again without asking GitHub.
+
+MixOS's `mixos-desktop` and `mixos-server` catalogue entries have their own
+sections. A catalogue entry's optional `category` selects `mixos-desktop`,
+`mixos-server`, `creative` or `other`; application names and publishers remain
+catalogue data. The catalogue's top-level `categories` map can label a group,
+for example `categories: {creative: "Graphics"}`.
+Unrecognised catalogue entries remain accessible under an additional **Other**
+section. Changing groups clears the previous selection and its release notes;
+selecting an app through the Bus opens its group automatically.
 
 One operation runs at a time; the status bar says what is happening and how
 it ended. Installs are per user, verified against the checksums each release
@@ -36,7 +47,7 @@ empty list. You follow apps by listing them in
 
 ## Appearance
 
-Appearance sets the session's look through the settings service
+**Appearance → Themes** sets the session's look through the settings service
 (settingsd): the **colour scheme** (each shown with its accent), the
 **style** (the scheme's own, or Plain, Pro, Studio or Classic), **light or
 dark**, **contrast**, and the **window frame**: a title bar drawn by the app
@@ -59,6 +70,16 @@ lost, Prefs asks settingsd for the change's receipt before anything else is
 applied (**Check again** asks now); if settingsd no longer holds one, the
 session's current state decides what the status line says.
 
+**Appearance → Fonts** shows the interface, heading and monospace faces currently
+installed on the window, with previews. Font family and size selection is not
+available yet; these faces follow the session design.
+
+**Appearance → Terminal** holds the terminal's font, layout, cursor, focus ring,
+mouse and environment settings, plus Reset terminal. Each change uses
+settingsd and applies as it is made. Themes contains only the session theme
+controls. See the [terminal settings](spec/settings/README.md#terminal) for
+the defaults and ranges.
+
 ## For agents
 
 Prefs answers on the Bus as `prefs`. `prefs.info` reports the whole state;
@@ -67,7 +88,10 @@ look, the expected look while a change settles, any held or conflicting
 edits and the revision read; `prefs.appearance.set`
 changes it at once (`scheme`, `style` with `own` for the scheme's own, `mode`,
 `contrast`, `decorations`, `caption_side`); `prefs.select {app}` and
-`prefs.panel {name}` select; `prefs.execute {id}` runs any command a button
+`prefs.section {name}` selects `themes`, `fonts`, `wallpapers`, `terminal`, `mixos-desktop`,
+`mixos-server`, `creative` or `other` and expands its parent. `prefs.panel {name}`
+remains compatible, opening the default Themes or Creative section.
+`prefs.execute {id}` runs any command a button
 or menu would (`apps.check`, `apps.install`, `appearance.apply`,
 `appearance.revert`, …), and `prefs.commands` lists them with their
 enablement. The window is drivable like every MixOS app
@@ -78,7 +102,7 @@ For scripted work, call the services directly (`releases.*`,
 `settings.*`): Prefs is their window, not a second implementation.
 ## Wallpaper
 
-In **Appearance → Wallpaper**, choose the default or an output, then Theme,
+In **Appearance → Wallpapers**, choose the default or an output, then Theme,
 Colour or Image. Colour accepts a picker or `#RRGGBB`. Browse opens the native
 image browser at the installed wallpaper folder, or Pictures in your home
 folder. It lists PNG/JPEG files and folders without blocking the window.
