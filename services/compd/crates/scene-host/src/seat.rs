@@ -1,5 +1,5 @@
-//! The host's mount reservations: edge pages by page id, and the one dialog
-//! seat.
+//! The host's mount reservations: edge pages by page id, a dialog seat and
+//! an independent toast seat.
 //!
 //! Quoin keeps these beside its panel carousel; compd has no carousel, so
 //! the registry here is the whole page namespace and the renderer places

@@ -1,4 +1,4 @@
-//! Where a resolved scene mounts: its page id, edge, or the dialog seat.
+//! Where a resolved scene mounts: an edge page, dialog seat or toast seat.
 
 use scene::ResolvedScene;
 use serde_json::{Value, json};

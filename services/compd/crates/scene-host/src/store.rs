@@ -57,8 +57,8 @@ pub struct SceneEntry {
     /// Kept across a hide, never reset to 0.
     pub(crate) applied: u64,
     pub(crate) owner: Option<SceneOwner>,
-    /// A dialog is mapped only between `shell.dialog.show` and
-    /// `shell.dialog.hide` (or its close button); an edge scene ignores it.
+    /// Dialogs and toasts map between their show and hide verbs (or close
+    /// buttons); edge scenes ignore this flag.
     pub(crate) visible: bool,
     // Set by a loader's JSON load envelope; zero fences a stopped behaviour.
     // Authored citizen metadata never grants model-write authority.
@@ -251,13 +251,13 @@ impl SceneStore {
         Ok(())
     }
 
-    /// `Some(true)` for a loaded dialog scene, `Some(false)` for an edge
+    /// `Some(true)` for a loaded dialog scene, `Some(false)` for another
     /// scene, `None` when no scene of that name is loaded.
     pub fn is_dialog(&self, name: &str) -> Option<bool> {
         self.scenes.get(name).map(|entry| is_dialog(&entry.tree))
     }
 
-    /// Page id and edge of a loaded edge scene; `None` for a dialog or an
+    /// Page id and edge of a loaded edge scene; `None` for an overlay or an
     /// unknown scene.
     pub fn edge_page(&self, name: &str) -> Option<(String, Edge)> {
         self.scenes

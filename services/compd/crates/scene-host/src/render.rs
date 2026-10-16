@@ -10,6 +10,8 @@
 //! - a DIALOG is centred on its seat's output at the envelope's `w`×`h`
 //!   (title bar included, as Quoin's frozen layout measures it), and only
 //!   while shown (`shell.dialog.show`, until `hide` or its close button).
+//! - a TOAST sits at the usable area's top right while shown, above edge
+//!   pages and below the dialog, with pointer input but no keyboard focus.
 //!
 //! Each placed scene is one screen-space UI surface in the world surface
 //! registry, so pointer and keyboard reach it the way they reach every

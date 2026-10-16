@@ -100,12 +100,10 @@ fn toast_reload_updates_geometry_refuses_kind_changes_and_cleans_up_departures()
     assert_eq!(store.toast_seat().unwrap().accepted_at, 2);
     assert!(store.scene("toast-probe").unwrap().visible());
     for kind in ["edge", "dialog"] {
-        let done = store.dispatch(
-            SceneVerb::Load,
-            &TOAST.replace("\"toast\"", &format!("\"{kind}\"")),
-            &Value::Null,
-            &mut caller,
-        );
+        let source = TOAST
+            .replace("\"toast\"", &format!("\"{kind}\""))
+            .replace("\"h\":120", "\"h\":300");
+        let done = store.dispatch(SceneVerb::Load, &source, &Value::Null, &mut caller);
         assert_eq!(done.rc, 10);
         assert!(done.body.contains("SUBPANEL_COLLISION"));
         assert_eq!(store.toast_seat().unwrap().h, 180.0);
