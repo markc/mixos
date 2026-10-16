@@ -5,8 +5,8 @@
 
 use egui::{RichText, ScrollArea, Ui};
 use jmap::Email;
-use toolkit::button::{Link, PushButton};
-use toolkit::command::Origin;
+use toolkit::button::{IconButton, Link};
+use toolkit::command::{Origin, label_text};
 use toolkit::markdown::{self, Document};
 use toolkit::{Icon, Registry, Strings, icons, panel};
 
@@ -17,13 +17,15 @@ use crate::state::{AccountView, State};
 /// The centre pane's email list.
 pub fn list(
     ui: &mut Ui,
-    state: &State,
+    _state: &State,
     view: &AccountView,
-    commands: &Registry<State>,
-    strings: &Strings,
+    _commands: &Registry<State>,
+    _strings: &Strings,
     stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
+    // Reply, Reply All and Forward live on the open email: the reader's
+    // toolbar and the Message menu.
     let title = view
         .mail
         .selected_mailbox()
@@ -42,19 +44,6 @@ pub fn list(
         String::new()
     };
     panel::group(ui, "emails", &[title.as_str(), count.as_str()], |ui, _| {
-        // Reply works from the open email; the button sits where the reader
-        // is not (a person reading in the reader panel replies from the
-        // menu or the shortcut).
-        ui.horizontal(|ui| {
-            let Some(command) = commands.get("mail.reply") else {
-                return;
-            };
-            let text = strings.get(command.label);
-            let response = ui.add_enabled((command.enabled)(state), PushButton::secondary(text));
-            if response.on_hover_text(strings.get("reply")).clicked() {
-                events.push(UiEvent::Command(command.id, Origin::Ui));
-            }
-        });
         if view.mail.busy {
             ui.weak(crate::label("loading"));
         }
@@ -119,14 +108,98 @@ fn row(ui: &mut Ui, email: &Email, view: &AccountView, stroke: f32, events: &mut
     );
 }
 
-/// The reader: the open email's headers and body. A text body is shown as
-/// Markdown when it is (or the person asked for it), else as the plain text
-/// it is; a link beside the date flips it.
-pub fn reader(ui: &mut Ui, view: &AccountView, events: &mut Vec<UiEvent>) {
-    let Some(email) = &view.mail.open else {
+/// The reader toolbar's split Reply menu: the commands that pick quoting.
+const REPLY_OPTIONS: [&str; 4] = [
+    "mail.reply_quoted",
+    "mail.reply_unquoted",
+    "mail.reply_all_quoted",
+    "mail.reply_all_unquoted",
+];
+
+/// The divider's height between the toolbar's groups.
+const DIVIDER: f32 = 16.0;
+
+/// The reader: a toolbar of what to do with the open email, then its
+/// subject, headers and body. A text body is shown as Markdown when it is
+/// (or the person asked for it, View › Message), else as the plain text it
+/// is. A right-click anywhere in it opens the Message menu.
+pub fn reader(
+    ui: &mut Ui,
+    state: &State,
+    view: &AccountView,
+    commands: &Registry<State>,
+    strings: &Strings,
+    events: &mut Vec<UiEvent>,
+) {
+    let area = ui.max_rect();
+    toolbar(ui, state, commands, strings, events);
+    toolkit::bars::hairline(ui);
+    if let Some(email) = &view.mail.open {
+        message(ui, view, email);
+    } else {
         ui.weak(crate::label("select-email"));
-        return;
-    };
+    }
+    let menu = ui.id().with("reader-menu");
+    if let Some(id) = commands.context_menu_over(ui, area, menu, "message", state, strings) {
+        events.push(UiEvent::Command(id, Origin::Menu));
+    }
+}
+
+/// Reply (with its quoting menu), Reply All, Forward, then Delete apart.
+/// Each is its registry command: same label, enablement and shortcut.
+fn toolbar(
+    ui: &mut Ui,
+    state: &State,
+    commands: &Registry<State>,
+    strings: &Strings,
+    events: &mut Vec<UiEvent>,
+) {
+    ui.horizontal(|ui| {
+        let link = |ui: &mut Ui, events: &mut Vec<UiEvent>, id: &'static str, icon: Icon| {
+            let Some(command) = commands.get(id) else {
+                return;
+            };
+            let key = commands.label_of(id, state).unwrap_or(command.label);
+            let text = label_text(strings, key);
+            let mut response = ui.add_enabled((command.enabled)(state), Link::new(icon, text));
+            if let Some(chord) = command.shortcut {
+                response = response.on_hover_text(ui.ctx().format_shortcut(&chord));
+            }
+            if response.clicked() {
+                events.push(UiEvent::Command(id, Origin::Ui));
+            }
+        };
+        link(ui, events, "mail.reply", Icon::Reply);
+        let replying = commands
+            .get("mail.reply")
+            .is_some_and(|c| (c.enabled)(state));
+        let more = ui.add_enabled(
+            replying,
+            IconButton::new(Icon::ChevronDown)
+                .size(ui.spacing().interact_size.y * 0.8)
+                .tooltip(crate::label("reply-options")),
+        );
+        egui::Popup::menu(&more).show(|ui| {
+            for id in REPLY_OPTIONS {
+                let Some(command) = commands.get(id) else {
+                    continue;
+                };
+                let button = egui::Button::new(label_text(strings, command.label));
+                if ui.add_enabled((command.enabled)(state), button).clicked() {
+                    events.push(UiEvent::Command(id, Origin::Ui));
+                }
+            }
+        });
+        link(ui, events, "mail.reply_all", Icon::ReplyAll);
+        link(ui, events, "mail.forward", Icon::Forward);
+        toolkit::bars::divider(ui, DIVIDER);
+        link(ui, events, "mail.delete", Icon::Trash);
+    });
+}
+
+/// The open email: subject first and largest, then From, To and the date,
+/// then the body.
+fn message(ui: &mut Ui, view: &AccountView, email: &Email) {
     let reader = &view.mail.reader;
     // The cache is the open email's once it has loaded; until then (or for
     // an email put in place without opening), detect afresh.
@@ -135,8 +208,9 @@ pub fn reader(ui: &mut Ui, view: &AccountView, events: &mut Vec<UiEvent>) {
     } else {
         reader::detect(email)
     };
-    let switchable = reader::has_text(email) && (format == Format::Markdown || !reader.auto());
-    panel::section_label(ui, email.subject.as_deref().unwrap_or(""));
+    ui.add(
+        egui::Label::new(RichText::new(email.subject.as_deref().unwrap_or("")).heading()).wrap(),
+    );
     ui.label(
         RichText::new(crate::label_with(
             "from-line",
@@ -157,26 +231,7 @@ pub fn reader(ui: &mut Ui, view: &AccountView, events: &mut Vec<UiEvent>) {
     if !to.is_empty() {
         ui.label(RichText::new(crate::label_with("to-line", &[("to", &to)])).weak());
     }
-    let date = RichText::new(email.date_short()).weak();
-    if switchable {
-        egui::Sides::new().show(
-            ui,
-            |ui| {
-                ui.label(date);
-            },
-            |ui| {
-                let (icon, key) = match format {
-                    Format::Markdown => (Icon::FileCode, "show-source"),
-                    Format::Plain => (Icon::FileText, "render-markdown"),
-                };
-                if ui.add(Link::new(icon, crate::label(key))).clicked() {
-                    events.push(UiEvent::Command("view.reader.markdown", Origin::Ui));
-                }
-            },
-        );
-    } else {
-        ui.label(date);
-    }
+    ui.label(RichText::new(email.date_short()).weak());
     toolkit::bars::hairline(ui);
     ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
         match email.text_body_value() {

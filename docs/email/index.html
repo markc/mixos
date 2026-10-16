@@ -354,10 +354,14 @@ that scroll sideways, tables, quotes and links (http, https and mailto
 open in the desktop's browser or mail handler; the address shows on
 hover). Images are never fetched, because remote images in mail track
 their reader: the alt text is a link to the image. Raw HTML is shown as
-text. <strong>Show Source</strong> beside the date (or View › Message › Render
-Markdown / Show Source) flips one email between the rendering and its
-text, and <strong>Render Markdown</strong> does the reverse for any plain email.
-The choice lasts while that email is open.</p>
+text. View › Message › <strong>Render Markdown</strong> (a tick) flips one email
+between the rendering and its text, either way. The choice lasts while
+that email is open.</p>
+<p>The reader opens with a toolbar of what to do with the email: <strong>Reply</strong>
+(its ▾ chooses with or without the quoted original), <strong>Reply All</strong>,
+<strong>Forward</strong> and, apart, <strong>Delete</strong>. The subject comes first, as the
+pane's heading, then From, To and the date. A right-click anywhere in
+the reader opens the <strong>Message</strong> menu.</p>
 </li>
 <li>
 <p><strong>Compose</strong> (To, Cc, Bcc, Subject, body, and From when there are
@@ -371,8 +375,20 @@ RFC 8621 server builds an Email from uploaded MIME with <code>Email/import</code
 so it refuses the send; <code>Email/import</code> is future work.</p>
 </li>
 <li>
-<p><strong>Mail actions</strong>: delete to Trash (confirmed when the settings ask),
-move to a mailbox, flag, and mark unread.</p>
+<p><strong>The Message menu</strong> holds everything that acts on the open email:
+reply (with or without the quote), reply all, forward, star, mark read
+or unread, move, and delete to Trash (confirmed when the settings ask).
+Labels follow the email (<strong>Star</strong> or <strong>Remove Star</strong>, <strong>Mark as Read</strong> or
+<strong>Mark as Unread</strong>). Marking an open email unread leaves it open and
+unread: only opening an email marks it read.</p>
+</li>
+<li>
+<p><strong>Quoted replies.</strong> A reply quotes the original's text body (a Markdown
+email's source; an HTML-only email's text) under an "On …, Ann wrote:"
+line, every line marked <code>&gt; </code> (an already quoted line gains another
+<code>&gt;</code>), with the original's signature cut at its <code>-- </code> line and lines
+never re-wrapped. The person's text and signature go above the quote.
+Plain text only.</p>
 </li>
 <li>
 <p><strong>New Event</strong> and <strong>New Contact</strong> forms. Start and end are RFC 3339
@@ -381,21 +397,24 @@ instants.</p>
 </ul>
 <h2 id="keyboard">Keyboard</h2>
 <table><thead><tr><th>Shortcut</th><th>Action</th></tr></thead><tbody>
-<tr><td>Ctrl+R</td><td>Refresh the account</td></tr>
+<tr><td>F5</td><td>Refresh the account</td></tr>
 <tr><td>Ctrl+Q</td><td>Quit</td></tr>
 <tr><td>Ctrl+N</td><td>Compose</td></tr>
-<tr><td>Ctrl+Shift+R</td><td>Reply</td></tr>
-<tr><td>Ctrl+Shift+A</td><td>Reply all</td></tr>
+<tr><td>Ctrl+R</td><td>Reply</td></tr>
+<tr><td>Ctrl+Shift+R</td><td>Reply all</td></tr>
 <tr><td>Ctrl+L</td><td>Forward</td></tr>
-<tr><td>Delete</td><td>Delete the open email</td></tr>
+<tr><td>S</td><td>Star or remove the star</td></tr>
+<tr><td>M</td><td>Mark read or unread</td></tr>
 <tr><td>Ctrl+Shift+M</td><td>Move the open email</td></tr>
-<tr><td>Ctrl+Shift+S</td><td>Flag or unflag</td></tr>
-<tr><td>Ctrl+Shift+U</td><td>Mark unread</td></tr>
+<tr><td>Delete</td><td>Delete the open email</td></tr>
 <tr><td>Ctrl+Shift+E</td><td>New event</td></tr>
 <tr><td>Ctrl+Shift+K</td><td>New contact</td></tr>
 <tr><td>Ctrl+1 / 2 / 3</td><td>Mail / Calendar / Contacts</td></tr>
 <tr><td>Ctrl+PageDown / PageUp</td><td>Next / previous account</td></tr>
 </tbody></table>
+<p>The shortcuts follow Thunderbird's. S, M and Delete act only while no
+text field has the keyboard (they type into the search box or a draft
+otherwise). Help › Keyboard Shortcuts shows the chords in force.</p>
 <h2 id="driving-it-over-the-bus">Driving it over the Bus</h2>
 <p>Service <code>email</code>, schema <code>email.v1</code>. <code>HELP</code> lists the verbs, and
 <code>app.describe</code> gives each one with its arguments and <code>read_only</code> flag.

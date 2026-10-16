@@ -47,7 +47,7 @@ select-event = Select an event to see its details.
 select-contact = Select a contact to see their details.
 html-source = This email has no plain-text body; the HTML source follows.
 message = Message
-reader-markdown = Render Markdown / Show Source
+reader-markdown = Render Markdown
 show-source = Show Source
 render-markdown = Render Markdown
 no-body = This email has no body.
@@ -86,7 +86,15 @@ forward-header = ---------- Forwarded message ----------
     Subject: { $subject }
     To: { $to }
 mark-unread = Mark as Unread
-flag = Flag or Unflag
+mark-read = Mark as Read
+flag = Star
+unflag = Remove Star
+reply-quoted = Reply with Quote
+reply-unquoted = Reply without Quote
+reply-all-quoted = Reply All with Quote
+reply-all-unquoted = Reply All without Quote
+reply-attribution = On { $date }, { $name } wrote:
+reply-options = More reply options
 move = Move To…
 move-title = Move To
 move-body = Choose the mailbox to move this email to.

@@ -271,7 +271,7 @@ pub const VERBS: &[Verb] = &[
     verb(
         "email.reply",
         false,
-        r#"{"account":"optional account id","id":"email id","all":"optional bool"}"#,
+        r#"{"account":"optional account id","id":"email id","all":"optional bool","quote":"optional bool (absent: email.compose.quote_on_reply)"}"#,
         "Open the compose dialog replying to an email",
     ),
     verb(
@@ -394,8 +394,9 @@ pub enum Query {
 pub enum Then {
     /// Answer it.
     Answer,
-    /// Open a compose replying to the email fetched (`true`: to all).
-    Reply(bool),
+    /// Open a compose replying to the email fetched (`true`: to all),
+    /// quoting it or not (`None`: as the settings say).
+    Reply(bool, Option<bool>),
     /// Open a compose forwarding the email fetched, to these addresses.
     Forward(String),
 }
@@ -1081,7 +1082,7 @@ fn dispatch(
             }
             let email = required(args, "id")?;
             let then = if verb == "email.reply" {
-                Then::Reply(flag(args, "all")?.unwrap_or(false))
+                Then::Reply(flag(args, "all")?.unwrap_or(false), flag(args, "quote")?)
             } else {
                 Then::Forward(list(args, "to")?.unwrap_or_default().join(", "))
             };

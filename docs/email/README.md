@@ -120,10 +120,15 @@ A malformed file loads defaults and is never overwritten.
   open in the desktop's browser or mail handler; the address shows on
   hover). Images are never fetched, because remote images in mail track
   their reader: the alt text is a link to the image. Raw HTML is shown as
-  text. **Show Source** beside the date (or View › Message › Render
-  Markdown / Show Source) flips one email between the rendering and its
-  text, and **Render Markdown** does the reverse for any plain email.
-  The choice lasts while that email is open.
+  text. View › Message › **Render Markdown** (a tick) flips one email
+  between the rendering and its text, either way. The choice lasts while
+  that email is open.
+
+  The reader opens with a toolbar of what to do with the email: **Reply**
+  (its ▾ chooses with or without the quoted original), **Reply All**,
+  **Forward** and, apart, **Delete**. The subject comes first, as the
+  pane's heading, then From, To and the date. A right-click anywhere in
+  the reader opens the **Message** menu.
 - **Compose** (To, Cc, Bcc, Subject, body, and From when there are
   several accounts), reply, reply all and forward. If the account's login
   (server or address) changes while a draft is open, Send waits: the
@@ -133,8 +138,18 @@ A malformed file loads defaults and is never overwritten.
   uses maild's extension of a top-level `blobId` on `Email/set`. A strict
   RFC 8621 server builds an Email from uploaded MIME with `Email/import`,
   so it refuses the send; `Email/import` is future work.
-- **Mail actions**: delete to Trash (confirmed when the settings ask),
-  move to a mailbox, flag, and mark unread.
+- **The Message menu** holds everything that acts on the open email:
+  reply (with or without the quote), reply all, forward, star, mark read
+  or unread, move, and delete to Trash (confirmed when the settings ask).
+  Labels follow the email (**Star** or **Remove Star**, **Mark as Read** or
+  **Mark as Unread**). Marking an open email unread leaves it open and
+  unread: only opening an email marks it read.
+- **Quoted replies.** A reply quotes the original's text body (a Markdown
+  email's source; an HTML-only email's text) under an "On …, Ann wrote:"
+  line, every line marked `> ` (an already quoted line gains another
+  `>`), with the original's signature cut at its `-- ` line and lines
+  never re-wrapped. The person's text and signature go above the quote.
+  Plain text only.
 - **New Event** and **New Contact** forms. Start and end are RFC 3339
   instants.
 
@@ -142,20 +157,24 @@ A malformed file loads defaults and is never overwritten.
 
 | Shortcut | Action |
 |---|---|
-| Ctrl+R | Refresh the account |
+| F5 | Refresh the account |
 | Ctrl+Q | Quit |
 | Ctrl+N | Compose |
-| Ctrl+Shift+R | Reply |
-| Ctrl+Shift+A | Reply all |
+| Ctrl+R | Reply |
+| Ctrl+Shift+R | Reply all |
 | Ctrl+L | Forward |
-| Delete | Delete the open email |
+| S | Star or remove the star |
+| M | Mark read or unread |
 | Ctrl+Shift+M | Move the open email |
-| Ctrl+Shift+S | Flag or unflag |
-| Ctrl+Shift+U | Mark unread |
+| Delete | Delete the open email |
 | Ctrl+Shift+E | New event |
 | Ctrl+Shift+K | New contact |
 | Ctrl+1 / 2 / 3 | Mail / Calendar / Contacts |
 | Ctrl+PageDown / PageUp | Next / previous account |
+
+The shortcuts follow Thunderbird's. S, M and Delete act only while no
+text field has the keyboard (they type into the search box or a draft
+otherwise). Help › Keyboard Shortcuts shows the chords in force.
 
 ## Driving it over the Bus
 

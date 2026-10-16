@@ -2422,7 +2422,7 @@ impl State {
             return self.refuse(reply, code::BUSY, &crate::label("compose-open"));
         }
         let opened = match then {
-            Then::Reply(all) => self.reply_to(account, &email, all),
+            Then::Reply(all, quote) => self.reply_to(account, &email, all, quote),
             Then::Forward(to) => self.forward(account, &email, &to),
             Then::Answer => false,
         };
@@ -2667,11 +2667,83 @@ impl State {
         self.write_server(account, None, write);
     }
 
+    /// `mail.mark_unread` (M): mark the open email read when it is unread,
+    /// else unread. It stays open either way and is not marked read again:
+    /// only a fresh open does that (`mark_read_on_open`). The list row and
+    /// the mailbox's unread count change at once.
+    pub fn toggle_open_read(&mut self) {
+        let Some((account, email)) = self.reading() else {
+            return;
+        };
+        let read = !email.is_read();
+        let ids = vec![email.id];
+        if let Some(view) = self.account_mut(&account) {
+            view.set_keyword(&ids, "$seen", read);
+            let selected = view.mail.selected.clone();
+            if let Some(mailbox) = view
+                .mail
+                .mailboxes
+                .iter_mut()
+                .find(|m| Some(&m.id) == selected.as_ref())
+            {
+                mailbox.unread_emails = if read {
+                    mailbox.unread_emails.saturating_sub(1)
+                } else {
+                    mailbox.unread_emails + 1
+                };
+            }
+        }
+        let write = crate::verbs::Write::Keywords {
+            ids,
+            read: Some(read),
+            flagged: None,
+        };
+        self.write_server(account, None, write);
+    }
+
     /// Reply to everyone the open email went to.
     pub fn reply_all_open(&mut self) {
         if let Some(account) = self.selected.clone() {
-            self.open_reply(&account, true);
+            self.open_reply(&account, true, None);
         }
+    }
+
+    /// Reply to the sender, quoting the original.
+    pub fn reply_open_quoted(&mut self) {
+        self.reply_open_with(false, Some(true));
+    }
+
+    /// Reply to the sender without the original.
+    pub fn reply_open_unquoted(&mut self) {
+        self.reply_open_with(false, Some(false));
+    }
+
+    /// Reply to everyone, quoting the original.
+    pub fn reply_all_open_quoted(&mut self) {
+        self.reply_open_with(true, Some(true));
+    }
+
+    /// Reply to everyone without the original.
+    pub fn reply_all_open_unquoted(&mut self) {
+        self.reply_open_with(true, Some(false));
+    }
+
+    fn reply_open_with(&mut self, all: bool, quote: Option<bool>) {
+        if let Some(account) = self.selected.clone() {
+            self.open_reply(&account, all, quote);
+        }
+    }
+
+    /// Whether a plain Reply quotes the original (`email.compose.quote_on_reply`).
+    pub fn quote_on_reply(&self) -> bool {
+        // The compose settings land with the email.compose group; until
+        // then a reply quotes, above the person's text.
+        true
+    }
+
+    /// Where the person's text goes in a quoted reply.
+    pub fn reply_position(&self) -> crate::quote::Position {
+        crate::quote::Position::Above
     }
 
     /// Forward the open email.
@@ -3262,9 +3334,11 @@ impl State {
     }
 
     /// A reply to `account`'s open email (`all`: to everyone it went to).
-    pub fn open_reply(&mut self, account: &str, all: bool) -> bool {
+    /// `quote`: with the original quoted, without it, or (`None`) as the
+    /// settings say.
+    pub fn open_reply(&mut self, account: &str, all: bool, quote: Option<bool>) -> bool {
         match self.account(account).and_then(|v| v.mail.open.clone()) {
-            Some(open) => self.reply_to(account, &open, all),
+            Some(open) => self.reply_to(account, &open, all, quote),
             None => false,
         }
     }
@@ -3314,7 +3388,7 @@ impl State {
 
     /// A compose replying to `email` from `account` (`all`: to everyone it
     /// went to but this account).
-    pub fn reply_to(&mut self, account: &str, open: &Email, all: bool) -> bool {
+    pub fn reply_to(&mut self, account: &str, open: &Email, all: bool, quote: Option<bool>) -> bool {
         let me = self
             .account(account)
             .map(|v| v.entry.email.to_ascii_lowercase())
@@ -3346,12 +3420,23 @@ impl State {
             Some(subject) => format!("Re: {subject}"),
             None => crate::label("reply-subject"),
         };
+        let body = if quote.unwrap_or_else(|| self.quote_on_reply()) {
+            crate::quote::reply_body(
+                &quotable(open),
+                &attribution(open),
+                &self.signed_body(account),
+                self.reply_position(),
+            )
+        } else {
+            String::new()
+        };
         self.open_compose(
             Some(account),
             Composed {
                 to,
                 cc,
                 subject,
+                body,
                 in_reply_to: open
                     .message_id
                     .clone()
@@ -3408,7 +3493,7 @@ impl State {
             }
             UiEvent::Reply => {
                 if let Some(account) = self.selected.clone() {
-                    self.open_reply(&account, false);
+                    self.open_reply(&account, false, None);
                 }
             }
             UiEvent::ComposeAccount(account) => {
@@ -3690,6 +3775,50 @@ impl State {
         };
         self.apply_ui(crate::view::UiEvent::SetMode(target));
     }
+}
+
+/// The text a reply quotes: the text body (a Markdown message's source),
+/// else the HTML body's text.
+fn quotable(email: &Email) -> String {
+    let html_part = email
+        .text_body
+        .as_ref()
+        .and_then(|parts| parts.first())
+        .and_then(|part| part.content_type.as_deref())
+        .is_some_and(|t| t.trim().to_ascii_lowercase().starts_with("text/html"));
+    match email.text_body_value() {
+        Some(text) if html_part => crate::quote::html_text(text),
+        Some(text) => text.to_owned(),
+        None => email
+            .html_body_value()
+            .map(crate::quote::html_text)
+            .unwrap_or_default(),
+    }
+}
+
+/// "On Fri 17 Oct 2026, 09:14, Ann wrote:", in the local time zone.
+fn attribution(email: &Email) -> String {
+    let when = email
+        .date
+        .as_deref()
+        .or(email.received_at.as_deref())
+        .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
+        .map(|d| {
+            d.with_timezone(&chrono::Local)
+                .format("%a %-d %b %Y, %H:%M")
+                .to_string()
+        })
+        .unwrap_or_default();
+    let who = email
+        .from
+        .as_ref()
+        .and_then(|from| from.first())
+        .map(|a| match a.name.as_deref().map(str::trim) {
+            Some(name) if !name.is_empty() => name.to_owned(),
+            _ => a.email.clone(),
+        })
+        .unwrap_or_default();
+    crate::label_with("reply-attribution", &[("date", &when), ("name", &who)])
 }
 
 /// The account a form is for.
@@ -4115,7 +4244,7 @@ pub(crate) mod tests {
         assert_eq!(compose.draft.from, "ann@a.example.invalid");
         assert!(compose.draft.cc.is_empty());
         // Reply all: everyone but me, Cc kept.
-        assert!(state.open_reply("a", true));
+        assert!(state.open_reply("a", true, Some(false)));
         let compose = state.compose.clone().unwrap();
         let to: Vec<&str> = compose.draft.to.iter().map(|a| a.email.as_str()).collect();
         assert_eq!(to, ["bob@example.invalid", "cy@example.invalid"]);
@@ -5135,7 +5264,7 @@ pub(crate) mod tests {
         let tag = tag(&state, "a");
         state.apply(Event::Account(
             tag.clone(),
-            Done::Answered(3, Then::Reply(false), Ok(email.clone())),
+            Done::Answered(3, Then::Reply(false, Some(false)), Ok(email.clone())),
         ));
         let compose = state.compose.clone().expect("a reply");
         assert_eq!(compose.draft.subject, "Re: Hello");
