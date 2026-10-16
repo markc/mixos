@@ -19,6 +19,7 @@ One line per component with a page: kind, then install profiles. The
   - [bridged — changelog](https://mixos.dev/bridged/changelog.md): Release notes of the bridged component, mirrored from services/bridged/CHANGELOG.md.
 - [buildinfo](https://mixos.dev/buildinfo/README.md): lib; profiles: none (library). Compile-time build provenance for MixOS binaries, and the --version contract every binary answers.
 - [bus](https://mixos.dev/bus/README.md): lib; profiles: none (library). The Bus wire format and the broker client library, with a supervised connection to noded that survives broker restarts.
+- [busviewer](https://mixos.dev/busviewer/README.md): app; profiles: unclassified. BusViewer is the MixOS desktop app that lists the services and verbs on this node's Bus, shows each verb's description and the mesh peers, and calls one verb once with a JSON body.
 - [ced](https://mixos.dev/ced/README.md): app; profiles: unclassified. The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live.
 - [citizen](https://mixos.dev/citizen/README.md): lib; profiles: none (library). An app's supervised native Bus connection, shared by the MixOS apps for registration, calls, replies, single-instance launch and window restore.
 - [compd](https://mixos.dev/compd/README.md): service; profiles: unclassified. The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, verbs, topics and props tree.
@@ -31,10 +32,12 @@ One line per component with a page: kind, then install profiles. The
 - [editd](https://mixos.dev/editd/README.md): service; profiles: unclassified. The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery.
   - [editd — changelog](https://mixos.dev/editd/changelog.md): Release notes of the editd component, mirrored from services/editd/CHANGELOG.md.
 - [editor](https://mixos.dev/editor/README.md): lib; profiles: none (library). The shared plain-text editor widget for MixOS egui applications, a virtualised monospace view over the headless editing model that works on a local file or a shared buffer.
+- [editor-model](https://mixos.dev/editor-model/README.md): lib; profiles: none (library). The headless text-editing model shared by MixOS editors, turning commands and motions into edits and keeping a local mirror of an edit-service buffer in step with the server, plus highlighting and diagnostics state.
 - [expr](https://mixos.dev/expr/README.md): lib; profiles: none (library). The pure expression language of Mix Scenes bindings, which compiles an expression, reports the globals it reads and evaluates it over JSON values under size and time limits.
 - [hostd](https://mixos.dev/hostd/README.md): service; profiles: unclassified. How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo.
   - [hostd — changelog](https://mixos.dev/hostd/changelog.md): Release notes of the hostd component, mirrored from services/hostd/CHANGELOG.md.
 - [logging](https://mixos.dev/logging/README.md): lib; profiles: none (library). Shared tracing, sink selection, reload handles and process statistics for MixOS services and the Mix shell.
+- [mimedb](https://mixos.dev/mimedb/README.md): lib; profiles: none (library). A library that reads the freedesktop shared-mime-info database and decides a file's type from its name and content the way GLib does, so MixOS names a file's type as the desktop does.
 - [mix](https://mixos.dev/mix/README.md): lib; profiles: none (library). The reference manual for the Mix language, one page per topic. The canonical home of these pages is docs/mix/ in the public markc/mixos monorepo; add a page by…
   - [buffer — the reference-semantic mutable byte buffer](https://mixos.dev/mix/buffer.md): Buffer is the one type in Mix with reference semantics. Everything else — strings, numbers, lists, maps, bytes — is value-semantic: $b = $a gives $b an…
   - [Builtin index](https://mixos.dev/mix/builtins.md): Every Mix builtin grouped by category, generated from mix builtins (mix 0.116.0). See the linked topical page for prose and examples; mix what NAME prints a…
@@ -93,11 +96,13 @@ One line per component with a page: kind, then install profiles. The
 - [settingsd](https://mixos.dev/settingsd/README.md): service; profiles: unclassified. The headless desktop settings authority, the one writer for a session profile's settings, with durable receipts and retained change publication on the Bus.
   - [settingsd — changelog](https://mixos.dev/settingsd/changelog.md): Release notes of the settingsd component, mirrored from services/settingsd/CHANGELOG.md.
 - [strict](https://mixos.dev/strict/README.md): lib; profiles: none (library). The MixOS strict-data format, the grammar of conf.mix and data.mix files, loaded as data and never executed.
+- [syntax](https://mixos.dev/syntax/README.md): lib; profiles: none (library). The syntax highlighting library for MixOS text editors, which runs Microsoft Edit's compiled lsh language definitions line by line over any chunked text store.
 - [system](https://mixos.dev/system/README.md): cli; profiles: unclassified. The system binary, mix, which is the Mix shell and every headless MixOS daemon in one file, choosing its personality from the name it is started under.
 - [term](https://mixos.dev/term/README.md): app; profiles: unclassified. The MixOS terminal, with tabs, split panes and a GPU-drawn grid, driven by the session settings and fully scriptable over the Bus.
   - [term — changelog](https://mixos.dev/term/changelog.md): Release notes of the term component, mirrored from apps/term/CHANGELOG.md.
 - [test-broker](https://mixos.dev/test-broker/README.md): lib; profiles: none (library). A development fixture that runs the real noded modules in an isolated broker runtime for the Term-to-Mix native session acceptance tests.
 - [thumbs](https://mixos.dev/thumbs/README.md): lib; profiles: none (library). File thumbnails made the freedesktop way, read from and written to the shared thumbnail cache and generated by the system's installed thumbnailers in their own processes.
+- [toolkit](https://mixos.dev/toolkit/README.md): lib; profiles: none (library). The shared shell for MixOS egui applications, giving every app the same theme, fonts, icons, title bar, menus, chrome components, command registry, Fluent strings and Bus drive verbs.
 
 ## Docs
 

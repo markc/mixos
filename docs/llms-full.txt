@@ -696,7 +696,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [bridged](../bridged/README.md) · [changelog](../bridged/changelog.md) | service | unclassified | [`services/bridged`](https://github.com/markc/mixos/tree/main/services/bridged) | How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes. |
 | [buildinfo](../buildinfo/README.md) | lib | none (library) | [`libs/buildinfo`](https://github.com/markc/mixos/tree/main/libs/buildinfo) | Compile-time build provenance for MixOS binaries, and the --version contract every binary answers. |
 | [bus](../bus/README.md) | lib | none (library) | [`libs/bus`](https://github.com/markc/mixos/tree/main/libs/bus) | The Bus wire format and the broker client library, with a supervised connection to noded that survives broker restarts. |
-| busviewer (no page yet) | app | unclassified | [`apps/busviewer`](https://github.com/markc/mixos/tree/main/apps/busviewer) |  |
+| [busviewer](../busviewer/README.md) | app | unclassified | [`apps/busviewer`](https://github.com/markc/mixos/tree/main/apps/busviewer) | BusViewer is the MixOS desktop app that lists the services and verbs on this node's Bus, shows each verb's description and the mesh peers, and calls one verb once with a JSON body. |
 | [ced](../ced/README.md) | app | unclassified | [`apps/ced`](https://github.com/markc/mixos/tree/main/apps/ced) | The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live. |
 | [citizen](../citizen/README.md) | lib | none (library) | [`libs/citizen`](https://github.com/markc/mixos/tree/main/libs/citizen) | An app's supervised native Bus connection, shared by the MixOS apps for registration, calls, replies, single-instance launch and window restore. |
 | [compd](../compd/README.md) · [changelog](../compd/changelog.md) | service | unclassified | [`services/compd`](https://github.com/markc/mixos/tree/main/services/compd) | The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, verbs, topics and props tree. |
@@ -707,11 +707,11 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [edit](../edit/README.md) | lib | none (library) | [`libs/edit`](https://github.com/markc/mixos/tree/main/libs/edit) | Shared headless text buffers used by editd and Ced, with revision checks, transactions, operational transforms, per-origin undo, anchors and search. |
 | [editd](../editd/README.md) · [changelog](../editd/changelog.md) | service | unclassified | [`services/editd`](https://github.com/markc/mixos/tree/main/services/editd) | The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery. |
 | [editor](../editor/README.md) | lib | none (library) | [`libs/editor`](https://github.com/markc/mixos/tree/main/libs/editor) | The shared plain-text editor widget for MixOS egui applications, a virtualised monospace view over the headless editing model that works on a local file or a shared buffer. |
-| editor-model (no page yet) | lib | none (library) | [`libs/editor-model`](https://github.com/markc/mixos/tree/main/libs/editor-model) |  |
+| [editor-model](../editor-model/README.md) | lib | none (library) | [`libs/editor-model`](https://github.com/markc/mixos/tree/main/libs/editor-model) | The headless text-editing model shared by MixOS editors, turning commands and motions into edits and keeping a local mirror of an edit-service buffer in step with the server, plus highlighting and… |
 | [expr](../expr/README.md) | lib | none (library) | [`libs/expr`](https://github.com/markc/mixos/tree/main/libs/expr) | The pure expression language of Mix Scenes bindings, which compiles an expression, reports the globals it reads and evaluates it over JSON values under size and time limits. |
 | [hostd](../hostd/README.md) · [changelog](../hostd/changelog.md) | service | unclassified | [`services/hostd`](https://github.com/markc/mixos/tree/main/services/hostd) | How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo. |
 | [logging](../logging/README.md) | lib | none (library) | [`libs/logging`](https://github.com/markc/mixos/tree/main/libs/logging) | Shared tracing, sink selection, reload handles and process statistics for MixOS services and the Mix shell. |
-| mimedb (no page yet) | lib | none (library) | [`libs/mimedb`](https://github.com/markc/mixos/tree/main/libs/mimedb) |  |
+| [mimedb](../mimedb/README.md) | lib | none (library) | [`libs/mimedb`](https://github.com/markc/mixos/tree/main/libs/mimedb) | A library that reads the freedesktop shared-mime-info database and decides a file's type from its name and content the way GLib does, so MixOS names a file's type as the desktop does. |
 | [mix](../mix/README.md) · [changelog](../mix/changelog.md) | lib | none (library) | [`libs/mix`](https://github.com/markc/mixos/tree/main/libs/mix) |  |
 | [mix-shell](../mix-shell/README.md) · [changelog](../mix-shell/changelog.md) | cli | unclassified | [`cli/mix-shell`](https://github.com/markc/mixos/tree/main/cli/mix-shell) | The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs. |
 | [noded](../noded/README.md) · [changelog](../noded/changelog.md) | service | unclassified | [`services/noded`](https://github.com/markc/mixos/tree/main/services/noded) | The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes. |
@@ -724,12 +724,12 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [settings](../settings/README.md) · [changelog](../settings/changelog.md) | lib | none (library) | [`libs/settings`](https://github.com/markc/mixos/tree/main/libs/settings) | Headless desktop settings types, validation, resolution and the shared consumer that apps and the compositor use to follow the settings authority. |
 | [settingsd](../settingsd/README.md) · [changelog](../settingsd/changelog.md) | service | unclassified | [`services/settingsd`](https://github.com/markc/mixos/tree/main/services/settingsd) | The headless desktop settings authority, the one writer for a session profile's settings, with durable receipts and retained change publication on the Bus. |
 | [strict](../strict/README.md) | lib | none (library) | [`libs/strict`](https://github.com/markc/mixos/tree/main/libs/strict) | The MixOS strict-data format, the grammar of conf.mix and data.mix files, loaded as data and never executed. |
-| syntax (no page yet) | lib | none (library) | [`libs/syntax`](https://github.com/markc/mixos/tree/main/libs/syntax) |  |
+| [syntax](../syntax/README.md) | lib | none (library) | [`libs/syntax`](https://github.com/markc/mixos/tree/main/libs/syntax) | The syntax highlighting library for MixOS text editors, which runs Microsoft Edit's compiled lsh language definitions line by line over any chunked text store. |
 | [system](../system/README.md) | cli | unclassified | [`cli/system`](https://github.com/markc/mixos/tree/main/cli/system) | The system binary, mix, which is the Mix shell and every headless MixOS daemon in one file, choosing its personality from the name it is started under. |
 | [term](../term/README.md) · [changelog](../term/changelog.md) | app | unclassified | [`apps/term`](https://github.com/markc/mixos/tree/main/apps/term) | The MixOS terminal, with tabs, split panes and a GPU-drawn grid, driven by the session settings and fully scriptable over the Bus. |
 | [test-broker](../test-broker/README.md) | lib | none (library) | [`libs/test-broker`](https://github.com/markc/mixos/tree/main/libs/test-broker) | A development fixture that runs the real noded modules in an isolated broker runtime for the Term-to-Mix native session acceptance tests. |
 | [thumbs](../thumbs/README.md) | lib | none (library) | [`libs/thumbs`](https://github.com/markc/mixos/tree/main/libs/thumbs) | File thumbnails made the freedesktop way, read from and written to the shared thumbnail cache and generated by the system's installed thumbnailers in their own processes. |
-| toolkit (no page yet) | lib | none (library) | [`libs/toolkit`](https://github.com/markc/mixos/tree/main/libs/toolkit) |  |
+| [toolkit](../toolkit/README.md) | lib | none (library) | [`libs/toolkit`](https://github.com/markc/mixos/tree/main/libs/toolkit) | The shared shell for MixOS egui applications, giving every app the same theme, fonts, icons, title bar, menus, chrome components, command registry, Fluent strings and Bus drive verbs. |
 
 ## Packages
 
@@ -1713,6 +1713,210 @@ value, and the `(rc, message)` tuple accessors remain for compatibility.
 
 `cargo test -p bus`. The integration test drives a stub broker in process;
 no noded is needed.
+
+---
+
+<!-- page: https://mixos.dev/busviewer/ (source: https://mixos.dev/busviewer/README.md) -->
+
+# BusViewer
+
+`busviewer` (app id `dev.mixos.busviewer`) is a native window onto the Bus
+of the node it runs on. It asks noded which services are registered, asks
+each service to describe its verbs, and shows them as a tree. Select a verb
+to read its arguments and description, type a JSON body, and call it. The
+reply is shown with its return code. BusViewer also lists the mesh nodes
+this node can see.
+
+It is for people and agents who want to see what a node offers and try a
+verb by hand. It ships in the `mixos-desktop` package set. Nothing else in
+the workspace depends on it.
+
+BusViewer is also the reference app for driving a window over the Bus.
+Everything in its window is a Bus verb, and
+[Driving apps over the Bus](../docs/drive.md#busviewer-the-worked-example)
+uses it as the worked example.
+
+The source is
+[`apps/busviewer`](https://github.com/markc/mixos/tree/main/apps/busviewer).
+
+## How it is built
+
+BusViewer follows the engine-first rule in
+[AGENTS.md](https://github.com/markc/mixos/blob/main/AGENTS.md) §4.1. It is
+two crates:
+
+- **`inspector`** (`crates/inspector`): the headless engine. No UI and no
+  I/O. It holds the protocol model, the discovery and call rules, and the
+  handling of every `busviewer.*` verb.
+- **`busviewer`**: the egui shell. It draws the engine's state, runs the
+  engine's effects on a small tokio runtime, and owns the command registry
+  that the menus, the shortcuts and the Bus all go through.
+
+The engine never does work itself. The shell feeds it events (Bus
+deliveries, finished discoveries and calls, edits made in the window), and
+the engine returns `Effect`s for the shell to carry out: `Discover`,
+`Call`, `Show`, `Reply`, `Commands`, `Execute`, `Describe`, `Drive`, `Copy`
+and `Exit`. Every effect that leaves the process carries a ticket. A
+completion whose ticket is not the one in flight is ignored, so a late
+reply can never land on a newer operation.
+
+### inspector
+
+| Module | What it holds |
+|---|---|
+| `model` | `Verb`, `Snapshot` (services, each with its verbs or an error; peers), `Selection`, the parsers for `noded.list`, `noded.peers`, `HELP` and `app.describe`, the limits, and `describe()`, the app's own verb list |
+| `engine` | `Engine`, `Effect`, `Dialog`, `Row` and `RowKind` (the services tree), `UiState` (what a person arranges), `Session` (the session theme) |
+| `bus` | the connection, through the shared [citizen](../citizen/README.md) library: `start`, `probe`, `forward`, `show`, and `discover` |
+
+Discovery calls `noded.list` and `noded.peers`, then asks every service for
+`HELP`, falling back to `app.describe`. It describes eight services at a
+time. A service that fails to describe itself shows as an error row and
+does not stop the others.
+
+The limits are fixed in `model`:
+
+- a JSON body is at most 65,536 bytes;
+- a reply is shown up to 1,000,000 bytes, then marked as truncated.
+
+### busviewer
+
+| Module | What it holds |
+|---|---|
+| `src/main.rs` | options, single-instance launch, the eframe window |
+| `src/lib.rs` | the string catalogue: `strings()`, `label()`, `label_with()` |
+| `src/shell.rs` | `Shell`: applies events, settles effects, runs Bus work, follows the desktop profile, wires the toolkit drive layer |
+| `src/view.rs` | `view()`: draws the engine's state and returns what the person did as `UiEvent`s; it never changes state itself |
+| `src/commands.rs` | `registry()`: every command, with its menu, shortcut, icon and when it is enabled |
+| `i18n/en/busviewer.ftl` | the English strings |
+
+The shell applies one event and settles its effects before it reads the
+next, so a later delivery can never change what an earlier command acts
+on. Within one frame, edits are applied before commands, so a call uses
+the body the person sees. Bus work wakes the window only when something
+finished; nothing polls.
+
+## Rules
+
+- **One operation at a time.** A refresh or a call in flight makes the
+  window busy. Bus requests that need it idle are refused with `BUSY`.
+- **A call is sent once.** BusViewer never retries. A transport failure is
+  reported as return code 10 with the outcome unknown.
+- **No call on bad input.** An unadvertised target, a body over the limit
+  or invalid JSON is refused before anything is sent. An empty body is
+  allowed.
+- **Closing answers everything.** Quit waits until accepted work is
+  finished, and every Bus request already accepted gets an answer before
+  the connection stops.
+- **One window per session.** A second launch finds the running BusViewer
+  on the Bus, asks it to show its window through compd, and exits.
+
+## Bus
+
+BusViewer registers as `busviewer` on the local broker. Its verbs are
+registered in
+[`verbs.conf.mix`](https://github.com/markc/mixos/blob/main/docs/docs/spec/bus/verbs.conf.mix)
+with owner `busviewer`.
+
+- Reading: `busviewer.ping`, `busviewer.info`, `busviewer.tree`,
+  `busviewer.reply`, `busviewer.commands`, plus `HELP` and `app.describe`.
+- Changing state: `busviewer.filter`, `busviewer.expand`,
+  `busviewer.select_row`, `busviewer.select`, `busviewer.body`,
+  `busviewer.split`, `busviewer.dialog`, `busviewer.theme`,
+  `busviewer.call`, `busviewer.execute`, `busviewer.refresh`,
+  `busviewer.show`, `busviewer.quit`.
+- The window's drive verbs, from the toolkit: `busviewer.ui.tree`,
+  `busviewer.ui.click`, `busviewer.ui.pointer`, `busviewer.ui.scroll`,
+  `busviewer.ui.key`, `busviewer.ui.type`, `busviewer.ui.menu`,
+  `busviewer.ui.menu.list`, `busviewer.ui.menu.open`,
+  `busviewer.ui.menu.close`, `busviewer.ui.capture`, `busviewer.window`
+  and `busviewer.window.state`.
+
+Arguments, answers and refusal codes (`BUSY`, `DISCONNECTED`, `ARGUMENT`,
+`UNKNOWN_VERB`, `UNKNOWN_COMMAND`, `DISABLED`) are tabled in
+[Driving apps over the Bus](../docs/drive.md#busviewer-the-worked-example).
+Tree rows are named by key, for example `service:noded` or
+`verb:noded:noded.list`.
+
+Calling a verb from Mix through BusViewer:
+
+```mix
+$body = json_encode({service: "noded", verb: "noded.list"})
+send busviewer busviewer.call body=$body timeout=30
+print $result
+```
+
+The answer is `{service, verb, request_body, rc, body}`.
+
+## Commands and keys
+
+Every menu item, shortcut and `busviewer.execute` id is one command in
+`src/commands.rs`:
+
+| Command | Menu | Key |
+|---|---|---|
+| `file.refresh` | File › Refresh services | Ctrl+R |
+| `file.quit` | File › Quit | Ctrl+Q |
+| `edit.format` | Edit › Format JSON body | Ctrl+Shift+F |
+| `edit.clear` | Edit › Clear body | |
+| `edit.copy` | Edit › Copy reply | |
+| `bus.call` | Bus › Call verb | Ctrl+Enter |
+| `help.shortcuts` | Help › Keyboard shortcuts | F1 |
+| `help.about` | Help › About BusViewer | |
+| `view.search` | title bar search button | Ctrl+F |
+| `view.mode` | title bar light/dark button | |
+
+View › Theme adds the `view.theme.*`, `view.mode.*`, `view.style.*`,
+`view.decorations.*` and `view.captions.*` choices. They set the theme of
+this window only; the session's theme file is never written. The Help menu
+opens with a field that searches every command. The desktop profile can
+rebind the shortcuts (`keymaps.busviewer.<id>`), and `busviewer.commands`
+reports the ones in force.
+
+## Running it
+
+```text
+busviewer [--noded-url URL] [--service NAME] [--comp NAME]
+```
+
+- `--noded-url`: the broker to use. The default is the session's noded.
+- `--service`: the Bus name to register as, `busviewer` by default.
+- `--comp`: the compositor's service name, used to raise the window. The
+  default is `$MIXOS_COMP_SERVICE`, or `comp`.
+
+Service names may contain only ASCII letters, digits, `-`, `_` and `.`.
+
+The window follows the desktop profile's look and keymaps from
+[settingsd](../settingsd/README.md), through the
+[settings](../settings/README.md) follower, and updates when they change.
+With no theme chosen it starts in Studio Dark.
+
+## Testing
+
+On an authorised build worker at a pushed commit:
+
+```text
+cargo test --locked -p inspector -p busviewer
+```
+
+- The engine's unit tests (`crates/inspector/src/engine.rs`, `model.rs`)
+  cover discovery, selection, the body, calls, the Bus verbs, refusals,
+  tickets and quitting, with no UI.
+- `tests/shell.rs` runs the real `Shell` on a logging Bus handle (the
+  `inspector` `testing` feature) and checks every reply, call and the final
+  quit in order.
+- `tests/drive.rs` drives the window over its Bus verbs against the real
+  view: clicks, typing, the title bar controls, menus.
+- `tests/view.rs` checks the dialogs, the body buttons and their tooltips,
+  and the search field through kittest.
+- `tests/snapshot.rs` takes offscreen snapshots in several themes into
+  `tests/snapshots/`. Regenerate with `UPDATE_SNAPSHOTS=1` and look at the
+  images before committing them.
+- `tests/registry.rs` checks that the verb registry lists exactly the
+  verbs BusViewer describes, and that read-only verbs are class `query`
+  ([verb classes](../docs/decisions/2026-10-11-verb-classes.md)).
+- `crates/inspector/tests/native.rs` runs discovery, calls and
+  single-instance registration against an isolated real broker. It is
+  ignored by default and needs `BUSVIEWER_TEST_URL`.
 
 ---
 
@@ -5616,6 +5820,152 @@ The source is
 
 ---
 
+<!-- page: https://mixos.dev/editor-model/ (source: https://mixos.dev/editor-model/README.md) -->
+
+# editor-model
+
+`editor-model` is the frontend side of the [edit service](../editd/README.md):
+everything an editor needs that is not drawing. It has no UI toolkit, needs
+no async runtime and does no Bus I/O. The transport stays in the consumer;
+the mirror only produces requests (`types::Outgoing`) and consumes replies
+and events.
+
+Used by:
+
+- [editor](../editor/README.md), the shared egui editor widget, which turns
+  keys and pointer events into `EditCommand`s;
+- [ced](../ced/README.md) and its `documents` crate, including
+  `ced --headless`, which drive the mirror against `editd`.
+
+It builds on the [edit](../edit/README.md) library (`Text`, `ot`, `view`,
+`wire`, origins) and the [`syntax`](../syntax/README.md) crate (lsh highlighting).
+
+The source is [`libs/editor-model`](https://github.com/markc/mixos/tree/main/libs/editor-model).
+
+## Modules
+
+| Module | What it holds |
+|---|---|
+| `model` | `EditorModel`: selection, preferred column, scroll, overwrite, remote carets, change markers and the input-method composition range. `command()` turns an `EditCommand` into a `LocalEdit`. |
+| `mirror` | `Mirror`: one buffer's view text (confirmed rev + in-flight + queue) with local echo and single-authority OT rebase against `editd`. Pure: no Bus, no clock; every method returns a `Step`. |
+| `highlight` | `Highlight`: per-view highlighting state, lsh languages through `syntax::cache`, Mix through the Mix lexer. |
+| `diag` | `Diagnostics`: per-source diagnostic sets (`mix lint --json` output, or external sets) mapped through edits. |
+| `types` | Shared types every frontend speaks: `Intent`, `LocalEdit`, `ViewDelta`, `Outgoing`, `Incoming`, `Conflict`, `Notice`, `OpIdGen`, `bus_lane_label`. |
+| `fake` | `FakeEditd`, a fake `edit` daemon over the real `edit::Buffer`, for tests (feature `fake`). |
+
+## The editor model
+
+`EditorModel::command(&text, &cfg, command)` applies an `EditCommand` to the
+current view text and returns the `LocalEdit` to send, or `None` for a pure
+motion. Commands: insert, newline, backspace, delete, delete word left or
+right, tab, outdent, duplicate line, delete line, move line up or down,
+toggle comment, `Move { to, extend }`, select all, select word
+(double-click), select line (triple-click) and set selection. Motions are
+left and right, word left and right, up and down, smart Home, End, page up
+and down, document start and end, and `To(offset)`.
+
+The contracts, from the module docs:
+
+- Every motion is grapheme-correct through `edit::view`; Up and Down keep
+  `preferred_cells`.
+- A multi-line Tab or Outdent is one multi-item `LocalEdit`: one
+  `edit.apply`, one undo group. `coalesce` is set only for single-grapheme
+  typing and backspace/delete runs.
+- Newline copies the line's leading whitespace and uses the buffer's line
+  ending. ToggleComment uses the language's line-comment token
+  (`line_comment_for`: `--` for Mix, `//` for Rust, C, C++, Go and
+  JavaScript, `#` for shell, Python, TOML and YAML; other languages get
+  nothing).
+- `apply_delta` maps the selection, remote carets and markers through a
+  `ViewDelta`. A delta that overlaps the composition range cancels it.
+- Lines are 1-based, cells 0-based.
+
+```rust
+use edit::text::Text;
+use edit::view::MeasureCfg;
+use editor_model::model::{EditCfg, EditCommand, EditorModel};
+
+let cfg = EditCfg {
+    measure: MeasureCfg { tab_size: 4, ambiguous_wide: false },
+    insert_spaces: true,
+    eol: "\n",
+    line_comment: Some("--"),
+};
+let text = Text::from_text("hello\n").unwrap();
+let mut m = EditorModel::default();
+let edit = m.command(&text, &cfg, EditCommand::Insert("> ".into()));
+// `edit` is Some(LocalEdit { items, coalesce, caret_after }) for the mirror.
+```
+
+## The mirror
+
+`Mirror::bootstrap` starts from an `edit.open` reply. The host then feeds it
+`local_edit`, `server_op` (undo, redo, save, reload, apply at a revision),
+`on_event` (`edit.changed`), `on_reply`, `on_deadline`, `on_page` and
+`on_history`, and after every call drains `next_outgoing`,
+`take_retry_timer`, `take_echo_timer` and `take_outcomes`. The deltas it
+produces are `ViewDelta`s, the one thing the editor side consumes: how the
+view text changed, with its kind (`Local`, `Remote`, `Undo`, `Redo`,
+`Reload`, `Revert`, `Resync`), revision and view generation.
+
+The rules are binding and written out in the module docs of
+[`src/mirror.rs`](https://github.com/markc/mixos/blob/main/libs/editor-model/src/mirror.rs):
+one request in flight per buffer; how a server edit is folded (duplicate,
+gap, own ack, or a remote fold that rebases pending ops and reports a
+`Conflict`); how replies, `busy` backoff and refusals are handled; what
+happens at a deadline; recovery from an event gap, a reconnect or an epoch
+change (history first, then a paged snapshot); and the keep-mine transfer
+of a detached copy, staged over 1 MiB.
+
+## Highlighting and diagnostics
+
+- **Highlight**: lsh languages are checkpointed every 1024 lines and seek
+  under a per-frame `SliceBudget`; a line not reached yet draws plain. Mix
+  languages (`mix`, `scene`, `mix-data`) are relexed whole off the UI
+  thread, 150 ms after the last delta (the caller debounces and runs the
+  worker); buffers over 2 MiB stay plain. A result tagged for another
+  epoch, buffer, language or config is discarded; an older result is used
+  only above the first line touched since.
+- **Diagnostics**: one set per source. `LINT_SOURCE` is the frontend's own
+  `mix lint --json -` run (schema version 2 only); any other source is an
+  external set (`ced.diagnostics`). A diagnostic whose line was touched
+  since its tagged generation is dropped; the rest map through the deltas.
+
+## Features
+
+- `mix` (the crate default; the workspace dependency turns default
+  features off, and ced and editor enable it): Mix highlighting through the
+  Mix lexer. Without it, Mix buffers draw plain.
+- `fake`: the `fake` module, for consumers' tests. ced's tests enable it.
+
+## Testing
+
+Unit tests sit beside each module (`src/model/tests.rs`,
+`src/highlight/tests.rs`, `src/diag/tests.rs`). The mirror is tested end to
+end against `FakeEditd`:
+
+- `tests/fixture_server_side.rs` runs the server side of every scripted
+  scenario in
+  [`tests/fixtures/mirror/`](https://github.com/markc/mixos/tree/main/libs/editor-model/tests/fixtures/mirror)
+  (format in its README), so a contradictory fixture fails there first.
+- `tests/mirror_convergence.rs` replays every fixture through a real
+  `Mirror`, checking the exact requests sent and the declared client
+  expectations, then runs proptest properties over random interleavings of
+  typing, agent edits, undo, reordered or dropped events and replies, lost
+  requests, deadlines and dedup eviction. The emitted deltas are replayed
+  onto a shadow string that must match the mirror's text.
+
+On an authorised build worker:
+
+```
+cargo test --locked -p editor-model
+```
+
+A vertical-motion benchmark is `#[ignore]`d; run it in release on a build
+node.
+
+---
+
 <!-- page: https://mixos.dev/editor/ (source: https://mixos.dev/editor/README.md) -->
 
 # editor
@@ -6107,6 +6457,118 @@ Transplanted from `cosmix-lib-log` at cosmix
 [noded](../noded/README.md).
 
 The source is [`libs/logging`](https://github.com/markc/mixos/tree/main/libs/logging).
+
+---
+
+<!-- page: https://mixos.dev/mimedb/ (source: https://mixos.dev/mimedb/README.md) -->
+
+# mimedb
+
+`mimedb` reads the freedesktop shared-mime-info database from the same
+files the desktop reads, and decides a file's MIME type by GLib's rules. The
+answer agrees with `gio info` and the file manager. It is a plain Rust
+library with no Bus verbs, and its only dependency is `libc`.
+
+Two components use it:
+
+- [Mix](../mix/README.md), through the `mime_type()` builtin (behind the
+  `mix` crate's `mime` feature; see [Mix I/O](../mix/io.md)).
+- [thumbs](../thumbs/README.md), which types a file before choosing a
+  thumbnailer for it.
+
+The source is
+[`libs/mimedb`](https://github.com/markc/mixos/tree/main/libs/mimedb).
+
+## The database
+
+Each `mime` directory under `$XDG_DATA_HOME` (default `~/.local/share`) and
+`$XDG_DATA_DIRS` (default `/usr/local/share:/usr/share`) can hold `globs2`
+(or the older `globs`), `magic`, `aliases` and `subclasses`. Directories are
+read highest precedence first, and relative entries are ignored, as the XDG
+spec requires. A higher directory's `__NOGLOBS__` and `__NOMAGIC__` entries
+clear a lower one's rules for that type. Missing directories and files are
+skipped. A file over 16 MiB (`MAX_FILE`) is skipped, and so is anything that
+is not a regular file once opened: a FIFO in a database directory is never
+waited on.
+
+## How a type is decided
+
+1. A non-regular file is its `inode/*` type (`inode/directory`,
+   `inode/fifo` and so on), and an empty file is `application/x-zerosize`.
+2. If exactly one glob matches the name, that is the answer.
+3. Otherwise the leading bytes are sniffed: the highest-priority magic
+   match, or `text/plain` when the content looks like text.
+4. With no glob match, the sniffed type is the answer, or
+   `application/octet-stream` (uncertain) if nothing was sniffed. With
+   several glob matches, a sniffed type of priority 80 or more wins; failing
+   that, the first glob type that is a subclass of the sniffed type wins;
+   failing that, the first glob type wins, marked uncertain.
+
+Globs are matched in GLib's order: a literal name, then the longest
+`*.suffix`, then full patterns. At most `SNIFF_MAX` (16384) bytes are read,
+GLib's limit, and fewer when the magic rules reach less far.
+
+One known limit: full patterns use the crate's own `fnmatch`, not glibc's.
+POSIX named classes use Unicode's predicates instead of a locale's tables,
+and collating symbols cannot end a range. The stock database uses neither.
+
+## API
+
+- `Database::load()` loads the desktop's database (`xdg_mime_dirs()`);
+  `Database::load_from(&dirs)` loads given `mime` directories, highest
+  precedence first.
+- `for_path(path, content) -> PathGuess` types a file, following symlinks.
+  With `content` false the file is never opened. A missing path is typed by
+  its name (`exists: false`); an unreadable one by its name, uncertain.
+- `guess(name, data) -> Guess` decides from an optional name and optional
+  leading bytes, for a caller that already has the file open.
+- `Guess { mime, by, uncertain }`, where `by` is a `By`: `Stat`, `Glob`,
+  `Magic`, `Content` (an empty file or the text check) or `Fallback`.
+  `By::as_str()` gives the lower-case name.
+- `globs(name)`, `sniff(data)`, `unalias(mime)`, `is_subclass(mime, base)`
+  and `parents(mime)`. Parents come nearest first and include the spec's
+  implicit ones: `text/plain` for `text/*` types and
+  `application/octet-stream` for everything but `inode/*`. Cycles in
+  `subclasses` are visited once.
+- `is_stale()` reports whether any directory or database file has changed
+  (timestamp or size) since loading, so a long-lived caller can reload.
+  `sniff_len()` is how many bytes to read before calling `guess`.
+- `text_fallback(data)` and `looks_like_text(data)` are the two text checks.
+
+## Example
+
+thumbs reads the start of a file it already has open and asks for its type:
+
+```rust
+let db = mimedb::Database::load();
+let mut data = Vec::new();
+source.take(db.sniff_len() as u64).read_to_end(&mut data)?;
+let mime = db.guess(Some("photo.jpg"), Some(&data)).mime;
+```
+
+From Mix, the same answer comes from `mime_type()`, which keeps one
+database per thread and reloads it when `is_stale()` says so or the XDG
+directories change:
+
+```mix
+$r = mime_type("/etc/hosts")
+print($r.mime)
+```
+
+## Source and tests
+
+- `src/lib.rs`: the database, loading and layering, the decision rules,
+  and the subclass graph.
+- `src/glob.rs`: parsing `globs2`/`globs` and the desktop's match order,
+  including `fnmatch`.
+- `src/magic.rs`: parsing and matching the binary `magic` file.
+
+Unit tests in each module build private `mime` directories in a temporary
+directory, so they never depend on the host's `/usr/share/mime`. They cover
+layer clearing, staleness after a same-size rewrite, oversized files,
+priority-zero magic, cycles and very wide parent graphs. The `mix` crate's
+[`tests/mime_type.rs`](https://github.com/markc/mixos/blob/main/libs/mix/tests/mime_type.rs)
+tests the builtin against a private database the same way.
 
 ---
 
@@ -28602,6 +29064,139 @@ The source is [`libs/strict`](https://github.com/markc/mixos/tree/main/libs/stri
 
 ---
 
+<!-- page: https://mixos.dev/syntax/ (source: https://mixos.dev/syntax/README.md) -->
+
+# syntax
+
+Deterministic syntax highlighting for MixOS text editors. It wraps `lsh`
+from Microsoft Edit (msedit): a small compiler from `*.lsh` language
+definitions to bytecode, and a line-oriented runtime that turns each line
+into highlight spans. The two upstream crates, `lsh` and `stdext`, are
+vendored with documented patches under
+[`vendor/msedit`](https://github.com/markc/mixos/tree/main/vendor/msedit)
+(MIT, from microsoft/edit at `826b4c0`).
+
+It is a core library (`kind = "lib"`, `layer = "core"`) with no Bus
+contract. Its one direct user is [`editor-model`](../editor-model/README.md)
+([`libs/editor-model/src/highlight.rs`](https://github.com/markc/mixos/blob/main/libs/editor-model/src/highlight.rs)),
+which maps its highlight kinds to colour classes for the
+[editor](../editor/README.md) widget, and so for [ced](../ced/README.md).
+Mix source is highlighted by the Mix lexer, not by this crate.
+
+The source is [`libs/syntax`](https://github.com/markc/mixos/tree/main/libs/syntax).
+
+## Concepts
+
+- **Bytes, not graphemes.** lsh works on bytes, so a text store may hand
+  over chunks that split a grapheme cluster.
+- **Line numbers are 1-based** everywhere in the API.
+- **Lines of 32 KiB or more are left plain** (`MAX_LINE_LEN`, as upstream).
+  Unlike upstream, the highlighter still advances to the real end of such a
+  line, so later line numbers stay correct.
+- **A checkpoint every 1024 lines** (`cache::INTERVAL`, pinned in every
+  build profile; upstream uses 16 in debug builds). A random seek costs at
+  most one interval of parsing.
+- **No build script and no mutable statics.** The compiled definitions in
+  `src/defs.rs` are generated once and committed.
+
+## API
+
+- `language_for_path(&Path)`, `language_by_id("rust")`,
+  `language_by_name("Markdown")` (ASCII-case-insensitive): look up a
+  `&'static Language`.
+- `LineSource`: the trait a text store implements. `read_forward(offset)`
+  returns the contiguous bytes from `offset` to some chunk boundary (empty at
+  the end); the highlighter assembles lines that span chunks. The optional
+  `indexed_line_end(line)` lets a store with a line index skip over-long
+  lines without reading them. `&[u8]` and `str` implement it.
+- `highlighter::Highlighter`: parses one line at a time from the top.
+  `parse_next_line(&mut Vec<Span>)` fills the spans of the next line;
+  `snapshot()` and `restore()` save and resume a `HighlighterState`.
+- `highlighter::Span { start, kind }`: `kind` applies from `start` (an
+  absolute byte offset in the source) to the next span or the end of the
+  line.
+- `cache::Cache`: checkpointed random access. `parse_line(h, line, out)`
+  resumes from the nearest checkpoint; `invalidate_from(line)` drops the
+  states an edit at `line` makes stale; `advance(h, target, max_lines)`
+  time-slices a cold seek with a per-call line budget and returns true once
+  `target` is reachable; `reach()` is the furthest line reachable without
+  parsing. The cache also keeps a frontier, so a budget below one interval
+  still makes progress from frame to frame.
+- `defs::HighlightKind`: `Comment`, `String`, `KeywordControl`,
+  `StorageType`, the `Markup*` kinds and the rest. `defs::LANGUAGES` and
+  `defs::FILE_ASSOCIATIONS` are the generated tables. `syntax::runtime`
+  re-exports the vendored `Language` and `Highlight` types.
+
+## Languages
+
+C, C++, C#, Diff, F#, Git commit and rebase messages, Go, ignore files,
+Java, JavaScript, JSON, LSH, Lua, Markdown, Odin, PowerShell, properties,
+Python, Ruby, Rust, shell script, TOML, XML and YAML: one per definition
+file in
+[`vendor/msedit/lsh/definitions`](https://github.com/markc/mixos/tree/main/vendor/msedit/lsh/definitions).
+
+## Example
+
+From the tests:
+
+```rust
+use syntax::highlighter::Highlighter;
+
+let text = "fn main() {\n    // hello\n}\n";
+let src = text.as_bytes();
+let rust = syntax::language_by_id("rust").expect("lsh defines rust");
+let mut h = Highlighter::new(&src, rust);
+let mut spans = Vec::new();
+h.parse_next_line(&mut spans); // line 1
+h.parse_next_line(&mut spans); // line 2: a Comment span starts at the "//"
+```
+
+An editor keeps one `Cache` per buffer, builds a fresh `Highlighter` over
+its text each frame (a highlighter borrows the text), calls `cache.advance`
+with a line budget for lines not yet reached, and calls
+`cache.invalidate_from(line)` after each edit.
+
+## Regenerating the definitions
+
+`src/defs.rs` is written by the `gen` example, the same generator msedit
+runs from its build script, with two changes: the compiler's IR dump is left
+out (it prints node addresses, so it differs on every run) and
+`HighlightKind` also derives `Hash`.
+
+```sh
+cargo run --release -p syntax --example gen            # writes src/defs.rs
+cargo run --release -p syntax --example gen -- --stdout
+```
+
+The lsh compiler panics on patterns it does not support, so it runs only
+here and in the tests (`syntax::compiler`, hidden from the docs), never
+inside an editor. The crate has no features.
+
+## Source layout
+
+| Path | What |
+|---|---|
+| `src/lib.rs` | Language lookup, `LineSource`, the hidden `compiler` module |
+| `src/highlighter.rs` | `Highlighter`, `HighlighterState`, `Span`, `MAX_LINE_LEN` |
+| `src/cache.rs` | `Cache` and `INTERVAL` |
+| `src/defs.rs` | Generated bytecode, strings, charsets and language tables |
+| `examples/gen.rs` | The generator for `src/defs.rs` |
+
+## Tests
+
+- `tests/defs_fresh.rs`: the committed `src/defs.rs` matches a fresh
+  generation byte for byte; two generations in one process agree; every
+  file association points into `LANGUAGES`, and the lookups work.
+- `tests/highlighter.rs`: spans are absolute and ordered; any chunk size
+  gives the same spans as one slice; `INTERVAL` stays 1024; over-long lines
+  are plain and keep later line numbers, with and without a line index;
+  reading past the end is empty; `advance` makes progress below one interval
+  per call; and a proptest checks that random seeks, also after an edit and
+  `invalidate_from`, equal a linear parse. An ignored benchmark times
+  over-long lines with and without a line index.
+
+---
+
 <!-- page: https://mixos.dev/system/ (source: https://mixos.dev/system/README.md) -->
 
 # system
@@ -28781,6 +29376,264 @@ The source is [`libs/thumbs`](https://github.com/markc/mixos/tree/main/libs/thum
   its ticket stale. A folder view that scrolls will want one; it can be
   added without changing what exists.
 - The PNG and mountinfo parsers have unit tests but no fuzz targets yet.
+
+---
+
+<!-- page: https://mixos.dev/toolkit/ (source: https://mixos.dev/toolkit/README.md) -->
+
+# Toolkit
+
+`toolkit` is the library every MixOS egui application is built on. It is
+the shell layer of the
+[egui applications decision](../docs/decisions/2026-10-09-egui-applications.md)
+(see [AGENTS.md](https://github.com/markc/mixos/blob/main/AGENTS.md) §4.1).
+An app keeps its behaviour in a headless engine and its UI state in one
+serialisable struct. The toolkit draws the window around that state and
+routes every action through one command registry.
+
+It gives each app:
+
+- the resolved [design](../design/README.md) as an egui style, plus the
+  embedded Inter and JetBrains Mono faces and the Lucide icons;
+- the client-side title bar, menu bars and menus, and the View › Theme
+  submenu;
+- the chrome components (bars, buttons, panels, tabs, fields, toggles,
+  combos, sliders, canvas scrollbars, tooltips, dialogs), drawn to the
+  chrome specification in each chrome scheme;
+- the command registry, which generates menus, shortcuts, the palette and
+  the Bus surface, and records every executed command;
+- the drive verbs, the UI-level Bus verbs that every app shares;
+- Fluent string catalogues, a key-chord grammar, and thumbnail decoding.
+
+The source is
+[`libs/toolkit`](https://github.com/markc/mixos/tree/main/libs/toolkit).
+
+## Who uses it
+
+The apps [term](../term/README.md), [ced](../ced/README.md),
+[dopus](../dopus/README.md), [prefs](../prefs/README.md),
+[screenshot](../screenshot/README.md), [backdrop](../backdrop/README.md)
+and busviewer; the [editor](../editor/README.md) library; and four of
+[compd](../compd/README.md)'s crates (`decor`, `ui`, `scene-host`,
+`world`). backdrop is the only one that turns on the `layer` feature.
+
+## Starting an app
+
+Call `toolkit::install(ctx, &theme)` once on the egui context. It installs
+the image loaders the icons need and applies the theme's style and fonts.
+`Theme::load()` reads the shared `theme.conf.mix` from the MixOS etc
+directory (`$MIXOS_ETC`, else `$MIXOS/etc`, else `/etc/mixos` for root,
+else `$XDG_CONFIG_HOME/mixos`). It falls back to the embedded design, and
+says why on stderr, when the file is missing or unusable.
+
+A minimal window, condensed from `tests/snapshot.rs`:
+
+```rust
+use toolkit::command::{Command, Registry, always};
+use toolkit::{Icon, Strings, Theme, icons};
+
+#[derive(Default)]
+struct Demo { refreshed: u32 }
+
+let mut commands = Registry::new();
+commands.add(Command {
+    id: "bus.refresh",           // stable, never reused once published
+    label: "cmd-refresh",        // Fluent key
+    menu: Some("menu-bus"),      // Fluent key of the top-level menu
+    submenu: None,
+    group: 0,
+    shortcut: Some(egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::R)),
+    icon: Some(Icon::RefreshCw),
+    enabled: always,
+    run: |s: &mut Demo| s.refreshed += 1,
+});
+
+let theme = Theme::load();
+toolkit::install(ctx, &theme);
+let strings = Strings::new(include_str!("../i18n/en/demo.ftl"));
+let stroke = icons::stroke_width(&theme);
+
+// each frame:
+let _ = toolkit::titlebar::show(ui, "Demo", Some(Icon::Server), stroke,
+                                &commands, &state, &strings);
+```
+
+## Main pieces
+
+### Theme and look
+
+- `theme`: `Theme` holds a resolved design together with the context it
+  was compiled for (scheme, style, mode, contrast) and its framing
+  (server- or client-side decorations, caption side). Build one with
+  `Theme::embedded()`, `for_context`, `from_source` (a full design
+  document or a selection-only file) or `load()`. Then adjust it with
+  `with_choice`, `framed` and `with_overlay`.
+- `session_look`: turns the desktop profile's appearance, as
+  [settingsd](../settingsd/README.md) holds it, into a `Theme`. It is pure,
+  with no Bus and no I/O. An appearance that names a design this build
+  does not know leaves the app's session theme in place.
+- `theme_menu`: the View › Theme submenu, added with
+  `Registry::theme_menu`. It covers the hue schemes (Ocean, Crimson, Stone,
+  Forest, Sunset, Mono), the chrome schemes (Pro, Studio, Classic), modes,
+  styles and framing. Command ids are `view.theme.<scheme>`,
+  `view.mode.*`, `view.style.*`, `view.decorations.*` and
+  `view.captions.*`, and each axis can follow the session.
+- `style`: maps a hue scheme's design onto egui's `Style`. The module docs
+  give the field-by-field mapping table.
+- `chrome`: the colours and geometry of the title bar and menus. For the
+  chrome schemes (`pro`, `studio`, `classic`) it supplies the whole egui
+  style, taken from the design's chrome family. Components read
+  `Chrome::style` and `Chrome::metrics` and never ask which scheme they are
+  drawing, so a new style needs only design data. See the
+  [chrome family decision](../docs/decisions/2026-10-09-chrome-family-and-schemes.md).
+- `fonts`: the embedded faces. Weight is a design token: each typography
+  role names a weight, and the static Inter file of that weight is the one
+  installed. Monospace is JetBrains Mono.
+- `icons`: Lucide icons, from unmodified upstream SVGs. The `Icon` enum
+  names them. Stroke width comes from the design metric
+  `icon.stroke_width`, and colour comes from the widget's text colour at
+  draw time. See the
+  [icons and type decision](../docs/decisions/2026-10-09-icons-and-type.md).
+
+### Window chrome and components
+
+- `titlebar`: the client-side title bar. From the left it holds the app
+  mark, the registry's menus, the centred title, an optional right-hand
+  group of controls, and the minimize, maximize and close buttons. Captions
+  can be on the left instead. A window opened with `titlebar::viewport` is
+  undecorated. Only the free gap between the menus and the buttons drags
+  the window. Call `titlebar::edges` last in the frame to add the resize
+  zones. Under server-side decorations the row becomes a plain menu bar.
+- `menu`: menu bars and menus drawn by the toolkit, not by egui's
+  `MenuBar`. One highlight is shared by pointer and keyboard, a menu opens
+  on press, and press-drag-release runs an item. `Nav` holds the open menu
+  and its highlights as pure data and is tested without egui.
+- `bars`, `button`, `panel`, `tabs`, `field`, `toggle`, `combo`, `slider`,
+  `canvas`, `tooltip`, `dialog`: the chrome components (options, status
+  and tool bars, icon rail, push and icon buttons, dock panel groups,
+  document tabs, value, text and search fields, checkboxes and switches,
+  combo boxes, sliders, canvas scrollbars, tooltip wording, and modal
+  dialogs).
+
+### Commands
+
+- `command`: `Command<S>` is one action, with an id, a label key, a menu
+  and submenu, a group, a shortcut, an icon, an `enabled` rule and a `run`
+  handler over the app's state `S`. A handler only changes state. Work that
+  leaves the process, such as a Bus call or a file write, is queued on the
+  state for the app's effect loop. `Registry<S>` provides `add`,
+  `add_choice`, `add_toggle`, `execute(id, state, origin)`, `describe`,
+  `menus` and `model`, `shortcuts`, `search`, `shortcut_grid` and `rebind`.
+  The UI, the command line and Bus verbs all dispatch by id.
+- `executed`: every run is recorded with its `Origin` (`menu`, `shortcut`,
+  `palette`, `ui`, `bus`, `macro`) and given a per-process sequence number.
+  It goes into a bounded `Journal` that counts the runs it drops.
+  `Registry::take_executed` hands the records to the app's Bus connection,
+  which publishes them on `<app>.command.executed`
+  ([decision](../docs/decisions/2026-10-11-executed-commands.md)).
+- `keymap`: the chord grammar (`Ctrl`, `Alt`, `Shift`, then one key, joined
+  by `+`). `Registry::rebind` applies the person's bindings from the
+  desktop profile.
+
+### Drive verbs
+
+`drive` lets an agent do in the window anything a person can.
+`drive::install(ctx, app)` turns on AccessKit, keeps each pass's widget
+tree, and injects queued pointer and key events through egui's input hook,
+the same path real input takes. The app registers these verbs under its own
+prefix (`<app>.ui.tree` and so on):
+
+`ui.tree`, `ui.click`, `ui.pointer`, `ui.scroll`, `ui.key`, `ui.type`,
+`ui.menu`, `ui.menu.list`, `ui.menu.open`, `ui.menu.close`, `ui.capture`,
+`window`, `window.state`
+
+The app forwards each request, with the prefix removed, to
+`drive::request` from inside a frame. It sends back whatever `request`, or
+`drive::logic` (called once per frame), returns. It holds later commands
+while `drive::pending` is true, and calls `drive::finish` before closing.
+Reads answer at once. Input verbs run one at a time, one step per pass,
+and answer one pass after their last step. At most 32 input requests can
+be queued. The [driving guide](../docs/drive.md) shows them in use.
+
+### Strings, thumbnails, layer surfaces
+
+- `strings`: `Strings::new(ftl)` wraps an app's Fluent catalogue
+  (`i18n/en/<app>.ftl`). It provides `get`, `with` (with arguments) and
+  `has`. A missing key renders as the key itself, so a gap shows on screen
+  instead of a blank. The toolkit's own labels, such as window buttons and
+  the Theme menu, are in `i18n/en/toolkit.ftl`.
+- `thumbnail`: decodes cached thumbnail PNGs within explicit size limits
+  on a `Decoder` thread, ready to upload as textures. Making the
+  thumbnails is the job of [thumbs](../thumbs/README.md).
+- `layer` (feature `layer`): egui programs on wlr-layer-shell surfaces,
+  such as wallpapers, desktops and docks. `layer::run(options, program)`
+  creates one surface per output (`Outputs::Each`), or a single surface
+  the compositor places. Each surface has its own egui context and draws
+  through wgpu's GL backend on its `wl_surface`. It follows fractional
+  scale and takes pointer, scroll and optional keyboard input. It redraws
+  only when something changes, so an idle surface costs nothing.
+
+## Features and dependencies
+
+The default build has no features. `layer` adds smithay-client-toolkit
+0.19.2 (the version eframe's winit already links), wayland-backend, wgpu,
+egui-wgpu and xkbcommon. Workspace dependencies: `assets`, `config`,
+`design`, `settings` (data types only, no Bus) and `thumbs`.
+
+## Assets and licences
+
+`assets/fonts/` holds static Inter (Light, Regular, Medium, SemiBold) and
+JetBrains Mono (Light, Regular, Medium) faces with their OFL texts.
+`assets/icons/` holds the Lucide SVGs with `LICENSE-lucide.txt`, and
+mixos.dev uses the same icons. `assets/licenses.conf.mix` pins each notice
+by SHA-256. This includes the notices for egui's own fallback fonts, which
+are in `assets/fonts/fallbacks/`.
+`scripts/install_licenses.mix` installs them under
+`<share>/licenses/toolkit` (default share `/opt/mixos/share`). `--check`
+validates only the sources, and `--verify` checks an installed tree. See
+the [bundled font licences decision](../docs/decisions/2026-10-13-bundled-font-licences.md).
+
+## Source layout
+
+| Path | What |
+|---|---|
+| `src/lib.rs` | module list and `install` |
+| `src/theme.rs`, `theme_menu.rs`, `session_look.rs`, `style.rs`, `chrome.rs` | the look |
+| `src/fonts.rs`, `icons.rs` | embedded faces and Lucide icons |
+| `src/titlebar.rs`, `menu.rs` | window chrome |
+| `src/bars.rs` … `src/dialog.rs` | chrome components |
+| `src/command.rs`, `executed.rs`, `keymap.rs` | commands, executed records, chords |
+| `src/drive.rs` | the drive verbs |
+| `src/strings.rs`, `thumbnail.rs` | Fluent strings, thumbnail decoding |
+| `src/layer.rs`, `src/layer/` | layer-shell surfaces (feature `layer`) |
+| `i18n/en/toolkit.ftl` | the toolkit's own strings |
+| `assets/`, `scripts/install_licenses.mix` | fonts, icons, licence notices |
+
+## Testing
+
+Unit tests sit in the modules; for example `menu::Nav` is tested as plain
+data. The integration tests in `tests/` drive real frames through
+`egui_kittest`:
+
+- `components.rs`, `menu.rs`, `titlebar.rs`, `chrome.rs`: component, menu
+  and title-bar behaviour under pointer and keyboard;
+- `drive.rs`: the drive verbs, requested inside frames the way an app's
+  shell requests them;
+- `snapshot.rs`, `components_snapshot.rs`: offscreen wgpu snapshots across
+  schemes and modes, compared with `tests/snapshots/*.png`. Regenerate them
+  with `UPDATE_SNAPSHOTS=1`, and look at the images before committing;
+- `spec_renders.rs`: when `CHROME_RENDER_DIR` is set, it renders the
+  chrome scenes for an out-of-tree comparison against the chrome
+  specification's evidence. When it is unset, it does nothing;
+- `asset_licenses_test.mix`: install, drift and verify checks for the
+  licence installer.
+
+On an authorised build worker at a pushed commit:
+
+```
+cargo test --locked -p toolkit
+cargo test --locked -p toolkit --features layer
+```
 
 ---
 
@@ -29555,7 +30408,7 @@ yet. They are listed on both this page and the server page until they do.
 
 - [backdrop](../backdrop/README.md) (app): The MixOS desktop background — drawn by its own program on the compositor's background layer, on every output, at native and fractional scale.
 - [bridged](../bridged/README.md) (service): How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes.
-- busviewer (app; no page yet)
+- [busviewer](../busviewer/README.md) (app): BusViewer is the MixOS desktop app that lists the services and verbs on this node's Bus, shows each verb's description and the mesh peers, and calls one verb once with a JSON body.
 - [ced](../ced/README.md) (app): The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live.
 - [compd](../compd/README.md) (service): The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, verbs, topics and props tree.
 - [dopus](../dopus/README.md) (app): MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads…
@@ -29599,7 +30452,7 @@ yet. They are listed on both this page and the desktop page until they do.
 
 - [backdrop](../backdrop/README.md) (app): The MixOS desktop background — drawn by its own program on the compositor's background layer, on every output, at native and fractional scale.
 - [bridged](../bridged/README.md) (service): How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes.
-- busviewer (app; no page yet)
+- [busviewer](../busviewer/README.md) (app): BusViewer is the MixOS desktop app that lists the services and verbs on this node's Bus, shows each verb's description and the mesh peers, and calls one verb once with a JSON body.
 - [ced](../ced/README.md) (app): The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live.
 - [compd](../compd/README.md) (service): The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, verbs, topics and props tree.
 - [dopus](../dopus/README.md) (app): MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads…

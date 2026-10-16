@@ -13,6 +13,7 @@
   <url><loc>https://mixos.dev/bridged/</loc></url>
   <url><loc>https://mixos.dev/buildinfo/</loc></url>
   <url><loc>https://mixos.dev/bus/</loc></url>
+  <url><loc>https://mixos.dev/busviewer/</loc></url>
   <url><loc>https://mixos.dev/ced/</loc></url>
   <url><loc>https://mixos.dev/citizen/</loc></url>
   <url><loc>https://mixos.dev/compd/</loc></url>
@@ -55,10 +56,12 @@
   <url><loc>https://mixos.dev/dopus/</loc></url>
   <url><loc>https://mixos.dev/edit/</loc></url>
   <url><loc>https://mixos.dev/editd/</loc></url>
+  <url><loc>https://mixos.dev/editor-model/</loc></url>
   <url><loc>https://mixos.dev/editor/</loc></url>
   <url><loc>https://mixos.dev/expr/</loc></url>
   <url><loc>https://mixos.dev/hostd/</loc></url>
   <url><loc>https://mixos.dev/logging/</loc></url>
+  <url><loc>https://mixos.dev/mimedb/</loc></url>
   <url><loc>https://mixos.dev/mix-shell/</loc></url>
   <url><loc>https://mixos.dev/mix/buffer/</loc></url>
   <url><loc>https://mixos.dev/mix/builtins/</loc></url>
@@ -111,10 +114,12 @@
   <url><loc>https://mixos.dev/settings/</loc></url>
   <url><loc>https://mixos.dev/settingsd/</loc></url>
   <url><loc>https://mixos.dev/strict/</loc></url>
+  <url><loc>https://mixos.dev/syntax/</loc></url>
   <url><loc>https://mixos.dev/system/</loc></url>
   <url><loc>https://mixos.dev/term/</loc></url>
   <url><loc>https://mixos.dev/test-broker/</loc></url>
   <url><loc>https://mixos.dev/thumbs/</loc></url>
+  <url><loc>https://mixos.dev/toolkit/</loc></url>
   <url><loc>https://mixos.dev/bridged/changelog/</loc></url>
   <url><loc>https://mixos.dev/compd/changelog/</loc></url>
   <url><loc>https://mixos.dev/editd/changelog/</loc></url>
