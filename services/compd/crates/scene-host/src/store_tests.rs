@@ -14,30 +14,62 @@ const TOAST: &str = "---\nscene: 1\nname: toast-probe\ncitizen: c\nwindow: {\"ki
 fn toast_show_is_busy_independently_of_the_dialog_and_hide_frees_it() {
     let mut store = SceneStore::default();
     let mut caller = mount("loader", 1);
-    for source in [TOAST.to_owned(), TOAST.replace("toast-probe", "other-toast")] {
-        assert_eq!(store.dispatch(SceneVerb::Load, &source, &Value::Null, &mut caller).rc, 0);
+    for source in [
+        TOAST.to_owned(),
+        TOAST.replace("toast-probe", "other-toast"),
+    ] {
+        assert_eq!(
+            store
+                .dispatch(SceneVerb::Load, &source, &Value::Null, &mut caller)
+                .rc,
+            0
+        );
     }
     let frozen: Value = serde_json::from_str(SHELL_VERBS).unwrap();
-    let dialog = frozen["shell.scene.load"]["request"]["source"].as_str().unwrap();
-    assert_eq!(store.dispatch(SceneVerb::Load, dialog, &Value::Null, &mut caller).rc, 0);
+    let dialog = frozen["shell.scene.load"]["request"]["source"]
+        .as_str()
+        .unwrap();
+    assert_eq!(
+        store
+            .dispatch(SceneVerb::Load, dialog, &Value::Null, &mut caller)
+            .rc,
+        0
+    );
     store.set_dialog_visible("editor", true);
     let dialog = store.dialog_seat().unwrap().clone();
     assert!(store.toast_seat().is_none() && store.edge_page("toast-probe").is_none());
-    store.set_toast_visible("toast-probe", true, "DP-2", Some(320.0)).unwrap();
+    store
+        .set_toast_visible("toast-probe", true, "DP-2", Some(320.0))
+        .unwrap();
     let toast = store.toast_seat().unwrap().clone();
-    let busy = store.set_toast_visible("other-toast", true, "DP-1", None).unwrap_err();
+    let busy = store
+        .set_toast_visible("other-toast", true, "DP-1", None)
+        .unwrap_err();
     assert_eq!(busy["error_code"], "TOAST_BUSY");
-    assert_eq!(busy["holder"], json!({"scene":"toast-probe", "owner":"loader"}));
+    assert_eq!(
+        busy["holder"],
+        json!({"scene":"toast-probe", "owner":"loader"})
+    );
     assert_eq!(store.toast_seat(), Some(&toast));
     assert!(!store.scene("other-toast").unwrap().visible());
-    store.set_toast_visible("other-toast", false, "DP-1", None).unwrap();
+    store
+        .set_toast_visible("other-toast", false, "DP-1", None)
+        .unwrap();
     assert_eq!(store.toast_seat(), Some(&toast));
-    store.set_toast_visible("toast-probe", true, "DP-2", None).unwrap();
+    store
+        .set_toast_visible("toast-probe", true, "DP-2", None)
+        .unwrap();
     assert_eq!(store.toast_seat().unwrap().h, 320.0);
-    store.set_toast_visible("toast-probe", true, "DP-2", Some(5000.0)).unwrap();
+    store
+        .set_toast_visible("toast-probe", true, "DP-2", Some(5000.0))
+        .unwrap();
     assert_eq!(store.toast_seat().unwrap().h, 2048.0);
-    store.set_toast_visible("toast-probe", false, "DP-2", None).unwrap();
-    store.set_toast_visible("other-toast", true, "DP-1", Some(1.0)).unwrap();
+    store
+        .set_toast_visible("toast-probe", false, "DP-2", None)
+        .unwrap();
+    store
+        .set_toast_visible("other-toast", true, "DP-1", Some(1.0))
+        .unwrap();
     assert_eq!(store.toast_seat().unwrap().h, 60.0);
     assert_eq!(store.dialog_seat(), Some(&dialog));
     assert!(store.scene("editor").unwrap().visible());
@@ -47,16 +79,33 @@ fn toast_show_is_busy_independently_of_the_dialog_and_hide_frees_it() {
 fn toast_reload_updates_geometry_refuses_kind_changes_and_cleans_up_departures() {
     let mut store = SceneStore::default();
     let mut caller = mount("loader", 1);
-    assert_eq!(store.dispatch(SceneVerb::Load, TOAST, &Value::Null, &mut caller).rc, 0);
-    store.set_toast_visible("toast-probe", true, "DP-2", Some(300.0)).unwrap();
+    assert_eq!(
+        store
+            .dispatch(SceneVerb::Load, TOAST, &Value::Null, &mut caller)
+            .rc,
+        0
+    );
+    store
+        .set_toast_visible("toast-probe", true, "DP-2", Some(300.0))
+        .unwrap();
     caller.accepted_at = 2;
     let resized = TOAST.replace("\"h\":120", "\"h\":180");
-    assert_eq!(store.dispatch(SceneVerb::Load, &resized, &Value::Null, &mut caller).rc, 0);
+    assert_eq!(
+        store
+            .dispatch(SceneVerb::Load, &resized, &Value::Null, &mut caller)
+            .rc,
+        0
+    );
     assert_eq!(store.toast_seat().unwrap().h, 180.0);
     assert_eq!(store.toast_seat().unwrap().accepted_at, 2);
     assert!(store.scene("toast-probe").unwrap().visible());
     for kind in ["edge", "dialog"] {
-        let done = store.dispatch(SceneVerb::Load, &TOAST.replace("\"toast\"", &format!("\"{kind}\"")), &Value::Null, &mut caller);
+        let done = store.dispatch(
+            SceneVerb::Load,
+            &TOAST.replace("\"toast\"", &format!("\"{kind}\"")),
+            &Value::Null,
+            &mut caller,
+        );
         assert_eq!(done.rc, 10);
         assert!(done.body.contains("SUBPANEL_COLLISION"));
         assert_eq!(store.toast_seat().unwrap().h, 180.0);
@@ -66,9 +115,26 @@ fn toast_reload_updates_geometry_refuses_kind_changes_and_cleans_up_departures()
     assert_eq!(store.unload_owned_before("loader", 2), Vec::<String>::new());
     assert_eq!(store.unload_owned_before("loader", 3), ["toast-probe"]);
     assert!(store.toast_seat().is_none());
-    assert_eq!(store.dispatch(SceneVerb::Load, TOAST, &Value::Null, &mut caller).rc, 0);
-    store.set_toast_visible("toast-probe", true, "DP-1", None).unwrap();
-    assert_eq!(store.dispatch(SceneVerb::Unload, "", &json!({"scene":"toast-probe"}), &mut caller).rc, 0);
+    assert_eq!(
+        store
+            .dispatch(SceneVerb::Load, TOAST, &Value::Null, &mut caller)
+            .rc,
+        0
+    );
+    store
+        .set_toast_visible("toast-probe", true, "DP-1", None)
+        .unwrap();
+    assert_eq!(
+        store
+            .dispatch(
+                SceneVerb::Unload,
+                "",
+                &json!({"scene":"toast-probe"}),
+                &mut caller
+            )
+            .rc,
+        0
+    );
     assert!(store.toast_seat().is_none());
 }
 

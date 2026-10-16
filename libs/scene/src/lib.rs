@@ -829,15 +829,16 @@ pub fn resolve(doc: &SceneDocument) -> Result<ResolvedScene, Vec<Diagnostic>> {
                     .map(|v| (p.name.into(), normalize_number(v)))
             })
             .collect();
-        if r.widget == "window" && ports.get("kind").is_some_and(|kind| kind == "toast")
-            && !r.ports.contains_key("chrome")
-        {
-            ports.insert("chrome".into(), JsonValue::Bool(false));
-        }
         for p in ps {
             if let Some(value) = prepared.values.get(&format!("{id}.{}", p.name)) {
                 bindings::set_port(&mut ports, p.name, value.clone());
             }
+        }
+        if r.widget == "window"
+            && ports.get("kind").is_some_and(|kind| kind == "toast")
+            && !r.ports.contains_key("chrome")
+        {
+            ports.insert("chrome".into(), JsonValue::Bool(false));
         }
         nodes.insert(
             id.clone(),

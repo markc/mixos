@@ -267,7 +267,10 @@ mod tests {
         toast.register(seat("toast", "loader")).unwrap();
         let held = toast.seat().unwrap().clone();
         for other in [seat("other", "loader"), seat("toast", "other")] {
-            assert!(matches!(toast.register(other), Err(DialogError::Busy { .. })));
+            assert!(matches!(
+                toast.register(other),
+                Err(DialogError::Busy { .. })
+            ));
             assert_eq!(toast.seat(), Some(&held));
         }
         assert!(toast.release("other").is_none());

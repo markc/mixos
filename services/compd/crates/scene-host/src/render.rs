@@ -28,7 +28,9 @@ use world::scene::layer::base::Layer;
 use world::state::Loop;
 use world::surface::draw::handle::handle::{UiSpace, load};
 
-use crate::mount::{dialog_geometry, is_dialog, is_overlay, is_toast, page_id, scene_edge, toast_geometry};
+use crate::mount::{
+    dialog_geometry, is_dialog, is_overlay, is_toast, page_id, scene_edge, toast_geometry,
+};
 use crate::seat::Edge;
 use crate::store::{Mounted, SceneEntry, SceneStore};
 use crate::view::{Content, Frame, SceneMessage, SceneUi, event_of};
@@ -179,16 +181,25 @@ pub fn targets(store: &SceneStore, panels: &crate::panels::Panels) -> BTreeMap<S
     for (name, entry) in store.scenes() {
         let tree = entry.tree();
         if is_toast(tree) {
-            let Some(seat) = store.toast_seat().filter(|seat| seat.scene == name && entry.visible()) else {
+            let Some(seat) = store
+                .toast_seat()
+                .filter(|seat| seat.scene == name && entry.visible())
+            else {
                 continue;
             };
-            targets.insert(name.to_owned(), Target {
-                output: seat.output.clone(),
-                place: Place::Toast {
-                    w: seat.w, h: seat.h,
-                    frame: seat.chrome.then(|| Frame { title: seat.title.clone().unwrap_or_default() }),
+            targets.insert(
+                name.to_owned(),
+                Target {
+                    output: seat.output.clone(),
+                    place: Place::Toast {
+                        w: seat.w,
+                        h: seat.h,
+                        frame: seat.chrome.then(|| Frame {
+                            title: seat.title.clone().unwrap_or_default(),
+                        }),
+                    },
                 },
-            });
+            );
             continue;
         }
         if is_dialog(tree) {
@@ -599,7 +610,12 @@ pub(crate) fn reconcile(
                     (0.0, 0.0, logical.0, logical.1)
                 } else {
                     let layer = map.non_exclusive_zone();
-                    (layer.loc.x as f32, layer.loc.y as f32, layer.size.w as f32, layer.size.h as f32)
+                    (
+                        layer.loc.x as f32,
+                        layer.loc.y as f32,
+                        layer.size.w as f32,
+                        layer.size.h as f32,
+                    )
                 };
                 toast_rect(*w, *h, toast_zone(&panels.zones(&target.output), zone))
             }
@@ -748,8 +764,12 @@ pub(crate) fn reconcile(
             registry.set_visible_by_id(handle, mapped);
         }
         let requested = !toast && panels.focus_requested(&target.output) == Some(edge);
-        let field = (!toast).then(|| crate::view::autofocus(entry.tree())
-            .or_else(|| requested.then(|| first_field(entry.tree())).flatten())).flatten();
+        let field = (!toast)
+            .then(|| {
+                crate::view::autofocus(entry.tree())
+                    .or_else(|| requested.then(|| first_field(entry.tree())).flatten())
+            })
+            .flatten();
         // A pending resize invalidates UI's widget cache (and its focus).
         // Wait until the instance has applied the final viewport, then focus.
         let ready = state
@@ -846,7 +866,13 @@ pub(crate) fn reconcile(
                     .schedule_redraw(dispatcher::state::state::RedrawReason::Publish);
             }
         }
-        if mapped && !dialog && !toast && !autofocus_done && !ready && (field.is_some() || requested) {
+        if mapped
+            && !dialog
+            && !toast
+            && !autofocus_done
+            && !ready
+            && (field.is_some() || requested)
+        {
             state
                 .state
                 .schedule_redraw(dispatcher::state::state::RedrawReason::Publish);
@@ -889,11 +915,20 @@ pub(crate) fn reconcile(
         .filter(|(name, surface)| {
             restack
                 && surface.output == output
-                && targets
-                    .get(*name)
-                    .is_some_and(|target| matches!(target.place, Place::Dialog { .. } | Place::Toast { .. }))
+                && targets.get(*name).is_some_and(|target| {
+                    matches!(target.place, Place::Dialog { .. } | Place::Toast { .. })
+                })
         })
-        .map(|(name, surface)| (if matches!(targets[name].place, Place::Dialog { .. }) { 1 } else { 0 }, surface.handle))
+        .map(|(name, surface)| {
+            (
+                if matches!(targets[name].place, Place::Dialog { .. }) {
+                    1
+                } else {
+                    0
+                },
+                surface.handle,
+            )
+        })
         .collect();
     if let Some(registry) = state.inner.surface_mut().registry.as_mut() {
         if restack {
@@ -1076,8 +1111,9 @@ thread_local! {
 /// window, so the taskbar sees the window the user is in and a task click
 /// minimises it (Quoin's rule, quoin_scenes_gate Q2).
 pub(crate) fn takes_keyboard(tree: &scene::ResolvedScene) -> bool {
-    !is_toast(tree) && (matches!(scene_edge(tree), Edge::Left | Edge::Right)
-        || tree.nodes.values().any(|node| node.family == "field"))
+    !is_toast(tree)
+        && (matches!(scene_edge(tree), Edge::Left | Edge::Right)
+            || tree.nodes.values().any(|node| node.family == "field"))
 }
 
 /// A surface's area in physical px (a full redraw's damage).
@@ -1120,7 +1156,10 @@ pub(crate) fn layout(
             .filter(|seat| seat.scene == scene)
             .map(|seat| seat.output.clone())
     } else if toast {
-        store.toast_seat().filter(|seat| seat.scene == scene).map(|seat| seat.output.clone())
+        store
+            .toast_seat()
+            .filter(|seat| seat.scene == scene)
+            .map(|seat| seat.output.clone())
     } else {
         store
             .pages()
@@ -1129,7 +1168,11 @@ pub(crate) fn layout(
     };
     // Seats already use the connector name, as Quoin does.
     let (x, y, w, h) = placed.get(scene).copied().unwrap_or_else(|| {
-        let (w, h, _, _) = if toast { toast_geometry(tree) } else { dialog_geometry(tree) };
+        let (w, h, _, _) = if toast {
+            toast_geometry(tree)
+        } else {
+            dialog_geometry(tree)
+        };
         if dialog || toast {
             (0.0, 0.0, w, h)
         } else {
@@ -1228,11 +1271,24 @@ mod tests {
 
     #[test]
     fn toast_placement_stacks_panel_and_layer_zones_with_a_twelve_pixel_margin() {
-        let zone = toast_zone(&[(Edge::Top, 40.0), (Edge::Right, 200.0), (Edge::Bottom, 52.0)], (10.0, 24.0, 1260.0, 776.0));
+        let zone = toast_zone(
+            &[
+                (Edge::Top, 40.0),
+                (Edge::Right, 200.0),
+                (Edge::Bottom, 52.0),
+            ],
+            (10.0, 24.0, 1260.0, 776.0),
+        );
         assert_eq!(zone, (10.0, 64.0, 1060.0, 684.0));
         assert_eq!(toast_rect(360.0, 120.0, zone), (698.0, 76.0, 360.0, 120.0));
-        assert_eq!(toast_rect(2048.0, 2048.0, zone), (22.0, 76.0, 1036.0, 660.0));
-        assert_eq!(toast_rect(360.0, 120.0, (0.0, 0.0, 100.0, 80.0)), (12.0, 12.0, 76.0, 56.0));
+        assert_eq!(
+            toast_rect(2048.0, 2048.0, zone),
+            (22.0, 76.0, 1036.0, 660.0)
+        );
+        assert_eq!(
+            toast_rect(360.0, 120.0, (0.0, 0.0, 100.0, 80.0)),
+            (12.0, 12.0, 76.0, 56.0)
+        );
     }
 
     #[test]
@@ -1244,14 +1300,26 @@ mod tests {
         assert!(targets(&store, &panels).is_empty());
         assert!(resident_targets(&store, &panels, &BTreeMap::new()).is_empty());
         assert!(!takes_keyboard(store.scene("toast-probe").unwrap().tree()));
-        store.set_toast_visible("toast-probe", true, "DP-1", Some(300.0)).unwrap();
+        store
+            .set_toast_visible("toast-probe", true, "DP-1", Some(300.0))
+            .unwrap();
         let mapped = targets(&store, &panels);
         let target = &mapped["toast-probe"];
         assert_eq!(target.output, "DP-1");
         assert_eq!(target.frame(), None);
-        assert_eq!(rect(&target.place, (1920.0, 1080.0)), (1548.0, 12.0, 360.0, 300.0));
-        store.set_toast_visible("toast-probe", false, "DP-1", None).unwrap();
-        assert!(!keep_surface(&store, &targets(&store, &panels), "toast-probe", "DP-1"));
+        assert_eq!(
+            rect(&target.place, (1920.0, 1080.0)),
+            (1548.0, 12.0, 360.0, 300.0)
+        );
+        store
+            .set_toast_visible("toast-probe", false, "DP-1", None)
+            .unwrap();
+        assert!(!keep_surface(
+            &store,
+            &targets(&store, &panels),
+            "toast-probe",
+            "DP-1"
+        ));
     }
     use crate::store::SceneMount;
     use crate::verb::SceneVerb;

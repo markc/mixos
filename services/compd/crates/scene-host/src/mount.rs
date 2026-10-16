@@ -96,6 +96,9 @@ mod tests {
         }
         let source = "---\nscene: 1\nname: toast-probe\ncitizen: c\nwindow: {\"kind\":\"toast\",\"w\":5000,\"h\":10,\"chrome\":true,\"title\":\"Probe\"}\n---\n```mix\nroot: {widget: \"column\", children: []}\n```\n";
         let tree = scene::resolve(&scene::parse(source).unwrap()).unwrap();
-        assert_eq!(toast_geometry(&tree), (2048.0, 60.0, Some("Probe".into()), true));
+        assert_eq!(
+            toast_geometry(&tree),
+            (2048.0, 60.0, Some("Probe".into()), true)
+        );
     }
 }

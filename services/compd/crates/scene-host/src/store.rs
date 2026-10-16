@@ -15,8 +15,12 @@ use scene::{ResolvedScene, SceneDocument, Severity};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-use crate::mount::{dialog_geometry, is_dialog, is_overlay, is_toast, page_id, scene_edge, toast_geometry};
-use crate::seat::{DialogError, DialogSeat, DialogSlot, Edge, PageRegistry, PageSeat, ToastSeat, ToastSlot};
+use crate::mount::{
+    dialog_geometry, is_dialog, is_overlay, is_toast, page_id, scene_edge, toast_geometry,
+};
+use crate::seat::{
+    DialogError, DialogSeat, DialogSlot, Edge, PageRegistry, PageSeat, ToastSeat, ToastSlot,
+};
 use crate::templates::{PreparedLists, validate_templates};
 use crate::verb::SceneVerb;
 
@@ -211,24 +215,35 @@ impl SceneStore {
             "error_code":"NOT_FOUND", "message":format!("no scene named {name} is loaded"), "scene":name
         }))?;
         if !is_toast(&entry.tree) {
-            return Err(json!({"error_code":"NOT_TOAST", "message":format!("scene {name} is not a toast"), "scene":name}));
+            return Err(
+                json!({"error_code":"NOT_TOAST", "message":format!("scene {name} is not a toast"), "scene":name}),
+            );
         }
         if visible {
             let owner = entry.owner.as_ref().ok_or_else(|| json!({
                 "error_code":"SCENE_REFUSED", "message":"toast has no loader reservation", "scene":name
             }))?;
             let (w, h, title, chrome) = toast_geometry(&entry.tree);
-            let h = height.or_else(|| self.toast.seat().filter(|seat| seat.scene == name).map(|seat| seat.h)).unwrap_or(h);
-            self.toast.register(ToastSeat {
-                scene: name.to_owned(),
-                owner: owner.citizen.clone(),
-                accepted_at: owner.accepted_at,
-                output: output.to_owned(),
-                w,
-                h: h.clamp(60.0, 2048.0),
-                title,
-                chrome,
-            }).map_err(|error| toast_refusal(name, error))?;
+            let h = height
+                .or_else(|| {
+                    self.toast
+                        .seat()
+                        .filter(|seat| seat.scene == name)
+                        .map(|seat| seat.h)
+                })
+                .unwrap_or(h);
+            self.toast
+                .register(ToastSeat {
+                    scene: name.to_owned(),
+                    owner: owner.citizen.clone(),
+                    accepted_at: owner.accepted_at,
+                    output: output.to_owned(),
+                    w,
+                    h: h.clamp(60.0, 2048.0),
+                    title,
+                    chrome,
+                })
+                .map_err(|error| toast_refusal(name, error))?;
         } else {
             self.toast.release(name);
         }
@@ -780,7 +795,9 @@ impl SceneStore {
             let by_owner = caller.owner.to_owned();
             if let Some(old) = self.scenes.remove(&tree.name) {
                 self.toast.release(&tree.name);
-                self.pages.forget(&page_id(&old.tree));
+                if !is_overlay(&old.tree) {
+                    self.pages.forget(&page_id(&old.tree));
+                }
                 if let Some(mounted) = old.mounted {
                     self.removed.push(mounted);
                 }
@@ -817,11 +834,18 @@ impl SceneStore {
                 if let Some(held) = self.toast.seat().filter(|seat| seat.scene == tree.name) {
                     let (w, h, title, chrome) = toast_geometry(&tree);
                     let seat = ToastSeat {
-                        scene: tree.name.clone(), owner: owner.citizen.clone(),
-                        accepted_at: owner.accepted_at, output: held.output.clone(),
-                        w, h, title, chrome,
+                        scene: tree.name.clone(),
+                        owner: owner.citizen.clone(),
+                        accepted_at: owner.accepted_at,
+                        output: held.output.clone(),
+                        w,
+                        h,
+                        title,
+                        chrome,
                     };
-                    self.toast.register(seat).map_err(|error| toast_refusal(&tree.name, error))?;
+                    self.toast
+                        .register(seat)
+                        .map_err(|error| toast_refusal(&tree.name, error))?;
                 }
             } else {
                 self.pages
