@@ -158,6 +158,10 @@ pub struct Orchestrator {
     /// drain it.
     pub control_ping: Option<smithay::reexports::calloop::ping::Ping>,
     pub status_session: StatusSession,
+    /// Every libseat edge since the comp Bus last drained it: `(active,
+    /// unix_ms)`, in order. A pause and an activation can land in one
+    /// dispatch, where `status_session` keeps only the last.
+    pub session_edges: Vec<(bool, u64)>,
     /// Per-seat touchpad swipe accumulator (libinput Begin→Update*→End spans
     /// multiple input dispatches). World-agnostic raw delta; the swipe
     /// handler turns it into a directional-view action at end-of-swipe.
@@ -331,6 +335,7 @@ impl Orchestrator {
             finger_scroll_ramp: FingerScrollRamp::default(),
             control_ping: None,
             status_session: StatusSession::Active,
+            session_edges: Vec::new(),
             gesture: Default::default(),
             touch: Default::default(),
             storage: crate::storage::state::state::Storage::new(nested),

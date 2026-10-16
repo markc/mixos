@@ -466,11 +466,17 @@ impl Bus {
             lp.inner.status_session,
             world::state::state::StatusSession::Paused
         );
-        // Libseat's notifier dispatch reaches this pass on both edges,
-        // including while frames are parked. The outbox wakes its own worker.
-        if let Some(record) = self.session.observe(!paused, session::unix_millis()) {
-            self.producer
-                .offer_next(move |event_seq| record.with_event_seq(event_seq));
+        // Every libseat edge in order (a pause and an activation can share a
+        // dispatch), then the current state, which announces the first one.
+        // Libseat's notifier dispatch reaches this pass on both edges, frames
+        // parked or not; the outbox wakes its own worker.
+        let edges = std::mem::take(&mut lp.inner.session_edges);
+        let current = (!paused, session::unix_millis());
+        for (active, at_ms) in edges.into_iter().chain(std::iter::once(current)) {
+            if let Some(record) = self.session.observe(active, at_ms) {
+                self.producer
+                    .offer_next(move |event_seq| record.with_event_seq(event_seq));
+            }
         }
         // So does a session lock beginning.
         let locked = world::comp::session_lock::active(lp);
