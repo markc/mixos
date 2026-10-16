@@ -165,7 +165,7 @@ fn tool_bar(
     stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
-    bars::tools(ui, |ui| {
+    bars::options(ui, |ui| {
         for tab in Tab::ALL {
             if toolkit::selectable(ui, engine.ui.tab == tab, label(tab.name())).clicked() {
                 events.push(UiEvent::Tab(tab));

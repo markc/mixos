@@ -21,10 +21,11 @@ pub enum Kind {
 /// The resource's line colour, from the installed theme.
 pub fn tint(ui: &Ui, kind: Kind) -> Color32 {
     let v = ui.visuals();
+    let palette = toolkit::chrome::Chrome::of(ui.ctx()).palette;
     match kind {
-        Kind::Cpu => v.selection.bg_fill,
+        Kind::Cpu => palette.accent,
         Kind::Memory => v.hyperlink_color,
-        Kind::Disk => v.warn_fg_color,
+        Kind::Disk => palette.warning,
         Kind::Net => v.selection.stroke.color,
     }
 }
