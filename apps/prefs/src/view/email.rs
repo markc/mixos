@@ -59,12 +59,14 @@ pub fn section(
             ui.label(RichText::new(label("email-reading")).weak());
             return;
         };
-        ui.horizontal_top(|ui| {
+        // The divider is painted once the row's height is known: a
+        // separator would claim all the height left.
+        let row = ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(LIST_WIDTH);
                 accounts(ui, engine, email, events);
             });
-            ui.separator();
+            ui.add_space(ui.spacing().item_spacing.x * 2.0);
             ui.vertical(|ui| {
                 ui.set_width(ui.available_width());
                 match &engine.email.form {
@@ -80,6 +82,14 @@ pub fn section(
                 }
             });
         });
+        let rect = row.response.rect;
+        // Midway across the gap: item spacing either side of the space.
+        let x = rect.left() + LIST_WIDTH + ui.spacing().item_spacing.x * 2.0;
+        ui.painter().vline(
+            x,
+            rect.y_range(),
+            ui.visuals().widgets.noninteractive.bg_stroke,
+        );
         bars::hairline(ui);
         ui.strong(label("email-mail"));
         mail_options(ui, engine, email, events);
