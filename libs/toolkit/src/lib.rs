@@ -46,6 +46,7 @@ pub mod canvas;
 pub mod chrome;
 pub mod combo;
 pub mod command;
+pub mod datatable;
 pub mod dialog;
 pub mod drive;
 pub mod executed;

@@ -153,6 +153,10 @@ let _ = toolkit::titlebar::show(ui, "Demo", Some(Icon::Server), stroke,
   list, bold or emphasis, inline code, a link and a non-reply quote,
   scanned outside quoted lines and the signature. The email reader uses
   both.
+- `datatable`: sortable, resizable columns over virtualised one-line rows,
+  with a pager, keyboard navigation and a drive surface. It reports sorts
+  and pages as events and leaves them to the app. See
+  [Data table](datatable.md).
 
 ### Commands
 

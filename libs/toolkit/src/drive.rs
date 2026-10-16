@@ -1126,6 +1126,7 @@ fn actionable(role: Role) -> bool {
             | Role::MenuItemRadio
             | Role::Tab
             | Role::ListBoxOption
+            | Role::Row
     )
 }
 

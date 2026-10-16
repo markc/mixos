@@ -87,6 +87,11 @@ the settings service like the session's look. It is separate from
 Applications, which installs apps. Its first section is **Email**, the
 [email app](../email/README.md)'s accounts and mail options (`email.*` in
 settingsd; see the [email settings](../docs/spec/settings/README.md)).
+It has four tabs, **Accounts**, **Mail**, **Reader** and **Compose**; an
+agent opens one with `prefs.section {name:"email", tab:"reader"}`, and
+`prefs.section {name:"email", tab:"accounts", account:"<id>"}` also
+selects that account (Email's **Account Settings…** does this; an
+unknown id selects none).
 
 - **Accounts** lists the accounts in the order Email's folder tree shows
   them, marking the default and any that are disabled. **Add account**
@@ -101,7 +106,14 @@ settingsd; see the [email settings](../docs/spec/settings/README.md)).
   would refuse is named under the field and nothing is sent. **Enabled**
   applies at once.
 - **Mail** holds messages per page (10 to 500), marking messages read when
-  opened, and asking before deleting them; each applies at once. **Reset
+  opened, and asking before deleting them; each applies at once.
+- **Reader** sets the text size of the message reader, 10 to 32 points
+  in half-point steps (default 15), and its **colours**: Follow window,
+  Light or Dark. A line set at that size, on those colours, shows it;
+  **Default size** puts the size back. Each applies at once.
+- **Compose**: **Quote the original when replying**, **Write my reply**
+  above or below the quote (only while quoting), and **Autosave drafts**.
+  Each applies at once. **Reset
   email settings…** asks first, then puts every email setting back to its
   default, which means no accounts.
 
@@ -149,8 +161,9 @@ send prefs prefs.email.set body='{"op":"default","id":"acct-0f3a2b1c9d8e"}'
 send prefs prefs.email.set body='{"op":"move","id":"acct-0f3a2b1c9d8e","direction":"up"}'
 send prefs prefs.email.set body='{"op":"enable","id":"acct-0f3a2b1c9d8e","enabled":false}'
 
--- A mail option.
+-- A mail option, and the reader's text size.
 send prefs prefs.email.set body='{"path":"email.mail.page_size","value":50}'
+send prefs prefs.email.set body='{"path":"email.reader.font_size","value":18.5}'
 
 -- Hand a password to Email (answered once Email has), or forget it.
 send prefs prefs.email.password body='{"id":"acct-0f3a2b1c9d8e","password":"…"}'
@@ -158,11 +171,44 @@ send prefs prefs.email.password body='{"id":"acct-0f3a2b1c9d8e","forget":true}'
 ```
 
 `prefs.email.set` takes `op` `add`, `update`, `remove`, `move`, `default`
-or `enable`, or `path` and `value` for a mail option. Over the Bus,
+or `enable`, or `path` and `value` for a mail option or `email.reader.font_size`. Over the Bus,
 `remove` removes at once: the confirmation belongs to the window. A field
 the settings service would refuse is answered with `ARGUMENT`, naming it.
 For scripts that do not need Prefs open, call `settings.apply` on the
 `email.*` paths directly, and `email.account.password.set` on Email.
+
+### Every control and its Bus verb
+
+Every option in the section can be reached by an agent. `prefs.email`
+lists the settings paths it takes as `paths`; `prefs.email.set {path,
+value}` sets any of them and `prefs.email.reset {path}` puts one back to
+its default (no `path`: the whole group).
+
+| Control | Settings path | Bus |
+|---|---|---|
+| Account list, order | `email.accounts` | `prefs.email.set` `op` `add`/`update`/`remove`/`move`/`enable`, or `{path:"email.accounts"}` (a list that drops an account is refused: removals go through `op remove`) |
+| Make default | `email.default_account` | `prefs.email.set {op:"default", id}` or `{path}`; `prefs.execute email.account.default` |
+| Messages per page | `email.mail.page_size` | `prefs.email.set {path, value}` |
+| Mark messages read when opened | `email.mail.mark_read_on_open` | `prefs.email.set {path, value}` |
+| Ask before deleting messages | `email.mail.confirm_delete` | `prefs.email.set {path, value}` |
+| Reader text size, Default size | `email.reader.font_size` | `prefs.email.set {path, value}`, `prefs.email.reset {path}`; `prefs.execute email.reader.reset` |
+| Reader colours (Follow window, Light, Dark) | `email.reader.theme` (`auto`, `light`, `dark`) | `prefs.email.set {path, value}`, `prefs.email.reset {path}` |
+| Quote the original when replying | `email.compose.quote_on_reply` | `prefs.email.set {path, value}`, `prefs.email.reset {path}` |
+| Write my reply above / below the quote | `email.compose.reply_position` (`above`, `below`) | `prefs.email.set {path, value}`, `prefs.email.reset {path}` |
+| Autosave drafts | `email.compose.autosave` | `prefs.email.set {path, value}`, `prefs.email.reset {path}` |
+| Reset email settings… | `email` | `prefs.email.reset` (refused while Email runs and holds accounts); `prefs.execute email.reset`, then `dialog.confirm` |
+
+| Button | Command (`prefs.execute {id}`) |
+|---|---|
+| Add account, Save, Revert | `email.account.add`, `email.account.save`, `email.account.revert` |
+| Remove… | `email.account.remove`, then `dialog.confirm` (or `prefs.email.set {op:"remove", id}`) |
+| Move up, Move down, Make default, Enabled | `email.account.up`, `email.account.down`, `email.account.default`, `email.account.enable` |
+| Set password, Forget password…, Connect now | `email.password.set`, `email.password.forget` then `dialog.confirm`, `email.account.connect` (or `prefs.email.password {id, password}` / `{id, forget:true}`) |
+| The Accounts, Mail, Reader and Compose tabs | `view.email.accounts`, `view.email.mail`, `view.email.reader`, `view.email.compose` (or `prefs.section {name:"email", tab}`) |
+| A confirmation's Confirm / Cancel | `dialog.confirm`, `dialog.cancel` (`prefs.dialog {open:null}` also cancels) |
+
+The form's fields are typed through the window (`prefs.ui.type`), or set
+in one call with `prefs.email.set {op:"update", id, …}`.
 
 ## For agents
 

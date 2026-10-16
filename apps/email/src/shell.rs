@@ -350,6 +350,7 @@ pub fn start(
         places: loaded.config.ui.places,
         reader: loaded.config.ui.reader,
         expanded: loaded.config.ui.expanded.clone(),
+        list: loaded.config.ui.list.clone(),
         ..UiState::default()
     };
     let mut state = State::new(
@@ -599,10 +600,20 @@ impl Shell {
                 ticket,
                 mailbox,
                 limit,
+                position,
+                sort,
             } => {
                 if let Some((tag, client)) = self.client(&account) {
                     self.spawn(async move {
-                        let page = client.email_page(&mailbox, 0, limit).await;
+                        let page = client
+                            .email_query_sorted(
+                                Some(&mailbox),
+                                None,
+                                sort,
+                                position,
+                                u64::from(limit),
+                            )
+                            .await;
                         Event::Account(tag, Done::Page(ticket, page))
                     });
                 }

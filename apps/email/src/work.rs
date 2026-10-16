@@ -57,15 +57,17 @@ pub enum Work {
     FetchMailboxes {
         account: String,
     },
-    /// A mailbox's first page. `ticket` comes back with the page, so an
-    /// answer to an older request cannot replace a newer one (also for
-    /// `OpenEmail`, `Send`, `FetchEvents` and `FetchContacts`); tickets are
-    /// per account.
+    /// One page of a mailbox: `limit` emails from `position` under `sort`.
+    /// `ticket` comes back with the page, so an answer to an older request
+    /// cannot replace a newer one (also for `OpenEmail`, `Send`,
+    /// `FetchEvents` and `FetchContacts`); tickets are per account.
     FetchEmails {
         account: String,
         ticket: u64,
         mailbox: String,
         limit: u32,
+        position: u64,
+        sort: jmap::EmailSort,
     },
     /// Fetch one email with its bodies; `reply` is the Bus request that
     /// asked for it (`email.open`), answered when it loads.
