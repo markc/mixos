@@ -367,7 +367,8 @@ fn with_no_email_open_the_toolbar_is_disabled() {
     let h = harness(state, &theme(Scheme::Pro, Mode::Light));
     for key in ["reply", "reply-all", "forward", "delete"] {
         use egui_kittest::kittest::NodeT;
-        let node = h.get_by_label(&label(key));
+        let text = label(key);
+        let node = h.get_by_label(&text);
         assert!(node.accesskit_node().is_disabled(), "{key}");
     }
 }
