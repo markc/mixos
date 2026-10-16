@@ -960,7 +960,9 @@ mod tests {
             .save(&crate::config::EmailConfig::from(&state))
             .unwrap();
         let kept = std::fs::read_to_string(dir.join("config.conf.mix")).unwrap();
-        assert!(kept.contains("schema_version: 1") && kept.contains("pw-live"));
+        let kept: Value = config::from_conf_mix_str(&kept).unwrap();
+        assert_eq!(kept["schema_version"], 1);
+        assert_eq!(kept["account"]["password"], "pw-live");
         // A second start finds the same account under the same id.
         let (again, _, _) = start(Some(&dir));
         assert!(again.account(&id).is_some());

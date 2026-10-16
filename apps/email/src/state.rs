@@ -1365,6 +1365,14 @@ impl State {
         true
     }
 
+    /// Make `id` the current account, fetching nothing: its caller has.
+    fn focus(&mut self, id: &str) {
+        if self.selected.as_deref() != Some(id) {
+            self.selected = Some(id.to_owned());
+            self.config_dirty = true;
+        }
+    }
+
     /// Select the next (or previous) account in tree order.
     pub fn step_account(&mut self, forward: bool) {
         let count = self.accounts.len();
@@ -1395,7 +1403,7 @@ impl State {
             return false;
         }
         view.select_mailbox(id, limit, &mut self.work);
-        self.select_account(account);
+        self.focus(account);
         self.set_mode_only(Mode::Mail);
         true
     }
@@ -1409,7 +1417,7 @@ impl State {
             return false;
         }
         view.select_calendar(id, &mut self.work);
-        self.select_account(account);
+        self.focus(account);
         self.set_mode_only(Mode::Calendar);
         true
     }
@@ -1423,7 +1431,7 @@ impl State {
             return false;
         }
         view.select_book(id, &mut self.work);
-        self.select_account(account);
+        self.focus(account);
         self.set_mode_only(Mode::Contacts);
         true
     }

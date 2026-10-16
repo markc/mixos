@@ -332,6 +332,13 @@ mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
 
+    /// The schema a written file declares.
+    fn schema(raw: &str) -> u64 {
+        config::from_conf_mix_str::<serde_json::Value>(raw).unwrap()["schema_version"]
+            .as_u64()
+            .unwrap()
+    }
+
     fn entry() -> settings::email::AccountEntry {
         settings::email::AccountEntry {
             id: "acct-1".into(),
@@ -359,7 +366,7 @@ mod tests {
         let mode = std::fs::metadata(&file.path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
         let raw = std::fs::read_to_string(&file.path).unwrap();
-        assert!(raw.contains("schema_version: 2"), "{raw}");
+        assert_eq!(schema(&raw), 2, "{raw}");
     }
 
     #[test]
@@ -430,7 +437,7 @@ mod tests {
         file.migrated();
         assert!(file.save(&shaped).unwrap());
         let raw = std::fs::read_to_string(&path).unwrap();
-        assert!(raw.contains("schema_version: 2") && !raw.contains("pw-1"), "{raw}");
+        assert!(schema(&raw) == 2 && !raw.contains("pw-1"), "{raw}");
         let (after, file) = ConfigFile::load(dir.path());
         assert!(after.legacy.is_none() && !file.legacy());
     }
