@@ -543,11 +543,11 @@ fn window_studio_dark() {
 }
 
 #[test]
-fn mail_list_pro_light() {
+fn mail_list_studio_light() {
     snapshot(
-        "mail_list_pro_light",
+        "mail_list_studio_light",
         long_list(),
-        &theme(Scheme::Pro, Mode::Light),
+        &theme(Scheme::Studio, Mode::Light),
     );
 }
 

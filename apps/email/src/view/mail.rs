@@ -46,12 +46,18 @@ pub fn list(
             }
         });
         let columns = list_columns(date_width(ui));
-        // The list's own state, with the remembered widths and density.
-        let table = TableState {
+        // The list's own state, with the remembered widths and density; an
+        // email opened some other way (the Bus, a reply) shows as selected.
+        let mut table = TableState {
             widths: state.ui.list.widths.clone(),
             density: state.ui.list.density,
             ..view.mail.table.clone()
         };
+        if let Some(open) = &view.mail.open
+            && table.selection.is_empty()
+        {
+            table.selection = vec![open.id.clone()];
+        }
         let rows = EmailRows {
             emails: &view.mail.emails,
             now: clock(ui.ctx()),
