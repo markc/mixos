@@ -116,7 +116,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_surface_is_37_verbs_and_12_topics() {
+    fn the_surface_is_38_verbs_and_12_topics() {
         assert_eq!(DIRECT_VERBS.len(), 16);
         assert_eq!(WINDOW_VERBS.len(), 17);
         assert_eq!(INPUT_VERBS.len(), 5);

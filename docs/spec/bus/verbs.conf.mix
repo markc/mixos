@@ -196,6 +196,7 @@
     {name:"comp.props.set", owner:"compd", version:"0.1.11", status:"accepted", class:"intent"},
     {name:"comp.region.select", owner:"compd", version:"0.2.0", status:"accepted", class:"intent"},
     {name:"comp.input.sequence", owner:"compd", version:"0.1.11", status:"accepted", class:"input"},
+    {name:"comp.motion.run", owner:"compd", version:"0.2.0", status:"draft", class:"intent"},
     {name:"comp.panel.hold", owner:"compd", version:"0.1.11", status:"accepted", class:"intent"},
     {name:"comp.panel.mode", owner:"compd", version:"0.1.11", status:"accepted", class:"intent"},
     {name:"comp.info", owner:"compd", version:"0.1.11", status:"accepted", class:"query"},

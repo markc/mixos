@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 # Copyright 2026 Mark Constable <mc@mixos.dev>
 # layers.conf.mix — the compd crate layer table (strict data, load_data).
-# version: 0.3.0
+# version: 0.3.1
 #
 # Read by tools/layering_gate.mix and tools/closure_gate.mix.
 #
@@ -38,6 +38,8 @@ layers: {
   "policy": 0,
   # 0 — the desktop shell's panel/edge model (pure, no dependencies)
   "edges": 0,
+  # 0 — motion maths: curves, springs, routes, Fitts (pure, no dependencies)
+  "motion": 0,
 
   # 1 — device primitives (drm/udev/seat/input/gpu + kernel.scanout),
   #     GLES renderer primitives, the one wgpu device factory
@@ -87,10 +89,10 @@ layers: {
 binary: "compd"
 
 # No GPU, windowing or compositor toolkit in their closure.
-headless_crates: ["model", "surfaces", "ledger", "comp-model", "policy", "edges", "comp-service"]
+headless_crates: ["model", "surfaces", "ledger", "comp-model", "policy", "edges", "motion", "comp-service"]
 
 # Must reach neither bevy nor ash, in every feature configuration.
-core_crates: ["model", "slots", "surfaces", "ledger", "comp-model", "policy", "edges", "kms", "render-gles", "graphics", "protocols", "dispatcher", "x11-wm", "effects", "drivers", "world", "seat", "scenegraph", "ui", "screencopy", "decor", "frames", "native", "nested", "recorder", "outputs", "policy-host", "scene-host", "comp-service", "compd"]
+core_crates: ["model", "slots", "surfaces", "ledger", "comp-model", "policy", "edges", "motion", "kms", "render-gles", "graphics", "protocols", "dispatcher", "x11-wm", "effects", "drivers", "world", "seat", "scenegraph", "ui", "screencopy", "decor", "frames", "native", "nested", "recorder", "outputs", "policy-host", "scene-host", "comp-service", "compd"]
 
 # The only crates allowed to reach bevy. None today.
 effects_crates: []

@@ -133,10 +133,7 @@ mod tests {
         let c = CubicBezier::new(0.05, 0.9, 0.1, 1.1).unwrap();
         let mut t = Timeline::new(0.0, 1.0, Easing::Bezier(c));
         let peak = (1..=99)
-            .map(|i| {
-                let v = t.progress(i as f64 / 100.0);
-                v
-            })
+            .map(|i| t.progress(i as f64 / 100.0))
             .fold(f64::MIN, f64::max);
         assert!(peak > 1.0, "overshoot peak {peak}");
         assert!((t.progress(1.0) - 1.0).abs() < 1e-6);
