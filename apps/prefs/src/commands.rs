@@ -574,7 +574,9 @@ mod tests {
             .iter()
             .map(|c| c.id)
             .filter(|id| {
-                id.starts_with("email.") || id.starts_with("dialog.") || *id == "view.panel.app-settings"
+                id.starts_with("email.")
+                    || id.starts_with("dialog.")
+                    || *id == "view.panel.app-settings"
             })
             .collect();
         for id in [
@@ -604,15 +606,28 @@ mod tests {
     fn a_confirmation_is_answerable_by_command() {
         let r = registry();
         let mut e = Engine::new(crate::label_with);
-        assert!(r.execute("dialog.confirm", &mut e, toolkit::command::Origin::Bus).is_err());
+        assert!(
+            r.execute("dialog.confirm", &mut e, toolkit::command::Origin::Bus)
+                .is_err()
+        );
         e.open(Dialog::ResetEmail);
-        assert!(r.execute("dialog.cancel", &mut e, toolkit::command::Origin::Bus).is_ok());
+        assert!(
+            r.execute("dialog.cancel", &mut e, toolkit::command::Origin::Bus)
+                .is_ok()
+        );
         assert_eq!(e.ui.dialog, None);
         e.open(Dialog::ForgetPassword("acct-1".into()));
-        assert!(r.execute("dialog.confirm", &mut e, toolkit::command::Origin::Bus).is_ok());
+        assert!(
+            r.execute("dialog.confirm", &mut e, toolkit::command::Origin::Bus)
+                .is_ok()
+        );
         assert_eq!(e.ui.dialog, None, "confirming closes it");
         e.open(Dialog::About);
-        assert!(r.execute("dialog.confirm", &mut e, toolkit::command::Origin::Bus).is_err(), "not a confirmation");
+        assert!(
+            r.execute("dialog.confirm", &mut e, toolkit::command::Origin::Bus)
+                .is_err(),
+            "not a confirmation"
+        );
     }
 
     #[test]

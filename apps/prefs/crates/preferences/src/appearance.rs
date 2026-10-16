@@ -288,7 +288,9 @@ impl Call {
             Call::Read => "settings.get",
             Call::Apply(_) => "settings.apply",
             Call::Receipt(_) => "settings.status",
-            Call::Terminal(_, Edit::Reset) | Call::Email(_, EmailEdit::Reset(_)) => "settings.reset",
+            Call::Terminal(_, Edit::Reset) | Call::Email(_, EmailEdit::Reset(_)) => {
+                "settings.reset"
+            }
             Call::Terminal(_, Edit::Set(..)) | Call::Email(_, EmailEdit::Apply(_)) => {
                 "settings.apply"
             }

@@ -510,9 +510,7 @@ fn leaf_paths() -> Vec<String> {
 /// `path`'s JSON pointer in the serialised group (`email.mail.page_size`
 /// is `/mail/page_size`; `email` is the root).
 fn pointer(path: &str) -> String {
-    path.strip_prefix("email")
-        .unwrap_or(path)
-        .replace('.', "/")
+    path.strip_prefix("email").unwrap_or(path).replace('.', "/")
 }
 
 /// `email` with `path` set to `value` as given, typed by the settings
@@ -2137,7 +2135,10 @@ mod tests {
         let changes = applied(plan(&email, &change, mint).unwrap());
         assert_eq!(changes["email.reader.font_size"], json!(18.0));
         let change = email_change(&json!({"path":"email.reader.font_size","value":"18"})).unwrap();
-        assert!(matches!(plan(&email, &change, mint), Err(Refusal::Settings(_))));
+        assert!(matches!(
+            plan(&email, &change, mint),
+            Err(Refusal::Settings(_))
+        ));
     }
 
     /// The reader's size is one apply per edit, shown by prefs.email, and
@@ -2209,7 +2210,11 @@ mod tests {
             (_, Some("boolean")) => json!(!current.as_bool().expect("a boolean")),
             (_, Some("integer" | "number")) => {
                 let (min, max) = (&entry["minimum"], &entry["maximum"]);
-                if *min != current { min.clone() } else { max.clone() }
+                if *min != current {
+                    min.clone()
+                } else {
+                    max.clone()
+                }
             }
             (_, Some(kind)) if kind.contains('|') || kind == "string" => {
                 panic!("{path}: a {kind} with no listed values needs a sample here")
@@ -2243,7 +2248,11 @@ mod tests {
             let apply = effects
                 .iter()
                 .find_map(|x| match x {
-                    Effect::Settings { verb: "settings.apply", body, .. } => Some(body.clone()),
+                    Effect::Settings {
+                        verb: "settings.apply",
+                        body,
+                        ..
+                    } => Some(body.clone()),
                     _ => None,
                 })
                 .unwrap_or_else(|| panic!("{path}: no apply"));
@@ -2260,7 +2269,11 @@ mod tests {
                 let reset = effects
                     .iter()
                     .find_map(|x| match x {
-                        Effect::Settings { verb: "settings.reset", body, .. } => Some(body.clone()),
+                        Effect::Settings {
+                            verb: "settings.reset",
+                            body,
+                            ..
+                        } => Some(body.clone()),
                         _ => None,
                     })
                     .unwrap_or_else(|| panic!("{path}: no reset"));
@@ -2272,30 +2285,55 @@ mod tests {
         let mut e = read();
         let mut group = json!(e.email().unwrap());
         group["mail"] = json!({"page_size":20});
-        e.command(3, "prefs.email.set", &json!({"path":"email","value":group}).to_string());
+        e.command(
+            3,
+            "prefs.email.set",
+            &json!({"path":"email","value":group}).to_string(),
+        );
         assert!(e.take_effects().iter().any(|x| matches!(x,
             Effect::Settings { verb: "settings.apply", body, .. } if body["changes"]["email.mail.page_size"] == 20)));
         let mut e = read();
         e.command(4, "prefs.email.reset", "{}");
-        assert!(e.take_effects().iter().any(|x| matches!(x,
-            Effect::Reply { id: 4, rc: 10, body } if body["error_code"] == "REMOVE_THROUGH_EMAIL")));
+        assert!(
+            e.take_effects().iter().any(|x| matches!(x,
+            Effect::Reply { id: 4, rc: 10, body } if body["error_code"] == "REMOVE_THROUGH_EMAIL"))
+        );
         e.email.service = Service::Absent;
         e.command(5, "prefs.email.reset", "{}");
         assert!(e.take_effects().iter().any(|x| matches!(x,
             Effect::Settings { verb: "settings.reset", body, .. } if body["reset"] == json!(["email"]))));
         // A list that drops an account is a removal: through Email's remove.
         let mut e = read();
-        e.command(6, "prefs.email.set", r#"{"path":"email.accounts","value":[]}"#);
-        assert!(e.take_effects().iter().any(|x| matches!(x,
-            Effect::Reply { id: 6, rc: 10, body } if body["error_code"] == "REMOVE_THROUGH_EMAIL")));
+        e.command(
+            6,
+            "prefs.email.set",
+            r#"{"path":"email.accounts","value":[]}"#,
+        );
+        assert!(
+            e.take_effects().iter().any(|x| matches!(x,
+            Effect::Reply { id: 6, rc: 10, body } if body["error_code"] == "REMOVE_THROUGH_EMAIL"))
+        );
         // Unknown paths and unknown keys are refused, never sent.
         let mut e = read();
-        e.command(7, "prefs.email.set", r#"{"path":"email.mail.nope","value":1}"#);
-        e.command(8, "prefs.email.set", r#"{"path":"email.mail","value":{"page_size":20,"nope":1}}"#);
+        e.command(
+            7,
+            "prefs.email.set",
+            r#"{"path":"email.mail.nope","value":1}"#,
+        );
+        e.command(
+            8,
+            "prefs.email.set",
+            r#"{"path":"email.mail","value":{"page_size":20,"nope":1}}"#,
+        );
         e.command(9, "prefs.email.reset", r#"{"path":"email.nope"}"#);
         let effects = e.take_effects();
         for id in [7, 8, 9] {
-            assert!(effects.iter().any(|x| matches!(x, Effect::Reply { id: i, rc: 10, .. } if *i == id)), "{id}: {effects:?}");
+            assert!(
+                effects
+                    .iter()
+                    .any(|x| matches!(x, Effect::Reply { id: i, rc: 10, .. } if *i == id)),
+                "{id}: {effects:?}"
+            );
         }
         assert!(!effects.iter().any(|x| matches!(x, Effect::Settings { .. })));
     }
@@ -2728,7 +2766,11 @@ mod tests {
         e.reset_email();
         e.confirm_email();
         assert!(settings_calls(&mut e).is_empty());
-        assert!(e.failed && e.status == "email-reset-remove-first", "{}", e.status);
+        assert!(
+            e.failed && e.status == "email-reset-remove-first",
+            "{}",
+            e.status
+        );
         // Email away: the group is reset.
         let mut e = read();
         e.email.service = Service::Absent;
