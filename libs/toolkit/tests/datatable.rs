@@ -177,6 +177,7 @@ impl Sample {
 fn harness(sample: Sample, scheme: Scheme, mode: Mode) -> Harness<'static, Sample> {
     let mut h = Harness::builder()
         .with_size(vec2(720.0, 260.0))
+        .with_step_dt(0.05)
         .wgpu()
         .build_ui_state(
             |ui, s: &mut Sample| {
@@ -293,10 +294,10 @@ fn a_double_click_activates() {
                 pressed,
                 modifiers: egui::Modifiers::NONE,
             });
+            // Four steps of 50 ms: inside the double-click window.
+            h.step();
         }
     }
-    // One pass: a kittest step is a quarter second, past the double-click
-    // window.
     h.run();
     assert!(
         h.state()

@@ -683,9 +683,11 @@ fn header_cell(
     let visuals = ui.visuals().clone();
     let gap = ui.spacing().item_spacing.x;
     let whole = rect.expand2(vec2(gap / 2.0, 0.0));
+    // The cell clips to itself; the fill and rules reach across the gaps.
+    let mut across = ui.painter().clone();
+    across.set_clip_rect(whole.expand(1.0));
     if column.sortable && ui.rect_contains_pointer(rect) {
-        ui.painter()
-            .rect_filled(whole, 0.0, visuals.widgets.hovered.bg_fill);
+        across.rect_filled(whole, 0.0, visuals.widgets.hovered.bg_fill);
     }
     let colour = if sorted.is_some() {
         visuals.strong_text_color()
@@ -709,10 +711,10 @@ fn header_cell(
         let centre = pos2(text_right + pad + side / 2.0, rect.center().y);
         paint_icon(ui, icon, centre, side, colour);
     }
-    ui.painter().hline(whole.x_range(), rect.bottom() - 0.5, rule);
+    across.hline(whole.x_range(), rect.bottom() - 0.5, rule);
     if divider {
         let inset = rect.height() / 4.0;
-        ui.painter().vline(
+        across.vline(
             whole.right(),
             (rect.top() + inset)..=(rect.bottom() - inset),
             rule,
