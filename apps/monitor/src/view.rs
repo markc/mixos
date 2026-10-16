@@ -232,6 +232,7 @@ fn tool_bar(
 }
 
 fn right(ui: &mut Ui, text: impl Into<RichText>) {
+    let text: RichText = text.into();
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
         ui.label(text);
     });
