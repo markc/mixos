@@ -31,3 +31,6 @@ toolkit-decorations-ssd = System title bar (SSD)
 toolkit-captions-left = Captions left
 toolkit-captions-right = Captions right
 no-matching-commands = No matching commands
+markdown-image = Image: { $alt }
+markdown-image-untitled = Image
+markdown-image-hover = { $url } (not loaded)

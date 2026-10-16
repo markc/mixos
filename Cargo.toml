@@ -69,6 +69,9 @@ fluent-bundle = "=0.15.3"
 futures = "=0.3.34"
 # Window captures over the Bus (toolkit::drive); the version image already uses.
 png = "=0.18.1"
+# toolkit::markdown: the parser only (no `html` feature), the version Mix's
+# markdown feature already locks.
+pulldown-cmark = { version = "=0.12.2", default-features = false }
 
 # Shared libraries (libs/).
 assets = { path = "libs/assets" }
