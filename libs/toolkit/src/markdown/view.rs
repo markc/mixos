@@ -67,7 +67,7 @@ pub fn show(ui: &mut Ui, document: &Document) -> Option<String> {
     ui.vertical(|ui| {
         ui.set_max_width(width);
         ui.spacing_mut().item_spacing.y = 0.0;
-        view.blocks(ui, &document.blocks, 0);
+        view.blocks(ui, &document.blocks, 0, false);
     });
     view.clicked
 }
@@ -132,13 +132,15 @@ impl View {
     }
 
     /// `blocks` with the theme's spacing between them; `depth` is the list
-    /// nesting, for the bullet shape.
-    fn blocks(&mut self, ui: &mut Ui, blocks: &[Block], depth: usize) {
+    /// nesting, for the bullet shape. Inside a list item the blocks sit as
+    /// close as the items do.
+    fn blocks(&mut self, ui: &mut Ui, blocks: &[Block], depth: usize, in_item: bool) {
         for (index, block) in blocks.iter().enumerate() {
             if index > 0 {
                 let gap = match (&blocks[index - 1], block) {
                     (Block::Heading { .. }, _) => GAP_AFTER_HEADING,
                     (_, Block::Heading { .. }) => GAP_BEFORE_HEADING,
+                    _ if in_item => ITEM_GAP,
                     _ => GAP,
                 };
                 ui.add_space(self.em(gap));
@@ -205,10 +207,11 @@ impl View {
         self.inline(ui, &inline, base);
     }
 
-    /// One run of inline text as one selectable label, its links live.
-    fn inline(&mut self, ui: &mut Ui, inline: &Inline, base: &Base) {
+    /// One run of inline text as one selectable label, its links live; the
+    /// label's rect, unless the run is empty.
+    fn inline(&mut self, ui: &mut Ui, inline: &Inline, base: &Base) -> Option<Rect> {
         if inline.is_empty() {
-            return;
+            return None;
         }
         let mut job = LayoutJob::default();
         job.wrap.max_width = if base.wrap {
@@ -259,6 +262,20 @@ impl View {
         }
         let galley = ui.painter().layout_job(job);
         let response = ui.add(Label::new(galley.clone()).selectable(true));
+        let rect = response.rect;
+        self.follow(ui, response, &galley, &links);
+        Some(rect)
+    }
+
+    /// The link under the pointer of the label `response` shows `galley`
+    /// in: its address on hover, opened on a click.
+    fn follow(
+        &mut self,
+        ui: &Ui,
+        response: egui::Response,
+        galley: &Arc<Galley>,
+        links: &[(Range<usize>, &Link)],
+    ) {
         if links.is_empty() {
             return;
         }
@@ -268,7 +285,7 @@ impl View {
         else {
             return;
         };
-        let Some(link) = hit(&galley, pointer - response.rect.min, &links) else {
+        let Some(link) = hit(galley, pointer - response.rect.min, links) else {
             return;
         };
         let hover = if link.image {
@@ -326,7 +343,7 @@ impl View {
             ui.add_space(indent);
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
-                self.blocks(ui, blocks, depth);
+                self.blocks(ui, blocks, depth, false);
             });
         });
         self.color = saved;
@@ -349,7 +366,7 @@ impl View {
                     self.marker(ui, marker, start, index, item.task, depth);
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = 0.0;
-                        self.blocks(ui, &item.blocks, depth + 1);
+                        self.blocks(ui, &item.blocks, depth + 1, true);
                     });
                 });
             });
@@ -418,7 +435,8 @@ impl View {
                 ScrollArea::horizontal()
                     .auto_shrink([true, true])
                     .show(ui, |ui| {
-                        egui::Grid::new("table")
+                        let mut header_bottom = f32::NEG_INFINITY;
+                        let grid = egui::Grid::new("table")
                             .striped(true)
                             .spacing(spacing)
                             .show(ui, |ui| {
@@ -426,20 +444,40 @@ impl View {
                                 header.font = header.strong.clone();
                                 header.wrap = false;
                                 for cell in head {
-                                    self.inline(ui, cell, &header);
+                                    let rect = self.cell(ui, cell, &header);
+                                    header_bottom = header_bottom.max(rect.bottom());
                                 }
                                 ui.end_row();
                                 let mut base = self.body_base(ui);
                                 base.wrap = false;
                                 for row in rows {
                                     for cell in row {
-                                        self.inline(ui, cell, &base);
+                                        self.cell(ui, cell, &base);
                                     }
                                     ui.end_row();
                                 }
                             });
+                        // The header's rule, midway to the first row.
+                        if header_bottom.is_finite() && !rows.is_empty() {
+                            let y = ui
+                                .painter()
+                                .round_to_pixel_center(header_bottom + spacing.y / 2.0);
+                            ui.painter().hline(
+                                grid.response.rect.x_range(),
+                                y,
+                                Stroke::new(1.0, self.palette.separator),
+                            );
+                        }
                     });
             });
+    }
+
+    /// One table cell; an empty one still takes its column.
+    fn cell(&mut self, ui: &mut Ui, cell: &Inline, base: &Base) -> Rect {
+        match self.inline(ui, cell, base) {
+            Some(rect) => rect,
+            None => ui.label("").rect,
+        }
     }
 }
 

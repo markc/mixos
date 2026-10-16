@@ -343,7 +343,21 @@ a server-side filter over name, email and company.</p>
 </li>
 <li>
 <p><strong>The reader</strong>: the open email (plain text first, the HTML source when
-there is no plain text), event or contact.</p>
+there is no plain text), event or contact. A text body written as
+Markdown is rendered: a <code>text/markdown</code> part always, and a
+<code>text/plain</code> one when the toolkit's conservative detector finds
+Markdown in it (a fence, a table, two headings, or two of a heading,
+a list, bold, inline code, a link and a block quote). Quoted replies,
+signatures, forwarded headers, bare URLs and ASCII art never trigger
+it. Rendered mail shows headings, lists and task boxes, code blocks
+that scroll sideways, tables, quotes and links (http, https and mailto
+open in the desktop's browser or mail handler; the address shows on
+hover). Images are never fetched, because remote images in mail track
+their reader: the alt text is a link to the image. Raw HTML is shown as
+text. <strong>Show Source</strong> beside the date (or View › Message › Render
+Markdown / Show Source) flips one email between the rendering and its
+text, and <strong>Render Markdown</strong> does the reverse for any plain email.
+The choice lasts while that email is open.</p>
 </li>
 <li>
 <p><strong>Compose</strong> (To, Cc, Bcc, Subject, body, and From when there are
@@ -431,6 +445,10 @@ never waits on them.</p>
 </tbody></table>
 <p>Every command the window runs (menu, shortcut, button or <code>email.execute</code>)
 is published on <code>email.command.executed</code> with how it was reached.</p>
+<p><code>email.info</code> reports how the open email is shown under each account's
+<code>mail.reader</code>: <code>{"format": "markdown" | "plain", "auto": true | false}</code>,
+where <code>auto</code> is false once the person (or <code>email.execute {"id":"view.reader.markdown"}</code>) has flipped it. The command is disabled
+when the open email has no text body.</p>
 <p>From Mix:</p>
 <pre><code>send email email.accounts
 send email email.list body='{"account":"acct-3f9a1c2b4d5e","mailbox":"m-inbox","limit":20}'

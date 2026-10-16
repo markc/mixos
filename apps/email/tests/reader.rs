@@ -292,20 +292,22 @@ fn reader_markdown_studio_dark() {
     );
 }
 
+// Pro draws on its dark chrome in either mode: a hue scheme is the light
+// picture.
 #[test]
-fn reader_markdown_pro_light() {
+fn reader_markdown_ocean_light() {
     snapshot(
-        "reader_markdown_pro_light",
+        "reader_markdown_ocean_light",
         opened("text/plain", MARKDOWN),
-        &theme(Scheme::Pro, Mode::Light),
+        &theme(Scheme::Ocean, Mode::Light),
     );
 }
 
 #[test]
-fn reader_plain_pro_light() {
+fn reader_plain_ocean_light() {
     snapshot(
-        "reader_plain_pro_light",
+        "reader_plain_ocean_light",
         opened("text/plain", PLAIN),
-        &theme(Scheme::Pro, Mode::Light),
+        &theme(Scheme::Ocean, Mode::Light),
     );
 }

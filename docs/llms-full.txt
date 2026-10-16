@@ -6519,7 +6519,21 @@ A malformed file loads defaults and is never overwritten.
   as the page size), its calendar's events, or its book's contacts, with
   a server-side filter over name, email and company.
 - **The reader**: the open email (plain text first, the HTML source when
-  there is no plain text), event or contact.
+  there is no plain text), event or contact. A text body written as
+  Markdown is rendered: a `text/markdown` part always, and a
+  `text/plain` one when the toolkit's conservative detector finds
+  Markdown in it (a fence, a table, two headings, or two of a heading,
+  a list, bold, inline code, a link and a block quote). Quoted replies,
+  signatures, forwarded headers, bare URLs and ASCII art never trigger
+  it. Rendered mail shows headings, lists and task boxes, code blocks
+  that scroll sideways, tables, quotes and links (http, https and mailto
+  open in the desktop's browser or mail handler; the address shows on
+  hover). Images are never fetched, because remote images in mail track
+  their reader: the alt text is a link to the image. Raw HTML is shown as
+  text. **Show Source** beside the date (or View › Message › Render
+  Markdown / Show Source) flips one email between the rendering and its
+  text, and **Render Markdown** does the reverse for any plain email.
+  The choice lasts while that email is open.
 - **Compose** (To, Cc, Bcc, Subject, body, and From when there are
   several accounts), reply, reply all and forward. If the account's login
   (server or address) changes while a draft is open, Send waits: the
@@ -6606,6 +6620,12 @@ never waits on them.
 
 Every command the window runs (menu, shortcut, button or `email.execute`)
 is published on `email.command.executed` with how it was reached.
+
+`email.info` reports how the open email is shown under each account's
+`mail.reader`: `{"format": "markdown" | "plain", "auto": true | false}`,
+where `auto` is false once the person (or `email.execute
+{"id":"view.reader.markdown"}`) has flipped it. The command is disabled
+when the open email has no text body.
 
 From Mix:
 
