@@ -161,7 +161,7 @@ fn canonical_request_digest_ignores_object_key_order_but_binds_fences() {
 #[test]
 fn public_machine_fixtures_exercise_dispatch_and_restartable_float_settings() {
     let fixture: serde_json::Value = strict::from_str(include_str!(
-        "../../../docs/spec/settings/authority.spec.mix"
+        "../../../docs/docs/spec/settings/authority.spec.mix"
     ))
     .unwrap();
     let binding: Binding = serde_json::from_value(fixture["binding"].clone()).unwrap();

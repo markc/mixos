@@ -46,7 +46,7 @@ in [AGENTS.md](AGENTS.md).
 The desktop is written in Rust on [egui](https://github.com/emilk/egui) and
 wgpu, and every application is engine-first: its behaviour is a set of named
 commands that the UI, the command line and the Bus all invoke the same way
-([decision](docs/decisions/2026-10-09-egui-applications.md)).
+([decision](docs/docs/decisions/2026-10-09-egui-applications.md)).
 
 - Site and manual: <https://mixos.dev> (`docs/`, GitHub Pages)
 - For agents: [`/llms.txt`](https://mixos.dev/llms.txt) indexes every page,
@@ -57,19 +57,19 @@ commands that the UI, the command line and the Bus all invoke the same way
 ## The site
 
 mixos.dev is a prerendered static site. Every `docs/**/*.md` becomes a complete
-HTML page at a directory-style URL (`docs/try.md` → `/try/`), built locally by
+HTML page at a directory-style URL (`docs/docs/try.md` → `/docs/try/`, `docs/term/README.md` → `/term/`), built locally by
 Mix and committed; GitHub Pages only serves the result. Nothing renders in the
-browser and there is no hash routing. `docs/web/nav.js` only swaps the content
+browser and there is no hash routing. `docs/_web/nav.js` only swaps the content
 area on same-site clicks, and every link works without it.
 
 ```sh
-mix docs/build/gen-site.mix                 # rebuild whatever changed
-mix docs/build/gen-site.mix --check         # verify: stale output or broken links -> exit 1
-mix docs/build/gen-site.mix --install-hook  # run --check before every commit
+mix docs/_build/gen-site.mix                 # rebuild whatever changed
+mix docs/_build/gen-site.mix --check         # verify: stale output or broken links -> exit 1
+mix docs/_build/gen-site.mix --install-hook  # run --check before every commit
 mix -c 'http_serve("docs", {clean_urls: true})'   # preview locally
 ```
 
-Sources live in `docs/build/`: `shell.html` (page chrome), `home.html` (landing
+Sources live in `docs/_build/`: `shell.html` (page chrome), `home.html` (landing
 page) and `site.conf.mix` (sidebar, icons, redirects). The build needs
 `hb-subset` (harfbuzz) and `woff2_compress` (woff2) to cut the icon font.
 

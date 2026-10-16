@@ -30,7 +30,7 @@ if $MIX == "" then $MIX = env("MIXOS_TEST_MIX") ?? "" end
 if $MIX == "" then $MIX = "/opt/mixos/bin/mix" end
 $citizen = realpath($here .. "/../scripts/bridged.mix")
 $fake = realpath($here .. "/lib/fake_app.mix")
-$registry = realpath($here .. "/../../../docs/spec/bus/verbs.conf.mix")
+$registry = realpath($here .. "/../../../docs/docs/spec/bus/verbs.conf.mix")
 -- The noded binary: --noded PATH wins, else $MIXOS_TEST_NODED, else the installed one.
 $noded = env("MIXOS_TEST_NODED") ?? ""
 if $noded == "" then $noded = "/opt/mixos/bin/noded" end

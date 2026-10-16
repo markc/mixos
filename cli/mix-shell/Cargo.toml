@@ -10,7 +10,7 @@ description = "Mix shell and native ABP citizen runtime"
 
 # The shell is a library: `cli/system` builds the `mix` binary and runs
 # `mix_shell::main` for the `mix` personality
-# (docs/decisions/2026-10-12-one-system-binary.md). Its process-level tests
+# (docs/docs/decisions/2026-10-12-one-system-binary.md). Its process-level tests
 # live in cli/system/tests, against that binary. Doc comments here were never
 # doctests.
 [lib]

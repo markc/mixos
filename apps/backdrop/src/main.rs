@@ -29,7 +29,7 @@ Usage: backdrop [OPTIONS]\n\
   --service NAME     register on the Bus as NAME (default backdrop)\n\
   --probe            the regression probe: surfaces, scale and input\n\
   --help             this text\n\
-Bus: backdrop.ping, backdrop.state, backdrop.set (docs/backdrop.md).";
+Bus: backdrop.ping, backdrop.state, backdrop.set (docs/backdrop/README.md).";
 
 /// The largest document read (strict data: a few kilobytes in practice).
 const MAX_DOCUMENT: u64 = 64 * 1024;

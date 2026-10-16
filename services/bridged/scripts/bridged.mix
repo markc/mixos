@@ -18,7 +18,7 @@
 -- refused name never reaches the Bus.
 -- Config: $BRIDGED_CONFIG, else <etc>/bridge/<app>.conf.mix with <etc> =
 -- $MIXOS_ETC or /etc/mixos. Keys: host, port, auth, token_file, timeout_s,
--- connect_timeout_s, backoff_s, max_line, instance (docs/spec/bridge/).
+-- connect_timeout_s, backoff_s, max_line, instance (docs/docs/spec/bridge/).
 -- auth "key" reads token_file on every connect, not here: the app writes that
 -- file after it starts, so a key path that does not exist yet is not refused.
 -- A refusal at start prints "bridged: refusing to start: CODE: message" and
