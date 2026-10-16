@@ -322,6 +322,20 @@ fn email_accounts_apply_reach_the_summary_and_never_take_a_password() {
         before
     );
     assert!(state.accepted.desktop.email.is_default());
+    // So is one with a password in its URL's userinfo, and the refusal does
+    // not repeat it.
+    let mut userinfo = account.clone();
+    userinfo["url"] = json!("https://me:hunter2@mail.example.org");
+    let body = request(&state, "userinfo", json!({"email.accounts":[userinfo]}));
+    for verb in ["settings.validate", "settings.apply"] {
+        let refused = settingsd::service::dispatch(&mut state, verb, &body).unwrap_err();
+        assert_eq!(refused["status"], "validation_failed", "{verb}");
+        assert!(!refused.to_string().contains("hunter2"), "{refused}");
+    }
+    assert_eq!(
+        std::fs::read(dir.path().join("desktop.conf.mix")).unwrap(),
+        before
+    );
     let body = request(
         &state,
         "email",

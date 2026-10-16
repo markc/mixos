@@ -548,7 +548,7 @@ resolved design.</p>
 <table><thead><tr><th>Key</th><th>Type and range</th><th>Default</th></tr></thead><tbody>
 <tr><td><code>id</code></td><td><code>[a-z0-9-]{1,64}</code>, stable; the writer mints <code>acct-</code> and 12 hex digits</td><td>required</td></tr>
 <tr><td><code>name</code></td><td>the tree label: 1–128 bytes, no control characters, no surrounding space</td><td>required</td></tr>
-<tr><td><code>url</code></td><td>the JMAP base: <code>https://</code> and a host, no trailing slash, no space; at most 2048 bytes</td><td>required</td></tr>
+<tr><td><code>url</code></td><td>the JMAP base: <code>https://host[:port][/path]</code>, the host a DNS name, IPv4 or bracketed IPv6 address; no userinfo (<code>user:secret@</code>, so no password rides in a URL), query, fragment, backslash, trailing slash or space; at most 2048 bytes</td><td>required</td></tr>
 <tr><td><code>email</code></td><td>the login and default From: one <code>@</code> with text on both sides, no space; at most 254 bytes</td><td>required</td></tr>
 <tr><td><code>ca_path</code></td><td>an absolute path to a PEM bundle, or null for the system roots</td><td>null</td></tr>
 <tr><td><code>enabled</code></td><td>boolean</td><td>true</td></tr>
