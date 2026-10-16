@@ -2,7 +2,7 @@
 
 > MixOS is an agent-operable computing system: a Linux userland where every app is a service, every service speaks one message bus, and Mix is the shell. It is tried as a small signed systemd-nspawn image that runs on its own virtual terminal beside the user's existing desktop, at native GPU, input and audio speed.
 
-Generated from the Markdown pages of https://mixos.dev/ in sidebar order. Index: https://mixos.dev/llms.txt
+Generated from the Markdown pages of https://mixos.dev/ in sidebar order. It describes the current `main` branch. Index: https://mixos.dev/llms.txt
 
 ---
 
@@ -454,6 +454,150 @@ wires it up in five places:
 
 `drive::describe("<app>")` lists the verbs for `HELP` and `app.describe`.
 BusViewer's shell (`apps/busviewer/src/shell.rs`) is the reference wiring.
+
+---
+
+<!-- page: https://mixos.dev/docs/components/ (source: https://mixos.dev/docs/components.md) -->
+
+# Components
+
+Every MixOS component, generated from the component metadata: each principal
+package's `[package.metadata.mixos]`, or a Mix component's `component.mx`, read by
+`tools/component_index.mix`. Install profiles come only from a declared `profiles`
+list; a shipping component that has not declared one yet is unclassified. By
+profile: [desktop](desktop.md) and [server](server.md). This page describes the current `main` branch of MixOS.
+
+| Component | Kind | Profiles | Source | Description |
+|---|---|---|---|---|
+| assets (no page yet) | lib | none (library) | [`libs/assets`](https://github.com/markc/mixos/tree/main/libs/assets) |  |
+| [backdrop](../backdrop/README.md) | app | unclassified | [`apps/backdrop`](https://github.com/markc/mixos/tree/main/apps/backdrop) | The MixOS desktop background — drawn by its own program on the compositor's background layer, on every output, at native and fractional scale. |
+| [bridged](../bridged/README.md) · [changelog](../bridged/changelog.md) | service | unclassified | [`services/bridged`](https://github.com/markc/mixos/tree/main/services/bridged) | How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes. |
+| buildinfo (no page yet) | lib | none (library) | [`libs/buildinfo`](https://github.com/markc/mixos/tree/main/libs/buildinfo) |  |
+| bus (no page yet) | lib | none (library) | [`libs/bus`](https://github.com/markc/mixos/tree/main/libs/bus) |  |
+| busviewer (no page yet) | app | unclassified | [`apps/busviewer`](https://github.com/markc/mixos/tree/main/apps/busviewer) |  |
+| ced (no page yet) | app | unclassified | [`apps/ced`](https://github.com/markc/mixos/tree/main/apps/ced) |  |
+| citizen (no page yet) | lib | none (library) | [`libs/citizen`](https://github.com/markc/mixos/tree/main/libs/citizen) |  |
+| compd (no page yet) · [changelog](../compd/changelog.md) | service | unclassified | [`services/compd`](https://github.com/markc/mixos/tree/main/services/compd) |  |
+| config (no page yet) | lib | none (library) | [`libs/config`](https://github.com/markc/mixos/tree/main/libs/config) |  |
+| davproto (no page yet) | lib | none (library) | [`libs/davproto`](https://github.com/markc/mixos/tree/main/libs/davproto) |  |
+| design (no page yet) | lib | none (library) | [`libs/design`](https://github.com/markc/mixos/tree/main/libs/design) |  |
+| [dopus](../dopus/README.md) | app | unclassified | [`apps/dopus`](https://github.com/markc/mixos/tree/main/apps/dopus) | MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads… |
+| edit (no page yet) | lib | none (library) | [`libs/edit`](https://github.com/markc/mixos/tree/main/libs/edit) |  |
+| [editd](../editd/README.md) · [changelog](../editd/changelog.md) | service | unclassified | [`services/editd`](https://github.com/markc/mixos/tree/main/services/editd) |  |
+| editor (no page yet) | lib | none (library) | [`libs/editor`](https://github.com/markc/mixos/tree/main/libs/editor) |  |
+| editor-model (no page yet) | lib | none (library) | [`libs/editor-model`](https://github.com/markc/mixos/tree/main/libs/editor-model) |  |
+| expr (no page yet) | lib | none (library) | [`libs/expr`](https://github.com/markc/mixos/tree/main/libs/expr) |  |
+| [hostd](../hostd/README.md) · [changelog](../hostd/changelog.md) | service | unclassified | [`services/hostd`](https://github.com/markc/mixos/tree/main/services/hostd) | How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo. |
+| logging (no page yet) | lib | none (library) | [`libs/logging`](https://github.com/markc/mixos/tree/main/libs/logging) |  |
+| mimedb (no page yet) | lib | none (library) | [`libs/mimedb`](https://github.com/markc/mixos/tree/main/libs/mimedb) |  |
+| [mix](../mix/README.md) · [changelog](../mix/changelog.md) | lib | none (library) | [`libs/mix`](https://github.com/markc/mixos/tree/main/libs/mix) |  |
+| mix-shell (no page yet) · [changelog](../mix-shell/changelog.md) | cli | unclassified | [`cli/mix-shell`](https://github.com/markc/mixos/tree/main/cli/mix-shell) |  |
+| [noded](../noded/README.md) · [changelog](../noded/changelog.md) | service | unclassified | [`services/noded`](https://github.com/markc/mixos/tree/main/services/noded) |  |
+| [portald](../portald/README.md) | service | unclassified | [`services/portald`](https://github.com/markc/mixos/tree/main/services/portald) | How portald serves the XDG Settings portal on the session bus, where the appearance values come from, and how applications and agents read them. |
+| [prefs](../prefs/README.md) | app | unclassified | [`apps/prefs`](https://github.com/markc/mixos/tree/main/apps/prefs) | MixOS's preferences window — a sidebar of editors: Applications follows, installs, updates, rolls back and removes upstream releases; Appearance sets the session's colour scheme, style, mode,… |
+| props (no page yet) | lib | none (library) | [`libs/props`](https://github.com/markc/mixos/tree/main/libs/props) |  |
+| [releasesd](../releasesd/README.md) | service | unclassified | [`services/releasesd`](https://github.com/markc/mixos/tree/main/services/releasesd) | How releasesd follows upstream application releases on GitHub and installs their Linux builds per user, verified, with rollback, from the command line or the Bus. |
+| scene (no page yet) | lib | none (library) | [`libs/scene`](https://github.com/markc/mixos/tree/main/libs/scene) |  |
+| [screenshot](../screenshot/README.md) | app | unclassified | [`apps/screenshot`](https://github.com/markc/mixos/tree/main/apps/screenshot) | MixOS's screenshot app — Print Screen for a region, Shift+Print for the screen, Alt+Print for a window; arrows, boxes, pens, highlighter, text, numbered markers, crop and redaction that stay… |
+| settings (no page yet) · [changelog](../settings/changelog.md) | lib | none (library) | [`libs/settings`](https://github.com/markc/mixos/tree/main/libs/settings) |  |
+| settingsd (no page yet) · [changelog](../settingsd/changelog.md) | service | unclassified | [`services/settingsd`](https://github.com/markc/mixos/tree/main/services/settingsd) |  |
+| strict (no page yet) | lib | none (library) | [`libs/strict`](https://github.com/markc/mixos/tree/main/libs/strict) |  |
+| syntax (no page yet) | lib | none (library) | [`libs/syntax`](https://github.com/markc/mixos/tree/main/libs/syntax) |  |
+| system (no page yet) | cli | unclassified | [`cli/system`](https://github.com/markc/mixos/tree/main/cli/system) |  |
+| term (no page yet) · [changelog](../term/changelog.md) | app | unclassified | [`apps/term`](https://github.com/markc/mixos/tree/main/apps/term) |  |
+| test-broker (no page yet) | lib | none (library) | [`libs/test-broker`](https://github.com/markc/mixos/tree/main/libs/test-broker) |  |
+| thumbs (no page yet) | lib | none (library) | [`libs/thumbs`](https://github.com/markc/mixos/tree/main/libs/thumbs) |  |
+| toolkit (no page yet) | lib | none (library) | [`libs/toolkit`](https://github.com/markc/mixos/tree/main/libs/toolkit) |  |
+
+## Packages
+
+Every workspace package and Mix component, with the component that owns it.
+Private crates stay under their owning component. Dependency closure is
+checked separately by the layering gate.
+
+| Package | Component | Kind | Layer | Contract | Version |
+|---|---|---|---|---|---|
+| [backdrop](https://github.com/markc/mixos/blob/main/apps/backdrop/Cargo.toml) | backdrop | app | desktop | none | 0.1.1 |
+| [wallpaper](https://github.com/markc/mixos/blob/main/apps/backdrop/crates/wallpaper/Cargo.toml) | backdrop | app | core | none | 0.1.1 |
+| [busviewer](https://github.com/markc/mixos/blob/main/apps/busviewer/Cargo.toml) | busviewer | app | desktop | public | 0.1.1 |
+| [inspector](https://github.com/markc/mixos/blob/main/apps/busviewer/crates/inspector/Cargo.toml) | busviewer | app | core | none | 0.1.1 |
+| [ced](https://github.com/markc/mixos/blob/main/apps/ced/Cargo.toml) | ced | app | desktop | public | 0.1.1 |
+| [documents](https://github.com/markc/mixos/blob/main/apps/ced/crates/documents/Cargo.toml) | ced | app | core | none | 0.1.1 |
+| [dopus](https://github.com/markc/mixos/blob/main/apps/dopus/Cargo.toml) | dopus | app | desktop | public | 0.1.1 |
+| [dopus-core](https://github.com/markc/mixos/blob/main/apps/dopus/crates/dopus-core/Cargo.toml) | dopus | app | core | none | 0.1.1 |
+| [files](https://github.com/markc/mixos/blob/main/apps/dopus/crates/files/Cargo.toml) | dopus | app | core | none | 0.1.1 |
+| [prefs](https://github.com/markc/mixos/blob/main/apps/prefs/Cargo.toml) | prefs | app | desktop | public | 0.1.1 |
+| [preferences](https://github.com/markc/mixos/blob/main/apps/prefs/crates/preferences/Cargo.toml) | prefs | app | core | none | 0.1.1 |
+| [screenshot](https://github.com/markc/mixos/blob/main/apps/screenshot/Cargo.toml) | screenshot | app | desktop | public | 0.1.1 |
+| [annotation](https://github.com/markc/mixos/blob/main/apps/screenshot/crates/annotation/Cargo.toml) | screenshot | app | core | none | 0.1.1 |
+| [term](https://github.com/markc/mixos/blob/main/apps/term/Cargo.toml) | term | app | desktop | public | 0.4.0 |
+| [term-core](https://github.com/markc/mixos/blob/main/apps/term/crates/term-core/Cargo.toml) | term | app | core | none | 0.1.1 |
+| [term-render](https://github.com/markc/mixos/blob/main/apps/term/crates/term-render/Cargo.toml) | term | app | desktop | none | 0.1.1 |
+| [mix-shell](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml) | mix-shell | cli | mix | public | 0.116.0 |
+| [system](https://github.com/markc/mixos/blob/main/cli/system/Cargo.toml) | system | cli | core | none | 0.1.1 |
+| [assets](https://github.com/markc/mixos/blob/main/libs/assets/Cargo.toml) | assets | lib | core | public | 0.1.1 |
+| [buildinfo](https://github.com/markc/mixos/blob/main/libs/buildinfo/Cargo.toml) | buildinfo | lib | core | none | 0.1.1 |
+| [bus](https://github.com/markc/mixos/blob/main/libs/bus/Cargo.toml) | bus | lib | core | none | 0.1.1 |
+| [citizen](https://github.com/markc/mixos/blob/main/libs/citizen/Cargo.toml) | citizen | lib | core | none | 0.1.1 |
+| [config](https://github.com/markc/mixos/blob/main/libs/config/Cargo.toml) | config | lib | core | none | 0.1.1 |
+| [davproto](https://github.com/markc/mixos/blob/main/libs/davproto/Cargo.toml) | davproto | lib | core | none | 0.1.1 |
+| [design](https://github.com/markc/mixos/blob/main/libs/design/Cargo.toml) | design | lib | core | none | 0.1.1 |
+| [edit](https://github.com/markc/mixos/blob/main/libs/edit/Cargo.toml) | edit | lib | core | none | 0.1.1 |
+| [editor-model](https://github.com/markc/mixos/blob/main/libs/editor-model/Cargo.toml) | editor-model | lib | core | none | 0.1.1 |
+| [editor](https://github.com/markc/mixos/blob/main/libs/editor/Cargo.toml) | editor | lib | desktop | none | 0.1.1 |
+| [expr](https://github.com/markc/mixos/blob/main/libs/expr/Cargo.toml) | expr | lib | core | none | 0.1.1 |
+| [logging](https://github.com/markc/mixos/blob/main/libs/logging/Cargo.toml) | logging | lib | core | none | 0.1.1 |
+| [mimedb](https://github.com/markc/mixos/blob/main/libs/mimedb/Cargo.toml) | mimedb | lib | mix | none | 0.1.1 |
+| [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.116.0 |
+| [props](https://github.com/markc/mixos/blob/main/libs/props/Cargo.toml) | props | lib | core | none | 0.1.1 |
+| [scene](https://github.com/markc/mixos/blob/main/libs/scene/Cargo.toml) | scene | lib | core | none | 0.1.1 |
+| [settings](https://github.com/markc/mixos/blob/main/libs/settings/Cargo.toml) | settings | lib | core | public | 0.7.0 |
+| [strict](https://github.com/markc/mixos/blob/main/libs/strict/Cargo.toml) | strict | lib | core | none | 0.1.1 |
+| [syntax](https://github.com/markc/mixos/blob/main/libs/syntax/Cargo.toml) | syntax | lib | core | none | 0.1.1 |
+| [test-broker](https://github.com/markc/mixos/blob/main/libs/test-broker/Cargo.toml) | test-broker | lib | core | none | 0.1.1 |
+| [thumbs](https://github.com/markc/mixos/blob/main/libs/thumbs/Cargo.toml) | thumbs | lib | core | none | 0.1.1 |
+| [toolkit](https://github.com/markc/mixos/blob/main/libs/toolkit/Cargo.toml) | toolkit | lib | desktop | none | 0.1.1 |
+| [bridged](https://github.com/markc/mixos/blob/main/services/bridged/component.mx) | bridged | service | desktop | public | 0.2.0 |
+| [compd](https://github.com/markc/mixos/blob/main/services/compd/Cargo.toml) | compd | service | desktop | public | 0.2.0 |
+| [comp-model](https://github.com/markc/mixos/blob/main/services/compd/crates/comp-model/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [comp-service](https://github.com/markc/mixos/blob/main/services/compd/crates/comp-service/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [decor](https://github.com/markc/mixos/blob/main/services/compd/crates/decor/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [dispatcher](https://github.com/markc/mixos/blob/main/services/compd/crates/dispatcher/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [drivers](https://github.com/markc/mixos/blob/main/services/compd/crates/drivers/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [edges](https://github.com/markc/mixos/blob/main/services/compd/crates/edges/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [effects](https://github.com/markc/mixos/blob/main/services/compd/crates/effects/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [frames](https://github.com/markc/mixos/blob/main/services/compd/crates/frames/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [graphics](https://github.com/markc/mixos/blob/main/services/compd/crates/graphics/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [kms](https://github.com/markc/mixos/blob/main/services/compd/crates/kms/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [ledger](https://github.com/markc/mixos/blob/main/services/compd/crates/ledger/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [model](https://github.com/markc/mixos/blob/main/services/compd/crates/model/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [motion](https://github.com/markc/mixos/blob/main/services/compd/crates/motion/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [native](https://github.com/markc/mixos/blob/main/services/compd/crates/native/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [nested](https://github.com/markc/mixos/blob/main/services/compd/crates/nested/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [outputs](https://github.com/markc/mixos/blob/main/services/compd/crates/outputs/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [policy-host](https://github.com/markc/mixos/blob/main/services/compd/crates/policy-host/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [policy](https://github.com/markc/mixos/blob/main/services/compd/crates/policy/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [protocols](https://github.com/markc/mixos/blob/main/services/compd/crates/protocols/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [recorder](https://github.com/markc/mixos/blob/main/services/compd/crates/recorder/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [render-gles](https://github.com/markc/mixos/blob/main/services/compd/crates/render-gles/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [scene-host](https://github.com/markc/mixos/blob/main/services/compd/crates/scene-host/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [scenegraph](https://github.com/markc/mixos/blob/main/services/compd/crates/scenegraph/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [screencopy](https://github.com/markc/mixos/blob/main/services/compd/crates/screencopy/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [seat](https://github.com/markc/mixos/blob/main/services/compd/crates/seat/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [slots](https://github.com/markc/mixos/blob/main/services/compd/crates/slots/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [surfaces](https://github.com/markc/mixos/blob/main/services/compd/crates/surfaces/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [testkit](https://github.com/markc/mixos/blob/main/services/compd/crates/testkit/Cargo.toml) | compd | test | desktop | none | 0.1.1 |
+| [ui](https://github.com/markc/mixos/blob/main/services/compd/crates/ui/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [world](https://github.com/markc/mixos/blob/main/services/compd/crates/world/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [x11-wm](https://github.com/markc/mixos/blob/main/services/compd/crates/x11-wm/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [editd](https://github.com/markc/mixos/blob/main/services/editd/Cargo.toml) | editd | service | core | public | 0.2.0 |
+| [hostd](https://github.com/markc/mixos/blob/main/services/hostd/Cargo.toml) | hostd | service | core | public | 0.1.0 |
+| [noded](https://github.com/markc/mixos/blob/main/services/noded/Cargo.toml) | noded | service | core | public | 0.18.3 |
+| [mesh-trust](https://github.com/markc/mixos/blob/main/services/noded/crates/mesh-trust/Cargo.toml) | noded | service | core | none | 0.1.1 |
+| [mesh](https://github.com/markc/mixos/blob/main/services/noded/crates/mesh/Cargo.toml) | noded | service | core | none | 0.1.1 |
+| [portald](https://github.com/markc/mixos/blob/main/services/portald/Cargo.toml) | portald | service | core | public | 0.1.0 |
+| [releasesd](https://github.com/markc/mixos/blob/main/services/releasesd/component.mx) | releasesd | service | desktop | public | 0.2.0 |
+| [settingsd](https://github.com/markc/mixos/blob/main/services/settingsd/Cargo.toml) | settingsd | service | core | public | 0.1.0 |
 
 ---
 
@@ -2294,7 +2438,7 @@ repository yet. Should they get a repository of their own?
     layer in a `base` or `server` component; what it calls on the Bus is
     checked at review, as AGENTS.md §2.5 already says.
 
-  The component index (`docs/docs/dev/components.md`) shows each component's
+  The component index ([`/docs/components/`](../components.md)) shows each component's
   profiles.
 - **Resolving, installing and activating are separate.**
   - **Resolve:** one tool answers "what is in `server`?" from the metadata,
@@ -3174,102 +3318,6 @@ decided before the first stable release.
   exception list, and a grouped `llms.txt`.
 - Every link to a moved page is updated, including in AGENTS.md and the
   decision records.
-
----
-
-<!-- page: https://mixos.dev/docs/dev/components/ (source: https://mixos.dev/docs/dev/components.md) -->
-
-<!-- generated by tools/component_index.mix; do not edit -->
-# Components
-
-Component ownership and declared layers come from the workspace manifests
-and, for Mix components, from `component.mx`. Private crates remain under
-their owning component. Dependency closure is checked separately by the
-layering gate.
-
-| Package | Owner | Kind | Layer | Contract | Version |
-|---|---|---|---|---|---|
-| [backdrop](https://github.com/markc/mixos/blob/main/apps/backdrop/Cargo.toml) | backdrop | app | desktop | none | 0.1.1 |
-| [wallpaper](https://github.com/markc/mixos/blob/main/apps/backdrop/crates/wallpaper/Cargo.toml) | backdrop | app | core | none | 0.1.1 |
-| [busviewer](https://github.com/markc/mixos/blob/main/apps/busviewer/Cargo.toml) | busviewer | app | desktop | public | 0.1.1 |
-| [inspector](https://github.com/markc/mixos/blob/main/apps/busviewer/crates/inspector/Cargo.toml) | busviewer | app | core | none | 0.1.1 |
-| [ced](https://github.com/markc/mixos/blob/main/apps/ced/Cargo.toml) | ced | app | desktop | public | 0.1.1 |
-| [documents](https://github.com/markc/mixos/blob/main/apps/ced/crates/documents/Cargo.toml) | ced | app | core | none | 0.1.1 |
-| [dopus](https://github.com/markc/mixos/blob/main/apps/dopus/Cargo.toml) | dopus | app | desktop | public | 0.1.1 |
-| [dopus-core](https://github.com/markc/mixos/blob/main/apps/dopus/crates/dopus-core/Cargo.toml) | dopus | app | core | none | 0.1.1 |
-| [files](https://github.com/markc/mixos/blob/main/apps/dopus/crates/files/Cargo.toml) | dopus | app | core | none | 0.1.1 |
-| [prefs](https://github.com/markc/mixos/blob/main/apps/prefs/Cargo.toml) | prefs | app | desktop | public | 0.1.1 |
-| [preferences](https://github.com/markc/mixos/blob/main/apps/prefs/crates/preferences/Cargo.toml) | prefs | app | core | none | 0.1.1 |
-| [screenshot](https://github.com/markc/mixos/blob/main/apps/screenshot/Cargo.toml) | screenshot | app | desktop | public | 0.1.1 |
-| [annotation](https://github.com/markc/mixos/blob/main/apps/screenshot/crates/annotation/Cargo.toml) | screenshot | app | core | none | 0.1.1 |
-| [term](https://github.com/markc/mixos/blob/main/apps/term/Cargo.toml) | term | app | desktop | public | 0.4.0 |
-| [term-core](https://github.com/markc/mixos/blob/main/apps/term/crates/term-core/Cargo.toml) | term | app | core | none | 0.1.1 |
-| [term-render](https://github.com/markc/mixos/blob/main/apps/term/crates/term-render/Cargo.toml) | term | app | desktop | none | 0.1.1 |
-| [mix-shell](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml) | mix-shell | cli | mix | public | 0.116.0 |
-| [system](https://github.com/markc/mixos/blob/main/cli/system/Cargo.toml) | system | cli | core | none | 0.1.1 |
-| [assets](https://github.com/markc/mixos/blob/main/libs/assets/Cargo.toml) | assets | lib | core | public | 0.1.1 |
-| [buildinfo](https://github.com/markc/mixos/blob/main/libs/buildinfo/Cargo.toml) | buildinfo | lib | core | none | 0.1.1 |
-| [bus](https://github.com/markc/mixos/blob/main/libs/bus/Cargo.toml) | bus | lib | core | none | 0.1.1 |
-| [citizen](https://github.com/markc/mixos/blob/main/libs/citizen/Cargo.toml) | citizen | lib | core | none | 0.1.1 |
-| [config](https://github.com/markc/mixos/blob/main/libs/config/Cargo.toml) | config | lib | core | none | 0.1.1 |
-| [davproto](https://github.com/markc/mixos/blob/main/libs/davproto/Cargo.toml) | davproto | lib | core | none | 0.1.1 |
-| [design](https://github.com/markc/mixos/blob/main/libs/design/Cargo.toml) | design | lib | core | none | 0.1.1 |
-| [edit](https://github.com/markc/mixos/blob/main/libs/edit/Cargo.toml) | edit | lib | core | none | 0.1.1 |
-| [editor-model](https://github.com/markc/mixos/blob/main/libs/editor-model/Cargo.toml) | editor-model | lib | core | none | 0.1.1 |
-| [editor](https://github.com/markc/mixos/blob/main/libs/editor/Cargo.toml) | editor | lib | desktop | none | 0.1.1 |
-| [expr](https://github.com/markc/mixos/blob/main/libs/expr/Cargo.toml) | expr | lib | core | none | 0.1.1 |
-| [logging](https://github.com/markc/mixos/blob/main/libs/logging/Cargo.toml) | logging | lib | core | none | 0.1.1 |
-| [mimedb](https://github.com/markc/mixos/blob/main/libs/mimedb/Cargo.toml) | mimedb | lib | mix | none | 0.1.1 |
-| [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.116.0 |
-| [props](https://github.com/markc/mixos/blob/main/libs/props/Cargo.toml) | props | lib | core | none | 0.1.1 |
-| [scene](https://github.com/markc/mixos/blob/main/libs/scene/Cargo.toml) | scene | lib | core | none | 0.1.1 |
-| [settings](https://github.com/markc/mixos/blob/main/libs/settings/Cargo.toml) | settings | lib | core | public | 0.7.0 |
-| [strict](https://github.com/markc/mixos/blob/main/libs/strict/Cargo.toml) | strict | lib | core | none | 0.1.1 |
-| [syntax](https://github.com/markc/mixos/blob/main/libs/syntax/Cargo.toml) | syntax | lib | core | none | 0.1.1 |
-| [test-broker](https://github.com/markc/mixos/blob/main/libs/test-broker/Cargo.toml) | test-broker | lib | core | none | 0.1.1 |
-| [thumbs](https://github.com/markc/mixos/blob/main/libs/thumbs/Cargo.toml) | thumbs | lib | core | none | 0.1.1 |
-| [toolkit](https://github.com/markc/mixos/blob/main/libs/toolkit/Cargo.toml) | toolkit | lib | desktop | none | 0.1.1 |
-| [bridged](https://github.com/markc/mixos/blob/main/services/bridged/component.mx) | bridged | service | desktop | public | 0.2.0 |
-| [compd](https://github.com/markc/mixos/blob/main/services/compd/Cargo.toml) | compd | service | desktop | public | 0.2.0 |
-| [comp-model](https://github.com/markc/mixos/blob/main/services/compd/crates/comp-model/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [comp-service](https://github.com/markc/mixos/blob/main/services/compd/crates/comp-service/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [decor](https://github.com/markc/mixos/blob/main/services/compd/crates/decor/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [dispatcher](https://github.com/markc/mixos/blob/main/services/compd/crates/dispatcher/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [drivers](https://github.com/markc/mixos/blob/main/services/compd/crates/drivers/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [edges](https://github.com/markc/mixos/blob/main/services/compd/crates/edges/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [effects](https://github.com/markc/mixos/blob/main/services/compd/crates/effects/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [frames](https://github.com/markc/mixos/blob/main/services/compd/crates/frames/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [graphics](https://github.com/markc/mixos/blob/main/services/compd/crates/graphics/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [kms](https://github.com/markc/mixos/blob/main/services/compd/crates/kms/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [ledger](https://github.com/markc/mixos/blob/main/services/compd/crates/ledger/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [model](https://github.com/markc/mixos/blob/main/services/compd/crates/model/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [motion](https://github.com/markc/mixos/blob/main/services/compd/crates/motion/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [native](https://github.com/markc/mixos/blob/main/services/compd/crates/native/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [nested](https://github.com/markc/mixos/blob/main/services/compd/crates/nested/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [outputs](https://github.com/markc/mixos/blob/main/services/compd/crates/outputs/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [policy-host](https://github.com/markc/mixos/blob/main/services/compd/crates/policy-host/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [policy](https://github.com/markc/mixos/blob/main/services/compd/crates/policy/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [protocols](https://github.com/markc/mixos/blob/main/services/compd/crates/protocols/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [recorder](https://github.com/markc/mixos/blob/main/services/compd/crates/recorder/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [render-gles](https://github.com/markc/mixos/blob/main/services/compd/crates/render-gles/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [scene-host](https://github.com/markc/mixos/blob/main/services/compd/crates/scene-host/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [scenegraph](https://github.com/markc/mixos/blob/main/services/compd/crates/scenegraph/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [screencopy](https://github.com/markc/mixos/blob/main/services/compd/crates/screencopy/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [seat](https://github.com/markc/mixos/blob/main/services/compd/crates/seat/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [slots](https://github.com/markc/mixos/blob/main/services/compd/crates/slots/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [surfaces](https://github.com/markc/mixos/blob/main/services/compd/crates/surfaces/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [testkit](https://github.com/markc/mixos/blob/main/services/compd/crates/testkit/Cargo.toml) | compd | test | desktop | none | 0.1.1 |
-| [ui](https://github.com/markc/mixos/blob/main/services/compd/crates/ui/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [world](https://github.com/markc/mixos/blob/main/services/compd/crates/world/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [x11-wm](https://github.com/markc/mixos/blob/main/services/compd/crates/x11-wm/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [editd](https://github.com/markc/mixos/blob/main/services/editd/Cargo.toml) | editd | service | core | public | 0.2.0 |
-| [hostd](https://github.com/markc/mixos/blob/main/services/hostd/Cargo.toml) | hostd | service | core | public | 0.1.0 |
-| [noded](https://github.com/markc/mixos/blob/main/services/noded/Cargo.toml) | noded | service | core | public | 0.18.3 |
-| [mesh-trust](https://github.com/markc/mixos/blob/main/services/noded/crates/mesh-trust/Cargo.toml) | noded | service | core | none | 0.1.1 |
-| [mesh](https://github.com/markc/mixos/blob/main/services/noded/crates/mesh/Cargo.toml) | noded | service | core | none | 0.1.1 |
-| [portald](https://github.com/markc/mixos/blob/main/services/portald/Cargo.toml) | portald | service | core | public | 0.1.0 |
-| [releasesd](https://github.com/markc/mixos/blob/main/services/releasesd/component.mx) | releasesd | service | desktop | public | 0.2.0 |
-| [settingsd](https://github.com/markc/mixos/blob/main/services/settingsd/Cargo.toml) | settingsd | service | core | public | 0.1.0 |
 
 ---
 
@@ -27030,3 +27078,836 @@ later on its own.
   agents alike.
 - A region selection may take up to 70 seconds (Cap allowed 38).
 - Raw shots are deleted when no longer needed, and the folder is pruned.
+
+---
+
+<!-- page: https://mixos.dev/bridged/changelog/ (source: https://mixos.dev/bridged/changelog.md) -->
+
+# bridged Bus contract
+
+> Mirrored from [`services/bridged/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/bridged/CHANGELOG.md), where releases update it. The component's page is [bridged](README.md). This page describes the current `main` branch of MixOS.
+
+## 0.2.0
+
+- Additive: `auth: "key"` (instance config 0.2.0). The first line is
+  `params.key`, the secret is the 64-hex content of `token_file`, read on every
+  connect before any bytes are sent. A missing, unreadable or unusable key is
+  rc 11 with no connection; the retry after `backoff_s` reads it again.
+  `status` works before the key exists and never shows it. Token and none
+  modes are unchanged. Bus verbs and registry classes are unchanged.
+
+## 0.1.0
+
+First version. A Bus bridge to an external application's line-delimited JSON
+control channel, one instance per application (`bridged@<app>`), answering
+`<app>.call`, `.commands`, `.execute`, `.inspect`, `.screenshot` and
+`.status` with rc 0 (the app's result), 10 (the app's error), 11 (connect,
+auth, transport or timeout) or 12 (a bad request).
+
+- Instance config 0.1.0 (`docs/spec/bridge/`): `<etc>/bridge/<app>.conf.mix`,
+  `<etc>` = `$MIXOS_ETC` or `/etc/mixos`, or `$BRIDGED_CONFIG`; keys `host`
+  (loopback only), `port`, `auth` (`token` or `none`), `token_file`,
+  `timeout_s`, `connect_timeout_s`, `backoff_s`, `max_line`, `instance`.
+- Start checks, also as `mix bridged.mix --check <app>`: the Bus service-name
+  rule, and no name that a registered verb already starts with (read from the
+  installed verb registry, failing closed). A refusal exits 2 with
+  `RUNTIME`, `NAME_INVALID`, `NAME_RESERVED`, `REGISTRY`, `CONFIG` or
+  `TOKEN`.
+- The name may not start with `mixos-` (mix --serve strips it) or be one of
+  the broker's (`noded`, `noded-*`, the session-name shape).
+- The token is redacted from every error, result and `last_error`; the token
+  file must be `0600`. `localhost` connects as `127.0.0.1`.
+- A reply without a boolean `ok` drops the connection (rc 11, then backoff).
+- The unit runs `bridged.mix --start <app>`: the start checks in process,
+  then `mix --serve` as a child (Mix has no exec), exiting with the child's
+  code. A documented refusal exits 2 and is never restarted
+  (`RestartPreventExitStatus=2`); an unexpected start error exits 3, and it,
+  a crash or a broken install is a rate-limited failure. A clean stop exits
+  143 (`SuccessExitStatus=143`). Run `--start` under the unit: outside
+  systemd it has no parent-death protection. `BRIDGED_MIX` and the `.env`
+  file must be administrator-controlled.
+- Writes draw on the same transport budget as connect and reads
+  (`timeout_s`): every `tcp_send` gets the time left as `{timeout}`, and a
+  send that runs out is rc 11 with the connection dropped. Local encoding
+  and scheduling cannot be interrupted and can run past it. Requires Mix >=
+  0.112.1; an older Mix is refused at start
+  (`RUNTIME`).
+- `max_line` bounds both directions exactly: an encoded request over it is
+  refused with rc 12 before the connection is touched; a reply line over it
+  is rc 11 with the connection dropped, even when it arrives whole in one
+  read.
+- The unit is sandboxed (no capabilities or new privileges, read-only file
+  system with private `/tmp`, loopback-only IP by `IPAddressAllow=localhost`
+  and `IPAddressDeny=any`; a non-loopback Bus needs a drop-in).
+  `systemd-analyze security` exposure 4.0 (OK).
+- Documented residuals: loopback port squatting after the app dies (a
+  unix-socket channel would close it), a direct `mix --serve` briefly holding
+  a refused name, and the reverse name collision being the verb-registry
+  gate's to refuse.
+- The six verbs are declared in `docs/spec/bus/verbs.conf.mix` as the
+  `bridged` instance family (`<app>.<verb>`, `members: "instances"`), in the
+  registry's schema 3. Installing the registry is a separate deployed
+  prerequisite, and this entry does not claim a live installation.
+- The bridge tests run in `tools/mix_tests.mix`. Their mix binary is
+  `BRIDGED_MIX`, else `MIXOS_TEST_MIX`, else `/opt/mixos/bin/mix`; the Bus
+  test's noded is `--noded`, else `MIXOS_TEST_NODED`, else the installed one.
+- The over-`max_line` reply test asserts rc 11 and the `transport:` prefix,
+  not the wording of Mix's line-limit error, which the current Mix changed.
+
+Ported from a private prototype (a serve citizen and its core, version
+0.3.0), with the instance-config path rule, the serve-name guard and the
+`--check` mode added, and its tests moved from a socat stand-in to one
+written in Mix on `tcp_listen`.
+
+---
+
+<!-- page: https://mixos.dev/compd/changelog/ (source: https://mixos.dev/compd/changelog.md) -->
+
+# Changelog
+
+> Mirrored from [`services/compd/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/compd/CHANGELOG.md), where releases update it. This page describes the current `main` branch of MixOS.
+
+## 0.2.0
+
+- `comp.region.select` 0.2.0: a click (under 4 logical px of travel, with
+  no drag on the way) and Enter or keypad Enter now select the whole output
+  under the pointer, answering exactly as a drag from corner to corner does;
+  a click used to re-arm the selection. A drag stays a drag even if it
+  returns to its start. The overlay dims the output (clear inside a drag),
+  outlines the selection in the theme's focus-ring colour and shows a hint
+  ("Drag to select an area · Click or Enter for the whole screen · Esc to
+  cancel"), only on the selected output, in the session look (followed on
+  every change); a selected reply waits for a frame of that output without
+  the overlay.
+- While a `comp.region.select` run holds the seat the cursor is a
+  crosshair (the theme's `crosshair`, else `cross` or `tcross`, else the
+  arrow); the normal cursor is back on the frame that ends the run, however
+  it ends, so the clean frame never shows the crosshair. A cursor's hotspot
+  is now read after its shape is chosen, so a change of shape lands in place
+  on its first frame.
+- The capture panels (the setup chooser, region border and dim, Stop
+  buttons and the Continue, Save, Encoding and error dialogs) draw in the
+  session theme, followed on every change like the region overlay, with
+  the embedded theme until the shell delivers one. Open panels repaint at
+  once.
+- Workspaces: `comp.workspaces.list`, `comp.workspaces.set_count {count,
+  persist}` and `comp.workspace.rename {index, name, persist}`, and the
+  `comp.workspace.changed` topic. The count and names persist in
+  `preferences.json` (`workspaces_count`, `workspace_names`) and compd
+  starts with them. `workspaces.list` rows carry `name`.
+- The pointer moves at the same logical speed at every output scale: a
+  relative delta is multiplied by the output scale as well as
+  `cursor_sensitivity`, so a scale-2.5 output no longer needs a sensitivity
+  of 2.5.
+
+- compd's own UI is egui: capture overlays and dialogs, the frame-rate
+  overlay, notifications and the Mix Scenes shell are egui programs painted
+  with egui-wgpu into textures on compd's own EGL context, on the same MixOS
+  look the apps draw with (`toolkit`).
+- Mix Scenes are laid out as flexbox with taffy, as Quoin lays them out;
+  `shell.scene.layout` reports the rectangles each node was drawn and
+  hit-tested at.
+- The session look follows settingsd through the shared consumer on the scene
+  host's own connection (compact schema-2 deliveries, offline cache), and
+  window decorations take their themes from the same look.
+- A UI surface off screen is suspended: its animations stop waking the
+  compositor until it is shown again.
+- The whole `comp.*` verb catalogue is registered, and a registry test keeps
+  it exact.
+- Window titles are shaped with cosmic-text over the apps' embedded faces, so
+  they match the apps' type and need no fonts installed.
+
+---
+
+<!-- page: https://mixos.dev/editd/changelog/ (source: https://mixos.dev/editd/changelog.md) -->
+
+# editd Bus contract
+
+> Mirrored from [`services/editd/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/editd/CHANGELOG.md), where releases update it. The component's page is [editd](README.md). This page describes the current `main` branch of MixOS.
+
+## 0.2.0
+
+Transplant the `edit.*` buffer contract and retained golden fixtures from
+cosmix `e0297242305f3a3c3de09f1ca01e8faa771768da`. Resolve broker discovery
+and recovery directories through the isolated MixOS environment.
+
+---
+
+<!-- page: https://mixos.dev/hostd/changelog/ (source: https://mixos.dev/hostd/changelog.md) -->
+
+# hostd contract changes
+
+> Mirrored from [`services/hostd/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/hostd/CHANGELOG.md), where releases update it. The component's page is [hostd](README.md). This page describes the current `main` branch of MixOS.
+
+## 0.1.0 (draft)
+
+- Read verbs `host.info`, `net.state`, `hostd.status`, `hostd.receipt` on the
+  local socket and the Bus; retained `hostd.info` topic.
+- Control verbs `hostd.freeze` (root on the host, or a grant) and
+  `hostd.thaw` (root on the host only; also lifts grant suspensions), local
+  only.
+- Write verbs `net.link.apply` and `hostd.undo`, local only, behind standing
+  grants in `/etc/hostd/policy.mx` (schema 1): caller by uid and verified
+  cgroup, verb families, argument allow-lists, expiry, per-caller rate with a
+  grant-wide cap. Receipts, health-checked rollback, and a circuit breaker
+  that suspends a grant after two rollbacks in a row.
+- Local socket: NUL-framed JSON, kernel caller identity read per request,
+  per-uid connection cap, connection lifetime, read and write deadlines.
+- `hostd.status` adds `held_grants`: each grant the caller holds, in full.
+- Write verb `net.wg.apply`: networkd-native WireGuard, key made and kept by
+  hostd (0640 root:systemd-network, never returned), the handshake dead-man
+  check. The unit gains `CAP_CHOWN` and `CAP_NET_ADMIN` for it.
+- Write verbs `net.wifi.scan` and `net.wifi.connect` through iwd: no files,
+  the passphrase only through a one-connect agent, put back by forgetting
+  and reconnecting.
+
+---
+
+<!-- page: https://mixos.dev/mix/changelog/ (source: https://mixos.dev/mix/changelog.md) -->
+
+# Changelog
+
+> Mirrored from [`libs/mix/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/libs/mix/CHANGELOG.md), where releases update it. The component's page is [mix](README.md). This page describes the current `main` branch of MixOS.
+
+## Unreleased
+
+### Added
+
+- `analyzer::Analysis` carries `handlers`: one `HandlerDeclaration` (`command`,
+  `file`, `line`) per `on <command>` statement in the parsed AST, in source
+  order, with duplicates kept. `analyze()` collects them with the existing
+  statement walker. Remote `ssh_mix` bodies are not included. `mix lint --json`
+  and `--data` report the same list as an additive `handlers` field. The data
+  is structural: it does not prove that a handler runs or is reachable.
+
+## 0.116.0
+
+### Added
+
+- The remote mix binary is configurable. Every builtin that drives a
+  remote mix (`ssh_mix`, `ssh_mix_many`, `ssh_exec`, `ssh_run`'s
+  `env_transport: "mix"`, `send_mail`'s `host` hop) resolves it in one
+  place: the `mix_bin` option, else the local env var `MIX_REMOTE_BIN`
+  (empty counts as unset), else `/opt/cosmix/bin/mix`, the unchanged
+  default. The value is interpolated into the remote command string, so
+  it must be an absolute path or a bare name using only `[A-Za-z0-9_./+-]`;
+  anything else raises `OPTION_INVALID` locally before ssh runs. A host with
+  mix only at `/opt/mixos/bin/mix` used to fail with exit 127.
+
+### Changed
+
+- `ssh_exec`'s `remote_mix` option is now validated the same way (it was
+  interpolated unchecked) and is an alias of `mix_bin`; passing both
+  raises.
+
+## 0.115.0
+
+### Added
+
+- `unix_connect(path[, {timeout, frame}])`: a client for a local
+  unix-domain stream socket, in `tcp_connect`'s handle space, so
+  `tcp_send`, `tcp_recv`, `tcp_recv_line`, `tcp_on` and `tcp_close` take it.
+  The connect is bounded by `timeout` and fails at once on a full backlog
+  (`UNIX_CONNECT_BUSY`). `frame: "nul"` makes a line a NUL-terminated
+  frame, the framing of systemd's Varlink services and of hostd, for
+  `tcp_recv_line` and `tcp_on {frame: "line"}` alike. Refusals carry
+  `UNIX_CONNECT_*` codes. `mix man system` documents it.
+
+### Changed
+
+- One frame splitter serves `tcp_recv_line` (blocking and Class C) and
+  `tcp_on` line mode, keyed to the connection's delimiter. One trailing CR
+  is still stripped from an LF line.
+
+### Fixed
+
+- `max` now caps a complete line too. A line longer than `max` whose
+  terminator arrived in the same read used to be delivered, so whether it
+  was refused depended on packet timing. All three paths (`tcp_recv_line`
+  blocking and Class C, `tcp_on` line mode) now refuse it the same way.
+
+## 0.114.0
+
+### Changed
+
+- Released with mix-shell 0.114.0, whose usage-statistics store is now an
+  append-only JSONL store (`mix man stats`). The language and its builtins
+  are unchanged.
+
+## 0.113.1
+
+### Fixed
+
+- An `on` header reads a hyphenated name whole, like a `send` target:
+  `on dopus-test.command.executed` handles that topic. Before, the header
+  stopped at the hyphen, so the handler registered as `dopus` with
+  `-test.command.executed` as its body: it parsed, linted clean and never
+  fired. Leading-zero segments (`on svc-01.ping`) lex as part of the name,
+  as they do after `send`.
+
+## 0.113.0
+
+### Added
+
+- `mime_type(path[, {content}])`: a file's type from the freedesktop
+  shared-mime-info database, decided by GLib's rules, so it agrees with
+  `gio info` and the file manager (checked against GIO on 5,047 files).
+  Returns `{mime, by, uncertain, exists, parents}`. Behind the new `mime`
+  feature, through the new `mimedb` crate. `mix man io` documents it.
+
+## 0.112.1
+
+### Added
+
+- `tcp_send(handle, payload[, {timeout}])`: one deadline bounds the whole
+  send, however many partial writes a slow reader forces (seconds, 0 = wait
+  forever). On expiry it raises `TCP_SEND_TIMEOUT` with
+  `details: {written, total}` and retires the handle; bytes already written
+  stay written. The wait honours SIGTERM and Ctrl-C. On a `tcp_on` handle
+  the timeout is the receipt deadline. Without the option `tcp_send` is
+  unchanged.
+
+### Fixed
+
+- SIGTERM now ends a blocking `tcp_accept`, `tcp_recv`, `tcp_recv_line` or
+  `ws_recv` at once, as it ends `sleep()`. On unix these numeric waits now
+  wait on the async runtime instead of blocking the evaluator's thread, so
+  the shell's SIGTERM and Ctrl-C handling can cancel them. Before, a script
+  looping on `tcp_accept($l, {timeout: 0.05})` ignored SIGTERM until the
+  15 s backstop forced it out. Options, results and error messages are
+  unchanged.
+- A receive returns data already buffered before it judges the deadline, so
+  a very short timeout no longer returns nil while a line sits in the buffer.
+  Traffic that delivers nothing (a WebSocket Pong flood, a line trickled with
+  no newline) now counts against the deadline and the interrupt flag, so a
+  finite timeout ends on time and SIGTERM still ends an untimed wait.
+- A very large receive timeout in a Class C `tcp_recv`/`ws_recv` waits
+  forever instead of overflowing the deadline.
+
+## 0.112.0
+
+### Added
+
+- Server-side TCP. `tcp_listen(host, port[, {backlog}])` binds and listens
+  and returns a listener handle; `host` is required (`"127.0.0.1"` is the
+  normal choice) and port 0 takes an ephemeral port. `tcp_local_addr(handle)`
+  returns `{host, port}` for a listener or connection.
+  `tcp_accept(listener[, {timeout}])` returns an ordinary connected handle,
+  or nil on timeout; in a Class C body it waits on native readiness.
+  `tcp_on` on a listener delivers one `accepted: {handle, peer}` event per
+  connection, and `tcp_accept(source)` reads that source outside serve mode.
+  `tcp_close` closes a listener. Listeners and the connections they accept
+  belong to the evaluator generation and close when it retires. Errors
+  carry stable codes (`TCP_LISTEN_ADDR_IN_USE`, `TCP_LISTEN_PERMISSION`,
+  `TCP_LISTEN_ADDR_UNAVAILABLE`, `TCP_LISTEN_ADDRESS`, `TCP_LISTEN_ARGUMENT`,
+  `TCP_ACCEPT_HANDLE`, `TCP_HANDLE_LIMIT`, `TCP_LISTENER`).
+- The handle limit is server-side: at most 1024 listeners and accepted
+  connections are live at once, each holding a slot until it closes, and
+  `tcp_listen` and `tcp_accept` refuse with `TCP_HANDLE_LIMIT` past it.
+  `tcp_connect` is not limited and behaves as before.
+- A blocking `tcp_accept` wakes promptly on Ctrl-C through a SIGINT wake
+  socket that `interrupt::init` installs, and rechecks the interrupt flag at
+  least every 250 ms, so no waiter misses it.
+- `on @.verb` registers a handler under the serve name: the unquoted `@` is
+  replaced by the `--serve` name (the value `serve_name()` returns) when the
+  handler registers, so one generic script run as `--name photo` answers
+  `photo.verb` and a second instance as `--name other` answers `other.verb`.
+  Dispatch, HELP and handler listings show the resolved name; the AST keeps
+  `@.verb`. Outside `mix --serve` the statement raises
+  `SERVE_PREFIX_OUTSIDE_SERVE`. Each segment after `@.` must be a bare name,
+  quoted or not. `on a.@.b`, `on @`, `on @x.y`, a quoted `on "@.x"`, a quoted
+  segment that isn't a bare name (`on @."a.b"`) and `@` in an expression are
+  parse errors (an unquoted `@` was a lexer error before). Positions that read
+  raw source text now accept `@` as an ordinary character where it used to
+  fail lexing: a bareword `source`/`include` path (`source ./foo@bar.mix`) and
+  the command after `|` (`print(1) | cat @foo`).
+
+### Fixed
+
+- HTTP 1xx, 204 and 304 responses are bodyless on every method, not only
+  HEAD. A conditional GET answered 304 with `Content-Encoding: gzip` no longer
+  fails with `HTTP_BODY`, so ETag polling works.
+
+## 0.111.0
+
+### Added
+
+- `script_path()` returns the entry script's absolute, symlink-resolved path,
+  the same answer as `realpath($0)`, fixed when the script starts (a later
+  `chdir()`, including one in the prelude, does not move it). It is nil under
+  `mix -c`, in the REPL, for `mix -` and when the path cannot be resolved at
+  start. A `require`d module, even during its top-level init, gets the entry
+  script's path.
+
+### Fixed
+
+- Lambdas created inside a served `on` handler keep the handler's local
+  variables when they run later (they faulted with `undefined variable`). A
+  module first required inside a handler still reads its globals live.
+- `password_hash` sha512-crypt output is now verifiable by glibc `crypt(3)` and
+  Dovecot.
+- `chr()` and `ord()` structured error codes are pinned by tests.
+
+## 0.109.1
+
+Initial MixOS transplant of the current language library and regression corpus.
+Language syntax, builtin contracts and evaluator behaviour retain the source
+version. Environment and project roots use MixOS names. SSH helpers retain the
+installed Mix path used by existing Cosmix nodes during the migration.
+
+---
+
+<!-- page: https://mixos.dev/mix-shell/changelog/ (source: https://mixos.dev/mix-shell/changelog.md) -->
+
+# Changelog
+
+> Mirrored from [`cli/mix-shell/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/cli/mix-shell/CHANGELOG.md), where releases update it. This page describes the current `main` branch of MixOS.
+
+## 0.116.0
+
+### Added
+
+- Released with mix 0.116.0: the remote mix binary for `ssh_mix` and the
+  other remote-mix builtins comes from the `mix_bin` option, else
+  `MIX_REMOTE_BIN`, else `/opt/cosmix/bin/mix` (`mix man remote`).
+
+## 0.115.0
+
+### Added
+
+- Released with mix 0.115.0: `unix_connect()` opens a local unix-domain
+  stream socket, with NUL-terminated frames for Varlink and hostd
+  (`mix man system`).
+
+## 0.114.0
+
+### Changed
+
+- Usage statistics are an append-only JSONL store. A run's exit appends one
+  record to `runs/YYYY-MM-DD.jsonl` with a single write and does nothing
+  else, so recording costs nothing measurable: `mix -c 1` went from 151 ms
+  to 52 ms on a host with a busy history, the same as with stats off. Raw
+  day files are never rewritten; `cache/` holds disposable per-day
+  aggregates checked against the exact raw file; reports filter by each
+  bucket's own date. `mix stats query` runs SQL over the old `mix.db` tables
+  built in memory, so on a large history it now takes about a second.
+- `clear` and `reset` append an operation anchored to storage positions, not
+  a clock, under `ops.lock`. They refuse while the old weekly documents
+  (`current.json`, `YYYY-WNN.json`) exist; those are read in place, never
+  moved, and their `stats.lock` is never taken, so an older mix still writing
+  them keeps working. `mix man stats` documents the store.
+
+### Fixed
+
+- A session task no longer inherits file descriptors the shell itself
+  inherited without close-on-exec.
+
+## 0.113.1
+
+### Fixed
+
+- Built on mix 0.113.1: `on dopus-test.command.executed` (a hyphenated
+  handler name) now fires; before, it parsed and never did. `mix man bus`
+  documents it.
+
+## 0.113.0
+
+### Added
+
+- Built on mix 0.113.0 with the `mime` feature: `mime_type()` names a
+  file's type as the desktop does. `mix man io` documents it.
+
+## 0.112.1
+
+### Fixed
+
+- Built on mix 0.112.1: SIGTERM and Ctrl-C end a blocking `tcp_accept`,
+  `tcp_recv`, `tcp_recv_line` or `ws_recv` at once, `tcp_send` takes a
+  whole-send `{timeout}` (`TCP_SEND_TIMEOUT`), and receives serve buffered
+  data first while traffic that delivers nothing counts against the
+  deadline. `mix man system` documents them.
+
+## 0.112.0
+
+### Added
+
+- Built on mix 0.112.0: server-side TCP (`tcp_listen`, `tcp_accept`,
+  `tcp_local_addr`, `tcp_on` on a listener) and `on @.verb`, which registers
+  a handler under the `--serve` name so one generic script serves any
+  instance. `mix man serve` and `mix man system` document both.
+
+### Fixed
+
+- The serve reload lifecycle test's TERM-ignoring fixture creates the trace
+  file itself. The citizen spawned it before the first trace line existed,
+  so a fast start panicked on open and the grace test timed out.
+
+## 0.111.0
+
+### Fixed
+
+- An interrupted run exits with status 130 (128+SIGINT) derived from the signal
+  actually received, never from error text: an ordinary error whose message
+  mentions `interrupted` now fails with its own diagnostic instead of exiting 0.
+- SIGINT/SIGTERM are honoured during `--serve` startup (stalled broker
+  registration, CPU-bound preludes, reloads) and during `-c`, script and
+  `.mixrc` prelude loading. A caught interrupt cannot end in success, and
+  `--result-fd` always reports it as an error frame.
+- `script_path()` is resolved before the prelude runs in script and serve modes.
+
+## 0.109.4
+
+Initial MixOS shell transplant. Language semantics retain the source version.
+Application transport is native ABP through noded. Runtime directories use the
+shared config rule; installed manuals are available offline. Cross-process
+native-session handoff bytes retain the frozen compatibility contract.
+
+---
+
+<!-- page: https://mixos.dev/noded/changelog/ (source: https://mixos.dev/noded/changelog.md) -->
+
+# noded changes
+
+> Mirrored from [`services/noded/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/noded/CHANGELOG.md), where releases update it. The component's page is [noded](README.md). This page describes the current `main` branch of MixOS.
+
+## 0.18.3
+
+Add a structured rejection body to the different-channel `noded.register`
+collision refusal: `{"schema": "noded.registration-rejection.v1",
+"error_code": "NAME_TAKEN", "message": …}` alongside the unchanged `rc=10`
+reply and `error` header. The body is additive only — ABP framing, return
+codes, admission refusals and session transcript bytes are untouched — and
+lets clients classify a collision without matching diagnostic text. The bus
+client decodes it through a bounded typed envelope whose classification is
+pinned by noded and bus tests.
+
+## 0.18.2
+
+Transplant the native broker, session authority and mesh routing to the MixOS
+workspace. Preserve ABP verbs, admission domains and session transcript bytes.
+Use strict MixOS configuration and owned shutdown signalling.
+
+---
+
+<!-- page: https://mixos.dev/settings/changelog/ (source: https://mixos.dev/settings/changelog.md) -->
+
+# settings contract changes
+
+> Mirrored from [`libs/settings/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/libs/settings/CHANGELOG.md), where releases update it. This page describes the current `main` branch of MixOS.
+
+## 0.7.0
+
+Additive, store format unchanged (3):
+
+- `Desktop.terminal` (`terminal::Terminal`): the term's preferences under
+  `terminal.*` (font family/size/weight, padding, scrollback lines, scroll
+  speed, border width, cursor shape/blink, focus ring/strength, copy on
+  select, `TERM`). Every default reproduces the term before the group
+  existed except padding (8 px instead of 1 px) and the focus ring: its
+  default, `accent` at strength 0.25, draws the focused pane's border as the
+  card border moved a quarter toward the theme accent, where the term drew
+  it halfway before. That change is intentional (a subtler tinted ring);
+  `neutral` remains available, and `accent` with strength 0.5
+  gives the old look. Omitted at its defaults (and each value within it), so older
+  profiles keep their seals. It does not touch `Effective`, as `keymaps`
+  does not. A profile that sets any of it will not load in a 0.6.0 build:
+  reset `terminal` first.
+- `Summary.terminal` and `Followed::Look.terminal` carry it to followers.
+- `settings.describe` lists each `terminal.*` field with its range and
+  default; `terminal` alone resets or replaces the whole group.
+- `terminal: null` resets the whole terminal group, as advertised.
+- Correct the scroll speed unit: rows per wheel line, scaled by speed/40;
+  touchpad travel counts in cell heights at that scale. Default 40 keeps
+  the existing one-row-per-wheel-line behaviour; it is not a pixel distance.
+
+## 0.6.0
+
+Additive, store format 3 ([decision](https://github.com/markc/mixos/blob/main/docs/docs/decisions/2026-10-14-session-icon-stroke-and-type.md)):
+
+- `Appearance` and `Effective` gain four optional session choices:
+  `icon_stroke` (1.0 to 3.0 in quarter steps), `font_family`,
+  `font_weight` (100 to 900 in steps of 100) and `mono_family`. Each is
+  omitted when unset, so profiles without them keep their digests.
+- `ChangePlan`: `icon_stroke` is a paint change; the font choices are
+  resource and text changes.
+- `CompactEffective` carries the same fields.
+- The store writes format 3. A format-2 build refuses a profile that sets
+  any of them; reset them first with `settings.reset` or a null value.
+
+Rust API change: `Followed::Look.appearance` is now `Box<Appearance>` to keep
+follower events compact as font settings grow. Borrowed callers use deref
+coercion; callers that take ownership unwrap with `*appearance`.
+
+## 0.5.0
+
+Authority verbs 0.3.0 (additive): snapshot schema 2
+([decision](https://github.com/markc/mixos/blob/main/docs/docs/decisions/2026-10-11-settings-snapshot-schema-2.md)).
+
+- `compact`: `CompactSnapshot` (schema 2) sends each distinct design
+  projection once under `designs`, keyed by digest; each context's `design`
+  names one. `encode` builds it; `decode` reads schema 1 or 2 into the same
+  in-memory `Snapshot`, so consumers, reducer, cache and effective digests
+  are unchanged. A dangling or unnamed design is refused.
+- `compact_topic(profile)` / `COMPACT_TOPIC_PREFIX`: the retained schema 2
+  topic, `settingsd.desktop.compact.<profile>`, published between the
+  schema 1 topic and the summary.
+- **Breaking:** `ReadRequest.schema` (1 by default and never serialised;
+  2 for the compact form) on `settings.get` and `settings.appearance.get`.
+  Another schema is refused with `unsupported_schema`.
+- `native` follows the compact topic and reads schema 2. Consumers on the
+  schema 1 topic are not affected.
+- `describe()` lists the snapshot schemas and the compact topic.
+
+## 0.4.0
+
+Authority verbs 0.2.0 (additive), snapshot schema still 1
+([decision](https://github.com/markc/mixos/blob/main/docs/docs/decisions/2026-10-11-settings-summary-reads.md)):
+
+- `Summary` (schema 1): binding, incarnation, revision, design revision,
+  source digest, appearance names and `custom_source`; never projections or
+  a custom source. `summary_topic(profile)` /
+  `SUMMARY_TOPIC_PREFIX` name its retained topic,
+  `settingsd.desktop.summary.<profile>`, published beside the snapshot topic.
+- `ReadRequest.view` (`View::Full`, the default and never serialised, or
+  `View::Summary`) selects `settings.get`'s answer.
+- `follow::Follower` subscribes to the summary topic and reads the summary
+  view. **Breaking:** `Followed::Look` gains `custom_source`, and its
+  `appearance.source` is always `None`.
+- `describe()` lists the read views and both topics.
+
+The cache interpretation includes the library version, so caches written by
+0.3.x fall back visibly once.
+
+## 0.3.5
+
+Add the appearance keys `appearance.style` (null, the default, takes the
+scheme's own style; else plain, pro, studio or classic),
+`appearance.decorations` (csd, the default, or ssd) and
+`appearance.caption_side` (right, the default, or left). They resolve into
+every effective context; a style change is a paint and layout change and a
+decorations or caption-side change a layout change. Older desktops and
+snapshots load with the defaults. Authority verbs/schema remain 0.1.0/1.
+
+## 0.3.4
+
+Expose the public snapshot identity of an activated cache capture so hosts can
+report fenced persistence receipts without copying its projection or private
+producer serial. Authority verbs/schema remain 0.1.0/1. The cache interpretation
+includes the library version; older caches fall back visibly without affecting
+authority history.
+
+## 0.3.3
+
+Add immutable cache targets for borrowed workers, capture deduplication and
+producer-fenced writer opening. Add lazy persistent fallback loading after
+retained resource validation, preserving load diagnostics when embedded works.
+Authority verbs/schema remain 0.1.0/1. Older presentation caches are rejected
+because the cache interpretation includes this library version.
+
+## 0.3.2
+
+Expose shared consumer evidence with separate accepted and applied identities,
+connection generation, confirmation, presentation kind and faults. Readback
+never claims frame presentation or broker participant registration. Authority
+verbs and snapshot schema remain 0.1.0 and 1.
+
+## 0.3.1
+
+Split authenticated native delivery decoding from UI consumer handling, retaining
+binding/generation fences in the decoded value. Add shared session binding and
+capture identity predicates for coalesced resource scheduling. Authority wire
+contract/schema remain 0.1.0/1. The cache interpretation includes this crate's
+version, so older local presentation caches are rejected and embedded defaults
+remain available; authority persistence is unaffected.
+
+## 0.3.0
+
+Add shared retained/cache/embedded fallback preparation with host resource
+validation, immutable stage fencing and explicit presentation labels. Persisted
+data never seeds authority ordering or mutation fences. Optional cache I/O
+uses bounded no-follow directory-relative reads and atomic replacement, with
+schema/target/capability/digest checks plus complete projection recompilation.
+Applied-generation captures and one locked serial writer reject stale saves;
+ambiguous post-rename failure remains visible. Exact JSON float round trips
+preserve compiler projection comparison. The authority wire/schema stay
+0.1.0/1. Real resource loading, GUI/first-map timing and artifact integration
+remain pending.
+Keep fallback preparation/activation faults separate from authority/current
+resource faults, and detect unsupported cache headers before strict body parsing.
+
+## 0.2.0
+
+Add transport-neutral consumer and render-domain change plan, with an optional
+native executor over an app-owned supervised connection. Bound work/buffering,
+coalesce queue-loss recovery, fence connection/consumer/renderer completions,
+and advance unchanged render evidence without a redraw. Retired confirmation
+candidates are deduplicated within a bounded history. No owned runtime or
+renderer dependency. Authority wire contract/schema remain 0.1.0/1.
+Use canonical app/shell constructors, captured read baselines/tickets and one
+absolute recovery deadline. Malformed-event storms cannot bypass the deadline;
+same-incarnation rollback is distinct from a read racing a newer publication.
+DTO additions require explicit render/evidence classification at compile time.
+Persisted fallback cache, artifact/resource preparation and GUI activation are
+still pending; this API does not advertise their completion.
+
+## 0.1.0
+
+Initial binding/revision/receipt/snapshot types, independent design read
+projection, validated batch vocabulary and ordering/work-ticket reducer.
+Renderer transport/bootstrap adapters remain pending.
+Before initial release: report confirmed same-revision contradictions and
+validate authored app enum values before accessibility precedence.
+
+---
+
+<!-- page: https://mixos.dev/settingsd/changelog/ (source: https://mixos.dev/settingsd/changelog.md) -->
+
+# settingsd contract changes
+
+> Mirrored from [`services/settingsd/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/settingsd/CHANGELOG.md), where releases update it. This page describes the current `main` branch of MixOS.
+
+## 0.1.0
+
+Serve describe/get/validate/apply/reset/status through native ABP; durable
+changed/no-op receipts, target/revision fencing, exclusive writer, recoverable
+replacement and complete scoped retained publication. Package the service unit.
+Before initial release: add explicit idempotent first-run session seed, preserving
+established missing-primary failure, and session wants/upholds wiring without
+making GUI startup wait for authority readiness. Authority verbs/schema unchanged.
+First creation requires installer-only --allow-create; the automatic unit uses
+plain seed and cannot recreate a wholly lost profile directory or mount.
+
+Before initial release: pin package source and verify stored content digest;
+bind storage to the held directory/lock; fence validation; add bounded pending
+publication retries and preserve missing-store failure visibility.
+Fence effective compiler interpretation; distinguish intact unsupported/I/O
+failures from corruption; keep pending publication backoff capped at 30 seconds
+until success. Inline capacity refusal has a distinct snapshot_too_large status.
+
+---
+
+<!-- page: https://mixos.dev/term/changelog/ (source: https://mixos.dev/term/changelog.md) -->
+
+# Terminal Bus contract
+
+> Mirrored from [`apps/term/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/apps/term/CHANGELOG.md), where releases update it. This page describes the current `main` branch of MixOS.
+
+## 0.4.0
+
+The window is egui on wgpu, its grid drawn on the GPU by `term-render`.
+The terminal's own verbs (`term.session`, `term.tabs`, `term.tab.*`,
+`term.panes`, `term.pane.*`, `term.snapshot`, `term.scroll`, `term.type`,
+`term.props.watch`, INFO and HELP) are unchanged.
+
+Added: `term.commands` and `term.execute` (every window action by command
+id), `app.describe`, the toolkit drive verbs (`term.ui.*`, `term.window`,
+`term.window.state`), and `term.command.executed`, published for every
+command run with how it was reached.
+
+Alt is Meta: ESC before the key (readline's Alt+b/f/., Alt+Backspace,
+Alt+Enter), and Alt+cursor keys send xterm's CSI 1;3 sequences.
+Ctrl+[ and the other control punctuation send their control codes.
+
+Program (OSC) titles now reach the tab strip without a `term.props.watch`
+watcher. Right Shift with Left/Right no longer changes tab: right-hand
+modifier chords are the person's own keys on MixOS.
+
+## 0.3.5
+
+Shared the native application bootstrap and task worker. PTY ownership
+and ordered teardown stay in the terminal. The native session contract is
+unchanged.
+
+## 0.3.4
+
+The terminal frontend and native session verbs entered the tree. The
+cross-process session constants and the child-only descriptor handoff keep
+their bytes.
+
+---
+
+<!-- page: https://mixos.dev/docs/desktop/ (source: https://mixos.dev/docs/desktop.md) -->
+
+# Desktop components
+
+The components a MixOS desktop installs, generated from each component's declared
+install profiles. A component in more than one profile is listed on each page. Every
+component, with its kind and source, is in the [component index](components.md); see also
+the [server](server.md) list. This page describes the current `main` branch of MixOS.
+
+## Core components
+
+On every MixOS system.
+
+None yet.
+
+## Desktop components
+
+None yet.
+
+## Unclassified
+
+Apps, services and command-line components that do not declare install profiles
+yet. They are listed on both this page and the server page until they do.
+
+- [backdrop](../backdrop/README.md) (app): The MixOS desktop background — drawn by its own program on the compositor's background layer, on every output, at native and fractional scale.
+- [bridged](../bridged/README.md) (service): How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes.
+- busviewer (app; no page yet)
+- ced (app; no page yet)
+- compd (service; no page yet)
+- [dopus](../dopus/README.md) (app): MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads…
+- [editd](../editd/README.md) (service)
+- [hostd](../hostd/README.md) (service): How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo.
+- mix-shell (cli; no page yet)
+- [noded](../noded/README.md) (service)
+- [portald](../portald/README.md) (service): How portald serves the XDG Settings portal on the session bus, where the appearance values come from, and how applications and agents read them.
+- [prefs](../prefs/README.md) (app): MixOS's preferences window — a sidebar of editors: Applications follows, installs, updates, rolls back and removes upstream releases; Appearance sets the session's colour scheme, style, mode,…
+- [releasesd](../releasesd/README.md) (service): How releasesd follows upstream application releases on GitHub and installs their Linux builds per user, verified, with rollback, from the command line or the Bus.
+- [screenshot](../screenshot/README.md) (app): MixOS's screenshot app — Print Screen for a region, Shift+Print for the screen, Alt+Print for a window; arrows, boxes, pens, highlighter, text, numbered markers, crop and redaction that stay…
+- settingsd (service; no page yet)
+- system (cli; no page yet)
+- term (app; no page yet)
+
+---
+
+<!-- page: https://mixos.dev/docs/server/ (source: https://mixos.dev/docs/server.md) -->
+
+# Server components
+
+The components a MixOS server installs, generated from each component's declared
+install profiles. A component in more than one profile is listed on each page. Every
+component, with its kind and source, is in the [component index](components.md); see also
+the [desktop](desktop.md) list. This page describes the current `main` branch of MixOS.
+
+## Core components
+
+On every MixOS system.
+
+None yet.
+
+## Server components
+
+None yet.
+
+## Unclassified
+
+Apps, services and command-line components that do not declare install profiles
+yet. They are listed on both this page and the desktop page until they do.
+
+- [backdrop](../backdrop/README.md) (app): The MixOS desktop background — drawn by its own program on the compositor's background layer, on every output, at native and fractional scale.
+- [bridged](../bridged/README.md) (service): How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes.
+- busviewer (app; no page yet)
+- ced (app; no page yet)
+- compd (service; no page yet)
+- [dopus](../dopus/README.md) (app): MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads…
+- [editd](../editd/README.md) (service)
+- [hostd](../hostd/README.md) (service): How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo.
+- mix-shell (cli; no page yet)
+- [noded](../noded/README.md) (service)
+- [portald](../portald/README.md) (service): How portald serves the XDG Settings portal on the session bus, where the appearance values come from, and how applications and agents read them.
+- [prefs](../prefs/README.md) (app): MixOS's preferences window — a sidebar of editors: Applications follows, installs, updates, rolls back and removes upstream releases; Appearance sets the session's colour scheme, style, mode,…
+- [releasesd](../releasesd/README.md) (service): How releasesd follows upstream application releases on GitHub and installs their Linux builds per user, verified, with rollback, from the command line or the Bus.
+- [screenshot](../screenshot/README.md) (app): MixOS's screenshot app — Print Screen for a region, Shift+Print for the screen, Alt+Print for a window; arrows, boxes, pens, highlighter, text, numbered markers, crop and redaction that stay…
+- settingsd (service; no page yet)
+- system (cli; no page yet)
+- term (app; no page yet)
