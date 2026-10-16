@@ -1421,7 +1421,8 @@ impl State {
     /// id now, answering `reply` with `forgotten` (whether one was held)
     /// once the secrets file no longer has it.
     pub fn forget_password(&mut self, id: &str, reply: u64) {
-        let body = |forgotten: bool| json!({ "id": id, "has_password": false, "forgotten": forgotten });
+        let body =
+            |forgotten: bool| json!({ "id": id, "has_password": false, "forgotten": forgotten });
         if !self.secrets.has(id) && !self.unsaved.contains(id) {
             return self.reply(reply, 0, body(false));
         }

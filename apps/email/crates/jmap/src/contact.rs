@@ -76,7 +76,11 @@ impl ContactPatch {
         // A list that leaves nothing clears the property (null): RFC 9553
         // §1.4.1 forbids an empty map.
         if let Some(emails) = &self.emails {
-            patch["emails"] = or_null(numbered("e", emails, |address| json!({ "address": address })));
+            patch["emails"] = or_null(numbered(
+                "e",
+                emails,
+                |address| json!({ "address": address }),
+            ));
         }
         if let Some(phones) = &self.phones {
             patch["phones"] = or_null(numbered("p", phones, |number| json!({ "number": number })));
@@ -113,7 +117,11 @@ fn is_empty_map(value: &Value) -> bool {
 
 /// `value`, or `null` when it is an empty map.
 fn or_null(value: Value) -> Value {
-    if is_empty_map(&value) { Value::Null } else { value }
+    if is_empty_map(&value) {
+        Value::Null
+    } else {
+        value
+    }
 }
 
 /// The one-entry `organizations` map JSContact gives a single name.

@@ -1440,7 +1440,11 @@ mod tests {
         orphaned.set_settings(crate::state::tests::settings(&["a"]));
         orphaned.take_work();
         assert!(orphaned.account("b").is_none() && orphaned.has_password("b"));
-        run(&mut orphaned, "email.account.password.set", json!({"id": "b", "password": ""}));
+        run(
+            &mut orphaned,
+            "email.account.password.set",
+            json!({"id": "b", "password": ""}),
+        );
         let work = orphaned.take_work();
         assert!(!orphaned.has_password("b"));
         assert!(orphaned.take_replies().is_empty(), "answered once saved");
@@ -1453,14 +1457,35 @@ mod tests {
         assert_eq!(reply.rc, 0);
         assert_eq!(reply.body["forgotten"], true);
         // Nothing held: still rc 0, forgotten false.
-        run(&mut orphaned, "email.account.password.set", json!({"id": "zz", "password": ""}));
+        run(
+            &mut orphaned,
+            "email.account.password.set",
+            json!({"id": "zz", "password": ""}),
+        );
         let reply = &orphaned.take_replies()[0];
-        assert_eq!((reply.rc, reply.body["forgotten"].clone()), (0, json!(false)));
+        assert_eq!(
+            (reply.rc, reply.body["forgotten"].clone()),
+            (0, json!(false))
+        );
         // A malformed id, or a real password for an unknown one, is refused.
-        run(&mut orphaned, "email.account.password.set", json!({"id": "NO GOOD", "password": ""}));
-        assert_eq!(orphaned.take_replies()[0].body["error_code"], code::INVALID_ARGUMENT);
-        run(&mut orphaned, "email.account.password.set", json!({"id": "zz", "password": "pw"}));
-        assert_eq!(orphaned.take_replies()[0].body["error_code"], code::UNKNOWN_ACCOUNT);
+        run(
+            &mut orphaned,
+            "email.account.password.set",
+            json!({"id": "NO GOOD", "password": ""}),
+        );
+        assert_eq!(
+            orphaned.take_replies()[0].body["error_code"],
+            code::INVALID_ARGUMENT
+        );
+        run(
+            &mut orphaned,
+            "email.account.password.set",
+            json!({"id": "zz", "password": "pw"}),
+        );
+        assert_eq!(
+            orphaned.take_replies()[0].body["error_code"],
+            code::UNKNOWN_ACCOUNT
+        );
     }
 
     #[test]
