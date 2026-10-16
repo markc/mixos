@@ -175,10 +175,7 @@ impl Reader<'_> {
                 _ => None,
             })
         };
-        loop {
-            let Some(event) = self.events.peek() else {
-                break;
-            };
+        while let Some(event) = self.events.peek() {
             if until == Until::Block && !is_inline(event, !open.is_empty()) {
                 break;
             }
