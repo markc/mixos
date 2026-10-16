@@ -332,16 +332,19 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
     /// and wait, ungrabbed, for a report with nothing held.
     ///
     /// Known limits, inherent to taking a grab from outside the compositor
-    /// (README "Known limits"); both happen only at acquisition, at startup
+    /// (README "Known limits"); all happen only at acquisition, at startup
     /// or switch-to, with keys in motion:
     /// - a key pressed before the grab and released inside the
     ///   check–grab–drain window stays down in the compositor: the release
     ///   is consumed under the grab, and EVIOCGRAB has no way to hand it
     ///   back on the original device;
+    /// - a key tapped (pressed and released) between the grab and the
+    ///   drain is lost to both the compositor and inputd, with nothing
+    ///   left held;
     /// - while waiting for a quiet keyboard inputd holds no grab, so user
     ///   keys pressed meanwhile reach apps unclassified.
     ///
-    /// Neither can be closed from here. They close where the compositor
+    /// None can be closed from here. They close where the compositor
     /// enforces the user keys itself (compd's user-key layer).
     fn try_grab(&mut self, now: Instant) -> io::Result<()> {
         let before = self.device.key_state()?;

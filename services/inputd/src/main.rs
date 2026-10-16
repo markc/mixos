@@ -62,7 +62,8 @@ struct Args {
 
     /// Exit after this many seconds of grabbing, which releases the grab.
     /// For the first supervised run.
-    #[arg(long, value_name = "SECONDS")]
+    /// At least 1: 0 would exit before the first grab.
+    #[arg(long, value_name = "SECONDS", value_parser = clap::value_parser!(u64).range(1..))]
     grab_timeout: Option<u64>,
 
     /// The keymap file to load and write rebinds to. Default: keymap.json
@@ -145,17 +146,24 @@ fn main() -> anyhow::Result<()> {
         std::thread::spawn(move || {
             // run_grab returns only on an error. The kernel has released
             // the grab with the fd; exit so systemd starts a fresh broker
-            // rather than leaving one with no keyboard.
-            if let Err(error) = reader::run_grab(options, shared, tx) {
+            // rather than leaving one with no keyboard. A panic exits too:
+            // a broker whose reader died must not stay up looking healthy.
+            if let Err((status, error)) = reader_outcome(|| reader::run_grab(options, shared, tx)) {
                 tracing::error!(%error, "grab reader stopped");
-                std::process::exit(1);
+                std::process::exit(status);
             }
         });
     } else if let Some(device) = args.observe {
         let shared = Arc::clone(&resolver);
         std::thread::spawn(move || {
-            if let Err(error) = reader::run_observe(&device, shared) {
-                tracing::error!(%error, "observe reader stopped");
+            match reader_outcome(|| reader::run_observe(&device, shared)) {
+                Ok(()) => {}
+                // An observe error leaves the Bus service up, as before.
+                Err((1, error)) => tracing::error!(%error, "observe reader stopped"),
+                Err((status, error)) => {
+                    tracing::error!(%error, "observe reader panicked");
+                    std::process::exit(status);
+                }
             }
         });
     }
@@ -165,6 +173,24 @@ fn main() -> anyhow::Result<()> {
         .enable_all()
         .build()?;
     runtime.block_on(serve(resolver, store, fire_rx))
+}
+
+/// Run a reader body on its thread. `Err((1, why))` when it returned an
+/// error, `Err((101, why))` when it panicked (the panic itself is also
+/// printed by the default hook).
+fn reader_outcome(body: impl FnOnce() -> std::io::Result<()>) -> Result<(), (i32, String)> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(error)) => Err((1, error.to_string())),
+        Err(panic) => {
+            let why = panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| panic.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "panic".to_string());
+            Err((101, format!("panicked: {why}")))
+        }
+    }
 }
 
 /// Serve `input.*` and send fired verbs, across broker restarts.
@@ -303,6 +329,29 @@ mod tests {
             assert_eq!(fire_target(&f), Some(("scenes", "scenes.editor.open")));
             assert_eq!(f.args, Some(serde_json::json!({"safe": true})));
         }
+    }
+
+    #[test]
+    fn a_reader_panic_or_error_becomes_an_exit_status() {
+        assert_eq!(reader_outcome(|| Ok(())), Ok(()));
+        let (status, why) =
+            reader_outcome(|| Err(std::io::Error::other("device went away"))).unwrap_err();
+        assert_eq!((status, why.as_str()), (1, "device went away"));
+        let (status, why) = reader_outcome(|| panic!("latch table corrupt")).unwrap_err();
+        assert_eq!(status, 101);
+        assert!(why.contains("latch table corrupt"), "{why}");
+        let owned = String::from("formatted panic");
+        let (status, why) = reader_outcome(move || panic!("{owned}")).unwrap_err();
+        assert_eq!(status, 101);
+        assert!(why.contains("formatted panic"), "{why}");
+    }
+
+    #[test]
+    fn a_zero_grab_timeout_is_refused() {
+        assert!(Args::try_parse_from(["inputd", "--grab", "/dev/input/event1", "--grab-timeout", "0"]).is_err());
+        let args =
+            Args::try_parse_from(["inputd", "--grab", "/dev/input/event1", "--grab-timeout", "30"]).unwrap();
+        assert_eq!(args.grab_timeout, Some(30));
     }
 
     #[test]

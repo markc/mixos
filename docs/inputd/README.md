@@ -71,8 +71,8 @@ appears after it started.
 
 ## Known limits
 
-Both happen only while inputd takes the grab (at startup or on switching
-to its VT) with keys in motion, and neither can be closed from inputd. They
+All of these happen only while inputd takes the grab (at startup or on
+switching to its VT) with keys in motion, and none can be closed from inputd. They
 close where the compositor enforces the user keys itself: compd's user-key
 layer.
 
@@ -81,6 +81,9 @@ layer.
   discards queued events, the release is consumed under the grab. The
   compositor saw the press on the original keyboard and never sees its
   release; `EVIOCGRAB` offers no way to hand it back on that device.
+- **A key tapped as the grab is taken can be lost.** A press and release
+  that both land between the grab and the discard of queued events reach
+  neither the apps nor inputd's bindings. Nothing is left held.
 - **User keys pass while inputd waits.** While a key is held at switch-to,
   inputd is not grabbed, so a user key pressed in that time reaches the
   apps unclassified.
