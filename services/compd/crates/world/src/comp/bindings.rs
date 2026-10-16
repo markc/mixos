@@ -245,10 +245,7 @@ fn watch_user_keymap(lp: &mut Loop, path: &Path) -> Option<notify::RecommendedWa
     // The directory may not exist yet on a fresh account: make it, so a
     // keymap written later is seen.
     if let Err(error) = std::fs::create_dir_all(dir) {
-        warn!(
-            "user keymap {}: {error}; not followed live",
-            dir.display()
-        );
+        warn!("user keymap {}: {error}; not followed live", dir.display());
         return None;
     }
     let (sender, source) = channel::<()>();
@@ -288,10 +285,7 @@ fn watch_user_keymap(lp: &mut Loop, path: &Path) -> Option<notify::RecommendedWa
         }
     };
     if let Err(error) = watcher.watch(dir, RecursiveMode::NonRecursive) {
-        warn!(
-            "user keymap {}: {error}; not followed live",
-            dir.display()
-        );
+        warn!("user keymap {}: {error}; not followed live", dir.display());
         return None;
     }
     Some(watcher)
@@ -362,7 +356,13 @@ pub fn key(
             .is_some_and(|surface| super::session_lock::is_lock_surface(lp, &surface));
     // The user keys first: the user's binding, the user's passthrough, or
     // swallowed. Under a lock every user key is swallowed and nothing fires.
-    let user = user_key(&mut lp.inner.comp.bindings, keycode, pressed, locked, modifier);
+    let user = user_key(
+        &mut lp.inner.comp.bindings,
+        keycode,
+        pressed,
+        locked,
+        modifier,
+    );
     if user.took {
         if let Some(token) = user.repeat {
             arm_repeat(lp, token);

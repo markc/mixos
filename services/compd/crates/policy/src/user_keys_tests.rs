@@ -51,7 +51,10 @@ fn took(edge: &UserKeyEdge) -> bool {
 #[test]
 fn the_default_keymap_binds_nothing_and_swallows_every_user_key() {
     let mut keys = UserKeys::default();
-    assert!(keys.rows().is_empty(), "no shipped default binds a user key");
+    assert!(
+        keys.rows().is_empty(),
+        "no shipped default binds a user key"
+    );
     for stroke in user_keys() {
         let held = held_modifiers(stroke.modifiers);
         for &modifier in &held {
@@ -139,18 +142,19 @@ fn releasing_the_modifier_first_still_swallows_the_arrow_release() {
 
 #[test]
 fn a_rebind_or_reload_while_held_applies_from_the_next_press() {
-    let mut keys = UserKeys::new(vec![row(
-        63,
-        SideModifiers::NONE,
-        "user.f05",
-        json!({}),
-    )]);
-    assert_eq!(keys.edge(xkb(63), true, false).fire.unwrap().verb, "user.f05");
+    let mut keys = UserKeys::new(vec![row(63, SideModifiers::NONE, "user.f05", json!({}))]);
+    assert_eq!(
+        keys.edge(xkb(63), true, false).fire.unwrap().verb,
+        "user.f05"
+    );
     // Rebound to passthrough while held: the release still follows the press.
     let mut pass = row(63, SideModifiers::NONE, "user.f05", json!({}));
     pass.passthrough = true;
     assert!(keys.replace(vec![pass.clone()]));
-    assert!(!keys.replace(vec![pass]), "an unchanged reload is no change");
+    assert!(
+        !keys.replace(vec![pass]),
+        "an unchanged reload is no change"
+    );
     assert!(keys.edge(xkb(63), false, false).took);
     assert!(!keys.edge(xkb(63), true, false).took, "passthrough now");
     // Removed while held (the file emptied): the release goes on as pressed.

@@ -239,9 +239,16 @@ fn a_reload_while_a_key_is_held_applies_from_its_next_press() {
     )
     .unwrap();
     assert!(h.wire.inner.comp.bindings.reload_user_keymap(&path));
-    assert!(h.key(xkb(EV_F5), false, false), "the release follows the press");
+    assert!(
+        h.key(xkb(EV_F5), false, false),
+        "the release follows the press"
+    );
     assert!(h.client.state.keys.is_empty());
-    assert_eq!(chord(&mut h, &[EV_F5]), vec![false, false], "passthrough now");
+    assert_eq!(
+        chord(&mut h, &[EV_F5]),
+        vec![false, false],
+        "passthrough now"
+    );
     assert_eq!(h.client.state.keys, vec![(EV_F5, true), (EV_F5, false)]);
     assert!(h.wire.inner.comp.bindings.take_bus_fires().is_empty());
 }
@@ -251,11 +258,18 @@ fn a_bad_file_keeps_the_keymap_and_a_missing_one_binds_nothing() {
     let (mut h, path) = harness("bad", WORKSPACE_KEYMAP);
     for bad in ["not json", r#"{"version":2,"physical":[]}"#, "[]"] {
         std::fs::write(&path, bad).unwrap();
-        assert!(!h.wire.inner.comp.bindings.reload_user_keymap(&path), "{bad}");
+        assert!(
+            !h.wire.inner.comp.bindings.reload_user_keymap(&path),
+            "{bad}"
+        );
     }
     assert_eq!(h.wire.inner.comp.bindings.user.rows().len(), 2);
     chord(&mut h, &[EV_RCTRL, EV_RIGHT]);
-    assert_eq!(run_comp_fires(&mut h), 1, "the last good keymap is in force");
+    assert_eq!(
+        run_comp_fires(&mut h),
+        1,
+        "the last good keymap is in force"
+    );
     assert_eq!(h.comp().current_workspace(), 2);
 
     std::fs::remove_file(&path).unwrap();
