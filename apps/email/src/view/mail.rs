@@ -133,9 +133,10 @@ fn header(
             .x;
         if let Some(command) = commands.get("mail.compose") {
             let label = toolkit::command::label_text(strings, command.label);
-            let mut button = PushButton::primary(label).icon(Icon::SquarePen);
+            let button = PushButton::primary(label).icon(Icon::SquarePen);
             let left = ui.available_width() - count_width - SCOPE_WIDTH - 4.0 * gap;
-            button = button.icon_only(left - button.width(ui) < SEARCH_MIN);
+            let squeezed = left - button.width(ui) < SEARCH_MIN;
+            let button = button.icon_only(squeezed);
             let tooltip = toolkit::tooltip::for_command(ui.ctx(), command, strings);
             let response = ui
                 .add_enabled((command.enabled)(state), button)

@@ -294,7 +294,7 @@ impl State {
     }
 
     fn folder_form(&mut self, action: FolderAction, name: String, count: u64) {
-        let Some(Node::Mailbox(account, _)) | Some(Node::Account(account)) = self.target_node() else {
+        let Some(Node::Mailbox(account, _) | Node::Account(account)) = self.target_node() else {
             return;
         };
         let generation = self.generation_of(&account);
