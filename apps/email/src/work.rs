@@ -14,6 +14,10 @@ use serde_json::Value;
 
 pub use crate::verbs::{Query, Then, Write};
 
+/// How long a settings write may stay unsettled before its caller hears
+/// it timed out.
+pub const WRITE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// How to reach one account's server. The password is never printed.
 #[derive(Clone, PartialEq)]
 pub struct Login {
@@ -124,6 +128,11 @@ pub enum Work {
     },
     /// Read the session profile again (after an apply, or a conflict).
     ReadSettings,
+    /// Settings write `op`'s deadline: [`crate::state::State::write_deadline`]
+    /// is called with it once [`WRITE_DEADLINE`] has passed.
+    WriteDeadline {
+        op: u64,
+    },
     /// Write the secrets file; its outcome comes back under `ticket`.
     SaveSecrets {
         ticket: u64,
@@ -150,6 +159,7 @@ impl Work {
             | Work::FetchBooks { account }
             | Work::FetchContacts { account, .. } => Some(account),
             Work::Settings { .. }
+            | Work::WriteDeadline { .. }
             | Work::ReadSettings
             | Work::SaveSecrets { .. }
             | Work::OpenPrefs => None,

@@ -935,6 +935,11 @@ fn dispatch(
         }
         "email.account.password.set" => {
             let password = text(args, "password")?.ok_or_else(|| invalid("password is required"))?;
+            if let Some(account) = text(args, "id")?
+                && state.migration_locks(&account)
+            {
+                return Err(Bad(code::MIGRATION_PENDING, crate::label("migration-pending")));
+            }
             if password.is_empty() {
                 // A forget works for any well-formed id, an orphan whose
                 // account settingsd no longer holds included (Prefs cleans
@@ -1206,6 +1211,15 @@ fn account_set(state: &mut State, id: u64, args: &Value) -> Checked<()> {
         signature: text(args, "signature")?,
     };
     let password = text(args, "password")?.filter(|p| !p.is_empty());
+    if password.is_some()
+        && let Some(account) = text(args, "id")?
+        && state.migration_locks(&account)
+    {
+        return Err(Bad(
+            code::MIGRATION_PENDING,
+            crate::label("migration-pending"),
+        ));
+    }
     let change = match text(args, "id")? {
         // An update names only what it changes: a retry after a conflict
         // reapplies just those fields to the fresh read.
@@ -1450,7 +1464,8 @@ mod tests {
         assert!(orphaned.take_replies().is_empty(), "answered once saved");
         for w in &work {
             if let Work::SaveSecrets { ticket } = w {
-                orphaned.secrets_saved(*ticket, Ok(true));
+                let version = orphaned.secrets_snapshot().0;
+                orphaned.secrets_saved(*ticket, version, Ok(true));
             }
         }
         let reply = &orphaned.take_replies()[0];
@@ -1486,6 +1501,41 @@ mod tests {
             orphaned.take_replies()[0].body["error_code"],
             code::UNKNOWN_ACCOUNT
         );
+    }
+
+    /// Review #15: while the schema-1 account is still migrating, its
+    /// password can neither be set nor forgotten (a restart would bring the
+    /// old one back): a recoverable MIGRATION_PENDING.
+    #[test]
+    fn review_15_the_migrating_account_refuses_password_changes() {
+        let mut state = State::new(
+            crate::state::UiState::default(),
+            Mode::Mail,
+            None,
+            settings::email::Email::default(),
+            crate::secrets::Secrets::default(),
+        );
+        let legacy = crate::state::tests::entry("legacy");
+        state.begin_migration(legacy, "pw-old");
+        state.take_work();
+        for args in [
+            json!({"id": "legacy", "password": "pw-new"}),
+            json!({"id": "legacy", "password": ""}),
+        ] {
+            run(&mut state, "email.account.password.set", args);
+            let reply = &state.take_replies()[0];
+            assert_eq!(reply.body["error_code"], code::MIGRATION_PENDING);
+        }
+        run(
+            &mut state,
+            "email.account.set",
+            json!({"id": "legacy", "password": "pw-new"}),
+        );
+        assert_eq!(
+            state.take_replies()[0].body["error_code"],
+            code::MIGRATION_PENDING
+        );
+        assert!(state.has_password("legacy"));
     }
 
     #[test]
