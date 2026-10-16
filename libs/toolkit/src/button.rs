@@ -185,6 +185,8 @@ pub struct PushButton {
     label: String,
     kind: Kind,
     min_width: f32,
+    icon: Option<Icon>,
+    icon_only: bool,
 }
 
 impl PushButton {
@@ -193,14 +195,15 @@ impl PushButton {
             label: label.into(),
             kind: Kind::Primary,
             min_width: 0.0,
+            icon: None,
+            icon_only: false,
         }
     }
 
     pub fn secondary(label: impl Into<String>) -> Self {
         Self {
-            label: label.into(),
             kind: Kind::Secondary,
-            min_width: 0.0,
+            ..Self::primary(label)
         }
     }
 
@@ -209,7 +212,43 @@ impl PushButton {
         self.min_width = width;
         self
     }
+
+    /// `icon` before the label, in the label's ink.
+    pub fn icon(mut self, icon: Icon) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    /// Only the icon shows (the label stays the accessible name and the
+    /// tooltip): a button squeezed by its row.
+    pub fn icon_only(mut self, only: bool) -> Self {
+        self.icon_only = only;
+        self
+    }
+
+    /// The width the button takes in `ui` as configured.
+    pub fn width(&self, ui: &Ui) -> f32 {
+        let font = crate::fonts::bound(ui.ctx(), crate::fonts::medium(PUSH_SIZE));
+        let text = ui
+            .painter()
+            .layout_no_wrap(self.label.clone(), font, Color32::PLACEHOLDER)
+            .size()
+            .x;
+        self.content_width(text).max(self.min_width)
+    }
+
+    fn content_width(&self, text: f32) -> f32 {
+        let icon = PUSH_SIZE.round();
+        match (self.icon, self.icon_only) {
+            (Some(_), true) => icon + PUSH_PADDING / 2.0,
+            (Some(_), false) => icon + ICON_GAP + text + PUSH_PADDING,
+            (None, _) => text + PUSH_PADDING,
+        }
+    }
 }
+
+/// From a push button's icon to its label.
+const ICON_GAP: f32 = 6.0;
 
 /// A push button's corner radius: fully round for a pill (Pro), else
 /// `radius_sm`.
@@ -229,10 +268,16 @@ impl Widget for PushButton {
             .painter()
             .layout_no_wrap(self.label.clone(), font, Color32::PLACEHOLDER);
         let height = chrome.metrics.push_height;
-        let size = vec2((galley.size().x + PUSH_PADDING).max(self.min_width), height);
-        let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+        let size = vec2(
+            self.content_width(galley.size().x).max(self.min_width),
+            height,
+        );
+        let (rect, mut response) = ui.allocate_exact_size(size, Sense::click());
         response
             .widget_info(|| WidgetInfo::labeled(WidgetType::Button, ui.is_enabled(), &self.label));
+        if self.icon_only {
+            response = response.on_hover_text(&self.label);
+        }
         if !ui.is_rect_visible(rect) {
             return response;
         }
@@ -297,8 +342,23 @@ impl Widget for PushButton {
         if style.bevels {
             chrome::bevel(painter, rect, !pressed, p);
         }
-        let at = (rect.center() - galley.size() / 2.0).round_to_pixels(ui.pixels_per_point());
-        painter.galley(at, galley, ink);
+        let side = PUSH_SIZE.round();
+        match self.icon {
+            Some(icon) if self.icon_only => paint_icon(ui, icon, rect.center(), side, ink),
+            Some(icon) => {
+                let run = side + ICON_GAP + galley.size().x;
+                let left = rect.center().x - run / 2.0;
+                paint_icon(ui, icon, pos2(left + side / 2.0, rect.center().y), side, ink);
+                let at = pos2(left + side + ICON_GAP, rect.center().y - galley.size().y / 2.0)
+                    .round_to_pixels(ui.pixels_per_point());
+                ui.painter().galley(at, galley, ink);
+            }
+            None => {
+                let at =
+                    (rect.center() - galley.size() / 2.0).round_to_pixels(ui.pixels_per_point());
+                ui.painter().galley(at, galley, ink);
+            }
+        }
         if response.has_focus() {
             focus_ring(ui, rect, radius, &chrome);
         }

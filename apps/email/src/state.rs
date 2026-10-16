@@ -2686,6 +2686,8 @@ impl State {
             }
         };
         let limit = self.settings.mail.page_size;
+        // The email to open in place of an open one the write took away.
+        let mut advance = None;
         if let Some(view) = self
             .accounts
             .iter_mut()
@@ -2694,6 +2696,17 @@ impl State {
             match write.touches() {
                 Mode::Mail => {
                     let gone = write.removes();
+                    // The selection (else the open email) moves to the next
+                    // row, or the previous when the last went.
+                    let before: Vec<String> =
+                        view.mail.emails.iter().map(|e| e.id.clone()).collect();
+                    let table = &mut view.mail.table;
+                    if table.selection.is_empty()
+                        && let Some(open) = &view.mail.open
+                    {
+                        table.selection = vec![open.id.clone()];
+                    }
+                    let next = table.rows_removed(gone, &before);
                     view.mail.emails.retain(|e| !gone.contains(&e.id));
                     if view
                         .mail
@@ -2702,6 +2715,7 @@ impl State {
                         .is_some_and(|e| gone.contains(&e.id))
                     {
                         view.mail.open = None;
+                        advance = next.map(|id| (tag.account.clone(), id));
                     }
                     self.work.push(Work::FetchMailboxes {
                         account: tag.account.clone(),
@@ -2722,6 +2736,9 @@ impl State {
                     }
                 }
             }
+        }
+        if let Some((account, id)) = advance {
+            self.open_email(&account, id);
         }
         if mine {
             self.form = None;

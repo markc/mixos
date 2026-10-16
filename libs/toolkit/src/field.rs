@@ -433,6 +433,56 @@ pub fn search(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> Respons
     response
 }
 
+/// A [`search`] field with a clear (×) button at its end while it holds
+/// text. Returns the field's response and whether the × was clicked (the
+/// caller empties the text, so the change is its, not the field's).
+pub fn search_clearable(
+    ui: &mut Ui,
+    text: &mut String,
+    hint: &str,
+    width: f32,
+) -> (Response, bool) {
+    let margin = Margin {
+        left: SEARCH_LEAD,
+        right: SEARCH_LEAD,
+        top: INSET.top,
+        bottom: INSET.bottom,
+    };
+    let edit = TextEdit::singleline(text)
+        .hint_text(hint)
+        .desired_width(width)
+        .margin(margin)
+        .min_size(vec2(0.0, HEIGHT))
+        .vertical_align(Align::Center);
+    let response = ui.add(edit);
+    let tint = Chrome::of(ui.ctx()).palette.text_faint;
+    let lead = pos2(
+        response.rect.left() + f32::from(INSET.left) + SEARCH_ICON / 2.0,
+        response.rect.center().y,
+    );
+    paint_icon(ui, Icon::Search, lead, SEARCH_ICON, tint);
+    if text.is_empty() {
+        return (response, false);
+    }
+    // Registered after the editor, so it wins the pointer over its end.
+    let side = f32::from(SEARCH_LEAD);
+    let clear = egui::Rect::from_center_size(
+        pos2(response.rect.right() - side / 2.0, response.rect.center().y),
+        vec2(side, side),
+    );
+    let button = ui.interact(clear, response.id.with("clear"), egui::Sense::click());
+    let label = crate::strings::own("clear-search");
+    button.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+    let ink = if button.hovered() {
+        Chrome::of(ui.ctx()).palette.text
+    } else {
+        tint
+    };
+    paint_icon(ui, Icon::X, clear.center(), SEARCH_ICON, ink);
+    let clicked = button.clicked();
+    (response, clicked)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

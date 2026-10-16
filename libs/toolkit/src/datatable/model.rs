@@ -7,7 +7,7 @@
 //! engine and its tests use it without a window.
 
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -238,6 +238,16 @@ pub enum TableEvent {
     Activated { index: usize, key: String },
     /// The person dragged a column to this width (points).
     ColumnResized { column: String, width: f32 },
+    /// A column was shown or hidden.
+    ColumnShown { column: String, visible: bool },
+    /// The row height changed.
+    DensityChanged(Density),
+    /// Row `index` was right-clicked: the app shows its context menu for
+    /// the selection (a row outside the selection is selected first).
+    ContextMenu { index: usize, key: String },
+    /// A drag of these rows began (the selection, or the one unselected
+    /// row it started on). The rows ride in a [`super::RowsDrag`] payload.
+    DragStarted { keys: Vec<String> },
 }
 
 /// The page size a fresh state uses.
@@ -262,6 +272,9 @@ pub struct TableState {
     /// Widths the person dragged, by column id.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub widths: BTreeMap<String, f32>,
+    /// Columns the person hid, by id.
+    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+    pub hidden: BTreeSet<String>,
     pub density: Density,
 }
 
@@ -274,6 +287,7 @@ impl Default for TableState {
             selection: Vec::new(),
             focus: None,
             widths: BTreeMap::new(),
+            hidden: BTreeSet::new(),
             density: Density::Compact,
         }
     }
@@ -449,6 +463,43 @@ impl TableState {
         };
     }
 
+    /// Rows `removed` left a page whose rows were `before` (a delete, a
+    /// move): when the selection goes with them, it moves to the first row
+    /// after the last removed selected one that survives, else the nearest
+    /// survivor before it. Returns the newly selected key, if it moved.
+    pub fn rows_removed(&mut self, removed: &[String], before: &[String]) -> Option<String> {
+        let gone = |key: &String| removed.contains(key);
+        if self.selection.is_empty() || !self.selection.iter().all(gone) {
+            self.selection.retain(|k| !gone(k));
+            return None;
+        }
+        let last = before.iter().rposition(|k| self.selection.contains(k));
+        let survivors: Vec<(usize, &String)> = before
+            .iter()
+            .enumerate()
+            .filter(|(_, k)| !gone(k))
+            .collect();
+        let next = last.and_then(|at| {
+            survivors
+                .iter()
+                .find(|(i, _)| *i > at)
+                .or_else(|| survivors.iter().rev().find(|(i, _)| *i < at))
+        });
+        match next {
+            Some((_, key)) => {
+                let key = (*key).clone();
+                self.focus = survivors.iter().position(|(_, k)| **k == key);
+                self.selection = vec![key.clone()];
+                Some(key)
+            }
+            None => {
+                self.selection.clear();
+                self.focus = None;
+                None
+            }
+        }
+    }
+
     /// Whether row `key` is selected.
     pub fn is_selected(&self, key: &str) -> bool {
         self.selection.iter().any(|k| k == key)
@@ -495,7 +546,48 @@ impl TableState {
             TableEvent::ColumnResized { column, width } => {
                 self.widths.insert(column.clone(), *width);
             }
+            TableEvent::ColumnShown { column, visible } => {
+                if *visible {
+                    self.hidden.remove(column);
+                } else {
+                    self.hidden.insert(column.clone());
+                }
+            }
+            TableEvent::DensityChanged(density) => self.density = *density,
+            TableEvent::ContextMenu { index, key } => {
+                self.focus = Some(*index);
+                if !self.is_selected(key) {
+                    self.selection = vec![key.clone()];
+                }
+            }
+            TableEvent::DragStarted { keys } => {
+                if !keys.iter().all(|k| self.is_selected(k)) {
+                    self.selection = keys.clone();
+                }
+            }
         }
+    }
+
+    /// The rows a drag starting on `key` carries: the selection when `key`
+    /// is in it (in the page's order, `keys`), else `key` alone.
+    pub fn drag_keys(&self, key: &str, keys: &[String]) -> Vec<String> {
+        if self.is_selected(key) {
+            keys.iter()
+                .filter(|k| self.is_selected(k))
+                .cloned()
+                .collect()
+        } else {
+            vec![key.to_owned()]
+        }
+    }
+
+    /// `columns` less the hidden ones.
+    pub fn visible(&self, columns: &[Column]) -> Vec<Column> {
+        columns
+            .iter()
+            .filter(|c| !self.hidden.contains(c.id))
+            .cloned()
+            .collect()
     }
 
     /// The table as agents read it: columns, sort, page, pages, the shown
@@ -512,6 +604,7 @@ impl TableState {
                 "label": c.label,
                 "sortable": c.sortable,
                 "width": self.widths.get(c.id),
+                "visible": !self.hidden.contains(c.id),
             })).collect::<Vec<_>>(),
             "sort": self.sort.as_ref().map(|s| &s.column),
             "order": self.sort.as_ref().map(|s| s.order.name()),
@@ -735,6 +828,97 @@ mod tests {
         assert_eq!(state.focus, Some(4));
         state.rows_changed(&[]);
         assert_eq!(state.focus, None);
+    }
+
+    #[test]
+    fn a_removed_selection_moves_to_its_neighbour() {
+        let rows = keys(5);
+        let gone = |k: &[&str]| k.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // The next row, at its index among the survivors.
+        let mut state = TableState {
+            selection: vec!["k2".into()],
+            ..TableState::default()
+        };
+        assert_eq!(state.rows_removed(&gone(&["k2"]), &rows), Some("k3".into()));
+        assert_eq!(state.focus, Some(2));
+        // The last row: the previous one.
+        let mut state = TableState {
+            selection: vec!["k4".into()],
+            ..TableState::default()
+        };
+        assert_eq!(state.rows_removed(&gone(&["k4"]), &rows), Some("k3".into()));
+        // Several selected: after the last of them.
+        let mut state = TableState {
+            selection: vec!["k1".into(), "k2".into()],
+            ..TableState::default()
+        };
+        assert_eq!(
+            state.rows_removed(&gone(&["k1", "k2"]), &rows),
+            Some("k3".into())
+        );
+        // Part of the selection stays: it just loses the rest.
+        let mut state = TableState {
+            selection: vec!["k1".into(), "k2".into()],
+            ..TableState::default()
+        };
+        assert_eq!(state.rows_removed(&gone(&["k1"]), &rows), None);
+        assert_eq!(state.selection, vec!["k2".to_owned()]);
+        // Everything gone: nothing selected.
+        let mut state = TableState {
+            selection: vec!["k0".into()],
+            ..TableState::default()
+        };
+        assert_eq!(state.rows_removed(&rows, &rows), None);
+        assert!(state.selection.is_empty() && state.focus.is_none());
+    }
+
+    #[test]
+    fn a_drag_carries_the_selection_or_selects_its_own_row() {
+        let rows = keys(4);
+        let state = TableState {
+            selection: vec!["k3".into(), "k1".into()],
+            ..TableState::default()
+        };
+        // In page order, whatever order they were picked in.
+        assert_eq!(state.drag_keys("k3", &rows), ["k1", "k3"]);
+        assert_eq!(state.drag_keys("k2", &rows), ["k2"]);
+        let mut state = state;
+        state.apply(
+            &TableEvent::DragStarted {
+                keys: vec!["k2".into()],
+            },
+            SelectionMode::Multi,
+        );
+        assert_eq!(state.selection, ["k2"]);
+        // A right-click inside the selection keeps it; outside, replaces it.
+        let mut state = TableState {
+            selection: vec!["k1".into(), "k2".into()],
+            ..TableState::default()
+        };
+        let context = |i: usize| TableEvent::ContextMenu {
+            index: i,
+            key: format!("k{i}"),
+        };
+        state.apply(&context(2), SelectionMode::Multi);
+        assert_eq!(state.selection.len(), 2);
+        state.apply(&context(0), SelectionMode::Multi);
+        assert_eq!((state.selection.as_slice(), state.focus), (&["k0".to_owned()][..], Some(0)));
+    }
+
+    #[test]
+    fn columns_hide_and_density_changes() {
+        let mut state = TableState::default();
+        let hide = |visible| TableEvent::ColumnShown {
+            column: "size".into(),
+            visible,
+        };
+        state.apply(&hide(false), SelectionMode::Single);
+        assert_eq!(state.visible(&columns()).len(), 3);
+        assert_eq!(state.describe(&columns(), Total::Known(0), 0)["columns"][3]["visible"], false);
+        state.apply(&hide(true), SelectionMode::Single);
+        assert_eq!(state.visible(&columns()).len(), 4);
+        state.apply(&TableEvent::DensityChanged(Density::Comfortable), SelectionMode::Single);
+        assert_eq!(state.density, Density::Comfortable);
     }
 
     #[test]

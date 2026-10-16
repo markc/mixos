@@ -38,6 +38,7 @@
 //! is the chrome's menu-row height (a design token), compact by default.
 
 pub mod model;
+pub mod verbs;
 
 pub use model::{
     Align, Column, DEFAULT_PAGE_SIZE, Density, Order, PageMove, Pick, SelectionMode, Sort,
@@ -191,6 +192,26 @@ pub fn focus_id(id: &str) -> Id {
     Id::new(("toolkit.datatable", id))
 }
 
+/// Whether the table with target id `id` has the keyboard: what an app's
+/// focus-scoped shortcuts (single keys such as Delete) test.
+pub fn is_focused(ctx: &egui::Context, id: &str) -> bool {
+    ctx.memory(|m| m.has_focus(focus_id(id)))
+}
+
+/// Give the table with target id `id` the keyboard.
+pub fn focus(ctx: &egui::Context, id: &str) {
+    ctx.memory_mut(|m| m.request_focus(focus_id(id)));
+}
+
+/// The drag-and-drop payload of a row drag (egui's [`egui::DragAndDrop`]):
+/// the table it left and its rows' keys. A drop target reads it with
+/// `DragAndDrop::payload::<RowsDrag>(ctx)` and checks `table`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RowsDrag {
+    pub table: String,
+    pub keys: Vec<String>,
+}
+
 /// The keys a focused table answers, without modifiers.
 const KEYS: [(Key, TableKey); 7] = [
     (Key::ArrowUp, TableKey::Up),
@@ -201,6 +222,18 @@ const KEYS: [(Key, TableKey); 7] = [
     (Key::End, TableKey::End),
     (Key::Enter, TableKey::Enter),
 ];
+
+/// One pass's layout inputs to the table body.
+#[derive(Clone, Copy)]
+struct Pass<'p> {
+    /// The shown columns (the hidden ones left out).
+    columns: &'p [Column],
+    keys: &'p [String],
+    height: f32,
+    body: f32,
+    focused: bool,
+    scroll_to: Option<usize>,
+}
 
 /// A table over one page of rows. Build it each frame from the app's
 /// state and call [`DataTable::show`].
@@ -216,7 +249,12 @@ pub struct DataTable<'a> {
     pager: bool,
     striped: bool,
     empty: Option<String>,
+    context: Option<ContextMenu<'a>>,
+    drag: Option<&'a dyn Fn(usize) -> String>,
 }
+
+/// Draws a row's context menu: given the menu's `Ui` and the row's index.
+pub type ContextMenu<'a> = &'a mut dyn FnMut(&mut Ui, usize);
 
 impl<'a> DataTable<'a> {
     /// The table with target id `id` (its egui id, focus target and
@@ -234,7 +272,26 @@ impl<'a> DataTable<'a> {
             pager: true,
             striped: false,
             empty: None,
+            context: None,
+            drag: None,
         }
+    }
+
+    /// A right-click on a row reports [`TableEvent::ContextMenu`] (after
+    /// selecting the row, when it was not) and opens a popup that `menu`
+    /// fills, for that row.
+    pub fn context_menu(mut self, menu: ContextMenu<'a>) -> Self {
+        self.context = Some(menu);
+        self
+    }
+
+    /// Rows can be dragged: a drag carries the selection (or the one
+    /// unselected row it starts on) as a [`RowsDrag`] payload, reports
+    /// [`TableEvent::DragStarted`], and shows `label(count)` ("3 messages")
+    /// by the pointer.
+    pub fn draggable(mut self, label: &'a dyn Fn(usize) -> String) -> Self {
+        self.drag = Some(label);
+        self
     }
 
     /// What is known of the whole set's size (the pager reads it).
@@ -293,15 +350,17 @@ impl<'a> DataTable<'a> {
 
     /// Draw the table into the space `ui` has left, the pager along its
     /// bottom, and report what the person did.
-    pub fn show(self, ui: &mut Ui, rows: &dyn Rows) -> Vec<TableEvent> {
+    pub fn show(mut self, ui: &mut Ui, rows: &dyn Rows) -> Vec<TableEvent> {
         let mut events = Vec::new();
+        let mut context = self.context.take();
+        let columns = self.state.visible(self.columns);
         let builder = UiBuilder::new().id_salt(("toolkit.datatable", self.id));
         ui.scope_builder(builder, |ui| {
             ui.ctx().accesskit_node_builder(ui.unique_id(), |node| {
                 node.set_role(Role::Table);
                 node.set_label(self.id);
                 node.set_row_count(rows.len());
-                node.set_column_count(self.columns.len());
+                node.set_column_count(columns.len());
             });
             let height = row_height(ui, self.state.density);
             let keys: Vec<String> = (0..rows.len()).map(|row| rows.key(row)).collect();
@@ -338,16 +397,16 @@ impl<'a> DataTable<'a> {
                     }
                 }
             }
-            self.table(
-                ui,
-                rows,
-                &keys,
+            let layout = Pass {
+                columns: &columns,
+                keys: &keys,
                 height,
                 body,
                 focused,
                 scroll_to,
-                &mut events,
-            );
+            };
+            self.table(ui, rows, &layout, &mut context, &mut events);
+            self.drag_preview(ui);
             if self.pager {
                 self.footer(ui, rows.len(), height, &mut events);
             }
@@ -355,18 +414,22 @@ impl<'a> DataTable<'a> {
         events
     }
 
-    #[allow(clippy::too_many_arguments, reason = "one frame's layout inputs")]
     fn table(
         &self,
         ui: &mut Ui,
         rows: &dyn Rows,
-        keys: &[String],
-        height: f32,
-        body: f32,
-        focused: bool,
-        scroll_to: Option<usize>,
+        pass: &Pass,
+        context: &mut Option<ContextMenu<'a>>,
         events: &mut Vec<TableEvent>,
     ) {
+        let Pass {
+            columns,
+            keys,
+            height,
+            body,
+            focused,
+            scroll_to,
+        } = *pass;
         let pad = ui.spacing().item_spacing.x / 2.0;
         // Rows abut: the selection and hover fills meet.
         ui.spacing_mut().item_spacing.y = 0.0;
@@ -374,18 +437,25 @@ impl<'a> DataTable<'a> {
         // its resize handle is hovered or dragged.
         let rule = ui.visuals().widgets.noninteractive.bg_stroke;
         ui.visuals_mut().widgets.noninteractive.bg_stroke.color = Color32::TRANSPARENT;
-        let last = self.columns.len().saturating_sub(1);
+        let last = columns.len().saturating_sub(1);
         let available = ui.available_width();
+        let sense = if self.drag.is_some() {
+            Sense::click_and_drag()
+        } else {
+            Sense::click()
+        };
+        // The column set is part of the id: hiding one starts its widths over.
+        let shape: Vec<&str> = columns.iter().map(|c| c.id).collect();
         let mut builder = TableBuilder::new(ui)
-            .id_salt(("toolkit.datatable.columns", self.id))
+            .id_salt(("toolkit.datatable.columns", self.id, shape))
             .striped(self.striped)
             .resizable(true)
-            .sense(Sense::click())
+            .sense(sense)
             .cell_layout(Layout::left_to_right(egui::Align::Center))
             .auto_shrink(false)
             .min_scrolled_height(body)
             .max_scroll_height(body);
-        for column in self.columns {
+        for column in columns {
             builder = builder.column(egui_column(column, self.state, available));
         }
         if let Some(row) = scroll_to {
@@ -395,7 +465,7 @@ impl<'a> DataTable<'a> {
         let focus = focus_id(self.id);
         let output = builder
             .header(height, |mut header| {
-                for (n, column) in self.columns.iter().enumerate() {
+                for (n, column) in columns.iter().enumerate() {
                     let sorted = self
                         .state
                         .sort
@@ -431,7 +501,7 @@ impl<'a> DataTable<'a> {
                     let style = rows.style(index);
                     let mut texts = Vec::new();
                     let mut whole = Rect::NOTHING;
-                    for column in self.columns {
+                    for column in columns {
                         let cell = rows.cell(index, column.id);
                         let mut elided = false;
                         let (_, response) = row.col(|ui| {
@@ -475,7 +545,45 @@ impl<'a> DataTable<'a> {
                             pick: if toggle { Pick::Toggle } else { Pick::Only },
                         });
                     }
-                    if response.clicked() || response.double_clicked() {
+                    if response.secondary_clicked() {
+                        // A row outside the selection is selected first.
+                        if !selected {
+                            events.push(TableEvent::Selected {
+                                index,
+                                key: key.clone(),
+                                pick: Pick::Only,
+                            });
+                        }
+                        events.push(TableEvent::ContextMenu {
+                            index,
+                            key: key.clone(),
+                        });
+                    }
+                    if let Some(menu) = context.as_mut() {
+                        response.context_menu(|ui| (*menu)(ui, index));
+                    }
+                    if self.drag.is_some() && response.drag_started() {
+                        let keys = self.state.drag_keys(key, keys);
+                        if !selected {
+                            events.push(TableEvent::Selected {
+                                index,
+                                key: key.clone(),
+                                pick: Pick::Only,
+                            });
+                        }
+                        egui::DragAndDrop::set_payload(
+                            &response.ctx,
+                            RowsDrag {
+                                table: self.id.to_owned(),
+                                keys: keys.clone(),
+                            },
+                        );
+                        events.push(TableEvent::DragStarted { keys });
+                    }
+                    if response.clicked()
+                        || response.double_clicked()
+                        || response.secondary_clicked()
+                    {
                         response.ctx.memory_mut(|m| m.request_focus(focus));
                     }
                     // The keyboard's row, where it is not the selection.
@@ -499,38 +607,72 @@ impl<'a> DataTable<'a> {
             ui.painter()
                 .text(top, egui::Align2::CENTER_TOP, text, font, weak);
         }
-        self.resized(ui, &widths, events);
+        self.resized(ui, columns, &widths, events);
+    }
+
+    /// The count badge by the pointer while this table's rows are dragged.
+    fn drag_preview(&self, ui: &Ui) {
+        let Some(label) = self.drag else {
+            return;
+        };
+        let Some(drag) = egui::DragAndDrop::payload::<RowsDrag>(ui.ctx()) else {
+            return;
+        };
+        let Some(pointer) = ui.ctx().pointer_latest_pos() else {
+            return;
+        };
+        if drag.table != self.id {
+            return;
+        }
+        let chrome = Chrome::of(ui.ctx());
+        let p = &chrome.palette;
+        let font = TextStyle::Body.resolve(ui.style());
+        let layer = egui::LayerId::new(egui::Order::Tooltip, focus_id(self.id).with("drag"));
+        let painter = ui.ctx().layer_painter(layer);
+        let galley = painter.layout_no_wrap(label(drag.keys.len()), font, p.primary_text);
+        let pad = ui.spacing().button_padding;
+        let rect = Rect::from_min_size(
+            pointer + vec2(12.0, 12.0),
+            galley.size() + 2.0 * pad,
+        );
+        painter.rect_filled(rect, f32::from(chrome.metrics.radius), p.primary_bg);
+        painter.galley(rect.min + pad, galley, p.primary_text);
     }
 
     /// Report a resizable column whose width changed since the last frame,
     /// once the drag that changed it ends.
-    fn resized(&self, ui: &Ui, widths: &[f32], events: &mut Vec<TableEvent>) {
+    fn resized(&self, ui: &Ui, columns: &[Column], widths: &[f32], events: &mut Vec<TableEvent>) {
         let focus = focus_id(self.id);
         let (seen, waiting) = (focus.with("widths"), focus.with("resized"));
-        let last: Option<Vec<f32>> = ui.data(|d| d.get_temp(seen));
-        let mut pending: Vec<usize> = ui.data(|d| d.get_temp(waiting)).unwrap_or_default();
-        if let Some(last) = last.filter(|last| last.len() == widths.len()) {
-            for (index, column) in self.columns.iter().enumerate() {
-                let moved = widths
-                    .get(index)
-                    .is_some_and(|w| (w - last[index]).abs() > 0.5);
-                if column.width.resizable() && moved && !pending.contains(&index) {
-                    pending.push(index);
-                }
+        // By column id, so showing or hiding a column moves nothing.
+        let now: Vec<(&'static str, f32)> = columns
+            .iter()
+            .map(|c| c.id)
+            .zip(widths.iter().copied())
+            .collect();
+        let last: Vec<(&'static str, f32)> = ui.data(|d| d.get_temp(seen)).unwrap_or_default();
+        let mut pending: Vec<&'static str> = ui.data(|d| d.get_temp(waiting)).unwrap_or_default();
+        for (column, (id, width)) in columns.iter().zip(&now) {
+            let moved = last
+                .iter()
+                .find(|(seen, _)| seen == id)
+                .is_some_and(|(_, before)| (width - before).abs() > 0.5);
+            if column.width.resizable() && moved && !pending.contains(id) {
+                pending.push(id);
             }
         }
         if !ui.input(|i| i.pointer.any_down()) {
-            for index in pending.drain(..) {
-                if let (Some(column), Some(width)) = (self.columns.get(index), widths.get(index)) {
+            for id in pending.drain(..) {
+                if let Some((_, width)) = now.iter().find(|(c, _)| *c == id) {
                     events.push(TableEvent::ColumnResized {
-                        column: column.id.to_owned(),
+                        column: id.to_owned(),
                         width: width.round(),
                     });
                 }
             }
         }
         ui.data_mut(|d| {
-            d.insert_temp(seen, widths.to_vec());
+            d.insert_temp(seen, now);
             d.insert_temp(waiting, pending);
         });
     }

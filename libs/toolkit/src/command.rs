@@ -648,6 +648,61 @@ impl<S> Registry<S> {
             .collect()
     }
 
+    /// The ids of every command in menu `menu`, in registry order: what a
+    /// context menu of that menu's commands lists.
+    pub fn ids_in(&self, menu: &str) -> Vec<&'static str> {
+        self.commands
+            .iter()
+            .filter(|c| c.menu == Some(menu))
+            .map(|c| c.id)
+            .collect()
+    }
+
+    /// Commands `ids`, in that order, as a context menu's rows drawn into
+    /// `ui` (the popup of `Response::context_menu`): each label with its
+    /// shortcut and tick, enabled by its rule, a separator wherever the
+    /// group changes, and `why(id)` as a disabled row's tooltip. Returns
+    /// the command clicked (the menu closes); the caller runs it with
+    /// [`Origin::Menu`].
+    pub fn context_menu(
+        &self,
+        ui: &mut egui::Ui,
+        state: &S,
+        strings: &Strings,
+        ids: &[&str],
+        why: &dyn Fn(&str) -> Option<String>,
+    ) -> Option<&'static str> {
+        let mut chosen = None;
+        let mut group = None;
+        for id in ids {
+            let Some(command) = self.get(id) else {
+                continue;
+            };
+            if group.is_some_and(|g| g != command.group) {
+                ui.separator();
+            }
+            group = Some(command.group);
+            let enabled = (command.enabled)(state);
+            let mut label = label_text(strings, command.label);
+            if self.checked(command.id, state) == Some(true) {
+                label = format!("{} {label}", menu::TICK);
+            }
+            let mut button = egui::Button::new(label);
+            if let Some(shortcut) = command.shortcut {
+                button = button.shortcut_text(ui.ctx().format_shortcut(&shortcut));
+            }
+            let mut response = ui.add_enabled(enabled, button);
+            if !enabled && let Some(reason) = why(command.id) {
+                response = response.on_disabled_hover_text(reason);
+            }
+            if response.clicked() {
+                chosen = Some(command.id);
+                ui.close();
+            }
+        }
+        chosen
+    }
+
     /// The enabled commands whose label contains `query` (case-insensitive),
     /// for a command palette.
     pub fn search<'a>(&'a self, query: &str, state: &S, strings: &Strings) -> Vec<&'a Command<S>> {
