@@ -1,52 +1,78 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The running window: feeds the state its events and carries out its
-//! work. JMAP calls run on a small tokio runtime; each completion is sent
-//! back as an [`Event`] with a repaint request, so the window wakes only
-//! when something happened (no polling). The Bus connection carries the
-//! session-look topic (theme-follow) and single-instance activation.
+//! work. JMAP calls run on a small tokio runtime, one client per account;
+//! each completion is sent back as an [`Event`] with a repaint request, so
+//! the window wakes only when something happened (no polling). The Bus
+//! connection carries the session-profile topic (theme-follow and the
+//! `email.*` accounts), the settingsd writes, and single-instance
+//! activation.
 //!
 //! This is the app's one architectural exception: the effects runtime
 //! speaks HTTPS itself, through the `jmap` engine, because a pure JMAP
 //! client's server is whatever account the person pointed it at.
 
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, mpsc};
 use std::task::Poll;
 
 use futures::StreamExt;
 use jmap::{Client, EmailPage};
+use serde_json::{Value, json};
 use toolkit::command::Origin;
 use toolkit::{Registry, Strings, Theme, drive};
 
 use crate::commands;
-use crate::state::{SessionInfo, State, UiState};
+use crate::secrets::{Secrets, SecretsFile};
+use crate::state::{Mode, SessionInfo, Settled, State, Tag, UiState, code};
+use crate::verbs::{Forward, Then, Write};
 use crate::view::{UiEvent, view};
-use crate::work::Work;
-use crate::{APP, label};
+use crate::work::{Login, Work};
+use crate::{APP, APP_ID, label};
 
-/// What finished off the UI thread. Completions carry their result; the
-/// shell resolves the Look pair itself (theme-follow, below).
-pub enum Event {
-    /// A Bus delivery.
-    Delivery(citizen::Delivery),
-    /// The connect finished. The client stays in the shell; the state gets
-    /// the summary.
-    Connected(Result<SessionInfo, jmap::Error>),
+/// One account's answer, addressed by [`Tag`] in [`Event::Account`]. The
+/// tickets are the requests' (see [`crate::work::Work`]).
+pub enum Done {
     Mailboxes(Result<Vec<jmap::Mailbox>, jmap::Error>),
-    /// The ticket is the request's (see [`crate::work::Work`]).
     Page(u64, Result<EmailPage, jmap::Error>),
-    /// One email with its bodies; boxed — a full [`jmap::Email`] is large.
-    Opened(u64, Box<Result<jmap::Email, jmap::Error>>),
+    /// One email with its bodies, and the Bus request that asked for it;
+    /// boxed — a full [`jmap::Email`] is large.
+    Opened(u64, Option<u64>, Box<Result<jmap::Email, jmap::Error>>),
+    /// A Bus query's answer, for request `reply`.
+    Answered(u64, Then, Result<Value, jmap::Error>),
+    /// A server write finished (`reply`: the Bus request, if any).
+    Wrote(Option<u64>, Write, Result<Value, jmap::Error>),
     Marked(Result<(), jmap::Error>),
     Sent(u64, Result<(), jmap::Error>),
     Calendars(Result<Vec<jmap::Calendar>, jmap::Error>),
     Events(u64, Result<Vec<jmap::CalendarEvent>, jmap::Error>),
     Books(Result<Vec<jmap::AddressBook>, jmap::Error>),
     Contacts(u64, Result<Vec<jmap::Contact>, jmap::Error>),
-    /// A read of the session look (settingsd), for the shell.
+}
+
+/// What finished off the UI thread. Completions carry their result; the
+/// shell resolves the Look pair itself (theme-follow, below).
+pub enum Event {
+    /// A Bus delivery.
+    Delivery(citizen::Delivery),
+    /// An account's connect finished. The client stays in the shell; the
+    /// state gets the summary.
+    Connected(Tag, Result<SessionInfo, jmap::Error>),
+    /// An account's server answered.
+    Account(Tag, Done),
+    /// settingsd answered write `ticket`.
+    Settled(u64, Settled),
+    /// The secrets file was written (or refused) for save `ticket`.
+    SecretsSaved(u64, Result<bool, String>),
+    /// A read of the session profile (settingsd), for the shell.
     Look(u64, Result<citizen::Reply, citizen::CallError>),
     /// A retry of the session look after a transient fault (its generation).
     LookRetry(u64),
+    /// `email.show` (request `id`) finished.
+    Shown(u64, Result<Value, String>),
+    /// Open Email Settings finished; an error is for the status line.
+    PrefsOpened(Result<(), String>),
 }
 
 pub struct Shell {
@@ -59,10 +85,13 @@ pub struct Shell {
     tx: mpsc::Sender<Event>,
     rx: mpsc::Receiver<Event>,
     ctx: egui::Context,
-    client: Option<Client>,
+    /// Each connected account's client, with its connection generation.
+    clients: HashMap<String, (u64, Client)>,
+    /// The newest connect asked for, per account: only its client is kept.
+    latest: HashMap<String, u64>,
     /// Where a finished connect parks its client for the UI thread to
     /// adopt; the event channel carries only the summary.
-    adopted: Arc<Mutex<Option<Client>>>,
+    adopted: Arc<Mutex<Vec<(String, u64, Client)>>>,
     exiting: bool,
     /// The theme choice installed last.
     installed: toolkit::theme_menu::Choice,
@@ -77,6 +106,13 @@ pub struct Shell {
     /// The latest look retry; an older one firing is void.
     look_retry: u64,
     config: Option<crate::config::ConfigFile>,
+    secrets: Option<SecretsFile>,
+    /// Settings writes sent, for unique operation ids.
+    applies: u64,
+    /// Bus commands waiting behind drive input accepted before them.
+    held: std::collections::VecDeque<(u64, String, String)>,
+    /// The compositor's Bus service, for `email.show`.
+    comp: String,
 }
 
 /// This host's name: the settingsd instance to try first (settingsd runs
@@ -87,7 +123,10 @@ fn hostname() -> String {
         .unwrap_or_default()
 }
 
-/// How long one settings read may take.
+/// Prefs' app id, as `apps.launch` takes it.
+const PREFS_APP_ID: &str = "dev.mixos.prefs";
+
+/// How long one settings read or write may take.
 const LOOK_BUDGET: std::time::Duration = std::time::Duration::from_secs(30);
 
 type Deliveries = futures::channel::mpsc::Receiver<citizen::Delivery>;
@@ -96,6 +135,115 @@ fn locked(inbox: &Mutex<Deliveries>) -> std::sync::MutexGuard<'_, Deliveries> {
     inbox
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// What a settingsd apply answered.
+fn settled(result: Result<citizen::Reply, citizen::CallError>) -> Settled {
+    let reply = match result {
+        Ok(reply) => reply,
+        Err(error) if error.outcome_unknown => return Settled::Unknown(error.message),
+        Err(error) => return Settled::Unavailable(error.message),
+    };
+    if reply.body.trim().is_empty() {
+        return Settled::Unavailable(
+            reply
+                .error
+                .unwrap_or_else(|| format!("refused by the broker (rc {})", reply.rc)),
+        );
+    }
+    let value: Value = serde_json::from_str(&reply.body).unwrap_or(Value::String(reply.body));
+    if reply.rc == 0 {
+        return Settled::Accepted;
+    }
+    match value["status"].as_str() {
+        Some("conflict") => Settled::Conflict,
+        Some("outcome_unknown") => Settled::Unknown(value.to_string()),
+        status => Settled::Refused(
+            value["message"]
+                .as_str()
+                .or(status)
+                .map_or_else(|| value.to_string(), str::to_owned),
+        ),
+    }
+}
+
+/// The schema-1 account as a settings account: its id derived from its
+/// identity, named by its address, and its inline CA bundle written beside
+/// the config (`ca-<id>.pem`, 0600) so settingsd can name it by path.
+fn legacy_entry(
+    account: &jmap::Account,
+    dir: &Path,
+) -> Result<settings::email::AccountEntry, String> {
+    let url = account.url.trim().trim_end_matches('/').to_owned();
+    let email = account.email.trim().to_owned();
+    let id = crate::writer::legacy_id(&url, &email);
+    let ca_path = match &account.ca_pem {
+        Some(pem) => {
+            let path = dir.join(format!("ca-{id}.pem"));
+            crate::config::write_private(&path, pem.as_bytes())?;
+            Some(path.to_string_lossy().into_owned())
+        }
+        None => None,
+    };
+    let name = if settings::email::valid_name(&email) {
+        email.clone()
+    } else {
+        label("title")
+    };
+    Ok(settings::email::AccountEntry {
+        id,
+        name,
+        url,
+        email,
+        ca_path,
+        enabled: true,
+        signature: String::new(),
+    })
+}
+
+/// The state a launch starts in, from the app's config directory: the
+/// window's shape, the accounts cache, the passwords, and a schema-1
+/// account still to migrate. Without a config directory nothing persists.
+pub fn start(
+    dir: Option<&Path>,
+) -> (
+    State,
+    Option<crate::config::ConfigFile>,
+    Option<SecretsFile>,
+) {
+    let Some(dir) = dir else {
+        eprintln!("email: no config directory; nothing is persisted");
+        let state = State::new(
+            UiState::default(),
+            Mode::Mail,
+            None,
+            settings::email::Email::default(),
+            Secrets::default(),
+        );
+        return (state, None, None);
+    };
+    let (loaded, config) = crate::config::ConfigFile::load(dir);
+    let (secrets, secrets_file) = SecretsFile::load(dir);
+    let ui = UiState {
+        places: loaded.config.ui.places,
+        reader: loaded.config.ui.reader,
+        expanded: loaded.config.ui.expanded.clone(),
+        ..UiState::default()
+    };
+    let mut state = State::new(
+        ui,
+        loaded.config.ui.mode,
+        loaded.config.ui.account.clone(),
+        loaded.config.cache.clone(),
+        secrets,
+    );
+    if let Some(legacy) = &loaded.legacy {
+        match legacy_entry(legacy, dir) {
+            Ok(entry) => state.begin_migration(entry, &legacy.password),
+            Err(error) => eprintln!("email: the old account cannot migrate yet: {error}"),
+        }
+    }
+    (state, Some(config), Some(secrets_file))
 }
 
 impl Shell {
@@ -116,8 +264,7 @@ impl Shell {
         let (tx, rx) = mpsc::channel();
         let forward = tx.clone();
         let wake = ctx.clone();
-        // The forwarder owns the deliveries from here: the shell never
-        // reads them (email answers no Bus commands of its own).
+        // The forwarder owns the deliveries from here.
         let source = Arc::new(Mutex::new(deliveries));
         runtime.spawn(async move {
             loop {
@@ -140,25 +287,10 @@ impl Shell {
             let _ = forward.send(Event::Delivery(citizen::Delivery::Disconnected));
             wake.request_repaint();
         });
-        // The persisted account and window shape, under the poison pill.
-        let (config, file) = match config::AppDirs::resolve(APP) {
-            Some(dirs) => {
-                let (config, file) = crate::config::ConfigFile::load(&dirs.config());
-                (config, Some(file))
-            }
-            None => {
-                eprintln!("email: no config directory; nothing is persisted");
-                (crate::config::EmailConfig::default(), None)
-            }
-        };
-        let ui = UiState {
-            places: config.ui.places,
-            reader: config.ui.reader,
-            dialog: None,
-            theme: Default::default(),
-        };
+        let dir: Option<PathBuf> = config::AppDirs::resolve(APP).map(|dirs| dirs.config());
+        let (state, config, secrets) = start(dir.as_deref());
         let mut shell = Self {
-            state: State::new(config.account, ui, config.ui.mode),
+            state,
             commands: commands::registry(),
             strings: crate::strings(),
             theme: theme.clone(),
@@ -167,8 +299,9 @@ impl Shell {
             tx,
             rx,
             ctx,
-            client: None,
-            adopted: Arc::new(Mutex::new(None)),
+            clients: HashMap::new(),
+            latest: HashMap::new(),
+            adopted: Arc::new(Mutex::new(Vec::new())),
             exiting: false,
             installed: toolkit::theme_menu::Choice::default(),
             file_theme: theme,
@@ -176,7 +309,11 @@ impl Shell {
             keymap: toolkit::keymap::Overrides::new(),
             follower: settings::follow::Follower::new(&hostname()),
             look_retry: 0,
-            config: file,
+            config,
+            secrets,
+            applies: 0,
+            held: std::collections::VecDeque::new(),
+            comp: std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into()),
         };
         shell.read_look();
         shell.settle();
@@ -194,133 +331,341 @@ impl Shell {
     /// Spawn `work` and send its result back as an event.
     fn spawn<F>(&self, work: F)
     where
-        F: Future + Send + 'static,
-        F::Output: Into<Event>,
+        F: Future<Output = Event> + Send + 'static,
     {
         let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
         self.runtime.spawn(async move {
-            let _ = tx.send(work.await.into());
+            let _ = tx.send(work.await);
             ctx.request_repaint();
         });
     }
 
-    /// Perform the state's queued work. A connect that finished parks its
+    /// Perform the state's queued work until none is left (a save answers
+    /// at once and may queue more). A connect that finished parks its
     /// client for this thread first, so the fetches a connect schedules
     /// find it there.
     fn settle(&mut self) {
-        if let Some(client) = self.adopted.lock().unwrap().take() {
-            self.client = Some(client);
+        let parked = std::mem::take(&mut *self.adopted.lock().unwrap());
+        for (account, generation, client) in parked {
+            if self.latest.get(&account) == Some(&generation) {
+                self.clients.insert(account, (generation, client));
+            }
         }
-        for work in self.state.take_work() {
-            self.perform(work);
+        loop {
+            let work = self.state.take_work();
+            if work.is_empty() {
+                break;
+            }
+            for work in work {
+                self.perform(work);
+            }
         }
+        for reply in self.state.take_replies() {
+            self.bus.reply(reply.id, reply.rc, reply.body);
+        }
+        self.publish_executed();
         self.save_config_if_dirty();
+    }
+
+    /// Publish the commands run since the last call on
+    /// `<service>.command.executed`.
+    fn publish_executed(&self) {
+        let (runs, lost) = self.commands.take_executed();
+        if runs.is_empty() && lost == 0 {
+            return;
+        }
+        let topic = toolkit::executed::topic(self.bus.service());
+        let bodies = runs.iter().map(toolkit::executed::Executed::body).collect();
+        self.bus.publish(&topic, bodies, lost);
+    }
+
+    /// `account`'s client and its generation, or a note on the status line
+    /// when there is none (the token died, the app reconnected, the connect
+    /// failed). The clone is cheap: the HTTP pool and the token cell are
+    /// shared.
+    fn client(&mut self, account: &str) -> Option<(Tag, Client)> {
+        match self.clients.get(account) {
+            Some((generation, client)) => Some((
+                Tag {
+                    account: account.to_owned(),
+                    generation: *generation,
+                },
+                client.clone(),
+            )),
+            None => {
+                self.state.status = label("not-connected");
+                self.ctx.request_repaint();
+                None
+            }
+        }
+    }
+
+    /// A Bus request whose account has no client: refused, never left
+    /// unanswered.
+    fn not_connected(&mut self, reply: Option<u64>) {
+        if let Some(reply) = reply {
+            self.state
+                .refuse(reply, code::NOT_CONNECTED, &label("not-connected"));
+        }
     }
 
     /// Perform one unit of work on the effects runtime.
     fn perform(&mut self, work: Work) {
         match work {
-            Work::Connect(account) => {
-                self.client = None;
+            Work::Connect {
+                account,
+                generation,
+                login,
+            } => {
+                self.clients.remove(&account);
+                self.latest.insert(account.clone(), generation);
                 let adopted = self.adopted.clone();
+                let tag = Tag {
+                    account: account.clone(),
+                    generation,
+                };
                 self.spawn(async move {
-                    let connected = match Client::connect(&account).await {
+                    let connected = match connect(&login).await {
                         Ok(client) => {
-                            *adopted.lock().unwrap() = Some(client.clone());
+                            adopted
+                                .lock()
+                                .unwrap()
+                                .push((account, generation, client.clone()));
                             Ok(SessionInfo {
                                 account_name: client
                                     .session()
                                     .account_name
                                     .clone()
-                                    .unwrap_or_else(|| account.email.clone()),
+                                    .unwrap_or_else(|| login.email.clone()),
                                 account_id: client.account_id().to_owned(),
                             })
                         }
                         Err(error) => Err(error),
                     };
-                    Event::Connected(connected)
+                    Event::Connected(tag, connected)
                 });
             }
-            Work::FetchMailboxes => {
-                if let Some(client) = self.client() {
-                    self.spawn(async move { Event::Mailboxes(client.mailboxes().await) });
-                }
+            Work::Disconnect { account } => {
+                self.clients.remove(&account);
+                self.latest.remove(&account);
             }
-            Work::FetchEmails { ticket, mailbox } => {
-                if let Some(client) = self.client() {
+            Work::FetchMailboxes { account } => {
+                if let Some((tag, client)) = self.client(&account) {
                     self.spawn(async move {
-                        Event::Page(ticket, client.email_page(&mailbox, 0, 100).await)
+                        Event::Account(tag, Done::Mailboxes(client.mailboxes().await))
                     });
                 }
             }
-            Work::OpenEmail { ticket, id } => {
-                if let Some(client) = self.client() {
-                    self.spawn(
-                        async move { Event::Opened(ticket, Box::new(client.email(&id).await)) },
-                    );
+            Work::FetchEmails {
+                account,
+                ticket,
+                mailbox,
+                limit,
+            } => {
+                if let Some((tag, client)) = self.client(&account) {
+                    self.spawn(async move {
+                        let page = client.email_page(&mailbox, 0, limit).await;
+                        Event::Account(tag, Done::Page(ticket, page))
+                    });
                 }
             }
-            Work::MarkRead { id, read } => {
-                if let Some(client) = self.client() {
-                    self.spawn(async move { Event::Marked(client.mark_read(&id, read).await) });
+            Work::OpenEmail {
+                account,
+                ticket,
+                id,
+                reply,
+            } => match self.client(&account) {
+                Some((tag, client)) => {
+                    self.spawn(async move {
+                        let email = client.email(&id).await;
+                        Event::Account(tag, Done::Opened(ticket, reply, Box::new(email)))
+                    });
+                }
+                None => self.not_connected(reply),
+            },
+            Work::Query {
+                account,
+                reply,
+                query,
+                then,
+            } => match self.client(&account) {
+                Some((tag, client)) => {
+                    self.spawn(async move {
+                        let answer = crate::verbs::run_query(&client, query).await;
+                        Event::Account(tag, Done::Answered(reply, then, answer))
+                    });
+                }
+                None => self.not_connected(Some(reply)),
+            },
+            Work::Write {
+                account,
+                reply,
+                write,
+            } => {
+                let sent = self.state.sent_mailbox_id(&account);
+                match self.client(&account) {
+                    Some((tag, client)) => {
+                        self.spawn(async move {
+                            let answer =
+                                crate::verbs::run_write(&client, write.clone(), sent).await;
+                            Event::Account(tag, Done::Wrote(reply, write, answer))
+                        });
+                    }
+                    None => self.not_connected(reply),
                 }
             }
-            Work::Send { ticket, draft } => {
+            Work::MarkRead { account, id, read } => {
+                if let Some((tag, client)) = self.client(&account) {
+                    self.spawn(async move {
+                        Event::Account(tag, Done::Marked(client.mark_read(&id, read).await))
+                    });
+                }
+            }
+            Work::Send {
+                account,
+                ticket,
+                draft,
+            } => {
                 // The send recipe needs the Sent mailbox; without the mail
-                // listing yet, there is nothing to file under.
-                let Some(sent) = self.state.sent_mailbox_id() else {
-                    self.state.apply(Event::Sent(
-                        ticket,
-                        Err(jmap::Error::Protocol("no Sent mailbox yet".into())),
-                    ));
-                    return;
-                };
-                if let Some(client) = self.client() {
-                    self.spawn(
-                        async move { Event::Sent(ticket, client.send(&draft, &sent).await) },
-                    );
+                // listing yet, there is nothing to file under. Either way
+                // the compose hears back, so it never stays busy.
+                let sent = self.state.sent_mailbox_id(&account);
+                match (self.client(&account), sent) {
+                    (Some((tag, client)), Some(sent)) => {
+                        self.spawn(async move {
+                            Event::Account(
+                                tag,
+                                Done::Sent(ticket, client.send(&draft, &sent).await),
+                            )
+                        });
+                    }
+                    (found, _) => {
+                        let generation = self
+                            .state
+                            .account(&account)
+                            .map_or(0, crate::state::AccountView::generation);
+                        let tag = found.map(|(tag, _)| tag).unwrap_or(Tag {
+                            account,
+                            generation,
+                        });
+                        let error = jmap::Error::Protocol(label("no-sent-mailbox"));
+                        self.state
+                            .apply(Event::Account(tag, Done::Sent(ticket, Err(error))));
+                    }
                 }
             }
-            Work::FetchCalendars => {
-                if let Some(client) = self.client() {
-                    self.spawn(async move { Event::Calendars(client.calendars().await) });
-                }
-            }
-            Work::FetchEvents { ticket, calendar } => {
-                if let Some(client) = self.client() {
+            Work::FetchCalendars { account } => {
+                if let Some((tag, client)) = self.client(&account) {
                     self.spawn(async move {
-                        Event::Events(ticket, client.calendar_events(&calendar).await)
+                        Event::Account(tag, Done::Calendars(client.calendars().await))
                     });
                 }
             }
-            Work::FetchBooks => {
-                if let Some(client) = self.client() {
-                    self.spawn(async move { Event::Books(client.address_books().await) });
+            Work::FetchEvents {
+                account,
+                ticket,
+                calendar,
+            } => {
+                if let Some((tag, client)) = self.client(&account) {
+                    self.spawn(async move {
+                        let events = client.calendar_events(&calendar).await;
+                        Event::Account(tag, Done::Events(ticket, events))
+                    });
+                }
+            }
+            Work::FetchBooks { account } => {
+                if let Some((tag, client)) = self.client(&account) {
+                    self.spawn(async move {
+                        Event::Account(tag, Done::Books(client.address_books().await))
+                    });
                 }
             }
             Work::FetchContacts {
+                account,
                 ticket,
                 book,
                 filter,
             } => {
-                if let Some(client) = self.client() {
+                if let Some((tag, client)) = self.client(&account) {
                     self.spawn(async move {
-                        Event::Contacts(ticket, client.contacts(&book, &filter).await)
+                        let contacts = client.contacts(&book, &filter).await;
+                        Event::Account(tag, Done::Contacts(ticket, contacts))
                     });
                 }
             }
+            Work::Settings { ticket, changes } => {
+                self.applies += 1;
+                let operation = format!(
+                    "email-{}-{}-{}",
+                    std::process::id(),
+                    self.applies,
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_millis())
+                );
+                match self.follower.apply(&operation, changes) {
+                    None => self
+                        .state
+                        .settled(ticket, Settled::Unavailable(label("settings-missing"))),
+                    Some(apply) => {
+                        let bus = self.bus.clone();
+                        self.spawn(async move {
+                            let result = bus
+                                .raw_within(
+                                    apply.service,
+                                    apply.verb,
+                                    apply.body.to_string(),
+                                    LOOK_BUDGET,
+                                )
+                                .await;
+                            Event::Settled(ticket, settled(result))
+                        });
+                    }
+                }
+            }
+            Work::ReadSettings => self.read_look(),
+            Work::SaveSecrets { ticket } => {
+                let result = match &self.secrets {
+                    Some(file) => file.save(self.state.secrets()),
+                    None => Ok(true),
+                };
+                if let Err(error) = &result {
+                    eprintln!("email: {error}");
+                }
+                self.state.secrets_saved(ticket, result);
+            }
+            Work::OpenPrefs => self.open_prefs(),
         }
     }
 
-    /// The connected client, or a note on the status line when there is
-    /// none (the token died, the app reconnected, the connect failed).
-    /// The clone is cheap: the HTTP pool and the token cell are shared.
-    fn client(&mut self) -> Option<Client> {
-        if self.client.is_none() {
-            self.state.status = label("not-connected");
-            self.ctx.request_repaint();
-        }
-        self.client.clone()
+    /// Show Prefs on its Email section: ask a running Prefs, else have the
+    /// session's launcher (`apps.launch`, as Prefs launches Email) start it
+    /// and ask again once it registers. The app has no launcher of its own:
+    /// without one, the status line says so.
+    fn open_prefs(&mut self) {
+        let bus = self.bus.clone();
+        self.spawn(async move {
+            let section = json!({"name": "email"});
+            let asked = bus.call("prefs", "prefs.section", section.clone()).await;
+            if asked.as_ref().is_ok_and(|r| r.rc == 0) {
+                return Event::PrefsOpened(Ok(()));
+            }
+            let launched = bus
+                .call("apps", "apps.launch", json!({"id": PREFS_APP_ID}))
+                .await;
+            if !launched.as_ref().is_ok_and(|r| r.rc == 0) {
+                return Event::PrefsOpened(Err(label("no-launcher")));
+            }
+            // A launch registers within seconds; ask until it answers.
+            for _ in 0..40 {
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                let asked = bus.call("prefs", "prefs.section", section.clone()).await;
+                if asked.is_ok_and(|r| r.rc == 0) {
+                    return Event::PrefsOpened(Ok(()));
+                }
+            }
+            Event::PrefsOpened(Err(label("prefs-silent")))
+        });
     }
 
     /// Apply every finished event, settling after each one, so a later
@@ -329,6 +674,7 @@ impl Shell {
         while let Ok(event) = self.rx.try_recv() {
             if let Event::Look(ticket, result) = event {
                 self.looked(ticket, result);
+                self.settle();
                 continue;
             }
             if let Event::LookRetry(generation) = event {
@@ -348,19 +694,93 @@ impl Shell {
                 self.read_look();
                 continue;
             }
-            if let Event::Delivery(citizen::Delivery::Command { .. }) = event {
-                // email answers no Bus verbs of its own in this slice; the
-                // drive verbs (window commands, captures) go to toolkit.
+            if let Event::Delivery(citizen::Delivery::Command { id, verb, body }) = event {
+                if self.exiting {
+                    self.refuse_closing(id);
+                } else {
+                    self.held.push_back((id, verb, body));
+                    self.release();
+                }
+                continue;
+            }
+            if let Event::PrefsOpened(result) = event {
+                if let Err(error) = result {
+                    self.state.status = error;
+                }
+                continue;
+            }
+            if let Event::Shown(id, result) = event {
+                match result {
+                    Ok(body) => self.bus.reply(id, 0, body),
+                    Err(error) => self
+                        .bus
+                        .reply(id, 10, crate::state::refusal("SHOW", &error)),
+                }
                 continue;
             }
             self.state.apply(event);
             self.settle();
         }
+        self.release();
     }
 
-    /// Persist the config when the state says it changed.
+    fn refuse_closing(&self, id: u64) {
+        self.bus.reply(
+            id,
+            10,
+            crate::state::refusal(code::BUSY, &label("quitting")),
+        );
+    }
+
+    /// Run held Bus commands in order. Input that only joins the drive
+    /// queue goes straight on; anything else waits until the drive input
+    /// before it is answered, so a caller's clicks and its later verbs act
+    /// in the order sent.
+    fn release(&mut self) {
+        while let Some((_, verb, _)) = self.held.front() {
+            let joins = verb.strip_prefix("email.").is_some_and(drive::queues);
+            if self.exiting || (drive::pending(&self.ctx) && !joins) {
+                return;
+            }
+            let (id, verb, body) = self.held.pop_front().expect("a held command");
+            self.command(id, &verb, &body);
+        }
+    }
+
+    /// One Bus command: the verbs layer answers or queues it; the drive
+    /// verbs and the window's activation are the shell's.
+    fn command(&mut self, id: u64, verb: &str, body: &str) {
+        let forward = crate::verbs::command(
+            &mut self.state,
+            &self.commands,
+            &self.strings,
+            id,
+            verb,
+            body,
+        );
+        match forward {
+            Some(Forward::Drive { id, verb, args }) => {
+                if let Some(answer) = drive::request(&self.ctx, id, &verb, &args) {
+                    self.bus.reply(answer.id, answer.rc, answer.body);
+                }
+            }
+            Some(Forward::Show { id }) => {
+                let (bus, comp) = (self.bus.clone(), self.comp.clone());
+                self.spawn(async move { Event::Shown(id, citizen::show(bus, comp, APP_ID).await) });
+            }
+            None => {}
+        }
+        self.settle();
+    }
+
+    /// Persist the config when the state says it changed, and rewrite it as
+    /// schema 2 once the schema-1 account has migrated.
     fn save_config_if_dirty(&mut self) {
-        if !self.state.config_dirty() {
+        let migrated = self.state.take_migrated();
+        if let (true, Some(file)) = (migrated, &mut self.config) {
+            file.migrated();
+        }
+        if !self.state.config_dirty() && !migrated {
             return;
         }
         if let Some(file) = &self.config {
@@ -426,9 +846,10 @@ impl Shell {
         });
     }
 
-    /// A look read answered: a new look is installed at once (under the
-    /// window's own choice); without settingsd the theme file stands; a
-    /// transient fault is retried with backoff, the last look standing.
+    /// A profile read answered: a new look is installed at once (under the
+    /// window's own choice) and the `email.*` accounts reconcile; without
+    /// settingsd the theme file and the accounts cache stand; a transient
+    /// fault is retried with backoff, the last look standing.
     pub fn looked(&mut self, ticket: u64, result: Result<citizen::Reply, citizen::CallError>) {
         // Closing: nothing more to draw. A superseded read's answer changes
         // nothing, retries included.
@@ -445,13 +866,18 @@ impl Shell {
                 appearance,
                 custom_source,
                 keymaps,
+                email,
                 ..
             }) => {
                 self.set_look((!custom_source).then_some(*appearance));
                 self.set_keymap(keymaps.get(APP).cloned().unwrap_or_default());
+                self.state.set_settings(*email);
             }
-            Some(settings::follow::Followed::Missing) if self.look.is_some() => {
-                self.set_look(None);
+            Some(settings::follow::Followed::Missing) => {
+                if self.look.is_some() {
+                    self.set_look(None);
+                }
+                self.state.settings_missing();
             }
             _ => {}
         }
@@ -525,6 +951,13 @@ impl Shell {
             for answer in drive::finish(&self.ctx) {
                 self.bus.reply(answer.id, answer.rc, answer.body);
             }
+            // Every accepted command gets its answer before the Bus stops.
+            for (id, _, _) in std::mem::take(&mut self.held) {
+                self.refuse_closing(id);
+            }
+            for reply in self.state.take_replies() {
+                self.bus.reply(reply.id, reply.rc, reply.body);
+            }
             self.save_config_if_dirty();
             self.bus.quit();
             self.ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -565,6 +998,23 @@ impl Shell {
     }
 }
 
+/// Connect with `login`, reading its CA bundle first.
+async fn connect(login: &Login) -> Result<Client, jmap::Error> {
+    let ca_pem = match &login.ca_path {
+        Some(path) => Some(std::fs::read_to_string(path).map_err(|e| {
+            jmap::Error::Protocol(format!("{}: {path}: {e}", label("ca-unreadable")))
+        })?),
+        None => None,
+    };
+    Client::connect(&jmap::Account {
+        url: login.url.clone(),
+        email: login.email.clone(),
+        password: login.password.clone(),
+        ca_pem,
+    })
+    .await
+}
+
 impl eframe::App for Shell {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         Shell::logic(self, ctx);
@@ -572,5 +1022,93 @@ impl eframe::App for Shell {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         Shell::ui(self, ui);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reply(rc: u8, body: &str) -> Result<citizen::Reply, citizen::CallError> {
+        Ok(citizen::Reply {
+            rc,
+            body: body.into(),
+            error: None,
+        })
+    }
+
+    #[test]
+    fn apply_answers_are_read_as_settled() {
+        assert_eq!(
+            settled(reply(0, r#"{"status":"applied"}"#)),
+            Settled::Accepted
+        );
+        assert_eq!(
+            settled(reply(10, r#"{"status":"conflict"}"#)),
+            Settled::Conflict
+        );
+        assert_eq!(
+            settled(reply(10, r#"{"status":"invalid","message":"bad url"}"#)),
+            Settled::Refused("bad url".into())
+        );
+        assert!(matches!(settled(reply(10, "")), Settled::Unavailable(_)));
+        let lost = Err(citizen::CallError {
+            message: "timed out".into(),
+            outcome_unknown: true,
+        });
+        assert!(matches!(settled(lost), Settled::Unknown(_)));
+    }
+
+    /// The live install's shape, in a tempdir: a schema-1 file with one
+    /// account, its password and an inline CA bundle. Starting migrates
+    /// nothing away yet: the account is shown and connects at once, its
+    /// password lands in the secrets file (0600), its CA bundle beside it,
+    /// and the schema-1 file still holds everything until settingsd takes it.
+    #[test]
+    fn a_schema_one_install_starts_with_its_account_and_loses_nothing() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("config");
+        std::fs::create_dir(&dir).unwrap();
+        let raw = "schema_version: 1\naccount: {url: \"https://mail.example.invalid\", email: \"admin@example.invalid\", password: \"pw-live\", ca_pem: \"-----BEGIN CERTIFICATE-----\\nAA\\n-----END CERTIFICATE-----\\n\"}\nui: {places: 0.2}\n";
+        std::fs::write(dir.join("config.conf.mix"), raw).unwrap();
+        let (mut state, config, secrets) = start(Some(&dir));
+        let id = crate::writer::legacy_id("https://mail.example.invalid", "admin@example.invalid");
+        let view = state.account(&id).expect("the old account is shown");
+        assert_eq!(view.entry.email, "admin@example.invalid");
+        let ca = view.entry.ca_path.clone().expect("the CA bundle by path");
+        assert!(
+            std::fs::read_to_string(&ca)
+                .unwrap()
+                .contains("BEGIN CERTIFICATE")
+        );
+        let work = state.take_work();
+        let save = work.iter().find_map(|w| match w {
+            Work::SaveSecrets { ticket } => Some(*ticket),
+            _ => None,
+        });
+        assert!(work.iter().any(|w| matches!(w, Work::Connect { .. })));
+        // The shell performs the save.
+        let file = secrets.unwrap();
+        assert!(file.save(state.secrets()).unwrap());
+        state.secrets_saved(save.unwrap(), Ok(true));
+        let (loaded, _) = SecretsFile::load(&dir);
+        assert_eq!(loaded.password(&id), Some("pw-live"));
+        let mode = std::fs::metadata(&file.path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+        // Until settingsd has it, a save keeps the schema-1 file whole.
+        let config = config.unwrap();
+        assert!(config.legacy());
+        config
+            .save(&crate::config::EmailConfig::from(&state))
+            .unwrap();
+        let kept = std::fs::read_to_string(dir.join("config.conf.mix")).unwrap();
+        let kept: Value = config::from_conf_mix_str(&kept).unwrap();
+        assert_eq!(kept["schema_version"].as_f64(), Some(1.0));
+        assert_eq!(kept["account"]["password"], "pw-live");
+        // A second start finds the same account under the same id.
+        let (again, _, _) = start(Some(&dir));
+        assert!(again.account(&id).is_some());
+        assert_eq!(again.accounts.len(), 1);
     }
 }

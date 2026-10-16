@@ -8,8 +8,13 @@
 //! state and returns what the person did, [`state`] applies both those
 //! [`view::UiEvent`]s and the shell's [`shell::Event`] completions and
 //! schedules [`work::Work`], and [`shell`] performs that work on a small
-//! tokio runtime — one repaint per completion, nothing polls. [`config`]
-//! persists the account and the window's shape under the poison-pill law.
+//! tokio runtime — one repaint per completion, nothing polls.
+//!
+//! The accounts are settingsd's (`email.*`, configured in Prefs); the app
+//! follows them and [`writer`] changes them with fenced applies. Their
+//! passwords live only in [`secrets`], the app's private file. [`config`]
+//! persists the window's shape and the last accounts seen under the
+//! poison-pill law, and migrates the single account an older config held.
 //!
 //! The one architectural exception this app owns: it speaks HTTPS itself,
 //! from its own effects runtime, where every other app reaches services
@@ -18,10 +23,13 @@
 
 pub mod commands;
 pub mod config;
+pub mod secrets;
 pub mod shell;
 pub mod state;
+pub mod verbs;
 pub mod view;
 pub mod work;
+pub mod writer;
 
 use toolkit::Strings;
 

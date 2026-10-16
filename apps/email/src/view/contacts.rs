@@ -1,28 +1,28 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The contacts surface: the selected address book's contacts in the
-//! centre pane (with the text filter the server runs over name, email and
-//! company), the open contact's detail in the reader, an address book row
-//! in the places panel. Read-only in this slice.
+//! The contacts surface: an account's selected address book's contacts in
+//! the centre pane (with the text filter the server runs over name, email
+//! and company) and the open contact's detail in the reader (the address
+//! books themselves are the tree's).
 
 use egui::{RichText, ScrollArea, Ui};
-use jmap::{AddressBook, Contact};
+use jmap::Contact;
 use toolkit::{Icon, icons, panel};
 
 use super::UiEvent;
-use crate::state::State;
+use crate::state::AccountView;
 
 /// The centre pane's contact list, with its filter.
-pub fn list(ui: &mut Ui, state: &State, stroke: f32, events: &mut Vec<UiEvent>) {
-    let title = state
+pub fn list(ui: &mut Ui, view: &AccountView, stroke: f32, events: &mut Vec<UiEvent>) {
+    let title = view
         .contacts
         .books
         .iter()
-        .find(|book| Some(book.id.as_str()) == state.contacts.selected.as_deref())
+        .find(|book| Some(book.id.as_str()) == view.contacts.selected.as_deref())
         .map(|book| book.name.clone())
         .unwrap_or_else(|| crate::label("contacts"));
     panel::group(ui, "contacts", &[title.as_str()], |ui, _| {
-        let mut filter = state.contacts.filter.clone();
+        let mut filter = view.contacts.filter.clone();
         let search = toolkit::field::search(
             ui,
             &mut filter,
@@ -30,17 +30,17 @@ pub fn list(ui: &mut Ui, state: &State, stroke: f32, events: &mut Vec<UiEvent>) 
             ui.available_width(),
         );
         if search.changed() {
-            events.push(UiEvent::ContactFilter(filter));
+            events.push(UiEvent::ContactFilter(view.id().to_owned(), filter));
         }
-        if state.contacts.busy {
+        if view.contacts.busy {
             ui.weak(crate::label("loading"));
         }
         ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-            if state.contacts.contacts.is_empty() && !state.contacts.busy {
+            if view.contacts.contacts.is_empty() && !view.contacts.busy {
                 ui.weak(crate::label("empty"));
             }
-            for (index, contact) in state.contacts.contacts.iter().enumerate() {
-                row(ui, index, contact, state, stroke, events);
+            for (index, contact) in view.contacts.contacts.iter().enumerate() {
+                row(ui, index, contact, view, stroke, events);
             }
         });
     });
@@ -51,11 +51,11 @@ fn row(
     ui: &mut Ui,
     index: usize,
     contact: &Contact,
-    state: &State,
+    view: &AccountView,
     stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
-    let selected = state.contacts.open == Some(index);
+    let selected = view.contacts.open == Some(index);
     let weak = ui.visuals().weak_text_color();
     egui::Sides::new().show(
         ui,
@@ -67,7 +67,7 @@ fn row(
                 RichText::new(contact.display_name())
             };
             if toolkit::selectable(ui, selected, text).clicked() {
-                events.push(UiEvent::SelectContact(index));
+                events.push(UiEvent::SelectContact(view.id().to_owned(), index));
             }
         },
         |ui| {
@@ -77,11 +77,11 @@ fn row(
 }
 
 /// The reader: the open contact's detail.
-pub fn reader(ui: &mut Ui, state: &State) {
-    let Some(contact) = state
+pub fn reader(ui: &mut Ui, view: &AccountView) {
+    let Some(contact) = view
         .contacts
         .open
-        .and_then(|index| state.contacts.contacts.get(index))
+        .and_then(|index| view.contacts.contacts.get(index))
     else {
         ui.weak(crate::label("select-contact"));
         return;
@@ -93,8 +93,7 @@ pub fn reader(ui: &mut Ui, state: &State) {
     detail(
         ui,
         "address-book-line",
-        state
-            .contacts
+        view.contacts
             .books
             .iter()
             .find(|book| book.id == contact.address_book_id)
@@ -120,31 +119,4 @@ fn detail(ui: &mut Ui, label: &str, value: Option<&str>) {
     if let Some(value) = value.filter(|value| !value.is_empty()) {
         ui.label(RichText::new(crate::label_with(label, &[("value", value)])).weak());
     }
-}
-
-/// An address book row in the places panel.
-pub fn place_row(
-    ui: &mut Ui,
-    book: &AddressBook,
-    state: &State,
-    stroke: f32,
-    events: &mut Vec<UiEvent>,
-) {
-    let selected = state.contacts.selected.as_deref() == Some(book.id.as_str());
-    let weak = ui.visuals().weak_text_color();
-    egui::Sides::new().show(
-        ui,
-        |ui| {
-            ui.add(icons::image(Icon::BookUser, stroke, 12.0, weak));
-            let text = if selected {
-                RichText::new(&book.name).strong()
-            } else {
-                RichText::new(&book.name)
-            };
-            if toolkit::selectable(ui, selected, text).clicked() {
-                events.push(UiEvent::SelectBook(book.id.clone()));
-            }
-        },
-        |_| {},
-    );
 }
