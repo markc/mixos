@@ -130,7 +130,7 @@ contract = "none"          # none | public  (public = semver'd, see §5)
 - **Component names** are a lowercase letter, then lowercase letters, digits
   and hyphens. `docs` and `v` are reserved. The same gate refuses a bad name
   in any package's `component` or in a `component.mx`
-  ([decision](docs/decisions/2026-10-16-site-url-layout.md#component-names)).
+  ([decision](docs/docs/decisions/2026-10-16-site-url-layout.md#component-names)).
 
 ### 2.4 Removing a component
 
