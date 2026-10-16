@@ -139,6 +139,7 @@ impl Default for MailState {
             emails: Vec::new(),
             total: 0,
             open: None,
+            reader: crate::reader::Reader::default(),
             busy: false,
             table: list_default(),
         }

@@ -12,7 +12,7 @@ use toolkit::button::{Link, PushButton};
 use toolkit::command::Origin;
 use toolkit::datatable::{Cell, DataTable, RowStyle, Rows, TableState};
 use toolkit::markdown::{self, Document};
-use toolkit::{Icon, Registry, Strings, icons, panel};
+use toolkit::{Icon, Registry, Strings, panel};
 
 use super::UiEvent;
 use crate::reader::{self, Format};
