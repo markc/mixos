@@ -88,6 +88,47 @@ fn published(rig: &Rig) -> Vec<Value> {
         .collect()
 }
 
+/// `prefs.email.password` hands the password to the email service in the
+/// call's body, which only the shell fills in as it sends, and answers with
+/// Email's outcome (here the logging handle sends nothing, so: not sent).
+/// The answer never repeats the password.
+#[test]
+fn a_password_goes_to_email_and_is_answered_without_it() {
+    let mut rig = rig();
+    send(
+        &mut rig,
+        7,
+        "prefs.email.password",
+        json!({"id": "acct-1", "password": "hunter2"}),
+    );
+    wait(&mut rig, &[7]);
+    let log = rig.bus.log();
+    let call = log
+        .iter()
+        .find_map(|l| match l {
+            Logged::Call {
+                service,
+                verb,
+                body,
+            } if verb == "email.account.password.set" => Some((service.clone(), body.clone())),
+            _ => None,
+        })
+        .expect("the call to Email");
+    assert_eq!(call.0, "email");
+    let body: Value = serde_json::from_str(&call.1).unwrap();
+    assert_eq!(body, json!({"id": "acct-1", "password": "hunter2"}));
+    let (rc, reply) = log
+        .iter()
+        .find_map(|l| match l {
+            Logged::Reply { id: 7, rc, body } => Some((*rc, body.clone())),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(rc, 10);
+    assert_eq!(reply["error_code"], "NOT_SENT");
+    assert!(!reply.to_string().contains("hunter2"));
+}
+
 /// A Bus execute and a menu pick are published with how they were reached
 /// and consecutive seq; an unknown command publishes nothing.
 #[test]

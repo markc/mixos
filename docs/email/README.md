@@ -6,9 +6,12 @@ layout: page
 # email — the MixOS JMAP mail client
 
 `email` (`dev.mixos.email`) is the reserved MixOS mail client: a **pure
-JMAP client** speaking HTTPS to any RFC 8620/8621-shaped server — the
-mesh's own maild, or anyone else's server. Mail is listed, read, composed
-and sent; calendars and address books are listed and shown.
+JMAP client** that speaks HTTPS to any RFC 8620/8621-shaped server, whether
+that is the mesh's own maild or someone else's server. It holds **any
+number of accounts**, shown as a tree in the Thunderbird style. Mail is
+listed, read, composed, sent, flagged, moved and deleted. Calendars,
+events, address books and contacts are listed, shown and created. Every
+action can also be done over the Bus.
 
 ## Running it
 
@@ -16,64 +19,221 @@ and sent; calendars and address books are listed and shown.
 email [--noded-url URL] [--service NAME]
 ```
 
-A second launch raises the first window. The first run shows the account
-form:
+A second launch raises the first window.
+
+## Accounts are set up in Prefs
+
+Accounts are configured in **Prefs → Email**, not in the app
+([decision](../docs/decisions/2026-10-16-email-accounts-in-settings.md)).
+Each account has the fields below.
 
 | Field | What it is |
 |---|---|
-| Server URL | The JMAP server base (`https://…`). maild directly, or a webd vhost that proxies `/jmap`. |
-| Email address | The login; the Basic username at the token exchange. |
-| Password | Spent once per token lifetime; held in the config file (mode 0600) afterwards. |
-| CA bundle path | Optional. A PEM bundle to trust for a server whose certificate is self-issued. |
+| Name | The label in the tree. |
+| Server URL | The JMAP server base (`https://…`, no trailing slash): maild directly, or a webd vhost that proxies `/jmap`. |
+| Email address | The login, the Basic username at the token exchange, and the default From. |
+| Password | Kept only in the app's private `secrets.conf.mix` (0600). It never enters settingsd. |
+| CA bundle path | Optional. An absolute path to a PEM bundle to trust when the server's certificate is self-issued. |
+| Enabled | Off disconnects the account and keeps it listed. |
+| Signature | Plain text added to new drafts after a `-- ` line. |
 
-The account persists in the app's config directory
-(`~/.local/state/mixos/apps/email/config/config.conf.mix`); a malformed
-file loads defaults and is never overwritten.
+The group also holds the **default account** (the compose From) and the
+mail options: **page size** (10–500, default 100), **mark read on open**
+and **confirm before delete**. Every change applies at once:
 
-## What it does
+- a new enabled account with a password connects;
+- a change to the URL, address or CA path reconnects;
+- a rename relabels;
+- turning an account off disconnects it;
+- a removed account's client and view go.
 
-- **Mail** — mailboxes with unread counts; the newest 100 emails per
-  mailbox; read in the reader pane (plain text first, HTML source when
-  there is no plain text); opening an email marks it read; compose (To, Cc,
-  Bcc, Subject, body) and reply, sent through the proven recipe: build the
-  message, upload it, create the Email in Sent, submit. **Sending requires
-  maild:** the create step uses maild's extension of a top-level `blobId` on
-  `Email/set`. A strict RFC 8621 server builds an Email from uploaded MIME
-  with `Email/import` instead, and refuses the send; `Email/import` is
-  future work. Reading, calendars and contacts use standard methods only.
-- **Calendar** — calendars, their events by start, the open event's
-  detail.
-- **Contacts** — address books, contacts with a server-side text filter
-  over name, email and company, the open contact's detail.
+A settings read never deletes a password. Only **Email** forgets one: an
+account removed with `email.account.remove`, or an empty
+`email.account.password.set`. An account removed elsewhere (in Prefs, or
+by a settings reset) leaves its entry in `secrets.conf.mix`, unused.
 
-## How it talks to the server
+settingsd omits the `email` group at its defaults, so a read with no
+accounts cannot be told apart from a settingsd that does not carry the
+group. When such a read arrives while accounts are shown, Email keeps
+them (views, connections, passwords) and says so in the status line. It
+stops keeping them at the next read that lists accounts, or when an
+account is removed through Email.
 
-One HTTPS session per account. On connect: the password is exchanged for a
-Bearer token (`POST /auth/tokens/issue`) and the Session is discovered
-(`GET /.well-known/jmap`); every method call after that carries the token.
-A server without the token endpoint falls back to Basic auth on every
-request. Requests batch their methodCalls and chain `Email/query` into
-`Email/get` through a ResultReference — one round trip per list.
+If settingsd is not running, the window opens the accounts it last saw
+(cached in its config) read-only, and the status line says so.
 
-The engine (`apps/email/crates/jmap`) is ported from the retired Dioxus
-mail client, with its faults fixed: session discovery and URL templates
-instead of hardcoded paths, real pagination, Bcc carried through,
-`In-Reply-To` wrapped exactly once, CR/LF stripped from header inputs
-(header injection), typed method-error handling, and attachment download
-wired (the UI for it is a later slice).
+With no account the window shows **Open Email Settings**. An account that
+failed to connect, or has no password yet, shows its error, **Retry** and
+the same button.
+
+**Upgrading from the single-account version.** The old `config.conf.mix`
+(schema 1, with the password inline) migrates once, losing nothing:
+
+1. The password is written to `secrets.conf.mix`, and an inline CA bundle
+   to `ca-<id>.pem` beside it. Nothing else happens until that save has
+   landed. A user name and password inside the old server URL are
+   removed (the status line says so, without the URL).
+2. The account is added to settingsd and made the default. When
+   settingsd already holds it under another id, the password is written
+   under that id, and that save must land too.
+3. Only then is the file rewritten as schema 2: the window shape and the
+   accounts cache, with no secret.
+
+Until settingsd has taken the account, the old file stays as it was and
+the account works as before.
+
+Files, in `~/.local/state/mixos/apps/email/config/`:
+
+| File | Holds |
+|---|---|
+| `config.conf.mix` | schema 2: split sizes, mode, selected account, collapsed tree nodes, the last accounts seen |
+| `secrets.conf.mix` | the passwords, by account id (0600, written only by email) |
+| `ca-<id>.pem` | a migrated account's CA bundle |
+
+A malformed file loads defaults and is never overwritten.
+
+## The window
+
+- **The tree** (left). Each account is a root node, with its connection
+  state and its total unread count. Under each account come:
+  - its **mailboxes**, nested by parent, with unread counts (the inbox
+    first, the trash last);
+  - a **Calendars** group;
+  - an **Address Books** group.
+
+  Clicking a node selects its account, the matching surface and that
+  folder, calendar or book. Nodes collapse and expand, and the state is
+  remembered. Once the tree has focus, **↑/↓** move, **←/→** collapse and
+  expand (or go to the parent or first child) and **Enter** selects.
+- **The centre**: the selected account's mail page (newest first, as many
+  as the page size), its calendar's events, or its book's contacts, with
+  a server-side filter over name, email and company.
+- **The reader**: the open email (plain text first, the HTML source when
+  there is no plain text), event or contact.
+- **Compose** (To, Cc, Bcc, Subject, body, and From when there are
+  several accounts), reply, reply all and forward. If the account's login
+  (server or address) changes while a draft is open, Send waits: the
+  dialog shows the new address and **Use New Address**. Mail is sent through
+  the proven recipe: build the message, upload it, create the Email in
+  Sent, then submit. **Sending requires maild**, because the create step
+  uses maild's extension of a top-level `blobId` on `Email/set`. A strict
+  RFC 8621 server builds an Email from uploaded MIME with `Email/import`,
+  so it refuses the send; `Email/import` is future work.
+- **Mail actions**: delete to Trash (confirmed when the settings ask),
+  move to a mailbox, flag, and mark unread.
+- **New Event** and **New Contact** forms. Start and end are RFC 3339
+  instants.
 
 ## Keyboard
 
 | Shortcut | Action |
 |---|---|
-| Ctrl+R | Refresh |
+| Ctrl+R | Refresh the account |
 | Ctrl+Q | Quit |
 | Ctrl+N | Compose |
 | Ctrl+Shift+R | Reply |
+| Ctrl+Shift+A | Reply all |
+| Ctrl+L | Forward |
+| Delete | Delete the open email |
+| Ctrl+Shift+M | Move the open email |
+| Ctrl+Shift+S | Flag or unflag |
+| Ctrl+Shift+U | Mark unread |
+| Ctrl+Shift+E | New event |
+| Ctrl+Shift+K | New contact |
 | Ctrl+1 / 2 / 3 | Mail / Calendar / Contacts |
+| Ctrl+PageDown / PageUp | Next / previous account |
+
+## Driving it over the Bus
+
+Service `email`, schema `email.v1`. `HELP` lists the verbs, and
+`app.describe` gives each one with its arguments and `read_only` flag.
+`account` defaults to the selected account. A refusal is rc 10 with
+`{error_code, message}`, and two of the codes are kept distinct:
+
+- `UNKNOWN_ACCOUNT`: no account has that id;
+- `NOT_FOUND`: the account's server holds no email, mailbox, event or
+  contact with that id.
+
+The other codes are `INVALID_ARGUMENT`, `NOT_CONNECTED`, `UNAVAILABLE`
+(settingsd absent), `CONFLICT`, `TIMEOUT` (settingsd did not answer a
+write within 60 s), `STALE` (the account reconnected while the request
+was pending, so its answer would come from the old connection),
+`SUPERSEDED` (a newer `email.open` replaced this one before it loaded), `MIGRATION_PENDING` (the account is still moving
+from the old config, so its password cannot change, and it cannot be
+removed, until that finishes), `CANCELLED` (Email closed before the
+request ran; a write that may have run answers `OUTCOME_UNKNOWN`),
+`SERVER`,
+`BUSY`, `UNKNOWN_VERB`, `UNKNOWN_COMMAND` and `DISABLED`.
+
+Queries that need the server answer when the server does. The window
+never waits on them.
+
+| Verb | Class | Does |
+|---|---|---|
+| `email.ping`, `email.info`, `email.commands` | query | probe; the whole window state (no secret); the command registry |
+| `email.accounts` | query | the accounts with `has_password` and `state`, never a password |
+| `email.mailboxes {account?}` | query | mailboxes with roles, parents and counts |
+| `email.list {account?, mailbox?, offset?, limit?, query?}` | query | one page, newest first, with `total` |
+| `email.search {account?, text, mailbox?, limit?}` | query | emails matching text |
+| `email.get {account?, id}` | query | one email's headers and `text` body |
+| `email.calendars`, `email.events {calendar?, from?, to?}`, `email.event.get {id}` | query | calendars and events |
+| `email.books`, `email.contacts {book?, filter?}`, `email.contact.get {id}` | query | address books and contacts |
+| `email.show`, `email.quit` | system, intent | raise, close |
+| `email.execute {id}` | intent | run any registry command (published with origin `bus`) |
+| `email.mode {name}`, `email.refresh {account?}` | intent | switch surface; fetch again (a failed account reconnects) |
+| `email.account.set {id?, name, url, email, password?, ca_path?, enabled?, signature?}` | intent | create or update in settingsd; answers `{id}` once settingsd accepts |
+| `email.account.remove {id}`, `email.account.default {id}` | intent | through settingsd, fenced |
+| `email.account.password.set {id, password}` | intent | write-only: the secrets file, then reconnect; an empty password forgets it for any account id, even one settingsd no longer holds (`{forgotten}`) |
+| `email.account.connect {id}`, `email.account.select {id}` | intent | reconnect; show |
+| `email.mailbox.select/create/rename/delete` | intent | `create` answers `{id}` |
+| `email.open {id}` | intent | show an email in the reader; answers once loaded |
+| `email.mark {ids, read?, flagged?}`, `email.move {ids, mailbox}`, `email.delete {ids, destroy?}` | intent | the list and counts refresh after |
+| `email.send {to, cc?, bcc?, subject, body, in_reply_to?}` | intent | send without the dialog |
+| `email.compose {…}`, `email.reply {id, all?}`, `email.forward {id, to?}` | intent | open the compose dialog, filled in |
+| `email.calendar.select`, `email.event.create/update/delete` | intent | `create` answers `{id}`; `end` or an ISO 8601 `duration` |
+| `email.book.select`, `email.contact.create/update/delete` | intent | `create` answers `{id}` |
+| `email.ui.*`, `email.window`, `email.window.state` | input, query | the toolkit [drive verbs](../docs/drive.md) |
+
+Every command the window runs (menu, shortcut, button or `email.execute`)
+is published on `email.command.executed` with how it was reached.
+
+From Mix:
+
+```
+send email email.accounts
+send email email.list body='{"account":"acct-3f9a1c2b4d5e","mailbox":"m-inbox","limit":20}'
+send email email.search body='{"text":"invoice"}'
+send email email.mark body='{"ids":["E42"],"read":false}'
+send email email.event.create body='{"title":"Standup","start":"2026-10-17T09:00:00+10:00","duration":"PT15M"}'
+send email email.account.password.set body='{"id":"acct-3f9a1c2b4d5e","password":"…"}'
+```
+
+## How it talks to the server
+
+There is one HTTPS client per account. On connect, the password is
+exchanged for a Bearer token (`POST /auth/tokens/issue`) and the Session
+is discovered (`GET /.well-known/jmap`). Every method call after that
+carries the token. A server without the token endpoint falls back to
+Basic auth on every request. Requests batch their methodCalls and chain
+`Email/query` into `Email/get` through a ResultReference, so a list is one
+round trip. Every answer carries its account id and connection generation,
+so a late answer from one account, or from an account's earlier
+connection, is never applied to another.
+
+The engine (`apps/email/crates/jmap`) is ported from the retired Dioxus
+mail client, with its faults fixed:
+
+- session discovery and URL templates instead of hard-coded paths;
+- real pagination;
+- Bcc carried through;
+- `In-Reply-To` wrapped exactly once;
+- CR/LF stripped from header inputs (header injection);
+- typed handling of method errors.
 
 ## Performance workload
 
-The recorded workload for future profiling: a 10,000-email mailbox — the
-list renders 100 rows from one query+get round trip, and the reader fetches
-one email's bodies on open. Nothing else scales with mailbox size.
+The recorded workload for future profiling is a 10,000-email mailbox in
+each of several accounts. The list renders one page (the page size) from
+a single query-and-get round trip, the reader fetches one email's bodies
+when it opens, and the tree's work grows with the mailbox count, not the
+email count. Nothing else scales with mailbox size.

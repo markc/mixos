@@ -9,8 +9,150 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::client::{Call, Client};
+use crate::client::{
+    CREATE, Call, Client, check_confirmed, check_set_reply, non_empty, optional_text, require_uuid,
+};
 use crate::error::{Error, Result};
+
+/// What a new contact says, as a JSContact Card. Each non-blank email and
+/// phone becomes a numbered entry (`e1`, `e2`, `p1`…), in order.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ContactDraft {
+    /// The full name, as `name.full`.
+    pub name: String,
+    pub emails: Vec<String>,
+    pub phones: Vec<String>,
+    pub organization: Option<String>,
+    pub notes: Option<String>,
+}
+
+/// The changes to an existing contact. Only the set fields are patched. A
+/// list replaces its whole map (`Some(vec![])` clears it); an empty
+/// `organization` or `notes` clears it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ContactPatch {
+    pub name: Option<String>,
+    pub emails: Option<Vec<String>>,
+    pub phones: Option<Vec<String>>,
+    pub organization: Option<String>,
+    pub notes: Option<String>,
+}
+
+impl ContactDraft {
+    /// The JSContact Card this draft creates in `address_book`, under `uid`.
+    fn to_jscontact(&self, uid: &str, address_book: &str) -> Value {
+        let mut card = json!({
+            "@type": "Card",
+            "uid": uid,
+            "addressBookId": address_book,
+            "name": { "full": self.name },
+        });
+        // RFC 9553 §1.4.1: an empty map is omitted, never sent as {}.
+        let emails = numbered("e", &self.emails, |address| json!({ "address": address }));
+        if !is_empty_map(&emails) {
+            card["emails"] = emails;
+        }
+        let phones = numbered("p", &self.phones, |number| json!({ "number": number }));
+        if !is_empty_map(&phones) {
+            card["phones"] = phones;
+        }
+        if let Some(organization) = non_empty(self.organization.as_deref()) {
+            card["organizations"] = organization_map(organization);
+        }
+        if let Some(notes) = non_empty(self.notes.as_deref()) {
+            card["notes"] = json!(notes);
+        }
+        card
+    }
+}
+
+impl ContactPatch {
+    /// The JSContact patch: each set field, an empty text field as `null`.
+    fn to_patch(&self) -> Value {
+        let mut patch = json!({});
+        if let Some(name) = &self.name {
+            patch["name"] = json!({ "full": name });
+        }
+        // A list that leaves nothing clears the property (null): RFC 9553
+        // §1.4.1 forbids an empty map.
+        if let Some(emails) = &self.emails {
+            patch["emails"] = or_null(numbered(
+                "e",
+                emails,
+                |address| json!({ "address": address }),
+            ));
+        }
+        if let Some(phones) = &self.phones {
+            patch["phones"] = or_null(numbered("p", phones, |number| json!({ "number": number })));
+        }
+        if let Some(organization) = &self.organization {
+            patch["organizations"] = match non_empty(Some(organization)) {
+                Some(organization) => organization_map(organization),
+                None => Value::Null,
+            };
+        }
+        if let Some(notes) = &self.notes {
+            patch["notes"] = optional_text(notes);
+        }
+        patch
+    }
+}
+
+/// A map of the non-blank values, keyed `prefix` plus a 1-based number.
+fn numbered(prefix: &str, values: &[String], entry: impl Fn(&str) -> Value) -> Value {
+    let entries: serde_json::Map<String, Value> = values
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .enumerate()
+        .map(|(index, value)| (format!("{prefix}{}", index + 1), entry(value)))
+        .collect();
+    Value::Object(entries)
+}
+
+/// Whether `value` is a map with no entries.
+fn is_empty_map(value: &Value) -> bool {
+    value.as_object().is_some_and(serde_json::Map::is_empty)
+}
+
+/// `value`, or `null` when it is an empty map.
+fn or_null(value: Value) -> Value {
+    if is_empty_map(&value) {
+        Value::Null
+    } else {
+        value
+    }
+}
+
+/// The one-entry `organizations` map JSContact gives a single name.
+fn organization_map(name: &str) -> Value {
+    json!({ "o1": { "name": name } })
+}
+
+/// The Contact/set arguments creating `draft` in `address_book`. The
+/// `addressBookId` must be a UUID: maild skips a create without one.
+fn contact_create_args(
+    account_id: &str,
+    uid: &str,
+    address_book: &str,
+    draft: &ContactDraft,
+) -> Result<Value> {
+    require_uuid("address book", address_book)?;
+    Ok(json!({
+        "accountId": account_id,
+        "create": { CREATE: draft.to_jscontact(uid, address_book) },
+    }))
+}
+
+/// The Contact/set arguments patching one contact.
+fn contact_update_args(account_id: &str, id: &str, patch: &ContactPatch) -> Value {
+    json!({ "accountId": account_id, "update": { id: patch.to_patch() } })
+}
+
+/// The Contact/set arguments destroying one contact.
+fn contact_destroy_args(account_id: &str, id: &str) -> Value {
+    json!({ "accountId": account_id, "destroy": [id] })
+}
 
 /// One address book.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -98,6 +240,57 @@ impl Client {
         Ok(serde_json::from_value(list)?)
     }
 
+    /// One contact by id, its full JSContact card included.
+    pub async fn contact(&self, id: &str) -> Result<Contact> {
+        let replies = self
+            .call(&[Call(
+                "Contact/get".into(),
+                json!({ "accountId": self.account_id(), "ids": [id] }),
+                "c0".into(),
+            )])
+            .await?;
+        let data = replies
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::Protocol("Contact/get reply is empty".into()))?;
+        let list = data
+            .get("list")
+            .cloned()
+            .ok_or_else(|| Error::Protocol("Contact/get reply has no list".into()))?;
+        let contacts: Vec<Contact> = serde_json::from_value(list)?;
+        contacts
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::Protocol(format!("contact {id:?} is gone")))
+    }
+
+    /// Create a contact in `address_book` and return its id. The uid is
+    /// minted here: JSContact requires one, and a fresh card has none.
+    pub async fn create_contact(&self, address_book: &str, draft: &ContactDraft) -> Result<String> {
+        let uid = uuid::Uuid::now_v7().to_string();
+        let args = contact_create_args(self.account_id(), &uid, address_book, draft)?;
+        let data = self.set_call("Contact/set", args).await?;
+        check_set_reply(&data, "notCreated", &[CREATE.to_owned()])?;
+        check_confirmed(&data, "created", &[CREATE.to_owned()])?;
+        Client::created_id(&data, CREATE)
+    }
+
+    /// Patch one contact. Only the set fields change.
+    pub async fn update_contact(&self, id: &str, patch: &ContactPatch) -> Result<()> {
+        let args = contact_update_args(self.account_id(), id, patch);
+        let data = self.set_call("Contact/set", args).await?;
+        check_set_reply(&data, "notUpdated", &[id.to_owned()])?;
+        check_confirmed(&data, "updated", &[id.to_owned()])
+    }
+
+    /// Delete one contact.
+    pub async fn delete_contact(&self, id: &str) -> Result<()> {
+        let args = contact_destroy_args(self.account_id(), id);
+        let data = self.set_call("Contact/set", args).await?;
+        check_set_reply(&data, "notDestroyed", &[id.to_owned()])?;
+        check_confirmed(&data, "destroyed", &[id.to_owned()])
+    }
+
     /// One address book's contacts, full-name first, with an optional text
     /// filter over name, email and company. One round trip: `Contact/query`
     /// chains into `Contact/get`.
@@ -145,6 +338,49 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    /// RFC 9553 §1.4.1: a create with no (or only blank) emails or phones
+    /// omits the map rather than sending `{}`.
+    #[test]
+    fn a_draft_omits_empty_maps() {
+        let draft = ContactDraft {
+            name: "Ann".into(),
+            emails: vec!["  ".into()],
+            phones: Vec::new(),
+            ..ContactDraft::default()
+        };
+        let card = draft.to_jscontact("uid-1", "book-1");
+        assert!(card.get("emails").is_none(), "{card}");
+        assert!(card.get("phones").is_none(), "{card}");
+        let draft = ContactDraft {
+            emails: vec!["ann@example.invalid".into()],
+            ..draft
+        };
+        let card = draft.to_jscontact("uid-1", "book-1");
+        assert_eq!(card["emails"]["e1"]["address"], "ann@example.invalid");
+    }
+
+    /// RFC 9553 §1.4.1: a patch whose list leaves nothing clears the
+    /// property with `null`, never `{}`.
+    #[test]
+    fn a_patch_clears_an_emptied_map_with_null() {
+        let patch = ContactPatch {
+            emails: Some(Vec::new()),
+            phones: Some(vec![" ".into()]),
+            ..ContactPatch::default()
+        }
+        .to_patch();
+        assert_eq!(patch["emails"], Value::Null);
+        assert_eq!(patch["phones"], Value::Null);
+        assert!(patch.as_object().unwrap().contains_key("emails"));
+        let patch = ContactPatch {
+            phones: Some(vec!["+61 7 5555 0100".into()]),
+            ..ContactPatch::default()
+        }
+        .to_patch();
+        assert_eq!(patch["phones"]["p1"]["number"], "+61 7 5555 0100");
+        assert!(patch.get("emails").is_none());
+    }
+
     #[test]
     fn reads_the_maild_contact_shape() {
         let contact: Contact = serde_json::from_value(json!({
@@ -181,5 +417,108 @@ mod tests {
         .unwrap();
         assert_eq!(contact.display_name(), "Bob Sample");
         assert_eq!(contact.display_email(), "bob@example.invalid");
+    }
+
+    fn draft() -> ContactDraft {
+        ContactDraft {
+            name: "Ann Example".into(),
+            emails: vec![
+                "ann@example.invalid".into(),
+                "  ".into(),
+                "a2@example.invalid".into(),
+            ],
+            phones: vec!["+61 7 5555 0000".into()],
+            organization: Some("Example Pty Ltd".into()),
+            notes: Some("Met at the fair".into()),
+        }
+    }
+
+    #[test]
+    fn a_draft_serialises_to_a_jscontact_card() {
+        assert_eq!(
+            draft().to_jscontact("uid-1", "B1"),
+            json!({
+                "@type": "Card",
+                "uid": "uid-1",
+                "addressBookId": "B1",
+                "name": { "full": "Ann Example" },
+                "emails": {
+                    "e1": { "address": "ann@example.invalid" },
+                    "e2": { "address": "a2@example.invalid" }
+                },
+                "phones": { "p1": { "number": "+61 7 5555 0000" } },
+                "organizations": { "o1": { "name": "Example Pty Ltd" } },
+                "notes": "Met at the fair"
+            })
+        );
+    }
+
+    #[test]
+    fn a_blank_draft_has_no_empty_maps_and_no_optional_fields() {
+        let card = ContactDraft {
+            name: "Bob".into(),
+            organization: Some(" ".into()),
+            ..ContactDraft::default()
+        }
+        .to_jscontact("uid-2", "B1");
+        assert!(card.get("emails").is_none());
+        assert!(card.get("phones").is_none());
+        assert!(card.get("organizations").is_none());
+        assert!(card.get("notes").is_none());
+    }
+
+    #[test]
+    fn a_create_wraps_the_card_under_the_client_id() {
+        let book = "0196c0de-0000-7000-8000-000000000002";
+        let args = contact_create_args("A1", "uid-1", book, &draft()).unwrap();
+        assert_eq!(args["accountId"], json!("A1"));
+        assert_eq!(args["create"]["c0"]["addressBookId"], json!(book));
+        assert_eq!(
+            args["create"]["c0"]["name"],
+            json!({ "full": "Ann Example" })
+        );
+        assert!(contact_create_args("A1", "uid-1", "B1", &draft()).is_err());
+    }
+
+    #[test]
+    fn a_patch_replaces_whole_maps_and_clears_blank_text() {
+        let patch = ContactPatch {
+            emails: Some(Vec::new()),
+            phones: Some(vec!["0400 000 000".into()]),
+            organization: Some(String::new()),
+            notes: Some("Moved".into()),
+            ..ContactPatch::default()
+        };
+        assert_eq!(
+            contact_update_args("A1", "P1", &patch),
+            json!({
+                "accountId": "A1",
+                "update": {
+                    "P1": {
+                        "emails": null,
+                        "phones": { "p1": { "number": "0400 000 000" } },
+                        "organizations": null,
+                        "notes": "Moved"
+                    }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn a_created_card_reads_back_through_the_existing_struct() {
+        let data = draft().to_jscontact("uid-1", "B1");
+        let contact: Contact = serde_json::from_value(json!({
+            "id": "P9",
+            "addressBookId": "B1",
+            "uid": "uid-1",
+            "data": data,
+            "fullName": "Ann Example",
+            "email": "ann@example.invalid"
+        }))
+        .unwrap();
+        assert_eq!(contact.display_name(), "Ann Example");
+        assert_eq!(contact.display_email(), "ann@example.invalid");
+        assert_eq!(contact.data["addressBookId"], json!("B1"));
     }
 }

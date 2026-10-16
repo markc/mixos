@@ -1,6 +1,6 @@
 ---
 title: Prefs
-description: MixOS's preferences window — a sidebar of editors: Applications follows, installs, updates, rolls back and removes upstream releases; Appearance sets the session's colour scheme, style, mode, contrast and window frame.
+description: MixOS's preferences window — a sidebar of editors: Applications follows, installs, updates, rolls back and removes upstream releases; Appearance sets the session's colour scheme, style, mode, contrast and window frame; App Settings → Email edits the email app's accounts and mail options.
 ---
 
 # Prefs
@@ -8,7 +8,7 @@ description: MixOS's preferences window — a sidebar of editors: Applications f
 Prefs holds MixOS's preference editors in one window: an expandable tree
 on the left, the selected section on the right. Appearance contains Themes,
 Fonts, Wallpapers and Terminal; Applications contains MixOS Desktop, MixOS Server and
-Creative. The sidebar can be resized. The name is a nod to the
+Creative; App Settings contains Email. The sidebar can be resized. The name is a nod to the
 Prefs drawer of AmigaOS, where each setting had its own small editor.
 
 ## Applications
@@ -80,6 +80,90 @@ settingsd and applies as it is made. Themes contains only the session theme
 controls. See the [terminal settings](../docs/spec/settings/README.md#terminal) for
 the defaults and ranges.
 
+## App Settings → Email
+
+**App Settings** holds settings that belong to one application, kept in
+the settings service like the session's look. It is separate from
+Applications, which installs apps. Its first section is **Email**, the
+[email app](../email/README.md)'s accounts and mail options (`email.*` in
+settingsd; see the [email settings](../docs/spec/settings/README.md)).
+
+- **Accounts** lists the accounts in the order Email's folder tree shows
+  them, marking the default and any that are disabled. **Add account**
+  opens a blank form; **Move up** and **Move down** reorder; **Make
+  default** picks the account new mail is sent from (with none, the first
+  enabled account); **Remove…** asks first, and Cancel is the default.
+- The selected account's form holds its **name**, **JMAP URL** (https,
+  no trailing slash), **login email**, an optional **CA bundle** (an
+  absolute PEM path; blank trusts the system roots) and a **signature**.
+  Typing stays in the form until **Save**; **Revert** drops it. Each field
+  is checked by the settings service's own rules first, and a field it
+  would refuse is named under the field and nothing is sent. **Enabled**
+  applies at once.
+- **Mail** holds messages per page (10 to 500), marking messages read when
+  opened, and asking before deleting them; each applies at once. **Reset
+  email settings…** asks first, then puts every email setting back to its
+  default, which means no accounts.
+
+Each change is one write to settingsd carrying the whole account list,
+and the default account in the same write when the change touches it
+(removing the default account clears it). Every write is checked against
+the revision shown, as on the Appearance panel. If settingsd refuses one,
+the status line gives its reason and the panel keeps showing what
+settingsd holds; your typing stays in the form.
+
+**Passwords never go to the settings service**, whose settings every Bus
+client can read, and Prefs neither keeps nor shows them. **Set password**
+hands the typed password to Email itself (`email.account.password.set`),
+which keeps it in its own private file, and empties the field; the field
+gets the password back only if Email refuses it. If Email is not running,
+Prefs starts it (`apps.launch`) and waits up to about 16 seconds for it to
+come onto the Bus. Under the field, Prefs says whether Email holds a
+password for the account, as Email reports it (`email.accounts`), or that
+this is unknown because Email is not running. **Connect now** asks Email
+to connect the account (`email.account.connect`). **Forget password…**
+asks first (Cancel is the default), then has Email delete the password it
+keeps; it is the only time Prefs sends an empty password, and it starts
+Email if needed, as Set password does. **Remove…** goes through Email
+when it may be running (`email.account.remove`): Email removes the account
+from settingsd and forgets its password itself, and refuses while the
+account is still being migrated from its old configuration
+(`MIGRATION_PENDING`, shown as Email gives it). When Email is not running,
+Prefs removes the account from settingsd directly and, once settingsd shows
+it gone, asks a running Email to forget the password; Prefs does not start
+Email for this, and if Email is away or refuses, the status line says the
+password may still be held. An account still being migrated comes back
+when Email next starts, by design.
+An Email too old to know these verbs is reported as such, not retried.
+
+```mix
+-- What Prefs shows: accounts (with has_password), default, mail options.
+send prefs prefs.email
+
+-- Add an account; the answer carries its new id.
+send prefs prefs.email.set body='{"op":"add","name":"Work","url":"https://mail.example.com","email":"admin@example.com"}'
+
+-- Change one field, make it the default, move it, disable it.
+send prefs prefs.email.set body='{"op":"update","id":"acct-0f3a2b1c9d8e","signature":"-- Admin"}'
+send prefs prefs.email.set body='{"op":"default","id":"acct-0f3a2b1c9d8e"}'
+send prefs prefs.email.set body='{"op":"move","id":"acct-0f3a2b1c9d8e","direction":"up"}'
+send prefs prefs.email.set body='{"op":"enable","id":"acct-0f3a2b1c9d8e","enabled":false}'
+
+-- A mail option.
+send prefs prefs.email.set body='{"path":"email.mail.page_size","value":50}'
+
+-- Hand a password to Email (answered once Email has), or forget it.
+send prefs prefs.email.password body='{"id":"acct-0f3a2b1c9d8e","password":"…"}'
+send prefs prefs.email.password body='{"id":"acct-0f3a2b1c9d8e","forget":true}'
+```
+
+`prefs.email.set` takes `op` `add`, `update`, `remove`, `move`, `default`
+or `enable`, or `path` and `value` for a mail option. Over the Bus,
+`remove` removes at once: the confirmation belongs to the window. A field
+the settings service would refuse is answered with `ARGUMENT`, naming it.
+For scripts that do not need Prefs open, call `settings.apply` on the
+`email.*` paths directly, and `email.account.password.set` on Email.
+
 ## For agents
 
 Prefs answers on the Bus as `prefs`. `prefs.info` reports the whole state;
@@ -89,8 +173,11 @@ edits and the revision read; `prefs.appearance.set`
 changes it at once (`scheme`, `style` with `own` for the scheme's own, `mode`,
 `contrast`, `decorations`, `caption_side`); `prefs.select {app}` and
 `prefs.section {name}` selects `themes`, `fonts`, `wallpapers`, `terminal`, `mixos-desktop`,
-`mixos-server`, `creative` or `other` and expands its parent. `prefs.panel {name}`
-remains compatible, opening the default Themes or Creative section.
+`mixos-server`, `creative`, `other` or `email` and expands its parent. `prefs.panel {name}`
+remains compatible, opening the default Themes, Creative or Email section
+(`applications`, `appearance`, `app-settings`). `prefs.email`,
+`prefs.email.set` and `prefs.email.password` are described under App
+Settings → Email above.
 `prefs.execute {id}` runs any command a button
 or menu would (`apps.check`, `apps.install`, `appearance.apply`,
 `appearance.revert`, …), and `prefs.commands` lists them with their
@@ -137,6 +224,7 @@ The source is [`apps/prefs`](https://github.com/markc/mixos/tree/main/apps/prefs
 |---|---|
 | `crates/preferences` | the headless engine: panels, rows, notes, one operation at a time, the `prefs.*` verbs |
 | `crates/preferences/src/appearance.rs` | the Appearance panel: the look, its draft, fenced applies, receipts for lost replies |
+| `crates/preferences/src/email.rs` | App Settings → Email: account changes planned and checked, fenced applies, passwords handed to Email |
 | `src/commands.rs` | every action as a registered command (menus, buttons, shortcuts, `prefs.execute`) |
 | `src/view.rs` | the egui rendering; returns what the person did |
 | `src/shell.rs` | events in, effects out, in order; drained shutdown |

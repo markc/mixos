@@ -21,7 +21,7 @@ refusal, invalid input or unknown verbs. Domain status is structured in the body
 | Verb | Input and result |
 | --- | --- |
 | `settings.describe` | No mutation; version, fields, ranges, defaults, limits and implemented/deferred capabilities |
-| `settings.get` | `{binding:{instance,profile}, view?, schema?}`; `view` `full` (default): complete accepted snapshot under `snapshot`, in `schema` 1 (default) or 2 (each distinct design projection once under `designs`, contexts naming it by digest; other schemas refused with `unsupported_schema`); `summary`: the profile's `Summary` (schema, binding, incarnation, revision, design revision, source digest, appearance names, `custom_source`, `keymaps` when any are set, and `terminal` when any value is set; never projections or a source) under `summary`; both with publication/recovery status |
+| `settings.get` | `{binding:{instance,profile}, view?, schema?}`; `view` `full` (default): complete accepted snapshot under `snapshot`, in `schema` 1 (default) or 2 (each distinct design projection once under `designs`, contexts naming it by digest; other schemas refused with `unsupported_schema`); `summary`: the profile's `Summary` (schema, binding, incarnation, revision, design revision, source digest, appearance names, `custom_source`, `keymaps` when any are set, `terminal` when any value is set, and `email` when any value is set; never projections or a source) under `summary`; both with publication/recovery status |
 | `settings.appearance.get` | `{binding:{instance,profile}, schema?}`; read-only appearance projection (`mode`, `contrast`, sRGB `accent`) tagged with incarnation and revisions; the reply also includes the atomic `snapshot` (in `schema` 1 or 2, as for `settings.get`) for shared Consumer validation; `wrong_target` on a foreign binding |
 | `settings.validate` | Fenced apply-shaped body; resolve/compile candidate without a write or receipt; valid with current base identity or diagnostics/conflict |
 | `settings.apply` | Fenced batch described below; durable changed/unchanged receipt |
@@ -307,6 +307,45 @@ design. Terminal colours are not a setting: they follow the session theme.
 
 Apply and reset take each path, or `terminal` for the whole group. The
 summary carries `terminal` when any value is set.
+
+## Email
+
+The profile's `email` holds the email app's JMAP accounts and mail options.
+**It is not secret and cannot hold a secret.** The snapshot and summary are
+retained on the Bus for any client to read, so an account has no password
+field and every record in the group refuses unknown keys: an account carrying
+`password` is refused with `validation_failed`, and nothing is written.
+Passwords live only in the email app's private secrets file, set through its
+own write-only verb. The group is omitted at its defaults, so older profiles
+keep their seals and the store format stays 3. It does not affect the
+resolved design.
+
+| Field | Type and range | Default |
+| --- | --- | --- |
+| `email.accounts` | list of accounts, at most 64, ids unique; replaced whole, in tree order | `[]` |
+| `email.default_account` | an `id` in `email.accounts`, or null | null: the first enabled account |
+| `email.mail.page_size` | integer 10–500 | 100 |
+| `email.mail.mark_read_on_open` | boolean | true |
+| `email.mail.confirm_delete` | boolean | true |
+
+Each account is a record of exactly these keys:
+
+| Key | Type and range | Default |
+| --- | --- | --- |
+| `id` | `[a-z0-9-]{1,64}`, stable; the writer mints `acct-` and 12 hex digits | required |
+| `name` | the tree label: 1–128 bytes, no control characters, no surrounding space | required |
+| `url` | the JMAP base: `https://host[:port][/path]`, the host a DNS name, IPv4 or bracketed IPv6 address; no userinfo (`user:secret@`, so no password rides in a URL), query, fragment, backslash, trailing slash or space; at most 2048 bytes | required |
+| `email` | the login and default From: one `@` with text on both sides, no space; at most 254 bytes | required |
+| `ca_path` | an absolute path to a PEM bundle, or null for the system roots | null |
+| `enabled` | boolean | true |
+| `signature` | plain text appended to new drafts: at most 4096 characters, no control characters but newline and tab | `""` |
+
+A refused account is named by position: `email.accounts[2].url`. The default
+account must name an account, so removing it from the list needs
+`email.default_account` changed or reset in the same batch. Apply and reset
+take each path, or `email` for the whole group (null resets it too);
+`email.mail` alone is not a path. The summary carries `email` when any value
+is set; `settings::email::from_snapshot` and `from_summary` read it.
 
 ## Topics and storage
 

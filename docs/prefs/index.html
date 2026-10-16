@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="MixOS&#x27;s preferences window — a sidebar of editors: Applications follows, installs, updates, rolls back and removes upstream releases; Appearance sets the session&#x27;s colour scheme, style, mode, contrast and window frame.">
+    <meta name="description" content="MixOS&#x27;s preferences window — a sidebar of editors: Applications follows, installs, updates, rolls back and removes upstream releases; Appearance sets the session&#x27;s colour scheme, style, mode, contrast and window frame; App Settings → Email edits the email app&#x27;s accounts and mail options.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=c34fdc68c4" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=51993ccf9f">
@@ -219,6 +219,7 @@
                     <nav id="toc-nav">
                         <a href="#applications">Applications</a>
                         <a href="#appearance">Appearance</a>
+                        <a href="#app-settings--email">App Settings → Email</a>
                         <a href="#for-agents">For agents</a>
                         <a href="#wallpaper">Wallpaper</a>
                         <a href="#running-and-testing">Running and testing</a>
@@ -250,7 +251,7 @@
 <p>Prefs holds MixOS's preference editors in one window: an expandable tree
 on the left, the selected section on the right. Appearance contains Themes,
 Fonts, Wallpapers and Terminal; Applications contains MixOS Desktop, MixOS Server and
-Creative. The sidebar can be resized. The name is a nod to the
+Creative; App Settings contains Email. The sidebar can be resized. The name is a nod to the
 Prefs drawer of AmigaOS, where each setting had its own small editor.</p>
 <h2 id="applications">Applications</h2>
 <p>Each Applications section shows its followed apps, from the <a href="/releasesd/">releases
@@ -314,6 +315,84 @@ mouse and environment settings, plus Reset terminal. Each change uses
 settingsd and applies as it is made. Themes contains only the session theme
 controls. See the <a href="/docs/spec/settings/#terminal">terminal settings</a> for
 the defaults and ranges.</p>
+<h2 id="app-settings--email">App Settings → Email</h2>
+<p><strong>App Settings</strong> holds settings that belong to one application, kept in
+the settings service like the session's look. It is separate from
+Applications, which installs apps. Its first section is <strong>Email</strong>, the
+<a href="/email/">email app</a>'s accounts and mail options (<code>email.*</code> in
+settingsd; see the <a href="/docs/spec/settings/">email settings</a>).</p>
+<ul>
+<li><strong>Accounts</strong> lists the accounts in the order Email's folder tree shows
+them, marking the default and any that are disabled. <strong>Add account</strong>
+opens a blank form; <strong>Move up</strong> and <strong>Move down</strong> reorder; <strong>Make
+default</strong> picks the account new mail is sent from (with none, the first
+enabled account); <strong>Remove…</strong> asks first, and Cancel is the default.</li>
+<li>The selected account's form holds its <strong>name</strong>, <strong>JMAP URL</strong> (https,
+no trailing slash), <strong>login email</strong>, an optional <strong>CA bundle</strong> (an
+absolute PEM path; blank trusts the system roots) and a <strong>signature</strong>.
+Typing stays in the form until <strong>Save</strong>; <strong>Revert</strong> drops it. Each field
+is checked by the settings service's own rules first, and a field it
+would refuse is named under the field and nothing is sent. <strong>Enabled</strong>
+applies at once.</li>
+<li><strong>Mail</strong> holds messages per page (10 to 500), marking messages read when
+opened, and asking before deleting them; each applies at once. <strong>Reset
+email settings…</strong> asks first, then puts every email setting back to its
+default, which means no accounts.</li>
+</ul>
+<p>Each change is one write to settingsd carrying the whole account list,
+and the default account in the same write when the change touches it
+(removing the default account clears it). Every write is checked against
+the revision shown, as on the Appearance panel. If settingsd refuses one,
+the status line gives its reason and the panel keeps showing what
+settingsd holds; your typing stays in the form.</p>
+<p><strong>Passwords never go to the settings service</strong>, whose settings every Bus
+client can read, and Prefs neither keeps nor shows them. <strong>Set password</strong>
+hands the typed password to Email itself (<code>email.account.password.set</code>),
+which keeps it in its own private file, and empties the field; the field
+gets the password back only if Email refuses it. If Email is not running,
+Prefs starts it (<code>apps.launch</code>) and waits up to about 16 seconds for it to
+come onto the Bus. Under the field, Prefs says whether Email holds a
+password for the account, as Email reports it (<code>email.accounts</code>), or that
+this is unknown because Email is not running. <strong>Connect now</strong> asks Email
+to connect the account (<code>email.account.connect</code>). <strong>Forget password…</strong>
+asks first (Cancel is the default), then has Email delete the password it
+keeps; it is the only time Prefs sends an empty password, and it starts
+Email if needed, as Set password does. <strong>Remove…</strong> goes through Email
+when it may be running (<code>email.account.remove</code>): Email removes the account
+from settingsd and forgets its password itself, and refuses while the
+account is still being migrated from its old configuration
+(<code>MIGRATION_PENDING</code>, shown as Email gives it). When Email is not running,
+Prefs removes the account from settingsd directly and, once settingsd shows
+it gone, asks a running Email to forget the password; Prefs does not start
+Email for this, and if Email is away or refuses, the status line says the
+password may still be held. An account still being migrated comes back
+when Email next starts, by design.
+An Email too old to know these verbs is reported as such, not retried.</p>
+<pre><code class="language-mix">-- What Prefs shows: accounts (with has_password), default, mail options.
+send prefs prefs.email
+
+-- Add an account; the answer carries its new id.
+send prefs prefs.email.set body='{"op":"add","name":"Work","url":"https://mail.example.com","email":"admin@example.com"}'
+
+-- Change one field, make it the default, move it, disable it.
+send prefs prefs.email.set body='{"op":"update","id":"acct-0f3a2b1c9d8e","signature":"-- Admin"}'
+send prefs prefs.email.set body='{"op":"default","id":"acct-0f3a2b1c9d8e"}'
+send prefs prefs.email.set body='{"op":"move","id":"acct-0f3a2b1c9d8e","direction":"up"}'
+send prefs prefs.email.set body='{"op":"enable","id":"acct-0f3a2b1c9d8e","enabled":false}'
+
+-- A mail option.
+send prefs prefs.email.set body='{"path":"email.mail.page_size","value":50}'
+
+-- Hand a password to Email (answered once Email has), or forget it.
+send prefs prefs.email.password body='{"id":"acct-0f3a2b1c9d8e","password":"…"}'
+send prefs prefs.email.password body='{"id":"acct-0f3a2b1c9d8e","forget":true}'
+</code></pre>
+<p><code>prefs.email.set</code> takes <code>op</code> <code>add</code>, <code>update</code>, <code>remove</code>, <code>move</code>, <code>default</code>
+or <code>enable</code>, or <code>path</code> and <code>value</code> for a mail option. Over the Bus,
+<code>remove</code> removes at once: the confirmation belongs to the window. A field
+the settings service would refuse is answered with <code>ARGUMENT</code>, naming it.
+For scripts that do not need Prefs open, call <code>settings.apply</code> on the
+<code>email.*</code> paths directly, and <code>email.account.password.set</code> on Email.</p>
 <h2 id="for-agents">For agents</h2>
 <p>Prefs answers on the Bus as <code>prefs</code>. <code>prefs.info</code> reports the whole state;
 <code>prefs.apps</code> the rows, selection and notes; <code>prefs.appearance</code> the session
@@ -322,8 +401,11 @@ edits and the revision read; <code>prefs.appearance.set</code>
 changes it at once (<code>scheme</code>, <code>style</code> with <code>own</code> for the scheme's own, <code>mode</code>,
 <code>contrast</code>, <code>decorations</code>, <code>caption_side</code>); <code>prefs.select {app}</code> and
 <code>prefs.section {name}</code> selects <code>themes</code>, <code>fonts</code>, <code>wallpapers</code>, <code>terminal</code>, <code>mixos-desktop</code>,
-<code>mixos-server</code>, <code>creative</code> or <code>other</code> and expands its parent. <code>prefs.panel {name}</code>
-remains compatible, opening the default Themes or Creative section.
+<code>mixos-server</code>, <code>creative</code>, <code>other</code> or <code>email</code> and expands its parent. <code>prefs.panel {name}</code>
+remains compatible, opening the default Themes, Creative or Email section
+(<code>applications</code>, <code>appearance</code>, <code>app-settings</code>). <code>prefs.email</code>,
+<code>prefs.email.set</code> and <code>prefs.email.password</code> are described under App
+Settings → Email above.
 <code>prefs.execute {id}</code> runs any command a button
 or menu would (<code>apps.check</code>, <code>apps.install</code>, <code>appearance.apply</code>,
 <code>appearance.revert</code>, …), and <code>prefs.commands</code> lists them with their
@@ -359,6 +441,7 @@ state read, never automatically resent.</p>
 <table><thead><tr><th>Path</th><th>What</th></tr></thead><tbody>
 <tr><td><code>crates/preferences</code></td><td>the headless engine: panels, rows, notes, one operation at a time, the <code>prefs.*</code> verbs</td></tr>
 <tr><td><code>crates/preferences/src/appearance.rs</code></td><td>the Appearance panel: the look, its draft, fenced applies, receipts for lost replies</td></tr>
+<tr><td><code>crates/preferences/src/email.rs</code></td><td>App Settings → Email: account changes planned and checked, fenced applies, passwords handed to Email</td></tr>
 <tr><td><code>src/commands.rs</code></td><td>every action as a registered command (menus, buttons, shortcuts, <code>prefs.execute</code>)</td></tr>
 <tr><td><code>src/view.rs</code></td><td>the egui rendering; returns what the person did</td></tr>
 <tr><td><code>src/shell.rs</code></td><td>events in, effects out, in order; drained shutdown</td></tr>

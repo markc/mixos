@@ -217,6 +217,7 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
+                        <a href="#080">0.8.0</a>
                         <a href="#070">0.7.0</a>
                         <a href="#060">0.6.0</a>
                         <a href="#050">0.5.0</a>
@@ -257,6 +258,25 @@
 <blockquote>
 <p>Mirrored from <a href="https://github.com/markc/mixos/blob/main/libs/settings/CHANGELOG.md"><code>libs/settings/CHANGELOG.md</code></a>, where releases update it. The component's page is <a href="/settings/">settings</a>. This page describes the current <code>main</code> branch of MixOS.</p>
 </blockquote>
+<h2 id="080">0.8.0</h2>
+<p>Additive, store format unchanged (3):</p>
+<ul>
+<li><code>Desktop.email</code> (<code>email::Email</code>): the email app's JMAP accounts
+(<code>email.accounts</code>, replaced whole, in tree order: id, name, url, email,
+ca_path, enabled, signature), <code>email.default_account</code> and the mail options
+<code>email.mail.page_size</code> (10–500, default 100), <code>mark_read_on_open</code> and
+<code>confirm_delete</code> (both default true). Omitted at its defaults, so older
+profiles keep their seals; it does not touch <code>Effective</code>. A profile that
+sets any of it will not load in a 0.7.0 build: reset <code>email</code> first.</li>
+<li>Nothing in it is secret: an account has no password field and every
+record refuses unknown keys, so <code>settings.apply</code> refuses an account that
+carries <code>password</code>.</li>
+<li><code>Summary.email</code> and <code>Followed::Look.email</code> carry it to followers;
+<code>email::from_snapshot</code>, <code>email::from_summary</code> and <code>Email::from_account</code>
+read it; <code>email::mint_account_id</code> mints a new unique <code>acct-</code> id.</li>
+<li><code>settings.describe</code> lists each <code>email.*</code> path; <code>email</code> alone resets or
+replaces the whole group.</li>
+</ul>
 <h2 id="070">0.7.0</h2>
 <p>Additive, store format unchanged (3):</p>
 <ul>

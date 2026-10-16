@@ -129,12 +129,31 @@ pub fn backref(result_of: &str, name: &str, path: &str) -> Value {
     json!({"resultOf": result_of, "name": name, "path": path})
 }
 
-/// The request envelope.
-#[derive(Serialize)]
-struct Envelope<'a> {
-    using: &'a [String],
-    #[serde(rename = "methodCalls")]
-    method_calls: &'a [Call],
+/// The request body for `calls`, under the Session's advertised `using` list.
+pub(crate) fn request_body(using: &[String], calls: &[Call]) -> Value {
+    json!({ "using": using, "methodCalls": calls })
+}
+
+/// The client id every `/set` create uses. One create per call, so one id.
+pub(crate) const CREATE: &str = "c0";
+
+/// A UUID id that maild parses. maild skips a create whose parent id does not
+/// parse (`calendarId`, `addressBookId`), with no reply entry, so it is
+/// checked before the request goes out.
+pub(crate) fn require_uuid(field: &str, value: &str) -> Result<()> {
+    uuid::Uuid::parse_str(value)
+        .map(|_| ())
+        .map_err(|e| Error::Protocol(format!("{field} {value:?} is not a UUID: {e}")))
+}
+
+/// A trimmed text value, or `None` when it is empty.
+pub(crate) fn non_empty(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
+/// A text value as JSON: `null` when empty, so a patch clears the field.
+pub(crate) fn optional_text(text: &str) -> Value {
+    non_empty(Some(text)).map_or(Value::Null, |text| json!(text))
 }
 
 /// The response envelope.
@@ -333,14 +352,10 @@ impl Client {
 
     /// One POST, no retry logic.
     async fn call_once(&self, calls: &[Call]) -> Result<Vec<Value>> {
-        let envelope = Envelope {
-            using: &self.session.using,
-            method_calls: calls,
-        };
         let api = self.endpoint(&self.session.api_url)?;
         let response = self
             .authorize(self.pool.post(api))
-            .json(&envelope)
+            .json(&request_body(&self.session.using, calls))
             .send()
             .await?;
         let status = response.status();
@@ -377,6 +392,16 @@ impl Client {
         ))
     }
 
+    /// One `/set` call: `method` with its arguments, the reply's arguments
+    /// returned for the caller to check with [`check_set_reply`].
+    pub(crate) async fn set_call(&self, method: &str, args: Value) -> Result<Value> {
+        let replies = self.call(&[Call(method.into(), args, "s0".into())]).await?;
+        replies
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::Protocol(format!("{method} reply is empty")))
+    }
+
     /// The server id a `/set` reply assigned to one created client id. A
     /// silent skip (maild's PIM handlers never populate `notCreated`) reads
     /// as a protocol error: the id simply is not there.
@@ -387,6 +412,35 @@ impl Client {
             .and_then(Value::as_str)
             .map(str::to_owned)
             .ok_or_else(|| Error::Protocol(format!("no id for created {client_id:?}")))
+    }
+}
+
+/// Fail with the first error a `/set` reply reports under `key` for any of
+/// `ids`. A reply that names none of them is a success.
+pub(crate) fn check_set_reply(data: &Value, key: &str, ids: &[String]) -> Result<()> {
+    match ids.iter().find_map(|id| Client::set_error(data, key, id)) {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+
+/// Fail for the first of `ids` that the reply does not confirm under `key`
+/// (`created`, `updated` or `destroyed`). maild's calendar and contact sets
+/// skip a failed create or update without any `not*` entry, so a missing
+/// confirmation is the only signal. A `destroyed` list is an array of ids;
+/// the other two are maps keyed by id.
+pub(crate) fn check_confirmed(data: &Value, key: &str, ids: &[String]) -> Result<()> {
+    let confirmed = |id: &str| match data.get(key) {
+        Some(Value::Object(map)) => map.contains_key(id),
+        Some(Value::Array(list)) => list.iter().any(|entry| entry.as_str() == Some(id)),
+        _ => false,
+    };
+    match ids.iter().find(|id| !confirmed(id)) {
+        Some(id) => Err(Error::method(
+            "serverFail",
+            Some(&format!("server did not confirm {id:?} as {key}")),
+        )),
+        None => Ok(()),
     }
 }
 
@@ -458,5 +512,89 @@ mod tests {
             Err(Error::Protocol(_))
         ));
         assert_eq!(body.len(), 10, "nothing past the cap is kept");
+    }
+
+    #[test]
+    fn the_request_body_carries_using_and_the_method_calls() {
+        let calls = [Call(
+            "Mailbox/get".into(),
+            json!({"accountId": "A1"}),
+            "m0".into(),
+        )];
+        let body = request_body(&["urn:ietf:params:jmap:mail".into()], &calls);
+        assert_eq!(
+            body,
+            json!({
+                "using": ["urn:ietf:params:jmap:mail"],
+                "methodCalls": [["Mailbox/get", {"accountId": "A1"}, "m0"]]
+            })
+        );
+    }
+
+    #[test]
+    fn a_set_error_for_any_listed_id_fails_the_reply() {
+        let reply = json!({
+            "updated": { "E1": null },
+            "notUpdated": {
+                "E2": { "type": "notFound", "description": "no such email" }
+            }
+        });
+        let ids = ["E1".to_owned(), "E2".to_owned()];
+        match check_set_reply(&reply, "notUpdated", &ids) {
+            Err(Error::Method {
+                error_type,
+                description,
+            }) => {
+                assert_eq!(error_type, "notFound");
+                assert_eq!(description, "no such email");
+            }
+            other => panic!("expected a method error, got {other:?}"),
+        }
+        assert!(check_set_reply(&reply, "notUpdated", &["E1".to_owned()]).is_ok());
+    }
+
+    #[test]
+    fn a_set_error_without_a_type_is_a_server_failure() {
+        let reply = json!({ "notDestroyed": { "E9": {} } });
+        match check_set_reply(&reply, "notDestroyed", &["E9".to_owned()]) {
+            Err(Error::Method { error_type, .. }) => assert_eq!(error_type, "serverFail"),
+            other => panic!("expected a method error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_silently_skipped_create_or_update_is_refused() {
+        // maild answers a skipped create or update with no entry in either map.
+        let reply = json!({ "created": { "c0": { "id": "V1" } }, "updated": null });
+        assert!(check_confirmed(&reply, "created", &["c0".to_owned()]).is_ok());
+        for (key, id) in [("created", "c1"), ("updated", "V1")] {
+            match check_confirmed(&reply, key, &[id.to_owned()]) {
+                Err(Error::Method {
+                    error_type,
+                    description,
+                }) => {
+                    assert_eq!(error_type, "serverFail");
+                    assert!(description.contains("did not confirm"), "{description}");
+                }
+                other => panic!("expected a method error for {key}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_destroyed_list_confirms_by_id() {
+        let reply = json!({ "destroyed": ["M2"] });
+        assert!(check_confirmed(&reply, "destroyed", &["M2".to_owned()]).is_ok());
+        assert!(check_confirmed(&reply, "destroyed", &["M3".to_owned()]).is_err());
+    }
+
+    #[test]
+    fn a_created_id_is_read_and_a_missing_one_is_refused() {
+        let reply = json!({ "created": { "c0": { "id": "M7" } } });
+        assert_eq!(Client::created_id(&reply, CREATE).unwrap(), "M7");
+        assert!(matches!(
+            Client::created_id(&json!({}), CREATE),
+            Err(Error::Protocol(_))
+        ));
     }
 }

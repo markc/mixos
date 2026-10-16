@@ -2,11 +2,14 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! preferences: Prefs' headless engine. It holds the panels, the
 //! Applications panel's rows and release notes (from the `releases`
-//! service), the Appearance panel over settingsd, the one-operation-at-a-time rules and the `prefs.*` Bus verbs,
+//! service), the Appearance panel over settingsd, App Settings → Email (the
+//! email app's settings in settingsd, its passwords handed to the app), the
+//! one-operation-at-a-time rules and the `prefs.*` Bus verbs,
 //! and knows nothing about the UI; `prefs` renders it with egui
 //! (AGENTS.md §4.1, engine first).
 pub mod appearance;
 mod background;
+pub mod email;
 pub mod engine;
 pub mod model;
 pub mod navigation;

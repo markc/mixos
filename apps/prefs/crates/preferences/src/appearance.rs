@@ -22,6 +22,7 @@
 //! is reported, never a guess. Quitting waits for a bounded number of
 //! receipt lookups; nothing needs to survive a restart, since the fence and
 //! a fresh read already make any later apply safe.
+use crate::email::Edit as EmailEdit;
 use crate::engine::{Effect, Engine};
 use crate::terminal::Edit;
 use citizen::{CallError, Reply};
@@ -277,6 +278,8 @@ pub(crate) enum Call {
     Receipt(Submitted),
     /// One terminal edit (the Terminal group), under its operation id.
     Terminal(String, Edit),
+    /// One email change (App Settings → Email), under its operation id.
+    Email(String, EmailEdit),
 }
 
 impl Call {
@@ -285,8 +288,10 @@ impl Call {
             Call::Read => "settings.get",
             Call::Apply(_) => "settings.apply",
             Call::Receipt(_) => "settings.status",
-            Call::Terminal(_, Edit::Reset) => "settings.reset",
-            Call::Terminal(_, Edit::Set(..)) => "settings.apply",
+            Call::Terminal(_, Edit::Reset) | Call::Email(_, EmailEdit::Reset) => "settings.reset",
+            Call::Terminal(_, Edit::Set(..)) | Call::Email(_, EmailEdit::Apply(_)) => {
+                "settings.apply"
+            }
         }
     }
 }
@@ -308,6 +313,9 @@ pub struct Appearance {
     /// The terminal's preferences as settingsd holds them, from the same
     /// read as the look; the Terminal group shows these, never a copy.
     pub terminal: Option<TerminalPrefs>,
+    /// The email app's settings as settingsd holds them, from the same read;
+    /// the Email section shows these, never a copy.
+    pub email: Option<settings::email::Email>,
     /// The profile names a design package of its own (`appearance.source`):
     /// the window keeps the session theme rather than the embedded design.
     pub custom_source: bool,
@@ -362,6 +370,7 @@ impl Default for Appearance {
             settings: Availability::Unknown,
             current: None,
             terminal: None,
+            email: None,
             custom_source: false,
             keymaps: Default::default(),
             fence: None,
@@ -482,6 +491,13 @@ impl Appearance {
             && !self.syncing
     }
 
+    /// A group's edit settled (Email): read again before the next apply.
+    /// The read shows whether it landed and gives the fence for the next.
+    pub(crate) fn settle_by_read(&mut self) {
+        self.syncing = true;
+        self.reread = true;
+    }
+
     /// The revision the panel was read at.
     pub fn revision(&self) -> Option<u64> {
         self.fence.as_ref().map(|(_, r)| r.0)
@@ -531,8 +547,9 @@ impl Appearance {
     }
 }
 
-/// What a settingsd call answered.
-enum Answer {
+/// What a settingsd call answered (and, for the Email section, a call to
+/// the email app or to apps: their refusals carry a JSON body too).
+pub(crate) enum Answer {
     /// rc 0 with a JSON body.
     Ok(Value),
     /// settingsd refused (rc 10, a JSON body with a `status`).
@@ -545,7 +562,7 @@ enum Answer {
     Lost(String),
 }
 
-fn answer(result: Result<Reply, CallError>) -> Answer {
+pub(crate) fn answer(result: Result<Reply, CallError>) -> Answer {
     let reply = match result {
         Ok(reply) => reply,
         Err(error) if error.outcome_unknown => return Answer::Lost(error.message),
@@ -574,7 +591,7 @@ fn answer(result: Result<Reply, CallError>) -> Answer {
 }
 
 /// A refusal's text: its message, else its diagnostics, else its status.
-fn refusal(value: &Value) -> String {
+pub(crate) fn refusal(value: &Value) -> String {
     if let Some(message) = value["message"].as_str() {
         return message.to_owned();
     }
@@ -598,31 +615,12 @@ fn refusal(value: &Value) -> String {
         .map_or_else(|| value.to_string(), str::to_owned)
 }
 
-/// The fence and look in a `settings.get` reply (its `summary` view).
-fn snapshot(
-    value: &Value,
-) -> Result<
-    (
-        String,
-        Revision,
-        Look,
-        bool,
-        settings::keymap::Keymaps,
-        TerminalPrefs,
-    ),
-    String,
-> {
+/// The summary and look in a `settings.get` reply (its `summary` view).
+fn snapshot(value: &Value) -> Result<(settings::Summary, Look), String> {
     let summary: settings::Summary =
         serde_json::from_value(value["summary"].clone()).map_err(|e| format!("summary: {e}"))?;
     let look = Look::from_stored(&summary.appearance)?;
-    Ok((
-        summary.incarnation,
-        summary.revision,
-        look,
-        summary.custom_source,
-        summary.keymaps,
-        summary.terminal,
-    ))
+    Ok((summary, look))
 }
 
 impl Engine {
@@ -687,6 +685,25 @@ impl Engine {
                         Vec::new(),
                     ),
                     Edit::Reset => (BTreeMap::new(), vec!["terminal".to_owned()]),
+                };
+                serde_json::to_value(ApplyRequest {
+                    binding: self.look.binding.clone(),
+                    expected_incarnation: incarnation,
+                    expected_revision: revision,
+                    operation_id: operation.clone(),
+                    changes,
+                    reset,
+                    request_digest: None,
+                })
+                .expect("an apply request serialises")
+            }
+            // Every path of one change in one fenced batch: settingsd checks
+            // the group as it leaves them all, never a state between.
+            Call::Email(operation, edit) => {
+                let (incarnation, revision) = self.look.fence.clone().expect("a fenced apply");
+                let (changes, reset) = match edit {
+                    EmailEdit::Apply(changes) => (changes.clone(), Vec::new()),
+                    EmailEdit::Reset => (BTreeMap::new(), vec!["email".to_owned()]),
                 };
                 serde_json::to_value(ApplyRequest {
                     binding: self.look.binding.clone(),
@@ -964,6 +981,7 @@ impl Engine {
                 Call::Apply(submitted) => self.apply_answered(submitted, answer),
                 Call::Receipt(submitted) => self.receipt_answered(submitted, answer),
                 Call::Terminal(..) => self.terminal_answered(answer),
+                Call::Email(..) => self.email_answered(answer),
             }
         }
         if self.look.reread && self.look.job.is_none() {
@@ -980,13 +998,14 @@ impl Engine {
     fn read_answered(&mut self, answer: Answer) {
         match answer {
             Answer::Ok(value) => match snapshot(&value) {
-                Ok((incarnation, revision, look, custom, keymaps, terminal)) => {
+                Ok((summary, look)) => {
                     self.look.settings = Availability::Available;
-                    self.look.keymaps = keymaps;
-                    self.look.fence = Some((incarnation, revision));
+                    self.look.keymaps = summary.keymaps;
+                    self.look.fence = Some((summary.incarnation, summary.revision));
                     self.look.current = Some(look);
-                    self.look.terminal = Some(terminal);
-                    self.look.custom_source = custom;
+                    self.look.terminal = Some(summary.terminal);
+                    self.email_read(summary.email);
+                    self.look.custom_source = summary.custom_source;
                     // A recovering settingsd may not show a write it has
                     // already taken: it cannot decide pinned axes, and
                     // nothing is applied until a read that can (its change

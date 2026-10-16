@@ -48,6 +48,22 @@ pub enum Effect {
         ticket: u64,
         path: Option<String>,
     },
+    /// Call `verb` on `service` (the email app, or apps to launch it) and
+    /// report [`Engine::mailed`] with `ticket`. A `secret` goes into the
+    /// body as `password` only as the shell sends it; it is never in `body`.
+    Mail {
+        ticket: u64,
+        service: &'static str,
+        verb: &'static str,
+        body: Value,
+        secret: Option<crate::email::Secret>,
+    },
+    /// Report [`Engine::waited`] with `ticket` after `after_ms`: a bounded
+    /// wait for a launched app to register.
+    Wait {
+        ticket: u64,
+        after_ms: u64,
+    },
     /// Restore and focus the window and report [`Engine::shown`].
     Show {
         ticket: u64,
@@ -93,6 +109,12 @@ pub enum Dialog {
     Shortcuts,
     /// Confirm removing this app.
     Remove(String),
+    /// Confirm removing this email account.
+    RemoveAccount(String),
+    /// Confirm resetting every email setting.
+    ResetEmail,
+    /// Confirm Email forgetting this account's saved password.
+    ForgetPassword(String),
 }
 
 /// One operation on the releases service.
@@ -175,8 +197,13 @@ pub struct UiState {
     pub appearance_expanded: bool,
     #[serde(default = "expanded")]
     pub applications_expanded: bool,
+    #[serde(default = "expanded")]
+    pub app_settings_expanded: bool,
     /// The selected app in the Applications panel.
     pub selected: Option<String>,
+    /// The selected account in App Settings → Email, by id.
+    #[serde(default)]
+    pub email_account: Option<String>,
     pub dialog: Option<Dialog>,
     /// The window's own theme choice (View › Theme, the title bar's
     /// light/dark button, `prefs.theme`): `None` on an axis follows the
@@ -206,7 +233,9 @@ impl Default for UiState {
             section: default_section(),
             appearance_expanded: true,
             applications_expanded: true,
+            app_settings_expanded: true,
             selected: None,
+            email_account: None,
             dialog: None,
             theme_scheme: None,
             theme_mode: None,
@@ -340,6 +369,8 @@ pub struct Engine {
     pub look: Appearance,
     pub wallpaper: crate::wallpaper::WallpaperEditor,
     pub picker: crate::picker::Picker,
+    /// App Settings → Email: the form, the password typed, Email on the Bus.
+    pub email: crate::email::EmailEditor,
     next_ticket: u64,
     job: Option<Job>,
     notes_job: Option<(u64, String)>,
@@ -368,6 +399,7 @@ impl Engine {
             look: Appearance::default(),
             wallpaper: crate::wallpaper::WallpaperEditor::default(),
             picker: crate::picker::Picker::default(),
+            email: crate::email::EmailEditor::default(),
             next_ticket: 0,
             job: None,
             notes_job: None,
@@ -393,14 +425,16 @@ impl Engine {
         self.next_ticket
     }
 
-    /// An operation, a notes load, a settings call or a window activation
-    /// is in flight.
+    /// An operation, a notes load, a settings call, a password or connect
+    /// for Email (bounded, launch wait included) or a window activation is
+    /// in flight.
     pub fn busy(&self) -> bool {
         self.job.is_some()
             || self.notes_job.is_some()
             || self.look.job.is_some()
             || self.wallpaper.working()
             || self.picker.loading.is_some()
+            || self.email.task.is_some()
             || !self.activations.is_empty()
     }
 
@@ -457,6 +491,9 @@ impl Engine {
                     && self.ui.dialog.is_none()
                     && !self.picker.open
                     && !self.quitting
+            }
+            Panel::AppSettings => {
+                !self.look.working() && self.connected && self.ui.dialog.is_none() && !self.quitting
             }
         }
     }
@@ -530,6 +567,10 @@ impl Engine {
             Panel::Appearance => {
                 self.read_look();
                 self.read_wallpaper();
+            }
+            Panel::AppSettings => {
+                self.read_look();
+                self.query_email_accounts();
             }
         }
     }
@@ -608,9 +649,14 @@ impl Engine {
         match section.panel() {
             Panel::Appearance => self.ui.appearance_expanded = true,
             Panel::Applications => self.ui.applications_expanded = true,
+            Panel::AppSettings => self.ui.app_settings_expanded = true,
         }
         if self.ui.selected.is_some() && self.selected_row().is_none() {
             self.clear_selection();
+        }
+        // Whether each account has a password is Email's to say.
+        if section == Section::Email {
+            self.query_email_accounts();
         }
     }
 
@@ -626,6 +672,9 @@ impl Engine {
     }
     pub fn toggle_applications(&mut self) {
         self.ui.applications_expanded = !self.ui.applications_expanded;
+    }
+    pub fn toggle_app_settings(&mut self) {
+        self.ui.app_settings_expanded = !self.ui.app_settings_expanded;
     }
 
     /// Select `app` and load its release notes. Selection is refused under
@@ -748,17 +797,19 @@ impl Engine {
     pub fn delivery(&mut self, delivery: Delivery) {
         match delivery {
             Delivery::Command { id, verb, body } => self.command(id, &verb, &body),
-            // A service came or went: releases or settingsd may be one.
+            // A service came or went: releases, settingsd or Email may be one.
             Delivery::Changed => {
                 self.start(Op::List);
                 self.read_look();
                 self.read_wallpaper();
+                self.email_services_changed();
             }
             Delivery::Connected => {
                 self.connected = true;
                 self.start(Op::List);
                 self.read_look();
                 self.read_wallpaper();
+                self.email_services_changed();
             }
             // settingsd announced a change: a hint, re-read over the call.
             Delivery::Topic(topic) => {
@@ -904,7 +955,7 @@ impl Engine {
         json!({"schema":"prefs.v1","app_id":APP_ID,"version":env!("CARGO_PKG_VERSION"),"pid":std::process::id(),
             "connected":self.connected,"releases":self.releases,"busy":self.busy(),"working":self.working(),"uncertain":self.uncertain,
             "status":self.status,"failed":self.failed,"apps":self.apps,"notes":self.notes,"notes_error":self.notes_error,
-            "appearance":self.appearance_view(),"wallpaper":self.wallpaper,"picker":self.picker,"section":self.section(),"ui":self.ui})
+            "appearance":self.appearance_view(),"wallpaper":self.wallpaper,"picker":self.picker,"email":self.email_view(),"section":self.section(),"ui":self.ui})
     }
 
     fn apps_view(&self) -> Value {
@@ -1007,6 +1058,22 @@ impl Engine {
                 Ok(body) => self.ok(id, body),
                 Err((code, message)) => self.error(id, code, &message),
             },
+            "prefs.email" => self.ok(id, self.email_view()),
+            // A removal goes through Email's guard and is answered by it.
+            "prefs.email.set" if args["op"] == "remove" => {
+                match crate::email::email_change(&args) {
+                    Ok(crate::email::Change::Remove(account)) => {
+                        let _ = self.remove_account(account, Some(id));
+                    }
+                    Ok(_) => self.error(id, "ARGUMENT", "op remove needs an id"),
+                    Err(message) => self.error(id, "ARGUMENT", &message),
+                }
+            }
+            "prefs.email.set" => match self.set_email(&args) {
+                Ok(body) => self.ok(id, body),
+                Err((code, message)) => self.error(id, code, &message),
+            },
+            "prefs.email.password" => self.email_password(id, &args),
             "HELP" => self.effects.push(Effect::Describe { id, help: true }),
             "app.describe" => self.effects.push(Effect::Describe { id, help: false }),
             "prefs.commands" => self.effects.push(Effect::Commands { id }),

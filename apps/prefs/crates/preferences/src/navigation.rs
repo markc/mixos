@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The renderer-independent navigation model: the sections the sidebar
-//! offers, which panel each belongs to, and which Applications rows sit
-//! under each section.
+//! offers, which panel each belongs to (Appearance, Applications or App
+//! Settings), and which Applications rows sit under each section.
 use serde::{Deserialize, Serialize};
 
 use crate::model::{AppRow, Panel};
@@ -21,10 +21,12 @@ pub enum Section {
     Server,
     Creative,
     Other,
+    /// App Settings → Email: the email app's accounts and mail options.
+    Email,
 }
 
 impl Section {
-    pub const ALL: [Section; 8] = [
+    pub const ALL: [Section; 9] = [
         Section::Themes,
         Section::Fonts,
         Section::Wallpapers,
@@ -33,6 +35,7 @@ impl Section {
         Section::Server,
         Section::Creative,
         Section::Other,
+        Section::Email,
     ];
 
     pub fn name(self) -> &'static str {
@@ -45,6 +48,7 @@ impl Section {
             Section::Server => "mixos-server",
             Section::Creative => "creative",
             Section::Other => "other",
+            Section::Email => "email",
         }
     }
 
@@ -58,6 +62,7 @@ impl Section {
             Section::Themes | Section::Fonts | Section::Wallpapers | Section::Terminal => {
                 Panel::Appearance
             }
+            Section::Email => Panel::AppSettings,
             _ => Panel::Applications,
         }
     }
@@ -72,6 +77,7 @@ impl Section {
             Section::Server => "section-server",
             Section::Creative => "section-creative",
             Section::Other => "section-other",
+            Section::Email => "section-email",
         }
     }
 
@@ -85,6 +91,7 @@ impl Section {
             Section::Server => "view.section.server",
             Section::Creative => "view.section.creative",
             Section::Other => "view.section.other",
+            Section::Email => "view.section.email",
         }
     }
 
@@ -93,6 +100,7 @@ impl Section {
         match panel {
             Panel::Appearance => Section::Themes,
             Panel::Applications => Section::Creative,
+            Panel::AppSettings => Section::Email,
         }
     }
 
@@ -152,6 +160,8 @@ mod tests {
         assert_eq!(Section::Server.panel(), Panel::Applications);
         assert_eq!(Section::default_for(Panel::Appearance), Section::Themes);
         assert_eq!(Section::default_for(Panel::Applications), Section::Creative);
+        assert_eq!(Section::Email.panel(), Panel::AppSettings);
+        assert_eq!(Section::default_for(Panel::AppSettings), Section::Email);
     }
 
     #[test]
@@ -179,7 +189,7 @@ mod tests {
         );
         assert!(Section::Other.matches(&row("someapp", "vendor/someapp")));
         let mut custom = row("canvas", "example/canvas");
-        for category in ["themes", "unknown"] {
+        for category in ["themes", "email", "unknown"] {
             custom.category = Some(category.into());
             assert_eq!(application_section(&custom), Section::Other);
         }
