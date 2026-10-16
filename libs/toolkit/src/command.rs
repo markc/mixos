@@ -92,8 +92,22 @@ pub struct Described {
     pub checked: Option<bool>,
 }
 
+/// Where a command's shortcut may fire.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Scope {
+    /// Wherever the keyboard is.
+    #[default]
+    Anywhere,
+    /// Only while no text field has the keyboard: for bare keys and editing
+    /// keys (S, M, Delete) that a field typing them must keep.
+    Browsing,
+}
+
 /// Runs a choice command: a closure, so it can carry its choice.
 type ChoiceRun<S> = Box<dyn Fn(&mut S)>;
+
+/// A command's label key for the current state.
+type Relabel<S> = Box<dyn Fn(&S) -> &'static str>;
 
 /// A command's chords: its own shortcut and the further ones.
 type Bound = (Option<KeyboardShortcut>, Vec<KeyboardShortcut>);
@@ -113,6 +127,11 @@ pub struct Registry<S> {
     /// Each command's chords after its own `shortcut`: they run it too,
     /// outside the menus.
     extras: HashMap<&'static str, Vec<KeyboardShortcut>>,
+    /// Commands whose shortcuts fire only in a [`Scope`] narrower than
+    /// anywhere.
+    scopes: HashMap<&'static str, Scope>,
+    /// Commands whose label follows the state ([`Registry::relabel`]).
+    labels: HashMap<&'static str, Relabel<S>>,
     /// Every command's chords as built, kept by the first
     /// [`Registry::rebind`] so each later one starts from them.
     defaults: Option<HashMap<&'static str, Bound>>,
@@ -128,6 +147,8 @@ impl<S> Default for Registry<S> {
             choice_runs: HashMap::new(),
             choice_checks: HashMap::new(),
             extras: HashMap::new(),
+            scopes: HashMap::new(),
+            labels: HashMap::new(),
             defaults: None,
             journal: std::cell::RefCell::new(crate::executed::Journal::default()),
         }
@@ -226,6 +247,49 @@ impl<S> Registry<S> {
         self.add(command);
         self.choice_checks.insert(id, Box::new(checked));
         self
+    }
+
+    /// Let command `id`'s shortcuts fire only in `scope`.
+    ///
+    /// # Panics
+    /// When there is no command `id`.
+    pub fn scope(&mut self, id: &str, scope: Scope) -> &mut Self {
+        let id = self
+            .get(id)
+            .unwrap_or_else(|| panic!("no command {id:?}"))
+            .id;
+        self.scopes.insert(id, scope);
+        self
+    }
+
+    /// Where command `id`'s shortcuts fire.
+    pub fn scope_of(&self, id: &str) -> Scope {
+        self.scopes.get(id).copied().unwrap_or_default()
+    }
+
+    /// Give command `id` a label that follows the state ("Mark as Read"
+    /// while unread, "Mark as Unread" otherwise): `label` returns the
+    /// Fluent key. Menus, [`Registry::describe`] and search read it.
+    ///
+    /// # Panics
+    /// When there is no command `id`.
+    pub fn relabel(&mut self, id: &str, label: impl Fn(&S) -> &'static str + 'static) -> &mut Self {
+        let id = self
+            .get(id)
+            .unwrap_or_else(|| panic!("no command {id:?}"))
+            .id;
+        self.labels.insert(id, Box::new(label));
+        self
+    }
+
+    /// Command `id`'s label key in `state`.
+    pub fn label_of(&self, id: &str, state: &S) -> Option<&'static str> {
+        let command = self.get(id)?;
+        Some(
+            self.labels
+                .get(id)
+                .map_or(command.label, |label| label(state)),
+        )
     }
 
     /// Whether command `id` is a choice, and if so whether it is ticked.
@@ -445,7 +509,7 @@ impl<S> Registry<S> {
             .iter()
             .map(|c| Described {
                 id: c.id,
-                label: label_text(strings, c.label),
+                label: label_text(strings, self.label_of(c.id, state).unwrap_or(c.label)),
                 menu: c.menu.map(|m| label_text(strings, m)),
                 shortcut: c.shortcut.map(|s| s.format(&ModifierNames::NAMES, false)),
                 more: self
@@ -475,11 +539,16 @@ impl<S> Registry<S> {
         }
         // With no text field taking the keyboard, the clipboard events the
         // platform makes of Ctrl+X, Ctrl+C and Ctrl+V are those key presses.
-        let clipboard = !ctx.egui_wants_keyboard_input();
+        let typing = ctx.egui_wants_keyboard_input();
+        let clipboard = !typing;
         ctx.input_mut(|i| {
             let held = i.modifiers;
             i.events
                 .retain(|event| match self.hit(event, held, clipboard) {
+                    // A browsing chord is the text field's while one types.
+                    Some(command) if typing && self.scope_of(command.id) == Scope::Browsing => {
+                        true
+                    }
                     Some(command) if (command.enabled)(state) => {
                         fired.push(command.id);
                         false
@@ -580,6 +649,67 @@ impl<S> Registry<S> {
             .collect()
     }
 
+    /// Menu `menu` (a Fluent menu key) as `response`'s right-click menu:
+    /// the menu bar's rows, ticks, shortcuts and enablement, generated the
+    /// same way. Returns the command chosen this frame (run it with
+    /// [`Origin::Menu`]).
+    pub fn context_menu(
+        &self,
+        response: &egui::Response,
+        menu: &str,
+        state: &S,
+        strings: &Strings,
+    ) -> Option<&'static str> {
+        self.context_popup(egui::Popup::context_menu(response), menu, state, strings)
+    }
+
+    /// Menu `menu` as the right-click menu of the area `rect` of `ui`: a
+    /// secondary click anywhere in it opens the menu, whichever widget
+    /// (a selectable label, a link) the click landed on. For a pane full of
+    /// text that has no single response. `id` names the menu's memory.
+    pub fn context_menu_over(
+        &self,
+        ui: &egui::Ui,
+        rect: egui::Rect,
+        id: egui::Id,
+        menu: &str,
+        state: &S,
+        strings: &Strings,
+    ) -> Option<&'static str> {
+        let layer = ui.layer_id();
+        let ctx = ui.ctx().clone();
+        let opened = ui.input(|i| {
+            i.pointer.secondary_clicked()
+                && i.pointer
+                    .interact_pos()
+                    .is_some_and(|at| rect.contains(at) && ctx.layer_id_at(at) == Some(layer))
+        });
+        let popup = egui::Popup::new(id, ctx, egui::PopupAnchor::PointerFixed, layer)
+            .kind(egui::PopupKind::Menu)
+            .layout(egui::Layout::top_down_justified(egui::Align::Min))
+            .style(egui::containers::menu::menu_style)
+            .open_memory(opened.then_some(egui::SetOpenCommand::Bool(true)));
+        self.context_popup(popup, menu, state, strings)
+    }
+
+    fn context_popup(
+        &self,
+        popup: egui::Popup<'_>,
+        menu: &str,
+        state: &S,
+        strings: &Strings,
+    ) -> Option<&'static str> {
+        let mut chosen = None;
+        popup.show(|ui| {
+            let title = label_text(strings, menu);
+            let model = self.model(ui.ctx(), state, strings);
+            if let Some(menu) = model.iter().find(|m| m.title == title) {
+                chosen = context_entries(ui, &menu.entries);
+            }
+        });
+        chosen
+    }
+
     /// The menu model: one menu per distinct `menu` key in first-use order,
     /// rows in registry order, a submenu row where a submenu's first command
     /// is, and a separator wherever the group changes.
@@ -594,7 +724,7 @@ impl<S> Registry<S> {
         }
         let row = |c: &Command<S>| {
             let shortcut = c.shortcut.map(|s| ctx.format_shortcut(&s));
-            let label = label_text(strings, c.label);
+            let label = label_text(strings, self.label_of(c.id, state).unwrap_or(c.label));
             let enabled = (c.enabled)(state);
             Entry::Row(match self.checked(c.id, state) {
                 Some(checked) => Row::choice(c.id, label, shortcut, enabled, checked),
@@ -655,10 +785,49 @@ impl<S> Registry<S> {
         self.commands
             .iter()
             .filter(|c| {
-                (c.enabled)(state) && label_text(strings, c.label).to_lowercase().contains(&query)
+                (c.enabled)(state)
+                    && label_text(strings, self.label_of(c.id, state).unwrap_or(c.label))
+                        .to_lowercase()
+                        .contains(&query)
             })
             .collect()
     }
+}
+
+/// A context menu's `entries` as egui menu buttons; the command chosen.
+fn context_entries(ui: &mut egui::Ui, entries: &[Entry]) -> Option<&'static str> {
+    let mut chosen = None;
+    for entry in entries {
+        match entry {
+            Entry::Separator => {
+                ui.separator();
+            }
+            Entry::Row(row) if row.is_submenu() => {
+                ui.add_enabled_ui(row.enabled, |ui| {
+                    ui.menu_button(row.label.as_str(), |ui| {
+                        if let Some(id) = context_entries(ui, &row.children) {
+                            chosen = Some(id);
+                        }
+                    });
+                });
+            }
+            Entry::Row(row) => {
+                let label = match row.checked {
+                    Some(true) => format!("{} {}", menu::TICK, row.label),
+                    _ => row.label.clone(),
+                };
+                let mut button = egui::Button::new(label);
+                if let Some(shortcut) = &row.shortcut {
+                    button = button.shortcut_text(shortcut.as_str());
+                }
+                if ui.add_enabled(row.enabled, button).clicked() {
+                    chosen = row.id;
+                    ui.close();
+                }
+            }
+        }
+    }
+    chosen
 }
 
 #[cfg(test)]
@@ -1058,6 +1227,87 @@ mod tests {
         );
         output.textures_delta.clear();
         out
+    }
+
+    #[test]
+    fn a_browsing_chord_waits_while_a_text_field_has_the_keyboard() {
+        let bare = KeyboardShortcut::new(Modifiers::NONE, Key::S);
+        let mut r = registry();
+        r.add(Command {
+            id: "count.bare",
+            label: "cmd-bump",
+            menu: None,
+            submenu: None,
+            group: 0,
+            shortcut: Some(bare),
+            icon: None,
+            enabled: always,
+            run: |s| s.n += 10,
+        });
+        r.scope("count.bare", Scope::Browsing);
+        assert_eq!(r.scope_of("count.bare"), Scope::Browsing);
+        assert_eq!(r.scope_of("count.bump"), Scope::Anywhere);
+        let s = Counter::default();
+        assert_eq!(fired_key(&r, &s, bare), ["count.bare"], "nothing focused");
+        // The same presses with a text field focused.
+        let ctx = egui::Context::default();
+        let field = egui::Id::new("field");
+        let mut text = String::new();
+        let mut frame = |events: Vec<egui::Event>| {
+            let mut out = Vec::new();
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    out = r.shortcuts(ui.ctx(), &s);
+                    ui.add(egui::TextEdit::singleline(&mut text).id(field));
+                },
+            );
+            output.textures_delta.clear();
+            out
+        };
+        frame(Vec::new());
+        ctx.memory_mut(|m| m.request_focus(field));
+        frame(Vec::new());
+        let press = |shortcut: KeyboardShortcut| egui::Event::Key {
+            key: shortcut.logical_key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: shortcut.modifiers,
+        };
+        assert!(frame(vec![press(bare)]).is_empty(), "the field keeps S");
+        assert_eq!(
+            frame(vec![press(KeyboardShortcut::new(Modifiers::COMMAND, Key::B))]),
+            ["count.bump"],
+            "an anywhere chord still fires"
+        );
+    }
+
+    #[test]
+    fn a_relabelled_command_reads_its_state_everywhere() {
+        let mut r = registry();
+        r.relabel("count.reset", |s: &Counter| {
+            if s.n == 0 { "cmd-bump" } else { "cmd-reset" }
+        });
+        let strings = Strings::new(FTL);
+        let ctx = egui::Context::default();
+        let label = |s: &Counter| {
+            let model = r.model(&ctx, s, &strings);
+            model[0].entries[1].row().unwrap().label.clone()
+        };
+        assert_eq!(label(&Counter::default()), "Bump");
+        let counted = Counter {
+            n: 3,
+            ..Counter::default()
+        };
+        assert_eq!(label(&counted), "Reset");
+        let described = r.describe(&counted, &strings);
+        assert_eq!(described[1].label, "Reset");
+        assert_eq!(r.label_of("count.reset", &Counter::default()), Some("cmd-bump"));
+        assert_eq!(r.label_of("count.bump", &counted), Some("cmd-bump"));
     }
 
     #[test]
