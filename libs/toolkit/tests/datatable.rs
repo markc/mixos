@@ -142,11 +142,15 @@ impl Sample {
 
     fn rows(&self) -> TextRows {
         let mut all = MESSAGES.to_vec();
-        sort_rows(&mut all, self.state.sort.as_ref(), |a, b, column| match column {
-            "from" => compare_text(a.from, b.from),
-            "subject" => compare_text(a.subject, b.subject),
-            _ => a.date.cmp(b.date),
-        });
+        sort_rows(
+            &mut all,
+            self.state.sort.as_ref(),
+            |a, b, column| match column {
+                "from" => compare_text(a.from, b.from),
+                "subject" => compare_text(a.subject, b.subject),
+                _ => a.date.cmp(b.date),
+            },
+        );
         let rows = page_of(&all, &self.state)
             .iter()
             .map(|m| {
@@ -159,7 +163,11 @@ impl Sample {
                 }
                 TextRow {
                     key: m.id.into(),
-                    cells: vec![Cell::new(m.from), subject, Cell::new(m.date).weak(!m.unread)],
+                    cells: vec![
+                        Cell::new(m.from),
+                        subject,
+                        Cell::new(m.date).weak(!m.unread),
+                    ],
                     style: RowStyle {
                         strong: m.unread,
                         weak: false,
@@ -311,7 +319,11 @@ fn a_double_click_activates() {
 fn the_pager_moves_between_pages() {
     let mut h = light(Sample::new(5));
     assert!(h.query_by_label("1–5 of 7").is_some());
-    assert!(h.get_by_label("Previous page").accesskit_node().is_disabled());
+    assert!(
+        h.get_by_label("Previous page")
+            .accesskit_node()
+            .is_disabled()
+    );
     h.get_by_label("Next page").click();
     h.run();
     assert_eq!(h.state().state.page, 1);

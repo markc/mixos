@@ -1448,7 +1448,11 @@ mod tests {
             other => panic!("{other:?}"),
         }
         // No sort is the newest first; an order flips it.
-        run(&mut state, "email.list", json!({"mailbox": "m", "order": "asc"}));
+        run(
+            &mut state,
+            "email.list",
+            json!({"mailbox": "m", "order": "asc"}),
+        );
         assert!(matches!(
             state.take_work().as_slice(),
             [Work::Query {

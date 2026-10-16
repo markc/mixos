@@ -539,7 +539,11 @@ pub fn compare_text(a: &str, b: &str) -> Ordering {
 /// Sort `rows` in memory by `sort`: `compare(a, b, column)` orders two
 /// rows ascending by a column, and the sort's order is applied on top. A
 /// stable sort, so equal rows keep their order; no sort leaves them alone.
-pub fn sort_rows<T>(rows: &mut [T], sort: Option<&Sort>, compare: impl Fn(&T, &T, &str) -> Ordering) {
+pub fn sort_rows<T>(
+    rows: &mut [T],
+    sort: Option<&Sort>,
+    compare: impl Fn(&T, &T, &str) -> Ordering,
+) {
     if let Some(sort) = sort {
         rows.sort_by(|a, b| sort.order.apply(compare(a, b, &sort.column)));
     }
@@ -646,7 +650,10 @@ mod tests {
         let open = Total::Unknown { more: true };
         assert_eq!(state.page_target(PageMove::Next, open), Some(3));
         assert_eq!(state.page_target(PageMove::Last, open), None);
-        assert_eq!(state.page_target(PageMove::Next, Total::Unknown { more: false }), None);
+        assert_eq!(
+            state.page_target(PageMove::Next, Total::Unknown { more: false }),
+            None
+        );
         // A zero page size is one row per page, never a division by zero.
         state.page_size = 0;
         assert_eq!(state.pages(Total::Known(3)), Some(3));
@@ -776,7 +783,11 @@ mod tests {
             "name" => compare_text(x.0, y.0),
             _ => x.1.cmp(&y.1),
         };
-        sort_rows(&mut rows, Some(&Sort::new("name", Order::Ascending)), compare);
+        sort_rows(
+            &mut rows,
+            Some(&Sort::new("name", Order::Ascending)),
+            compare,
+        );
         assert_eq!(rows, vec![("A", 3), ("a", 1), ("b", 2), ("c", 2)]);
         sort_rows(&mut rows, Some(&Sort::new("n", Order::Descending)), compare);
         // Stable: the two 2s keep their order.
@@ -790,10 +801,7 @@ mod tests {
             ..TableState::default()
         };
         assert_eq!(page_of(&rows, &state), &[("a", 1)]);
-        let past = TableState {
-            page: 9,
-            ..state
-        };
+        let past = TableState { page: 9, ..state };
         assert!(page_of(&rows, &past).is_empty());
     }
 

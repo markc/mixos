@@ -221,7 +221,13 @@ const NOW: i64 = 1_792_143_000;
 /// date from today, this week, this year and an older year.
 fn long_list() -> State {
     let mut state = fixture();
-    let email = |id: &str, from: serde_json::Value, subject: &str, at: &str, keywords: serde_json::Value, attachment: bool| -> jmap::Email {
+    let email = |id: &str,
+                 from: serde_json::Value,
+                 subject: &str,
+                 at: &str,
+                 keywords: serde_json::Value,
+                 attachment: bool|
+     -> jmap::Email {
         serde_json::from_value(serde_json::json!({
             "id": id,
             "subject": subject,
@@ -251,7 +257,9 @@ fn long_list() -> State {
         ),
         email(
             "L3",
-            serde_json::json!("cy.no-display-name.but-a-very-long-local-part@subdomain.example.invalid"),
+            serde_json::json!(
+                "cy.no-display-name.but-a-very-long-local-part@subdomain.example.invalid"
+            ),
             "Minutes",
             "2026-10-12T17:45:00Z",
             serde_json::json!({ "$seen": true }),
@@ -393,7 +401,12 @@ fn list_rows(h: &Harness<'static, Window>) -> Vec<String> {
     use egui_kittest::kittest::NodeT;
     let mut rows: Vec<(f32, String)> = h
         .query_all_by_role(egui::accesskit::Role::Row)
-        .map(|n| (n.rect().top(), n.accesskit_node().label().unwrap_or_default()))
+        .map(|n| {
+            (
+                n.rect().top(),
+                n.accesskit_node().label().unwrap_or_default(),
+            )
+        })
         .collect();
     rows.sort_by(|a, b| a.0.total_cmp(&b.0));
     rows.into_iter().map(|(_, label)| label).collect()
@@ -436,13 +449,14 @@ fn the_pager_and_the_keyboard_drive_the_list() {
     let mut h = harness(long_list());
     h.get_by_label("Next page").click();
     h.run();
-    assert!(
-        h.state_mut()
-            .state
-            .take_work()
-            .iter()
-            .any(|w| matches!(w, Work::FetchEmails { position: 100, limit: 100, .. }))
-    );
+    assert!(h.state_mut().state.take_work().iter().any(|w| matches!(
+        w,
+        Work::FetchEmails {
+            position: 100,
+            limit: 100,
+            ..
+        }
+    )));
     // A row takes the keyboard; Down opens the next email.
     let mut h = harness(long_list());
     h.get_by_label_contains("Minutes").click();

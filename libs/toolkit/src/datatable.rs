@@ -338,7 +338,16 @@ impl<'a> DataTable<'a> {
                     }
                 }
             }
-            self.table(ui, rows, &keys, height, body, focused, scroll_to, &mut events);
+            self.table(
+                ui,
+                rows,
+                &keys,
+                height,
+                body,
+                focused,
+                scroll_to,
+                &mut events,
+            );
             if self.pager {
                 self.footer(ui, rows.len(), height, &mut events);
             }
@@ -560,7 +569,11 @@ impl<'a> DataTable<'a> {
                     for (to, icon, key) in [
                         (PageMove::Last, Icon::ChevronsRight, "datatable-last-page"),
                         (PageMove::Next, Icon::ChevronRight, "datatable-next-page"),
-                        (PageMove::Previous, Icon::ChevronLeft, "datatable-previous-page"),
+                        (
+                            PageMove::Previous,
+                            Icon::ChevronLeft,
+                            "datatable-previous-page",
+                        ),
                         (PageMove::First, Icon::ChevronsLeft, "datatable-first-page"),
                     ] {
                         let button = IconButton::new(icon)
@@ -648,7 +661,14 @@ fn header_node(response: &egui::Response, whole: Rect, sorted: Option<Order>) {
 
 /// `text` laid out on one line in `font` and `colour`, cut to `width` with
 /// "…" when `elide`.
-fn line(ui: &Ui, text: &str, font: FontId, colour: Color32, width: f32, elide: bool) -> std::sync::Arc<egui::Galley> {
+fn line(
+    ui: &Ui,
+    text: &str,
+    font: FontId,
+    colour: Color32,
+    width: f32,
+    elide: bool,
+) -> std::sync::Arc<egui::Galley> {
     let mut job = LayoutJob::single_section(text.to_owned(), TextFormat::simple(font, colour));
     job.wrap = if elide {
         TextWrapping::truncate_at_width(width.max(0.0))

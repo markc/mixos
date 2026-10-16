@@ -757,7 +757,11 @@ mod tests {
             (EmailSort::default(), "receivedAt", false),
             (EmailSort::new(SortProperty::Subject, true), "subject", true),
             (EmailSort::new(SortProperty::From, false), "from", false),
-            (EmailSort::new(SortProperty::ReceivedAt, true), "receivedAt", true),
+            (
+                EmailSort::new(SortProperty::ReceivedAt, true),
+                "receivedAt",
+                true,
+            ),
         ] {
             let calls = email_query_calls("A1", email_filter(Some("M1"), None), sort, 40, 20);
             let body = crate::client::request_body(&["urn:ietf:params:jmap:mail".into()], &calls);

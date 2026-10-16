@@ -57,9 +57,9 @@ fn reading(state: &State) -> bool {
 fn listing(state: &State) -> bool {
     undialogued(state)
         && state.mode == Mode::Mail
-        && state.current().is_some_and(|v| {
-            v.phase == crate::state::Phase::Ready && v.mail.selected.is_some()
-        })
+        && state
+            .current()
+            .is_some_and(|v| v.phase == crate::state::Phase::Ready && v.mail.selected.is_some())
 }
 
 /// More than one account to step through.
@@ -276,16 +276,34 @@ pub fn registry() -> Registry<State> {
     });
     // View › Sort By: the list's server-side sort, ticked on the column in
     // force; choosing it again reverses it, as its header does.
-    let sorts: [(&'static str, &'static str, &'static str, Key, fn(&mut State)); 3] = [
-        ("view.sort_from", "column-from", COLUMN_FROM, Key::Num1, |s| {
-            s.sort_mail(COLUMN_FROM)
-        }),
-        ("view.sort_subject", "column-subject", COLUMN_SUBJECT, Key::Num2, |s| {
-            s.sort_mail(COLUMN_SUBJECT)
-        }),
-        ("view.sort_date", "column-date", COLUMN_DATE, Key::Num3, |s| {
-            s.sort_mail(COLUMN_DATE)
-        }),
+    let sorts: [(
+        &'static str,
+        &'static str,
+        &'static str,
+        Key,
+        fn(&mut State),
+    ); 3] = [
+        (
+            "view.sort_from",
+            "column-from",
+            COLUMN_FROM,
+            Key::Num1,
+            |s| s.sort_mail(COLUMN_FROM),
+        ),
+        (
+            "view.sort_subject",
+            "column-subject",
+            COLUMN_SUBJECT,
+            Key::Num2,
+            |s| s.sort_mail(COLUMN_SUBJECT),
+        ),
+        (
+            "view.sort_date",
+            "column-date",
+            COLUMN_DATE,
+            Key::Num3,
+            |s| s.sort_mail(COLUMN_DATE),
+        ),
     ];
     for (id, label, column, chord, run) in sorts {
         r.add_toggle(

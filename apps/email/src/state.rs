@@ -376,13 +376,7 @@ impl AccountView {
     /// Select a mailbox and fetch its first page under `sort` (the list's
     /// remembered one): a new mailbox starts at its first page with nothing
     /// selected.
-    fn select_mailbox(
-        &mut self,
-        id: String,
-        limit: u32,
-        sort: Option<Sort>,
-        work: &mut Vec<Work>,
-    ) {
+    fn select_mailbox(&mut self, id: String, limit: u32, sort: Option<Sort>, work: &mut Vec<Work>) {
         self.mail.selected = Some(id.clone());
         self.mail.open = None;
         // The old mailbox's rows go at once, so none of them can be opened
@@ -2475,11 +2469,7 @@ impl State {
             return;
         };
         let account = view.entry.id.clone();
-        if let Some(sort) = view
-            .mail
-            .table
-            .next_sort(&list_columns(0.0), column, false)
-        {
+        if let Some(sort) = view.mail.table.next_sort(&list_columns(0.0), column, false) {
             self.mail_table(&account, TableEvent::SortChanged(sort));
         }
     }
@@ -4044,9 +4034,15 @@ pub(crate) mod tests {
     /// …) of `total`.
     fn answer(state: &mut State, ticket: u64, shown: usize, total: u64) {
         let emails = (0..shown)
-            .map(|i| serde_json::from_value(json!({ "id": format!("E{i}"), "keywords": {} })).unwrap())
+            .map(|i| {
+                serde_json::from_value(json!({ "id": format!("E{i}"), "keywords": {} })).unwrap()
+            })
             .collect();
-        done(state, "a", Done::Page(ticket, Ok(jmap::EmailPage { emails, total })));
+        done(
+            state,
+            "a",
+            Done::Page(ticket, Ok(jmap::EmailPage { emails, total })),
+        );
     }
 
     /// Account a with an inbox and a folder, the inbox's first page of
@@ -4194,7 +4190,10 @@ pub(crate) mod tests {
             }
         }
         assert_eq!(email_sort(None), jmap::EmailSort::default());
-        assert_eq!(list_default().sort, Some(list_sort(jmap::EmailSort::default())));
+        assert_eq!(
+            list_default().sort,
+            Some(list_sort(jmap::EmailSort::default()))
+        );
     }
 
     #[test]
