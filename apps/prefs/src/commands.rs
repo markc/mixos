@@ -426,6 +426,13 @@ pub fn registry() -> Registry<Engine> {
             Engine::connect_email_account,
         ),
         (
+            "email.reader.reset",
+            "email-reader-reset",
+            3,
+            Engine::can_reset_reader_font,
+            Engine::reset_reader_font,
+        ),
+        (
             "email.reset",
             "email-reset",
             3,

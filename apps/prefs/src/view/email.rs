@@ -10,7 +10,8 @@ use egui::{Align, Layout, RichText, Ui};
 use preferences::Engine;
 use preferences::appearance::Availability as Settings;
 use preferences::email::{
-    AccountEntry, Change, Email, Field, Form, PAGE_SIZE_MAX, PAGE_SIZE_MIN, Secret, Service,
+    AccountEntry, Change, Email, Field, Form, PAGE_SIZE_MAX, PAGE_SIZE_MIN, READER_FONT_MAX,
+    READER_FONT_MIN, READER_FONT_STEP, Secret, Service,
 };
 use toolkit::toggle::Toggle;
 use toolkit::{Registry, Strings, bars, field, panel};
@@ -93,6 +94,10 @@ pub fn section(
         bars::hairline(ui);
         ui.strong(label("email-mail"));
         mail_options(ui, engine, email, events);
+        bars::hairline(ui);
+        ui.strong(label("email-reader"));
+        reader(ui, engine, commands, strings, email, events);
+        bars::hairline(ui);
         ui.horizontal(|ui| {
             command_button(ui, engine, commands, strings, "email.reset", false, events);
             ui.add(egui::Label::new(RichText::new(label("email-note")).weak()).wrap());
@@ -353,6 +358,53 @@ fn mail_options(ui: &mut Ui, engine: &Engine, email: &Email, events: &mut Vec<Ui
             }
         });
     });
+}
+
+/// The reader's text size: typed or dragged (each edit one apply, on a
+/// half-point step), a line set at that size, and back to the default.
+fn reader(
+    ui: &mut Ui,
+    engine: &Engine,
+    commands: &Registry<Engine>,
+    strings: &Strings,
+    email: &Email,
+    events: &mut Vec<UiEvent>,
+) {
+    let current = email.reader.font_size;
+    ui.add_enabled_ui(engine.can_edit_email(), |ui| {
+        ui.vertical(|ui| {
+            ui.set_width(ui.available_width());
+            let size = Numeric {
+                key: "email-reader-font",
+                title: label("email-reader-font"),
+                unit: "pt",
+                places: 1,
+                slider: true,
+            };
+            if let Some(value) = number(ui, size, current, READER_FONT_MIN..=READER_FONT_MAX) {
+                let stepped = (value / READER_FONT_STEP).round() * READER_FONT_STEP;
+                if stepped != current {
+                    events.push(UiEvent::EmailChange(Change::ReaderFontSize(stepped)));
+                }
+            }
+        });
+    });
+    // The preview is set at the size itself: what the reader will show.
+    ui.add(egui::Label::new(RichText::new(label("email-reader-preview")).size(current as f32)).wrap());
+    ui.horizontal(|ui| {
+        command_button(ui, engine, commands, strings, "email.reader.reset", false, events);
+        let note = label_with("email-reader-default", &[("size", &format_size(preferences::email::READER_FONT_DEFAULT))]);
+        ui.label(RichText::new(note).weak());
+    });
+}
+
+/// A size in points as the panel writes it: 15, 15.5.
+fn format_size(size: f64) -> String {
+    if size.fract() == 0.0 {
+        format!("{size:.0}")
+    } else {
+        format!("{size:.1}")
+    }
 }
 
 /// The remove and reset confirmations: Cancel is the default, so Enter

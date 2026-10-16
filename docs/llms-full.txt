@@ -29464,7 +29464,10 @@ settingsd; see the [email settings](../docs/spec/settings/README.md)).
   would refuse is named under the field and nothing is sent. **Enabled**
   applies at once.
 - **Mail** holds messages per page (10 to 500), marking messages read when
-  opened, and asking before deleting them; each applies at once. **Reset
+  opened, and asking before deleting them; each applies at once.
+- **Reader** sets the text size of the message reader, 10 to 32 points
+  in half-point steps (default 15), with a line set at that size to show
+  it; **Default size** puts it back. It applies at once. **Reset
   email settings…** asks first, then puts every email setting back to its
   default, which means no accounts.
 
@@ -29512,8 +29515,9 @@ send prefs prefs.email.set body='{"op":"default","id":"acct-0f3a2b1c9d8e"}'
 send prefs prefs.email.set body='{"op":"move","id":"acct-0f3a2b1c9d8e","direction":"up"}'
 send prefs prefs.email.set body='{"op":"enable","id":"acct-0f3a2b1c9d8e","enabled":false}'
 
--- A mail option.
+-- A mail option, and the reader's text size.
 send prefs prefs.email.set body='{"path":"email.mail.page_size","value":50}'
+send prefs prefs.email.set body='{"path":"email.reader.font_size","value":18.5}'
 
 -- Hand a password to Email (answered once Email has), or forget it.
 send prefs prefs.email.password body='{"id":"acct-0f3a2b1c9d8e","password":"…"}'
@@ -29521,7 +29525,7 @@ send prefs prefs.email.password body='{"id":"acct-0f3a2b1c9d8e","forget":true}'
 ```
 
 `prefs.email.set` takes `op` `add`, `update`, `remove`, `move`, `default`
-or `enable`, or `path` and `value` for a mail option. Over the Bus,
+or `enable`, or `path` and `value` for a mail option or `email.reader.font_size`. Over the Bus,
 `remove` removes at once: the confirmation belongs to the window. A field
 the settings service would refuse is answered with `ARGUMENT`, naming it.
 For scripts that do not need Prefs open, call `settings.apply` on the

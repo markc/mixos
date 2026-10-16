@@ -335,7 +335,10 @@ is checked by the settings service's own rules first, and a field it
 would refuse is named under the field and nothing is sent. <strong>Enabled</strong>
 applies at once.</li>
 <li><strong>Mail</strong> holds messages per page (10 to 500), marking messages read when
-opened, and asking before deleting them; each applies at once. <strong>Reset
+opened, and asking before deleting them; each applies at once.</li>
+<li><strong>Reader</strong> sets the text size of the message reader, 10 to 32 points
+in half-point steps (default 15), with a line set at that size to show
+it; <strong>Default size</strong> puts it back. It applies at once. <strong>Reset
 email settings…</strong> asks first, then puts every email setting back to its
 default, which means no accounts.</li>
 </ul>
@@ -380,15 +383,16 @@ send prefs prefs.email.set body='{"op":"default","id":"acct-0f3a2b1c9d8e"}'
 send prefs prefs.email.set body='{"op":"move","id":"acct-0f3a2b1c9d8e","direction":"up"}'
 send prefs prefs.email.set body='{"op":"enable","id":"acct-0f3a2b1c9d8e","enabled":false}'
 
--- A mail option.
+-- A mail option, and the reader's text size.
 send prefs prefs.email.set body='{"path":"email.mail.page_size","value":50}'
+send prefs prefs.email.set body='{"path":"email.reader.font_size","value":18.5}'
 
 -- Hand a password to Email (answered once Email has), or forget it.
 send prefs prefs.email.password body='{"id":"acct-0f3a2b1c9d8e","password":"…"}'
 send prefs prefs.email.password body='{"id":"acct-0f3a2b1c9d8e","forget":true}'
 </code></pre>
 <p><code>prefs.email.set</code> takes <code>op</code> <code>add</code>, <code>update</code>, <code>remove</code>, <code>move</code>, <code>default</code>
-or <code>enable</code>, or <code>path</code> and <code>value</code> for a mail option. Over the Bus,
+or <code>enable</code>, or <code>path</code> and <code>value</code> for a mail option or <code>email.reader.font_size</code>. Over the Bus,
 <code>remove</code> removes at once: the confirmation belongs to the window. A field
 the settings service would refuse is answered with <code>ARGUMENT</code>, naming it.
 For scripts that do not need Prefs open, call <code>settings.apply</code> on the

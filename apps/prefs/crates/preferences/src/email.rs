@@ -26,7 +26,9 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 pub use settings::email::{
-    AccountEntry, Email, MailOptions, PAGE_SIZE_MAX, PAGE_SIZE_MIN, mint_account_id,
+    AccountEntry, Email, MailOptions, PAGE_SIZE_MAX, PAGE_SIZE_MIN, READER_FONT_DEFAULT,
+    READER_FONT_MAX, READER_FONT_MIN, READER_FONT_STEP, ReaderOptions, mint_account_id,
+    valid_reader_font_size,
 };
 
 /// The email app's Bus service.
@@ -457,6 +459,8 @@ pub enum Change {
     PageSize(u32),
     MarkReadOnOpen(bool),
     ConfirmDelete(bool),
+    /// The reader's text size in points (`email.reader.font_size`).
+    ReaderFontSize(f64),
 }
 
 /// Why a change was not sent.
@@ -509,6 +513,12 @@ fn edit_between(old: &Email, new: &Email) -> BTreeMap<String, Value> {
     }
     if a.confirm_delete != b.confirm_delete {
         changes.insert("email.mail.confirm_delete".into(), json!(b.confirm_delete));
+    }
+    if old.reader.font_size != new.reader.font_size {
+        changes.insert(
+            "email.reader.font_size".into(),
+            json!(new.reader.font_size),
+        );
     }
     changes
 }
@@ -589,6 +599,12 @@ pub fn plan(
         }
         Change::MarkReadOnOpen(on) => next.mail.mark_read_on_open = *on,
         Change::ConfirmDelete(on) => next.mail.confirm_delete = *on,
+        Change::ReaderFontSize(size) => {
+            if !valid_reader_font_size(*size) {
+                return Err(Refusal::Key("email-reader-font-refused"));
+            }
+            next.reader.font_size = *size;
+        }
     }
     settings::email::validate(&next).map_err(|d| Refusal::Settings(redact_text(&d.message)))?;
     let changes = edit_between(email, &next);
@@ -1129,6 +1145,25 @@ impl Engine {
     pub fn toggle_email_account(&mut self) {
         if let Some(account) = self.selected_editable().cloned() {
             let _ = self.change_email(Change::Enable(account.id, !account.enabled));
+        }
+    }
+
+    /// The reader's text size as settingsd holds it.
+    pub fn reader_font_size(&self) -> Option<f64> {
+        self.email().map(|e| e.reader.font_size)
+    }
+
+    pub fn can_reset_reader_font(&self) -> bool {
+        self.can_edit_email()
+            && self
+                .reader_font_size()
+                .is_some_and(|s| s != READER_FONT_DEFAULT)
+    }
+
+    /// The reader's text size back to its default: one apply.
+    pub fn reset_reader_font(&mut self) {
+        if self.can_reset_reader_font() {
+            let _ = self.change_email(Change::ReaderFontSize(READER_FONT_DEFAULT));
         }
     }
 
@@ -1684,6 +1719,7 @@ impl Engine {
             "accounts":accounts,
             "default_account":email.and_then(|e| e.default_account.clone()),
             "mail":mail.map(|m| json!({"page_size":m.page_size,"mark_read_on_open":m.mark_read_on_open,"confirm_delete":m.confirm_delete})),
+            "reader":email.map(|e| json!({"font_size":e.reader.font_size,"default":READER_FONT_DEFAULT,"min":READER_FONT_MIN,"max":READER_FONT_MAX,"step":READER_FONT_STEP})),
             "email_service":self.email.service,
             "selected":self.ui.email_account,
             "form":self.email.form,
@@ -1808,7 +1844,11 @@ pub fn email_change(args: &Value) -> Result<Change, String> {
                 .as_bool()
                 .map(Change::ConfirmDelete)
                 .ok_or_else(|| "confirm_delete must be true or false".into()),
-            _ => Err("path must be email.mail.page_size, email.mail.mark_read_on_open or email.mail.confirm_delete".into()),
+            Some("email.reader.font_size") => value
+                .as_f64()
+                .map(Change::ReaderFontSize)
+                .ok_or_else(|| "font_size must be a number of points".into()),
+            _ => Err("path must be email.mail.page_size, email.mail.mark_read_on_open, email.mail.confirm_delete or email.reader.font_size".into()),
         };
     }
     match args.get("op").and_then(Value::as_str) {
@@ -1962,6 +2002,79 @@ mod tests {
             plan(&two(), &Change::Enable("b".into(), true), mint),
             Err(Refusal::Unchanged)
         );
+    }
+
+    #[test]
+    fn the_reader_font_size_sends_its_path_on_a_half_point_step() {
+        let email = two();
+        let changes = applied(plan(&email, &Change::ReaderFontSize(21.5), mint).unwrap());
+        assert_eq!(
+            changes,
+            BTreeMap::from([("email.reader.font_size".to_owned(), json!(21.5))])
+        );
+        for size in [
+            READER_FONT_MIN - READER_FONT_STEP,
+            READER_FONT_MAX + READER_FONT_STEP,
+            15.25,
+            f64::NAN,
+        ] {
+            assert_eq!(
+                plan(&email, &Change::ReaderFontSize(size), mint),
+                Err(Refusal::Key("email-reader-font-refused")),
+                "{size}"
+            );
+        }
+        assert_eq!(
+            plan(&email, &Change::ReaderFontSize(READER_FONT_DEFAULT), mint),
+            Err(Refusal::Unchanged)
+        );
+        assert_eq!(
+            email_change(&json!({"path":"email.reader.font_size","value":18})),
+            Ok(Change::ReaderFontSize(18.0))
+        );
+        assert!(email_change(&json!({"path":"email.reader.font_size","value":"18"})).is_err());
+    }
+
+    /// The reader's size is one apply per edit, shown by prefs.email, and
+    /// reset to its default with one more; prefs.email.set takes its path.
+    #[test]
+    fn the_reader_font_size_applies_shows_and_resets() {
+        let mut e = read();
+        assert_eq!(e.email_view()["reader"]["font_size"], READER_FONT_DEFAULT);
+        assert!(!e.can_reset_reader_font(), "already the default");
+        e.command(
+            1,
+            "prefs.email.set",
+            r#"{"path":"email.reader.font_size","value":19.5}"#,
+        );
+        let calls = settings_calls(&mut e);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0].2["changes"],
+            json!({"email.reader.font_size":19.5})
+        );
+        e.settled(calls[0].0, reply(0, json!({"status":"changed"})));
+        let mut after = two();
+        after.reader.font_size = 19.5;
+        settle_read(&mut e, "8", json!(after));
+        assert_eq!(e.reader_font_size(), Some(19.5));
+        assert_eq!(e.email_view()["reader"]["font_size"], 19.5);
+        assert!(e.can_reset_reader_font());
+        e.reset_reader_font();
+        let calls = settings_calls(&mut e);
+        assert_eq!(
+            calls[0].2["changes"],
+            json!({"email.reader.font_size":READER_FONT_DEFAULT})
+        );
+        e.settled(calls[0].0, reply(0, json!({"status":"changed"})));
+        settle_read(&mut e, "9", json!(two()));
+        e.command(
+            2,
+            "prefs.email.set",
+            r#"{"path":"email.reader.font_size","value":40}"#,
+        );
+        assert!(e.take_effects().iter().any(|x| matches!(x,
+            Effect::Reply { id: 2, rc: 10, body } if body["error_code"] == "ARGUMENT")));
     }
 
     #[test]
