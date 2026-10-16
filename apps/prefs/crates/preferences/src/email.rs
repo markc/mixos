@@ -26,8 +26,62 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 pub use settings::email::{
-    AccountEntry, Email, MailOptions, PAGE_SIZE_MAX, PAGE_SIZE_MIN, mint_account_id,
+    AccountEntry, ComposeOptions, Email, MailOptions, PAGE_SIZE_MAX, PAGE_SIZE_MIN,
+    READER_FONT_DEFAULT, READER_FONT_MAX, READER_FONT_MIN, READER_FONT_STEP, ReaderOptions,
+    ReaderTheme, ReplyPosition, mint_account_id, valid_reader_font_size,
 };
+
+/// The Email section's tabs, in strip order.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EmailTab {
+    #[default]
+    Accounts,
+    Mail,
+    Reader,
+    Compose,
+}
+
+impl EmailTab {
+    pub const ALL: [EmailTab; 4] = [
+        EmailTab::Accounts,
+        EmailTab::Mail,
+        EmailTab::Reader,
+        EmailTab::Compose,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            EmailTab::Accounts => "accounts",
+            EmailTab::Mail => "mail",
+            EmailTab::Reader => "reader",
+            EmailTab::Compose => "compose",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|t| t.name() == name)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            EmailTab::Accounts => "email-tab-accounts",
+            EmailTab::Mail => "email-tab-mail",
+            EmailTab::Reader => "email-tab-reader",
+            EmailTab::Compose => "email-tab-compose",
+        }
+    }
+
+    /// The command that shows this tab.
+    pub fn command(self) -> &'static str {
+        match self {
+            EmailTab::Accounts => "view.email.accounts",
+            EmailTab::Mail => "view.email.mail",
+            EmailTab::Reader => "view.email.reader",
+            EmailTab::Compose => "view.email.compose",
+        }
+    }
+}
 
 /// The email app's Bus service.
 pub const EMAIL: &str = "email";
@@ -457,6 +511,11 @@ pub enum Change {
     PageSize(u32),
     MarkReadOnOpen(bool),
     ConfirmDelete(bool),
+    /// The reader's text size in points (`email.reader.font_size`).
+    ReaderFontSize(f64),
+    /// Any described `email.*` path set to a value as given: the generic
+    /// form `prefs.email.set {path, value}` takes.
+    Path(String, Value),
 }
 
 /// Why a change was not sent.
@@ -473,11 +532,74 @@ pub enum Refusal {
 }
 
 /// What one change asks of settingsd: the paths it sets, in one fenced
-/// batch, or the whole group back to its defaults.
+/// batch, or paths back to their defaults (`email` is the whole group).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Edit {
     Apply(BTreeMap<String, Value>),
-    Reset,
+    Reset(Vec<String>),
+}
+
+/// Every `email.*` path settingsd describes, the group `email` first:
+/// what `prefs.email.set` and `prefs.email.reset` take.
+pub fn email_paths() -> Vec<String> {
+    let mut paths: Vec<String> = settings::email::describe()
+        .as_object()
+        .map(|o| o.keys().cloned().collect())
+        .unwrap_or_default();
+    paths.sort_by_key(|p| (p != "email", p.clone()));
+    paths
+}
+
+/// The paths that hold a value: none has another path below it.
+fn leaf_paths() -> Vec<String> {
+    let all = email_paths();
+    all.iter()
+        .filter(|p| !all.iter().any(|q| q.starts_with(&format!("{p}."))))
+        .cloned()
+        .collect()
+}
+
+/// `path`'s JSON pointer in the serialised group (`email.mail.page_size`
+/// is `/mail/page_size`; `email` is the root).
+fn pointer(path: &str) -> String {
+    path.strip_prefix("email").unwrap_or(path).replace('.', "/")
+}
+
+/// `email` with `path` set to `value` as given, typed by the settings
+/// crate's own records (unknown keys refused): the Bus' generic set.
+pub fn set_path(email: &Email, path: &str, value: &Value) -> Result<Email, Refusal> {
+    if !email_paths().iter().any(|p| p == path) {
+        return Err(Refusal::Key("email-unknown-path"));
+    }
+    let refused = |e: serde_json::Error| Refusal::Settings(redact_text(&format!("{path}: {e}")));
+    if path == "email" {
+        return match value {
+            Value::Null => Ok(Email::default()),
+            value => serde_json::from_value(value.clone()).map_err(refused),
+        };
+    }
+    let mut doc = serde_json::to_value(email).map_err(refused)?;
+    let keys: Vec<&str> = path["email.".len()..].split('.').collect();
+    let (last, parents) = keys.split_last().expect("a leaf below email");
+    let mut at = &mut doc;
+    for key in parents {
+        if !at[*key].is_object() {
+            at[*key] = json!({});
+        }
+        at = &mut at[*key];
+    }
+    at[*last] = value.clone();
+    serde_json::from_value(doc).map_err(refused)
+}
+
+/// Accounts `old` holds that `new` does not: a removal, which goes
+/// through Email's guard while it may be running.
+pub fn dropped_accounts(old: &Email, new: &Email) -> Vec<String> {
+    old.accounts
+        .iter()
+        .filter(|a| new.account(&a.id).is_none())
+        .map(|a| a.id.clone())
+        .collect()
 }
 
 /// A change made sendable: its edit, and the id it gives a new account.
@@ -487,28 +609,22 @@ pub struct Planned {
     pub added: Option<String>,
 }
 
-/// The edit taking `old` to `new`: each path that differs, the account list
-/// whole.
+/// The edit taking `old` to `new`: each described path that differs, the
+/// account list whole. A path back at its default (omitted when
+/// serialised) is sent as the default settingsd describes.
 fn edit_between(old: &Email, new: &Email) -> BTreeMap<String, Value> {
+    let described = settings::email::describe();
+    let (a, b) = (json!(old), json!(new));
     let mut changes = BTreeMap::new();
-    if old.accounts != new.accounts {
-        changes.insert("email.accounts".into(), json!(new.accounts));
-    }
-    if old.default_account != new.default_account {
-        changes.insert("email.default_account".into(), json!(new.default_account));
-    }
-    let (a, b) = (&old.mail, &new.mail);
-    if a.page_size != b.page_size {
-        changes.insert("email.mail.page_size".into(), json!(b.page_size));
-    }
-    if a.mark_read_on_open != b.mark_read_on_open {
-        changes.insert(
-            "email.mail.mark_read_on_open".into(),
-            json!(b.mark_read_on_open),
-        );
-    }
-    if a.confirm_delete != b.confirm_delete {
-        changes.insert("email.mail.confirm_delete".into(), json!(b.confirm_delete));
+    for path in leaf_paths() {
+        let at = pointer(&path);
+        let (before, after) = (a.pointer(&at), b.pointer(&at));
+        if before != after {
+            let value = after
+                .cloned()
+                .unwrap_or_else(|| described[&path]["default"].clone());
+            changes.insert(path, value);
+        }
     }
     changes
 }
@@ -589,6 +705,13 @@ pub fn plan(
         }
         Change::MarkReadOnOpen(on) => next.mail.mark_read_on_open = *on,
         Change::ConfirmDelete(on) => next.mail.confirm_delete = *on,
+        Change::Path(path, value) => next = set_path(&next, path, value)?,
+        Change::ReaderFontSize(size) => {
+            if !valid_reader_font_size(*size) {
+                return Err(Refusal::Key("email-reader-font-refused"));
+            }
+            next.reader.font_size = *size;
+        }
     }
     settings::email::validate(&next).map_err(|d| Refusal::Settings(redact_text(&d.message)))?;
     let changes = edit_between(email, &next);
@@ -712,6 +835,9 @@ pub struct EmailEditor {
     removed: Option<(String, String)>,
     /// Forgets waiting for the action in progress to end.
     forgets: Vec<(String, String)>,
+    /// An account asked for (`prefs.section … account=`) before settingsd
+    /// was read: selected, if it exists, once it is.
+    pending_account: Option<String>,
 }
 
 /// The `has_password` per account in an `email.accounts` answer: a list of
@@ -863,6 +989,9 @@ impl Engine {
     /// account's form, and an account gone from the list leaves the form.
     pub(crate) fn email_read(&mut self, email: Email) {
         let before = self.look.email.replace(email);
+        if let Some(id) = self.email.pending_account.take() {
+            self.open_email_account(Some(&id));
+        }
         // A removal settingsd shows: Email forgets the account's password.
         if let Some((id, name)) = self.email.removed.take()
             && self
@@ -901,6 +1030,39 @@ impl Engine {
                 if !form.edited(saved) || !form.edited(Some(account)) {
                     self.email.form = Some(Form::of(account));
                 }
+            }
+        }
+    }
+
+    // ---- the tabs -----------------------------------------------------------
+
+    /// Show the Email section on `tab`.
+    pub fn set_email_tab(&mut self, tab: EmailTab) {
+        if self.ui.dialog.is_some() || self.picker.open || self.quitting {
+            return;
+        }
+        self.set_section(Section::Email);
+        self.ui.email_tab = tab;
+    }
+
+    /// The Accounts tab with account `id` selected (Email's "Account
+    /// Settings…"); an unknown id, or none, leaves nothing selected. Asked
+    /// before settingsd is read, the selection waits for the read.
+    pub fn open_email_account(&mut self, id: Option<&str>) {
+        self.set_email_tab(EmailTab::Accounts);
+        if self.ui.section != Section::Email {
+            return;
+        }
+        let known = id.and_then(|id| self.email().and_then(|e| e.account(id)).cloned());
+        match (known, id) {
+            (Some(account), _) => self.select_email_account(&account.id),
+            (None, Some(id)) if self.look.email.is_none() => {
+                self.email.pending_account = Some(id.to_owned());
+            }
+            _ => {
+                self.ui.email_account = None;
+                self.email.form = None;
+                self.email.password = Secret::default();
             }
         }
     }
@@ -1132,6 +1294,25 @@ impl Engine {
         }
     }
 
+    /// The reader's text size as settingsd holds it.
+    pub fn reader_font_size(&self) -> Option<f64> {
+        self.email().map(|e| e.reader.font_size)
+    }
+
+    pub fn can_reset_reader_font(&self) -> bool {
+        self.can_edit_email()
+            && self
+                .reader_font_size()
+                .is_some_and(|s| s != READER_FONT_DEFAULT)
+    }
+
+    /// The reader's text size back to its default: one apply.
+    pub fn reset_reader_font(&mut self) {
+        if self.can_reset_reader_font() {
+            let _ = self.change_email(Change::ReaderFontSize(READER_FONT_DEFAULT));
+        }
+    }
+
     pub fn can_reset_email(&self) -> bool {
         self.can_edit_email()
     }
@@ -1160,7 +1341,12 @@ impl Engine {
                 self.ui.dialog = None;
                 if self.can_edit_email() {
                     self.email.added = None;
-                    self.send_email(Edit::Reset);
+                    if let Err(key) = self.reset_guard("email") {
+                        self.status = self.label(key, &[]);
+                        self.failed = true;
+                    } else {
+                        self.send_email(Edit::Reset(vec!["email".to_owned()]));
+                    }
                 }
             }
             _ => {}
@@ -1684,13 +1870,60 @@ impl Engine {
             "accounts":accounts,
             "default_account":email.and_then(|e| e.default_account.clone()),
             "mail":mail.map(|m| json!({"page_size":m.page_size,"mark_read_on_open":m.mark_read_on_open,"confirm_delete":m.confirm_delete})),
+            "reader":email.map(|e| json!({"font_size":e.reader.font_size,"default":READER_FONT_DEFAULT,"min":READER_FONT_MIN,"max":READER_FONT_MAX,"step":READER_FONT_STEP,"theme":e.reader.theme})),
+            "compose":email.map(|e| json!({"quote_on_reply":e.compose.quote_on_reply,"reply_position":e.compose.reply_position,"autosave":e.compose.autosave})),
             "email_service":self.email.service,
+            "tab":self.ui.email_tab,
+            "paths":email_paths(),
             "selected":self.ui.email_account,
             "form":self.email.form,
             "password_typed":!self.email.password.is_empty(),
             "task":self.email.task.as_ref().map(|t| json!({"action":t.action.kind(),"account":task_id(t),"stage":t.stage})),
             "outcome":self.email.outcome.as_ref().map(|(text, failed)| json!({"text":text,"failed":failed})),
             "can_edit":self.can_edit_email()})
+    }
+
+    /// Resetting `path` would remove accounts while Email may be running,
+    /// past its guard (it refuses to remove one it is still migrating):
+    /// they go one by one through Email's remove first.
+    pub(crate) fn reset_guard(&self, path: &str) -> Result<(), &'static str> {
+        let covers_accounts = path == "email" || path == "email.accounts";
+        let has_accounts = self.email().is_some_and(|e| !e.accounts.is_empty());
+        if covers_accounts && has_accounts && self.email.service != Service::Absent {
+            Err("email-reset-remove-first")
+        } else {
+            Ok(())
+        }
+    }
+
+    /// `prefs.email.reset {path?}`: one described path (default `email`,
+    /// the whole group) back to its default, as one `settings.reset`.
+    pub(crate) fn reset_email_path(
+        &mut self,
+        args: &Value,
+    ) -> Result<Value, (&'static str, String)> {
+        let path = match args.get("path") {
+            None | Some(Value::Null) => "email".to_owned(),
+            Some(Value::String(path)) => path.clone(),
+            Some(_) => return Err(("ARGUMENT", "path must be a string".into())),
+        };
+        if !email_paths().contains(&path) {
+            let message = format!("path must be one of {}", email_paths().join(", "));
+            return Err(("ARGUMENT", message));
+        }
+        if self.look.email.is_none() {
+            return Err(("NOT_READY", self.label("email-not-ready", &[])));
+        }
+        if !self.can_edit_email() {
+            return Err(("BUSY", self.label("busy", &[])));
+        }
+        self.reset_guard(&path)
+            .map_err(|key| ("REMOVE_THROUGH_EMAIL", self.label(key, &[])))?;
+        self.email.added = None;
+        self.send_email(Edit::Reset(vec![path.clone()]));
+        let mut body = self.email_view();
+        body["resetting"] = json!(path);
+        Ok(body)
     }
 
     /// `prefs.email.set`: one change, through the same paths as the window.
@@ -1701,6 +1934,19 @@ impl Engine {
         }
         if !self.can_edit_email() {
             return Err(("BUSY", self.label("busy", &[])));
+        }
+        // A list without an account Email holds is a removal: through
+        // Email's guard (op remove), not past it, while Email may run.
+        if let Change::Path(path, value) = &change
+            && let Some(email) = self.email()
+            && let Ok(next) = set_path(email, path, value)
+            && !dropped_accounts(email, &next).is_empty()
+            && self.email.service != Service::Absent
+        {
+            return Err((
+                "REMOVE_THROUGH_EMAIL",
+                self.label("email-remove-through-email", &[]),
+            ));
         }
         match self.change_email(change) {
             Ok(planned) => {
@@ -1794,22 +2040,11 @@ pub fn email_change(args: &Value) -> Result<Change, String> {
     };
     if let Some(path) = args.get("path") {
         let value = args.get("value").ok_or("value is required with path")?;
-        return match path.as_str() {
-            Some("email.mail.page_size") => value
-                .as_f64()
-                .filter(|v| v.fract() == 0.0 && *v >= 0.0 && *v <= f64::from(u32::MAX))
-                .map(|v| Change::PageSize(v as u32))
-                .ok_or_else(|| "page_size must be a whole number".into()),
-            Some("email.mail.mark_read_on_open") => value
-                .as_bool()
-                .map(Change::MarkReadOnOpen)
-                .ok_or_else(|| "mark_read_on_open must be true or false".into()),
-            Some("email.mail.confirm_delete") => value
-                .as_bool()
-                .map(Change::ConfirmDelete)
-                .ok_or_else(|| "confirm_delete must be true or false".into()),
-            _ => Err("path must be email.mail.page_size, email.mail.mark_read_on_open or email.mail.confirm_delete".into()),
-        };
+        let path = path.as_str().ok_or("path must be a string")?;
+        if !email_paths().iter().any(|p| p == path) {
+            return Err(format!("path must be one of {}", email_paths().join(", ")));
+        }
+        return Ok(Change::Path(path.to_owned(), value.clone()));
     }
     match args.get("op").and_then(Value::as_str) {
         Some("add") => {
@@ -1874,7 +2109,7 @@ mod tests {
     fn applied(planned: Planned) -> BTreeMap<String, Value> {
         match planned.edit {
             Edit::Apply(changes) => changes,
-            Edit::Reset => panic!("not a reset"),
+            Edit::Reset(_) => panic!("not a reset"),
         }
     }
 
@@ -1965,6 +2200,342 @@ mod tests {
     }
 
     #[test]
+    fn the_reader_font_size_sends_its_path_on_a_half_point_step() {
+        let email = two();
+        let changes = applied(plan(&email, &Change::ReaderFontSize(21.5), mint).unwrap());
+        assert_eq!(
+            changes,
+            BTreeMap::from([("email.reader.font_size".to_owned(), json!(21.5))])
+        );
+        for size in [
+            READER_FONT_MIN - READER_FONT_STEP,
+            READER_FONT_MAX + READER_FONT_STEP,
+            15.25,
+            f64::NAN,
+        ] {
+            assert_eq!(
+                plan(&email, &Change::ReaderFontSize(size), mint),
+                Err(Refusal::Key("email-reader-font-refused")),
+                "{size}"
+            );
+        }
+        assert_eq!(
+            plan(&email, &Change::ReaderFontSize(READER_FONT_DEFAULT), mint),
+            Err(Refusal::Unchanged)
+        );
+        // Over the Bus the path goes generic, typed by the settings crate.
+        let change = email_change(&json!({"path":"email.reader.font_size","value":18})).unwrap();
+        let changes = applied(plan(&email, &change, mint).unwrap());
+        assert_eq!(changes["email.reader.font_size"], json!(18.0));
+        let change = email_change(&json!({"path":"email.reader.font_size","value":"18"})).unwrap();
+        assert!(matches!(
+            plan(&email, &change, mint),
+            Err(Refusal::Settings(_))
+        ));
+    }
+
+    /// The reader's size is one apply per edit, shown by prefs.email, and
+    /// reset to its default with one more; prefs.email.set takes its path.
+    #[test]
+    fn the_reader_font_size_applies_shows_and_resets() {
+        let e = read();
+        assert_eq!(e.email_view()["reader"]["font_size"], READER_FONT_DEFAULT);
+        assert_eq!(e.email_view()["reader"]["theme"], "auto");
+        assert_eq!(
+            e.email_view()["compose"],
+            json!({"quote_on_reply":true,"reply_position":"above","autosave":true})
+        );
+        // The window's theme and compose controls send their one path.
+        for (path, value) in [
+            ("email.reader.theme", json!("dark")),
+            ("email.compose.quote_on_reply", json!(false)),
+            ("email.compose.reply_position", json!("below")),
+            ("email.compose.autosave", json!(false)),
+        ] {
+            let mut e = read();
+            e.change_email(Change::Path(path.into(), value.clone()))
+                .unwrap();
+            let calls = settings_calls(&mut e);
+            assert_eq!(calls[0].2["changes"], json!({path: value}), "{path}");
+        }
+        let mut e = read();
+        assert!(
+            e.change_email(Change::Path("email.reader.theme".into(), json!("sepia")))
+                .is_err()
+        );
+        assert!(settings_calls(&mut e).is_empty());
+        let mut e = read();
+        assert!(!e.can_reset_reader_font(), "already the default");
+        e.command(
+            1,
+            "prefs.email.set",
+            r#"{"path":"email.reader.font_size","value":19.5}"#,
+        );
+        let calls = settings_calls(&mut e);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0].2["changes"],
+            json!({"email.reader.font_size":19.5})
+        );
+        e.settled(calls[0].0, reply(0, json!({"status":"changed"})));
+        let mut after = two();
+        after.reader.font_size = 19.5;
+        settle_read(&mut e, "8", json!(after));
+        assert_eq!(e.reader_font_size(), Some(19.5));
+        assert_eq!(e.email_view()["reader"]["font_size"], 19.5);
+        assert!(e.can_reset_reader_font());
+        e.reset_reader_font();
+        let calls = settings_calls(&mut e);
+        assert_eq!(
+            calls[0].2["changes"],
+            json!({"email.reader.font_size":READER_FONT_DEFAULT})
+        );
+        e.settled(calls[0].0, reply(0, json!({"status":"changed"})));
+        settle_read(&mut e, "9", json!(two()));
+        e.command(
+            2,
+            "prefs.email.set",
+            r#"{"path":"email.reader.font_size","value":40}"#,
+        );
+        assert!(e.take_effects().iter().any(|x| matches!(x,
+            Effect::Reply { id: 2, rc: 10, body } if body["error_code"] == "ARGUMENT")));
+    }
+
+    /// A value for `path` that differs from what `email` holds, from the
+    /// path's own description: the coverage test's sample. A new kind of
+    /// path fails here, by name, until it is covered.
+    fn sample(email: &Email, path: &str, entry: &Value) -> Value {
+        let current = json!(email)
+            .pointer(&pointer(path))
+            .cloned()
+            .unwrap_or_else(|| entry["default"].clone());
+        let choices = ["values", "enum", "one_of", "choices"]
+            .iter()
+            .find_map(|k| entry[*k].as_array().cloned());
+        if let Some(choices) = choices {
+            return choices
+                .into_iter()
+                .find(|c| *c != current)
+                .unwrap_or_else(|| panic!("{path}: no other choice"));
+        }
+        match (path, entry["type"].as_str()) {
+            ("email.accounts", _) => {
+                let mut list = email.accounts.clone();
+                list.reverse();
+                json!(list)
+            }
+            ("email.default_account", _) => json!(email.accounts.last().map(|a| &a.id)),
+            (_, Some("boolean")) => json!(!current.as_bool().expect("a boolean")),
+            (_, Some("integer" | "number")) => {
+                let (min, max) = (&entry["minimum"], &entry["maximum"]);
+                if *min != current {
+                    min.clone()
+                } else {
+                    max.clone()
+                }
+            }
+            (_, Some(kind)) if kind.contains('|') || kind == "string" => {
+                panic!("{path}: a {kind} with no listed values needs a sample here")
+            }
+            _ => panic!("{path}: describe it ({entry}) or give it a sample here"),
+        }
+    }
+
+    /// Mark's rule: every option has a Bus verb. Every leaf path settingsd
+    /// describes is set through prefs.email.set as one apply of that path,
+    /// and reset through prefs.email.reset as one settings.reset of it;
+    /// resetting the accounts while Email may run is refused (its guard).
+    #[test]
+    fn every_described_email_path_round_trips_over_the_bus() {
+        let described = settings::email::describe();
+        let leaves = leaf_paths();
+        assert!(leaves.len() >= 6, "{leaves:?}");
+        assert_eq!(email_paths()[0], "email");
+        for path in &leaves {
+            let mut e = read();
+            let email = e.email().unwrap().clone();
+            let value = sample(&email, path, &described[path.as_str()]);
+            let args = json!({"path":path,"value":value});
+            e.command(1, "prefs.email.set", &args.to_string());
+            let effects = e.take_effects();
+            let answer = effects.iter().find_map(|x| match x {
+                Effect::Reply { id: 1, rc, body } => Some((*rc, body.clone())),
+                _ => None,
+            });
+            assert_eq!(answer.as_ref().map(|a| a.0), Some(0), "{path}: {answer:?}");
+            let apply = effects
+                .iter()
+                .find_map(|x| match x {
+                    Effect::Settings {
+                        verb: "settings.apply",
+                        body,
+                        ..
+                    } => Some(body.clone()),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("{path}: no apply"));
+            assert_eq!(apply["changes"][path.as_str()], value, "{path}");
+            // And back to its default, the one path.
+            let mut e = read();
+            e.command(2, "prefs.email.reset", &json!({"path":path}).to_string());
+            let effects = e.take_effects();
+            let guarded = path == "email.accounts";
+            let refused = effects.iter().any(|x| matches!(x,
+                Effect::Reply { id: 2, rc: 10, body } if body["error_code"] == "REMOVE_THROUGH_EMAIL"));
+            assert_eq!(refused, guarded, "{path}: {effects:?}");
+            if !guarded {
+                let reset = effects
+                    .iter()
+                    .find_map(|x| match x {
+                        Effect::Settings {
+                            verb: "settings.reset",
+                            body,
+                            ..
+                        } => Some(body.clone()),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| panic!("{path}: no reset"));
+                assert_eq!(reset["reset"], json!([path]));
+            }
+        }
+        // The whole group: a new group in one set, a reset of it once Email
+        // is away (with it running and holding accounts, refused).
+        let mut e = read();
+        let mut group = json!(e.email().unwrap());
+        group["mail"] = json!({"page_size":20});
+        e.command(
+            3,
+            "prefs.email.set",
+            &json!({"path":"email","value":group}).to_string(),
+        );
+        assert!(e.take_effects().iter().any(|x| matches!(x,
+            Effect::Settings { verb: "settings.apply", body, .. } if body["changes"]["email.mail.page_size"] == 20)));
+        let mut e = read();
+        e.command(4, "prefs.email.reset", "{}");
+        assert!(
+            e.take_effects().iter().any(|x| matches!(x,
+            Effect::Reply { id: 4, rc: 10, body } if body["error_code"] == "REMOVE_THROUGH_EMAIL"))
+        );
+        e.email.service = Service::Absent;
+        e.command(5, "prefs.email.reset", "{}");
+        assert!(e.take_effects().iter().any(|x| matches!(x,
+            Effect::Settings { verb: "settings.reset", body, .. } if body["reset"] == json!(["email"]))));
+        // A list that drops an account is a removal: through Email's remove.
+        let mut e = read();
+        e.command(
+            6,
+            "prefs.email.set",
+            r#"{"path":"email.accounts","value":[]}"#,
+        );
+        assert!(
+            e.take_effects().iter().any(|x| matches!(x,
+            Effect::Reply { id: 6, rc: 10, body } if body["error_code"] == "REMOVE_THROUGH_EMAIL"))
+        );
+        // Unknown paths and unknown keys are refused, never sent.
+        let mut e = read();
+        e.command(
+            7,
+            "prefs.email.set",
+            r#"{"path":"email.mail.nope","value":1}"#,
+        );
+        e.command(
+            8,
+            "prefs.email.set",
+            r#"{"path":"email.mail","value":{"page_size":20,"nope":1}}"#,
+        );
+        e.command(9, "prefs.email.reset", r#"{"path":"email.nope"}"#);
+        let effects = e.take_effects();
+        for id in [7, 8, 9] {
+            assert!(
+                effects
+                    .iter()
+                    .any(|x| matches!(x, Effect::Reply { id: i, rc: 10, .. } if *i == id)),
+                "{id}: {effects:?}"
+            );
+        }
+        assert!(!effects.iter().any(|x| matches!(x, Effect::Settings { .. })));
+    }
+
+    /// The tab is engine state: prefs.section name=email tab=… shows it, it
+    /// is in prefs.info's ui, and other sections refuse a tab.
+    #[test]
+    fn the_email_tab_is_addressable_over_the_bus() {
+        let mut e = read();
+        assert_eq!(e.ui.email_tab, EmailTab::Accounts);
+        e.command(1, "prefs.section", r#"{"name":"email","tab":"reader"}"#);
+        assert_eq!(e.ui.email_tab, EmailTab::Reader);
+        assert_eq!(e.info()["ui"]["email_tab"], "reader");
+        assert_eq!(e.email_view()["tab"], "reader");
+        e.set_section(Section::Themes);
+        e.command(2, "prefs.section", r#"{"name":"email","tab":"compose"}"#);
+        assert_eq!((e.section(), e.ui.email_tab), (Section::Email, EmailTab::Compose));
+        e.command(3, "prefs.section", r#"{"name":"email","tab":"nope"}"#);
+        e.command(4, "prefs.section", r#"{"name":"themes","tab":"mail"}"#);
+        e.command(5, "prefs.section", r#"{"name":"email","tab":"mail","account":"b"}"#);
+        let effects = e.take_effects();
+        for id in [3, 4, 5] {
+            assert!(
+                effects.iter().any(|x| matches!(x,
+                    Effect::Reply { id: i, rc: 10, body } if *i == id && body["error_code"] == "ARGUMENT")),
+                "{id}: {effects:?}"
+            );
+        }
+        assert_eq!(e.ui.email_tab, EmailTab::Compose, "a refused call changes nothing");
+        for tab in EmailTab::ALL {
+            assert_eq!(EmailTab::from_name(tab.name()), Some(tab));
+        }
+    }
+
+    /// Email's "Account Settings…": prefs.section name=email tab=accounts
+    /// account=<id> selects it; an unknown id leaves none selected; asked
+    /// before settingsd is read, the selection waits for the read.
+    #[test]
+    fn account_settings_opens_the_accounts_tab_on_an_account() {
+        let mut e = read();
+        e.set_email_tab(EmailTab::Reader);
+        e.command(
+            1,
+            "prefs.section",
+            r#"{"name":"email","tab":"accounts","account":"b"}"#,
+        );
+        assert_eq!(e.ui.email_tab, EmailTab::Accounts);
+        assert_eq!(e.ui.email_account.as_deref(), Some("b"));
+        assert_eq!(e.email.form.as_ref().and_then(|f| f.id.as_deref()), Some("b"));
+        e.command(2, "prefs.section", r#"{"name":"email","account":"acct-unknown"}"#);
+        assert_eq!(e.ui.email_tab, EmailTab::Accounts);
+        assert_eq!(e.ui.email_account, None, "unknown: none selected");
+        assert!(e.email.form.is_none());
+        assert!(
+            e.take_effects()
+                .iter()
+                .any(|x| matches!(x, Effect::Reply { id: 2, rc: 0, .. }))
+        );
+        // Before the first read: selected once settingsd answers.
+        let mut e = Engine::new(label);
+        let listing = e
+            .take_effects()
+            .into_iter()
+            .find_map(|x| match x {
+                Effect::Releases { ticket, .. } => Some(ticket),
+                _ => None,
+            })
+            .unwrap();
+        e.released(listing, reply(0, json!([])));
+        e.take_effects();
+        e.command(
+            3,
+            "prefs.section",
+            r#"{"name":"email","tab":"accounts","account":"a"}"#,
+        );
+        assert_eq!(e.ui.email_account, None);
+        e.start_appearance("example");
+        let calls = settings_calls(&mut e);
+        e.settled(calls[0].0, reply(0, snapshot("7", json!(two()))));
+        assert_eq!(e.ui.email_account.as_deref(), Some("a"));
+        assert_eq!(e.email.form.as_ref().map(|f| f.name.as_str()), Some("Work"));
+    }
+
+    #[test]
     fn mail_options_send_their_own_path() {
         let email = two();
         let cases = [
@@ -2004,7 +2575,7 @@ mod tests {
         );
         assert_eq!(
             email_change(&json!({"path":"email.mail.page_size","value":50.0})),
-            Ok(Change::PageSize(50))
+            Ok(Change::Path("email.mail.page_size".into(), json!(50.0)))
         );
         assert_eq!(
             email_change(&json!({"op":"update","id":"a","ca_path":null})),
@@ -2021,7 +2592,8 @@ mod tests {
             json!({"op":"add","name":"x"}),
             json!({"op":"update","id":"a","password":"hunter2"}),
             json!({"op":"enable","id":"a"}),
-            json!({"path":"email.accounts","value":[]}),
+            json!({"path":"email.nope","value":1}),
+            json!({"path":"email.mail.page_size"}),
         ] {
             assert!(email_change(&bad).is_err(), "{bad}");
         }
@@ -2385,7 +2957,20 @@ mod tests {
 
     #[test]
     fn reset_asks_first_and_resets_only_the_email_group() {
+        // Email running and holding accounts: refused, they go through
+        // Email's remove first.
         let mut e = read();
+        e.reset_email();
+        e.confirm_email();
+        assert!(settings_calls(&mut e).is_empty());
+        assert!(
+            e.failed && e.status == "email-reset-remove-first",
+            "{}",
+            e.status
+        );
+        // Email away: the group is reset.
+        let mut e = read();
+        e.email.service = Service::Absent;
         e.reset_email();
         assert_eq!(e.ui.dialog, Some(Dialog::ResetEmail));
         e.confirm_email();

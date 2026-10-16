@@ -11,7 +11,7 @@
 use citizen::Reply;
 use design::{CaptionSide, DesignContext, Mode, Scheme, Style};
 use egui_kittest::Harness;
-use preferences::email::Field;
+use preferences::email::{EmailTab, Field};
 use preferences::{Dialog, Effect, Engine, Look, Panel, Section};
 use prefs::{commands, label_with, strings, view::view};
 use serde_json::json;
@@ -416,6 +416,48 @@ fn email_engine(email: serde_json::Value, passwords: Option<serde_json::Value>) 
         );
     }
     e
+}
+
+/// The reader at 21 pt on Light colours in a dark window: the preview is
+/// set at that size on the light variant's tokens, Default size offered;
+/// Compose writes replies below the quote and does not autosave.
+#[test]
+fn email_reader_studio_dark() {
+    let e = email_engine(
+        json!({"accounts":[
+            {"id":"acct-0f3a","name":"Work","url":"https://mail.example.com","email":"admin@example.com"}
+        ],"reader":{"font_size":21.0,"theme":"light"},
+          "compose":{"reply_position":"below","autosave":false}}),
+        None,
+    );
+    assert!(e.can_reset_reader_font());
+    assert_eq!(e.email_view()["compose"]["reply_position"], "below");
+    let mut reader = e;
+    reader.set_email_tab(EmailTab::Reader);
+    draw(
+        chrome(Scheme::Studio, Mode::Dark),
+        "email_reader_studio_dark",
+        reader,
+    );
+}
+
+/// The Mail tab: list options and Reset email settings.
+#[test]
+fn email_mail_studio_dark() {
+    let mut e = email_engine(json!({"mail":{"page_size":50,"confirm_delete":false}}), None);
+    e.set_email_tab(EmailTab::Mail);
+    draw(chrome(Scheme::Studio, Mode::Dark), "email_mail_studio_dark", e);
+}
+
+/// The Compose tab, quoting off: where the reply goes waits greyed out.
+#[test]
+fn email_compose_pro_light() {
+    let mut e = email_engine(
+        json!({"compose":{"quote_on_reply":false,"reply_position":"below"}}),
+        None,
+    );
+    e.set_email_tab(EmailTab::Compose);
+    draw(chrome(Scheme::Pro, Mode::Light), "email_compose_pro_light", e);
 }
 
 /// No accounts yet: the list says so and Add account is the way in.
