@@ -766,11 +766,7 @@ fn place_window(
 
 /// The window a `comp.motion.run` addresses, resolved the way `comp.window.*`
 /// resolves it (a stale generation is refused).
-fn motion_window(
-    lp: &Loop,
-    id: u64,
-    generation: u64,
-) -> Result<(SurfaceId, Window), ControlReply> {
+fn motion_window(lp: &Loop, id: u64, generation: u64) -> Result<(SurfaceId, Window), ControlReply> {
     let surface = match lp
         .inner
         .comp
@@ -789,9 +785,10 @@ fn motion_window(
 /// start of a `comp.motion.run` window target.
 pub fn window_rect(lp: &Loop, id: u64, generation: u64) -> Result<[f64; 4], ControlReply> {
     let (_, window) = motion_window(lp, id, generation)?;
-    let origin = world::comp::live_window_space(&lp.inner.comp, lp.inner.all_world_spaces(), &window)
-        .and_then(|space| space.state.element_location(&window))
-        .unwrap_or_else(|| Point::from((0, 0)));
+    let origin =
+        world::comp::live_window_space(&lp.inner.comp, lp.inner.all_world_spaces(), &window)
+            .and_then(|space| space.state.element_location(&window))
+            .unwrap_or_else(|| Point::from((0, 0)));
     let size = window.geometry().size;
     Ok([
         f64::from(origin.x),

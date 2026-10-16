@@ -137,7 +137,10 @@ fn parse_target(value: &Value) -> Result<MotionTarget, ControlReply> {
 }
 
 fn parse_pointer(pointer: &serde_json::Map<String, Value>) -> Result<MotionTarget, ControlReply> {
-    if pointer.keys().any(|key| !POINTER_FIELDS.contains(&key.as_str())) {
+    if pointer
+        .keys()
+        .any(|key| !POINTER_FIELDS.contains(&key.as_str()))
+    {
         return Err(invalid_argument(
             "pointer",
             "only output, path, duration_ms and curve",
@@ -178,7 +181,10 @@ fn parse_pointer(pointer: &serde_json::Map<String, Value>) -> Result<MotionTarge
 }
 
 fn parse_window(window: &serde_json::Map<String, Value>) -> Result<MotionTarget, ControlReply> {
-    if window.keys().any(|key| !WINDOW_FIELDS.contains(&key.as_str())) {
+    if window
+        .keys()
+        .any(|key| !WINDOW_FIELDS.contains(&key.as_str()))
+    {
         return Err(invalid_argument(
             "window",
             "only id, generation, to, duration_ms and curve",
@@ -203,7 +209,10 @@ fn parse_window(window: &serde_json::Map<String, Value>) -> Result<MotionTarget,
             ));
         }
     };
-    if to_object.keys().any(|key| !TO_FIELDS.contains(&key.as_str())) {
+    if to_object
+        .keys()
+        .any(|key| !TO_FIELDS.contains(&key.as_str()))
+    {
         return Err(invalid_argument(
             "window.to",
             "only x, y, w and h",
@@ -255,9 +264,7 @@ fn parse_timing(
         Some(value) => value
             .as_u64()
             .filter(|ms| *ms <= MAX_DURATION_MS)
-            .ok_or_else(|| {
-                invalid_argument("duration_ms", "integer 0..=10000", "milliseconds")
-            })?,
+            .ok_or_else(|| invalid_argument("duration_ms", "integer 0..=10000", "milliseconds"))?,
     };
     let easing = match present(fields, "curve") {
         None => Easing::Bezier(CubicBezier::EASE_IN_OUT),
@@ -277,8 +284,14 @@ fn parse_point(value: &Value) -> Result<(f64, f64), ControlReply> {
     let Value::Object(point) = value else {
         return Err(bad());
     };
-    let x = point.get("x").and_then(Value::as_f64).filter(|v| v.is_finite());
-    let y = point.get("y").and_then(Value::as_f64).filter(|v| v.is_finite());
+    let x = point
+        .get("x")
+        .and_then(Value::as_f64)
+        .filter(|v| v.is_finite());
+    let y = point
+        .get("y")
+        .and_then(Value::as_f64)
+        .filter(|v| v.is_finite());
     match (x, y) {
         (Some(x), Some(y)) => Ok((x, y)),
         _ => Err(bad()),
@@ -418,7 +431,9 @@ mod tests {
             "path": [{"x": 0, "y": 0}], "curve": [-0.1, 0, 0.5, 1]
         }}]})));
         // Non-finite point.
-        assert!(refused(json!({"targets": [{"pointer": {"path": [{"x": "a", "y": 0}]}}]})));
+        assert!(refused(
+            json!({"targets": [{"pointer": {"path": [{"x": "a", "y": 0}]}}]})
+        ));
         // Unknown pointer field.
         assert!(refused(json!({"targets": [{"pointer": {
             "path": [{"x": 0, "y": 0}], "speed": 3

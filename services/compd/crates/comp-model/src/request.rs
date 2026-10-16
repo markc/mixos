@@ -957,7 +957,10 @@ pub(crate) fn args_object<'a>(
     Ok(object)
 }
 
-pub(crate) fn present<'a>(object: &'a serde_json::Map<String, Value>, name: &str) -> Option<&'a Value> {
+pub(crate) fn present<'a>(
+    object: &'a serde_json::Map<String, Value>,
+    name: &str,
+) -> Option<&'a Value> {
     object.get(name).filter(|value| !value.is_null())
 }
 

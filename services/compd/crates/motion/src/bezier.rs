@@ -118,7 +118,11 @@ mod tests {
 
     #[test]
     fn endpoints_are_exact() {
-        for c in [CubicBezier::EASE, CubicBezier::EASE_IN, CubicBezier::EASE_OUT] {
+        for c in [
+            CubicBezier::EASE,
+            CubicBezier::EASE_IN,
+            CubicBezier::EASE_OUT,
+        ] {
             assert_eq!(c.sample(0.0), 0.0);
             assert_eq!(c.sample(1.0), 1.0);
         }

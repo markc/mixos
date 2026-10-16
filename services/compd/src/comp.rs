@@ -65,15 +65,15 @@ use smithay::reexports::calloop::ping::make_ping;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{LoopHandle, RegistrationToken};
 
-use comp_model::observation::{ObservationRecord, PanelRequest, PointerPosition, PointerSample};
 use comp_model::motion_run::{MotionSpec, MotionTarget};
+use comp_model::observation::{ObservationRecord, PanelRequest, PointerPosition, PointerSample};
 use comp_model::reply::ControlReply;
 use comp_model::request::{InputOp, LongOp, WaitSpec, WindowOp};
-use motion::{Glide, Point, Route, Timeline};
 use comp_model::snapshot::{CompSnapshot, ReadScopes, project_window_row, surface_key};
 use comp_service::{
     CompEngine, LongReply, ObservationProducer, PortContext, PortService, PortWorker,
 };
+use motion::{Glide, Point, Route, Timeline};
 use outputs::render_contract::contract::RendererId;
 use policy::window::{WaitResolution, WindowFacts};
 use world::state::Loop;
@@ -234,9 +234,7 @@ fn motion_completed(kind: &MotionKind) -> ControlReply {
             to,
             ..
         } => {
-            let rect: Vec<f64> = (0..4)
-                .map(|i| to[i].unwrap_or(from[i]))
-                .collect();
+            let rect: Vec<f64> = (0..4).map(|i| to[i].unwrap_or(from[i])).collect();
             json!({"window": {"id": id, "generation": generation, "rect": rect}})
         }
     };
@@ -580,15 +578,9 @@ impl Bus {
                     from,
                     to,
                     timeline,
-                } => policy_host::motion::window_step(
-                    lp,
-                    *id,
-                    *generation,
-                    *from,
-                    *to,
-                    timeline,
-                    t,
-                ),
+                } => {
+                    policy_host::motion::window_step(lp, *id, *generation, *from, *to, timeline, t)
+                }
             };
             match step {
                 policy_host::motion::Step::Moving => still.push(run),
@@ -824,7 +816,8 @@ impl Engine<'_> {
                     return;
                 };
                 let mut glide = Glide::new(route, easing, 0.0, duration.as_secs_f64());
-                let step = policy_host::motion::pointer_step(self.lp, &mut glide, output.as_deref(), 0.0);
+                let step =
+                    policy_host::motion::pointer_step(self.lp, &mut glide, output.as_deref(), 0.0);
                 (MotionKind::Pointer { glide, output }, step)
             }
             MotionTarget::Window {

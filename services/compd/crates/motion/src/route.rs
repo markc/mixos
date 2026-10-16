@@ -167,7 +167,12 @@ mod tests {
 
     #[test]
     fn curve_passes_through_every_waypoint() {
-        let w = [pt(0.0, 0.0), pt(100.0, 200.0), pt(300.0, 50.0), pt(400.0, 400.0)];
+        let w = [
+            pt(0.0, 0.0),
+            pt(100.0, 200.0),
+            pt(300.0, 50.0),
+            pt(400.0, 400.0),
+        ];
         let r = Route::new(&w).unwrap();
         // Each waypoint lies on the sampled polyline (distance to nearest sample ~0).
         for want in &w {

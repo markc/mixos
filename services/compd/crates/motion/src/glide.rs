@@ -76,12 +76,7 @@ mod tests {
     #[test]
     fn ease_in_out_is_slow_at_the_start() {
         let route = Route::new(&[p(0.0, 0.0), p(300.0, 0.0)]).unwrap();
-        let mut g = Glide::new(
-            route,
-            Easing::Bezier(CubicBezier::EASE_IN_OUT),
-            0.0,
-            1.0,
-        );
+        let mut g = Glide::new(route, Easing::Bezier(CubicBezier::EASE_IN_OUT), 0.0, 1.0);
         let (early, _) = g.sample(0.1);
         assert!(early.x < 30.0, "slow start, got {}", early.x);
     }
