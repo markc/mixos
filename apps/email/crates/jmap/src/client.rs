@@ -137,6 +137,15 @@ pub(crate) fn request_body(using: &[String], calls: &[Call]) -> Value {
 /// The client id every `/set` create uses. One create per call, so one id.
 pub(crate) const CREATE: &str = "c0";
 
+/// A UUID id that maild parses. maild skips a create whose parent id does not
+/// parse (`calendarId`, `addressBookId`), with no reply entry, so it is
+/// checked before the request goes out.
+pub(crate) fn require_uuid(field: &str, value: &str) -> Result<()> {
+    uuid::Uuid::parse_str(value)
+        .map(|_| ())
+        .map_err(|e| Error::Protocol(format!("{field} {value:?} is not a UUID: {e}")))
+}
+
 /// A trimmed text value, or `None` when it is empty.
 pub(crate) fn non_empty(value: Option<&str>) -> Option<&str> {
     value.map(str::trim).filter(|value| !value.is_empty())
@@ -415,6 +424,26 @@ pub(crate) fn check_set_reply(data: &Value, key: &str, ids: &[String]) -> Result
     }
 }
 
+/// Fail for the first of `ids` that the reply does not confirm under `key`
+/// (`created`, `updated` or `destroyed`). maild's calendar and contact sets
+/// skip a failed create or update without any `not*` entry, so a missing
+/// confirmation is the only signal. A `destroyed` list is an array of ids;
+/// the other two are maps keyed by id.
+pub(crate) fn check_confirmed(data: &Value, key: &str, ids: &[String]) -> Result<()> {
+    let confirmed = |id: &str| match data.get(key) {
+        Some(Value::Object(map)) => map.contains_key(id),
+        Some(Value::Array(list)) => list.iter().any(|entry| entry.as_str() == Some(id)),
+        _ => false,
+    };
+    match ids.iter().find(|id| !confirmed(id)) {
+        Some(id) => Err(Error::method(
+            "serverFail",
+            Some(&format!("server did not confirm {id:?} as {key}")),
+        )),
+        None => Ok(()),
+    }
+}
+
 /// `and_then` sugar for the status check that precedes every body read.
 trait StatusCheck {
     fn and_then_ok_status(self) -> Result<reqwest::Response>;
@@ -531,6 +560,29 @@ mod tests {
             Err(Error::Method { error_type, .. }) => assert_eq!(error_type, "serverFail"),
             other => panic!("expected a method error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_silently_skipped_create_or_update_is_refused() {
+        // maild answers a skipped create or update with no entry in either map.
+        let reply = json!({ "created": { "c0": { "id": "V1" } }, "updated": null });
+        assert!(check_confirmed(&reply, "created", &["c0".to_owned()]).is_ok());
+        for (key, id) in [("created", "c1"), ("updated", "V1")] {
+            match check_confirmed(&reply, key, &[id.to_owned()]) {
+                Err(Error::Method { error_type, description }) => {
+                    assert_eq!(error_type, "serverFail");
+                    assert!(description.contains("did not confirm"), "{description}");
+                }
+                other => panic!("expected a method error for {key}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_destroyed_list_confirms_by_id() {
+        let reply = json!({ "destroyed": ["M2"] });
+        assert!(check_confirmed(&reply, "destroyed", &["M2".to_owned()]).is_ok());
+        assert!(check_confirmed(&reply, "destroyed", &["M3".to_owned()]).is_err());
     }
 
     #[test]

@@ -13,7 +13,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::client::{CREATE, Call, Client, check_set_reply};
+use crate::client::{CREATE, Call, Client, check_confirmed, check_set_reply};
 use crate::error::{Error, Result};
 
 /// One mailbox, as `Mailbox/get` returns it.
@@ -237,7 +237,9 @@ impl Client {
     /// Set or clear `$seen` (`read`) and `$flagged` (`flagged`) on every id
     /// in one Email/set. `None` leaves that keyword alone. Each keyword is a
     /// pointer delta, the form maild's keyword bitmap patcher accepts. A
-    /// refused id fails the call with the server's error.
+    /// refused id fails the call with the server's error. A no-op update is
+    /// omitted from `updated` by RFC 8620 §5.3, so success is not confirmed
+    /// here: only the `notUpdated` map is checked.
     pub async fn set_keywords(
         &self,
         ids: &[String],
@@ -278,7 +280,8 @@ impl Client {
         }
         let args = json!({ "accountId": self.account_id(), "destroy": ids });
         let data = self.set_call("Email/set", args).await?;
-        check_set_reply(&data, "notDestroyed", ids)
+        check_set_reply(&data, "notDestroyed", ids)?;
+        check_confirmed(&data, "destroyed", ids)
     }
 
     /// Create a mailbox under `parent` (or at the top level) and return its id.
@@ -286,6 +289,7 @@ impl Client {
         let args = mailbox_create_args(self.account_id(), name, parent);
         let data = self.set_call("Mailbox/set", args).await?;
         check_set_reply(&data, "notCreated", &[CREATE.to_owned()])?;
+        check_confirmed(&data, "created", &[CREATE.to_owned()])?;
         Client::created_id(&data, CREATE)
     }
 
@@ -293,7 +297,8 @@ impl Client {
     pub async fn rename_mailbox(&self, id: &str, name: &str) -> Result<()> {
         let args = mailbox_rename_args(self.account_id(), id, name);
         let data = self.set_call("Mailbox/set", args).await?;
-        check_set_reply(&data, "notUpdated", &[id.to_owned()])
+        check_set_reply(&data, "notUpdated", &[id.to_owned()])?;
+        check_confirmed(&data, "updated", &[id.to_owned()])
     }
 
     /// Delete a mailbox. Refused while it still holds email
@@ -301,7 +306,8 @@ impl Client {
     pub async fn delete_mailbox(&self, id: &str) -> Result<()> {
         let args = mailbox_destroy_args(self.account_id(), id);
         let data = self.set_call("Mailbox/set", args).await?;
-        check_set_reply(&data, "notDestroyed", &[id.to_owned()])
+        check_set_reply(&data, "notDestroyed", &[id.to_owned()])?;
+        check_confirmed(&data, "destroyed", &[id.to_owned()])
     }
 
     /// Update email properties (keywords, mailboxIds) with one patch.

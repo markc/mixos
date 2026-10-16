@@ -10,17 +10,23 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::client::{CREATE, Call, Client, check_set_reply, non_empty, optional_text};
+use crate::client::{
+    CREATE, Call, Client, check_confirmed, check_set_reply, non_empty, optional_text, require_uuid,
+};
 use crate::error::{Error, Result};
 
-/// What a new event says, as a JSCalendar Event. `start` is a LocalDateTime
-/// (`YYYY-MM-DDTHH:MM:SS`), read in `time_zone` when one is given;
-/// `duration` is ISO 8601, as [`duration_between`] writes it.
+/// What a new event says, as a JSCalendar Event. `start` and `end` are
+/// RFC 3339 instants with an offset: maild indexes only those for range
+/// queries, so any other form is refused rather than stored unfindable.
+/// They are sent normalised to UTC; `duration` is computed from them.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct EventDraft {
     pub title: String,
+    /// e.g. `2026-10-14T08:00:00+10:00`.
     pub start: String,
-    pub duration: String,
+    /// An RFC 3339 instant with an offset, after `start`.
+    pub end: String,
+    /// An IANA zone name, stored as the event's `timeZone`.
     pub time_zone: Option<String>,
     /// All-day: the JSCalendar `showWithoutTime` flag.
     pub show_without_time: bool,
@@ -30,13 +36,15 @@ pub struct EventDraft {
 
 /// The changes to an existing event. Only the fields that are `Some` are
 /// patched; an empty `time_zone`, `location` or `description` clears it.
-/// `start` and `duration` patch independently, so a move that keeps the
-/// length sends both.
+///
+/// maild currently persists only `title`, `start` and `end` on update: the
+/// other fields are sent but silently ignored by the server. `start` and
+/// `end` are RFC 3339 instants with an offset, as for [`EventDraft`].
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct EventPatch {
     pub title: Option<String>,
     pub start: Option<String>,
-    pub duration: Option<String>,
+    pub end: Option<String>,
     pub time_zone: Option<String>,
     pub show_without_time: Option<bool>,
     pub location: Option<String>,
@@ -45,14 +53,19 @@ pub struct EventPatch {
 
 impl EventDraft {
     /// The JSCalendar Event this draft creates in `calendar`, under `uid`.
-    fn to_jscalendar(&self, uid: &str, calendar: &str) -> Value {
+    /// `calendarId` is the singular top-level key maild requires.
+    fn to_jscalendar(&self, uid: &str, calendar: &str) -> Result<Value> {
+        let start = utc_instant("start", &self.start)?;
+        let end = utc_instant("end", &self.end)?;
+        let duration = duration_between(&start, &end).map_err(Error::Protocol)?;
         let mut event = json!({
             "@type": "Event",
             "uid": uid,
-            "calendarIds": { calendar: true },
+            "calendarId": calendar,
             "title": self.title,
-            "start": self.start,
-            "duration": self.duration,
+            "start": start,
+            "end": end,
+            "duration": duration,
             "showWithoutTime": self.show_without_time,
         });
         if let Some(time_zone) = non_empty(self.time_zone.as_deref()) {
@@ -64,22 +77,22 @@ impl EventDraft {
         if let Some(description) = non_empty(self.description.as_deref()) {
             event["description"] = json!(description);
         }
-        event
+        Ok(event)
     }
 }
 
 impl EventPatch {
     /// The JSCalendar patch: each set field, an empty text field as `null`.
-    fn to_patch(&self) -> Value {
+    fn to_patch(&self) -> Result<Value> {
         let mut patch = json!({});
         if let Some(title) = &self.title {
             patch["title"] = json!(title);
         }
         if let Some(start) = &self.start {
-            patch["start"] = json!(start);
+            patch["start"] = json!(utc_instant("start", start)?);
         }
-        if let Some(duration) = &self.duration {
-            patch["duration"] = json!(duration);
+        if let Some(end) = &self.end {
+            patch["end"] = json!(utc_instant("end", end)?);
         }
         if let Some(time_zone) = &self.time_zone {
             patch["timeZone"] = optional_text(time_zone);
@@ -96,8 +109,22 @@ impl EventPatch {
         if let Some(description) = &self.description {
             patch["description"] = optional_text(description);
         }
-        patch
+        Ok(patch)
     }
+}
+
+/// An RFC 3339 instant with an offset, normalised to UTC with a `Z` suffix.
+/// Anything else is refused: a LocalDateTime is stored by maild but never
+/// time-indexed, so a range query would miss it.
+fn utc_instant(field: &str, text: &str) -> Result<String> {
+    let instant = chrono::DateTime::parse_from_rfc3339(text).map_err(|e| {
+        Error::Protocol(format!(
+            "{field} {text:?} is not an RFC 3339 instant with an offset: {e}"
+        ))
+    })?;
+    Ok(instant
+        .with_timezone(&chrono::Utc)
+        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
 }
 
 /// The one-entry `locations` map JSCalendar gives a single location name.
@@ -105,15 +132,14 @@ fn locations(name: &str) -> Value {
     json!({ "l1": { "@type": "Location", "name": name } })
 }
 
-/// The ISO 8601 duration from one LocalDateTime to another (`PT1H`,
-/// `P1DT1H30M`, `PT0S`), for [`EventDraft::duration`]. Both ends are
-/// `YYYY-MM-DDTHH:MM:SS`. An end before the start, or a malformed end, is
+/// The ISO 8601 duration between two RFC 3339 instants (`PT1H`, `P1DT1H30M`,
+/// `PT0S`). Offsets are honoured, so instants in different zones measure the
+/// real elapsed time. An end before the start, or a malformed instant, is
 /// refused with a message naming it.
 pub fn duration_between(start: &str, end: &str) -> std::result::Result<String, String> {
-    const FORMAT: &str = "%Y-%m-%dT%H:%M:%S";
     let parse = |text: &str| {
-        chrono::NaiveDateTime::parse_from_str(text, FORMAT)
-            .map_err(|e| format!("not a local datetime {text:?}: {e}"))
+        chrono::DateTime::parse_from_rfc3339(text)
+            .map_err(|e| format!("not an RFC 3339 instant {text:?}: {e}"))
     };
     let seconds = (parse(end)? - parse(start)?).num_seconds();
     if seconds < 0 {
@@ -145,16 +171,22 @@ pub fn duration_between(start: &str, end: &str) -> std::result::Result<String, S
 }
 
 /// The CalendarEvent/set arguments creating `draft` in `calendar`.
-fn event_create_args(account_id: &str, uid: &str, calendar: &str, draft: &EventDraft) -> Value {
-    json!({
+fn event_create_args(
+    account_id: &str,
+    uid: &str,
+    calendar: &str,
+    draft: &EventDraft,
+) -> Result<Value> {
+    require_uuid("calendar", calendar)?;
+    Ok(json!({
         "accountId": account_id,
-        "create": { CREATE: draft.to_jscalendar(uid, calendar) },
-    })
+        "create": { CREATE: draft.to_jscalendar(uid, calendar)? },
+    }))
 }
 
 /// The CalendarEvent/set arguments patching one event.
-fn event_update_args(account_id: &str, id: &str, patch: &EventPatch) -> Value {
-    json!({ "accountId": account_id, "update": { id: patch.to_patch() } })
+fn event_update_args(account_id: &str, id: &str, patch: &EventPatch) -> Result<Value> {
+    Ok(json!({ "accountId": account_id, "update": { id: patch.to_patch()? } }))
 }
 
 /// The CalendarEvent/set arguments destroying one event.
@@ -293,12 +325,12 @@ impl Client {
         after: Option<&str>,
         before: Option<&str>,
     ) -> Result<Vec<CalendarEvent>> {
-        let mut filter = json!({ "inCalendar": calendar_id });
+        let mut filter = json!({ "calendarId": calendar_id });
         if let Some(after) = after {
-            filter["after"] = json!(after);
+            filter["after"] = json!(utc_instant("after", after)?);
         }
         if let Some(before) = before {
-            filter["before"] = json!(before);
+            filter["before"] = json!(utc_instant("before", before)?);
         }
         self.query_events(filter).await
     }
@@ -331,24 +363,27 @@ impl Client {
     /// here: JSCalendar requires one, and a fresh event has none.
     pub async fn create_event(&self, calendar: &str, draft: &EventDraft) -> Result<String> {
         let uid = uuid::Uuid::now_v7().to_string();
-        let args = event_create_args(self.account_id(), &uid, calendar, draft);
+        let args = event_create_args(self.account_id(), &uid, calendar, draft)?;
         let data = self.set_call("CalendarEvent/set", args).await?;
         check_set_reply(&data, "notCreated", &[CREATE.to_owned()])?;
+        check_confirmed(&data, "created", &[CREATE.to_owned()])?;
         Client::created_id(&data, CREATE)
     }
 
     /// Patch one event. Only the set fields change.
     pub async fn update_event(&self, id: &str, patch: &EventPatch) -> Result<()> {
-        let args = event_update_args(self.account_id(), id, patch);
+        let args = event_update_args(self.account_id(), id, patch)?;
         let data = self.set_call("CalendarEvent/set", args).await?;
-        check_set_reply(&data, "notUpdated", &[id.to_owned()])
+        check_set_reply(&data, "notUpdated", &[id.to_owned()])?;
+        check_confirmed(&data, "updated", &[id.to_owned()])
     }
 
     /// Delete one event.
     pub async fn delete_event(&self, id: &str) -> Result<()> {
         let args = event_destroy_args(self.account_id(), id);
         let data = self.set_call("CalendarEvent/set", args).await?;
-        check_set_reply(&data, "notDestroyed", &[id.to_owned()])
+        check_set_reply(&data, "notDestroyed", &[id.to_owned()])?;
+        check_confirmed(&data, "destroyed", &[id.to_owned()])
     }
 
     /// The query-then-get listing behind every events call, sorted newest
@@ -409,26 +444,45 @@ mod tests {
     fn draft() -> EventDraft {
         EventDraft {
             title: "Dentist".into(),
-            start: "2026-10-14T08:00:00".into(),
-            duration: "PT30M".into(),
+            start: "2026-10-14T08:00:00+10:00".into(),
+            end: "2026-10-14T08:30:00+10:00".into(),
             ..EventDraft::default()
         }
     }
 
     #[test]
-    fn a_draft_serialises_to_a_jscalendar_event() {
-        let event = draft().to_jscalendar("uid-1", "C1");
+    fn a_draft_serialises_to_a_utc_event_with_a_singular_calendar_id() {
+        let event = draft().to_jscalendar("uid-1", "C1").unwrap();
         assert_eq!(
             event,
             json!({
                 "@type": "Event",
                 "uid": "uid-1",
-                "calendarIds": { "C1": true },
+                "calendarId": "C1",
                 "title": "Dentist",
-                "start": "2026-10-14T08:00:00",
+                "start": "2026-10-13T22:00:00Z",
+                "end": "2026-10-13T22:30:00Z",
                 "duration": "PT30M",
                 "showWithoutTime": false
             })
+        );
+    }
+
+    #[test]
+    fn a_local_or_malformed_instant_is_refused_before_any_request() {
+        let local = EventDraft {
+            start: "2026-10-14T08:00:00".into(),
+            ..draft()
+        };
+        assert!(matches!(
+            local.to_jscalendar("uid-1", "C1"),
+            Err(Error::Protocol(_))
+        ));
+        let bad_calendar = event_create_args("A1", "uid-1", "not-a-uuid", &draft());
+        assert!(matches!(bad_calendar, Err(Error::Protocol(_))));
+        assert!(
+            event_create_args("A1", "uid-1", "0196c0de-0000-7000-8000-000000000001", &draft())
+                .is_ok()
         );
     }
 
@@ -441,7 +495,7 @@ mod tests {
             show_without_time: true,
             ..draft()
         };
-        let event = full.to_jscalendar("uid-1", "C1");
+        let event = full.to_jscalendar("uid-1", "C1").unwrap();
         assert_eq!(event["timeZone"], json!("Australia/Brisbane"));
         assert_eq!(
             event["locations"],
@@ -454,40 +508,37 @@ mod tests {
             location: Some("  ".into()),
             ..draft()
         }
-        .to_jscalendar("uid-1", "C1");
+        .to_jscalendar("uid-1", "C1")
+        .unwrap();
         assert!(blank.get("locations").is_none());
         assert!(blank.get("timeZone").is_none());
     }
 
     #[test]
     fn a_create_wraps_the_event_under_the_client_id() {
-        assert_eq!(
-            event_create_args("A1", "uid-1", "C1", &draft())["create"]["c0"]["title"],
-            json!("Dentist")
-        );
-        assert_eq!(
-            event_create_args("A1", "uid-1", "C1", &draft())["accountId"],
-            json!("A1")
-        );
+        let args = event_create_args("A1", "uid-1", "0196c0de-0000-7000-8000-000000000001", &draft())
+            .unwrap();
+        assert_eq!(args["create"]["c0"]["title"], json!("Dentist"));
+        assert_eq!(args["accountId"], json!("A1"));
     }
 
     #[test]
-    fn a_patch_sends_only_the_set_fields_and_clears_blank_text() {
+    fn a_patch_sends_only_the_set_fields_normalised_to_utc() {
         let patch = EventPatch {
-            start: Some("2026-10-15T09:00:00".into()),
-            duration: Some("PT1H".into()),
+            start: Some("2026-10-15T09:00:00+10:00".into()),
+            end: Some("2026-10-15T10:00:00+10:00".into()),
             location: Some(String::new()),
             description: Some("Moved".into()),
             ..EventPatch::default()
         };
         assert_eq!(
-            event_update_args("A1", "V1", &patch),
+            event_update_args("A1", "V1", &patch).unwrap(),
             json!({
                 "accountId": "A1",
                 "update": {
                     "V1": {
-                        "start": "2026-10-15T09:00:00",
-                        "duration": "PT1H",
+                        "start": "2026-10-14T23:00:00Z",
+                        "end": "2026-10-15T00:00:00Z",
                         "locations": null,
                         "description": "Moved"
                     }
@@ -502,7 +553,7 @@ mod tests {
 
     #[test]
     fn a_window_filter_names_the_calendar_and_both_bounds() {
-        let mut filter = json!({ "inCalendar": "C1" });
+        let mut filter = json!({ "calendarId": "C1" });
         filter["after"] = json!("2026-10-01T00:00:00Z");
         filter["before"] = json!("2026-11-01T00:00:00Z");
         let calls = event_query_calls("A1", filter);
@@ -514,7 +565,7 @@ mod tests {
                 {
                     "accountId": "A1",
                     "filter": {
-                        "inCalendar": "C1",
+                        "calendarId": "C1",
                         "after": "2026-10-01T00:00:00Z",
                         "before": "2026-11-01T00:00:00Z"
                     },
@@ -528,7 +579,7 @@ mod tests {
 
     #[test]
     fn a_created_event_reads_back_through_the_existing_struct() {
-        let data = draft().to_jscalendar("uid-1", "C1");
+        let data = draft().to_jscalendar("uid-1", "C1").unwrap();
         let event: CalendarEvent = serde_json::from_value(json!({
             "id": "V9",
             "calendarId": "C1",
@@ -542,20 +593,29 @@ mod tests {
     }
 
     #[test]
-    fn durations_are_iso_8601_from_local_datetimes() {
-        let at = |end: &str| duration_between("2026-10-14T09:00:00", end);
-        assert_eq!(at("2026-10-14T10:00:00").unwrap(), "PT1H");
-        assert_eq!(at("2026-10-14T09:45:00").unwrap(), "PT45M");
-        assert_eq!(at("2026-10-14T09:00:30").unwrap(), "PT30S");
-        assert_eq!(at("2026-10-15T10:30:00").unwrap(), "P1DT1H30M");
-        assert_eq!(at("2026-10-16T09:00:00").unwrap(), "P2D");
-        assert_eq!(at("2026-10-14T09:00:00").unwrap(), "PT0S");
+    fn durations_are_iso_8601_between_rfc_3339_instants() {
+        let at = |end: &str| duration_between("2026-10-14T09:00:00+10:00", end);
+        assert_eq!(at("2026-10-14T10:00:00+10:00").unwrap(), "PT1H");
+        assert_eq!(at("2026-10-14T09:45:00+10:00").unwrap(), "PT45M");
+        assert_eq!(at("2026-10-14T09:00:30+10:00").unwrap(), "PT30S");
+        assert_eq!(at("2026-10-15T10:30:00+10:00").unwrap(), "P1DT1H30M");
+        assert_eq!(at("2026-10-16T09:00:00+10:00").unwrap(), "P2D");
+        assert_eq!(at("2026-10-14T09:00:00+10:00").unwrap(), "PT0S");
+    }
+
+    #[test]
+    fn offsets_are_honoured_across_zones() {
+        // 09:00 at +10:00 is 23:00 UTC the day before: one hour later in UTC.
+        assert_eq!(
+            duration_between("2026-10-14T09:00:00+10:00", "2026-10-13T23:00:00Z").unwrap(),
+            "PT1H"
+        );
     }
 
     #[test]
     fn a_reversed_or_malformed_span_is_refused() {
-        assert!(duration_between("2026-10-14T10:00:00", "2026-10-14T09:00:00").is_err());
-        assert!(duration_between("2026-10-14T09:00:00", "2026-10-14 10:00").is_err());
-        assert!(duration_between("not a time", "2026-10-14T10:00:00").is_err());
+        assert!(duration_between("2026-10-14T10:00:00+10:00", "2026-10-14T09:00:00+10:00").is_err());
+        assert!(duration_between("2026-10-14T09:00:00", "2026-10-14T10:00:00+10:00").is_err());
+        assert!(duration_between("not a time", "2026-10-14T10:00:00+10:00").is_err());
     }
 }

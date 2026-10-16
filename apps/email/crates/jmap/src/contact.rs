@@ -9,7 +9,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::client::{CREATE, Call, Client, check_set_reply, non_empty, optional_text};
+use crate::client::{
+    CREATE, Call, Client, check_confirmed, check_set_reply, non_empty, optional_text, require_uuid,
+};
 use crate::error::{Error, Result};
 
 /// What a new contact says, as a JSContact Card. Each non-blank email and
@@ -42,7 +44,7 @@ impl ContactDraft {
         let mut card = json!({
             "@type": "Card",
             "uid": uid,
-            "addressBookIds": { address_book: true },
+            "addressBookId": address_book,
             "name": { "full": self.name },
             "emails": numbered("e", &self.emails, |address| json!({ "address": address })),
             "phones": numbered("p", &self.phones, |number| json!({ "number": number })),
@@ -100,17 +102,19 @@ fn organization_map(name: &str) -> Value {
     json!({ "o1": { "name": name } })
 }
 
-/// The Contact/set arguments creating `draft` in `address_book`.
+/// The Contact/set arguments creating `draft` in `address_book`. The
+/// `addressBookId` must be a UUID: maild skips a create without one.
 fn contact_create_args(
     account_id: &str,
     uid: &str,
     address_book: &str,
     draft: &ContactDraft,
-) -> Value {
-    json!({
+) -> Result<Value> {
+    require_uuid("address book", address_book)?;
+    Ok(json!({
         "accountId": account_id,
         "create": { CREATE: draft.to_jscontact(uid, address_book) },
-    })
+    }))
 }
 
 /// The Contact/set arguments patching one contact.
@@ -237,9 +241,10 @@ impl Client {
     /// minted here: JSContact requires one, and a fresh card has none.
     pub async fn create_contact(&self, address_book: &str, draft: &ContactDraft) -> Result<String> {
         let uid = uuid::Uuid::now_v7().to_string();
-        let args = contact_create_args(self.account_id(), &uid, address_book, draft);
+        let args = contact_create_args(self.account_id(), &uid, address_book, draft)?;
         let data = self.set_call("Contact/set", args).await?;
         check_set_reply(&data, "notCreated", &[CREATE.to_owned()])?;
+        check_confirmed(&data, "created", &[CREATE.to_owned()])?;
         Client::created_id(&data, CREATE)
     }
 
@@ -247,14 +252,16 @@ impl Client {
     pub async fn update_contact(&self, id: &str, patch: &ContactPatch) -> Result<()> {
         let args = contact_update_args(self.account_id(), id, patch);
         let data = self.set_call("Contact/set", args).await?;
-        check_set_reply(&data, "notUpdated", &[id.to_owned()])
+        check_set_reply(&data, "notUpdated", &[id.to_owned()])?;
+        check_confirmed(&data, "updated", &[id.to_owned()])
     }
 
     /// Delete one contact.
     pub async fn delete_contact(&self, id: &str) -> Result<()> {
         let args = contact_destroy_args(self.account_id(), id);
         let data = self.set_call("Contact/set", args).await?;
-        check_set_reply(&data, "notDestroyed", &[id.to_owned()])
+        check_set_reply(&data, "notDestroyed", &[id.to_owned()])?;
+        check_confirmed(&data, "destroyed", &[id.to_owned()])
     }
 
     /// One address book's contacts, full-name first, with an optional text
@@ -363,7 +370,7 @@ mod tests {
             json!({
                 "@type": "Card",
                 "uid": "uid-1",
-                "addressBookIds": { "B1": true },
+                "addressBookId": "B1",
                 "name": { "full": "Ann Example" },
                 "emails": {
                     "e1": { "address": "ann@example.invalid" },
@@ -392,12 +399,15 @@ mod tests {
 
     #[test]
     fn a_create_wraps_the_card_under_the_client_id() {
-        let args = contact_create_args("A1", "uid-1", "B1", &draft());
+        let book = "0196c0de-0000-7000-8000-000000000002";
+        let args = contact_create_args("A1", "uid-1", book, &draft()).unwrap();
         assert_eq!(args["accountId"], json!("A1"));
+        assert_eq!(args["create"]["c0"]["addressBookId"], json!(book));
         assert_eq!(
             args["create"]["c0"]["name"],
             json!({ "full": "Ann Example" })
         );
+        assert!(contact_create_args("A1", "uid-1", "B1", &draft()).is_err());
     }
 
     #[test]
@@ -439,6 +449,6 @@ mod tests {
         .unwrap();
         assert_eq!(contact.display_name(), "Ann Example");
         assert_eq!(contact.display_email(), "ann@example.invalid");
-        assert_eq!(contact.data["addressBookIds"]["B1"], json!(true));
+        assert_eq!(contact.data["addressBookId"], json!("B1"));
     }
 }
