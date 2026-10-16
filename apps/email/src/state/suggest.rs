@@ -510,8 +510,8 @@ mod tests {
             named("Ann (old)", "ANN@example.invalid"),
             named("Anne", "anne@example.invalid"),
         ];
-        let present = ["anne@example.invalid".to_owned()];
-        let got = merge("ann", &contacts, &recent, &present, 8);
+        let already = ["anne@example.invalid".to_owned()];
+        let got = merge("ann", &contacts, &recent, &already, 8);
         assert_eq!(got.len(), 1);
         assert_eq!(
             (got[0].name.as_deref(), got[0].contact),
