@@ -412,6 +412,13 @@ pub fn registry() -> Registry<Engine> {
             Engine::set_email_password,
         ),
         (
+            "email.password.forget",
+            "email-forget-password",
+            2,
+            Engine::can_forget_email_password,
+            Engine::forget_email_password,
+        ),
+        (
             "email.account.connect",
             "email-connect",
             2,

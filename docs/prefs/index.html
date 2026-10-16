@@ -354,8 +354,14 @@ Prefs starts it (<code>apps.launch</code>) and waits up to about 16 seconds for 
 come onto the Bus. Under the field, Prefs says whether Email holds a
 password for the account, as Email reports it (<code>email.accounts</code>), or that
 this is unknown because Email is not running. <strong>Connect now</strong> asks Email
-to connect the account (<code>email.account.connect</code>). An Email too old to
-know these verbs is reported as such, not retried.</p>
+to connect the account (<code>email.account.connect</code>). <strong>Forget password…</strong>
+asks first (Cancel is the default), then has Email delete the password it
+keeps; it is the only time Prefs sends an empty password, and it starts
+Email if needed, as Set password does. Removing an account also asks Email
+to forget its password once settingsd shows the account gone, but only if
+Email is already running: Prefs does not start Email for this, and if Email
+is away or refuses, the status line says the password may still be held.
+An Email too old to know these verbs is reported as such, not retried.</p>
 <pre><code class="language-mix">-- What Prefs shows: accounts (with has_password), default, mail options.
 send prefs prefs.email
 
@@ -371,8 +377,9 @@ send prefs prefs.email.set body='{"op":"enable","id":"acct-0f3a2b1c9d8e","enable
 -- A mail option.
 send prefs prefs.email.set body='{"path":"email.mail.page_size","value":50}'
 
--- Hand a password to Email (answered once Email has).
+-- Hand a password to Email (answered once Email has), or forget it.
 send prefs prefs.email.password body='{"id":"acct-0f3a2b1c9d8e","password":"…"}'
+send prefs prefs.email.password body='{"id":"acct-0f3a2b1c9d8e","forget":true}'
 </code></pre>
 <p><code>prefs.email.set</code> takes <code>op</code> <code>add</code>, <code>update</code>, <code>remove</code>, <code>move</code>, <code>default</code>
 or <code>enable</code>, or <code>path</code> and <code>value</code> for a mail option. Over the Bus,

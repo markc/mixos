@@ -113,6 +113,8 @@ pub enum Dialog {
     RemoveAccount(String),
     /// Confirm resetting every email setting.
     ResetEmail,
+    /// Confirm Email forgetting this account's saved password.
+    ForgetPassword(String),
 }
 
 /// One operation on the releases service.
