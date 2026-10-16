@@ -45,15 +45,17 @@ fn directory(path: &Path, create: bool) -> io::Result<File> {
     for name in names {
         let mut fd = unsafe { libc::openat(directory.as_raw_fd(), name.as_ptr(), flags) };
         if fd < 0 && create && io::Error::last_os_error().kind() == io::ErrorKind::NotFound {
-            if unsafe { libc::mkdirat(directory.as_raw_fd(), name.as_ptr(), 0o700) } == 0 {
-                // The new entry lives in the parent: sync it so a crash cannot
-                // drop the directory after a save that reported success. The
-                // new directory is synced in turn as the next parent, or by
-                // `replace` when the file lands in it.
-                directory.sync_all()?;
-            } else if io::Error::last_os_error().kind() != io::ErrorKind::AlreadyExists {
+            if unsafe { libc::mkdirat(directory.as_raw_fd(), name.as_ptr(), 0o700) } != 0
+                && io::Error::last_os_error().kind() != io::ErrorKind::AlreadyExists
+            {
                 return Err(io::Error::last_os_error());
             }
+            // The new entry lives in the parent: sync it so a crash cannot drop
+            // the directory after a save that reported success. A racing
+            // creator may not have synced yet, so `AlreadyExists` syncs too.
+            // The new directory is synced in turn as the next parent, or by
+            // `replace` when the file lands in it.
+            directory.sync_all()?;
             fd = unsafe { libc::openat(directory.as_raw_fd(), name.as_ptr(), flags) };
         }
         if fd < 0 {
