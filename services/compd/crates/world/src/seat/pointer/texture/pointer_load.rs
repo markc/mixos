@@ -454,7 +454,10 @@ mod tests {
         assert!(!agent.chunks_exact(4).any(|p| p == ARROW_FILL));
         let cache = fixture.cache(24);
         assert_eq!(cache.agent_arrow(2.5).size, (60, 60).into());
-        assert!(Arc::ptr_eq(&cache.agent_arrow(2.5), &cache.agent_arrow(2.5)));
+        assert!(Arc::ptr_eq(
+            &cache.agent_arrow(2.5),
+            &cache.agent_arrow(2.5)
+        ));
         assert_eq!(
             fixture.cache(u32::MAX).get("default").unwrap().size,
             (512, 512).into()
