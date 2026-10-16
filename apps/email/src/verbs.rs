@@ -287,6 +287,18 @@ pub const VERBS: &[Verb] = &[
         "Print an email through the browser's print dialog; answers {path} of the page",
     ),
     verb(
+        "email.attachments",
+        true,
+        r#"{"account":"optional account id","id":"email id"}"#,
+        "An email's attachments: part, name, type, size, and whether each can be downloaded and opened",
+    ),
+    verb(
+        "email.attachment.save",
+        false,
+        r#"{"account":"optional account id","id":"email id","part":"attachment part id","dir":"optional absolute existing directory (default the download directory)"}"#,
+        "Save an attachment, never over an existing file; answers {path}",
+    ),
+    verb(
         "email.calendar.select",
         false,
         r#"{"account":"optional account id","id":"calendar id"}"#,
@@ -376,6 +388,10 @@ pub enum Query {
     Get {
         id: String,
     },
+    /// One email's attachments.
+    Attachments {
+        id: String,
+    },
     Calendars,
     Events {
         calendar: String,
@@ -406,6 +422,12 @@ pub enum Then {
     Forward(String),
     /// Print the email fetched, answering with the page's path.
     Print,
+    /// Save the email fetched's attachment `part` in `dir` (the download
+    /// directory when `None`), answering with its path.
+    Save {
+        part: String,
+        dir: Option<std::path::PathBuf>,
+    },
 }
 
 /// A change on the account's server.
@@ -513,6 +535,7 @@ pub async fn run_query(client: &Client, query: Query) -> Result<Value, jmap::Err
             }
             value
         }
+        Query::Attachments { id } => crate::attachments::describe(&client.email(&id).await?),
         Query::Calendars => json!({ "calendars": to_value(client.calendars().await?) }),
         Query::Events { calendar, from, to } => {
             let events = client
@@ -1111,6 +1134,29 @@ fn dispatch(
                     state.query(account, id, Query::Get { id: wanted }, Then::Print);
                 }
             }
+        }
+        "email.attachments" => {
+            let account = connected(state, args)?;
+            query(state, account, Query::Attachments {
+                id: required(args, "id")?,
+            });
+        }
+        "email.attachment.save" => {
+            let account = connected(state, args)?;
+            let email = required(args, "id")?;
+            let part = required(args, "part")?;
+            let dir = match text(args, "dir")? {
+                None => None,
+                Some(dir) => {
+                    let dir = std::path::PathBuf::from(dir);
+                    if !dir.is_absolute() || !dir.is_dir() {
+                        return Err(invalid(crate::label("dir-not-directory")));
+                    }
+                    Some(dir)
+                }
+            };
+            let then = Then::Save { part, dir };
+            state.query(account, id, Query::Get { id: email }, then);
         }
         "email.calendar.select" => {
             let account = account(state, args)?;

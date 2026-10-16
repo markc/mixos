@@ -596,6 +596,8 @@ pub enum FormField {
 pub enum Dialog {
     About,
     Shortcuts,
+    /// The open email's attachments.
+    Attachments,
 }
 
 /// The window's own theme choice: `None` on an axis follows the session.
@@ -878,6 +880,8 @@ pub struct State {
     /// Secrets saves in flight, with the reply each one owes and what its
     /// landing moves on.
     saves: BTreeMap<u64, (Option<(u64, Value)>, AfterSave)>,
+    /// Attachment downloads in flight: ticket to part id.
+    pub attaching: BTreeMap<u64, String>,
     next_ticket: u64,
     /// Whether the persisted config (shape, cache) has changed.
     config_dirty: bool,
@@ -924,6 +928,7 @@ impl State {
             outstanding: BTreeMap::new(),
             writes: BTreeMap::new(),
             saves: BTreeMap::new(),
+            attaching: BTreeMap::new(),
             next_ticket: 0,
             config_dirty: false,
         };
@@ -1094,6 +1099,8 @@ impl State {
             }
         }
         self.credential_busy.clear();
+        // The shell aborts the downloads; their callers hear below.
+        self.attaching.clear();
         for (_, (owed, _)) in std::mem::take(&mut self.saves) {
             if let Some((reply, _)) = owed {
                 self.refuse(reply, code::OUTCOME_UNKNOWN, &unknown);
@@ -2140,6 +2147,9 @@ impl State {
                 self.secrets_saved(ticket, version, result)
             }
             Event::Printed(reply, result) => self.printed(reply, result),
+            Event::Attached(ticket, reply, open, result) => {
+                self.attached(ticket, reply, open, result)
+            }
             Event::Delivery(..)
             | Event::Look(..)
             | Event::LookRetry(_)
@@ -2423,8 +2433,15 @@ impl State {
         if self.account(account).map(AccountView::generation) != Some(tag.generation) {
             return self.refuse(reply, code::STALE, &crate::label("stale-connection"));
         }
-        if matches!(then, Then::Print) {
-            return self.print_email(account, &email, Some(reply));
+        match &then {
+            Then::Print => return self.print_email(account, &email, Some(reply)),
+            Then::Save { part, dir } => {
+                let target = crate::attachments::Target::Save(dir.clone());
+                // A refusal is answered to the caller inside.
+                let _ = self.fetch_attachment(account, &email, part, target, Some(reply));
+                return;
+            }
+            _ => {}
         }
         if self.compose.is_some() {
             return self.refuse(reply, code::BUSY, &crate::label("compose-open"));
@@ -2432,7 +2449,7 @@ impl State {
         let opened = match then {
             Then::Reply(all) => self.reply_to(account, &email, all),
             Then::Forward(to) => self.forward(account, &email, &to),
-            Then::Answer | Then::Print => false,
+            Then::Answer | Then::Print | Then::Save { .. } => false,
         };
         if opened {
             let subject = self.compose.as_ref().map(|c| c.draft.subject.clone());
@@ -2955,7 +2972,7 @@ impl State {
             "tree": self.tree().iter().map(|r| json!({"key": r.node.key(), "depth": r.depth, "label": r.label, "unread": r.unread, "expandable": r.expandable, "expanded": r.expanded, "selected": r.selected})).collect::<Vec<_>>(),
             "compose": compose,
             "form": form,
-            "dialog": self.ui.dialog.map(|d| match d { Dialog::About => "about", Dialog::Shortcuts => "shortcuts" }),
+            "dialog": self.ui.dialog.map(|d| match d { Dialog::About => "about", Dialog::Shortcuts => "shortcuts", Dialog::Attachments => "attachments" }),
             "ui": {
                 "places": self.ui.places,
                 "reader": self.ui.reader,
@@ -3531,6 +3548,8 @@ impl State {
                 self.form_note = None;
             }
             UiEvent::CloseDialog => self.ui.dialog = None,
+            UiEvent::Attachment(part, open) => self.attachment(&part, open),
+            UiEvent::SaveAllAttachments => self.save_all_attachments(),
             UiEvent::SetMode(mode) => {
                 self.ui.theme.mode = Some(mode);
             }

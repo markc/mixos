@@ -24,8 +24,11 @@
 //! decided differently from GIO for rare characters. The stock database
 //! uses none of them.
 
+mod apps;
 mod glob;
 mod magic;
+
+pub use apps::{apps_in, cache_paths, mimeapps_paths};
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

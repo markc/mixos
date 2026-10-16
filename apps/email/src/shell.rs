@@ -23,6 +23,7 @@ use serde_json::{Value, json};
 use toolkit::command::Origin;
 use toolkit::{Registry, Strings, Theme, drive};
 
+use crate::attachments::{self, Target};
 use crate::commands;
 use crate::secrets::{Secrets, SecretsFile};
 use crate::state::{Mode, SessionInfo, Settled, State, Tag, UiState, code};
@@ -83,6 +84,9 @@ pub enum Event {
     /// A print page was written and handed to the browser (its path), for
     /// Bus request `reply` if one asked.
     Printed(Option<u64>, Result<String, String>),
+    /// Attachment download `ticket` finished (`true`: it was to open),
+    /// with the file's path, for Bus request `reply` if one asked.
+    Attached(u64, Option<u64>, bool, Result<String, String>),
 }
 
 pub struct Shell {
@@ -129,6 +133,9 @@ pub struct Shell {
     comp: String,
     /// `email.show` requests forwarded to the compositor, not yet answered.
     shows: std::collections::BTreeSet<u64>,
+    /// Attachment downloads running, by ticket: aborted when the window
+    /// closes.
+    downloads: HashMap<u64, tokio::task::AbortHandle>,
 }
 
 /// This host's name: the settingsd instance to try first (settingsd runs
@@ -303,7 +310,8 @@ fn closing(event: &Event) -> Closing {
         | Event::Settled(..)
         | Event::SecretsSaved(..)
         | Event::WriteDeadline(_)
-        | Event::Printed(..) => Closing::Apply,
+        | Event::Printed(..)
+        | Event::Attached(..) => Closing::Apply,
         Event::Delivery(citizen::Delivery::Command { id, .. }) => Closing::Cancel(*id),
         Event::Shown(..) => Closing::Shown,
         Event::Delivery(_) | Event::Look(..) | Event::LookRetry(_) | Event::PrefsOpened(_) => {
@@ -440,6 +448,7 @@ impl Shell {
             held: std::collections::VecDeque::new(),
             comp: std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into()),
             shows: std::collections::BTreeSet::new(),
+            downloads: HashMap::new(),
         };
         shell.read_look();
         shell.settle();
@@ -454,16 +463,19 @@ impl Shell {
         &mut self.state
     }
 
-    /// Spawn `work` and send its result back as an event.
-    fn spawn<F>(&self, work: F)
+    /// Spawn `work` and send its result back as an event; the handle aborts
+    /// it.
+    fn spawn<F>(&self, work: F) -> tokio::task::AbortHandle
     where
         F: Future<Output = Event> + Send + 'static,
     {
         let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-        self.runtime.spawn(async move {
-            let _ = tx.send(work.await);
-            ctx.request_repaint();
-        });
+        self.runtime
+            .spawn(async move {
+                let _ = tx.send(work.await);
+                ctx.request_repaint();
+            })
+            .abort_handle()
     }
 
     /// Perform the state's queued work until none is left (a save answers
@@ -813,6 +825,30 @@ impl Shell {
                     Event::Printed(reply, result)
                 });
             }
+            Work::Attachment {
+                account,
+                ticket,
+                blob,
+                name,
+                index,
+                mime,
+                target,
+                reply,
+            } => {
+                let open = target == Target::Open;
+                let Some((_, client)) = self.client(&account) else {
+                    let error = label("not-connected");
+                    self.state
+                        .apply(Event::Attached(ticket, reply, open, Err(error)));
+                    return;
+                };
+                let bus = self.bus.clone();
+                let handle = self.spawn(async move {
+                    let result = attachment(&client, &bus, &blob, name, index, mime, target).await;
+                    Event::Attached(ticket, reply, open, result)
+                });
+                self.downloads.insert(ticket, handle);
+            }
         }
     }
 
@@ -890,6 +926,9 @@ impl Shell {
             if let Event::Shown(id, result) = event {
                 self.shown(id, result);
                 continue;
+            }
+            if let Event::Attached(ticket, ..) = &event {
+                self.downloads.remove(ticket);
             }
             self.state.apply(event);
             self.settle();
@@ -1208,6 +1247,10 @@ impl Shell {
             for (id, _, _) in std::mem::take(&mut self.held) {
                 self.refuse_closing(id);
             }
+            // Downloads stop here; their callers hear from close_out.
+            for (_, download) in self.downloads.drain() {
+                download.abort();
+            }
             self.drain_saver();
             self.state.close_out();
             for reply in self.state.take_replies() {
@@ -1291,6 +1334,46 @@ fn open_links(ctx: &egui::Context) {
             Err(error) => eprintln!("email: opening a link: {error}"),
         }
     }
+}
+
+/// Download one attachment, put it where `target` says (on the blocking
+/// pool), and when the target is Open, open it in the first of its type's
+/// applications the launcher starts; the file's path.
+async fn attachment(
+    client: &Client,
+    bus: &citizen::Handle,
+    blob: &str,
+    name: Option<String>,
+    index: usize,
+    mime: String,
+    target: Target,
+) -> Result<String, String> {
+    let data = client
+        .download_blob(blob)
+        .await
+        .map_err(|e| e.to_string())?;
+    let open = target == Target::Open;
+    let (path, apps) = tokio::task::spawn_blocking(move || {
+        let path = attachments::place(&target, name.as_deref(), index, &mime, &data)?;
+        let apps = if open {
+            attachments::open_with(&path, &mime)?
+        } else {
+            Vec::new()
+        };
+        Ok::<_, String>((path, apps))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    let shown = path.display().to_string();
+    if !open {
+        return Ok(shown);
+    }
+    for app in &apps {
+        if launch(bus, app, &path).await.is_ok() {
+            return Ok(shown);
+        }
+    }
+    Err(label_with("attachment-no-app", &[("path", &shown)]))
 }
 
 /// Open `path` in desktop app `id` through the session's launcher

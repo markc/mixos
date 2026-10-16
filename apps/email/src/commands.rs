@@ -62,6 +62,15 @@ fn readable(state: &State) -> bool {
             .is_some_and(crate::reader::has_text)
 }
 
+/// The open email has attachments.
+fn attached(state: &State) -> bool {
+    reading(state)
+        && state
+            .current()
+            .and_then(|v| v.mail.open.as_ref())
+            .is_some_and(|e| !crate::attachments::of(e).is_empty())
+}
+
 /// More than one account to step through.
 fn several(state: &State) -> bool {
     undialogued(state) && state.accounts.len() > 1
@@ -205,6 +214,17 @@ pub fn registry() -> Registry<State> {
         icon: None,
         enabled: reading,
         run: State::print_open,
+    })
+    .add(Command {
+        id: "mail.attachments",
+        submenu: None,
+        group: 4,
+        label: "attachments",
+        menu: Some("mail"),
+        shortcut: None,
+        icon: Some(Icon::Paperclip),
+        enabled: attached,
+        run: State::open_attachments,
     })
     .add(Command {
         id: "calendar.new_event",

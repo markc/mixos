@@ -311,6 +311,17 @@ implicit ones: <code>text/plain</code> for <code>text/*</code> types and
 (timestamp or size) since loading, so a long-lived caller can reload.
 <code>sniff_len()</code> is how many bytes to read before calling <code>guess</code>.</li>
 <li><code>text_fallback(data)</code> and <code>looks_like_text(data)</code> are the two text checks.</li>
+<li><code>extension(mime)</code> is the type's usual extension without the dot (<code>pdf</code>):
+its heaviest plain <code>*.ext</code> glob.</li>
+<li><code>apps_for(mime)</code> lists the applications that open a type, best first, as
+desktop ids without <code>.desktop</code> (the form <code>apps.launch</code> takes), following
+the freedesktop MIME Applications spec: for the type and then each
+supertype (never <code>application/octet-stream</code>), every <code>mimeapps.list</code>'s
+Default Applications, then Added Associations, then <code>mimeinfo.cache</code>,
+less the Removed Associations; <code>media/*</code> keys match the whole media
+type. <code>mimeapps_paths()</code> and <code>cache_paths()</code> name the files read, and
+<code>apps_in(lists, caches, types)</code> is the same decision over given texts.
+Desktop-specific <code>$desktop-mimeapps.list</code> files are not read.</li>
 </ul>
 <h2 id="example">Example</h2>
 <p>thumbs reads the start of a file it already has open and asks for its type:</p>

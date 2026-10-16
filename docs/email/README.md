@@ -146,6 +146,26 @@ A malformed file loads defaults and is never overwritten.
   remote images are left out (their alt text stays), and the page's
   security policy forbids it from fetching anything. If no browser opens
   it, the status line names the page so you can open it yourself.
+- **Attachments** (Mail › Attachments…). A popup lists the open email's
+  attachments: each with its type's icon, its name (elided, whole on
+  hover), its size, and **Save** and **Open**; **Save All** is at the
+  bottom. A part the server could not decode is greyed with a note.
+  Downloads run in the background, never in the window's thread, and stop
+  when Email closes.
+  - **Save** writes to your download directory (`XDG_DOWNLOAD_DIR` in
+    `~/.config/user-dirs.dirs`, else `~/Downloads`), as a new file only
+    you can read. It is written in full, then put in place, so a
+    half-written file never appears, and it never replaces a file:
+    `report.pdf` becomes `report (1).pdf`. The sender's name is cleaned
+    first (no `/`, `\`, `..`, control characters or leading dots, at most
+    200 bytes); a part with no name is `attachment-<n>` with its type's
+    usual extension. The status line shows where it went.
+  - **Open** puts the file in `$XDG_RUNTIME_DIR/email-attach/` (private,
+    pruned after a day) and opens it in the app the desktop associates
+    with its type (`mimeapps.list`, then `mimeinfo.cache`). Programs and
+    scripts (ELF executables and libraries, shell and other scripts,
+    `.desktop` launchers, AppImages, Windows executables) are never opened,
+    by their type, their name or their first bytes: they can only be saved.
 - **New Event** and **New Contact** forms. Start and end are RFC 3339
   instants.
 
@@ -217,6 +237,8 @@ never waits on them.
 | `email.send {to, cc?, bcc?, subject, body, in_reply_to?}` | intent | send without the dialog |
 | `email.compose {…}`, `email.reply {id, all?}`, `email.forward {id, to?}` | intent | open the compose dialog, filled in |
 | `email.print {id?}` | intent | print an email (default the open one) through the browser; answers `{path}` of the page, or `FILE` naming it when no browser opened it |
+| `email.attachments {id}` | query | the email's attachments: `part`, `name`, `type`, `size`, `disposition`, `cid`, `downloadable`, `openable` |
+| `email.attachment.save {id, part, dir?}` | intent | save one attachment, never over a file; `dir` must be an absolute, existing directory (default the download directory); answers `{path}`. A part that cannot be decoded is `INVALID_ARGUMENT`, an unknown part `NOT_FOUND` |
 | `email.calendar.select`, `email.event.create/update/delete` | intent | `create` answers `{id}`; `end` or an ISO 8601 `duration` |
 | `email.book.select`, `email.contact.create/update/delete` | intent | `create` answers `{id}` |
 | `email.ui.*`, `email.window`, `email.window.state` | input, query | the toolkit [drive verbs](../docs/drive.md) |

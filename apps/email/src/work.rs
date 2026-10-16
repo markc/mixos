@@ -148,6 +148,19 @@ pub enum Work {
         html: String,
         reply: Option<u64>,
     },
+    /// Download attachment blob `blob` (the email's `index`th, from 1, of
+    /// type `mime`) and save or open it as `target` says; the outcome comes
+    /// back under `ticket`, and to `reply` (a Bus request) if one asked.
+    Attachment {
+        account: String,
+        ticket: u64,
+        blob: String,
+        name: Option<String>,
+        index: usize,
+        mime: String,
+        target: crate::attachments::Target,
+        reply: Option<u64>,
+    },
 }
 
 impl Work {
@@ -166,7 +179,8 @@ impl Work {
             | Work::FetchCalendars { account }
             | Work::FetchEvents { account, .. }
             | Work::FetchBooks { account }
-            | Work::FetchContacts { account, .. } => Some(account),
+            | Work::FetchContacts { account, .. }
+            | Work::Attachment { account, .. } => Some(account),
             Work::Settings { .. }
             | Work::WriteDeadline { .. }
             | Work::ReadSettings

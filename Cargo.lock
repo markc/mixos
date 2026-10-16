@@ -2080,6 +2080,7 @@ dependencies = [
  "futures",
  "jmap",
  "libc",
+ "mimedb",
  "pulldown-cmark",
  "serde",
  "serde_json",
