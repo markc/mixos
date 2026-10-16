@@ -333,7 +333,12 @@ fn parse_mode(body: &str) -> Result<Option<InputMode>, String> {
         return Err("invalid mode request: the body must be a JSON object".into());
     };
     match object.get("mode") {
-        None => Ok(None),
+        // Only exactly `{}` toggles: a misspelt key must not.
+        None if object.is_empty() => Ok(None),
+        None => Err(format!(
+            "invalid mode request: no \"mode\" field (got {})",
+            object.keys().cloned().collect::<Vec<_>>().join(", ")
+        )),
         Some(Value::String(mode)) => match mode.to_ascii_lowercase().as_str() {
             "transparent" => Ok(Some(InputMode::Transparent)),
             "normal" => Ok(Some(InputMode::Normal)),
@@ -1001,6 +1006,9 @@ mod tests {
             r#"{"mode":true}"#,
             r#"{"mode":["transparent"]}"#,
             r#"{"mode":"off"}"#,
+            r#"{"mdoe":"normal"}"#,
+            r#"{"Mode":"normal"}"#,
+            r#"{"other":1}"#,
         ] {
             let mut cmd = command(verbs::MODE, json!({}), Some("local"));
             cmd.body = body.to_string();

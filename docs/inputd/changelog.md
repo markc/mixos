@@ -31,6 +31,13 @@ loads unchanged.
   switch-away every key held on the re-emitter is released there, then the
   grab is dropped; on switch-to the grab is retaken, with bounded backoff
   while another holder has it. Without `--vt` the grab is held always.
+- **The grab is taken only with no key down,** so no key is left held in
+  the compositor; inputd waits ungrabbed until the keyboard is quiet.
+- **Dropped events (`SYN_DROPPED`) are recovered:** the key state is
+  re-read, every key passed on is released, and keys still held are
+  swallowed until their release.
+- `input.mode` refuses a malformed body; only an empty body or `{}`
+  toggles.
 - The re-emitter is `inputd virtual keyboard`, created once at start; the
   injector is `inputd virtual pointer`.
 - The keymap is `keymap.json` in the state directory

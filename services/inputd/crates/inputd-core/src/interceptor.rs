@@ -57,16 +57,26 @@ pub struct Step {
     pub emit: bool,
     /// Fire this verb.
     pub fire: Option<Fire>,
+    /// The event was a repeat or release with no latch: its press was not
+    /// seen. Dropped; the caller may log it.
+    pub orphan: bool,
 }
 
 impl Step {
     const EMIT: Self = Self {
         emit: true,
         fire: None,
+        orphan: false,
     };
     const DROP: Self = Self {
         emit: false,
         fire: None,
+        orphan: false,
+    };
+    const ORPHAN: Self = Self {
+        emit: false,
+        fire: None,
+        orphan: true,
     };
 }
 
@@ -117,26 +127,22 @@ impl Interceptor {
         emitted
     }
 
-    /// Recover after the device dropped events (`SYN_DROPPED`): `is_down`
-    /// is the physical key state read once the stream is back in sync,
-    /// and `held` the modifiers it shows. Every latched key that is no
-    /// longer down loses its latch; those latched as emitted are returned,
-    /// in ascending order, for the caller to release on the re-emitter. The
-    /// modifier state is rebuilt from `held`. A key down now with no latch
-    /// had its press lost: its release is an orphan, like one from before
-    /// the grab.
-    pub fn resync(&mut self, is_down: impl Fn(u16) -> bool, held: SideModifiers) -> Vec<u16> {
-        let up: Vec<u16> = self
-            .latches
-            .keys()
-            .copied()
-            .filter(|&code| !is_down(code))
-            .collect();
-        let mut released = Vec::new();
-        for code in up {
-            if self.latches.remove(&code) == Some(Latch::Emitted) {
-                released.push(code);
-            }
+    /// Recover after the device dropped events (`SYN_DROPPED`): `down` is
+    /// every key physically down in the state read once the stream is back
+    /// in sync, and `held` the modifiers among them.
+    ///
+    /// Every key latched as emitted is returned, in ascending order, for
+    /// the caller to release on the re-emitter, **whether or not it is
+    /// still down**: the physical state cannot show that the press it was
+    /// latched for continued, rather than being released and pressed again
+    /// inside the lost events. Every latch is forgotten, and each key down
+    /// now is quarantined until its release: its repeats and release are
+    /// swallowed and nothing fires. The modifiers are rebuilt from `held`.
+    pub fn resync(&mut self, down: &[u16], held: SideModifiers) -> Vec<u16> {
+        let released = self.end();
+        for &code in down {
+            self.latches
+                .insert(code, Latch::Swallowed { repeat: None });
         }
         self.mods = held;
         released
@@ -162,14 +168,15 @@ impl Interceptor {
             2 => match self.latches.get(&code) {
                 Some(Latch::Emitted) => Step::EMIT,
                 Some(Latch::Swallowed { repeat }) => Step {
-                    emit: false,
                     fire: repeat.clone(),
+                    ..Step::DROP
                 },
-                None => Step::DROP,
+                None => Step::ORPHAN,
             },
             0 => match self.latches.remove(&code) {
                 Some(Latch::Emitted) => Step::EMIT,
-                Some(Latch::Swallowed { .. }) | None => Step::DROP,
+                Some(Latch::Swallowed { .. }) => Step::DROP,
+                None => Step::ORPHAN,
             },
             _ => Step::DROP,
         }
@@ -189,8 +196,8 @@ impl Interceptor {
         let repeat = Fire::from_resolution(resolver.resolve(code, self.mods, Edge::Repeat));
         self.latches.insert(code, Latch::Swallowed { repeat });
         Step {
-            emit: false,
             fire: Fire::from_resolution(press),
+            ..Step::DROP
         }
     }
 
@@ -198,15 +205,26 @@ impl Interceptor {
         match value {
             1 => {
                 self.mods.set(code, true);
-                self.latches.insert(code, Latch::Emitted);
-                Step::EMIT
+                // A re-press keeps the existing decision (a quarantine too).
+                match self.latches.get(&code) {
+                    Some(Latch::Swallowed { .. }) => Step::DROP,
+                    _ => {
+                        self.latches.insert(code, Latch::Emitted);
+                        Step::EMIT
+                    }
+                }
             }
-            2 if self.is_emitted(code) => Step::EMIT,
+            2 => match self.latches.get(&code) {
+                Some(Latch::Emitted) => Step::EMIT,
+                Some(Latch::Swallowed { .. }) => Step::DROP,
+                None => Step::ORPHAN,
+            },
             0 => {
                 self.mods.set(code, false);
                 match self.latches.remove(&code) {
                     Some(Latch::Emitted) => Step::EMIT,
-                    _ => Step::DROP,
+                    Some(Latch::Swallowed { .. }) => Step::DROP,
+                    None => Step::ORPHAN,
                 }
             }
             _ => Step::DROP,

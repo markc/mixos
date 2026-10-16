@@ -614,12 +614,10 @@ fn a_resync_after_dropped_events_releases_what_is_up_and_rebuilds_modifiers() {
     // then drops events, losing the releases of A, F5 and Right Ctrl, and
     // the press of Left Shift.
     run.feed(KEY_A, 1).feed(KEY_F5, 1).feed(KEY_RIGHTCTRL, 1);
-    let down = [KEY_LEFTSHIFT];
-    let released = run
-        .keys
-        .resync(|code| down.contains(&code), mods(&["lshift"]));
-    assert_eq!(released, [KEY_A, KEY_RIGHTCTRL], "emitted keys that are up");
+    let released = run.keys.resync(&[KEY_LEFTSHIFT], mods(&["lshift"]));
+    assert_eq!(released, [KEY_A, KEY_RIGHTCTRL], "every emitted key");
     assert!(!run.keys.is_emitted(KEY_A) && !run.keys.is_swallowed(KEY_F5));
+    assert!(run.keys.is_swallowed(KEY_LEFTSHIFT), "held now: quarantined");
     assert_eq!(run.keys.mods(), mods(&["lshift"]));
     // The stale Right Ctrl is gone: a bare-arrow chord is not formed, and
     // Left Shift (whose press was lost) still counts for matching.
@@ -637,13 +635,38 @@ fn a_resync_after_dropped_events_releases_what_is_up_and_rebuilds_modifiers() {
 }
 
 #[test]
-fn a_resync_keeps_latches_for_keys_still_down() {
+fn a_resync_releases_and_quarantines_keys_still_down() {
+    // RCtrl + F5 is emitted (a chorded F-key is the apps'). Inside the lost
+    // events F5 and Right Ctrl go up and a NEW bare F5 goes down. The state
+    // shows F5 down, but that is not the press latched as emitted.
     let mut run = Run::new(Resolver::new(default_keymap()));
-    run.feed(KEY_A, 1).feed(KEY_F5, 1);
-    let released = run
-        .keys
-        .resync(|code| code == KEY_A || code == KEY_F5, SideModifiers::NONE);
-    assert!(released.is_empty());
-    run.feed(KEY_A, 0).feed(KEY_F5, 0);
-    assert_eq!(run.emitted, [(KEY_A, 1), (KEY_A, 0)]);
+    run.feed(KEY_RIGHTCTRL, 1).feed(KEY_F5, 1);
+    assert_eq!(run.emitted, [(KEY_RIGHTCTRL, 1), (KEY_F5, 1)]);
+    let released = run.keys.resync(&[KEY_F5], SideModifiers::NONE);
+    assert_eq!(released, [KEY_F5, KEY_RIGHTCTRL], "released though F5 is down");
+    for code in released {
+        run.emitted.push((code, 0));
+    }
+    // The new bare F5's repeats and release reach nothing, and fire nothing.
+    run.feed(KEY_F5, 2).feed(KEY_F5, 2).feed(KEY_F5, 0);
+    run.assert_balanced();
+    assert_eq!(run.emitted.len(), 4, "{:?}", run.emitted);
+    assert!(run.fired.is_empty());
+    // Quarantine ends at the release: the next press is decided afresh.
+    run.feed(KEY_A, 1).feed(KEY_A, 0);
+    assert_eq!(run.emitted[4..], [(KEY_A, 1), (KEY_A, 0)]);
+}
+
+#[test]
+fn an_orphan_is_flagged_and_a_quarantined_key_is_not() {
+    let mut keys = Interceptor::new();
+    let resolver = Resolver::new(default_keymap());
+    keys.begin(SideModifiers::NONE);
+    for (code, value) in [(KEY_A, 2), (KEY_A, 0), (KEY_RIGHTCTRL, 0)] {
+        let step = keys.key(&resolver, code, value);
+        assert!(step.orphan && !step.emit, "{code} {value}");
+    }
+    keys.resync(&[KEY_A], SideModifiers::NONE);
+    let step = keys.key(&resolver, KEY_A, 0);
+    assert!(!step.orphan && !step.emit);
 }

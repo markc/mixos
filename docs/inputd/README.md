@@ -51,10 +51,15 @@ grab only while one of those VTs is the active console:
 - **On switch-away,** it releases on the re-emitter every key it had passed
   and is still held, then drops the grab. The next VT's compositor reads the
   keyboard directly.
-- **On switch-to,** it takes the grab again. While another holder still has
-  the device, it retries with a backoff from 50 ms up to 2 s.
-- **After a grab,** a repeat or release whose press it did not see is
-  dropped.
+- **On switch-to,** it takes the grab again, but only once **no key is
+  down**. A key held across the grab would stay down in the compositor,
+  which saw its press but would never see its release. So while the
+  switch chord (Ctrl+Alt+Fn) is still held, inputd waits ungrabbed and
+  tries again at each report from the keyboard. While another holder still
+  has the device, it retries with a backoff from 50 ms up to 2 s.
+- **If the kernel drops events** (`SYN_DROPPED`), inputd re-reads which
+  keys are down, releases every key it had passed on, and swallows any key
+  still held until it is released.
 
 It watches `/sys/class/tty/tty0/active` with `poll(2)`, so a switch wakes it
 at once and nothing is polled on a timer. The re-emitter is made once, at

@@ -17,8 +17,14 @@
 //! them. On switch-away it releases on the re-emitter every key latched as
 //! emitted, forgets every latch, then drops the grab. On switch-to it grabs
 //! again, retrying with bounded exponential backoff while another holder
-//! still has the device (`EBUSY`); a repeat or release whose press it did
-//! not see under this grab is dropped. With no VT set it grabs always.
+//! still has the device (`EBUSY`). With no VT set it grabs always.
+//!
+//! A grab is only taken while **no key is down**: a key held across the
+//! grab would stay down in the compositor, which saw its press on the
+//! original device and would never see its release. While a key is held
+//! inputd waits ungrabbed and tries again at each report from the device.
+//! A repeat or release whose press was not seen under the grab is dropped
+//! (and logged; with the quiet-grab rule it should not happen).
 //!
 //! While not grabbed, events read from the device are discarded: the
 //! compositor of the active VT reads them itself.
@@ -66,6 +72,15 @@ impl KeyState {
             }
         }
         Self(bits)
+    }
+
+    /// Every key down, ascending.
+    pub fn down_codes(&self) -> Vec<u16> {
+        (0..=0x2ffu16).filter(|&code| self.is_down(code)).collect()
+    }
+
+    pub fn any_down(&self) -> bool {
+        self.0.iter().any(|&byte| byte != 0)
     }
 
     pub fn is_down(&self, code: u16) -> bool {
@@ -141,6 +156,12 @@ pub struct Grabber<D, E> {
     failures: u32,
     /// Between a `SYN_DROPPED` and the `SYN_REPORT` that ends it.
     dropping: bool,
+    /// A grab is wanted but a key is down: waiting, ungrabbed, for the
+    /// keyboard to be quiet.
+    waiting: bool,
+    /// A key snapshot was just taken: the rest of the batch being processed
+    /// predates it and is discarded.
+    cut: bool,
     keys: Interceptor,
 }
 
@@ -155,6 +176,8 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
             retry: None,
             failures: 0,
             dropping: false,
+            waiting: false,
+            cut: false,
             keys: Interceptor::new(),
         }
     }
@@ -200,6 +223,27 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
         }
     }
 
+    /// Handle one batch of events read from the device, in order. Returns
+    /// the verbs to fire. When a key snapshot is taken mid-batch (the grab
+    /// is taken, or dropped events are recovered), the rest of the batch
+    /// predates the snapshot and is discarded: processing resumes strictly
+    /// after it.
+    pub fn events(
+        &mut self,
+        resolver: &Resolver,
+        batch: &[(u16, u16, i32)],
+    ) -> io::Result<Vec<Fire>> {
+        self.cut = false;
+        let mut fired = Vec::new();
+        for &(kind, code, value) in batch {
+            fired.extend(self.event(resolver, kind, code, value)?);
+            if std::mem::take(&mut self.cut) {
+                break;
+            }
+        }
+        Ok(fired)
+    }
+
     /// Handle one event read from the device. Returns a verb to fire.
     pub fn event(
         &mut self,
@@ -209,6 +253,16 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
         value: i32,
     ) -> io::Result<Option<Fire>> {
         if !self.grabbed {
+            // Waiting for a quiet keyboard, ungrabbed: the compositor reads
+            // these events itself. Each report may be the last key going up.
+            if self.waiting
+                && self.wanted
+                && self.retry.is_none()
+                && kind == EV_SYN
+                && code == SYN_REPORT
+            {
+                self.try_grab(Instant::now())?;
+            }
             return Ok(None);
         }
         // The kernel's overflow contract: after SYN_DROPPED, ignore events
@@ -230,6 +284,11 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
             EV_SYN => self.out.emit(kind, code, value).map(|()| None),
             EV_KEY => {
                 let step = self.keys.key(resolver, code, value);
+                if step.orphan {
+                    // A grab is only taken with no key down, so this should
+                    // never happen; the drop is the safety net.
+                    tracing::warn!(code, value, "key event with no press seen under this grab; dropped");
+                }
                 if step.emit {
                     self.out.emit(kind, code, value)?;
                 }
@@ -255,13 +314,26 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
         }
         self.retry = None;
         self.failures = 0;
+        self.waiting = false;
         if self.grabbed {
             return self.release();
         }
         Ok(())
     }
 
+    /// Take the grab, but only at a quiet moment. A key held when the grab
+    /// is taken was pressed on the original device, where the compositor
+    /// saw it; its release would come only to inputd, and the compositor
+    /// would keep the key down (a release on the re-emitter does not reach
+    /// that device's state). So: no key down before the grab, and none
+    /// after it once queued events are discarded; otherwise drop the grab
+    /// and wait, ungrabbed, for a report with nothing held.
     fn try_grab(&mut self, now: Instant) -> io::Result<()> {
+        let before = self.device.key_state()?;
+        if before.any_down() {
+            self.wait(&before);
+            return Ok(());
+        }
         match self.device.grab(true) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::ResourceBusy => {
@@ -287,32 +359,49 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
         // Events queued before the grab took effect were delivered to the
         // compositor as well; replaying them would type them twice. Discard
         // them first, then snapshot the keys: every event after the snapshot
-        // is processed, so no modifier change after it is lost. On failure
-        // the grab is dropped again and the error goes up: never guess the
-        // modifiers, a stale one misclassifies user keys.
-        let held = self.device.drain().and_then(|()| self.device.key_state());
-        let held = match held {
-            Ok(state) => state.modifiers(),
+        // is processed. On failure the grab is dropped again and the error
+        // goes up: never guess the key state.
+        let after = match self.device.drain().and_then(|()| self.device.key_state()) {
+            Ok(state) => state,
             Err(error) => {
                 let _ = self.device.grab(false);
                 return Err(error);
             }
         };
+        if after.any_down() {
+            // A key went down between the check and the grab.
+            self.device.grab(false)?;
+            self.wait(&after);
+            return Ok(());
+        }
         self.grabbed = true;
+        self.waiting = false;
         self.dropping = false;
-        self.keys.begin(held);
+        self.cut = true;
+        self.keys.begin(SideModifiers::NONE);
         tracing::info!("keyboard grab held");
         Ok(())
     }
 
-    /// After dropped events: release on the re-emitter every emitted key
-    /// that is no longer down, forget latches of keys that are up, and
-    /// rebuild the modifiers from the device.
+    fn wait(&mut self, state: &KeyState) {
+        if !self.waiting {
+            tracing::info!(held = ?state.down_codes(), "keys held; the grab waits for the keyboard to be quiet");
+        }
+        self.waiting = true;
+        // The next attempt is driven by the device's reports, not a timer.
+        self.retry = None;
+    }
+
+    /// After dropped events: release on the re-emitter every key latched
+    /// as emitted, quarantine every key down now until its release, and
+    /// rebuild the modifiers from the device. The rest of the batch
+    /// predates the snapshot and is discarded.
     fn resync(&mut self) -> io::Result<()> {
         let state = self.device.key_state()?;
+        self.cut = true;
         let released = self
             .keys
-            .resync(|code| state.is_down(code), state.modifiers());
+            .resync(&state.down_codes(), state.modifiers());
         for &code in &released {
             self.out.emit(EV_KEY, code, 0)?;
         }
@@ -374,6 +463,9 @@ mod tests {
         /// that held a key transition changes it.
         after_drain: Option<KeyState>,
         keys_fail: bool,
+        /// Answers for the next key_state calls, before `held` and
+        /// `keys_fail` apply.
+        script: VecDeque<KeyState>,
     }
 
     impl GrabDevice for FakeDevice {
@@ -388,6 +480,9 @@ mod tests {
         }
         fn key_state(&mut self) -> io::Result<KeyState> {
             self.log.borrow_mut().push("keys".into());
+            if let Some(state) = self.script.pop_front() {
+                return Ok(state);
+            }
             if self.keys_fail {
                 return Err(io::Error::other("EVIOCGKEY failed"));
             }
@@ -445,6 +540,7 @@ mod tests {
                 held: KeyState::NONE,
                 after_drain: None,
                 keys_fail: false,
+                script: VecDeque::new(),
             };
             let out = FakeOut {
                 log: log.clone(),
@@ -506,7 +602,7 @@ mod tests {
         assert!(!rig.grabber.follows_console());
         rig.grabber.start(rig.now).unwrap();
         assert!(rig.grabber.is_grabbed());
-        assert_eq!(rig.take_log(), ["grab 1", "drain", "keys"]);
+        assert_eq!(rig.take_log(), ["keys", "grab 1", "drain", "keys"]);
         rig.grabber.console(Some(3), rig.now).unwrap();
         assert!(
             rig.grabber.is_grabbed(),
@@ -524,7 +620,7 @@ mod tests {
         assert!(rig.take_log().is_empty());
         rig.console(&mut console);
         assert!(rig.grabber.is_grabbed());
-        assert_eq!(rig.take_log(), ["grab 1", "drain", "keys"]);
+        assert_eq!(rig.take_log(), ["keys", "grab 1", "drain", "keys"]);
         rig.console(&mut console);
         assert!(
             rig.take_log().is_empty(),
@@ -588,35 +684,81 @@ mod tests {
     }
 
     #[test]
-    fn switch_back_drops_orphan_releases_and_repeats() {
+    fn switching_back_with_keys_held_waits_for_their_release() {
         let mut rig = Rig::new(Some(vec![1]), 0);
         rig.grabber.console(Some(1), rig.now).unwrap();
         rig.key(KEY_A, 1).key(KEY_RIGHTCTRL, 1);
         rig.grabber.console(Some(4), rig.now).unwrap();
-        // On VT4 the keys are still physically held, then the person
-        // switches back while holding them.
+        // The person switches back while still holding both keys.
+        rig.grabber.device_mut().held = KeyState::of(&[KEY_A, KEY_RIGHTCTRL]);
         rig.grabber.console(Some(1), rig.now).unwrap();
+        assert!(!rig.grabber.is_grabbed(), "no grab while keys are down");
         rig.take_log();
-        rig.key(KEY_A, 2).key(KEY_A, 0).key(KEY_RIGHTCTRL, 0);
-        assert!(rig.take_log().is_empty(), "orphans reached the re-emitter");
-        // A fresh press under the new grab is ordinary again.
+        // Ungrabbed, their repeats and releases go to the compositor
+        // directly; inputd re-checks at each report.
+        rig.key(KEY_A, 2).key(KEY_A, 0);
+        rig.grabber.device_mut().held = KeyState::of(&[KEY_RIGHTCTRL]);
+        syn(&mut rig, SYN_REPORT);
+        assert!(!rig.grabber.is_grabbed());
+        rig.key(KEY_RIGHTCTRL, 0);
+        rig.grabber.device_mut().held = KeyState::NONE;
+        syn(&mut rig, SYN_REPORT);
+        assert!(rig.grabber.is_grabbed(), "grabbed once the keyboard is quiet");
+        assert_eq!(rig.take_log(), ["keys", "keys", "grab 1", "drain", "keys"]);
         rig.key(KEY_A, 1).key(KEY_A, 0);
         assert_eq!(rig.take_log(), ["emit 1 30 1", "emit 1 30 0"]);
     }
 
     #[test]
-    fn a_held_modifier_at_grab_still_forms_a_user_key_chord() {
+    fn a_held_key_defers_the_grab_until_it_is_released() {
+        // The VT-switch chord is still down at switch-to.
         let mut rig = Rig::new(Some(vec![1]), 0);
-        rig.grabber.device_mut().held = KeyState::of(&[KEY_RIGHTCTRL]);
+        rig.grabber.device_mut().held = KeyState::of(&[KEY_LEFTCTRL, KEY_LEFTALT, 59]);
         rig.grabber.console(Some(1), rig.now).unwrap();
+        assert!(!rig.grabber.is_grabbed());
+        assert_eq!(rig.take_log(), ["keys"], "checked, never grabbed");
+        assert_eq!(rig.grabber.deadline(), None, "no timer: reports drive it");
+        // Events while waiting are the compositor's.
+        rig.key(59, 0).key(KEY_LEFTALT, 0).key(KEY_LEFTCTRL, 0);
+        rig.grabber.device_mut().held = KeyState::NONE;
+        syn(&mut rig, SYN_REPORT);
+        assert!(rig.grabber.is_grabbed());
+        assert_eq!(rig.take_log(), ["keys", "grab 1", "drain", "keys"]);
+        // No orphan follows: the releases were never inputd's.
+        rig.key(KEY_F5, 1).key(KEY_F5, 0);
+        assert!(rig.take_log().is_empty(), "bare F5 is swallowed");
+    }
+
+    #[test]
+    fn a_key_pressed_between_the_check_and_the_grab_drops_the_grab() {
+        let mut rig = Rig::new(Some(vec![1]), 0);
+        let device = rig.grabber.device_mut();
+        // Quiet at the check; A down in the snapshot after the grab.
+        device.script = VecDeque::from([KeyState::NONE]);
+        device.held = KeyState::of(&[KEY_A]);
+        rig.grabber.console(Some(1), rig.now).unwrap();
+        assert!(!rig.grabber.is_grabbed());
+        assert_eq!(rig.take_log(), ["keys", "grab 1", "drain", "keys", "grab 0"]);
+        // Waiting again: A's release arrives ungrabbed, then the retry.
+        rig.key(KEY_A, 0);
+        rig.grabber.device_mut().held = KeyState::NONE;
+        syn(&mut rig, SYN_REPORT);
+        assert!(rig.grabber.is_grabbed());
+        assert_eq!(rig.take_log(), ["keys", "grab 1", "drain", "keys"]);
+    }
+
+    #[test]
+    fn switching_away_while_waiting_cancels_the_wait() {
+        let mut rig = Rig::new(Some(vec![1]), 0);
+        rig.grabber.device_mut().held = KeyState::of(&[KEY_A]);
+        rig.grabber.console(Some(1), rig.now).unwrap();
+        rig.grabber.console(Some(4), rig.now).unwrap();
         rig.take_log();
-        rig.key(KEY_RIGHT, 1)
-            .key(KEY_RIGHT, 0)
-            .key(KEY_RIGHTCTRL, 0);
-        assert!(
-            rig.take_log().is_empty(),
-            "Right Ctrl + → is swallowed; its Ctrl release is an orphan"
-        );
+        rig.grabber.device_mut().held = KeyState::NONE;
+        rig.key(KEY_A, 0);
+        syn(&mut rig, SYN_REPORT);
+        assert!(!rig.grabber.is_grabbed(), "VT4 is active: no grab");
+        assert!(rig.take_log().is_empty(), "not even a check");
     }
 
     #[test]
@@ -775,16 +917,17 @@ mod tests {
 
     #[test]
     fn a_right_ctrl_released_while_draining_is_not_left_held() {
-        // Right Ctrl is down at the grab and its release is among the
-        // queued events the grab discards. The snapshot must come after
-        // the drain, or a stale Right Ctrl turns bare F5 into RCtrl+F5,
-        // which passes to apps.
+        // Right Ctrl goes down after the quiet check and is down at the
+        // grab; its release is among the queued events the grab discards.
+        // The snapshot must come after the drain, or a stale Right Ctrl
+        // turns bare F5 into RCtrl+F5, which passes to apps.
         let mut rig = Rig::new(None, 0);
         let device = rig.grabber.device_mut();
+        device.script = VecDeque::from([KeyState::NONE]);
         device.held = KeyState::of(&[KEY_RIGHTCTRL]);
         device.after_drain = Some(KeyState::NONE);
         rig.grabber.start(rig.now).unwrap();
-        assert_eq!(rig.take_log(), ["grab 1", "drain", "keys"]);
+        assert_eq!(rig.take_log(), ["keys", "grab 1", "drain", "keys"]);
         rig.key(KEY_F5, 1).key(KEY_F5, 0);
         assert!(rig.take_log().is_empty(), "bare F5 leaked to the apps");
     }
@@ -792,10 +935,15 @@ mod tests {
     #[test]
     fn a_failed_key_snapshot_drops_the_grab_and_reports() {
         let mut rig = Rig::new(None, 0);
-        rig.grabber.device_mut().keys_fail = true;
+        let device = rig.grabber.device_mut();
+        device.script = VecDeque::from([KeyState::NONE]);
+        device.keys_fail = true;
         assert!(rig.grabber.start(rig.now).is_err());
         assert!(!rig.grabber.is_grabbed());
-        assert_eq!(rig.take_log(), ["grab 1", "drain", "keys", "grab 0"]);
+        assert_eq!(rig.take_log(), ["keys", "grab 1", "drain", "keys", "grab 0"]);
+        // A failed check before the grab is reported too, with no grab.
+        assert!(rig.grabber.start(rig.now).is_err());
+        assert_eq!(rig.take_log(), ["keys"]);
         rig.key(KEY_F5, 1);
         assert!(rig.take_log().is_empty(), "nothing is processed ungrabbed");
     }
@@ -813,5 +961,104 @@ mod tests {
                 ..SideModifiers::NONE
             }
         );
+        assert!(state.any_down() && !KeyState::NONE.any_down());
+        assert_eq!(state.down_codes(), [KEY_RIGHTCTRL, KEY_LEFTALT, 0x2ff]);
+    }
+
+    fn batch(rig: &mut Rig, events: &[(u16, u16, i32)]) {
+        let fired = rig.grabber.events(&rig.resolver, events).unwrap();
+        rig.fired.extend(fired.iter().map(|f| f.verb.as_str()));
+    }
+
+    #[test]
+    fn a_recovery_discards_the_rest_of_its_batch() {
+        // Case 1: the bare F5 after the recovery report predates the
+        // snapshot, which shows Right Ctrl down. It must not be judged
+        // (and emitted as RCtrl+F5) under that newer state.
+        let mut rig = Rig::new(None, 0);
+        rig.grabber.start(rig.now).unwrap();
+        rig.take_log();
+        rig.grabber.device_mut().held = KeyState::of(&[KEY_RIGHTCTRL]);
+        batch(
+            &mut rig,
+            &[
+                (EV_SYN, SYN_DROPPED, 0),
+                (EV_SYN, SYN_REPORT, 0),
+                (EV_KEY, KEY_F5, 1),
+                (EV_KEY, KEY_F5, 0),
+                (EV_KEY, KEY_RIGHTCTRL, 1),
+                (EV_SYN, SYN_REPORT, 0),
+            ],
+        );
+        assert_eq!(rig.take_log(), ["keys"], "nothing after the snapshot");
+        // Right Ctrl is quarantined: its release reaches nothing either.
+        batch(&mut rig, &[(EV_KEY, KEY_RIGHTCTRL, 0), (EV_SYN, SYN_REPORT, 0)]);
+        assert_eq!(rig.take_log(), ["emit 0 0 0"]);
+    }
+
+    #[test]
+    fn a_buffered_press_older_than_the_snapshot_cannot_stick() {
+        // Case 2: A's press sits in the batch after the recovery report;
+        // its release was flushed by the snapshot, which shows A up. The
+        // press must not be emitted, or nothing would ever release it.
+        let mut rig = Rig::new(None, 0);
+        rig.grabber.start(rig.now).unwrap();
+        rig.take_log();
+        batch(
+            &mut rig,
+            &[
+                (EV_SYN, SYN_DROPPED, 0),
+                (EV_SYN, SYN_REPORT, 0),
+                (EV_KEY, KEY_A, 1),
+                (EV_SYN, SYN_REPORT, 0),
+            ],
+        );
+        assert_eq!(rig.take_log(), ["keys"]);
+        assert!(!rig.grabber.keys.is_emitted(KEY_A));
+    }
+
+    #[test]
+    fn taking_the_grab_mid_batch_discards_the_rest_of_it() {
+        // While waiting, the report that finds the keyboard quiet takes the
+        // grab; events after it in the same batch were read before the
+        // grab, so the compositor already had them.
+        let mut rig = Rig::new(None, 0);
+        rig.grabber.device_mut().held = KeyState::of(&[KEY_A]);
+        rig.grabber.start(rig.now).unwrap();
+        rig.grabber.device_mut().held = KeyState::NONE;
+        rig.take_log();
+        batch(
+            &mut rig,
+            &[
+                (EV_KEY, KEY_A, 0),
+                (EV_SYN, SYN_REPORT, 0),
+                (EV_KEY, KEY_A, 1),
+                (EV_SYN, SYN_REPORT, 0),
+            ],
+        );
+        assert!(rig.grabber.is_grabbed());
+        assert_eq!(rig.take_log(), ["keys", "grab 1", "drain", "keys"]);
+        assert!(!rig.grabber.keys.is_emitted(KEY_A));
+    }
+
+    #[test]
+    fn an_overflow_releases_every_emitted_key_and_quarantines_held_ones() {
+        // RCtrl + F5 is emitted; the overflow loses F5 up, RCtrl up and a
+        // new bare F5 down. The state shows F5 down.
+        let mut rig = Rig::new(None, 0);
+        rig.grabber.start(rig.now).unwrap();
+        rig.key(KEY_RIGHTCTRL, 1).key(KEY_F5, 1);
+        rig.take_log();
+        rig.grabber.device_mut().held = KeyState::of(&[KEY_F5]);
+        syn(&mut rig, SYN_DROPPED);
+        syn(&mut rig, SYN_REPORT);
+        assert_eq!(
+            rig.take_log(),
+            ["keys", "emit 1 63 0", "emit 1 97 0", "emit 0 0 0"]
+        );
+        // The new bare F5's repeats and release leak nowhere.
+        rig.key(KEY_F5, 2).key(KEY_F5, 2).key(KEY_F5, 0);
+        assert!(rig.take_log().is_empty(), "the new F5 leaked");
+        assert!(rig.fired.is_empty());
     }
 }

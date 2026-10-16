@@ -268,6 +268,13 @@ active, followed by <code>poll(2)</code> on <code>/sys/class/tty/tty0/active</co
 switch-away every key held on the re-emitter is released there, then the
 grab is dropped; on switch-to the grab is retaken, with bounded backoff
 while another holder has it. Without <code>--vt</code> the grab is held always.</li>
+<li><strong>The grab is taken only with no key down,</strong> so no key is left held in
+the compositor; inputd waits ungrabbed until the keyboard is quiet.</li>
+<li><strong>Dropped events (<code>SYN_DROPPED</code>) are recovered:</strong> the key state is
+re-read, every key passed on is released, and keys still held are
+swallowed until their release.</li>
+<li><code>input.mode</code> refuses a malformed body; only an empty body or <code>{}</code>
+toggles.</li>
 <li>The re-emitter is <code>inputd virtual keyboard</code>, created once at start; the
 injector is <code>inputd virtual pointer</code>.</li>
 <li>The keymap is <code>keymap.json</code> in the state directory

@@ -158,10 +158,8 @@ pub fn run_grab(
         if dev_events & libc::POLLIN != 0 {
             let events = grabber.device_mut().read_events()?;
             let resolver = resolver.lock().expect("resolver poisoned");
-            for (kind, code, value) in events {
-                if let Some(fire) = grabber.event(&resolver, kind, code, value)? {
-                    let _ = fire_tx.send(fire.into());
-                }
+            for fire in grabber.events(&resolver, &events)? {
+                let _ = fire_tx.send(fire.into());
             }
         }
         grabber.tick(now)?;
