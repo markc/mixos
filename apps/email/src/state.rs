@@ -1096,7 +1096,7 @@ impl State {
     /// Connect `view` afresh with the password held, or wait for one.
     fn connect(&mut self, view: &mut AccountView) {
         self.disconnect(view);
-        let Some(password) = self.secrets.password(&view.entry.id) else {
+        let Some(password) = self.secrets.password(&view.entry.id).map(str::to_owned) else {
             view.phase = Phase::NoPassword;
             return;
         };
@@ -1108,7 +1108,7 @@ impl State {
             login: Login {
                 url: view.entry.url.clone(),
                 email: view.entry.email.clone(),
-                password: password.to_owned(),
+                password,
                 ca_path: view.entry.ca_path.clone(),
             },
         });
