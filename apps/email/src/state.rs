@@ -2790,8 +2790,9 @@ impl State {
                         .is_some_and(|e| gone.contains(&e.id))
                     {
                         view.mail.open = None;
-                        advance = next.map(|id| (tag.account.clone(), id));
                     }
+                    // The reader follows the selection to its new row.
+                    advance = next.map(|id| (tag.account.clone(), id));
                     self.work.push(Work::FetchMailboxes {
                         account: tag.account.clone(),
                     });

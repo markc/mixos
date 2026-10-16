@@ -704,11 +704,19 @@ fn compose_gives_way_to_its_icon_before_the_search_field_shrinks() {
     narrow.snapshot("list_header_narrow_pro_light");
 }
 
+/// The tree's row `label` (the leftmost node of that name: a panel tab
+/// can repeat a mailbox's name).
+fn tree_row<'h>(h: &'h Harness<'static, Window>, label: &'h str) -> egui_kittest::Node<'h> {
+    h.query_all_by_label(label)
+        .min_by(|a, b| a.rect().left().total_cmp(&b.rect().left()))
+        .unwrap()
+}
+
 /// Right-click the tree row `label` and snapshot its open menu.
 fn tree_menu(label: &str, name: &str) -> Harness<'static, Window> {
     let mut h = harness(fixture());
-    h.get_by_label(label).click_secondary();
-    h.run();
+    tree_row(&h, label).click_secondary();
+    h.run_steps(6);
     h.snapshot(name);
     h
 }
@@ -749,8 +757,8 @@ fn each_tree_node_has_its_registry_menu() {
 #[test]
 fn a_role_folder_menu_disables_rename_and_delete() {
     let mut h = harness(fixture());
-    h.get_by_label("Inbox").click_secondary();
-    h.run();
+    tree_row(&h, "Inbox").click_secondary();
+    h.run_steps(6);
     let rename = h.get_by_label("Rename…");
     assert!(rename.accesskit_node().is_disabled());
     let mark = h.get_by_label("Mark Folder as Read");
@@ -761,7 +769,7 @@ fn a_role_folder_menu_disables_rename_and_delete() {
 fn a_row_right_click_selects_it_and_opens_the_message_menu() {
     let mut h = harness(long_list());
     h.get_by_label_contains("Photos from").click_secondary();
-    h.run();
+    h.run_steps(6);
     assert!(
         h.state()
             .seen
@@ -776,7 +784,7 @@ fn a_row_right_click_selects_it_and_opens_the_message_menu() {
 /// Press on the list row `row`, then move to the tree row `target`.
 fn drag_to(h: &mut Harness<'static, Window>, row: &str, target: &str) -> egui::Pos2 {
     let from = h.get_by_label_contains(row).rect().center();
-    let to = h.get_by_label(target).rect().center();
+    let to = tree_row(h, target).rect().center();
     h.hover_at(from);
     h.event(egui::Event::PointerButton {
         pos: from,
