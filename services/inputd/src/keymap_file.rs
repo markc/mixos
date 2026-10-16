@@ -865,7 +865,11 @@ pub(crate) mod tests {
 
     fn mode_of(path: &Path) -> u32 {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::symlink_metadata(path).unwrap().permissions().mode() & 0o7777
+        std::fs::symlink_metadata(path)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o7777
     }
 
     #[test]
@@ -880,7 +884,10 @@ pub(crate) mod tests {
         std::os::unix::fs::symlink(&victim, path.with_extension("json.tmp")).unwrap();
         save(&path, &inputd_core::default_keymap().physical).unwrap();
         assert_eq!(std::fs::read_to_string(&victim).unwrap(), "precious");
-        assert_eq!(load(&path).unwrap().rows, inputd_core::default_keymap().physical);
+        assert_eq!(
+            load(&path).unwrap().rows,
+            inputd_core::default_keymap().physical
+        );
         assert_eq!(
             dir_names(&dir),
             vec!["keymap.json", "keymap.json.tmp", "victim"],
@@ -924,10 +931,10 @@ pub(crate) mod tests {
         take_synced();
         // Initial creation (seeding a missing keymap).
         let _ = open(&path, STAMP);
-        assert_eq!(take_synced(), [dir.clone()], "seeding");
+        assert_eq!(take_synced(), std::slice::from_ref(&dir), "seeding");
         // A replacement.
         save(&path, &[]).unwrap();
-        assert_eq!(take_synced(), [dir.clone()], "save");
+        assert_eq!(take_synced(), std::slice::from_ref(&dir), "save");
         // Recovery: the bad file moved aside, then the defaults seeded.
         std::fs::write(&path, "not json").unwrap();
         let opened = open(&path, STAMP);

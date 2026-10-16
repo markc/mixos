@@ -53,9 +53,11 @@ pub const KEY_BITS_LEN: usize = 0x2ff / 8 + 1;
 pub struct KeyState(pub [u8; KEY_BITS_LEN]);
 
 impl KeyState {
+    #[cfg(test)]
     pub const NONE: Self = Self([0; KEY_BITS_LEN]);
 
     /// The state with exactly `codes` down.
+    #[cfg(test)]
     pub fn of(codes: &[u16]) -> Self {
         let mut bits = [0; KEY_BITS_LEN];
         for &code in codes {
