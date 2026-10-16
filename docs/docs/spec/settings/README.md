@@ -334,7 +334,7 @@ Each account is a record of exactly these keys:
 | --- | --- | --- |
 | `id` | `[a-z0-9-]{1,64}`, stable; the writer mints `acct-` and 12 hex digits | required |
 | `name` | the tree label: 1–128 bytes, no control characters, no surrounding space | required |
-| `url` | the JMAP base: `https://` and a host, no trailing slash, no space; at most 2048 bytes | required |
+| `url` | the JMAP base: `https://host[:port][/path]`, the host a DNS name, IPv4 or bracketed IPv6 address; no userinfo (`user:secret@`, so no password rides in a URL), query, fragment, backslash, trailing slash or space; at most 2048 bytes | required |
 | `email` | the login and default From: one `@` with text on both sides, no space; at most 254 bytes | required |
 | `ca_path` | an absolute path to a PEM bundle, or null for the system roots | null |
 | `enabled` | boolean | true |

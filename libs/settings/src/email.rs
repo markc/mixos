@@ -165,13 +165,66 @@ pub fn valid_name(name: &str) -> bool {
 
 /// Whether `url` is a JMAP base this group takes: `https://`, a host, no
 /// trailing slash, no space or control characters.
+///
+/// The authority is `host[:port]` and nothing else: userinfo
+/// (`user:secret@host`, even with an empty user or secret) is refused, so a
+/// password cannot ride into a retained snapshot inside the URL. So are a
+/// query, a fragment and a backslash, which parsers disagree about.
 pub fn valid_url(url: &str) -> bool {
-    url.len() <= URL_MAX_BYTES
-        && url
-            .strip_prefix("https://")
-            .is_some_and(|rest| !rest.is_empty() && !rest.starts_with('/'))
-        && !url.ends_with('/')
-        && !url.chars().any(|c| c.is_control() || c.is_whitespace())
+    if url.len() > URL_MAX_BYTES
+        || url.ends_with('/')
+        || url
+            .chars()
+            .any(|c| c.is_control() || c.is_whitespace() || matches!(c, '?' | '#' | '\\'))
+    {
+        return false;
+    }
+    let Some(rest) = url.strip_prefix("https://") else {
+        return false;
+    };
+    let authority = rest
+        .split_once('/')
+        .map_or(rest, |(authority, _)| authority);
+    valid_authority(authority)
+}
+
+/// `host[:port]`: a DNS name or IPv4 address of letters, digits, `-` and
+/// `.`, or a bracketed IPv6 literal; the port 1 to 65535.
+fn valid_authority(authority: &str) -> bool {
+    if authority.contains('@') {
+        return false;
+    }
+    let (host, port) = if let Some(v6) = authority.strip_prefix('[') {
+        let Some((literal, after)) = v6.split_once(']') else {
+            return false;
+        };
+        if literal.is_empty() || !literal.bytes().all(|b| b.is_ascii_hexdigit() || b == b':') {
+            return false;
+        }
+        match after {
+            "" => ("v6", None),
+            _ => match after.strip_prefix(':') {
+                Some(port) => ("v6", Some(port)),
+                None => return false,
+            },
+        }
+    } else {
+        match authority.split_once(':') {
+            Some((host, port)) => (host, Some(port)),
+            None => (authority, None),
+        }
+    };
+    let host_ok = !host.is_empty()
+        && host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.');
+    let port_ok = port.is_none_or(|p| {
+        !p.is_empty()
+            && p.len() <= 5
+            && p.bytes().all(|b| b.is_ascii_digit())
+            && p.parse::<u32>().is_ok_and(|n| (1..=65535).contains(&n))
+    });
+    host_ok && port_ok
 }
 
 /// Whether `address` is a login this group takes: one `@` with text on both
@@ -226,7 +279,7 @@ pub fn validate(email: &Email) -> Result<(), Diagnostic> {
         if !valid_url(&account.url) {
             return Err(error(
                 &path("url"),
-                "Use an https:// URL without a trailing slash",
+                "Use https://host[:port][/path]: no credentials, query, fragment or trailing slash",
             ));
         }
         if !valid_address(&account.email) {
@@ -291,7 +344,7 @@ pub fn describe() -> Value {
             "account": {
                 "id": {"type":"string", "pattern":"[a-z0-9-]{1,64}", "unique":true, "minted":"acct- and 12 hex digits"},
                 "name": {"type":"string", "max_bytes":NAME_MAX_BYTES},
-                "url": {"type":"string", "prefix":"https://", "trailing_slash":false, "max_bytes":URL_MAX_BYTES},
+                "url": {"type":"string", "prefix":"https://", "trailing_slash":false, "userinfo":false, "query":false, "fragment":false, "max_bytes":URL_MAX_BYTES},
                 "email": {"type":"string", "max_bytes":ADDRESS_MAX_BYTES, "one":"@"},
                 "ca_path": {"type":"string|null", "absolute":true, "max_bytes":CA_PATH_MAX_BYTES, "default":null, "null":"the system roots"},
                 "enabled": {"type":"boolean", "default":true},
@@ -595,6 +648,9 @@ mod tests {
                 vec![
                     json!("https://mail.example.org"),
                     json!("https://mail.example.org:8443/jmap"),
+                    json!("https://192.0.2.1"),
+                    json!("https://[2001:db8::1]:443/jmap"),
+                    json!("https://mail.example.org/a@b"),
                 ],
                 vec![
                     json!("http://mail.example.org"),
@@ -603,6 +659,17 @@ mod tests {
                     json!("https:///path"),
                     json!("https://mail example.org"),
                     json!("mail.example.org"),
+                    json!("https://user:pw@mail.example.org"),
+                    json!("https://@mail.example.org"),
+                    json!("https://mail.example.org?token=x"),
+                    json!("https://mail.example.org/jmap#frag"),
+                    json!("https://mail.example.org\\@evil.example"),
+                    json!("https://mail.example.org:0"),
+                    json!("https://mail.example.org:65536"),
+                    json!("https://mail.example.org:"),
+                    json!("https://mail.example.org:x"),
+                    json!("https://[2001:db8::1"),
+                    json!("https://mail.example.org\u{7f}"),
                 ],
             ),
             (
@@ -684,6 +751,27 @@ mod tests {
         assert!(
             serde_json::from_value::<Desktop>(json!({"email":{"mail":{"password":"x"}}})).is_err()
         );
+    }
+
+    #[test]
+    fn a_password_in_url_userinfo_is_refused_without_echoing_it() {
+        for url in [
+            "https://user:hunter2@mail.example.org",
+            "https://:hunter2@mail.example.org",
+            "https://user:@mail.example.org",
+            "https://hunter2@mail.example.org/jmap",
+            "https://user:hunter2@mail.example.org:8443",
+        ] {
+            let mut a = account("acct-1");
+            a["url"] = json!(url);
+            let refused = apply("email.accounts", json!([a])).unwrap_err();
+            assert_eq!(refused.path, "email.accounts[0].url", "{url}");
+            let shown = serde_json::to_string(&refused).unwrap();
+            assert!(
+                !shown.contains("hunter2") && !shown.contains("user:"),
+                "{shown}"
+            );
+        }
     }
 
     #[test]
