@@ -23,6 +23,7 @@
 
 pub mod commands;
 pub mod config;
+pub mod reader;
 pub mod secrets;
 pub mod shell;
 pub mod state;

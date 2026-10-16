@@ -55,6 +55,7 @@ pub mod icons;
 pub mod keymap;
 #[cfg(feature = "layer")]
 pub mod layer;
+pub mod markdown;
 pub mod menu;
 pub mod panel;
 pub mod session_look;

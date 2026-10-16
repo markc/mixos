@@ -6519,7 +6519,21 @@ A malformed file loads defaults and is never overwritten.
   as the page size), its calendar's events, or its book's contacts, with
   a server-side filter over name, email and company.
 - **The reader**: the open email (plain text first, the HTML source when
-  there is no plain text), event or contact.
+  there is no plain text), event or contact. A text body written as
+  Markdown is rendered: a `text/markdown` part always, and a
+  `text/plain` one when the toolkit's conservative detector finds
+  Markdown in it (a fence, a table, two headings, or two of a heading,
+  a list, bold, inline code, a link and a block quote). Quoted replies,
+  signatures, forwarded headers, bare URLs and ASCII art never trigger
+  it. Rendered mail shows headings, lists and task boxes, code blocks
+  that scroll sideways, tables, quotes and links (http, https and mailto
+  open in the desktop's browser or mail handler; the address shows on
+  hover). Images are never fetched, because remote images in mail track
+  their reader: the alt text is a link to the image. Raw HTML is shown as
+  text. **Show Source** beside the date (or View › Message › Render
+  Markdown / Show Source) flips one email between the rendering and its
+  text, and **Render Markdown** does the reverse for any plain email.
+  The choice lasts while that email is open.
 - **Compose** (To, Cc, Bcc, Subject, body, and From when there are
   several accounts), reply, reply all and forward. If the account's login
   (server or address) changes while a draft is open, Send waits: the
@@ -6606,6 +6620,12 @@ never waits on them.
 
 Every command the window runs (menu, shortcut, button or `email.execute`)
 is published on `email.command.executed` with how it was reached.
+
+`email.info` reports how the open email is shown under each account's
+`mail.reader`: `{"format": "markdown" | "plain", "auto": true | false}`,
+where `auto` is false once the person (or `email.execute
+{"id":"view.reader.markdown"}`) has flipped it. The command is disabled
+when the open email has no text body.
 
 From Mix:
 
@@ -30722,6 +30742,23 @@ let _ = toolkit::titlebar::show(ui, "Demo", Some(Icon::Server), stroke,
   document tabs, value, text and search fields, checkboxes and switches,
   combo boxes, sliders, canvas scrollbars, tooltip wording, and modal
   dialogs).
+- `markdown`: Markdown drawn natively. `Document::parse(&str)` turns
+  CommonMark with GFM tables, strikethrough and task lists into plain data
+  (pulldown-cmark, parser only), so an app parses once and keeps the
+  document in its state. `markdown::show(ui, &document)` draws it every
+  frame from the theme: heading sizes stepped from the `Heading` style,
+  code in the monospace face on the field surface (scrolled sideways,
+  never wrapped), quotes after a rule, lists with read-only task boxes,
+  striped tables, rules and links. Each text run is one selectable label.
+  Links go to `Context::open_url` only for http, https and mailto
+  (`markdown::openable`), with the address on hover, and `show` returns
+  the link clicked. Images are never fetched (the alt text links to
+  them) and raw HTML shows as text. `markdown::looks_like_markdown(&str)`
+  is a conservative test for plain text written as Markdown: one fence,
+  table or pair of headings, or two distinct signals among a heading, a
+  list, bold or emphasis, inline code, a link and a non-reply quote,
+  scanned outside quoted lines and the signature. The email reader uses
+  both.
 
 ### Commands
 

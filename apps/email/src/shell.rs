@@ -1200,6 +1200,7 @@ impl Shell {
         let fired = self.commands.shortcuts(ui.ctx(), &self.state);
         let stroke = toolkit::icons::stroke_width(&self.theme);
         let mut events = view(ui, &self.state, &self.commands, &self.strings, stroke);
+        open_links(ui.ctx());
         events.extend(
             fired
                 .into_iter()
@@ -1225,6 +1226,45 @@ impl Shell {
         // drawing: never midway through the frame that saw the click.
         if self.choice() != self.installed {
             ui.ctx().request_repaint();
+        }
+    }
+}
+
+/// Hand the frame's link requests (a Markdown link clicked in the reader)
+/// to the desktop's handler, detached. eframe is built without its own
+/// browser launcher, so the requests are taken out of egui's output here;
+/// only http, https and mailto addresses are opened, as one argument and
+/// never through a shell.
+fn open_links(ctx: &egui::Context) {
+    let urls = ctx.output_mut(|output| {
+        let mut urls = Vec::new();
+        output.commands.retain(|command| match command {
+            egui::OutputCommand::OpenUrl(open) => {
+                urls.push(open.url.clone());
+                false
+            }
+            _ => true,
+        });
+        urls
+    });
+    for url in urls
+        .into_iter()
+        .filter(|url| toolkit::markdown::openable(url))
+    {
+        match std::process::Command::new("xdg-open")
+            .arg(url.trim())
+            .spawn()
+        {
+            Ok(mut child) => {
+                // Reaped off the UI thread, so it never lingers as a zombie.
+                let reaped = std::thread::Builder::new()
+                    .name("email-xdg-open-reap".into())
+                    .spawn(move || drop(child.wait()));
+                if reaped.is_err() {
+                    eprintln!("email: the link opener's reaper did not start");
+                }
+            }
+            Err(error) => eprintln!("email: opening a link: {error}"),
         }
     }
 }
