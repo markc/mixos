@@ -175,8 +175,7 @@ pub fn numbered(name: &str, k: u32) -> String {
 /// The name an attachment is written under: its own name, sanitised, else
 /// `attachment-<n>` with `ext`.
 pub fn file_name(name: Option<&str>, n: usize, ext: Option<&str>) -> String {
-    name.and_then(sanitise)
-        .unwrap_or_else(|| fallback(n, ext))
+    name.and_then(sanitise).unwrap_or_else(|| fallback(n, ext))
 }
 
 /// A size as a person reads it: `512 B`, `48 KB`, `1.2 MB`.
@@ -222,7 +221,11 @@ pub fn icon(mime: &str, name: Option<&str>) -> Icon {
         _ if sub.contains("spreadsheet") || sub == "csv" || sub.contains("excel") => {
             Icon::FileSpreadsheet
         }
-        _ if sub == "json" || sub == "xml" || sub.contains("javascript") || sub.ends_with("+xml") => {
+        _ if sub == "json"
+            || sub == "xml"
+            || sub.contains("javascript")
+            || sub.ends_with("+xml") =>
+        {
             Icon::FileCode
         }
         "text" => Icon::FileText,
@@ -363,7 +366,10 @@ pub fn save_in(dir: &Path, name: &str, data: &[u8]) -> Result<PathBuf, String> {
         }
     }
     let _ = std::fs::remove_file(&temp);
-    Err(format!("{}: {name}: every alternative name is taken", dir.display()))
+    Err(format!(
+        "{}: {name}: every alternative name is taken",
+        dir.display()
+    ))
 }
 
 /// The usual extension of `mime`, from the desktop's MIME database (loaded
@@ -447,14 +453,14 @@ mod tests {
     #[test]
     fn a_name_loses_separators_dots_and_control_characters() {
         assert_eq!(sanitise("report.pdf").as_deref(), Some("report.pdf"));
-        assert_eq!(
-            sanitise("../../etc/passwd").as_deref(),
-            Some("etcpasswd")
-        );
+        assert_eq!(sanitise("../../etc/passwd").as_deref(), Some("etcpasswd"));
         assert_eq!(sanitise("a\\b/c.txt").as_deref(), Some("abc.txt"));
         assert_eq!(sanitise(".bashrc").as_deref(), Some("bashrc"));
         assert_eq!(sanitise("...hidden..txt").as_deref(), Some("hidden.txt"));
-        assert_eq!(sanitise("bad\u{0}na\u{7}me\n.txt").as_deref(), Some("badname.txt"));
+        assert_eq!(
+            sanitise("bad\u{0}na\u{7}me\n.txt").as_deref(),
+            Some("badname.txt")
+        );
         assert_eq!(sanitise("  spaced.txt. ").as_deref(), Some("spaced.txt"));
         assert_eq!(sanitise(".."), None);
         assert_eq!(sanitise("/"), None);
@@ -551,8 +557,14 @@ mod tests {
             user_download_dir("XDG_DOWNLOAD_DIR=\"/srv/in\"\n", home),
             Some(PathBuf::from("/srv/in"))
         );
-        assert_eq!(user_download_dir("XDG_DOWNLOAD_DIR=\"$HOME/\"\n", home), None);
-        assert_eq!(user_download_dir("XDG_MUSIC_DIR=\"$HOME/Music\"\n", home), None);
+        assert_eq!(
+            user_download_dir("XDG_DOWNLOAD_DIR=\"$HOME/\"\n", home),
+            None
+        );
+        assert_eq!(
+            user_download_dir("XDG_MUSIC_DIR=\"$HOME/Music\"\n", home),
+            None
+        );
     }
 
     #[test]
@@ -586,6 +598,9 @@ mod tests {
         assert_eq!(list[1]["openable"], false);
         assert_eq!(list[1]["downloadable"], true);
         assert_eq!(list[2]["downloadable"], false);
-        assert!(value["attachments"].to_string().find("B2").is_none(), "no blob ids");
+        assert!(
+            value["attachments"].to_string().find("B2").is_none(),
+            "no blob ids"
+        );
     }
 }

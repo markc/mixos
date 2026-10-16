@@ -691,7 +691,12 @@ mod tests {
         // A listing without the property has none, and says so as absent.
         let bare: Email = serde_json::from_value(json!({ "id": "E6" })).unwrap();
         assert_eq!(bare.attachments, None);
-        assert!(serde_json::to_value(&bare).unwrap().get("attachments").is_none());
+        assert!(
+            serde_json::to_value(&bare)
+                .unwrap()
+                .get("attachments")
+                .is_none()
+        );
     }
 
     #[test]

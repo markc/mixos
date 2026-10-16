@@ -16,7 +16,10 @@ use crate::work::Work;
 impl State {
     /// `mail.attachments`: show the open email's attachments.
     pub fn open_attachments(&mut self) {
-        if self.reading().is_some_and(|(_, e)| !attachments::of(&e).is_empty()) {
+        if self
+            .reading()
+            .is_some_and(|(_, e)| !attachments::of(&e).is_empty())
+        {
             self.ui.dialog = Some(Dialog::Attachments);
         }
     }
@@ -312,15 +315,33 @@ mod tests {
         let ok = state.fetch_attachment("a", &email, "2", Target::Save(None), None);
         assert!(ok.is_ok());
         match state.take_work().as_slice() {
-            [Work::Attachment { account, blob, name, index: 1, mime, target: Target::Save(None), reply: None, .. }] => {
+            [
+                Work::Attachment {
+                    account,
+                    blob,
+                    name,
+                    index: 1,
+                    mime,
+                    target: Target::Save(None),
+                    reply: None,
+                    ..
+                },
+            ] => {
                 assert_eq!((account.as_str(), blob.as_str()), ("a", "B2"));
-                assert_eq!((name.as_deref(), mime.as_str()), (Some("a.pdf"), "application/pdf"));
+                assert_eq!(
+                    (name.as_deref(), mime.as_str()),
+                    (Some("a.pdf"), "application/pdf")
+                );
             }
             other => panic!("{other:?}"),
         }
         assert_eq!(state.attaching.values().collect::<Vec<_>>(), ["2"]);
         // A script saves but never opens; an undecodable part neither.
-        assert!(state.fetch_attachment("a", &email, "3", Target::Save(None), None).is_ok());
+        assert!(
+            state
+                .fetch_attachment("a", &email, "3", Target::Save(None), None)
+                .is_ok()
+        );
         let refused = state.fetch_attachment("a", &email, "3", Target::Open, Some(7));
         assert_eq!(refused.unwrap_err().0, code::REFUSED);
         let refused = state.fetch_attachment("a", &email, "4", Target::Save(None), None);
@@ -347,7 +368,11 @@ mod tests {
                 json!({ "id": "E1", "part": "2", "dir": dir }),
             );
             let replies = state.take_replies();
-            assert_eq!(replies[0].body["error_code"], code::INVALID_ARGUMENT, "{dir}");
+            assert_eq!(
+                replies[0].body["error_code"],
+                code::INVALID_ARGUMENT,
+                "{dir}"
+            );
         }
         let dir = std::env::temp_dir();
         bus(
@@ -356,7 +381,14 @@ mod tests {
             json!({ "id": "E1", "part": "2", "dir": dir }),
         );
         let work = state.take_work();
-        let [Work::Query { query: Query::Get { .. }, then, .. }] = work.as_slice() else {
+        let [
+            Work::Query {
+                query: Query::Get { .. },
+                then,
+                ..
+            },
+        ] = work.as_slice()
+        else {
             panic!("{work:?}");
         };
         assert_eq!(

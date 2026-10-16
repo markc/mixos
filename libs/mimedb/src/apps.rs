@@ -40,7 +40,11 @@ pub fn mimeapps_paths() -> Vec<PathBuf> {
         _ => out.push(PathBuf::from("/etc/xdg")),
     }
     let mut paths: Vec<PathBuf> = out.into_iter().map(|d| d.join("mimeapps.list")).collect();
-    paths.extend(applications_dirs().into_iter().map(|d| d.join("mimeapps.list")));
+    paths.extend(
+        applications_dirs()
+            .into_iter()
+            .map(|d| d.join("mimeapps.list")),
+    );
     paths
 }
 
@@ -225,7 +229,10 @@ text/plain=dev.mixos.ced.desktop;
             "[Default Applications]\ntext/html=zen.desktop\n".to_owned(),
             "[Default Applications]\ntext/html=firefox.desktop;zen.desktop\n".to_owned(),
         ];
-        assert_eq!(apps_in(&lists, &[], &types(&["text/html"])), ["zen", "firefox"]);
+        assert_eq!(
+            apps_in(&lists, &[], &types(&["text/html"])),
+            ["zen", "firefox"]
+        );
     }
 
     #[test]

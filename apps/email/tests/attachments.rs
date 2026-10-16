@@ -204,9 +204,7 @@ fn downloads(state: &mut State) -> Vec<(String, Target, usize)> {
 fn the_command_is_enabled_only_with_attachments() {
     let state = opened();
     let registry = commands::registry();
-    let enabled = |state: &State| {
-        (registry.get("mail.attachments").unwrap().enabled)(state)
-    };
+    let enabled = |state: &State| (registry.get("mail.attachments").unwrap().enabled)(state);
     assert!(enabled(&state));
     let mut bare = opened();
     bare.accounts[0].mail.open.as_mut().unwrap().attachments = None;
@@ -287,5 +285,8 @@ fn attachments_pro_light() {
 
 #[test]
 fn attachments_studio_dark() {
-    snapshot("attachments_studio_dark", &theme(Scheme::Studio, Mode::Dark));
+    snapshot(
+        "attachments_studio_dark",
+        &theme(Scheme::Studio, Mode::Dark),
+    );
 }
