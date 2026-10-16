@@ -393,7 +393,13 @@ impl View {
                 pos2(at.left() + side / 2.0, at.center().y),
                 Vec2::splat(side),
             );
-            crate::toggle::paint_box(painter, &self.palette, b, done, self.palette.text_faint);
+            // Filled in the link colour: a hue scheme's light accent is a
+            // tint too pale to read as "done" under the white tick.
+            let palette = Palette {
+                accent: self.link,
+                ..self.palette
+            };
+            crate::toggle::paint_box(painter, &palette, b, done, self.palette.text_faint);
             return;
         }
         match start {
