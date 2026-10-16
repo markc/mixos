@@ -322,21 +322,36 @@ fn unbind(resolver: &Shared, store: &Store, body: &str) -> (u8, String) {
     }
 }
 
+/// The mode an `input.mode` body asks for: `Ok(None)` to toggle.
+fn parse_mode(body: &str) -> Result<Option<InputMode>, String> {
+    if body.trim().is_empty() {
+        return Ok(None);
+    }
+    let value: Value =
+        serde_json::from_str(body).map_err(|err| format!("invalid mode request: {err}"))?;
+    let Some(object) = value.as_object() else {
+        return Err("invalid mode request: the body must be a JSON object".into());
+    };
+    match object.get("mode") {
+        None => Ok(None),
+        Some(Value::String(mode)) => match mode.to_ascii_lowercase().as_str() {
+            "transparent" => Ok(Some(InputMode::Transparent)),
+            "normal" => Ok(Some(InputMode::Normal)),
+            other => Err(format!("unknown mode: {other}")),
+        },
+        Some(other) => Err(format!(
+            "invalid mode request: mode must be \"normal\" or \"transparent\", not {other}"
+        )),
+    }
+}
+
 fn mode(resolver: &Shared, body: &str) -> (u8, String) {
-    // `{"mode":"transparent"|"normal"}`, or `{}`/empty to toggle.
-    let requested = if body.trim().is_empty() {
-        None
-    } else {
-        match serde_json::from_str::<Value>(body).ok().and_then(|v| {
-            v.get("mode")
-                .and_then(Value::as_str)
-                .map(str::to_ascii_lowercase)
-        }) {
-            Some(m) if m == "transparent" => Some(InputMode::Transparent),
-            Some(m) if m == "normal" => Some(InputMode::Normal),
-            Some(other) => return error(&format!("unknown mode: {other}")),
-            None => None,
-        }
+    // `{"mode":"transparent"|"normal"}` sets; an empty body or `{}`
+    // toggles. Anything else is refused and changes nothing: a malformed
+    // request must never drop the user-key rule by toggling to transparent.
+    let requested = match parse_mode(body) {
+        Ok(requested) => requested,
+        Err(message) => return error(&message),
     };
     let mut resolver = resolver.lock().expect("resolver poisoned");
     let next = requested.unwrap_or(match resolver.mode() {
@@ -968,6 +983,37 @@ mod tests {
             assert_eq!(reply["mode"], want);
             assert!(reply["generation"].is_u64());
         }
+    }
+
+    #[test]
+    fn a_malformed_mode_request_is_refused_and_changes_nothing() {
+        let resolver = resolver();
+        let store = Store::default();
+        let mut injector = Injector::default();
+        for body in [
+            "{",
+            "[]",
+            "null",
+            "42",
+            "\"transparent\"",
+            r#"{"mode":42}"#,
+            r#"{"mode":null}"#,
+            r#"{"mode":true}"#,
+            r#"{"mode":["transparent"]}"#,
+            r#"{"mode":"off"}"#,
+        ] {
+            let mut cmd = command(verbs::MODE, json!({}), Some("local"));
+            cmd.body = body.to_string();
+            let (rc, reply) = dispatch(&resolver, &store, &mut injector, &cmd);
+            assert_eq!(rc, 10, "{body}: {reply}");
+            let live = resolver.lock().unwrap();
+            assert_eq!(live.mode(), InputMode::Normal, "{body} changed the mode");
+            assert_eq!(live.generation(), 0, "{body} bumped the generation");
+        }
+        // `{}` still toggles, like an empty body.
+        let (rc, reply) = run(&resolver, &store, verbs::MODE, json!({}));
+        assert_eq!(rc, 0, "{reply}");
+        assert_eq!(reply["mode"], "transparent");
     }
 
     #[test]

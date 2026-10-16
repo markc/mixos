@@ -606,3 +606,44 @@ fn a_second_press_without_release_keeps_the_first_decision() {
     );
     assert!(!run.emitted_codes().contains(&KEY_RIGHT));
 }
+
+#[test]
+fn a_resync_after_dropped_events_releases_what_is_up_and_rebuilds_modifiers() {
+    let mut run = Run::new(Resolver::new(default_keymap()));
+    // Held: A (emitted), F5 (swallowed), Right Ctrl (emitted). The device
+    // then drops events, losing the releases of A, F5 and Right Ctrl, and
+    // the press of Left Shift.
+    run.feed(KEY_A, 1).feed(KEY_F5, 1).feed(KEY_RIGHTCTRL, 1);
+    let down = [KEY_LEFTSHIFT];
+    let released = run
+        .keys
+        .resync(|code| down.contains(&code), mods(&["lshift"]));
+    assert_eq!(released, [KEY_A, KEY_RIGHTCTRL], "emitted keys that are up");
+    assert!(!run.keys.is_emitted(KEY_A) && !run.keys.is_swallowed(KEY_F5));
+    assert_eq!(run.keys.mods(), mods(&["lshift"]));
+    // The stale Right Ctrl is gone: a bare-arrow chord is not formed, and
+    // Left Shift (whose press was lost) still counts for matching.
+    for code in released {
+        run.emitted.push((code, 0));
+    }
+    run.feed(KEY_LEFTSHIFT, 0);
+    run.feed(KEY_F5, 1).feed(KEY_F5, 0);
+    assert!(
+        !run.emitted_codes().contains(&KEY_F5),
+        "bare F5 after resync is the user's: {:?}",
+        run.emitted
+    );
+    run.assert_balanced();
+}
+
+#[test]
+fn a_resync_keeps_latches_for_keys_still_down() {
+    let mut run = Run::new(Resolver::new(default_keymap()));
+    run.feed(KEY_A, 1).feed(KEY_F5, 1);
+    let released = run
+        .keys
+        .resync(|code| code == KEY_A || code == KEY_F5, SideModifiers::NONE);
+    assert!(released.is_empty());
+    run.feed(KEY_A, 0).feed(KEY_F5, 0);
+    assert_eq!(run.emitted, [(KEY_A, 1), (KEY_A, 0)]);
+}

@@ -27,7 +27,7 @@ use std::io;
 use std::time::{Duration, Instant};
 
 use inputd_core::{Fire, Interceptor, Resolver};
-use inputd_schema::SideModifiers;
+use inputd_schema::{SideModifiers, codes};
 
 /// `input-event-codes.h` event types and the report code.
 pub const EV_SYN: u16 = 0;
@@ -41,12 +41,62 @@ pub const GRAB_RETRY_CAP: Duration = Duration::from_secs(2);
 /// At the cap, log one failed attempt in this many.
 const GRAB_RETRY_LOG_EVERY: u32 = 30;
 
+/// Events were lost: discard up to and including the next `SYN_REPORT`,
+/// then read the device state afresh.
+pub const SYN_DROPPED: u16 = 3;
+
+/// Bytes in a `KEY_MAX` key bitmap (`EVIOCGKEY`).
+pub const KEY_BITS_LEN: usize = 0x2ff / 8 + 1;
+
+/// Which keys are physically down: an `EVIOCGKEY` bitmap.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KeyState(pub [u8; KEY_BITS_LEN]);
+
+impl KeyState {
+    pub const NONE: Self = Self([0; KEY_BITS_LEN]);
+
+    /// The state with exactly `codes` down.
+    pub fn of(codes: &[u16]) -> Self {
+        let mut bits = [0; KEY_BITS_LEN];
+        for &code in codes {
+            if let Some(byte) = bits.get_mut(usize::from(code / 8)) {
+                *byte |= 1 << (code % 8);
+            }
+        }
+        Self(bits)
+    }
+
+    pub fn is_down(&self, code: u16) -> bool {
+        self.0
+            .get(usize::from(code / 8))
+            .is_some_and(|byte| byte & (1 << (code % 8)) != 0)
+    }
+
+    /// The side-specific modifiers down.
+    pub fn modifiers(&self) -> SideModifiers {
+        let mut mods = SideModifiers::NONE;
+        for code in [
+            codes::KEY_LEFTCTRL,
+            codes::KEY_RIGHTCTRL,
+            codes::KEY_LEFTSHIFT,
+            codes::KEY_RIGHTSHIFT,
+            codes::KEY_LEFTALT,
+            codes::KEY_RIGHTALT,
+            codes::KEY_LEFTMETA,
+            codes::KEY_RIGHTMETA,
+        ] {
+            mods.set(code, self.is_down(code));
+        }
+        mods
+    }
+}
+
 /// The keyboard being intercepted.
 pub trait GrabDevice {
     /// `EVIOCGRAB` on (`true`) or off.
     fn grab(&mut self, on: bool) -> io::Result<()>;
-    /// The modifier keys physically down now (`EVIOCGKEY`).
-    fn held_modifiers(&mut self) -> io::Result<SideModifiers>;
+    /// The keys physically down now (`EVIOCGKEY`).
+    fn key_state(&mut self) -> io::Result<KeyState>;
     /// Discard every event already queued on the device.
     fn drain(&mut self) -> io::Result<()>;
 }
@@ -87,6 +137,8 @@ pub struct Grabber<D, E> {
     /// The next attempt and the wait that led to it.
     retry: Option<(Instant, Duration)>,
     failures: u32,
+    /// Between a `SYN_DROPPED` and the `SYN_REPORT` that ends it.
+    dropping: bool,
     keys: Interceptor,
 }
 
@@ -100,6 +152,7 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
             grabbed: false,
             retry: None,
             failures: 0,
+            dropping: false,
             keys: Interceptor::new(),
         }
     }
@@ -154,6 +207,20 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
         value: i32,
     ) -> io::Result<Option<Fire>> {
         if !self.grabbed {
+            return Ok(None);
+        }
+        // The kernel's overflow contract: after SYN_DROPPED, ignore events
+        // up to and including the next SYN_REPORT, then re-read the state.
+        // The marker itself is not forwarded.
+        if kind == EV_SYN && code == SYN_DROPPED {
+            self.dropping = true;
+            return Ok(None);
+        }
+        if self.dropping {
+            if kind == EV_SYN && code == SYN_REPORT {
+                self.dropping = false;
+                self.resync()?;
+            }
             return Ok(None);
         }
         match kind {
@@ -213,20 +280,47 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
             }
             Err(error) => return Err(error),
         }
-        self.grabbed = true;
         self.retry = None;
         self.failures = 0;
-        let held = self.device.held_modifiers().unwrap_or_else(|error| {
-            tracing::warn!(%error, "could not read held modifiers; assuming none");
-            SideModifiers::NONE
-        });
-        self.keys.begin(held);
         // Events queued before the grab took effect were delivered to the
-        // compositor as well; replaying them would type them twice.
-        if let Err(error) = self.device.drain() {
-            tracing::warn!(%error, "could not discard queued events");
-        }
+        // compositor as well; replaying them would type them twice. Discard
+        // them first, then snapshot the keys: every event after the snapshot
+        // is processed, so no modifier change after it is lost. On failure
+        // the grab is dropped again and the error goes up: never guess the
+        // modifiers, a stale one misclassifies user keys.
+        let held = self.device.drain().and_then(|()| self.device.key_state());
+        let held = match held {
+            Ok(state) => state.modifiers(),
+            Err(error) => {
+                let _ = self.device.grab(false);
+                return Err(error);
+            }
+        };
+        self.grabbed = true;
+        self.dropping = false;
+        self.keys.begin(held);
         tracing::info!("keyboard grab held");
+        Ok(())
+    }
+
+    /// After dropped events: release on the re-emitter every emitted key
+    /// that is no longer down, forget latches of keys that are up, and
+    /// rebuild the modifiers from the device.
+    fn resync(&mut self) -> io::Result<()> {
+        let state = self.device.key_state()?;
+        let released = self
+            .keys
+            .resync(|code| state.is_down(code), state.modifiers());
+        for &code in &released {
+            self.out.emit(EV_KEY, code, 0)?;
+        }
+        if !released.is_empty() {
+            self.out.emit(EV_SYN, SYN_REPORT, 0)?;
+        }
+        tracing::warn!(
+            released = released.len(),
+            "input events were dropped; key state re-read from the device"
+        );
         Ok(())
     }
 
@@ -245,6 +339,7 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
             written = self.out.emit(EV_SYN, SYN_REPORT, 0);
         }
         self.grabbed = false;
+        self.dropping = false;
         let ungrabbed = self.device.grab(false);
         tracing::info!(released = held.len(), "keyboard grab dropped");
         written.and(ungrabbed)
@@ -271,7 +366,12 @@ mod tests {
     struct FakeDevice {
         log: Log,
         busy: u32,
-        held: SideModifiers,
+        /// What EVIOCGKEY reports.
+        held: KeyState,
+        /// The key state once the queued events are discarded: a queue
+        /// that held a key transition changes it.
+        after_drain: Option<KeyState>,
+        keys_fail: bool,
     }
 
     impl GrabDevice for FakeDevice {
@@ -284,11 +384,18 @@ mod tests {
             self.log.borrow_mut().push(format!("grab {}", u8::from(on)));
             Ok(())
         }
-        fn held_modifiers(&mut self) -> io::Result<SideModifiers> {
+        fn key_state(&mut self) -> io::Result<KeyState> {
+            self.log.borrow_mut().push("keys".into());
+            if self.keys_fail {
+                return Err(io::Error::other("EVIOCGKEY failed"));
+            }
             Ok(self.held)
         }
         fn drain(&mut self) -> io::Result<()> {
             self.log.borrow_mut().push("drain".into());
+            if let Some(state) = self.after_drain.take() {
+                self.held = state;
+            }
             Ok(())
         }
     }
@@ -333,7 +440,9 @@ mod tests {
             let device = FakeDevice {
                 log: log.clone(),
                 busy,
-                held: SideModifiers::NONE,
+                held: KeyState::NONE,
+                after_drain: None,
+                keys_fail: false,
             };
             let out = FakeOut {
                 log: log.clone(),
@@ -395,7 +504,7 @@ mod tests {
         assert!(!rig.grabber.follows_console());
         rig.grabber.start(rig.now).unwrap();
         assert!(rig.grabber.is_grabbed());
-        assert_eq!(rig.take_log(), ["grab 1", "drain"]);
+        assert_eq!(rig.take_log(), ["grab 1", "drain", "keys"]);
         rig.grabber.console(Some(3), rig.now).unwrap();
         assert!(
             rig.grabber.is_grabbed(),
@@ -413,7 +522,7 @@ mod tests {
         assert!(rig.take_log().is_empty());
         rig.console(&mut console);
         assert!(rig.grabber.is_grabbed());
-        assert_eq!(rig.take_log(), ["grab 1", "drain"]);
+        assert_eq!(rig.take_log(), ["grab 1", "drain", "keys"]);
         rig.console(&mut console);
         assert!(
             rig.take_log().is_empty(),
@@ -496,7 +605,7 @@ mod tests {
     #[test]
     fn a_held_modifier_at_grab_still_forms_a_user_key_chord() {
         let mut rig = Rig::new(Some(vec![1]), 0);
-        rig.grabber.device_mut().held = SideModifiers::RIGHT_CTRL;
+        rig.grabber.device_mut().held = KeyState::of(&[KEY_RIGHTCTRL]);
         rig.grabber.console(Some(1), rig.now).unwrap();
         rig.take_log();
         rig.key(KEY_RIGHT, 1)
@@ -572,8 +681,8 @@ mod tests {
             fn grab(&mut self, _: bool) -> io::Result<()> {
                 Err(io::Error::from_raw_os_error(19)) // ENODEV
             }
-            fn held_modifiers(&mut self) -> io::Result<SideModifiers> {
-                Ok(SideModifiers::NONE)
+            fn key_state(&mut self) -> io::Result<KeyState> {
+                Ok(KeyState::NONE)
             }
             fn drain(&mut self) -> io::Result<()> {
                 Ok(())
@@ -623,5 +732,84 @@ mod tests {
         rig.take_log();
         rig.grabber.shutdown().unwrap();
         assert_eq!(rig.take_log(), ["emit 1 30 0", "emit 0 0 0", "grab 0"]);
+    }
+
+    fn syn(rig: &mut Rig, code: u16) {
+        let fire = rig.grabber.event(&rig.resolver, EV_SYN, code, 0).unwrap();
+        assert!(fire.is_none());
+    }
+
+    #[test]
+    fn dropped_events_are_recovered_from_the_device_state() {
+        let mut rig = Rig::new(None, 0);
+        rig.grabber.start(rig.now).unwrap();
+        // Held and emitted: A and Right Ctrl. Then the device overflows and
+        // their releases are lost; only Left Shift is down afterwards.
+        rig.key(KEY_A, 1).key(KEY_RIGHTCTRL, 1);
+        syn(&mut rig, SYN_REPORT);
+        rig.take_log();
+        rig.grabber.device_mut().held = KeyState::of(&[KEY_LEFTSHIFT]);
+        syn(&mut rig, SYN_DROPPED);
+        // Everything up to and including the next report is ignored.
+        rig.key(KEY_RIGHTCTRL, 0).key(KEY_F5, 1);
+        assert!(rig.take_log().is_empty(), "events inside the drop leaked");
+        syn(&mut rig, SYN_REPORT);
+        assert_eq!(
+            rig.take_log(),
+            ["keys", "emit 1 30 0", "emit 1 97 0", "emit 0 0 0"],
+            "the state is re-read and the lost releases are sent"
+        );
+        // Right Ctrl is no longer counted, Left Shift is: Left Shift + →
+        // passes, and after Left Shift goes up a bare F5 is swallowed.
+        rig.key(KEY_RIGHT, 1).key(KEY_RIGHT, 0);
+        assert_eq!(rig.take_log(), ["emit 1 106 1", "emit 1 106 0"]);
+        rig.key(KEY_LEFTSHIFT, 0).key(KEY_F5, 1).key(KEY_F5, 0);
+        assert!(rig.take_log().is_empty(), "bare F5 leaked after resync");
+        // And the stream resumes normally.
+        rig.key(KEY_A, 1);
+        syn(&mut rig, SYN_REPORT);
+        assert_eq!(rig.take_log(), ["emit 1 30 1", "emit 0 0 0"]);
+    }
+
+    #[test]
+    fn a_right_ctrl_released_while_draining_is_not_left_held() {
+        // Right Ctrl is down at the grab and its release is among the
+        // queued events the grab discards. The snapshot must come after
+        // the drain, or a stale Right Ctrl turns bare F5 into RCtrl+F5,
+        // which passes to apps.
+        let mut rig = Rig::new(None, 0);
+        let device = rig.grabber.device_mut();
+        device.held = KeyState::of(&[KEY_RIGHTCTRL]);
+        device.after_drain = Some(KeyState::NONE);
+        rig.grabber.start(rig.now).unwrap();
+        assert_eq!(rig.take_log(), ["grab 1", "drain", "keys"]);
+        rig.key(KEY_F5, 1).key(KEY_F5, 0);
+        assert!(rig.take_log().is_empty(), "bare F5 leaked to the apps");
+    }
+
+    #[test]
+    fn a_failed_key_snapshot_drops_the_grab_and_reports() {
+        let mut rig = Rig::new(None, 0);
+        rig.grabber.device_mut().keys_fail = true;
+        assert!(rig.grabber.start(rig.now).is_err());
+        assert!(!rig.grabber.is_grabbed());
+        assert_eq!(rig.take_log(), ["grab 1", "drain", "keys", "grab 0"]);
+        rig.key(KEY_F5, 1);
+        assert!(rig.take_log().is_empty(), "nothing is processed ungrabbed");
+    }
+
+    #[test]
+    fn key_state_bitmaps() {
+        let state = KeyState::of(&[KEY_RIGHTCTRL, KEY_LEFTALT, 0x2ff]);
+        assert!(state.is_down(KEY_RIGHTCTRL) && state.is_down(0x2ff));
+        assert!(!state.is_down(KEY_LEFTCTRL) && !state.is_down(0x300));
+        assert_eq!(
+            state.modifiers(),
+            SideModifiers {
+                right_ctrl: true,
+                left_alt: true,
+                ..SideModifiers::NONE
+            }
+        );
     }
 }

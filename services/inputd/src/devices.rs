@@ -9,9 +9,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::Path;
 
-use inputd_schema::{SideModifiers, codes};
-
-use crate::grab::{Console, EV_KEY, EV_SYN, Emit, GrabDevice};
+use crate::grab::{Console, EV_KEY, EV_SYN, Emit, GrabDevice, KEY_BITS_LEN, KeyState};
 
 pub const EV_REL: u16 = 2;
 /// The highest key code (`KEY_MAX`).
@@ -30,7 +28,6 @@ pub const CONSOLE_ACTIVE: &str = "/sys/class/tty/tty0/active";
 // _IOW('U', 3, struct uinput_setup) (92 bytes); UI_SET_*BIT = _IOW('U',
 // 100..102, int).
 const EVIOCGRAB: libc::c_ulong = 0x4004_4590;
-const KEY_BITS_LEN: usize = KEY_MAX as usize / 8 + 1;
 const EVIOCGKEY: libc::c_ulong = 0x8000_4518 | ((KEY_BITS_LEN as libc::c_ulong) << 16);
 const UI_SET_EVBIT: libc::c_ulong = 0x4004_5564;
 const UI_SET_KEYBIT: libc::c_ulong = 0x4004_5565;
@@ -112,26 +109,12 @@ impl GrabDevice for EvdevDevice {
         check(unsafe { libc::ioctl(self.fd(), EVIOCGRAB, libc::c_int::from(on)) })
     }
 
-    fn held_modifiers(&mut self) -> io::Result<SideModifiers> {
+    fn key_state(&mut self) -> io::Result<KeyState> {
         let mut bits = [0u8; KEY_BITS_LEN];
         // SAFETY: EVIOCGKEY writes at most KEY_BITS_LEN bytes, the size
         // encoded in the request, into this caller-owned buffer.
         check(unsafe { libc::ioctl(self.fd(), EVIOCGKEY, bits.as_mut_ptr()) })?;
-        let down = |code: u16| bits[usize::from(code / 8)] & (1 << (code % 8)) != 0;
-        let mut mods = SideModifiers::NONE;
-        for code in [
-            codes::KEY_LEFTCTRL,
-            codes::KEY_RIGHTCTRL,
-            codes::KEY_LEFTSHIFT,
-            codes::KEY_RIGHTSHIFT,
-            codes::KEY_LEFTALT,
-            codes::KEY_RIGHTALT,
-            codes::KEY_LEFTMETA,
-            codes::KEY_RIGHTMETA,
-        ] {
-            mods.set(code, down(code));
-        }
-        Ok(mods)
+        Ok(KeyState(bits))
     }
 
     fn drain(&mut self) -> io::Result<()> {

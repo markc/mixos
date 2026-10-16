@@ -117,6 +117,31 @@ impl Interceptor {
         emitted
     }
 
+    /// Recover after the device dropped events (`SYN_DROPPED`): `is_down`
+    /// is the physical key state read once the stream is back in sync,
+    /// and `held` the modifiers it shows. Every latched key that is no
+    /// longer down loses its latch; those latched as emitted are returned,
+    /// in ascending order, for the caller to release on the re-emitter. The
+    /// modifier state is rebuilt from `held`. A key down now with no latch
+    /// had its press lost: its release is an orphan, like one from before
+    /// the grab.
+    pub fn resync(&mut self, is_down: impl Fn(u16) -> bool, held: SideModifiers) -> Vec<u16> {
+        let up: Vec<u16> = self
+            .latches
+            .keys()
+            .copied()
+            .filter(|&code| !is_down(code))
+            .collect();
+        let mut released = Vec::new();
+        for code in up {
+            if self.latches.remove(&code) == Some(Latch::Emitted) {
+                released.push(code);
+            }
+        }
+        self.mods = held;
+        released
+    }
+
     /// True when `code` is held and was decided as emitted.
     pub fn is_emitted(&self, code: u16) -> bool {
         self.latches.get(&code) == Some(&Latch::Emitted)

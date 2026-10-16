@@ -380,6 +380,7 @@ fn rename_noreplace(from: &Path, to: &Path) -> std::io::Result<()> {
         )
     };
     if rc == 0 {
+        sync_parent_after_rename(to);
         return Ok(());
     }
     let error = std::io::Error::last_os_error();
@@ -390,6 +391,7 @@ fn rename_noreplace(from: &Path, to: &Path) -> std::io::Result<()> {
         return Err(error);
     }
     link_move(from, to, &mut |_| {}, &mut |p| std::fs::remove_file(p))
+        .inspect(|()| sync_parent_after_rename(to))
 }
 
 /// The fallback move for filesystems without `RENAME_NOREPLACE`: `link(from,
@@ -582,11 +584,17 @@ fn parse(text: &str, path: &Path) -> Result<Loaded, String> {
     })
 }
 
-/// Persist physical rows durably: write a temp file next to the target, fsync,
-/// then atomically rename over it. Creates parent directories as needed.
+/// Persist physical rows durably: write a fresh temp file next to the
+/// target, fsync it, rename it over the target, then fsync the directory.
+/// Creates parent directories as needed. A symlinked keymap is refused,
+/// never replaced.
 pub fn save(path: &Path, physical: &[PhysicalBinding]) -> std::io::Result<()> {
     let tmp = write_tmp(path, physical)?;
-    std::fs::rename(&tmp, path)
+    if let Err(error) = std::fs::rename(&tmp, path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(error);
+    }
+    sync_parent(path)
 }
 
 /// Like [`save`], but only onto a VACANT path: fails with `AlreadyExists`
@@ -598,25 +606,86 @@ fn save_new(path: &Path, physical: &[PhysicalBinding]) -> std::io::Result<()> {
     })
 }
 
-/// Write the document durably to `<path>.json.tmp` (creating parent
-/// directories) and return the temp path.
+/// fsync the directory holding `path`, so a rename into it survives a
+/// power failure.
+fn sync_parent(path: &Path) -> std::io::Result<()> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    std::fs::File::open(parent)?.sync_all()?;
+    #[cfg(test)]
+    tests::SYNCED.with(|synced| synced.borrow_mut().push(parent.to_path_buf()));
+    Ok(())
+}
+
+/// [`sync_parent`] after a rename that has already happened: a failure is
+/// logged, not returned, because the rename itself succeeded.
+fn sync_parent_after_rename(path: &Path) {
+    if let Err(error) = sync_parent(path) {
+        tracing::warn!(%error, path = %path.display(), "directory fsync after rename failed");
+    }
+}
+
+/// Write the document durably to a new, uniquely named temp file beside
+/// `path` (creating parent directories) and return its name. The file is
+/// created exclusively and never through a symlink (`O_EXCL`,
+/// `O_NOFOLLOW`), with the target's permission bits, or 0600 for a new
+/// keymap.
 fn write_tmp(path: &Path, physical: &[PhysicalBinding]) -> std::io::Result<PathBuf> {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static NEXT: AtomicU32 = AtomicU32::new(0);
+
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
+    let mode = match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            return Err(std::io::Error::other(format!(
+                "{} is a symlink; not replaced",
+                path.display()
+            )));
+        }
+        Ok(meta) if meta.is_file() => meta.permissions().mode() & 0o7777,
+        _ => 0o600,
+    };
     let doc = PersistedKeymap {
         version: KEYMAP_SCHEMA_VERSION,
         physical: physical.to_vec(),
     };
     let json = serde_json::to_string_pretty(&doc)
         .map_err(|error| std::io::Error::other(error.to_string()))?;
-    let tmp = path.with_extension("json.tmp");
-    {
-        let mut file = std::fs::File::create(&tmp)?;
-        file.write_all(json.as_bytes())?;
-        file.sync_all()?;
+    let name = path
+        .file_name()
+        .ok_or_else(|| std::io::Error::other("keymap path has no file name"))?
+        .to_string_lossy()
+        .into_owned();
+    for _ in 0..100 {
+        let n = NEXT.fetch_add(1, Ordering::Relaxed);
+        let tmp = path.with_file_name(format!(".{name}.tmp-{}-{n}", std::process::id()));
+        let mut file = match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+            .open(&tmp)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        };
+        let written = file
+            .set_permissions(std::fs::Permissions::from_mode(mode))
+            .and_then(|()| file.write_all(json.as_bytes()))
+            .and_then(|()| file.sync_all());
+        if let Err(error) = written {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(error);
+        }
+        return Ok(tmp);
     }
-    Ok(tmp)
+    Err(std::io::Error::other("no free temp file name"))
 }
 
 #[cfg(test)]
@@ -781,6 +850,89 @@ pub(crate) mod tests {
             std::fs::read_to_string(&path).unwrap(),
             LEGACY_FILE.trim_end()
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    thread_local! {
+        /// Every directory [`sync_parent`] fsynced on this test's thread.
+        pub(crate) static SYNCED: std::cell::RefCell<Vec<PathBuf>> =
+            const { std::cell::RefCell::new(Vec::new()) };
+    }
+
+    fn take_synced() -> Vec<PathBuf> {
+        SYNCED.with(|synced| std::mem::take(&mut *synced.borrow_mut()))
+    }
+
+    fn mode_of(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::symlink_metadata(path).unwrap().permissions().mode() & 0o7777
+    }
+
+    #[test]
+    fn save_never_writes_through_a_planted_temp_symlink() {
+        // The temp name the earlier code always used, planted as a symlink
+        // to a file that must not be touched.
+        let dir = scratch("tmp-symlink");
+        let path = dir.join(FILE_NAME);
+        std::fs::write(&path, doc(NEXT_WITHOUT)).unwrap();
+        let victim = dir.join("victim");
+        std::fs::write(&victim, "precious").unwrap();
+        std::os::unix::fs::symlink(&victim, path.with_extension("json.tmp")).unwrap();
+        save(&path, &inputd_core::default_keymap().physical).unwrap();
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "precious");
+        assert_eq!(load(&path).unwrap().rows, inputd_core::default_keymap().physical);
+        assert_eq!(
+            dir_names(&dir),
+            vec!["keymap.json", "keymap.json.tmp", "victim"],
+            "no temp file left behind"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn save_keeps_the_keymap_mode_and_creates_new_ones_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch("modes");
+        let path = dir.join(FILE_NAME);
+        save(&path, &[]).unwrap();
+        assert_eq!(mode_of(&path), 0o600, "a new keymap is private");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640)).unwrap();
+        save(&path, &inputd_core::default_keymap().physical).unwrap();
+        assert_eq!(mode_of(&path), 0o640, "a rewrite keeps the mode");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn save_refuses_to_replace_a_symlinked_keymap() {
+        let dir = scratch("save-symlink");
+        let target = dir.join("real.json");
+        std::fs::write(&target, doc(NEXT_WITHOUT)).unwrap();
+        let path = dir.join(FILE_NAME);
+        std::os::unix::fs::symlink(&target, &path).unwrap();
+        let error = save(&path, &[]).unwrap_err();
+        assert!(error.to_string().contains("symlink"), "{error}");
+        assert_eq!(std::fs::read_link(&path).unwrap(), target, "link untouched");
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), doc(NEXT_WITHOUT));
+        assert_eq!(dir_names(&dir), vec!["keymap.json", "real.json"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn every_rename_into_the_directory_is_followed_by_a_directory_fsync() {
+        let dir = scratch("dir-fsync");
+        let path = dir.join(FILE_NAME);
+        take_synced();
+        // Initial creation (seeding a missing keymap).
+        let _ = open(&path, STAMP);
+        assert_eq!(take_synced(), [dir.clone()], "seeding");
+        // A replacement.
+        save(&path, &[]).unwrap();
+        assert_eq!(take_synced(), [dir.clone()], "save");
+        // Recovery: the bad file moved aside, then the defaults seeded.
+        std::fs::write(&path, "not json").unwrap();
+        let opened = open(&path, STAMP);
+        assert!(opened.recovered_from.is_some());
+        assert_eq!(take_synced(), [dir.clone(), dir.clone()], "recovery");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
