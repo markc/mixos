@@ -136,7 +136,9 @@ fn an_old_profile_opens_with_default_email_and_takes_accounts() {
     let (_, reopened) = Store::open(dir.path(), &binding()).unwrap();
     assert_eq!(reopened.desktop.email.accounts[0].signature, "-- \nMe");
     assert_eq!(reopened.desktop.appearance.scheme, "forest");
-    reopened.effective().expect("the effective digest still verifies");
+    reopened
+        .effective()
+        .expect("the effective digest still verifies");
 }
 
 #[test]

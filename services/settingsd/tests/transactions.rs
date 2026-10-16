@@ -219,7 +219,10 @@ fn public_machine_fixtures_exercise_dispatch_and_restartable_float_settings() {
         json!({"focus":{"ring":"neutral"},"env":{"term":"xterm-kitty"}})
     );
     assert_eq!(snapshot["desktop"]["email"]["default_account"], "acct-1");
-    assert_eq!(snapshot["desktop"]["email"]["mail"], json!({"page_size":50}));
+    assert_eq!(
+        snapshot["desktop"]["email"]["mail"],
+        json!({"page_size":50})
+    );
     drop(state);
     let (store, accepted) = Store::open(dir.path(), &binding).unwrap();
     let restored = Authority::new(store, accepted).unwrap();

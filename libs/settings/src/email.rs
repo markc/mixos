@@ -179,11 +179,9 @@ pub fn valid_url(url: &str) -> bool {
 /// check.
 pub fn valid_address(address: &str) -> bool {
     address.len() <= ADDRESS_MAX_BYTES
-        && address
-            .split_once('@')
-            .is_some_and(|(local, domain)| {
-                !local.is_empty() && !domain.is_empty() && !domain.contains('@')
-            })
+        && address.split_once('@').is_some_and(|(local, domain)| {
+            !local.is_empty() && !domain.is_empty() && !domain.contains('@')
+        })
         && !address.chars().any(|c| c.is_control() || c.is_whitespace())
 }
 
@@ -409,7 +407,11 @@ mod tests {
         // field out; Mix data reads the same.
         let read: AccountEntry = serde_json::from_value(account("acct-1")).unwrap();
         assert_eq!(
-            (read.ca_path.as_deref(), read.enabled, read.signature.as_str()),
+            (
+                read.ca_path.as_deref(),
+                read.enabled,
+                read.signature.as_str()
+            ),
             (None, true, "")
         );
         let changed = Email {
@@ -504,10 +506,9 @@ mod tests {
         );
         // A disabled default falls back to the first enabled account.
         let mut email = seven.email.clone();
-        email.accounts.insert(
-            0,
-            serde_json::from_value(account("first")).unwrap(),
-        );
+        email
+            .accounts
+            .insert(0, serde_json::from_value(account("first")).unwrap());
         email.accounts[1].enabled = false;
         email.default_account = Some("b-2".into());
         assert_eq!(email.from_account().unwrap().id, "first");
@@ -519,7 +520,13 @@ mod tests {
             (
                 "email.mail.page_size",
                 vec![json!(10), json!(500), json!(100.0)],
-                vec![json!(9), json!(501), json!(100.5), json!("100"), json!(null)],
+                vec![
+                    json!(9),
+                    json!(501),
+                    json!(100.5),
+                    json!("100"),
+                    json!(null),
+                ],
             ),
             (
                 "email.mail.mark_read_on_open",
@@ -645,7 +652,9 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(refused.path, "email.accounts[2].id");
-        let many: Vec<Value> = (0..ACCOUNTS_MAX).map(|i| account(&format!("a{i}"))).collect();
+        let many: Vec<Value> = (0..ACCOUNTS_MAX)
+            .map(|i| account(&format!("a{i}")))
+            .collect();
         assert!(apply("email.accounts", json!(many)).is_ok());
         let too_many: Vec<Value> = (0..=ACCOUNTS_MAX)
             .map(|i| account(&format!("a{i}")))
@@ -679,16 +688,27 @@ mod tests {
 
     #[test]
     fn unknown_keys_and_scopes_are_refused() {
-        for path in ["email.mail", "email.signature", "email.accounts.0", "email.mail.typo"] {
+        for path in [
+            "email.mail",
+            "email.signature",
+            "email.accounts.0",
+            "email.mail.typo",
+        ] {
             assert!(apply(path, json!(1)).is_err(), "{path}");
         }
         assert!(apply("email", json!({"mail":{"page_size":20}})).is_ok());
         assert!(apply("email", json!({"mail":{"page_size":5}})).is_err());
         // Removing the default account needs the default changed in the
         // same batch.
-        let one = apply("email", json!({"accounts":[account("a")], "default_account":"a"})).unwrap();
+        let one = apply(
+            "email",
+            json!({"accounts":[account("a")], "default_account":"a"}),
+        )
+        .unwrap();
         assert_eq!(
-            apply_to(&one, "email.accounts", json!([])).unwrap_err().path,
+            apply_to(&one, "email.accounts", json!([]))
+                .unwrap_err()
+                .path,
             "email.default_account"
         );
         let both = patch(
