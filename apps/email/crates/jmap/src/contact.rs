@@ -345,7 +345,11 @@ mod tests {
     fn draft() -> ContactDraft {
         ContactDraft {
             name: "Ann Example".into(),
-            emails: vec!["ann@example.invalid".into(), "  ".into(), "a2@example.invalid".into()],
+            emails: vec![
+                "ann@example.invalid".into(),
+                "  ".into(),
+                "a2@example.invalid".into(),
+            ],
             phones: vec!["+61 7 5555 0000".into()],
             organization: Some("Example Pty Ltd".into()),
             notes: Some("Met at the fair".into()),
@@ -390,7 +394,10 @@ mod tests {
     fn a_create_wraps_the_card_under_the_client_id() {
         let args = contact_create_args("A1", "uid-1", "B1", &draft());
         assert_eq!(args["accountId"], json!("A1"));
-        assert_eq!(args["create"]["c0"]["name"], json!({ "full": "Ann Example" }));
+        assert_eq!(
+            args["create"]["c0"]["name"],
+            json!({ "full": "Ann Example" })
+        );
     }
 
     #[test]

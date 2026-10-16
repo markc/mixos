@@ -386,9 +386,7 @@ impl Client {
     /// One `/set` call: `method` with its arguments, the reply's arguments
     /// returned for the caller to check with [`check_set_reply`].
     pub(crate) async fn set_call(&self, method: &str, args: Value) -> Result<Value> {
-        let replies = self
-            .call(&[Call(method.into(), args, "s0".into())])
-            .await?;
+        let replies = self.call(&[Call(method.into(), args, "s0".into())]).await?;
         replies
             .into_iter()
             .next()
@@ -489,7 +487,11 @@ mod tests {
 
     #[test]
     fn the_request_body_carries_using_and_the_method_calls() {
-        let calls = [Call("Mailbox/get".into(), json!({"accountId": "A1"}), "m0".into())];
+        let calls = [Call(
+            "Mailbox/get".into(),
+            json!({"accountId": "A1"}),
+            "m0".into(),
+        )];
         let body = request_body(&["urn:ietf:params:jmap:mail".into()], &calls);
         assert_eq!(
             body,

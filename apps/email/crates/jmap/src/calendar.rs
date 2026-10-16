@@ -281,7 +281,8 @@ impl Client {
     /// key this listing has always sent; [`Client::calendar_events_between`]
     /// is the windowed form.
     pub async fn calendar_events(&self, calendar_id: &str) -> Result<Vec<CalendarEvent>> {
-        self.query_events(json!({ "calendarId": calendar_id })).await
+        self.query_events(json!({ "calendarId": calendar_id }))
+            .await
     }
 
     /// One calendar's events, newest-start first, filtered to an optional
@@ -442,7 +443,10 @@ mod tests {
         };
         let event = full.to_jscalendar("uid-1", "C1");
         assert_eq!(event["timeZone"], json!("Australia/Brisbane"));
-        assert_eq!(event["locations"], json!({ "l1": { "@type": "Location", "name": "Clinic" } }));
+        assert_eq!(
+            event["locations"],
+            json!({ "l1": { "@type": "Location", "name": "Clinic" } })
+        );
         assert_eq!(event["description"], json!("Bring card"));
         assert_eq!(event["showWithoutTime"], json!(true));
 

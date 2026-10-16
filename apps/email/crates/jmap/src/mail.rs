@@ -436,10 +436,8 @@ fn keyword_patch(read: Option<bool>, flagged: Option<bool>) -> Value {
 
 /// The Email/set arguments applying one patch to every id.
 fn email_update_args(account_id: &str, ids: &[String], patch: &Value) -> Value {
-    let update: serde_json::Map<String, Value> = ids
-        .iter()
-        .map(|id| (id.clone(), patch.clone()))
-        .collect();
+    let update: serde_json::Map<String, Value> =
+        ids.iter().map(|id| (id.clone(), patch.clone())).collect();
     json!({ "accountId": account_id, "update": update })
 }
 
@@ -532,12 +530,7 @@ mod tests {
 
     #[test]
     fn the_query_pair_is_one_request_with_the_filter_applied() {
-        let calls = email_query_calls(
-            "A1",
-            email_filter(Some("M1"), Some("  invoice ")),
-            20,
-            500,
-        );
+        let calls = email_query_calls("A1", email_filter(Some("M1"), Some("  invoice ")), 20, 500);
         assert_eq!(
             crate::client::request_body(&["urn:ietf:params:jmap:mail".into()], &calls),
             json!({
