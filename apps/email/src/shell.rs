@@ -961,7 +961,7 @@ mod tests {
             .unwrap();
         let kept = std::fs::read_to_string(dir.join("config.conf.mix")).unwrap();
         let kept: Value = config::from_conf_mix_str(&kept).unwrap();
-        assert_eq!(kept["schema_version"], 1);
+        assert_eq!(kept["schema_version"].as_f64(), Some(1.0));
         assert_eq!(kept["account"]["password"], "pw-live");
         // A second start finds the same account under the same id.
         let (again, _, _) = start(Some(&dir));
