@@ -36,7 +36,8 @@
 //! (VT switch, lost input authority) clears the agent seat: the agent epoch
 //! moves, so comp-service refuses the agent admissions still queued
 //! `input_cleared`, and the agent's runs end `input_cleared`. Human input does
-//! not clear the agent.
+//! not clear the agent. A `comp.motion.run` is the exception: it keeps its
+//! wall-clock end time through a pause and answers `completed` with `parked`.
 //!
 //! Region select: `comp.region.select` is policy-host
 //! `region`; the run holds the human seat, its reply waits here and is sent
@@ -212,16 +213,30 @@ enum MotionKind {
     },
 }
 
+impl MotionKind {
+    /// Seconds from the start to the end, fixed when the run starts.
+    fn end(&self) -> f64 {
+        match self {
+            MotionKind::Pointer { glide, .. } => glide.end(),
+            MotionKind::Window { timeline, .. } => timeline.end(),
+        }
+    }
+}
+
 /// A running `comp.motion.run`: what it moves, the human pointer when it
-/// began (a real move cancels it), and the reply it owes.
+/// began (a real move cancels it), whether a pause has hidden that pointer
+/// since, and the reply it owes.
 struct MotionRun {
     started: Instant,
     kind: MotionKind,
     human_at_start: Option<(String, f64, f64)>,
+    rebase_human: bool,
     reply: LongReply,
 }
 
-fn motion_completed(kind: &MotionKind) -> ControlReply {
+/// The run's end state as its caller sees it; `parked` when the VT was
+/// paused at the end, so no frame showed the last of it.
+fn motion_completed(kind: &MotionKind, parked: bool) -> ControlReply {
     let target = match kind {
         MotionKind::Pointer { glide, .. } => {
             let end = glide.target();
@@ -238,7 +253,11 @@ fn motion_completed(kind: &MotionKind) -> ControlReply {
             json!({"window": {"id": id, "generation": generation, "rect": rect}})
         }
     };
-    ControlReply::Body(json!({"version": 1, "status": "completed", "target": target}))
+    let mut body = json!({"version": 1, "status": "completed", "target": target});
+    if parked {
+        body["parked"] = json!(true);
+    }
+    ControlReply::Body(body)
 }
 
 fn motion_cancelled(reason: &str) -> ControlReply {
@@ -548,8 +567,11 @@ impl Bus {
     }
 
     /// Step every running glide once, and answer the ones that ended or were
-    /// stopped. A glide stops when the human pointer moves, when the session
-    /// is paused, or when its caller has gone. Re-arms its timer while any run.
+    /// stopped. A glide stops when the human pointer moves or its caller has
+    /// gone. A pause does not stop it: its end time holds, the steps between
+    /// are skipped (no frame would show them), and at the end time the end
+    /// state is committed and the caller told `parked`. Re-arms its timer
+    /// while any run: every tick when live, the next end time when paused.
     fn service_motions(&mut self, lp: &mut Loop) {
         let now = Instant::now();
         let human = policy_host::input::human_pointer(lp);
@@ -559,15 +581,23 @@ impl Bus {
             if run.reply.is_closed() {
                 continue;
             }
+            let end = run.kind.end();
+            let elapsed = now.duration_since(run.started).as_secs_f64();
             if paused {
-                run.reply.send(motion_cancelled("session_paused"));
-                continue;
-            }
-            if human != run.human_at_start {
+                // The human cursor is unreported while paused; compare
+                // afresh from the first live pass.
+                run.rebase_human = true;
+                if elapsed < end {
+                    still.push(run);
+                    continue;
+                }
+            } else if std::mem::take(&mut run.rebase_human) {
+                run.human_at_start = human.clone();
+            } else if human != run.human_at_start {
                 run.reply.send(motion_cancelled("human_input"));
                 continue;
             }
-            let t = now.duration_since(run.started).as_secs_f64();
+            let t = elapsed.min(end);
             let step = match &mut run.kind {
                 MotionKind::Pointer { glide, output } => {
                     policy_host::motion::pointer_step(lp, glide, output.as_deref(), t)
@@ -585,13 +615,26 @@ impl Bus {
             match step {
                 policy_host::motion::Step::Moving => still.push(run),
                 policy_host::motion::Step::Arrived => {
-                    run.reply.send(motion_completed(&run.kind));
+                    run.reply.send(motion_completed(&run.kind, paused));
                 }
                 policy_host::motion::Step::Refused(answer) => run.reply.send(answer),
             }
         }
         self.motions = still;
-        let next = (!self.motions.is_empty()).then(|| now + MOTION_TICK);
+        // Paused: wake at the earliest end time (1 ms past it, so float
+        // rounding never wakes it a hair early), not every frame.
+        let next = if paused {
+            self.motions
+                .iter()
+                .map(|run| {
+                    run.started
+                        + Duration::from_secs_f64(run.kind.end())
+                        + Duration::from_millis(1)
+                })
+                .min()
+        } else {
+            (!self.motions.is_empty()).then(|| now + MOTION_TICK)
+        };
         self.motion_timer.rearm(&self.handle, next, |_| {});
     }
 
@@ -856,11 +899,12 @@ impl Engine<'_> {
         };
         match step {
             policy_host::motion::Step::Refused(answer) => reply.send(answer),
-            policy_host::motion::Step::Arrived => reply.send(motion_completed(&kind)),
+            policy_host::motion::Step::Arrived => reply.send(motion_completed(&kind, false)),
             policy_host::motion::Step::Moving => self.motions.push(MotionRun {
                 started,
                 kind,
                 human_at_start,
+                rebase_human: false,
                 reply,
             }),
         }
