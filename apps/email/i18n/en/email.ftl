@@ -40,7 +40,18 @@ email-line = { $value }
 phone-line = Phone: { $value }
 company-line = Company: { $value }
 address-book-line = Address book: { $value }
-count-of = { $shown } of { $total }
+column-from = From
+column-subject = Subject
+column-date = Date
+sort-by = Sort By
+next-page = Next Page
+previous-page = Previous Page
+# The message list's dates (chrono strftime): today, the last six days,
+# this year, and older.
+date-today = %H:%M
+date-week = %a %H:%M
+date-year = %-d %b
+date-older = %d/%m/%Y
 reply-subject = Re:
 select-email = Select an email to read it.
 select-event = Select an event to see its details.
