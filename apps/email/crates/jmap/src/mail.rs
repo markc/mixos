@@ -13,7 +13,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::client::{Call, Client};
+use crate::client::{CREATE, Call, Client, check_set_reply};
 use crate::error::{Error, Result};
 
 /// One mailbox, as `Mailbox/get` returns it.
@@ -162,41 +162,40 @@ impl Client {
     }
 
     /// One page of a mailbox's email, newest first, with the full count.
-    /// One round trip: `Email/query` chains into `Email/get` through a
-    /// ResultReference.
+    /// A thin wrapper over [`Client::email_query`] with no text filter.
     pub async fn email_page(
         &self,
         mailbox_id: &str,
         position: u32,
         limit: u32,
     ) -> Result<EmailPage> {
-        let limit = limit.clamp(1, 500);
-        let replies = self
-            .call(&[
-                Call(
-                    "Email/query".into(),
-                    json!({
-                        "accountId": self.account_id(),
-                        "filter": { "inMailbox": mailbox_id },
-                        "sort": [{ "property": "receivedAt", "isAscending": false }],
-                        "position": position,
-                        "limit": limit,
-                        "calculateTotal": true,
-                    }),
-                    "q0".into(),
-                ),
-                Call(
-                    "Email/get".into(),
-                    json!({
-                        "accountId": self.account_id(),
-                        "#ids": crate::client::backref("q0", "Email/query", "/ids"),
-                        "fetchTextBodyValues": false,
-                        "fetchHTMLBodyValues": false,
-                    }),
-                    "e0".into(),
-                ),
-            ])
-            .await?;
+        self.email_query(
+            Some(mailbox_id),
+            None,
+            u64::from(position),
+            u64::from(limit),
+        )
+        .await
+    }
+
+    /// One page of the email matching an optional mailbox and an optional
+    /// full-text query, newest first, with the full match count. `None` for
+    /// both lists the whole account. One round trip: `Email/query` chains
+    /// into `Email/get` through a ResultReference.
+    pub async fn email_query(
+        &self,
+        mailbox: Option<&str>,
+        text: Option<&str>,
+        position: u64,
+        limit: u64,
+    ) -> Result<EmailPage> {
+        let calls = email_query_calls(
+            self.account_id(),
+            email_filter(mailbox, text),
+            position,
+            limit,
+        );
+        let replies = self.call(&calls).await?;
         let mut replies = replies.into_iter();
         let query = replies.next().ok_or(empty("Email/query"))?;
         let get = replies.next().ok_or(empty("Email/get"))?;
@@ -229,15 +228,80 @@ impl Client {
             .ok_or_else(|| Error::Protocol("email get returned no entry".into()))
     }
 
-    /// Add or remove the `$seen` keyword (mark read / unread) as a keyword
-    /// pointer delta, the form maild's keyword bitmap patcher accepts.
+    /// Add or remove the `$seen` keyword (mark read / unread). A wrapper over
+    /// [`Client::set_keywords`].
     pub async fn mark_read(&self, id: &str, read: bool) -> Result<()> {
-        let patch = if read {
-            json!({ "keywords/$seen": true })
-        } else {
-            json!({ "keywords/$seen": null })
-        };
-        self.update_email(id, patch).await
+        self.set_keywords(&[id.to_owned()], Some(read), None).await
+    }
+
+    /// Set or clear `$seen` (`read`) and `$flagged` (`flagged`) on every id
+    /// in one Email/set. `None` leaves that keyword alone. Each keyword is a
+    /// pointer delta, the form maild's keyword bitmap patcher accepts. A
+    /// refused id fails the call with the server's error.
+    pub async fn set_keywords(
+        &self,
+        ids: &[String],
+        read: Option<bool>,
+        flagged: Option<bool>,
+    ) -> Result<()> {
+        if ids.is_empty() || (read.is_none() && flagged.is_none()) {
+            return Ok(());
+        }
+        let args = email_update_args(self.account_id(), ids, &keyword_patch(read, flagged));
+        let data = self.set_call("Email/set", args).await?;
+        check_set_reply(&data, "notUpdated", ids)
+    }
+
+    /// Move every id into exactly one mailbox: `mailboxIds` becomes
+    /// `{to: true}`, dropping any other membership.
+    pub async fn move_emails(&self, ids: &[String], to_mailbox: &str) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let patch = json!({ "mailboxIds": { to_mailbox: true } });
+        let args = email_update_args(self.account_id(), ids, &patch);
+        let data = self.set_call("Email/set", args).await?;
+        check_set_reply(&data, "notUpdated", ids)
+    }
+
+    /// Delete every id. With `destroy`, the emails are destroyed; without it
+    /// they move to the mailbox with the `trash` role, which must exist.
+    pub async fn delete_emails(&self, ids: &[String], destroy: bool) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        if !destroy {
+            let mailboxes = self.mailboxes().await?;
+            let trash = trash_mailbox(&mailboxes)
+                .ok_or_else(|| Error::Protocol("no mailbox has the trash role".into()))?;
+            return self.move_emails(ids, &trash.id).await;
+        }
+        let args = json!({ "accountId": self.account_id(), "destroy": ids });
+        let data = self.set_call("Email/set", args).await?;
+        check_set_reply(&data, "notDestroyed", ids)
+    }
+
+    /// Create a mailbox under `parent` (or at the top level) and return its id.
+    pub async fn create_mailbox(&self, name: &str, parent: Option<&str>) -> Result<String> {
+        let args = mailbox_create_args(self.account_id(), name, parent);
+        let data = self.set_call("Mailbox/set", args).await?;
+        check_set_reply(&data, "notCreated", &[CREATE.to_owned()])?;
+        Client::created_id(&data, CREATE)
+    }
+
+    /// Rename a mailbox.
+    pub async fn rename_mailbox(&self, id: &str, name: &str) -> Result<()> {
+        let args = mailbox_rename_args(self.account_id(), id, name);
+        let data = self.set_call("Mailbox/set", args).await?;
+        check_set_reply(&data, "notUpdated", &[id.to_owned()])
+    }
+
+    /// Delete a mailbox. Refused while it still holds email
+    /// (`onDestroyRemoveEmails` is false): the emails are never removed with it.
+    pub async fn delete_mailbox(&self, id: &str) -> Result<()> {
+        let args = mailbox_destroy_args(self.account_id(), id);
+        let data = self.set_call("Mailbox/set", args).await?;
+        check_set_reply(&data, "notDestroyed", &[id.to_owned()])
     }
 
     /// Update email properties (keywords, mailboxIds) with one patch.
@@ -316,6 +380,99 @@ impl Client {
     }
 }
 
+/// The Email/query filter: the mailbox and the text, each only when given.
+/// An empty object matches every email.
+fn email_filter(mailbox: Option<&str>, text: Option<&str>) -> Value {
+    let mut filter = json!({});
+    if let Some(mailbox) = mailbox {
+        filter["inMailbox"] = json!(mailbox);
+    }
+    if let Some(text) = text.map(str::trim).filter(|text| !text.is_empty()) {
+        filter["text"] = json!(text);
+    }
+    filter
+}
+
+/// The Email/query and Email/get pair behind [`Client::email_query`]: one
+/// round trip, the get chained to the query's ids.
+fn email_query_calls(account_id: &str, filter: Value, position: u64, limit: u64) -> Vec<Call> {
+    vec![
+        Call(
+            "Email/query".into(),
+            json!({
+                "accountId": account_id,
+                "filter": filter,
+                "sort": [{ "property": "receivedAt", "isAscending": false }],
+                "position": position,
+                "limit": limit.clamp(1, 500),
+                "calculateTotal": true,
+            }),
+            "q0".into(),
+        ),
+        Call(
+            "Email/get".into(),
+            json!({
+                "accountId": account_id,
+                "#ids": crate::client::backref("q0", "Email/query", "/ids"),
+                "fetchTextBodyValues": false,
+                "fetchHTMLBodyValues": false,
+            }),
+            "e0".into(),
+        ),
+    ]
+}
+
+/// The keyword patch for `$seen` and `$flagged`: `true` sets a keyword,
+/// `null` clears it, and `None` leaves it out of the patch entirely.
+fn keyword_patch(read: Option<bool>, flagged: Option<bool>) -> Value {
+    let mut patch = json!({});
+    for (keyword, set) in [("$seen", read), ("$flagged", flagged)] {
+        if let Some(set) = set {
+            patch[format!("keywords/{keyword}")] = if set { json!(true) } else { Value::Null };
+        }
+    }
+    patch
+}
+
+/// The Email/set arguments applying one patch to every id.
+fn email_update_args(account_id: &str, ids: &[String], patch: &Value) -> Value {
+    let update: serde_json::Map<String, Value> = ids
+        .iter()
+        .map(|id| (id.clone(), patch.clone()))
+        .collect();
+    json!({ "accountId": account_id, "update": update })
+}
+
+/// The mailbox with the `trash` role, when the account has one.
+fn trash_mailbox(mailboxes: &[Mailbox]) -> Option<&Mailbox> {
+    mailboxes
+        .iter()
+        .find(|mailbox| mailbox.role.as_deref() == Some("trash"))
+}
+
+/// The Mailbox/set arguments creating one mailbox, client id [`CREATE`].
+fn mailbox_create_args(account_id: &str, name: &str, parent: Option<&str>) -> Value {
+    json!({
+        "accountId": account_id,
+        "create": { CREATE: { "name": name, "parentId": parent } },
+    })
+}
+
+/// The Mailbox/set arguments renaming one mailbox.
+fn mailbox_rename_args(account_id: &str, id: &str, name: &str) -> Value {
+    json!({ "accountId": account_id, "update": { id: { "name": name } } })
+}
+
+/// The Mailbox/set arguments destroying one mailbox, refused while it still
+/// holds email.
+fn mailbox_destroy_args(account_id: &str, id: &str) -> Value {
+    json!({
+        "accountId": account_id,
+        "destroy": [id],
+        "onDestroyRemoveEmails": false,
+    })
+}
+
 /// A `/get` reply: the list, and whether the server reported ids it could
 /// not find (maild answers `notFound: []` on the PIM types, so absence of
 /// entries there is the only signal).
@@ -371,5 +528,134 @@ mod tests {
         .unwrap();
         assert_eq!(email.from_display(), "bob@example.invalid");
         assert!(!email.is_read());
+    }
+
+    #[test]
+    fn the_query_pair_is_one_request_with_the_filter_applied() {
+        let calls = email_query_calls(
+            "A1",
+            email_filter(Some("M1"), Some("  invoice ")),
+            20,
+            500,
+        );
+        assert_eq!(
+            crate::client::request_body(&["urn:ietf:params:jmap:mail".into()], &calls),
+            json!({
+                "using": ["urn:ietf:params:jmap:mail"],
+                "methodCalls": [
+                    ["Email/query", {
+                        "accountId": "A1",
+                        "filter": { "inMailbox": "M1", "text": "invoice" },
+                        "sort": [{ "property": "receivedAt", "isAscending": false }],
+                        "position": 20,
+                        "limit": 500,
+                        "calculateTotal": true
+                    }, "q0"],
+                    ["Email/get", {
+                        "accountId": "A1",
+                        "#ids": { "resultOf": "q0", "name": "Email/query", "path": "/ids" },
+                        "fetchTextBodyValues": false,
+                        "fetchHTMLBodyValues": false
+                    }, "e0"]
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn no_mailbox_and_no_text_matches_the_whole_account_at_a_clamped_limit() {
+        let calls = email_query_calls("A1", email_filter(None, Some("   ")), 0, 0);
+        let body = serde_json::to_value(&calls).unwrap();
+        assert_eq!(body[0][1]["filter"], json!({}));
+        assert_eq!(body[0][1]["limit"], json!(1));
+        let calls = email_query_calls("A1", email_filter(None, None), 0, 9_000);
+        let body = serde_json::to_value(&calls).unwrap();
+        assert_eq!(body[0][1]["limit"], json!(500));
+    }
+
+    #[test]
+    fn a_keyword_patch_sets_clears_or_leaves_each_keyword() {
+        assert_eq!(
+            keyword_patch(Some(true), Some(false)),
+            json!({ "keywords/$seen": true, "keywords/$flagged": null })
+        );
+        assert_eq!(
+            keyword_patch(None, Some(true)),
+            json!({ "keywords/$flagged": true })
+        );
+        assert_eq!(
+            keyword_patch(Some(false), None),
+            json!({ "keywords/$seen": null })
+        );
+    }
+
+    #[test]
+    fn a_keyword_update_applies_the_same_patch_to_each_id() {
+        let ids = ["E1".to_owned(), "E2".to_owned()];
+        assert_eq!(
+            email_update_args("A1", &ids, &keyword_patch(Some(true), None)),
+            json!({
+                "accountId": "A1",
+                "update": {
+                    "E1": { "keywords/$seen": true },
+                    "E2": { "keywords/$seen": true }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn a_move_replaces_the_whole_mailbox_set() {
+        let ids = ["E1".to_owned()];
+        let patch = json!({ "mailboxIds": { "M9": true } });
+        assert_eq!(
+            email_update_args("A1", &ids, &patch),
+            json!({ "accountId": "A1", "update": { "E1": { "mailboxIds": { "M9": true } } } })
+        );
+    }
+
+    #[test]
+    fn the_trash_mailbox_is_the_one_with_the_trash_role() {
+        let mailboxes = vec![
+            Mailbox {
+                id: "M1".into(),
+                role: Some("inbox".into()),
+                ..Mailbox::default()
+            },
+            Mailbox {
+                id: "M2".into(),
+                role: Some("trash".into()),
+                ..Mailbox::default()
+            },
+        ];
+        assert_eq!(trash_mailbox(&mailboxes).map(|m| m.id.as_str()), Some("M2"));
+        assert!(trash_mailbox(&mailboxes[..1]).is_none());
+    }
+
+    #[test]
+    fn mailbox_set_arguments_name_the_mailbox_and_keep_its_emails() {
+        assert_eq!(
+            mailbox_create_args("A1", "Projects", Some("M1")),
+            json!({
+                "accountId": "A1",
+                "create": { "c0": { "name": "Projects", "parentId": "M1" } }
+            })
+        );
+        assert_eq!(
+            mailbox_create_args("A1", "Top", None)["create"]["c0"]["parentId"],
+            Value::Null
+        );
+        assert_eq!(
+            mailbox_rename_args("A1", "M2", "Archive"),
+            json!({ "accountId": "A1", "update": { "M2": { "name": "Archive" } } })
+        );
+        assert_eq!(
+            mailbox_destroy_args("A1", "M2"),
+            json!({
+                "accountId": "A1",
+                "destroy": ["M2"],
+                "onDestroyRemoveEmails": false
+            })
+        );
     }
 }

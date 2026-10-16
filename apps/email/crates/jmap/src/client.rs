@@ -129,12 +129,22 @@ pub fn backref(result_of: &str, name: &str, path: &str) -> Value {
     json!({"resultOf": result_of, "name": name, "path": path})
 }
 
-/// The request envelope.
-#[derive(Serialize)]
-struct Envelope<'a> {
-    using: &'a [String],
-    #[serde(rename = "methodCalls")]
-    method_calls: &'a [Call],
+/// The request body for `calls`, under the Session's advertised `using` list.
+pub(crate) fn request_body(using: &[String], calls: &[Call]) -> Value {
+    json!({ "using": using, "methodCalls": calls })
+}
+
+/// The client id every `/set` create uses. One create per call, so one id.
+pub(crate) const CREATE: &str = "c0";
+
+/// A trimmed text value, or `None` when it is empty.
+pub(crate) fn non_empty(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
+/// A text value as JSON: `null` when empty, so a patch clears the field.
+pub(crate) fn optional_text(text: &str) -> Value {
+    non_empty(Some(text)).map_or(Value::Null, |text| json!(text))
 }
 
 /// The response envelope.
@@ -333,14 +343,10 @@ impl Client {
 
     /// One POST, no retry logic.
     async fn call_once(&self, calls: &[Call]) -> Result<Vec<Value>> {
-        let envelope = Envelope {
-            using: &self.session.using,
-            method_calls: calls,
-        };
         let api = self.endpoint(&self.session.api_url)?;
         let response = self
             .authorize(self.pool.post(api))
-            .json(&envelope)
+            .json(&request_body(&self.session.using, calls))
             .send()
             .await?;
         let status = response.status();
@@ -377,6 +383,18 @@ impl Client {
         ))
     }
 
+    /// One `/set` call: `method` with its arguments, the reply's arguments
+    /// returned for the caller to check with [`check_set_reply`].
+    pub(crate) async fn set_call(&self, method: &str, args: Value) -> Result<Value> {
+        let replies = self
+            .call(&[Call(method.into(), args, "s0".into())])
+            .await?;
+        replies
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::Protocol(format!("{method} reply is empty")))
+    }
+
     /// The server id a `/set` reply assigned to one created client id. A
     /// silent skip (maild's PIM handlers never populate `notCreated`) reads
     /// as a protocol error: the id simply is not there.
@@ -387,6 +405,15 @@ impl Client {
             .and_then(Value::as_str)
             .map(str::to_owned)
             .ok_or_else(|| Error::Protocol(format!("no id for created {client_id:?}")))
+    }
+}
+
+/// Fail with the first error a `/set` reply reports under `key` for any of
+/// `ids`. A reply that names none of them is a success.
+pub(crate) fn check_set_reply(data: &Value, key: &str, ids: &[String]) -> Result<()> {
+    match ids.iter().find_map(|id| Client::set_error(data, key, id)) {
+        Some(error) => Err(error),
+        None => Ok(()),
     }
 }
 
@@ -458,5 +485,59 @@ mod tests {
             Err(Error::Protocol(_))
         ));
         assert_eq!(body.len(), 10, "nothing past the cap is kept");
+    }
+
+    #[test]
+    fn the_request_body_carries_using_and_the_method_calls() {
+        let calls = [Call("Mailbox/get".into(), json!({"accountId": "A1"}), "m0".into())];
+        let body = request_body(&["urn:ietf:params:jmap:mail".into()], &calls);
+        assert_eq!(
+            body,
+            json!({
+                "using": ["urn:ietf:params:jmap:mail"],
+                "methodCalls": [["Mailbox/get", {"accountId": "A1"}, "m0"]]
+            })
+        );
+    }
+
+    #[test]
+    fn a_set_error_for_any_listed_id_fails_the_reply() {
+        let reply = json!({
+            "updated": { "E1": null },
+            "notUpdated": {
+                "E2": { "type": "notFound", "description": "no such email" }
+            }
+        });
+        let ids = ["E1".to_owned(), "E2".to_owned()];
+        match check_set_reply(&reply, "notUpdated", &ids) {
+            Err(Error::Method {
+                error_type,
+                description,
+            }) => {
+                assert_eq!(error_type, "notFound");
+                assert_eq!(description, "no such email");
+            }
+            other => panic!("expected a method error, got {other:?}"),
+        }
+        assert!(check_set_reply(&reply, "notUpdated", &["E1".to_owned()]).is_ok());
+    }
+
+    #[test]
+    fn a_set_error_without_a_type_is_a_server_failure() {
+        let reply = json!({ "notDestroyed": { "E9": {} } });
+        match check_set_reply(&reply, "notDestroyed", &["E9".to_owned()]) {
+            Err(Error::Method { error_type, .. }) => assert_eq!(error_type, "serverFail"),
+            other => panic!("expected a method error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_created_id_is_read_and_a_missing_one_is_refused() {
+        let reply = json!({ "created": { "c0": { "id": "M7" } } });
+        assert_eq!(Client::created_id(&reply, CREATE).unwrap(), "M7");
+        assert!(matches!(
+            Client::created_id(&json!({}), CREATE),
+            Err(Error::Protocol(_))
+        ));
     }
 }

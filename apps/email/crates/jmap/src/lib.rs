@@ -28,10 +28,10 @@ pub mod mail;
 pub mod session;
 
 pub use auth::{Account, Token};
-pub use calendar::{Calendar, CalendarEvent};
+pub use calendar::{Calendar, CalendarEvent, EventDraft, EventPatch, duration_between};
 pub use client::{Call, Client, backref};
 pub use compose::{Composed, build_mime, format_address, parse_addresses};
-pub use contact::{AddressBook, Contact};
+pub use contact::{AddressBook, Contact, ContactDraft, ContactPatch};
 pub use error::{Error, Result};
 pub use mail::{BodyPart, Email, EmailAddress, EmailPage, Mailbox};
 pub use session::Session;
