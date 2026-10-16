@@ -94,7 +94,7 @@ fn row(
         ui.add(egui::Label::new(text).truncate())
             .on_hover_text(hover);
         if !usable {
-            ui.small(RichText::new(crate::label("attachment-undecodable")).weak());
+            ui.small(RichText::new(crate::label("attachment-undecodable-note")).weak());
         }
     });
     ui.weak(attachments::human_size(attachment.size));

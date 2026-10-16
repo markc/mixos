@@ -154,6 +154,7 @@ save-all = Save All
 open = Open
 no-attachments = This email has no attachments.
 attachment-undecodable = This part cannot be decoded, so it cannot be saved or opened.
+attachment-undecodable-note = Can't be decoded
 attachment-save-only = Programs and scripts can be saved, but not opened from Email.
 attachment-downloading = Downloading the attachment…
 attachment-saved = Saved to { $path }
