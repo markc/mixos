@@ -1,0 +1,23 @@
+---
+scene: 1
+name: toast
+citizen: scene-toast
+window: {"chrome":false,"h":132,"kind":"toast","title":"Notification","w":360}
+model: {"app":"","body":"","has_body":false,"id":0,"labels":["","","",""],"more":"","shown":[false,false,false,false],"summary":""}
+---
+```mix
+root: {"background":"#2a2e32","children":["head","t_sum","t_body","t_actions"],"fill":true,"gap":6,"padding":14,"radius":10,"widget":"column"}
+head: {"align":"center","children":["t_app","t_more","head_fill","t_close"],"gap":8,"widget":"row"}
+t_app: {"color":"#a1a9b1","elide":true,"size":11,"text":"= $model.app","widget":"text"}
+t_more: {"color":"#6e7680","size":11,"text":"= $model.more","widget":"text"}
+head_fill: {"widget":"spacer"}
+t_close: {"label":"×","on_click":"toast.dismiss","widget":"button"}
+t_sum: {"bold":true,"color":"#fcfcfc","size":14,"text":"= $model.summary","widget":"text"}
+t_body: {"color":"#c8ced4","hidden":"= not $model.has_body","size":12,"text":"= $model.body","widget":"text"}
+t_actions: {"align":"center","children":["t_fill","b0","b1","b2","b3"],"gap":8,"widget":"row"}
+t_fill: {"widget":"spacer"}
+b0: {"hidden":"= not $model.shown[0]","label":"= $model.labels[0]","on_click":"toast.press0","tone":"primary","widget":"button"}
+b1: {"hidden":"= not $model.shown[1]","label":"= $model.labels[1]","on_click":"toast.press1","widget":"button"}
+b2: {"hidden":"= not $model.shown[2]","label":"= $model.labels[2]","on_click":"toast.press2","widget":"button"}
+b3: {"hidden":"= not $model.shown[3]","label":"= $model.labels[3]","on_click":"toast.press3","widget":"button"}
+```

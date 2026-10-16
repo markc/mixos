@@ -1,0 +1,201 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.1.0
+-- notify: the notification store behind notifyd, pure. A record is open until
+-- it gets exactly one outcome; the first outcome wins and later ones are
+-- refused ALREADY_ANSWERED. Every function takes the state and returns a new
+-- one (Mix maps are values), so the Bus surface owns the only copy.
+--
+-- State: {schema: 1, seq, records: [record, ...]} oldest first.
+-- Record: {id, summary, body, app, source, actions: [{id, label}], thread,
+--   request_id, created_at, created_t, deadline_t, outcome}
+-- Outcome: nil while open, else {kind, action, at}; kind is one of
+--   action (a button; action is its id), dismissed (the human closed it
+--   without choosing), expired (its timeout passed), closed (the sender or
+--   the Notifications page withdrew it). Expiry never means yes.
+
+$SUMMARY_MAX = 120
+$BODY_MAX = 500
+$TEXT_MAX = 80
+$ACTIONS_MAX = 4
+$OPEN_ACTIONABLE_MAX = 8
+$RECORDS_MAX = 200
+$TIMEOUT_MAX_MS = 86400000
+$KINDS = ["action", "dismissed", "expired", "closed"]
+
+fn new_state()
+  return {schema: 1, seq: 0, records: []}
+end
+
+fn _usage($message)
+  raise("USAGE", $message)
+end
+
+fn _text($args, $key, $max, $required)
+  $v = $args[$key]
+  if $v == nil then
+    if $required then _usage($key .. " is required") end
+    return ""
+  end
+  if type($v) != "string" then _usage($key .. " must be a string") end
+  if len($v) > $max then _usage($key .. " is longer than " .. to_string($max) .. " characters") end
+  return $v
+end
+
+fn _actions($args)
+  $v = $args.actions
+  if $v == nil then return [] end
+  if type($v) != "list" then _usage("actions must be a list of {id, label}") end
+  if len($v) > $ACTIONS_MAX then _usage("at most " .. to_string($ACTIONS_MAX) .. " actions") end
+  $out = []
+  $seen = {}
+  for each $a in $v
+    if type($a) != "map" or type($a.id) != "string" or type($a.label) != "string" then
+      _usage("each action needs a string id and label")
+    end
+    if not re_match($a.id, "^[a-z0-9_-]{1,32}$") then _usage("action id must match [a-z0-9_-]{1,32}") end
+    if $a.label == "" or len($a.label) > 32 then _usage("action label must be 1 to 32 characters") end
+    if $seen[$a.id] != nil then _usage("duplicate action id " .. $a.id) end
+    $seen[$a.id] = true
+    push($out, {id: $a.id, label: $a.label})
+  end
+  return $out
+end
+
+fn find($state, $id)
+  for each $r in $state.records
+    if $r.id == $id then return $r end
+  end
+  return nil
+end
+
+fn is_open($r)
+  return $r.outcome == nil
+end
+
+fn is_actionable($r)
+  return len($r.actions) > 0
+end
+
+fn open_actionable($state)
+  return len(filter($state.records, fn($r) = is_open($r) and is_actionable($r)))
+end
+
+-- Drop the oldest answered records past the cap; open ones are never dropped.
+fn _trim($state)
+  $extra = len($state.records) - $RECORDS_MAX
+  if $extra <= 0 then return $state end
+  $kept = []
+  for each $r in $state.records
+    if $extra > 0 and not is_open($r) then
+      $extra = $extra - 1
+    else
+      push($kept, $r)
+    end
+  end
+  $state.records = $kept
+  return $state
+end
+
+-- notify.send: validate $args, add the record. Returns {state, record}.
+fn add($state, $args, $now, $now_iso)
+  if type($args) != "map" then _usage("the body must be a JSON object") end
+  $summary = _text($args, "summary", $SUMMARY_MAX, true)
+  if trim($summary) == "" then _usage("summary is required") end
+  $body = _text($args, "body", $BODY_MAX, false)
+  $source = _text($args, "source", $TEXT_MAX, false)
+  $app = _text($args, "app", $TEXT_MAX, false)
+  if $app == "" then $app = if $source != "" then $source else "Notification" end end
+  $thread = _text($args, "thread", $TEXT_MAX, false)
+  $request_id = _text($args, "request_id", $TEXT_MAX, false)
+  $actions = _actions($args)
+  $deadline = nil
+  if $args.timeout_ms != nil then
+    $t = $args.timeout_ms
+    if type($t) != "number" or $t < 1 or $t > $TIMEOUT_MAX_MS or floor($t) != $t then
+      _usage("timeout_ms must be a whole number from 1 to " .. to_string($TIMEOUT_MAX_MS))
+    end
+    $deadline = $now + $t / 1000
+  end
+  if len($actions) > 0 and open_actionable($state) >= $OPEN_ACTIONABLE_MAX then
+    raise("TOO_MANY_OPEN", to_string($OPEN_ACTIONABLE_MAX) .. " notifications are already waiting for an answer")
+  end
+  if len(filter($state.records, fn($r) = is_open($r))) >= $RECORDS_MAX then
+    raise("TOO_MANY_OPEN", to_string($RECORDS_MAX) .. " notifications are open")
+  end
+  $state.seq = $state.seq + 1
+  $rec = {id: $state.seq, summary: $summary, body: $body, app: $app, source: $source,
+    actions: $actions, thread: $thread, request_id: $request_id,
+    created_at: $now_iso, created_t: $now, deadline_t: $deadline, outcome: nil}
+  $records = $state.records
+  push($records, $rec)
+  $state.records = $records
+  return {state: _trim($state), record: $rec}
+end
+
+-- Give record $id its one outcome. $action is the button id for kind
+-- "action", else nil. Returns {state, record}.
+fn settle($state, $id, $kind, $action, $now_iso)
+  if not contains($KINDS, $kind) then _usage("unknown outcome " .. to_string($kind)) end
+  if type($id) != "number" or floor($id) != $id then _usage("id must be a whole number") end
+  $found = nil
+  $records = []
+  for each $r in $state.records
+    if $r.id == $id then
+      if not is_open($r) then
+        raise("ALREADY_ANSWERED", "notification " .. to_string($id) .. " already has an outcome: " .. $r.outcome.kind)
+      end
+      if $kind == "action" then
+        if type($action) != "string" or not contains(map($r.actions, fn($a) = $a.id), $action) then
+          _usage("notification " .. to_string($id) .. " has no action " .. to_string($action))
+        end
+      end
+      $r.outcome = {kind: $kind, action: if $kind == "action" then $action else nil end, at: $now_iso}
+      $found = $r
+    end
+    push($records, $r)
+  end
+  if $found == nil then raise("NOT_FOUND", "no notification " .. to_string($id)) end
+  $state.records = $records
+  return {state: $state, record: $found}
+end
+
+-- Open records whose deadline has passed at $now.
+fn due($state, $now)
+  return map(filter($state.records, fn($r) = is_open($r) and $r.deadline_t != nil and $r.deadline_t <= $now), fn($r) = $r.id)
+end
+
+-- What callers see: the record without the internal clock fields.
+fn view($r)
+  return {id: $r.id, summary: $r.summary, body: $r.body, app: $r.app, source: $r.source,
+    actions: $r.actions, thread: $r.thread, request_id: $r.request_id,
+    created_at: $r.created_at, status: if is_open($r) then "open" else "done" end,
+    outcome: $r.outcome}
+end
+
+-- notify.list: open records (or every record with all: true), oldest first.
+fn list($state, $args)
+  $all = type($args) == "map" and $args.all == true
+  $rows = if $all then $state.records else filter($state.records, fn($r) = is_open($r)) end
+  return map($rows, fn($r) = view($r))
+end
+
+-- A state read back from disk: the shape is checked, not trusted. A file
+-- that does not parse or has the wrong shape raises STATE_INVALID.
+fn restore($text)
+  $v = nil
+  try
+    $v = json_parse($text)
+  catch $m
+    raise("STATE_INVALID", "state file is not JSON: " .. $m)
+  end
+  if type($v) != "map" or $v.schema != 1 or type($v.seq) != "number" or type($v.records) != "list" then
+    raise("STATE_INVALID", "state file has the wrong shape")
+  end
+  for each $r in $v.records
+    if type($r) != "map" or type($r.id) != "number" or type($r.summary) != "string" or type($r.actions) != "list" then
+      raise("STATE_INVALID", "state file has a malformed record")
+    end
+  end
+  return $v
+end

@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixOS notifications for session %i
+Wants=noded@%i.service
+After=noded@%i.service
+PartOf=session@%i.target
+
+[Service]
+Type=simple
+User=mixos
+# The session's HOME and XDG directories: state goes to the session user's
+# ~/.local/state/mixos/notifyd/state.json.
+EnvironmentFile=/etc/mixos/session/%i.env
+ExecStart=/opt/mixos/bin/mix --serve /opt/mixos/lib/notifyd/notifyd.mix --name notify
+KillMode=control-group
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=2

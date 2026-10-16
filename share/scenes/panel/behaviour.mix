@@ -225,11 +225,11 @@ fn fetch_tray()
   $state.tray = $ok ? $out.value.items : []
 end
 
--- notify.list rows carry no body; the props tree holds every notification.
+-- notify.list: the open notifications (notifyd).
 fn fetch_notes()
-  $out = $r.call($NOTIFY, "notify.props.get", {})
-  $ok = $out.ok and type($out.value) == "map"
-  $state.notes_count = $ok ? length($m.notification_rows($out.value)) : 0
+  $out = $r.call($NOTIFY, "notify.list", {})
+  $ok = $out.ok and type($out.value) == "list"
+  $state.notes_count = $ok ? length($out.value) : 0
 end
 
 -- Desired popup state is the loader's; applied completion arrives through
@@ -420,6 +420,8 @@ fn services_changed($live)
   $state.services = $live
   if contains($live, $APPS) and not contains($previous, $APPS) then $state.icons = empty_icons() end
   if contains($live, $COMP) and not contains($previous, $COMP) then $r.call($COMP, "comp.props.watch", {}) end
+  -- notifyd arrived after the panel: bring the toast up now.
+  if contains($live, $NOTIFY) and not contains($previous, $NOTIFY) then task_start("toast_ensure", "{}") end
   if not $state.ready then
     $ready = $r.ready($ctx)
     $state.ready = $ready.ok
@@ -501,6 +503,28 @@ end
 -- The volume popup owns every audio control, mute included.
 on volume async
   $r.respond(toggle_popup("volume"))
+end
+
+-- The toast (notifyd's notifications, top right) is a shipped system scene
+-- that stays enabled: installed and enabled here once the panel is ready,
+-- and again on reconnect (scenes.enable reconciles, so it is idempotent).
+-- Without notifyd on the Bus the toast has nothing to show, so it waits.
+$TOAST = "toast"
+on toast_ensure async
+  if not port_exists($NOTIFY) then return end
+  $list = $r.call($ctx.loader, "scenes.list", {})
+  $known = false
+  if $list.ok and type($list.value) == "map" then
+    for each $s in $list.value.scenes ?? []
+      if type($s) == "map" and $s.name == $TOAST then $known = true end
+    end
+  end
+  if not $known then
+    $add = $r.call($ctx.loader, "scenes.install", {template: $TOAST, enable: false})
+    if not $add.ok then eprint("panel: toast install refused: " .. json_encode($add.value)); return end
+  end
+  $on = $r.call($ctx.loader, "scenes.enable", {name: $TOAST})
+  if not $on.ok then eprint("panel: toast enable refused: " .. json_encode($on.value)) end
 end
 
 -- A right click on a pager button: the rename dialog for that workspace.
@@ -673,6 +697,9 @@ end
 on notification.closed
   schedule()
 end
+on notification.answered
+  schedule()
+end
 on apps.changed
   $state.icons = empty_icons()
   schedule()
@@ -690,7 +717,10 @@ on bus.connected
   $state.icons = empty_icons()
   $ready = $r.ready($ctx)
   $state.ready = $ready.ok
-  if $state.ready then resync() end
+  if $state.ready then
+    resync()
+    task_start("toast_ensure", "{}")
+  end
 end
 
 -- A closed batch from the live handle re-subscribes after the backoff; one
@@ -805,4 +835,5 @@ $ready = $r.ready($ctx)
 if not $ready.ok then raise("SCENE_READY", json_encode($ready.value)) end
 $state.ready = true
 resync()
+task_start("toast_ensure", "{}")
 start_clock()

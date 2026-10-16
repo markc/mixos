@@ -1,0 +1,149 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- notifyd_test: the notify.* verbs over a real Bus. A private noded broker
+-- (tests/lib/private_bus.mix), notifyd as a serve citizen, and a listener
+-- citizen that records the notify.changed topic. Covers send, get, list,
+-- action (first wins), dismiss, close, close_all, expiry, the published
+-- events, and a restart that keeps open records and re-arms their timeouts.
+-- Run from the checkout root: mix services/notifyd/tests/notifyd_test.mix [--noded PATH]
+
+$pb = require("../../../tests/lib/private_bus.mix")
+$here = dirname(realpath($0))
+$citizen = realpath($here .. "/../scripts/notifyd.mix")
+$listener = realpath($here .. "/fixtures/listener.mix")
+$noded = "/opt/mixos/bin/noded"
+$a = args()
+if len($a) == 2 and $a[0] == "--noded" then $noded = $a[1] end
+$tmp = "/var/tmp/notifyd-test." .. uuid()
+$results = []
+$pids = []
+
+fn check($name, $ok)
+  push($results, {name: $name, ok: $ok})
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+
+-- One Bus call: {rc, v} where v is the decoded reply.
+fn call($verb, $body)
+  $b = json_encode($body)
+  send notify $verb body=$b timeout=10
+  $v = $result
+  if type($v) == "string" then
+    try
+      $v = json_parse($v)
+    catch $m
+    end
+  end
+  return {rc: $rc, v: $v}
+end
+
+fn code($v)
+  if type($v) == "map" then return $v.error_code end
+  if type($v) == "string" then return split($v, ":")[0] end
+  return nil
+end
+
+fn wait_for($verb, $body)
+  for $i = 1 to 80
+    if call($verb, $body).rc == 0 then return true end
+    sleep(0.25)
+  end
+  return false
+end
+
+fn start_notifyd($env)
+  return spawn(["/opt/mixos/bin/mix", "--serve", $citizen, "--name", "notify"],
+    {detach: true, env: $env, stdout: {file: $tmp .. "/notifyd.log", append: true}, stderr: "stdout"})
+end
+
+fn events()
+  if not is_file($tmp .. "/events") then return [] end
+  return filter(split(read_file($tmp .. "/events"), "\n"), fn($l) = $l != "")
+end
+
+-- Wait (bounded) for an event line to arrive.
+fn saw($line)
+  for $i = 1 to 40
+    if contains(events(), $line) then return true end
+    sleep(0.1)
+  end
+  return false
+end
+
+$bus = nil
+mkdir($tmp, {parents: true})
+try
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "notifyd-test", noded: $noded})
+  $env = merge($pb.client_env($bus), {HOME: $tmp .. "/home", MIXOS_NOTIFYD_STATE: $tmp .. "/state/state.json"})
+  push($pids, spawn(["/opt/mixos/bin/mix", "--serve", $listener, "--name", "listener"],
+    {detach: true, env: merge($env, {NOTIFY_EVENTS: $tmp .. "/events"}), stdout: {file: $tmp .. "/listener.log"}, stderr: "stdout"}))
+  push($pids, start_notifyd($env))
+  send listener listener.ready timeout=2
+  check("notifyd answers notify.list", wait_for("notify.list", {}))
+  -- The listener subscribes during init; give the broker time to confirm.
+  sleep(3)
+
+  $p = call("notify.send", {summary: "Job done", source: "test"})
+  check("send replies at once with an id", $p.rc == 0 and $p.v.id == 1 and $p.v.status == "open")
+  check("created event published", saw("notification.created 1 -"))
+  $q = call("notify.send", {summary: "Is this okay?", actions: [{id: "yes", label: "Yes"}, {id: "no", label: "No"}]})
+  check("a question gets id 2", $q.rc == 0 and $q.v.id == 2)
+  check("list shows both open", len(call("notify.list", {}).v) == 2)
+
+  $bad = call("notify.send", {summary: ""})
+  check("blank summary refused rc 10", $bad.rc == 10 and code($bad.v) == "USAGE")
+  $nf = call("notify.get", {id: 99})
+  check("unknown id refused rc 14", $nf.rc == 14 and code($nf.v) == "NOT_FOUND")
+
+  $ans = call("notify.action", {id: 2, action: "yes"})
+  check("action answered", $ans.rc == 0 and $ans.v.outcome.kind == "action" and $ans.v.outcome.action == "yes")
+  check("answered event published", saw("notification.answered 2 action"))
+  $again = call("notify.action", {id: 2, action: "no"})
+  check("second answer refused rc 15", $again.rc == 15 and code($again.v) == "ALREADY_ANSWERED")
+  check("get shows the first answer", call("notify.get", {id: 2}).v.outcome.action == "yes")
+
+  $d = call("notify.send", {summary: "Dismiss me", actions: [{id: "ok", label: "OK"}]})
+  check("dismissed", call("notify.dismiss", {id: $d.v.id}).v.outcome.kind == "dismissed")
+  check("dismiss published as closed", saw("notification.closed " .. to_string($d.v.id) .. " dismissed"))
+
+  -- Expiry: a 1 s timeout, nobody answers.
+  $e = call("notify.send", {summary: "Timeout", actions: [{id: "ok", label: "OK"}], timeout_ms: 1000})
+  check("expired after its timeout", saw("notification.closed " .. to_string($e.v.id) .. " expired"))
+  check("get shows expired, never an action", call("notify.get", {id: $e.v.id}).v.outcome.kind == "expired")
+  $late = call("notify.action", {id: $e.v.id, action: "ok"})
+  check("a click after expiry is refused", $late.rc == 15)
+
+  -- close_all closes passive notes, leaves questions open.
+  $open_q = call("notify.send", {summary: "Still asking", actions: [{id: "ok", label: "OK"}]})
+  $ca = call("notify.close_all", {})
+  check("close_all closed the passive note only", $ca.rc == 0 and deep_eq($ca.v.closed, [1]))
+  check("the question is still open", call("notify.get", {id: $open_q.v.id}).v.status == "open")
+
+  -- Restart: open records survive and their timeouts are re-armed.
+  $t = call("notify.send", {summary: "Across a restart", actions: [{id: "ok", label: "OK"}], timeout_ms: 4000})
+  send notify QUIT timeout=5
+  sleep(1)
+  check("notifyd is gone after QUIT", call("notify.list", {}).rc != 0)
+  push($pids, start_notifyd($env))
+  check("notifyd answers after restart", wait_for("notify.list", {}))
+  check("the open question survived", call("notify.get", {id: $open_q.v.id}).v.status == "open")
+  check("ids continue after restart", call("notify.send", {summary: "next"}).v.id == $t.v.id + 1)
+  sleep(4)
+  check("re-armed timeout expired after restart", call("notify.get", {id: $t.v.id}).v.outcome.kind == "expired")
+finally
+  for each $p in $pids
+    try
+      kill($p, 15)
+    catch $m
+    end
+  end
+  if $bus != nil then $pb.stop($bus) end
+end
+
+$failed = filter($results, fn($r) = not $r.ok)
+print(to_string(len($results) - len($failed)) .. "/" .. to_string(len($results)) .. " passed")
+if len($failed) > 0 then
+  print("logs in " .. $tmp)
+  exit(1)
+end
+remove_dir($tmp)

@@ -1,0 +1,179 @@
+-- version: 0.1.0
+-- The toast: notifyd's notifications in the top right corner, on the host's
+-- toast seat (shell.toast.show/hide), which never takes keyboard focus and
+-- never competes with a dialog. A question (a notification with buttons)
+-- stays until it has an outcome; the oldest open question shows first, with
+-- "+N more" for the rest. A passive notification shows for FLASH_S seconds,
+-- then the toast hides (it stays on the Notifications page).
+-- A button answers through notify.action; × dismisses a question
+-- (notify.dismiss, never an answer) and only hides a passive one.
+$LIB = env("SCENES_LIB", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mixos/scenes/lib")
+$r = require($LIB .. "/runtime.mix")
+$ctx = $r.scene_context("toast")
+$NOTIFY = env("NOTIFY_SERVICE", "notify")
+$FLASH_S = 6
+-- flash: the passive notification on show and when it hides (time()).
+$state = {ready: false, queued: false, sequence: 0, shown_id: 0, actions: [], visible: false,
+  flash: nil, seen: 0}
+
+fn schedule()
+  $state.sequence = $state.sequence + 1
+  if $state.ready and not $state.queued then
+    $state.queued = true
+    emit $ctx.citizen refresh
+  end
+end
+
+-- What to show from the open list: the oldest question, else the passive
+-- notification still within its flash. {note, more} or nil.
+fn pick($open, $flash, $now)
+  $questions = filter($open, fn($n) = len($n.actions ?? []) > 0)
+  if len($questions) > 0 then return {note: $questions[0], more: len($questions) - 1} end
+  if $flash != nil and $flash.until > $now then
+    for each $n in $open
+      if $n.id == $flash.id then return {note: $n, more: 0} end
+    end
+  end
+  return nil
+end
+
+fn model_of($note, $more)
+  $labels = ["", "", "", ""]
+  $shown = [false, false, false, false]
+  $i = 0
+  for each $a in $note.actions ?? []
+    if $i < 4 then
+      $labels[$i] = $a.label
+      $shown[$i] = true
+    end
+    $i = $i + 1
+  end
+  $body = $note.body ?? ""
+  return {id: $note.id, app: $note.app ?? "", summary: $note.summary ?? "", body: $body,
+    has_body: $body != "", labels: $labels, shown: $shown,
+    more: if $more > 0 then "+" .. to_string($more) .. " more" else "" end}
+end
+
+-- The seat height: the body and the button row add to the bare toast.
+fn height_of($m)
+  $h = 76
+  if $m.has_body then $h = $h + 36 end
+  if $m.shown[0] then $h = $h + 40 end
+  return $h
+end
+
+fn refresh()
+  if not $state.ready then return $r.failure("scene_not_ready", "Waiting for loader readiness") end
+  $sequence = $state.sequence
+  $out = $r.call($NOTIFY, "notify.list", {})
+  if not $out.ok then return $out end
+  if type($out.value) != "list" then return $r.failure("notify_invalid_reply", "notify.list must return a list") end
+  if $sequence != $state.sequence then return $r.failure("superseded", "A newer notification event replaced this snapshot") end
+  $choice = pick($out.value, $state.flash, time())
+  if $choice == nil then
+    $state.shown_id = 0
+    $state.actions = []
+    if $state.visible then
+      $state.visible = false
+      return $r.call($ctx.host, "shell.toast.hide", {scene: $ctx.name})
+    end
+    return {ok: true, rc: 0, value: {}}
+  end
+  $model = model_of($choice.note, $choice.more)
+  $published = $r.publish_model($ctx, $model)
+  if not $published.ok then return $published end
+  $state.shown_id = $model.id
+  $state.actions = $choice.note.actions ?? []
+  $state.visible = true
+  return $r.call($ctx.host, "shell.toast.show", {scene: $ctx.name, h: height_of($model)})
+end
+
+on refresh async
+  $state.queued = false
+  $r.respond(refresh())
+end
+
+-- A new passive notification flashes; the hide is a local timer task.
+on notification.created
+  $a = $r.event_args($event)
+  if type($a.id) == "number" and $a.id > $state.seen then
+    $state.seen = $a.id
+    if len($a.actions ?? []) == 0 then
+      $state.flash = {id: $a.id, until: time() + $FLASH_S}
+      task_start("toast.flash_end", json_encode({id: $a.id}))
+    end
+  end
+  schedule()
+end
+on notification.answered
+  schedule()
+end
+on notification.closed
+  schedule()
+end
+
+on toast.flash_end async
+  sleep($FLASH_S)
+end
+on toast.flash_end
+  $id = $r.event_args($event).id
+  if $state.flash != nil and $state.flash.id == $id and $state.flash.until <= time() then
+    $state.flash = nil
+  end
+  schedule()
+end
+
+fn press($index)
+  if $state.shown_id < 1 or $index >= len($state.actions) then
+    return $r.failure("not_shown", "no button " .. to_string($index) .. " is showing")
+  end
+  $out = $r.call($NOTIFY, "notify.action", {id: $state.shown_id, action: $state.actions[$index].id})
+  schedule()
+  return $out
+end
+
+on toast.press0 async
+  $r.respond(press(0))
+end
+on toast.press1 async
+  $r.respond(press(1))
+end
+on toast.press2 async
+  $r.respond(press(2))
+end
+on toast.press3 async
+  $r.respond(press(3))
+end
+
+on toast.dismiss async
+  if $state.shown_id < 1 then $r.respond($r.failure("not_shown", "no notification is showing")); return end
+  if len($state.actions) > 0 then
+    $out = $r.call($NOTIFY, "notify.dismiss", {id: $state.shown_id})
+    schedule()
+    $r.respond($out)
+  else
+    $state.flash = nil
+    schedule()
+    reply(0, "{}")
+  end
+end
+
+on props.changed
+  $a = $r.event_args($event)
+  if $event.headers.from == env("NODED_SERVICE", "noded") and $a.path != "services.registered" then return end
+  schedule()
+end
+
+on bus.connected
+  $state.ready = false
+  $ready = $r.ready($ctx)
+  $state.ready = $ready.ok
+  schedule()
+end
+
+subscribe($NOTIFY .. ".changed")
+subscribe(env("NODED_SERVICE", "noded") .. ".props.changed")
+$ready = $r.ready($ctx)
+if not $ready.ok then raise("SCENE_READY", json_encode($ready.value)) end
+$state.ready = true
+schedule()

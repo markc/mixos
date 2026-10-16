@@ -1,0 +1,25 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- listener: a test citizen that records every notify.changed delivery as one
+-- line "<command> <id> <outcome kind or ->" in $NOTIFY_EVENTS.
+$file = env("NOTIFY_EVENTS")
+
+fn record()
+  $v = if type($event.args) == "map" then $event.args else {} end
+  $kind = if type($v.outcome) == "map" then $v.outcome.kind else "-" end
+  append_file($file, $event.command .. " " .. to_string($v.id) .. " " .. $kind .. "\n")
+end
+
+on notification.created
+  record()
+end
+on notification.answered
+  record()
+end
+on notification.closed
+  record()
+end
+subscribe("notify.changed")
+on listener.ready
+  reply(0, "{}")
+end

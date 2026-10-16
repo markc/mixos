@@ -1,0 +1,7 @@
+schema: 1
+name: "toast"
+title: "Toasts"
+behaviour: "behaviour.mix"
+description: "Notifications pop up in the top right corner; questions wait there for an answer"
+hidden: true
+requires: ["notify"]

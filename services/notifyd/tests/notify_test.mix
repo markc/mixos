@@ -1,0 +1,106 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- notify_test: the notifyd store, offline: validation and its limits, one
+-- outcome per record (first wins), expiry, listing, trimming and restore.
+-- Run from the checkout root: mix services/notifyd/tests/notify_test.mix
+-- Prints PASS/FAIL per check; exits 1 on any failure.
+
+$n = require("../scripts/lib/notify.mix")
+$results = []
+
+fn check($name, $ok)
+  push($results, {name: $name, ok: $ok})
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+
+-- $f must raise with $code.
+fn refuses($name, $code, $f)
+  try
+    $f()
+    check($name .. " (expected " .. $code .. ", nothing raised)", false)
+  catch $msg, $err
+    check($name, $err.code == $code)
+    if $err.code != $code then print("     got " .. to_string($err.code) .. ": " .. $msg) end
+  end
+end
+
+$T = "2026-10-16T00:00:00Z"
+$yes_no = [{id: "yes", label: "Yes"}, {id: "no", label: "No"}]
+
+-- Validation.
+$s = $n.new_state()
+refuses("summary is required", "USAGE", fn() = $n.add($s, {}, 100, $T))
+refuses("blank summary is refused", "USAGE", fn() = $n.add($s, {summary: "  "}, 100, $T))
+refuses("summary over 120 characters", "USAGE", fn() = $n.add($s, {summary: repeat("x", 121)}, 100, $T))
+refuses("body over 500 characters", "USAGE", fn() = $n.add($s, {summary: "a", body: repeat("x", 501)}, 100, $T))
+refuses("five actions", "USAGE", fn() = $n.add($s, {summary: "a", actions: [{id: "a", label: "A"}, {id: "b", label: "B"}, {id: "c", label: "C"}, {id: "d", label: "D"}, {id: "e", label: "E"}]}, 100, $T))
+refuses("duplicate action ids", "USAGE", fn() = $n.add($s, {summary: "a", actions: [{id: "a", label: "A"}, {id: "a", label: "B"}]}, 100, $T))
+refuses("action id with a space", "USAGE", fn() = $n.add($s, {summary: "a", actions: [{id: "a b", label: "A"}]}, 100, $T))
+refuses("fractional timeout", "USAGE", fn() = $n.add($s, {summary: "a", timeout_ms: 1.5}, 100, $T))
+refuses("body that is not a map", "USAGE", fn() = $n.add($s, "text", 100, $T))
+
+-- Add and defaults.
+$a = $n.add($s, {summary: "Job done", source: "claude@vt4"}, 100, $T)
+$s = $a.state
+check("first id is 1", $a.record.id == 1)
+check("app defaults to source", $a.record.app == "claude@vt4")
+$b = $n.add($s, {summary: "Is this okay?", actions: $yes_no, timeout_ms: 5000}, 100, $T)
+$s = $b.state
+check("deadline is now + timeout", $b.record.deadline_t == 105)
+check("app defaults to Notification", $n.add($n.new_state(), {summary: "x"}, 1, $T).record.app == "Notification")
+
+-- Outcomes: first wins, the action must exist.
+refuses("unknown action", "USAGE", fn() = $n.settle($s, 2, "action", "maybe", $T))
+refuses("unknown id", "NOT_FOUND", fn() = $n.settle($s, 99, "dismissed", nil, $T))
+refuses("unknown outcome kind", "USAGE", fn() = $n.settle($s, 2, "superseded", nil, $T))
+$c = $n.settle($s, 2, "action", "yes", $T)
+$s = $c.state
+check("action recorded", $c.record.outcome.kind == "action" and $c.record.outcome.action == "yes")
+refuses("a second outcome is refused", "ALREADY_ANSWERED", fn() = $n.settle($s, 2, "action", "no", $T))
+refuses("expiry after an answer is refused", "ALREADY_ANSWERED", fn() = $n.settle($s, 2, "expired", nil, $T))
+check("dismissed carries no action", $n.settle($s, 1, "dismissed", nil, $T).record.outcome.action == nil)
+
+-- Listing.
+check("list shows only open records", len($n.list($s, {})) == 1 and $n.list($s, {})[0].id == 1)
+check("list all shows both, oldest first", len($n.list($s, {all: true})) == 2 and $n.list($s, {all: true})[0].id == 1)
+check("view hides the clock fields", $n.list($s, {})[0].deadline_t == nil and $n.list($s, {})[0].status == "open")
+check("view of an answered record says done", $n.list($s, {all: true})[1].status == "done")
+
+-- Expiry.
+$e = $n.add($s, {summary: "Waiting", actions: $yes_no, timeout_ms: 1000}, 200, $T)
+$s = $e.state
+check("nothing due before the deadline", len($n.due($s, 200.5)) == 0)
+check("due at the deadline", deep_eq($n.due($s, 201), [$e.record.id]))
+$s = $n.settle($s, $e.record.id, "expired", nil, $T).state
+check("an expired record is no longer due", len($n.due($s, 300)) == 0)
+
+-- The open-actionable limit.
+$full = $n.new_state()
+for $i = 1 to 8
+  $full = $n.add($full, {summary: "q" .. to_string($i), actions: $yes_no}, 1, $T).state
+end
+refuses("ninth open question is refused", "TOO_MANY_OPEN", fn() = $n.add($full, {summary: "q9", actions: $yes_no}, 1, $T))
+check("a passive note still fits", $n.add($full, {summary: "fyi"}, 1, $T).record.id == 9)
+$full = $n.settle($full, 1, "dismissed", nil, $T).state
+check("answering one makes room", $n.add($full, {summary: "q9", actions: $yes_no}, 1, $T).record.id == 9)
+
+-- Trimming keeps open records.
+$big = $n.new_state()
+$big = $n.add($big, {summary: "keep me", actions: $yes_no}, 1, $T).state
+for $i = 1 to 205
+  $r = $n.add($big, {summary: "n"}, 1, $T)
+  $big = $n.settle($r.state, $r.record.id, "closed", nil, $T).state
+end
+check("history capped at 200", len($big.records) == 200)
+check("the open record survives trimming", $big.records[0].summary == "keep me" and $n.is_open($big.records[0]))
+
+-- Restore.
+$back = $n.restore(json_encode($s))
+check("restore round-trips", deep_eq($back, $s))
+refuses("restore refuses non-JSON", "STATE_INVALID", fn() = $n.restore("not json"))
+refuses("restore refuses the wrong shape", "STATE_INVALID", fn() = $n.restore("{\"schema\": 2}"))
+refuses("restore refuses a malformed record", "STATE_INVALID", fn() = $n.restore("{\"schema\":1,\"seq\":1,\"records\":[{\"id\":\"x\"}]}"))
+
+$failed = filter($results, fn($r) = not $r.ok)
+print(to_string(len($results) - len($failed)) .. "/" .. to_string(len($results)) .. " passed")
+if len($failed) > 0 then exit(1) end

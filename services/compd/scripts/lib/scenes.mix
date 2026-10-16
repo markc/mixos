@@ -516,9 +516,14 @@ fn start($s, $name)
   return $s
 end
 
--- A shipped system dialog (docs/docs/decisions/2026-10-12-system-dialogs.md):
+-- A seated scene (a dialog or a toast) holds a host seat, not an edge page.
+fn seated($kind)
+  return $kind == "dialog" or $kind == "toast"
+end
+
+-- A shipped system dialog or toast (docs/docs/decisions/2026-10-12-system-dialogs.md):
 -- installed under its own template's name, from a SHIPPED template whose own
--- metadata says hidden and whose own scene is a dialog. The permission comes
+-- metadata says hidden and whose own scene is seated. The permission comes
 -- from the shipped files, never from the user-editable installed copy.
 fn system_dialog($s, $name)
   -- The recorded origin, or (while an install is still being staged) the
@@ -530,7 +535,7 @@ fn system_dialog($s, $name)
   try
     $meta = data_parse(bounded_read($t .. "/template.conf.mix", 65536))
     $doc = document(bounded_read($t .. "/scene.mix", 262144))
-    return type($meta) == "map" and $meta.hidden == true and ($doc.mount.kind ?? "edge") == "dialog" and $doc.name == $name
+    return type($meta) == "map" and $meta.hidden == true and seated($doc.mount.kind ?? "edge") and $doc.name == $name
   catch $e
     return false
   end
@@ -554,8 +559,8 @@ fn candidate($s, $name, $dir)
   if $name != "editor" then
     -- The recovery path must never be squatted (plan §3, rule 13).
     if $page == "scene-editor" then fail("SCENES_RESERVED", "page scene-editor is reserved for the Scene Editor", {name:$name, page:$page}) end
-    if $kind == "dialog" and not system_dialog($s, $name) then
-      fail("SCENES_RESERVED", "window.kind dialog is reserved for the Scene Editor and shipped system dialogs", {name:$name})
+    if seated($kind) and not system_dialog($s, $name) then
+      fail("SCENES_RESERVED", "window.kind " .. $kind .. " is reserved for the Scene Editor and shipped system scenes", {name:$name})
     end
   end
   $meta_text = bounded_read($dir .. "/template.conf.mix", 65536)
@@ -576,7 +581,7 @@ fn candidate($s, $name, $dir)
   end
   $edge = $doc.mount.edge
   if not contains(["left", "top", "bottom"], $edge) then $edge = "right" end
-  if $kind == "dialog" then $edge = nil end
+  if seated($kind) then $edge = nil end
   return {source:$source, model:$doc.model, page:$page, edge:$edge, kind:$kind, title:$meta.title ?? $name,
     digest:hash_sha256($source), behaviour_digest:$behaviour, meta_digest:hash_sha256($meta_text)}
 end
@@ -599,7 +604,7 @@ fn observe($s, $name, $dir)
     $shown.kind = $doc.mount.kind ?? "edge"
     $shown.page = type($doc.mount.panel) == "string" ? $doc.mount.panel : "scene-" .. $name
     $shown.edge = contains($EDGES, $doc.mount.edge) ? $doc.mount.edge : "right"
-    if $shown.kind == "dialog" then $shown.edge = nil end
+    if seated($shown.kind) then $shown.edge = nil end
   catch $ignored
   end
   try
@@ -1582,7 +1587,7 @@ fn templates_list($s)
       if type($meta.description) == "string" then $row.description = substr($meta.description, 0, 200) end
       $row.kind = $doc.mount.kind ?? "edge"
       $row.edge = contains($EDGES, $doc.mount.edge) ? $doc.mount.edge : "right"
-      if $row.kind == "dialog" then $row.edge = nil end
+      if seated($row.kind) then $row.edge = nil end
       $row.behaviour = regular($dir .. "/behaviour.mix")
       $row.recommended = $meta.recommended == true
       if type($meta.order) == "number" then $row.order = $meta.order end
@@ -2012,7 +2017,7 @@ fn move($s, $args)
   $source = bounded_read($path, 262144)
   $doc = document($source)
   if $doc.headers.window == nil then fail("SCENES_MOUNT", "scene has no window header to move", {name:$name}) end
-  if $doc.window.kind == "dialog" then fail("SCENES_MOUNT", "a dialog scene has no edge", {name:$name}) end
+  if seated($doc.window.kind) then fail("SCENES_MOUNT", "a " .. $doc.window.kind .. " scene has no edge", {name:$name}) end
   $old = contains($EDGES, $doc.window.edge) ? $doc.window.edge : "right"
   $window = $doc.window
   $window.edge = $args.edge
