@@ -618,7 +618,9 @@ mod tests {
 
     #[test]
     fn a_reversed_or_malformed_span_is_refused() {
-        assert!(duration_between("2026-10-14T10:00:00+10:00", "2026-10-14T09:00:00+10:00").is_err());
+        assert!(
+            duration_between("2026-10-14T10:00:00+10:00", "2026-10-14T09:00:00+10:00").is_err()
+        );
         assert!(duration_between("2026-10-14T09:00:00", "2026-10-14T10:00:00+10:00").is_err());
         assert!(duration_between("not a time", "2026-10-14T10:00:00+10:00").is_err());
     }
