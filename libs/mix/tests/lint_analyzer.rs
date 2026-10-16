@@ -1412,11 +1412,12 @@ fn send_status_for_each_binder_named_as_a_status_overwrites() {
 }
 
 #[test]
-fn send_status_pure_builtin_in_an_address_block_overwrites() {
-    // In an address block a builtin call is also sent to the address.
-    let src = "send svc ping\naddress \"other\"\nlen(\"abc\")\nend\nprint($rc)\n";
+fn send_status_pure_builtin_in_an_address_block_keeps_the_send_checked() {
+    // A builtin dispatches before the address fallback, so `len()` in a send's
+    // arguments does not write $rc; the read after it checks the first send.
+    let src = "send svc first\naddress other\nping n=len(\"abc\") status=$rc\nend\nprint($rc)\n";
     let got = w2307_lines(src);
-    assert!(got.contains(&Some(1)), "got: {got:?}");
+    assert!(!got.contains(&Some(1)), "got: {got:?}");
 }
 
 #[test]

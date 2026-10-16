@@ -2639,10 +2639,7 @@ fn on_path(head: &str) -> bool {
 /// handler body runs later, when a message arrives, so it is checked as a
 /// block of its own.
 fn check_send_rc_reads(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis, sets: &StatusSets) {
-    let cx = StatusCx {
-        sets,
-        in_address: false,
-    };
+    let cx = StatusCx { sets };
     // rest[i] is the flow of stmts[i..], so the code after stmts[idx] is rest[idx + 1].
     let mut rest = vec![StatusFlow::PASS; stmts.len() + 1];
     for idx in (0..stmts.len()).rev() {
@@ -2706,11 +2703,7 @@ impl StatusSets {
         loop {
             let mut grew = false;
             for &(name, params, body) in &defs {
-                let cx = StatusCx {
-                    sets: &sets,
-                    in_address: false,
-                };
-                let flow = function_def_flow(cx, params, body);
+                let flow = function_def_flow(StatusCx { sets: &sets }, params, body);
                 if flow.wrote && sets.overwriting.insert(name.to_string()) {
                     grew = true;
                 }
@@ -2764,10 +2757,6 @@ fn collect_function_bodies<'a>(
 #[derive(Clone, Copy)]
 struct StatusCx<'a> {
     sets: &'a StatusSets,
-    /// Inside an `address` body every call that is not a user function is a
-    /// bus send, builtins included, and a user function's calls inherit the
-    /// address, so every call there writes the status.
-    in_address: bool,
 }
 
 /// How the status (`$rc`, `$result`, `$reply`) fares along the paths through
@@ -3127,7 +3116,7 @@ fn status_flow_send<'a>(
 /// A user function's halt (`exit`, `panic`, `die`, uncaught error) on some path
 /// ends the caller's path there too, so the call carries an exit on that path.
 fn call_flow(cx: StatusCx, name: &str) -> StatusFlow {
-    if cx.in_address || cx.sets.bound.contains(name) {
+    if cx.sets.bound.contains(name) {
         return StatusFlow::SEND;
     }
     let writes = if cx.sets.overwriting.contains(name) {
@@ -3355,14 +3344,11 @@ fn status_flow_stmt(cx: StatusCx, stmt: &Stmt) -> StatusFlow {
             command,
             args,
         } => status_flow_send(cx, target, command, args),
-        // The address body runs its statements in order, and every call in it
-        // is a send: pure builtins too (see `StatusCx::in_address`).
+        // The address body runs its statements in order. A builtin still runs
+        // as a builtin there (it dispatches before the address fallback); an
+        // unknown call becomes a send and is a barrier, like any unknown call.
         StmtKind::Address { target, body } => {
-            let inner = StatusCx {
-                in_address: true,
-                ..cx
-            };
-            status_flow_expr(cx, target).then(status_flow_stmts(inner, body))
+            status_flow_expr(cx, target).then(status_flow_stmts(cx, body))
         }
         // Fire-and-forget bus delivery. It writes no `$rc` / `$result` (see
         // exec_emit), so only its operands can write.
