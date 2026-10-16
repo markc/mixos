@@ -539,7 +539,12 @@ impl Host {
                 let visible = request.verb == SceneVerb::ToastShow;
                 let height = if visible && args.get("h").is_some() {
                     let Some(h) = number_argument(&args, "h") else {
-                        return refused("INVALID_HEIGHT", "h must be a finite number", None);
+                        return Answer {
+                            rc: 10,
+                            body: json!({"error_code":"INVALID_HEIGHT", "message":"h must be a finite number"}).to_string(),
+                            publish: Vec::new(),
+                            changed: false,
+                        };
                     };
                     Some(h.clamp(60.0, 2048.0) as f32)
                 } else {
