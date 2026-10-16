@@ -1172,7 +1172,8 @@ fn unpack_staged(
         for entry in iter {
             let mut entry = entry.map_err(|e| io_failure(format!("{caller}: {e}"), &e))?;
             entry_count += 1;
-            if entry_count > opts.max_entries {
+            // Members and implicit parent directories share max_entries.
+            if entry_count.saturating_add(implicit_dirs) > opts.max_entries {
                 return Err(runtime(format!(
                     "{caller}: exceeded max_entries ({})",
                     opts.max_entries
@@ -1232,7 +1233,14 @@ fn unpack_staged(
                 EntryType::Directory => {
                     // 0700 during extraction; the post-pass applies the real
                     // (masked) mode so nothing is ever wider than asked.
-                    if unsafe { libc::mkdirat(parent.as_raw_fd(), leaf.as_ptr(), 0o700) } != 0 {
+                    // Staging is fresh, so an existing directory here was made
+                    // by this archive (an earlier member's implicit parent):
+                    // accept it, as tar does. Anything else is still refused.
+                    if unsafe { libc::mkdirat(parent.as_raw_fd(), leaf.as_ptr(), 0o700) } != 0
+                        && !(last_error().raw_os_error() == Some(libc::EEXIST)
+                            && stat_at(&parent, &leaf)
+                                .is_ok_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFDIR))
+                    {
                         return Err(runtime(format!(
                             "{caller}: mkdir '{}': {}",
                             rel.display(),

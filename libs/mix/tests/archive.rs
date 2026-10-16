@@ -1729,6 +1729,57 @@ async fn implicit_parent_directories_count_against_max_entries() {
 }
 
 #[tokio::test]
+async fn implicit_directories_also_spend_the_member_allowance() {
+    // Two implicit parents first, then top-level files: 5 members + 2
+    // implicit directories is 7 entries, over max_entries 6.
+    let d = tmpdir("implicit-then-flat");
+    let arc = d.join("mixed.tar");
+    let names: Vec<String> = ["d0/f", "d1/f", "t0", "t1", "t2"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    implicit_parent_archive(&arc, &names);
+    let dest = d.join("dest");
+    let err = run_err(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\", max_entries:6}})",
+        arc.display(),
+        dest.display()
+    ))
+    .await;
+    assert!(err.contains("max_entries"), "{err}");
+    assert!(!dest.exists());
+    assert_no_staging(&d);
+}
+
+#[tokio::test]
+async fn an_explicit_directory_after_its_implicit_creation_is_accepted() {
+    let d = tmpdir("implicit-then-explicit");
+    let arc = d.join("order.tar");
+    let mut b = Builder::new(fs::File::create(&arc).unwrap());
+    let mut file = Header::new_gnu();
+    file.set_size(0);
+    file.set_mode(0o644);
+    file.set_mtime(0);
+    b.append_data(&mut file, "x/y", std::io::empty()).unwrap();
+    let mut dir = Header::new_gnu();
+    dir.set_entry_type(tar::EntryType::Directory);
+    dir.set_size(0);
+    dir.set_mode(0o755);
+    dir.set_mtime(0);
+    b.append_data(&mut dir, "x/", std::io::empty()).unwrap();
+    b.into_inner().unwrap().flush().unwrap();
+    let dest = d.join("dest");
+    run_ok(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+        arc.display(),
+        dest.display()
+    ))
+    .await;
+    assert!(dest.join("x/y").exists());
+    assert!(dest.join("x").is_dir());
+}
+
+#[tokio::test]
 async fn a_zstd_frame_with_a_corrupt_checksum_footer_is_refused() {
     let d = tmpdir("zstd-footer");
     let src = d.join("src");
