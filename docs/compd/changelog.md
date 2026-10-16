@@ -10,6 +10,24 @@ generated: by docs/_build/gen-site.mix from services/compd/CHANGELOG.md; do not 
 
 ## 0.2.0
 
+- The user keys belong to the user. compd enforces the rule itself, ahead
+  of its own bindings, because on a MixOS VT it reads the keyboard itself.
+  The user keys are bare F1–F12 and Right Ctrl, Right Alt or Right Shift with
+  an arrow, matched side-exact with inputd's classifier and press-latched
+  disposition. A user key fires the session user's binding, or goes to the
+  focused client when the user bound it `passthrough`; otherwise it is
+  swallowed, and no client sees its press, repeat or release. Under a
+  session lock every user key is swallowed and nothing fires.
+  - The bindings are read from keymap.v1 (`inputd/keymap.json` in the
+    user's MixOS config dir, or `$MIXOS_USER_KEYMAP`) and reloaded when the
+    file changes. A bad file keeps the last good keymap, and a missing one
+    binds nothing.
+  - A `comp.*` verb runs as its Bus request does. Any other verb is sent to
+    its service fire-and-forget, with the row's args as the body.
+    `repeat: allow` rows repeat at the seat's rate while held.
+  - `bindings.user` lists the rows.
+  - compd ships no user-key binding. The opt-in bare-F9 Bus key can no
+    longer fire.
 - `comp.region.select` 0.2.0: a click (under 4 logical px of travel, with
   no drag on the way) and Enter or keypad Enter now select the whole output
   under the pointer, answering exactly as a drag from corner to corner does;
