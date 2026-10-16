@@ -712,6 +712,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [email](../email/README.md) | app | unclassified | [`apps/email`](https://github.com/markc/mixos/tree/main/apps/email) |  |
 | [expr](../expr/README.md) | lib | none (library) | [`libs/expr`](https://github.com/markc/mixos/tree/main/libs/expr) | The pure expression language of Mix Scenes bindings, which compiles an expression, reports the globals it reads and evaluates it over JSON values under size and time limits. |
 | [hostd](../hostd/README.md) · [changelog](../hostd/changelog.md) | service | unclassified | [`services/hostd`](https://github.com/markc/mixos/tree/main/services/hostd) | How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo. |
+| [inputd](../inputd/README.md) · [changelog](../inputd/changelog.md) | service | unclassified | [`services/inputd`](https://github.com/markc/mixos/tree/main/services/inputd) | How inputd turns keys into Bus verbs below the compositor, keeps the user keys for the person, and holds its keyboard grab only while its own VT is active. |
 | [logging](../logging/README.md) | lib | none (library) | [`libs/logging`](https://github.com/markc/mixos/tree/main/libs/logging) | Shared tracing, sink selection, reload handles and process statistics for MixOS services and the Mix shell. |
 | [mimedb](../mimedb/README.md) | lib | none (library) | [`libs/mimedb`](https://github.com/markc/mixos/tree/main/libs/mimedb) | A library that reads the freedesktop shared-mime-info database and decides a file's type from its name and content the way GLib does, so MixOS names a file's type as the desktop does. |
 | [mix](../mix/README.md) · [changelog](../mix/changelog.md) | lib | none (library) | [`libs/mix`](https://github.com/markc/mixos/tree/main/libs/mix) |  |
@@ -819,6 +820,9 @@ checked separately by the layering gate.
 | [x11-wm](https://github.com/markc/mixos/blob/main/services/compd/crates/x11-wm/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [editd](https://github.com/markc/mixos/blob/main/services/editd/Cargo.toml) | editd | service | core | public | 0.2.0 |
 | [hostd](https://github.com/markc/mixos/blob/main/services/hostd/Cargo.toml) | hostd | service | core | public | 0.1.0 |
+| [inputd](https://github.com/markc/mixos/blob/main/services/inputd/Cargo.toml) | inputd | service | core | public | 0.5.0 |
+| [inputd-core](https://github.com/markc/mixos/blob/main/services/inputd/crates/inputd-core/Cargo.toml) | inputd | service | core | none | 0.1.1 |
+| [inputd-schema](https://github.com/markc/mixos/blob/main/services/inputd/crates/inputd-schema/Cargo.toml) | inputd | service | core | none | 0.1.1 |
 | [noded](https://github.com/markc/mixos/blob/main/services/noded/Cargo.toml) | noded | service | core | public | 0.18.3 |
 | [mesh-trust](https://github.com/markc/mixos/blob/main/services/noded/crates/mesh-trust/Cargo.toml) | noded | service | core | none | 0.1.1 |
 | [mesh](https://github.com/markc/mixos/blob/main/services/noded/crates/mesh/Cargo.toml) | noded | service | core | none | 0.1.1 |
@@ -6550,6 +6554,117 @@ The source is
 `cargo test -p hostd`: no test needs root. The live gate for network writes
 runs as root on a disposable networkd host, on dummy links only, and
 removes everything it made.
+
+---
+
+<!-- page: https://mixos.dev/inputd/ (source: https://mixos.dev/inputd/README.md) -->
+
+# The input broker
+
+`inputd` reads the keyboard below the compositor, where Left Ctrl and Right
+Ctrl are still different keys. A key the person has bound fires a Bus verb
+and never reaches an app. Everything else is passed on unchanged.
+
+It is the successor of AmigaOS's `input.device`: keys become verbs, and
+bindings are data that a person, an agent or a Bus message can change.
+
+## The user keys
+
+These strokes belong to the person, never to an app or a system default:
+
+- **bare F1 to F12;**
+- **Right Ctrl, Right Alt or Right Shift with an arrow** (any of the three
+  right-hand modifiers, and no other modifier).
+
+inputd swallows every user key on its press, repeats and release unless the
+person has bound it to a verb or marked it passthrough. The shipped keymap
+binds none of them. `Ctrl+F3`, bare arrows and Left-hand modifier arrows
+stay with the apps.
+
+The one shipped binding is the system-reserved recovery chord `Ctrl+Alt+P`
+(Left or Right Ctrl with Left Alt), which toggles the scene editor.
+
+## How a key is decided
+
+Each key is decided **once, at its press**, and keeps that decision until
+it is released:
+
+- **fire:** a binding matched, so its verb is sent and the key is
+  swallowed. A row with `repeat: "allow"` fires again on each repeat.
+- **swallow:** an unbound user key.
+- **pass:** anything else, or a passthrough row. The key is re-emitted on
+  the `inputd virtual keyboard` device.
+
+Releasing Right Ctrl before → still swallows the → release. A binding
+changed while a key is held applies from that key's next press.
+
+## Grab and VTs
+
+With `--grab DEVICE` or `--grab-name NAME`, inputd grabs the keyboard
+(`EVIOCGRAB`) and re-emits what it passes. With `--vt N[,M...]` it holds the
+grab only while one of those VTs is the active console:
+
+- **On switch-away,** it releases on the re-emitter every key it had passed
+  and is still held, then drops the grab. The next VT's compositor reads the
+  keyboard directly.
+- **On switch-to,** it takes the grab again. While another holder still has
+  the device, it retries with a backoff from 50 ms up to 2 s.
+- **After a grab,** a repeat or release whose press it did not see is
+  dropped.
+
+It watches `/sys/class/tty/tty0/active` with `poll(2)`, so a switch wakes it
+at once and nothing is polled on a timer. The re-emitter is made once, at
+start, and kept: a compositor in a container cannot see an input device that
+appears after it started.
+
+## Running it
+
+| flag | what it does |
+|---|---|
+| (none) | the Bus service only; no keyboard |
+| `--observe DEVICE` | read a keyboard without grabbing it, and log what each key would do |
+| `--grab DEVICE` | grab this event node |
+| `--grab-name NAME` | grab the node whose name in `/proc/bus/input/devices` is NAME |
+| `--vt N[,M...]` | hold the grab only on these VTs |
+| `--grab-timeout SECONDS` | exit after this long, which releases the grab |
+| `--keymap PATH` | the keymap file (default: `keymap.json` in the state directory) |
+
+The unit `inputd.service` runs the Bus service only. An operator turns the
+grab on with a drop-in, after a supervised run with `--grab-timeout` from a
+shell that can kill it. Any exit of inputd, SIGKILL included, releases the
+grab.
+
+## The keymap file
+
+`/var/lib/mixos/inputd/keymap.json` (the unit's state directory), in the
+keymap.v1 format:
+
+```json
+{"version": 1, "physical": [
+  {"stroke": {"code": 106, "modifiers": {"right_ctrl": true}},
+   "action": "comp.workspace.switch", "args": {"index": "next"},
+   "service": "comp", "repeat": "allow"}
+]}
+```
+
+`code` is the Linux key code. `service` names the Bus service the verb goes
+to; without it, the verb's first dot-segment does. `args` is the verb's
+body. A row with `"passthrough": true` re-emits its stroke instead.
+
+## Verbs
+
+| verb | what it does |
+|---|---|
+| `input.query` | the rows, the mode and the generation |
+| `input.bind` | add or replace a row (`{"layer":"physical", ...row}`) |
+| `input.unbind` | remove the row on a stroke (`{"code":..., "modifiers":{...}}`) |
+| `input.mode` | `{"mode":"transparent"}` passes every key unchanged; `normal`; empty toggles |
+| `input.reload` | re-read the keymap file |
+| `input.key` | inject a key press, release or tap |
+| `input.pointer.move`, `.button`, `.scroll` | inject pointer input |
+
+Bindings are written through to the keymap file. `MIXOS_MESH_OPEN=0`
+limits the keymap changes to node-local callers.
 
 ---
 
@@ -30176,6 +30291,43 @@ and recovery directories through the isolated MixOS environment.
 
 ---
 
+<!-- page: https://mixos.dev/inputd/changelog/ (source: https://mixos.dev/inputd/changelog.md) -->
+
+# inputd contract changes
+
+> Mirrored from [`services/inputd/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/inputd/CHANGELOG.md), where releases update it. The component's page is [inputd](README.md). This page describes the current `main` branch of MixOS.
+
+## 0.5.0 (draft)
+
+The broker enters MixOS. The wire is unchanged: Bus service `inputd`, the
+`input.*` verbs and their bodies, and the keymap.v1 file
+(`{"version":1,"physical":[...]}`); a keymap written by the earlier broker
+loads unchanged.
+
+- **The user keys are the user's.** Bare F1–F12, and Right Ctrl, Right Alt
+  or Right Shift (any of them, nothing else) with an arrow, are swallowed
+  on press, repeat and release unless the person binds them or marks them
+  passthrough. The shipped keymap binds none of them: its only rows are the
+  system-reserved `Ctrl+Alt+P` scene-editor chord. The earlier shipped
+  F-key, Right Ctrl arrow and Right Shift passthrough rows are gone; a
+  person who wants them binds them.
+- **Press-latched disposition.** Each key is decided once, at its press,
+  and holds that decision to its release, whatever the modifiers or the
+  keymap do meanwhile. A repeat or release whose press was not seen under
+  the current grab is dropped.
+- **`--vt N[,M...]`.** The grab is held only while one of those VTs is
+  active, followed by `poll(2)` on `/sys/class/tty/tty0/active`. On
+  switch-away every key held on the re-emitter is released there, then the
+  grab is dropped; on switch-to the grab is retaken, with bounded backoff
+  while another holder has it. Without `--vt` the grab is held always.
+- The re-emitter is `inputd virtual keyboard`, created once at start; the
+  injector is `inputd virtual pointer`.
+- The keymap is `keymap.json` in the state directory
+  (`/var/lib/mixos/inputd/`), or `--keymap PATH`.
+- The mesh lock is `MIXOS_MESH_OPEN=0`.
+
+---
+
 <!-- page: https://mixos.dev/mix/changelog/ (source: https://mixos.dev/mix/changelog.md) -->
 
 # Changelog
@@ -30832,6 +30984,7 @@ yet. They are listed on both this page and the server page until they do.
 - [editd](../editd/README.md) (service): The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery.
 - [email](../email/README.md) (app)
 - [hostd](../hostd/README.md) (service): How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo.
+- [inputd](../inputd/README.md) (service): How inputd turns keys into Bus verbs below the compositor, keeps the user keys for the person, and holds its keyboard grab only while its own VT is active.
 - [mix-shell](../mix-shell/README.md) (cli): The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs.
 - [noded](../noded/README.md) (service): The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes.
 - [notifyd](../notifyd/README.md) (service): How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed.
@@ -30878,6 +31031,7 @@ yet. They are listed on both this page and the desktop page until they do.
 - [editd](../editd/README.md) (service): The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery.
 - [email](../email/README.md) (app)
 - [hostd](../hostd/README.md) (service): How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo.
+- [inputd](../inputd/README.md) (service): How inputd turns keys into Bus verbs below the compositor, keeps the user keys for the person, and holds its keyboard grab only while its own VT is active.
 - [mix-shell](../mix-shell/README.md) (cli): The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs.
 - [noded](../noded/README.md) (service): The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes.
 - [notifyd](../notifyd/README.md) (service): How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed.

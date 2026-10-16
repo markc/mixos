@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[package]
+name = "inputd-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "inputd's pure core: keymap resolution, the user-key rule, rebind admission and press-latched key disposition"
+
+[package.metadata.mixos]
+component = "inputd"
+kind = "service"
+layer = "core"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+inputd-schema = { path = "../inputd-schema" }
+serde_json.workspace = true
