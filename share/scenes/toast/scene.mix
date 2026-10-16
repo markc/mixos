@@ -6,7 +6,8 @@ window: {"chrome":false,"h":132,"kind":"toast","title":"Notification","w":360}
 model: {"app":"","body":"","has_body":false,"id":0,"labels":["","","",""],"more":"","shown":[false,false,false,false],"summary":""}
 ---
 ```mix
-root: {"background":"#2a2e32","children":["head","t_sum","t_body","t_actions"],"fill":true,"gap":6,"padding":14,"radius":10,"widget":"column"}
+root: {"background":"#2a2e32","children":["card"],"fill":true,"padding":14,"radius":10,"widget":"row"}
+card: {"children":["head","t_sum","t_body","t_actions"],"fill":true,"gap":6,"widget":"column"}
 head: {"align":"center","children":["t_app","t_more","head_fill","t_close"],"gap":8,"widget":"row"}
 t_app: {"color":"#a1a9b1","elide":true,"size":11,"text":"= $model.app","widget":"text"}
 t_more: {"color":"#6e7680","size":11,"text":"= $model.more","widget":"text"}
