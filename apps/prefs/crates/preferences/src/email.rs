@@ -236,7 +236,13 @@ pub const REDACTED: &str = "[redacted]";
 
 /// Query keys whose values read as credentials.
 const SECRET_KEYS: [&str; 7] = [
-    "pass", "pwd", "secret", "token", "key", "auth", "credential",
+    "pass",
+    "pwd",
+    "secret",
+    "token",
+    "key",
+    "auth",
+    "credential",
 ];
 
 /// `url` as it may be observed: userinfo (`user:password@`) before the host
@@ -1891,7 +1897,10 @@ mod tests {
                 "https://mail.example.org?Password=x&API_KEY=y",
                 "https://mail.example.org?Password=[redacted]&API_KEY=[redacted]",
             ),
-            ("user:hunter2@mail.example.org", "[redacted]@mail.example.org"),
+            (
+                "user:hunter2@mail.example.org",
+                "[redacted]@mail.example.org",
+            ),
             ("", ""),
         ] {
             assert_eq!(redact_url(typed), shown, "{typed}");
@@ -1944,7 +1953,14 @@ mod tests {
         e.save_email_account();
         assert!(settings_calls(&mut e).is_empty(), "refused before sending");
         assert!(e.failed);
-        assert!(e.email.form.as_ref().unwrap().errors.contains_key(&Field::Url));
+        assert!(
+            e.email
+                .form
+                .as_ref()
+                .unwrap()
+                .errors
+                .contains_key(&Field::Url)
+        );
         for text in observed(&mut e) {
             assert!(!leaked(&text), "{text}");
         }
