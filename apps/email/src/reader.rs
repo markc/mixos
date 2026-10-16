@@ -148,7 +148,7 @@ impl Reader {
     /// The parsed document, when `email` is shown as Markdown.
     pub fn document(&self, email: &Email) -> Option<&Document> {
         (self.is_for(email) && self.format() == Format::Markdown)
-            .then(|| self.document.as_deref())
+            .then_some(self.document.as_deref())
             .flatten()
     }
 
