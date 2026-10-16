@@ -803,9 +803,9 @@ impl Engine {
         let Some(form) = self.email.form.clone() else {
             return;
         };
-        let change = match form.id {
+        let change = match &form.id {
             None => Change::Add(form.patch()),
-            Some(id) => Change::Update(id, form.patch()),
+            Some(id) => Change::Update(id.clone(), form.patch()),
         };
         let _ = self.change_email(change);
     }
