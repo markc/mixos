@@ -1430,7 +1430,8 @@ fn send_status_variable_named_like_a_builtin_holding_data_is_no_barrier() {
 #[test]
 fn send_status_variable_named_like_a_builtin_holding_a_lambda_is_a_barrier() {
     // A callable binding resolves before the builtin, so `upper(...)` may send.
-    let src = "$upper = fn($s) = $s\nsend svc ping\n$x = upper(\"a\")\nif $rc != 0 then exit(1) end\n";
+    let src =
+        "$upper = fn($s) = $s\nsend svc ping\n$x = upper(\"a\")\nif $rc != 0 then exit(1) end\n";
     let got = w2307_lines(src);
     assert!(got.contains(&Some(2)), "got: {got:?}");
 }
