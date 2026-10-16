@@ -149,7 +149,5 @@ site: {
   -- a page, so remove it in the same change that adds the page. Never add a
   -- new component here; write its page instead
   -- (docs/docs/decisions/2026-10-16-site-url-layout.md).
-  missing_pages: [
-    "busviewer", "editor-model", "mimedb", "syntax", "toolkit"
-  ]
+  missing_pages: []
 }
