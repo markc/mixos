@@ -27011,22 +27011,6 @@ first.
 
 Screenshot answers on the Bus as `screenshot` (schema `screenshot.v1`).
 
-### Session service (interim)
-
-Agents need the Bus service to be there whenever the desktop is, not only
-while the window is open. The interim arrangement is a headless instance
-started by the session: `screenshot-headless@N.service`, wanted by
-`session@N.target` through a drop-in. Its service name is
-`screenshot-headless`. The unit and drop-in are in `apps/screenshot/units/`.
-The install steps are in the hub's
-`_plan/2026-10-13-session-services.md`.
-
-This is temporary. The plan is to move it into `deskd`, the desktop's
-session-services binary, so one place declares every resident session
-service. A later step may let `noded` start services on first call, for
-those that don't need to be resident. Until then, a new resident service
-is added the same way: a unit plus a drop-in.
-
 | Verb | Arguments | Answer |
 |---|---|---|
 | `screenshot.ping`, `screenshot.info` | | liveness and the compositor served (`comp`); the document, its source and last save, the capture, the job and the UI state |

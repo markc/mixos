@@ -219,7 +219,6 @@
                         <a href="#saving">Saving</a>
                         <a href="#handing-a-shot-to-an-agent">Handing a shot to an agent</a>
                         <a href="#for-agents">For agents</a>
-                        <a href="#session-service-interim" class="toc-h3">Session service (interim)</a>
                         <a href="#from-the-command-line">From the command line</a>
                         <a href="#notes">Notes</a>
                         <a href="#changes-from-cap">Changes from Cap</a>
@@ -359,19 +358,6 @@ print $recent.shots[0].path
 first.</p>
 <h2 id="for-agents">For agents</h2>
 <p>Screenshot answers on the Bus as <code>screenshot</code> (schema <code>screenshot.v1</code>).</p>
-<h3 id="session-service-interim">Session service (interim)</h3>
-<p>Agents need the Bus service to be there whenever the desktop is, not only
-while the window is open. The interim arrangement is a headless instance
-started by the session: <code>screenshot-headless@N.service</code>, wanted by
-<code>session@N.target</code> through a drop-in. Its service name is
-<code>screenshot-headless</code>. The unit and drop-in are in <code>apps/screenshot/units/</code>.
-The install steps are in the hub's
-<code>_plan/2026-10-13-session-services.md</code>.</p>
-<p>This is temporary. The plan is to move it into <code>deskd</code>, the desktop's
-session-services binary, so one place declares every resident session
-service. A later step may let <code>noded</code> start services on first call, for
-those that don't need to be resident. Until then, a new resident service
-is added the same way: a unit plus a drop-in.</p>
 <table><thead><tr><th>Verb</th><th>Arguments</th><th>Answer</th></tr></thead><tbody>
 <tr><td><code>screenshot.ping</code>, <code>screenshot.info</code></td><td></td><td>liveness and the compositor served (<code>comp</code>); the document, its source and last save, the capture, the job and the UI state</td></tr>
 <tr><td><code>screenshot.capture</code></td><td><code>mode</code> (<code>screen</code>, <code>window</code>, <code>region</code>), <code>output</code>, <code>window</code> <code>{id, generation}</code>, <code>cursor</code>, <code>delay</code> (0–10)</td><td>a new document, once it is ready; any answer, refusals included, carries <code>restore_failed: true</code> if the window could not be shown again; refused while unsaved annotations exist</td></tr>
