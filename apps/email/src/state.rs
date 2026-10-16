@@ -759,6 +759,12 @@ enum Stage {
 struct Migration {
     entry: AccountEntry,
     stage: Stage,
+    /// Every id settingsd held the account as during this migration: they
+    /// stay locked until it ends, whatever the current read lists.
+    adopted: std::collections::BTreeSet<String>,
+    /// settingsd accepted the account: if it disappears from settingsd
+    /// before the migration ends, the migration applies it again.
+    applied: bool,
 }
 
 /// A credential-bearing operation on one account. At most one runs per
@@ -925,6 +931,8 @@ impl State {
         self.hold(&entry.id, password);
         let durable = !self.unsaved.contains_key(&entry.id) && self.secrets.has(&entry.id);
         self.migration = Some(Migration {
+            adopted: std::collections::BTreeSet::new(),
+            applied: false,
             entry,
             stage: if durable { Stage::Ready } else { Stage::Saving },
         });
@@ -1291,6 +1299,7 @@ impl State {
         self.settings = email;
         self.source = Source::Settings;
         self.epoch += 1;
+        self.replan_if_gone();
         self.start_migration();
         self.reconcile();
         // A new page size applies to the lists shown.
@@ -1446,13 +1455,46 @@ impl State {
     /// changed or forgotten until the migration finishes, or a restart
     /// would bring the old one back.
     pub fn migration_locks(&self, id: &str) -> bool {
-        let Some(Migration { entry, .. }) = &self.migration else {
+        let Some(Migration { entry, adopted, .. }) = &self.migration else {
             return false;
         };
         entry.id == id
+            || adopted.contains(id)
             || self.settings.accounts.iter().any(|a| {
                 a.id == id && a.url == entry.url && a.email.eq_ignore_ascii_case(&entry.email)
             })
+    }
+
+    /// The account settingsd holds as the migrating one: the same URL and
+    /// address (case aside).
+    fn holds_legacy(&self, account: &AccountEntry) -> bool {
+        self.migration.as_ref().is_some_and(|m| {
+            account.url == m.entry.url && account.email.eq_ignore_ascii_case(&m.entry.email)
+        })
+    }
+
+    /// settingsd no longer lists the account an applied migration put
+    /// there (Prefs removed it directly): the migration starts over against
+    /// the current settings, so the account comes back rather than its
+    /// password being lost.
+    fn replan_if_gone(&mut self) {
+        let applied = self.migration.as_ref().is_some_and(|m| m.applied);
+        if !applied || self.held.is_some() {
+            return;
+        }
+        let present = self.settings.accounts.iter().any(|a| self.holds_legacy(a));
+        if !present {
+            self.replan();
+        }
+    }
+
+    /// Plan the migration again: back to Ready, sent on this read.
+    fn replan(&mut self) {
+        if let Some(m) = self.migration.as_mut() {
+            m.stage = Stage::Ready;
+            m.applied = false;
+        }
+        self.status = crate::label("migration-still-running");
     }
 
     /// settingsd is not running: the cached accounts stand, read-only.
@@ -1709,6 +1751,9 @@ impl State {
                 if self.secrets.set(id, "") {
                     self.mark(id);
                     save = true;
+                } else if self.unsaved.contains_key(id) {
+                    // Gone from memory, perhaps not from disk: save again.
+                    save = true;
                 }
             }
         }
@@ -1757,6 +1802,24 @@ impl State {
             return;
         };
         let adopted = id.unwrap_or(&legacy).to_owned();
+        if let Some(m) = self.migration.as_mut() {
+            m.applied = true;
+        }
+        if adopted != legacy {
+            // Still the account the legacy one was matched with (same URL
+            // and address)? Otherwise the password never moves to it.
+            let same = self
+                .settings
+                .account(&adopted)
+                .is_some_and(|a| self.holds_legacy(a));
+            if !same {
+                self.replan();
+                return self.start_migration();
+            }
+            if let Some(m) = self.migration.as_mut() {
+                m.adopted.insert(adopted.clone());
+            }
+        }
         if adopted == legacy || (self.secrets.has(&adopted) && !self.unsaved.contains_key(&adopted))
         {
             return self.finish_migration();
@@ -1884,7 +1947,13 @@ impl State {
                 }
                 self.start_migration();
             }
-            (AfterSave::Transfer, None) => self.finish_migration(),
+            // Only the transfer the migration is still waiting on.
+            (AfterSave::Transfer, None)
+                if self.migration.as_ref().map(|m| m.stage) == Some(Stage::Transferring) =>
+            {
+                self.finish_migration()
+            }
+            (AfterSave::Transfer, None) => {}
             (AfterSave::Migration | AfterSave::Transfer, Some(message)) => {
                 let message = message.clone();
                 self.stop_migration(&message);
@@ -3363,12 +3432,28 @@ impl State {
                     let view = self.account(&c.account)?;
                     Some((c.account.clone(), view.generation))
                 });
+                let address = self
+                    .compose
+                    .as_ref()
+                    .and_then(|c| self.account(&c.account))
+                    .map(|v| v.entry.email.clone());
                 if let Some(compose) = &mut self.compose
-                    && let Some(stale) = compose.stale.take()
-                    && current == Some((stale.account.clone(), stale.generation))
+                    && let Some(stale) = compose.stale.as_mut()
                 {
-                    compose.draft.from = stale.address;
-                    compose.error = None;
+                    if current == Some((stale.account.clone(), stale.generation)) {
+                        compose.draft.from = stale.address.clone();
+                        compose.stale = None;
+                        compose.error = None;
+                    } else if let (Some((account, generation)), Some(address)) = (current, address)
+                    {
+                        // The connection moved on since: offer its address
+                        // instead, and Send stays blocked until taken.
+                        *stale = StaleFrom {
+                            account,
+                            generation,
+                            address,
+                        };
+                    }
                 }
             }
             UiEvent::SendCompose => self.send_compose(),
@@ -5847,5 +5932,139 @@ pub(crate) mod tests {
             );
         }
         assert!(state.take_work().is_empty(), "nothing more is started");
+    }
+
+    /// A migration whose legacy account settingsd already holds as "a"
+    /// with no default: begun, its password durable, settingsd read, the
+    /// default-setting apply sent. Returns the apply's ticket.
+    fn adopting(state: &mut State) -> u64 {
+        let held = entry("a");
+        state.begin_migration(legacy_matching(&held), "pw-legacy");
+        let work = state.take_work();
+        land(state, &work, Ok(true));
+        state.set_settings(EmailSettings {
+            accounts: vec![held],
+            ..EmailSettings::default()
+        });
+        settings_ticket(state).0
+    }
+
+    fn fresh() -> State {
+        State::new(
+            UiState::default(),
+            Mode::Mail,
+            None,
+            EmailSettings::default(),
+            Secrets::default(),
+        )
+    }
+
+    /// Round 5, #15: the adopted id stays locked even once settingsd no
+    /// longer lists it, and the migration replans: the legacy account is
+    /// applied again, so a removal elsewhere never loses it.
+    #[test]
+    fn round5_15_an_adopted_account_removed_elsewhere_stays_locked_and_comes_back() {
+        let mut state = fresh();
+        let ticket = adopting(&mut state);
+        state.settled(ticket, Settled::Accepted);
+        let work = state.take_work();
+        land(&mut state, &work, Ok(true));
+        assert!(state.take_migrated());
+        state.migration_rewritten(Err("read-only file system".into()));
+        assert!(state.migration_locks("a"));
+        // Prefs removes "a" straight through settingsd.
+        state.set_settings(settings(&["b"]));
+        assert!(
+            state.migration_locks("a"),
+            "still locked without settings listing it"
+        );
+        let (_, changes) = settings_ticket(&mut state);
+        let ids: Vec<&str> = changes["email.accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|a| a["id"].as_str())
+            .collect();
+        assert!(
+            ids.contains(&"acct-legacy"),
+            "the legacy account is applied again: {ids:?}"
+        );
+        assert!(state.has_password("acct-legacy"));
+    }
+
+    /// Round 5, #18: a stale From from an older connection is recomputed
+    /// from the current one, and Send stays blocked until it is taken.
+    #[test]
+    fn round5_18_a_mismatched_new_from_is_recomputed_not_dropped() {
+        let mut state = connected();
+        state.apply_ui(UiEvent::Compose);
+        let mut next = settings(&["a"]);
+        next.accounts[0].email = "new@a.example.invalid".into();
+        state.set_settings(next);
+        state.reconnect("a");
+        state.take_work();
+        state.apply_ui(UiEvent::ComposeUseNewFrom);
+        let compose = state.compose.clone().unwrap();
+        assert_eq!(compose.draft.from, "ann@a.example.invalid", "not taken yet");
+        let stale = compose.stale.expect("still blocked");
+        assert_eq!(stale.generation, tag(&state, "a").generation);
+        assert_eq!(stale.address, "new@a.example.invalid");
+        state.apply_ui(UiEvent::ComposeUseNewFrom);
+        assert_eq!(
+            state.compose.as_ref().unwrap().draft.from,
+            "new@a.example.invalid"
+        );
+    }
+
+    /// Round 5, #25: a late migration ack never moves the password to an
+    /// adopted account whose server changed meanwhile; the migration
+    /// replans against the current settings.
+    #[test]
+    fn round5_25_adoption_is_revalidated_before_the_transfer() {
+        let mut state = fresh();
+        let ticket = adopting(&mut state);
+        let mut moved = entry("a");
+        moved.url = "https://elsewhere.example.invalid".into();
+        state.set_settings(EmailSettings {
+            accounts: vec![moved],
+            ..EmailSettings::default()
+        });
+        state.take_work();
+        state.settled(ticket, Settled::Accepted);
+        assert!(
+            !state.has_password("a"),
+            "never sent to the replacement server"
+        );
+        let (_, changes) = settings_ticket(&mut state);
+        let ids: Vec<&str> = changes["email.accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|a| a["id"].as_str())
+            .collect();
+        assert!(ids.contains(&"acct-legacy"), "replanned: {ids:?}");
+    }
+
+    /// Round 5, #26: removing an account whose earlier forget never
+    /// reached the disk saves again, and answers only once it lands.
+    #[test]
+    fn round5_26_a_removal_saves_an_unsaved_forget() {
+        let mut state = connected();
+        state.change_accounts(Change::Remove("a".into()), Some(1), None);
+        let (ticket, _) = settings_ticket(&mut state);
+        state.settled(ticket, Settled::Accepted);
+        let work = state.take_work();
+        land(&mut state, &work, Err("disk full".into()));
+        assert_eq!(state.take_replies()[0].body["error_code"], code::SECRETS);
+        state.set_settings(settings(&["a"]));
+        state.take_work();
+        state.change_accounts(Change::Remove("a".into()), Some(2), None);
+        let (ticket, _) = settings_ticket(&mut state);
+        state.settled(ticket, Settled::Accepted);
+        let work = state.take_work();
+        assert_eq!(saves(&work), 1, "the forget is saved again");
+        assert!(state.take_replies().is_empty());
+        land(&mut state, &work, Ok(true));
+        assert_eq!(state.take_replies()[0].rc, 0);
     }
 }
