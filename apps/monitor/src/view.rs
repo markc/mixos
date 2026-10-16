@@ -142,10 +142,8 @@ fn status_bar(ui: &mut Ui, engine: &Engine, stroke: f32) {
             ui.small(RichText::new(error).color(ui.visuals().error_fg_color));
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if let Some(s) = &engine.snapshot {
-                if let Some(up) = s.uptime_s {
-                    ui.small(format!("{} {}", label("uptime"), uptime(up)));
-                }
+            if let Some(up) = engine.snapshot.as_ref().and_then(|s| s.uptime_s) {
+                ui.small(format!("{} {}", label("uptime"), uptime(up)));
             }
             if let Some(t) = &engine.processes {
                 ui.small(label_with(
