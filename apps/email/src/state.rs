@@ -1085,7 +1085,10 @@ impl State {
     /// it. Writes are still computed against what settingsd holds.
     pub fn set_settings(&mut self, email: EmailSettings) {
         let page_size = self.settings.mail.page_size;
-        let shown = self.held.clone().unwrap_or_else(|| self.settings.accounts.clone());
+        let shown = self
+            .held
+            .clone()
+            .unwrap_or_else(|| self.settings.accounts.clone());
         if email.accounts.is_empty() && !shown.is_empty() {
             self.held = Some(shown);
             self.status = crate::label("settings-empty-held");
@@ -4190,7 +4193,12 @@ pub(crate) mod tests {
         // settingsd is read before the password is durable: nothing is
         // sent yet.
         state.set_settings(EmailSettings::default());
-        assert!(!state.take_work().iter().any(|w| matches!(w, Work::Settings { .. })));
+        assert!(
+            !state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::Settings { .. }))
+        );
         land(&mut state, &work, Ok(true));
         // Once it is, settingsd (with no accounts) gets the migration, and
         // the account stays shown (and connected) while it is.
@@ -4569,7 +4577,10 @@ pub(crate) mod tests {
         state.set_settings(settings(&["a"]));
         assert!(!state.holding());
         assert!(state.account("b").is_none());
-        assert!(state.has_password("b"), "an orphan entry, never deleted by a read");
+        assert!(
+            state.has_password("b"),
+            "an orphan entry, never deleted by a read"
+        );
         assert_eq!(saves(&state.take_work()), 0);
     }
 
@@ -4585,7 +4596,10 @@ pub(crate) mod tests {
         assert!(state.accounts.is_empty());
         assert!(!state.has_password("a"));
         assert_eq!(saves(&work), 1);
-        assert!(state.take_replies().is_empty(), "answered once the file has it");
+        assert!(
+            state.take_replies().is_empty(),
+            "answered once the file has it"
+        );
         land(&mut state, &work, Ok(true));
         assert_eq!(state.take_replies()[0].rc, 0);
         state.set_settings(EmailSettings::default());
@@ -4622,7 +4636,10 @@ pub(crate) mod tests {
         });
         let (ticket, changes) = settings_ticket(&mut state);
         assert_eq!(changes, json!({"email.default_account": "a"}));
-        assert!(state.has_password("acct-legacy"), "kept while the apply is out");
+        assert!(
+            state.has_password("acct-legacy"),
+            "kept while the apply is out"
+        );
         state.settled(ticket, Settled::Accepted);
         let work = state.take_work();
         assert!(state.migrating() && !state.take_migrated());
@@ -4649,7 +4666,12 @@ pub(crate) mod tests {
         let work = state.take_work();
         land(&mut state, &work, Ok(false));
         state.set_settings(EmailSettings::default());
-        assert!(!state.take_work().iter().any(|w| matches!(w, Work::Settings { .. })));
+        assert!(
+            !state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::Settings { .. }))
+        );
         assert!(state.migrating() && !state.take_migrated());
         // The same with the transfer failing.
         let mut state = State::new(
@@ -4775,7 +4797,12 @@ pub(crate) mod tests {
         let other = Write::DeleteMailbox { id: "m".into() };
         state.apply(Event::Account(
             tag.clone(),
-            Done::Wrote(Some(4), None, Box::new(other), Err(jmap::Error::Protocol("x".into()))),
+            Done::Wrote(
+                Some(4),
+                None,
+                Box::new(other),
+                Err(jmap::Error::Protocol("x".into())),
+            ),
         ));
         assert!(
             matches!(&state.form, Some(Form::Event(f)) if f.busy),
@@ -4790,7 +4817,12 @@ pub(crate) mod tests {
         };
         state.apply(Event::Account(
             tag.clone(),
-            Done::Wrote(None, first, Box::new(create.clone()), Ok(json!({"id": "ev-1"}))),
+            Done::Wrote(
+                None,
+                first,
+                Box::new(create.clone()),
+                Ok(json!({"id": "ev-1"})),
+            ),
         ));
         assert!(
             matches!(&state.form, Some(Form::Event(f)) if f.busy),
