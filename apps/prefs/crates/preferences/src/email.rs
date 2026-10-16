@@ -2722,7 +2722,16 @@ mod tests {
 
     #[test]
     fn reset_asks_first_and_resets_only_the_email_group() {
+        // Email running and holding accounts: refused, they go through
+        // Email's remove first.
         let mut e = read();
+        e.reset_email();
+        e.confirm_email();
+        assert!(settings_calls(&mut e).is_empty());
+        assert!(e.failed && e.status == "email-reset-remove-first", "{}", e.status);
+        // Email away: the group is reset.
+        let mut e = read();
+        e.email.service = Service::Absent;
         e.reset_email();
         assert_eq!(e.ui.dialog, Some(Dialog::ResetEmail));
         e.confirm_email();
