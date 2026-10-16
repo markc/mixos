@@ -607,7 +607,7 @@ pub(crate) fn reconcile(
             }
             Place::Toast { w, h, .. } => {
                 let current = state.inner.current_output();
-                let map = smithay::desktop::layer_map_for_output(&current);
+                let map = smithay::desktop::layer_map_for_output(current);
                 let zone = if map.layers().next().is_none() {
                     (0.0, 0.0, logical.0, logical.1)
                 } else {
