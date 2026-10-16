@@ -21,14 +21,29 @@ pub enum Kind {
 /// The resource's line colour, from the installed theme.
 pub fn tint(ui: &Ui, kind: Kind) -> Color32 {
     let palette = toolkit::chrome::Chrome::of(ui.ctx()).palette;
-    match kind {
+    let hue = match kind {
         Kind::Cpu => palette.accent,
         // A third of the way round the colour wheel from the accent, each
         // way: distinct from it in every scheme, and still the theme's.
         Kind::Memory => turned(palette.accent, 1.0 / 3.0),
         Kind::Disk => palette.warning,
         Kind::Net => turned(palette.accent, -1.0 / 3.0),
+    };
+    legible(hue, ui.visuals().dark_mode)
+}
+
+/// `colour` with enough contrast to read as a line on the graph's
+/// background: deep on a light theme, bright on a dark one. A light
+/// scheme's accent is often a pale highlight that would wash out.
+fn legible(colour: Color32, dark: bool) -> Color32 {
+    let mut hsva = egui::ecolor::Hsva::from(colour);
+    if dark {
+        hsva.v = hsva.v.max(0.75);
+    } else {
+        hsva.v = hsva.v.min(0.55);
+        hsva.s = hsva.s.max(0.55);
     }
+    hsva.into()
 }
 
 /// `colour` with its hue turned by `turns` of the wheel.
