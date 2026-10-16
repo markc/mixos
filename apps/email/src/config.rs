@@ -188,14 +188,12 @@ impl ConfigFile {
             }
         };
         let parsed = match schema {
-            CURRENT_SCHEMA => config::from_conf_mix_str::<EmailConfig>(&raw).map(|config| {
-                Loaded {
-                    config: EmailConfig {
-                        ui: config.ui.normalised(),
-                        ..config
-                    },
-                    legacy: None,
-                }
+            CURRENT_SCHEMA => config::from_conf_mix_str::<EmailConfig>(&raw).map(|config| Loaded {
+                config: EmailConfig {
+                    ui: config.ui.normalised(),
+                    ..config
+                },
+                legacy: None,
             }),
             LEGACY_SCHEMA => config::from_conf_mix_str::<LegacyConfig>(&raw).map(|old| Loaded {
                 config: EmailConfig {
@@ -431,7 +429,10 @@ mod tests {
         shaped.ui.places = 0.3;
         assert!(file.save(&shaped).unwrap());
         let (again, _) = ConfigFile::load(dir.path());
-        assert_eq!(again.legacy.as_ref().map(|a| a.password.as_str()), Some("pw-1"));
+        assert_eq!(
+            again.legacy.as_ref().map(|a| a.password.as_str()),
+            Some("pw-1")
+        );
         assert_eq!(again.config.ui.places, 0.3);
         // Once settingsd has it: schema 2, no password anywhere.
         file.migrated();

@@ -150,7 +150,11 @@ pub fn changes(old: &Email, new: &Email) -> Value {
 pub fn legacy_id(url: &str, email: &str) -> String {
     // FNV-1a over the identity; the settings crate turns it into an id.
     let mut seed: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in url.bytes().chain([0]).chain(email.to_ascii_lowercase().bytes()) {
+    for byte in url
+        .bytes()
+        .chain([0])
+        .chain(email.to_ascii_lowercase().bytes())
+    {
         seed ^= u64::from(byte);
         seed = seed.wrapping_mul(0x0000_0100_0000_01b3);
     }
@@ -203,7 +207,12 @@ mod tests {
         let changed = changes(&two(), &next);
         assert_eq!(changed["email.default_account"], Value::Null);
         assert_eq!(changed["email.accounts"].as_array().unwrap().len(), 1);
-        assert!(changed.as_object().unwrap().contains_key("email.default_account"));
+        assert!(
+            changed
+                .as_object()
+                .unwrap()
+                .contains_key("email.default_account")
+        );
     }
 
     #[test]
@@ -241,8 +250,17 @@ mod tests {
     #[test]
     fn a_legacy_id_is_stable_and_valid() {
         let a = legacy_id("https://mail.example.invalid", "Admin@example.invalid");
-        assert_eq!(a, legacy_id("https://mail.example.invalid", "admin@example.invalid"));
-        assert_ne!(a, legacy_id("https://other.example.invalid", "admin@example.invalid"));
-        assert!(settings::email::valid_id(&a) && a.starts_with("acct-"), "{a}");
+        assert_eq!(
+            a,
+            legacy_id("https://mail.example.invalid", "admin@example.invalid")
+        );
+        assert_ne!(
+            a,
+            legacy_id("https://other.example.invalid", "admin@example.invalid")
+        );
+        assert!(
+            settings::email::valid_id(&a) && a.starts_with("acct-"),
+            "{a}"
+        );
     }
 }

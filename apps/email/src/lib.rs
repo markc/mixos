@@ -26,6 +26,7 @@ pub mod config;
 pub mod secrets;
 pub mod shell;
 pub mod state;
+pub mod verbs;
 pub mod view;
 pub mod work;
 pub mod writer;

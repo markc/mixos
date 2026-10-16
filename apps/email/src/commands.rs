@@ -9,7 +9,31 @@ use toolkit::{Command, Icon, Registry};
 use crate::state::{Mode, State};
 
 fn idle(state: &State) -> bool {
-    state.compose.is_none() && state.ui.dialog.is_none()
+    state.compose.is_none() && state.form.is_none() && state.ui.dialog.is_none()
+}
+
+/// The current account is connected (its server can be written).
+fn ready(state: &State) -> bool {
+    idle(state)
+        && state
+            .current()
+            .is_some_and(|v| v.phase == crate::state::Phase::Ready)
+}
+
+/// An event can be made: a calendar to put it in.
+fn calendared(state: &State) -> bool {
+    ready(state)
+        && state
+            .current()
+            .is_some_and(|v| !v.calendars.calendars.is_empty())
+}
+
+/// A contact can be made: an address book to put it in.
+fn booked(state: &State) -> bool {
+    ready(state)
+        && state
+            .current()
+            .is_some_and(|v| !v.contacts.books.is_empty())
 }
 
 fn undialogued(state: &State) -> bool {
@@ -21,9 +45,11 @@ fn composable(state: &State) -> bool {
     idle(state) && state.compose_account().is_some()
 }
 
-/// The current account has an email open.
+/// The current account has an email open, in the mail surface.
 fn reading(state: &State) -> bool {
-    idle(state) && state.current().is_some_and(|v| v.mail.open.is_some())
+    ready(state)
+        && state.mode == Mode::Mail
+        && state.current().is_some_and(|v| v.mail.open.is_some())
 }
 
 /// More than one account to step through.
@@ -92,6 +118,94 @@ pub fn registry() -> Registry<State> {
         icon: Some(Icon::Reply),
         enabled: reading,
         run: State::reply_open,
+    })
+    .add(Command {
+        id: "mail.reply_all",
+        submenu: None,
+        group: 1,
+        label: "reply-all",
+        menu: Some("mail"),
+        shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::A),
+        icon: None,
+        enabled: reading,
+        run: State::reply_all_open,
+    })
+    .add(Command {
+        id: "mail.forward",
+        submenu: None,
+        group: 1,
+        label: "forward",
+        menu: Some("mail"),
+        shortcut: key(Modifiers::COMMAND, Key::L),
+        icon: None,
+        enabled: reading,
+        run: State::forward_open,
+    })
+    .add(Command {
+        id: "mail.mark_unread",
+        submenu: None,
+        group: 2,
+        label: "mark-unread",
+        menu: Some("mail"),
+        shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::U),
+        icon: None,
+        enabled: reading,
+        run: State::mark_open_unread,
+    })
+    .add(Command {
+        id: "mail.flag",
+        submenu: None,
+        group: 2,
+        label: "flag",
+        menu: Some("mail"),
+        shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::S),
+        icon: None,
+        enabled: reading,
+        run: State::flag_open,
+    })
+    .add(Command {
+        id: "mail.move",
+        submenu: None,
+        group: 3,
+        label: "move",
+        menu: Some("mail"),
+        shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::M),
+        icon: Some(Icon::FolderInput),
+        enabled: reading,
+        run: State::move_open,
+    })
+    .add(Command {
+        id: "mail.delete",
+        submenu: None,
+        group: 3,
+        label: "delete",
+        menu: Some("mail"),
+        shortcut: key(Modifiers::NONE, Key::Delete),
+        icon: Some(Icon::Trash),
+        enabled: reading,
+        run: State::delete_open,
+    })
+    .add(Command {
+        id: "calendar.new_event",
+        submenu: None,
+        group: 0,
+        label: "new-event",
+        menu: Some("calendar"),
+        shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::E),
+        icon: Some(Icon::Calendar),
+        enabled: calendared,
+        run: State::new_event,
+    })
+    .add(Command {
+        id: "contacts.new_contact",
+        submenu: None,
+        group: 0,
+        label: "new-contact",
+        menu: Some("contacts"),
+        shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::K),
+        icon: Some(Icon::Contact),
+        enabled: booked,
+        run: State::new_contact,
     });
     // View › Theme: any scheme, style, mode and framing, in this window only.
     r.theme_menu("view", choice, set_choice);

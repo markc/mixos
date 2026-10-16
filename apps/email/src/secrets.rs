@@ -179,7 +179,10 @@ mod tests {
         let mut secrets = Secrets::default();
         secrets.set("acct-1", "hunter2");
         let shown = format!("{secrets:?}");
-        assert!(shown.contains("acct-1") && !shown.contains("hunter2"), "{shown}");
+        assert!(
+            shown.contains("acct-1") && !shown.contains("hunter2"),
+            "{shown}"
+        );
     }
 
     #[test]

@@ -25,18 +25,24 @@ use toolkit::{Registry, Strings, Theme, drive};
 
 use crate::commands;
 use crate::secrets::{Secrets, SecretsFile};
-use crate::state::{Mode, SessionInfo, Settled, State, Tag, UiState};
+use crate::state::{Mode, SessionInfo, Settled, State, Tag, UiState, code};
+use crate::verbs::{Forward, Then, Write};
 use crate::view::{UiEvent, view};
 use crate::work::{Login, Work};
-use crate::{APP, label};
+use crate::{APP, APP_ID, label};
 
 /// One account's answer, addressed by [`Tag`] in [`Event::Account`]. The
 /// tickets are the requests' (see [`crate::work::Work`]).
 pub enum Done {
     Mailboxes(Result<Vec<jmap::Mailbox>, jmap::Error>),
     Page(u64, Result<EmailPage, jmap::Error>),
-    /// One email with its bodies; boxed — a full [`jmap::Email`] is large.
-    Opened(u64, Box<Result<jmap::Email, jmap::Error>>),
+    /// One email with its bodies, and the Bus request that asked for it;
+    /// boxed — a full [`jmap::Email`] is large.
+    Opened(u64, Option<u64>, Box<Result<jmap::Email, jmap::Error>>),
+    /// A Bus query's answer, for request `reply`.
+    Answered(u64, Then, Result<Value, jmap::Error>),
+    /// A server write finished (`reply`: the Bus request, if any).
+    Wrote(Option<u64>, Write, Result<Value, jmap::Error>),
     Marked(Result<(), jmap::Error>),
     Sent(u64, Result<(), jmap::Error>),
     Calendars(Result<Vec<jmap::Calendar>, jmap::Error>),
@@ -63,6 +69,10 @@ pub enum Event {
     Look(u64, Result<citizen::Reply, citizen::CallError>),
     /// A retry of the session look after a transient fault (its generation).
     LookRetry(u64),
+    /// `email.show` (request `id`) finished.
+    Shown(u64, Result<Value, String>),
+    /// Open Email Settings finished; an error is for the status line.
+    PrefsOpened(Result<(), String>),
 }
 
 pub struct Shell {
@@ -99,6 +109,10 @@ pub struct Shell {
     secrets: Option<SecretsFile>,
     /// Settings writes sent, for unique operation ids.
     applies: u64,
+    /// Bus commands waiting behind drive input accepted before them.
+    held: std::collections::VecDeque<(u64, String, String)>,
+    /// The compositor's Bus service, for `email.show`.
+    comp: String,
 }
 
 /// This host's name: the settingsd instance to try first (settingsd runs
@@ -108,6 +122,9 @@ fn hostname() -> String {
         .map(|name| name.trim().to_owned())
         .unwrap_or_default()
 }
+
+/// Prefs' app id, as `apps.launch` takes it.
+const PREFS_APP_ID: &str = "dev.mixos.prefs";
 
 /// How long one settings read or write may take.
 const LOOK_BUDGET: std::time::Duration = std::time::Duration::from_secs(30);
@@ -187,7 +204,13 @@ fn legacy_entry(
 /// The state a launch starts in, from the app's config directory: the
 /// window's shape, the accounts cache, the passwords, and a schema-1
 /// account still to migrate. Without a config directory nothing persists.
-pub fn start(dir: Option<&Path>) -> (State, Option<crate::config::ConfigFile>, Option<SecretsFile>) {
+pub fn start(
+    dir: Option<&Path>,
+) -> (
+    State,
+    Option<crate::config::ConfigFile>,
+    Option<SecretsFile>,
+) {
     let Some(dir) = dir else {
         eprintln!("email: no config directory; nothing is persisted");
         let state = State::new(
@@ -289,6 +312,8 @@ impl Shell {
             config,
             secrets,
             applies: 0,
+            held: std::collections::VecDeque::new(),
+            comp: std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into()),
         };
         shell.read_look();
         shell.settle();
@@ -375,6 +400,15 @@ impl Shell {
         }
     }
 
+    /// A Bus request whose account has no client: refused, never left
+    /// unanswered.
+    fn not_connected(&mut self, reply: Option<u64>) {
+        if let Some(reply) = reply {
+            self.state
+                .refuse(reply, code::NOT_CONNECTED, &label("not-connected"));
+        }
+    }
+
     /// Perform one unit of work on the effects runtime.
     fn perform(&mut self, work: Work) {
         match work {
@@ -439,12 +473,45 @@ impl Shell {
                 account,
                 ticket,
                 id,
-            } => {
-                if let Some((tag, client)) = self.client(&account) {
+                reply,
+            } => match self.client(&account) {
+                Some((tag, client)) => {
                     self.spawn(async move {
                         let email = client.email(&id).await;
-                        Event::Account(tag, Done::Opened(ticket, Box::new(email)))
+                        Event::Account(tag, Done::Opened(ticket, reply, Box::new(email)))
                     });
+                }
+                None => self.not_connected(reply),
+            },
+            Work::Query {
+                account,
+                reply,
+                query,
+                then,
+            } => match self.client(&account) {
+                Some((tag, client)) => {
+                    self.spawn(async move {
+                        let answer = crate::verbs::run_query(&client, query).await;
+                        Event::Account(tag, Done::Answered(reply, then, answer))
+                    });
+                }
+                None => self.not_connected(Some(reply)),
+            },
+            Work::Write {
+                account,
+                reply,
+                write,
+            } => {
+                let sent = self.state.sent_mailbox_id(&account);
+                match self.client(&account) {
+                    Some((tag, client)) => {
+                        self.spawn(async move {
+                            let answer =
+                                crate::verbs::run_write(&client, write.clone(), sent).await;
+                            Event::Account(tag, Done::Wrote(reply, write, answer))
+                        });
+                    }
+                    None => self.not_connected(reply),
                 }
             }
             Work::MarkRead { account, id, read } => {
@@ -466,7 +533,10 @@ impl Shell {
                 match (self.client(&account), sent) {
                     (Some((tag, client)), Some(sent)) => {
                         self.spawn(async move {
-                            Event::Account(tag, Done::Sent(ticket, client.send(&draft, &sent).await))
+                            Event::Account(
+                                tag,
+                                Done::Sent(ticket, client.send(&draft, &sent).await),
+                            )
                         });
                     }
                     (found, _) => {
@@ -534,15 +604,19 @@ impl Shell {
                         .map_or(0, |d| d.as_millis())
                 );
                 match self.follower.apply(&operation, changes) {
-                    None => self.state.settled(
-                        ticket,
-                        Settled::Unavailable(label("settings-missing")),
-                    ),
+                    None => self
+                        .state
+                        .settled(ticket, Settled::Unavailable(label("settings-missing"))),
                     Some(apply) => {
                         let bus = self.bus.clone();
                         self.spawn(async move {
                             let result = bus
-                                .raw_within(apply.service, apply.verb, apply.body.to_string(), LOOK_BUDGET)
+                                .raw_within(
+                                    apply.service,
+                                    apply.verb,
+                                    apply.body.to_string(),
+                                    LOOK_BUDGET,
+                                )
                                 .await;
                             Event::Settled(ticket, settled(result))
                         });
@@ -564,29 +638,33 @@ impl Shell {
         }
     }
 
-    /// Show Prefs on its Email section: ask a running Prefs, else launch it
-    /// and ask again once it registers.
+    /// Show Prefs on its Email section: ask a running Prefs, else have the
+    /// session's launcher (`apps.launch`, as Prefs launches Email) start it
+    /// and ask again once it registers. The app has no launcher of its own:
+    /// without one, the status line says so.
     fn open_prefs(&mut self) {
         let bus = self.bus.clone();
-        self.runtime.spawn(async move {
+        self.spawn(async move {
             let section = json!({"name": "email"});
             let asked = bus.call("prefs", "prefs.section", section.clone()).await;
             if asked.as_ref().is_ok_and(|r| r.rc == 0) {
-                return;
+                return Event::PrefsOpened(Ok(()));
             }
-            if let Err(error) = launch_prefs() {
-                eprintln!("email: cannot launch Prefs: {error}");
-                return;
+            let launched = bus
+                .call("apps", "apps.launch", json!({"id": PREFS_APP_ID}))
+                .await;
+            if !launched.as_ref().is_ok_and(|r| r.rc == 0) {
+                return Event::PrefsOpened(Err(label("no-launcher")));
             }
             // A launch registers within seconds; ask until it answers.
             for _ in 0..40 {
                 tokio::time::sleep(std::time::Duration::from_millis(250)).await;
                 let asked = bus.call("prefs", "prefs.section", section.clone()).await;
                 if asked.is_ok_and(|r| r.rc == 0) {
-                    return;
+                    return Event::PrefsOpened(Ok(()));
                 }
             }
-            eprintln!("email: Prefs did not answer prefs.section");
+            Event::PrefsOpened(Err(label("prefs-silent")))
         });
     }
 
@@ -616,14 +694,83 @@ impl Shell {
                 self.read_look();
                 continue;
             }
-            if let Event::Delivery(citizen::Delivery::Command { .. }) = event {
-                // email answers no Bus verbs of its own in this slice; the
-                // drive verbs (window commands, captures) go to toolkit.
+            if let Event::Delivery(citizen::Delivery::Command { id, verb, body }) = event {
+                if self.exiting {
+                    self.refuse_closing(id);
+                } else {
+                    self.held.push_back((id, verb, body));
+                    self.release();
+                }
+                continue;
+            }
+            if let Event::PrefsOpened(result) = event {
+                if let Err(error) = result {
+                    self.state.status = error;
+                }
+                continue;
+            }
+            if let Event::Shown(id, result) = event {
+                match result {
+                    Ok(body) => self.bus.reply(id, 0, body),
+                    Err(error) => self
+                        .bus
+                        .reply(id, 10, crate::state::refusal("SHOW", &error)),
+                }
                 continue;
             }
             self.state.apply(event);
             self.settle();
         }
+        self.release();
+    }
+
+    fn refuse_closing(&self, id: u64) {
+        self.bus.reply(
+            id,
+            10,
+            crate::state::refusal(code::BUSY, &label("quitting")),
+        );
+    }
+
+    /// Run held Bus commands in order. Input that only joins the drive
+    /// queue goes straight on; anything else waits until the drive input
+    /// before it is answered, so a caller's clicks and its later verbs act
+    /// in the order sent.
+    fn release(&mut self) {
+        while let Some((_, verb, _)) = self.held.front() {
+            let joins = verb.strip_prefix("email.").is_some_and(drive::queues);
+            if self.exiting || (drive::pending(&self.ctx) && !joins) {
+                return;
+            }
+            let (id, verb, body) = self.held.pop_front().expect("a held command");
+            self.command(id, &verb, &body);
+        }
+    }
+
+    /// One Bus command: the verbs layer answers or queues it; the drive
+    /// verbs and the window's activation are the shell's.
+    fn command(&mut self, id: u64, verb: &str, body: &str) {
+        let forward = crate::verbs::command(
+            &mut self.state,
+            &self.commands,
+            &self.strings,
+            id,
+            verb,
+            body,
+        );
+        match forward {
+            Some(Forward::Drive { id, verb, args }) => {
+                if let Some(answer) = drive::request(&self.ctx, id, &verb, &args) {
+                    self.bus.reply(answer.id, answer.rc, answer.body);
+                }
+            }
+            Some(Forward::Show { id }) => {
+                let (bus, comp) = (self.bus.clone(), self.comp.clone());
+                self.spawn(async move { Event::Shown(id, citizen::show(bus, comp, APP_ID).await) });
+            }
+            None => {}
+        }
+        self.settle();
     }
 
     /// Persist the config when the state says it changed, and rewrite it as
@@ -804,6 +951,13 @@ impl Shell {
             for answer in drive::finish(&self.ctx) {
                 self.bus.reply(answer.id, answer.rc, answer.body);
             }
+            // Every accepted command gets its answer before the Bus stops.
+            for (id, _, _) in std::mem::take(&mut self.held) {
+                self.refuse_closing(id);
+            }
+            for reply in self.state.take_replies() {
+                self.bus.reply(reply.id, reply.rc, reply.body);
+            }
             self.save_config_if_dirty();
             self.bus.quit();
             self.ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -861,27 +1015,6 @@ async fn connect(login: &Login) -> Result<Client, jmap::Error> {
     .await
 }
 
-/// Start Prefs, detached: from `PATH`, else the MixOS install.
-fn launch_prefs() -> Result<(), String> {
-    let mut last = String::new();
-    for program in ["prefs", "/opt/mixos/bin/prefs"] {
-        match std::process::Command::new(program)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-        {
-            // Reaped by a thread so it never lingers as a zombie.
-            Ok(mut child) => {
-                std::thread::spawn(move || child.wait());
-                return Ok(());
-            }
-            Err(error) => last = format!("{program}: {error}"),
-        }
-    }
-    Err(last)
-}
-
 impl eframe::App for Shell {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         Shell::logic(self, ctx);
@@ -906,8 +1039,14 @@ mod tests {
 
     #[test]
     fn apply_answers_are_read_as_settled() {
-        assert_eq!(settled(reply(0, r#"{"status":"applied"}"#)), Settled::Accepted);
-        assert_eq!(settled(reply(10, r#"{"status":"conflict"}"#)), Settled::Conflict);
+        assert_eq!(
+            settled(reply(0, r#"{"status":"applied"}"#)),
+            Settled::Accepted
+        );
+        assert_eq!(
+            settled(reply(10, r#"{"status":"conflict"}"#)),
+            Settled::Conflict
+        );
         assert_eq!(
             settled(reply(10, r#"{"status":"invalid","message":"bad url"}"#)),
             Settled::Refused("bad url".into())
@@ -938,7 +1077,11 @@ mod tests {
         let view = state.account(&id).expect("the old account is shown");
         assert_eq!(view.entry.email, "admin@example.invalid");
         let ca = view.entry.ca_path.clone().expect("the CA bundle by path");
-        assert!(std::fs::read_to_string(&ca).unwrap().contains("BEGIN CERTIFICATE"));
+        assert!(
+            std::fs::read_to_string(&ca)
+                .unwrap()
+                .contains("BEGIN CERTIFICATE")
+        );
         let work = state.take_work();
         let save = work.iter().find_map(|w| match w {
             Work::SaveSecrets { ticket } => Some(*ticket),

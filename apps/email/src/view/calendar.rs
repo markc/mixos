@@ -115,7 +115,6 @@ pub fn reader(ui: &mut Ui, view: &AccountView) {
     });
 }
 
-
 /// An event's readable range: "14 Oct 09:00 – 10:30" style.
 fn range_of(event: &CalendarEvent) -> String {
     let start = event.starts_at();

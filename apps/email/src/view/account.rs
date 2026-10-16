@@ -37,40 +37,42 @@ pub fn none(ui: &mut Ui, events: &mut Vec<UiEvent>) {
 /// The selected account, when it has nothing to list.
 pub fn pane(ui: &mut Ui, view: &AccountView, events: &mut Vec<UiEvent>) {
     let title = view.entry.name.clone();
-    panel::group(ui, "account", &[title.as_str()], |ui, _| match &view.phase {
-        Phase::Connecting => {
-            ui.label(crate::label_with(
-                "connecting-account",
-                &[("email", &view.entry.email)],
-            ));
-        }
-        Phase::Failed(error) => {
-            ui.label(
-                egui::RichText::new(crate::label_with("account-failed", &[("error", error)]))
-                    .color(ui.visuals().error_fg_color),
-            );
-            ui.horizontal(|ui| {
-                if ui.add(PushButton::primary(crate::label("retry"))).clicked() {
-                    events.push(UiEvent::Retry(view.entry.id.clone()));
-                }
-                settings_button(ui, false, events);
-            });
-        }
-        Phase::NoPassword => {
-            ui.label(
-                egui::RichText::new(crate::label_with(
-                    "account-no-password",
+    panel::group(ui, "account", &[title.as_str()], |ui, _| {
+        match &view.phase {
+            Phase::Connecting => {
+                ui.label(crate::label_with(
+                    "connecting-account",
                     &[("email", &view.entry.email)],
-                ))
-                .color(ui.visuals().error_fg_color),
-            );
-            ui.horizontal(|ui| settings_button(ui, true, events));
+                ));
+            }
+            Phase::Failed(error) => {
+                ui.label(
+                    egui::RichText::new(crate::label_with("account-failed", &[("error", error)]))
+                        .color(ui.visuals().error_fg_color),
+                );
+                ui.horizontal(|ui| {
+                    if ui.add(PushButton::primary(crate::label("retry"))).clicked() {
+                        events.push(UiEvent::Retry(view.entry.id.clone()));
+                    }
+                    settings_button(ui, false, events);
+                });
+            }
+            Phase::NoPassword => {
+                ui.label(
+                    egui::RichText::new(crate::label_with(
+                        "account-no-password",
+                        &[("email", &view.entry.email)],
+                    ))
+                    .color(ui.visuals().error_fg_color),
+                );
+                ui.horizontal(|ui| settings_button(ui, true, events));
+            }
+            Phase::Disabled => {
+                ui.weak(crate::label("account-disabled"));
+                ui.horizontal(|ui| settings_button(ui, false, events));
+            }
+            // The list owns the centre pane once connected.
+            Phase::Ready => {}
         }
-        Phase::Disabled => {
-            ui.weak(crate::label("account-disabled"));
-            ui.horizontal(|ui| settings_button(ui, false, events));
-        }
-        // The list owns the centre pane once connected.
-        Phase::Ready => {}
     });
 }

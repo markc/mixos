@@ -93,8 +93,7 @@ pub fn reader(ui: &mut Ui, view: &AccountView) {
     detail(
         ui,
         "address-book-line",
-        view
-            .contacts
+        view.contacts
             .books
             .iter()
             .find(|book| book.id == contact.address_book_id)
@@ -121,4 +120,3 @@ fn detail(ui: &mut Ui, label: &str, value: Option<&str>) {
         ui.label(RichText::new(crate::label_with(label, &[("value", value)])).weak());
     }
 }
-

@@ -12,6 +12,8 @@
 use jmap::Composed;
 use serde_json::Value;
 
+pub use crate::verbs::{Query, Then, Write};
+
 /// How to reach one account's server. The password is never printed.
 #[derive(Clone, PartialEq)]
 pub struct Login {
@@ -45,8 +47,12 @@ pub enum Work {
         login: Login,
     },
     /// Drop `account`'s client (removed, disabled, or about to reconnect).
-    Disconnect { account: String },
-    FetchMailboxes { account: String },
+    Disconnect {
+        account: String,
+    },
+    FetchMailboxes {
+        account: String,
+    },
     /// A mailbox's first page. `ticket` comes back with the page, so an
     /// answer to an older request cannot replace a newer one (also for
     /// `OpenEmail`, `Send`, `FetchEvents` and `FetchContacts`); tickets are
@@ -57,11 +63,27 @@ pub enum Work {
         mailbox: String,
         limit: u32,
     },
-    /// Fetch one email with its bodies.
+    /// Fetch one email with its bodies; `reply` is the Bus request that
+    /// asked for it (`email.open`), answered when it loads.
     OpenEmail {
         account: String,
         ticket: u64,
         id: String,
+        reply: Option<u64>,
+    },
+    /// A Bus query on the account's server, answered under `reply`.
+    Query {
+        account: String,
+        reply: u64,
+        query: Query,
+        then: Then,
+    },
+    /// A change on the account's server, from the window (`reply` none) or
+    /// the Bus.
+    Write {
+        account: String,
+        reply: Option<u64>,
+        write: Write,
     },
     /// Set or clear `$seen`.
     MarkRead {
@@ -75,13 +97,17 @@ pub enum Work {
         ticket: u64,
         draft: Composed,
     },
-    FetchCalendars { account: String },
+    FetchCalendars {
+        account: String,
+    },
     FetchEvents {
         account: String,
         ticket: u64,
         calendar: String,
     },
-    FetchBooks { account: String },
+    FetchBooks {
+        account: String,
+    },
     FetchContacts {
         account: String,
         ticket: u64,
@@ -90,11 +116,16 @@ pub enum Work {
     },
     /// A fenced `settings.apply` of `changes` (`{path: value}`) on the
     /// session profile; its answer comes back under `ticket`.
-    Settings { ticket: u64, changes: Value },
+    Settings {
+        ticket: u64,
+        changes: Value,
+    },
     /// Read the session profile again (after an apply, or a conflict).
     ReadSettings,
     /// Write the secrets file; its outcome comes back under `ticket`.
-    SaveSecrets { ticket: u64 },
+    SaveSecrets {
+        ticket: u64,
+    },
     /// Launch Prefs on its Email section.
     OpenPrefs,
 }
@@ -108,15 +139,18 @@ impl Work {
             | Work::FetchMailboxes { account }
             | Work::FetchEmails { account, .. }
             | Work::OpenEmail { account, .. }
+            | Work::Query { account, .. }
+            | Work::Write { account, .. }
             | Work::MarkRead { account, .. }
             | Work::Send { account, .. }
             | Work::FetchCalendars { account }
             | Work::FetchEvents { account, .. }
             | Work::FetchBooks { account }
             | Work::FetchContacts { account, .. } => Some(account),
-            Work::Settings { .. } | Work::ReadSettings | Work::SaveSecrets { .. } | Work::OpenPrefs => {
-                None
-            }
+            Work::Settings { .. }
+            | Work::ReadSettings
+            | Work::SaveSecrets { .. }
+            | Work::OpenPrefs => None,
         }
     }
 }
@@ -133,11 +167,17 @@ mod tests {
             password: "hunter2".into(),
             ca_path: None,
         };
-        let shown = format!("{:?}", Work::Connect {
-            account: "a".into(),
-            generation: 1,
-            login,
-        });
-        assert!(!shown.contains("hunter2") && shown.contains("withheld"), "{shown}");
+        let shown = format!(
+            "{:?}",
+            Work::Connect {
+                account: "a".into(),
+                generation: 1,
+                login,
+            }
+        );
+        assert!(
+            !shown.contains("hunter2") && shown.contains("withheld"),
+            "{shown}"
+        );
     }
 }

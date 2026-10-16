@@ -297,15 +297,35 @@ impl AccountView {
         });
     }
 
-    /// Queue an email open; only the newest one's answer is applied.
-    fn open_email(&mut self, id: String, work: &mut Vec<Work>) {
+    /// Queue an email open; only the newest one's answer is applied (and
+    /// `reply`, a Bus request, is answered whatever happens).
+    fn open_email(&mut self, id: String, reply: Option<u64>, work: &mut Vec<Work>) {
         self.tickets.open += 1;
         self.tickets.open_mailbox = self.mail.selected.clone();
         work.push(Work::OpenEmail {
             account: self.work(),
             ticket: self.tickets.open,
             id,
+            reply,
         });
+    }
+
+    /// Set or clear a keyword on the shown copies of `ids` (the row and the
+    /// open email), ahead of the server's word.
+    fn set_keyword(&mut self, ids: &[String], keyword: &str, on: bool) {
+        let open = self.mail.open.iter_mut();
+        for email in self.mail.emails.iter_mut().chain(open) {
+            if ids.contains(&email.id) {
+                let keywords = email.keywords.get_or_insert_with(|| json!({}));
+                if let Some(map) = keywords.as_object_mut() {
+                    if on {
+                        map.insert(keyword.into(), json!(true));
+                    } else {
+                        map.remove(keyword);
+                    }
+                }
+            }
+        }
     }
 
     /// Select a calendar and fetch its events.
@@ -488,6 +508,62 @@ pub enum TreeKey {
     Enter,
 }
 
+/// A form over the window, for one account.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Form {
+    /// Delete these emails? (`email.mail.confirm_delete`)
+    Delete {
+        account: String,
+        ids: Vec<String>,
+    },
+    /// Move these emails: the mailbox is chosen in the form.
+    Move {
+        account: String,
+        ids: Vec<String>,
+    },
+    Event(EventForm),
+    Contact(ContactForm),
+}
+
+/// The New Event form. `start` and `end` are RFC 3339 instants as typed.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct EventForm {
+    pub account: String,
+    pub calendar: String,
+    pub title: String,
+    pub start: String,
+    pub end: String,
+    pub location: String,
+    pub busy: bool,
+    pub error: Option<String>,
+}
+
+/// The New Contact form.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ContactForm {
+    pub account: String,
+    pub book: String,
+    pub name: String,
+    pub email: String,
+    pub phone: String,
+    pub organization: String,
+    pub busy: bool,
+    pub error: Option<String>,
+}
+
+/// One field of the event or contact form.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FormField {
+    Title,
+    Start,
+    End,
+    Location,
+    Name,
+    Email,
+    Phone,
+    Organization,
+}
+
 /// The modal dialogs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Dialog {
@@ -632,6 +708,9 @@ pub struct State {
     /// The migration completed: the shell rewrites the config as schema 2.
     migrated: bool,
     pub compose: Option<ComposeState>,
+    /// A form over the window: a delete to confirm, a move's target, a new
+    /// event or contact.
+    pub form: Option<Form>,
     pub ui: UiState,
     /// The last thing the status bar should say.
     pub status: String,
@@ -672,6 +751,7 @@ impl State {
             migration_refused: false,
             migrated: false,
             compose: None,
+            form: None,
             ui,
             status: String::new(),
             exiting: false,
@@ -838,7 +918,11 @@ impl State {
         let mut forgot = false;
         for mut gone in old {
             self.disconnect(&mut gone);
-            if self.compose.as_ref().is_some_and(|c| c.account == gone.entry.id) {
+            if self
+                .compose
+                .as_ref()
+                .is_some_and(|c| c.account == gone.entry.id)
+            {
                 self.compose = None;
             }
             if self.source == Source::Settings {
@@ -959,18 +1043,33 @@ impl State {
             .collect();
         for ticket in waiting {
             if let Some(pending) = self.writes.remove(&ticket) {
-                self.write_failed(pending, code::UNAVAILABLE, &crate::label("settings-missing"));
+                self.write_failed(
+                    pending,
+                    code::UNAVAILABLE,
+                    &crate::label("settings-missing"),
+                );
             }
         }
     }
 
     /// Write `change` to settingsd; `reply` is answered once it is settled.
     /// `password` is held for the account once settingsd has it.
-    pub fn change_accounts(&mut self, change: Change, reply: Option<u64>, password: Option<String>) {
+    pub fn change_accounts(
+        &mut self,
+        change: Change,
+        reply: Option<u64>,
+        password: Option<String>,
+    ) {
         self.write(change, reply, password, false);
     }
 
-    fn write(&mut self, change: Change, reply: Option<u64>, password: Option<String>, migration: bool) {
+    fn write(
+        &mut self,
+        change: Change,
+        reply: Option<u64>,
+        password: Option<String>,
+        migration: bool,
+    ) {
         let pending = PendingWrite {
             change,
             reply,
@@ -982,7 +1081,11 @@ impl State {
         };
         match self.source {
             Source::Missing => {
-                self.write_failed(pending, code::UNAVAILABLE, &crate::label("settings-missing"));
+                self.write_failed(
+                    pending,
+                    code::UNAVAILABLE,
+                    &crate::label("settings-missing"),
+                );
             }
             // Not read yet: computed and sent once the first read answers.
             Source::Cache => {
@@ -1032,7 +1135,10 @@ impl State {
         match answer {
             Settled::Accepted => {
                 let (next, about) = pending.sent.clone().unwrap_or_else(|| {
-                    (self.settings.clone(), pending.change.account().map(str::to_owned))
+                    (
+                        self.settings.clone(),
+                        pending.change.account().map(str::to_owned),
+                    )
                 });
                 // In force at once; the read this asks for confirms it (or
                 // brings what another writer did since).
@@ -1058,7 +1164,9 @@ impl State {
                 }
                 self.write_failed(pending, code::REFUSED, &message);
             }
-            Settled::Unavailable(message) => self.write_failed(pending, code::UNAVAILABLE, &message),
+            Settled::Unavailable(message) => {
+                self.write_failed(pending, code::UNAVAILABLE, &message)
+            }
             Settled::Unknown(message) => {
                 self.queue(Work::ReadSettings);
                 self.write_failed(pending, code::OUTCOME_UNKNOWN, &message);
@@ -1082,15 +1190,14 @@ impl State {
         if pending.migration {
             // The account settingsd had already may carry another id: the
             // password moves to it unless it has one of its own.
-            if let (Some(legacy), Some(id)) = (self.migration.take(), about.as_deref()) {
-                if legacy.id != id
-                    && !self.secrets.has(id)
-                    && let Some(password) = self.secrets.password(&legacy.id).map(str::to_owned)
-                {
-                    self.secrets.set(id, &password);
-                    self.secrets.set(&legacy.id, "");
-                    self.save_secrets(None);
-                }
+            if let (Some(legacy), Some(id)) = (self.migration.take(), about.as_deref())
+                && legacy.id != id
+                && !self.secrets.has(id)
+                && let Some(password) = self.secrets.password(&legacy.id).map(str::to_owned)
+            {
+                self.secrets.set(id, &password);
+                self.secrets.set(&legacy.id, "");
+                self.save_secrets(None);
             }
             self.migrated = true;
             self.status = crate::label("migrated");
@@ -1134,7 +1241,12 @@ impl State {
             return false;
         }
         self.secrets.set(id, password);
-        self.save_secrets(reply.map(|reply| (reply, json!({ "id": id, "has_password": !password.is_empty() }))));
+        self.save_secrets(reply.map(|reply| {
+            (
+                reply,
+                json!({ "id": id, "has_password": !password.is_empty() }),
+            )
+        }));
         self.reconnect(id);
         true
     }
@@ -1172,6 +1284,28 @@ impl State {
         use crate::shell::{Done, Event};
         match event {
             Event::Connected(tag, result) => self.connected(tag, result),
+            // A Bus request is answered whatever became of the account
+            // since: only the view's update depends on it.
+            Event::Account(tag, Done::Answered(reply, then, result)) => {
+                self.answered(&tag.account, reply, then, result);
+            }
+            Event::Account(tag, Done::Wrote(reply, write, result)) => {
+                self.wrote(&tag, reply, write, result);
+            }
+            Event::Account(tag, Done::Opened(ticket, Some(reply), result)) => {
+                match result.as_ref() {
+                    Ok(email) => self.reply(
+                        reply,
+                        0,
+                        json!({ "account": tag.account, "id": email.id, "subject": email.subject }),
+                    ),
+                    Err(error) => {
+                        let (code, message) = crate::verbs::server_refusal(error);
+                        self.refuse(reply, code, &message);
+                    }
+                }
+                self.apply(Event::Account(tag, Done::Opened(ticket, None, result)));
+            }
             Event::Account(tag, done) => {
                 let limit = self.settings.mail.page_size;
                 let Some(view) = self
@@ -1214,10 +1348,10 @@ impl State {
                         view.mail.busy = false;
                         self.status = error.to_string();
                     }
-                    Done::Opened(ticket, _)
+                    Done::Opened(ticket, _, _)
                         if ticket != view.tickets.open
                             || view.tickets.open_mailbox != view.mail.selected => {}
-                    Done::Opened(_, result) => match *result {
+                    Done::Opened(_, _, result) => match *result {
                         Ok(email) => view.mail.open = Some(email),
                         Err(ref error) => self.status = error.to_string(),
                     },
@@ -1305,11 +1439,13 @@ impl State {
                     | Done::Marked(Err(error))
                     | Done::Calendars(Err(error))
                     | Done::Books(Err(error)) => self.status = error.to_string(),
+                    // Answered above, before the generation check.
+                    Done::Answered(..) | Done::Wrote(..) => {}
                 }
             }
             Event::Settled(ticket, answer) => self.settled(ticket, answer),
             Event::SecretsSaved(ticket, result) => self.secrets_saved(ticket, result),
-            Event::Delivery(..) | Event::Look(..) | Event::LookRetry(_) => {}
+            Event::Delivery(..) | Event::Look(..) | Event::LookRetry(_) | Event::Shown(..) | Event::PrefsOpened(_) => {}
         }
     }
 
@@ -1341,11 +1477,9 @@ impl State {
                     self.work.push(work);
                 }
             }
-            Err(error) => {
-                let error = error.to_string();
-                view.phase = Phase::Failed(error.clone());
-                self.status = error;
-            }
+            // The account's own pane and its tree row say so; the status
+            // line stays about the account shown.
+            Err(error) => view.phase = Phase::Failed(error.to_string()),
         }
     }
 
@@ -1468,8 +1602,547 @@ impl State {
                 read: true,
             });
         }
-        view.open_email(id, &mut self.work);
+        view.open_email(id, None, &mut self.work);
         true
+    }
+
+    /// `email.open`: show `account`'s email `id` in the reader, whether or
+    /// not the shown page holds it, answering `reply` once it loads.
+    pub fn open_by_bus(&mut self, account: &str, id: String, reply: u64) {
+        self.focus(account);
+        self.set_mode_only(Mode::Mail);
+        let mark = self.settings.mail.mark_read_on_open;
+        let Some(view) = self.accounts.iter_mut().find(|v| v.entry.id == account) else {
+            return;
+        };
+        if mark && view.mail.emails.iter().any(|e| e.id == id && !e.is_read()) {
+            view.set_keyword(std::slice::from_ref(&id), "$seen", true);
+            self.work.push(Work::MarkRead {
+                account: account.to_owned(),
+                id: id.clone(),
+                read: true,
+            });
+        }
+        view.open_email(id, Some(reply), &mut self.work);
+    }
+
+    /// Ask `account`'s server `query` for Bus request `reply`.
+    pub fn query(
+        &mut self,
+        account: String,
+        reply: u64,
+        query: crate::verbs::Query,
+        then: crate::verbs::Then,
+    ) {
+        self.queue(Work::Query {
+            account,
+            reply,
+            query,
+            then,
+        });
+    }
+
+    /// Make a change on `account`'s server; `reply` (a Bus request) is
+    /// answered with what it made.
+    pub fn write_server(
+        &mut self,
+        account: String,
+        reply: Option<u64>,
+        write: crate::verbs::Write,
+    ) {
+        self.queue(Work::Write {
+            account,
+            reply,
+            write,
+        });
+    }
+
+    /// A Bus query answered: the reply goes out, or the compose it was
+    /// for opens.
+    pub fn answered(
+        &mut self,
+        account: &str,
+        reply: u64,
+        then: crate::verbs::Then,
+        result: Result<Value, jmap::Error>,
+    ) {
+        use crate::verbs::Then;
+        let value = match result {
+            Ok(value) => value,
+            Err(error) => {
+                let (code, message) = crate::verbs::server_refusal(&error);
+                return self.refuse(reply, code, &message);
+            }
+        };
+        let email = match then {
+            Then::Answer => return self.reply(reply, 0, value),
+            _ => serde_json::from_value::<Email>(value),
+        };
+        let email = match email {
+            Ok(email) => email,
+            Err(error) => return self.refuse(reply, code::SERVER, &error.to_string()),
+        };
+        if self.compose.is_some() {
+            return self.refuse(reply, code::BUSY, &crate::label("compose-open"));
+        }
+        let opened = match then {
+            Then::Reply(all) => self.reply_to(account, &email, all),
+            Then::Forward(to) => self.forward(account, &email, &to),
+            Then::Answer => false,
+        };
+        if opened {
+            let subject = self.compose.as_ref().map(|c| c.draft.subject.clone());
+            self.reply(
+                reply,
+                0,
+                json!({ "composing": account, "subject": subject }),
+            );
+        } else {
+            self.refuse(reply, code::UNKNOWN_ACCOUNT, &crate::label("no-account"));
+        }
+    }
+
+    /// A server write finished: the view it changed is fetched again (the
+    /// moved or deleted emails leave the list at once), a form waiting on
+    /// it closes, and `reply` hears what the server made.
+    pub fn wrote(
+        &mut self,
+        tag: &Tag,
+        reply: Option<u64>,
+        write: crate::verbs::Write,
+        result: Result<Value, jmap::Error>,
+    ) {
+        let value = match result {
+            Ok(value) => value,
+            Err(error) => {
+                let message = error.to_string();
+                if let Some(form) = self.form.as_mut() {
+                    match form {
+                        Form::Event(f) if f.busy => {
+                            f.busy = false;
+                            f.error = Some(message.clone());
+                        }
+                        Form::Contact(f) if f.busy => {
+                            f.busy = false;
+                            f.error = Some(message.clone());
+                        }
+                        _ => {}
+                    }
+                }
+                self.status = message;
+                if let Some(reply) = reply {
+                    let (code, message) = crate::verbs::server_refusal(&error);
+                    self.refuse(reply, code, &message);
+                }
+                return;
+            }
+        };
+        let limit = self.settings.mail.page_size;
+        if let Some(view) = self
+            .accounts
+            .iter_mut()
+            .find(|v| v.entry.id == tag.account && v.generation == tag.generation)
+        {
+            match write.touches() {
+                Mode::Mail => {
+                    let gone = write.removes();
+                    view.mail.emails.retain(|e| !gone.contains(&e.id));
+                    if view
+                        .mail
+                        .open
+                        .as_ref()
+                        .is_some_and(|e| gone.contains(&e.id))
+                    {
+                        view.mail.open = None;
+                    }
+                    self.work.push(Work::FetchMailboxes {
+                        account: tag.account.clone(),
+                    });
+                    if let Some(mailbox) = view.mail.selected.clone() {
+                        view.fetch_emails(mailbox, limit, &mut self.work);
+                    }
+                }
+                Mode::Calendar => {
+                    if let Some(calendar) = view.calendars.selected.clone() {
+                        view.fetch_events(calendar, &mut self.work);
+                    }
+                }
+                Mode::Contacts => {
+                    if let Some(book) = view.contacts.selected.clone() {
+                        let filter = view.contacts.filter.clone();
+                        view.fetch_contacts(book, filter, &mut self.work);
+                    }
+                }
+            }
+        }
+        let waiting = matches!(
+            (&self.form, &write),
+            (Some(Form::Event(f)), crate::verbs::Write::CreateEvent { .. }) if f.busy && f.account == tag.account
+        ) || matches!(
+            (&self.form, &write),
+            (Some(Form::Contact(f)), crate::verbs::Write::CreateContact { .. }) if f.busy && f.account == tag.account
+        );
+        if waiting {
+            self.form = None;
+            self.status = crate::label("saved");
+        }
+        if let Some(reply) = reply {
+            self.reply(reply, 0, value);
+        }
+    }
+
+    /// The open email of the current account, with its account.
+    fn reading(&self) -> Option<(String, Email)> {
+        let view = self.current()?;
+        Some((view.entry.id.clone(), view.mail.open.clone()?))
+    }
+
+    /// Delete the open email: confirm first when the settings ask to.
+    pub fn delete_open(&mut self) {
+        let Some((account, email)) = self.reading() else {
+            return;
+        };
+        let ids = vec![email.id];
+        if self.settings.mail.confirm_delete {
+            self.form = Some(Form::Delete { account, ids });
+        } else {
+            self.write_server(
+                account,
+                None,
+                crate::verbs::Write::Delete {
+                    ids,
+                    destroy: false,
+                },
+            );
+        }
+    }
+
+    /// Choose where the open email moves to.
+    pub fn move_open(&mut self) {
+        if let Some((account, email)) = self.reading() {
+            self.form = Some(Form::Move {
+                account,
+                ids: vec![email.id],
+            });
+        }
+    }
+
+    /// Flag or unflag the open email.
+    pub fn flag_open(&mut self) {
+        let Some((account, email)) = self.reading() else {
+            return;
+        };
+        let flagged = !email
+            .keywords
+            .as_ref()
+            .and_then(|k| k.get("$flagged"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let ids = vec![email.id];
+        if let Some(view) = self.account_mut(&account) {
+            view.set_keyword(&ids, "$flagged", flagged);
+        }
+        let write = crate::verbs::Write::Keywords {
+            ids,
+            read: None,
+            flagged: Some(flagged),
+        };
+        self.write_server(account, None, write);
+    }
+
+    /// Mark the open email unread.
+    pub fn mark_open_unread(&mut self) {
+        let Some((account, email)) = self.reading() else {
+            return;
+        };
+        let ids = vec![email.id];
+        if let Some(view) = self.account_mut(&account) {
+            view.set_keyword(&ids, "$seen", false);
+        }
+        let write = crate::verbs::Write::Keywords {
+            ids,
+            read: Some(false),
+            flagged: None,
+        };
+        self.write_server(account, None, write);
+    }
+
+    /// Reply to everyone the open email went to.
+    pub fn reply_all_open(&mut self) {
+        if let Some(account) = self.selected.clone() {
+            self.open_reply(&account, true);
+        }
+    }
+
+    /// Forward the open email.
+    pub fn forward_open(&mut self) {
+        if let Some((account, email)) = self.reading() {
+            self.forward(&account, &email, "");
+        }
+    }
+
+    /// Open the New Event form on the current account's selected calendar,
+    /// starting at the next whole hour, an hour long.
+    pub fn new_event(&mut self) {
+        let Some(view) = self.current() else {
+            return;
+        };
+        let Some(calendar) = view
+            .calendars
+            .selected
+            .clone()
+            .or_else(|| view.calendars.calendars.first().map(|c| c.id.clone()))
+        else {
+            return;
+        };
+        use chrono::Timelike;
+        let later = chrono::Local::now() + chrono::Duration::hours(1);
+        let hour = later
+            .with_minute(0)
+            .and_then(|t| t.with_second(0))
+            .and_then(|t| t.with_nanosecond(0))
+            .unwrap_or(later);
+        let format = |t: chrono::DateTime<chrono::Local>| {
+            t.to_rfc3339_opts(chrono::SecondsFormat::Secs, false)
+        };
+        self.form = Some(Form::Event(EventForm {
+            account: view.entry.id.clone(),
+            calendar,
+            start: format(hour),
+            end: format(hour + chrono::Duration::hours(1)),
+            ..EventForm::default()
+        }));
+    }
+
+    /// Open the New Contact form on the current account's selected book.
+    pub fn new_contact(&mut self) {
+        let Some(view) = self.current() else {
+            return;
+        };
+        let Some(book) = view
+            .contacts
+            .selected
+            .clone()
+            .or_else(|| view.contacts.books.first().map(|b| b.id.clone()))
+        else {
+            return;
+        };
+        self.form = Some(Form::Contact(ContactForm {
+            account: view.entry.id.clone(),
+            book,
+            ..ContactForm::default()
+        }));
+    }
+
+    /// The form's answer: Delete confirmed, a Move target chosen, or Save.
+    fn submit_form(&mut self, choice: Option<String>) {
+        let Some(form) = self.form.clone() else {
+            return;
+        };
+        match form {
+            Form::Delete { account, ids } => {
+                self.form = None;
+                self.write_server(
+                    account,
+                    None,
+                    crate::verbs::Write::Delete {
+                        ids,
+                        destroy: false,
+                    },
+                );
+            }
+            Form::Move { account, ids } => {
+                if let Some(mailbox) = choice {
+                    self.form = None;
+                    self.write_server(account, None, crate::verbs::Write::Move { ids, mailbox });
+                }
+            }
+            Form::Event(f) if !f.busy => {
+                let checked = (|| {
+                    if f.title.trim().is_empty() {
+                        return Err(crate::label("title-needed"));
+                    }
+                    jmap::duration_between(f.start.trim(), f.end.trim())?;
+                    Ok(())
+                })();
+                if let Err(error) = checked {
+                    if let Some(Form::Event(form)) = &mut self.form {
+                        form.error = Some(error);
+                    }
+                    return;
+                }
+                let draft = jmap::EventDraft {
+                    title: f.title.trim().to_owned(),
+                    start: f.start.trim().to_owned(),
+                    end: f.end.trim().to_owned(),
+                    location: Some(f.location.trim().to_owned()).filter(|l| !l.is_empty()),
+                    ..jmap::EventDraft::default()
+                };
+                if let Some(Form::Event(form)) = &mut self.form {
+                    form.busy = true;
+                    form.error = None;
+                }
+                let write = crate::verbs::Write::CreateEvent {
+                    calendar: f.calendar,
+                    draft,
+                };
+                self.write_server(f.account, None, write);
+            }
+            Form::Contact(f) if !f.busy => {
+                if f.name.trim().is_empty() {
+                    if let Some(Form::Contact(form)) = &mut self.form {
+                        form.error = Some(crate::label("name-needed"));
+                    }
+                    return;
+                }
+                let some = |text: &str| Some(text.trim().to_owned()).filter(|t| !t.is_empty());
+                let draft = jmap::ContactDraft {
+                    name: f.name.trim().to_owned(),
+                    emails: some(&f.email).into_iter().collect(),
+                    phones: some(&f.phone).into_iter().collect(),
+                    organization: some(&f.organization),
+                    notes: None,
+                };
+                if let Some(Form::Contact(form)) = &mut self.form {
+                    form.busy = true;
+                    form.error = None;
+                }
+                let write = crate::verbs::Write::CreateContact {
+                    book: f.book,
+                    draft,
+                };
+                self.write_server(f.account, None, write);
+            }
+            Form::Event(_) | Form::Contact(_) => {}
+        }
+    }
+
+    /// The accounts as `email.accounts` reports them: settings, whether a
+    /// password is held, connection state; never a password.
+    pub fn accounts_view(&self) -> Value {
+        let default = self.settings.from_account().map(|a| a.id.clone());
+        Value::Array(
+            self.accounts
+                .iter()
+                .map(|view| {
+                    let entry = &view.entry;
+                    json!({
+                        "id": entry.id,
+                        "name": entry.name,
+                        "url": entry.url,
+                        "email": entry.email,
+                        "ca_path": entry.ca_path,
+                        "enabled": entry.enabled,
+                        "signature": entry.signature,
+                        "default": default.as_deref() == Some(entry.id.as_str()),
+                        "has_password": self.secrets.has(&entry.id),
+                        "state": view.phase.name(),
+                        "error": match &view.phase { Phase::Failed(error) => Some(error.as_str()), _ => None },
+                        "session": view.session,
+                        "unread": view.mail.unread(),
+                        "migrating": self.migration.as_ref().is_some_and(|m| m.id == entry.id),
+                    })
+                })
+                .collect(),
+        )
+    }
+
+    /// The whole window state as `email.info` reports it, minus secrets.
+    pub fn info(&self) -> Value {
+        let views: Vec<Value> = self
+            .accounts
+            .iter()
+            .zip(self.accounts_view().as_array().cloned().unwrap_or_default())
+            .map(|(view, mut out)| {
+                let shown = |emails: &[Email]| -> Vec<Value> {
+                    emails
+                        .iter()
+                        .map(|e| {
+                            json!({
+                                "id": e.id,
+                                "subject": e.subject,
+                                "from": e.from_display(),
+                                "date": e.date.as_ref().or(e.received_at.as_ref()),
+                                "read": e.is_read(),
+                                "flagged": e.keywords.as_ref().and_then(|k| k.get("$flagged")).and_then(Value::as_bool).unwrap_or(false),
+                            })
+                        })
+                        .collect()
+                };
+                out["mail"] = json!({
+                    "mailboxes": view.mail.mailboxes,
+                    "selected": view.mail.selected,
+                    "emails": shown(&view.mail.emails),
+                    "total": view.mail.total,
+                    "open": view.mail.open.as_ref().map(|e| &e.id),
+                    "busy": view.mail.busy,
+                });
+                out["calendar"] = json!({
+                    "calendars": view.calendars.calendars,
+                    "selected": view.calendars.selected,
+                    "events": view.calendars.events.iter().map(|e| json!({"id": e.id, "title": e.display_title(), "start": e.start, "end": e.end})).collect::<Vec<_>>(),
+                    "open": view.calendars.open.and_then(|i| view.calendars.events.get(i)).map(|e| &e.id),
+                    "busy": view.calendars.busy,
+                });
+                out["contacts"] = json!({
+                    "books": view.contacts.books,
+                    "selected": view.contacts.selected,
+                    "filter": view.contacts.filter,
+                    "contacts": view.contacts.contacts.iter().map(|c| json!({"id": c.id, "name": c.display_name(), "email": c.display_email()})).collect::<Vec<_>>(),
+                    "open": view.contacts.open.and_then(|i| view.contacts.contacts.get(i)).map(|c| &c.id),
+                    "busy": view.contacts.busy,
+                });
+                out
+            })
+            .collect();
+        let compose = self.compose.as_ref().map(|c| {
+            json!({
+                "account": c.account,
+                "from": c.draft.from,
+                "to": c.to_text,
+                "cc": c.cc_text,
+                "bcc": c.bcc_text,
+                "subject": c.draft.subject,
+                "body": c.draft.body,
+                "in_reply_to": c.draft.in_reply_to,
+                "busy": c.busy,
+                "error": c.error,
+            })
+        });
+        let form = self.form.as_ref().map(|form| match form {
+            Form::Delete { account, ids } => json!({"kind": "delete", "account": account, "ids": ids}),
+            Form::Move { account, ids } => json!({"kind": "move", "account": account, "ids": ids}),
+            Form::Event(f) => json!({"kind": "event", "account": f.account, "calendar": f.calendar, "title": f.title, "start": f.start, "end": f.end, "location": f.location, "busy": f.busy, "error": f.error}),
+            Form::Contact(f) => json!({"kind": "contact", "account": f.account, "book": f.book, "name": f.name, "email": f.email, "phone": f.phone, "organization": f.organization, "busy": f.busy, "error": f.error}),
+        });
+        json!({
+            "schema": crate::verbs::SCHEMA,
+            "version": env!("CARGO_PKG_VERSION"),
+            "selected": self.selected,
+            "mode": self.mode,
+            "source": match self.source { Source::Cache => "cache", Source::Settings => "settings", Source::Missing => "missing" },
+            "status": self.status,
+            "default_account": self.settings.default_account,
+            "mail_options": {
+                "page_size": self.settings.mail.page_size,
+                "mark_read_on_open": self.settings.mail.mark_read_on_open,
+                "confirm_delete": self.settings.mail.confirm_delete,
+            },
+            "accounts": views,
+            "tree": self.tree().iter().map(|r| json!({"key": r.node.key(), "depth": r.depth, "label": r.label, "unread": r.unread, "expandable": r.expandable, "expanded": r.expanded, "selected": r.selected})).collect::<Vec<_>>(),
+            "compose": compose,
+            "form": form,
+            "dialog": self.ui.dialog.map(|d| match d { Dialog::About => "about", Dialog::Shortcuts => "shortcuts" }),
+            "ui": {
+                "places": self.ui.places,
+                "reader": self.ui.reader,
+                "cursor": self.ui.cursor.as_ref().map(Node::key),
+                "expanded": self.ui.expanded,
+                "theme_mode": self.ui.theme.mode.map(|m| format!("{m:?}").to_lowercase()),
+            },
+            "migrating": self.migration.is_some(),
+            "exiting": self.exiting,
+        })
     }
 
     /// The node the centre pane shows, for the tree's highlight.
@@ -1542,7 +2215,13 @@ impl State {
                     view.calendars
                         .calendars
                         .iter()
-                        .map(|c| (Node::Calendar(id.clone(), c.id.clone()), c.name.clone(), RowKind::Calendar))
+                        .map(|c| {
+                            (
+                                Node::Calendar(id.clone(), c.id.clone()),
+                                c.name.clone(),
+                                RowKind::Calendar,
+                            )
+                        })
                         .collect::<Vec<_>>(),
                 ),
                 (
@@ -1552,7 +2231,13 @@ impl State {
                     view.contacts
                         .books
                         .iter()
-                        .map(|b| (Node::Book(id.clone(), b.id.clone()), b.name.clone(), RowKind::Book))
+                        .map(|b| {
+                            (
+                                Node::Book(id.clone(), b.id.clone()),
+                                b.name.clone(),
+                                RowKind::Book,
+                            )
+                        })
                         .collect(),
                 ),
             ];
@@ -1607,7 +2292,10 @@ impl State {
             .mailboxes
             .iter()
             .filter(|m| match parent {
-                None => m.parent_id.as_deref().is_none_or(|p| !known(p) || p == m.id),
+                None => m
+                    .parent_id
+                    .as_deref()
+                    .is_none_or(|p| !known(p) || p == m.id),
                 Some(parent) => m.parent_id.as_deref() == Some(parent) && m.id != parent,
             })
             .collect();
@@ -1624,11 +2312,10 @@ impl State {
         }
         for mailbox in level {
             let node = Node::Mailbox(view.entry.id.clone(), mailbox.id.clone());
-            let children = view
-                .mail
-                .mailboxes
-                .iter()
-                .any(|m| m.parent_id.as_deref() == Some(mailbox.id.as_str()) && m.id != mailbox.id);
+            let children =
+                view.mail.mailboxes.iter().any(|m| {
+                    m.parent_id.as_deref() == Some(mailbox.id.as_str()) && m.id != mailbox.id
+                });
             let open = children && self.expanded(&node);
             rows.push(TreeRow {
                 selected: selected == Some(&node),
@@ -1742,7 +2429,10 @@ impl State {
     /// Open a compose dialog from `account` (the default From when `None`)
     /// with `draft`'s fields; the account's address and signature fill in.
     pub fn open_compose(&mut self, account: Option<&str>, mut draft: Composed) -> bool {
-        let Some(account) = account.map(str::to_owned).or_else(|| self.compose_account()) else {
+        let Some(account) = account
+            .map(str::to_owned)
+            .or_else(|| self.compose_account())
+        else {
             return false;
         };
         let Some(view) = self.account(&account) else {
@@ -1758,9 +2448,58 @@ impl State {
 
     /// A reply to `account`'s open email (`all`: to everyone it went to).
     pub fn open_reply(&mut self, account: &str, all: bool) -> bool {
-        let Some(open) = self.account(account).and_then(|v| v.mail.open.clone()) else {
-            return false;
+        match self.account(account).and_then(|v| v.mail.open.clone()) {
+            Some(open) => self.reply_to(account, &open, all),
+            None => false,
+        }
+    }
+
+    /// A compose forwarding `email` from `account` to `to` (as typed): the
+    /// subject marked, the original quoted under its headers.
+    pub fn forward(&mut self, account: &str, email: &Email, to: &str) -> bool {
+        let subject = match email.subject.as_deref() {
+            Some(subject) if subject.to_lowercase().starts_with("fwd:") => subject.to_owned(),
+            Some(subject) => format!("Fwd: {subject}"),
+            None => crate::label("forward-subject"),
         };
+        let addresses = |list: &Option<Vec<EmailAddress>>| {
+            list.iter()
+                .flatten()
+                .map(jmap::format_address)
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let quoted = crate::label_with(
+            "forward-header",
+            &[
+                ("from", &addresses(&email.from)),
+                ("date", &email.date_short()),
+                ("subject", email.subject.as_deref().unwrap_or("")),
+                ("to", &addresses(&email.to)),
+            ],
+        );
+        let original = email.text_body_value().unwrap_or_default();
+        let body = format!(
+            "{}\n\n{quoted}\n\n{original}",
+            self.signed_body(account).trim_end()
+        );
+        let opened = self.open_compose(
+            Some(account),
+            Composed {
+                subject,
+                body,
+                ..Composed::default()
+            },
+        );
+        if opened && let Some(compose) = &mut self.compose {
+            compose.to_text = to.to_owned();
+        }
+        opened
+    }
+
+    /// A compose replying to `email` from `account` (`all`: to everyone it
+    /// went to but this account).
+    pub fn reply_to(&mut self, account: &str, open: &Email, all: bool) -> bool {
         let me = self
             .account(account)
             .map(|v| v.entry.email.to_ascii_lowercase())
@@ -1798,7 +2537,10 @@ impl State {
                 to,
                 cc,
                 subject,
-                in_reply_to: open.message_id.clone().and_then(|ids| ids.into_iter().next()),
+                in_reply_to: open
+                    .message_id
+                    .clone()
+                    .and_then(|ids| ids.into_iter().next()),
                 ..Composed::default()
             },
         )
@@ -1910,6 +2652,25 @@ impl State {
                     self.config_dirty = true;
                 }
             }
+            UiEvent::FormField(field, value) => match &mut self.form {
+                Some(Form::Event(f)) if !f.busy => match field {
+                    FormField::Title => f.title = value,
+                    FormField::Start => f.start = value,
+                    FormField::End => f.end = value,
+                    FormField::Location => f.location = value,
+                    _ => {}
+                },
+                Some(Form::Contact(f)) if !f.busy => match field {
+                    FormField::Name => f.name = value,
+                    FormField::Email => f.email = value,
+                    FormField::Phone => f.phone = value,
+                    FormField::Organization => f.organization = value,
+                    _ => {}
+                },
+                _ => {}
+            },
+            UiEvent::FormSubmit(choice) => self.submit_form(choice),
+            UiEvent::FormCancel => self.form = None,
             UiEvent::CloseDialog => self.ui.dialog = None,
             UiEvent::SetMode(mode) => {
                 self.ui.theme.mode = Some(mode);
@@ -1975,7 +2736,10 @@ impl State {
 
     /// `account`'s Sent mailbox id, for the send recipe.
     pub fn sent_mailbox_id(&self, account: &str) -> Option<String> {
-        self.account(account)?.mail.by_role("sent").map(|m| m.id.clone())
+        self.account(account)?
+            .mail
+            .by_role("sent")
+            .map(|m| m.id.clone())
     }
 
     // The command registry's entry points (commands.rs).
@@ -2228,7 +2992,10 @@ pub(crate) mod tests {
         assert_eq!(state.account("c").unwrap().phase, Phase::Disabled);
         assert_eq!(state.account("d").unwrap().phase, Phase::Connecting);
         assert_eq!(connects(&work), ["b", "d"]);
-        assert!(work.iter().any(|w| matches!(w, Work::Disconnect { account } if account == "c")));
+        assert!(
+            work.iter()
+                .any(|w| matches!(w, Work::Disconnect { account } if account == "c"))
+        );
         // Then c is removed: its view and its password go.
         state.set_settings(settings(&["a", "b", "d"]));
         assert!(state.account("c").is_none());
@@ -2244,8 +3011,16 @@ pub(crate) mod tests {
     #[test]
     fn a_late_answer_from_one_account_never_touches_another() {
         let mut state = connected_many(&["a", "b"]);
-        done(&mut state, "a", Done::Mailboxes(Ok(vec![mailbox("in", Some("inbox"), 2)])));
-        done(&mut state, "b", Done::Mailboxes(Ok(vec![mailbox("in", Some("inbox"), 5)])));
+        done(
+            &mut state,
+            "a",
+            Done::Mailboxes(Ok(vec![mailbox("in", Some("inbox"), 2)])),
+        );
+        done(
+            &mut state,
+            "b",
+            Done::Mailboxes(Ok(vec![mailbox("in", Some("inbox"), 5)])),
+        );
         state.take_work();
         // Both accounts' first page is ticket 1: the account id tells them apart.
         let page = |id: &str| jmap::EmailPage {
@@ -2294,7 +3069,10 @@ pub(crate) mod tests {
             tag,
             Err(jmap::Error::Unauthorized("the server went away".into())),
         ));
-        assert!(matches!(state.account("a").unwrap().phase, Phase::Failed(_)));
+        assert!(matches!(
+            state.account("a").unwrap().phase,
+            Phase::Failed(_)
+        ));
         state.apply_ui(UiEvent::Retry("a".into()));
         assert_eq!(state.account("a").unwrap().phase, Phase::Connecting);
         assert_eq!(connects(&state.take_work()), ["a"]);
@@ -2340,7 +3118,10 @@ pub(crate) mod tests {
                 mailbox("m-in", Some("inbox"), 3),
             ])),
         );
-        assert_eq!(state.account("a").unwrap().mail.selected.as_deref(), Some("m-in"));
+        assert_eq!(
+            state.account("a").unwrap().mail.selected.as_deref(),
+            Some("m-in")
+        );
         match state.take_work().as_slice() {
             [Work::FetchEmails { mailbox, limit, .. }] => {
                 assert_eq!(mailbox, "m-in");
@@ -2402,12 +3183,21 @@ pub(crate) mod tests {
     #[test]
     fn a_new_page_size_refetches_with_it() {
         let mut state = connected();
-        done(&mut state, "a", Done::Mailboxes(Ok(vec![mailbox("in", Some("inbox"), 0)])));
+        done(
+            &mut state,
+            "a",
+            Done::Mailboxes(Ok(vec![mailbox("in", Some("inbox"), 0)])),
+        );
         state.take_work();
         let mut next = settings(&["a"]);
         next.mail.page_size = 25;
         state.set_settings(next);
-        assert!(state.take_work().iter().any(|w| matches!(w, Work::FetchEmails { limit: 25, .. })));
+        assert!(
+            state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::FetchEmails { limit: 25, .. }))
+        );
     }
 
     #[test]
@@ -2547,7 +3337,9 @@ pub(crate) mod tests {
             .take_work()
             .iter()
             .find_map(|w| match w {
-                Work::Send { account, ticket, .. } => Some((account.clone(), *ticket)),
+                Work::Send {
+                    account, ticket, ..
+                } => Some((account.clone(), *ticket)),
                 _ => None,
             })
             .expect("a send was queued")
@@ -2571,7 +3363,10 @@ pub(crate) mod tests {
         done(&mut state, "a", Done::Sent(ticket, Ok(())));
         assert!(state.compose.is_none());
         let work = state.take_work();
-        assert!(work.iter().any(|w| matches!(w, Work::FetchMailboxes { .. })));
+        assert!(
+            work.iter()
+                .any(|w| matches!(w, Work::FetchMailboxes { .. }))
+        );
         assert!(matches!(
             work.as_slice(),
             [_, Work::FetchEmails { mailbox, .. }] if mailbox == "m-sent"
@@ -2591,7 +3386,10 @@ pub(crate) mod tests {
         done(
             &mut state,
             "a",
-            Done::Sent(ticket, Err(jmap::Error::method("serverFail", Some("no relay")))),
+            Done::Sent(
+                ticket,
+                Err(jmap::Error::method("serverFail", Some("no relay"))),
+            ),
         );
         let compose = state.compose.expect("the dialog stays");
         assert!(!compose.busy);
@@ -2622,12 +3420,18 @@ pub(crate) mod tests {
     fn another_accounts_send_never_closes_this_compose() {
         let mut state = connected_many(&["a", "b"]);
         state.apply_ui(UiEvent::Compose);
-        state.apply_ui(UiEvent::ComposeField(ComposeField::To, "bob@example.invalid".into()));
+        state.apply_ui(UiEvent::ComposeField(
+            ComposeField::To,
+            "bob@example.invalid".into(),
+        ));
         state.apply_ui(UiEvent::SendCompose);
         let (account, ticket) = sent_ticket(&mut state);
         assert_eq!(account, "a");
         done(&mut state, "b", Done::Sent(ticket, Ok(())));
-        assert!(state.compose.as_ref().is_some_and(|c| c.busy), "still sending");
+        assert!(
+            state.compose.as_ref().is_some_and(|c| c.busy),
+            "still sending"
+        );
     }
 
     #[test]
@@ -2685,7 +3489,7 @@ pub(crate) mod tests {
         done(
             &mut state,
             "a",
-            Done::Opened(next, Box::new(Ok(page("X").emails.remove(0)))),
+            Done::Opened(next, None, Box::new(Ok(page("X").emails.remove(0)))),
         );
         assert!(state.account("a").unwrap().mail.open.is_none());
     }
@@ -2709,7 +3513,10 @@ pub(crate) mod tests {
             })
             .unwrap();
         state.select_mailbox("a", "m-b".into());
-        assert!(state.account("a").unwrap().mail.emails.is_empty(), "A's rows are gone");
+        assert!(
+            state.account("a").unwrap().mail.emails.is_empty(),
+            "A's rows are gone"
+        );
         // A click on A's row while B loads does nothing.
         state.take_work();
         state.apply_ui(UiEvent::OpenEmail("a".into(), "A1".into()));
@@ -2721,7 +3528,11 @@ pub(crate) mod tests {
         );
         // And A's body, arriving late, is dropped.
         let body: Email = serde_json::from_value(json!({ "id": "A1", "keywords": {} })).unwrap();
-        done(&mut state, "a", Done::Opened(ticket, Box::new(Ok(body))));
+        done(
+            &mut state,
+            "a",
+            Done::Opened(ticket, None, Box::new(Ok(body))),
+        );
         assert!(state.account("a").unwrap().mail.open.is_none());
     }
 
@@ -2755,7 +3566,11 @@ pub(crate) mod tests {
             serde_json::from_value(json!({ "id": title, "calendarId": "C", "title": title }))
                 .unwrap()
         };
-        done(&mut state, "a", Done::Events(second, Ok(vec![event("two")])));
+        done(
+            &mut state,
+            "a",
+            Done::Events(second, Ok(vec![event("two")])),
+        );
         done(&mut state, "a", Done::Events(first, Ok(vec![event("one")])));
         let view = state.account("a").unwrap();
         assert_eq!(view.calendars.events.len(), 1);
@@ -2765,7 +3580,11 @@ pub(crate) mod tests {
     #[test]
     fn a_count_refresh_keeps_the_open_email() {
         let mut state = connected();
-        done(&mut state, "a", Done::Mailboxes(Ok(vec![mailbox("m-in", Some("inbox"), 1)])));
+        done(
+            &mut state,
+            "a",
+            Done::Mailboxes(Ok(vec![mailbox("m-in", Some("inbox"), 1)])),
+        );
         state.take_work();
         state.account_mut("a").unwrap().mail.emails =
             vec![serde_json::from_value(json!({ "id": "E1", "keywords": {} })).unwrap()];
@@ -2779,9 +3598,17 @@ pub(crate) mod tests {
             })
             .unwrap();
         let email: Email = serde_json::from_value(json!({ "id": "E1", "keywords": {} })).unwrap();
-        done(&mut state, "a", Done::Opened(open, Box::new(Ok(email))));
+        done(
+            &mut state,
+            "a",
+            Done::Opened(open, None, Box::new(Ok(email))),
+        );
         // The mark-read's count refresh answers after the body.
-        done(&mut state, "a", Done::Mailboxes(Ok(vec![mailbox("m-in", Some("inbox"), 0)])));
+        done(
+            &mut state,
+            "a",
+            Done::Mailboxes(Ok(vec![mailbox("m-in", Some("inbox"), 0)])),
+        );
         let view = state.account("a").unwrap();
         assert_eq!(view.mail.open.as_ref().map(|e| e.id.as_str()), Some("E1"));
     }
@@ -2915,12 +3742,23 @@ pub(crate) mod tests {
         let mut state = tree_fixture();
         state.apply_ui(UiEvent::Select(Node::Book("a".into(), "B1".into())));
         assert_eq!(state.mode, Mode::Contacts);
-        assert!(state.take_work().iter().any(|w| matches!(w, Work::FetchContacts { book, .. } if book == "B1")));
+        assert!(
+            state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::FetchContacts { book, .. } if book == "B1"))
+        );
         state.apply_ui(UiEvent::Select(Node::Account("b".into())));
         assert_eq!(state.selected.as_deref(), Some("b"));
         state.apply_ui(UiEvent::Select(Node::Mailbox("a".into(), "m-kid".into())));
-        assert_eq!((state.selected.as_deref(), state.mode), (Some("a"), Mode::Mail));
-        assert_eq!(state.account("a").unwrap().mail.selected.as_deref(), Some("m-kid"));
+        assert_eq!(
+            (state.selected.as_deref(), state.mode),
+            (Some("a"), Mode::Mail)
+        );
+        assert_eq!(
+            state.account("a").unwrap().mail.selected.as_deref(),
+            Some("m-kid")
+        );
     }
 
     #[test]
@@ -2928,18 +3766,30 @@ pub(crate) mod tests {
         let mut state = tree_fixture();
         // The cursor starts on the shown row (the inbox).
         state.tree_key(TreeKey::Down);
-        assert_eq!(state.ui.cursor, Some(Node::Mailbox("a".into(), "m-folder".into())));
+        assert_eq!(
+            state.ui.cursor,
+            Some(Node::Mailbox("a".into(), "m-folder".into()))
+        );
         state.tree_key(TreeKey::Left);
         assert!(!state.expanded(&Node::Mailbox("a".into(), "m-folder".into())));
         assert!(state.config_dirty());
         assert!(!labels(&state).contains(&"  M-KID".to_owned()));
         state.tree_key(TreeKey::Right);
         state.tree_key(TreeKey::Right);
-        assert_eq!(state.ui.cursor, Some(Node::Mailbox("a".into(), "m-kid".into())));
+        assert_eq!(
+            state.ui.cursor,
+            Some(Node::Mailbox("a".into(), "m-kid".into()))
+        );
         state.tree_key(TreeKey::Left);
-        assert_eq!(state.ui.cursor, Some(Node::Mailbox("a".into(), "m-folder".into())));
+        assert_eq!(
+            state.ui.cursor,
+            Some(Node::Mailbox("a".into(), "m-folder".into()))
+        );
         state.tree_key(TreeKey::Enter);
-        assert_eq!(state.account("a").unwrap().mail.selected.as_deref(), Some("m-folder"));
+        assert_eq!(
+            state.account("a").unwrap().mail.selected.as_deref(),
+            Some("m-folder")
+        );
         // Collapsing an account hides everything under it.
         state.apply_ui(UiEvent::Expand(Node::Account("a".into()), false));
         assert_eq!(labels(&state), ["A", "B"]);
@@ -2973,7 +3823,10 @@ pub(crate) mod tests {
         state.change_accounts(Change::Upsert(entry("n")), Some(3), Some("pw".into()));
         let (ticket, changes) = settings_ticket(&mut state);
         assert_eq!(changes["email.accounts"].as_array().unwrap().len(), 2);
-        assert!(!changes.to_string().contains("pw"), "no secret goes to settingsd");
+        assert!(
+            !changes.to_string().contains("pw"),
+            "no secret goes to settingsd"
+        );
         assert!(state.take_replies().is_empty());
         state.settled(ticket, Settled::Accepted);
         let work = state.take_work();
@@ -3001,7 +3854,12 @@ pub(crate) mod tests {
         state.change_accounts(Change::Remove("a".into()), Some(4), None);
         let (ticket, _) = settings_ticket(&mut state);
         state.settled(ticket, Settled::Conflict);
-        assert!(state.take_work().iter().any(|w| matches!(w, Work::ReadSettings)));
+        assert!(
+            state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::ReadSettings))
+        );
         // Someone added b meanwhile: the retry keeps it.
         state.set_settings(settings(&["a", "b"]));
         let (ticket, changes) = settings_ticket(&mut state);
@@ -3012,8 +3870,16 @@ pub(crate) mod tests {
         assert_eq!(reply.body["error_code"], code::REFUSED);
         // An unknown account never reaches settingsd.
         state.change_accounts(Change::Remove("zz".into()), Some(5), None);
-        assert!(!state.take_work().iter().any(|w| matches!(w, Work::Settings { .. })));
-        assert_eq!(state.take_replies()[0].body["error_code"], code::UNKNOWN_ACCOUNT);
+        assert!(
+            !state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::Settings { .. }))
+        );
+        assert_eq!(
+            state.take_replies()[0].body["error_code"],
+            code::UNKNOWN_ACCOUNT
+        );
     }
 
     #[test]
@@ -3030,8 +3896,16 @@ pub(crate) mod tests {
         assert_eq!(state.source, Source::Missing);
         assert_eq!(state.accounts.len(), 1, "the cache stands");
         state.change_accounts(Change::Remove("a".into()), Some(9), None);
-        assert_eq!(state.take_replies()[0].body["error_code"], code::UNAVAILABLE);
-        assert!(!state.take_work().iter().any(|w| matches!(w, Work::Settings { .. })));
+        assert_eq!(
+            state.take_replies()[0].body["error_code"],
+            code::UNAVAILABLE
+        );
+        assert!(
+            !state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::Settings { .. }))
+        );
     }
 
     #[test]
@@ -3045,7 +3919,12 @@ pub(crate) mod tests {
         );
         state.take_work();
         state.change_accounts(Change::Default(Some("a".into())), Some(2), None);
-        assert!(!state.take_work().iter().any(|w| matches!(w, Work::Settings { .. })));
+        assert!(
+            !state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::Settings { .. }))
+        );
         state.set_settings(settings(&["a"]));
         let (_, changes) = settings_ticket(&mut state);
         assert_eq!(changes, json!({"email.default_account": "a"}));
@@ -3094,7 +3973,11 @@ pub(crate) mod tests {
         state.take_work();
         state.set_settings(after);
         let work = state.take_work();
-        assert!(!work.iter().any(|w| matches!(w, Work::Settings { .. } | Work::Connect { .. })));
+        assert!(
+            !work
+                .iter()
+                .any(|w| matches!(w, Work::Settings { .. } | Work::Connect { .. }))
+        );
         assert_eq!(state.account(&id).unwrap().phase, Phase::Connecting);
     }
 
@@ -3119,9 +4002,293 @@ pub(crate) mod tests {
             ..EmailSettings::default()
         });
         // Nothing to write: the migration completes and the password moves.
-        assert!(!state.take_work().iter().any(|w| matches!(w, Work::Settings { .. })));
+        assert!(
+            !state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::Settings { .. }))
+        );
         assert!(!state.migrating());
         assert!(state.has_password("a") && !state.has_password("acct-legacy"));
         assert_eq!(state.accounts.len(), 1);
+    }
+
+    use crate::verbs::{Then, Write};
+
+    /// A connected account showing its inbox with E1 open.
+    fn reading() -> State {
+        let mut state = connected();
+        done(
+            &mut state,
+            "a",
+            Done::Mailboxes(Ok(vec![mailbox("m-in", Some("inbox"), 1)])),
+        );
+        state.take_work();
+        let view = state.account_mut("a").unwrap();
+        view.mail.emails = vec![unread_email("E1"), unread_email("E2")];
+        view.mail.open = Some(unread_email("E1"));
+        state
+    }
+
+    fn writes(state: &mut State) -> Vec<(Option<u64>, Write)> {
+        state
+            .take_work()
+            .into_iter()
+            .filter_map(|w| match w {
+                Work::Write { reply, write, .. } => Some((reply, write)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_write_refreshes_its_view_and_answers_with_what_the_server_made() {
+        let mut state = reading();
+        let delete = Write::Delete {
+            ids: vec!["E1".into()],
+            destroy: false,
+        };
+        state.write_server("a".into(), Some(5), delete.clone());
+        assert_eq!(writes(&mut state), [(Some(5), delete.clone())]);
+        let tag = tag(&state, "a");
+        state.apply(Event::Account(
+            tag,
+            Done::Wrote(Some(5), delete, Ok(json!({"ids": ["E1"]}))),
+        ));
+        let view = state.account("a").unwrap();
+        assert_eq!(view.mail.emails.len(), 1, "E1 left the list at once");
+        assert!(view.mail.open.is_none());
+        let work = state.take_work();
+        assert!(
+            work.iter()
+                .any(|w| matches!(w, Work::FetchMailboxes { .. }))
+        );
+        assert!(
+            work.iter()
+                .any(|w| matches!(w, Work::FetchEmails { mailbox, .. } if mailbox == "m-in"))
+        );
+        let reply = &state.take_replies()[0];
+        assert_eq!((reply.id, reply.rc), (5, 0));
+        assert_eq!(reply.body["ids"][0], "E1");
+    }
+
+    #[test]
+    fn a_bus_answer_goes_out_even_after_the_account_reconnected() {
+        let mut state = connected();
+        let old = tag(&state, "a");
+        state.reconnect("a");
+        state.apply(Event::Account(
+            old.clone(),
+            Done::Answered(8, Then::Answer, Ok(json!({"mailboxes": []}))),
+        ));
+        state.apply(Event::Account(
+            old,
+            Done::Wrote(
+                Some(9),
+                Write::DeleteMailbox { id: "m".into() },
+                Err(jmap::Error::method("notFound", None)),
+            ),
+        ));
+        let replies = state.take_replies();
+        assert_eq!((replies[0].id, replies[0].rc), (8, 0));
+        assert_eq!((replies[1].id, replies[1].rc), (9, 10));
+        assert_eq!(replies[1].body["error_code"], code::NOT_FOUND);
+    }
+
+    #[test]
+    fn delete_confirms_when_the_settings_ask_and_not_otherwise() {
+        let mut state = reading();
+        state.delete_open();
+        assert!(matches!(&state.form, Some(Form::Delete { ids, .. }) if ids == &["E1"]));
+        assert!(writes(&mut state).is_empty(), "nothing until confirmed");
+        state.apply_ui(UiEvent::FormSubmit(None));
+        assert!(state.form.is_none());
+        assert!(matches!(
+            writes(&mut state).as_slice(),
+            [(None, Write::Delete { destroy: false, .. })]
+        ));
+        let mut next = settings(&["a"]);
+        next.mail.confirm_delete = false;
+        state.set_settings(next);
+        state.take_work();
+        state.account_mut("a").unwrap().mail.open = Some(unread_email("E2"));
+        state.delete_open();
+        assert!(state.form.is_none());
+        assert_eq!(writes(&mut state).len(), 1);
+    }
+
+    #[test]
+    fn move_flag_and_mark_unread_act_on_the_open_email() {
+        let mut state = reading();
+        state.move_open();
+        state.apply_ui(UiEvent::FormSubmit(Some("m-archive".into())));
+        assert!(
+            matches!(writes(&mut state).as_slice(), [(None, Write::Move { mailbox, .. })] if mailbox == "m-archive")
+        );
+        state.flag_open();
+        let view = state.account("a").unwrap();
+        let flagged =
+            view.mail.open.as_ref().unwrap().keywords.as_ref().unwrap()["$flagged"].clone();
+        assert_eq!(flagged, json!(true), "shown at once");
+        assert!(matches!(
+            writes(&mut state).as_slice(),
+            [(
+                None,
+                Write::Keywords {
+                    flagged: Some(true),
+                    read: None,
+                    ..
+                }
+            )]
+        ));
+        state.account_mut("a").unwrap().mail.emails[0].keywords = Some(json!({"$seen": true}));
+        state.mark_open_unread();
+        assert!(!state.account("a").unwrap().mail.emails[0].is_read());
+        assert!(matches!(
+            writes(&mut state).as_slice(),
+            [(
+                None,
+                Write::Keywords {
+                    read: Some(false),
+                    ..
+                }
+            )]
+        ));
+    }
+
+    #[test]
+    fn the_event_form_checks_then_creates_and_closes_once_saved() {
+        let mut state = connected();
+        done(
+            &mut state,
+            "a",
+            Done::Calendars(Ok(vec![Calendar {
+                id: "C1".into(),
+                name: "Main".into(),
+                ..Calendar::default()
+            }])),
+        );
+        state.take_work();
+        state.new_event();
+        assert!(
+            matches!(&state.form, Some(Form::Event(f)) if f.calendar == "C1" && !f.start.is_empty())
+        );
+        state.apply_ui(UiEvent::FormSubmit(None));
+        assert!(
+            matches!(&state.form, Some(Form::Event(f)) if f.error.is_some()),
+            "a title is needed"
+        );
+        state.apply_ui(UiEvent::FormField(FormField::Title, "Standup".into()));
+        state.apply_ui(UiEvent::FormField(FormField::End, "not a time".into()));
+        state.apply_ui(UiEvent::FormSubmit(None));
+        assert!(writes(&mut state).is_empty(), "a bad end is refused here");
+        state.apply_ui(UiEvent::FormField(
+            FormField::Start,
+            "2026-10-17T09:00:00+10:00".into(),
+        ));
+        state.apply_ui(UiEvent::FormField(
+            FormField::End,
+            "2026-10-17T09:15:00+10:00".into(),
+        ));
+        state.apply_ui(UiEvent::FormSubmit(None));
+        let write = match writes(&mut state).as_slice() {
+            [(None, write @ Write::CreateEvent { calendar, draft })] => {
+                assert_eq!((calendar.as_str(), draft.title.as_str()), ("C1", "Standup"));
+                write.clone()
+            }
+            other => panic!("{other:?}"),
+        };
+        assert!(matches!(&state.form, Some(Form::Event(f)) if f.busy));
+        let tag = tag(&state, "a");
+        state.apply(Event::Account(
+            tag,
+            Done::Wrote(None, write, Ok(json!({"id": "ev-1"}))),
+        ));
+        assert!(state.form.is_none());
+        assert!(
+            state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::FetchEvents { calendar, .. } if calendar == "C1"))
+        );
+    }
+
+    #[test]
+    fn a_bus_reply_or_forward_opens_compose_from_the_fetched_email() {
+        let mut state = connected();
+        let email = serde_json::to_value(unread_email("E7")).unwrap();
+        let tag = tag(&state, "a");
+        state.apply(Event::Account(
+            tag.clone(),
+            Done::Answered(3, Then::Reply(false), Ok(email.clone())),
+        ));
+        let compose = state.compose.clone().expect("a reply");
+        assert_eq!(compose.draft.subject, "Re: Hello");
+        assert_eq!(state.take_replies()[0].body["composing"], "a");
+        // A second one while that compose is open is refused, not lost.
+        state.apply(Event::Account(
+            tag.clone(),
+            Done::Answered(
+                4,
+                Then::Forward("x@example.invalid".into()),
+                Ok(email.clone()),
+            ),
+        ));
+        assert_eq!(state.take_replies()[0].body["error_code"], code::BUSY);
+        state.compose = None;
+        state.apply(Event::Account(
+            tag,
+            Done::Answered(5, Then::Forward("x@example.invalid".into()), Ok(email)),
+        ));
+        let compose = state.compose.clone().expect("a forward");
+        assert_eq!(compose.draft.subject, "Fwd: Hello");
+        assert_eq!(compose.to_text, "x@example.invalid");
+        assert!(
+            compose.draft.body.contains("Bob <bob@example.invalid>"),
+            "{}",
+            compose.draft.body
+        );
+    }
+
+    #[test]
+    fn a_bus_open_answers_once_the_email_loads() {
+        let mut state = reading();
+        state.open_by_bus("a", "E2".into(), 6);
+        let ticket = state
+            .take_work()
+            .iter()
+            .find_map(|w| match w {
+                Work::OpenEmail {
+                    ticket,
+                    reply: Some(6),
+                    ..
+                } => Some(*ticket),
+                _ => None,
+            })
+            .expect("an open for the Bus");
+        assert!(
+            state.account("a").unwrap().mail.emails[1].is_read(),
+            "marked read like a click"
+        );
+        done(
+            &mut state,
+            "a",
+            Done::Opened(ticket, Some(6), Box::new(Ok(unread_email("E2")))),
+        );
+        assert_eq!(state.take_replies()[0].body["id"], "E2");
+        assert_eq!(
+            state.account("a").unwrap().mail.open.as_ref().unwrap().id,
+            "E2"
+        );
+        done(
+            &mut state,
+            "a",
+            Done::Opened(
+                ticket + 9,
+                Some(7),
+                Box::new(Err(jmap::Error::Protocol("email \"E9\" is gone".into()))),
+            ),
+        );
+        assert_eq!(state.take_replies()[0].body["error_code"], code::NOT_FOUND);
     }
 }

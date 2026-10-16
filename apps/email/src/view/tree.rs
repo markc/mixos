@@ -81,56 +81,62 @@ fn draw(ui: &mut Ui, row: &TreeRow, cursor: bool, stroke: f32, events: &mut Vec<
     let weak = ui.visuals().weak_text_color();
     let error = ui.visuals().error_fg_color;
     let indent = ui.spacing().indent * row.depth as f32;
-    let shown = ui.scope(|ui| egui::Sides::new().show(
-        ui,
-        |ui| {
-            ui.add_space(indent);
-            if row.expandable {
-                let chevron = if row.expanded {
-                    Icon::ChevronDown
+    let shown = ui.scope(|ui| {
+        egui::Sides::new().show(
+            ui,
+            |ui| {
+                ui.add_space(indent);
+                if row.expandable {
+                    let chevron = if row.expanded {
+                        Icon::ChevronDown
+                    } else {
+                        Icon::ChevronRight
+                    };
+                    let toggle =
+                        ui.add(icons::image(chevron, stroke, ICON, weak).sense(Sense::click()));
+                    if toggle.clicked() {
+                        events.push(UiEvent::Expand(row.node.clone(), !row.expanded));
+                        ui.memory_mut(|m| m.request_focus(tree_id()));
+                    }
                 } else {
-                    Icon::ChevronRight
+                    // Where a disclosure would be, so icons line up by depth.
+                    ui.add_space(ICON + ui.spacing().item_spacing.x);
+                }
+                let (icon, colour) = match &row.kind {
+                    RowKind::Account(Phase::Ready) => (Icon::Mail, weak),
+                    RowKind::Account(Phase::Connecting) => (Icon::LoaderCircle, weak),
+                    RowKind::Account(Phase::Failed(_) | Phase::NoPassword) => {
+                        (Icon::CircleAlert, error)
+                    }
+                    RowKind::Account(Phase::Disabled) => (Icon::Unplug, weak),
+                    RowKind::Mailbox(role) => (mailbox_icon(role.as_deref()), weak),
+                    RowKind::CalendarGroup | RowKind::Calendar => (Icon::Calendar, weak),
+                    RowKind::BookGroup | RowKind::Book => (Icon::BookUser, weak),
                 };
-                let toggle = ui.add(icons::image(chevron, stroke, ICON, weak).sense(Sense::click()));
-                if toggle.clicked() {
-                    events.push(UiEvent::Expand(row.node.clone(), !row.expanded));
+                ui.add(icons::image(icon, stroke, ICON, colour));
+                let root = matches!(row.kind, RowKind::Account(_));
+                let text = if row.selected || root {
+                    RichText::new(&row.label).strong()
+                } else {
+                    RichText::new(&row.label)
+                };
+                let text = if matches!(row.kind, RowKind::Account(Phase::Disabled)) {
+                    text.weak()
+                } else {
+                    text
+                };
+                if toolkit::selectable(ui, row.selected, text).clicked() {
+                    events.push(UiEvent::Select(row.node.clone()));
                     ui.memory_mut(|m| m.request_focus(tree_id()));
                 }
-            } else {
-                ui.add_space(ICON);
-            }
-            let (icon, colour) = match &row.kind {
-                RowKind::Account(Phase::Ready) => (Icon::Mail, weak),
-                RowKind::Account(Phase::Connecting) => (Icon::LoaderCircle, weak),
-                RowKind::Account(Phase::Failed(_) | Phase::NoPassword) => (Icon::CircleAlert, error),
-                RowKind::Account(Phase::Disabled) => (Icon::Unplug, weak),
-                RowKind::Mailbox(role) => (mailbox_icon(role.as_deref()), weak),
-                RowKind::CalendarGroup | RowKind::Calendar => (Icon::Calendar, weak),
-                RowKind::BookGroup | RowKind::Book => (Icon::BookUser, weak),
-            };
-            ui.add(icons::image(icon, stroke, ICON, colour));
-            let root = matches!(row.kind, RowKind::Account(_));
-            let text = if row.selected || root {
-                RichText::new(&row.label).strong()
-            } else {
-                RichText::new(&row.label)
-            };
-            let text = if matches!(row.kind, RowKind::Account(Phase::Disabled)) {
-                text.weak()
-            } else {
-                text
-            };
-            if toolkit::selectable(ui, row.selected, text).clicked() {
-                events.push(UiEvent::Select(row.node.clone()));
-                ui.memory_mut(|m| m.request_focus(tree_id()));
-            }
-        },
-        |ui| {
-            if row.unread > 0 {
-                ui.label(RichText::new(row.unread.to_string()).strong());
-            }
-        },
-    ));
+            },
+            |ui| {
+                if row.unread > 0 {
+                    ui.label(RichText::new(row.unread.to_string()).strong());
+                }
+            },
+        )
+    });
     if cursor {
         let rect = shown.response.rect;
         let visuals = ui.visuals();

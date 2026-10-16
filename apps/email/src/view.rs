@@ -15,6 +15,7 @@ pub mod account;
 pub mod calendar;
 pub mod compose;
 pub mod contacts;
+pub mod form;
 pub mod mail;
 pub mod tree;
 
@@ -53,6 +54,11 @@ pub enum UiEvent {
     Retry(String),
     /// Open Prefs on its Email section.
     OpenPrefs,
+    /// An event or contact form's field.
+    FormField(crate::state::FormField, String),
+    /// The form's answer: confirm, save, or (a move) the mailbox chosen.
+    FormSubmit(Option<String>),
+    FormCancel,
     SplitPlaces(f32),
     SplitReader(f32),
     CloseDialog,
@@ -126,6 +132,7 @@ pub fn view(
         window(ui, state, commands, strings, stroke, &mut events);
     }
     compose::dialog(ui, state, &mut events);
+    form::dialog(ui, state, &mut events);
     if let Some(dialog) = state.ui.dialog {
         let title = match dialog {
             Dialog::About => "about",
@@ -162,9 +169,7 @@ fn status(ui: &mut egui::Ui, state: &State, stroke: f32) {
             _ => (Icon::Unplug, ui.visuals().error_fg_color),
         };
         ui.add(toolkit::icons::image(icon, stroke, ICON, colour));
-        let mut line = current
-            .map(|v| v.entry.name.clone())
-            .unwrap_or_default();
+        let mut line = current.map(|v| v.entry.name.clone()).unwrap_or_default();
         let mut push = |text: &str| {
             if !line.is_empty() {
                 line.push_str(" — ");
@@ -174,7 +179,9 @@ fn status(ui: &mut egui::Ui, state: &State, stroke: f32) {
         if !state.status.is_empty() {
             push(&state.status);
         }
-        if state.source == Source::Missing && !state.status.contains(&crate::label("settings-missing")) {
+        if state.source == Source::Missing
+            && !state.status.contains(&crate::label("settings-missing"))
+        {
             push(&crate::label("settings-missing"));
         }
         ui.small(&line);

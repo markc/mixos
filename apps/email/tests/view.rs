@@ -61,7 +61,13 @@ fn fixture() -> State {
     let mut secrets = Secrets::default();
     secrets.set("home", "secret");
     secrets.set("work", "secret");
-    let mut state = State::new(UiState::default(), Surface::Mail, None, settings.clone(), secrets);
+    let mut state = State::new(
+        UiState::default(),
+        Surface::Mail,
+        None,
+        settings.clone(),
+        secrets,
+    );
     state.set_settings(settings);
     let home = tag(&state, "home");
     state.apply(Event::Connected(
@@ -213,11 +219,23 @@ fn the_tree_draws_each_account_with_its_mailboxes_calendars_and_books() {
     let h = harness(fixture());
     // A selected row answers to two accessible nodes (the button and its
     // labelled widget info), so the draw asserts on "at least one".
-    for name in ["Home", "Work", "Inbox", "Lists", "Rust", "Main", "Colleagues"] {
+    for name in [
+        "Home",
+        "Work",
+        "Inbox",
+        "Lists",
+        "Rust",
+        "Main",
+        "Colleagues",
+    ] {
         assert!(h.query_all_by_label(name).next().is_some(), "{name}");
     }
     assert!(h.query_all_by_label(&label("calendars")).next().is_some());
-    assert!(h.query_all_by_label(&label("address-books")).next().is_some());
+    assert!(
+        h.query_all_by_label(&label("address-books"))
+            .next()
+            .is_some()
+    );
 }
 
 #[test]
@@ -226,7 +244,10 @@ fn a_mailbox_row_click_selects_the_mailbox() {
     h.get_by_label("Sent").click();
     h.run();
     let state = &h.state().state;
-    assert_eq!(state.account("home").unwrap().mail.selected.as_deref(), Some("m-sent"));
+    assert_eq!(
+        state.account("home").unwrap().mail.selected.as_deref(),
+        Some("m-sent")
+    );
 }
 
 #[test]
@@ -241,7 +262,11 @@ fn a_calendar_row_switches_the_mode_and_an_account_row_the_account() {
     assert_eq!(state.selected.as_deref(), Some("work"));
     // The failed account's pane: its error, a retry and Email Settings.
     assert!(h.query_all_by_label(&label("retry")).next().is_some());
-    assert!(h.query_all_by_label(&label("open-settings")).next().is_some());
+    assert!(
+        h.query_all_by_label(&label("open-settings"))
+            .next()
+            .is_some()
+    );
 }
 
 #[test]
@@ -325,7 +350,10 @@ fn no_accounts_offers_email_settings() {
 fn a_failed_account_retries() {
     let mut state = fixture();
     state.select_account("work");
-    assert!(matches!(state.account("work").unwrap().phase, Phase::Failed(_)));
+    assert!(matches!(
+        state.account("work").unwrap().phase,
+        Phase::Failed(_)
+    ));
     let mut h = harness(state);
     h.get_by_label(&label("retry")).click();
     h.run();
@@ -347,22 +375,72 @@ fn snapshot(name: &str, state: State, theme: &Theme) {
 
 #[test]
 fn window_pro_light() {
-    snapshot("window_pro_light", fixture(), &theme(Scheme::Pro, Mode::Light));
+    snapshot(
+        "window_pro_light",
+        fixture(),
+        &theme(Scheme::Pro, Mode::Light),
+    );
 }
 
 #[test]
 fn window_studio_dark() {
-    snapshot("window_studio_dark", fixture(), &theme(Scheme::Studio, Mode::Dark));
+    snapshot(
+        "window_studio_dark",
+        fixture(),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
 }
 
 #[test]
 fn failed_account_pro_light() {
     let mut state = fixture();
     state.select_account("work");
-    snapshot("failed_account_pro_light", state, &theme(Scheme::Pro, Mode::Light));
+    snapshot(
+        "failed_account_pro_light",
+        state,
+        &theme(Scheme::Pro, Mode::Light),
+    );
+}
+
+#[test]
+fn new_event_form_studio_dark() {
+    let mut state = fixture();
+    state.new_event();
+    if let Some(email::state::Form::Event(form)) = &mut state.form {
+        // A fixed time, so the picture does not move with the clock.
+        form.title = "Standup".into();
+        form.start = "2026-10-17T09:00:00+10:00".into();
+        form.end = "2026-10-17T09:15:00+10:00".into();
+    }
+    snapshot(
+        "new_event_form_studio_dark",
+        state,
+        &theme(Scheme::Studio, Mode::Dark),
+    );
+}
+
+#[test]
+fn confirm_delete_pro_light() {
+    let mut state = fixture();
+    let first = state.accounts[0].mail.emails[0].clone();
+    state.accounts[0].mail.open = Some(first);
+    state.delete_open();
+    assert!(matches!(
+        state.form,
+        Some(email::state::Form::Delete { .. })
+    ));
+    snapshot(
+        "confirm_delete_pro_light",
+        state,
+        &theme(Scheme::Pro, Mode::Light),
+    );
 }
 
 #[test]
 fn no_accounts_studio_dark() {
-    snapshot("no_accounts_studio_dark", empty(), &theme(Scheme::Studio, Mode::Dark));
+    snapshot(
+        "no_accounts_studio_dark",
+        empty(),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
 }
