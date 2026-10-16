@@ -3,7 +3,7 @@
 The reserved MixOS mail client (`dev.mixos.email`): a pure JMAP client —
 mail, calendar and contacts over HTTPS to any RFC 8620/8621-shaped server.
 Read mail and send it; list calendars, events, address books and contacts.
-The manual is [`docs/email.md`](../../docs/email.md).
+The manual is [`docs/email/README.md`](../../docs/email/README.md).
 
 - `crates/jmap`: the headless engine — session discovery, token auth, the
   wire types and calls for mail, compose, calendars and contacts. Ported
