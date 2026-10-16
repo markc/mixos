@@ -196,6 +196,12 @@ fn restore($text)
     if type($r) != "map" or type($r.id) != "number" or type($r.summary) != "string" or type($r.actions) != "list" then
       raise("STATE_INVALID", "state file has a malformed record")
     end
+    if $r.deadline_t != nil and type($r.deadline_t) != "number" then
+      raise("STATE_INVALID", "record " .. to_string($r.id) .. " has a malformed deadline")
+    end
+    if $r.outcome != nil and (type($r.outcome) != "map" or not contains($KINDS, $r.outcome.kind)) then
+      raise("STATE_INVALID", "record " .. to_string($r.id) .. " has a malformed outcome")
+    end
   end
   return $v
 end

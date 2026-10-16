@@ -82,15 +82,31 @@ fn refresh()
   $model = model_of($choice.note, $choice.more)
   $published = $r.publish_model($ctx, $model)
   if not $published.ok then return $published end
-  $state.shown_id = $model.id
-  $state.actions = $choice.note.actions ?? []
-  $state.visible = true
-  return $r.call($ctx.host, "shell.toast.show", {scene: $ctx.name, h: height_of($model)})
+  $shown = $r.call($ctx.host, "shell.toast.show", {scene: $ctx.name, h: height_of($model)})
+  if $shown.ok then
+    $state.shown_id = $model.id
+    $state.actions = $choice.note.actions ?? []
+    $state.visible = true
+  else
+    -- Not on screen: no button may answer it. The next event retries.
+    $state.shown_id = 0
+    $state.actions = []
+    $state.visible = false
+  end
+  return $shown
 end
 
+-- One refresh at a time: queued stays set while it runs (it yields at every
+-- Bus call), so events only bump the sequence; a bump during the run
+-- schedules one more refresh at the end. An older refresh can never
+-- overwrite a newer one's shown id, so a button always answers the
+-- question on screen.
 on refresh async
+  $start = $state.sequence
+  $out = refresh()
   $state.queued = false
-  $r.respond(refresh())
+  if $state.sequence != $start then schedule() end
+  $r.respond($out)
 end
 
 -- A new passive notification flashes; the hide is a local timer task.
