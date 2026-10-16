@@ -926,7 +926,9 @@ impl Staging {
             )));
         }
         if !directory_names(&self.dir)?.is_empty() {
-            return Err(std::io::Error::other("the new staging directory is not empty"));
+            return Err(std::io::Error::other(
+                "the new staging directory is not empty",
+            ));
         }
         Ok(())
     }

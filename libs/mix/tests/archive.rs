@@ -1740,7 +1740,11 @@ async fn a_zstd_frame_with_a_corrupt_checksum_footer_is_refused() {
     // four bytes are the XXH64 footer and nothing else.
     let mut bytes = fs::read(&arc).unwrap();
     assert_eq!(&bytes[..4], &[0x28, 0xb5, 0x2f, 0xfd], "zstd magic");
-    assert_ne!(bytes[4] & 0x04, 0, "the packer must emit a content checksum");
+    assert_ne!(
+        bytes[4] & 0x04,
+        0,
+        "the packer must emit a content checksum"
+    );
     let good = d.join("good");
     run_ok(&format!(
         "tar_unpack(\"{}\", \"{}\")",
