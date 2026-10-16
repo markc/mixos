@@ -337,9 +337,19 @@ remembered. Once the tree has focus, <strong>↑/↓</strong> move, <strong>←/
 expand (or go to the parent or first child) and <strong>Enter</strong> selects.</p>
 </li>
 <li>
-<p><strong>The centre</strong>: the selected account's mail page (newest first, as many
-as the page size), its calendar's events, or its book's contacts, with
-a server-side filter over name, email and company.</p>
+<p><strong>The centre</strong>: the selected account's mail page, its calendar's events,
+or its book's contacts, with a server-side filter over name, email and
+company. The mail page is a <a href="/toolkit/datatable/">data table</a>: one
+compact row per email with From (the name, else the address), Subject
+(with flag and attachment markers) and Date (the time today, "Mon 14:02"
+this week, "16 Oct" this year, else "16/10/2025"); unread rows are bold
+and long cells end in "…" with the whole text on hover. A header click
+sorts by that column on the server (newest first by default; maild sorts
+by date, subject and sender), and the pager steps through pages of the
+page size. A new mailbox opens on its first page in the last sort chosen,
+which is remembered with the column widths. Once a row is clicked,
+<strong>↑/↓</strong>, <strong>Page Up/Down</strong>, <strong>Home/End</strong> move through the page and
+<strong>Enter</strong> opens the email.</p>
 </li>
 <li>
 <p><strong>The reader</strong>: the open email (plain text first, the HTML source when
@@ -395,6 +405,8 @@ instants.</p>
 <tr><td>Ctrl+Shift+K</td><td>New contact</td></tr>
 <tr><td>Ctrl+1 / 2 / 3</td><td>Mail / Calendar / Contacts</td></tr>
 <tr><td>Ctrl+PageDown / PageUp</td><td>Next / previous account</td></tr>
+<tr><td>Alt+PageDown / PageUp</td><td>Next / previous page of the list</td></tr>
+<tr><td>Alt+1 / 2 / 3</td><td>Sort by From / Subject / Date (again: reverse)</td></tr>
 </tbody></table>
 <h2 id="driving-it-over-the-bus">Driving it over the Bus</h2>
 <p>Service <code>email</code>, schema <code>email.v1</code>. <code>HELP</code> lists the verbs, and
@@ -422,7 +434,7 @@ never waits on them.</p>
 <tr><td><code>email.ping</code>, <code>email.info</code>, <code>email.commands</code></td><td>query</td><td>probe; the whole window state (no secret); the command registry</td></tr>
 <tr><td><code>email.accounts</code></td><td>query</td><td>the accounts with <code>has_password</code> and <code>state</code>, never a password</td></tr>
 <tr><td><code>email.mailboxes {account?}</code></td><td>query</td><td>mailboxes with roles, parents and counts</td></tr>
-<tr><td><code>email.list {account?, mailbox?, offset?, limit?, query?}</code></td><td>query</td><td>one page, newest first, with <code>total</code></td></tr>
+<tr><td><code>email.list {account?, mailbox?, sort?, order?, page?, offset?, limit?, query?}</code></td><td>query</td><td>one page sorted by <code>sort</code> (<code>received</code>, <code>subject</code>, <code>from</code>; default <code>received</code>) in <code>order</code> (<code>asc</code>, <code>desc</code>; default newest first, else A to Z), from <code>page</code> × <code>limit</code> or <code>offset</code>, with <code>total</code>, <code>page</code>, <code>sort</code> and <code>order</code></td></tr>
 <tr><td><code>email.search {account?, text, mailbox?, limit?}</code></td><td>query</td><td>emails matching text</td></tr>
 <tr><td><code>email.get {account?, id}</code></td><td>query</td><td>one email's headers and <code>text</code> body</td></tr>
 <tr><td><code>email.calendars</code>, <code>email.events {calendar?, from?, to?}</code>, <code>email.event.get {id}</code></td><td>query</td><td>calendars and events</td></tr>

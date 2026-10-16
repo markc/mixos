@@ -33,5 +33,5 @@ pub use client::{Call, Client, backref};
 pub use compose::{Composed, build_mime, format_address, parse_addresses};
 pub use contact::{AddressBook, Contact, ContactDraft, ContactPatch};
 pub use error::{Error, Result};
-pub use mail::{BodyPart, Email, EmailAddress, EmailPage, Mailbox};
+pub use mail::{BodyPart, Email, EmailAddress, EmailPage, EmailSort, Mailbox, SortProperty};
 pub use session::Session;

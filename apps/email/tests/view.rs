@@ -206,8 +206,96 @@ fn harness_with(state: State, theme: &Theme) -> Harness<'static, Window> {
             },
         );
     toolkit::install(&h.ctx, theme);
+    // Friday 2026-10-16 09:30 UTC: the list's dates do not move with the
+    // clock.
+    email::view::mail::pin_clock(&h.ctx, NOW, 0);
     h.run();
     h
+}
+
+/// The pinned clock, in Unix seconds.
+const NOW: i64 = 1_792_143_000;
+
+/// The fixture's inbox page replaced by six emails: a long sender and a
+/// long subject to elide, unread, flagged and attachment markers, and a
+/// date from today, this week, this year and an older year.
+fn long_list() -> State {
+    let mut state = fixture();
+    let email = |id: &str,
+                 from: serde_json::Value,
+                 subject: &str,
+                 at: &str,
+                 keywords: serde_json::Value,
+                 attachment: bool|
+     -> jmap::Email {
+        serde_json::from_value(serde_json::json!({
+            "id": id,
+            "subject": subject,
+            "from": from,
+            "receivedAt": at,
+            "keywords": keywords,
+            "hasAttachment": attachment,
+        }))
+        .unwrap()
+    };
+    let emails = vec![
+        email(
+            "L1",
+            serde_json::json!([{ "name": "Ann Lee", "email": "ann@example.invalid" }]),
+            "Lunch today?",
+            "2026-10-16T08:05:00Z",
+            serde_json::json!({}),
+            false,
+        ),
+        email(
+            "L2",
+            serde_json::json!([{ "name": "Bartholomew Rivera-Montgomery of the Extremely Long Display Name Society", "email": "bart@example.invalid" }]),
+            "Quarterly report: the full numbers, every appendix, the board's comments on each, and a summary of the summary",
+            "2026-10-14T14:02:00Z",
+            serde_json::json!({ "$seen": true, "$flagged": true }),
+            true,
+        ),
+        email(
+            "L3",
+            serde_json::json!(
+                "cy.no-display-name.but-a-very-long-local-part@subdomain.example.invalid"
+            ),
+            "Minutes",
+            "2026-10-12T17:45:00Z",
+            serde_json::json!({ "$seen": true }),
+            false,
+        ),
+        email(
+            "L4",
+            serde_json::json!([{ "name": "Dee", "email": "dee@example.invalid" }]),
+            "Re: build cluster",
+            "2026-08-03T09:00:00Z",
+            serde_json::json!({ "$flagged": true }),
+            false,
+        ),
+        email(
+            "L5",
+            serde_json::json!([{ "name": "Eve", "email": "eve@example.invalid" }]),
+            "Photos from the weekend",
+            "2026-01-16T11:00:00Z",
+            serde_json::json!({ "$seen": true }),
+            true,
+        ),
+        email(
+            "L6",
+            serde_json::json!([{ "name": "Gus", "email": "gus@example.invalid" }]),
+            "Old thread",
+            "2025-10-16T10:00:00Z",
+            serde_json::json!({ "$seen": true }),
+            false,
+        ),
+    ];
+    let view = &mut state.accounts[0];
+    view.mail.total = 236;
+    view.mail.emails = emails;
+    view.mail.table.selection = vec!["L3".into()];
+    view.mail.table.focus = Some(2);
+    state
 }
 
 fn harness(state: State) -> Harness<'static, Window> {
@@ -290,7 +378,7 @@ fn the_tree_takes_the_keyboard_after_a_click() {
 #[test]
 fn an_unread_email_row_opens_and_marks_read() {
     let mut h = harness(fixture());
-    h.get_by_label("Bob").click();
+    h.get_by_label_contains("Bob").click();
     h.run();
     let state = &h.state().state;
     assert!(
@@ -305,6 +393,96 @@ fn an_unread_email_row_opens_and_marks_read() {
     assert!(
         work.iter()
             .any(|w| matches!(w, Work::OpenEmail { id, .. } if id == "E1"))
+    );
+}
+
+/// The message list's rows, top to bottom, by their accessible labels.
+fn list_rows(h: &Harness<'static, Window>) -> Vec<String> {
+    use egui_kittest::kittest::NodeT;
+    let mut rows: Vec<(f32, String)> = h
+        .query_all_by_role(egui::accesskit::Role::Row)
+        .map(|n| {
+            (
+                n.rect().top(),
+                n.accesskit_node().label().unwrap_or_default(),
+            )
+        })
+        .collect();
+    rows.sort_by(|a, b| a.0.total_cmp(&b.0));
+    rows.into_iter().map(|(_, label)| label).collect()
+}
+
+#[test]
+fn each_email_is_one_row_of_from_subject_and_a_compact_date() {
+    let h = harness(long_list());
+    assert_eq!(
+        list_rows(&h),
+        [
+            "Ann Lee, Lunch today?, 08:05",
+            "Bartholomew Rivera-Montgomery of the Extremely Long Display Name Society, Quarterly report: the full numbers, every appendix, the board's comments on each, and a summary of the summary, Wed 14:02",
+            "cy.no-display-name.but-a-very-long-local-part@subdomain.example.invalid, Minutes, Mon 17:45",
+            "Dee, Re: build cluster, 3 Aug",
+            "Eve, Photos from the weekend, 16 Jan",
+            "Gus, Old thread, 16/10/2025",
+        ]
+    );
+    // The pager reads the server's total.
+    assert!(h.query_by_label("1–6 of 236").is_some());
+}
+
+#[test]
+fn dates_show_in_the_clock_zone() {
+    // Ten hours east: Bob's 01:02 UTC Tuesday is 11:02 there.
+    let mut h = harness(fixture());
+    email::view::mail::pin_clock(&h.ctx, NOW, 10 * 3600);
+    h.run();
+    assert!(
+        list_rows(&h)[0].ends_with("Tue 11:02"),
+        "{:?}",
+        list_rows(&h)
+    );
+}
+
+#[test]
+fn a_header_click_sorts_on_the_server() {
+    let mut h = harness(fixture());
+    h.get_by_label(&label("column-subject")).click();
+    h.run();
+    let state = &mut h.state_mut().state;
+    assert!(state.mail_sorted_by(email::state::COLUMN_SUBJECT));
+    let fetched = state.take_work().into_iter().any(|w| {
+        matches!(w, Work::FetchEmails { position: 0, sort, .. }
+            if sort == jmap::EmailSort::new(jmap::SortProperty::Subject, true))
+    });
+    assert!(fetched);
+}
+
+#[test]
+fn the_pager_and_the_keyboard_drive_the_list() {
+    let mut h = harness(long_list());
+    h.get_by_label("Next page").click();
+    h.run();
+    assert!(h.state_mut().state.take_work().iter().any(|w| matches!(
+        w,
+        Work::FetchEmails {
+            position: 100,
+            limit: 100,
+            ..
+        }
+    )));
+    // A row takes the keyboard; Down opens the next email.
+    let mut h = harness(long_list());
+    h.get_by_label_contains("Minutes").click();
+    h.run();
+    h.state_mut().state.take_work();
+    h.key_press(egui::Key::ArrowDown);
+    h.run();
+    assert!(
+        h.state_mut()
+            .state
+            .take_work()
+            .iter()
+            .any(|w| matches!(w, Work::OpenEmail { id, .. } if id == "L4"))
     );
 }
 
@@ -387,6 +565,24 @@ fn window_studio_dark() {
     snapshot(
         "window_studio_dark",
         fixture(),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
+}
+
+#[test]
+fn mail_list_studio_light() {
+    snapshot(
+        "mail_list_studio_light",
+        long_list(),
+        &theme(Scheme::Studio, Mode::Light),
+    );
+}
+
+#[test]
+fn mail_list_studio_dark() {
+    snapshot(
+        "mail_list_studio_dark",
+        long_list(),
         &theme(Scheme::Studio, Mode::Dark),
     );
 }

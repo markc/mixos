@@ -4,9 +4,10 @@
 //! from this registry; every run is published on `email.command.executed`.
 
 use egui::{Key, KeyboardShortcut, Modifiers};
+use toolkit::datatable::PageMove;
 use toolkit::{Command, Icon, Registry};
 
-use crate::state::{Mode, State};
+use crate::state::{COLUMN_DATE, COLUMN_FROM, COLUMN_SUBJECT, Mode, State};
 
 fn idle(state: &State) -> bool {
     state.compose.is_none() && state.form.is_none() && state.ui.dialog.is_none()
@@ -62,10 +63,28 @@ fn readable(state: &State) -> bool {
             .is_some_and(crate::reader::has_text)
 }
 
+/// The current account shows a mailbox's list (it can sort and page).
+fn listing(state: &State) -> bool {
+    undialogued(state)
+        && state.mode == Mode::Mail
+        && state
+            .current()
+            .is_some_and(|v| v.phase == crate::state::Phase::Ready && v.mail.selected.is_some())
+}
+
 /// More than one account to step through.
 fn several(state: &State) -> bool {
     undialogued(state) && state.accounts.len() > 1
 }
+
+/// One View › Sort By command: id, label, column, the Alt chord's key, run.
+type SortCommand = (
+    &'static str,
+    &'static str,
+    &'static str,
+    Key,
+    fn(&mut State),
+);
 
 const fn key(modifiers: Modifiers, key: Key) -> Option<KeyboardShortcut> {
     Some(KeyboardShortcut::new(modifiers, key))
@@ -273,6 +292,69 @@ pub fn registry() -> Registry<State> {
         icon: None,
         enabled: several,
         run: |state| state.step_account(false),
+    });
+    // View › Sort By: the list's server-side sort, ticked on the column in
+    // force; choosing it again reverses it, as its header does.
+    let sorts: [SortCommand; 3] = [
+        (
+            "view.sort_from",
+            "column-from",
+            COLUMN_FROM,
+            Key::Num1,
+            |s| s.sort_mail(COLUMN_FROM),
+        ),
+        (
+            "view.sort_subject",
+            "column-subject",
+            COLUMN_SUBJECT,
+            Key::Num2,
+            |s| s.sort_mail(COLUMN_SUBJECT),
+        ),
+        (
+            "view.sort_date",
+            "column-date",
+            COLUMN_DATE,
+            Key::Num3,
+            |s| s.sort_mail(COLUMN_DATE),
+        ),
+    ];
+    for (id, label, column, chord, run) in sorts {
+        r.add_toggle(
+            Command {
+                id,
+                submenu: Some("sort-by"),
+                group: 2,
+                label,
+                menu: Some("view"),
+                shortcut: key(Modifiers::ALT, chord),
+                icon: None,
+                enabled: listing,
+                run,
+            },
+            move |s: &State| s.mail_sorted_by(column),
+        );
+    }
+    r.add(Command {
+        id: "view.previous_page",
+        submenu: None,
+        group: 3,
+        label: "previous-page",
+        menu: Some("view"),
+        shortcut: key(Modifiers::ALT, Key::PageUp),
+        icon: Some(Icon::ChevronLeft),
+        enabled: |s| listing(s) && s.can_page_mail(PageMove::Previous),
+        run: |s| s.page_mail(PageMove::Previous),
+    })
+    .add(Command {
+        id: "view.next_page",
+        submenu: None,
+        group: 3,
+        label: "next-page",
+        menu: Some("view"),
+        shortcut: key(Modifiers::ALT, Key::PageDown),
+        icon: Some(Icon::ChevronRight),
+        enabled: |s| listing(s) && s.can_page_mail(PageMove::Next),
+        run: |s| s.page_mail(PageMove::Next),
     })
     .add(Command {
         id: "view.reader.markdown",

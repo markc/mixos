@@ -105,9 +105,19 @@ A malformed file loads defaults and is never overwritten.
   folder, calendar or book. Nodes collapse and expand, and the state is
   remembered. Once the tree has focus, **↑/↓** move, **←/→** collapse and
   expand (or go to the parent or first child) and **Enter** selects.
-- **The centre**: the selected account's mail page (newest first, as many
-  as the page size), its calendar's events, or its book's contacts, with
-  a server-side filter over name, email and company.
+- **The centre**: the selected account's mail page, its calendar's events,
+  or its book's contacts, with a server-side filter over name, email and
+  company. The mail page is a [data table](../toolkit/datatable.md): one
+  compact row per email with From (the name, else the address), Subject
+  (with flag and attachment markers) and Date (the time today, "Mon 14:02"
+  this week, "16 Oct" this year, else "16/10/2025"); unread rows are bold
+  and long cells end in "…" with the whole text on hover. A header click
+  sorts by that column on the server (newest first by default; maild sorts
+  by date, subject and sender), and the pager steps through pages of the
+  page size. A new mailbox opens on its first page in the last sort chosen,
+  which is remembered with the column widths. Once a row is clicked,
+  **↑/↓**, **Page Up/Down**, **Home/End** move through the page and
+  **Enter** opens the email.
 - **The reader**: the open email (plain text first, the HTML source when
   there is no plain text), event or contact. A text body written as
   Markdown is rendered: a `text/markdown` part always, and a
@@ -156,6 +166,8 @@ A malformed file loads defaults and is never overwritten.
 | Ctrl+Shift+K | New contact |
 | Ctrl+1 / 2 / 3 | Mail / Calendar / Contacts |
 | Ctrl+PageDown / PageUp | Next / previous account |
+| Alt+PageDown / PageUp | Next / previous page of the list |
+| Alt+1 / 2 / 3 | Sort by From / Subject / Date (again: reverse) |
 
 ## Driving it over the Bus
 
@@ -187,7 +199,7 @@ never waits on them.
 | `email.ping`, `email.info`, `email.commands` | query | probe; the whole window state (no secret); the command registry |
 | `email.accounts` | query | the accounts with `has_password` and `state`, never a password |
 | `email.mailboxes {account?}` | query | mailboxes with roles, parents and counts |
-| `email.list {account?, mailbox?, offset?, limit?, query?}` | query | one page, newest first, with `total` |
+| `email.list {account?, mailbox?, sort?, order?, page?, offset?, limit?, query?}` | query | one page sorted by `sort` (`received`, `subject`, `from`; default `received`) in `order` (`asc`, `desc`; default newest first, else A to Z), from `page` × `limit` or `offset`, with `total`, `page`, `sort` and `order` |
 | `email.search {account?, text, mailbox?, limit?}` | query | emails matching text |
 | `email.get {account?, id}` | query | one email's headers and `text` body |
 | `email.calendars`, `email.events {calendar?, from?, to?}`, `email.event.get {id}` | query | calendars and events |

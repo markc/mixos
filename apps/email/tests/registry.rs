@@ -77,3 +77,28 @@ fn read_only_verbs_are_queries() {
         }
     }
 }
+
+/// The registry's version for `name`, from its one-entry-per-line form.
+fn version_of(name: &str) -> Option<&'static str> {
+    let key = format!("name:\"{name}\"");
+    REGISTRY
+        .lines()
+        .find(|line| line.contains(&key))?
+        .split("version:\"")
+        .nth(1)?
+        .split('"')
+        .next()
+}
+
+/// `email.list` took `sort`, `order` and `page` in 0.2.0, and `email.info`
+/// the message list's table state: both payloads changed, so both moved
+/// on from 0.1.0 (AGENTS.md §5).
+#[test]
+fn the_list_payload_change_is_versioned() {
+    let list = VERBS.iter().find(|v| v.name == "email.list").unwrap();
+    for arg in ["sort", "order", "page", "offset", "limit"] {
+        assert!(list.args.contains(&format!("\"{arg}\"")), "{arg}");
+    }
+    assert_eq!(version_of("email.list"), Some("0.2.0"));
+    assert_eq!(version_of("email.info"), Some("0.2.0"));
+}
