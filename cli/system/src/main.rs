@@ -18,6 +18,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 const PERSONALITIES: &[(&str, &str)] = &[
     ("mix", mix_shell::COMPONENT_VERSION),
     ("noded", noded::COMPONENT_VERSION),
+    ("monitord", monitord::COMPONENT_VERSION),
 ];
 
 /// The personality argv[0] names: its basename, without the leading `-` a
@@ -61,6 +62,7 @@ fn main() -> ExitCode {
         // `exe`: a `/proc/self/exe` re-exec that did not set argv[0].
         "mix" | "exe" => mix_shell::main(),
         "noded" => noded::main(),
+        "monitord" => monitord::main(),
         own if is_own_file(own) => mix_shell::main(),
         _ => {
             eprintln!(

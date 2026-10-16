@@ -716,6 +716,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [mimedb](../mimedb/README.md) | lib | none (library) | [`libs/mimedb`](https://github.com/markc/mixos/tree/main/libs/mimedb) | A library that reads the freedesktop shared-mime-info database and decides a file's type from its name and content the way GLib does, so MixOS names a file's type as the desktop does. |
 | [mix](../mix/README.md) · [changelog](../mix/changelog.md) | lib | none (library) | [`libs/mix`](https://github.com/markc/mixos/tree/main/libs/mix) |  |
 | [mix-shell](../mix-shell/README.md) · [changelog](../mix-shell/changelog.md) | cli | unclassified | [`cli/mix-shell`](https://github.com/markc/mixos/tree/main/cli/mix-shell) | The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs. |
+| [monitord](../monitord/README.md) · [changelog](../monitord/changelog.md) | service | base | [`services/monitord`](https://github.com/markc/mixos/tree/main/services/monitord) | How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read verbs on the Bus, so any node's load can be read from anywhere on the… |
 | [noded](../noded/README.md) · [changelog](../noded/changelog.md) | service | unclassified | [`services/noded`](https://github.com/markc/mixos/tree/main/services/noded) | The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes. |
 | [notifyd](../notifyd/README.md) | service | unclassified | [`services/notifyd`](https://github.com/markc/mixos/tree/main/services/notifyd) | How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed. |
 | [portald](../portald/README.md) | service | unclassified | [`services/portald`](https://github.com/markc/mixos/tree/main/services/portald) | How portald serves the XDG Settings portal on the session bus, where the appearance values come from, and how applications and agents read them. |
@@ -819,6 +820,7 @@ checked separately by the layering gate.
 | [x11-wm](https://github.com/markc/mixos/blob/main/services/compd/crates/x11-wm/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [editd](https://github.com/markc/mixos/blob/main/services/editd/Cargo.toml) | editd | service | core | public | 0.2.0 |
 | [hostd](https://github.com/markc/mixos/blob/main/services/hostd/Cargo.toml) | hostd | service | core | public | 0.1.0 |
+| [monitord](https://github.com/markc/mixos/blob/main/services/monitord/Cargo.toml) | monitord | service | core | public | 0.1.0 |
 | [noded](https://github.com/markc/mixos/blob/main/services/noded/Cargo.toml) | noded | service | core | public | 0.18.3 |
 | [mesh-trust](https://github.com/markc/mixos/blob/main/services/noded/crates/mesh-trust/Cargo.toml) | noded | service | core | none | 0.1.1 |
 | [mesh](https://github.com/markc/mixos/blob/main/services/noded/crates/mesh/Cargo.toml) | noded | service | core | none | 0.1.1 |
@@ -4360,6 +4362,144 @@ valid, so nothing is migrated.
   precedence (overlay, then token, then `DEFAULT_STROKE` 1.5), a weight
   override that beats the chrome lock, and a background scan of the host's
   font files.
+
+---
+
+<!-- page: https://mixos.dev/docs/decisions/2026-10-16-monitord-and-monitor/ (source: https://mixos.dev/docs/decisions/2026-10-16-monitord-and-monitor.md) -->
+
+# Decision — monitord and Monitor
+
+Status: accepted 2026-10-16.
+
+## The decision
+
+- **`monitord`** (`services/monitord`, kind service, layer core) runs once
+  per host as its own unprivileged user. It samples the system and its
+  processes, keeps recent history in memory and longer history in SQLite,
+  and answers read verbs on the Bus. It runs headless; a mesh node with no
+  desktop is a first-class host.
+- **`Monitor`** (`apps/monitor`, binary `monitor`, app id
+  `dev.mixos.monitor`) is the egui task manager: processes, performance
+  graphs, apps, services and users, in the shape people know from Windows
+  Task Manager and GNOME Mission Center. It reads everything through
+  monitord's verbs, never from `/proc` itself, so the same window shows any
+  node on the mesh (`monitord.<node>.bus`).
+- **monitord observes; it does not act.** No verb signals, renices or
+  stops anything.
+  - The `monitord` command line acts locally as the person who runs it:
+    `monitord signal` and `monitord renice` make the system call directly
+    and the kernel decides, exactly like `kill` and `renice`.
+  - Acting across users or across the mesh is hostd's job, as closed verbs
+    behind grants ([hostd decision](2026-10-12-hostd.md)), added one
+    reviewed verb at a time.
+- **A personality of the system binary.** monitord's library exports
+  `main`; `cli/system` carries it
+  ([one system binary](2026-10-12-one-system-binary.md)). The unit runs
+  `/opt/mixos/bin/monitord serve`.
+
+### History
+
+| Tier | Resolution | Kept | Where |
+|---|---|---|---|
+| live | the sample interval (1 s) | 10 minutes | memory ring |
+| short | 1 minute (avg, min, max) | 7 days | SQLite |
+| long | 1 hour (avg, min, max) | 1 year | SQLite |
+
+- SQLite (`rusqlite`, already in the system binary through the shell)
+  holds only system-wide series: CPU, memory, swap, load, pressure, and one
+  series per network interface and disk. Per-core and per-process series
+  live in memory only; they are too many to keep.
+- The database is `/var/lib/monitord/history.db`, owned by monitord. It is
+  a cache: deleting it loses history, nothing else.
+- Retention is configuration, so a small node can keep less.
+
+### Sampling
+
+- System-wide sampling runs all the time at 1 s. It reads a handful of
+  `/proc` files and costs next to nothing.
+- The process table is sampled only while someone is reading it: a
+  `monitord.processes` call holds the process sampler on for 30 s. An idle
+  mesh node does not walk `/proc` every second. A cold call samples twice,
+  a short interval apart, so CPU percentages are never zero by default.
+- monitord reads what an unprivileged user can read. A process's I/O
+  counters and some of its details are readable only for monitord's own
+  processes; elsewhere those fields are absent, never guessed. Wider reads
+  are a later, reviewed capability (`CAP_SYS_PTRACE` or a hostd verb).
+
+### On the Bus
+
+- Read verbs (all queries): `monitord.status`, `monitord.snapshot`,
+  `monitord.processes`, `monitord.process`, `monitord.series` and
+  `monitord.history`. The verbs and their bodies are documented in the
+  [monitord manual](../../monitord/README.md).
+- A retained topic, `monitord.summary`, carries a small system summary
+  every 5 s, so a dashboard of the whole mesh subscribes instead of
+  polling.
+- The reply bodies are a public contract (`contract = "public"`), versioned
+  in monitord's changelog. Monitor depends on the JSON, not on monitord's
+  Rust types. If a second component needs those types, they are promoted to
+  a library by review (AGENTS.md §2.2).
+
+### What it is built from
+
+- **Phase 1 reads the kernel directly.** `/proc` and `/sys` parsers are
+  small, and each one reads from a root directory, so tests run against a
+  fixture tree, the way hostd's do. No collection crate is needed yet.
+- **Later phases use permissive crates,** each checked against `deny.toml`
+  when it enters:
+
+  | Area | Crate |
+  |---|---|
+  | NVIDIA | `nvml-wrapper` (MIT OR Apache-2.0) |
+  | AMD | `libamdgpu_top` (MIT) |
+  | Intel, and GPU use per process on every vendor | `qmlib` (Apache-2.0) |
+  | systemd units, login sessions | `zbus_systemd` (MIT OR Apache-2.0) |
+  | battery | `starship-battery` (ISC) |
+  | graphs, tables (Monitor) | `egui_plot`, `egui_table` (MIT OR Apache-2.0) |
+
+- **Code may be lifted** from bottom (MIT) and systemd-manager-tui (MIT),
+  with its notice kept (AGENTS.md §4).
+- **GPL and other copyleft monitors are reference only:** Mission Center
+  and magpie, Resources, nvtop. Nobody copies or translates their code.
+  Where one of them shows *what* to read, the reader is written fresh from
+  the kernel's documentation.
+
+### Phases
+
+1. monitord: CPU, memory, swap, pressure, load, disks, network interfaces,
+   the process table and tree; history; the Bus verbs and topic; the command
+   line, with local `signal` and `renice`.
+2. Monitor: the egui window over phase 1, any node on the mesh.
+3. GPUs: NVIDIA, AMD and Intel, with use per process.
+4. systemd services and the Apps view (processes grouped by application).
+5. Sensors, fans, battery, power.
+6. Privileged readings (per-process network bytes over eBPF, SMART, RAPL
+   energy, DMI) through a reviewed capability or hostd verbs.
+
+## Why
+
+- Every node on the mesh should be able to say what it is doing, in one
+  shape, to any agent or window that asks, without ssh.
+- The split between a headless sampler and a window is already the right
+  one in Mission Center (magpie and its GTK frontend), but that code is
+  GPL-3.0 and MixOS is MIT OR Apache-2.0. Permissive Rust crates cover
+  most of the same ground, and what they don't cover is small.
+- Keeping monitord read-only keeps it unprivileged, so it can run
+  everywhere. Killing a process is already a kernel-checked system call for
+  the local user; across users or nodes it is a privileged change, and
+  those go through hostd.
+
+## Consequences
+
+- noded's built-in `mon` module (`mon.status`, `mon.processes`,
+  `mon.props.*`) is superseded. Its verbs were never registered and nothing
+  in the tree calls them. It is removed once monitord is installed on the
+  mesh.
+- monitord adds a system user, `monitord`, and the state directory
+  `/var/lib/monitord`.
+- Monitor's graphs and tables record their performance workloads (a
+  2,000-process table, a 64-core grid) before they are optimised
+  (AGENTS.md §4.1).
 
 ---
 
@@ -28342,6 +28482,191 @@ mix keywords          list the reserved words
 
 ---
 
+<!-- page: https://mixos.dev/monitord/ (source: https://mixos.dev/monitord/README.md) -->
+
+# The system monitor service
+
+`monitord` runs once on every MixOS host, as its own unprivileged user. It
+samples the system every second, keeps history, and answers questions about
+the host on the Bus. It only reads. The reasons are in the
+[monitord decision](../docs/decisions/2026-10-16-monitord-and-monitor.md).
+
+Monitor, the task manager window, draws what monitord serves. Agents and
+scripts ask it directly.
+
+## Asking it
+
+On the Bus, the service is `monitord`. Any node's monitord is reachable
+over the mesh as `monitord.<node>.bus`:
+
+```mix
+send monitord monitord.snapshot
+print($reply.cpu.busy)
+
+send monitord.alpha.bus monitord.processes sort=memory limit=5
+```
+
+Every verb is a query: it changes nothing. A refusal comes back with `rc`
+10 and a body whose `status` says why: `bad_request`, `not_found`,
+`unknown_verb`, `failed` or `busy`.
+
+| Verb | Body | Returns |
+|---|---|---|
+| `monitord.status` | — | Version, uptime, sample interval, whether the process sampler is running, and the history database's size and retention |
+| `monitord.snapshot` | — | The system now (below) |
+| `monitord.processes` | `sort`, `reverse`, `limit`, `filter`, `user`, `tree`, `kernel_threads` | The process table |
+| `monitord.process` | `pid` | One process in full |
+| `monitord.series` | — | The history series held: `live` and `stored` |
+| `monitord.history` | `series`, `from` or `since`, `to`, `max_points` | Points for each series |
+
+Unknown body fields are refused, so a typo is an error, not a silent
+default.
+
+### `monitord.snapshot`
+
+Rates and percentages are over the last sample interval (`interval_s`).
+Sizes are bytes; rates are per second.
+
+- `host`, `ts` (Unix seconds), `uptime_s`, `boot_time`.
+- `cpu`: `model`, `cores`, and `busy`, `user`, `system`, `iowait`, `steal`
+  in percent; `per_core`, a list of the same per CPU with `mhz`;
+  `context_switches_ps`, `forks_ps`.
+- `memory`: `total`, `available`, `used` (`total - available`), `free`,
+  `cached`, `buffers`, `shared`, `dirty`. `swap`: `total`, `used`, `free`.
+- `load`: `one`, `five`, `fifteen`, `runnable`, `tasks`.
+- `pressure`: for `cpu`, `memory` and `io`, the share of time tasks
+  stalled (`some`, and `full` where the kernel reports it), each as
+  `avg10`, `avg60`, `avg300`. Absent on kernels without PSI.
+- `tasks`: `total`, `running`, `blocked`.
+- `disks`: each whole disk with `model`, `rotational`, `read_bps`,
+  `write_bps`, `reads_ps`, `writes_ps` and `busy` (percent of the interval
+  with I/O in flight). Loop and RAM devices are left out.
+- `filesystems`: each real filesystem once per device, with `mount`,
+  `device`, `kind`, `total`, `used`, `available`.
+- `net`: each interface but loopback, with `state`, `physical`,
+  `speed_mbps`, `rx_bps`, `tx_bps` and the running totals.
+
+A value monitord can't know is `null`, never zero.
+
+### `monitord.processes`
+
+```text
+{"sort":"cpu", "limit":100, "filter":"firefox", "user":"alice", "tree":false}
+```
+
+- `sort` is `cpu` (the default), `memory`, `io`, `pid`, `name` or `user`.
+  Numbers sort largest first and names A to Z; `reverse` flips it.
+- `limit` defaults to 100; 0 means every row.
+- `filter` matches the name or command line, ignoring case.
+- `tree` puts parents before children, siblings in sort order, each row
+  with its `depth`. A filter keeps a match's ancestors, so the tree still
+  joins up.
+- The kernel's own threads are left out unless `kernel_threads` is true.
+
+The reply has `total` (rows that matched), `count` (rows returned) and
+`rows`. Each row has `pid`, `ppid`, `name`, `cmdline`, `user`, `uid`,
+`state`, `cpu`, `memory` (resident), `virtual_memory`, `threads`, `nice`,
+`priority`, `started_at`, `read_bps`, `write_bps`, `unit` (the systemd
+service or scope) and `kernel_thread`.
+
+`cpu` is a share of the whole machine, as Task Manager shows it: one busy
+core of eight is 12.5.
+
+The process table is sampled only while someone reads it. A call keeps the
+sampler running for 30 seconds. The first call after a quiet spell takes
+two scans 0.3 s apart, so it answers in about a third of a second.
+
+monitord runs unprivileged, so another user's I/O counters, open files and
+working directory are unreadable to it. Those fields are `null`.
+
+### `monitord.process`
+
+`{"pid": 1234}` returns the table's fields plus `exe`, `cwd`, the whole
+`cmdline`, `cpu_time_s`, `memory_peak`, `swap`, `read_bytes`,
+`write_bytes`, `open_files`, `voluntary_switches`,
+`involuntary_switches`, `cgroup` and `children`.
+
+### `monitord.history`
+
+```text
+{"series":["cpu.busy","net.*"], "since":3600, "max_points":600}
+```
+
+- `series` is one name or a list. A name ending in `*` matches a prefix:
+  `cpu.core.*` is every core.
+- Give `from` (Unix seconds) or `since` (seconds back from `to`); the
+  default is the last ten minutes. `to` defaults to now.
+- Each point is `[time, average, minimum, maximum]`. Points are merged into
+  buckets of `step_s` seconds so a series has at most `max_points` (default
+  600).
+- `tier` says where the points came from:
+
+| Tier | Resolution | Kept | Series |
+|---|---|---|---|
+| `live` | every sample | 10 minutes | all, per core included |
+| `minute` | 1 minute | 7 days | system-wide |
+| `hour` | 1 hour | 1 year | system-wide |
+
+The series are `cpu.busy`, `cpu.user`, `cpu.system`, `cpu.iowait`,
+`cpu.steal`, `mem.used`, `mem.available`, `mem.cached`, `swap.used`,
+`load.1`, `load.5`, `load.15`, `psi.<cpu|memory|io>.<some|full>`,
+`disk.<name>.<read|write|busy>` and `net.<name>.<rx|tx>`, plus, in memory
+only, `cpu.core.<n>.busy` and `cpu.core.<n>.mhz`.
+
+### The summary topic
+
+Every 5 seconds monitord publishes a small retained summary on
+`monitord.summary`: host, CPU busy and core count, memory, swap, load, total
+network and disk rates, the 10-second pressure figures and the task count.
+A mesh dashboard subscribes to it instead of polling every node.
+
+## The command line
+
+The same binary works with no daemon running. It reads the kernel itself,
+so it answers on a node's console or over ssh either way:
+
+```text
+monitord snapshot            the system now, sampled over half a second
+monitord ps --sort memory    the process table (--tree, --user, --filter, --all)
+monitord history cpu.busy --since 86400    stored history from the database
+monitord signal 1234 TERM    send a signal, as you
+monitord renice 1234 10      change a nice value, as you
+```
+
+`--json` prints what the matching verb returns. `signal` and `renice` run as
+the person who typed them, and the kernel decides whether they may. No Bus
+verb signals or renices anything: acting across users or nodes is
+[hostd](../hostd/README.md)'s job.
+
+## Running it
+
+`monitord.service` runs `/opt/mixos/bin/monitord serve` as the user
+`monitord`, with no capabilities and a strict sandbox. The history
+database is `/var/lib/monitord/history.db`; it is a cache, and deleting it
+loses history and nothing else.
+
+`serve` takes:
+
+- `--interval-ms` (default 1000);
+- `--db PATH` or `--no-db`;
+- `--minute-days` (default 7) and `--hour-days` (default 365);
+- `--no-bus`, to sample and record without joining the Bus.
+
+When the broker is down, monitord keeps sampling and recording, and joins
+when it comes back.
+
+## Testing
+
+```text
+cargo test -p monitord
+```
+
+The kernel readers take the text of each file, and the verb tests run
+against a fixture `/proc` and `/sys` tree, so no test needs a real host or
+a broker.
+
+---
+
 <!-- page: https://mixos.dev/noded/ (source: https://mixos.dev/noded/README.md) -->
 
 # Native node broker
@@ -30559,6 +30884,26 @@ native-session handoff bytes retain the frozen compatibility contract.
 
 ---
 
+<!-- page: https://mixos.dev/monitord/changelog/ (source: https://mixos.dev/monitord/changelog.md) -->
+
+# monitord contract changes
+
+> Mirrored from [`services/monitord/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/monitord/CHANGELOG.md), where releases update it. The component's page is [monitord](README.md). This page describes the current `main` branch of MixOS.
+
+## 0.1.0 (draft)
+
+- Read verbs `monitord.status`, `monitord.snapshot`, `monitord.processes`,
+  `monitord.process`, `monitord.series` and `monitord.history`, all
+  queries.
+- Retained topic `monitord.summary`, every 5 s.
+- History: every sample for 10 minutes in memory; minute rollups for 7 days
+  and hour rollups for a year in SQLite (`/var/lib/monitord/history.db`,
+  schema 1).
+- Command line: `serve`, `snapshot`, `ps`, `history`, and the local actions
+  `signal` and `renice`, which run as the caller.
+
+---
+
 <!-- page: https://mixos.dev/noded/changelog/ (source: https://mixos.dev/noded/changelog.md) -->
 
 # noded changes
@@ -30834,7 +31179,7 @@ the [server](server.md) list. This page describes the current `main` branch of M
 
 On every MixOS system.
 
-None yet.
+- [monitord](../monitord/README.md) (service): How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read verbs on the Bus, so any node's load can be read from anywhere on the…
 
 ## Desktop components
 
@@ -30880,7 +31225,7 @@ the [desktop](desktop.md) list. This page describes the current `main` branch of
 
 On every MixOS system.
 
-None yet.
+- [monitord](../monitord/README.md) (service): How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read verbs on the Bus, so any node's load can be read from anywhere on the…
 
 ## Server components
 
