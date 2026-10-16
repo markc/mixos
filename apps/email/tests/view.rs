@@ -50,19 +50,22 @@ fn fixture() -> State {
         },
     ])));
     // The answer to the inbox's first page request (ticket 1).
-    state.apply(Event::Page(1, Ok(EmailPage {
-        emails: vec![
-            serde_json::from_value(serde_json::json!({
-                "id": "E1",
-                "subject": "Lunch",
-                "from": [{ "name": "Bob", "email": "bob@example.invalid" }],
-                "receivedAt": "2026-10-13T01:02:03Z",
-                "keywords": {}
-            }))
-            .unwrap(),
-        ],
-        total: 1,
-    })));
+    state.apply(Event::Page(
+        1,
+        Ok(EmailPage {
+            emails: vec![
+                serde_json::from_value(serde_json::json!({
+                    "id": "E1",
+                    "subject": "Lunch",
+                    "from": [{ "name": "Bob", "email": "bob@example.invalid" }],
+                    "receivedAt": "2026-10-13T01:02:03Z",
+                    "keywords": {}
+                }))
+                .unwrap(),
+            ],
+            total: 1,
+        }),
+    ));
     state.apply(Event::Calendars(Ok(vec![jmap::Calendar {
         id: "C1".into(),
         name: "Main".into(),

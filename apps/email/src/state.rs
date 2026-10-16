@@ -1119,7 +1119,10 @@ mod tests {
     fn a_late_send_success_leaves_a_newer_draft_alone() {
         let mut state = connected();
         state.apply_ui(UiEvent::Compose);
-        state.apply_ui(UiEvent::ComposeField(ComposeField::To, "bob@example.invalid".into()));
+        state.apply_ui(UiEvent::ComposeField(
+            ComposeField::To,
+            "bob@example.invalid".into(),
+        ));
         state.apply_ui(UiEvent::SendCompose);
         let first = sent_ticket(&mut state);
         // Cancelled while sending, then a new draft.
@@ -1136,7 +1139,10 @@ mod tests {
     fn a_typed_separator_stays_in_the_recipient_field() {
         let mut state = connected();
         state.apply_ui(UiEvent::Compose);
-        state.apply_ui(UiEvent::ComposeField(ComposeField::To, "bob@example.invalid,".into()));
+        state.apply_ui(UiEvent::ComposeField(
+            ComposeField::To,
+            "bob@example.invalid,".into(),
+        ));
         let compose = state.compose.as_ref().unwrap();
         assert_eq!(compose.to_text, "bob@example.invalid,");
         assert_eq!(compose.draft.to, ["bob@example.invalid"]);
@@ -1145,7 +1151,10 @@ mod tests {
             "bob@example.invalid, cy@example.invalid".into(),
         ));
         let compose = state.compose.as_ref().unwrap();
-        assert_eq!(compose.draft.to, ["bob@example.invalid", "cy@example.invalid"]);
+        assert_eq!(
+            compose.draft.to,
+            ["bob@example.invalid", "cy@example.invalid"]
+        );
     }
 
     #[test]
@@ -1187,7 +1196,11 @@ mod tests {
     #[test]
     fn a_count_refresh_keeps_the_open_email() {
         let mut state = connected();
-        state.apply(Event::Mailboxes(Ok(vec![mailbox("m-in", Some("inbox"), 1)])));
+        state.apply(Event::Mailboxes(Ok(vec![mailbox(
+            "m-in",
+            Some("inbox"),
+            1,
+        )])));
         state.take_work();
         state.apply_ui(UiEvent::OpenEmail("E1".into()));
         let open = state
@@ -1202,7 +1215,11 @@ mod tests {
             serde_json::from_value(serde_json::json!({ "id": "E1", "keywords": {} })).unwrap();
         state.apply(Event::Opened(open, Box::new(Ok(email))));
         // The mark-read's count refresh answers after the body.
-        state.apply(Event::Mailboxes(Ok(vec![mailbox("m-in", Some("inbox"), 0)])));
+        state.apply(Event::Mailboxes(Ok(vec![mailbox(
+            "m-in",
+            Some("inbox"),
+            0,
+        )])));
         assert_eq!(state.mail.open.as_ref().map(|e| e.id.as_str()), Some("E1"));
     }
 
