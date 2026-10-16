@@ -118,6 +118,9 @@ fn tmpdir(tag: &str) -> PathBuf {
             .as_nanos()
     ));
     fs::create_dir_all(&d).unwrap();
+    // tar_unpack refuses a group/other-writable dest parent; pin the mode so
+    // a permissive umask cannot fail every test.
+    fs::set_permissions(&d, fs::Permissions::from_mode(0o755)).unwrap();
     d
 }
 
@@ -1619,4 +1622,146 @@ async fn bare_relative_paths_use_the_current_directory() {
     let r = unpacked.expect("tar_unpack with a bare dest name");
     no_warnings(receipt(&r));
     assert_eq!(fs::read(d.join("reldest/a")).unwrap(), b"a");
+}
+
+#[tokio::test]
+async fn dest_parent_with_an_untrusted_writer_is_refused() {
+    let d = tmpdir("untrusted-parent");
+    let arc = d.join("one.tar");
+    build_plain(&arc, &[("a", b"1", 0o644)]);
+    let parent = d.join("shared");
+    fs::create_dir(&parent).unwrap();
+    // World-writable without the sticky bit: anyone could swap staging.
+    fs::set_permissions(&parent, fs::Permissions::from_mode(0o777)).unwrap();
+    let err = run_err(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+        arc.display(),
+        parent.join("dest").display()
+    ))
+    .await;
+    assert!(err.contains("without the sticky bit"), "{err}");
+    assert!(
+        parent.read_dir().unwrap().next().is_none(),
+        "a refused parent must be left untouched"
+    );
+    // Group-writable alone is refused too.
+    fs::set_permissions(&parent, fs::Permissions::from_mode(0o775)).unwrap();
+    let err = run_err(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+        arc.display(),
+        parent.join("dest").display()
+    ))
+    .await;
+    assert!(err.contains("without the sticky bit"), "{err}");
+    // With the sticky bit (as /tmp) only an entry's owner can rename it.
+    fs::set_permissions(&parent, fs::Permissions::from_mode(0o1777)).unwrap();
+    run_ok(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+        arc.display(),
+        parent.join("dest").display()
+    ))
+    .await;
+    assert_eq!(fs::read(parent.join("dest/a")).unwrap(), b"1");
+
+    // A parent owned by another user (root can make one) is refused.
+    if unsafe { libc::geteuid() } == 0 {
+        let foreign = d.join("foreign");
+        fs::create_dir(&foreign).unwrap();
+        fs::set_permissions(&foreign, fs::Permissions::from_mode(0o755)).unwrap();
+        std::os::unix::fs::chown(&foreign, Some(12345), Some(12345)).unwrap();
+        let err = run_err(&format!(
+            "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+            arc.display(),
+            foreign.join("dest").display()
+        ))
+        .await;
+        assert!(err.contains("owned by uid 12345"), "{err}");
+        assert!(foreign.read_dir().unwrap().next().is_none());
+    }
+}
+
+/// A plain tar of empty files at the given paths (no directory entries, so
+/// every parent is implicit).
+fn implicit_parent_archive(path: &std::path::Path, names: &[String]) {
+    let mut b = Builder::new(fs::File::create(path).unwrap());
+    for name in names {
+        let mut h = Header::new_gnu();
+        h.set_size(0);
+        h.set_mode(0o644);
+        h.set_mtime(0);
+        b.append_data(&mut h, name, std::io::empty()).unwrap();
+    }
+    b.into_inner().unwrap().flush().unwrap();
+}
+
+#[tokio::test]
+async fn implicit_parent_directories_count_against_max_entries() {
+    let d = tmpdir("implicit-dirs");
+    let arc = d.join("deep.tar");
+    // Three members, each under five directories no entry declares.
+    let names: Vec<String> = (0..3).map(|i| format!("a{i}/b/c/d/e/f")).collect();
+    implicit_parent_archive(&arc, &names);
+    let dest = d.join("dest");
+    let err = run_err(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\", max_entries:10}})",
+        arc.display(),
+        dest.display()
+    ))
+    .await;
+    assert!(err.contains("implicit parent directories"), "{err}");
+    assert!(!dest.exists());
+    assert_no_staging(&d);
+    // Within the limit: 3 members and 15 implicit directories.
+    let ok = d.join("ok");
+    let out = run_ok(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\", max_entries:18}})",
+        arc.display(),
+        ok.display()
+    ))
+    .await;
+    assert_eq!(receipt(&out)["implicit_dirs"].to_mix_string(), "15");
+    assert!(ok.join("a2/b/c/d/e/f").exists());
+}
+
+#[tokio::test]
+async fn a_zstd_frame_with_a_corrupt_checksum_footer_is_refused() {
+    let d = tmpdir("zstd-footer");
+    let src = d.join("src");
+    fs::create_dir(&src).unwrap();
+    fs::write(src.join("a"), b"checksummed content\n").unwrap();
+    let arc = d.join("a.tar.zst");
+    run_ok(&format!(
+        "tar_pack(\"{}\", \"{}\", {{codec:\"zstd\"}})",
+        src.display(),
+        arc.display()
+    ))
+    .await;
+    // The frame carries a content checksum (header flag bit 2), so its last
+    // four bytes are the XXH64 footer and nothing else.
+    let mut bytes = fs::read(&arc).unwrap();
+    assert_eq!(&bytes[..4], &[0x28, 0xb5, 0x2f, 0xfd], "zstd magic");
+    assert_ne!(bytes[4] & 0x04, 0, "the packer must emit a content checksum");
+    let good = d.join("good");
+    run_ok(&format!(
+        "tar_unpack(\"{}\", \"{}\")",
+        arc.display(),
+        good.display()
+    ))
+    .await;
+    let last = bytes.len() - 1;
+    bytes[last] ^= 0xff;
+    let bad = d.join("bad.tar.zst");
+    fs::write(&bad, &bytes).unwrap();
+    let (code, msg) = run_err_code(&format!("tar_list(\"{}\")", bad.display())).await;
+    assert_eq!(code, "ARCHIVE_STREAM_CORRUPT", "{msg}");
+    let dest = d.join("dest");
+    let (code, msg) = run_err_code(&format!(
+        "tar_unpack(\"{}\", \"{}\")",
+        bad.display(),
+        dest.display()
+    ))
+    .await;
+    assert_eq!(code, "ARCHIVE_STREAM_CORRUPT", "{msg}");
+    assert!(!dest.exists());
+    assert_no_staging(&d);
 }

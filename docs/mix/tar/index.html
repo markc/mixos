@@ -260,7 +260,8 @@ flate2 over its Rust backend.</p>
 profile below is a contract that any encoder must satisfy:</p>
 <ul>
 <li><strong>single frame</strong> — <code>tar_unpack</code>/<code>tar_list</code> drain the stream to true EOF:
-the zstd frame checksum / gzip CRC are verified there, any non-zero decoded
+the zstd content checksum (XXH64, verified whenever the frame carries one;
+<code>tar_pack</code> always writes it) / gzip CRC are verified there, any non-zero decoded
 bytes after the tar end are refused, and raw input left unconsumed (a
 concatenated second frame or gzip member, including an empty member) is
 refused. Trailing compressed bytes, including zeros, are refused too;</li>
@@ -275,7 +276,7 @@ window, and must decode with <code>tar_list</code> before it is trusted.</li>
 <h2 id="the-builtins">The builtins</h2>
 <table><thead><tr><th>Call</th><th>Result</th></tr></thead><tbody>
 <tr><td><code>tar_list(path[, opts])</code></td><td>list of <code>{name,size,mode,uid,gid,kind,mtime}</code> — streaming, nothing extracted, stream verified; <code>kind</code> is <code>file</code>, <code>dir</code>, <code>symlink</code>, <code>hardlink</code>, <code>metadata</code> (a PAX global header) or <code>other</code></td></tr>
-<tr><td><code>tar_unpack(path, dest[, opts])</code></td><td>receipt <code>{files,dirs,symlinks,hardlinks,metadata,bytes,xattrs_restored,entries,trailing_padding,codec,warnings}</code></td></tr>
+<tr><td><code>tar_unpack(path, dest[, opts])</code></td><td>receipt <code>{files,dirs,symlinks,hardlinks,metadata,bytes,xattrs_restored,entries,implicit_dirs,trailing_padding,codec,warnings}</code></td></tr>
 <tr><td><code>tar_pack(source, path[, opts])</code></td><td>receipt <code>{files,dirs,symlinks,bytes,capabilities,codec,level}</code></td></tr>
 </tbody></table>
 <p><code>opts</code> keys are validated strictly — unknown keys raise.</p>
@@ -288,13 +289,21 @@ descriptor from creation to commit: every member is created relative to
 it, one <code>O_NOFOLLOW</code> component at a time, so a staging name swapped in a
 writable parent cannot redirect a write. It is renamed into place only
 after the whole stream verifies, with <code>RENAME_NOREPLACE</code>, so anything that
-appears at <code>dest</code> in the meantime is never replaced. (On a filesystem
-without <code>RENAME_NOREPLACE</code> the commit checks <code>dest</code>, then renames; a
-directory created at <code>dest</code> between the two is replaced. Unpack into a
-parent other users cannot write.) Failures restore traversable/writable
-staging-directory modes before removing the tree through the same
-descriptor. A cleanup failure is reported alongside the original error,
-with the staging name, rather than silently discarded.</li>
+appears at <code>dest</code> in the meantime is never replaced. A kernel or
+filesystem without <code>RENAME_NOREPLACE</code> makes the commit fail closed: the
+unpack raises and the staging tree is rolled back. Failures restore
+traversable/writable staging-directory modes before removing the tree
+through the same descriptor. A cleanup failure is reported alongside the
+original error, with the staging name, rather than silently discarded.</li>
+<li><strong><code>dest</code>'s parent must have no untrusted writer.</strong> It must be owned by the
+caller's effective uid or by root, and must not be writable by group or
+other unless it has the sticky bit (as <code>/tmp</code>, where only an entry's owner
+may rename or remove it). Anything else is refused before staging is
+created, with nothing written. Another writer there could swap the staging
+directory between its creation and its use, or between the final identity
+check and the rename; refusing such a parent closes those windows. The new
+staging directory is also checked to be the caller's own, <code>0700</code> and
+empty before anything is extracted into it.</li>
 <li>Member names are validated on the <em>resolved</em> path (GNU longname and PAX
 smuggling land there): no absolute paths, no <code>.</code>/<code>..</code> components, UTF-8
 only (invalid bytes raise — the extractor never guesses what got
@@ -336,7 +345,10 @@ xattr names and values held for the whole archive until the post-pass
 applies them; one archive of many small records cannot exhaust memory.</li>
 <li>Directory and symlink metadata (mode, mtime, owner) is applied in a
 children-first post-pass, so directory mtimes stick.</li>
-<li>Limits: <code>max_entries</code> (200k), <code>max_bytes</code> (64 GiB of file bytes),
+<li>Limits: <code>max_entries</code> (200k, counting both members and every parent
+directory created implicitly for a member whose directory the archive
+does not list; the receipt's <code>implicit_dirs</code> reports those),
+<code>max_bytes</code> (64 GiB of file bytes),
 <code>max_name</code> (4096), and <code>max_stream_bytes</code> (16 GiB). The last bounds the
 <strong>decoded</strong> stream, including headers, metadata, file data and all trailing
 zero padding, across parsing and final verification. An entry's declared

@@ -26976,7 +26976,8 @@ One-line help for each builtin is `mix builtins tar_list` (or `tar_unpack`,
 profile below is a contract that any encoder must satisfy:
 
 - **single frame** — `tar_unpack`/`tar_list` drain the stream to true EOF:
-  the zstd frame checksum / gzip CRC are verified there, any non-zero decoded
+  the zstd content checksum (XXH64, verified whenever the frame carries one;
+  `tar_pack` always writes it) / gzip CRC are verified there, any non-zero decoded
   bytes after the tar end are refused, and raw input left unconsumed (a
   concatenated second frame or gzip member, including an empty member) is
   refused. Trailing compressed bytes, including zeros, are refused too;
@@ -26994,7 +26995,7 @@ For artifacts that people unpack with stock tools, use `codec:"gzip"`
 | Call | Result |
 |---|---|
 | `tar_list(path[, opts])` | list of `{name,size,mode,uid,gid,kind,mtime}` — streaming, nothing extracted, stream verified; `kind` is `file`, `dir`, `symlink`, `hardlink`, `metadata` (a PAX global header) or `other` |
-| `tar_unpack(path, dest[, opts])` | receipt `{files,dirs,symlinks,hardlinks,metadata,bytes,xattrs_restored,entries,trailing_padding,codec,warnings}` |
+| `tar_unpack(path, dest[, opts])` | receipt `{files,dirs,symlinks,hardlinks,metadata,bytes,xattrs_restored,entries,implicit_dirs,trailing_padding,codec,warnings}` |
 | `tar_pack(source, path[, opts])` | receipt `{files,dirs,symlinks,bytes,capabilities,codec,level}` |
 
 `opts` keys are validated strictly — unknown keys raise.
@@ -27008,13 +27009,21 @@ For artifacts that people unpack with stock tools, use `codec:"gzip"`
   it, one `O_NOFOLLOW` component at a time, so a staging name swapped in a
   writable parent cannot redirect a write. It is renamed into place only
   after the whole stream verifies, with `RENAME_NOREPLACE`, so anything that
-  appears at `dest` in the meantime is never replaced. (On a filesystem
-  without `RENAME_NOREPLACE` the commit checks `dest`, then renames; a
-  directory created at `dest` between the two is replaced. Unpack into a
-  parent other users cannot write.) Failures restore traversable/writable
-  staging-directory modes before removing the tree through the same
-  descriptor. A cleanup failure is reported alongside the original error,
-  with the staging name, rather than silently discarded.
+  appears at `dest` in the meantime is never replaced. A kernel or
+  filesystem without `RENAME_NOREPLACE` makes the commit fail closed: the
+  unpack raises and the staging tree is rolled back. Failures restore
+  traversable/writable staging-directory modes before removing the tree
+  through the same descriptor. A cleanup failure is reported alongside the
+  original error, with the staging name, rather than silently discarded.
+- **`dest`'s parent must have no untrusted writer.** It must be owned by the
+  caller's effective uid or by root, and must not be writable by group or
+  other unless it has the sticky bit (as `/tmp`, where only an entry's owner
+  may rename or remove it). Anything else is refused before staging is
+  created, with nothing written. Another writer there could swap the staging
+  directory between its creation and its use, or between the final identity
+  check and the rename; refusing such a parent closes those windows. The new
+  staging directory is also checked to be the caller's own, `0700` and
+  empty before anything is extracted into it.
 - Member names are validated on the *resolved* path (GNU longname and PAX
   smuggling land there): no absolute paths, no `.`/`..` components, UTF-8
   only (invalid bytes raise — the extractor never guesses what got
@@ -27056,7 +27065,10 @@ For artifacts that people unpack with stock tools, use `codec:"gzip"`
   applies them; one archive of many small records cannot exhaust memory.
 - Directory and symlink metadata (mode, mtime, owner) is applied in a
   children-first post-pass, so directory mtimes stick.
-- Limits: `max_entries` (200k), `max_bytes` (64 GiB of file bytes),
+- Limits: `max_entries` (200k, counting both members and every parent
+  directory created implicitly for a member whose directory the archive
+  does not list; the receipt's `implicit_dirs` reports those),
+  `max_bytes` (64 GiB of file bytes),
   `max_name` (4096), and `max_stream_bytes` (16 GiB). The last bounds the
   **decoded** stream, including headers, metadata, file data and all trailing
   zero padding, across parsing and final verification. An entry's declared

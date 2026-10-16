@@ -32,6 +32,14 @@
   `"metadata"`). A bare relative dest or output name means the current
   directory. `tar_pack` refuses an output inside its source and raises when
   a file changes size while it is packed.
+- Archive review, round 2. `tar_unpack` refuses a dest parent that another
+  user could write (group/other-writable without the sticky bit, or owned by
+  neither the caller nor root) before creating anything, and checks the new
+  staging directory is the caller's, `0700` and empty. Without
+  `RENAME_NOREPLACE` the commit now fails closed and rolls back. Implicitly
+  created parent directories count against `max_entries` (receipt
+  `implicit_dirs`). zstd content checksums are verified on unpack and list,
+  and `tar_pack` now writes one.
 - `analyzer::Analysis` carries `handlers`: one `HandlerDeclaration` (`command`,
   `file`, `line`) per `on <command>` statement in the parsed AST, in source
   order, with duplicates kept. `analyze()` collects them with the existing

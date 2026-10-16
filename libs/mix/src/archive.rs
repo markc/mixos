@@ -394,7 +394,17 @@ impl VerifiedDecode {
         Ok(match codec {
             Codec::Zstd => VerifiedDecode::Zstd {
                 dec: Box::new(
-                    structured_zstd::decoding::StreamingDecoder::new(br).map_err(|e| {
+                    // The decoder's default (EmitOnly) computes the content
+                    // checksum without comparing it: Verify makes a frame
+                    // whose XXH64 footer disagrees fail at its end.
+                    structured_zstd::decoding::StreamingDecoder::new_with_decoder(br, {
+                        let mut frame = structured_zstd::decoding::FrameDecoder::new();
+                        frame.set_content_checksum(
+                            structured_zstd::decoding::ContentChecksum::Verify,
+                        );
+                        frame
+                    })
+                    .map_err(|e| {
                         MixError::structured(
                             STREAM_CORRUPT,
                             format!("{caller}: zstd init '{}': {e}", path.display()),
@@ -819,10 +829,17 @@ fn stat_at(dir: &File, name: &std::ffi::CStr) -> std::io::Result<libc::stat> {
 }
 
 /// The private staging directory, held by descriptor from creation to
-/// commit. Every extraction step is relative to `dir`, so swapping the
-/// staging NAME in a writable parent cannot redirect a write; the name is
-/// used only to commit and to remove, each after checking it still names
-/// the same inode.
+/// commit. Every extraction step is relative to `dir`; the name is used only
+/// to commit and to remove, each after checking it still names the same
+/// inode.
+///
+/// The parent must have no untrusted writer (see [`Staging::trusted_parent`]):
+/// a writer there could replace the staging name between `mkdirat` and the
+/// open, or between the identity check and the rename, and no descriptor
+/// discipline closes those windows. With such a parent refused, nobody but
+/// the caller (or root) can rename or replace entries in it, so the windows
+/// are closed by that policy rather than by the checks, which remain as
+/// defence in depth.
 struct Staging {
     parent: File,
     name: std::ffi::CString,
@@ -833,11 +850,37 @@ struct Staging {
 const RENAME_NOREPLACE: libc::c_uint = 1;
 
 impl Staging {
+    /// Refuse a parent another user could write to. A group- or
+    /// other-writable directory is accepted only with the sticky bit (as
+    /// `/tmp`), because then only an entry's owner may rename or remove it.
+    /// The parent must be owned by the effective uid or root.
+    fn trusted_parent(parent: &File, euid: u32) -> std::io::Result<()> {
+        let st = parent.metadata()?;
+        let mode = st.mode();
+        if mode & 0o022 != 0 && mode & libc::S_ISVTX == 0 {
+            return Err(std::io::Error::other(format!(
+                "dest's parent is writable by group or other without the sticky bit \
+                 (mode {:04o}); another user could swap the staging directory",
+                mode & 0o7777
+            )));
+        }
+        if st.uid() != euid && st.uid() != 0 {
+            return Err(std::io::Error::other(format!(
+                "dest's parent is owned by uid {}, neither the caller ({euid}) nor root",
+                st.uid()
+            )));
+        }
+        Ok(())
+    }
+
     fn create(parent: &Path) -> std::io::Result<Self> {
         let parent = OpenOptions::new()
             .read(true)
             .custom_flags(libc::O_DIRECTORY | libc::O_CLOEXEC)
             .open(parent)?;
+        let euid = unsafe { libc::geteuid() };
+        // Checked on the held descriptor before anything is created.
+        Self::trusted_parent(&parent, euid)?;
         for _ in 0..16 {
             let name = std::ffi::CString::new(format!(".mixtar-stage-{:016x}", staging_suffix()))?;
             if unsafe { libc::mkdirat(parent.as_raw_fd(), name.as_ptr(), 0o700) } != 0 {
@@ -848,16 +891,61 @@ impl Staging {
                 return Err(e);
             }
             let dir = open_dir_at(&parent, &name)?;
-            // Private regardless of umask: content exists briefly before the
-            // header mode is applied.
-            if unsafe { libc::fchmod(dir.as_raw_fd(), 0o700) } != 0 {
-                return Err(last_error());
+            let staging = Staging { parent, name, dir };
+            if let Err(e) = staging.verify_fresh(euid) {
+                staging.discard_if_ours(euid);
+                return Err(e);
             }
-            return Ok(Staging { parent, name, dir });
+            return Ok(staging);
         }
         Err(std::io::Error::other(
             "could not create a unique staging directory",
         ))
+    }
+
+    /// The opened directory must be the one just made: the caller's own,
+    /// empty, and private. Ownership is checked before the chmod, so a
+    /// foreign directory is never modified.
+    fn verify_fresh(&self, euid: u32) -> std::io::Result<()> {
+        let st = self.dir.metadata()?;
+        if st.uid() != euid {
+            return Err(std::io::Error::other(format!(
+                "the staging directory is owned by uid {}, not the caller ({euid})",
+                st.uid()
+            )));
+        }
+        // Private regardless of umask: content exists briefly before the
+        // header mode is applied.
+        if unsafe { libc::fchmod(self.dir.as_raw_fd(), 0o700) } != 0 {
+            return Err(last_error());
+        }
+        let mode = self.dir.metadata()?.mode() & 0o7777;
+        if mode != 0o700 {
+            return Err(std::io::Error::other(format!(
+                "the staging directory has mode {mode:04o}, not 0700"
+            )));
+        }
+        if !directory_names(&self.dir)?.is_empty() {
+            return Err(std::io::Error::other("the new staging directory is not empty"));
+        }
+        Ok(())
+    }
+
+    /// Remove a staging directory that failed verification, but only when it
+    /// is still ours and empty; anything else is left untouched.
+    fn discard_if_ours(&self, euid: u32) {
+        let ours = self.dir.metadata().is_ok_and(|st| st.uid() == euid)
+            && directory_names(&self.dir).is_ok_and(|names| names.is_empty())
+            && self.still_named().unwrap_or(false);
+        if ours {
+            unsafe {
+                libc::unlinkat(
+                    self.parent.as_raw_fd(),
+                    self.name.as_ptr(),
+                    libc::AT_REMOVEDIR,
+                );
+            }
+        }
     }
 
     /// Whether the staging name still names the held directory.
@@ -868,6 +956,9 @@ impl Staging {
     }
 
     /// Rename into place without replacing anything that appeared at dest.
+    /// The identity check and the rename are not atomic together; the window
+    /// between them is closed by the trusted-parent policy (see [`Staging`]),
+    /// not by the check.
     fn commit(&self, dest: &std::ffi::CStr) -> std::io::Result<()> {
         if !self.still_named()? {
             return Err(std::io::Error::other(
@@ -888,28 +979,16 @@ impl Staging {
             return Ok(());
         }
         let e = last_error();
-        if !matches!(e.raw_os_error(), Some(libc::EINVAL | libc::ENOSYS)) {
-            return Err(e);
+        if matches!(e.raw_os_error(), Some(libc::EINVAL | libc::ENOSYS)) {
+            // Without RENAME_NOREPLACE a check-then-rename could replace a
+            // directory created at dest in between. Fail closed; the caller
+            // rolls the staging tree back.
+            return Err(std::io::Error::other(format!(
+                "this kernel or filesystem cannot rename without replacing \
+                 (renameat2 RENAME_NOREPLACE: {e}); refusing to commit"
+            )));
         }
-        // This filesystem cannot rename without replacing. Check, then
-        // rename: a directory created at dest in between is replaced (docs).
-        match stat_at(&self.parent, dest) {
-            Ok(_) => return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists)),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e),
-        }
-        let rc = unsafe {
-            libc::renameat(
-                self.parent.as_raw_fd(),
-                self.name.as_ptr(),
-                self.parent.as_raw_fd(),
-                dest.as_ptr(),
-            )
-        };
-        if rc != 0 {
-            return Err(last_error());
-        }
-        Ok(())
+        Err(e)
     }
 
     /// Remove the staged tree through the held descriptor, then its name if it
@@ -972,12 +1051,15 @@ fn remove_tree_at(dir: &File) -> std::io::Result<()> {
 
 /// The directory holding `rel` in the staging tree, and `rel`'s last name.
 /// Each component is opened relative to the one before with O_NOFOLLOW, so
-/// no symlink is traversed and no path is resolved twice. `create` makes a
-/// missing parent the way tar does for an implicit one (0777 less umask).
+/// no symlink is traversed and no path is resolved twice. With an allowance,
+/// a missing parent is made the way tar makes an implicit one (0777 less
+/// umask), and each one made spends the allowance: an implicit directory is
+/// an inode like any member, so it counts against `max_entries`. Without
+/// one, a missing parent is an error.
 fn parent_at(
     staging: &File,
     rel: &Path,
-    create: bool,
+    mut allowance: Option<&mut u64>,
 ) -> std::io::Result<(File, std::ffi::CString)> {
     let leaf = rel
         .file_name()
@@ -991,7 +1073,15 @@ fn parent_at(
         let name = std::ffi::CString::new(part.as_bytes())?;
         dir = match open_dir_at(&dir, &name) {
             Ok(next) => next,
-            Err(e) if create && e.kind() == std::io::ErrorKind::NotFound => {
+            Err(e) if allowance.is_some() && e.kind() == std::io::ErrorKind::NotFound => {
+                if let Some(left) = allowance.as_deref_mut() {
+                    if *left == 0 {
+                        return Err(std::io::Error::other(
+                            "exceeded max_entries (implicit parent directories count as entries)",
+                        ));
+                    }
+                    *left -= 1;
+                }
                 if unsafe { libc::mkdirat(dir.as_raw_fd(), name.as_ptr(), 0o777) } != 0 {
                     let e = last_error();
                     if e.kind() != std::io::ErrorKind::AlreadyExists {
@@ -1061,6 +1151,7 @@ fn unpack_staged(
     let mut xattrs_restored: u64 = 0;
     let mut xattr_bytes: u64 = 0;
     let mut entry_count: u64 = 0;
+    let mut implicit_dirs: u64 = 0;
     let mut warnings: Vec<String> = Vec::new();
     let mut symlinks_created: HashSet<PathBuf> = HashSet::new();
     let mut extracted_files: HashSet<PathBuf> = HashSet::new();
@@ -1109,8 +1200,15 @@ fn unpack_staged(
                     )));
                 }
             }
-            let (parent, leaf) = parent_at(staging, &rel, true)
+            // Members and implicit parent directories share max_entries.
+            let mut allowance = opts
+                .max_entries
+                .saturating_sub(entry_count)
+                .saturating_sub(implicit_dirs);
+            let before = allowance;
+            let (parent, leaf) = parent_at(staging, &rel, Some(&mut allowance))
                 .map_err(|e| runtime(format!("{caller}: parent of '{}': {e}", rel.display())))?;
+            implicit_dirs += before - allowance;
 
             let mode = header.mode().unwrap_or(0o644);
             let masked = if opts.keep_special_bits {
@@ -1238,7 +1336,7 @@ fn unpack_staged(
                             clean_target.display()
                         )));
                     }
-                    let (source_dir, source_leaf) = parent_at(staging, &clean_target, false)
+                    let (source_dir, source_leaf) = parent_at(staging, &clean_target, None)
                         .map_err(|e| {
                             runtime(format!("{caller}: hardlink '{}': {e}", rel.display()))
                         })?;
@@ -1281,7 +1379,7 @@ fn unpack_staged(
     // bit or a capability is applied only when the archive's owner was.
     let root = unsafe { libc::geteuid() } == 0;
     for m in deferred.iter().rev() {
-        let (parent, leaf) = parent_at(staging, &m.rel, false)
+        let (parent, leaf) = parent_at(staging, &m.rel, None)
             .map_err(|e| runtime(format!("{caller}: metadata '{}': {e}", m.rel.display())))?;
         let times = [
             libc::timespec {
@@ -1390,6 +1488,10 @@ fn unpack_staged(
         Value::Number(xattrs_restored as f64),
     );
     map.insert("entries".to_string(), Value::Number(entry_count as f64));
+    map.insert(
+        "implicit_dirs".to_string(),
+        Value::Number(implicit_dirs as f64),
+    );
     map.insert(
         "trailing_padding".to_string(),
         Value::Number(trailing as f64),
@@ -1687,7 +1789,11 @@ fn pack_stream(
     let sink = match opts.codec {
         Codec::Zstd => {
             let level = structured_zstd::encoding::CompressionLevel::Level(opts.level);
-            let enc = structured_zstd::encoding::StreamingEncoder::new(buf, level);
+            let mut enc = structured_zstd::encoding::StreamingEncoder::new(buf, level);
+            // Off by default in this encoder: every builtin artifact carries
+            // the XXH64 footer the unpacker verifies.
+            enc.set_content_checksum(true)
+                .map_err(|e| runtime(format!("{caller}: zstd checksum: {e}")))?;
             PackSink::Zstd(Box::new(enc))
         }
         Codec::Gzip => PackSink::Gzip(Box::new(flate2::write::GzEncoder::new(
