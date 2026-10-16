@@ -5176,11 +5176,25 @@ pub(crate) mod tests {
             state.account("a").unwrap().mail.open.as_ref().unwrap().id,
             "E2"
         );
+        // A real open (the latest) of an id the server does not hold.
+        state.open_by_bus("a", "E9".into(), 7);
+        let missing = state
+            .take_work()
+            .iter()
+            .find_map(|w| match w {
+                Work::OpenEmail {
+                    ticket,
+                    reply: Some(7),
+                    ..
+                } => Some(*ticket),
+                _ => None,
+            })
+            .unwrap();
         done(
             &mut state,
             "a",
             Done::Opened(
-                ticket + 9,
+                missing,
                 Some(7),
                 Box::new(Err(jmap::Error::Protocol("email \"E9\" is gone".into()))),
             ),
