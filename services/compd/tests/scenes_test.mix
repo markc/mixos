@@ -1426,6 +1426,20 @@ try
   $_ = refused($s, "install", {template:"sysdlg", name:"renamed-dlg", enable:true}, "SCENES_RESERVED")
   check(len(filter($l.templates_list($s).templates ?? [], fn($t) = $t.template == "sysdlg")) == 0, "R4: a system dialog stays out of the gallery")
 
+  -- R5: a toast is seated like a dialog: a SHIPPED hidden toast template
+  -- installs and loads with no edge; a hand-made toast is refused.
+  $toast_window = "{\"kind\":\"toast\",\"w\":360,\"h\":132}"
+  tpl_fixture($sys, "systoast", "{title: \"Toast\", hidden: true}\n", false, $toast_window)
+  $s = se_fresh("st", $sys)
+  $s = $l.request($s, "install", {template:"systoast", enable:true})
+  check($s.rc == 0 and $s.response.installed == true and $s.response.enabled == true, "R5: a shipped hidden toast installs and loads: " .. json_encode($s.response))
+  $toast_row = filter($l.inventory($s).scenes, fn($r) = $r.name == "systoast")[0]
+  check($toast_row.kind == "toast" and $toast_row.edge == nil, "R5: a toast has no edge: " .. json_encode({kind:$toast_row.kind, edge:$toast_row.edge}))
+  install_fixture($s.root, "hand-toast", false)
+  write_file($s.root .. "/hand-toast/scene.mix", replace(fixture_source("hand-toast", "x"), "{\"kind\":\"edge\",\"edge\":\"right\"}", $toast_window))
+  $s = $l.rescan($s, false)
+  $_ = refused($s, "enable", {name:"hand-toast"}, "SCENES_RESERVED")
+
   -- P1: problems carry lines and the attempted per-file digests.
   $s = se_fresh("p", $tpl)
   $s = $l.request($s, "install", {template:"alpha", enable:true})
