@@ -6,7 +6,7 @@ use comp_model::observation::ObservationRecord;
 use comp_model::snapshot::SessionSnapshot;
 
 /// The initial session state and each active/paused edge, with one clock
-/// shared by the query and topic. The first observation keeps the start time.
+/// shared by the query and topic. Each record carries its own observation time.
 pub(super) struct Session {
     snapshot: SessionSnapshot,
     announced: bool,
@@ -28,9 +28,10 @@ impl Session {
         if self.announced && self.snapshot.active == active {
             return None;
         }
-        if self.announced {
-            self.snapshot.since_ms = now_ms;
-        }
+        // The first record may be a later edge (a compd started on a VT in
+        // the background is first serviced when the VT activates): its time
+        // is that edge's, never the process start.
+        self.snapshot.since_ms = now_ms;
         self.snapshot.active = active;
         self.announced = true;
         Some(ObservationRecord::SessionChanged {
@@ -63,7 +64,7 @@ mod tests {
         for initially_active in [true, false] {
             let mut session = Session::new(Some("3"), 100);
             for (active, now_ms, since_ms) in [
-                (initially_active, 110, 100),
+                (initially_active, 110, 110),
                 (!initially_active, 200, 200),
                 (initially_active, 300, 300),
             ] {
