@@ -174,7 +174,11 @@ pub fn clear_agent(lp: &mut Loop) {
     }
     let injection = &mut lp.inner.comp.injection;
     injection.agent = Default::default();
-    injection.agent_pointer = None;
+    // A drawn agent arrow goes with it.
+    if injection.agent_pointer.take().is_some() {
+        lp.state
+            .schedule_redraw(dispatcher::state::state::RedrawReason::AgentInput);
+    }
 }
 
 /// Inject one op on one seat, then reply with
@@ -900,6 +904,9 @@ fn agent_motion(
     time: u32,
 ) {
     lp.inner.comp.injection.agent_pointer = Some(position);
+    // The agent arrow is drawn at this position (seat `pointer::draw`).
+    lp.state
+        .schedule_redraw(dispatcher::state::state::RedrawReason::AgentInput);
     let Some(pointer) = agent_pointer(lp) else {
         return;
     };

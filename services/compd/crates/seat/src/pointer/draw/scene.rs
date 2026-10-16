@@ -1,7 +1,8 @@
+use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
 use smithay::backend::renderer::element::{AsRenderElements, Kind};
 use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
-use smithay::utils::{Physical, Point, Rectangle, Scale, Size};
+use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size};
 use std::os::linux::raw::stat;
 use world::seat::pointer::element::element::PointerRenderElement;
 use world::state::state::CoordinateTrait;
@@ -171,6 +172,35 @@ where
     for el in pointer_elements {
         // Wrap it in the CanvasElement enum variant we just created
         elements.push(el);
+    }
+
+    // The agent seat's pointer, so a human sees where an agent points: its own
+    // amber arrow at the agent's location (the same space as the human's
+    // `current_location()`). Pushed after the human cursor, so it draws behind
+    // it (first-pushed is front-most), and `Kind::Unspecified` keeps it off the
+    // one hardware cursor plane. Gone once the agent seat is cleared.
+    if let Some((x, y)) = state.inner.comp.injection.agent_pointer {
+        let theme = std::sync::Arc::clone(&state.inner.pointer_mut().element.theme);
+        let cursor = theme.agent_arrow(size_context.scale);
+        let at: Point<i32, Physical> = Transform::from(((x, y, 0.0, 0.0), size_context)).into();
+        let ratio = f64::from(theme.base_size()) / f64::from(cursor.nominal.max(1));
+        let pixels = (f64::from(cursor.size.w), f64::from(cursor.size.h));
+        let src = Rectangle::<f64, Logical>::from_size(pixels.into());
+        let logical = Size::<i32, Logical>::from((
+            (pixels.0 * ratio).round().max(1.0) as i32,
+            (pixels.1 * ratio).round().max(1.0) as i32,
+        ));
+        if let Ok(elem) = MemoryRenderBufferRenderElement::from_buffer(
+            renderer,
+            at.to_f64(),
+            &cursor.frames[0].buffer,
+            None,
+            Some(src),
+            Some(logical),
+            Kind::Unspecified,
+        ) {
+            elements.push(PointerRenderElement::from(elem));
+        }
     }
 
     elements
