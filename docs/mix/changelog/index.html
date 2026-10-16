@@ -274,6 +274,42 @@
 <h2 id="unreleased">Unreleased</h2>
 <h3 id="added">Added</h3>
 <ul>
+<li>Add the <code>archive</code> feature with the <code>tar_list</code>, <code>tar_unpack</code> and <code>tar_pack</code>
+builtins. Archives use zstd (default), gzip or no codec. <code>tar_unpack</code>
+validates every member, extracts into a staging directory and renames it
+into place only after the stream verifies. See <code>mix man tar</code>.</li>
+<li>Harden archive builtins: count trailing padding against the shared decoded
+stream budget, reject oversized declared files before creation and bound
+copying, cap GNU/PAX metadata payloads before buffering, and refuse unread
+gzip input or additional members. Packing captures capabilities only with
+<code>keep_special_bits:true</code> and walks pinned directory/file descriptors without
+following replacement symlinks. Rollback restores directory access and
+reports cleanup failures. Empty/truncated zstd headers now raise
+<code>ARCHIVE_STREAM_CORRUPT</code>. GNU sparse entries are refused; <code>tar_list</code> also
+accepts <code>max_entries</code>. Each fix has targeted archive regression coverage.</li>
+<li>Archive review fixes. <code>tar_unpack</code> restores only <code>user.*</code> xattrs by
+default: <code>security.capability</code> needs <code>keep_special_bits:true</code>, and
+<code>trusted.*</code>, POSIX ACLs (<code>system.*</code>) and the rest of <code>security.*</code> need the
+new <code>privileged_xattrs:true</code>. Retained xattr bytes are bounded across the
+archive by the new <code>max_xattr_bytes</code> (16 MiB). Staging has an unpredictable
+name and is held by descriptor; members are created one O_NOFOLLOW
+component at a time relative to it, and the commit refuses to replace
+anything that appeared at <code>dest</code> (RENAME_NOREPLACE). Owner, mode and mtime
+failures are no longer discarded: an owner that cannot be applied is listed
+in the receipt's new <code>warnings</code>, and then its setuid/setgid bits and
+capability are dropped; mode and mtime failures raise. PAX global headers
+(<code>git archive</code>) are accepted as metadata (receipt <code>metadata</code>, list kind
+<code>"metadata"</code>). A bare relative dest or output name means the current
+directory. <code>tar_pack</code> refuses an output inside its source and raises when
+a file changes size while it is packed.</li>
+<li>Archive review, round 2. <code>tar_unpack</code> refuses a dest parent that another
+user could write (group/other-writable without the sticky bit, or owned by
+neither the caller nor root) before creating anything, and checks the new
+staging directory is the caller's, <code>0700</code> and empty. Without
+<code>RENAME_NOREPLACE</code> the commit now fails closed and rolls back. Implicitly
+created parent directories count against <code>max_entries</code> (receipt
+<code>implicit_dirs</code>). zstd content checksums are verified on unpack and list,
+and <code>tar_pack</code> now writes one.</li>
 <li><code>analyzer::Analysis</code> carries <code>handlers</code>: one <code>HandlerDeclaration</code> (<code>command</code>,
 <code>file</code>, <code>line</code>) per <code>on &lt;command&gt;</code> statement in the parsed AST, in source
 order, with duplicates kept. <code>analyze()</code> collects them with the existing

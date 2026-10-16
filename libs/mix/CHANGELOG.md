@@ -4,6 +4,42 @@
 
 ### Added
 
+- Add the `archive` feature with the `tar_list`, `tar_unpack` and `tar_pack`
+  builtins. Archives use zstd (default), gzip or no codec. `tar_unpack`
+  validates every member, extracts into a staging directory and renames it
+  into place only after the stream verifies. See `mix man tar`.
+- Harden archive builtins: count trailing padding against the shared decoded
+  stream budget, reject oversized declared files before creation and bound
+  copying, cap GNU/PAX metadata payloads before buffering, and refuse unread
+  gzip input or additional members. Packing captures capabilities only with
+  `keep_special_bits:true` and walks pinned directory/file descriptors without
+  following replacement symlinks. Rollback restores directory access and
+  reports cleanup failures. Empty/truncated zstd headers now raise
+  `ARCHIVE_STREAM_CORRUPT`. GNU sparse entries are refused; `tar_list` also
+  accepts `max_entries`. Each fix has targeted archive regression coverage.
+- Archive review fixes. `tar_unpack` restores only `user.*` xattrs by
+  default: `security.capability` needs `keep_special_bits:true`, and
+  `trusted.*`, POSIX ACLs (`system.*`) and the rest of `security.*` need the
+  new `privileged_xattrs:true`. Retained xattr bytes are bounded across the
+  archive by the new `max_xattr_bytes` (16 MiB). Staging has an unpredictable
+  name and is held by descriptor; members are created one O_NOFOLLOW
+  component at a time relative to it, and the commit refuses to replace
+  anything that appeared at `dest` (RENAME_NOREPLACE). Owner, mode and mtime
+  failures are no longer discarded: an owner that cannot be applied is listed
+  in the receipt's new `warnings`, and then its setuid/setgid bits and
+  capability are dropped; mode and mtime failures raise. PAX global headers
+  (`git archive`) are accepted as metadata (receipt `metadata`, list kind
+  `"metadata"`). A bare relative dest or output name means the current
+  directory. `tar_pack` refuses an output inside its source and raises when
+  a file changes size while it is packed.
+- Archive review, round 2. `tar_unpack` refuses a dest parent that another
+  user could write (group/other-writable without the sticky bit, or owned by
+  neither the caller nor root) before creating anything, and checks the new
+  staging directory is the caller's, `0700` and empty. Without
+  `RENAME_NOREPLACE` the commit now fails closed and rolls back. Implicitly
+  created parent directories count against `max_entries` (receipt
+  `implicit_dirs`). zstd content checksums are verified on unpack and list,
+  and `tar_pack` now writes one.
 - `analyzer::Analysis` carries `handlers`: one `HandlerDeclaration` (`command`,
   `file`, `line`) per `on <command>` statement in the parsed AST, in source
   order, with duplicates kept. `analyze()` collects them with the existing
