@@ -2043,6 +2043,9 @@ fn directory_names(dir: &File) -> std::io::Result<Vec<std::ffi::OsString>> {
         return Err(err);
     }
     let stream = DirStream(stream);
+    // The dup shares the held descriptor's offset, so an earlier listing
+    // left it at the end; without the rewind a second listing is empty.
+    unsafe { libc::rewinddir(stream.0) };
     let mut names = Vec::new();
     loop {
         unsafe {
