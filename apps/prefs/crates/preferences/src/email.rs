@@ -715,15 +715,15 @@ impl Engine {
     pub(crate) fn email_read(&mut self, email: Email) {
         let before = self.look.email.replace(email);
         let email = self.look.email.as_ref().expect("just read");
-        if let Some(id) = self.email.added.take() {
-            if let Some(account) = email.account(&id) {
-                self.ui.email_account = Some(id);
-                self.email.form = Some(Form::of(account));
-                self.email.password = Secret::default();
-                return;
-            }
-            // Not there: the apply did not land (or another writer was
-            // first). The typed form stays.
+        // A sent Add not in the read did not land (or another writer was
+        // first): its typed form stays.
+        if let Some(id) = self.email.added.take()
+            && let Some(account) = email.account(&id)
+        {
+            self.ui.email_account = Some(id);
+            self.email.form = Some(Form::of(account));
+            self.email.password = Secret::default();
+            return;
         }
         let Some(form) = &self.email.form else {
             return;
