@@ -516,8 +516,13 @@ mod tests {
 
     #[test]
     fn a_create_wraps_the_event_under_the_client_id() {
-        let args = event_create_args("A1", "uid-1", "0196c0de-0000-7000-8000-000000000001", &draft())
-            .unwrap();
+        let args = event_create_args(
+            "A1",
+            "uid-1",
+            "0196c0de-0000-7000-8000-000000000001",
+            &draft(),
+        )
+        .unwrap();
         assert_eq!(args["create"]["c0"]["title"], json!("Dentist"));
         assert_eq!(args["accountId"], json!("A1"));
     }
