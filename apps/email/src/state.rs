@@ -6095,7 +6095,9 @@ pub(crate) mod tests {
             .iter()
             .find_map(|w| match w {
                 Work::OpenEmail {
-                    ticket, reply: Some(6), ..
+                    ticket,
+                    reply: Some(6),
+                    ..
                 } => Some(*ticket),
                 _ => None,
             })
