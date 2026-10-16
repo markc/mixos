@@ -15,7 +15,7 @@ pub enum Work {
     FetchMailboxes,
     /// A mailbox's first page. `ticket` comes back with the page, so an
     /// answer to an older request cannot replace a newer one (also for
-    /// `OpenEmail`, `Send` and `FetchContacts`).
+    /// `OpenEmail`, `Send`, `FetchEvents` and `FetchContacts`).
     FetchEmails {
         ticket: u64,
         mailbox: String,
@@ -37,6 +37,7 @@ pub enum Work {
     },
     FetchCalendars,
     FetchEvents {
+        ticket: u64,
         calendar: String,
     },
     FetchBooks,

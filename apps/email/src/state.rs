@@ -9,7 +9,9 @@
 //! The state stays UI-pure: the connected [`jmap::Client`] lives in the
 //! shell, and the events carry only what the state needs to know.
 
-use jmap::{Account, AddressBook, Calendar, CalendarEvent, Composed, Contact, Email, Mailbox};
+use jmap::{
+    Account, AddressBook, Calendar, CalendarEvent, Composed, Contact, Email, EmailAddress, Mailbox,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::work::Work;
@@ -140,10 +142,16 @@ pub struct ComposeState {
 
 impl ComposeState {
     pub fn new(draft: Composed) -> Self {
+        let text = |list: &[EmailAddress]| {
+            list.iter()
+                .map(jmap::format_address)
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
         Self {
-            to_text: draft.to.join(", "),
-            cc_text: draft.cc.join(", "),
-            bcc_text: draft.bcc.join(", "),
+            to_text: text(&draft.to),
+            cc_text: text(&draft.cc),
+            bcc_text: text(&draft.bcc),
             draft,
             busy: false,
             error: None,
@@ -158,6 +166,10 @@ impl ComposeState {
 struct Tickets {
     page: u64,
     open: u64,
+    /// The mailbox the latest open was issued under: its answer is dropped
+    /// when the selection has changed since.
+    open_mailbox: Option<String>,
+    events: u64,
     contacts: u64,
     send: u64,
 }
@@ -353,7 +365,9 @@ impl State {
                 self.mail.busy = false;
                 self.failed_now(&error);
             }
-            Event::Opened(ticket, _) if ticket != self.tickets.open => {}
+            Event::Opened(ticket, _)
+                if ticket != self.tickets.open
+                    || self.tickets.open_mailbox != self.mail.selected => {}
             Event::Opened(_, result) => match *result {
                 Ok(email) => self.mail.open = Some(email),
                 Err(ref error) => self.failed_now(error),
@@ -405,12 +419,13 @@ impl State {
                 }
             }
             Event::Calendars(Err(error)) => self.failed_now(&error),
-            Event::Events(Ok(events)) => {
+            Event::Events(ticket, _) if ticket != self.tickets.events => {}
+            Event::Events(_, Ok(events)) => {
                 self.calendars.busy = false;
                 self.calendars.events = events;
                 self.calendars.open = None;
             }
-            Event::Events(Err(error)) => {
+            Event::Events(_, Err(error)) => {
                 self.calendars.busy = false;
                 self.failed_now(&error);
             }
@@ -450,6 +465,10 @@ impl State {
     pub fn select_mailbox(&mut self, id: String) {
         self.mail.selected = Some(id.clone());
         self.mail.open = None;
+        // The old mailbox's rows go at once, so none of them can be opened
+        // under the new selection while its page loads.
+        self.mail.emails.clear();
+        self.mail.total = 0;
         // An open still in flight belongs to the old mailbox.
         self.tickets.open += 1;
         self.mail.busy = true;
@@ -466,6 +485,7 @@ impl State {
     /// Queue an email open; only the newest one's answer is applied.
     fn open_email(&mut self, id: String) {
         self.tickets.open += 1;
+        self.tickets.open_mailbox = self.mail.selected.clone();
         let ticket = self.tickets.open;
         self.queue(Work::OpenEmail { ticket, id });
     }
@@ -485,7 +505,14 @@ impl State {
     pub fn select_calendar(&mut self, id: String) {
         self.calendars.selected = Some(id.clone());
         self.calendars.busy = true;
-        self.queue(Work::FetchEvents { calendar: id });
+        self.fetch_events(id);
+    }
+
+    /// Queue a calendar's events; only the newest one's answer is applied.
+    fn fetch_events(&mut self, calendar: String) {
+        self.tickets.events += 1;
+        let ticket = self.tickets.events;
+        self.queue(Work::FetchEvents { ticket, calendar });
     }
 
     /// Select an address book and fetch its contacts.
@@ -513,6 +540,9 @@ impl State {
                 self.fetch_missing_for_mode();
             }
             UiEvent::SelectMailbox(id) => self.select_mailbox(id),
+            // Only a row of the shown page opens: a click that raced a
+            // mailbox change names a row that is gone.
+            UiEvent::OpenEmail(id) if !self.mail.emails.iter().any(|email| email.id == id) => {}
             UiEvent::OpenEmail(id) => {
                 // Optimistically mark the row read; the server's word
                 // replaces the counts when it answers.
@@ -556,12 +586,14 @@ impl State {
             UiEvent::Reply => {
                 // A reply works from the open email.
                 if let Some(open) = self.mail.open.clone() {
-                    let to = open
+                    // The sender's name travels with the address.
+                    let to: Vec<EmailAddress> = open
                         .from
                         .as_ref()
                         .and_then(|from| from.first())
-                        .map(|a| a.email.clone())
-                        .unwrap_or_default();
+                        .cloned()
+                        .into_iter()
+                        .collect();
                     let subject = match open.subject.as_deref() {
                         Some(subject) if subject.to_lowercase().starts_with("re:") => {
                             subject.to_owned()
@@ -575,7 +607,7 @@ impl State {
                             .as_ref()
                             .map(|account| account.email.clone())
                             .unwrap_or_default(),
-                        to: vec![to],
+                        to,
                         subject,
                         in_reply_to: open
                             .message_id
@@ -586,21 +618,16 @@ impl State {
                 }
             }
             UiEvent::ComposeField(field, value) => {
-                if let Some(compose) = &mut self.compose {
-                    // Keep what was typed; the lists are parsed from it.
+                // While a send is in flight the dialog shows what was sent:
+                // edits wait for its answer (the view disables the fields).
+                if let Some(compose) = &mut self.compose
+                    && !compose.busy
+                {
+                    // Recipients stay as typed; they are parsed at send.
                     match field {
-                        ComposeField::To => {
-                            compose.draft.to = split_addresses(&value);
-                            compose.to_text = value;
-                        }
-                        ComposeField::Cc => {
-                            compose.draft.cc = split_addresses(&value);
-                            compose.cc_text = value;
-                        }
-                        ComposeField::Bcc => {
-                            compose.draft.bcc = split_addresses(&value);
-                            compose.bcc_text = value;
-                        }
+                        ComposeField::To => compose.to_text = value,
+                        ComposeField::Cc => compose.cc_text = value,
+                        ComposeField::Bcc => compose.bcc_text = value,
                         ComposeField::Subject => compose.draft.subject = value,
                         ComposeField::Body => compose.draft.body = value,
                     }
@@ -608,18 +635,30 @@ impl State {
             }
             UiEvent::CloseCompose => self.compose = None,
             UiEvent::SendCompose => {
-                if let Some(compose) = &self.compose
+                let ticket = self.tickets.send + 1;
+                let mut send = None;
+                if let Some(compose) = &mut self.compose
                     && !compose.busy
                 {
-                    let draft = compose.draft.clone();
-                    self.tickets.send += 1;
-                    let ticket = self.tickets.send;
-                    self.queue(Work::Send { ticket, draft });
-                    if let Some(compose) = &mut self.compose {
-                        compose.busy = true;
-                        compose.error = None;
-                        compose.sending = Some(ticket);
+                    match parse_recipients(compose) {
+                        Err(error) => {
+                            compose.error =
+                                Some(crate::label_with("bad-recipient", &[("error", &error)]));
+                        }
+                        Ok((to, cc, bcc)) => {
+                            compose.draft.to = to;
+                            compose.draft.cc = cc;
+                            compose.draft.bcc = bcc;
+                            compose.busy = true;
+                            compose.error = None;
+                            compose.sending = Some(ticket);
+                            send = Some(compose.draft.clone());
+                        }
                     }
+                }
+                if let Some(draft) = send {
+                    self.tickets.send = ticket;
+                    self.queue(Work::Send { ticket, draft });
                 }
             }
             UiEvent::SetupField(field, value) => match field {
@@ -672,7 +711,7 @@ impl State {
                 } else if self.calendars.events.is_empty() && self.calendars.selected.is_some() {
                     let calendar = self.calendars.selected.clone().unwrap();
                     self.calendars.busy = true;
-                    self.queue(Work::FetchEvents { calendar });
+                    self.fetch_events(calendar);
                 }
             }
             Mode::Contacts => {
@@ -733,7 +772,7 @@ impl State {
         match &self.compose {
             Some(compose) => {
                 !compose.busy
-                    && !compose.draft.to.is_empty()
+                    && !compose.to_text.trim().is_empty()
                     && !compose.draft.subject.trim().is_empty()
             }
             None => false,
@@ -761,7 +800,7 @@ impl State {
                 self.queue(Work::FetchCalendars);
                 if let Some(calendar) = self.calendars.selected.clone() {
                     self.calendars.busy = true;
-                    self.queue(Work::FetchEvents { calendar });
+                    self.fetch_events(calendar);
                 }
             }
             Mode::Contacts => {
@@ -821,14 +860,18 @@ impl State {
     }
 }
 
-/// Split an address line on commas and semicolons, dropping empties.
-fn split_addresses(value: &str) -> Vec<String> {
-    value
-        .split([',', ';'])
-        .map(str::trim)
-        .filter(|address| !address.is_empty())
-        .map(str::to_owned)
-        .collect()
+/// The three recipient lists parsed from what was typed, or the reason
+/// one is refused. To must name someone.
+type Recipients = (Vec<EmailAddress>, Vec<EmailAddress>, Vec<EmailAddress>);
+
+fn parse_recipients(compose: &ComposeState) -> Result<Recipients, String> {
+    let to = jmap::parse_addresses(&compose.to_text)?;
+    let cc = jmap::parse_addresses(&compose.cc_text)?;
+    let bcc = jmap::parse_addresses(&compose.bcc_text)?;
+    if to.is_empty() {
+        return Err("no recipient in To".to_owned());
+    }
+    Ok((to, cc, bcc))
 }
 
 #[cfg(test)]
@@ -1028,7 +1071,14 @@ mod tests {
         );
         state.apply_ui(UiEvent::Reply);
         let compose = state.compose.expect("a compose dialog");
-        assert_eq!(compose.draft.to, ["bob@example.invalid"]);
+        assert_eq!(
+            compose.draft.to,
+            [EmailAddress {
+                name: Some("Bob".into()),
+                email: "bob@example.invalid".into()
+            }]
+        );
+        assert_eq!(compose.to_text, "Bob <bob@example.invalid>");
         assert_eq!(compose.draft.subject, "Re: Lunch");
         assert_eq!(
             compose.draft.in_reply_to.as_deref(),
@@ -1038,20 +1088,77 @@ mod tests {
     }
 
     #[test]
-    fn compose_fields_split_address_lists() {
+    fn bare(email: &str) -> EmailAddress {
+        EmailAddress {
+            name: None,
+            email: email.into(),
+        }
+    }
+
+    #[test]
+    fn sending_parses_the_address_lists() {
         let mut state = connected();
         state.apply_ui(UiEvent::Compose);
         state.apply_ui(UiEvent::ComposeField(
             ComposeField::To,
-            "bob@example.invalid, carol@example.invalid; ".into(),
+            "bob@example.invalid, \"Lee, Cy\" <cy@example.invalid>; ".into(),
         ));
         state.apply_ui(UiEvent::ComposeField(ComposeField::Subject, "Hi".into()));
+        assert!(state.compose_sendable());
+        state.apply_ui(UiEvent::SendCompose);
         let compose = state.compose.clone().unwrap();
         assert_eq!(
             compose.draft.to,
-            ["bob@example.invalid", "carol@example.invalid"]
+            [
+                bare("bob@example.invalid"),
+                EmailAddress {
+                    name: Some("Lee, Cy".into()),
+                    email: "cy@example.invalid".into()
+                }
+            ]
         );
-        assert!(state.compose_sendable());
+        assert!(compose.busy);
+    }
+
+    #[test]
+    fn a_malformed_recipient_is_refused_with_a_compose_error() {
+        let mut state = connected();
+        state.apply_ui(UiEvent::Compose);
+        state.apply_ui(UiEvent::ComposeField(ComposeField::To, "Ann <ann@".into()));
+        state.apply_ui(UiEvent::ComposeField(ComposeField::Subject, "Hi".into()));
+        state.apply_ui(UiEvent::SendCompose);
+        let compose = state.compose.clone().unwrap();
+        assert!(!compose.busy, "nothing was sent");
+        assert!(compose.error.is_some());
+        assert!(
+            !state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::Send { .. }))
+        );
+    }
+
+    #[test]
+    fn edits_while_sending_are_refused() {
+        let mut state = connected();
+        state.apply_ui(UiEvent::Compose);
+        state.apply_ui(UiEvent::ComposeField(ComposeField::To, "bob@example.invalid".into()));
+        state.apply_ui(UiEvent::ComposeField(ComposeField::Subject, "Hi".into()));
+        state.apply_ui(UiEvent::SendCompose);
+        for (field, value) in [
+            (ComposeField::To, "eve@example.invalid"),
+            (ComposeField::Cc, "eve@example.invalid"),
+            (ComposeField::Bcc, "eve@example.invalid"),
+            (ComposeField::Subject, "changed"),
+            (ComposeField::Body, "changed"),
+        ] {
+            state.apply_ui(UiEvent::ComposeField(field, value.into()));
+        }
+        let compose = state.compose.clone().unwrap();
+        assert_eq!(compose.to_text, "bob@example.invalid");
+        assert!(compose.cc_text.is_empty() && compose.bcc_text.is_empty());
+        assert_eq!(compose.draft.subject, "Hi");
+        assert!(compose.draft.body.is_empty());
     }
 
     #[test]
@@ -1145,15 +1252,15 @@ mod tests {
         ));
         let compose = state.compose.as_ref().unwrap();
         assert_eq!(compose.to_text, "bob@example.invalid,");
-        assert_eq!(compose.draft.to, ["bob@example.invalid"]);
         state.apply_ui(UiEvent::ComposeField(
             ComposeField::To,
             "bob@example.invalid, cy@example.invalid".into(),
         ));
+        state.apply_ui(UiEvent::SendCompose);
         let compose = state.compose.as_ref().unwrap();
         assert_eq!(
             compose.draft.to,
-            ["bob@example.invalid", "cy@example.invalid"]
+            [bare("bob@example.invalid"), bare("cy@example.invalid")]
         );
     }
 
@@ -1194,6 +1301,65 @@ mod tests {
     }
 
     #[test]
+    fn an_old_mailbox_row_cannot_open_under_the_new_selection() {
+        let mut state = connected();
+        state.mail.mailboxes = vec![mailbox("m-a", Some("inbox"), 0), mailbox("m-b", None, 0)];
+        state.select_mailbox("m-a".into());
+        state.mail.emails =
+            vec![serde_json::from_value(json!({ "id": "A1", "keywords": {} })).unwrap()];
+        // An open issued under A, then the switch to B.
+        state.apply_ui(UiEvent::OpenEmail("A1".into()));
+        let ticket = state
+            .take_work()
+            .iter()
+            .find_map(|w| match w {
+                Work::OpenEmail { ticket, .. } => Some(*ticket),
+                _ => None,
+            })
+            .unwrap();
+        state.select_mailbox("m-b".into());
+        assert!(state.mail.emails.is_empty(), "A's rows are gone");
+        // A click on A's row while B loads does nothing.
+        state.take_work();
+        state.apply_ui(UiEvent::OpenEmail("A1".into()));
+        assert!(
+            !state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::OpenEmail { .. }))
+        );
+        // And A's body, arriving late, is dropped.
+        let body: Email = serde_json::from_value(json!({ "id": "A1", "keywords": {} })).unwrap();
+        state.apply(Event::Opened(ticket, Box::new(Ok(body))));
+        assert!(state.mail.open.is_none());
+    }
+
+    #[test]
+    fn a_late_calendar_answer_does_not_replace_the_selected_one() {
+        let mut state = connected();
+        state.select_calendar("C1".into());
+        state.select_calendar("C2".into());
+        let tickets: Vec<u64> = state
+            .take_work()
+            .iter()
+            .filter_map(|w| match w {
+                Work::FetchEvents { ticket, .. } => Some(*ticket),
+                _ => None,
+            })
+            .collect();
+        let [first, second] = tickets[..] else {
+            panic!("{tickets:?}")
+        };
+        let event = |title: &str| -> CalendarEvent {
+            serde_json::from_value(json!({ "id": title, "calendarId": "C", "title": title })).unwrap()
+        };
+        state.apply(Event::Events(second, Ok(vec![event("two")])));
+        state.apply(Event::Events(first, Ok(vec![event("one")])));
+        assert_eq!(state.calendars.events.len(), 1);
+        assert_eq!(state.calendars.events[0].id, "two");
+    }
+
+    #[test]
     fn a_count_refresh_keeps_the_open_email() {
         let mut state = connected();
         state.apply(Event::Mailboxes(Ok(vec![mailbox(
@@ -1202,6 +1368,8 @@ mod tests {
             1,
         )])));
         state.take_work();
+        state.mail.emails =
+            vec![serde_json::from_value(json!({ "id": "E1", "keywords": {} })).unwrap()];
         state.apply_ui(UiEvent::OpenEmail("E1".into()));
         let open = state
             .take_work()
@@ -1234,7 +1402,7 @@ mod tests {
         state.take_work();
         state.apply_ui(UiEvent::Mode(Mode::Calendar));
         match state.take_work().as_slice() {
-            [Work::FetchEvents { calendar }] => assert_eq!(calendar, "C1"),
+            [Work::FetchEvents { calendar, .. }] => assert_eq!(calendar, "C1"),
             other => panic!("{other:?}"),
         }
     }

@@ -40,7 +40,7 @@ pub enum Event {
     Marked(Result<(), jmap::Error>),
     Sent(u64, Result<(), jmap::Error>),
     Calendars(Result<Vec<jmap::Calendar>, jmap::Error>),
-    Events(Result<Vec<jmap::CalendarEvent>, jmap::Error>),
+    Events(u64, Result<Vec<jmap::CalendarEvent>, jmap::Error>),
     Books(Result<Vec<jmap::AddressBook>, jmap::Error>),
     Contacts(u64, Result<Vec<jmap::Contact>, jmap::Error>),
     /// A read of the session look (settingsd), for the shell.
@@ -286,11 +286,11 @@ impl Shell {
                     self.spawn(async move { Event::Calendars(client.calendars().await) });
                 }
             }
-            Work::FetchEvents { calendar } => {
+            Work::FetchEvents { ticket, calendar } => {
                 if let Some(client) = self.client() {
-                    self.spawn(
-                        async move { Event::Events(client.calendar_events(&calendar).await) },
-                    );
+                    self.spawn(async move {
+                        Event::Events(ticket, client.calendar_events(&calendar).await)
+                    });
                 }
             }
             Work::FetchBooks => {

@@ -50,25 +50,28 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiE
                 events.push(UiEvent::ComposeField(field, buffer));
             }
         };
-    line(ui, "to", ComposeField::To, &compose.to_text, events);
-    line(ui, "cc", ComposeField::Cc, &compose.cc_text, events);
-    line(ui, "bcc", ComposeField::Bcc, &compose.bcc_text, events);
-    line(
-        ui,
-        "subject",
-        ComposeField::Subject,
-        &compose.draft.subject,
-        events,
-    );
-    let mut body = compose.draft.body.clone();
-    let editor = TextEdit::multiline(&mut body)
-        .desired_rows(8)
-        .desired_width(f32::INFINITY)
-        .hint_text(crate::label("body"))
-        .interactive(!compose.busy);
-    if ui.add(editor).changed() {
-        events.push(UiEvent::ComposeField(ComposeField::Body, body));
-    }
+    // While a send is in flight every field is read-only: the dialog shows
+    // exactly what is being sent.
+    ui.add_enabled_ui(!compose.busy, |ui| {
+        line(ui, "to", ComposeField::To, &compose.to_text, events);
+        line(ui, "cc", ComposeField::Cc, &compose.cc_text, events);
+        line(ui, "bcc", ComposeField::Bcc, &compose.bcc_text, events);
+        line(
+            ui,
+            "subject",
+            ComposeField::Subject,
+            &compose.draft.subject,
+            events,
+        );
+        let mut body = compose.draft.body.clone();
+        let editor = TextEdit::multiline(&mut body)
+            .desired_rows(8)
+            .desired_width(f32::INFINITY)
+            .hint_text(crate::label("body"));
+        if ui.add(editor).changed() {
+            events.push(UiEvent::ComposeField(ComposeField::Body, body));
+        }
+    });
     if let Some(error) = &compose.error {
         ui.label(
             egui::RichText::new(crate::label_with("send-failed", &[("error", error)]))

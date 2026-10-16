@@ -25,6 +25,7 @@ send = Send
 cancel = Cancel
 sending = Sending…
 send-failed = Not sent: { $error }
+bad-recipient = Check the recipients: { $error }
 compose-title = Compose
 to = To
 cc = Cc
