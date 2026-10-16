@@ -144,7 +144,10 @@ pub enum Work {
     OpenPrefs,
     /// Write a print page and open it in the browser; `reply` (a Bus
     /// request) hears the page's path.
-    Print { html: String, reply: Option<u64> },
+    Print {
+        html: String,
+        reply: Option<u64>,
+    },
 }
 
 impl Work {

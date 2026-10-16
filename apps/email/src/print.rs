@@ -186,10 +186,7 @@ pub fn page(email: &Email, format: Format, points: f64) -> String {
         Some(html) => html_source(html),
         None => match email.html_body_value() {
             Some(html) => html_source(html),
-            None => format!(
-                "<p class=\"note\">{}</p>",
-                escape(&crate::label("no-body"))
-            ),
+            None => format!("<p class=\"note\">{}</p>", escape(&crate::label("no-body"))),
         },
     };
     format!(
@@ -334,14 +331,23 @@ mod tests {
         serde_json::from_value(value).unwrap()
     }
 
+    fn render(
+        text: Option<(&str, &str)>,
+        html: Option<&str>,
+        format: Format,
+        points: f64,
+    ) -> String {
+        page(&email(text, html), format, points)
+    }
+
     /// The `<body>` of a page: what the message could have put there.
-    fn body(page: &str) -> &str {
+    fn inside(page: &str) -> &str {
         page.split("<body>").nth(1).unwrap()
     }
 
     #[test]
     fn the_headers_are_present_and_escaped() {
-        let page = page(&email(Some(("text/plain", "Hi")), None), Format::Plain, 15.0);
+        let page = render(Some(("text/plain", "Hi")), None, Format::Plain, 15.0);
         for key in ["from", "to", "cc", "print-date", "subject"] {
             assert!(
                 page.contains(&format!("<th>{}</th>", escape(&crate::label(key)))),
@@ -353,12 +359,12 @@ mod tests {
         assert!(page.contains("Cy &lt;cy@example.invalid&gt;"));
         assert!(page.contains("2026"), "the date");
         assert!(page.contains("<title>Plan &lt;b&gt;&amp;&lt;/b&gt; &quot;notes&quot;</title>"));
-        assert!(!body(&page).contains("<b>"));
+        assert!(!inside(&page).contains("<b>"));
     }
 
     #[test]
     fn the_csp_print_call_and_text_size_are_in_the_head() {
-        let page = page(&email(Some(("text/plain", "Hi")), None), Format::Plain, 18.5);
+        let page = render(Some(("text/plain", "Hi")), None, Format::Plain, 18.5);
         assert!(page.contains(&format!(
             "<meta http-equiv=\"Content-Security-Policy\" content=\"{CSP}\">"
         )));
@@ -367,13 +373,13 @@ mod tests {
         assert!(page.contains("@page"));
         // The one script is the page's own, in the head.
         assert_eq!(page.matches("<script").count(), 1);
-        assert!(!body(&page).contains("<script"));
+        assert!(!inside(&page).contains("<script"));
     }
 
     #[test]
     fn plain_text_is_escaped_and_wrapped() {
         let text = "a < b && c > d\n<script>alert(1)</script>";
-        let page = page(&email(Some(("text/plain", text)), None), Format::Plain, 15.0);
+        let page = render(Some(("text/plain", text)), None, Format::Plain, 15.0);
         assert!(page.contains(
             "<pre class=\"plain\">a &lt; b &amp;&amp; c &gt; d\n&lt;script&gt;alert(1)&lt;/script&gt;</pre>"
         ));
@@ -383,13 +389,13 @@ mod tests {
     #[test]
     fn markdown_renders_but_its_raw_html_is_escaped() {
         let md = "# Plan\n\n- **one**\n- two\n\n<div onclick=\"x()\">raw</div>\n\nand <span style=\"x\">inline</span> too\n";
-        let page = page(&email(Some(("text/markdown", md)), None), Format::Markdown, 15.0);
-        let body = body(&page);
-        assert!(body.contains("<h1>Plan</h1>"));
-        assert!(body.contains("<strong>one</strong>"));
-        assert!(body.contains("&lt;div onclick=&quot;x()&quot;&gt;raw&lt;/div&gt;"));
-        assert!(body.contains("&lt;span style=&quot;x&quot;&gt;inline&lt;/span&gt;"));
-        assert!(!body.contains("<div") && !body.contains("<span"));
+        let page = render(Some(("text/markdown", md)), None, Format::Markdown, 15.0);
+        let shown = inside(&page);
+        assert!(shown.contains("<h1>Plan</h1>"));
+        assert!(shown.contains("<strong>one</strong>"));
+        assert!(shown.contains("&lt;div onclick=&quot;x()&quot;&gt;raw&lt;/div&gt;"));
+        assert!(shown.contains("&lt;span style=&quot;x&quot;&gt;inline&lt;/span&gt;"));
+        assert!(!shown.contains("<div") && !shown.contains("<span"));
     }
 
     #[test]
@@ -397,28 +403,28 @@ mod tests {
         let md = "![a chart](https://tracker.example.invalid/pixel.png \"t\")\n\n\
                   <img src=\"https://tracker.example.invalid/x.png\">\n\n\
                   [site](https://example.invalid/) [bad](javascript:alert(1)) [file](file:///etc/passwd)\n";
-        let page = page(&email(Some(("text/markdown", md)), None), Format::Markdown, 15.0);
-        let body = body(&page);
-        assert!(!body.contains("<img"), "{body}");
-        assert!(!body.contains("src="), "{body}");
-        assert!(body.contains("a chart"), "the alt text stands in");
-        assert!(body.contains("<a href=\"https://example.invalid/\">site</a>"));
-        assert!(!body.contains("javascript:alert(1)\""), "{body}");
-        assert!(!body.contains("href=\"javascript"), "{body}");
-        assert!(!body.contains("href=\"file"), "{body}");
-        assert!(body.contains("bad") && body.contains("file"));
+        let page = render(Some(("text/markdown", md)), None, Format::Markdown, 15.0);
+        let shown = inside(&page);
+        assert!(!shown.contains("<img"), "{shown}");
+        assert!(!shown.contains("src="), "{shown}");
+        assert!(shown.contains("a chart"), "the alt text stands in");
+        assert!(shown.contains("<a href=\"https://example.invalid/\">site</a>"));
+        assert!(!shown.contains("javascript:alert(1)\""), "{shown}");
+        assert!(!shown.contains("href=\"javascript"), "{shown}");
+        assert!(!shown.contains("href=\"file"), "{shown}");
+        assert!(shown.contains("bad") && shown.contains("file"));
     }
 
     #[test]
     fn an_html_body_is_its_escaped_source() {
         let html = "<p>Hi <img src=\"https://tracker.example.invalid/p.gif\"></p>";
-        let page = page(&email(None, Some(html)), Format::Plain, 15.0);
-        let body = body(&page);
-        assert!(body.contains("&lt;p&gt;Hi &lt;img src=&quot;https://tracker"));
-        assert!(!body.contains("<img") && !body.contains("<p>Hi"));
+        let page = render(None, Some(html), Format::Plain, 15.0);
+        let shown = inside(&page);
+        assert!(shown.contains("&lt;p&gt;Hi &lt;img src=&quot;https://tracker"));
+        assert!(!shown.contains("<img") && !shown.contains("<p>Hi"));
         // The same when the server serves the HTML as the text body.
-        let page = page(&email(Some(("text/html", html)), None), Format::Markdown, 15.0);
-        assert!(!body(&page).contains("<img"));
+        let page = render(Some(("text/html", html)), None, Format::Markdown, 15.0);
+        assert!(!inside(&page).contains("<img"));
     }
 
     #[test]

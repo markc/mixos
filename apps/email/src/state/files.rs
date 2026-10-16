@@ -106,7 +106,10 @@ mod tests {
     #[test]
     fn print_builds_the_page_as_the_reader_shows_it() {
         let mut state = connected_many(&["a"]);
-        open(&mut state, email("E1", "Plan", "# Heading\n\n- one\n- two\n"));
+        open(
+            &mut state,
+            email("E1", "Plan", "# Heading\n\n- one\n- two\n"),
+        );
         state.print_open();
         let work = state.take_work();
         let [(html, None)] = printed(&work)[..] else {
