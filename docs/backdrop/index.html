@@ -218,6 +218,7 @@
                 <div class="panel-content">
                     <nav id="toc-nav">
                         <a href="#the-document">The document</a>
+                        <a href="#slideshows">Slideshows</a>
                         <a href="#images">Images</a>
                         <a href="#memory-budgets" class="toc-h3">Memory budgets</a>
                         <a href="#the-bus">The Bus</a>
@@ -260,11 +261,11 @@ draws it with egui. A crash in it never takes the session down.</p>
 <ul>
 <li>a <strong>solid colour</strong> per output, or the <strong>session theme's</strong> colour when no
 document names one;</li>
-<li>a <strong>PNG or JPEG image</strong>, centre-cropped to fill each output (the default
-and only fit). Each output may have its own.</li>
+<li>a <strong>PNG or JPEG image</strong>, with fill, fit, centre, tile or stretch sizing;</li>
+<li>a <strong>slideshow</strong>, from a folder or an explicit image list, with a half-second
+crossfade. Each output may have its own wallpaper.</li>
 </ul>
-<p>Not yet: fit modes other than centre-crop, slideshows, the live folder view
-and preferences UI. The probe (<code>backdrop --probe</code>) is still there: it is the
+<p>The live folder view remains planned. The probe (<code>backdrop --probe</code>) is the
 regression gate for the surfaces, scale and input, and draws its own labels.</p>
 <h2 id="the-document">The document</h2>
 <p><code>backdrop.mx</code> (strict data, <code>schema: 1</code>), in the app's config directory
@@ -279,9 +280,16 @@ outputs: {
 <li><code>schema</code> is required and must be <code>1</code>.</li>
 <li><code>default</code> is one wallpaper; without it the session theme's colour fills
 every output.</li>
-<li>Each wallpaper names exactly one of <code>colour</code> (<code>#RRGGBB</code>, six hex digits) or
-<code>image</code> (an absolute path). <code>fallback</code> (<code>#RRGGBB</code>) goes with an image only:
-it is shown until the image is decoded.</li>
+<li>Each wallpaper names exactly one of <code>colour</code> (<code>#RRGGBB</code>, six hex digits),
+<code>image</code> (an absolute path) or <code>slideshow</code> (the source and timing below).
+<code>fallback</code> (<code>#RRGGBB</code>) goes with an image or slideshow: it shows behind
+transparent pixels and in letterbox bars. Without it the theme colour shows.</li>
+<li><code>fit</code> goes with an image or slideshow. It defaults to <code>fill</code>, which crops
+equally from opposite edges to cover the output. <code>fit</code> preserves the aspect
+ratio with letterbox bars; <code>centre</code> centres the image at its native pixel
+size; <code>tile</code> repeats at its native pixel size from the top left; <code>stretch</code>
+covers the output without preserving the aspect ratio. Native sizing honours
+the output scale even when the retained texture has been downscaled.</li>
 <li><code>outputs</code> maps an output's name (<code>DP-1</code>) to its own wallpaper; an output
 without one takes the default.</li>
 <li>Unknown keys, wrong types, bad colours, relative paths and other shapes
@@ -290,6 +298,28 @@ are refused, naming the field. A bad document at start stops the app.</li>
 <p>Command line: <code>--colour #RRGGBB</code> or <code>--image FILE</code> replaces the document's
 <strong>default</strong> for this run (it is not stored). <code>--service NAME</code> registers the
 Bus name (default <code>backdrop</code>).</p>
+<h2 id="slideshows">Slideshows</h2>
+<pre><code class="language-text">schema: 1
+default: {
+  slideshow: { folder: "/usr/share/wallpapers", interval_s: 600, shuffle: false },
+  fallback: "#101820",
+  fit: "fit",
+}
+</code></pre>
+<p>Replace <code>folder</code> with <code>images: ["/usr/share/wallpapers/a.png", "/usr/share/wallpapers/b.jpg"]</code> for an explicit order. Exactly one source is
+required, all paths are absolute, and an explicit list must be non-empty.
+<code>interval_s</code> defaults to 600 and values below 5 are refused. <code>shuffle</code> defaults
+to false. Folder discovery is bounded and non-recursive; PNG and JPEG files
+are sorted before scheduling. Discovery and decoding run on the worker.
+The folder is discovered at startup or on a set; reapply the document to pick up
+folder changes. Repeated paths in a list share one schedule entry.</p>
+<p>A slideshow retains its current image while the next decodes. A failed decode
+keeps that image and reports the error; the failed entry is skipped on the next
+attempt, which waits for the interval. Entries are tried again on later cycles.
+A successful advance crossfades for about 0.5 seconds, then releases
+the previous image and texture. The configured source is preserved when stored.
+A refused replacement also defers active slideshows for another interval, so
+their last good image stays visible after the refusal.</p>
 <h2 id="images">Images</h2>
 <ul>
 <li>PNG and JPEG only. The file is opened once, without blocking (a FIFO or
@@ -300,14 +330,16 @@ refused before any pixel buffer exists. The decoder's own allocation cap is
 256 MiB.</li>
 <li>Decoding runs on one worker thread, one image at a time. The kept image is
 downscaled so its longest side is at most 3840 pixels.</li>
-<li>At most four distinct images per document, counted after command-line
-overrides: a <code>--image</code> that makes five is refused.</li>
+<li>At most four resident image sources per document, counted after command-line
+overrides. A slideshow counts as one source regardless of its list length;
+only its selected images are decoded.</li>
 <li>Every image a set names is decoded again, even one already on screen, so a
 file replaced at the same path is picked up by the next set.</li>
 <li>A set applies only once all its images are decoded. A missing, corrupt,
 oversize or unsupported image refuses the whole change: the last applied
 backdrop stays on screen, and the reason is in <code>backdrop.state</code>. Images being
-decoded for a refused or superseded set are dropped at once.</li>
+kept for a refused or superseded set are dropped at once; in-flight results
+are discarded on completion.</li>
 </ul>
 <h3 id="memory-budgets">Memory budgets</h3>
 <p>Two aggregate budgets, both enforced; the per-image limits above are not
@@ -316,6 +348,11 @@ totals.</p>
 <tr><td>Decoded RGBA held by the controller (applied and candidate images together)</td><td>512 MiB (<code>RESIDENT_BUDGET</code>)</td><td>a decode that would take the total over it is refused (<code>IMAGE</code>); the last applied images stay until a whole candidate set applies</td></tr>
 <tr><td>Accounted wallpaper texture bytes, across all outputs, overlap included (<code>TEXTURE_BUDGET</code>)</td><td>512 MiB</td><td>four full-size outputs swapping (four old and four new textures)</td></tr>
 </tbody></table>
+<p>Each output keeps its own texture at the decoded size, capped at 3840 pixels
+a side. The budget can leave additional outputs on fallback when there is no
+room for their textures. An image over the device's texture-size limit keeps
+the output's last good image on screen, or shows fallback when there is none,
+with the limit reported in that output's <code>error</code>.</p>
 <p>A full-size image is 3840 × 3840 × 4 bytes = 56.25 MiB, the largest kept. Four
 applied plus four candidates is 450 MiB, which fits the 512 MiB resident budget.
 Textures are accounted as the bytes of the new size reserved while the old is
@@ -323,7 +360,8 @@ still held, so a swap is counted in full. When bytes are released, live outputs
 are woken once so one that was starved draws again; nothing wakes when nothing
 is freed.</p>
 <ul>
-<li>A context owns at most one image texture. Replacing it reserves the new size
+<li>A context owns one image texture, or two during a slideshow crossfade.
+Replacing it reserves the new size
 while the old is still held, so the overlap is counted; a texture that does
 not fit leaves that output on its fallback colour, with the reason in its
 <code>error</code>. Removing an output, showing a solid colour, or a change of image
@@ -342,6 +380,7 @@ wallpaper textures.</p>
 <tr><td><code>backdrop.ping</code></td><td>query</td><td><code>{}</code></td><td><code>{schema, service}</code></td></tr>
 <tr><td><code>backdrop.state</code></td><td>query</td><td><code>{}</code></td><td>the state below</td></tr>
 <tr><td><code>backdrop.set</code></td><td>intent</td><td>a complete document (above)</td><td>the change, once applied</td></tr>
+<tr><td><code>backdrop.next</code></td><td>intent</td><td><code>{}</code></td><td>full state, once the next images have decoded and applied</td></tr>
 </tbody></table>
 <p><code>backdrop.set</code> replaces the whole document; it does not patch it. A valid
 set waits for its images, is stored in the document's file (atomically,
@@ -354,22 +393,42 @@ through <code>config::atomic</code>), and then applies. Its reply is <code>rc 0<
 <li><code>STORE</code>: the document could not be stored (nothing changed), or it was
 stored but its durability is not confirmed (applied; the reply says so);</li>
 <li><code>SUPERSEDED</code>: a newer set replaced this one before it applied.</li>
+<li><code>BUSY</code>: a next arrived while a set or advance was decoding;</li>
+<li><code>NON_SLIDESHOW</code>: a next was requested with no applied slideshow;</li>
+<li><code>UNKNOWN</code>: the requested verb is not implemented.</li>
 </ul>
+<p><code>backdrop.next</code> advances configured slideshows without changing or storing their
+sources. It refuses a configuration with no slideshow. An advance waiting for
+decode keeps the current pixels; a newer set can supersede it. Refused advances
+are not published as executed commands.
+Automatic advances run independently for each configured source and wait for
+the active crossfade to finish. A corrupt image on one output does not stop
+other outputs' schedules. A manual next advances all slideshows together and
+can interrupt their current fade.</p>
 <p><code>backdrop.state</code> answers with no output on screen:
-<code>{schema, service, requested, active, pending, error, config, config_file, outputs}</code>. <code>requested</code> and <code>active</code> are revisions: <code>requested</code> numbers every request
+<code>{schema, service, requested, active, pending, error, config, config_file, outputs, fit, slideshows}</code>. <code>fit</code> is the default image's effective fit (or null
+for a solid fill); outputs also report their effective fit. Each slideshow
+reports its output (null for the default), <code>current_path</code>, <code>index</code>, <code>count</code>,
+<code>interval_s</code>, <code>shuffle</code>, <code>pending</code> and <code>fading</code>.
+<code>requested</code> and <code>active</code> are revisions: <code>requested</code> numbers every request,
+including startup and automatic slideshow advances,
 made, and <code>active</code> is the revision of the accepted configuration. <code>pending</code> is
 the revision still decoding, if any. <code>error</code> is the last refused change's
-reason. <code>outputs</code> lists each output drawn so far, with its size, scale, what it
+reason until another change applies successfully, including an automatic advance.
+<code>outputs</code> lists each output drawn so far, with its size, scale, what it
 shows (<code>theme</code>, <code>colour</code>, <code>image</code> or <code>fallback</code>), its <code>error</code>, and
 <code>presented_revision</code>: the revision that output last drew. Use that field to see
 what is on screen; <code>active</code> alone does not mean every output has presented it yet.</p>
-<p>Every applied set is one run of <code>backdrop.set</code> and is published on
+<p>Every applied Bus set or next is one run of its command and is published on
 <code>backdrop.command.executed</code> with origin <code>bus</code>. The command line's default is
 not a run: it is the start state.</p>
 <h2 id="cost">Cost</h2>
 <p>It costs nothing while nothing changes. A static colour or image draws once
 per output and then sleeps; a set, a decode, a change of output or scale wakes
 it through egui's repaint request.</p>
+<p>The slideshow controller waits on its inbox until the next schedule or fade
+deadline. It never polls. Repaints run only while a fade is active, and stop
+when the previous texture is released.</p>
 <h2 id="start-up-and-failure">Start-up and failure</h2>
 <ul>
 <li>The Bus registration must succeed: if the broker refuses or is unreachable,
@@ -384,6 +443,10 @@ its texture and its status.</li>
 named design token. Naming the desktop token is a follow-up.</li>
 <li>Overlapping sets (one still decoding when the next arrives) are exercised by
 the controller's unit tests; the Mix gate sends its sets one after another.</li>
+<li>Input limits bound allocations, not filesystem latency. A stalled mount can
+block the single decode lane until its I/O returns; state, ping, theme and
+solid-colour controls remain available. Superseded in-flight results are
+discarded on completion; already queued jobs are withdrawn immediately.</li>
 </ul>
 <h2 id="running-it">Running it</h2>
 <p>Run it inside a MixOS session: <code>backdrop</code>, or <code>backdrop --colour #1e1e2e</code>,

@@ -15,35 +15,38 @@
 //!   registry. Its reply comes when that has happened, or with the reason it
 //!   did not. A refused set keeps the last applied backdrop on screen.
 //!
-//! Images are held in two maps: `active` (the applied document's images,
-//! on screen) and `candidate` (the pending request's, being decoded). A
-//! candidate becomes active only on a successful commit; it is cleared on
-//! supersession, decode failure and store refusal.
+//! `active` holds selected images, `candidate` holds a pending request and
+//! `previous` retains outgoing images for a half-second crossfade. Candidates
+//! apply together, or are dropped on supersession, decode or store refusal.
 //!
 //! Limits: one decode at a time, a queue of the pending request's images only
 //! (at most four), and an inbox of 64 messages. Resident RGBA is bounded by
 //! [`RESIDENT_BUDGET`]: a decode that would take active plus candidate over it
 //! is refused.
 //!
-//! A change wakes the surfaces through the contexts they handed over. Nothing
-//! polls.
+//! A change wakes the surfaces through their contexts. Slideshow and fade
+//! deadlines drive timed waits on the inbox; a static wallpaper blocks there.
 
-use crate::program::{Resident, Shared, View, Wakers, lock};
+use crate::program::{Budget, FADE, Resident, Shared, View, Wakers, lock};
 use citizen::{Delivery, Handle};
 use futures::StreamExt;
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, mpsc};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use toolkit::command::{Command, Origin, Registry};
 use wallpaper::decode::Decoded;
-use wallpaper::{Config, Decode, Document, Engine};
+use wallpaper::engine::Schedule;
+use wallpaper::schema::SlideSource;
+use wallpaper::{Config, Decode, Document, Engine, Wallpaper};
 
 /// The app's name: its default Bus service, its config directory and its
 /// thread names.
 pub const APP: &str = "backdrop";
 /// The command a set runs: the one definition every change goes through.
 pub const SET: &str = "backdrop.set";
+pub const NEXT: &str = "backdrop.next";
 /// The verbs this service answers, with their classes
 /// (docs/docs/spec/bus/verbs.conf.mix).
 #[cfg(test)]
@@ -51,6 +54,7 @@ pub const VERBS: &[(&str, &str)] = &[
     ("backdrop.ping", "query"),
     ("backdrop.state", "query"),
     (SET, "intent"),
+    (NEXT, "intent"),
 ];
 /// Messages the controller's inbox holds before a sender waits.
 const INBOX: usize = 64;
@@ -81,6 +85,119 @@ enum Msg {
         path: PathBuf,
         result: Result<Decoded, String>,
     },
+    Prepared {
+        revision: u64,
+        key: Option<String>,
+        result: Result<(Schedule, Decoded), String>,
+    },
+}
+
+#[derive(Clone)]
+enum Job {
+    Load(u64, PathBuf),
+    Resolve(u64, Option<String>, Wallpaper),
+}
+
+fn marker(key: &Option<String>) -> PathBuf {
+    match key {
+        None => PathBuf::from("slideshow:default"),
+        Some(name) => PathBuf::from(format!("slideshow:output:{name}")),
+    }
+}
+
+fn slides(config: &Config) -> Vec<(Option<String>, Wallpaper)> {
+    std::iter::once((None, &config.default))
+        .chain(
+            config
+                .outputs
+                .iter()
+                .map(|(key, wallpaper)| (Some(key.clone()), wallpaper)),
+        )
+        .filter(|(_, wallpaper)| matches!(wallpaper, Wallpaper::Slideshow { .. }))
+        .map(|(key, wallpaper)| (key, wallpaper.clone()))
+        .collect()
+}
+
+/// Only the decode worker calls this: folder traversal and image loading never
+/// run on the controller or the Wayland thread.
+fn prepare(wallpaper: Wallpaper, revision: u64) -> Result<(Schedule, Decoded), String> {
+    let Wallpaper::Slideshow {
+        source,
+        interval_s,
+        shuffle,
+        ..
+    } = wallpaper
+    else {
+        return Err("not a slideshow source".into());
+    };
+    let files = match source {
+        SlideSource::Folder(path) => wallpaper::decode::list_folder(&path)?,
+        SlideSource::Images(paths) => paths,
+    };
+    let seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(revision, |d| d.as_nanos() as u64 ^ revision);
+    let mut schedule = Schedule::new(files, interval_s, shuffle, seed, Duration::ZERO)?;
+    // A file that fails to decode is skipped, as the timer path skips one. One
+    // lap of the order visits each file once; refuse only when none decodes.
+    let mut first_error = None;
+    for _ in 0..schedule.files.len() {
+        match wallpaper::decode::load(schedule.current()) {
+            Ok(image) => return Ok((schedule, image)),
+            Err(e) => {
+                first_error.get_or_insert(e);
+                schedule.advance(Duration::ZERO);
+            }
+        }
+    }
+    Err(format!(
+        "no slideshow image could be decoded: {}",
+        first_error.unwrap_or_default()
+    ))
+}
+
+/// Always return a completion when the worker unwinds. An abort profile still
+/// terminates the process, rather than leaving a live controller wedged.
+fn guarded_job(job: Job, work: impl FnOnce(Job) -> Msg) -> Msg {
+    let fallback = job.clone();
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work(job))) {
+        Ok(msg) => msg,
+        Err(_) => match fallback {
+            Job::Load(revision, path) => Msg::Decoded {
+                revision,
+                path,
+                result: Err("decoder panicked".into()),
+            },
+            Job::Resolve(revision, key, _) => Msg::Prepared {
+                revision,
+                key,
+                result: Err("decoder panicked".into()),
+            },
+        },
+    }
+}
+
+fn resolved(config: &Config, schedules: &BTreeMap<Option<String>, Schedule>) -> Config {
+    let resolve = |key: Option<String>, wallpaper: &Wallpaper| match wallpaper {
+        Wallpaper::Slideshow { fallback, fit, .. } => {
+            schedules
+                .get(&key)
+                .map_or(Wallpaper::Theme, |s| Wallpaper::Image {
+                    path: s.current().to_path_buf(),
+                    fallback: *fallback,
+                    fit: *fit,
+                })
+        }
+        other => other.clone(),
+    };
+    Config {
+        default: resolve(None, &config.default),
+        outputs: config
+            .outputs
+            .iter()
+            .map(|(key, wallpaper)| (key.clone(), resolve(Some(key.clone()), wallpaper)))
+            .collect(),
+    }
 }
 
 /// Who is owed an answer for a revision.
@@ -89,6 +206,8 @@ enum Owed {
     Startup,
     /// A Bus request, by its delivery id.
     Bus(u64),
+    Next(u64),
+    Timer,
 }
 
 /// Why a document could not be stored.
@@ -142,9 +261,18 @@ pub fn start(setup: Setup) -> Result<(), String> {
                 active: BTreeMap::new(),
                 candidate: BTreeMap::new(),
                 serial: 0,
+                memory: Budget::new(RESIDENT_BUDGET),
                 queue: VecDeque::new(),
                 decoding: false,
                 owed: BTreeMap::new(),
+                schedules: BTreeMap::new(),
+                pending_schedules: None,
+                advancing: BTreeSet::new(),
+                display: Config::default(),
+                previous: BTreeMap::new(),
+                previous_config: None,
+                fade_started: None,
+                started: Instant::now(),
                 shared,
                 wakers,
                 results,
@@ -172,6 +300,19 @@ fn registry() -> Registry<Engine> {
             engine.apply();
         },
     });
+    registry.add(Command {
+        id: NEXT,
+        label: "backdrop-next",
+        menu: None,
+        submenu: None,
+        group: 0,
+        shortcut: None,
+        icon: None,
+        enabled: |engine: &Engine| engine.ready() && !slides(engine.applied()).is_empty(),
+        run: |engine: &mut Engine| {
+            engine.apply();
+        },
+    });
     registry
 }
 
@@ -186,10 +327,19 @@ struct Controller {
     /// The pending request's decoded images: not yet applied.
     candidate: BTreeMap<PathBuf, Arc<Resident>>,
     serial: u64,
+    memory: Arc<Budget>,
     /// The pending request's decodes still to run, in order: one at a time.
-    queue: VecDeque<(u64, PathBuf)>,
+    queue: VecDeque<Job>,
     decoding: bool,
     owed: BTreeMap<u64, Owed>,
+    schedules: BTreeMap<Option<String>, Schedule>,
+    pending_schedules: Option<BTreeMap<Option<String>, Schedule>>,
+    advancing: BTreeSet<Option<String>>,
+    display: Config,
+    previous: BTreeMap<PathBuf, Arc<Resident>>,
+    previous_config: Option<Config>,
+    fade_started: Option<Instant>,
+    started: Instant,
     shared: Arc<Mutex<Shared>>,
     wakers: Wakers,
     results: mpsc::SyncSender<Msg>,
@@ -198,7 +348,19 @@ struct Controller {
 impl Controller {
     fn run(mut self, config: Config, inbox: mpsc::Receiver<Msg>) {
         self.stage(config, Owed::Startup);
-        for msg in inbox {
+        loop {
+            self.tick();
+            let received = match self.next_deadline() {
+                Some(wait) => inbox.recv_timeout(wait),
+                None => inbox
+                    .recv()
+                    .map_err(|_| mpsc::RecvTimeoutError::Disconnected),
+            };
+            let msg = match received {
+                Ok(msg) => msg,
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            };
             match msg {
                 Msg::Delivery(Delivery::Command { id, verb, body }) => {
                     self.command(id, &verb, &body)
@@ -219,6 +381,11 @@ impl Controller {
                     path,
                     result,
                 } => self.decoded(revision, path, result),
+                Msg::Prepared {
+                    revision,
+                    key,
+                    result,
+                } => self.prepared(revision, key, result),
             }
         }
     }
@@ -238,6 +405,18 @@ impl Controller {
                 Ok(config) => self.stage(config, Owed::Bus(id)),
                 Err(message) => self.reply(id, 10, refusal("ARGUMENT", message)),
             },
+            NEXT => match parse_next(body) {
+                Err(reason) => self.reply(id, 10, refusal("ARGUMENT", reason)),
+                Ok(()) if self.schedules.is_empty() => self.reply(
+                    id,
+                    10,
+                    refusal("NON_SLIDESHOW", "the applied backdrop has no slideshow"),
+                ),
+                Ok(()) if self.engine.pending().is_some() => {
+                    self.reply(id, 10, refusal("BUSY", "a set or advance is pending"))
+                }
+                Ok(()) => self.advance(self.schedules.keys().cloned().collect(), Owed::Next(id)),
+            },
             other => self.reply(id, 10, refusal("UNKNOWN", format!("no verb {other:?}"))),
         }
     }
@@ -247,7 +426,18 @@ impl Controller {
     /// replaced at the same path. A superseded request's partial candidates go
     /// at once.
     fn stage(&mut self, config: Config, owed: Owed) {
-        let staged = self.engine.stage(config, |_| false);
+        self.finish_fade();
+        let sources: BTreeMap<_, _> = slides(&config)
+            .into_iter()
+            .map(|(key, wallpaper)| (marker(&key), (key, wallpaper)))
+            .collect();
+        let paths = config
+            .images()
+            .into_iter()
+            .map(Path::to_path_buf)
+            .chain(sources.keys().cloned())
+            .collect();
+        let staged = self.engine.stage_images(config, paths, |_| false);
         if let Some(old) = staged.superseded {
             let old = self.owed.remove(&old);
             self.answer(
@@ -260,15 +450,120 @@ impl Controller {
             );
         }
         self.candidate.clear();
+        self.pending_schedules = Some(BTreeMap::new());
+        self.advancing.clear();
         let revision = staged.revision;
         self.owed.insert(revision, owed);
         self.queue.clear();
-        self.queue
-            .extend(staged.jobs.into_iter().map(|path| (revision, path)));
+        self.queue.extend(
+            staged
+                .jobs
+                .into_iter()
+                .map(|path| match sources.get(&path) {
+                    Some((key, wallpaper)) => {
+                        Job::Resolve(revision, key.clone(), wallpaper.clone())
+                    }
+                    None => Job::Load(revision, path),
+                }),
+        );
         if self.engine.ready() {
             self.complete();
         } else {
             self.next_decode();
+        }
+    }
+
+    fn advance(&mut self, keys: BTreeSet<Option<String>>, owed: Owed) {
+        if self.engine.pending().is_some() || keys.is_empty() {
+            return;
+        }
+        self.finish_fade();
+        let now = self.started.elapsed();
+        let mut schedules = self.schedules.clone();
+        let mut refresh = BTreeSet::new();
+        for key in &keys {
+            if let Some(schedule) = schedules.get_mut(key) {
+                schedule.advance(now);
+                refresh.insert(schedule.current().to_path_buf());
+            }
+        }
+        let config = self.engine.applied().clone();
+        let display = resolved(&config, &schedules);
+        let paths: Vec<_> = display
+            .images()
+            .into_iter()
+            .map(Path::to_path_buf)
+            .collect();
+        self.candidate = self
+            .active
+            .iter()
+            .filter(|(path, _)| paths.contains(path) && !refresh.contains(*path))
+            .map(|(path, resident)| (path.clone(), resident.clone()))
+            .collect();
+        let staged = self.engine.stage_images(config, paths, |path| {
+            self.active.contains_key(path) && !refresh.contains(path)
+        });
+        self.pending_schedules = Some(schedules);
+        self.advancing = keys;
+        self.owed.insert(staged.revision, owed);
+        self.queue = staged
+            .jobs
+            .into_iter()
+            .map(|path| Job::Load(staged.revision, path))
+            .collect();
+        if self.engine.ready() {
+            self.complete();
+        } else {
+            self.next_decode();
+        }
+    }
+
+    /// Blocking until the nearest real deadline; pending decode suppresses
+    /// schedule wakes, but not fade cleanup. A static image has no deadline.
+    fn next_deadline(&self) -> Option<Duration> {
+        let fade = self
+            .fade_started
+            .map(|start| FADE.saturating_sub(start.elapsed()));
+        let slide = if self.engine.pending().is_none() && self.fade_started.is_none() {
+            self.schedules
+                .values()
+                .filter_map(Schedule::deadline)
+                .min()
+                .map(|at| at.saturating_sub(self.started.elapsed()))
+        } else {
+            None
+        };
+        fade.into_iter().chain(slide).min()
+    }
+
+    fn tick(&mut self) {
+        if self
+            .fade_started
+            .is_some_and(|start| start.elapsed() >= FADE)
+        {
+            self.finish_fade();
+        }
+        if self.engine.pending().is_none() && self.fade_started.is_none() {
+            let now = self.started.elapsed();
+            let due = self
+                .schedules
+                .iter()
+                .find(|(_, schedule)| schedule.due(now))
+                .map(|(key, _)| key.clone());
+            if let Some(key) = due {
+                // Automatic advances are independent transactions. Finish the
+                // current fade before starting another output, and let a failed
+                // source defer only its own schedule. Bus NEXT still advances all.
+                self.advance(BTreeSet::from([key]), Owed::Timer);
+            }
+        }
+    }
+
+    fn finish_fade(&mut self) {
+        if self.fade_started.take().is_some() {
+            self.previous.clear();
+            self.previous_config = None;
+            self.publish();
         }
     }
 
@@ -277,29 +572,49 @@ impl Controller {
         if self.decoding {
             return;
         }
-        let Some((revision, path)) = self.queue.pop_front() else {
+        let Some(job) = self.queue.pop_front() else {
             return;
         };
         self.decoding = true;
         let results = self.results.clone();
-        let job = path.clone();
+        let backup = job.clone();
         let spawned = std::thread::Builder::new()
             .name("backdrop-decode".into())
             .spawn(move || {
-                let result = wallpaper::decode::load(&job);
-                let _ = results.send(Msg::Decoded {
-                    revision,
-                    path: job,
-                    result,
+                let msg = guarded_job(job, |job| match job {
+                    Job::Load(revision, path) => {
+                        let result = wallpaper::decode::load(&path);
+                        Msg::Decoded {
+                            revision,
+                            path,
+                            result,
+                        }
+                    }
+                    Job::Resolve(revision, key, wallpaper) => Msg::Prepared {
+                        revision,
+                        key,
+                        result: prepare(wallpaper, revision),
+                    },
                 });
+                let _ = results.send(msg);
             });
         if let Err(error) = spawned {
-            self.decoded(revision, path, Err(format!("decoder thread: {error}")));
+            let reason = format!("decoder thread: {error}");
+            match backup {
+                Job::Load(revision, path) => self.decoded(revision, path, Err(reason)),
+                Job::Resolve(revision, key, _) => self.prepared(revision, key, Err(reason)),
+            }
         }
     }
 
     fn decoded(&mut self, revision: u64, path: PathBuf, result: Result<Decoded, String>) {
         self.decoding = false;
+        if self.engine.pending() == Some(revision) && result.is_ok() {
+            // A discovery job can name a path already supplied by a static
+            // image. Its previous candidate is not published and may be released
+            // before accounting for the replacement.
+            self.candidate.remove(&path);
+        }
         let verdict = match &result {
             Ok(image) if self.resident_bytes() + image.bytes() > RESIDENT_BUDGET => Err(format!(
                 "{}: {} bytes resident would exceed the {RESIDENT_BUDGET}-byte budget",
@@ -317,37 +632,99 @@ impl Controller {
                 self.complete();
             }
             Decode::Failed(message) => {
-                // The failed request is dead: its queued decodes and its candidates go.
-                self.candidate.clear();
-                self.queue.clear();
-                let owed = self.owed.remove(&revision);
-                if matches!(owed, Some(Owed::Startup)) {
-                    eprintln!("backdrop: {message}; the session theme stays");
-                }
-                self.answer(owed, 10, refusal("IMAGE", message));
+                self.failed(revision, message, Some(&path));
             }
         }
         self.next_decode();
     }
 
+    fn prepared(
+        &mut self,
+        revision: u64,
+        key: Option<String>,
+        result: Result<(Schedule, Decoded), String>,
+    ) {
+        self.decoding = false;
+        if self.engine.pending() == Some(revision)
+            && let Ok((schedule, _)) = &result
+        {
+            self.candidate.remove(schedule.current());
+        }
+        let verdict = match &result {
+            Ok((_, image)) if self.resident_bytes() + image.bytes() > RESIDENT_BUDGET => Err(
+                format!("resident image budget exceeds {RESIDENT_BUDGET} bytes"),
+            ),
+            other => other.as_ref().map(|_| ()).map_err(Clone::clone),
+        };
+        match self.engine.decoded(revision, &marker(&key), verdict) {
+            Decode::Superseded => {}
+            Decode::Failed(message) => self.failed(revision, message, None),
+            outcome => {
+                if let Ok((schedule, image)) = result {
+                    self.keep(schedule.current().to_path_buf(), Ok(image));
+                    if let Some(pending) = &mut self.pending_schedules {
+                        pending.insert(key, schedule);
+                    }
+                }
+                if outcome == Decode::Ready {
+                    self.complete();
+                }
+            }
+        }
+        self.next_decode();
+    }
+
+    fn failed(&mut self, revision: u64, message: String, path: Option<&Path>) {
+        self.candidate.clear();
+        self.queue.clear();
+        if let (Some(path), Some(pending)) = (path, &self.pending_schedules) {
+            let now = self.started.elapsed();
+            for key in &self.advancing {
+                if let Some(attempted) = pending.get(key).filter(|s| s.current() == path)
+                    && let Some(active) = self.schedules.get_mut(key)
+                {
+                    active.skip_failed(attempted, now);
+                }
+            }
+        }
+        self.pending_schedules = None;
+        self.defer_after_refusal();
+        let owed = self.owed.remove(&revision);
+        if matches!(owed, Some(Owed::Startup)) {
+            eprintln!("backdrop: {message}; the session theme stays");
+        }
+        self.answer(owed, 10, refusal("IMAGE", message));
+    }
+
+    fn defer_after_refusal(&mut self) {
+        let now = self.started.elapsed();
+        for (key, schedule) in &mut self.schedules {
+            if self.advancing.is_empty() || self.advancing.contains(key) {
+                schedule.defer(now);
+            }
+        }
+        self.advancing.clear();
+    }
+
     /// Bytes of decoded RGBA held: the applied images and the candidate's.
     fn resident_bytes(&self) -> u64 {
-        self.active
-            .values()
-            .chain(self.candidate.values())
-            .map(|resident| resident.image.bytes())
-            .sum()
+        self.memory.used()
     }
 
     /// Keep a decoded image as a candidate of the request it was decoded for.
     fn keep(&mut self, path: PathBuf, result: Result<Decoded, String>) {
         if let Ok(image) = result {
+            let reservation = self
+                .memory
+                .reserve(image.bytes())
+                .expect("the single controller checked the resident budget before keeping pixels");
             self.serial += 1;
             self.candidate.insert(
                 path,
                 Arc::new(Resident {
                     serial: self.serial,
                     image,
+                    _resident_bytes: Some(Arc::new(reservation)),
                 }),
             );
         }
@@ -357,6 +734,9 @@ impl Controller {
     /// make its candidates the active images, wake the surfaces, publish the
     /// run and answer.
     fn complete(&mut self) {
+        if !self.engine.ready() {
+            return;
+        }
         let Some(revision) = self.engine.pending() else {
             return;
         };
@@ -370,7 +750,10 @@ impl Controller {
                 Ok(()) => {}
                 Err(Stored::Refused(reason)) => {
                     self.candidate.clear();
+                    self.pending_schedules = None;
+                    self.queue.clear();
                     self.engine.refuse(revision, reason.clone());
+                    self.defer_after_refusal();
                     self.answer(owed, 10, refusal("STORE", reason));
                     return;
                 }
@@ -382,20 +765,51 @@ impl Controller {
                 .registry
                 .execute(SET, &mut self.engine, Origin::Bus)
                 .map_err(|e| e.to_string()),
+            Some(Owed::Next(_)) => self
+                .registry
+                .execute(NEXT, &mut self.engine, Origin::Bus)
+                .map_err(|e| e.to_string()),
             _ => {
                 self.engine.apply();
                 Ok(())
             }
         };
         if applied.is_ok() {
-            // The commit: the applied images are the candidates; the old ones go.
-            self.active = std::mem::take(&mut self.candidate);
+            let now = self.started.elapsed();
+            let mut schedules = self.pending_schedules.take().unwrap_or_default();
+            for (key, schedule) in &mut schedules {
+                if self.advancing.is_empty() || self.advancing.contains(key) {
+                    schedule.defer(now);
+                }
+            }
+            let display = resolved(self.engine.applied(), &schedules);
+            let fading = !self.advancing.is_empty() && display != self.display;
+            let old = std::mem::replace(&mut self.active, std::mem::take(&mut self.candidate));
+            if fading {
+                self.previous = old;
+                self.previous_config = Some(self.display.clone());
+                self.fade_started = Some(Instant::now());
+            }
+            self.display = display;
+            self.schedules = schedules;
         } else {
             self.candidate.clear();
+            self.pending_schedules = None;
+            self.engine.refuse(
+                revision,
+                "command registry refused the ready request".into(),
+            );
+            self.defer_after_refusal();
         }
+        self.advancing.clear();
+        self.queue.clear();
         self.publish();
         self.journal();
         match (owed, applied, unconfirmed) {
+            (Some(Owed::Next(id)), Ok(()), _) => self.reply(id, 0, self.state()),
+            (Some(Owed::Next(id)), Err(reason), _) => {
+                self.reply(id, 10, refusal("INTERNAL", reason))
+            }
             (Some(Owed::Bus(id)), Ok(()), None) => self.reply(id, 0, self.change()),
             (Some(Owed::Bus(id)), Ok(()), Some(reason)) => self.reply(
                 id,
@@ -414,8 +828,11 @@ impl Controller {
     fn publish(&self) {
         let view = Arc::new(View {
             revision: self.engine.status().active,
-            config: self.engine.applied().clone(),
+            config: self.display.clone(),
             images: self.active.clone(),
+            previous: self.previous.clone(),
+            previous_config: self.previous_config.clone(),
+            fade_started: self.fade_started,
         });
         lock(&self.shared).view = view;
         let contexts: Vec<_> = lock(&self.wakers)
@@ -448,7 +865,7 @@ impl Controller {
     }
 
     fn answer(&self, owed: Option<Owed>, rc: u8, body: Value) {
-        if let Some(Owed::Bus(id)) = owed {
+        if let Some(Owed::Bus(id) | Owed::Next(id)) = owed {
             self.reply(id, rc, body);
         }
     }
@@ -482,6 +899,7 @@ impl Controller {
                     "shows": output.shows,
                     "presented_revision": output.revision,
                     "error": output.error,
+                    "fit": wallpaper_fit(self.display.for_output(Some(name))),
                 })
             })
             .collect();
@@ -495,7 +913,33 @@ impl Controller {
             "config": status.config,
             "config_file": self.store_text(),
             "outputs": outputs,
+            "fit": wallpaper_fit(&self.display.default),
+            "slideshows": self.schedules.iter().map(|(key, schedule)| {
+                let fading = self.previous_config.as_ref().is_some_and(|old|
+                    old.for_output(key.as_deref()) != self.display.for_output(key.as_deref()));
+                json!({"output": key, "current_path": schedule.current(),
+                    "index": schedule.current_index, "count": schedule.files.len(),
+                    "interval_s": schedule.interval_s, "shuffle": schedule.shuffle,
+                    "pending": self.engine.pending().is_some(), "fading": fading})
+            }).collect::<Vec<_>>(),
         })
+    }
+}
+
+fn wallpaper_fit(wallpaper: &Wallpaper) -> Option<wallpaper::fit::Fit> {
+    match wallpaper {
+        Wallpaper::Image { fit, .. } | Wallpaper::Slideshow { fit, .. } => Some(*fit),
+        _ => None,
+    }
+}
+
+fn parse_next(body: &str) -> Result<(), String> {
+    if body.len() as u64 > crate::MAX_DOCUMENT {
+        return Err("body: too large".into());
+    }
+    match serde_json::from_str::<Value>(body).map_err(|e| format!("body: {e}"))? {
+        Value::Object(fields) if fields.is_empty() => Ok(()),
+        _ => Err("body: expected the empty object {}".into()),
     }
 }
 
@@ -566,9 +1010,18 @@ mod tests {
             active: BTreeMap::new(),
             candidate: BTreeMap::new(),
             serial: 0,
+            memory: Budget::new(RESIDENT_BUDGET),
             queue: VecDeque::new(),
             decoding: false,
             owed: BTreeMap::new(),
+            schedules: BTreeMap::new(),
+            pending_schedules: None,
+            advancing: BTreeSet::new(),
+            display: Config::default(),
+            previous: BTreeMap::new(),
+            previous_config: None,
+            fade_started: None,
+            started: Instant::now(),
             shared: Arc::new(Mutex::new(Shared::default())),
             wakers: Arc::new(Mutex::new(Vec::new())),
             results,
@@ -584,6 +1037,7 @@ mod tests {
                 Wallpaper::Image {
                     path: PathBuf::from(path),
                     fallback: None,
+                    fit: wallpaper::fit::Fit::Fill,
                 },
             );
         }
@@ -593,6 +1047,7 @@ mod tests {
     fn decoded_ok() -> Result<Decoded, String> {
         Ok(Decoded {
             size: [1, 1],
+            original_size: [1, 1],
             rgba: image::RgbaImage::new(1, 1),
         })
     }
@@ -619,9 +1074,9 @@ mod tests {
     }
 
     #[test]
-    fn set_is_the_only_command_and_it_runs_through_the_registry() {
+    fn set_and_next_are_commands_and_set_runs_through_the_registry() {
         let registry = registry();
-        assert_eq!(registry.iter().count(), 1);
+        assert_eq!(registry.iter().count(), 2);
         let mut engine = Engine::new();
         engine.stage(Config::default(), |_| false);
         registry
@@ -714,6 +1169,7 @@ mod tests {
     fn full_size() -> Result<Decoded, String> {
         Ok(Decoded {
             size: [3840, 3840],
+            original_size: [3840, 3840],
             rgba: image::RgbaImage::new(1, 1),
         })
     }
@@ -746,6 +1202,7 @@ mod tests {
             PathBuf::from("/w/9.png"),
             Ok(Decoded {
                 size: [5_000, 15_625],
+                original_size: [5_000, 15_625],
                 rgba: image::RgbaImage::new(1, 1),
             }),
         );
@@ -767,6 +1224,7 @@ mod tests {
         // One byte-row over the budget (8193 × 16384 × 4 bytes).
         let big = Decoded {
             size: [16_384, 8_193],
+            original_size: [16_384, 8_193],
             rgba: image::RgbaImage::new(1, 1),
         };
         c.decoded(1, PathBuf::from("/w/a.png"), Ok(big));
@@ -781,5 +1239,488 @@ mod tests {
                 .as_deref()
                 .is_some_and(|e| e.contains("budget"))
         );
+    }
+
+    fn slide_config() -> Config {
+        Config::from_text("schema: 1\ndefault: { slideshow: { images: [\"/w/a.png\", \"/w/b.png\"], interval_s: 5 } }").unwrap()
+    }
+
+    fn start_slide(c: &mut Controller) {
+        c.stage(slide_config(), Owed::Startup);
+        let schedule = Schedule::new(
+            vec!["/w/a.png".into(), "/w/b.png".into()],
+            5,
+            false,
+            1,
+            Duration::ZERO,
+        )
+        .unwrap();
+        c.prepared(1, None, Ok((schedule, decoded_ok().unwrap())));
+        assert_eq!(c.engine.status().active, 1);
+    }
+
+    #[test]
+    fn next_body_is_strict_and_static_images_have_no_timer_or_next_run() {
+        assert!(parse_next("{}").is_ok());
+        for body in ["[]", "null", "{\"x\":1}", "broken"] {
+            assert!(parse_next(body).is_err());
+        }
+        let mut c = controller();
+        c.stage(images(&["/w/a.png"]), Owed::Startup);
+        c.decoded(1, "/w/a.png".into(), decoded_ok());
+        assert_eq!(c.next_deadline(), None);
+        c.command(7, NEXT, "{}");
+        assert_eq!(c.engine.status().requested, 1);
+        assert!(c.registry.take_executed().0.is_empty());
+    }
+
+    #[test]
+    fn next_applies_after_decode_and_records_the_bus_command_with_full_state() {
+        let mut c = controller();
+        start_slide(&mut c);
+        c.command(7, NEXT, "{}");
+        assert_eq!(c.engine.pending(), Some(2));
+        assert_eq!(c.schedules[&None].current(), Path::new("/w/a.png"));
+        assert_eq!(
+            c.next_deadline(),
+            None,
+            "a decode waits for a completion, not its old deadline"
+        );
+        c.decoded(2, "/w/b.png".into(), decoded_ok());
+        assert_eq!(c.schedules[&None].current(), Path::new("/w/b.png"));
+        let (runs, lost) = c.registry.take_executed();
+        assert_eq!((runs.len(), lost), (1, 0));
+        assert_eq!(runs[0].id, NEXT);
+        assert_eq!(runs[0].origin, Origin::Bus);
+        let state = c.state();
+        assert_eq!(state["slideshows"][0]["index"], 1);
+        assert_eq!(state["slideshows"][0]["count"], 2);
+        assert_eq!(state["fit"], "fill");
+        assert!(state["config"]["default"]["slideshow"].is_object());
+        assert!(c.fade_started.is_some());
+    }
+
+    #[test]
+    fn a_failed_next_keeps_the_selection_and_schedules_a_future_retry() {
+        let mut c = controller();
+        start_slide(&mut c);
+        let serial = c.active[Path::new("/w/a.png")].serial;
+        c.command(7, NEXT, "{}");
+        c.decoded(2, "/w/b.png".into(), Err("corrupt".into()));
+        assert_eq!(c.engine.status().active, 1);
+        assert_eq!(c.active[Path::new("/w/a.png")].serial, serial);
+        assert_eq!(c.schedules[&None].current(), Path::new("/w/a.png"));
+        assert!(!c.schedules[&None].due(c.started.elapsed()));
+        assert!(c.engine.status().error.is_some());
+        assert!(c.registry.take_executed().0.is_empty());
+        assert!(c.candidate.is_empty());
+    }
+
+    #[test]
+    fn a_set_supersedes_a_pending_next_and_its_late_completion() {
+        let mut c = controller();
+        start_slide(&mut c);
+        c.command(7, NEXT, "{}");
+        c.stage(Config::default(), Owed::Startup);
+        c.decoded(2, "/w/b.png".into(), decoded_ok());
+        assert_eq!(c.engine.status().active, 3);
+        assert_eq!(c.engine.applied(), &Config::default());
+        assert!(c.schedules.is_empty());
+        assert!(c.active.is_empty());
+        assert!(c.registry.take_executed().0.is_empty());
+    }
+
+    #[test]
+    fn next_is_busy_during_decode_and_replaces_an_existing_fade_without_third_image() {
+        let mut c = controller();
+        start_slide(&mut c);
+        c.command(7, NEXT, "{}");
+        c.command(8, NEXT, "{}");
+        assert_eq!(c.engine.status().requested, 2);
+        assert!(matches!(c.owed.get(&2), Some(Owed::Next(7))));
+        c.decoded(2, "/w/b.png".into(), decoded_ok());
+        assert_eq!(c.resident_bytes(), 8);
+        c.command(9, NEXT, "{}");
+        assert!(
+            c.previous.is_empty(),
+            "the previous fade is released before another decode"
+        );
+        c.decoded(3, "/w/a.png".into(), decoded_ok());
+        assert_eq!(
+            c.resident_bytes(),
+            8,
+            "only the current and outgoing image remain"
+        );
+    }
+
+    #[test]
+    fn fade_cleanup_releases_old_pixels_and_wakes_even_without_a_surface() {
+        let mut c = controller();
+        start_slide(&mut c);
+        c.command(7, NEXT, "{}");
+        c.decoded(2, "/w/b.png".into(), decoded_ok());
+        c.fade_started = Some(Instant::now() - FADE);
+        c.tick();
+        assert!(c.previous.is_empty());
+        assert!(lock(&c.shared).view.previous.is_empty());
+        assert_eq!(c.resident_bytes(), 4);
+        assert_eq!(c.state()["slideshows"][0]["fading"], false);
+    }
+
+    #[test]
+    fn timers_advance_only_due_outputs_and_do_not_record_bus_runs() {
+        let mut c = controller();
+        let mut config = slide_config();
+        config.outputs.insert(
+            "DP-1".into(),
+            Wallpaper::Slideshow {
+                source: SlideSource::Images(vec!["/w/c.png".into(), "/w/d.png".into()]),
+                interval_s: 600,
+                shuffle: false,
+                fallback: None,
+                fit: wallpaper::fit::Fit::Fill,
+            },
+        );
+        c.stage(config, Owed::Startup);
+        c.prepared(
+            1,
+            None,
+            Ok((
+                Schedule::new(
+                    vec!["/w/a.png".into(), "/w/b.png".into()],
+                    5,
+                    false,
+                    1,
+                    Duration::ZERO,
+                )
+                .unwrap(),
+                decoded_ok().unwrap(),
+            )),
+        );
+        c.prepared(
+            1,
+            Some("DP-1".into()),
+            Ok((
+                Schedule::new(
+                    vec!["/w/c.png".into(), "/w/d.png".into()],
+                    600,
+                    false,
+                    1,
+                    Duration::ZERO,
+                )
+                .unwrap(),
+                decoded_ok().unwrap(),
+            )),
+        );
+        c.started = Instant::now() - Duration::from_secs(6);
+        c.tick();
+        assert_eq!(c.engine.pending(), Some(2));
+        assert_eq!(c.advancing, BTreeSet::from([None]));
+        c.tick();
+        assert_eq!(
+            c.engine.status().requested,
+            2,
+            "no polling or repeat launch while decoding"
+        );
+        c.decoded(2, "/w/b.png".into(), decoded_ok());
+        assert_eq!(
+            c.schedules[&Some("DP-1".into())].current(),
+            Path::new("/w/c.png")
+        );
+        assert_eq!(c.schedules[&None].current(), Path::new("/w/b.png"));
+        assert!(c.registry.take_executed().0.is_empty());
+    }
+
+    #[test]
+    fn a_stale_folder_completion_never_applies_after_a_new_set() {
+        let mut c = controller();
+        c.stage(slide_config(), Owed::Startup);
+        c.stage(Config::default(), Owed::Startup);
+        c.prepared(
+            1,
+            None,
+            Ok((
+                Schedule::new(vec!["/w/a.png".into()], 5, false, 1, Duration::ZERO).unwrap(),
+                decoded_ok().unwrap(),
+            )),
+        );
+        assert_eq!(c.engine.status().active, 2);
+        assert!(c.schedules.is_empty());
+        assert!(c.active.is_empty());
+    }
+
+    #[test]
+    fn retained_view_snapshots_still_count_towards_the_cpu_budget() {
+        let mut c = controller();
+        let first = ["/w/1.png", "/w/2.png", "/w/3.png", "/w/4.png"];
+        c.stage(images(&first), Owed::Startup);
+        for path in first {
+            c.decoded(1, path.into(), full_size());
+        }
+        let old_view = lock(&c.shared).view.clone();
+        let second = ["/w/5.png", "/w/6.png", "/w/7.png", "/w/8.png"];
+        c.stage(images(&second), Owed::Startup);
+        for path in second {
+            c.decoded(2, path.into(), full_size());
+        }
+        assert_eq!(c.resident_bytes(), 8 * 3840 * 3840 * 4);
+        c.stage(images(&["/w/9.png", "/w/10.png"]), Owed::Startup);
+        c.decoded(3, "/w/9.png".into(), full_size());
+        c.decoded(3, "/w/10.png".into(), full_size());
+        assert_eq!(
+            c.engine.status().active,
+            2,
+            "the retained view prevents an over-budget commit"
+        );
+        assert!(c.engine.status().error.is_some());
+        drop(old_view);
+        assert_eq!(c.resident_bytes(), 4 * 3840 * 3840 * 4);
+    }
+
+    #[test]
+    fn a_refused_set_keeps_overdue_slideshows_stable_for_another_interval() {
+        let mut c = controller();
+        start_slide(&mut c);
+        c.started = Instant::now() - Duration::from_secs(6);
+        c.stage(images(&["/w/missing.png"]), Owed::Bus(7));
+        c.decoded(2, "/w/missing.png".into(), Err("missing".into()));
+        c.tick();
+        assert_eq!(c.engine.status().requested, 2);
+        assert_eq!(c.schedules[&None].current(), Path::new("/w/a.png"));
+        assert!(!c.schedules[&None].due(c.started.elapsed()));
+    }
+
+    #[test]
+    fn a_panicking_worker_reports_failure_and_does_not_wedge_later_sets() {
+        let mut c = controller();
+        c.stage(images(&["/w/a.png"]), Owed::Bus(7));
+        let msg = guarded_job(Job::Load(1, "/w/a.png".into()), |_| {
+            panic!("injected decoder panic")
+        });
+        let Msg::Decoded {
+            revision,
+            path,
+            result,
+        } = msg
+        else {
+            panic!("image completion required")
+        };
+        c.decoded(revision, path, result);
+        assert!(c.engine.pending().is_none());
+        assert!(!c.decoding);
+        assert!(
+            c.engine
+                .status()
+                .error
+                .as_deref()
+                .unwrap()
+                .contains("panicked")
+        );
+        c.stage(Config::default(), Owed::Startup);
+        assert_eq!(c.engine.status().active, 2);
+        let msg = guarded_job(Job::Resolve(3, None, slide_config().default), |_| {
+            panic!("injected discovery panic")
+        });
+        assert!(matches!(msg, Msg::Prepared { result: Err(_), .. }));
+    }
+
+    #[test]
+    fn store_refusal_defers_overdue_slideshows_without_applying_the_set() {
+        let mut c = controller();
+        start_slide(&mut c);
+        c.store = Some("/dev/null/backdrop.mx".into());
+        c.started = Instant::now() - Duration::from_secs(6);
+        c.stage(Config::default(), Owed::Bus(7));
+        c.tick();
+        assert_eq!(c.engine.status().requested, 2);
+        assert_eq!(c.engine.status().active, 1);
+        assert!(c.engine.status().error.is_some());
+        assert!(!c.schedules[&None].due(c.started.elapsed()));
+    }
+
+    #[test]
+    fn automatic_advances_wait_for_other_outputs_fades_and_fail_independently() {
+        let mut c = controller();
+        let mut config = slide_config();
+        config.outputs.insert(
+            "DP-1".into(),
+            Wallpaper::Slideshow {
+                source: SlideSource::Images(vec!["/w/c.png".into(), "/w/d.png".into()]),
+                interval_s: 5,
+                shuffle: false,
+                fallback: None,
+                fit: wallpaper::fit::Fit::Fill,
+            },
+        );
+        c.stage(config, Owed::Startup);
+        c.prepared(
+            1,
+            None,
+            Ok((
+                Schedule::new(
+                    vec!["/w/a.png".into(), "/w/b.png".into()],
+                    5,
+                    false,
+                    1,
+                    Duration::ZERO,
+                )
+                .unwrap(),
+                decoded_ok().unwrap(),
+            )),
+        );
+        c.prepared(
+            1,
+            Some("DP-1".into()),
+            Ok((
+                Schedule::new(
+                    vec!["/w/c.png".into(), "/w/d.png".into()],
+                    5,
+                    false,
+                    1,
+                    Duration::ZERO,
+                )
+                .unwrap(),
+                decoded_ok().unwrap(),
+            )),
+        );
+        c.started = Instant::now() - Duration::from_secs(6);
+        c.tick();
+        assert_eq!(c.advancing, BTreeSet::from([None]));
+        c.decoded(2, "/w/b.png".into(), decoded_ok());
+        let started = c.fade_started.unwrap();
+        c.tick();
+        assert_eq!(
+            c.fade_started,
+            Some(started),
+            "the other output cannot cut this fade"
+        );
+        assert_eq!(c.engine.status().requested, 2);
+        assert!(
+            c.next_deadline().unwrap() > Duration::ZERO,
+            "no busy spin on the overdue output"
+        );
+        c.fade_started = Some(Instant::now() - FADE);
+        c.tick();
+        assert_eq!(c.advancing, BTreeSet::from([Some("DP-1".into())]));
+        c.decoded(3, "/w/d.png".into(), Err("corrupt".into()));
+        assert_eq!(c.schedules[&None].current(), Path::new("/w/b.png"));
+        assert_eq!(
+            c.schedules[&Some("DP-1".into())].current(),
+            Path::new("/w/c.png")
+        );
+        assert!(c.registry.take_executed().0.is_empty());
+    }
+
+    #[test]
+    fn next_after_a_failed_image_tries_the_following_entry() {
+        let mut c = controller();
+        let config = Config::from_text("schema: 1\ndefault: { slideshow: { images: [\"/w/a.png\", \"/w/b.png\", \"/w/c.png\"], interval_s: 5 } }").unwrap();
+        c.stage(config, Owed::Startup);
+        c.prepared(
+            1,
+            None,
+            Ok((
+                Schedule::new(
+                    vec!["/w/a.png".into(), "/w/b.png".into(), "/w/c.png".into()],
+                    5,
+                    false,
+                    1,
+                    Duration::ZERO,
+                )
+                .unwrap(),
+                decoded_ok().unwrap(),
+            )),
+        );
+        c.command(7, NEXT, "{}");
+        c.decoded(2, "/w/b.png".into(), Err("corrupt".into()));
+        assert_eq!(c.schedules[&None].current(), Path::new("/w/a.png"));
+        c.command(8, NEXT, "{}");
+        assert_eq!(
+            c.pending_schedules.as_ref().unwrap()[&None].current(),
+            Path::new("/w/c.png")
+        );
+        c.decoded(3, "/w/c.png".into(), decoded_ok());
+        assert_eq!(c.schedules[&None].current(), Path::new("/w/c.png"));
+        let (runs, _) = c.registry.take_executed();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].id, NEXT);
+    }
+
+    #[test]
+    fn a_repeated_candidate_path_does_not_cause_a_false_budget_refusal() {
+        let mut c = controller();
+        let first = ["/w/1.png", "/w/2.png", "/w/3.png", "/w/4.png"];
+        c.stage(images(&first), Owed::Startup);
+        for path in first {
+            c.decoded(1, path.into(), full_size());
+        }
+        let old_view = lock(&c.shared).view.clone();
+        let second = ["/w/5.png", "/w/6.png", "/w/7.png", "/w/8.png"];
+        c.stage(images(&second), Owed::Startup);
+        for path in second {
+            c.decoded(2, path.into(), full_size());
+        }
+        let mut config = images(&["/w/9.png", "/w/10.png"]);
+        config.default = Wallpaper::Slideshow {
+            source: SlideSource::Images(vec!["/w/9.png".into(), "/w/11.png".into()]),
+            interval_s: 5,
+            shuffle: false,
+            fallback: None,
+            fit: wallpaper::fit::Fit::Fill,
+        };
+        c.stage(config, Owed::Startup);
+        c.decoded(3, "/w/9.png".into(), full_size());
+        c.prepared(
+            3,
+            None,
+            Ok((
+                Schedule::new(
+                    vec!["/w/9.png".into(), "/w/11.png".into()],
+                    5,
+                    false,
+                    1,
+                    Duration::ZERO,
+                )
+                .unwrap(),
+                full_size().unwrap(),
+            )),
+        );
+        assert_eq!(c.engine.pending(), Some(3));
+        assert!(c.engine.status().error.is_none());
+        assert_eq!(c.resident_bytes(), 9 * 3840 * 3840 * 4);
+        drop(old_view);
+        c.decoded(3, "/w/10.png".into(), full_size());
+        assert_eq!(c.engine.status().active, 3);
+    }
+
+    fn slideshow_of(paths: Vec<PathBuf>) -> Wallpaper {
+        Wallpaper::Slideshow {
+            source: SlideSource::Images(paths),
+            interval_s: 5,
+            shuffle: false,
+            fallback: None,
+            fit: wallpaper::fit::Fit::Fill,
+        }
+    }
+
+    #[test]
+    fn a_slideshow_whose_first_file_fails_starts_on_the_next() {
+        let dir = std::env::temp_dir().join(format!("backdrop-prepare-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bad = dir.join("a-bad.png");
+        let good = dir.join("b-good.png");
+        std::fs::write(&bad, b"not a png").unwrap();
+        image::RgbaImage::new(2, 2).save(&good).unwrap();
+        let (schedule, image) = prepare(slideshow_of(vec![bad.clone(), good.clone()]), 1)
+            .expect("the decodable file is used");
+        assert_eq!(schedule.current(), good.as_path());
+        assert_eq!(image.original_size, [2, 2]);
+        let refused = prepare(slideshow_of(vec![bad.clone(), dir.join("missing.png")]), 2);
+        assert!(
+            refused
+                .unwrap_err()
+                .contains("no slideshow image could be decoded")
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
