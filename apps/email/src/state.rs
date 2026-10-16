@@ -184,7 +184,7 @@ pub struct ComposeState {
 
 /// A replacement From, bound to the account and connection it came from:
 /// it can be taken only for that account, on that connection.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct StaleFrom {
     pub account: String,
     pub generation: u64,
