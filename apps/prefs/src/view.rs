@@ -795,98 +795,6 @@ fn number(ui: &mut Ui, spec: Numeric, current: f64, range: RangeInclusive<f64>) 
     (rounded != (current * scale).round() / scale).then_some(rounded)
 }
 
-#[cfg(test)]
-mod numeric_tests {
-    use super::*;
-    use egui::accesskit::Role;
-    use egui_kittest::{Harness, kittest::Queryable};
-
-    #[test]
-    fn scrubbing_and_enter_commit_once_and_escape_cancels_typing() {
-        #[derive(Default)]
-        struct State {
-            value: f64,
-            commits: Vec<f64>,
-        }
-        let mut h = Harness::builder()
-            .with_size(egui::vec2(640.0, 200.0))
-            .build_ui_state(
-                |ui, state: &mut State| {
-                    let spec = Numeric {
-                        key: "numeric-test",
-                        title: "Number".into(),
-                        unit: "",
-                        places: 0,
-                        slider: false,
-                    };
-                    if let Some(value) = number(ui, spec, state.value, 0.0..=1000.0) {
-                        state.value = value;
-                        state.commits.push(value);
-                    }
-                },
-                State {
-                    value: 100.0,
-                    ..Default::default()
-                },
-            );
-        toolkit::install(&h.ctx, &toolkit::Theme::embedded());
-        h.run();
-        let from = h.get_by_role(Role::SpinButton).rect().center();
-        let to = from + egui::vec2(30.0, 0.0);
-        h.hover_at(from);
-        h.run();
-        h.drag_at(from);
-        h.run();
-        h.hover_at(to);
-        h.run();
-        assert!(
-            h.state().commits.is_empty(),
-            "dragging never applies per frame"
-        );
-        h.drop_at(to);
-        h.run();
-        assert_eq!(h.state().commits.len(), 1, "one release, one apply");
-        assert!(
-            h.state().value > 100.0,
-            "the dragged value survives the release frame"
-        );
-        h.get_by_role(Role::SpinButton).click();
-        h.run();
-        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
-        h.get_by_role(Role::TextInput).type_text("250");
-        h.run();
-        assert_eq!(h.state().commits.len(), 1, "typing waits for focus loss");
-        h.key_press(egui::Key::Enter);
-        h.run();
-        assert_eq!(h.state().commits.len(), 2);
-        assert_eq!(h.state().value, 250.0);
-        h.get_by_role(Role::SpinButton).click();
-        h.run();
-        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
-        h.get_by_role(Role::TextInput).type_text("350");
-        h.run();
-        assert_eq!(h.state().commits.len(), 2);
-        h.key_press(egui::Key::Escape);
-        h.run();
-        assert_eq!(h.state().commits.len(), 2, "Escape sends no apply");
-        assert_eq!(h.state().value, 250.0);
-        assert!(
-            h.ctx
-                .data(|d| d.get_temp::<f64>(egui::Id::new("numeric-test")))
-                .is_none()
-        );
-        h.get_by_role(Role::SpinButton).click();
-        h.run();
-        assert_eq!(
-            h.get_by_role(Role::TextInput).value().as_deref(),
-            Some("250")
-        );
-        h.key_press(egui::Key::Escape);
-        h.run();
-        assert_eq!(h.state().commits.len(), 2);
-    }
-}
-
 /// A text field that applies when Enter is pressed or it loses focus, not
 /// per keystroke. While it is not being edited it shows `current`. `Some`
 /// is the trimmed text to apply when it differs from `current`.
@@ -1196,5 +1104,97 @@ fn dialogs(
                 });
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::*;
+    use egui::accesskit::Role;
+    use egui_kittest::{Harness, kittest::Queryable};
+
+    #[test]
+    fn scrubbing_and_enter_commit_once_and_escape_cancels_typing() {
+        #[derive(Default)]
+        struct State {
+            value: f64,
+            commits: Vec<f64>,
+        }
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(640.0, 200.0))
+            .build_ui_state(
+                |ui, state: &mut State| {
+                    let spec = Numeric {
+                        key: "numeric-test",
+                        title: "Number".into(),
+                        unit: "",
+                        places: 0,
+                        slider: false,
+                    };
+                    if let Some(value) = number(ui, spec, state.value, 0.0..=1000.0) {
+                        state.value = value;
+                        state.commits.push(value);
+                    }
+                },
+                State {
+                    value: 100.0,
+                    ..Default::default()
+                },
+            );
+        toolkit::install(&h.ctx, &toolkit::Theme::embedded());
+        h.run();
+        let from = h.get_by_role(Role::SpinButton).rect().center();
+        let to = from + egui::vec2(30.0, 0.0);
+        h.hover_at(from);
+        h.run();
+        h.drag_at(from);
+        h.run();
+        h.hover_at(to);
+        h.run();
+        assert!(
+            h.state().commits.is_empty(),
+            "dragging never applies per frame"
+        );
+        h.drop_at(to);
+        h.run();
+        assert_eq!(h.state().commits.len(), 1, "one release, one apply");
+        assert!(
+            h.state().value > 100.0,
+            "the dragged value survives the release frame"
+        );
+        h.get_by_role(Role::SpinButton).click();
+        h.run();
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        h.get_by_role(Role::TextInput).type_text("250");
+        h.run();
+        assert_eq!(h.state().commits.len(), 1, "typing waits for focus loss");
+        h.key_press(egui::Key::Enter);
+        h.run();
+        assert_eq!(h.state().commits.len(), 2);
+        assert_eq!(h.state().value, 250.0);
+        h.get_by_role(Role::SpinButton).click();
+        h.run();
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        h.get_by_role(Role::TextInput).type_text("350");
+        h.run();
+        assert_eq!(h.state().commits.len(), 2);
+        h.key_press(egui::Key::Escape);
+        h.run();
+        assert_eq!(h.state().commits.len(), 2, "Escape sends no apply");
+        assert_eq!(h.state().value, 250.0);
+        assert!(
+            h.ctx
+                .data(|d| d.get_temp::<f64>(egui::Id::new("numeric-test")))
+                .is_none()
+        );
+        h.get_by_role(Role::SpinButton).click();
+        h.run();
+        assert_eq!(
+            h.get_by_role(Role::TextInput).value().as_deref(),
+            Some("250")
+        );
+        h.key_press(egui::Key::Escape);
+        h.run();
+        assert_eq!(h.state().commits.len(), 2);
     }
 }
