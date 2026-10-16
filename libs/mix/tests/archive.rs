@@ -304,11 +304,52 @@ async fn refuse_absolute_member() {
 }
 
 #[tokio::test]
-async fn refuse_symlink_then_write_through_it() {
+async fn refuse_write_through_a_contained_symlink() {
+    let d = tmpdir("sym-contained");
+    let arc = d.join("evil.tar");
+    // A real directory, a CONTAINED symlink to it (valid on its own), then a
+    // member whose path traverses the symlink. Only the ancestor guard can
+    // refuse this: the link target itself is clean.
+    let mut b = Builder::new(fs::File::create(&arc).unwrap());
+    let mut dir = Header::new_gnu();
+    dir.set_entry_type(tar::EntryType::Directory);
+    dir.set_size(0);
+    dir.set_mode(0o755);
+    dir.set_mtime(0);
+    b.append_data(&mut dir, "sub", std::io::empty()).unwrap();
+    let mut link = Header::new_gnu();
+    link.set_entry_type(tar::EntryType::Symlink);
+    link.set_size(0);
+    link.set_mode(0o777);
+    link.set_mtime(0);
+    link.set_link_name("sub").unwrap();
+    b.append_data(&mut link, "pivot", std::io::empty()).unwrap();
+    let mut file = Header::new_gnu();
+    file.set_size(5);
+    file.set_mode(0o644);
+    file.set_mtime(0);
+    b.append_data(&mut file, "pivot/inside", &b"evil\n"[..])
+        .unwrap();
+    b.into_inner().unwrap().flush().unwrap();
+    let dest = d.join("dest");
+    let err = run_err(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+        arc.display(),
+        dest.display()
+    ))
+    .await;
+    assert!(err.contains("through symlink 'pivot'"), "{err}");
+    assert!(!dest.exists());
+    assert_no_staging(&d);
+}
+
+#[tokio::test]
+async fn refuse_an_escaping_symlink_target_before_any_traversal() {
     let d = tmpdir("sym");
     let arc = d.join("evil.tar");
-    // A contained symlink first (valid on its own), then a member whose
-    // path TRAVERSES it — the classic write-outside escape.
+    // An escaping symlink, then a member whose path traverses it. The target
+    // is refused first, so the traversal check never runs (see the
+    // contained case above for that guard).
     let file = fs::File::create(&arc).unwrap();
     let mut b = Builder::new(file);
     let mut h = Header::new_gnu();
@@ -1367,4 +1408,210 @@ async fn packing_file_replacements_never_reads_a_symlink_target() {
         assert_eq!(bytes, inside, "packer followed a replacement symlink");
         assert!(entries.next().is_none());
     }
+}
+
+/// The receipt map of a successful call.
+fn receipt(v: &Value) -> &indexmap::IndexMap<String, Value> {
+    match v {
+        Value::Map(m) => m,
+        other => panic!("expected a receipt map, got {other:?}"),
+    }
+}
+
+fn no_warnings(r: &indexmap::IndexMap<String, Value>) {
+    match &r["warnings"] {
+        Value::List(l) => assert!(l.is_empty(), "unexpected warnings: {l:?}"),
+        other => panic!("warnings is not a list: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_pax_global_header_is_metadata_not_a_member() {
+    // `git archive` opens with a global header carrying the commit id.
+    let d = tmpdir("pax-global");
+    let arc = d.join("git.tar");
+    let mut b = Builder::new(fs::File::create(&arc).unwrap());
+    let payload = b"18 comment=abcdef\n";
+    let mut g = Header::new_ustar();
+    g.set_entry_type(tar::EntryType::XGlobalHeader);
+    g.set_size(payload.len() as u64);
+    g.set_mtime(0);
+    b.append_data(&mut g, "pax_global_header", &payload[..])
+        .unwrap();
+    let mut f = Header::new_ustar();
+    f.set_size(3);
+    f.set_mode(0o644);
+    f.set_mtime(0);
+    b.append_data(&mut f, "repo/a.txt", &b"abc"[..]).unwrap();
+    b.into_inner().unwrap().flush().unwrap();
+
+    let list = run_ok(&format!(
+        "tar_list(\"{}\", {{codec:\"none\"}})",
+        arc.display()
+    ))
+    .await;
+    let Value::List(items) = &list else {
+        panic!("list not a list: {list:?}")
+    };
+    let kinds: Vec<String> = items
+        .iter()
+        .map(|v| receipt(v)["kind"].to_mix_string())
+        .collect();
+    assert_eq!(kinds, ["metadata", "file"]);
+
+    let dest = d.join("dest");
+    let out = run_ok(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+        arc.display(),
+        dest.display()
+    ))
+    .await;
+    let r = receipt(&out);
+    assert_eq!(r["metadata"].to_mix_string(), "1");
+    assert_eq!(r["files"].to_mix_string(), "1");
+    no_warnings(r);
+    assert_eq!(fs::read(dest.join("repo/a.txt")).unwrap(), b"abc");
+    assert!(!dest.join("pax_global_header").exists());
+}
+
+#[tokio::test]
+async fn privileged_xattrs_need_their_opt_in() {
+    if unsafe { libc::geteuid() } != 0 {
+        return; // documented skip: trusted.* needs CAP_SYS_ADMIN
+    }
+    let d = tmpdir("privileged-xattrs");
+    if !xattr_supported(&d, c"trusted.mixtest", b"t")
+        || !xattr_supported(&d, c"user.mixtest", b"u")
+    {
+        return;
+    }
+    let arc = xattr_archive(
+        &d,
+        "privileged",
+        &[
+            ("SCHILY.xattr.user.mixtest", &b"u"[..]),
+            ("SCHILY.xattr.trusted.mixtest", &b"t"[..]),
+        ],
+    );
+    let plain = d.join("plain");
+    let out = run_ok(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+        arc.display(),
+        plain.display()
+    ))
+    .await;
+    assert_eq!(receipt(&out)["xattrs_restored"].to_mix_string(), "1");
+    assert_eq!(get_xattr(&plain.join("prog"), c"user.mixtest").unwrap(), b"u");
+    get_xattr(&plain.join("prog"), c"trusted.mixtest")
+        .expect_err("trusted.* must not be restored by default");
+    // keep_special_bits admits security.capability only, not trusted.*.
+    let special = d.join("special");
+    run_ok(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\", keep_special_bits:true}})",
+        arc.display(),
+        special.display()
+    ))
+    .await;
+    get_xattr(&special.join("prog"), c"trusted.mixtest")
+        .expect_err("keep_special_bits must not admit trusted.*");
+    let opted = d.join("opted");
+    run_ok(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\", privileged_xattrs:true}})",
+        arc.display(),
+        opted.display()
+    ))
+    .await;
+    assert_eq!(get_xattr(&opted.join("prog"), c"trusted.mixtest").unwrap(), b"t");
+}
+
+#[tokio::test]
+async fn retained_xattr_bytes_are_bounded_across_the_archive() {
+    let d = tmpdir("xattr-budget");
+    let arc = d.join("many.tar");
+    let mut b = Builder::new(fs::File::create(&arc).unwrap());
+    // Each record is under the 64 KiB per-payload ceiling; together they are
+    // over the budget asked for below.
+    let value = vec![b'v'; 40_000];
+    for i in 0..3 {
+        b.append_pax_extensions([("SCHILY.xattr.user.big", value.as_slice())])
+            .unwrap();
+        let mut h = Header::new_gnu();
+        h.set_size(0);
+        h.set_mode(0o644);
+        h.set_mtime(0);
+        b.append_data(&mut h, format!("f{i}"), std::io::empty())
+            .unwrap();
+    }
+    b.into_inner().unwrap().flush().unwrap();
+    let dest = d.join("dest");
+    let err = run_err(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\", max_xattr_bytes:100000}})",
+        arc.display(),
+        dest.display()
+    ))
+    .await;
+    assert!(err.contains("max_xattr_bytes"), "{err}");
+    assert!(!dest.exists());
+    assert_no_staging(&d);
+    let err = run_err(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\", max_xattr_bytes:2000000000}})",
+        arc.display(),
+        dest.display()
+    ))
+    .await;
+    assert!(err.contains("max_xattr_bytes must be at most"), "{err}");
+}
+
+#[tokio::test]
+async fn pack_refuses_an_output_inside_its_source() {
+    let d = tmpdir("pack-inside");
+    let src = d.join("src");
+    fs::create_dir_all(src.join("sub")).unwrap();
+    fs::write(src.join("a"), b"a").unwrap();
+    for out in [src.join("out.tar"), src.join("sub/out.tar")] {
+        let err = run_err(&format!(
+            "tar_pack(\"{}\", \"{}\", {{codec:\"none\"}})",
+            src.display(),
+            out.display()
+        ))
+        .await;
+        assert!(err.contains("inside the source"), "{err}");
+        assert!(!out.exists(), "the refused output must not be created");
+    }
+}
+
+#[tokio::test]
+async fn a_dangling_symlink_at_dest_counts_as_existing() {
+    let d = tmpdir("dest-dangling");
+    let arc = d.join("one.tar");
+    build_plain(&arc, &[("a", b"1", 0o644)]);
+    let dest = d.join("dest");
+    std::os::unix::fs::symlink(d.join("nowhere"), &dest).unwrap();
+    let err = run_err(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+        arc.display(),
+        dest.display()
+    ))
+    .await;
+    assert!(err.contains("exists"), "{err}");
+    assert!(!d.join("nowhere").exists());
+    assert_no_staging(&d);
+}
+
+#[tokio::test]
+async fn bare_relative_paths_use_the_current_directory() {
+    let d = tmpdir("bare-relative");
+    fs::create_dir_all(d.join("src")).unwrap();
+    fs::write(d.join("src/a"), b"a").unwrap();
+    // The process cwd is shared by every test thread; only this test uses
+    // relative paths, and the previous cwd is restored before asserting.
+    let before = std::env::current_dir().unwrap();
+    std::env::set_current_dir(&d).unwrap();
+    let packed = mix::run("tar_pack(\"src\", \"rel.tar\", {codec:\"none\"})").await;
+    let unpacked = mix::run("tar_unpack(\"rel.tar\", \"reldest\", {codec:\"none\"})").await;
+    std::env::set_current_dir(before).unwrap();
+    packed.expect("tar_pack with a bare output name");
+    let r = unpacked.expect("tar_unpack with a bare dest name");
+    no_warnings(receipt(&r));
+    assert_eq!(fs::read(d.join("reldest/a")).unwrap(), b"a");
 }

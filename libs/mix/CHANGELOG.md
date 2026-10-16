@@ -17,6 +17,21 @@
   reports cleanup failures. Empty/truncated zstd headers now raise
   `ARCHIVE_STREAM_CORRUPT`. GNU sparse entries are refused; `tar_list` also
   accepts `max_entries`. Each fix has targeted archive regression coverage.
+- Archive review fixes. `tar_unpack` restores only `user.*` xattrs by
+  default: `security.capability` needs `keep_special_bits:true`, and
+  `trusted.*`, POSIX ACLs (`system.*`) and the rest of `security.*` need the
+  new `privileged_xattrs:true`. Retained xattr bytes are bounded across the
+  archive by the new `max_xattr_bytes` (16 MiB). Staging has an unpredictable
+  name and is held by descriptor; members are created one O_NOFOLLOW
+  component at a time relative to it, and the commit refuses to replace
+  anything that appeared at `dest` (RENAME_NOREPLACE). Owner, mode and mtime
+  failures are no longer discarded: an owner that cannot be applied is listed
+  in the receipt's new `warnings`, and then its setuid/setgid bits and
+  capability are dropped; mode and mtime failures raise. PAX global headers
+  (`git archive`) are accepted as metadata (receipt `metadata`, list kind
+  `"metadata"`). A bare relative dest or output name means the current
+  directory. `tar_pack` refuses an output inside its source and raises when
+  a file changes size while it is packed.
 - `analyzer::Analysis` carries `handlers`: one `HandlerDeclaration` (`command`,
   `file`, `line`) per `on <command>` statement in the parsed AST, in source
   order, with duplicates kept. `analyze()` collects them with the existing

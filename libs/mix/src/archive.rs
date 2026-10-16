@@ -20,17 +20,23 @@
 //! nothing is ever extracted THROUGH a created symlink; hardlinks may only
 //! target an earlier regular file (hardlink-to-hardlink is refused). All
 //! entry metadata — including directories' — is applied in a children-first
-//! post-pass using lchown / utimensat(AT_SYMLINK_NOFOLLOW) so nothing
+//! post-pass through descriptors (fchown / fchmod / futimens, and
+//! fchownat / utimensat with AT_SYMLINK_NOFOLLOW for symlinks) so nothing
 //! follows a link out of the staging tree. `max_stream_bytes` bounds the
 //! DECODED stream including trailing padding. Metadata payloads have a
 //! separate small ceiling checked before tar can buffer them.
 //! Xattrs are parsed and applied BY HAND: the tar crate's blanket
-//! `set_unpack_xattrs` would restore `security.capability` even when the
-//! caller asked for suid/sgid stripping, so `keep_special_bits:false` (the
-//! default) skips `security.*` entirely — a capability xattr is a privilege
-//! grant exactly like a suid bit. Entries land in a private 0700 staging
-//! directory (dest must NOT exist) and are renamed into place only after
-//! the compressed stream is drained to true EOF: the zstd frame checksum /
+//! `set_unpack_xattrs` would restore every record. By default only `user.*`
+//! is restored; `security.capability` needs `keep_special_bits`, and every
+//! other namespace (`trusted.*`, POSIX ACLs in `system.*`, the rest of
+//! `security.*`) needs `privileged_xattrs` — each is a privilege grant like
+//! a suid bit. A special bit or capability is applied only when the archive's
+//! owner was. Entries land in a private 0700 staging directory with an
+//! unpredictable name, held by descriptor: every member is created relative
+//! to it, one O_NOFOLLOW component at a time, so a swapped staging name in a
+//! writable parent cannot redirect a write. `dest` must NOT exist, and the
+//! staging tree is renamed into place (RENAME_NOREPLACE) only after the
+//! compressed stream is drained to true EOF: the zstd frame checksum /
 //! gzip CRC is actually verified, the decoded tail must be all zero (GNU
 //! padding), AND the raw input must be fully consumed (a concatenated
 //! second frame never decodes, so only the source position can see it).
@@ -128,11 +134,20 @@ struct UnpackOpts {
     numeric_owner: bool,
     xattrs: bool,
     keep_special_bits: bool,
+    /// Restore xattrs outside `user.*`: `trusted.*`, `system.*` (POSIX ACLs)
+    /// and `security.*`. Each grants or changes privilege, like a suid bit.
+    privileged_xattrs: bool,
     max_entries: u64,
     max_bytes: u64,
     max_name: usize,
     max_stream_bytes: u64,
+    /// Total xattr name and value bytes retained across the whole archive
+    /// until the metadata post-pass applies them.
+    max_xattr_bytes: u64,
 }
+
+/// The largest `max_xattr_bytes` a caller may ask for.
+const MAX_XATTR_BYTES_CEILING: u64 = 1 << 30;
 
 impl Default for UnpackOpts {
     fn default() -> Self {
@@ -141,11 +156,13 @@ impl Default for UnpackOpts {
             numeric_owner: true,
             xattrs: true,
             keep_special_bits: false,
+            privileged_xattrs: false,
             max_entries: 200_000,
             max_bytes: 64 << 30,
             max_name: 4096,
             // Includes headers, file data, metadata and trailing padding.
             max_stream_bytes: 16 << 30,
+            max_xattr_bytes: 16 << 20,
         }
     }
 }
@@ -623,6 +640,9 @@ fn kind_str(t: EntryType) -> &'static str {
         EntryType::Directory => "dir",
         EntryType::Symlink => "symlink",
         EntryType::Link => "hardlink",
+        // A PAX global header (`git archive` writes one) carries metadata
+        // for the archive, never a file.
+        EntryType::XGlobalHeader => "metadata",
         _ => "other",
     }
 }
@@ -657,6 +677,9 @@ pub fn builtin_tar_unpack(args: Vec<Value>) -> MixResult<Option<Value>> {
             if let Some(v) = bool_opt(caller, "keep_special_bits", m.get("keep_special_bits"))? {
                 opts.keep_special_bits = v;
             }
+            if let Some(v) = bool_opt(caller, "privileged_xattrs", m.get("privileged_xattrs"))? {
+                opts.privileged_xattrs = v;
+            }
             opts.max_entries =
                 count_opt(caller, "max_entries", m.get("max_entries"))?.unwrap_or(opts.max_entries);
             opts.max_bytes =
@@ -666,6 +689,15 @@ pub fn builtin_tar_unpack(args: Vec<Value>) -> MixResult<Option<Value>> {
             opts.max_stream_bytes =
                 count_opt(caller, "max_stream_bytes", m.get("max_stream_bytes"))?
                     .unwrap_or(opts.max_stream_bytes);
+            opts.max_xattr_bytes =
+                count_opt(caller, "max_xattr_bytes", m.get("max_xattr_bytes"))?
+                    .unwrap_or(opts.max_xattr_bytes);
+            if opts.max_xattr_bytes > MAX_XATTR_BYTES_CEILING {
+                return Err(opt_invalid(
+                    caller,
+                    format!("max_xattr_bytes must be at most {MAX_XATTR_BYTES_CEILING}"),
+                ));
+            }
             known_keys_check(
                 caller,
                 m,
@@ -674,10 +706,12 @@ pub fn builtin_tar_unpack(args: Vec<Value>) -> MixResult<Option<Value>> {
                     "numeric_owner",
                     "xattrs",
                     "keep_special_bits",
+                    "privileged_xattrs",
                     "max_entries",
                     "max_bytes",
                     "max_name",
                     "max_stream_bytes",
+                    "max_xattr_bytes",
                 ],
             )?;
         }
@@ -690,13 +724,13 @@ pub fn builtin_tar_unpack(args: Vec<Value>) -> MixResult<Option<Value>> {
     }
 
     let dest_path = Path::new(&dest);
-    if dest_path.exists() {
+    // symlink_metadata: a dangling symlink at dest exists too.
+    if fs::symlink_metadata(dest_path).is_ok() {
         return Err(runtime(format!(
             "{caller}: dest '{dest}' exists; refusing (extraction is staged, never merged)"
         )));
     }
-    let parent = dest_path
-        .parent()
+    let parent = parent_or_cwd(dest_path)
         .ok_or_else(|| runtime(format!("{caller}: dest has no parent directory")))?;
     if !parent.is_dir() {
         return Err(runtime(format!(
@@ -704,59 +738,272 @@ pub fn builtin_tar_unpack(args: Vec<Value>) -> MixResult<Option<Value>> {
             parent.display()
         )));
     }
+    let leaf = dest_path
+        .file_name()
+        .ok_or_else(|| runtime(format!("{caller}: dest '{dest}' must name a directory")))?;
+    let leaf = std::ffi::CString::new(leaf.as_bytes())
+        .map_err(|_| runtime(format!("{caller}: dest contains NUL")))?;
 
-    let staging = parent.join(format!(
-        ".mixtar-stage-{}-{}",
-        std::process::id(),
-        STAGE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-    ));
-    fs::create_dir(&staging).map_err(|e| runtime(format!("{caller}: staging: {e}")))?;
-    // Private staging regardless of umask: content exists briefly before
-    // the header mode is applied.
-    let _ = fs::set_permissions(&staging, fs::Permissions::from_mode(0o700));
-
-    match unpack_staged(&path, &staging, &opts, caller) {
+    let staging = Staging::create(parent).map_err(|e| runtime(format!("{caller}: staging: {e}")))?;
+    match unpack_staged(&path, &staging.dir, &opts, caller) {
         Ok(receipt) => {
-            if let Err(e) = fs::rename(&staging, dest_path) {
-                return Err(rollback_staging(
-                    &staging,
-                    runtime(format!("{caller}: commit '{dest}': {e}")),
-                ));
+            if let Err(e) = staging.commit(&leaf) {
+                return Err(staging.rollback(runtime(format!("{caller}: commit '{dest}': {e}"))));
             }
             Ok(Some(Value::Map(std::rc::Rc::new(receipt))))
         }
-        Err(e) => Err(rollback_staging(&staging, e)),
+        Err(e) => Err(staging.rollback(e)),
+    }
+}
+
+/// A path's parent, with a bare relative name's empty parent read as the
+/// current directory (`Path::new("out").parent()` is `Some("")`).
+fn parent_or_cwd(path: &Path) -> Option<&Path> {
+    match path.parent() {
+        Some(p) if p.as_os_str().is_empty() => Some(Path::new(".")),
+        other => other,
     }
 }
 
 static STAGE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-fn rollback_staging(staging: &Path, original: MixError) -> MixError {
-    // Restore parents before inspecting children: the metadata post-pass may
-    // already have made a directory 0000 or read-only. Never chmod symlinks.
-    let restore = (|| -> std::io::Result<()> {
-        let mut queue = vec![staging.to_path_buf()];
-        while let Some(dir) = queue.pop() {
-            fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
-            for child in fs::read_dir(&dir)? {
-                let child = child?;
-                if child.file_type()?.is_dir() {
-                    queue.push(child.path());
+/// An unpredictable staging name: kernel randomness, mixed with the pid,
+/// a counter and the clock in case getrandom is unavailable.
+fn staging_suffix() -> u64 {
+    let mut buf = [0u8; 8];
+    let n = unsafe { libc::getrandom(buf.as_mut_ptr().cast(), buf.len(), 0) };
+    let random = if n == buf.len() as isize {
+        u64::from_ne_bytes(buf)
+    } else {
+        0
+    };
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos() as u64);
+    random
+        ^ (u64::from(std::process::id()) << 32)
+        ^ STAGE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ^ nanos.rotate_left(17)
+}
+
+const DIR_FLAGS: i32 = libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC;
+
+fn last_error() -> std::io::Error {
+    std::io::Error::last_os_error()
+}
+
+fn open_dir_at(dir: &File, name: &std::ffi::CStr) -> std::io::Result<File> {
+    let fd = unsafe { libc::openat(dir.as_raw_fd(), name.as_ptr(), DIR_FLAGS) };
+    if fd < 0 {
+        Err(last_error())
+    } else {
+        Ok(unsafe { File::from_raw_fd(fd) })
+    }
+}
+
+/// `fstatat` without following a final symlink.
+fn stat_at(dir: &File, name: &std::ffi::CStr) -> std::io::Result<libc::stat> {
+    let mut st = std::mem::MaybeUninit::<libc::stat>::uninit();
+    let rc = unsafe {
+        libc::fstatat(
+            dir.as_raw_fd(),
+            name.as_ptr(),
+            st.as_mut_ptr(),
+            libc::AT_SYMLINK_NOFOLLOW,
+        )
+    };
+    if rc != 0 {
+        return Err(last_error());
+    }
+    Ok(unsafe { st.assume_init() })
+}
+
+/// The private staging directory, held by descriptor from creation to
+/// commit. Every extraction step is relative to `dir`, so swapping the
+/// staging NAME in a writable parent cannot redirect a write; the name is
+/// used only to commit and to remove, each after checking it still names
+/// the same inode.
+struct Staging {
+    parent: File,
+    name: std::ffi::CString,
+    dir: File,
+}
+
+/// `renameat2(2)`'s flag: fail with EEXIST rather than replace the target.
+const RENAME_NOREPLACE: libc::c_uint = 1;
+
+impl Staging {
+    fn create(parent: &Path) -> std::io::Result<Self> {
+        let parent = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_DIRECTORY | libc::O_CLOEXEC)
+            .open(parent)?;
+        for _ in 0..16 {
+            let name = std::ffi::CString::new(format!(".mixtar-stage-{:016x}", staging_suffix()))?;
+            if unsafe { libc::mkdirat(parent.as_raw_fd(), name.as_ptr(), 0o700) } != 0 {
+                let e = last_error();
+                if e.kind() == std::io::ErrorKind::AlreadyExists {
+                    continue;
                 }
+                return Err(e);
             }
+            let dir = open_dir_at(&parent, &name)?;
+            // Private regardless of umask: content exists briefly before the
+            // header mode is applied.
+            if unsafe { libc::fchmod(dir.as_raw_fd(), 0o700) } != 0 {
+                return Err(last_error());
+            }
+            return Ok(Staging { parent, name, dir });
+        }
+        Err(std::io::Error::other(
+            "could not create a unique staging directory",
+        ))
+    }
+
+    /// Whether the staging name still names the held directory.
+    fn still_named(&self) -> std::io::Result<bool> {
+        let named = stat_at(&self.parent, &self.name)?;
+        let held = self.dir.metadata()?;
+        Ok(named.st_dev as u64 == held.dev() && named.st_ino as u64 == held.ino())
+    }
+
+    /// Rename into place without replacing anything that appeared at dest.
+    fn commit(&self, dest: &std::ffi::CStr) -> std::io::Result<()> {
+        if !self.still_named()? {
+            return Err(std::io::Error::other(
+                "the staging directory was replaced; nothing was committed",
+            ));
+        }
+        let rc = unsafe {
+            libc::syscall(
+                libc::SYS_renameat2,
+                self.parent.as_raw_fd(),
+                self.name.as_ptr(),
+                self.parent.as_raw_fd(),
+                dest.as_ptr(),
+                RENAME_NOREPLACE,
+            )
+        };
+        if rc == 0 {
+            return Ok(());
+        }
+        let e = last_error();
+        if !matches!(e.raw_os_error(), Some(libc::EINVAL | libc::ENOSYS)) {
+            return Err(e);
+        }
+        // This filesystem cannot rename without replacing. Check, then
+        // rename: a directory created at dest in between is replaced (docs).
+        match stat_at(&self.parent, dest) {
+            Ok(_) => return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e),
+        }
+        let rc = unsafe {
+            libc::renameat(
+                self.parent.as_raw_fd(),
+                self.name.as_ptr(),
+                self.parent.as_raw_fd(),
+                dest.as_ptr(),
+            )
+        };
+        if rc != 0 {
+            return Err(last_error());
         }
         Ok(())
-    })();
-    let remove = fs::remove_dir_all(staging);
-    match (restore, remove) {
-        (Ok(()), Ok(())) => original,
-        (restore, remove) => runtime(format!(
-            "{original}; rollback cleanup '{}': restore modes: {:?}; remove: {:?}",
-            staging.display(),
-            restore.err(),
-            remove.err()
-        )),
     }
+
+    /// Remove the staged tree through the held descriptor, then its name if it
+    /// still names the held directory. A cleanup failure is reported with the
+    /// original error rather than discarded.
+    fn rollback(&self, original: MixError) -> MixError {
+        let remove = (|| -> std::io::Result<()> {
+            if unsafe { libc::fchmod(self.dir.as_raw_fd(), 0o700) } != 0 {
+                return Err(last_error());
+            }
+            remove_tree_at(&self.dir)?;
+            if !self.still_named()? {
+                return Err(std::io::Error::other(
+                    "the staging name was replaced; it is left in place",
+                ));
+            }
+            if unsafe {
+                libc::unlinkat(
+                    self.parent.as_raw_fd(),
+                    self.name.as_ptr(),
+                    libc::AT_REMOVEDIR,
+                )
+            } != 0
+            {
+                return Err(last_error());
+            }
+            Ok(())
+        })();
+        match remove {
+            Ok(()) => original,
+            Err(e) => runtime(format!(
+                "{original}; rollback cleanup '{}': {e}",
+                self.name.to_string_lossy()
+            )),
+        }
+    }
+}
+
+/// Empty a held directory, children-first, never following a link. The
+/// metadata post-pass may have made a directory 0000 or read-only, so each
+/// subdirectory's mode is restored before it is opened.
+fn remove_tree_at(dir: &File) -> std::io::Result<()> {
+    for name in directory_names(dir)? {
+        let name = std::ffi::CString::new(name.as_bytes())?;
+        let st = stat_at(dir, &name)?;
+        if st.st_mode & libc::S_IFMT == libc::S_IFDIR {
+            if unsafe { libc::fchmodat(dir.as_raw_fd(), name.as_ptr(), 0o700, 0) } != 0 {
+                return Err(last_error());
+            }
+            remove_tree_at(&open_dir_at(dir, &name)?)?;
+            if unsafe { libc::unlinkat(dir.as_raw_fd(), name.as_ptr(), libc::AT_REMOVEDIR) } != 0 {
+                return Err(last_error());
+            }
+        } else if unsafe { libc::unlinkat(dir.as_raw_fd(), name.as_ptr(), 0) } != 0 {
+            return Err(last_error());
+        }
+    }
+    Ok(())
+}
+
+/// The directory holding `rel` in the staging tree, and `rel`'s last name.
+/// Each component is opened relative to the one before with O_NOFOLLOW, so
+/// no symlink is traversed and no path is resolved twice. `create` makes a
+/// missing parent the way tar does for an implicit one (0777 less umask).
+fn parent_at(
+    staging: &File,
+    rel: &Path,
+    create: bool,
+) -> std::io::Result<(File, std::ffi::CString)> {
+    let leaf = rel
+        .file_name()
+        .ok_or_else(|| std::io::Error::other("member has no file name"))?;
+    let leaf = std::ffi::CString::new(leaf.as_bytes())?;
+    let mut dir = staging.try_clone()?;
+    for component in rel.parent().into_iter().flat_map(|p| p.components()) {
+        let Component::Normal(part) = component else {
+            return Err(std::io::Error::other("unexpected member path component"));
+        };
+        let name = std::ffi::CString::new(part.as_bytes())?;
+        dir = match open_dir_at(&dir, &name) {
+            Ok(next) => next,
+            Err(e) if create && e.kind() == std::io::ErrorKind::NotFound => {
+                if unsafe { libc::mkdirat(dir.as_raw_fd(), name.as_ptr(), 0o777) } != 0 {
+                    let e = last_error();
+                    if e.kind() != std::io::ErrorKind::AlreadyExists {
+                        return Err(e);
+                    }
+                }
+                open_dir_at(&dir, &name)?
+            }
+            Err(e) => return Err(e),
+        };
+    }
+    Ok((dir, leaf))
 }
 
 /// Never write a byte beyond the remaining file-data budget, even if a reader
@@ -800,7 +1047,7 @@ struct DeferredMeta {
 
 fn unpack_staged(
     path: &str,
-    staging: &Path,
+    staging: &File,
     opts: &UnpackOpts,
     caller: &str,
 ) -> MixResult<IndexMap<String, Value>> {
@@ -809,9 +1056,12 @@ fn unpack_staged(
     let mut dirs: u64 = 0;
     let mut symlinks: u64 = 0;
     let mut hardlinks: u64 = 0;
+    let mut metadata: u64 = 0;
     let mut bytes: u64 = 0;
     let mut xattrs_restored: u64 = 0;
+    let mut xattr_bytes: u64 = 0;
     let mut entry_count: u64 = 0;
+    let mut warnings: Vec<String> = Vec::new();
     let mut symlinks_created: HashSet<PathBuf> = HashSet::new();
     let mut extracted_files: HashSet<PathBuf> = HashSet::new();
     let mut deferred: Vec<DeferredMeta> = Vec::new();
@@ -836,14 +1086,20 @@ fn unpack_staged(
                 )));
             }
             let header = entry.header().clone();
+            // A PAX global header (`git archive` writes one) describes the
+            // archive, not a member: nothing to extract.
+            if matches!(header.entry_type(), EntryType::XGlobalHeader) {
+                metadata += 1;
+                continue;
+            }
             let raw_path = entry
                 .path()
                 .map_err(|e| runtime(format!("{caller}: member name: {e}")))?
                 .to_path_buf();
             let rel = clean_member(caller, &raw_path, opts.max_name)?;
-            let target_abs = staging.join(&rel);
 
-            // Never extract THROUGH a symlink this archive created.
+            // Never extract THROUGH a symlink this archive created. The
+            // O_NOFOLLOW walk below would refuse it too; this names it.
             for ancestor in rel.ancestors().skip(1) {
                 if !ancestor.as_os_str().is_empty() && symlinks_created.contains(ancestor) {
                     return Err(runtime(format!(
@@ -853,6 +1109,8 @@ fn unpack_staged(
                     )));
                 }
             }
+            let (parent, leaf) = parent_at(staging, &rel, true)
+                .map_err(|e| runtime(format!("{caller}: parent of '{}': {e}", rel.display())))?;
 
             let mode = header.mode().unwrap_or(0o644);
             let masked = if opts.keep_special_bits {
@@ -872,11 +1130,15 @@ fn unpack_staged(
 
             match header.entry_type() {
                 EntryType::Directory => {
-                    // 0700 & umask during extraction; the post-pass applies the
-                    // real (masked) mode so nothing is ever wider than asked.
-                    fs::create_dir(&target_abs).map_err(|e| {
-                        runtime(format!("{caller}: mkdir '{}': {e}", rel.display()))
-                    })?;
+                    // 0700 during extraction; the post-pass applies the real
+                    // (masked) mode so nothing is ever wider than asked.
+                    if unsafe { libc::mkdirat(parent.as_raw_fd(), leaf.as_ptr(), 0o700) } != 0 {
+                        return Err(runtime(format!(
+                            "{caller}: mkdir '{}': {}",
+                            rel.display(),
+                            last_error()
+                        )));
+                    }
                     dirs += 1;
                     deferred.push(meta);
                 }
@@ -888,22 +1150,30 @@ fn unpack_staged(
                             rel.display()
                         )));
                     }
-                    if let Some(parent) = target_abs.parent() {
-                        fs::create_dir_all(parent)
-                            .map_err(|e| runtime(format!("{caller}: mkdir parent: {e}")))?;
-                    }
                     if opts.xattrs {
-                        meta.xattrs = collect_pax_xattrs(&mut entry, opts);
+                        meta.xattrs = collect_pax_xattrs(&mut entry, opts, &mut xattr_bytes, caller)?;
                     }
                     entry.set_preserve_mtime(true);
-                    let mut out = OpenOptions::new()
-                        .write(true)
-                        .create_new(true)
-                        .mode(0o600)
-                        .open(&target_abs)
-                        .map_err(|e| {
-                            runtime(format!("{caller}: create '{}': {e}", rel.display()))
-                        })?;
+                    let fd = unsafe {
+                        libc::openat(
+                            parent.as_raw_fd(),
+                            leaf.as_ptr(),
+                            libc::O_WRONLY
+                                | libc::O_CREAT
+                                | libc::O_EXCL
+                                | libc::O_NOFOLLOW
+                                | libc::O_CLOEXEC,
+                            0o600,
+                        )
+                    };
+                    if fd < 0 {
+                        return Err(runtime(format!(
+                            "{caller}: create '{}': {}",
+                            rel.display(),
+                            last_error()
+                        )));
+                    }
+                    let mut out = unsafe { File::from_raw_fd(fd) };
                     let written =
                         copy_file_bounded(&mut entry, &mut out, remaining).map_err(|e| {
                             io_failure(format!("{caller}: write '{}': {e}", rel.display()), &e)
@@ -930,9 +1200,17 @@ fn unpack_staged(
                         target.as_os_str(),
                         opts.max_name,
                     )?;
-                    std::os::unix::fs::symlink(&clean, &target_abs).map_err(|e| {
-                        runtime(format!("{caller}: symlink '{}': {e}", rel.display()))
-                    })?;
+                    let clean = std::ffi::CString::new(clean.as_os_str().as_bytes())
+                        .map_err(|_| runtime(format!("{caller}: link target contains NUL")))?;
+                    if unsafe { libc::symlinkat(clean.as_ptr(), parent.as_raw_fd(), leaf.as_ptr()) }
+                        != 0
+                    {
+                        return Err(runtime(format!(
+                            "{caller}: symlink '{}': {}",
+                            rel.display(),
+                            last_error()
+                        )));
+                    }
                     symlinks += 1;
                     symlinks_created.insert(rel.clone());
                     let mut m = meta;
@@ -959,9 +1237,27 @@ fn unpack_staged(
                             clean_target.display()
                         )));
                     }
-                    fs::hard_link(staging.join(&clean_target), &target_abs).map_err(|e| {
-                        runtime(format!("{caller}: hardlink '{}': {e}", rel.display()))
-                    })?;
+                    let (source_dir, source_leaf) = parent_at(staging, &clean_target, false)
+                        .map_err(|e| {
+                            runtime(format!("{caller}: hardlink '{}': {e}", rel.display()))
+                        })?;
+                    // Flags 0: linkat never follows a symlink at the source.
+                    if unsafe {
+                        libc::linkat(
+                            source_dir.as_raw_fd(),
+                            source_leaf.as_ptr(),
+                            parent.as_raw_fd(),
+                            leaf.as_ptr(),
+                            0,
+                        )
+                    } != 0
+                    {
+                        return Err(runtime(format!(
+                            "{caller}: hardlink '{}': {}",
+                            rel.display(),
+                            last_error()
+                        )));
+                    }
                     hardlinks += 1;
                 }
                 other => {
@@ -976,21 +1272,109 @@ fn unpack_staged(
     }
     let trailing = limited.drain(caller)?;
 
-    // Deferred metadata, children-first so directory mtimes stick, never
-    // following symlinks (lchown / utimensat AT_SYMLINK_NOFOLLOW). The order
-    // per file is owner, then mode, then xattrs: chown clears setuid/setgid
-    // and security.capability, so chmod must follow it for a kept special bit
-    // to survive, and xattrs must come last so nothing strips them again.
+    // Deferred metadata, children-first so directory mtimes stick, through
+    // descriptors that never follow a link. The order per entry is owner,
+    // then mode, then mtime, then xattrs: chown clears setuid/setgid and
+    // security.capability, so chmod must follow it for a kept special bit to
+    // survive, and xattrs come last so nothing strips them again. A special
+    // bit or a capability is applied only when the archive's owner was.
+    let root = unsafe { libc::geteuid() } == 0;
     for m in deferred.iter().rev() {
-        let abs = staging.join(&m.rel);
-        if opts.numeric_owner {
-            let _ = lchown(&abs, m.uid, m.gid);
+        let (parent, leaf) = parent_at(staging, &m.rel, false)
+            .map_err(|e| runtime(format!("{caller}: metadata '{}': {e}", m.rel.display())))?;
+        let times = [
+            libc::timespec {
+                tv_sec: m.mtime,
+                tv_nsec: 0,
+            },
+            libc::timespec {
+                tv_sec: m.mtime,
+                tv_nsec: 0,
+            },
+        ];
+        if m.is_symlink {
+            if opts.numeric_owner
+                && unsafe {
+                    libc::fchownat(
+                        parent.as_raw_fd(),
+                        leaf.as_ptr(),
+                        m.uid,
+                        m.gid,
+                        libc::AT_SYMLINK_NOFOLLOW,
+                    )
+                } != 0
+            {
+                owner_not_applied(&mut warnings, &m.rel, m.uid, m.gid, root);
+            }
+            if unsafe {
+                libc::utimensat(
+                    parent.as_raw_fd(),
+                    leaf.as_ptr(),
+                    times.as_ptr(),
+                    libc::AT_SYMLINK_NOFOLLOW,
+                )
+            } != 0
+            {
+                return Err(runtime(format!(
+                    "{caller}: mtime of '{}': {}",
+                    m.rel.display(),
+                    last_error()
+                )));
+            }
+            continue;
         }
-        if !m.is_symlink {
-            let _ = fs::set_permissions(&abs, fs::Permissions::from_mode(m.mode));
+        // O_NONBLOCK: the entry is a file or directory this unpack made, so
+        // nothing can block; it is defence against a swapped-in fifo.
+        let fd = unsafe {
+            libc::openat(
+                parent.as_raw_fd(),
+                leaf.as_ptr(),
+                libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
+            )
+        };
+        if fd < 0 {
+            return Err(runtime(format!(
+                "{caller}: metadata '{}': {}",
+                m.rel.display(),
+                last_error()
+            )));
         }
-        let _ = set_mtime_nofollow(&abs, m.mtime);
-        xattrs_restored += apply_xattrs(&abs, &m.rel, &m.xattrs, caller)?;
+        let file = unsafe { File::from_raw_fd(fd) };
+        let mut owner_applied = true;
+        if opts.numeric_owner && unsafe { libc::fchown(file.as_raw_fd(), m.uid, m.gid) } != 0 {
+            owner_applied = false;
+            owner_not_applied(&mut warnings, &m.rel, m.uid, m.gid, root);
+        }
+        let mut mode = m.mode;
+        if !owner_applied && mode & 0o6000 != 0 {
+            mode &= !0o6000;
+            warnings.push(format!(
+                "'{}': setuid/setgid dropped because its owner was not applied",
+                m.rel.display()
+            ));
+        }
+        if unsafe { libc::fchmod(file.as_raw_fd(), mode) } != 0 {
+            return Err(runtime(format!(
+                "{caller}: mode of '{}': {}",
+                m.rel.display(),
+                last_error()
+            )));
+        }
+        if unsafe { libc::futimens(file.as_raw_fd(), times.as_ptr()) } != 0 {
+            return Err(runtime(format!(
+                "{caller}: mtime of '{}': {}",
+                m.rel.display(),
+                last_error()
+            )));
+        }
+        xattrs_restored += apply_xattrs(
+            &file,
+            &m.rel,
+            &m.xattrs,
+            owner_applied,
+            &mut warnings,
+            caller,
+        )?;
     }
 
     let mut map = IndexMap::new();
@@ -998,6 +1382,7 @@ fn unpack_staged(
     map.insert("dirs".to_string(), Value::Number(dirs as f64));
     map.insert("symlinks".to_string(), Value::Number(symlinks as f64));
     map.insert("hardlinks".to_string(), Value::Number(hardlinks as f64));
+    map.insert("metadata".to_string(), Value::Number(metadata as f64));
     map.insert("bytes".to_string(), Value::Number(bytes as f64));
     map.insert(
         "xattrs_restored".to_string(),
@@ -1012,22 +1397,58 @@ fn unpack_staged(
         "codec".to_string(),
         Value::String(opts.codec.as_str().to_string()),
     );
+    map.insert(
+        "warnings".to_string(),
+        Value::List(std::rc::Rc::new(
+            warnings.into_iter().map(Value::String).collect(),
+        )),
+    );
     Ok(map)
 }
 
-/// Collect the entry's `SCHILY.xattr.*` PAX records before its data stream is
-/// consumed. `security.*` is dropped here unless `keep_special_bits`: a
-/// capability xattr is a privilege grant exactly like a suid bit, and the
-/// tar crate's blanket `set_unpack_xattrs` would restore it regardless of the
-/// caller's choice. The pairs are applied later by `apply_xattrs`, once the
-/// owner and mode are settled.
+/// Record an owner that could not be applied. A non-root caller cannot give
+/// files away (EPERM), which is the documented capability limit and stays
+/// silent; any other failure is a warning in the receipt.
+fn owner_not_applied(warnings: &mut Vec<String>, rel: &Path, uid: u32, gid: u32, root: bool) {
+    let e = last_error();
+    if root || e.raw_os_error() != Some(libc::EPERM) {
+        warnings.push(format!(
+            "'{}': owner {uid}:{gid} not applied: {e}",
+            rel.display()
+        ));
+    }
+}
+
+/// Which xattrs a default unpack may restore. Only `user.*` changes nothing
+/// about privilege. `security.capability` is a privilege grant exactly like
+/// a suid bit, so `keep_special_bits` also admits it (the packer's matching
+/// opt-in). Everything else, `trusted.*`, `system.posix_acl_*` (an ACL can
+/// grant any user write access) and the rest of `security.*`, needs
+/// `privileged_xattrs`.
+fn xattr_allowed(name: &[u8], keep_special_bits: bool, privileged_xattrs: bool) -> bool {
+    if name.starts_with(b"user.") {
+        true
+    } else if name == b"security.capability" {
+        keep_special_bits || privileged_xattrs
+    } else {
+        privileged_xattrs
+    }
+}
+
+/// Collect the entry's admitted `SCHILY.xattr.*` PAX records before its data
+/// stream is consumed (see [`xattr_allowed`]). The tar crate's blanket
+/// `set_unpack_xattrs` would restore every record regardless. Retained bytes
+/// are counted across the archive against `max_xattr_bytes`, because the
+/// pairs are kept until the post-pass applies them.
 fn collect_pax_xattrs<E: Read>(
     entry: &mut tar::Entry<E>,
     opts: &UnpackOpts,
-) -> Vec<(Vec<u8>, Vec<u8>)> {
+    retained: &mut u64,
+    caller: &str,
+) -> MixResult<Vec<(Vec<u8>, Vec<u8>)>> {
     let pax = match entry.pax_extensions() {
         Ok(Some(p)) => p,
-        _ => return Vec::new(),
+        _ => return Ok(Vec::new()),
     };
     let mut pairs = Vec::new();
     for kv in pax.flatten() {
@@ -1036,36 +1457,49 @@ fn collect_pax_xattrs<E: Read>(
             continue;
         }
         let xname = &key[b"SCHILY.xattr.".len()..];
-        if !opts.keep_special_bits && xname.starts_with(b"security.") {
+        if !xattr_allowed(xname, opts.keep_special_bits, opts.privileged_xattrs) {
             continue;
         }
-        pairs.push((xname.to_vec(), kv.value_bytes().to_vec()));
+        let value = kv.value_bytes();
+        *retained = retained.saturating_add((xname.len() + value.len()) as u64);
+        if *retained > opts.max_xattr_bytes {
+            return Err(runtime(format!(
+                "{caller}: xattr metadata exceeds max_xattr_bytes ({})",
+                opts.max_xattr_bytes
+            )));
+        }
+        pairs.push((xname.to_vec(), value.to_vec()));
     }
-    pairs
+    Ok(pairs)
 }
 
-/// Apply collected xattr pairs to `abs` with `lsetxattr`. EPERM is tolerated
-/// (non-root extraction is a documented capability limit); every other
-/// failure raises.
+/// Apply collected xattr pairs through the entry's descriptor. A capability
+/// is skipped (with a warning) when the archive's owner was not applied.
+/// EPERM is tolerated (non-root extraction is a documented capability
+/// limit); every other failure raises.
 fn apply_xattrs(
-    abs: &Path,
+    file: &File,
     rel: &Path,
     pairs: &[(Vec<u8>, Vec<u8>)],
+    owner_applied: bool,
+    warnings: &mut Vec<String>,
     caller: &str,
 ) -> MixResult<u64> {
-    if pairs.is_empty() {
-        return Ok(0);
-    }
-    let cpath = std::ffi::CString::new(abs.as_os_str().as_bytes())
-        .map_err(|_| runtime(format!("{caller}: member path contains NUL")))?;
     let mut restored = 0u64;
     for (xname, value) in pairs {
+        if !owner_applied && xname.as_slice() == b"security.capability" {
+            warnings.push(format!(
+                "'{}': security.capability dropped because its owner was not applied",
+                rel.display()
+            ));
+            continue;
+        }
         let Ok(cname) = std::ffi::CString::new(xname.as_slice()) else {
             continue; // xattr names cannot contain NUL by definition
         };
         let rc = unsafe {
-            libc::lsetxattr(
-                cpath.as_ptr(),
+            libc::fsetxattr(
+                file.as_raw_fd(),
                 cname.as_ptr(),
                 value.as_ptr() as *const libc::c_void,
                 value.len(),
@@ -1073,7 +1507,7 @@ fn apply_xattrs(
             )
         };
         if rc != 0 {
-            let err = std::io::Error::last_os_error();
+            let err = last_error();
             if err.raw_os_error() == Some(libc::EPERM) {
                 continue; // non-root: documented limit, not an error
             }
@@ -1086,32 +1520,6 @@ fn apply_xattrs(
         restored += 1;
     }
     Ok(restored)
-}
-
-fn lchown(path: &Path, uid: u32, gid: u32) -> bool {
-    match std::ffi::CString::new(path.as_os_str().as_bytes()) {
-        Ok(c) => unsafe { libc::lchown(c.as_ptr(), uid, gid) == 0 },
-        Err(_) => false,
-    }
-}
-
-fn set_mtime_nofollow(path: &Path, mtime: i64) -> bool {
-    let ts = libc::timespec {
-        tv_sec: mtime,
-        tv_nsec: 0,
-    };
-    let times = [ts, ts];
-    match std::ffi::CString::new(path.as_os_str().as_bytes()) {
-        Ok(c) => unsafe {
-            libc::utimensat(
-                libc::AT_FDCWD,
-                c.as_ptr(),
-                times.as_ptr(),
-                libc::AT_SYMLINK_NOFOLLOW,
-            ) == 0
-        },
-        Err(_) => false,
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1187,12 +1595,27 @@ pub fn builtin_tar_pack(args: Vec<Value>) -> MixResult<Option<Value>> {
         .open(&source_path)
         .map_err(|e| runtime(format!("{caller}: open source directory '{source}': {e}")))?;
     let out_path = Path::new(&path);
-    if let Some(parent) = out_path.parent()
-        && !parent.is_dir()
-    {
+    let out_parent = parent_or_cwd(out_path).unwrap_or(Path::new("/"));
+    if !out_parent.is_dir() {
         return Err(runtime(format!(
             "{caller}: output parent '{}' does not exist",
-            parent.display()
+            out_parent.display()
+        )));
+    }
+    let out_name = out_path
+        .file_name()
+        .ok_or_else(|| runtime(format!("{caller}: output '{path}' must name a file")))?;
+    // An output inside the source would be walked and packed into itself.
+    // Refuse it before the file exists; the inode check below also catches
+    // one reached through a bind mount or another name.
+    let canonical_source = fs::canonicalize(&source_path)
+        .map_err(|e| runtime(format!("{caller}: source '{source}': {e}")))?;
+    let canonical_out = fs::canonicalize(out_parent)
+        .map_err(|e| runtime(format!("{caller}: output parent: {e}")))?
+        .join(out_name);
+    if canonical_out.starts_with(&canonical_source) {
+        return Err(runtime(format!(
+            "{caller}: output '{path}' is inside the source directory '{source}'"
         )));
     }
 
@@ -1202,8 +1625,12 @@ pub fn builtin_tar_pack(args: Vec<Value>) -> MixResult<Option<Value>> {
         .mode(0o600)
         .open(out_path)
         .map_err(|e| runtime(format!("{caller}: create '{path}': {e}")))?;
+    let output = file
+        .metadata()
+        .map(|m| (m.dev(), m.ino()))
+        .map_err(|e| runtime(format!("{caller}: fstat '{path}': {e}")))?;
     let buf = BufWriter::with_capacity(1 << 20, file);
-    match pack_stream(source_dir, buf, &opts, caller) {
+    match pack_stream(source_dir, buf, &opts, output, caller) {
         Ok(receipt) => Ok(Some(Value::Map(std::rc::Rc::new(receipt)))),
         Err(e) => {
             let _ = fs::remove_file(out_path);
@@ -1253,6 +1680,7 @@ fn pack_stream(
     source: File,
     buf: BufWriter<File>,
     opts: &PackOpts,
+    output: (u64, u64),
     caller: &str,
 ) -> MixResult<IndexMap<String, Value>> {
     let sink = match opts.codec {
@@ -1267,13 +1695,45 @@ fn pack_stream(
         ))),
         Codec::None => PackSink::None(buf),
     };
-    walk_and_append(source, sink, opts, caller)
+    walk_and_append(source, sink, opts, output, caller)
+}
+
+/// A file's data, exactly its declared size. The header carries the size
+/// read before the copy; a file that grows or shrinks meanwhile would
+/// otherwise produce a header that disagrees with its payload, a corrupt
+/// archive with a success receipt.
+struct ExactRead<R> {
+    inner: R,
+    remaining: u64,
+}
+
+impl<R: Read> Read for ExactRead<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        if self.remaining == 0 {
+            let mut probe = [0u8; 1];
+            return match self.inner.read(&mut probe)? {
+                0 => Ok(0),
+                _ => Err(std::io::Error::other("file grew while it was packed")),
+            };
+        }
+        let len = self.remaining.min(buf.len() as u64) as usize;
+        let n = self.inner.read(&mut buf[..len])?;
+        if n == 0 {
+            return Err(std::io::Error::other("file shrank while it was packed"));
+        }
+        self.remaining -= n as u64;
+        Ok(n)
+    }
 }
 
 fn walk_and_append(
     source: File,
     sink: PackSink,
     opts: &PackOpts,
+    output: (u64, u64),
     caller: &str,
 ) -> MixResult<IndexMap<String, Value>> {
     let mut builder = Builder::new(sink);
@@ -1297,6 +1757,12 @@ fn walk_and_append(
             let meta = child
                 .metadata()
                 .map_err(|e| runtime(format!("{caller}: fstat '{}': {e}", rel.display())))?;
+            if (meta.dev(), meta.ino()) == output {
+                return Err(runtime(format!(
+                    "{caller}: the output archive is inside the source tree (as '{}')",
+                    rel.display()
+                )));
+            }
             if meta.is_dir() {
                 let opened =
                     open_child_checked(&dir, &name, &meta, libc::O_RDONLY | libc::O_DIRECTORY)
@@ -1357,8 +1823,12 @@ fn walk_and_append(
                 let mut header = Header::new_gnu();
                 header.set_size(meta.len());
                 set_header_meta(&mut header, &meta, opts);
+                let data = ExactRead {
+                    inner: f,
+                    remaining: meta.len(),
+                };
                 builder
-                    .append_data(&mut header, &rel, f)
+                    .append_data(&mut header, &rel, data)
                     .map_err(|e| runtime(format!("{caller}: append '{}': {e}", rel.display())))?;
                 files += 1;
                 bytes += meta.len();
@@ -1527,4 +1997,66 @@ fn xattr_security_capability(file: &File) -> Option<Vec<u8>> {
     }
     buf.truncate(n as usize);
     Some(buf)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_user_xattrs_are_restored_without_an_opt_in() {
+        for name in [&b"user.mime_type"[..], b"user.x"] {
+            assert!(xattr_allowed(name, false, false));
+        }
+        for name in [
+            &b"system.posix_acl_access"[..],
+            b"system.posix_acl_default",
+            b"trusted.overlay.opaque",
+            b"security.selinux",
+            b"security.capability",
+            b"security.ima",
+        ] {
+            assert!(!xattr_allowed(name, false, false), "{name:?}");
+            assert!(xattr_allowed(name, false, true), "{name:?}");
+        }
+        // keep_special_bits admits the capability (the packer's matching
+        // opt-in) and nothing else privileged.
+        assert!(xattr_allowed(b"security.capability", true, false));
+        assert!(!xattr_allowed(b"system.posix_acl_access", true, false));
+        assert!(!xattr_allowed(b"security.selinux", true, false));
+    }
+
+    fn read_all(r: &mut impl Read) -> std::io::Result<Vec<u8>> {
+        let mut out = Vec::new();
+        r.read_to_end(&mut out)?;
+        Ok(out)
+    }
+
+    #[test]
+    fn exact_read_refuses_a_file_that_changed_size() {
+        let exact = ExactRead {
+            inner: &b"abcd"[..],
+            remaining: 4,
+        };
+        assert_eq!(read_all(&mut { exact }).unwrap(), b"abcd");
+        let grew = ExactRead {
+            inner: &b"abcde"[..],
+            remaining: 4,
+        };
+        let err = read_all(&mut { grew }).unwrap_err();
+        assert!(err.to_string().contains("grew"), "{err}");
+        let shrank = ExactRead {
+            inner: &b"ab"[..],
+            remaining: 4,
+        };
+        let err = read_all(&mut { shrank }).unwrap_err();
+        assert!(err.to_string().contains("shrank"), "{err}");
+    }
+
+    #[test]
+    fn a_bare_name_has_the_current_directory_as_its_parent() {
+        assert_eq!(parent_or_cwd(Path::new("out")), Some(Path::new(".")));
+        assert_eq!(parent_or_cwd(Path::new("a/out")), Some(Path::new("a")));
+        assert_eq!(parent_or_cwd(Path::new("/")), None);
+    }
 }
