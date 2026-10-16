@@ -162,6 +162,8 @@ pub struct Grabber<D, E> {
     /// A key snapshot was just taken: the rest of the batch being processed
     /// predates it and is discarded.
     cut: bool,
+    /// Something was written to the re-emitter since its last report.
+    dirty: bool,
     keys: Interceptor,
 }
 
@@ -178,6 +180,7 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
             dropping: false,
             waiting: false,
             cut: false,
+            dirty: false,
             keys: Interceptor::new(),
         }
     }
@@ -255,12 +258,7 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
         if !self.grabbed {
             // Waiting for a quiet keyboard, ungrabbed: the compositor reads
             // these events itself. Each report may be the last key going up.
-            if self.waiting
-                && self.wanted
-                && self.retry.is_none()
-                && kind == EV_SYN
-                && code == SYN_REPORT
-            {
+            if self.waiting && self.wanted && kind == EV_SYN && code == SYN_REPORT {
                 self.try_grab(Instant::now())?;
             }
             return Ok(None);
@@ -281,7 +279,7 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
         }
         match kind {
             // Report frames keep the re-emitted stream well formed.
-            EV_SYN => self.out.emit(kind, code, value).map(|()| None),
+            EV_SYN => self.put(kind, code, value).map(|()| None),
             EV_KEY => {
                 let step = self.keys.key(resolver, code, value);
                 if step.orphan {
@@ -294,7 +292,7 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
                     );
                 }
                 if step.emit {
-                    self.out.emit(kind, code, value)?;
+                    self.put(kind, code, value)?;
                 }
                 Ok(step.fire)
             }
@@ -332,10 +330,23 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
     /// that device's state). So: no key down before the grab, and none
     /// after it once queued events are discarded; otherwise drop the grab
     /// and wait, ungrabbed, for a report with nothing held.
+    ///
+    /// Known limits, inherent to taking a grab from outside the compositor
+    /// (README "Known limits"); both happen only at acquisition, at startup
+    /// or switch-to, with keys in motion:
+    /// - a key pressed before the grab and released inside the
+    ///   check–grab–drain window stays down in the compositor: the release
+    ///   is consumed under the grab, and EVIOCGRAB has no way to hand it
+    ///   back on the original device;
+    /// - while waiting for a quiet keyboard inputd holds no grab, so user
+    ///   keys pressed meanwhile reach apps unclassified.
+    ///
+    /// Neither can be closed from here. They close where the compositor
+    /// enforces the user keys itself (compd's user-key layer).
     fn try_grab(&mut self, now: Instant) -> io::Result<()> {
         let before = self.device.key_state()?;
         if before.any_down() {
-            self.wait(&before);
+            self.wait(&before, now);
             return Ok(());
         }
         match self.device.grab(true) {
@@ -375,7 +386,7 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
         if after.any_down() {
             // A key went down between the check and the grab.
             self.device.grab(false)?;
-            self.wait(&after);
+            self.wait(&after, now);
             return Ok(());
         }
         self.grabbed = true;
@@ -387,13 +398,38 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
         Ok(())
     }
 
-    fn wait(&mut self, state: &KeyState) {
+    /// Wait, ungrabbed, for a quiet keyboard. Each report from the device
+    /// triggers another attempt, and so does a bounded deadline on the
+    /// grab-retry schedule (doubling to the cap): another grab holder can
+    /// take the last release and the report with it, and inputd must not
+    /// wait for a report that never comes.
+    fn wait(&mut self, state: &KeyState, now: Instant) {
         if !self.waiting {
             tracing::info!(held = ?state.down_codes(), "keys held; the grab waits for the keyboard to be quiet");
         }
         self.waiting = true;
-        // The next attempt is driven by the device's reports, not a timer.
-        self.retry = None;
+        let wait = match self.retry {
+            None => GRAB_RETRY_FIRST,
+            Some((_, last)) => (last * 2).min(GRAB_RETRY_CAP),
+        };
+        self.retry = Some((now + wait, wait));
+    }
+
+    /// Write one event to the re-emitter, tracking whether anything is
+    /// waiting for a report.
+    fn put(&mut self, kind: u16, code: u16, value: i32) -> io::Result<()> {
+        self.out.emit(kind, code, value)?;
+        self.dirty = !(kind == EV_SYN && code == SYN_REPORT);
+        Ok(())
+    }
+
+    /// End the re-emitted frame if anything was written since the last
+    /// report, so no event is left buffered in the re-emitter.
+    fn flush(&mut self) -> io::Result<()> {
+        if self.dirty {
+            self.put(EV_SYN, SYN_REPORT, 0)?;
+        }
+        Ok(())
     }
 
     /// After dropped events: release on the re-emitter every key latched
@@ -405,11 +441,12 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
         self.cut = true;
         let released = self.keys.resync(&state.down_codes(), state.modifiers());
         for &code in &released {
-            self.out.emit(EV_KEY, code, 0)?;
+            self.put(EV_KEY, code, 0)?;
         }
-        if !released.is_empty() {
-            self.out.emit(EV_SYN, SYN_REPORT, 0)?;
-        }
+        // Flush whatever was written since the last report, not only these
+        // releases: the overflow may have eaten the report that ended a
+        // frame already re-emitted.
+        self.flush()?;
         tracing::warn!(
             released = released.len(),
             "input events were dropped; key state re-read from the device"
@@ -425,11 +462,11 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
         let mut written = Ok(());
         for &code in &held {
             if written.is_ok() {
-                written = self.out.emit(EV_KEY, code, 0);
+                written = self.put(EV_KEY, code, 0);
             }
         }
-        if written.is_ok() && !held.is_empty() {
-            written = self.out.emit(EV_SYN, SYN_REPORT, 0);
+        if written.is_ok() {
+            written = self.flush();
         }
         self.grabbed = false;
         self.dropping = false;
@@ -722,7 +759,11 @@ mod tests {
         rig.grabber.console(Some(1), rig.now).unwrap();
         assert!(!rig.grabber.is_grabbed());
         assert_eq!(rig.take_log(), ["keys"], "checked, never grabbed");
-        assert_eq!(rig.grabber.deadline(), None, "no timer: reports drive it");
+        assert_eq!(
+            rig.grabber.deadline(),
+            Some(rig.now + GRAB_RETRY_FIRST),
+            "a bounded deadline backs the reports up"
+        );
         // Events while waiting are the compositor's.
         rig.key(59, 0).key(KEY_LEFTALT, 0).key(KEY_LEFTCTRL, 0);
         rig.grabber.device_mut().held = KeyState::NONE;
@@ -767,6 +808,78 @@ mod tests {
         syn(&mut rig, SYN_REPORT);
         assert!(!rig.grabber.is_grabbed(), "VT4 is active: no grab");
         assert!(rig.take_log().is_empty(), "not even a check");
+        assert_eq!(rig.grabber.deadline(), None, "the wait's deadline went too");
+        rig.grabber.tick(rig.now + GRAB_RETRY_CAP).unwrap();
+        assert!(rig.take_log().is_empty());
+    }
+
+    #[test]
+    fn a_wait_is_retried_on_a_bounded_deadline_without_reports() {
+        // Another holder owns the grab while A is down, takes A's release
+        // and its report, then ungrabs: inputd sees no report at all.
+        let mut rig = Rig::new(Some(vec![1]), 0);
+        rig.grabber.device_mut().held = KeyState::of(&[KEY_A]);
+        let t0 = rig.now;
+        rig.grabber.console(Some(1), t0).unwrap();
+        // While A stays down the deadline backs off to the cap, never
+        // faster: a held key is no busy loop.
+        let mut waits = Vec::new();
+        let mut at = t0;
+        for _ in 0..8 {
+            let due = rig.grabber.deadline().expect("a deadline while waiting");
+            waits.push((due - at).as_millis());
+            rig.grabber.tick(due - Duration::from_millis(1)).unwrap();
+            at = due;
+            rig.grabber.tick(due).unwrap();
+        }
+        assert_eq!(waits, [50, 100, 200, 400, 800, 1600, 2000, 2000]);
+        assert!(!rig.grabber.is_grabbed());
+        // The holder took the release; the next deadline finds it quiet.
+        rig.grabber.device_mut().held = KeyState::NONE;
+        rig.take_log();
+        let due = rig.grabber.deadline().unwrap();
+        rig.grabber.tick(due).unwrap();
+        assert!(rig.grabber.is_grabbed());
+        assert_eq!(rig.take_log(), ["keys", "grab 1", "drain", "keys"]);
+        assert_eq!(rig.grabber.deadline(), None);
+    }
+
+    #[test]
+    fn a_recovery_flushes_a_frame_the_overflow_cut_short() {
+        // A's release is read, then the overflow replaces the rest of its
+        // frame, report included. The release goes out and must be flushed
+        // even though recovery has nothing of its own to release.
+        let mut rig = Rig::new(None, 0);
+        rig.grabber.start(rig.now).unwrap();
+        batch(&mut rig, &[(EV_KEY, KEY_A, 1), (EV_SYN, SYN_REPORT, 0)]);
+        rig.take_log();
+        batch(
+            &mut rig,
+            &[
+                (EV_KEY, KEY_A, 0),
+                (EV_SYN, SYN_DROPPED, 0),
+                (EV_SYN, SYN_REPORT, 0),
+            ],
+        );
+        assert_eq!(rig.take_log(), ["emit 1 30 0", "keys", "emit 0 0 0"]);
+    }
+
+    #[test]
+    fn a_switch_away_flushes_any_unreported_write() {
+        let mut rig = Rig::new(Some(vec![1]), 0);
+        rig.grabber.console(Some(1), rig.now).unwrap();
+        // A's release is out but its report has not arrived yet.
+        rig.key(KEY_A, 1);
+        syn(&mut rig, SYN_REPORT);
+        rig.key(KEY_A, 0);
+        rig.take_log();
+        rig.grabber.console(Some(4), rig.now).unwrap();
+        assert_eq!(rig.take_log(), ["emit 0 0 0", "grab 0"]);
+        // With nothing outstanding, a switch-away writes no empty frame.
+        rig.grabber.console(Some(1), rig.now).unwrap();
+        rig.take_log();
+        rig.grabber.console(Some(4), rig.now).unwrap();
+        assert_eq!(rig.take_log(), ["grab 0"]);
     }
 
     #[test]
@@ -911,10 +1024,12 @@ mod tests {
             ["keys", "emit 1 30 0", "emit 1 97 0", "emit 0 0 0"],
             "the state is re-read and the lost releases are sent"
         );
-        // Right Ctrl is no longer counted, Left Shift is: Left Shift + →
-        // passes, and after Left Shift goes up a bare F5 is swallowed.
+        // Right Ctrl is no longer counted, Left Shift is, but it is
+        // quarantined: the apps never saw its press, so Left Shift + → is
+        // held back rather than sent as a bare →. After Left Shift goes up
+        // a bare F5 is swallowed.
         rig.key(KEY_RIGHT, 1).key(KEY_RIGHT, 0);
-        assert_eq!(rig.take_log(), ["emit 1 106 1", "emit 1 106 0"]);
+        assert!(rig.take_log().is_empty(), "→ went out without its Shift");
         rig.key(KEY_LEFTSHIFT, 0).key(KEY_F5, 1).key(KEY_F5, 0);
         assert!(rig.take_log().is_empty(), "bare F5 leaked after resync");
         // And the stream resumes normally.

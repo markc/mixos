@@ -66,6 +66,22 @@ at once and nothing is polled on a timer. The re-emitter is made once, at
 start, and kept: a compositor in a container cannot see an input device that
 appears after it started.
 
+## Known limits
+
+Both happen only while inputd takes the grab (at startup or on switching
+to its VT) with keys in motion, and neither can be closed from inputd. They
+close where the compositor enforces the user keys itself: compd's user-key
+layer.
+
+- **A key can stay down in the compositor.** If a key is pressed before the
+  grab and released in the brief window while inputd checks, grabs and
+  discards queued events, the release is consumed under the grab. The
+  compositor saw the press on the original keyboard and never sees its
+  release; `EVIOCGRAB` offers no way to hand it back on that device.
+- **User keys pass while inputd waits.** While a key is held at switch-to,
+  inputd is not grabbed, so a user key pressed in that time reaches the
+  apps unclassified.
+
 ## Running it
 
 | flag | what it does |

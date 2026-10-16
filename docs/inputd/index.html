@@ -220,6 +220,7 @@
                         <a href="#the-user-keys">The user keys</a>
                         <a href="#how-a-key-is-decided">How a key is decided</a>
                         <a href="#grab-and-vts">Grab and VTs</a>
+                        <a href="#known-limits">Known limits</a>
                         <a href="#running-it">Running it</a>
                         <a href="#the-keymap-file">The keymap file</a>
                         <a href="#verbs">Verbs</a>
@@ -300,6 +301,21 @@ still held until it is released.</li>
 at once and nothing is polled on a timer. The re-emitter is made once, at
 start, and kept: a compositor in a container cannot see an input device that
 appears after it started.</p>
+<h2 id="known-limits">Known limits</h2>
+<p>Both happen only while inputd takes the grab (at startup or on switching
+to its VT) with keys in motion, and neither can be closed from inputd. They
+close where the compositor enforces the user keys itself: compd's user-key
+layer.</p>
+<ul>
+<li><strong>A key can stay down in the compositor.</strong> If a key is pressed before the
+grab and released in the brief window while inputd checks, grabs and
+discards queued events, the release is consumed under the grab. The
+compositor saw the press on the original keyboard and never sees its
+release; <code>EVIOCGRAB</code> offers no way to hand it back on that device.</li>
+<li><strong>User keys pass while inputd waits.</strong> While a key is held at switch-to,
+inputd is not grabbed, so a user key pressed in that time reaches the
+apps unclassified.</li>
+</ul>
 <h2 id="running-it">Running it</h2>
 <table><thead><tr><th>flag</th><th>what it does</th></tr></thead><tbody>
 <tr><td>(none)</td><td>the Bus service only; no keyboard</td></tr>

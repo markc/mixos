@@ -27,7 +27,13 @@ loads unchanged.
   the compositor; inputd waits ungrabbed until the keyboard is quiet.
 - **Dropped events (`SYN_DROPPED`) are recovered:** the key state is
   re-read, every key passed on is released, and keys still held are
-  swallowed until their release.
+  swallowed until their release. While a modifier is held that way, keys
+  that would go to the apps are held back too, so none goes out without
+  its modifier.
+- A frame written to the re-emitter is always ended with a report, on
+  recovery and on switch-away, so no release is left buffered.
+- While waiting for a quiet keyboard, inputd retries on the grab backoff
+  schedule (to 2 s) as well as at each report.
 - `input.mode` refuses a malformed body; only an empty body or `{}`
   toggles.
 - The re-emitter is `inputd virtual keyboard`, created once at start; the

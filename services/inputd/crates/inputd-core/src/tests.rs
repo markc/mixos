@@ -665,6 +665,28 @@ fn a_resync_releases_and_quarantines_keys_still_down() {
 }
 
 #[test]
+fn a_quarantined_modifier_holds_back_the_app_keys_that_depend_on_it() {
+    // After an overflow, Left Shift is down but quarantined: the apps never
+    // saw its press. Shift+A must not go out as a bare A.
+    let mut run = Run::new(personal());
+    run.keys.resync(&[KEY_LEFTSHIFT], mods(&["lshift"]));
+    run.feed(KEY_A, 1).feed(KEY_A, 2).feed(KEY_A, 0);
+    assert!(run.emitted.is_empty(), "leaked {:?}", run.emitted);
+    // Classification still sees the Shift: F5 is Shift+F5, the apps'
+    // chord, so it is held back like A rather than swallowed as a bare F5.
+    run.feed(KEY_F5, 1).feed(KEY_F5, 0);
+    assert!(run.emitted.is_empty());
+    // A modifier pressed now is emitted as usual; the keys after it are
+    // still held back while Left Shift is quarantined.
+    run.feed(KEY_LEFTCTRL, 1).feed(KEY_A, 1).feed(KEY_A, 0).feed(KEY_LEFTCTRL, 0);
+    assert_eq!(run.emitted, [(KEY_LEFTCTRL, 1), (KEY_LEFTCTRL, 0)]);
+    // Once Left Shift is released the quarantine ends.
+    run.feed(KEY_LEFTSHIFT, 0).feed(KEY_A, 1).feed(KEY_A, 0);
+    assert_eq!(run.emitted[2..], [(KEY_A, 1), (KEY_A, 0)]);
+    run.assert_balanced();
+}
+
+#[test]
 fn an_orphan_is_flagged_and_a_quarantined_key_is_not() {
     let mut keys = Interceptor::new();
     let resolver = Resolver::new(default_keymap());

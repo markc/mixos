@@ -6622,6 +6622,22 @@ at once and nothing is polled on a timer. The re-emitter is made once, at
 start, and kept: a compositor in a container cannot see an input device that
 appears after it started.
 
+## Known limits
+
+Both happen only while inputd takes the grab (at startup or on switching
+to its VT) with keys in motion, and neither can be closed from inputd. They
+close where the compositor enforces the user keys itself: compd's user-key
+layer.
+
+- **A key can stay down in the compositor.** If a key is pressed before the
+  grab and released in the brief window while inputd checks, grabs and
+  discards queued events, the release is consumed under the grab. The
+  compositor saw the press on the original keyboard and never sees its
+  release; `EVIOCGRAB` offers no way to hand it back on that device.
+- **User keys pass while inputd waits.** While a key is held at switch-to,
+  inputd is not grabbed, so a user key pressed in that time reaches the
+  apps unclassified.
+
 ## Running it
 
 | flag | what it does |
@@ -30329,7 +30345,13 @@ loads unchanged.
   the compositor; inputd waits ungrabbed until the keyboard is quiet.
 - **Dropped events (`SYN_DROPPED`) are recovered:** the key state is
   re-read, every key passed on is released, and keys still held are
-  swallowed until their release.
+  swallowed until their release. While a modifier is held that way, keys
+  that would go to the apps are held back too, so none goes out without
+  its modifier.
+- A frame written to the re-emitter is always ended with a report, on
+  recovery and on switch-away, so no release is left buffered.
+- While waiting for a quiet keyboard, inputd retries on the grab backoff
+  schedule (to 2 s) as well as at each report.
 - `input.mode` refuses a malformed body; only an empty body or `{}`
   toggles.
 - The re-emitter is `inputd virtual keyboard`, created once at start; the
