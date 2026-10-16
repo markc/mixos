@@ -351,8 +351,82 @@ fn stmt_bodies(kind: &StmtKind) -> Vec<&[Stmt]> {
 /// vars, catch vars, parse captures, exports) at any depth, including
 /// inside nested function definitions when `into_functions` is true.
 fn collect_bound_names(stmts: &[Stmt], into_functions: bool, out: &mut HashSet<String>) {
+    collect_bindings(stmts, into_functions, false, out);
+}
+
+/// The names that may hold a function value: the evaluator resolves a call
+/// through a callable binding before a named function, so only these can
+/// shadow one. `$values = values($m)` binds a list and shadows nothing.
+fn collect_callable_bindings(stmts: &[Stmt], out: &mut HashSet<String>) {
+    collect_bindings(stmts, true, true, out);
+}
+
+/// Whether a builtin's declared return can be a function value.
+fn shape_may_be_function(shape: &TypeShape) -> bool {
+    match shape {
+        TypeShape::Any | TypeShape::Function => true,
+        TypeShape::AnyOf(shapes) => shapes.iter().any(shape_may_be_function),
+        _ => false,
+    }
+}
+
+/// Whether evaluating `expr` may produce a function value. Literals,
+/// arithmetic, comparison, concatenation, string building and pure builtins
+/// whose declared return is not `any` or a function never do (`first($fns)`
+/// may). `and`, `or`, `??` and `|` return an operand, so they may when an
+/// operand may. Everything else may.
+fn may_be_callable(expr: &Expr) -> bool {
+    match expr {
+        Expr::NumberLiteral(_)
+        | Expr::StringLiteral(_)
+        | Expr::EscapedQuoteStringLiteral(_)
+        | Expr::BoolLiteral(_)
+        | Expr::NilLiteral
+        | Expr::InterpolatedString(_)
+        | Expr::Heredoc(_)
+        | Expr::ListLiteral(_)
+        | Expr::MapLiteral(_)
+        | Expr::UnaryOp { .. } => false,
+        Expr::BinaryOp { op, left, right } => match op {
+            BinOp::And | BinOp::Or | BinOp::NilCoalesce | BinOp::Pipe => {
+                may_be_callable(left) || may_be_callable(right)
+            }
+            _ => false,
+        },
+        Expr::FunctionCall { name, .. } => {
+            !is_pure_builtin(name)
+                || builtins::builtin_info_of(name)
+                    .is_none_or(|info| shape_may_be_function(&info.contract.returns))
+        }
+        _ => true,
+    }
+}
+
+/// `callable_only` keeps only the bindings that may hold a function value:
+/// loop variables and assignments whose value [`may_be_callable`]. Field,
+/// index and path writes, catch variables and parse targets never rebind a
+/// name to a function.
+fn collect_bindings(
+    stmts: &[Stmt],
+    into_functions: bool,
+    callable_only: bool,
+    out: &mut HashSet<String>,
+) {
     for stmt in stmts {
         match &stmt.kind {
+            StmtKind::Assignment { name, value } | StmtKind::Export { name, value }
+                if callable_only =>
+            {
+                if may_be_callable(value) {
+                    out.insert(name.clone());
+                }
+            }
+            StmtKind::FieldAssignment { .. }
+            | StmtKind::IndexAssignment { .. }
+            | StmtKind::PathAssignment { .. }
+            | StmtKind::TryCatch { catch: Some(_), .. }
+            | StmtKind::Parse { .. }
+                if callable_only => {}
             StmtKind::Assignment { name, .. }
             | StmtKind::Export { name, .. }
             | StmtKind::FieldAssignment { object: name, .. }
@@ -394,7 +468,7 @@ fn collect_bound_names(stmts: &[Stmt], into_functions: bool, out: &mut HashSet<S
             if matches!(stmt.kind, StmtKind::FunctionDef { .. }) && !into_functions {
                 continue;
             }
-            collect_bound_names(body, into_functions, out);
+            collect_bindings(body, into_functions, callable_only, out);
         }
         // A top-level `$x = if cond then $y = 1 ... end` binds $x AND
         // (in the taken branch) $y — if-branches run in the CURRENT
@@ -405,7 +479,7 @@ fn collect_bound_names(stmts: &[Stmt], into_functions: bool, out: &mut HashSet<S
         if into_functions || !matches!(stmt.kind, StmtKind::FunctionDef { .. }) {
             walk_stmt_exprs(stmt, &mut |expr| {
                 for_each_embedded_stmt_list(expr, false, &mut |body| {
-                    collect_bound_names(body, into_functions, out)
+                    collect_bindings(body, into_functions, callable_only, out)
                 });
             });
         }
@@ -2565,7 +2639,10 @@ fn on_path(head: &str) -> bool {
 /// handler body runs later, when a message arrives, so it is checked as a
 /// block of its own.
 fn check_send_rc_reads(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis, sets: &StatusSets) {
-    let cx = StatusCx { sets };
+    let cx = StatusCx {
+        sets,
+        in_address: false,
+    };
     // rest[i] is the flow of stmts[i..], so the code after stmts[idx] is rest[idx + 1].
     let mut rest = vec![StatusFlow::PASS; stmts.len() + 1];
     for idx in (0..stmts.len()).rev() {
@@ -2604,9 +2681,10 @@ struct StatusSets {
     /// an uncaught error) in the body or a parameter default. A caller's path
     /// through such a call ends there, so reads after it cannot discharge a send.
     halting: HashSet<String>,
-    /// Every name that may hold a callable binding: a variable anywhere, or a
-    /// parameter of any function. The evaluator resolves a call to one of these
-    /// names first, so a call through one is a barrier.
+    /// Every name that may hold a callable binding: a parameter of any
+    /// function, a loop variable, or a variable assigned a value that may be a
+    /// function. The evaluator resolves a call to one of these names first, so
+    /// a call through one is a barrier.
     bound: HashSet<String>,
 }
 
@@ -2615,7 +2693,7 @@ impl StatusSets {
         let mut defs: Vec<(&str, &[Param], &FunctionBody)> = Vec::new();
         collect_function_bodies(stmts, &mut defs);
         let mut bound = HashSet::new();
-        collect_bound_names(stmts, true, &mut bound);
+        collect_callable_bindings(stmts, &mut bound);
         collect_param_names(stmts, &mut bound);
         let mut sets = Self {
             defined: defs.iter().map(|(name, _, _)| name.to_string()).collect(),
@@ -2628,7 +2706,11 @@ impl StatusSets {
         loop {
             let mut grew = false;
             for &(name, params, body) in &defs {
-                let flow = function_def_flow(StatusCx { sets: &sets }, params, body);
+                let cx = StatusCx {
+                    sets: &sets,
+                    in_address: false,
+                };
+                let flow = function_def_flow(cx, params, body);
                 if flow.wrote && sets.overwriting.insert(name.to_string()) {
                     grew = true;
                 }
@@ -2682,6 +2764,10 @@ fn collect_function_bodies<'a>(
 #[derive(Clone, Copy)]
 struct StatusCx<'a> {
     sets: &'a StatusSets,
+    /// Inside an `address` body every call that is not a user function is a
+    /// bus send, builtins included, and a user function's calls inherit the
+    /// address, so every call there writes the status.
+    in_address: bool,
 }
 
 /// How the status (`$rc`, `$result`, `$reply`) fares along the paths through
@@ -3041,7 +3127,7 @@ fn status_flow_send<'a>(
 /// A user function's halt (`exit`, `panic`, `die`, uncaught error) on some path
 /// ends the caller's path there too, so the call carries an exit on that path.
 fn call_flow(cx: StatusCx, name: &str) -> StatusFlow {
-    if cx.sets.bound.contains(name) {
+    if cx.in_address || cx.sets.bound.contains(name) {
         return StatusFlow::SEND;
     }
     let writes = if cx.sets.overwriting.contains(name) {
@@ -3269,10 +3355,14 @@ fn status_flow_stmt(cx: StatusCx, stmt: &Stmt) -> StatusFlow {
             command,
             args,
         } => status_flow_send(cx, target, command, args),
-        // The address body runs its statements in order. Unknown calls in it
-        // are barriers, like any other unknown call.
+        // The address body runs its statements in order, and every call in it
+        // is a send: pure builtins too (see `StatusCx::in_address`).
         StmtKind::Address { target, body } => {
-            status_flow_expr(cx, target).then(status_flow_stmts(cx, body))
+            let inner = StatusCx {
+                in_address: true,
+                ..cx
+            };
+            status_flow_expr(cx, target).then(status_flow_stmts(inner, body))
         }
         // Fire-and-forget bus delivery. It writes no `$rc` / `$result` (see
         // exec_emit), so only its operands can write.

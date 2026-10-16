@@ -1412,6 +1412,30 @@ fn send_status_for_each_binder_named_as_a_status_overwrites() {
 }
 
 #[test]
+fn send_status_pure_builtin_in_an_address_block_overwrites() {
+    // In an address block a builtin call is also sent to the address.
+    let src = "send svc ping\naddress \"other\"\nlen(\"abc\")\nend\nprint($rc)\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(1)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_variable_named_like_a_builtin_holding_data_is_no_barrier() {
+    // `$values` holds a list, so `values(...)` still calls the pure builtin.
+    let src = "$m = {a: 1}\nsend svc ping\n$values = values($m)\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(!got.contains(&Some(2)), "got: {got:?}");
+}
+
+#[test]
+fn send_status_variable_named_like_a_builtin_holding_a_lambda_is_a_barrier() {
+    // A callable binding resolves before the builtin, so `upper(...)` may send.
+    let src = "$upper = fn($s) = $s\nsend svc ping\n$x = upper(\"a\")\nif $rc != 0 then exit(1) end\n";
+    let got = w2307_lines(src);
+    assert!(got.contains(&Some(2)), "got: {got:?}");
+}
+
+#[test]
 fn send_status_unknown_call_in_an_address_block_overwrites() {
     // Inside an address block an unknown call is sent to the address, which
     // sets $rc. The read after the block checks that call, not the first send.
