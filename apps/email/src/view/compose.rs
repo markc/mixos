@@ -258,8 +258,11 @@ fn dropdown(ui: &Ui, field: &Response, suggest: &Suggest) -> Option<usize> {
         .order(egui::Order::Tooltip)
         .fixed_pos(field.rect.left_bottom() + egui::vec2(0.0, 2.0))
         .show(ui.ctx(), |ui| {
-            egui::Frame::popup(ui.style()).show(ui, |ui| {
-                ui.set_width(field.rect.width());
+            let frame = egui::Frame::popup(ui.style());
+            // The list as wide as the field, frame and all.
+            let width = field.rect.width() - frame.total_margin().sum().x;
+            frame.show(ui, |ui| {
+                ui.set_width(width);
                 for (index, item) in suggest.items.iter().enumerate() {
                     let job = row(ui, item, &suggest.query);
                     let button = egui::Button::selectable(index == suggest.cursor, job)
