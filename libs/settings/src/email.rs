@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The email app's settings (`email.*`): its JMAP accounts, in tree order,
-//! the default From account, the mail list options and the reader's text
-//! size.
+//! the default From account, the mail list options, the reader's text size
+//! and theme, and the compose options.
 //!
 //! **Nothing here is secret, and nothing secret can be put here.** The
 //! snapshot and summary are retained on the Bus for every client to read, so
@@ -12,8 +12,8 @@
 //! file.
 //!
 //! Like [`crate::terminal`], the group is omitted from the serialised form at
-//! its defaults (no accounts, no default, the default mail and reader
-//! options), so a
+//! its defaults (no accounts, no default, the default mail, reader and
+//! compose options), so a
 //! profile written before it re-serialises byte for byte and its seals still
 //! verify. It does not touch the resolved design.
 use crate::model::{Diagnostic, Snapshot, Summary, deserialize_integer_u32, integer_u32};
@@ -60,6 +60,8 @@ pub struct Email {
     pub mail: MailOptions,
     #[serde(skip_serializing_if = "is_default")]
     pub reader: ReaderOptions,
+    #[serde(skip_serializing_if = "is_default")]
+    pub compose: ComposeOptions,
 }
 
 impl Email {
@@ -162,6 +164,8 @@ pub struct ReaderOptions {
     /// [`READER_FONT_MAX`] in steps of [`READER_FONT_STEP`].
     #[serde(skip_serializing_if = "is_default_reader_font")]
     pub font_size: f64,
+    #[serde(skip_serializing_if = "is_default")]
+    pub theme: ReaderTheme,
 }
 fn is_default_reader_font(size: &f64) -> bool {
     *size == READER_FONT_DEFAULT
@@ -170,8 +174,52 @@ impl Default for ReaderOptions {
     fn default() -> Self {
         Self {
             font_size: READER_FONT_DEFAULT,
+            theme: ReaderTheme::default(),
         }
     }
+}
+
+/// The message body's colours: the session theme's (`auto`), or always light
+/// or dark whatever the session uses.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReaderTheme {
+    #[default]
+    Auto,
+    Light,
+    Dark,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ComposeOptions {
+    /// Quote the original message in a reply.
+    #[serde(skip_serializing_if = "is_true")]
+    pub quote_on_reply: bool,
+    /// Where a reply's own text goes relative to the quote.
+    #[serde(skip_serializing_if = "is_default")]
+    pub reply_position: ReplyPosition,
+    /// Save drafts as they are written.
+    #[serde(skip_serializing_if = "is_true")]
+    pub autosave: bool,
+}
+impl Default for ComposeOptions {
+    fn default() -> Self {
+        Self {
+            quote_on_reply: true,
+            reply_position: ReplyPosition::default(),
+            autosave: true,
+        }
+    }
+}
+
+/// A reply's text above the quote (top posting) or below it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReplyPosition {
+    #[default]
+    Above,
+    Below,
 }
 
 /// Whether `size` is a reader text size this group takes: finite, in range
@@ -396,7 +444,11 @@ pub fn describe() -> Value {
         "email.mail.page_size": {"type":"integer", "minimum":PAGE_SIZE_MIN, "maximum":PAGE_SIZE_MAX, "default":100},
         "email.mail.mark_read_on_open": {"type":"boolean", "default":true},
         "email.mail.confirm_delete": {"type":"boolean", "default":true},
-        "email.reader.font_size": {"type":"number", "minimum":READER_FONT_MIN, "maximum":READER_FONT_MAX, "step":READER_FONT_STEP, "default":READER_FONT_DEFAULT, "unit":"pt"}
+        "email.reader.font_size": {"type":"number", "minimum":READER_FONT_MIN, "maximum":READER_FONT_MAX, "step":READER_FONT_STEP, "default":READER_FONT_DEFAULT, "unit":"pt"},
+        "email.reader.theme": {"type":"string", "enum":["auto","light","dark"], "default":"auto", "auto":"the session theme"},
+        "email.compose.quote_on_reply": {"type":"boolean", "default":true},
+        "email.compose.reply_position": {"type":"string", "enum":["above","below"], "default":"above", "of":"the reply's text, relative to the quote"},
+        "email.compose.autosave": {"type":"boolean", "default":true}
     })
 }
 
@@ -419,6 +471,7 @@ pub(crate) fn set(
     value: Option<Value>,
 ) -> Result<(), Diagnostic> {
     let defaults = MailOptions::default();
+    let compose = ComposeOptions::default();
     match field {
         [] => {
             *email = value
@@ -440,6 +493,20 @@ pub(crate) fn set(
         }
         ["reader", "font_size"] => {
             email.reader.font_size = value.map_or(Ok(READER_FONT_DEFAULT), |v| typed(path, v))?
+        }
+        ["reader", "theme"] => {
+            email.reader.theme = value.map_or(Ok(ReaderTheme::default()), |v| typed(path, v))?
+        }
+        ["compose", "quote_on_reply"] => {
+            email.compose.quote_on_reply =
+                value.map_or(Ok(compose.quote_on_reply), |v| typed(path, v))?
+        }
+        ["compose", "reply_position"] => {
+            email.compose.reply_position =
+                value.map_or(Ok(compose.reply_position), |v| typed(path, v))?
+        }
+        ["compose", "autosave"] => {
+            email.compose.autosave = value.map_or(Ok(compose.autosave), |v| typed(path, v))?
         }
         _ => return Err(error(path, "Unknown field or scope")),
     }
@@ -496,11 +563,23 @@ mod tests {
             ),
             (100, true, true)
         );
-        assert_eq!(e.reader.font_size, 15.0);
+        assert_eq!(
+            (e.reader.font_size, e.reader.theme),
+            (15.0, ReaderTheme::Auto)
+        );
+        assert_eq!(
+            (
+                e.compose.quote_on_reply,
+                e.compose.reply_position,
+                e.compose.autosave
+            ),
+            (true, ReplyPosition::Above, true)
+        );
         validate(&e).unwrap();
         let full = json!({"accounts":[], "default_account":null,
             "mail":{"page_size":100, "mark_read_on_open":true, "confirm_delete":true},
-            "reader":{"font_size":15.0}});
+            "reader":{"font_size":15.0, "theme":"auto"},
+            "compose":{"quote_on_reply":true, "reply_position":"above", "autosave":true}});
         let read: Email = serde_json::from_value(full).unwrap();
         assert_eq!(read, e);
         assert_eq!(serde_json::to_value(&read).unwrap(), json!({}));
@@ -523,17 +602,25 @@ mod tests {
                 confirm_delete: false,
                 ..Default::default()
             },
-            reader: ReaderOptions { font_size: 18.5 },
+            reader: ReaderOptions {
+                font_size: 18.5,
+                theme: ReaderTheme::Dark,
+            },
+            compose: ComposeOptions {
+                reply_position: ReplyPosition::Below,
+                autosave: false,
+                ..Default::default()
+            },
         };
         let text = serde_json::to_string(&changed).unwrap();
         assert_eq!(
             text,
-            r#"{"accounts":[{"id":"acct-1","name":"Gold Coast","url":"https://mail.example.org","email":"admin@example.org","ca_path":null,"enabled":true,"signature":""}],"default_account":"acct-1","mail":{"page_size":50,"confirm_delete":false},"reader":{"font_size":18.5}}"#
+            r#"{"accounts":[{"id":"acct-1","name":"Gold Coast","url":"https://mail.example.org","email":"admin@example.org","ca_path":null,"enabled":true,"signature":""}],"default_account":"acct-1","mail":{"page_size":50,"confirm_delete":false},"reader":{"font_size":18.5,"theme":"dark"},"compose":{"reply_position":"below","autosave":false}}"#
         );
         assert_eq!(serde_json::from_str::<Email>(&text).unwrap(), changed);
         assert_eq!(
             strict::from_str::<Email>(
-                r#"{accounts: [{id: "acct-1", name: "Gold Coast", url: "https://mail.example.org", email: "admin@example.org"}], default_account: "acct-1", mail: {page_size: 50.0, confirm_delete: false}, reader: {font_size: 18.5}}"#
+                r#"{accounts: [{id: "acct-1", name: "Gold Coast", url: "https://mail.example.org", email: "admin@example.org"}], default_account: "acct-1", mail: {page_size: 50.0, confirm_delete: false}, reader: {font_size: 18.5, theme: "dark"}, compose: {reply_position: "below", autosave: false}}"#
             )
             .unwrap(),
             changed
@@ -550,6 +637,10 @@ mod tests {
             "email.mail.mark_read_on_open",
             "email.mail.confirm_delete",
             "email.reader.font_size",
+            "email.reader.theme",
+            "email.compose.quote_on_reply",
+            "email.compose.reply_position",
+            "email.compose.autosave",
         ];
         let reset: Vec<String> = paths.iter().map(|p| (*p).into()).collect();
         assert_eq!(
@@ -646,6 +737,59 @@ mod tests {
     }
 
     #[test]
+    fn reader_theme_and_compose_keys_apply_reset_and_are_omitted_at_defaults() {
+        let base = apply("email.mail.page_size", json!(50)).unwrap();
+        // Each key written alone appears alone; written at its default it
+        // serialises away again.
+        for (path, value, default, shown) in [
+            (
+                "email.reader.theme",
+                json!("light"),
+                json!("auto"),
+                json!({"reader":{"theme":"light"}}),
+            ),
+            (
+                "email.compose.quote_on_reply",
+                json!(false),
+                json!(true),
+                json!({"compose":{"quote_on_reply":false}}),
+            ),
+            (
+                "email.compose.reply_position",
+                json!("below"),
+                json!("above"),
+                json!({"compose":{"reply_position":"below"}}),
+            ),
+            (
+                "email.compose.autosave",
+                json!(false),
+                json!(true),
+                json!({"compose":{"autosave":false}}),
+            ),
+        ] {
+            let set = apply(path, value).unwrap();
+            assert_eq!(serde_json::to_value(&set.email).unwrap(), shown, "{path}");
+            let reset = patch(&set, &BTreeMap::new(), &[path.into()]).unwrap();
+            assert_eq!(reset, Desktop::default(), "{path} reset");
+            let at_default = apply_to(&base, path, default).unwrap();
+            assert_eq!(
+                serde_json::to_value(&at_default.email).unwrap(),
+                json!({"mail":{"page_size":50}}),
+                "{path} at its default"
+            );
+        }
+        let typed = apply("email.compose.reply_position", json!("below")).unwrap();
+        assert_eq!(typed.email.compose.reply_position, ReplyPosition::Below);
+        let typed = apply("email.reader.theme", json!("dark")).unwrap();
+        assert_eq!(typed.email.reader.theme, ReaderTheme::Dark);
+        assert_eq!(
+            crate::digest(&resolve(&typed).unwrap()).unwrap(),
+            crate::digest(&resolve(&Desktop::default()).unwrap()).unwrap(),
+            "the design is untouched"
+        );
+    }
+
+    #[test]
     fn boundaries_are_accepted_and_one_step_outside_refused() {
         for (path, inside, outside) in [
             (
@@ -685,6 +829,26 @@ mod tests {
                     json!("15"),
                     json!(null),
                 ],
+            ),
+            (
+                "email.reader.theme",
+                vec![json!("auto"), json!("light"), json!("dark")],
+                vec![json!("sepia"), json!("Dark"), json!(null), json!(1)],
+            ),
+            (
+                "email.compose.quote_on_reply",
+                vec![json!(true), json!(false)],
+                vec![json!("yes"), json!(null)],
+            ),
+            (
+                "email.compose.reply_position",
+                vec![json!("above"), json!("below")],
+                vec![json!("top"), json!("Above"), json!(null), json!(0)],
+            ),
+            (
+                "email.compose.autosave",
+                vec![json!(true), json!(false)],
+                vec![json!("on"), json!(1)],
             ),
         ] {
             for value in inside {
@@ -874,6 +1038,10 @@ mod tests {
             "email.reader",
             "email.reader.typo",
             "email.reader.font_size.x",
+            "email.reader.theme.x",
+            "email.compose",
+            "email.compose.typo",
+            "email.compose.autosave.x",
         ] {
             assert!(apply(path, json!(1)).is_err(), "{path}");
         }
