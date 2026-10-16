@@ -149,6 +149,22 @@ fn toast_kind_accepts_header_and_node_with_chrome_opt_in() {
 }
 
 #[test]
+fn toast_refuses_edge_and_panel() {
+    for header in [
+        json!({"kind":"toast","edge":"right","w":360,"h":120}),
+        json!({"kind":"toast","panel":"scene-x","w":360,"h":120}),
+    ] {
+        let mut document = doc("root: {widget: \"column\", children: []}");
+        document.window = Some(header.clone());
+        assert!(
+            codes(&document).contains(&"window-dialog-edge".to_string()),
+            "{header}: {:?}",
+            lint(&document)
+        );
+    }
+}
+
+#[test]
 fn dialog_refuses_edge_panel_and_needs_bounded_size() {
     let mut document = doc("root: {widget: \"column\", children: []}");
     for (header, expected) in [

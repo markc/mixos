@@ -1,0 +1,46 @@
+# email: the reserved mail/calendar/contacts client — a pure JMAP client
+# over HTTPS (AGENTS.md §4.1). The `jmap` engine crate holds the protocol;
+# this crate is the egui shell.
+[package]
+name = "email"
+description = "Pure JMAP mail, calendar and contacts reader and composer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "email"
+kind = "app"
+layer = "desktop"
+contract = "public"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+jmap = { path = "crates/jmap" }
+buildinfo.workspace = true
+# The Bus connection: theme-follow topics and single-instance activation.
+bus.workspace = true
+citizen.workspace = true
+chrono = { workspace = true, features = ["clock"] }
+config.workspace = true
+design.workspace = true
+eframe.workspace = true
+egui.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+settings.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "sync", "time", "macros"] }
+toolkit.workspace = true
+
+[dev-dependencies]
+egui_kittest.workspace = true
+tempfile.workspace = true
+
+[build-dependencies]
+buildinfo.workspace = true

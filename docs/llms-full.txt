@@ -708,6 +708,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [editd](../editd/README.md) · [changelog](../editd/changelog.md) | service | unclassified | [`services/editd`](https://github.com/markc/mixos/tree/main/services/editd) | The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery. |
 | [editor](../editor/README.md) | lib | none (library) | [`libs/editor`](https://github.com/markc/mixos/tree/main/libs/editor) | The shared plain-text editor widget for MixOS egui applications, a virtualised monospace view over the headless editing model that works on a local file or a shared buffer. |
 | [editor-model](../editor-model/README.md) | lib | none (library) | [`libs/editor-model`](https://github.com/markc/mixos/tree/main/libs/editor-model) | The headless text-editing model shared by MixOS editors, turning commands and motions into edits and keeping a local mirror of an edit-service buffer in step with the server, plus highlighting and… |
+| [email](../email/README.md) | app | unclassified | [`apps/email`](https://github.com/markc/mixos/tree/main/apps/email) |  |
 | [expr](../expr/README.md) | lib | none (library) | [`libs/expr`](https://github.com/markc/mixos/tree/main/libs/expr) | The pure expression language of Mix Scenes bindings, which compiles an expression, reports the globals it reads and evaluates it over JSON values under size and time limits. |
 | [hostd](../hostd/README.md) · [changelog](../hostd/changelog.md) | service | unclassified | [`services/hostd`](https://github.com/markc/mixos/tree/main/services/hostd) | How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo. |
 | [logging](../logging/README.md) | lib | none (library) | [`libs/logging`](https://github.com/markc/mixos/tree/main/libs/logging) | Shared tracing, sink selection, reload handles and process statistics for MixOS services and the Mix shell. |
@@ -749,6 +750,8 @@ checked separately by the layering gate.
 | [dopus](https://github.com/markc/mixos/blob/main/apps/dopus/Cargo.toml) | dopus | app | desktop | public | 0.1.1 |
 | [dopus-core](https://github.com/markc/mixos/blob/main/apps/dopus/crates/dopus-core/Cargo.toml) | dopus | app | core | none | 0.1.1 |
 | [files](https://github.com/markc/mixos/blob/main/apps/dopus/crates/files/Cargo.toml) | dopus | app | core | none | 0.1.1 |
+| [email](https://github.com/markc/mixos/blob/main/apps/email/Cargo.toml) | email | app | desktop | public | 0.1.1 |
+| [jmap](https://github.com/markc/mixos/blob/main/apps/email/crates/jmap/Cargo.toml) | email | app | core | none | 0.1.1 |
 | [prefs](https://github.com/markc/mixos/blob/main/apps/prefs/Cargo.toml) | prefs | app | desktop | public | 0.1.1 |
 | [preferences](https://github.com/markc/mixos/blob/main/apps/prefs/crates/preferences/Cargo.toml) | prefs | app | core | none | 0.1.1 |
 | [screenshot](https://github.com/markc/mixos/blob/main/apps/screenshot/Cargo.toml) | screenshot | app | desktop | public | 0.1.1 |
@@ -3417,9 +3420,10 @@ Reversibility is replaced by these limits, which apply to both verbs:
 - **Every call is recorded,** as a receipt and in the audit journal. `hostd.undo`
   refuses both verbs.
 
-Open: whether `desk.*` also needs the second signature from an independent
-reviewer that the reboot tier requires. Until that is decided, the grant's
-own rate limit and expiry are the only second check.
+Deferred (Mark, 2026-10-13): the second signature from an independent reviewer
+that the reboot tier requires is not built for `desk.*`. Security gates are
+added once the desktop is ready for daily use, where they are needed. Until
+then, the grant's rate limit and expiry are the only second check.
 
 ---
 
@@ -6074,6 +6078,85 @@ snapshots with `UPDATE_SNAPSHOTS=1` and look at them before committing.
   rows and Home and End stay logical.
 - Mix-family buffers are highlighted by the Mix lexer only when the `mix`
   feature is on and the owner runs the relex (Ced does).
+
+---
+
+<!-- page: https://mixos.dev/email/ (source: https://mixos.dev/email/README.md) -->
+
+# email — the MixOS JMAP mail client
+
+`email` (`dev.mixos.email`) is the reserved MixOS mail client: a **pure
+JMAP client** speaking HTTPS to any RFC 8620/8621-shaped server — the
+mesh's own maild, or anyone else's server. Mail is listed, read, composed
+and sent; calendars and address books are listed and shown.
+
+## Running it
+
+```
+email [--noded-url URL] [--service NAME]
+```
+
+A second launch raises the first window. The first run shows the account
+form:
+
+| Field | What it is |
+|---|---|
+| Server URL | The JMAP server base (`https://…`). maild directly, or a webd vhost that proxies `/jmap`. |
+| Email address | The login; the Basic username at the token exchange. |
+| Password | Spent once per token lifetime; held in the config file (mode 0600) afterwards. |
+| CA bundle path | Optional. A PEM bundle to trust for a server whose certificate is self-issued. |
+
+The account persists in the app's config directory
+(`~/.local/state/mixos/apps/email/config/config.conf.mix`); a malformed
+file loads defaults and is never overwritten.
+
+## What it does
+
+- **Mail** — mailboxes with unread counts; the newest 100 emails per
+  mailbox; read in the reader pane (plain text first, HTML source when
+  there is no plain text); opening an email marks it read; compose (To, Cc,
+  Bcc, Subject, body) and reply, sent through the proven recipe: build the
+  message, upload it, create the Email in Sent, submit. **Sending requires
+  maild:** the create step uses maild's extension of a top-level `blobId` on
+  `Email/set`. A strict RFC 8621 server builds an Email from uploaded MIME
+  with `Email/import` instead, and refuses the send; `Email/import` is
+  future work. Reading, calendars and contacts use standard methods only.
+- **Calendar** — calendars, their events by start, the open event's
+  detail.
+- **Contacts** — address books, contacts with a server-side text filter
+  over name, email and company, the open contact's detail.
+
+## How it talks to the server
+
+One HTTPS session per account. On connect: the password is exchanged for a
+Bearer token (`POST /auth/tokens/issue`) and the Session is discovered
+(`GET /.well-known/jmap`); every method call after that carries the token.
+A server without the token endpoint falls back to Basic auth on every
+request. Requests batch their methodCalls and chain `Email/query` into
+`Email/get` through a ResultReference — one round trip per list.
+
+The engine (`apps/email/crates/jmap`) is ported from the retired Dioxus
+mail client, with its faults fixed: session discovery and URL templates
+instead of hardcoded paths, real pagination, Bcc carried through,
+`In-Reply-To` wrapped exactly once, CR/LF stripped from header inputs
+(header injection), typed method-error handling, and attachment download
+wired (the UI for it is a later slice).
+
+## Keyboard
+
+| Shortcut | Action |
+|---|---|
+| Ctrl+R | Refresh |
+| Ctrl+Q | Quit |
+| Ctrl+N | Compose |
+| Ctrl+Shift+R | Reply |
+| Ctrl+1 / 2 / 3 | Mail / Calendar / Contacts |
+
+## Performance workload
+
+The recorded workload for future profiling: a 10,000-email mailbox — the
+list renders 100 rows from one query+get round trip, and the reader fetches
+one email's bodies on open. Nothing else scales with mailbox size.
 
 ---
 
@@ -30552,6 +30635,7 @@ yet. They are listed on both this page and the server page until they do.
 - [compd](../compd/README.md) (service): The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, verbs, topics and props tree.
 - [dopus](../dopus/README.md) (app): MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads…
 - [editd](../editd/README.md) (service): The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery.
+- [email](../email/README.md) (app)
 - [hostd](../hostd/README.md) (service): How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo.
 - [mix-shell](../mix-shell/README.md) (cli): The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs.
 - [noded](../noded/README.md) (service): The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes.
@@ -30597,6 +30681,7 @@ yet. They are listed on both this page and the desktop page until they do.
 - [compd](../compd/README.md) (service): The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, verbs, topics and props tree.
 - [dopus](../dopus/README.md) (app): MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads…
 - [editd](../editd/README.md) (service): The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery.
+- [email](../email/README.md) (app)
 - [hostd](../hostd/README.md) (service): How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo.
 - [mix-shell](../mix-shell/README.md) (cli): The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs.
 - [noded](../noded/README.md) (service): The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes.

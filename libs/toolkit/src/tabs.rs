@@ -483,8 +483,7 @@ fn doc_tab(
     if let Some(turn) = tab.marker {
         // A ring with a solid half-disc inside it, touching the ring's inner edge
         // (no gap). The half is turned in place; the ring never moves.
-        let centre = pos2(rect.left() + left + MARKER / 2.0, rect.center().y)
-            .round_to_pixels(ppp);
+        let centre = pos2(rect.left() + left + MARKER / 2.0, rect.center().y).round_to_pixels(ppp);
         let scale = MARKER / 24.0;
         let ring = 10.0 * scale;
         let stroke = 2.0 * scale;
@@ -558,7 +557,10 @@ mod tests {
         assert_eq!(split_marker("\u{25D1} build"), (Some(0.0), "build"));
         assert_eq!(split_marker("\u{25D0}  build"), (Some(PI), "build"));
         assert_eq!(split_marker("\u{25D3} build"), (Some(FRAC_PI_2), "build"));
-        assert_eq!(split_marker("\u{25D2} build"), (Some(3.0 * FRAC_PI_2), "build"));
+        assert_eq!(
+            split_marker("\u{25D2} build"),
+            (Some(3.0 * FRAC_PI_2), "build")
+        );
     }
 
     #[test]

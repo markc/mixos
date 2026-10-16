@@ -100,6 +100,8 @@ check("restore round-trips", deep_eq($back, $s))
 refuses("restore refuses non-JSON", "STATE_INVALID", fn() = $n.restore("not json"))
 refuses("restore refuses the wrong shape", "STATE_INVALID", fn() = $n.restore("{\"schema\": 2}"))
 refuses("restore refuses a malformed record", "STATE_INVALID", fn() = $n.restore("{\"schema\":1,\"seq\":1,\"records\":[{\"id\":\"x\"}]}"))
+refuses("restore refuses a text deadline", "STATE_INVALID", fn() = $n.restore("{\"schema\":1,\"seq\":1,\"records\":[{\"id\":1,\"summary\":\"a\",\"actions\":[],\"deadline_t\":\"soon\"}]}"))
+refuses("restore refuses an unknown outcome", "STATE_INVALID", fn() = $n.restore("{\"schema\":1,\"seq\":1,\"records\":[{\"id\":1,\"summary\":\"a\",\"actions\":[],\"outcome\":{\"kind\":\"odd\"}}]}"))
 
 $failed = filter($results, fn($r) = not $r.ok)
 print(to_string(len($results) - len($failed)) .. "/" .. to_string(len($results)) .. " passed")

@@ -42,6 +42,9 @@ if is_file($STATE_FILE) then
     $kept = $STATE_FILE .. ".bad-" .. to_string(floor(time()))
     rename($STATE_FILE, $kept)
     eprint("notifyd: state file unreadable, moved to " .. $kept .. ": " .. $m)
+    -- Ids start above any the lost file can have handed out, so a sender
+    -- still waiting on an old id never takes a new notification's answer.
+    $S.seq = floor(time())
   end
 end
 
@@ -130,13 +133,25 @@ on notify.close_all desc "close every open notification that has no buttons"
   for each $r in $S.records
     if $n.is_open($r) and not $n.is_actionable($r) then push($closed, $r.id) end
   end
-  for each $id in $closed
-    $out = $n.settle($S, $id, "closed", nil, now_iso())
-    $S = $out.state
-    announce("notification.closed", $out.record)
+  -- Settle all, save once, then announce: nothing is published that a
+  -- failed save would undo.
+  try
+    $next = $S
+    $records = []
+    for each $id in $closed
+      $out = $n.settle($next, $id, "closed", nil, now_iso())
+      $next = $out.state
+      push($records, $out.record)
+    end
+    if len($closed) > 0 then save($next) end
+    $S = $next
+    for each $rec in $records
+      announce("notification.closed", $rec)
+    end
+    reply(0, json_encode({closed: $closed}))
+  catch $m, $err
+    fail($err.code ?? "SAVE_FAILED", $m)
   end
-  if len($closed) > 0 then save($S) end
-  reply(0, json_encode({closed: $closed}))
 end
 
 -- Expiry: the async entry sleeps until the deadline without blocking other
