@@ -127,7 +127,10 @@ pub fn view(
         };
         let id = egui::Id::new("dialog").with(title);
         let shown = dialog::Dialog::new(id, crate::label(title))
-            .buttons(vec![Choice::new(crate::label("done"), dialog::Role::Default)])
+            .buttons(vec![Choice::new(
+                crate::label("done"),
+                dialog::Role::Default,
+            )])
             .show(ui.ctx(), |ui| match dialog {
                 Dialog::About => {
                     ui.add(egui::Label::new(crate::label("about-body")).wrap());
@@ -198,7 +201,9 @@ fn ready(
     }
     egui::CentralPanel::default()
         .frame(bars::dock_frame(ui.ctx()))
-        .show(ui, |ui| centre(ui, state, commands, strings, stroke, events));
+        .show(ui, |ui| {
+            centre(ui, state, commands, strings, stroke, events)
+        });
 }
 
 /// The centre pane: the current mode's list.
@@ -255,11 +260,9 @@ fn places(ui: &mut egui::Ui, state: &State, stroke: f32, events: &mut Vec<UiEven
 /// The reader panel: the open email, event or contact.
 fn reader(ui: &mut egui::Ui, state: &State) {
     let title = crate::label("reader");
-    panel::group(ui, "reader", &[title.as_str()], |ui, _| {
-        match state.mode {
-            Mode::Mail => mail::reader(ui, state),
-            Mode::Calendar => calendar::reader(ui, state),
-            Mode::Contacts => contacts::reader(ui, state),
-        }
+    panel::group(ui, "reader", &[title.as_str()], |ui, _| match state.mode {
+        Mode::Mail => mail::reader(ui, state),
+        Mode::Calendar => calendar::reader(ui, state),
+        Mode::Contacts => contacts::reader(ui, state),
     });
 }

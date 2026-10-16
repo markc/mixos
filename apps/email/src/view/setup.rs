@@ -41,17 +41,42 @@ pub fn form(ui: &mut Ui, state: &State, stroke: f32, events: &mut Vec<UiEvent>) 
                 events.push(UiEvent::SetupField(setup, buffer));
             }
         };
-        line(ui, "setup-url", SetupField::Url, &state.setup.url, false, events);
-        line(ui, "setup-email", SetupField::Email, &state.setup.email, false, events);
-        line(ui, "setup-password", SetupField::Password, &state.setup.password, true, events);
-        line(ui, "setup-ca", SetupField::CaPath, &state.setup.ca_path, false, events);
+        line(
+            ui,
+            "setup-url",
+            SetupField::Url,
+            &state.setup.url,
+            false,
+            events,
+        );
+        line(
+            ui,
+            "setup-email",
+            SetupField::Email,
+            &state.setup.email,
+            false,
+            events,
+        );
+        line(
+            ui,
+            "setup-password",
+            SetupField::Password,
+            &state.setup.password,
+            true,
+            events,
+        );
+        line(
+            ui,
+            "setup-ca",
+            SetupField::CaPath,
+            &state.setup.ca_path,
+            false,
+            events,
+        );
         if let Some(error) = &state.setup.error {
             ui.label(
-                egui::RichText::new(crate::label_with(
-                    "setup-failed",
-                    &[("error", error)],
-                ))
-                .color(ui.visuals().error_fg_color),
+                egui::RichText::new(crate::label_with("setup-failed", &[("error", error)]))
+                    .color(ui.visuals().error_fg_color),
             );
         }
         ui.horizontal(|ui| {
@@ -60,10 +85,7 @@ pub fn form(ui: &mut Ui, state: &State, stroke: f32, events: &mut Vec<UiEvent>) 
             } else {
                 PushButton::primary(crate::label("setup-connect"))
             };
-            if ui
-                .add_enabled(!state.setup.busy, connect)
-                .clicked()
-            {
+            if ui.add_enabled(!state.setup.busy, connect).clicked() {
                 events.push(UiEvent::SetupConnect);
             }
         });
@@ -91,17 +113,11 @@ pub fn failed(ui: &mut Ui, state: &State, stroke: f32, events: &mut Vec<UiEvent>
     let title = crate::label("setup-title");
     panel::group(ui, "setup", &[title.as_str()], |ui, _| {
         ui.label(
-            egui::RichText::new(crate::label_with(
-                "setup-failed",
-                &[("error", &error)],
-            ))
-            .color(ui.visuals().error_fg_color),
+            egui::RichText::new(crate::label_with("setup-failed", &[("error", &error)]))
+                .color(ui.visuals().error_fg_color),
         );
         ui.horizontal(|ui| {
-            if ui
-                .add(PushButton::primary(crate::label("retry")))
-                .clicked()
-            {
+            if ui.add(PushButton::primary(crate::label("retry"))).clicked() {
                 events.push(UiEvent::Retry);
             }
             if ui

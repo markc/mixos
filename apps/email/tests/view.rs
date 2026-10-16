@@ -50,14 +50,16 @@ fn fixture() -> State {
         },
     ])));
     state.apply(Event::Page(Ok(EmailPage {
-        emails: vec![serde_json::from_value(serde_json::json!({
-            "id": "E1",
-            "subject": "Lunch",
-            "from": [{ "name": "Bob", "email": "bob@example.invalid" }],
-            "receivedAt": "2026-10-13T01:02:03Z",
-            "keywords": {}
-        }))
-        .unwrap()],
+        emails: vec![
+            serde_json::from_value(serde_json::json!({
+                "id": "E1",
+                "subject": "Lunch",
+                "from": [{ "name": "Bob", "email": "bob@example.invalid" }],
+                "receivedAt": "2026-10-13T01:02:03Z",
+                "keywords": {}
+            }))
+            .unwrap(),
+        ],
         total: 1,
     })));
     state.apply(Event::Calendars(Ok(vec![jmap::Calendar {
@@ -108,7 +110,10 @@ fn the_window_draws_the_account_and_the_surfaces() {
         h.query_all_by_label("Inbox").next().is_some(),
         "the Inbox row"
     );
-    assert!(h.query_all_by_label("Main").next().is_some(), "the calendar");
+    assert!(
+        h.query_all_by_label("Main").next().is_some(),
+        "the calendar"
+    );
     assert!(
         h.query_all_by_label("Colleagues").next().is_some(),
         "the address book"
@@ -131,12 +136,14 @@ fn an_unread_email_row_opens_and_marks_read() {
     let state = &h.state().state;
     assert!(state.mail.emails[0].is_read(), "the row marks read at once");
     let work = h.state_mut().state.take_work();
-    assert!(work.iter().any(
-        |w| matches!(w, email::work::Work::MarkRead { id, read: true } if id == "E1")
-    ));
-    assert!(work
-        .iter()
-        .any(|w| matches!(w, email::work::Work::OpenEmail { id } if id == "E1")));
+    assert!(
+        work.iter()
+            .any(|w| matches!(w, email::work::Work::MarkRead { id, read: true } if id == "E1"))
+    );
+    assert!(
+        work.iter()
+            .any(|w| matches!(w, email::work::Work::OpenEmail { id } if id == "E1"))
+    );
 }
 
 #[test]
@@ -151,12 +158,11 @@ fn the_contacts_filter_refetches() {
         .type_text("bob");
     h.run();
     assert_eq!(h.state().state.contacts.filter, "bob");
-    assert!(h
-        .state_mut()
-        .state
-        .take_work()
-        .iter()
-        .any(|w| matches!(w, email::work::Work::FetchContacts { filter, .. } if filter == "bob")));
+    assert!(
+        h.state_mut().state.take_work().iter().any(
+            |w| matches!(w, email::work::Work::FetchContacts { filter, .. } if filter == "bob")
+        )
+    );
 }
 
 #[test]

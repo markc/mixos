@@ -247,16 +247,14 @@ impl Shell {
             }
             Work::FetchEmails { mailbox } => {
                 if let Some(client) = self.client() {
-                    self.spawn(async move {
-                        Event::Page(client.email_page(&mailbox, 0, 100).await)
-                    });
+                    self.spawn(
+                        async move { Event::Page(client.email_page(&mailbox, 0, 100).await) },
+                    );
                 }
             }
             Work::OpenEmail { id } => {
                 if let Some(client) = self.client() {
-                    self.spawn(async move {
-                        Event::Opened(Box::new(client.email(&id).await))
-                    });
+                    self.spawn(async move { Event::Opened(Box::new(client.email(&id).await)) });
                 }
             }
             Work::MarkRead { id, read } => {
@@ -284,9 +282,9 @@ impl Shell {
             }
             Work::FetchEvents { calendar } => {
                 if let Some(client) = self.client() {
-                    self.spawn(async move {
-                        Event::Events(client.calendar_events(&calendar).await)
-                    });
+                    self.spawn(
+                        async move { Event::Events(client.calendar_events(&calendar).await) },
+                    );
                 }
             }
             Work::FetchBooks => {
@@ -296,9 +294,9 @@ impl Shell {
             }
             Work::FetchContacts { book, filter } => {
                 if let Some(client) = self.client() {
-                    self.spawn(async move {
-                        Event::Contacts(client.contacts(&book, &filter).await)
-                    });
+                    self.spawn(
+                        async move { Event::Contacts(client.contacts(&book, &filter).await) },
+                    );
                 }
             }
         }

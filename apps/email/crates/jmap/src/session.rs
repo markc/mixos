@@ -141,10 +141,7 @@ mod tests {
         assert_eq!(s.using.len(), 5);
         assert_eq!(s.api_url, "https://example.invalid/jmap");
         assert_eq!(s.upload_for("7"), "https://example.invalid/jmap/upload/7");
-        assert_eq!(
-            s.download_for("B1"),
-            "https://example.invalid/jmap/blob/B1"
-        );
+        assert_eq!(s.download_for("B1"), "https://example.invalid/jmap/blob/B1");
     }
 
     #[test]

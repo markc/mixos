@@ -13,15 +13,27 @@ pub enum Work {
     /// Connect: session discovery and the token exchange.
     Connect(Account),
     FetchMailboxes,
-    FetchEmails { mailbox: String },
+    FetchEmails {
+        mailbox: String,
+    },
     /// Fetch one email with its bodies.
-    OpenEmail { id: String },
+    OpenEmail {
+        id: String,
+    },
     /// Set or clear `$seen`.
-    MarkRead { id: String, read: bool },
+    MarkRead {
+        id: String,
+        read: bool,
+    },
     /// The send recipe (build, upload, create in Sent, submit).
     Send(Composed),
     FetchCalendars,
-    FetchEvents { calendar: String },
+    FetchEvents {
+        calendar: String,
+    },
     FetchBooks,
-    FetchContacts { book: String, filter: String },
+    FetchContacts {
+        book: String,
+        filter: String,
+    },
 }

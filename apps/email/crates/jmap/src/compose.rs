@@ -35,12 +35,8 @@ pub struct Composed {
 /// own header for the server's envelope to read and strip.
 pub fn build_mime(composed: &Composed) -> Vec<u8> {
     let clean = |value: &str| value.replace(['\r', '\n'], " ");
-    let address_list = |list: &[String]| {
-        list.iter()
-            .map(|a| clean(a))
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
+    let address_list =
+        |list: &[String]| list.iter().map(|a| clean(a)).collect::<Vec<_>>().join(", ");
     // A message id from the sender's domain; the angle brackets belong to
     // the caller of one_wrap, not the uuid.
     let domain = composed
@@ -49,11 +45,7 @@ pub fn build_mime(composed: &Composed) -> Vec<u8> {
         .next()
         .unwrap_or("localhost")
         .to_owned();
-    let message_id = format!(
-        "{}@{}",
-        uuid::Uuid::now_v7().simple(),
-        clean(&domain)
-    );
+    let message_id = format!("{}@{}", uuid::Uuid::now_v7().simple(), clean(&domain));
     let mut mime = String::new();
     let header = |mime: &mut String, name: &str, value: &str| {
         if !value.is_empty() {
@@ -72,7 +64,9 @@ pub fn build_mime(composed: &Composed) -> Vec<u8> {
     header(
         &mut mime,
         "Date",
-        &chrono::Utc::now().format("%a, %d %b %Y %H:%M:%S +0000").to_string(),
+        &chrono::Utc::now()
+            .format("%a, %d %b %Y %H:%M:%S +0000")
+            .to_string(),
     );
     header(&mut mime, "Message-ID", &one_wrap(&message_id));
     if let Some(reply_to) = &composed.in_reply_to {
@@ -112,9 +106,10 @@ impl Client {
                 "i0".into(),
             )])
             .await?;
-        let data = replies.into_iter().next().ok_or_else(|| {
-            crate::error::Error::Protocol("Identity/get reply is empty".into())
-        })?;
+        let data = replies
+            .into_iter()
+            .next()
+            .ok_or_else(|| crate::error::Error::Protocol("Identity/get reply is empty".into()))?;
         let list = data
             .get("list")
             .and_then(Value::as_array)
@@ -143,9 +138,7 @@ impl Client {
     pub async fn send(&self, composed: &Composed, sent_mailbox_id: &str) -> Result<()> {
         let identity_id = self.identity_id(&composed.from).await?;
         let mime = build_mime(composed);
-        let blob_id = self
-            .upload_blob(mime, "message/rfc822")
-            .await?;
+        let blob_id = self.upload_blob(mime, "message/rfc822").await?;
         let create = json!({
             "accountId": self.account_id(),
             "create": {
@@ -159,9 +152,10 @@ impl Client {
         let replies = self
             .call(&[Call("Email/set".into(), create, "c0".into())])
             .await?;
-        let data = replies.into_iter().next().ok_or_else(|| {
-            crate::error::Error::Protocol("Email/set reply is empty".into())
-        })?;
+        let data = replies
+            .into_iter()
+            .next()
+            .ok_or_else(|| crate::error::Error::Protocol("Email/set reply is empty".into()))?;
         if let Some(error) = Client::set_error(&data, "notCreated", "out1") {
             return Err(error);
         }
@@ -223,7 +217,10 @@ mod tests {
     #[test]
     fn bcc_stays_out_of_the_bytes() {
         let mime = String::from_utf8(build_mime(&composed())).unwrap();
-        assert!(!mime.contains("Bcc:"), "the bytes must not name Bcc recipients");
+        assert!(
+            !mime.contains("Bcc:"),
+            "the bytes must not name Bcc recipients"
+        );
         assert!(!mime.contains("dave@example.invalid"));
     }
 

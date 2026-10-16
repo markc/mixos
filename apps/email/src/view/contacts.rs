@@ -123,7 +123,13 @@ fn detail(ui: &mut Ui, label: &str, value: Option<&str>) {
 }
 
 /// An address book row in the places panel.
-pub fn place_row(ui: &mut Ui, book: &AddressBook, state: &State, stroke: f32, events: &mut Vec<UiEvent>) {
+pub fn place_row(
+    ui: &mut Ui,
+    book: &AddressBook,
+    state: &State,
+    stroke: f32,
+    events: &mut Vec<UiEvent>,
+) {
     let selected = state.contacts.selected.as_deref() == Some(book.id.as_str());
     let weak = ui.visuals().weak_text_color();
     egui::Sides::new().show(

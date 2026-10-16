@@ -51,10 +51,7 @@ pub fn list(
                 (command.enabled)(state) && state.mail.open.is_some(),
                 PushButton::secondary(text),
             );
-            if response
-                .on_hover_text(strings.get("reply"))
-                .clicked()
-            {
+            if response.on_hover_text(strings.get("reply")).clicked() {
                 events.push(UiEvent::Command(command.id, Origin::Ui));
             }
         });
@@ -123,7 +120,13 @@ fn row(ui: &mut Ui, email: &Email, state: &State, stroke: f32, events: &mut Vec<
 }
 
 /// A mailbox row in the places panel, with its unread count.
-pub fn place_row(ui: &mut Ui, mailbox: &Mailbox, state: &State, stroke: f32, events: &mut Vec<UiEvent>) {
+pub fn place_row(
+    ui: &mut Ui,
+    mailbox: &Mailbox,
+    state: &State,
+    stroke: f32,
+    events: &mut Vec<UiEvent>,
+) {
     let selected = state.mail.selected.as_deref() == Some(mailbox.id.as_str());
     let icon = match mailbox.role.as_deref() {
         Some("inbox") => Icon::Inbox,

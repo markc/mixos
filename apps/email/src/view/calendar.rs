@@ -79,11 +79,13 @@ pub fn reader(ui: &mut Ui, state: &State) {
         return;
     };
     panel::section_label(ui, &event.display_title());
-    ui.label(RichText::new(crate::label_with(
-        "when-line",
-        &[("when", &range_of(event))],
-    ))
-    .weak());
+    ui.label(
+        RichText::new(crate::label_with(
+            "when-line",
+            &[("when", &range_of(event))],
+        ))
+        .weak(),
+    );
     let calendar = state
         .calendars
         .calendars
@@ -114,7 +116,13 @@ pub fn reader(ui: &mut Ui, state: &State) {
 }
 
 /// A calendar row in the places panel.
-pub fn place_row(ui: &mut Ui, calendar: &Calendar, state: &State, stroke: f32, events: &mut Vec<UiEvent>) {
+pub fn place_row(
+    ui: &mut Ui,
+    calendar: &Calendar,
+    state: &State,
+    stroke: f32,
+    events: &mut Vec<UiEvent>,
+) {
     let selected = state.calendars.selected.as_deref() == Some(calendar.id.as_str());
     let weak = ui.visuals().weak_text_color();
     egui::Sides::new().show(

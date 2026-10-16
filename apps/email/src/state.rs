@@ -96,7 +96,9 @@ impl MailState {
 
     /// The mailbox with a role, preferring the inbox.
     pub fn by_role(&self, role: &str) -> Option<&Mailbox> {
-        self.mailboxes.iter().find(|m| m.role.as_deref() == Some(role))
+        self.mailboxes
+            .iter()
+            .find(|m| m.role.as_deref() == Some(role))
     }
 }
 
@@ -195,10 +197,7 @@ impl State {
     /// at the setup form without one. The mode is the persisted one.
     pub fn new(account: Option<Account>, ui: UiState, mode: Mode) -> Self {
         let (phase, work) = match &account {
-            Some(account) => (
-                Phase::Connecting,
-                vec![Work::Connect(account.clone())],
-            ),
+            Some(account) => (Phase::Connecting, vec![Work::Connect(account.clone())]),
             None => (Phase::Setup, Vec::new()),
         };
         let mut setup = SetupForm::default();
@@ -404,10 +403,7 @@ impl State {
         self.contacts.selected = Some(id.clone());
         self.contacts.busy = true;
         let filter = self.contacts.filter.clone();
-        self.queue(Work::FetchContacts {
-            book: id,
-            filter,
-        });
+        self.queue(Work::FetchContacts { book: id, filter });
     }
 
     /// Apply one frame's interactions.
@@ -430,11 +426,7 @@ impl State {
             UiEvent::OpenEmail(id) => {
                 // Optimistically mark the row read; the server's word
                 // replaces the counts when it answers.
-                if let Some(email) = self
-                    .mail
-                    .emails
-                    .iter_mut()
-                    .find(|email| email.id == id)
+                if let Some(email) = self.mail.emails.iter_mut().find(|email| email.id == id)
                     && !email.is_read()
                 {
                     email
@@ -500,7 +492,10 @@ impl State {
                                 .unwrap_or_default(),
                             to: vec![to],
                             subject,
-                            in_reply_to: open.message_id.clone().and_then(|ids| ids.into_iter().next()),
+                            in_reply_to: open
+                                .message_id
+                                .clone()
+                                .and_then(|ids| ids.into_iter().next()),
                             ..Composed::default()
                         },
                         busy: false,
@@ -580,9 +575,7 @@ impl State {
             Mode::Calendar => {
                 if self.calendars.calendars.is_empty() {
                     self.queue(Work::FetchCalendars);
-                } else if self.calendars.events.is_empty()
-                    && self.calendars.selected.is_some()
-                {
+                } else if self.calendars.events.is_empty() && self.calendars.selected.is_some() {
                     let calendar = self.calendars.selected.clone().unwrap();
                     self.calendars.busy = true;
                     self.queue(Work::FetchEvents { calendar });
@@ -614,8 +607,7 @@ impl State {
             match std::fs::read_to_string(self.setup.ca_path.trim()) {
                 Ok(pem) => Some(pem),
                 Err(error) => {
-                    self.setup.error =
-                        Some(format!("{}: {error}", crate::label("setup-ca-error")));
+                    self.setup.error = Some(format!("{}: {error}", crate::label("setup-ca-error")));
                     return;
                 }
             }
@@ -788,10 +780,7 @@ mod tests {
     fn a_saved_account_connects_at_launch() {
         let mut state = State::new(Some(account()), UiState::default(), Mode::Mail);
         assert!(matches!(state.phase, Phase::Connecting));
-        assert!(matches!(
-            state.take_work().as_slice(),
-            [Work::Connect(_)]
-        ));
+        assert!(matches!(state.take_work().as_slice(), [Work::Connect(_)]));
     }
 
     #[test]
@@ -804,8 +793,14 @@ mod tests {
     #[test]
     fn a_first_connect_adopts_the_setup_form_account() {
         let mut state = State::new(None, UiState::default(), Mode::Mail);
-        state.apply_ui(UiEvent::SetupField(SetupField::Url, "https://example.invalid".into()));
-        state.apply_ui(UiEvent::SetupField(SetupField::Email, "ann@example.invalid".into()));
+        state.apply_ui(UiEvent::SetupField(
+            SetupField::Url,
+            "https://example.invalid".into(),
+        ));
+        state.apply_ui(UiEvent::SetupField(
+            SetupField::Email,
+            "ann@example.invalid".into(),
+        ));
         state.apply_ui(UiEvent::SetupField(SetupField::Password, "secret".into()));
         state.apply_ui(UiEvent::SetupConnect);
         assert!(matches!(state.phase, Phase::Connecting));
@@ -827,8 +822,14 @@ mod tests {
     #[test]
     fn a_failed_first_connect_returns_to_the_form_with_the_error() {
         let mut state = State::new(None, UiState::default(), Mode::Mail);
-        state.apply_ui(UiEvent::SetupField(SetupField::Url, "https://example.invalid".into()));
-        state.apply_ui(UiEvent::SetupField(SetupField::Email, "ann@example.invalid".into()));
+        state.apply_ui(UiEvent::SetupField(
+            SetupField::Url,
+            "https://example.invalid".into(),
+        ));
+        state.apply_ui(UiEvent::SetupField(
+            SetupField::Email,
+            "ann@example.invalid".into(),
+        ));
         state.apply_ui(UiEvent::SetupField(SetupField::Password, "wrong".into()));
         state.apply_ui(UiEvent::SetupConnect);
         state.take_work();
@@ -885,25 +886,29 @@ mod tests {
         state.mail.emails = vec![unread_email("E1")];
         state.apply_ui(UiEvent::OpenEmail("E1".into()));
         let work = state.take_work();
-        assert!(work.iter().any(
-            |w| matches!(w, Work::MarkRead { id, read: true } if id == "E1")
-        ));
-        assert!(work
-            .iter()
-            .any(|w| matches!(w, Work::OpenEmail { id } if id == "E1")));
+        assert!(
+            work.iter()
+                .any(|w| matches!(w, Work::MarkRead { id, read: true } if id == "E1"))
+        );
+        assert!(
+            work.iter()
+                .any(|w| matches!(w, Work::OpenEmail { id } if id == "E1"))
+        );
         assert!(state.mail.emails[0].is_read());
     }
 
     #[test]
     fn reply_prefills_to_subject_and_in_reply_to() {
         let mut state = connected();
-        state.mail.open = Some(serde_json::from_value(json!({
-            "id": "E1",
-            "subject": "Lunch",
-            "from": [{ "name": "Bob", "email": "bob@example.invalid" }],
-            "messageId": ["<m1@example.invalid>"]
-        }))
-        .unwrap());
+        state.mail.open = Some(
+            serde_json::from_value(json!({
+                "id": "E1",
+                "subject": "Lunch",
+                "from": [{ "name": "Bob", "email": "bob@example.invalid" }],
+                "messageId": ["<m1@example.invalid>"]
+            }))
+            .unwrap(),
+        );
         state.apply_ui(UiEvent::Reply);
         let compose = state.compose.expect("a compose dialog");
         assert_eq!(compose.draft.to, ["bob@example.invalid"]);
@@ -945,7 +950,10 @@ mod tests {
         state.mail.mailboxes = vec![mailbox("m-sent", Some("sent"), 0)];
         state.mail.selected = Some("m-sent".into());
         state.apply_ui(UiEvent::Compose);
-        state.apply_ui(UiEvent::ComposeField(ComposeField::To, "bob@example.invalid".into()));
+        state.apply_ui(UiEvent::ComposeField(
+            ComposeField::To,
+            "bob@example.invalid".into(),
+        ));
         state.apply_ui(UiEvent::SendCompose);
         assert!(state.compose.as_ref().is_some_and(|c| c.busy));
         state.take_work();
@@ -963,7 +971,10 @@ mod tests {
     fn a_failed_send_keeps_the_dialog_with_the_error() {
         let mut state = connected();
         state.apply_ui(UiEvent::Compose);
-        state.apply_ui(UiEvent::ComposeField(ComposeField::To, "bob@example.invalid".into()));
+        state.apply_ui(UiEvent::ComposeField(
+            ComposeField::To,
+            "bob@example.invalid".into(),
+        ));
         state.apply_ui(UiEvent::SendCompose);
         state.take_work();
         state.apply(Event::Sent(Err(jmap::Error::method(

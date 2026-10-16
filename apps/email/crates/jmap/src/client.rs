@@ -110,7 +110,10 @@ impl Client {
     /// Basic auth. Any other failure propagates. The cell is shared, so a
     /// re-exchange from any clone is seen by them all.
     async fn exchange_token(&self) -> Result<()> {
-        let url = format!("{}/auth/tokens/issue", self.account.url.trim_end_matches('/'));
+        let url = format!(
+            "{}/auth/tokens/issue",
+            self.account.url.trim_end_matches('/')
+        );
         let response = self
             .pool
             .post(&url)
@@ -133,7 +136,9 @@ impl Client {
                 // The token goes into a header on every call; refuse anything
                 // that is not a plain header value.
                 if token.token.is_empty() || token.token.chars().any(char::is_control) {
-                    return Err(Error::Protocol("the server issued an unusable token".into()));
+                    return Err(Error::Protocol(
+                        "the server issued an unusable token".into(),
+                    ));
                 }
                 *self.token.lock().unwrap() = Some(token.token);
                 Ok(())
@@ -145,7 +150,10 @@ impl Client {
     /// document with the same authentication as `/jmap`, so the request
     /// carries the token (or Basic, in the fallback mode).
     async fn read_session(&mut self) -> Result<()> {
-        let url = format!("{}/.well-known/jmap", self.account.url.trim_end_matches('/'));
+        let url = format!(
+            "{}/.well-known/jmap",
+            self.account.url.trim_end_matches('/')
+        );
         let value = self
             .authorize(self.pool.get(&url))
             .send()
@@ -249,7 +257,10 @@ impl Client {
         let failure = data.get(key)?.as_object()?.get(client_id)?;
         let description = failure.get("description").and_then(Value::as_str);
         Some(Error::method(
-            failure.get("type").and_then(Value::as_str).unwrap_or("serverFail"),
+            failure
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or("serverFail"),
             description,
         ))
     }
