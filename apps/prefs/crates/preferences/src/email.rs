@@ -2468,10 +2468,17 @@ mod tests {
         assert_eq!(e.email_view()["tab"], "reader");
         e.set_section(Section::Themes);
         e.command(2, "prefs.section", r#"{"name":"email","tab":"compose"}"#);
-        assert_eq!((e.section(), e.ui.email_tab), (Section::Email, EmailTab::Compose));
+        assert_eq!(
+            (e.section(), e.ui.email_tab),
+            (Section::Email, EmailTab::Compose)
+        );
         e.command(3, "prefs.section", r#"{"name":"email","tab":"nope"}"#);
         e.command(4, "prefs.section", r#"{"name":"themes","tab":"mail"}"#);
-        e.command(5, "prefs.section", r#"{"name":"email","tab":"mail","account":"b"}"#);
+        e.command(
+            5,
+            "prefs.section",
+            r#"{"name":"email","tab":"mail","account":"b"}"#,
+        );
         let effects = e.take_effects();
         for id in [3, 4, 5] {
             assert!(
@@ -2480,7 +2487,11 @@ mod tests {
                 "{id}: {effects:?}"
             );
         }
-        assert_eq!(e.ui.email_tab, EmailTab::Compose, "a refused call changes nothing");
+        assert_eq!(
+            e.ui.email_tab,
+            EmailTab::Compose,
+            "a refused call changes nothing"
+        );
         for tab in EmailTab::ALL {
             assert_eq!(EmailTab::from_name(tab.name()), Some(tab));
         }
@@ -2500,8 +2511,15 @@ mod tests {
         );
         assert_eq!(e.ui.email_tab, EmailTab::Accounts);
         assert_eq!(e.ui.email_account.as_deref(), Some("b"));
-        assert_eq!(e.email.form.as_ref().and_then(|f| f.id.as_deref()), Some("b"));
-        e.command(2, "prefs.section", r#"{"name":"email","account":"acct-unknown"}"#);
+        assert_eq!(
+            e.email.form.as_ref().and_then(|f| f.id.as_deref()),
+            Some("b")
+        );
+        e.command(
+            2,
+            "prefs.section",
+            r#"{"name":"email","account":"acct-unknown"}"#,
+        );
         assert_eq!(e.ui.email_tab, EmailTab::Accounts);
         assert_eq!(e.ui.email_account, None, "unknown: none selected");
         assert!(e.email.form.is_none());
