@@ -136,3 +136,18 @@ Status: accepted 2026-10-16.
 - Monitor's graphs and tables record their performance workloads (a
   2,000-process table, a 64-core grid) before they are optimised
   (AGENTS.md §4.1).
+
+## Amendments
+
+### 2026-10-16: Monitor's End task and Kill, and its widgets
+
+- **Monitor acts on this node's processes the way the command line does.**
+  End task (SIGTERM) and Kill (SIGKILL) are local system calls made as the
+  person running Monitor, and the kernel decides. They are off while
+  another node is shown, and no Bus verb of monitord's is involved. Acting
+  on another node, or as another user, stays hostd's.
+- **Phase 2 adds no graph or table crate.** The graphs are painted
+  directly: a 64-core grid is 64 graphs a frame, which a plotting widget
+  per graph would make heavy. The process table is `egui_extras`'
+  `TableBuilder`, already in the tree. `egui_plot` and `egui_table` stay
+  candidates for when a view needs what they add (zoom, axes, ragged rows).

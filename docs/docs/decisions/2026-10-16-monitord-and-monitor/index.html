@@ -225,6 +225,8 @@
                         <a href="#phases" class="toc-h3">Phases</a>
                         <a href="#why">Why</a>
                         <a href="#consequences">Consequences</a>
+                        <a href="#amendments">Amendments</a>
+                        <a href="#2026-10-16-monitors-end-task-and-kill-and-its-widgets" class="toc-h3">2026-10-16: Monitor&#x27;s End task and Kill, and its widgets</a>
                     </nav>
                 </div>
             </div>
@@ -388,6 +390,20 @@ mesh.</li>
 <li>Monitor's graphs and tables record their performance workloads (a
 2,000-process table, a 64-core grid) before they are optimised
 (AGENTS.md §4.1).</li>
+</ul>
+<h2 id="amendments">Amendments</h2>
+<h3 id="2026-10-16-monitors-end-task-and-kill-and-its-widgets">2026-10-16: Monitor's End task and Kill, and its widgets</h3>
+<ul>
+<li><strong>Monitor acts on this node's processes the way the command line does.</strong>
+End task (SIGTERM) and Kill (SIGKILL) are local system calls made as the
+person running Monitor, and the kernel decides. They are off while
+another node is shown, and no Bus verb of monitord's is involved. Acting
+on another node, or as another user, stays hostd's.</li>
+<li><strong>Phase 2 adds no graph or table crate.</strong> The graphs are painted
+directly: a 64-core grid is 64 graphs a frame, which a plotting widget
+per graph would make heavy. The process table is <code>egui_extras</code>'
+<code>TableBuilder</code>, already in the tree. <code>egui_plot</code> and <code>egui_table</code> stay
+candidates for when a view needs what they add (zoom, axes, ragged rows).</li>
 </ul>
         </article>
         <p class="doc-source"><a href="/docs/decisions/2026-10-16-monitord-and-monitor.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
