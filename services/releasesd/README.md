@@ -3,9 +3,9 @@
 Upstream application releases for MixOS: follows the GitHub repositories in
 the user's catalogue, shows the installed version against the latest
 release, and installs each release's Linux tarball per user, verified and
-with one-step rollback. The manual is [docs/releases.md](../../docs/releases.md).
+with one-step rollback. The manual is [docs/releasesd/README.md](../../docs/releasesd/README.md).
 
-A Mix component ([decision](../../docs/decisions/2026-10-10-mix-components.md)):
+A Mix component ([decision](../../docs/docs/decisions/2026-10-10-mix-components.md)):
 no Cargo package, identity in `component.mx`.
 
 | Path | What |
@@ -25,5 +25,5 @@ mix services/releasesd/tests/releases_test.mix
 mix services/releasesd/tests/releasesd_test.mix
 ```
 
-The verbs are registered in `docs/spec/bus/verbs.conf.mix`; the catalogue
-schema and layout are in `docs/spec/releases/README.md`.
+The verbs are registered in `docs/docs/spec/bus/verbs.conf.mix`; the catalogue
+schema and layout are in `docs/docs/spec/releases/README.md`.

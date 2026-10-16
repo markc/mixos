@@ -5,7 +5,7 @@ by a person or an agent. Read it before creating a directory, a crate, a file
 or a name. `CLAUDE.md` only points here.
 
 The rationale, the alternatives weighed and the precedents are in
-[`docs/decisions/2026-10-04-source-layout.md`](docs/decisions/2026-10-04-source-layout.md).
+[`docs/docs/decisions/2026-10-04-source-layout.md`](docs/docs/decisions/2026-10-04-source-layout.md).
 Change this file only through a new decision there.
 
 ## 0. The ground rules
@@ -121,11 +121,11 @@ contract = "none"          # none | public  (public = semver'd, see §5)
 - **Directory = component = principal package name.** The principal binary
   has the same name. The single declared exception is `cli/system`, which
   builds the `mix` binary: the shell and every headless daemon in one file
-  ([decision](docs/decisions/2026-10-12-one-system-binary.md)). The shell
+  ([decision](docs/docs/decisions/2026-10-12-one-system-binary.md)). The shell
   itself is the library `cli/mix-shell`, so that `libs/mix` (package `mix`)
   stays the language.
 - A gate checks that each package's path matches its `component` and
-  `kind`, and generates the component index (`docs/dev/components.md`).
+  `kind`, and generates the component index (`docs/docs/dev/components.md`).
   That index is the agent's map of the tree.
 
 ### 2.4 Removing a component
@@ -143,7 +143,7 @@ Removal never deletes user data. A removed component's names are retired
 ### 2.5 Mix components
 
 A component may be written entirely in Mix
-([decision](docs/decisions/2026-10-10-mix-components.md)). It has no
+([decision](docs/docs/decisions/2026-10-10-mix-components.md)). It has no
 `Cargo.toml`. Its identity is `component.mx` at the top of the component:
 `schema: 1`, `name` (= directory = component), `component`, `kind`, `layer`,
 `contract`, its own `version`, and `program`, the principal `.mix` file.
@@ -196,17 +196,17 @@ services/releasesd/
    - units are named after their binary (`maild.service`);
    - a daemon linked into the system binary is installed as a personality:
      a symlink to `mix` named after its component, which its unit names
-     ([decision](docs/decisions/2026-10-12-one-system-binary.md)).
+     ([decision](docs/docs/decisions/2026-10-12-one-system-binary.md)).
    Binary names are checked against the major distributions' file lists
    before first use. The accepted collisions are `mix` (Elixir), `rec`
    and `play` (sox,
-   [decision](docs/decisions/2026-10-11-rec-and-play.md)) and
+   [decision](docs/docs/decisions/2026-10-11-rec-and-play.md)) and
    `screenshot` (nwg-shell,
-   [decision](docs/decisions/2026-10-12-screenshot.md)). MixOS installs
+   [decision](docs/docs/decisions/2026-10-12-screenshot.md)). MixOS installs
    to `/opt/mixos/bin`, which comes first in its PATH, and units and scripts
    call these binaries by absolute path.
 5. **Never reuse a name.** Retired package, binary, app and Bus verb names
-   are recorded in `docs/spec/names/retired.conf.mix` and stay reserved
+   are recorded in `docs/docs/spec/names/retired.conf.mix` and stay reserved
    forever. A gate refuses reuse.
 6. **The brand lives in one layer only:** Wayland app IDs and desktop files
    (`dev.mixos.<app>`), plus the paths `/opt/mixos`, `/var/lib/mixos`,
@@ -226,7 +226,7 @@ services/releasesd/
   a crate at a time when substantially edited, never as a drive-by inside
   other work. compd's crates entered with every `mod.rs` renamed and their
   self-named module files kept as a shrinking exception
-  ([decision](docs/decisions/2026-10-11-compd-module-layout.md)).
+  ([decision](docs/docs/decisions/2026-10-11-compd-module-layout.md)).
 - **Mix files:** `snake_case.mix`. Strict-data config is `*.conf.mix`
   (loaded with `load_data`, never executed). Specs are `*.spec.mix`. Mix tests
   are `*_test.mix`. Code transplanted from elsewhere is renamed on entry, and
@@ -254,7 +254,7 @@ services/releasesd/
 
 ### 4.1 Applications: egui, engine first
 
-The [egui applications decision](docs/decisions/2026-10-09-egui-applications.md)
+The [egui applications decision](docs/docs/decisions/2026-10-09-egui-applications.md)
 applies to every GUI app and to the desktop furniture.
 
 - **egui/eframe on wgpu, from crates.io.** No vendored UI toolkit.
@@ -265,7 +265,7 @@ applies to every GUI app and to the desktop furniture.
   generated from the registry; the UI, the CLI and Bus verbs dispatch by id.
 - **Every executed command is published** on `<app>.command.executed`, with
   how it was reached
-  ([decision](docs/decisions/2026-10-11-executed-commands.md)).
+  ([decision](docs/docs/decisions/2026-10-11-executed-commands.md)).
 - **UI state is one serialisable struct,** readable and drivable over the Bus.
 - **Tests and offscreen snapshots** gate UI changes. Look at the image.
 - **Measure before optimising.** Record the workload, environment and
@@ -287,15 +287,15 @@ applies to every GUI app and to the desktop furniture.
   A breaking change needs a deprecation period with both behaviours
   working, and a migration where data is involved.
 - **Bus verbs are wire contracts.** Every verb is registered in
-  `docs/spec/bus/verbs.conf.mix` (owner, version, status, and its class:
+  `docs/docs/spec/bus/verbs.conf.mix` (owner, version, status, and its class:
   intent, query, input or system,
-  [decision](docs/decisions/2026-10-11-verb-classes.md)). The registry gate
+  [decision](docs/docs/decisions/2026-10-11-verb-classes.md)). The registry gate
   (`tools/verb_registry.mix`) refuses a malformed, duplicate or unclassified
   entry. A component's registry test (`apps/<app>/tests/registry.rs`) checks
   that the verbs it describes are exactly the ones it registers; every new
   component adds one. Retired verb names join the retired-names registry
   (§3.5) when it lands.
-- **Specs** live in `docs/spec/<topic>/`. That means prose plus
+- **Specs** live in `docs/docs/spec/<topic>/`. That means prose plus
   machine-checkable `*.spec.mix` fixtures that the `tests/` gates consume.
   Each spec states its status (draft, accepted, superseded). Moving a spec
   never upgrades its status.
@@ -319,7 +319,7 @@ applies to every GUI app and to the desktop furniture.
   `NOTICE` line. Fonts may be OFL-1.1; everything else must fit the
   dependency allowlist. The pinned egui fallback-font bundle has the
   version-specific font exceptions recorded in
-  `docs/decisions/2026-10-13-bundled-font-licences.md`; they do not widen the
+  `docs/docs/decisions/2026-10-13-bundled-font-licences.md`; they do not widen the
   general code-dependency policy.
 
 ## 7. Tests
@@ -335,21 +335,28 @@ applies to every GUI app and to the desktop furniture.
 
 ## 8. Docs
 
-`docs/` is the source of mixos.dev, built by `docs/build/gen-site.mix`. Pages
-are prerendered, and every page is also published as Markdown.
+`docs/` is the source of mixos.dev, built by `docs/_build/gen-site.mix`. Pages
+are prerendered, and every page is also published as Markdown at its source
+path. The URL layout is fixed by the
+[site URL layout decision](docs/docs/decisions/2026-10-16-site-url-layout.md):
 
-- `docs/<topic>.md`: the user manual.
-- `docs/dev/`: contributor and architecture guides, plus the generated
+- `docs/<component>/README.md`: a component's page, at `/<component>/`, with
+  further pages beside it (`docs/mix/` is the Mix language manual). Every
+  component has one; the README in the component's own directory points to it.
+- `docs/docs/<page>.md`: everything that is not a component, at `/docs/<page>/`
+  (guides such as `try` and `drive`).
+- `docs/_build/` and `docs/_web/`: the generator's inputs and the site's assets.
+- `docs/docs/dev/`: contributor and architecture guides, plus the generated
   component index.
-- `docs/spec/`: contracts and registries (§5).
-- `docs/decisions/YYYY-MM-DD-title.md`: **public decisions**, which are the
+- `docs/docs/spec/`: contracts and registries (§5).
+- `docs/docs/decisions/YYYY-MM-DD-title.md`: **public decisions**, which are the
   public authority for this tree. Private plans may motivate a change, but a
   rule that binds contributors is stated here.
 
 ## 9. Building and bootstrapping
 
 - Requirements: the toolchain in `rust-toolchain.toml`, `git`, and the system
-  libraries listed in `docs/dev/building.md`. No Python.
+  libraries listed in `docs/docs/dev/building.md`. No Python.
 - **Bootstrap:** `cargo build --profile release-fast -p system` produces
   `mix`. Every gate after that is `mix tools/<gate>.mix`.
 - Gates run before merge. A gate that cannot run counts as failed.

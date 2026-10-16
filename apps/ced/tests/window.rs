@@ -721,7 +721,7 @@ fn the_editor_in_the_session_look() {
     h.snapshot("session_look_forest_dark");
 }
 
-/// docs/decisions/2026-10-11-executed-commands.md: a shortcut and a menu
+/// docs/docs/decisions/2026-10-11-executed-commands.md: a shortcut and a menu
 /// pick are published on ced.command.executed with their origin and
 /// consecutive seq.
 #[test]

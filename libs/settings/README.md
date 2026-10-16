@@ -93,4 +93,4 @@ is the I/O boundary; renaming it cannot redirect a write elsewhere, but may make
 the cache unavailable under the new path. That is a fallback/cache miss, never
 an authority rollback. Cache failure does not change applied renderer state.
 
-See [the settings contract](../../docs/spec/settings/README.md).
+See [the settings contract](../../docs/docs/spec/settings/README.md).

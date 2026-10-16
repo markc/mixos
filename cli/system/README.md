@@ -1,7 +1,7 @@
 # system
 
 The system binary, `mix`: the Mix shell and every headless MixOS daemon in one
-file ([decision](../../docs/decisions/2026-10-12-one-system-binary.md)).
+file ([decision](../../docs/docs/decisions/2026-10-12-one-system-binary.md)).
 
 The binary picks a personality from the basename of argv[0]. Started as `mix`
 it is the shell (`mix_shell::main`); started through a symlink named `noded`

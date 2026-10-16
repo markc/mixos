@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- version: 0.2.0
--- Install Mix components (component.mx; docs/decisions/2026-10-10-mix-components.md)
+-- Install Mix components (component.mx; docs/docs/decisions/2026-10-10-mix-components.md)
 -- from this checkout into a system root.
 --
 --   mix tools/component_install.mix [--root /] [--source <checkout>] [--dry-run] [component...]

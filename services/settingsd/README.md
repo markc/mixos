@@ -39,6 +39,6 @@ settings readiness. An image must provision its service account's writable
 Automatic startup never receives --allow-create, so lost mounts/directories do
 not silently become new default profiles.
 
-See [the settings contract](../../docs/spec/settings/README.md). Worker tests:
+See [the settings contract](../../docs/docs/spec/settings/README.md). Worker tests:
 `cargo test -p settingsd`. The native ABP gate and the compositor fixtures
 arrive with the desktop test harness.

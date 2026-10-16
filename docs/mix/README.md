@@ -115,8 +115,8 @@ includes compatible binaries, scripts and documents.
 
 New purposes use existing programs or versioned document schemas. Another file
 family or evaluation mode requires an architectural decision. See the
-[decision](https://mixos.dev/decisions/2026-10-08-mix-programs-and-documents/) and
-[file-family contract](https://mixos.dev/spec/mix/2026-10-08-programs-and-documents/).
+[decision](https://mixos.dev/docs/decisions/2026-10-08-mix-programs-and-documents/) and
+[file-family contract](https://mixos.dev/docs/spec/mix/2026-10-08-programs-and-documents/).
 
 ## Exit status
 

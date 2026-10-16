@@ -156,7 +156,7 @@ fn published(rig: &Rig) -> Vec<Value> {
         .collect()
 }
 
-/// docs/decisions/2026-10-11-executed-commands.md: a Bus execute, a
+/// docs/docs/decisions/2026-10-11-executed-commands.md: a Bus execute, a
 /// shortcut and a menu pick are each published with how they were reached
 /// and consecutive seq; a refused command publishes nothing.
 #[test]

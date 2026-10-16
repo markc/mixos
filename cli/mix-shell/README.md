@@ -7,7 +7,7 @@ The client supervisor is the shared implementation in `bus`.
 
 This package is a library. The `mix` binary is built by
 [`cli/system`](../system/README.md), which runs `mix_shell::main` when started
-as `mix` ([decision](../../docs/decisions/2026-10-12-one-system-binary.md)):
+as `mix` ([decision](../../docs/docs/decisions/2026-10-12-one-system-binary.md)):
 `cargo build -p system`. The shell's process-level tests live in
 `cli/system/tests` and run that binary (`cargo test -p system`); the unit tests
 and library-only tests stay here.

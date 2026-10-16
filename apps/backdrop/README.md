@@ -7,7 +7,7 @@ Today it draws a solid colour per output, or a PNG/JPEG image centre-cropped
 to fill it. With no document it uses the session theme's colour. Its
 document is `backdrop.mx` (strict data, `schema: 1`); its Bus verbs are
 `backdrop.ping`, `backdrop.state` and `backdrop.set`. The full format, the
-limits and the verbs are in [`docs/backdrop.md`](../../docs/backdrop.md).
+limits and the verbs are in [`docs/backdrop/README.md`](../../docs/backdrop/README.md).
 
 Layout:
 

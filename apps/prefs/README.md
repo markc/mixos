@@ -12,7 +12,7 @@ against latest, release notes, and Install or update, Roll back, Remove
 **Appearance**, over settingsd: the session's scheme, style, mode, contrast
 and window frame, previewed in the window and applied in one fenced
 `settings.apply`. The manual is
-[docs/prefs.md](../../docs/prefs.md).
+[docs/prefs/README.md](../../docs/prefs/README.md).
 
 | Path | What |
 |---|---|
