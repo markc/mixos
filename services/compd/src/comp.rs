@@ -54,6 +54,7 @@
 //! armed only while a dwell is pending ([`DwellTimer`]).
 
 mod sequence;
+mod session;
 
 use std::cell::Cell;
 use std::collections::BTreeSet;
@@ -70,7 +71,9 @@ use comp_model::motion_run::{MotionSpec, MotionTarget};
 use comp_model::observation::{ObservationRecord, PanelRequest, PointerPosition, PointerSample};
 use comp_model::reply::ControlReply;
 use comp_model::request::{InputOp, LongOp, WaitSpec, WindowOp};
-use comp_model::snapshot::{CompSnapshot, ReadScopes, project_window_row, surface_key};
+use comp_model::snapshot::{
+    CompSnapshot, ReadScopes, SessionSnapshot, project_window_row, surface_key,
+};
 use comp_service::{
     CompEngine, LongReply, ObservationProducer, PortContext, PortService, PortWorker,
 };
@@ -286,6 +289,7 @@ pub struct Bus {
     motion_timer: OneShot,
     sequences: sequence::Sequences,
     pointer: PointerWatch,
+    session: session::Session,
     /// The session was paused at the last pass (a pause clears the agent).
     paused: bool,
     /// A session lock was in force at the last pass (entry clears the agent).
@@ -356,6 +360,10 @@ impl Bus {
         backend: Backend,
         handle: &LoopHandle<'static, Loop>,
     ) -> Result<Self, String> {
+        let session = session::Session::new(
+            std::env::var("MIXOS_VT").ok().as_deref(),
+            session::unix_millis(),
+        );
         let (ping, source) = make_ping().map_err(|error| format!("Bus wake source: {error}"))?;
         let waker: comp_service::Waker = Arc::new(move || ping.ping());
         let wake = Arc::clone(&waker);
@@ -378,6 +386,9 @@ impl Bus {
             "comp Bus port: service {} via {noded_url}",
             wiring.context.service
         );
+        // The first post-dispatch pass announces the initial session state,
+        // even if no Bus request or frame is waiting.
+        wake();
         Ok(Self {
             port: wiring.service,
             producer: wiring.observation_producer,
@@ -404,6 +415,7 @@ impl Bus {
                 epoch: Instant::now(),
             },
             paused: false,
+            session,
             locked: false,
             worker: Some(worker),
         })
@@ -454,6 +466,18 @@ impl Bus {
             lp.inner.status_session,
             world::state::state::StatusSession::Paused
         );
+        // Every libseat edge in order (a pause and an activation can share a
+        // dispatch), then the current state, which announces the first one.
+        // Libseat's notifier dispatch reaches this pass on both edges, frames
+        // parked or not; the outbox wakes its own worker.
+        let edges = std::mem::take(&mut lp.inner.session_edges);
+        let current = (!paused, session::unix_millis());
+        for (active, at_ms) in edges.into_iter().chain(std::iter::once(current)) {
+            if let Some(record) = self.session.observe(active, at_ms) {
+                self.producer
+                    .offer_next(move |event_seq| record.with_event_seq(event_seq));
+            }
+        }
         // So does a session lock beginning.
         let locked = world::comp::session_lock::active(lp);
         let lock_began = locked && !self.locked;
@@ -501,6 +525,7 @@ impl Bus {
                 lp: &mut *lp,
                 context: &self.context,
                 binding_profile: self.binding_profile,
+                session: self.session.snapshot(),
                 handle: &self.handle,
                 pending: &self.pending,
                 waiters: &mut self.waiters,
@@ -818,6 +843,7 @@ struct Engine<'a> {
     lp: &'a mut Loop,
     context: &'a PortContext,
     binding_profile: &'static str,
+    session: SessionSnapshot,
     handle: &'a LoopHandle<'static, Loop>,
     pending: &'a Rc<Cell<bool>>,
     waiters: &'a mut Vec<Waiter>,
@@ -985,11 +1011,13 @@ impl Engine<'_> {
 
 impl CompEngine for Engine<'_> {
     fn snapshot(&mut self, scopes: &ReadScopes) -> Option<CompSnapshot> {
-        Some(policy_host::project(
+        let mut snapshot = policy_host::project(
             self.lp,
             identity(self.context, self.binding_profile),
             scopes,
-        ))
+        );
+        snapshot.session = Some(self.session);
+        Some(snapshot)
     }
 
     // Controls: the workspace verbs and sets; everything else

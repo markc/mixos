@@ -47,6 +47,7 @@
   <url><loc>https://mixos.dev/docs/decisions/2026-10-13-instance-verb-families/</loc></url>
   <url><loc>https://mixos.dev/docs/decisions/2026-10-14-session-icon-stroke-and-type/</loc></url>
   <url><loc>https://mixos.dev/docs/decisions/2026-10-16-email-accounts-in-settings/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-16-monitord-and-monitor/</loc></url>
   <url><loc>https://mixos.dev/docs/decisions/2026-10-16-site-url-layout/</loc></url>
   <url><loc>https://mixos.dev/docs/spec/bridge/</loc></url>
   <url><loc>https://mixos.dev/docs/spec/handler-closure-capture/</loc></url>
@@ -107,6 +108,7 @@
   <url><loc>https://mixos.dev/mix/system/</loc></url>
   <url><loc>https://mixos.dev/mix/tar/</loc></url>
   <url><loc>https://mixos.dev/mix/variables/</loc></url>
+  <url><loc>https://mixos.dev/monitord/</loc></url>
   <url><loc>https://mixos.dev/noded/</loc></url>
   <url><loc>https://mixos.dev/notifyd/</loc></url>
   <url><loc>https://mixos.dev/portald/</loc></url>
@@ -130,6 +132,7 @@
   <url><loc>https://mixos.dev/hostd/changelog/</loc></url>
   <url><loc>https://mixos.dev/mix/changelog/</loc></url>
   <url><loc>https://mixos.dev/mix-shell/changelog/</loc></url>
+  <url><loc>https://mixos.dev/monitord/changelog/</loc></url>
   <url><loc>https://mixos.dev/noded/changelog/</loc></url>
   <url><loc>https://mixos.dev/settings/changelog/</loc></url>
   <url><loc>https://mixos.dev/settingsd/changelog/</loc></url>

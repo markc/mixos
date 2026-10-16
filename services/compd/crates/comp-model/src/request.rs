@@ -1672,6 +1672,7 @@ pub fn read_scope(verb: &str, args: &Value) -> Option<String> {
     // same-named argument that means something else.
     let key = match verb {
         "comp.info" => return Some("info".to_string()),
+        "comp.session.get" => return Some("session".to_string()),
         "comp.workspaces.list" => return Some("workspaces".to_string()),
         "comp.props.list" => "prefix",
         "comp.props.get" | "comp.props.describe" => "path",

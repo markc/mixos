@@ -61,7 +61,7 @@ fn assert_noded_identity(command: &mut Command) {
 
 #[test]
 fn every_personality_reports_its_own_identity() {
-    let dir = links(&["mix", "noded"]);
+    let dir = links(&["mix", "noded", "monitord"]);
 
     let (code, out, err) = run(Command::new(dir.path().join("mix")).arg("--version"));
     assert_eq!(code, 0, "stderr: {err}");
@@ -74,6 +74,12 @@ fn every_personality_reports_its_own_identity() {
     let want = format!("noded {} (", noded::COMPONENT_VERSION);
     assert!(out.starts_with(&want), "got {out:?}, want prefix {want:?}");
     assert_noded_identity(&mut Command::new(dir.path().join("noded")));
+
+    let (code, out, err) = run(Command::new(dir.path().join("monitord")).args(["--version", "--json"]));
+    assert_eq!(code, 0, "stderr: {err}");
+    let doc: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+    assert_eq!(doc["component"], "monitord");
+    assert_eq!(doc["version"], monitord::COMPONENT_VERSION);
 }
 
 #[test]
@@ -104,9 +110,10 @@ fn personalities_lists_every_component() {
     let (code, out, _) = run(Command::new(BIN).arg("--personalities"));
     assert_eq!(code, 0);
     let want = format!(
-        "mix {}\nnoded {}\n",
+        "mix {}\nnoded {}\nmonitord {}\n",
         mix_shell::COMPONENT_VERSION,
-        noded::COMPONENT_VERSION
+        noded::COMPONENT_VERSION,
+        monitord::COMPONENT_VERSION
     );
     assert_eq!(out, want);
 }

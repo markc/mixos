@@ -222,6 +222,7 @@
                         <a href="#layout">Layout</a>
                         <a href="#build">Build</a>
                         <a href="#run">Run</a>
+                        <a href="#session-activity">Session activity</a>
                         <a href="#workspaces">Workspaces</a>
                         <a href="#test">Test</a>
                     </nav>
@@ -336,6 +337,24 @@ from <code>preferences.json</code> beside it.</p>
 the output scale: compd multiplies each relative pointer delta by both, so
 <code>1.0</code> moves the cursor at the same logical speed at every scale. Clients
 asking for relative motion get the raw deltas.</p>
+<h2 id="session-activity">Session activity</h2>
+<p><code>comp.session.get {}</code> is a draft query returning
+<code>{"version":1,"active":true,"vt":3,"since_ms":1792108800123}</code>. <code>active</code>
+describes this compositor's libseat session, including while paused after a
+console VT switch. <code>since_ms</code> is Unix milliseconds at the last transition,
+or at compd's Bus startup before the first transition.</p>
+<p>Topic <code>&lt;service&gt;.session.changed</code> (normally <code>comp.session.changed</code>) publishes
+<code>{"version":1,"active":false,"vt":3,"since_ms":1792108800456,"event_seq":42}</code>
+once at startup and once on each pause or resume. It uses the shared
+observation sequence, outbox and gap reporting. The publisher runs on its
+own Bus worker, so pause events do not wait for rendering or resumption.
+Subscribe before querying to establish the current state without polling;
+on an observation gap, query again. Across desks, the most recent
+<code>active:true</code> transition identifies the desk the human is viewing.</p>
+<p>The session unit supplies <code>MIXOS_VT=%i</code>. compd reads it once when starting
+its Bus service; <code>vt</code> is a u32 or <code>null</code> when the variable is absent or
+cannot be parsed. A nested compositor with no supplied VT reports <code>null</code>.
+The VT is never inferred from a runtime path or display name.</p>
 <h2 id="workspaces">Workspaces</h2>
 <p>Every output has a current workspace; windows belong to one. Verbs on the
 <code>comp</code> service:</p>

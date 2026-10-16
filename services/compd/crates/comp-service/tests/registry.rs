@@ -35,7 +35,7 @@ fn class_of(name: &str) -> Option<&'static str> {
 #[test]
 fn every_served_verb_is_registered_and_nothing_else() {
     let served: BTreeSet<String> = all_verbs().map(str::to_owned).collect();
-    assert_eq!(served.len(), 38);
+    assert_eq!(served.len(), 39);
     assert_eq!(registered(), served);
     assert!(served.iter().all(|verb| verb_family(verb).is_some()));
 }

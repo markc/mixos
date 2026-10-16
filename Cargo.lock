@@ -4555,6 +4555,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "monitord"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "buildinfo",
+ "bus",
+ "clap",
+ "libc",
+ "logging",
+ "mimalloc",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "motion"
 version = "0.1.1"
 
@@ -7492,6 +7511,7 @@ dependencies = [
  "mimalloc",
  "mix",
  "mix-shell",
+ "monitord",
  "noded",
  "proptest",
  "rustyline",

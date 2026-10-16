@@ -35,6 +35,7 @@ impl CompEngine for Engine {
     fn snapshot(&mut self, _scopes: &ReadScopes) -> Option<CompSnapshot> {
         let context = &self.context;
         Some(CompSnapshot {
+            session: None,
             occlusion: Default::default(),
             info: InfoSnapshot {
                 service: Arc::clone(&context.service),

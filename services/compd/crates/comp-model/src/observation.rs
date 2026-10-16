@@ -33,6 +33,7 @@ pub const CORNER_CLICKED_V2_TOPIC_SUFFIX: &str = "corner.clicked.v2";
 pub const DISCOVERY_PATH: &str = "input.corners.discovery";
 pub const POINTER_TOPIC_SUFFIX: &str = "pointer.changed";
 pub const PANEL_COMMAND_TOPIC_SUFFIX: &str = "panel.command";
+pub const SESSION_TOPIC_SUFFIX: &str = "session.changed";
 /// The workspace count, a current workspace or a name changed.
 pub const WORKSPACE_TOPIC_SUFFIX: &str = "workspace.changed";
 /// The `input.corners.holders` leaf. Quoin switches to command-driven
@@ -48,7 +49,7 @@ pub const WORKSPACE_COUNT_MAX: u32 = 16;
 
 /// Every topic suffix, in `AffectedTopics` bit order. The service publishes
 /// each as `<service>.<suffix>` ([`topic_name`]).
-pub const TOPIC_SUFFIXES: [&str; 12] = [
+pub const TOPIC_SUFFIXES: [&str; 13] = [
     PROPS_TOPIC_SUFFIX,
     SURFACE_MAPPED_TOPIC_SUFFIX,
     SURFACE_UNMAPPED_TOPIC_SUFFIX,
@@ -61,6 +62,7 @@ pub const TOPIC_SUFFIXES: [&str; 12] = [
     CORNER_CLICKED_V2_TOPIC_SUFFIX,
     PANEL_COMMAND_TOPIC_SUFFIX,
     WORKSPACE_TOPIC_SUFFIX,
+    SESSION_TOPIC_SUFFIX,
 ];
 
 pub fn topic_name(service: &str, suffix: &str) -> String {
@@ -375,6 +377,12 @@ impl TopicMessage {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ObservationRecord {
+    SessionChanged {
+        active: bool,
+        vt: Option<u32>,
+        since_ms: u64,
+        event_seq: u64,
+    },
     PanelCommand {
         output: String,
         edge: String,
@@ -461,6 +469,7 @@ pub enum ObservationRecord {
 impl ObservationRecord {
     pub fn event_seq(&self) -> u64 {
         match self {
+            Self::SessionChanged { event_seq, .. } => *event_seq,
             Self::PanelCommand { event_seq, .. } => *event_seq,
             Self::PointerChanged { event_seq, .. } => *event_seq,
             Self::PropsChanged { event_seq, .. }
@@ -480,7 +489,8 @@ impl ObservationRecord {
     /// the outbox numbers each one as it is offered (`offer_next`).
     pub fn with_event_seq(mut self, seq: u64) -> Self {
         match &mut self {
-            Self::PanelCommand { event_seq, .. }
+            Self::SessionChanged { event_seq, .. }
+            | Self::PanelCommand { event_seq, .. }
             | Self::PointerChanged { event_seq, .. }
             | Self::PropsChanged { event_seq, .. }
             | Self::SurfaceMapped { event_seq, .. }
@@ -498,6 +508,7 @@ impl ObservationRecord {
 
     pub fn topic_suffix(&self) -> &'static str {
         match self {
+            Self::SessionChanged { .. } => SESSION_TOPIC_SUFFIX,
             Self::PanelCommand { .. } => PANEL_COMMAND_TOPIC_SUFFIX,
             Self::PointerChanged { .. } => POINTER_TOPIC_SUFFIX,
             Self::PropsChanged { .. } => PROPS_TOPIC_SUFFIX,
@@ -521,6 +532,16 @@ impl ObservationRecord {
         message.set("command", self.topic_suffix());
         message.set("event_seq", &self.event_seq().to_string());
         message.body = match self {
+            Self::SessionChanged {
+                active,
+                vt,
+                since_ms,
+                event_seq,
+            } => json!({
+                "version": 1, "active": active, "vt": vt,
+                "since_ms": since_ms, "event_seq": event_seq,
+            })
+            .to_string(),
             Self::PanelCommand {
                 output,
                 edge,

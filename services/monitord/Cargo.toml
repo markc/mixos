@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[package]
+name = "monitord"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Samples the system and its processes, keeps history, and answers on the Bus"
+
+[package.metadata.mixos]
+component = "monitord"
+kind = "service"
+layer = "core"
+contract = "public"
+profiles = ["base"]
+
+[lints.clippy]
+mod_module_files = "deny"
+
+# The daemon is a library, so the system binary can run it as its
+# `monitord` personality (docs/docs/decisions/2026-10-12-one-system-binary.md);
+# src/main.rs is the standalone development binary.
+[lib]
+doctest = false
+
+[dependencies]
+bus = { workspace = true, features = ["native"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "signal", "time", "sync"] }
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+logging.workspace = true
+clap.workspace = true
+buildinfo.workspace = true
+libc.workspace = true
+rusqlite.workspace = true
+mimalloc.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[build-dependencies]
+buildinfo.workspace = true
