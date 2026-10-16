@@ -195,6 +195,10 @@ pub struct Desktop {
     /// defaults, as `keymaps` is while empty.
     #[serde(skip_serializing_if = "crate::terminal::Terminal::is_default")]
     pub terminal: crate::terminal::Terminal,
+    /// The email app's accounts and options ([`crate::email`]); nothing
+    /// secret. Omitted at its defaults, as `terminal` is.
+    #[serde(skip_serializing_if = "crate::email::Email::is_default")]
+    pub email: crate::email::Email,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -274,6 +278,9 @@ pub struct Summary {
     /// The terminal's preferences; omitted at their defaults.
     #[serde(default, skip_serializing_if = "crate::terminal::Terminal::is_default")]
     pub terminal: crate::terminal::Terminal,
+    /// The email app's accounts and options; omitted at their defaults.
+    #[serde(default, skip_serializing_if = "crate::email::Email::is_default")]
+    pub email: crate::email::Email,
 }
 
 /// The summary schema; independent of the snapshot's [`crate::SCHEMA`].
@@ -294,6 +301,7 @@ impl Summary {
             custom_source,
             keymaps: snapshot.desktop.keymaps.clone(),
             terminal: snapshot.desktop.terminal.clone(),
+            email: snapshot.desktop.email.clone(),
         }
     }
 }

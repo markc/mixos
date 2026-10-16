@@ -108,6 +108,39 @@ fn an_old_primary_and_backup_upgrade_on_open_and_accept_changes() {
     );
 }
 
+/// The email group is authored and omitted at its defaults, so it needs no
+/// format bump: an old record opens with the default group, and takes and
+/// keeps accounts afterwards.
+#[test]
+fn an_old_profile_opens_with_default_email_and_takes_accounts() {
+    let dir = profile(PRIMARY, BACKUP);
+    let (store, data) = Store::open(dir.path(), &binding()).unwrap();
+    assert!(data.desktop.email.is_default());
+    assert_eq!(data.format, FORMAT, "no new format for the email group");
+    let mut authority = Authority::new(store, data).unwrap();
+    let request = ApplyRequest {
+        binding: binding(),
+        expected_incarnation: authority.accepted.incarnation.clone(),
+        expected_revision: authority.accepted.revision,
+        operation_id: "email".into(),
+        changes: BTreeMap::from([(
+            "email.accounts".into(),
+            json!([{"id":"acct-1","name":"Home","url":"https://mail.example.org",
+                "email":"me@example.org","signature":"-- \nMe"}]),
+        )]),
+        reset: vec![],
+        request_digest: None,
+    };
+    authority.apply(request).unwrap();
+    drop(authority);
+    let (_, reopened) = Store::open(dir.path(), &binding()).unwrap();
+    assert_eq!(reopened.desktop.email.accounts[0].signature, "-- \nMe");
+    assert_eq!(reopened.desktop.appearance.scheme, "forest");
+    reopened
+        .effective()
+        .expect("the effective digest still verifies");
+}
+
 #[test]
 fn an_old_backup_restores_upgraded() {
     let dir = profile("{ incomplete", BACKUP);

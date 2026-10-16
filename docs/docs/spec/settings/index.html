@@ -222,6 +222,7 @@
                         <a href="#shell-panel-preferences">Shell panel preferences</a>
                         <a href="#key-bindings">Key bindings</a>
                         <a href="#terminal">Terminal</a>
+                        <a href="#email">Email</a>
                         <a href="#topics-and-storage">Topics and storage</a>
                         <a href="#validation-and-remaining-scope">Validation and remaining scope</a>
                     </nav>
@@ -265,7 +266,7 @@ responses preserve ordinary ABP rc conventions: 0 for handled results and 10 for
 refusal, invalid input or unknown verbs. Domain status is structured in the body.</p>
 <table><thead><tr><th>Verb</th><th>Input and result</th></tr></thead><tbody>
 <tr><td><code>settings.describe</code></td><td>No mutation; version, fields, ranges, defaults, limits and implemented/deferred capabilities</td></tr>
-<tr><td><code>settings.get</code></td><td><code>{binding:{instance,profile}, view?, schema?}</code>; <code>view</code> <code>full</code> (default): complete accepted snapshot under <code>snapshot</code>, in <code>schema</code> 1 (default) or 2 (each distinct design projection once under <code>designs</code>, contexts naming it by digest; other schemas refused with <code>unsupported_schema</code>); <code>summary</code>: the profile's <code>Summary</code> (schema, binding, incarnation, revision, design revision, source digest, appearance names, <code>custom_source</code>, <code>keymaps</code> when any are set, and <code>terminal</code> when any value is set; never projections or a source) under <code>summary</code>; both with publication/recovery status</td></tr>
+<tr><td><code>settings.get</code></td><td><code>{binding:{instance,profile}, view?, schema?}</code>; <code>view</code> <code>full</code> (default): complete accepted snapshot under <code>snapshot</code>, in <code>schema</code> 1 (default) or 2 (each distinct design projection once under <code>designs</code>, contexts naming it by digest; other schemas refused with <code>unsupported_schema</code>); <code>summary</code>: the profile's <code>Summary</code> (schema, binding, incarnation, revision, design revision, source digest, appearance names, <code>custom_source</code>, <code>keymaps</code> when any are set, <code>terminal</code> when any value is set, and <code>email</code> when any value is set; never projections or a source) under <code>summary</code>; both with publication/recovery status</td></tr>
 <tr><td><code>settings.appearance.get</code></td><td><code>{binding:{instance,profile}, schema?}</code>; read-only appearance projection (<code>mode</code>, <code>contrast</code>, sRGB <code>accent</code>) tagged with incarnation and revisions; the reply also includes the atomic <code>snapshot</code> (in <code>schema</code> 1 or 2, as for <code>settings.get</code>) for shared Consumer validation; <code>wrong_target</code> on a foreign binding</td></tr>
 <tr><td><code>settings.validate</code></td><td>Fenced apply-shaped body; resolve/compile candidate without a write or receipt; valid with current base identity or diagnostics/conflict</td></tr>
 <tr><td><code>settings.apply</code></td><td>Fenced batch described below; durable changed/unchanged receipt</td></tr>
@@ -526,6 +527,39 @@ design. Terminal colours are not a setting: they follow the session theme.</p>
 </tbody></table>
 <p>Apply and reset take each path, or <code>terminal</code> for the whole group. The
 summary carries <code>terminal</code> when any value is set.</p>
+<h2 id="email">Email</h2>
+<p>The profile's <code>email</code> holds the email app's JMAP accounts and mail options.
+<strong>It is not secret and cannot hold a secret.</strong> The snapshot and summary are
+retained on the Bus for any client to read, so an account has no password
+field and every record in the group refuses unknown keys: an account carrying
+<code>password</code> is refused with <code>validation_failed</code>, and nothing is written.
+Passwords live only in the email app's private secrets file, set through its
+own write-only verb. The group is omitted at its defaults, so older profiles
+keep their seals and the store format stays 3. It does not affect the
+resolved design.</p>
+<table><thead><tr><th>Field</th><th>Type and range</th><th>Default</th></tr></thead><tbody>
+<tr><td><code>email.accounts</code></td><td>list of accounts, at most 64, ids unique; replaced whole, in tree order</td><td><code>[]</code></td></tr>
+<tr><td><code>email.default_account</code></td><td>an <code>id</code> in <code>email.accounts</code>, or null</td><td>null: the first enabled account</td></tr>
+<tr><td><code>email.mail.page_size</code></td><td>integer 10–500</td><td>100</td></tr>
+<tr><td><code>email.mail.mark_read_on_open</code></td><td>boolean</td><td>true</td></tr>
+<tr><td><code>email.mail.confirm_delete</code></td><td>boolean</td><td>true</td></tr>
+</tbody></table>
+<p>Each account is a record of exactly these keys:</p>
+<table><thead><tr><th>Key</th><th>Type and range</th><th>Default</th></tr></thead><tbody>
+<tr><td><code>id</code></td><td><code>[a-z0-9-]{1,64}</code>, stable; the writer mints <code>acct-</code> and 12 hex digits</td><td>required</td></tr>
+<tr><td><code>name</code></td><td>the tree label: 1–128 bytes, no control characters, no surrounding space</td><td>required</td></tr>
+<tr><td><code>url</code></td><td>the JMAP base: <code>https://</code> and a host, no trailing slash, no space; at most 2048 bytes</td><td>required</td></tr>
+<tr><td><code>email</code></td><td>the login and default From: one <code>@</code> with text on both sides, no space; at most 254 bytes</td><td>required</td></tr>
+<tr><td><code>ca_path</code></td><td>an absolute path to a PEM bundle, or null for the system roots</td><td>null</td></tr>
+<tr><td><code>enabled</code></td><td>boolean</td><td>true</td></tr>
+<tr><td><code>signature</code></td><td>plain text appended to new drafts: at most 4096 characters, no control characters but newline and tab</td><td><code>""</code></td></tr>
+</tbody></table>
+<p>A refused account is named by position: <code>email.accounts[2].url</code>. The default
+account must name an account, so removing it from the list needs
+<code>email.default_account</code> changed or reset in the same batch. Apply and reset
+take each path, or <code>email</code> for the whole group (null resets it too);
+<code>email.mail</code> alone is not a path. The summary carries <code>email</code> when any value
+is set; <code>settings::email::from_snapshot</code> and <code>from_summary</code> read it.</p>
 <h2 id="topics-and-storage">Topics and storage</h2>
 <p>Publish retained <code>settingsd.desktop.changed.&lt;profile&gt;</code> (the snapshot in schema
 1), then retained <code>settingsd.desktop.compact.&lt;profile&gt;</code> (schema 2), then

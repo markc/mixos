@@ -218,6 +218,11 @@ fn public_machine_fixtures_exercise_dispatch_and_restartable_float_settings() {
         snapshot["desktop"]["terminal"],
         json!({"focus":{"ring":"neutral"},"env":{"term":"xterm-kitty"}})
     );
+    assert_eq!(snapshot["desktop"]["email"]["default_account"], "acct-1");
+    assert_eq!(
+        snapshot["desktop"]["email"]["mail"],
+        json!({"page_size":50})
+    );
     drop(state);
     let (store, accepted) = Store::open(dir.path(), &binding).unwrap();
     let restored = Authority::new(store, accepted).unwrap();
@@ -279,6 +284,79 @@ fn describe_lists_every_terminal_field_and_the_summary_carries_them() {
     apply.reset = vec!["terminal".into()];
     state.apply(apply).unwrap();
     assert!(state.accepted.desktop.terminal.is_default());
+}
+#[test]
+fn email_accounts_apply_reach_the_summary_and_never_take_a_password() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    let described = settingsd::service::dispatch(&mut state, "settings.describe", "").unwrap();
+    for path in [
+        "email",
+        "email.accounts",
+        "email.default_account",
+        "email.mail.page_size",
+        "email.mail.mark_read_on_open",
+        "email.mail.confirm_delete",
+    ] {
+        assert!(described["fields"].get(path).is_some(), "{path}");
+    }
+    let account = json!({"id":"acct-1","name":"Home","url":"https://mail.example.org",
+        "email":"me@example.org"});
+    let request = |state: &Authority, id: &str, changes: serde_json::Value| {
+        json!({"binding":binding(),"expected_incarnation":state.accepted.incarnation,
+            "expected_revision":state.accepted.revision,"operation_id":id,"changes":changes})
+        .to_string()
+    };
+    // An account carrying a password is refused, nothing is written, and the
+    // published snapshot never sees it.
+    let mut leaky = account.clone();
+    leaky["password"] = json!("hunter2");
+    let before = std::fs::read(dir.path().join("desktop.conf.mix")).unwrap();
+    let body = request(&state, "leak", json!({"email.accounts":[leaky]}));
+    for verb in ["settings.validate", "settings.apply"] {
+        let refused = settingsd::service::dispatch(&mut state, verb, &body).unwrap_err();
+        assert_eq!(refused["status"], "validation_failed", "{verb}");
+    }
+    assert_eq!(
+        std::fs::read(dir.path().join("desktop.conf.mix")).unwrap(),
+        before
+    );
+    assert!(state.accepted.desktop.email.is_default());
+    let body = request(
+        &state,
+        "email",
+        json!({"email.accounts":[account],"email.default_account":"acct-1",
+            "email.mail.page_size":50.0}),
+    );
+    settingsd::service::dispatch(&mut state, "settings.apply", &body).unwrap();
+    let summary = settingsd::service::dispatch(
+        &mut state,
+        "settings.get",
+        &json!({"binding":binding(),"view":"summary"}).to_string(),
+    )
+    .unwrap();
+    assert_eq!(
+        summary["summary"]["email"],
+        json!({"accounts":[{"id":"acct-1","name":"Home","url":"https://mail.example.org",
+            "email":"me@example.org","ca_path":null,"enabled":true,"signature":""}],
+            "default_account":"acct-1","mail":{"page_size":50}})
+    );
+    let text = std::fs::read_to_string(dir.path().join("desktop.conf.mix")).unwrap();
+    assert!(!text.contains("hunter2") && !text.contains("password"));
+    // It survives a restart, and a reset of the group returns the defaults.
+    drop(state);
+    let (store, accepted) = Store::open(dir.path(), &binding()).unwrap();
+    let mut state = Authority::new(store, accepted).unwrap();
+    assert_eq!(
+        settings::email::from_snapshot(&state.snapshot).accounts[0].id,
+        "acct-1"
+    );
+    let body = json!({"binding":binding(),"expected_incarnation":state.accepted.incarnation,
+        "expected_revision":state.accepted.revision,"operation_id":"email-reset",
+        "changes":{},"reset":["email"]})
+    .to_string();
+    settingsd::service::dispatch(&mut state, "settings.reset", &body).unwrap();
+    assert!(state.accepted.desktop.email.is_default());
 }
 #[test]
 fn the_summary_view_carries_identity_and_appearance_names_only() {
