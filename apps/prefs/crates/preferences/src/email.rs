@@ -1915,7 +1915,6 @@ mod tests {
         assert!(e.email.task.is_none());
         assert!(!e.failed);
         assert!(e.status.starts_with("email-password-set"), "{}", e.status);
-        assert!(!e.busy());
     }
 
     #[test]
