@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-// Vendored into cosmix-edit-core from microsoft/edit@826b4c0 crates/edit/src/helpers.rs; see vendor/msedit/README.md.
+// Vendored into MixOS (for libs/edit) from microsoft/edit@826b4c0 crates/edit/src/helpers.rs; see vendor/msedit/buffer/README.md.
 // Subset: the size constants, `CoordType` and (ced E1, for unicode measurement)
 // `Point` with its ordering; the rest of the upstream file serves the TUI and
 // is not vendored.

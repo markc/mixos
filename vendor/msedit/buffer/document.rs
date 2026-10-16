@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-// Vendored into cosmix-edit-core from microsoft/edit@826b4c0 crates/edit/src/document.rs; see vendor/msedit/README.md.
+// Vendored into MixOS (for libs/edit) from microsoft/edit@826b4c0 crates/edit/src/document.rs; see vendor/msedit/buffer/README.md.
 // Subset: the two traits and the `&[u8]` / `String` impls (the `PathBuf`
 // impls are not vendored).
 
@@ -23,8 +23,8 @@ pub trait ReadableDocument {
     ///   * You MUST NOT break grapheme clusters across chunks.
     ///   * You MUST NOT return an empty slice unless the offset is at or beyond the end.
     ///
-    /// Cosmix note: `GapBuffer` does NOT honour the grapheme promise (its chunk
-    /// boundary is wherever the gap is). Nothing in cosmix-edit-core E0 relies on
+    /// MixOS note: `GapBuffer` does NOT honour the grapheme promise (its chunk
+    /// boundary is wherever the gap is). Nothing in libs/edit relies on
     /// it; the E1 measurement code must add an adapter first (ced E0 plan §9.3).
     fn read_forward(&self, off: usize) -> &[u8];
 

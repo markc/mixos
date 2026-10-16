@@ -7,7 +7,7 @@ version = "0.0.0"
 edition = "2024"
 license = "MIT"
 publish = false
-description = "Vendored msedit lsh compiler + runtime for cosmix-lsh. Not for direct use."
+description = "Vendored msedit lsh compiler + runtime for libs/syntax. Not for direct use."
 
 [lib]
 name = "lsh"

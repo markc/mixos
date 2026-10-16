@@ -119,9 +119,12 @@ site: {
       title: "MixOS",
       items: [
         {title: "Home", href: "/", icon: "home"},
+        {title: "Docs", href: "/docs/", icon: "book-open"},
+        {title: "The Mix language", href: "/mix/", icon: "file-text"},
         {divider: true},
         {title: "Try it beside your desktop", href: "/docs/try/", icon: "monitor"},
         {title: "Driving apps over the Bus", href: "/docs/drive/", icon: "network"},
+        {title: "Components", href: "/docs/components/", icon: "box"},
         {title: "Decision: egui applications", href: "/docs/decisions/2026-10-09-egui-applications/", icon: "layers"},
         {divider: true},
         {title: "Decision: source layout", href: "/docs/decisions/2026-10-04-source-layout/", icon: "file-text"}
@@ -138,5 +141,13 @@ site: {
   -- Moved pages: old URL path -> new URL path. Each old path gets a static
   -- redirect page (meta refresh + canonical), because GitHub Pages has no
   -- server-side redirects. Never delete an entry; URLs are forever.
-  redirects: {}
+  redirects: {},
+
+  -- Components that do not have their page (docs/<name>/README.md) yet.
+  -- Every app, service, cli and lib component needs one, or gen-site --check
+  -- fails. This list only shrinks: --check refuses a name here that now has
+  -- a page, so remove it in the same change that adds the page. Never add a
+  -- new component here; write its page instead
+  -- (docs/docs/decisions/2026-10-16-site-url-layout.md).
+  missing_pages: []
 }

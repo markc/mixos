@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-// Vendored into cosmix-edit-core from microsoft/edit@826b4c0 crates/edit/src/simd/lines_bwd.rs; see vendor/msedit/README.md.
+// Vendored into MixOS (for libs/edit) from microsoft/edit@826b4c0 crates/edit/src/simd/lines_bwd.rs; see vendor/msedit/buffer/README.md.
 // Patched: OnceLock dispatch, loongarch arms removed (they need nightly features).
 
 use std::ptr;
@@ -70,7 +70,7 @@ unsafe fn lines_bwd_fallback(
 #[cfg(target_arch = "x86_64")]
 type LinesBwdFn = unsafe fn(*const u8, *const u8, CoordType, CoordType) -> (*const u8, CoordType);
 
-// cosmix patch (ced E0 plan §2.2(1)): upstream used a `static mut` fn pointer
+// MixOS patch (ced E0 plan §2.2(1)): upstream used a `static mut` fn pointer
 // overwritten on first call, a data race in a multi-threaded process.
 #[cfg(target_arch = "x86_64")]
 static LINES_BWD_DISPATCH: std::sync::OnceLock<LinesBwdFn> = std::sync::OnceLock::new();

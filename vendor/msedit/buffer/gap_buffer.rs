@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-// Vendored into cosmix-edit-core from microsoft/edit@826b4c0 crates/edit/src/buffer/gap_buffer.rs; see vendor/msedit/README.md.
+// Vendored into MixOS (for libs/edit) from microsoft/edit@826b4c0 crates/edit/src/buffer/gap_buffer.rs; see vendor/msedit/buffer/README.md.
 // Patched (ced E0 plan §2.2(3)): memory commit is fallible and all-or-nothing.
 // Upstream deleted text before a silently-failing enlargement; here
 // `allocate_gap` commits first and returns `Err` with the buffer untouched,
@@ -80,14 +80,14 @@ pub struct GapBuffer {
     gap_len: usize,
     /// Increments every time the buffer is modified.
     generation: u32,
-    /// Number of successful or attempted memory commits (cosmix addition).
+    /// Number of successful or attempted memory commits (MixOS addition).
     commit_calls: u64,
     /// If `Vec(..)`, the buffer is optimized for small amounts of text
     /// and uses the standard heap. Otherwise, it uses virtual memory.
     buffer: BackingBuffer,
 }
 
-// SAFETY (cosmix patch): `GapBuffer` exclusively owns its allocation — the
+// SAFETY (MixOS patch): `GapBuffer` exclusively owns its allocation — the
 // `text` NonNull points into the mmap reservation (or the `Vec`) held by its
 // own `buffer`, which is released only in `BackingBuffer::drop`. No other
 // handle aliases it and there is no interior mutability, so moving the
@@ -208,7 +208,7 @@ impl GapBuffer {
     /// Opens a gap of at least `len` bytes at `off`, deleting `delete` bytes
     /// after it. All-or-nothing: any memory the gap needs is committed BEFORE
     /// the gap moves or text is deleted, so an `Err` leaves the buffer exactly
-    /// as it was (cosmix patch; upstream returned a short slice after deleting).
+    /// as it was (MixOS patch; upstream returned a short slice after deleting).
     pub fn allocate_gap(&mut self, off: usize, len: usize, delete: usize) -> io::Result<&mut [u8]> {
         // Sanitize parameters
         let off = off.min(self.text_length);
@@ -353,7 +353,7 @@ impl GapBuffer {
         self.gap_len -= len;
     }
 
-    /// All-or-nothing replace (cosmix patch: returns `Err` untouched on OOM).
+    /// All-or-nothing replace (MixOS patch: returns `Err` untouched on OOM).
     pub fn replace(&mut self, range: Range<usize>, src: &[u8]) -> io::Result<()> {
         let gap = self.allocate_gap(
             range.start,

@@ -1,0 +1,255 @@
+---
+title: mix — changelog
+description: Release notes of the mix component, mirrored from libs/mix/CHANGELOG.md.
+generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
+---
+
+# Changelog
+
+> Mirrored from [`libs/mix/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/libs/mix/CHANGELOG.md), where releases update it. The component's page is [mix](README.md). This page describes the current `main` branch of MixOS.
+
+## Unreleased
+
+### Added
+
+- Add the `archive` feature with the `tar_list`, `tar_unpack` and `tar_pack`
+  builtins. Archives use zstd (default), gzip or no codec. `tar_unpack`
+  validates every member, extracts into a staging directory and renames it
+  into place only after the stream verifies. See `mix man tar`.
+- Harden archive builtins: count trailing padding against the shared decoded
+  stream budget, reject oversized declared files before creation and bound
+  copying, cap GNU/PAX metadata payloads before buffering, and refuse unread
+  gzip input or additional members. Packing captures capabilities only with
+  `keep_special_bits:true` and walks pinned directory/file descriptors without
+  following replacement symlinks. Rollback restores directory access and
+  reports cleanup failures. Empty/truncated zstd headers now raise
+  `ARCHIVE_STREAM_CORRUPT`. GNU sparse entries are refused; `tar_list` also
+  accepts `max_entries`. Each fix has targeted archive regression coverage.
+- Archive review fixes. `tar_unpack` restores only `user.*` xattrs by
+  default: `security.capability` needs `keep_special_bits:true`, and
+  `trusted.*`, POSIX ACLs (`system.*`) and the rest of `security.*` need the
+  new `privileged_xattrs:true`. Retained xattr bytes are bounded across the
+  archive by the new `max_xattr_bytes` (16 MiB). Staging has an unpredictable
+  name and is held by descriptor; members are created one O_NOFOLLOW
+  component at a time relative to it, and the commit refuses to replace
+  anything that appeared at `dest` (RENAME_NOREPLACE). Owner, mode and mtime
+  failures are no longer discarded: an owner that cannot be applied is listed
+  in the receipt's new `warnings`, and then its setuid/setgid bits and
+  capability are dropped; mode and mtime failures raise. PAX global headers
+  (`git archive`) are accepted as metadata (receipt `metadata`, list kind
+  `"metadata"`). A bare relative dest or output name means the current
+  directory. `tar_pack` refuses an output inside its source and raises when
+  a file changes size while it is packed.
+- Archive review, round 2. `tar_unpack` refuses a dest parent that another
+  user could write (group/other-writable without the sticky bit, or owned by
+  neither the caller nor root) before creating anything, and checks the new
+  staging directory is the caller's, `0700` and empty. Without
+  `RENAME_NOREPLACE` the commit now fails closed and rolls back. Implicitly
+  created parent directories count against `max_entries` (receipt
+  `implicit_dirs`). zstd content checksums are verified on unpack and list,
+  and `tar_pack` now writes one.
+- `analyzer::Analysis` carries `handlers`: one `HandlerDeclaration` (`command`,
+  `file`, `line`) per `on <command>` statement in the parsed AST, in source
+  order, with duplicates kept. `analyze()` collects them with the existing
+  statement walker. Remote `ssh_mix` bodies are not included. `mix lint --json`
+  and `--data` report the same list as an additive `handlers` field. The data
+  is structural: it does not prove that a handler runs or is reachable.
+
+### Fixed
+
+- `mix lint` MIX-W2307 (send result never checked) now counts a status read
+  inside an `if` condition, a map value, a nested call argument or a string
+  interpolation. A correctly checked send no longer warns.
+- MIX-W2307 treats every writer of `$rc`, `$result` and `$reply` as an
+  overwrite: `publish()`, `sh`, `$(...)`, pipes to external commands, user
+  assignments, address-block calls and calls to functions that send. A send
+  followed by one of these, and no read before it, now warns.
+- MIX-W2307 is conservative by construction: a construct whose effect on the
+  status the analyser cannot prove absent counts as an overwrite. A call is
+  proven non-writing only for a function defined in the file whose body and
+  parameter defaults do not write, or for one of the pure builtins (no I/O,
+  process, bus, network, clock or function-valued argument). Any other builtin,
+  value call (`$f()`), method call, `include` or `source`, and any name
+  defined nowhere in the file, now overwrites. A name that is also bound as a
+  variable or parameter is a barrier, because a callable binding runs before a
+  named function. A bare word that names a function is a call. A function that
+  can `exit`, `panic`, `die` or fail uncaught ends its caller's path, so a read
+  after that call does not discharge a send. String and heredoc `${...}`
+  fallbacks (`${x ?? sh "..."}`) are analysed as the program they are, and an
+  index is evaluated before its object. This can add warnings for code that is
+  correct but calls a non-pure builtin between a send and its check.
+
+## 0.116.0
+
+### Added
+
+- The remote mix binary is configurable. Every builtin that drives a
+  remote mix (`ssh_mix`, `ssh_mix_many`, `ssh_exec`, `ssh_run`'s
+  `env_transport: "mix"`, `send_mail`'s `host` hop) resolves it in one
+  place: the `mix_bin` option, else the local env var `MIX_REMOTE_BIN`
+  (empty counts as unset), else `/opt/cosmix/bin/mix`, the unchanged
+  default. The value is interpolated into the remote command string, so
+  it must be an absolute path or a bare name using only `[A-Za-z0-9_./+-]`;
+  anything else raises `OPTION_INVALID` locally before ssh runs. A host with
+  mix only at `/opt/mixos/bin/mix` used to fail with exit 127.
+
+### Changed
+
+- `ssh_exec`'s `remote_mix` option is now validated the same way (it was
+  interpolated unchecked) and is an alias of `mix_bin`; passing both
+  raises.
+
+## 0.115.0
+
+### Added
+
+- `unix_connect(path[, {timeout, frame}])`: a client for a local
+  unix-domain stream socket, in `tcp_connect`'s handle space, so
+  `tcp_send`, `tcp_recv`, `tcp_recv_line`, `tcp_on` and `tcp_close` take it.
+  The connect is bounded by `timeout` and fails at once on a full backlog
+  (`UNIX_CONNECT_BUSY`). `frame: "nul"` makes a line a NUL-terminated
+  frame, the framing of systemd's Varlink services and of hostd, for
+  `tcp_recv_line` and `tcp_on {frame: "line"}` alike. Refusals carry
+  `UNIX_CONNECT_*` codes. `mix man system` documents it.
+
+### Changed
+
+- One frame splitter serves `tcp_recv_line` (blocking and Class C) and
+  `tcp_on` line mode, keyed to the connection's delimiter. One trailing CR
+  is still stripped from an LF line.
+
+### Fixed
+
+- `max` now caps a complete line too. A line longer than `max` whose
+  terminator arrived in the same read used to be delivered, so whether it
+  was refused depended on packet timing. All three paths (`tcp_recv_line`
+  blocking and Class C, `tcp_on` line mode) now refuse it the same way.
+
+## 0.114.0
+
+### Changed
+
+- Released with mix-shell 0.114.0, whose usage-statistics store is now an
+  append-only JSONL store (`mix man stats`). The language and its builtins
+  are unchanged.
+
+## 0.113.1
+
+### Fixed
+
+- An `on` header reads a hyphenated name whole, like a `send` target:
+  `on dopus-test.command.executed` handles that topic. Before, the header
+  stopped at the hyphen, so the handler registered as `dopus` with
+  `-test.command.executed` as its body: it parsed, linted clean and never
+  fired. Leading-zero segments (`on svc-01.ping`) lex as part of the name,
+  as they do after `send`.
+
+## 0.113.0
+
+### Added
+
+- `mime_type(path[, {content}])`: a file's type from the freedesktop
+  shared-mime-info database, decided by GLib's rules, so it agrees with
+  `gio info` and the file manager (checked against GIO on 5,047 files).
+  Returns `{mime, by, uncertain, exists, parents}`. Behind the new `mime`
+  feature, through the new `mimedb` crate. `mix man io` documents it.
+
+## 0.112.1
+
+### Added
+
+- `tcp_send(handle, payload[, {timeout}])`: one deadline bounds the whole
+  send, however many partial writes a slow reader forces (seconds, 0 = wait
+  forever). On expiry it raises `TCP_SEND_TIMEOUT` with
+  `details: {written, total}` and retires the handle; bytes already written
+  stay written. The wait honours SIGTERM and Ctrl-C. On a `tcp_on` handle
+  the timeout is the receipt deadline. Without the option `tcp_send` is
+  unchanged.
+
+### Fixed
+
+- SIGTERM now ends a blocking `tcp_accept`, `tcp_recv`, `tcp_recv_line` or
+  `ws_recv` at once, as it ends `sleep()`. On unix these numeric waits now
+  wait on the async runtime instead of blocking the evaluator's thread, so
+  the shell's SIGTERM and Ctrl-C handling can cancel them. Before, a script
+  looping on `tcp_accept($l, {timeout: 0.05})` ignored SIGTERM until the
+  15 s backstop forced it out. Options, results and error messages are
+  unchanged.
+- A receive returns data already buffered before it judges the deadline, so
+  a very short timeout no longer returns nil while a line sits in the buffer.
+  Traffic that delivers nothing (a WebSocket Pong flood, a line trickled with
+  no newline) now counts against the deadline and the interrupt flag, so a
+  finite timeout ends on time and SIGTERM still ends an untimed wait.
+- A very large receive timeout in a Class C `tcp_recv`/`ws_recv` waits
+  forever instead of overflowing the deadline.
+
+## 0.112.0
+
+### Added
+
+- Server-side TCP. `tcp_listen(host, port[, {backlog}])` binds and listens
+  and returns a listener handle; `host` is required (`"127.0.0.1"` is the
+  normal choice) and port 0 takes an ephemeral port. `tcp_local_addr(handle)`
+  returns `{host, port}` for a listener or connection.
+  `tcp_accept(listener[, {timeout}])` returns an ordinary connected handle,
+  or nil on timeout; in a Class C body it waits on native readiness.
+  `tcp_on` on a listener delivers one `accepted: {handle, peer}` event per
+  connection, and `tcp_accept(source)` reads that source outside serve mode.
+  `tcp_close` closes a listener. Listeners and the connections they accept
+  belong to the evaluator generation and close when it retires. Errors
+  carry stable codes (`TCP_LISTEN_ADDR_IN_USE`, `TCP_LISTEN_PERMISSION`,
+  `TCP_LISTEN_ADDR_UNAVAILABLE`, `TCP_LISTEN_ADDRESS`, `TCP_LISTEN_ARGUMENT`,
+  `TCP_ACCEPT_HANDLE`, `TCP_HANDLE_LIMIT`, `TCP_LISTENER`).
+- The handle limit is server-side: at most 1024 listeners and accepted
+  connections are live at once, each holding a slot until it closes, and
+  `tcp_listen` and `tcp_accept` refuse with `TCP_HANDLE_LIMIT` past it.
+  `tcp_connect` is not limited and behaves as before.
+- A blocking `tcp_accept` wakes promptly on Ctrl-C through a SIGINT wake
+  socket that `interrupt::init` installs, and rechecks the interrupt flag at
+  least every 250 ms, so no waiter misses it.
+- `on @.verb` registers a handler under the serve name: the unquoted `@` is
+  replaced by the `--serve` name (the value `serve_name()` returns) when the
+  handler registers, so one generic script run as `--name photo` answers
+  `photo.verb` and a second instance as `--name other` answers `other.verb`.
+  Dispatch, HELP and handler listings show the resolved name; the AST keeps
+  `@.verb`. Outside `mix --serve` the statement raises
+  `SERVE_PREFIX_OUTSIDE_SERVE`. Each segment after `@.` must be a bare name,
+  quoted or not. `on a.@.b`, `on @`, `on @x.y`, a quoted `on "@.x"`, a quoted
+  segment that isn't a bare name (`on @."a.b"`) and `@` in an expression are
+  parse errors (an unquoted `@` was a lexer error before). Positions that read
+  raw source text now accept `@` as an ordinary character where it used to
+  fail lexing: a bareword `source`/`include` path (`source ./foo@bar.mix`) and
+  the command after `|` (`print(1) | cat @foo`).
+
+### Fixed
+
+- HTTP 1xx, 204 and 304 responses are bodyless on every method, not only
+  HEAD. A conditional GET answered 304 with `Content-Encoding: gzip` no longer
+  fails with `HTTP_BODY`, so ETag polling works.
+
+## 0.111.0
+
+### Added
+
+- `script_path()` returns the entry script's absolute, symlink-resolved path,
+  the same answer as `realpath($0)`, fixed when the script starts (a later
+  `chdir()`, including one in the prelude, does not move it). It is nil under
+  `mix -c`, in the REPL, for `mix -` and when the path cannot be resolved at
+  start. A `require`d module, even during its top-level init, gets the entry
+  script's path.
+
+### Fixed
+
+- Lambdas created inside a served `on` handler keep the handler's local
+  variables when they run later (they faulted with `undefined variable`). A
+  module first required inside a handler still reads its globals live.
+- `password_hash` sha512-crypt output is now verifiable by glibc `crypt(3)` and
+  Dovecot.
+- `chr()` and `ord()` structured error codes are pinned by tests.
+
+## 0.109.1
+
+Initial MixOS transplant of the current language library and regression corpus.
+Language syntax, builtin contracts and evaluator behaviour retain the source
+version. Environment and project roots use MixOS names. SSH helpers retain the
+installed Mix path used by existing Cosmix nodes during the migration.

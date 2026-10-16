@@ -286,7 +286,15 @@ mod tests {
         // The same session's path as seen inside the desk does not match.
         let inside = "/system.slice/system-scenes.slice/scenes@3.service";
         assert_eq!(
-            target(&p, &Caller { uid: 1000, ..caller(inside) }, RESTART, now()),
+            target(
+                &p,
+                &Caller {
+                    uid: 1000,
+                    ..caller(inside)
+                },
+                RESTART,
+                now()
+            ),
             Err("not_granted")
         );
     }

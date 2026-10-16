@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-// Vendored into cosmix-lsh from microsoft/edit@826b4c0 crates/stdext/src/simd/memset.rs; see cosmix-lsh/vendor/README.md.
+// Vendored into MixOS (for libs/syntax) from microsoft/edit@826b4c0 crates/stdext/src/simd/memset.rs; see vendor/msedit/README.md.
 
 //! `memchr` for arbitrary sizes (1/2/4/8 bytes).
 //!
@@ -92,7 +92,7 @@ unsafe fn memset_fallback(mut beg: *mut u8, end: *mut u8, val: u64) {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 type MemsetFn = unsafe fn(beg: *mut u8, end: *mut u8, val: u64);
 
-// cosmix patch (ced E1 plan §1.2): upstream kept the chosen implementation in a
+// MixOS patch (ced E1 plan §1.2): upstream kept the chosen implementation in a
 // mutable static fn pointer overwritten on first call, a data race in a
 // multi-threaded process. A typed OnceLock, filled by the same probe.
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]

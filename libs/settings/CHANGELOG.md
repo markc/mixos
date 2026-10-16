@@ -27,7 +27,7 @@ Additive, store format unchanged (3):
 
 ## 0.6.0
 
-Additive, store format 3 ([decision](../../docs/decisions/2026-10-14-session-icon-stroke-and-type.md)):
+Additive, store format 3 ([decision](../../docs/docs/decisions/2026-10-14-session-icon-stroke-and-type.md)):
 
 - `Appearance` and `Effective` gain four optional session choices:
   `icon_stroke` (1.0 to 3.0 in quarter steps), `font_family`,
@@ -46,7 +46,7 @@ coercion; callers that take ownership unwrap with `*appearance`.
 ## 0.5.0
 
 Authority verbs 0.3.0 (additive): snapshot schema 2
-([decision](../../docs/decisions/2026-10-11-settings-snapshot-schema-2.md)).
+([decision](../../docs/docs/decisions/2026-10-11-settings-snapshot-schema-2.md)).
 
 - `compact`: `CompactSnapshot` (schema 2) sends each distinct design
   projection once under `designs`, keyed by digest; each context's `design`
@@ -66,7 +66,7 @@ Authority verbs 0.3.0 (additive): snapshot schema 2
 ## 0.4.0
 
 Authority verbs 0.2.0 (additive), snapshot schema still 1
-([decision](../../docs/decisions/2026-10-11-settings-summary-reads.md)):
+([decision](../../docs/docs/decisions/2026-10-11-settings-summary-reads.md)):
 
 - `Summary` (schema 1): binding, incarnation, revision, design revision,
   source digest, appearance names and `custom_source`; never projections or

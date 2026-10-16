@@ -125,8 +125,9 @@ contract = "none"          # none | public  (public = semver'd, see §5)
   itself is the library `cli/mix-shell`, so that `libs/mix` (package `mix`)
   stays the language.
 - A gate checks that each package's path matches its `component` and
-  `kind`, and generates the component index (`docs/docs/dev/components.md`).
-  That index is the agent's map of the tree.
+  `kind` (`tools/component_index.mix`). The site generator builds the
+  component index from the same metadata (`/docs/components/`, source
+  `docs/docs/components.md`). That index is the agent's map of the tree.
 - **Component names** are a lowercase letter, then lowercase letters, digits
   and hyphens. `docs` and `v` are reserved. The same gate refuses a bad name
   in any package's `component` or in a `component.mx`
@@ -347,11 +348,16 @@ path. The URL layout is fixed by the
 - `docs/<component>/README.md`: a component's page, at `/<component>/`, with
   further pages beside it (`docs/mix/` is the Mix language manual). Every
   component has one; the README in the component's own directory points to it.
+  Those still without one are listed in `docs/_build/site.conf.mix`
+  `missing_pages`, which only shrinks. `docs/<component>/changelog.md` is
+  generated from the `CHANGELOG.md` beside the code; never write it by hand.
 - `docs/docs/<page>.md`: everything that is not a component, at `/docs/<page>/`
   (guides such as `try` and `drive`).
 - `docs/_build/` and `docs/_web/`: the generator's inputs and the site's assets.
-- `docs/docs/dev/`: contributor and architecture guides, plus the generated
-  component index.
+- `docs/docs/dev/`: contributor and architecture guides.
+- Generated, never edited (front matter `generated:`): the component index
+  `docs/docs/components.md`, the install-profile lists `docs/docs/desktop.md`
+  and `docs/docs/server.md`, and each component's changelog mirror.
 - `docs/docs/spec/`: contracts and registries (§5).
 - `docs/docs/decisions/YYYY-MM-DD-title.md`: **public decisions**, which are the
   public authority for this tree. Private plans may motivate a change, but a
@@ -374,7 +380,8 @@ path. The URL layout is fixed by the
 4. Its units, scripts, assets, i18n and tests inside the component (§2).
 5. Contracts registered (verbs, schemas) if it has any (§5).
 6. SPDX headers; third-party attribution intact (§4).
-7. Gates pass (§6, §9); the component index regenerated.
+7. Gates pass (§6, §9); the site regenerated (`mix docs/_build/gen-site.mix`),
+   which rebuilds the component index.
 8. Manual page in `docs/`; a public decision record if it changes a rule.
 9. GUI apps follow §4.1 and record their representative performance
    workloads.

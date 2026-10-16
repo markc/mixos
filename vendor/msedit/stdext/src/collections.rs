@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-// Vendored into cosmix-lsh from microsoft/edit@826b4c0 crates/stdext/src/collections/mod.rs; see cosmix-lsh/vendor/README.md.
+// Vendored into MixOS (for libs/syntax) from microsoft/edit@826b4c0 crates/stdext/src/collections/mod.rs; see vendor/msedit/README.md.
 
 mod string;
 mod vec;

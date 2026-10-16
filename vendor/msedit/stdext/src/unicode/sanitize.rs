@@ -1,4 +1,4 @@
-// Vendored into cosmix-lsh from microsoft/edit@826b4c0 crates/stdext/src/unicode/sanitize.rs (upstream file carries no header; the crate is MIT, see LICENSE); see cosmix-lsh/vendor/README.md.
+// Vendored into MixOS (for libs/syntax) from microsoft/edit@826b4c0 crates/stdext/src/unicode/sanitize.rs (upstream file carries no header; the crate is MIT, see LICENSE); see vendor/msedit/README.md.
 use std::borrow::Borrow;
 use std::ops::Range;
 

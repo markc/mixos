@@ -58,6 +58,8 @@ icons! {
     ArrowLeft => "arrow-left",
     ArrowRight => "arrow-right",
     ArrowUp => "arrow-up",
+    BookUser => "book-user",
+    Calendar => "calendar",
     Camera => "camera",
     Check => "check",
     ChevronDown => "chevron-down",
@@ -66,6 +68,7 @@ icons! {
     Circle => "circle",
     CircleAlert => "circle-alert",
     CircleCheck => "circle-check",
+    Contact => "contact",
     Copy => "copy",
     Crop => "crop",
     Disc => "disc",
@@ -95,11 +98,13 @@ icons! {
     HardDrive => "hard-drive",
     Highlighter => "highlighter",
     House => "house",
+    Inbox => "inbox",
     Image => "image",
     Info => "info",
     Keyboard => "keyboard",
     LayoutTemplate => "layout-template",
     LoaderCircle => "loader-circle",
+    Mail => "mail",
     MessageSquare => "message-square",
     Minus => "minus",
     Monitor => "monitor",
@@ -111,19 +116,23 @@ icons! {
     Palette => "palette",
     PanelLeft => "panel-left",
     PanelRight => "panel-right",
+    Paperclip => "paperclip",
     Pencil => "pencil",
     Play => "play",
     Plug => "plug",
     Presentation => "presentation",
     Redo2 => "redo-2",
     RefreshCw => "refresh-cw",
+    Reply => "reply",
     Save => "save",
     Scan => "scan",
     Search => "search",
+    Send => "send",
     Server => "server",
     Settings => "settings",
     Square => "square",
     SquareDashed => "square-dashed",
+    SquarePen => "square-pen",
     Sun => "sun",
     Trash => "trash",
     Type => "type",
@@ -209,7 +218,8 @@ mod tests {
     }
 
     #[test]
-    fn the_shipped_design_authors_the_lighter_stroke_baseline() {
-        assert_eq!(stroke_width(&Theme::embedded()), 1.5);
+    fn the_shipped_design_uses_lucide_default_stroke() {
+        // The approved baseline: the shipped token is 1.5 on the 24-unit grid.
+        assert_eq!(stroke_width(&Theme::embedded()), DEFAULT_STROKE);
     }
 }

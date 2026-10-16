@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-// Vendored into cosmix-lsh from microsoft/edit@826b4c0 crates/stdext/src/float.rs; see cosmix-lsh/vendor/README.md.
+// Vendored into MixOS (for libs/syntax) from microsoft/edit@826b4c0 crates/stdext/src/float.rs; see vendor/msedit/README.md.
 
 //! A simple, tiny, approximate (!) float parser.
 //! It's a good fit when you're fine with a few ULP of error.

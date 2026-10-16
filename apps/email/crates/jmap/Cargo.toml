@@ -1,0 +1,30 @@
+# jmap: email's headless engine — the JMAP wire protocol. Ported from the
+# retired Dioxus client's src/jmap.rs (markc/cmctl a9778d3) with its known
+# faults fixed: session discovery, token auth, batching, pagination, typed
+# method errors, Bcc, In-Reply-To, CRLF stripping, attachment download.
+[package]
+name = "jmap"
+description = "JMAP client protocol core: session, auth, mail, compose, calendars, contacts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "email"
+kind = "app"
+layer = "core"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+chrono = { workspace = true, features = ["clock"] }
+reqwest = { workspace = true, features = ["json"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

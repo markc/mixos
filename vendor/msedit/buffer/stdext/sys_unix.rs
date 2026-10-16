@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-// Vendored into cosmix-edit-core from microsoft/edit@826b4c0 crates/stdext/src/sys/unix.rs; see vendor/msedit/README.md.
+// Vendored into MixOS (for libs/edit) from microsoft/edit@826b4c0 crates/stdext/src/sys/unix.rs; see vendor/msedit/buffer/README.md.
 // Unchanged apart from this header.
 
 use std::ffi::c_int;
