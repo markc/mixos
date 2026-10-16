@@ -69,7 +69,9 @@ pub enum Event {
     /// settingsd answered write `ticket`.
     Settled(u64, Settled),
     /// The secrets file was written (or refused) for save `ticket`.
-    SecretsSaved(u64, Result<bool, String>),
+    SecretsSaved(u64, u64, Result<bool, String>),
+    /// Settings write `op`'s deadline passed.
+    WriteDeadline(u64),
     /// A read of the session profile (settingsd), for the shell.
     Look(u64, Result<citizen::Reply, citizen::CallError>),
     /// A retry of the session look after a transient fault (its generation).
@@ -111,7 +113,9 @@ pub struct Shell {
     /// The latest look retry; an older one firing is void.
     look_retry: u64,
     config: Option<crate::config::ConfigFile>,
-    secrets: Option<SecretsFile>,
+    /// The secrets saver: a serial worker thread that writes each snapshot
+    /// in order, off the UI thread (a stalled disk never freezes the window).
+    saver: Option<mpsc::Sender<(u64, u64, Secrets)>>,
     /// Settings writes sent, for unique operation ids.
     applies: u64,
     /// Bus commands waiting behind drive input accepted before them.
@@ -224,6 +228,37 @@ pub fn without_userinfo(url: &str) -> (String, bool) {
     }
 }
 
+/// The secrets saver: one thread, so saves land in the order they were
+/// asked for; each answers with the snapshot version it wrote.
+fn saver(
+    file: SecretsFile,
+    events: mpsc::Sender<Event>,
+    wake: egui::Context,
+) -> mpsc::Sender<(u64, u64, Secrets)> {
+    let (tx, rx) = mpsc::channel::<(u64, u64, Secrets)>();
+    let spawned = std::thread::Builder::new()
+        .name("email-secrets".into())
+        .spawn(move || {
+            while let Ok((ticket, version, snapshot)) = rx.recv() {
+                let result = file.save(&snapshot);
+                if let Err(error) = &result {
+                    eprintln!("email: {error}");
+                }
+                if events
+                    .send(Event::SecretsSaved(ticket, version, result))
+                    .is_err()
+                {
+                    return;
+                }
+                wake.request_repaint();
+            }
+        });
+    if let Err(error) = spawned {
+        eprintln!("email: no secrets saver: {error}");
+    }
+    tx
+}
+
 /// The state a launch starts in, from the app's config directory: the
 /// window's shape, the accounts cache, the passwords, and a schema-1
 /// account still to migrate. Without a config directory nothing persists.
@@ -318,6 +353,7 @@ impl Shell {
         });
         let dir: Option<PathBuf> = config::AppDirs::resolve(APP).map(|dirs| dirs.config());
         let (state, config, secrets) = start(dir.as_deref());
+        let saver = secrets.map(|file| saver(file, tx.clone(), ctx.clone()));
         let mut shell = Self {
             state,
             commands: commands::registry(),
@@ -339,7 +375,7 @@ impl Shell {
             follower: settings::follow::Follower::new(&hostname()),
             look_retry: 0,
             config,
-            secrets,
+            saver,
             applies: 0,
             held: std::collections::VecDeque::new(),
             comp: std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into()),
@@ -667,15 +703,26 @@ impl Shell {
                 }
             }
             Work::ReadSettings => self.read_look(),
+            Work::WriteDeadline { op } => {
+                self.spawn(async move {
+                    tokio::time::sleep(crate::work::WRITE_DEADLINE).await;
+                    Event::WriteDeadline(op)
+                });
+            }
             Work::SaveSecrets { ticket } => {
-                let result = match &self.secrets {
-                    Some(file) => file.save(self.state.secrets()),
-                    None => Ok(true),
+                let (version, snapshot) = self.state.secrets_snapshot();
+                let queued = match &self.saver {
+                    Some(saver) => saver.send((ticket, version, snapshot)).is_ok(),
+                    None => {
+                        // Nowhere to save: nothing persists this run.
+                        self.state.secrets_saved(ticket, version, Ok(true));
+                        true
+                    }
                 };
-                if let Err(error) = &result {
-                    eprintln!("email: {error}");
+                if !queued {
+                    let error = label("secrets-saver-gone");
+                    self.state.secrets_saved(ticket, version, Err(error));
                 }
-                self.state.secrets_saved(ticket, result);
             }
             Work::OpenPrefs => self.open_prefs(),
         }
@@ -916,6 +963,9 @@ impl Shell {
                 self.set_keymap(keymaps.get(APP).cloned().unwrap_or_default());
                 self.state.set_settings(*email);
             }
+            // Nothing new, but settingsd answered: a write waiting on a
+            // read is released.
+            Some(settings::follow::Followed::Unchanged) => self.state.settings_unchanged(),
             Some(settings::follow::Followed::Missing) => {
                 if self.look.is_some() {
                     self.set_look(None);
@@ -1174,7 +1224,8 @@ mod tests {
         // The shell performs the save.
         let file = secrets.unwrap();
         assert!(file.save(state.secrets()).unwrap());
-        state.secrets_saved(save.unwrap(), Ok(true));
+        let version = state.secrets_snapshot().0;
+        state.secrets_saved(save.unwrap(), version, Ok(true));
         let (loaded, _) = SecretsFile::load(&dir);
         assert_eq!(loaded.password(&id), Some("pw-live"));
         let mode = std::fs::metadata(&file.path).unwrap().permissions().mode();
@@ -1193,6 +1244,33 @@ mod tests {
         let (again, _, _) = start(Some(&dir));
         assert!(again.account(&id).is_some());
         assert_eq!(again.accounts.len(), 1);
+    }
+
+    /// Review #19: secrets are saved on the saver thread, in order, and each
+    /// ack names the snapshot version it wrote.
+    #[test]
+    fn review_19_the_saver_writes_off_the_ui_thread_in_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_, file) = SecretsFile::load(dir.path());
+        let (events, received) = mpsc::channel();
+        let saver = saver(file, events, egui::Context::default());
+        let ui = std::thread::current().id();
+        for (ticket, version, password) in [(1, 5, "pw-1"), (2, 6, "pw-2")] {
+            let mut secrets = Secrets::default();
+            secrets.set("a", password);
+            saver.send((ticket, version, secrets)).unwrap();
+        }
+        for expected in [(1, 5), (2, 6)] {
+            match received.recv_timeout(std::time::Duration::from_secs(10)) {
+                Ok(Event::SecretsSaved(ticket, version, Ok(true))) => {
+                    assert_eq!((ticket, version), expected);
+                }
+                _ => panic!("no ack for {expected:?}"),
+            }
+        }
+        assert_eq!(std::thread::current().id(), ui);
+        let (saved, _) = SecretsFile::load(dir.path());
+        assert_eq!(saved.password("a"), Some("pw-2"), "the later save is the one kept");
     }
 
     /// Review finding 13: a CA path must name a small regular file; a

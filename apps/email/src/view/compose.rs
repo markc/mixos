@@ -92,6 +92,23 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiE
             events.push(UiEvent::ComposeField(ComposeField::Body, body));
         }
     });
+    // The account's login changed under this draft: show the new From and
+    // let the person take it; Send waits until they do.
+    if let Some(from) = &compose.stale {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(
+                egui::RichText::new(crate::label_with(
+                    "compose-from-new",
+                    &[("old", &compose.draft.from), ("new", from)],
+                ))
+                .color(ui.visuals().warn_fg_color),
+            );
+            let take = toolkit::button::PushButton::secondary(crate::label("use-new-from"));
+            if ui.add(take).clicked() {
+                events.push(UiEvent::ComposeUseNewFrom);
+            }
+        });
+    }
     if let Some(error) = &compose.error {
         ui.label(
             egui::RichText::new(crate::label_with("send-failed", &[("error", error)]))

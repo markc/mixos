@@ -177,6 +177,9 @@ pub struct ComposeState {
     pub error: Option<String>,
     /// The send this compose is waiting on: only its completion closes it.
     pub sending: Option<u64>,
+    /// The account's new address, when its login (URL or address) changed
+    /// while this draft was open: Send waits until the person takes it.
+    pub stale: Option<String>,
 }
 
 impl ComposeState {
@@ -196,6 +199,7 @@ impl ComposeState {
             busy: false,
             error: None,
             sending: None,
+            stale: None,
         }
     }
 }
@@ -659,6 +663,11 @@ pub mod code {
     /// settingsd is absent: the accounts are read-only.
     pub const UNAVAILABLE: &str = "UNAVAILABLE";
     pub const CONFLICT: &str = "CONFLICT";
+    /// A settings write went unanswered past its deadline.
+    pub const TIMEOUT: &str = "TIMEOUT";
+    /// The account is still migrating from the schema-1 config: its
+    /// password cannot change until that finishes (retry later).
+    pub const MIGRATION_PENDING: &str = "MIGRATION_PENDING";
     pub const REFUSED: &str = "REFUSED";
     pub const OUTCOME_UNKNOWN: &str = "OUTCOME_UNKNOWN";
     pub const SECRETS: &str = "SECRETS";
@@ -695,6 +704,12 @@ struct PendingWrite {
     /// The settings read ([`State::epoch`]) it was computed against: its
     /// prediction is installed only if no newer read has arrived since.
     base: u64,
+    /// The account's credential operation when the write was made: its
+    /// password (or a removal's forget) lands only if still the latest.
+    credential: u64,
+    /// The write's own id, kept across its retries: its deadline is
+    /// [`Work::WriteDeadline`] with it.
+    op: u64,
 }
 
 /// Where the schema-1 migration stands. Each step needs the one before it
@@ -754,8 +769,21 @@ pub struct State {
     /// views and clients stay until a non-empty read or an explicit removal.
     held: Option<Vec<AccountEntry>>,
     secrets: Secrets,
-    /// Accounts whose password changed and is not yet durably saved.
-    unsaved: std::collections::BTreeSet<String>,
+    /// Accounts whose password changed and is not yet durably saved, with
+    /// the secrets version that changed it: a save of an older version
+    /// never clears a newer change.
+    unsaved: BTreeMap<String, u64>,
+    /// Bumped on every change to the passwords held.
+    secrets_version: u64,
+    /// Per account, the latest credential operation (a password set, a
+    /// forget, a removal): a write's password effect lands only if no
+    /// newer operation happened since the write was made.
+    credentials: BTreeMap<String, u64>,
+    /// The last credential operation number handed out.
+    credential_ops: u64,
+    /// The last connection generation handed out: one counter for every
+    /// account, so a removed and restored account never reuses one.
+    generations: u64,
     /// The schema-1 account until settingsd holds it and its password is
     /// durable under the id settingsd holds it as.
     migration: Option<Migration>,
@@ -804,7 +832,11 @@ impl State {
             epoch: 0,
             held: None,
             secrets,
-            unsaved: std::collections::BTreeSet::new(),
+            unsaved: BTreeMap::new(),
+            secrets_version: 0,
+            credentials: BTreeMap::new(),
+            credential_ops: 0,
+            generations: 0,
             migration: None,
             migrated: false,
             compose: None,
@@ -831,7 +863,7 @@ impl State {
     /// applied to settingsd.
     pub fn begin_migration(&mut self, entry: AccountEntry, password: &str) {
         self.hold(&entry.id, password);
-        let durable = !self.unsaved.contains(&entry.id) && self.secrets.has(&entry.id);
+        let durable = !self.unsaved.contains_key(&entry.id) && self.secrets.has(&entry.id);
         self.migration = Some(Migration {
             entry,
             stage: if durable { Stage::Ready } else { Stage::Saving },
@@ -847,8 +879,37 @@ impl State {
     /// save lands.
     fn hold(&mut self, id: &str, password: &str) {
         if self.secrets.set(id, password) {
-            self.unsaved.insert(id.to_owned());
+            self.mark(id);
         }
+    }
+
+    /// `id`'s password is unsaved as of a new secrets version.
+    fn mark(&mut self, id: &str) {
+        self.secrets_version += 1;
+        self.unsaved.insert(id.to_owned(), self.secrets_version);
+    }
+
+    /// A fresh connection generation.
+    fn next_generation(&mut self) -> u64 {
+        self.generations += 1;
+        self.generations
+    }
+
+    /// `id`'s latest credential operation.
+    fn credential(&self, id: &str) -> u64 {
+        self.credentials.get(id).copied().unwrap_or(0)
+    }
+
+    /// A new credential operation on `id`: any write made before it no
+    /// longer touches `id`'s password.
+    fn credential_op(&mut self, id: &str) {
+        self.credential_ops += 1;
+        self.credentials.insert(id.to_owned(), self.credential_ops);
+    }
+
+    /// The passwords and the version they are at, for the shell to save.
+    pub fn secrets_snapshot(&self) -> (u64, Secrets) {
+        (self.secrets_version, self.secrets.clone())
     }
 
     /// Whether the schema-1 account is still to migrate.
@@ -982,6 +1043,12 @@ impl State {
                         || view.entry.email != entry.email
                         || view.entry.ca_path != entry.ca_path;
                     let was_enabled = view.entry.enabled;
+                    if relogin
+                        && let Some(compose) = self.compose.as_mut()
+                        && compose.account == entry.id
+                    {
+                        compose.stale = Some(entry.email.clone());
+                    }
                     view.entry = entry;
                     if !view.entry.enabled {
                         if view.phase != Phase::Disabled {
@@ -1033,7 +1100,7 @@ impl State {
             view.phase = Phase::NoPassword;
             return;
         };
-        view.generation += 1;
+        view.generation = self.next_generation();
         view.phase = Phase::Connecting;
         self.work.push(Work::Connect {
             account: view.entry.id.clone(),
@@ -1055,7 +1122,7 @@ impl State {
             });
         }
         // Answers of the old connection are void from here.
-        view.generation += 1;
+        view.generation = self.next_generation();
         view.forget();
     }
 
@@ -1159,6 +1226,80 @@ impl State {
         self.status = crate::label_with("migration-stopped", &[("message", message)]);
     }
 
+    /// A settings read answered with nothing new (the follower had seen
+    /// it): writes waiting on a read are computed against what is in force
+    /// and sent again, so none waits forever.
+    pub fn settings_unchanged(&mut self) {
+        if self.source != Source::Settings {
+            return;
+        }
+        let waiting: Vec<u64> = self
+            .writes
+            .iter()
+            .filter(|(_, w)| w.awaiting_look)
+            .map(|(ticket, _)| *ticket)
+            .collect();
+        for ticket in waiting {
+            if let Some(pending) = self.writes.remove(&ticket) {
+                self.send_write(pending);
+            }
+        }
+    }
+
+    /// Write `op`'s deadline passed: if it is still unsettled (sent but not
+    /// answered, or waiting on a read that never came) its caller hears so.
+    pub fn write_deadline(&mut self, op: u64) {
+        let Some(ticket) = self
+            .writes
+            .iter()
+            .find(|(_, w)| w.op == op)
+            .map(|(ticket, _)| *ticket)
+        else {
+            return;
+        };
+        if let Some(pending) = self.writes.remove(&ticket) {
+            self.write_failed(pending, code::TIMEOUT, &crate::label("settings-timeout"));
+        }
+    }
+
+    /// Remove `id`, shown only because settingsd showed no accounts: the
+    /// held entry goes (the others stay) and its secret is forgotten
+    /// durably before `reply` hears rc 0.
+    fn remove_held(&mut self, id: &str, reply: Option<u64>) {
+        if let Some(held) = self.held.as_mut() {
+            held.retain(|a| a.id != id);
+            if held.is_empty() {
+                self.held = None;
+            }
+        }
+        self.credential_op(id);
+        let body = json!({ "id": id });
+        let forgot = self.secrets.set(id, "");
+        if forgot {
+            self.mark(id);
+        }
+        self.reconcile();
+        if forgot || self.unsaved.contains_key(id) {
+            self.save_secrets(reply.map(|reply| (reply, body)));
+        } else if let Some(reply) = reply {
+            self.reply(reply, 0, body);
+        }
+    }
+
+    /// Whether `id` is the account still migrating from the schema-1
+    /// config (or the one settingsd holds it as): its password may not be
+    /// changed or forgotten until the migration finishes, or a restart
+    /// would bring the old one back.
+    pub fn migration_locks(&self, id: &str) -> bool {
+        let Some(Migration { entry, .. }) = &self.migration else {
+            return false;
+        };
+        entry.id == id
+            || self.settings.accounts.iter().any(|a| {
+                a.id == id && a.url == entry.url && a.email.eq_ignore_ascii_case(&entry.email)
+            })
+    }
+
     /// settingsd is not running: the cached accounts stand, read-only.
     pub fn settings_missing(&mut self) {
         self.source = Source::Missing;
@@ -1199,12 +1340,26 @@ impl State {
         password: Option<String>,
         migration: bool,
     ) {
+        // #17: removing an account shown only because settingsd showed none
+        // (it is no longer in settingsd) removes it here, and its secret.
+        if let Change::Remove(id) = &change
+            && self.settings.account(id).is_none()
+            && self.held.as_ref().is_some_and(|h| h.iter().any(|a| a.id == *id))
+        {
+            let id = id.clone();
+            return self.remove_held(&id, reply);
+        }
+        let credential = change.account().map_or(0, |id| self.credential(id));
+        let op = self.ticket();
+        self.queue(Work::WriteDeadline { op });
         let pending = PendingWrite {
             change,
             reply,
             password,
             attempts: 0,
             awaiting_look: false,
+            credential,
+            op,
             migration,
             sent: None,
             base: 0,
@@ -1279,6 +1434,13 @@ impl State {
                 self.queue(Work::ReadSettings);
                 self.write_done(pending, about, current.then_some(next));
             }
+            // A newer read is already in force: compute against it now.
+            Settled::Conflict
+                if pending.attempts < WRITE_ATTEMPTS && self.epoch > pending.base =>
+            {
+                self.send_write(pending);
+            }
+            // Otherwise the next read releases it, an unchanged one too.
             Settled::Conflict if pending.attempts < WRITE_ATTEMPTS => {
                 self.writes.insert(
                     ticket,
@@ -1328,11 +1490,16 @@ impl State {
         // An explicit removal through Email: the views go even if it was the
         // last account, and its password is forgotten.
         let mut save = false;
+        let current = |state: &State, id: &str| state.credential(id) == pending.credential;
         if let Change::Remove(id) = &pending.change {
             self.held = None;
-            if self.secrets.set(id, "") {
-                self.unsaved.insert(id.clone());
-                save = true;
+            // Unless a newer password or forget came since (that one stands).
+            if current(self, id) {
+                self.credential_op(id);
+                if self.secrets.set(id, "") {
+                    self.mark(id);
+                    save = true;
+                }
             }
         }
         // A new password, or one held but not yet durably saved: an account
@@ -1340,11 +1507,14 @@ impl State {
         // the reconcile.
         let mut renewed = None;
         if let (Some(id), Some(password)) = (&about, &pending.password)
-            && (self.secrets.password(id) != Some(password.as_str()) || self.unsaved.contains(id))
+            && current(self, id)
+            && (self.secrets.password(id) != Some(password.as_str())
+                || self.unsaved.contains_key(id))
         {
             let changed = self.secrets.password(id) != Some(password.as_str());
+            self.credential_op(id);
             self.hold(id, password);
-            self.unsaved.insert(id.clone());
+            self.mark(id);
             save = true;
             renewed = changed.then(|| (id.clone(), self.account(id).is_some()));
         }
@@ -1368,7 +1538,9 @@ impl State {
             return;
         };
         let adopted = id.unwrap_or(&legacy).to_owned();
-        if adopted == legacy || (self.secrets.has(&adopted) && !self.unsaved.contains(&adopted)) {
+        if adopted == legacy
+            || (self.secrets.has(&adopted) && !self.unsaved.contains_key(&adopted))
+        {
             return self.finish_migration();
         }
         let Some(password) = self.secrets.password(&legacy).map(str::to_owned) else {
@@ -1405,8 +1577,9 @@ impl State {
         if self.account(id).is_none() {
             return false;
         }
+        self.credential_op(id);
         self.hold(id, password);
-        self.unsaved.insert(id.to_owned());
+        self.mark(id);
         self.save_secrets(reply.map(|reply| {
             (
                 reply,
@@ -1423,12 +1596,13 @@ impl State {
     pub fn forget_password(&mut self, id: &str, reply: u64) {
         let body =
             |forgotten: bool| json!({ "id": id, "has_password": false, "forgotten": forgotten });
-        if !self.secrets.has(id) && !self.unsaved.contains(id) {
+        self.credential_op(id);
+        if !self.secrets.has(id) && !self.unsaved.contains_key(id) {
             return self.reply(reply, 0, body(false));
         }
         let held = self.secrets.has(id);
         self.hold(id, "");
-        self.unsaved.insert(id.to_owned());
+        self.mark(id);
         self.save_secrets(Some((reply, body(held))));
         // A shown account has no password from now on.
         if self.account(id).is_some() {
@@ -1447,11 +1621,12 @@ impl State {
         self.queue(Work::SaveSecrets { ticket });
     }
 
-    /// Secrets save `ticket` finished: everything held is durable (the
-    /// shell writes the whole file at once), or nothing new is. A poison
+    /// Secrets save `ticket` finished, of the passwords as they were at
+    /// `version` (the shell saves a snapshot off the UI thread): what had
+    /// changed by then is durable, a later change stays unsaved. A poison
     /// pill refusal (`Ok(false)`) is a failure like any other. The error
     /// never carries a password.
-    pub fn secrets_saved(&mut self, ticket: u64, result: Result<bool, String>) {
+    pub fn secrets_saved(&mut self, ticket: u64, version: u64, result: Result<bool, String>) {
         let Some((owed, then)) = self.saves.remove(&ticket) else {
             return;
         };
@@ -1461,7 +1636,7 @@ impl State {
             Err(error) => Some(error),
         };
         match &refused {
-            None => self.unsaved.clear(),
+            None => self.unsaved.retain(|_, changed| *changed > version),
             Some(message) => {
                 self.status = crate::label_with("secrets-failed", &[("message", message)]);
             }
@@ -1627,7 +1802,10 @@ impl State {
                 }
             }
             Event::Settled(ticket, answer) => self.settled(ticket, answer),
-            Event::SecretsSaved(ticket, result) => self.secrets_saved(ticket, result),
+            Event::WriteDeadline(op) => self.write_deadline(op),
+            Event::SecretsSaved(ticket, version, result) => {
+                self.secrets_saved(ticket, version, result)
+            }
             Event::Delivery(..)
             | Event::Look(..)
             | Event::LookRetry(_)
@@ -2359,6 +2537,7 @@ impl State {
                 "subject": c.draft.subject,
                 "body": c.draft.body,
                 "in_reply_to": c.draft.in_reply_to,
+                "stale": c.stale,
                 "busy": c.busy,
                 "error": c.error,
             })
@@ -2889,6 +3068,14 @@ impl State {
                 }
             }
             UiEvent::CloseCompose => self.compose = None,
+            UiEvent::ComposeUseNewFrom => {
+                if let Some(compose) = &mut self.compose
+                    && let Some(from) = compose.stale.take()
+                {
+                    compose.draft.from = from;
+                    compose.error = None;
+                }
+            }
             UiEvent::SendCompose => self.send_compose(),
             UiEvent::Retry(account) => {
                 self.reconnect(&account);
@@ -2938,6 +3125,14 @@ impl State {
             return;
         };
         if compose.busy {
+            return;
+        }
+        // The account's login changed under this draft: it is not sent
+        // from the old address through the new login unasked.
+        if compose.stale.is_some() {
+            if let Some(compose) = &mut self.compose {
+                compose.error = Some(crate::label("compose-from-changed"));
+            }
             return;
         }
         let account = compose.account.clone();
@@ -3354,7 +3549,8 @@ pub(crate) mod tests {
             })
             .unwrap();
         assert!(state.take_replies().is_empty(), "answered once saved");
-        state.secrets_saved(ticket, Ok(true));
+        let version = state.secrets_snapshot().0;
+        state.secrets_saved(ticket, version, Ok(true));
         let replies = state.take_replies();
         assert_eq!(replies[0].id, 7);
         assert_eq!(replies[0].body["has_password"], true);
@@ -4095,7 +4291,8 @@ pub(crate) mod tests {
             .unwrap();
         // In force at once: the new account connects with its password.
         assert_eq!(connects(&work), ["n"]);
-        state.secrets_saved(save, Ok(true));
+        let version = state.secrets_snapshot().0;
+        state.secrets_saved(save, version, Ok(true));
         assert_eq!(state.take_replies()[0].body, json!({"id": "n"}));
         assert!(state.has_password("n"));
         // The follower's read then confirms it: nothing more to do.
@@ -4563,9 +4760,10 @@ pub(crate) mod tests {
 
     /// Answer every secrets save in `work` with `result`, as the shell does.
     fn land(state: &mut State, work: &[Work], result: Result<bool, String>) {
+        let version = state.secrets_snapshot().0;
         for w in work {
             if let Work::SaveSecrets { ticket } = w {
-                state.secrets_saved(*ticket, result.clone());
+                state.secrets_saved(*ticket, version, result.clone());
             }
         }
     }
@@ -4876,5 +5074,170 @@ pub(crate) mod tests {
         state.change_accounts(change(), Some(3), Some("pw-2".into()));
         assert_eq!(saves(&state.take_work()), 0);
         assert_eq!(state.take_replies()[0].id, 3);
+    }
+
+    fn rename() -> Change {
+        Change::Update(
+            "a".into(),
+            writer::AccountPatch {
+                name: Some("Renamed".into()),
+                ..writer::AccountPatch::default()
+            },
+        )
+    }
+
+    /// Review #4 remainder: a write's password (or a removal's forget)
+    /// never lands over a newer password set or forget.
+    #[test]
+    fn review_4_a_late_write_never_overwrites_a_newer_password() {
+        // A newer password set wins.
+        let mut state = connected();
+        state.change_accounts(rename(), Some(1), Some("pw-1".into()));
+        let (ticket, _) = settings_ticket(&mut state);
+        state.set_password("a", "pw-2", Some(2));
+        state.settled(ticket, Settled::Accepted);
+        assert_eq!(state.secrets.password("a"), Some("pw-2"));
+        // A newer forget wins.
+        let mut state = connected();
+        state.change_accounts(rename(), Some(1), Some("pw-1".into()));
+        let (ticket, _) = settings_ticket(&mut state);
+        state.forget_password("a", 2);
+        state.settled(ticket, Settled::Accepted);
+        assert!(!state.has_password("a"));
+        // A removal's forget yields to a newer password set.
+        let mut state = connected();
+        state.change_accounts(Change::Remove("a".into()), Some(1), None);
+        let (ticket, _) = settings_ticket(&mut state);
+        state.set_password("a", "pw-3", Some(2));
+        state.settled(ticket, Settled::Accepted);
+        assert_eq!(state.secrets.password("a"), Some("pw-3"));
+    }
+
+    /// Review #14: generations come from one counter, so an account
+    /// removed and restored never reuses one, and an old answer stays void.
+    #[test]
+    fn review_14_a_restored_account_never_reuses_a_generation() {
+        let mut state = connected_many(&["a", "b"]);
+        let old = tag(&state, "a");
+        state.set_settings(settings(&["b"]));
+        assert!(state.account("a").is_none());
+        state.set_settings(settings(&["a", "b"]));
+        let restored = tag(&state, "a");
+        assert!(restored.generation > old.generation);
+        state.apply(Event::Connected(old, Ok(info())));
+        assert_eq!(state.account("a").unwrap().phase, Phase::Connecting);
+        let generations: Vec<u64> = state.accounts.iter().map(|v| v.generation).collect();
+        assert_ne!(generations[0], generations[1], "unique across accounts too");
+    }
+
+    fn deadline_op(work: &[Work]) -> u64 {
+        work.iter()
+            .find_map(|w| match w {
+                Work::WriteDeadline { op } => Some(*op),
+                _ => None,
+            })
+            .expect("a deadline")
+    }
+
+    /// Review #16: a conflict retries at once over a newer read already in
+    /// force, an unchanged read releases a waiting write, and a deadline
+    /// answers one that never settles.
+    #[test]
+    fn review_16_no_write_waits_forever() {
+        let mut state = connected_many(&["a"]);
+        state.change_accounts(rename(), Some(1), None);
+        let (ticket, _) = settings_ticket(&mut state);
+        state.set_settings(settings(&["a", "b"]));
+        state.take_work();
+        state.settled(ticket, Settled::Conflict);
+        let (ticket, changes) = settings_ticket(&mut state);
+        assert_eq!(changes["email.accounts"][0]["name"], "Renamed", "sent again at once");
+        // No newer read: it waits, and an unchanged read releases it.
+        state.settled(ticket, Settled::Conflict);
+        assert!(!state.take_work().iter().any(|w| matches!(w, Work::Settings { .. })));
+        state.settings_unchanged();
+        assert!(state.take_work().iter().any(|w| matches!(w, Work::Settings { .. })));
+        // A write that never settles is answered at its deadline.
+        let mut state = connected_many(&["a"]);
+        state.change_accounts(rename(), Some(7), None);
+        let op = deadline_op(&state.take_work());
+        state.write_deadline(op);
+        let reply = &state.take_replies()[0];
+        assert_eq!((reply.id, reply.body["error_code"].clone()), (7, json!(code::TIMEOUT)));
+    }
+
+    /// Review #17: removing an account shown only because settingsd showed
+    /// none removes it and its secret, keeps the others, and answers rc 0.
+    #[test]
+    fn review_17_removing_a_held_account_removes_it_and_its_secret() {
+        let mut state = connected_many(&["a", "b"]);
+        state.set_settings(EmailSettings::default());
+        assert!(state.holding());
+        state.change_accounts(Change::Remove("a".into()), Some(1), None);
+        let work = state.take_work();
+        assert!(!work.iter().any(|w| matches!(w, Work::Settings { .. })));
+        assert!(state.account("a").is_none() && state.account("b").is_some());
+        assert!(state.holding() && !state.has_password("a") && state.has_password("b"));
+        assert!(state.take_replies().is_empty(), "answered once durable");
+        land(&mut state, &work, Ok(true));
+        let reply = &state.take_replies()[0];
+        assert_eq!((reply.id, reply.rc), (1, 0));
+        assert_eq!(state.cache().accounts.len(), 1);
+    }
+
+    /// Review #18: a login change under an open draft makes it stale: Send
+    /// is refused with an error until the new address is taken.
+    #[test]
+    fn review_18_a_compose_goes_stale_when_its_login_changes() {
+        let mut state = connected();
+        state.apply_ui(UiEvent::Compose);
+        state.apply_ui(UiEvent::ComposeField(
+            ComposeField::To,
+            "bob@example.invalid".into(),
+        ));
+        let mut next = settings(&["a"]);
+        next.accounts[0].email = "new@a.example.invalid".into();
+        state.set_settings(next);
+        state.take_work();
+        let compose = state.compose.clone().unwrap();
+        assert_eq!(compose.stale.as_deref(), Some("new@a.example.invalid"));
+        assert_eq!(compose.draft.from, "ann@a.example.invalid", "unchanged until taken");
+        state.apply_ui(UiEvent::SendCompose);
+        assert!(!state.take_work().iter().any(|w| matches!(w, Work::Send { .. })));
+        assert_eq!(
+            state.compose.as_ref().unwrap().error.as_deref(),
+            Some(crate::label("compose-from-changed").as_str())
+        );
+        state.apply_ui(UiEvent::ComposeUseNewFrom);
+        let compose = state.compose.clone().unwrap();
+        assert_eq!(compose.draft.from, "new@a.example.invalid");
+        assert!(compose.stale.is_none());
+        state.apply_ui(UiEvent::SendCompose);
+        assert!(state.take_work().iter().any(|w| matches!(w, Work::Send { .. })));
+    }
+
+    /// Review #19: a save's ack clears only what had changed by the
+    /// version it saved; a later change stays unsaved.
+    #[test]
+    fn review_19_a_late_save_ack_never_clears_a_newer_change() {
+        let mut state = connected();
+        state.set_password("a", "pw-1", None);
+        let first = state.secrets_snapshot().0;
+        let ticket = state
+            .take_work()
+            .iter()
+            .find_map(|w| match w {
+                Work::SaveSecrets { ticket } => Some(*ticket),
+                _ => None,
+            })
+            .unwrap();
+        state.set_password("a", "pw-2", None);
+        let second = state.secrets_snapshot().0;
+        assert!(second > first);
+        state.secrets_saved(ticket, first, Ok(true));
+        assert!(state.unsaved.contains_key("a"), "pw-2 is not durable yet");
+        let work = state.take_work();
+        land(&mut state, &work, Ok(true));
+        assert!(!state.unsaved.contains_key("a"));
     }
 }

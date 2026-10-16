@@ -49,6 +49,8 @@ pub enum UiEvent {
     ComposeAccount(String),
     ComposeField(crate::state::ComposeField, String),
     CloseCompose,
+    /// Take the account's new address as the stale draft's From.
+    ComposeUseNewFrom,
     SendCompose,
     /// Connect an account again.
     Retry(String),
