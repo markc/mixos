@@ -136,6 +136,10 @@ let _ = toolkit::titlebar::show(ui, "Demo", Some(Icon::Server), stroke,
   document tabs, value, text and search fields, checkboxes and switches,
   combo boxes, sliders, canvas scrollbars, tooltip wording, and modal
   dialogs).
+- `datatable`: sortable, resizable columns over virtualised one-line rows,
+  with a pager, keyboard navigation and a drive surface. It reports sorts
+  and pages as events and leaves them to the app. See
+  [Data table](datatable.md).
 
 ### Commands
 
