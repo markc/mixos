@@ -17,7 +17,7 @@
 //! password is a [`Secret`]: never serialised, redacted in `Debug`, zeroed
 //! when dropped, and put into the call's body only by the shell, as it sends.
 //! Whether an account has a password is read from `email.accounts`.
-use crate::appearance::{Answer, Call, refusal};
+use crate::appearance::{Answer, Call};
 use crate::engine::{Dialog, Effect, Engine};
 use crate::navigation::Section;
 use citizen::{CallError, Reply};
@@ -120,7 +120,8 @@ impl Field {
 pub type Refusals = BTreeMap<Field, &'static str>;
 
 /// New values for some of an account's fields; `None` leaves a field.
-#[derive(Clone, Debug, Default, PartialEq)]
+/// Debug-printed with its URL redacted.
+#[derive(Clone, Default, PartialEq)]
 pub struct Patch {
     pub name: Option<String>,
     pub url: Option<String>,
@@ -230,13 +231,109 @@ pub fn refusals(account: &AccountEntry) -> Refusals {
     out
 }
 
+/// The text that stands in for a credential in anything observed.
+pub const REDACTED: &str = "[redacted]";
+
+/// Query keys whose values read as credentials.
+const SECRET_KEYS: [&str; 7] = [
+    "pass",
+    "pwd",
+    "secret",
+    "token",
+    "key",
+    "auth",
+    "credential",
+];
+
+/// `url` as it may be observed: userinfo (`user:password@`) before the host
+/// becomes [`REDACTED`]`@`, and so does the value of any query parameter
+/// whose name reads as a credential (`password=`, `token=`, `api_key=`…).
+/// Only the edit field holds what was typed; `prefs.email`, `prefs.info`,
+/// Debug and status text show this.
+pub fn redact_url(url: &str) -> String {
+    let (scheme, rest) = match url.find("://") {
+        Some(at) => url.split_at(at + 3),
+        None => ("", url),
+    };
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let (authority, tail) = rest.split_at(end);
+    let authority = match authority.rfind('@') {
+        Some(at) => format!("{REDACTED}{}", &authority[at..]),
+        None => authority.to_owned(),
+    };
+    let tail = match tail.split_once('?') {
+        None => tail.to_owned(),
+        Some((path, query)) => {
+            let (query, fragment) = match query.split_once('#') {
+                Some((q, f)) => (q, Some(f)),
+                None => (query, None),
+            };
+            let pairs: Vec<String> = query
+                .split('&')
+                .map(|pair| match pair.split_once('=') {
+                    Some((key, _)) if credential_key(key) => format!("{key}={REDACTED}"),
+                    _ => pair.to_owned(),
+                })
+                .collect();
+            let fragment = fragment.map(|f| format!("#{f}")).unwrap_or_default();
+            format!("{path}?{}{fragment}", pairs.join("&"))
+        }
+    };
+    format!("{scheme}{authority}{tail}")
+}
+
+fn credential_key(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    SECRET_KEYS.iter().any(|k| key.contains(k))
+}
+
+/// Free text (a refusal's message, a diagnostic) as it may be observed:
+/// each URL in it (a word with `://`) passes through [`redact_url`].
+pub fn redact_text(text: &str) -> String {
+    if !text.contains("://") {
+        return text.to_owned();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut word = String::new();
+    let flush = |word: &mut String, out: &mut String| {
+        if word.contains("://") {
+            out.push_str(&redact_url(word));
+        } else {
+            out.push_str(word);
+        }
+        word.clear();
+    };
+    for c in text.chars() {
+        if c.is_whitespace() || matches!(c, '"' | '\'' | '<' | '>' | '(' | ')' | '`') {
+            flush(&mut word, &mut out);
+            out.push(c);
+        } else {
+            word.push(c);
+        }
+    }
+    flush(&mut word, &mut out);
+    out
+}
+
+/// A settingsd or Email refusal's text, redacted.
+fn refusal(value: &Value) -> String {
+    redact_text(&crate::appearance::refusal(value))
+}
+
+fn serialize_redacted<S: serde::Serializer>(url: &str, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(&redact_url(url))
+}
+
 /// The account form: the selected account's text as typed, or a new
-/// account's. Its fields go out together with Save.
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+/// account's. Its fields go out together with Save. Serialised and
+/// Debug-printed with its URL redacted ([`redact_url`]): only the edit
+/// field shows the URL as typed.
+#[derive(Clone, Default, PartialEq, Serialize)]
 pub struct Form {
     /// The account it edits; `None` is a new account.
     pub id: Option<String>,
     pub name: String,
+    #[serde(serialize_with = "serialize_redacted")]
     pub url: String,
     pub email: String,
     /// Blank is the system roots.
@@ -244,6 +341,33 @@ pub struct Form {
     pub signature: String,
     /// Why the last Save was not sent, by field.
     pub errors: Refusals,
+}
+
+impl std::fmt::Debug for Form {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Form")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("url", &redact_url(&self.url))
+            .field("email", &self.email)
+            .field("ca_path", &self.ca_path)
+            .field("signature", &self.signature)
+            .field("errors", &self.errors)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for Patch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Patch")
+            .field("name", &self.name)
+            .field("url", &self.url.as_deref().map(redact_url))
+            .field("email", &self.email)
+            .field("ca_path", &self.ca_path)
+            .field("signature", &self.signature)
+            .field("enabled", &self.enabled)
+            .finish()
+    }
 }
 
 impl Form {
@@ -466,7 +590,7 @@ pub fn plan(
         Change::MarkReadOnOpen(on) => next.mail.mark_read_on_open = *on,
         Change::ConfirmDelete(on) => next.mail.confirm_delete = *on,
     }
-    settings::email::validate(&next).map_err(|d| Refusal::Settings(d.message))?;
+    settings::email::validate(&next).map_err(|d| Refusal::Settings(redact_text(&d.message)))?;
     let changes = edit_between(email, &next);
     if changes.is_empty() {
         return Err(Refusal::Unchanged);
@@ -1391,6 +1515,7 @@ impl Engine {
                     .iter()
                     .map(|a| {
                         let mut row = json!(a);
+                        row["url"] = json!(redact_url(&a.url));
                         row["has_password"] = json!(self.email.passwords.get(&a.id));
                         row["default"] = json!(e.default_account.as_deref() == Some(a.id.as_str()));
                         row
@@ -1746,6 +1871,113 @@ mod tests {
         ] {
             assert!(email_change(&bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn urls_and_text_are_redacted_for_observation() {
+        for (typed, shown) in [
+            ("https://mail.example.org", "https://mail.example.org"),
+            (
+                "https://mail.example.org:8443/jmap",
+                "https://mail.example.org:8443/jmap",
+            ),
+            (
+                "https://user:hunter2@mail.example.org/jmap",
+                "https://[redacted]@mail.example.org/jmap",
+            ),
+            (
+                "https://a@b:c@mail.example.org",
+                "https://[redacted]@mail.example.org",
+            ),
+            (
+                "https://mail.example.org/p?token=abc&page=2#top",
+                "https://mail.example.org/p?token=[redacted]&page=2#top",
+            ),
+            (
+                "https://mail.example.org?Password=x&API_KEY=y",
+                "https://mail.example.org?Password=[redacted]&API_KEY=[redacted]",
+            ),
+            (
+                "user:hunter2@mail.example.org",
+                "[redacted]@mail.example.org",
+            ),
+            ("", ""),
+        ] {
+            assert_eq!(redact_url(typed), shown, "{typed}");
+        }
+        assert_eq!(
+            redact_text("refused \"https://u:p@h.example/x\", try again"),
+            "refused \"https://[redacted]@h.example/x\", try again"
+        );
+        assert_eq!(redact_text("no url here: a@b"), "no url here: a@b");
+    }
+
+    /// sol re-review #5: a URL with a password pasted into the form never
+    /// reaches prefs.email, prefs.info, Debug or the status line, before or
+    /// after Save refuses it; only the edit field holds it as typed.
+    #[test]
+    fn a_typed_userinfo_url_is_never_observed() {
+        let leaked = |text: &str| text.contains("hunter2") || text.contains("s3cret");
+        let observed = |e: &mut Engine| -> Vec<String> {
+            e.command(90, "prefs.email", "{}");
+            e.command(91, "prefs.info", "{}");
+            let mut out: Vec<String> = e
+                .take_effects()
+                .iter()
+                .filter_map(|x| match x {
+                    Effect::Reply { body, .. } => Some(body.to_string()),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(out.len(), 2);
+            out.push(format!("{:?}", e.email));
+            out.push(format!("{:?}", e.email.form.as_ref().map(Form::patch)));
+            out.push(e.status.clone());
+            out
+        };
+        let mut e = read();
+        e.new_email_account();
+        e.edit_email_field(Field::Name, "Leak".into());
+        e.edit_email_field(
+            Field::Url,
+            "https://user:hunter2@mail.example.org/jmap?password=s3cret".into(),
+        );
+        e.edit_email_field(Field::Email, "user@example.org".into());
+        for text in observed(&mut e) {
+            assert!(!leaked(&text), "{text}");
+        }
+        assert!(
+            e.email.form.as_ref().unwrap().url.contains("hunter2"),
+            "the edit field keeps what was typed"
+        );
+        e.save_email_account();
+        assert!(settings_calls(&mut e).is_empty(), "refused before sending");
+        assert!(e.failed);
+        assert!(
+            e.email
+                .form
+                .as_ref()
+                .unwrap()
+                .errors
+                .contains_key(&Field::Url)
+        );
+        for text in observed(&mut e) {
+            assert!(!leaked(&text), "{text}");
+        }
+        assert_eq!(
+            e.email_view()["form"]["url"],
+            "https://[redacted]@mail.example.org/jmap?password=[redacted]"
+        );
+        // The same URL sent over the Bus is refused without an echo.
+        e.command(
+            92,
+            "prefs.email.set",
+            r#"{"op":"add","name":"x","url":"https://user:hunter2@mail.example.org","email":"x@example.org"}"#,
+        );
+        for x in e.take_effects() {
+            assert!(!leaked(&format!("{x:?}")), "{x:?}");
+        }
+        assert!(!leaked(&e.status));
     }
 
     #[test]
