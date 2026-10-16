@@ -27,6 +27,7 @@ pub struct CursorThemeCache {
     fallback_size: u32,
     cache: Mutex<HashMap<String, Option<Arc<Cursor>>>>,
     builtin: Mutex<HashMap<u32, Arc<Cursor>>>,
+    agent: Mutex<HashMap<u32, Arc<Cursor>>>,
 }
 
 impl CursorThemeCache {
@@ -46,6 +47,7 @@ impl CursorThemeCache {
             fallback_size: size.max(1),
             cache: Mutex::new(HashMap::new()),
             builtin: Mutex::new(HashMap::new()),
+            agent: Mutex::new(HashMap::new()),
         }
     }
 
@@ -73,6 +75,22 @@ impl CursorThemeCache {
             .round()
             .max(1.0) as u32;
         self.get_sized(name, target)
+    }
+
+    /// The agent seat's arrow for an output at `scale`: the built-in shape
+    /// with an amber fill, so a human tells it from their own cursor at a
+    /// glance. Never from the theme, so it cannot match a theme's own arrow.
+    /// One buffer per size, like the fallback, so its renderer identity holds.
+    pub fn agent_arrow(&self, scale: f64) -> Arc<Cursor> {
+        let target = (f64::from(self.fallback_size) * scale.max(0.1))
+            .round()
+            .clamp(1.0, 512.0) as u32;
+        self.agent
+            .lock()
+            .unwrap()
+            .entry(target)
+            .or_insert_with(|| Arc::new(arrow_cursor(target, AGENT_FILL)))
+            .clone()
     }
 
     fn get_sized(&self, name: &str, target: u32) -> Option<Arc<Cursor>> {
@@ -103,7 +121,7 @@ impl CursorThemeCache {
                     let mut builtin = self.builtin.lock().unwrap();
                     Some(builtin.entry(target).or_insert_with(|| {
                     warn!("No usable cursor theme image; using built-in arrow at {target}px");
-                    Arc::new(builtin_arrow(target))
+                    Arc::new(arrow_cursor(target, ARROW_FILL))
                 }).clone())
                 });
 
@@ -188,6 +206,17 @@ fn alternates(name: &str) -> &'static [&'static str] {
 /// Original, source-defined arrow: an opaque dark outline and light fill keep
 /// it visible on both light and dark surfaces. No installed artwork is needed.
 fn arrow_pixels(size: u32) -> Vec<u8> {
+    arrow_pixels_filled(size, ARROW_FILL)
+}
+
+/// The fallback arrow's fill: white.
+const ARROW_FILL: [u8; 4] = [255, 255, 255, 255];
+/// The agent arrow's fill, amber (#FF9F1C), in the renderer's ARGB8888 byte
+/// order (B, G, R, A).
+const AGENT_FILL: [u8; 4] = [0x1C, 0x9F, 0xFF, 255];
+
+/// The arrow with `fill` (ARGB8888 bytes) inside its dark outline.
+fn arrow_pixels_filled(size: u32, fill: [u8; 4]) -> Vec<u8> {
     const OUTLINE: [(f64, f64); 8] = [
         (0.0, 0.0),
         (0.0, 20.0),
@@ -216,17 +245,16 @@ fn arrow_pixels(size: u32) -> Vec<u8> {
                 border |= distance <= 0.9 * 0.9;
             }
             if inside {
-                let shade = if border { 0 } else { 255 };
                 let offset = ((y * size + x) * 4) as usize;
-                // Opaque greys are identical in the renderer's ARGB byte order.
-                pixels[offset..offset + 4].copy_from_slice(&[shade, shade, shade, 255]);
+                let colour = if border { [0, 0, 0, 255] } else { fill };
+                pixels[offset..offset + 4].copy_from_slice(&colour);
             }
         }
     }
     pixels
 }
 
-fn builtin_arrow(size: u32) -> Cursor {
+fn arrow_cursor(size: u32, fill: [u8; 4]) -> Cursor {
     let dimensions = Size::from((size as i32, size as i32));
     let (format, _) = render_gles::format::answer::answer::constant(
         render_gles::format::answer::answer::Consumer::CursorImage,
@@ -234,7 +262,7 @@ fn builtin_arrow(size: u32) -> Cursor {
     Cursor {
         frames: vec![CursorFrame {
             buffer: MemoryRenderBuffer::from_slice(
-                &arrow_pixels(size),
+                &arrow_pixels_filled(size, fill),
                 format,
                 dimensions,
                 1,
@@ -420,6 +448,16 @@ mod tests {
         }
         let fixture = ThemeFixture::new();
         assert_eq!(fixture.cache(0).get("default").unwrap().size, (1, 1).into());
+        // The agent arrow: the same shape with an amber fill, never white.
+        let agent = arrow_pixels_filled(24, AGENT_FILL);
+        assert!(agent.chunks_exact(4).any(|p| p == AGENT_FILL));
+        assert!(!agent.chunks_exact(4).any(|p| p == ARROW_FILL));
+        let cache = fixture.cache(24);
+        assert_eq!(cache.agent_arrow(2.5).size, (60, 60).into());
+        assert!(Arc::ptr_eq(
+            &cache.agent_arrow(2.5),
+            &cache.agent_arrow(2.5)
+        ));
         assert_eq!(
             fixture.cache(u32::MAX).get("default").unwrap().size,
             (512, 512).into()

@@ -174,7 +174,11 @@ pub fn clear_agent(lp: &mut Loop) {
     }
     let injection = &mut lp.inner.comp.injection;
     injection.agent = Default::default();
-    injection.agent_pointer = None;
+    // A drawn agent arrow goes with it.
+    if injection.agent_pointer.take().is_some() {
+        lp.state
+            .schedule_redraw(dispatcher::state::state::RedrawReason::AgentInput);
+    }
 }
 
 /// Inject one op on one seat, then reply with
@@ -859,9 +863,12 @@ pub fn coalesce_agent_motion(lp: &Loop, previous: &InputOp, next: &InputOp) -> O
 }
 
 /// What the agent pointer reaches at `position` (host Space): a client
-/// surface and its origin, or nothing. Compositor chrome (SSD bars, UI) is
-/// `chrome_target` unless a root was named (then only that root's surfaces
-/// count).
+/// surface and its origin, or nothing. Over compositor chrome (SSD bars, UI:
+/// the backdrop, panels, toasts) the agent pointer moves with no focus, as
+/// over an empty spot: chrome takes its input from the human seat only, so an
+/// agent press there reaches nothing, and a glide may cross the wallpaper or
+/// rest on a panel without stranding the pointer. A named root still counts
+/// only that root's surfaces (`chrome_target` when none is under the point).
 /// The agent seat's hit: the surface under the point and its surface-local position.
 type AgentHit = (WlSurface, Point<f64, Logical>);
 /// Where an agent move lands (host Space) and what it hits there.
@@ -888,7 +895,7 @@ fn agent_hit(
         None => Ok(None),
         Some(hit) => match (hit.surface(), hit.position_motion()) {
             (Some(surface), Some(origin)) => Ok(Some((surface.clone(), origin))),
-            _ => Err(agent_refusal("chrome_target")),
+            _ => Ok(None),
         },
     }
 }
@@ -900,6 +907,9 @@ fn agent_motion(
     time: u32,
 ) {
     lp.inner.comp.injection.agent_pointer = Some(position);
+    // The agent arrow is drawn at this position (seat `pointer::draw`).
+    lp.state
+        .schedule_redraw(dispatcher::state::state::RedrawReason::AgentInput);
     let Some(pointer) = agent_pointer(lp) else {
         return;
     };
