@@ -8,7 +8,7 @@
 //! before committing.
 use design::{DesignContext, Mode, Scheme};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use email::secrets::Secrets;
 use email::shell::{Done, Event};
 use email::state::{Mode as Surface, Node, Phase, SessionInfo, State, Tag, UiState};
@@ -403,7 +403,6 @@ fn an_unread_email_row_opens_and_marks_read() {
 
 /// The message list's rows, top to bottom, by their accessible labels.
 fn list_rows(h: &Harness<'static, Window>) -> Vec<String> {
-    use egui_kittest::kittest::NodeT;
     let mut rows: Vec<(f32, String)> = h
         .query_all_by_role(egui::accesskit::Role::Row)
         .map(|n| {
