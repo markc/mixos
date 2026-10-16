@@ -1,38 +1,38 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The calendar surface: the selected calendar's events in the centre
-//! pane, the open event's detail in the reader, a calendar row in the
-//! places panel. Read-only in this slice; the detail renders the indexed
-//! title and start/end columns, with the JSCalendar description when the
-//! event carries one.
+//! The calendar surface: an account's selected calendar's events in the
+//! centre pane and the open event's detail in the reader (the calendars
+//! themselves are the tree's). The detail renders the indexed title and
+//! start/end columns, with the JSCalendar description when the event
+//! carries one.
 
 use chrono::{DateTime, Utc};
 use egui::{RichText, ScrollArea, Ui};
-use jmap::{Calendar, CalendarEvent};
+use jmap::CalendarEvent;
 use toolkit::{Icon, icons, panel};
 
 use super::UiEvent;
-use crate::state::State;
+use crate::state::AccountView;
 
 /// The centre pane's event list.
-pub fn list(ui: &mut Ui, state: &State, stroke: f32, events: &mut Vec<UiEvent>) {
-    let title = state
+pub fn list(ui: &mut Ui, view: &AccountView, stroke: f32, events: &mut Vec<UiEvent>) {
+    let title = view
         .calendars
         .calendars
         .iter()
-        .find(|calendar| Some(calendar.id.as_str()) == state.calendars.selected.as_deref())
+        .find(|calendar| Some(calendar.id.as_str()) == view.calendars.selected.as_deref())
         .map(|calendar| calendar.name.clone())
         .unwrap_or_else(|| crate::label("calendar"));
     panel::group(ui, "events", &[title.as_str()], |ui, _| {
-        if state.calendars.busy {
+        if view.calendars.busy {
             ui.weak(crate::label("loading"));
         }
         ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-            if state.calendars.events.is_empty() && !state.calendars.busy {
+            if view.calendars.events.is_empty() && !view.calendars.busy {
                 ui.weak(crate::label("empty"));
             }
-            for (index, event) in state.calendars.events.iter().enumerate() {
-                row(ui, index, event, state, stroke, events);
+            for (index, event) in view.calendars.events.iter().enumerate() {
+                row(ui, index, event, view, stroke, events);
             }
         });
     });
@@ -43,11 +43,11 @@ fn row(
     ui: &mut Ui,
     index: usize,
     event: &CalendarEvent,
-    state: &State,
+    view: &AccountView,
     stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
-    let selected = state.calendars.open == Some(index);
+    let selected = view.calendars.open == Some(index);
     egui::Sides::new().show(
         ui,
         |ui| {
@@ -59,7 +59,7 @@ fn row(
                 RichText::new(event.display_title())
             };
             if toolkit::selectable(ui, selected, text).clicked() {
-                events.push(UiEvent::SelectEvent(index));
+                events.push(UiEvent::SelectEvent(view.id().to_owned(), index));
             }
         },
         |ui| {
@@ -69,11 +69,11 @@ fn row(
 }
 
 /// The reader: the open event's detail.
-pub fn reader(ui: &mut Ui, state: &State) {
-    let Some(event) = state
+pub fn reader(ui: &mut Ui, view: &AccountView) {
+    let Some(event) = view
         .calendars
         .open
-        .and_then(|index| state.calendars.events.get(index))
+        .and_then(|index| view.calendars.events.get(index))
     else {
         ui.weak(crate::label("select-event"));
         return;
@@ -86,7 +86,7 @@ pub fn reader(ui: &mut Ui, state: &State) {
         ))
         .weak(),
     );
-    let calendar = state
+    let calendar = view
         .calendars
         .calendars
         .iter()
@@ -115,32 +115,6 @@ pub fn reader(ui: &mut Ui, state: &State) {
     });
 }
 
-/// A calendar row in the places panel.
-pub fn place_row(
-    ui: &mut Ui,
-    calendar: &Calendar,
-    state: &State,
-    stroke: f32,
-    events: &mut Vec<UiEvent>,
-) {
-    let selected = state.calendars.selected.as_deref() == Some(calendar.id.as_str());
-    let weak = ui.visuals().weak_text_color();
-    egui::Sides::new().show(
-        ui,
-        |ui| {
-            ui.add(icons::image(Icon::Calendar, stroke, 12.0, weak));
-            let text = if selected {
-                RichText::new(&calendar.name).strong()
-            } else {
-                RichText::new(&calendar.name)
-            };
-            if toolkit::selectable(ui, selected, text).clicked() {
-                events.push(UiEvent::SelectCalendar(calendar.id.clone()));
-            }
-        },
-        |_| {},
-    );
-}
 
 /// An event's readable range: "14 Oct 09:00 – 10:30" style.
 fn range_of(event: &CalendarEvent) -> String {

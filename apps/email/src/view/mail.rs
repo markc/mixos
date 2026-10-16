@@ -1,38 +1,39 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The mail surface: a mailbox's list in the centre pane, the open email
-//! in the reader, a mailbox row in the places panel.
+//! The mail surface: an account's mailbox list in the centre pane and the
+//! open email in the reader (the mailboxes themselves are the tree's).
 
 use egui::{RichText, ScrollArea, Ui};
-use jmap::{Email, Mailbox};
+use jmap::Email;
 use toolkit::button::PushButton;
 use toolkit::command::Origin;
 use toolkit::{Icon, Registry, Strings, icons, panel};
 
 use super::UiEvent;
-use crate::state::State;
+use crate::state::{AccountView, State};
 
 /// The centre pane's email list.
 pub fn list(
     ui: &mut Ui,
     state: &State,
+    view: &AccountView,
     commands: &Registry<State>,
     strings: &Strings,
     stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
-    let title = state
+    let title = view
         .mail
         .selected_mailbox()
         .map(|mailbox| mailbox.name.clone())
         .unwrap_or_else(|| crate::label("mail"));
-    let shown = state.mail.emails.len();
-    let count = if state.mail.total > 0 {
+    let shown = view.mail.emails.len();
+    let count = if view.mail.total > 0 {
         crate::label_with(
             "count-of",
             &[
                 ("shown", &shown.to_string()),
-                ("total", &state.mail.total.to_string()),
+                ("total", &view.mail.total.to_string()),
             ],
         )
     } else {
@@ -47,31 +48,28 @@ pub fn list(
                 return;
             };
             let text = strings.get(command.label);
-            let response = ui.add_enabled(
-                (command.enabled)(state) && state.mail.open.is_some(),
-                PushButton::secondary(text),
-            );
+            let response = ui.add_enabled((command.enabled)(state), PushButton::secondary(text));
             if response.on_hover_text(strings.get("reply")).clicked() {
                 events.push(UiEvent::Command(command.id, Origin::Ui));
             }
         });
-        if state.mail.busy {
+        if view.mail.busy {
             ui.weak(crate::label("loading"));
         }
         ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-            if state.mail.emails.is_empty() && !state.mail.busy {
+            if view.mail.emails.is_empty() && !view.mail.busy {
                 ui.weak(crate::label("empty"));
             }
-            for email in &state.mail.emails {
-                row(ui, email, state, stroke, events);
+            for email in &view.mail.emails {
+                row(ui, email, view, stroke, events);
             }
         });
     });
 }
 
 /// One email row: sender, subject, date; unread rows are strong.
-fn row(ui: &mut Ui, email: &Email, state: &State, stroke: f32, events: &mut Vec<UiEvent>) {
-    let selected = state
+fn row(ui: &mut Ui, email: &Email, view: &AccountView, stroke: f32, events: &mut Vec<UiEvent>) {
+    let selected = view
         .mail
         .open
         .as_ref()
@@ -87,7 +85,7 @@ fn row(ui: &mut Ui, email: &Email, state: &State, stroke: f32, events: &mut Vec<
         ui,
         |ui| {
             if toolkit::selectable(ui, selected, strong(email.from_display())).clicked() {
-                events.push(UiEvent::OpenEmail(email.id.clone()));
+                events.push(UiEvent::OpenEmail(view.id().to_owned(), email.id.clone()));
             }
         },
         |ui| {
@@ -119,49 +117,9 @@ fn row(ui: &mut Ui, email: &Email, state: &State, stroke: f32, events: &mut Vec<
     );
 }
 
-/// A mailbox row in the places panel, with its unread count.
-pub fn place_row(
-    ui: &mut Ui,
-    mailbox: &Mailbox,
-    state: &State,
-    stroke: f32,
-    events: &mut Vec<UiEvent>,
-) {
-    let selected = state.mail.selected.as_deref() == Some(mailbox.id.as_str());
-    let icon = match mailbox.role.as_deref() {
-        Some("inbox") => Icon::Inbox,
-        Some("sent") => Icon::Send,
-        Some("drafts") => Icon::FileText,
-        Some("trash") => Icon::Trash,
-        Some("junk") | Some("spam") => Icon::CircleAlert,
-        Some("archive") | Some("all") => Icon::FileArchive,
-        _ => Icon::Folder,
-    };
-    let weak = ui.visuals().weak_text_color();
-    egui::Sides::new().show(
-        ui,
-        |ui| {
-            ui.add(icons::image(icon, stroke, 12.0, weak));
-            let text = if selected {
-                RichText::new(&mailbox.name).strong()
-            } else {
-                RichText::new(&mailbox.name)
-            };
-            if toolkit::selectable(ui, selected, text).clicked() {
-                events.push(UiEvent::SelectMailbox(mailbox.id.clone()));
-            }
-        },
-        |ui| {
-            if mailbox.unread_emails > 0 {
-                ui.label(RichText::new(mailbox.unread_emails.to_string()).strong());
-            }
-        },
-    );
-}
-
 /// The reader: the open email's headers and body.
-pub fn reader(ui: &mut Ui, state: &State) {
-    let Some(email) = &state.mail.open else {
+pub fn reader(ui: &mut Ui, view: &AccountView) {
+    let Some(email) = &view.mail.open else {
         ui.weak(crate::label("select-email"));
         return;
     };

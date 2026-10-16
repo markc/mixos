@@ -53,6 +53,26 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiE
     // While a send is in flight every field is read-only: the dialog shows
     // exactly what is being sent.
     ui.add_enabled_ui(!compose.busy, |ui| {
+        // From: the accounts that can send, when there is a choice.
+        let senders: Vec<_> = state.accounts.iter().filter(|v| v.entry.enabled).collect();
+        if senders.len() > 1 {
+            let names: Vec<String> = senders
+                .iter()
+                .map(|v| format!("{} <{}>", v.entry.name, v.entry.email))
+                .collect();
+            let mut at = senders
+                .iter()
+                .position(|v| v.entry.id == compose.account)
+                .unwrap_or(0);
+            ui.horizontal(|ui| {
+                ui.label(crate::label("from"));
+                if toolkit::combo::show(ui, "compose-from", &mut at, &names, Some(width * 0.8))
+                    .changed()
+                {
+                    events.push(UiEvent::ComposeAccount(senders[at].entry.id.clone()));
+                }
+            });
+        }
         line(ui, "to", ComposeField::To, &compose.to_text, events);
         line(ui, "cc", ComposeField::Cc, &compose.cc_text, events);
         line(ui, "bcc", ComposeField::Bcc, &compose.bcc_text, events);
@@ -81,5 +101,4 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiE
     if compose.busy {
         ui.weak(crate::label("sending"));
     }
-    let _ = state;
 }
