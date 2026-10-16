@@ -1042,7 +1042,11 @@ impl Engine {
                 Ok(()) => {
                     let mut body = self.email_view();
                     body["applying"] = json!(true);
-                    self.effects.push(Effect::Reply { id: reply, rc: 0, body });
+                    self.effects.push(Effect::Reply {
+                        id: reply,
+                        rc: 0,
+                        body,
+                    });
                 }
                 Err(refusal) => {
                     let message = match refusal {
@@ -1487,14 +1491,21 @@ impl Engine {
                     &[("account", &name), ("message", &message)],
                 );
                 // The Bus caller gets Email's refusal as Email gave it.
-                let task = Task { reply: None, ..task };
+                let task = Task {
+                    reply: None,
+                    ..task
+                };
                 self.end_action(task, Err(("REFUSED", text)), Value::Null);
                 if let Some(reply) = reply {
                     let mut body = json!({"error_code":value["error_code"],"message":message});
                     if body["error_code"].is_null() {
                         body["error_code"] = json!("REFUSED");
                     }
-                    self.effects.push(Effect::Reply { id: reply, rc: 10, body });
+                    self.effects.push(Effect::Reply {
+                        id: reply,
+                        rc: 10,
+                        body,
+                    });
                 }
             }
             // Unknown: the next read shows whether it went.
@@ -2616,7 +2627,10 @@ mod tests {
                 assert_eq!(calls[0].2, "email.account.remove");
                 e.mailed(
                     calls[0].0,
-                    reply(10, json!({"error_code":"UNKNOWN_VERB","message":"unknown verb"})),
+                    reply(
+                        10,
+                        json!({"error_code":"UNKNOWN_VERB","message":"unknown verb"}),
+                    ),
                 );
             }
             let calls = settings_calls(e);
@@ -2700,7 +2714,11 @@ mod tests {
         assert!(!e.can_remove_email_account(), "one at a time");
         e.mailed(calls[0].0, reply(0, json!({"id":"b"})));
         assert!(!e.failed);
-        assert!(e.status.starts_with("email-removed account=Home"), "{}", e.status);
+        assert!(
+            e.status.starts_with("email-removed account=Home"),
+            "{}",
+            e.status
+        );
         let mut after = two();
         after.accounts.remove(1);
         settle_read(&mut e, "8", json!(after));
@@ -2726,7 +2744,8 @@ mod tests {
         e.mailed(calls[0].0, reply(10, pending.clone()));
         assert!(e.failed);
         assert!(
-            e.status.contains("MIGRATION_PENDING: The account is still being migrated"),
+            e.status
+                .contains("MIGRATION_PENDING: The account is still being migrated"),
             "{}",
             e.status
         );
@@ -2751,9 +2770,22 @@ mod tests {
         e.email.service = Service::Absent;
         e.command(1, "prefs.email.set", r#"{"op":"remove","id":"b"}"#);
         let effects = e.take_effects();
-        assert!(mail_calls(&effects).is_empty(), "Email is not asked or launched");
-        assert!(effects.iter().any(|x| matches!(x, Effect::Settings { verb: "settings.apply", .. })));
-        assert!(effects.iter().any(|x| matches!(x, Effect::Reply { id: 1, rc: 0, .. })));
+        assert!(
+            mail_calls(&effects).is_empty(),
+            "Email is not asked or launched"
+        );
+        assert!(effects.iter().any(|x| matches!(
+            x,
+            Effect::Settings {
+                verb: "settings.apply",
+                ..
+            }
+        )));
+        assert!(
+            effects
+                .iter()
+                .any(|x| matches!(x, Effect::Reply { id: 1, rc: 0, .. }))
+        );
         // Email registered, then gone by the time it is asked.
         let mut e = read();
         e.command(2, "prefs.email.set", r#"{"op":"remove","id":"b"}"#);
@@ -2761,9 +2793,24 @@ mod tests {
         assert_eq!(calls[0].2, "email.account.remove");
         e.mailed(calls[0].0, missing());
         let effects = e.take_effects();
-        assert!(effects.iter().any(|x| matches!(x, Effect::Settings { verb: "settings.apply", .. })));
-        assert!(effects.iter().any(|x| matches!(x, Effect::Reply { id: 2, rc: 0, .. })));
-        assert!(!effects.iter().any(|x| matches!(x, Effect::Mail { service: APPS, .. })), "never launched for it");
+        assert!(effects.iter().any(|x| matches!(
+            x,
+            Effect::Settings {
+                verb: "settings.apply",
+                ..
+            }
+        )));
+        assert!(
+            effects
+                .iter()
+                .any(|x| matches!(x, Effect::Reply { id: 2, rc: 0, .. }))
+        );
+        assert!(
+            !effects
+                .iter()
+                .any(|x| matches!(x, Effect::Mail { service: APPS, .. })),
+            "never launched for it"
+        );
         // An unknown account is refused at once.
         let mut e = read();
         e.command(3, "prefs.email.set", r#"{"op":"remove","id":"zz"}"#);
