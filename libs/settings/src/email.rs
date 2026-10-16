@@ -182,7 +182,9 @@ pub fn valid_url(url: &str) -> bool {
     let Some(rest) = url.strip_prefix("https://") else {
         return false;
     };
-    let authority = rest.split_once('/').map_or(rest, |(authority, _)| authority);
+    let authority = rest
+        .split_once('/')
+        .map_or(rest, |(authority, _)| authority);
     valid_authority(authority)
 }
 
