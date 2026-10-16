@@ -26,10 +26,9 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 pub use settings::email::{
-    AccountEntry, Email, MailOptions, PAGE_SIZE_MAX, PAGE_SIZE_MIN, READER_FONT_DEFAULT,
-    READER_FONT_MAX, READER_FONT_MIN, READER_FONT_STEP, ReaderOptions, ReaderTheme, ReplyPosition,
-    ComposeOptions, mint_account_id,
-    valid_reader_font_size,
+    AccountEntry, ComposeOptions, Email, MailOptions, PAGE_SIZE_MAX, PAGE_SIZE_MIN,
+    READER_FONT_DEFAULT, READER_FONT_MAX, READER_FONT_MIN, READER_FONT_STEP, ReaderOptions,
+    ReaderTheme, ReplyPosition, mint_account_id, valid_reader_font_size,
 };
 
 /// The email app's Bus service.
@@ -2162,12 +2161,16 @@ mod tests {
             ("email.compose.autosave", json!(false)),
         ] {
             let mut e = read();
-            e.change_email(Change::Path(path.into(), value.clone())).unwrap();
+            e.change_email(Change::Path(path.into(), value.clone()))
+                .unwrap();
             let calls = settings_calls(&mut e);
             assert_eq!(calls[0].2["changes"], json!({path: value}), "{path}");
         }
         let mut e = read();
-        assert!(e.change_email(Change::Path("email.reader.theme".into(), json!("sepia"))).is_err());
+        assert!(
+            e.change_email(Change::Path("email.reader.theme".into(), json!("sepia")))
+                .is_err()
+        );
         assert!(settings_calls(&mut e).is_empty());
         let mut e = read();
         assert!(!e.can_reset_reader_font(), "already the default");
