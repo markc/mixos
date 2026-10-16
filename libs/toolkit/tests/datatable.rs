@@ -222,6 +222,22 @@ fn row_labels(h: &Harness<'static, Sample>) -> Vec<String> {
 }
 
 #[test]
+fn debug_rects() {
+    let mut h = light(Sample::new(10));
+    for n in h.query_all_by_role(Role::Row) {
+        eprintln!("ROW {:?} {:?}", n.rect(), n.accesskit_node().label());
+    }
+    for n in h.query_all_by_role(Role::Button) {
+        eprintln!("BTN {:?} {:?}", n.rect(), n.accesskit_node().label());
+    }
+    let at = h.get_by_label_contains("Minutes").rect().center();
+    eprintln!("CLICK {at:?}");
+    h.get_by_label_contains("Minutes").click();
+    h.run();
+    eprintln!("SEEN {:?}", h.state().seen);
+}
+
+#[test]
 fn rows_are_row_nodes_labelled_with_their_cells() {
     let h = light(Sample::new(5));
     let labels = row_labels(&h);
