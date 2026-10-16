@@ -75,16 +75,6 @@ fn notes($notes)
   return {rows: $rows, count: length($notes), empty: length($rows) == 0}
 end
 
-fn notification_rows($props)
-  $out = []
-  for each $key, $n in $props
-    if re_match($key, "^n[0-9]+$") and type($n) == "map" then
-      push($out, {id: slice($key, 1, length($key)), app: $n.app ?? "", summary: $n.summary ?? "", body: $n.body ?? "", created_at: $n.created_at ?? ""})
-    end
-  end
-  return sort_by($out, function ($n) = $n.created_at)
-end
-
 -- A path from a name -> path map, trying one fallback name; "" when neither
 -- resolved (the template then shows its text stand-in).
 fn icon_choice($paths, $name, $fallback)

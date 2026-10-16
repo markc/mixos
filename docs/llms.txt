@@ -82,6 +82,7 @@ One line per component with a page: kind, then install profiles. The
   - [mix-shell — changelog](https://mixos.dev/mix-shell/changelog.md): Release notes of the mix-shell component, mirrored from cli/mix-shell/CHANGELOG.md.
 - [noded](https://mixos.dev/noded/README.md): service; profiles: unclassified. The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes.
   - [noded — changelog](https://mixos.dev/noded/changelog.md): Release notes of the noded component, mirrored from services/noded/CHANGELOG.md.
+- [notifyd](https://mixos.dev/notifyd/README.md): service; profiles: unclassified. How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed.
 - [portald](https://mixos.dev/portald/README.md): service; profiles: unclassified. How portald serves the XDG Settings portal on the session bus, where the appearance values come from, and how applications and agents read them.
 - [prefs](https://mixos.dev/prefs/README.md): app; profiles: unclassified. MixOS's preferences window — a sidebar of editors: Applications follows, installs, updates, rolls back and removes upstream releases; Appearance sets the session's colour scheme, style, mode, contrast and window frame.
 - [props](https://mixos.dev/props/README.md): lib; profiles: none (library). Shared property read types, revision handling and optional Bus publication builders for noded, Mix and editd.

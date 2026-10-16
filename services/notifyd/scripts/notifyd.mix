@@ -1,0 +1,165 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.1.0
+-- notifyd: the desk's notifications as a Bus service. Agents and apps post
+-- notifications, optionally with buttons; the desk's scenes show them (the
+-- toast, the right-panel Notifications page) and report what the human did.
+-- The store logic is lib/notify.mix; this file is only the Bus surface.
+--
+-- Run: mix --serve notifyd.mix --name notify       (Bus service "notify")
+--
+-- Verbs (bodies are JSON objects):
+--   notify.send     {summary, body?, app?, source?, actions?: [{id, label}],
+--                    timeout_ms?, request_id?, thread?}   -> {id, status}
+--   notify.get      {id}               the record, with its outcome once set
+--   notify.list     {all?}             open records (all: every record), oldest first
+--   notify.action   {id, action}       the human pressed a button
+--   notify.dismiss  {id}               the human closed it without choosing
+--   notify.close    {id}               the sender or the page withdrew it
+--   notify.close_all                   close every open record without buttons
+--                                      (the page's Clear all; questions stay)
+-- send replies at once; nothing waits for the human. The outcome is published
+-- on the topic "<name>.changed" with inner command notification.answered, and
+-- notify.get reads it afterwards. Other inner commands: notification.created,
+-- notification.closed (any outcome that is not a button press).
+-- Replies: rc 0 with JSON; rc 10 bad request; rc 14 unknown id; rc 15 already
+-- answered; rc 16 too many open. Errors use {error_code, message}.
+--
+-- State is one JSON file, written atomically on every change:
+-- $MIXOS_NOTIFYD_STATE, else $XDG_STATE_HOME/mixos/notifyd/state.json. After a
+-- restart, open records stay open (nothing is answered for the human) and
+-- their timeouts are re-armed.
+
+$n = require("lib/notify.mix")
+
+$STATE_FILE = env("MIXOS_NOTIFYD_STATE", env("XDG_STATE_HOME", env("HOME") .. "/.local/state") .. "/mixos/notifyd/state.json")
+$S = $n.new_state()
+if is_file($STATE_FILE) then
+  try
+    $S = $n.restore(read_file($STATE_FILE))
+  catch $m
+    -- A bad file is kept for inspection, never silently overwritten.
+    $kept = $STATE_FILE .. ".bad-" .. to_string(floor(time()))
+    rename($STATE_FILE, $kept)
+    eprint("notifyd: state file unreadable, moved to " .. $kept .. ": " .. $m)
+  end
+end
+
+fn save($state)
+  mkdir(dirname($STATE_FILE), {parents: true})
+  write_atomic($STATE_FILE, json_encode($state), {durability: "file"})
+end
+
+fn body()
+  if type($event.args) == "map" then return $event.args end
+  return {}
+end
+
+fn fail($code, $message)
+  $rc = if $code == "NOT_FOUND" then 14 elif $code == "ALREADY_ANSWERED" then 15 elif $code == "TOO_MANY_OPEN" then 16 else 10 end
+  reply($rc, json_encode({error_code: $code, message: $message}))
+end
+
+fn announce($command, $record)
+  publish(serve_name() .. ".changed", json_encode($n.view($record)), {command: $command})
+end
+
+-- Arm the timeout for an open record: a local task that sleeps to the
+-- deadline, then the plain handler below commits the expiry.
+fn arm($record)
+  if $record.deadline_t != nil and $n.is_open($record) then
+    task_start("notify.expire", json_encode({id: $record.id}))
+  end
+end
+
+-- Settle, save, announce and reply. Returns the state to keep (a function
+-- cannot assign the global $S; the handler stores what this returns).
+fn settle_and_reply($id, $kind, $action)
+  try
+    $out = $n.settle($S, $id, $kind, $action, now_iso())
+    save($out.state)
+    announce(if $kind == "action" then "notification.answered" else "notification.closed" end, $out.record)
+    reply(0, json_encode($n.view($out.record)))
+    return $out.state
+  catch $m, $err
+    fail($err.code, $m)
+    return $S
+  end
+end
+
+on notify.send desc "post a notification, optionally with buttons; replies {id, status} at once"
+  try
+    $out = $n.add($S, body(), time(), now_iso())
+    save($out.state)
+    $S = $out.state
+    announce("notification.created", $out.record)
+    arm($out.record)
+    reply(0, json_encode({id: $out.record.id, status: "open"}))
+  catch $m, $err
+    fail($err.code, $m)
+  end
+end
+
+on notify.get desc "one notification by id, with its outcome once it has one"
+  $r = $n.find($S, body().id)
+  if $r == nil then
+    fail("NOT_FOUND", "no notification " .. to_string(body().id))
+  else
+    reply(0, json_encode($n.view($r)))
+  end
+end
+
+on notify.list desc "open notifications, oldest first (all: true for every record)"
+  reply(0, json_encode($n.list($S, body())))
+end
+
+on notify.action desc "the human pressed button {action} on notification {id}"
+  $S = settle_and_reply(body().id, "action", body().action)
+end
+
+on notify.dismiss desc "the human closed notification {id} without choosing"
+  $S = settle_and_reply(body().id, "dismissed", nil)
+end
+
+on notify.close desc "withdraw notification {id} (its sender, or the Notifications page)"
+  $S = settle_and_reply(body().id, "closed", nil)
+end
+
+on notify.close_all desc "close every open notification that has no buttons"
+  $closed = []
+  for each $r in $S.records
+    if $n.is_open($r) and not $n.is_actionable($r) then push($closed, $r.id) end
+  end
+  for each $id in $closed
+    $out = $n.settle($S, $id, "closed", nil, now_iso())
+    $S = $out.state
+    announce("notification.closed", $out.record)
+  end
+  if len($closed) > 0 then save($S) end
+  reply(0, json_encode({closed: $closed}))
+end
+
+-- Expiry: the async entry sleeps until the deadline without blocking other
+-- callers; the plain entry then reads the current state and expires the
+-- record only if it is still open and really due.
+on notify.expire async
+  $r = $n.find($S, body().id)
+  if $r != nil and $r.deadline_t != nil then
+    $wait = $r.deadline_t - time()
+    if $wait > 0 then sleep($wait) end
+  end
+end
+on notify.expire
+  $r = $n.find($S, body().id)
+  if $r != nil and $n.is_open($r) and $r.deadline_t != nil and $r.deadline_t <= time() then
+    $out = $n.settle($S, $r.id, "expired", nil, now_iso())
+    save($out.state)
+    $S = $out.state
+    announce("notification.closed", $out.record)
+  end
+end
+
+-- Re-arm the timeouts of records still open from before a restart.
+for each $r in $S.records
+  arm($r)
+end

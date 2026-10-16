@@ -64,6 +64,8 @@ $scripts = [
   "services/editd/tests/edit_bus_test.mix",
   "services/releasesd/tests/releases_test.mix",
   "services/releasesd/tests/releasesd_test.mix",
+  "services/notifyd/tests/notify_test.mix",
+  "services/notifyd/tests/notifyd_test.mix",
   "apps/dopus/tests/dopus_bus_test.mix"
 ]
 if len($only) > 0 then

@@ -14,10 +14,10 @@ fn schedule()
   end
 end
 fn snapshot()
-  $out = $r.call($NOTIFY, "notify.props.get", {})
+  $out = $r.call($NOTIFY, "notify.list", {})
   if not $out.ok then return $out end
-  if type($out.value) != "map" then return $r.failure("notify_invalid_reply", "notify.props.get must return a map") end
-  return {ok: true, rc: 0, value: $m.notification_rows($out.value)}
+  if type($out.value) != "list" then return $r.failure("notify_invalid_reply", "notify.list must return a list") end
+  return {ok: true, rc: 0, value: $out.value}
 end
 fn refresh()
   if not $state.ready then return $r.failure("scene_not_ready", "Waiting for loader readiness") end
@@ -38,19 +38,16 @@ on note_close async
   if $id == nil or not re_match($id, "^[0-9]+$") then
     $r.respond($r.failure("invalid_args", "item.id must be a notification ID")); return
   end
-  $out = $r.call($NOTIFY, "notify.close", {id: to_number($id)})
+  -- The human closed it here: a dismissal, never an answer to a question.
+  $out = $r.call($NOTIFY, "notify.dismiss", {id: to_number($id)})
   if $out.ok then schedule() end
   $r.respond($out)
 end
+-- Clear all closes the notes without buttons; questions stay until answered.
 on notes_clear async
-  $out = snapshot()
-  if not $out.ok then $r.respond($out); return end
-  for each $note in $out.value
-    $closed = $r.call($NOTIFY, "notify.close", {id: to_number($note.id)})
-    if not $closed.ok then schedule(); $r.respond($closed); return end
-  end
+  $out = $r.call($NOTIFY, "notify.close_all", {})
   schedule()
-  reply(0, "{}")
+  $r.respond($out)
 end
 on notes.open
   $r.respond($r.popup($ctx, "open"))
@@ -77,6 +74,9 @@ on notification.created
   schedule()
 end
 on notification.closed
+  schedule()
+end
+on notification.answered
   schedule()
 end
 on bus.connected

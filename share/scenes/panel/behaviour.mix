@@ -225,11 +225,11 @@ fn fetch_tray()
   $state.tray = $ok ? $out.value.items : []
 end
 
--- notify.list rows carry no body; the props tree holds every notification.
+-- notify.list: the open notifications (notifyd).
 fn fetch_notes()
-  $out = $r.call($NOTIFY, "notify.props.get", {})
-  $ok = $out.ok and type($out.value) == "map"
-  $state.notes_count = $ok ? length($m.notification_rows($out.value)) : 0
+  $out = $r.call($NOTIFY, "notify.list", {})
+  $ok = $out.ok and type($out.value) == "list"
+  $state.notes_count = $ok ? length($out.value) : 0
 end
 
 -- Desired popup state is the loader's; applied completion arrives through
@@ -671,6 +671,9 @@ on notification.created
   schedule()
 end
 on notification.closed
+  schedule()
+end
+on notification.answered
   schedule()
 end
 on apps.changed
