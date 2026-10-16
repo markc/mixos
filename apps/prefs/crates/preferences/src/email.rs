@@ -27,7 +27,8 @@ use std::collections::BTreeMap;
 
 pub use settings::email::{
     AccountEntry, Email, MailOptions, PAGE_SIZE_MAX, PAGE_SIZE_MIN, READER_FONT_DEFAULT,
-    READER_FONT_MAX, READER_FONT_MIN, READER_FONT_STEP, ReaderOptions, mint_account_id,
+    READER_FONT_MAX, READER_FONT_MIN, READER_FONT_STEP, ReaderOptions, ReaderTheme, ReplyPosition,
+    ComposeOptions, mint_account_id,
     valid_reader_font_size,
 };
 
@@ -1779,7 +1780,8 @@ impl Engine {
             "accounts":accounts,
             "default_account":email.and_then(|e| e.default_account.clone()),
             "mail":mail.map(|m| json!({"page_size":m.page_size,"mark_read_on_open":m.mark_read_on_open,"confirm_delete":m.confirm_delete})),
-            "reader":email.map(|e| json!({"font_size":e.reader.font_size,"default":READER_FONT_DEFAULT,"min":READER_FONT_MIN,"max":READER_FONT_MAX,"step":READER_FONT_STEP})),
+            "reader":email.map(|e| json!({"font_size":e.reader.font_size,"default":READER_FONT_DEFAULT,"min":READER_FONT_MIN,"max":READER_FONT_MAX,"step":READER_FONT_STEP,"theme":e.reader.theme})),
+            "compose":email.map(|e| json!({"quote_on_reply":e.compose.quote_on_reply,"reply_position":e.compose.reply_position,"autosave":e.compose.autosave})),
             "email_service":self.email.service,
             "paths":email_paths(),
             "selected":self.ui.email_account,
@@ -2147,6 +2149,27 @@ mod tests {
     fn the_reader_font_size_applies_shows_and_resets() {
         let mut e = read();
         assert_eq!(e.email_view()["reader"]["font_size"], READER_FONT_DEFAULT);
+        assert_eq!(e.email_view()["reader"]["theme"], "auto");
+        assert_eq!(
+            e.email_view()["compose"],
+            json!({"quote_on_reply":true,"reply_position":"above","autosave":true})
+        );
+        // The window's theme and compose controls send their one path.
+        for (path, value) in [
+            ("email.reader.theme", json!("dark")),
+            ("email.compose.quote_on_reply", json!(false)),
+            ("email.compose.reply_position", json!("below")),
+            ("email.compose.autosave", json!(false)),
+        ] {
+            let mut e = read();
+            e.change_email(Change::Path(path.into(), value.clone())).unwrap();
+            let calls = settings_calls(&mut e);
+            assert_eq!(calls[0].2["changes"], json!({path: value}), "{path}");
+        }
+        let mut e = read();
+        assert!(e.change_email(Change::Path("email.reader.theme".into(), json!("sepia"))).is_err());
+        assert!(settings_calls(&mut e).is_empty());
+        let mut e = read();
         assert!(!e.can_reset_reader_font(), "already the default");
         e.command(
             1,

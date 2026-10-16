@@ -338,8 +338,12 @@ applies at once.</li>
 <li><strong>Mail</strong> holds messages per page (10 to 500), marking messages read when
 opened, and asking before deleting them; each applies at once.</li>
 <li><strong>Reader</strong> sets the text size of the message reader, 10 to 32 points
-in half-point steps (default 15), with a line set at that size to show
-it; <strong>Default size</strong> puts it back. It applies at once. <strong>Reset
+in half-point steps (default 15), and its <strong>colours</strong>: Follow window,
+Light or Dark. A line set at that size, on those colours, shows it;
+<strong>Default size</strong> puts the size back. Each applies at once.</li>
+<li><strong>Compose</strong>: <strong>Quote the original when replying</strong>, <strong>Write my reply</strong>
+above or below the quote (only while quoting), and <strong>Autosave drafts</strong>.
+Each applies at once. <strong>Reset
 email settings…</strong> asks first, then puts every email setting back to its
 default, which means no accounts.</li>
 </ul>
@@ -409,6 +413,10 @@ its default (no <code>path</code>: the whole group).</p>
 <tr><td>Mark messages read when opened</td><td><code>email.mail.mark_read_on_open</code></td><td><code>prefs.email.set {path, value}</code></td></tr>
 <tr><td>Ask before deleting messages</td><td><code>email.mail.confirm_delete</code></td><td><code>prefs.email.set {path, value}</code></td></tr>
 <tr><td>Reader text size, Default size</td><td><code>email.reader.font_size</code></td><td><code>prefs.email.set {path, value}</code>, <code>prefs.email.reset {path}</code>; <code>prefs.execute email.reader.reset</code></td></tr>
+<tr><td>Reader colours (Follow window, Light, Dark)</td><td><code>email.reader.theme</code> (<code>auto</code>, <code>light</code>, <code>dark</code>)</td><td><code>prefs.email.set {path, value}</code>, <code>prefs.email.reset {path}</code></td></tr>
+<tr><td>Quote the original when replying</td><td><code>email.compose.quote_on_reply</code></td><td><code>prefs.email.set {path, value}</code>, <code>prefs.email.reset {path}</code></td></tr>
+<tr><td>Write my reply above / below the quote</td><td><code>email.compose.reply_position</code> (<code>above</code>, <code>below</code>)</td><td><code>prefs.email.set {path, value}</code>, <code>prefs.email.reset {path}</code></td></tr>
+<tr><td>Autosave drafts</td><td><code>email.compose.autosave</code></td><td><code>prefs.email.set {path, value}</code>, <code>prefs.email.reset {path}</code></td></tr>
 <tr><td>Reset email settings…</td><td><code>email</code></td><td><code>prefs.email.reset</code> (refused while Email runs and holds accounts); <code>prefs.execute email.reset</code>, then <code>dialog.confirm</code></td></tr>
 </tbody></table>
 <table><thead><tr><th>Button</th><th>Command (<code>prefs.execute {id}</code>)</th></tr></thead><tbody>

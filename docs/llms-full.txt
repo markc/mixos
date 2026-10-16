@@ -29470,8 +29470,12 @@ settingsd; see the [email settings](../docs/spec/settings/README.md)).
 - **Mail** holds messages per page (10 to 500), marking messages read when
   opened, and asking before deleting them; each applies at once.
 - **Reader** sets the text size of the message reader, 10 to 32 points
-  in half-point steps (default 15), with a line set at that size to show
-  it; **Default size** puts it back. It applies at once. **Reset
+  in half-point steps (default 15), and its **colours**: Follow window,
+  Light or Dark. A line set at that size, on those colours, shows it;
+  **Default size** puts the size back. Each applies at once.
+- **Compose**: **Quote the original when replying**, **Write my reply**
+  above or below the quote (only while quoting), and **Autosave drafts**.
+  Each applies at once. **Reset
   email settings…** asks first, then puts every email setting back to its
   default, which means no accounts.
 
@@ -29550,6 +29554,10 @@ its default (no `path`: the whole group).
 | Mark messages read when opened | `email.mail.mark_read_on_open` | `prefs.email.set {path, value}` |
 | Ask before deleting messages | `email.mail.confirm_delete` | `prefs.email.set {path, value}` |
 | Reader text size, Default size | `email.reader.font_size` | `prefs.email.set {path, value}`, `prefs.email.reset {path}`; `prefs.execute email.reader.reset` |
+| Reader colours (Follow window, Light, Dark) | `email.reader.theme` (`auto`, `light`, `dark`) | `prefs.email.set {path, value}`, `prefs.email.reset {path}` |
+| Quote the original when replying | `email.compose.quote_on_reply` | `prefs.email.set {path, value}`, `prefs.email.reset {path}` |
+| Write my reply above / below the quote | `email.compose.reply_position` (`above`, `below`) | `prefs.email.set {path, value}`, `prefs.email.reset {path}` |
+| Autosave drafts | `email.compose.autosave` | `prefs.email.set {path, value}`, `prefs.email.reset {path}` |
 | Reset email settings… | `email` | `prefs.email.reset` (refused while Email runs and holds accounts); `prefs.execute email.reset`, then `dialog.confirm` |
 
 | Button | Command (`prefs.execute {id}`) |

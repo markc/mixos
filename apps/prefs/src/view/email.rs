@@ -4,15 +4,16 @@
 //! form, its password and connection, then the mail options. The values
 //! are settingsd's as last read; the form is the person's typing until
 //! Save. Each list action and option applies at once.
-use super::{Numeric, UiEvent, command_button, number};
+use super::{Numeric, UiEvent, choices, command_button, number};
 use crate::{label, label_with};
 use egui::{Align, Layout, RichText, Ui};
 use preferences::Engine;
 use preferences::appearance::Availability as Settings;
 use preferences::email::{
     AccountEntry, Change, Email, Field, Form, PAGE_SIZE_MAX, PAGE_SIZE_MIN, READER_FONT_MAX,
-    READER_FONT_MIN, READER_FONT_STEP, Secret, Service,
+    READER_FONT_MIN, READER_FONT_STEP, ReaderTheme, ReplyPosition, Secret, Service,
 };
+use serde_json::json;
 use toolkit::toggle::Toggle;
 use toolkit::{Registry, Strings, bars, field, panel};
 
@@ -97,6 +98,9 @@ pub fn section(
         bars::hairline(ui);
         ui.strong(label("email-reader"));
         reader(ui, engine, commands, strings, email, events);
+        bars::hairline(ui);
+        ui.strong(label("email-compose"));
+        compose(ui, engine, email, events);
         bars::hairline(ui);
         ui.horizontal(|ui| {
             command_button(ui, engine, commands, strings, "email.reset", false, events);
@@ -389,10 +393,34 @@ fn reader(
             }
         });
     });
-    // The preview is set at the size itself: what the reader will show.
-    ui.add(
-        egui::Label::new(RichText::new(label("email-reader-preview")).size(current as f32)).wrap(),
-    );
+    ui.add_enabled_ui(engine.can_edit_email(), |ui| {
+        panel::section_label(ui, &label("email-reader-theme"));
+        let themes = [
+            (ReaderTheme::Auto, label("email-reader-theme-auto")),
+            (ReaderTheme::Light, label("email-reader-theme-light")),
+            (ReaderTheme::Dark, label("email-reader-theme-dark")),
+        ];
+        if let Some(theme) = choices(ui, email.reader.theme, &themes) {
+            events.push(UiEvent::EmailChange(Change::Path(
+                "email.reader.theme".into(),
+                json!(theme),
+            )));
+        }
+    });
+    // The preview is what the reader will show: its size, on its colours.
+    let palette = reader_palette(ui.ctx(), engine, email.reader.theme);
+    egui::Frame::new()
+        .fill(palette.card)
+        .stroke(egui::Stroke::new(1.0, palette.card_border))
+        .corner_radius(toolkit::chrome::Chrome::of(ui.ctx()).metrics.radius_sm)
+        .inner_margin(egui::Margin::symmetric(12, 8))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            let text = RichText::new(label("email-reader-preview"))
+                .size(current as f32)
+                .color(palette.text);
+            ui.add(egui::Label::new(text).wrap());
+        });
     ui.horizontal(|ui| {
         command_button(
             ui,
@@ -411,6 +439,83 @@ fn reader(
             )],
         );
         ui.label(RichText::new(note).weak());
+    });
+}
+
+/// The colours the reader draws a message on: the window's for Follow
+/// window, else the light or dark variant of the scheme the window shows,
+/// from its design tokens (compiled once per scheme and mode).
+fn reader_palette(
+    ctx: &egui::Context,
+    engine: &Engine,
+    theme: ReaderTheme,
+) -> toolkit::chrome::Palette {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    let mode = match theme {
+        ReaderTheme::Auto => return toolkit::chrome::Chrome::of(ctx).palette,
+        ReaderTheme::Light => design::Mode::Light,
+        ReaderTheme::Dark => design::Mode::Dark,
+    };
+    type Cache = Mutex<HashMap<(design::Scheme, design::Mode), toolkit::chrome::Palette>>;
+    static CACHE: OnceLock<Cache> = OnceLock::new();
+    let scheme = engine.effective_theme().0;
+    let mut cache = CACHE
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    *cache.entry((scheme, mode)).or_insert_with(|| {
+        let theme = toolkit::Theme::for_context(design::DesignContext {
+            scheme,
+            mode,
+            ..design::DesignContext::default()
+        });
+        toolkit::chrome::Chrome::for_theme(&theme).palette
+    })
+}
+
+/// Quote on reply, where the reply goes, autosave: each applies at once.
+fn compose(ui: &mut Ui, engine: &Engine, email: &Email, events: &mut Vec<UiEvent>) {
+    let compose = &email.compose;
+    let path = |name: &str| format!("email.compose.{name}");
+    ui.add_enabled_ui(engine.can_edit_email(), |ui| {
+        ui.vertical(|ui| {
+            ui.set_width(ui.available_width());
+            let mut quote = compose.quote_on_reply;
+            if ui
+                .add(Toggle::new(&mut quote, label("email-quote-on-reply")))
+                .changed()
+            {
+                events.push(UiEvent::EmailChange(Change::Path(
+                    path("quote_on_reply"),
+                    json!(quote),
+                )));
+            }
+            // Where the reply goes only matters when the original is quoted.
+            ui.add_enabled_ui(compose.quote_on_reply, |ui| {
+                panel::section_label(ui, &label("email-reply-position"));
+                let positions = [
+                    (ReplyPosition::Above, label("email-reply-above")),
+                    (ReplyPosition::Below, label("email-reply-below")),
+                ];
+                if let Some(position) = choices(ui, compose.reply_position, &positions) {
+                    events.push(UiEvent::EmailChange(Change::Path(
+                        path("reply_position"),
+                        json!(position),
+                    )));
+                }
+            });
+            let mut autosave = compose.autosave;
+            if ui
+                .add(Toggle::new(&mut autosave, label("email-autosave")))
+                .changed()
+            {
+                events.push(UiEvent::EmailChange(Change::Path(
+                    path("autosave"),
+                    json!(autosave),
+                )));
+            }
+        });
     });
 }
 

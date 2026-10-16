@@ -418,21 +418,25 @@ fn email_engine(email: serde_json::Value, passwords: Option<serde_json::Value>) 
     e
 }
 
-/// The reader's text size set to 21 pt: the preview line is set at that
-/// size and Default size is offered.
+/// The reader at 21 pt on Light colours in a dark window: the preview is
+/// set at that size on the light variant's tokens, Default size offered;
+/// Compose writes replies below the quote and does not autosave.
 #[test]
 fn email_reader_studio_dark() {
     let e = email_engine(
         json!({"accounts":[
             {"id":"acct-0f3a","name":"Work","url":"https://mail.example.com","email":"admin@example.com"}
-        ],"reader":{"font_size":21.0}}),
+        ],"reader":{"font_size":21.0,"theme":"light"},
+          "compose":{"reply_position":"below","autosave":false}}),
         None,
     );
     assert!(e.can_reset_reader_font());
-    draw(
+    assert_eq!(e.email_view()["compose"]["reply_position"], "below");
+    draw_at_size(
         chrome(Scheme::Studio, Mode::Dark),
         "email_reader_studio_dark",
         e,
+        egui::vec2(980.0, 860.0),
     );
 }
 
