@@ -62,7 +62,7 @@ is Lucide 1.54.0 camera.svg, unmodified, under the same licence.
 Icon bundle (share/icons)
 -------------------------
 
-share/icons/lucide holds 27 unmodified SVGs from Lucide 1.54.0
+share/icons/lucide holds 30 unmodified SVGs from Lucide 1.54.0
 (https://github.com/lucide-icons/lucide), Lucide Icons and Contributors, ISC; the
 Feather-derived icons among them are also Cole Bemis (Feather), MIT. The licence
 is share/icons/LICENSE-lucide.txt. The installer (share/icons/install.mix)

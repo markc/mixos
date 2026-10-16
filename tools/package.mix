@@ -30,7 +30,7 @@ $PACKAGES = {
 }
 -- Desktop entries ship with their app; Exec loses the system path so
 -- releasesd points it at the installed binary.
-$ENTRIES = {"mixos-desktop": ["apps/dopus/assets/dev.mixos.dopus.desktop", "apps/screenshot/assets/dev.mixos.screenshot.desktop"]}
+$ENTRIES = {"mixos-desktop": ["apps/dopus/assets/dev.mixos.dopus.desktop", "apps/screenshot/assets/dev.mixos.screenshot.desktop", "apps/email/assets/dev.mixos.email.desktop"]}
 $DOCS = ["README.md", "LICENSE-MIT", "LICENSE-APACHE", "NOTICE"]
 
 $version = $g.opts.release ?? ""

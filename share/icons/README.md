@@ -6,7 +6,7 @@ panel use in place of the Material controls. It holds:
 - `manifest.conf.mix`: the finite catalogue, strict data loaded with `load_data`
   and never executed. Schema 1, family `lucide`, release `1.54.0`, stroke width
   `1.5` on the 24-unit canvas.
-- `lucide/*.svg`: the 27 upstream SVGs, copied byte for byte. Each is pinned by
+- `lucide/*.svg`: the 30 upstream SVGs, copied byte for byte. Each is pinned by
   its SHA-256 in the manifest.
 - `LICENSE-lucide.txt`: the Lucide licence text (ISC; the Feather-derived icons
   are also MIT). Attribution is in `NOTICE` and `REUSE.toml`.
