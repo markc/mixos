@@ -218,6 +218,7 @@
                 <div class="panel-content">
                     <nav id="toc-nav">
                         <a href="#settings-at-startup">Settings at startup</a>
+                        <a href="#toast-scenes">Toast scenes</a>
                         <a href="#layout">Layout</a>
                         <a href="#build">Build</a>
                         <a href="#run">Run</a>
@@ -274,6 +275,26 @@ bounded completion margin. Timeouts report failure without claiming
 persistence.</p>
 <p>The settings come from <a href="/settingsd/">settingsd</a> through the
 <a href="/settings/">settings</a> library.</p>
+<h2 id="toast-scenes">Toast scenes</h2>
+<p>A scene with <code>window: {"kind":"toast","w":360,"h":120}</code> uses a
+separate, pointer-interactive toast seat. It never takes keyboard focus,
+including on click or with an authored autofocus field. It draws above
+windows and edge panels, below the dialog and session lock.</p>
+<p>The draft intent verbs are <code>shell.toast.show {scene, output?, h?}</code> and
+<code>shell.toast.hide {scene}</code>. Both reply <code>{scene, visible, applied:true}</code>.
+Scenes load hidden; show reserves the one toast seat and hide releases it.
+A different scene's show returns rc 10 <code>TOAST_BUSY</code> with
+<code>holder:{scene, owner}</code>. Unknown scenes return <code>NOT_FOUND</code>, other mount
+kinds <code>NOT_TOAST</code>, and a nonnumeric height <code>INVALID_HEIGHT</code>.</p>
+<p>The output defaults to the selected output, as for dialogs. Width clamps
+to 240–2048 logical px and height to 60–2048 (defaults 360×120). A show can
+override height; showing the same scene again resizes it, and omitting
+height preserves its current override. Reload updates the authored geometry
+and keeps visibility; changing kind requires an unload first.</p>
+<p>Placement is top right, 12 logical px inside the usable area left by
+layer-shell exclusive zones and docked scene panels. The drawn size fits
+inside that area on small outputs. Chrome defaults to false; <code>chrome:true</code>
+adds a title frame and a close button that hides the toast.</p>
 <h2 id="layout">Layout</h2>
 <table><thead><tr><th>Path</th><th>What</th></tr></thead><tbody>
 <tr><td><code>src/</code></td><td>the <code>compd</code> binary: CLI, event loop, Bus and scene wiring</td></tr>
