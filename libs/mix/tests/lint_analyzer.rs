@@ -1687,7 +1687,8 @@ fn send_status_parameter_default_that_sends_overwrites_the_status() {
 #[test]
 fn send_status_interpolation_fallback_that_sends_overwrites_the_status() {
     // The fallback of ${x ?? ...} runs when x is nil, so its sh overwrites $rc.
-    let src = "$x = nil\nsend svc ping\n$s = \"${x ?? sh \"true\"}\"\nif $rc != 0 then exit(1) end\n";
+    let src =
+        "$x = nil\nsend svc ping\n$s = \"${x ?? sh \"true\"}\"\nif $rc != 0 then exit(1) end\n";
     let got = w2307_lines(src);
     assert!(got.contains(&Some(2)), "got: {got:?}");
 }
@@ -1716,7 +1717,8 @@ fn send_status_pure_parameter_default_keeps_the_call_pure() {
 
 #[test]
 fn send_status_pure_interpolation_fallback_keeps_the_send_checked() {
-    let src = "$x = nil\nsend svc ping\n$s = \"${x ?? len(\"a\")}\"\nif $rc != 0 then exit(1) end\n";
+    let src =
+        "$x = nil\nsend svc ping\n$s = \"${x ?? len(\"a\")}\"\nif $rc != 0 then exit(1) end\n";
     let got = w2307_lines(src);
     assert!(!got.contains(&Some(2)), "got: {got:?}");
 }
