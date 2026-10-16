@@ -9,7 +9,8 @@
 //! Applications editor is a panel group with the followed apps as a table,
 //! a second group with the selected app's actions and release notes, and a
 //! confirmation dialog before anything is removed. The Appearance editor
-//! sets the session's look through settingsd, each change at once.
+//! sets the session's look through settingsd, each change at once. App
+//! Settings holds per-application settings, Email first (`view/email.rs`).
 use crate::{label, label_with};
 use design::{CaptionSide, Contrast, Decorations, Mode, Scheme, Style};
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
@@ -31,6 +32,7 @@ use toolkit::slider::Slider;
 use toolkit::titlebar::{self, Control};
 use toolkit::toggle::Toggle;
 use toolkit::{Icon, Registry, Strings, bars, icons, panel, tooltip};
+mod email;
 mod wallpaper;
 
 /// One interaction from this frame.
@@ -55,6 +57,16 @@ pub enum UiEvent {
     PickerDirectory(String),
     PickerSelect(String),
     PickerEnter(String),
+    /// The email remove or reset dialog's confirm button.
+    ConfirmEmail,
+    /// Select this email account by id.
+    EmailSelect(String),
+    /// A field of the account form as typed.
+    EmailField(preferences::email::Field, String),
+    /// The password field as typed (never shown, never stored).
+    EmailPassword(preferences::email::Secret),
+    /// A change that applies at once: enable, a mail option.
+    EmailChange(preferences::email::Change),
 }
 
 const ICON: f32 = 14.0;
@@ -115,7 +127,8 @@ pub fn view(
     bars::status(ui, |ui| {
         let (icon, colour) = if !engine.connected {
             (Icon::Unplug, ui.visuals().error_fg_color)
-        } else if engine.working().is_some() || engine.look.working() {
+        } else if engine.working().is_some() || engine.look.working() || engine.email.task.is_some()
+        {
             (Icon::LoaderCircle, ui.visuals().weak_text_color())
         } else if engine.failed {
             (Icon::CircleAlert, ui.visuals().error_fg_color)
@@ -153,6 +166,7 @@ pub fn view(
                             wallpaper::controls(ui, engine, commands, strings, &mut events)
                         }
                         Section::Fonts => fonts(ui),
+                        Section::Email => email::section(ui, engine, commands, strings, &mut events),
                         _ => unreachable!(),
                     });
             }
@@ -188,6 +202,12 @@ fn editors(
                         "panel-applications",
                         engine.ui.applications_expanded,
                         "view.tree.applications",
+                    ),
+                    (
+                        Panel::AppSettings,
+                        "panel-app-settings",
+                        engine.ui.app_settings_expanded,
+                        "view.tree.app-settings",
                     ),
                 ] {
                     let enabled = commands.get(toggle).is_some_and(|c| (c.enabled)(engine));
@@ -1132,6 +1152,7 @@ fn dialogs(
         return;
     };
     match dialog {
+        Dialog::RemoveAccount(_) | Dialog::ResetEmail => email::confirmation(ui, engine, events),
         Dialog::About | Dialog::Shortcuts => {
             let about = *dialog == Dialog::About;
             let title = if about { "about" } else { "shortcuts" };

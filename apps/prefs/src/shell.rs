@@ -35,6 +35,10 @@ pub enum Event {
     Backdrop(u64, Result<Reply, CallError>),
     Browsed(u64, Result<preferences::picker::Listing, String>),
     Shown(u64, Option<u64>, Result<Value, String>),
+    /// A call to the email app (or to apps, launching it) finished.
+    Mailed(u64, Result<Reply, CallError>),
+    /// A wait the engine asked for is over.
+    Waited(u64),
 }
 
 /// Apply one finished event to the engine.
@@ -46,6 +50,8 @@ pub fn apply_event(engine: &mut Engine, event: Event) {
         Event::Backdrop(ticket, result) => engine.wallpaper_finished(ticket, result),
         Event::Browsed(ticket, result) => engine.browsed(ticket, result),
         Event::Shown(ticket, reply, result) => engine.shown(ticket, reply, result),
+        Event::Mailed(ticket, result) => engine.mailed(ticket, result),
+        Event::Waited(ticket) => engine.waited(ticket),
     }
 }
 
@@ -73,6 +79,13 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
             UiEvent::PickerDirectory(path) => engine.edit_picker_directory(path),
             UiEvent::PickerSelect(path) => engine.picker_select(&path),
             UiEvent::PickerEnter(path) => engine.picker_enter(&path),
+            UiEvent::ConfirmEmail => engine.confirm_email(),
+            UiEvent::EmailSelect(id) => engine.select_email_account(&id),
+            UiEvent::EmailField(field, text) => engine.edit_email_field(field, text),
+            UiEvent::EmailPassword(password) => engine.edit_email_password(password),
+            UiEvent::EmailChange(change) => {
+                let _ = engine.change_email(change);
+            }
         }
     }
 }
@@ -94,6 +107,10 @@ pub fn budget(verb: &str) -> Duration {
 /// How long a settingsd call may take: every verb answers from memory or
 /// one durable write.
 pub const SETTINGS_BUDGET: Duration = Duration::from_secs(30);
+
+/// How long a call to the email app (or `apps.launch`) may take: a
+/// password is written to one file, a connect only starts.
+pub const MAIL_BUDGET: Duration = Duration::from_secs(30);
 
 /// This host's name: the settingsd instance to try first (settingsd runs
 /// as `--instance %H`; the panel adopts the right one from its answer).
@@ -395,6 +412,31 @@ impl Shell {
                         .raw_within(SETTINGS, verb, body.to_string(), SETTINGS_BUDGET)
                         .await;
                     Event::Settled(ticket, result)
+                });
+            }
+            Effect::Mail {
+                ticket,
+                service,
+                verb,
+                mut body,
+                secret,
+            } => {
+                // The password joins the body only here, as it is sent.
+                if let Some(secret) = &secret {
+                    body["password"] = json!(secret.expose());
+                }
+                let bus = self.bus.clone();
+                self.spawn(async move {
+                    let result = bus
+                        .raw_within(service, verb, body.to_string(), MAIL_BUDGET)
+                        .await;
+                    Event::Mailed(ticket, result)
+                });
+            }
+            Effect::Wait { ticket, after_ms } => {
+                self.spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(after_ms)).await;
+                    Event::Waited(ticket)
                 });
             }
             Effect::Show { ticket, reply } => {

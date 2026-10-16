@@ -4,11 +4,14 @@
 //! Applications editor with a listed catalogue (an update, a current app, a
 //! new one and a failed check), a selected app with its release notes, and
 //! the remove confirmation; the Appearance editor as read and with an
-//! unapplied draft the window previews. Regenerate with `UPDATE_SNAPSHOTS=1` and look at
+//! unapplied draft the window previews; App Settings → Email with no
+//! accounts, two accounts with one selected, and a refused new account.
+//! Regenerate with `UPDATE_SNAPSHOTS=1` and look at
 //! the images before committing them.
 use citizen::Reply;
 use design::{CaptionSide, DesignContext, Mode, Scheme, Style};
 use egui_kittest::Harness;
+use preferences::email::Field;
 use preferences::{Dialog, Effect, Engine, Look, Panel, Section};
 use prefs::{commands, label_with, strings, view::view};
 use serde_json::json;
@@ -365,6 +368,102 @@ fn appearance_conflict_studio_dark() {
     let look = engine.look.shown().expect("shown");
     let theme = Theme::for_context(look.context()).framed(look.decorations, look.captions);
     draw(theme, "appearance_conflict_studio_dark", engine);
+}
+
+/// The Email section over a settingsd read holding `email`, with Email's
+/// `email.accounts` answered by `passwords` (or still unasked).
+fn email_engine(email: serde_json::Value, passwords: Option<serde_json::Value>) -> Engine {
+    let mut e = engine();
+    e.start_appearance("example");
+    let ticket = e
+        .take_effects()
+        .into_iter()
+        .find_map(|x| match x {
+            Effect::Settings { ticket, .. } => Some(ticket),
+            _ => None,
+        })
+        .expect("a settings read");
+    let mut snapshot = summary_reply(
+        "12",
+        json!({"scheme":"studio","mode":"dark","contrast":"normal","source":null}),
+    );
+    snapshot["summary"]["email"] = email;
+    e.settled(
+        ticket,
+        Ok(Reply {
+            rc: 0,
+            body: snapshot.to_string(),
+            error: None,
+        }),
+    );
+    e.set_section(Section::Email);
+    let ticket = e
+        .take_effects()
+        .into_iter()
+        .find_map(|x| match x {
+            Effect::Mail { ticket, .. } => Some(ticket),
+            _ => None,
+        })
+        .expect("Email asked about passwords");
+    if let Some(passwords) = passwords {
+        e.mailed(
+            ticket,
+            Ok(Reply {
+                rc: 0,
+                body: passwords.to_string(),
+                error: None,
+            }),
+        );
+    }
+    e
+}
+
+/// No accounts yet: the list says so and Add account is the way in.
+#[test]
+fn email_empty_studio_dark() {
+    let e = email_engine(json!({}), None);
+    draw(chrome(Scheme::Studio, Mode::Dark), "email_empty_studio_dark", e);
+}
+
+/// Two accounts, Work the default and Home disabled; Home selected, its
+/// password set in Email.
+#[test]
+fn email_accounts_studio_dark() {
+    let mut e = email_engine(
+        json!({"accounts":[
+            {"id":"acct-0f3a","name":"Work","url":"https://mail.example.com","email":"admin@example.com"},
+            {"id":"acct-9b21","name":"Home","url":"https://jmap.example.net","email":"mark@example.net",
+             "enabled":false,"signature":"-- \nMark"}
+        ],"default_account":"acct-0f3a","mail":{"page_size":50}}),
+        Some(json!({"accounts":[{"id":"acct-0f3a","has_password":true},{"id":"acct-9b21","has_password":true}]})),
+    );
+    e.select_email_account("acct-9b21");
+    draw_at_size(
+        chrome(Scheme::Studio, Mode::Dark),
+        "email_accounts_studio_dark",
+        e,
+        egui::vec2(980.0, 900.0),
+    );
+}
+
+/// A new account whose Save was refused before sending: the URL is not
+/// https and the address has no @; each field says why.
+#[test]
+fn email_invalid_pro_light() {
+    let mut e = email_engine(
+        json!({"accounts":[
+            {"id":"acct-0f3a","name":"Work","url":"https://mail.example.com","email":"admin@example.com"}
+        ]}),
+        None,
+    );
+    e.new_email_account();
+    e.edit_email_field(Field::Name, "Gold Coast".into());
+    e.edit_email_field(Field::Url, "http://mail.example.com/".into());
+    e.edit_email_field(Field::Email, "admin".into());
+    e.save_email_account();
+    assert!(e.failed, "{}", e.status);
+    assert_eq!(e.email.form.as_ref().map(|f| f.errors.len()), Some(2));
+    draw(chrome(Scheme::Pro, Mode::Light), "email_invalid_pro_light", e);
 }
 
 /// The releases service is not on the Bus: the panel says so.
