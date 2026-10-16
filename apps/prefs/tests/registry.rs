@@ -49,6 +49,14 @@ fn class_of(name: &str) -> Option<&'static str> {
         .next()
 }
 
+/// App Settings → Email's verbs: the view is a query, the changes intents.
+#[test]
+fn the_email_verbs_are_registered_with_their_classes() {
+    assert_eq!(class_of("prefs.email"), Some("query"));
+    assert_eq!(class_of("prefs.email.set"), Some("intent"));
+    assert_eq!(class_of("prefs.email.password"), Some("intent"));
+}
+
 /// A verb the app describes as read-only is a query
 /// (docs/docs/decisions/2026-10-11-verb-classes.md).
 #[test]
