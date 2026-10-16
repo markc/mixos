@@ -2147,7 +2147,7 @@ mod tests {
     /// reset to its default with one more; prefs.email.set takes its path.
     #[test]
     fn the_reader_font_size_applies_shows_and_resets() {
-        let mut e = read();
+        let e = read();
         assert_eq!(e.email_view()["reader"]["font_size"], READER_FONT_DEFAULT);
         assert_eq!(e.email_view()["reader"]["theme"], "auto");
         assert_eq!(
