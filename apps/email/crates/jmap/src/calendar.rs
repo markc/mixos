@@ -589,7 +589,7 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(event.display_title(), "Dentist");
-        assert_eq!(event.data["calendarIds"]["C1"], json!(true));
+        assert_eq!(event.data["calendarId"], json!("C1"));
     }
 
     #[test]
@@ -605,10 +605,14 @@ mod tests {
 
     #[test]
     fn offsets_are_honoured_across_zones() {
-        // 09:00 at +10:00 is 23:00 UTC the day before: one hour later in UTC.
+        // 09:00 at +10:00 is 23:00 UTC the day before, so midnight UTC is an hour on.
+        assert_eq!(
+            duration_between("2026-10-14T09:00:00+10:00", "2026-10-14T00:00:00Z").unwrap(),
+            "PT1H"
+        );
         assert_eq!(
             duration_between("2026-10-14T09:00:00+10:00", "2026-10-13T23:00:00Z").unwrap(),
-            "PT1H"
+            "PT0S"
         );
     }
 
