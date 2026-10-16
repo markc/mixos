@@ -1445,7 +1445,11 @@ impl State {
             }
             Event::Settled(ticket, answer) => self.settled(ticket, answer),
             Event::SecretsSaved(ticket, result) => self.secrets_saved(ticket, result),
-            Event::Delivery(..) | Event::Look(..) | Event::LookRetry(_) | Event::Shown(..) | Event::PrefsOpened(_) => {}
+            Event::Delivery(..)
+            | Event::Look(..)
+            | Event::LookRetry(_)
+            | Event::Shown(..)
+            | Event::PrefsOpened(_) => {}
         }
     }
 
