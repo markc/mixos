@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
--- version: 0.3.0
+-- version: 0.3.1
 -- Validate component ownership and generate the public map without Cargo.
 -- Two identity sources: Cargo workspace members ([package.metadata.mixos])
 -- and Mix components (component.mx, docs/docs/decisions/2026-10-10-mix-components.md).
@@ -35,12 +35,24 @@ fn dependency_names($table)
   end
   return $out
 end
+-- Component names (docs/decisions/2026-10-16-site-url-layout.md, "Component
+-- names"): a lowercase letter, then lowercase letters, digits and hyphens.
+-- `docs` and `v` are reserved.
+fn check_component_name($name, $package, $relative)
+  if type($name) != "string" or not re_match($name, "^[a-z][a-z0-9-]*$") then
+    raise("COMPONENT_NAME", $package .. " in " .. $relative .. ": component \"" .. to_string($name) .. "\" must start with a lowercase letter, then contain only lowercase letters, digits and hyphens")
+  end
+  if contains(["docs", "v"], $name) then
+    raise("COMPONENT_NAME", $package .. " in " .. $relative .. ": component \"" .. $name .. "\" is a reserved name (docs, v)")
+  end
+end
 for each $manifest in sort($manifests)
   $relative = substr($manifest, len($root) + 1)
   $parts = split($relative, "/")
   $doc = toml_parse(read_file($manifest))
   $pkg = $doc.package
   $meta = $pkg.metadata.mixos
+  check_component_name($meta.component, $pkg.name, $relative)
   $valid_kind = $meta.kind == $kinds[$parts[0]] or (len($parts) == 5 and $meta.kind == "test")
   if $pkg.publish != false or $meta.component != $parts[1] or not $valid_kind then
     raise("COMPONENT_IDENTITY", "Invalid component identity or publish flag: " .. $relative)
@@ -83,6 +95,7 @@ for each $kind_dir in ["apps", "services", "cli", "libs"]
     end
     $doc = load_data($doc_path)
     if type($doc) != "map" or $doc.schema != 1 then raise("COMPONENT_METADATA", "Expected schema 1: " .. $relative) end
+    check_component_name($doc.component, to_string($doc.name), $relative)
     if $doc.name != $dir_name or $doc.component != $dir_name or $doc.kind != $kinds[$kind_dir] then
       raise("COMPONENT_IDENTITY", "Invalid component identity: " .. $relative)
     end
