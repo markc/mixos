@@ -1087,7 +1087,6 @@ mod tests {
         assert_eq!(compose.draft.from, "ann@example.invalid");
     }
 
-    #[test]
     fn bare(email: &str) -> EmailAddress {
         EmailAddress {
             name: None,
@@ -1142,7 +1141,10 @@ mod tests {
     fn edits_while_sending_are_refused() {
         let mut state = connected();
         state.apply_ui(UiEvent::Compose);
-        state.apply_ui(UiEvent::ComposeField(ComposeField::To, "bob@example.invalid".into()));
+        state.apply_ui(UiEvent::ComposeField(
+            ComposeField::To,
+            "bob@example.invalid".into(),
+        ));
         state.apply_ui(UiEvent::ComposeField(ComposeField::Subject, "Hi".into()));
         state.apply_ui(UiEvent::SendCompose);
         for (field, value) in [
@@ -1351,7 +1353,8 @@ mod tests {
             panic!("{tickets:?}")
         };
         let event = |title: &str| -> CalendarEvent {
-            serde_json::from_value(json!({ "id": title, "calendarId": "C", "title": title })).unwrap()
+            serde_json::from_value(json!({ "id": title, "calendarId": "C", "title": title }))
+                .unwrap()
         };
         state.apply(Event::Events(second, Ok(vec![event("two")])));
         state.apply(Event::Events(first, Ok(vec![event("one")])));

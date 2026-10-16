@@ -429,7 +429,9 @@ mod tests {
             ..composed()
         };
         let mime = String::from_utf8(build_mime(&message)).unwrap();
-        assert!(mime.contains("To: \"Lee, Cy\" <cy@example.invalid>, Bob <bob@example.invalid>\r\n"));
+        assert!(
+            mime.contains("To: \"Lee, Cy\" <cy@example.invalid>, Bob <bob@example.invalid>\r\n")
+        );
     }
 
     #[test]
