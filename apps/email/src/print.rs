@@ -340,6 +340,14 @@ mod tests {
         page(&email(text, html), format, points)
     }
 
+    /// Every tag in `html`, from its `<` to its `>`: text never holds a
+    /// bare `<`, so these are the elements.
+    fn tags(html: &str) -> impl Iterator<Item = &str> {
+        html.split('<')
+            .skip(1)
+            .map(|rest| rest.split('>').next().unwrap_or(rest))
+    }
+
     /// The `<body>` of a page: what the message could have put there.
     fn inside(page: &str) -> &str {
         page.split("<body>").nth(1).unwrap()
@@ -393,8 +401,9 @@ mod tests {
         let shown = inside(&page);
         assert!(shown.contains("<h1>Plan</h1>"));
         assert!(shown.contains("<strong>one</strong>"));
-        assert!(shown.contains("&lt;div onclick=&quot;x()&quot;&gt;raw&lt;/div&gt;"));
-        assert!(shown.contains("&lt;span style=&quot;x&quot;&gt;inline&lt;/span&gt;"));
+        // Body text keeps its quotes: only &, < and > matter there.
+        assert!(shown.contains("&lt;div onclick=\"x()\"&gt;raw&lt;/div&gt;"));
+        assert!(shown.contains("&lt;span style=\"x\"&gt;inline&lt;/span&gt;"));
         assert!(!shown.contains("<div") && !shown.contains("<span"));
     }
 
@@ -406,7 +415,7 @@ mod tests {
         let page = render(Some(("text/markdown", md)), None, Format::Markdown, 15.0);
         let shown = inside(&page);
         assert!(!shown.contains("<img"), "{shown}");
-        assert!(!shown.contains("src="), "{shown}");
+        assert!(!tags(shown).any(|tag| tag.contains("src")), "{shown}");
         assert!(shown.contains("a chart"), "the alt text stands in");
         assert!(shown.contains("<a href=\"https://example.invalid/\">site</a>"));
         assert!(!shown.contains("javascript:alert(1)\""), "{shown}");
