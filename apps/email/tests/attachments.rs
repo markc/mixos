@@ -216,7 +216,8 @@ fn the_command_is_enabled_only_with_attachments() {
 #[test]
 fn save_and_open_queue_the_part_and_a_program_saves_only() {
     let mut h = harness(popup(), &theme(Scheme::Pro, Mode::Light));
-    let saves: Vec<_> = h.query_all_by_label(&label("save")).collect();
+    let (save, open) = (label("save"), label("open"));
+    let saves: Vec<_> = h.query_all_by_label(&save).collect();
     assert_eq!(saves.len(), 4, "a Save per row");
     saves[0].click();
     h.run();
@@ -224,19 +225,19 @@ fn save_and_open_queue_the_part_and_a_program_saves_only() {
     assert_eq!(queued, [("B2".to_owned(), Target::Save(None), 1)]);
     // The row under way shows no buttons; the first Open left is the
     // second row's, the nameless image.
-    let opens: Vec<_> = h.query_all_by_label(&label("open")).collect();
+    let opens: Vec<_> = h.query_all_by_label(&open).collect();
     assert_eq!(opens.len(), 3);
     opens[0].click();
     h.run();
     let queued = downloads(&mut h.state_mut().state);
     assert_eq!(queued, [("B3".to_owned(), Target::Open, 2)]);
     // The script's Open and the undecodable part's buttons do nothing.
-    let opens: Vec<_> = h.query_all_by_label(&label("open")).collect();
+    let opens: Vec<_> = h.query_all_by_label(&open).collect();
     assert_eq!(opens.len(), 2);
     opens[0].click();
     opens[1].click();
     h.run();
-    let saves: Vec<_> = h.query_all_by_label(&label("save")).collect();
+    let saves: Vec<_> = h.query_all_by_label(&save).collect();
     saves[1].click();
     h.run();
     assert!(downloads(&mut h.state_mut().state).is_empty());
