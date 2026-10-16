@@ -372,7 +372,7 @@ mix doctor
 mix doctor — mix 0.81.0
 
   ✓ version    0.81.0 · git 1a2b3c4d5e6f · built 2026-09-05T…Z
-  ✓ features   json regex markdown toml serde datetime url crypto http sqlite dkim datastar xml yaml ws
+  ✓ features   json regex markdown toml serde datetime url crypto http sqlite archive dkim datastar xml yaml ws
   ✓ prelude    loaded (2 functions in scope)
   ✓ manual     33 page(s) readable
   ✓ stats      writable at /home/you/.local/state/mix
