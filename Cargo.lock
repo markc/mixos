@@ -2079,6 +2079,7 @@ dependencies = [
  "egui_kittest",
  "futures",
  "jmap",
+ "libc",
  "serde",
  "serde_json",
  "settings",
