@@ -4,7 +4,7 @@
 
 [workspace]
 resolver = "3"
-members = ["libs/*", "services/noded", "services/noded/crates/*", "cli/mix-shell", "cli/system", "services/editd", "services/settingsd", "services/portald", "services/hostd", "apps/busviewer", "apps/busviewer/crates/*", "apps/prefs", "apps/prefs/crates/*", "apps/ced", "apps/ced/crates/*", "apps/dopus", "apps/dopus/crates/*", "apps/screenshot", "apps/screenshot/crates/*", "apps/backdrop", "apps/backdrop/crates/*", "apps/email", "apps/email/crates/*", "apps/term", "apps/term/crates/*", "services/compd", "services/compd/crates/*"]
+members = ["libs/*", "services/noded", "services/noded/crates/*", "cli/mix-shell", "cli/system", "services/editd", "services/settingsd", "services/portald", "services/hostd", "services/inputd", "services/inputd/crates/*", "apps/busviewer", "apps/busviewer/crates/*", "apps/prefs", "apps/prefs/crates/*", "apps/ced", "apps/ced/crates/*", "apps/dopus", "apps/dopus/crates/*", "apps/screenshot", "apps/screenshot/crates/*", "apps/backdrop", "apps/backdrop/crates/*", "apps/email", "apps/email/crates/*", "apps/term", "apps/term/crates/*", "services/compd", "services/compd/crates/*"]
 exclude = ["vendor", "vendor/teletypewriter", "vendor/msedit/lsh", "vendor/msedit/stdext"]
 
 [workspace.package]

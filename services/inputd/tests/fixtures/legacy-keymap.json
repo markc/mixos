@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "physical": [
+    {
+      "stroke": {
+        "code": 59,
+        "modifiers": {
+          "left_ctrl": false,
+          "right_ctrl": false,
+          "left_shift": false,
+          "right_shift": false,
+          "left_alt": false,
+          "right_alt": false,
+          "left_super": false,
+          "right_super": false
+        }
+      },
+      "action": "user.f01",
+      "scope": "global",
+      "repeat": "ignore",
+      "passthrough": false
+    },
+    {
+      "stroke": {
+        "code": 106,
+        "modifiers": {
+          "left_ctrl": false,
+          "right_ctrl": true,
+          "left_shift": false,
+          "right_shift": false,
+          "left_alt": false,
+          "right_alt": false,
+          "left_super": false,
+          "right_super": false
+        }
+      },
+      "action": "desktop.workspace.next",
+      "scope": "global",
+      "repeat": "allow",
+      "passthrough": false
+    },
+    {
+      "stroke": {
+        "code": 108,
+        "modifiers": {
+          "left_ctrl": false,
+          "right_ctrl": true,
+          "left_shift": false,
+          "right_shift": false,
+          "left_alt": false,
+          "right_alt": false,
+          "left_super": false,
+          "right_super": false
+        }
+      },
+      "action": "desktop.clipboard.menu",
+      "service": "desktop-vt1",
+      "scope": "global",
+      "repeat": "ignore",
+      "passthrough": false
+    },
+    {
+      "stroke": {
+        "code": 105,
+        "modifiers": {
+          "left_ctrl": false,
+          "right_ctrl": false,
+          "left_shift": false,
+          "right_shift": true,
+          "left_alt": false,
+          "right_alt": false,
+          "left_super": false,
+          "right_super": false
+        }
+      },
+      "action": "input.passthrough",
+      "scope": "global",
+      "repeat": "ignore",
+      "passthrough": true
+    },
+    {
+      "stroke": {
+        "code": 25,
+        "modifiers": {
+          "left_ctrl": true,
+          "right_ctrl": false,
+          "left_shift": false,
+          "right_shift": false,
+          "left_alt": true,
+          "right_alt": false,
+          "left_super": false,
+          "right_super": false
+        }
+      },
+      "action": "scenes.editor.open",
+      "args": {
+        "safe": true
+      },
+      "service": "scenes",
+      "scope": "global",
+      "repeat": "ignore",
+      "passthrough": false
+    }
+  ]
+}
