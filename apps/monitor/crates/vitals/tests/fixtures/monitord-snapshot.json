@@ -1,0 +1,301 @@
+{
+  "boot_time": 1791841701,
+  "cpu": {
+    "busy": 0.12406947890818287,
+    "context_switches_ps": 425.1381544541735,
+    "cores": 16,
+    "forks_ps": 0,
+    "iowait": 0,
+    "model": "Example 16-Core Processor",
+    "per_core": [
+      {
+        "busy": 0,
+        "cpu": 0,
+        "iowait": 0,
+        "mhz": 464,
+        "steal": 0,
+        "system": 0,
+        "user": 0
+      },
+      {
+        "busy": 0,
+        "cpu": 2,
+        "iowait": 0,
+        "mhz": 624,
+        "steal": 0,
+        "system": 0,
+        "user": 0
+      },
+      {
+        "busy": 1.9230769230769198,
+        "cpu": 4,
+        "iowait": 0,
+        "mhz": 400,
+        "steal": 0,
+        "system": 0,
+        "user": 1.9230769230769231
+      },
+      {
+        "busy": 0,
+        "cpu": 5,
+        "iowait": 0,
+        "mhz": 400,
+        "steal": 0,
+        "system": 0,
+        "user": 0
+      },
+      {
+        "busy": 0,
+        "cpu": 6,
+        "iowait": 0,
+        "mhz": 1214,
+        "steal": 0,
+        "system": 0,
+        "user": 0
+      },
+      {
+        "busy": 0,
+        "cpu": 7,
+        "iowait": 0,
+        "mhz": 977,
+        "steal": 0,
+        "system": 0,
+        "user": 0
+      },
+      {
+        "busy": 0,
+        "cpu": 8,
+        "iowait": 0,
+        "mhz": 400,
+        "steal": 0,
+        "system": 0,
+        "user": 0
+      },
+      {
+        "busy": 0,
+        "cpu": 9,
+        "iowait": 0,
+        "mhz": 1028,
+        "steal": 0,
+        "system": 0,
+        "user": 0
+      },
+      {
+        "busy": 0,
+        "cpu": 10,
+        "iowait": 0,
+        "mhz": 584,
+        "steal": 0,
+        "system": 0,
+        "user": 0
+      },
+      {
+        "busy": 0,
+        "cpu": 12,
+        "iowait": 0,
+        "mhz": 400,
+        "steal": 0,
+        "system": 0,
+        "user": 0
+      },
+      {
+        "busy": 0,
+        "cpu": 13,
+        "iowait": 0,
+        "mhz": 960,
+        "steal": 0,
+        "system": 0,
+        "user": 0
+      },
+      {
+        "busy": 0,
+        "cpu": 14,
+        "iowait": 0,
+        "mhz": 400,
+        "steal": 0,
+        "system": 0,
+        "user": 0
+      },
+      {
+        "busy": 0,
+        "cpu": 15,
+        "iowait": 0,
+        "mhz": 400,
+        "steal": 0,
+        "system": 0,
+        "user": 0
+      },
+      {
+        "busy": 0,
+        "cpu": 16,
+        "iowait": 0,
+        "mhz": 902,
+        "steal": 0,
+        "system": 0,
+        "user": 0
+      },
+      {
+        "busy": 0,
+        "cpu": 17,
+        "iowait": 0,
+        "mhz": 400,
+        "steal": 0,
+        "system": 0,
+        "user": 0
+      },
+      {
+        "busy": 0,
+        "cpu": 19,
+        "iowait": 0,
+        "mhz": 400,
+        "steal": 0,
+        "system": 0,
+        "user": 0
+      }
+    ],
+    "steal": 0,
+    "system": 0,
+    "user": 0.12406947890818859
+  },
+  "disks": [
+    {
+      "busy": 0,
+      "model": "Example NVMe",
+      "name": "nvme1n1",
+      "read_bps": 0,
+      "reads_ps": 0,
+      "rotational": false,
+      "write_bps": 0,
+      "writes_ps": 0
+    },
+    {
+      "busy": 0,
+      "model": "Example NVMe",
+      "name": "nvme0n1",
+      "read_bps": 0,
+      "reads_ps": 0,
+      "rotational": false,
+      "write_bps": 0,
+      "writes_ps": 0
+    },
+    {
+      "busy": 0,
+      "model": "Example NVMe",
+      "name": "nvme2n1",
+      "read_bps": 0,
+      "reads_ps": 0,
+      "rotational": false,
+      "write_bps": 0,
+      "writes_ps": 0
+    }
+  ],
+  "filesystems": [
+    {
+      "available": 28386263040,
+      "device": "pool/data-0",
+      "kind": "zfs",
+      "mount": "/",
+      "total": 34359738368,
+      "used": 5973475328
+    },
+    {
+      "available": 897816592384,
+      "device": "pool/data-1",
+      "kind": "zfs",
+      "mount": "/srv/data-1",
+      "total": 1288490188800,
+      "used": 390673596416
+    },
+    {
+      "available": 313731317760,
+      "device": "pool/data-2",
+      "kind": "zfs",
+      "mount": "/srv/data-2",
+      "total": 375809638400,
+      "used": 62078320640
+    }
+  ],
+  "host": "alpha",
+  "interval_s": 0.503365783,
+  "load": {
+    "fifteen": 1.55,
+    "five": 1.51,
+    "one": 1.62,
+    "runnable": 1,
+    "tasks": 840
+  },
+  "memory": {
+    "available": 51175055360,
+    "buffers": 0,
+    "cached": 44480499712,
+    "dirty": 0,
+    "free": 6747553792,
+    "shared": 52518912,
+    "total": 51539607552,
+    "used": 364552192
+  },
+  "net": [
+    {
+      "name": "eth0",
+      "physical": false,
+      "rx_bps": 0,
+      "rx_bytes": 209558942,
+      "rx_errors": 0,
+      "speed_mbps": 10000,
+      "state": "up",
+      "tx_bps": 0,
+      "tx_bytes": 4171650550,
+      "tx_errors": 0
+    }
+  ],
+  "pressure": {
+    "cpu": {
+      "full": {
+        "avg10": 0,
+        "avg300": 0,
+        "avg60": 0
+      },
+      "some": {
+        "avg10": 0.46,
+        "avg300": 0.48,
+        "avg60": 0.41
+      }
+    },
+    "io": {
+      "full": {
+        "avg10": 0,
+        "avg300": 0.01,
+        "avg60": 0
+      },
+      "some": {
+        "avg10": 0,
+        "avg300": 0.03,
+        "avg60": 0
+      }
+    },
+    "memory": {
+      "full": {
+        "avg10": 0,
+        "avg300": 0,
+        "avg60": 0
+      },
+      "some": {
+        "avg10": 0,
+        "avg300": 0,
+        "avg60": 0
+      }
+    }
+  },
+  "swap": {
+    "free": 0,
+    "total": 0,
+    "used": 0
+  },
+  "tasks": {
+    "blocked": 0,
+    "running": 1,
+    "total": 840
+  },
+  "ts": 1792154891.3921375,
+  "uptime_s": 263372.88
+}
