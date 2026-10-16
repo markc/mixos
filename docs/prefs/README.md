@@ -168,6 +168,34 @@ the settings service would refuse is answered with `ARGUMENT`, naming it.
 For scripts that do not need Prefs open, call `settings.apply` on the
 `email.*` paths directly, and `email.account.password.set` on Email.
 
+### Every control and its Bus verb
+
+Every option in the section can be reached by an agent. `prefs.email`
+lists the settings paths it takes as `paths`; `prefs.email.set {path,
+value}` sets any of them and `prefs.email.reset {path}` puts one back to
+its default (no `path`: the whole group).
+
+| Control | Settings path | Bus |
+|---|---|---|
+| Account list, order | `email.accounts` | `prefs.email.set` `op` `add`/`update`/`remove`/`move`/`enable`, or `{path:"email.accounts"}` (a list that drops an account is refused: removals go through `op remove`) |
+| Make default | `email.default_account` | `prefs.email.set {op:"default", id}` or `{path}`; `prefs.execute email.account.default` |
+| Messages per page | `email.mail.page_size` | `prefs.email.set {path, value}` |
+| Mark messages read when opened | `email.mail.mark_read_on_open` | `prefs.email.set {path, value}` |
+| Ask before deleting messages | `email.mail.confirm_delete` | `prefs.email.set {path, value}` |
+| Reader text size, Default size | `email.reader.font_size` | `prefs.email.set {path, value}`, `prefs.email.reset {path}`; `prefs.execute email.reader.reset` |
+| Reset email settings… | `email` | `prefs.email.reset` (refused while Email runs and holds accounts); `prefs.execute email.reset`, then `dialog.confirm` |
+
+| Button | Command (`prefs.execute {id}`) |
+|---|---|
+| Add account, Save, Revert | `email.account.add`, `email.account.save`, `email.account.revert` |
+| Remove… | `email.account.remove`, then `dialog.confirm` (or `prefs.email.set {op:"remove", id}`) |
+| Move up, Move down, Make default, Enabled | `email.account.up`, `email.account.down`, `email.account.default`, `email.account.enable` |
+| Set password, Forget password…, Connect now | `email.password.set`, `email.password.forget` then `dialog.confirm`, `email.account.connect` (or `prefs.email.password {id, password}` / `{id, forget:true}`) |
+| A confirmation's Confirm / Cancel | `dialog.confirm`, `dialog.cancel` (`prefs.dialog {open:null}` also cancels) |
+
+The form's fields are typed through the window (`prefs.ui.type`), or set
+in one call with `prefs.email.set {op:"update", id, …}`.
+
 ## For agents
 
 Prefs answers on the Bus as `prefs`. `prefs.info` reports the whole state;

@@ -636,6 +636,35 @@ impl Engine {
         self.pump_look();
     }
 
+    /// A confirmation is open: its confirm button can be pressed (by the
+    /// window, or by an agent through `dialog.confirm`).
+    pub fn can_confirm_dialog(&self) -> bool {
+        matches!(
+            self.ui.dialog,
+            Some(
+                Dialog::Remove(_)
+                    | Dialog::RemoveAccount(_)
+                    | Dialog::ResetEmail
+                    | Dialog::ForgetPassword(_)
+            )
+        )
+    }
+
+    /// The open confirmation's confirm button.
+    pub fn confirm_dialog(&mut self) {
+        match self.ui.dialog {
+            Some(Dialog::Remove(_)) => self.confirm_remove(),
+            Some(Dialog::RemoveAccount(_) | Dialog::ResetEmail | Dialog::ForgetPassword(_)) => {
+                self.confirm_email()
+            }
+            _ => {}
+        }
+    }
+
+    pub fn can_cancel_dialog(&self) -> bool {
+        self.ui.dialog.is_some()
+    }
+
     pub fn set_panel(&mut self, panel: Panel) {
         self.set_section(Section::default_for(panel));
     }
@@ -1074,6 +1103,10 @@ impl Engine {
                 Err((code, message)) => self.error(id, code, &message),
             },
             "prefs.email.password" => self.email_password(id, &args),
+            "prefs.email.reset" => match self.reset_email_path(&args) {
+                Ok(body) => self.ok(id, body),
+                Err((code, message)) => self.error(id, code, &message),
+            },
             "HELP" => self.effects.push(Effect::Describe { id, help: true }),
             "app.describe" => self.effects.push(Effect::Describe { id, help: false }),
             "prefs.commands" => self.effects.push(Effect::Commands { id }),

@@ -288,7 +288,7 @@ impl Call {
             Call::Read => "settings.get",
             Call::Apply(_) => "settings.apply",
             Call::Receipt(_) => "settings.status",
-            Call::Terminal(_, Edit::Reset) | Call::Email(_, EmailEdit::Reset) => "settings.reset",
+            Call::Terminal(_, Edit::Reset) | Call::Email(_, EmailEdit::Reset(_)) => "settings.reset",
             Call::Terminal(_, Edit::Set(..)) | Call::Email(_, EmailEdit::Apply(_)) => {
                 "settings.apply"
             }
@@ -703,7 +703,7 @@ impl Engine {
                 let (incarnation, revision) = self.look.fence.clone().expect("a fenced apply");
                 let (changes, reset) = match edit {
                     EmailEdit::Apply(changes) => (changes.clone(), Vec::new()),
-                    EmailEdit::Reset => (BTreeMap::new(), vec!["email".to_owned()]),
+                    EmailEdit::Reset(paths) => (BTreeMap::new(), paths.clone()),
                 };
                 serde_json::to_value(ApplyRequest {
                     binding: self.look.binding.clone(),

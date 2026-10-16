@@ -426,6 +426,20 @@ pub fn registry() -> Registry<Engine> {
             Engine::connect_email_account,
         ),
         (
+            "dialog.confirm",
+            "dialog-confirm",
+            4,
+            Engine::can_confirm_dialog,
+            Engine::confirm_dialog,
+        ),
+        (
+            "dialog.cancel",
+            "cancel",
+            4,
+            Engine::can_cancel_dialog,
+            Engine::close_dialog,
+        ),
+        (
             "email.reader.reset",
             "email-reader-reset",
             3,
@@ -541,6 +555,64 @@ mod tests {
             );
             assert!(command.submenu.is_none_or(known), "{} submenu", command.id);
         }
+    }
+
+    /// Mark's rule: every Email-section button and dialog choice is a
+    /// command, and every one is named in prefs.execute's list.
+    #[test]
+    fn every_email_and_dialog_command_is_listed_for_execute() {
+        let described = preferences::model::describe();
+        let execute = described["verbs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["name"] == "prefs.execute")
+            .and_then(|v| v["description"].as_str())
+            .unwrap()
+            .to_owned();
+        let ids: Vec<&str> = registry()
+            .iter()
+            .map(|c| c.id)
+            .filter(|id| {
+                id.starts_with("email.") || id.starts_with("dialog.") || *id == "view.panel.app-settings"
+            })
+            .collect();
+        for id in [
+            "email.account.save",
+            "email.account.revert",
+            "email.password.forget",
+            "email.account.connect",
+            "email.account.up",
+            "email.account.down",
+            "email.reset",
+            "email.reader.reset",
+            "dialog.confirm",
+        ] {
+            assert!(ids.contains(&id), "{id} is a command");
+        }
+        for id in ids {
+            assert!(
+                execute.contains(&format!("{id},")) || execute.contains(&format!("{id})")),
+                "{id} missing from prefs.execute's list"
+            );
+        }
+    }
+
+    /// A confirmation's choice can be made over the Bus: dialog.confirm
+    /// presses its confirm button, dialog.cancel closes it.
+    #[test]
+    fn a_confirmation_is_answerable_by_command() {
+        let r = registry();
+        let mut e = Engine::new(crate::label_with);
+        assert!(r.execute("dialog.confirm", &mut e, toolkit::command::Origin::Bus).is_err());
+        e.open(Dialog::ResetEmail);
+        assert!(r.execute("dialog.cancel", &mut e, toolkit::command::Origin::Bus).is_ok());
+        assert_eq!(e.ui.dialog, None);
+        e.open(Dialog::ForgetPassword("acct-1".into()));
+        assert!(r.execute("dialog.confirm", &mut e, toolkit::command::Origin::Bus).is_ok());
+        assert_eq!(e.ui.dialog, None, "confirming closes it");
+        e.open(Dialog::About);
+        assert!(r.execute("dialog.confirm", &mut e, toolkit::command::Origin::Bus).is_err(), "not a confirmation");
     }
 
     #[test]

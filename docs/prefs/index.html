@@ -220,6 +220,7 @@
                         <a href="#applications">Applications</a>
                         <a href="#appearance">Appearance</a>
                         <a href="#app-settings--email">App Settings → Email</a>
+                        <a href="#every-control-and-its-bus-verb" class="toc-h3">Every control and its Bus verb</a>
                         <a href="#for-agents">For agents</a>
                         <a href="#wallpaper">Wallpaper</a>
                         <a href="#running-and-testing">Running and testing</a>
@@ -397,6 +398,28 @@ or <code>enable</code>, or <code>path</code> and <code>value</code> for a mail o
 the settings service would refuse is answered with <code>ARGUMENT</code>, naming it.
 For scripts that do not need Prefs open, call <code>settings.apply</code> on the
 <code>email.*</code> paths directly, and <code>email.account.password.set</code> on Email.</p>
+<h3 id="every-control-and-its-bus-verb">Every control and its Bus verb</h3>
+<p>Every option in the section can be reached by an agent. <code>prefs.email</code>
+lists the settings paths it takes as <code>paths</code>; <code>prefs.email.set {path, value}</code> sets any of them and <code>prefs.email.reset {path}</code> puts one back to
+its default (no <code>path</code>: the whole group).</p>
+<table><thead><tr><th>Control</th><th>Settings path</th><th>Bus</th></tr></thead><tbody>
+<tr><td>Account list, order</td><td><code>email.accounts</code></td><td><code>prefs.email.set</code> <code>op</code> <code>add</code>/<code>update</code>/<code>remove</code>/<code>move</code>/<code>enable</code>, or <code>{path:"email.accounts"}</code> (a list that drops an account is refused: removals go through <code>op remove</code>)</td></tr>
+<tr><td>Make default</td><td><code>email.default_account</code></td><td><code>prefs.email.set {op:"default", id}</code> or <code>{path}</code>; <code>prefs.execute email.account.default</code></td></tr>
+<tr><td>Messages per page</td><td><code>email.mail.page_size</code></td><td><code>prefs.email.set {path, value}</code></td></tr>
+<tr><td>Mark messages read when opened</td><td><code>email.mail.mark_read_on_open</code></td><td><code>prefs.email.set {path, value}</code></td></tr>
+<tr><td>Ask before deleting messages</td><td><code>email.mail.confirm_delete</code></td><td><code>prefs.email.set {path, value}</code></td></tr>
+<tr><td>Reader text size, Default size</td><td><code>email.reader.font_size</code></td><td><code>prefs.email.set {path, value}</code>, <code>prefs.email.reset {path}</code>; <code>prefs.execute email.reader.reset</code></td></tr>
+<tr><td>Reset email settings…</td><td><code>email</code></td><td><code>prefs.email.reset</code> (refused while Email runs and holds accounts); <code>prefs.execute email.reset</code>, then <code>dialog.confirm</code></td></tr>
+</tbody></table>
+<table><thead><tr><th>Button</th><th>Command (<code>prefs.execute {id}</code>)</th></tr></thead><tbody>
+<tr><td>Add account, Save, Revert</td><td><code>email.account.add</code>, <code>email.account.save</code>, <code>email.account.revert</code></td></tr>
+<tr><td>Remove…</td><td><code>email.account.remove</code>, then <code>dialog.confirm</code> (or <code>prefs.email.set {op:"remove", id}</code>)</td></tr>
+<tr><td>Move up, Move down, Make default, Enabled</td><td><code>email.account.up</code>, <code>email.account.down</code>, <code>email.account.default</code>, <code>email.account.enable</code></td></tr>
+<tr><td>Set password, Forget password…, Connect now</td><td><code>email.password.set</code>, <code>email.password.forget</code> then <code>dialog.confirm</code>, <code>email.account.connect</code> (or <code>prefs.email.password {id, password}</code> / <code>{id, forget:true}</code>)</td></tr>
+<tr><td>A confirmation's Confirm / Cancel</td><td><code>dialog.confirm</code>, <code>dialog.cancel</code> (<code>prefs.dialog {open:null}</code> also cancels)</td></tr>
+</tbody></table>
+<p>The form's fields are typed through the window (<code>prefs.ui.type</code>), or set
+in one call with <code>prefs.email.set {op:"update", id, …}</code>.</p>
 <h2 id="for-agents">For agents</h2>
 <p>Prefs answers on the Bus as <code>prefs</code>. <code>prefs.info</code> reports the whole state;
 <code>prefs.apps</code> the rows, selection and notes; <code>prefs.appearance</code> the session

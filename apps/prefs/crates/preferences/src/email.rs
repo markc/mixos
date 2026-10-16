@@ -461,6 +461,9 @@ pub enum Change {
     ConfirmDelete(bool),
     /// The reader's text size in points (`email.reader.font_size`).
     ReaderFontSize(f64),
+    /// Any described `email.*` path set to a value as given: the generic
+    /// form `prefs.email.set {path, value}` takes.
+    Path(String, Value),
 }
 
 /// Why a change was not sent.
@@ -477,11 +480,76 @@ pub enum Refusal {
 }
 
 /// What one change asks of settingsd: the paths it sets, in one fenced
-/// batch, or the whole group back to its defaults.
+/// batch, or paths back to their defaults (`email` is the whole group).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Edit {
     Apply(BTreeMap<String, Value>),
-    Reset,
+    Reset(Vec<String>),
+}
+
+/// Every `email.*` path settingsd describes, the group `email` first:
+/// what `prefs.email.set` and `prefs.email.reset` take.
+pub fn email_paths() -> Vec<String> {
+    let mut paths: Vec<String> = settings::email::describe()
+        .as_object()
+        .map(|o| o.keys().cloned().collect())
+        .unwrap_or_default();
+    paths.sort_by_key(|p| (p != "email", p.clone()));
+    paths
+}
+
+/// The paths that hold a value: none has another path below it.
+fn leaf_paths() -> Vec<String> {
+    let all = email_paths();
+    all.iter()
+        .filter(|p| !all.iter().any(|q| q.starts_with(&format!("{p}."))))
+        .cloned()
+        .collect()
+}
+
+/// `path`'s JSON pointer in the serialised group (`email.mail.page_size`
+/// is `/mail/page_size`; `email` is the root).
+fn pointer(path: &str) -> String {
+    path.strip_prefix("email")
+        .unwrap_or(path)
+        .replace('.', "/")
+}
+
+/// `email` with `path` set to `value` as given, typed by the settings
+/// crate's own records (unknown keys refused): the Bus' generic set.
+pub fn set_path(email: &Email, path: &str, value: &Value) -> Result<Email, Refusal> {
+    if !email_paths().iter().any(|p| p == path) {
+        return Err(Refusal::Key("email-unknown-path"));
+    }
+    let refused = |e: serde_json::Error| Refusal::Settings(redact_text(&format!("{path}: {e}")));
+    if path == "email" {
+        return match value {
+            Value::Null => Ok(Email::default()),
+            value => serde_json::from_value(value.clone()).map_err(refused),
+        };
+    }
+    let mut doc = serde_json::to_value(email).map_err(refused)?;
+    let keys: Vec<&str> = path["email.".len()..].split('.').collect();
+    let (last, parents) = keys.split_last().expect("a leaf below email");
+    let mut at = &mut doc;
+    for key in parents {
+        if !at[*key].is_object() {
+            at[*key] = json!({});
+        }
+        at = &mut at[*key];
+    }
+    at[*last] = value.clone();
+    serde_json::from_value(doc).map_err(refused)
+}
+
+/// Accounts `old` holds that `new` does not: a removal, which goes
+/// through Email's guard while it may be running.
+pub fn dropped_accounts(old: &Email, new: &Email) -> Vec<String> {
+    old.accounts
+        .iter()
+        .filter(|a| new.account(&a.id).is_none())
+        .map(|a| a.id.clone())
+        .collect()
 }
 
 /// A change made sendable: its edit, and the id it gives a new account.
@@ -491,31 +559,22 @@ pub struct Planned {
     pub added: Option<String>,
 }
 
-/// The edit taking `old` to `new`: each path that differs, the account list
-/// whole.
+/// The edit taking `old` to `new`: each described path that differs, the
+/// account list whole. A path back at its default (omitted when
+/// serialised) is sent as the default settingsd describes.
 fn edit_between(old: &Email, new: &Email) -> BTreeMap<String, Value> {
+    let described = settings::email::describe();
+    let (a, b) = (json!(old), json!(new));
     let mut changes = BTreeMap::new();
-    if old.accounts != new.accounts {
-        changes.insert("email.accounts".into(), json!(new.accounts));
-    }
-    if old.default_account != new.default_account {
-        changes.insert("email.default_account".into(), json!(new.default_account));
-    }
-    let (a, b) = (&old.mail, &new.mail);
-    if a.page_size != b.page_size {
-        changes.insert("email.mail.page_size".into(), json!(b.page_size));
-    }
-    if a.mark_read_on_open != b.mark_read_on_open {
-        changes.insert(
-            "email.mail.mark_read_on_open".into(),
-            json!(b.mark_read_on_open),
-        );
-    }
-    if a.confirm_delete != b.confirm_delete {
-        changes.insert("email.mail.confirm_delete".into(), json!(b.confirm_delete));
-    }
-    if old.reader.font_size != new.reader.font_size {
-        changes.insert("email.reader.font_size".into(), json!(new.reader.font_size));
+    for path in leaf_paths() {
+        let at = pointer(&path);
+        let (before, after) = (a.pointer(&at), b.pointer(&at));
+        if before != after {
+            let value = after
+                .cloned()
+                .unwrap_or_else(|| described[&path]["default"].clone());
+            changes.insert(path, value);
+        }
     }
     changes
 }
@@ -596,6 +655,7 @@ pub fn plan(
         }
         Change::MarkReadOnOpen(on) => next.mail.mark_read_on_open = *on,
         Change::ConfirmDelete(on) => next.mail.confirm_delete = *on,
+        Change::Path(path, value) => next = set_path(&next, path, value)?,
         Change::ReaderFontSize(size) => {
             if !valid_reader_font_size(*size) {
                 return Err(Refusal::Key("email-reader-font-refused"));
@@ -1192,7 +1252,12 @@ impl Engine {
                 self.ui.dialog = None;
                 if self.can_edit_email() {
                     self.email.added = None;
-                    self.send_email(Edit::Reset);
+                    if let Err(key) = self.reset_guard("email") {
+                        self.status = self.label(key, &[]);
+                        self.failed = true;
+                    } else {
+                        self.send_email(Edit::Reset(vec!["email".to_owned()]));
+                    }
                 }
             }
             _ => {}
@@ -1718,12 +1783,56 @@ impl Engine {
             "mail":mail.map(|m| json!({"page_size":m.page_size,"mark_read_on_open":m.mark_read_on_open,"confirm_delete":m.confirm_delete})),
             "reader":email.map(|e| json!({"font_size":e.reader.font_size,"default":READER_FONT_DEFAULT,"min":READER_FONT_MIN,"max":READER_FONT_MAX,"step":READER_FONT_STEP})),
             "email_service":self.email.service,
+            "paths":email_paths(),
             "selected":self.ui.email_account,
             "form":self.email.form,
             "password_typed":!self.email.password.is_empty(),
             "task":self.email.task.as_ref().map(|t| json!({"action":t.action.kind(),"account":task_id(t),"stage":t.stage})),
             "outcome":self.email.outcome.as_ref().map(|(text, failed)| json!({"text":text,"failed":failed})),
             "can_edit":self.can_edit_email()})
+    }
+
+    /// Resetting `path` would remove accounts while Email may be running,
+    /// past its guard (it refuses to remove one it is still migrating):
+    /// they go one by one through Email's remove first.
+    pub(crate) fn reset_guard(&self, path: &str) -> Result<(), &'static str> {
+        let covers_accounts = path == "email" || path == "email.accounts";
+        let has_accounts = self.email().is_some_and(|e| !e.accounts.is_empty());
+        if covers_accounts && has_accounts && self.email.service != Service::Absent {
+            Err("email-reset-remove-first")
+        } else {
+            Ok(())
+        }
+    }
+
+    /// `prefs.email.reset {path?}`: one described path (default `email`,
+    /// the whole group) back to its default, as one `settings.reset`.
+    pub(crate) fn reset_email_path(
+        &mut self,
+        args: &Value,
+    ) -> Result<Value, (&'static str, String)> {
+        let path = match args.get("path") {
+            None | Some(Value::Null) => "email".to_owned(),
+            Some(Value::String(path)) => path.clone(),
+            Some(_) => return Err(("ARGUMENT", "path must be a string".into())),
+        };
+        if !email_paths().contains(&path) {
+            let message = format!("path must be one of {}", email_paths().join(", "));
+            return Err(("ARGUMENT", message));
+        }
+        if self.look.email.is_none() {
+            return Err(("NOT_READY", self.label("email-not-ready", &[])));
+        }
+        if !self.can_edit_email() {
+            return Err(("BUSY", self.label("busy", &[])));
+        }
+        self.reset_guard(&path)
+            .map_err(|key| ("REMOVE_THROUGH_EMAIL", self.label(key, &[])))?;
+        self.email.added = None;
+        self.send_email(Edit::Reset(vec![path.clone()]));
+        let mut body = self.email_view();
+        body["resetting"] = json!(path);
+        Ok(body)
     }
 
     /// `prefs.email.set`: one change, through the same paths as the window.
@@ -1734,6 +1843,19 @@ impl Engine {
         }
         if !self.can_edit_email() {
             return Err(("BUSY", self.label("busy", &[])));
+        }
+        // A list without an account Email holds is a removal: through
+        // Email's guard (op remove), not past it, while Email may run.
+        if let Change::Path(path, value) = &change
+            && let Some(email) = self.email()
+            && let Ok(next) = set_path(email, path, value)
+            && !dropped_accounts(email, &next).is_empty()
+            && self.email.service != Service::Absent
+        {
+            return Err((
+                "REMOVE_THROUGH_EMAIL",
+                self.label("email-remove-through-email", &[]),
+            ));
         }
         match self.change_email(change) {
             Ok(planned) => {
@@ -1827,26 +1949,11 @@ pub fn email_change(args: &Value) -> Result<Change, String> {
     };
     if let Some(path) = args.get("path") {
         let value = args.get("value").ok_or("value is required with path")?;
-        return match path.as_str() {
-            Some("email.mail.page_size") => value
-                .as_f64()
-                .filter(|v| v.fract() == 0.0 && *v >= 0.0 && *v <= f64::from(u32::MAX))
-                .map(|v| Change::PageSize(v as u32))
-                .ok_or_else(|| "page_size must be a whole number".into()),
-            Some("email.mail.mark_read_on_open") => value
-                .as_bool()
-                .map(Change::MarkReadOnOpen)
-                .ok_or_else(|| "mark_read_on_open must be true or false".into()),
-            Some("email.mail.confirm_delete") => value
-                .as_bool()
-                .map(Change::ConfirmDelete)
-                .ok_or_else(|| "confirm_delete must be true or false".into()),
-            Some("email.reader.font_size") => value
-                .as_f64()
-                .map(Change::ReaderFontSize)
-                .ok_or_else(|| "font_size must be a number of points".into()),
-            _ => Err("path must be email.mail.page_size, email.mail.mark_read_on_open, email.mail.confirm_delete or email.reader.font_size".into()),
-        };
+        let path = path.as_str().ok_or("path must be a string")?;
+        if !email_paths().iter().any(|p| p == path) {
+            return Err(format!("path must be one of {}", email_paths().join(", ")));
+        }
+        return Ok(Change::Path(path.to_owned(), value.clone()));
     }
     match args.get("op").and_then(Value::as_str) {
         Some("add") => {
@@ -1911,7 +2018,7 @@ mod tests {
     fn applied(planned: Planned) -> BTreeMap<String, Value> {
         match planned.edit {
             Edit::Apply(changes) => changes,
-            Edit::Reset => panic!("not a reset"),
+            Edit::Reset(_) => panic!("not a reset"),
         }
     }
 
@@ -2025,11 +2132,12 @@ mod tests {
             plan(&email, &Change::ReaderFontSize(READER_FONT_DEFAULT), mint),
             Err(Refusal::Unchanged)
         );
-        assert_eq!(
-            email_change(&json!({"path":"email.reader.font_size","value":18})),
-            Ok(Change::ReaderFontSize(18.0))
-        );
-        assert!(email_change(&json!({"path":"email.reader.font_size","value":"18"})).is_err());
+        // Over the Bus the path goes generic, typed by the settings crate.
+        let change = email_change(&json!({"path":"email.reader.font_size","value":18})).unwrap();
+        let changes = applied(plan(&email, &change, mint).unwrap());
+        assert_eq!(changes["email.reader.font_size"], json!(18.0));
+        let change = email_change(&json!({"path":"email.reader.font_size","value":"18"})).unwrap();
+        assert!(matches!(plan(&email, &change, mint), Err(Refusal::Settings(_))));
     }
 
     /// The reader's size is one apply per edit, shown by prefs.email, and
@@ -2074,6 +2182,124 @@ mod tests {
             Effect::Reply { id: 2, rc: 10, body } if body["error_code"] == "ARGUMENT")));
     }
 
+    /// A value for `path` that differs from what `email` holds, from the
+    /// path's own description: the coverage test's sample. A new kind of
+    /// path fails here, by name, until it is covered.
+    fn sample(email: &Email, path: &str, entry: &Value) -> Value {
+        let current = json!(email)
+            .pointer(&pointer(path))
+            .cloned()
+            .unwrap_or_else(|| entry["default"].clone());
+        let choices = ["values", "enum", "one_of", "choices"]
+            .iter()
+            .find_map(|k| entry[*k].as_array().cloned());
+        if let Some(choices) = choices {
+            return choices
+                .into_iter()
+                .find(|c| *c != current)
+                .unwrap_or_else(|| panic!("{path}: no other choice"));
+        }
+        match (path, entry["type"].as_str()) {
+            ("email.accounts", _) => {
+                let mut list = email.accounts.clone();
+                list.reverse();
+                json!(list)
+            }
+            ("email.default_account", _) => json!(email.accounts.last().map(|a| &a.id)),
+            (_, Some("boolean")) => json!(!current.as_bool().expect("a boolean")),
+            (_, Some("integer" | "number")) => {
+                let (min, max) = (&entry["minimum"], &entry["maximum"]);
+                if *min != current { min.clone() } else { max.clone() }
+            }
+            (_, Some(kind)) if kind.contains('|') || kind == "string" => {
+                panic!("{path}: a {kind} with no listed values needs a sample here")
+            }
+            _ => panic!("{path}: describe it ({entry}) or give it a sample here"),
+        }
+    }
+
+    /// Mark's rule: every option has a Bus verb. Every leaf path settingsd
+    /// describes is set through prefs.email.set as one apply of that path,
+    /// and reset through prefs.email.reset as one settings.reset of it;
+    /// resetting the accounts while Email may run is refused (its guard).
+    #[test]
+    fn every_described_email_path_round_trips_over_the_bus() {
+        let described = settings::email::describe();
+        let leaves = leaf_paths();
+        assert!(leaves.len() >= 6, "{leaves:?}");
+        assert_eq!(email_paths()[0], "email");
+        for path in &leaves {
+            let mut e = read();
+            let email = e.email().unwrap().clone();
+            let value = sample(&email, path, &described[path.as_str()]);
+            let args = json!({"path":path,"value":value});
+            e.command(1, "prefs.email.set", &args.to_string());
+            let effects = e.take_effects();
+            let answer = effects.iter().find_map(|x| match x {
+                Effect::Reply { id: 1, rc, body } => Some((*rc, body.clone())),
+                _ => None,
+            });
+            assert_eq!(answer.as_ref().map(|a| a.0), Some(0), "{path}: {answer:?}");
+            let apply = effects
+                .iter()
+                .find_map(|x| match x {
+                    Effect::Settings { verb: "settings.apply", body, .. } => Some(body.clone()),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("{path}: no apply"));
+            assert_eq!(apply["changes"][path.as_str()], value, "{path}");
+            // And back to its default, the one path.
+            let mut e = read();
+            e.command(2, "prefs.email.reset", &json!({"path":path}).to_string());
+            let effects = e.take_effects();
+            let guarded = path == "email.accounts";
+            let refused = effects.iter().any(|x| matches!(x,
+                Effect::Reply { id: 2, rc: 10, body } if body["error_code"] == "REMOVE_THROUGH_EMAIL"));
+            assert_eq!(refused, guarded, "{path}: {effects:?}");
+            if !guarded {
+                let reset = effects
+                    .iter()
+                    .find_map(|x| match x {
+                        Effect::Settings { verb: "settings.reset", body, .. } => Some(body.clone()),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| panic!("{path}: no reset"));
+                assert_eq!(reset["reset"], json!([path]));
+            }
+        }
+        // The whole group: a new group in one set, a reset of it once Email
+        // is away (with it running and holding accounts, refused).
+        let mut e = read();
+        let mut group = json!(e.email().unwrap());
+        group["mail"] = json!({"page_size":20});
+        e.command(3, "prefs.email.set", &json!({"path":"email","value":group}).to_string());
+        assert!(e.take_effects().iter().any(|x| matches!(x,
+            Effect::Settings { verb: "settings.apply", body, .. } if body["changes"]["email.mail.page_size"] == 20)));
+        let mut e = read();
+        e.command(4, "prefs.email.reset", "{}");
+        assert!(e.take_effects().iter().any(|x| matches!(x,
+            Effect::Reply { id: 4, rc: 10, body } if body["error_code"] == "REMOVE_THROUGH_EMAIL")));
+        e.email.service = Service::Absent;
+        e.command(5, "prefs.email.reset", "{}");
+        assert!(e.take_effects().iter().any(|x| matches!(x,
+            Effect::Settings { verb: "settings.reset", body, .. } if body["reset"] == json!(["email"]))));
+        // A list that drops an account is a removal: through Email's remove.
+        let mut e = read();
+        e.command(6, "prefs.email.set", r#"{"path":"email.accounts","value":[]}"#);
+        assert!(e.take_effects().iter().any(|x| matches!(x,
+            Effect::Reply { id: 6, rc: 10, body } if body["error_code"] == "REMOVE_THROUGH_EMAIL")));
+        // Unknown paths and unknown keys are refused, never sent.
+        let mut e = read();
+        e.command(7, "prefs.email.set", r#"{"path":"email.mail.nope","value":1}"#);
+        e.command(8, "prefs.email.set", r#"{"path":"email.mail","value":{"page_size":20,"nope":1}}"#);
+        e.command(9, "prefs.email.reset", r#"{"path":"email.nope"}"#);
+        let effects = e.take_effects();
+        for id in [7, 8, 9] {
+            assert!(effects.iter().any(|x| matches!(x, Effect::Reply { id: i, rc: 10, .. } if *i == id)), "{id}: {effects:?}");
+        }
+        assert!(!effects.iter().any(|x| matches!(x, Effect::Settings { .. })));
+    }
+
     #[test]
     fn mail_options_send_their_own_path() {
         let email = two();
@@ -2114,7 +2340,7 @@ mod tests {
         );
         assert_eq!(
             email_change(&json!({"path":"email.mail.page_size","value":50.0})),
-            Ok(Change::PageSize(50))
+            Ok(Change::Path("email.mail.page_size".into(), json!(50.0)))
         );
         assert_eq!(
             email_change(&json!({"op":"update","id":"a","ca_path":null})),
@@ -2131,7 +2357,8 @@ mod tests {
             json!({"op":"add","name":"x"}),
             json!({"op":"update","id":"a","password":"hunter2"}),
             json!({"op":"enable","id":"a"}),
-            json!({"path":"email.accounts","value":[]}),
+            json!({"path":"email.nope","value":1}),
+            json!({"path":"email.mail.page_size"}),
         ] {
             assert!(email_change(&bad).is_err(), "{bad}");
         }
