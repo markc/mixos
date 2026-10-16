@@ -110,15 +110,24 @@ fn application_dirs()
   return $out
 end
 
--- What to watch for one applications directory: the directory itself when it
--- exists, else its nearest existing ancestor (until it appears), else nil.
+-- Where to watch one applications directory, in resolved paths: fs_watch
+-- refuses a symlink root and reports resolved event paths, so both sides
+-- must be canonical. {on, dir}: on is the real path of the directory itself
+-- when it exists, else of its nearest existing ancestor (until it appears);
+-- dir is the directory's own path under that real ancestor. nil when not
+-- even / resolves.
 fn watch_target($dir)
   $d = $dir
+  $rest = ""
   while $d != "" and $d != "/"
-    if is_dir($d) then return $d end
+    if is_dir($d) then
+      $on = realpath($d)
+      return {on: $on, dir: $rest == "" ? $on : $on .. $rest}
+    end
+    $rest = "/" .. basename($d) .. $rest
     $d = dirname($d)
   end
-  return is_dir("/") ? "/" : nil
+  return is_dir("/") ? {on: "/", dir: $rest} : nil
 end
 
 -- Whether one fs.changed batch on the watch kept for $dir (placed on $on)

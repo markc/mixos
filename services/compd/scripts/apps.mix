@@ -33,9 +33,11 @@ end
 $WATCH_EVENTS = ["created", "modified", "deleted", "moved"]
 fn arm($watches)
   for each $dir in $a.application_dirs()
-    $on = $a.watch_target($dir)
+    $t = $a.watch_target($dir)
+    $on = $t == nil ? nil : $t.on
+    $real = $t == nil ? nil : $t.dir
     $cur = $watches[$dir]
-    if $cur != nil and $cur.on == $on then continue end
+    if $cur != nil and $cur.on == $on and $cur.real == $real then continue end
     if $cur != nil then
       try
         fs_unwatch($cur.handle)
@@ -45,7 +47,7 @@ fn arm($watches)
     end
     if $on != nil then
       try
-        $watches[$dir] = {handle: fs_watch($on, {recursive: $on == $dir, events: $WATCH_EVENTS}), on: $on}
+        $watches[$dir] = {handle: fs_watch($on, {recursive: $on == $real, events: $WATCH_EVENTS}), on: $on, real: $real}
       catch $why
         eprint("apps: no watch for " .. $dir .. " on " .. $on .. ": " .. $why)
       end
@@ -179,7 +181,7 @@ on fs.changed
   if len(keys($event.headers ?? {})) != 0 then return end
   $rescan = false
   for each $dir, $w in $watches
-    if $w.handle == $event.args.watch and $a.watch_relevant($dir, $w.on, $event.args) then $rescan = true end
+    if $w.handle == $event.args.watch and $a.watch_relevant($w.real, $w.on, $event.args) then $rescan = true end
   end
   if $rescan then
     $watches = arm($watches)

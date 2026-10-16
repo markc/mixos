@@ -243,8 +243,20 @@ try
   check($r.ok and trim($r.stdout) == "ran-A=b\nremoved", "native launch must execute an '='-named program and remove inherited DISPLAY")
 
   -- ── Watch placement and relevance ──────────────────────────────────
-  check($a.watch_target($tmp .. "/data/applications") == $tmp .. "/data/applications", "an existing directory is watched itself")
-  check($a.watch_target($tmp .. "/later/deeper/applications") == $tmp, "a missing directory watches its nearest existing ancestor")
+  $real_tmp = realpath($tmp)
+  $t = $a.watch_target($tmp .. "/data/applications")
+  check($t.on == $real_tmp .. "/data/applications" and $t.dir == $t.on, "an existing directory is watched itself")
+  $t = $a.watch_target($tmp .. "/later/deeper/applications")
+  check($t.on == $real_tmp and $t.dir == $real_tmp .. "/later/deeper/applications", "a missing directory watches its nearest existing ancestor")
+  -- Symlinks: fs_watch refuses a symlink root and reports resolved paths.
+  mkdir($tmp .. "/real-apps")
+  $_ln = run_argv_must(["ln", "-s", $tmp .. "/real-apps", $tmp .. "/data/linked-apps"])
+  $t = $a.watch_target($tmp .. "/data/linked-apps")
+  check($t.on == $real_tmp .. "/real-apps" and $t.dir == $t.on, "a symlinked directory is watched at its target")
+  $_ln = run_argv_must(["ln", "-s", $tmp .. "/real-share", $tmp .. "/linked-share"])
+  mkdir($tmp .. "/real-share")
+  $t = $a.watch_target($tmp .. "/linked-share/applications")
+  check($t.on == $real_tmp .. "/real-share" and $t.dir == $real_tmp .. "/real-share/applications", "a missing directory under a symlinked parent resolves the parent")
   $apps_dir = $tmp .. "/later/applications"
   check($a.watch_relevant($apps_dir, $apps_dir, {changes: [], overflow: false}), "any batch on the directory itself rescans")
   check($a.watch_relevant($apps_dir, $tmp, {changes: [{kind: "created", path: $tmp .. "/later"}], overflow: false}), "creating a parent on the way down is relevant")
