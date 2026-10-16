@@ -437,7 +437,7 @@ impl Shell {
                 keymaps,
                 ..
             }) => {
-                self.set_look((!custom_source).then_some(appearance));
+                self.set_look((!custom_source).then_some(*appearance));
                 self.set_keymap(keymaps.get(APP).cloned().unwrap_or_default());
             }
             Some(settings::follow::Followed::Missing) if self.look.is_some() => {
