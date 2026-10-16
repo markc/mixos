@@ -32,9 +32,9 @@ pub fn placement(
     pixels_per_point: f32,
     mode: Fit,
 ) -> Placement {
-    let whole = Placement {
+    let empty = Placement {
         min: [0.0; 2],
-        max: surface,
+        max: [0.0; 2],
         uv: FULL,
     };
     if image.contains(&0)
@@ -42,12 +42,32 @@ pub fn placement(
         || !pixels_per_point.is_finite()
         || pixels_per_point <= 0.0
     {
-        return Placement {
-            min: [0.0; 2],
-            max: [0.0; 2],
-            uv: FULL,
-        };
+        return empty;
     }
+    // An extreme but finite scale can still overflow or underflow the maths
+    // below (`f32::MAX` points per pixel): never return a non-finite rectangle.
+    let placed = placement_of(image, surface, pixels_per_point, mode);
+    let finite = placed
+        .min
+        .iter()
+        .chain(&placed.max)
+        .chain(&placed.uv.min)
+        .chain(&placed.uv.max)
+        .all(|v| v.is_finite());
+    if finite { placed } else { empty }
+}
+
+fn placement_of(
+    image: [u32; 2],
+    surface: [f32; 2],
+    pixels_per_point: f32,
+    mode: Fit,
+) -> Placement {
+    let whole = Placement {
+        min: [0.0; 2],
+        max: surface,
+        uv: FULL,
+    };
     let native = [
         image[0] as f32 / pixels_per_point,
         image[1] as f32 / pixels_per_point,
@@ -214,6 +234,19 @@ mod tests {
         ] {
             let p = placement(image, surface, scale, Fit::Fit);
             assert_eq!((p.min, p.max), ([0.0; 2], [0.0; 2]));
+        }
+    }
+
+    #[test]
+    fn extreme_finite_scales_never_produce_non_finite_geometry() {
+        for mode in [Fit::Fill, Fit::Fit, Fit::Centre, Fit::Tile, Fit::Stretch] {
+            for scale in [f32::MAX, f32::MIN_POSITIVE] {
+                let p = placement([1, 1], [3840.0, 2160.0], scale, mode);
+                let values = p.min.iter().chain(&p.max).chain(&p.uv.min).chain(&p.uv.max);
+                for v in values {
+                    assert!(v.is_finite(), "{mode:?} at {scale}: {p:?}");
+                }
+            }
         }
     }
 }
