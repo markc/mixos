@@ -141,8 +141,7 @@ impl Interceptor {
     pub fn resync(&mut self, down: &[u16], held: SideModifiers) -> Vec<u16> {
         let released = self.end();
         for &code in down {
-            self.latches
-                .insert(code, Latch::Swallowed { repeat: None });
+            self.latches.insert(code, Latch::Swallowed { repeat: None });
         }
         self.mods = held;
         released

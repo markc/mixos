@@ -617,7 +617,10 @@ fn a_resync_after_dropped_events_releases_what_is_up_and_rebuilds_modifiers() {
     let released = run.keys.resync(&[KEY_LEFTSHIFT], mods(&["lshift"]));
     assert_eq!(released, [KEY_A, KEY_RIGHTCTRL], "every emitted key");
     assert!(!run.keys.is_emitted(KEY_A) && !run.keys.is_swallowed(KEY_F5));
-    assert!(run.keys.is_swallowed(KEY_LEFTSHIFT), "held now: quarantined");
+    assert!(
+        run.keys.is_swallowed(KEY_LEFTSHIFT),
+        "held now: quarantined"
+    );
     assert_eq!(run.keys.mods(), mods(&["lshift"]));
     // The stale Right Ctrl is gone: a bare-arrow chord is not formed, and
     // Left Shift (whose press was lost) still counts for matching.
@@ -643,7 +646,11 @@ fn a_resync_releases_and_quarantines_keys_still_down() {
     run.feed(KEY_RIGHTCTRL, 1).feed(KEY_F5, 1);
     assert_eq!(run.emitted, [(KEY_RIGHTCTRL, 1), (KEY_F5, 1)]);
     let released = run.keys.resync(&[KEY_F5], SideModifiers::NONE);
-    assert_eq!(released, [KEY_F5, KEY_RIGHTCTRL], "released though F5 is down");
+    assert_eq!(
+        released,
+        [KEY_F5, KEY_RIGHTCTRL],
+        "released though F5 is down"
+    );
     for code in released {
         run.emitted.push((code, 0));
     }

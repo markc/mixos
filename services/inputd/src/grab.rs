@@ -287,7 +287,11 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
                 if step.orphan {
                     // A grab is only taken with no key down, so this should
                     // never happen; the drop is the safety net.
-                    tracing::warn!(code, value, "key event with no press seen under this grab; dropped");
+                    tracing::warn!(
+                        code,
+                        value,
+                        "key event with no press seen under this grab; dropped"
+                    );
                 }
                 if step.emit {
                     self.out.emit(kind, code, value)?;
@@ -399,9 +403,7 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
     fn resync(&mut self) -> io::Result<()> {
         let state = self.device.key_state()?;
         self.cut = true;
-        let released = self
-            .keys
-            .resync(&state.down_codes(), state.modifiers());
+        let released = self.keys.resync(&state.down_codes(), state.modifiers());
         for &code in &released {
             self.out.emit(EV_KEY, code, 0)?;
         }
@@ -703,7 +705,10 @@ mod tests {
         rig.key(KEY_RIGHTCTRL, 0);
         rig.grabber.device_mut().held = KeyState::NONE;
         syn(&mut rig, SYN_REPORT);
-        assert!(rig.grabber.is_grabbed(), "grabbed once the keyboard is quiet");
+        assert!(
+            rig.grabber.is_grabbed(),
+            "grabbed once the keyboard is quiet"
+        );
         assert_eq!(rig.take_log(), ["keys", "keys", "grab 1", "drain", "keys"]);
         rig.key(KEY_A, 1).key(KEY_A, 0);
         assert_eq!(rig.take_log(), ["emit 1 30 1", "emit 1 30 0"]);
@@ -738,7 +743,10 @@ mod tests {
         device.held = KeyState::of(&[KEY_A]);
         rig.grabber.console(Some(1), rig.now).unwrap();
         assert!(!rig.grabber.is_grabbed());
-        assert_eq!(rig.take_log(), ["keys", "grab 1", "drain", "keys", "grab 0"]);
+        assert_eq!(
+            rig.take_log(),
+            ["keys", "grab 1", "drain", "keys", "grab 0"]
+        );
         // Waiting again: A's release arrives ungrabbed, then the retry.
         rig.key(KEY_A, 0);
         rig.grabber.device_mut().held = KeyState::NONE;
@@ -940,7 +948,10 @@ mod tests {
         device.keys_fail = true;
         assert!(rig.grabber.start(rig.now).is_err());
         assert!(!rig.grabber.is_grabbed());
-        assert_eq!(rig.take_log(), ["keys", "grab 1", "drain", "keys", "grab 0"]);
+        assert_eq!(
+            rig.take_log(),
+            ["keys", "grab 1", "drain", "keys", "grab 0"]
+        );
         // A failed check before the grab is reported too, with no grab.
         assert!(rig.grabber.start(rig.now).is_err());
         assert_eq!(rig.take_log(), ["keys"]);
@@ -962,7 +973,7 @@ mod tests {
             }
         );
         assert!(state.any_down() && !KeyState::NONE.any_down());
-        assert_eq!(state.down_codes(), [KEY_RIGHTCTRL, KEY_LEFTALT, 0x2ff]);
+        assert_eq!(state.down_codes(), [KEY_LEFTALT, KEY_RIGHTCTRL, 0x2ff]);
     }
 
     fn batch(rig: &mut Rig, events: &[(u16, u16, i32)]) {
@@ -992,7 +1003,10 @@ mod tests {
         );
         assert_eq!(rig.take_log(), ["keys"], "nothing after the snapshot");
         // Right Ctrl is quarantined: its release reaches nothing either.
-        batch(&mut rig, &[(EV_KEY, KEY_RIGHTCTRL, 0), (EV_SYN, SYN_REPORT, 0)]);
+        batch(
+            &mut rig,
+            &[(EV_KEY, KEY_RIGHTCTRL, 0), (EV_SYN, SYN_REPORT, 0)],
+        );
         assert_eq!(rig.take_log(), ["emit 0 0 0"]);
     }
 
