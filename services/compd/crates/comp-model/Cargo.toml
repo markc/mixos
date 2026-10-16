@@ -23,6 +23,7 @@ xwayland = []
 [dependencies]
 surfaces.workspace = true
 ledger.workspace = true
+motion.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

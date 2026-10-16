@@ -764,6 +764,63 @@ fn place_window(
         .map_element(window, location, false);
 }
 
+/// The window a `comp.motion.run` addresses, resolved the way `comp.window.*`
+/// resolves it (a stale generation is refused).
+fn motion_window(
+    lp: &Loop,
+    id: u64,
+    generation: u64,
+) -> Result<(SurfaceId, Window), ControlReply> {
+    let surface = match lp
+        .inner
+        .comp
+        .registry
+        .resolve_window_target(id, Some(generation))
+    {
+        Ok(record) => record.id(),
+        Err(error) => return Err(ControlReply::WindowTarget { id, error }),
+    };
+    let window = window_of(lp, surface)
+        .ok_or_else(|| ControlReply::refused("unknown_window", serde_json::json!({})))?;
+    Ok((surface, window))
+}
+
+/// Where a window is now, `[x, y, w, h]` in global logical coordinates: the
+/// start of a `comp.motion.run` window target.
+pub fn window_rect(lp: &Loop, id: u64, generation: u64) -> Result<[f64; 4], ControlReply> {
+    let (_, window) = motion_window(lp, id, generation)?;
+    let origin = world::comp::live_window_space(&lp.inner.comp, lp.inner.all_world_spaces(), &window)
+        .and_then(|space| space.state.element_location(&window))
+        .unwrap_or_else(|| Point::from((0, 0)));
+    let size = window.geometry().size;
+    Ok([
+        f64::from(origin.x),
+        f64::from(origin.y),
+        f64::from(size.w),
+        f64::from(size.h),
+    ])
+}
+
+/// Move and resize a window to `rect` (`[x, y, w, h]`, global logical) for one
+/// motion tick. It is the origin and configure `comp.window.place` makes, and a
+/// configure is sent only when the size actually changes.
+pub fn window_glide_step(
+    lp: &mut Loop,
+    id: u64,
+    generation: u64,
+    rect: [f64; 4],
+) -> Result<(), ControlReply> {
+    let (surface, window) = motion_window(lp, id, generation)?;
+    let location = Point::<i32, Logical>::from((rect[0].round() as i32, rect[1].round() as i32));
+    let wanted = Size::<i32, Logical>::from((
+        (rect[2].round() as i32).max(1),
+        (rect[3].round() as i32).max(1),
+    ));
+    let size = (wanted != window.geometry().size).then_some(wanted);
+    place_window(lp, surface, location, size);
+    Ok(())
+}
+
 /// Apply the interactive move/resize grab's latest step: a move carries the
 /// window by the pointer delta; a
 /// resize grows from the grabbed edges, anchored on the opposite ones, clamped
