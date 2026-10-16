@@ -31,6 +31,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [editd](../editd/README.md) · [changelog](../editd/changelog.md) | service | unclassified | [`services/editd`](https://github.com/markc/mixos/tree/main/services/editd) | The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery. |
 | [editor](../editor/README.md) | lib | none (library) | [`libs/editor`](https://github.com/markc/mixos/tree/main/libs/editor) | The shared plain-text editor widget for MixOS egui applications, a virtualised monospace view over the headless editing model that works on a local file or a shared buffer. |
 | [editor-model](../editor-model/README.md) | lib | none (library) | [`libs/editor-model`](https://github.com/markc/mixos/tree/main/libs/editor-model) | The headless text-editing model shared by MixOS editors, turning commands and motions into edits and keeping a local mirror of an edit-service buffer in step with the server, plus highlighting and… |
+| [email](../email/README.md) | app | unclassified | [`apps/email`](https://github.com/markc/mixos/tree/main/apps/email) |  |
 | [expr](../expr/README.md) | lib | none (library) | [`libs/expr`](https://github.com/markc/mixos/tree/main/libs/expr) | The pure expression language of Mix Scenes bindings, which compiles an expression, reports the globals it reads and evaluates it over JSON values under size and time limits. |
 | [hostd](../hostd/README.md) · [changelog](../hostd/changelog.md) | service | unclassified | [`services/hostd`](https://github.com/markc/mixos/tree/main/services/hostd) | How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo. |
 | [logging](../logging/README.md) | lib | none (library) | [`libs/logging`](https://github.com/markc/mixos/tree/main/libs/logging) | Shared tracing, sink selection, reload handles and process statistics for MixOS services and the Mix shell. |
@@ -71,6 +72,8 @@ checked separately by the layering gate.
 | [dopus](https://github.com/markc/mixos/blob/main/apps/dopus/Cargo.toml) | dopus | app | desktop | public | 0.1.1 |
 | [dopus-core](https://github.com/markc/mixos/blob/main/apps/dopus/crates/dopus-core/Cargo.toml) | dopus | app | core | none | 0.1.1 |
 | [files](https://github.com/markc/mixos/blob/main/apps/dopus/crates/files/Cargo.toml) | dopus | app | core | none | 0.1.1 |
+| [email](https://github.com/markc/mixos/blob/main/apps/email/Cargo.toml) | email | app | desktop | public | 0.1.1 |
+| [jmap](https://github.com/markc/mixos/blob/main/apps/email/crates/jmap/Cargo.toml) | email | app | core | none | 0.1.1 |
 | [prefs](https://github.com/markc/mixos/blob/main/apps/prefs/Cargo.toml) | prefs | app | desktop | public | 0.1.1 |
 | [preferences](https://github.com/markc/mixos/blob/main/apps/prefs/crates/preferences/Cargo.toml) | prefs | app | core | none | 0.1.1 |
 | [screenshot](https://github.com/markc/mixos/blob/main/apps/screenshot/Cargo.toml) | screenshot | app | desktop | public | 0.1.1 |
