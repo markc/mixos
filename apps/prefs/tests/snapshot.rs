@@ -444,9 +444,16 @@ fn email_reader_studio_dark() {
 /// The Mail tab: list options and Reset email settings.
 #[test]
 fn email_mail_studio_dark() {
-    let mut e = email_engine(json!({"mail":{"page_size":50,"confirm_delete":false}}), None);
+    let mut e = email_engine(
+        json!({"mail":{"page_size":50,"confirm_delete":false}}),
+        None,
+    );
     e.set_email_tab(EmailTab::Mail);
-    draw(chrome(Scheme::Studio, Mode::Dark), "email_mail_studio_dark", e);
+    draw(
+        chrome(Scheme::Studio, Mode::Dark),
+        "email_mail_studio_dark",
+        e,
+    );
 }
 
 /// The Compose tab, quoting off: where the reply goes waits greyed out.
@@ -457,7 +464,11 @@ fn email_compose_pro_light() {
         None,
     );
     e.set_email_tab(EmailTab::Compose);
-    draw(chrome(Scheme::Pro, Mode::Light), "email_compose_pro_light", e);
+    draw(
+        chrome(Scheme::Pro, Mode::Light),
+        "email_compose_pro_light",
+        e,
+    );
 }
 
 /// No accounts yet: the list says so and Add account is the way in.

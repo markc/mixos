@@ -1178,8 +1178,9 @@ impl Engine {
                     Some(section) if email_args && section != Section::Email => {
                         self.error(id, "ARGUMENT", "tab and account are for the email section")
                     }
-                    Some(_) if account.is_some()
-                        && tab.is_some_and(|t| t != crate::email::EmailTab::Accounts) =>
+                    Some(_)
+                        if account.is_some()
+                            && tab.is_some_and(|t| t != crate::email::EmailTab::Accounts) =>
                     {
                         self.error(id, "ARGUMENT", "account goes with tab accounts")
                     }
