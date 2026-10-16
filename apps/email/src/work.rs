@@ -89,6 +89,9 @@ pub enum Work {
         reply: Option<u64>,
         /// The form operation it settles, if a form sent it.
         form: Option<u64>,
+        /// The connection generation it must go through (a form's); on any
+        /// other it is refused as stale.
+        expect: Option<u64>,
         write: Write,
     },
     /// Set or clear `$seen`.

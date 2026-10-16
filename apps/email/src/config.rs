@@ -244,8 +244,18 @@ impl ConfigFile {
     }
 
     /// settingsd holds the legacy account now: later saves write schema 2.
-    pub fn migrated(&mut self) {
-        self.legacy = None;
+    /// The account is handed back, to [`ConfigFile::restore`] should the
+    /// schema-2 rewrite fail.
+    pub fn migrated(&mut self) -> Option<Account> {
+        self.legacy.take()
+    }
+
+    /// The schema-2 rewrite failed: keep writing the schema-1 form, its
+    /// account untouched, so the next launch migrates again.
+    pub fn restore(&mut self, legacy: Option<Account>) {
+        if legacy.is_some() {
+            self.legacy = legacy;
+        }
     }
 
     /// Persist the config; `Ok(false)` when the poison pill refuses the

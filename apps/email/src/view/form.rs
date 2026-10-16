@@ -86,6 +86,9 @@ fn line(
 }
 
 fn body(ui: &mut Ui, state: &State, form: &Form, events: &mut Vec<UiEvent>) {
+    if let Some(note) = &state.form_note {
+        ui.label(egui::RichText::new(note).color(ui.visuals().error_fg_color));
+    }
     let optional = crate::label("optional");
     let grid = |ui: &mut Ui, salt: &str, add: &mut dyn FnMut(&mut Ui)| {
         egui::Grid::new(salt).num_columns(2).show(ui, |ui| add(ui));

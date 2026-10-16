@@ -179,7 +179,16 @@ pub struct ComposeState {
     pub sending: Option<u64>,
     /// The account's new address, when its login (URL or address) changed
     /// while this draft was open: Send waits until the person takes it.
-    pub stale: Option<String>,
+    pub stale: Option<StaleFrom>,
+}
+
+/// A replacement From, bound to the account and connection it came from:
+/// it can be taken only for that account, on that connection.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StaleFrom {
+    pub account: String,
+    pub generation: u64,
+    pub address: String,
 }
 
 impl ComposeState {
@@ -518,11 +527,13 @@ pub enum Form {
     /// Delete these emails? (`email.mail.confirm_delete`)
     Delete {
         account: String,
+        generation: u64,
         ids: Vec<String>,
     },
     /// Move these emails: the mailbox is chosen in the form.
     Move {
         account: String,
+        generation: u64,
         ids: Vec<String>,
     },
     Event(EventForm),
@@ -533,6 +544,8 @@ pub enum Form {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct EventForm {
     pub account: String,
+    /// The connection it was opened on: it submits only through that one.
+    pub generation: u64,
     pub calendar: String,
     pub title: String,
     pub start: String,
@@ -548,6 +561,8 @@ pub struct EventForm {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ContactForm {
     pub account: String,
+    /// The connection it was opened on: it submits only through that one.
+    pub generation: u64,
     pub book: String,
     pub name: String,
     pub email: String,
@@ -670,6 +685,8 @@ pub mod code {
     pub const MIGRATION_PENDING: &str = "MIGRATION_PENDING";
     pub const REFUSED: &str = "REFUSED";
     pub const OUTCOME_UNKNOWN: &str = "OUTCOME_UNKNOWN";
+    /// The window closed before the request was started or answered.
+    pub const CANCELLED: &str = "CANCELLED";
     pub const SECRETS: &str = "SECRETS";
     pub const SERVER: &str = "SERVER";
     pub const BUSY: &str = "BUSY";
@@ -710,6 +727,9 @@ struct PendingWrite {
     /// The write's own id, kept across its retries: its deadline is
     /// [`Work::WriteDeadline`] with it.
     op: u64,
+    /// The account whose credential operation this write is: released
+    /// (the next one runs) when the write settles.
+    holds: Option<String>,
 }
 
 /// Where the schema-1 migration stands. Each step needs the one before it
@@ -726,6 +746,10 @@ enum Stage {
     /// settingsd holds the account under another id: the password is being
     /// written under that id.
     Transferring,
+    /// settingsd has the account and its password is durable where
+    /// settingsd will look for it: the schema-2 config rewrite is asked
+    /// of the shell, and the lock holds until it is confirmed.
+    Rewriting,
     /// A step failed this run (a save refused, settingsd refused).
     Stopped,
 }
@@ -737,10 +761,30 @@ struct Migration {
     stage: Stage,
 }
 
+/// A credential-bearing operation on one account. At most one runs per
+/// account; later ones wait in submission order and run when it settles
+/// (its settings write and its secrets save both landed, or failed), so
+/// none is ever superseded silently and each caller hears its own outcome.
+#[derive(Clone, Debug)]
+enum CredentialOp {
+    /// An account write carrying a password, or a removal.
+    Write {
+        change: Change,
+        reply: Option<u64>,
+        password: Option<String>,
+    },
+    /// `email.account.password.set` with a password.
+    Password { password: String, reply: Option<u64> },
+    /// `email.account.password.set` with an empty password.
+    Forget { reply: u64 },
+}
+
 /// What a secrets save finishing moves on.
 #[derive(Clone, Debug)]
 enum AfterSave {
     Nothing,
+    /// The credential operation on this account has settled.
+    Credential(String),
     /// The migration's password is durable.
     Migration,
     /// The migrated password is durable under the adopted id.
@@ -781,6 +825,10 @@ pub struct State {
     credentials: BTreeMap<String, u64>,
     /// The last credential operation number handed out.
     credential_ops: u64,
+    /// Accounts with a credential operation in flight.
+    credential_busy: std::collections::BTreeSet<String>,
+    /// The credential operations waiting, per account, in order.
+    credential_queue: BTreeMap<String, std::collections::VecDeque<CredentialOp>>,
     /// The last connection generation handed out: one counter for every
     /// account, so a removed and restored account never reuses one.
     generations: u64,
@@ -793,6 +841,8 @@ pub struct State {
     /// A form over the window: a delete to confirm, a move's target, a new
     /// event or contact.
     pub form: Option<Form>,
+    /// Why the open form cannot be submitted (its account's login changed).
+    pub form_note: Option<String>,
     pub ui: UiState,
     /// The last thing the status bar should say.
     pub status: String,
@@ -803,6 +853,9 @@ pub struct State {
     session_mode: design::Mode,
     work: Vec<Work>,
     replies: Vec<Reply>,
+    /// Bus requests sent to an account's server and not yet answered:
+    /// `true` for a write (its outcome is unknown if the window closes).
+    outstanding: BTreeMap<u64, bool>,
     writes: BTreeMap<u64, PendingWrite>,
     /// Secrets saves in flight, with the reply each one owes and what its
     /// landing moves on.
@@ -836,17 +889,21 @@ impl State {
             secrets_version: 0,
             credentials: BTreeMap::new(),
             credential_ops: 0,
+            credential_busy: std::collections::BTreeSet::new(),
+            credential_queue: BTreeMap::new(),
             generations: 0,
             migration: None,
             migrated: false,
             compose: None,
             form: None,
+            form_note: None,
             ui,
             status: String::new(),
             exiting: false,
             session_mode: design::Mode::Dark,
             work: Vec::new(),
             replies: Vec::new(),
+            outstanding: BTreeMap::new(),
             writes: BTreeMap::new(),
             saves: BTreeMap::new(),
             next_ticket: 0,
@@ -982,7 +1039,54 @@ impl State {
 
     /// Answer Bus request `id`.
     pub fn reply(&mut self, id: u64, rc: u8, body: Value) {
+        self.outstanding.remove(&id);
         self.replies.push(Reply { id, rc, body });
+    }
+
+    /// The window is closing: every caller still waiting hears now. A
+    /// settings write sent and unanswered, a server write in flight or a
+    /// secrets save not confirmed may have happened (OUTCOME_UNKNOWN); a
+    /// query, or anything not yet started, is CANCELLED. Nothing more is
+    /// started after this.
+    pub fn close_out(&mut self) {
+        let unknown = crate::label("closing-unknown");
+        let cancelled = crate::label("closing-cancelled");
+        for (_, pending) in std::mem::take(&mut self.writes) {
+            if let Some(reply) = pending.reply {
+                if pending.sent.is_some() && !pending.awaiting_look {
+                    self.refuse(reply, code::OUTCOME_UNKNOWN, &unknown);
+                } else {
+                    self.refuse(reply, code::CANCELLED, &cancelled);
+                }
+            }
+        }
+        for (_, queue) in std::mem::take(&mut self.credential_queue) {
+            for op in queue {
+                let reply = match op {
+                    CredentialOp::Write { reply, .. } | CredentialOp::Password { reply, .. } => {
+                        reply
+                    }
+                    CredentialOp::Forget { reply } => Some(reply),
+                };
+                if let Some(reply) = reply {
+                    self.refuse(reply, code::CANCELLED, &cancelled);
+                }
+            }
+        }
+        self.credential_busy.clear();
+        for (_, (owed, _)) in std::mem::take(&mut self.saves) {
+            if let Some((reply, _)) = owed {
+                self.refuse(reply, code::OUTCOME_UNKNOWN, &unknown);
+            }
+        }
+        for (reply, write) in std::mem::take(&mut self.outstanding) {
+            if write {
+                self.refuse(reply, code::OUTCOME_UNKNOWN, &unknown);
+            } else {
+                self.refuse(reply, code::CANCELLED, &cancelled);
+            }
+        }
+        self.work.clear();
     }
 
     /// Answer Bus request `id` with a refusal.
@@ -1043,12 +1147,6 @@ impl State {
                         || view.entry.email != entry.email
                         || view.entry.ca_path != entry.ca_path;
                     let was_enabled = view.entry.enabled;
-                    if relogin
-                        && let Some(compose) = self.compose.as_mut()
-                        && compose.account == entry.id
-                    {
-                        compose.stale = Some(entry.email.clone());
-                    }
                     view.entry = entry;
                     if !view.entry.enabled {
                         if view.phase != Phase::Disabled {
@@ -1057,6 +1155,9 @@ impl State {
                         }
                     } else if relogin || !was_enabled {
                         self.connect(&mut view);
+                    }
+                    if relogin {
+                        self.login_changed(&view);
                     }
                     view
                 }
@@ -1091,6 +1192,24 @@ impl State {
             self.ui.cursor = None;
         }
         self.config_dirty = true;
+    }
+
+    /// `view`'s login (URL, address or CA) changed: a draft open on it is
+    /// stale (its new From bound to this connection), and a form open on it
+    /// can no longer be submitted.
+    fn login_changed(&mut self, view: &AccountView) {
+        if let Some(compose) = self.compose.as_mut()
+            && compose.account == view.entry.id
+        {
+            compose.stale = Some(StaleFrom {
+                account: view.entry.id.clone(),
+                generation: view.generation,
+                address: view.entry.email.clone(),
+            });
+        }
+        if self.form.as_ref().is_some_and(|f| form_account(f) == view.entry.id) {
+            self.form_note = Some(crate::label("form-account-changed"));
+        }
     }
 
     /// Connect `view` afresh with the password held, or wait for one.
@@ -1203,7 +1322,7 @@ impl State {
             if let Some(m) = self.migration.as_mut() {
                 m.stage = Stage::Applying;
             }
-            self.write(Change::Migrate(entry), None, None, true);
+            self.write(Change::Migrate(entry), None, None, true, None);
         }
     }
 
@@ -1211,10 +1330,29 @@ impl State {
     /// password is durable under the id settingsd holds it as. The shell
     /// rewrites the schema-1 config now, and not before.
     fn finish_migration(&mut self) {
-        self.migration = None;
+        if let Some(m) = self.migration.as_mut() {
+            m.stage = Stage::Rewriting;
+        }
         self.migrated = true;
-        self.status = crate::label("migrated");
-        self.reconcile();
+    }
+
+    /// The shell rewrote the config as schema 2 (`Ok(true)`), or could
+    /// not. Only a confirmed rewrite ends the migration and its lock; a
+    /// failed one keeps both, the schema-1 file stays, and the next launch
+    /// runs the migration again.
+    pub fn migration_rewritten(&mut self, result: Result<bool, String>) {
+        if self.migration.as_ref().map(|m| m.stage) != Some(Stage::Rewriting) {
+            return;
+        }
+        match result {
+            Ok(true) => {
+                self.migration = None;
+                self.status = crate::label("migrated");
+                self.reconcile();
+            }
+            Ok(false) => self.stop_migration(&crate::label("config-refused")),
+            Err(error) => self.stop_migration(&error),
+        }
     }
 
     /// A migration step failed: it stops here this run; the schema-1 file
@@ -1233,6 +1371,8 @@ impl State {
         if self.source != Source::Settings {
             return;
         }
+        // A migration waiting to be (re)sent goes too.
+        self.start_migration();
         let waiting: Vec<u64> = self
             .writes
             .iter()
@@ -1265,7 +1405,7 @@ impl State {
     /// Remove `id`, shown only because settingsd showed no accounts: the
     /// held entry goes (the others stay) and its secret is forgotten
     /// durably before `reply` hears rc 0.
-    fn remove_held(&mut self, id: &str, reply: Option<u64>) {
+    fn remove_held(&mut self, id: &str, reply: Option<u64>, holds: Option<String>) {
         if let Some(held) = self.held.as_mut() {
             held.retain(|a| a.id != id);
             if held.is_empty() {
@@ -1279,10 +1419,16 @@ impl State {
             self.mark(id);
         }
         self.reconcile();
+        let then = holds.clone().map_or(AfterSave::Nothing, AfterSave::Credential);
         if forgot || self.unsaved.contains_key(id) {
-            self.save_secrets(reply.map(|reply| (reply, body)));
-        } else if let Some(reply) = reply {
-            self.reply(reply, 0, body);
+            self.save_secrets_then(reply.map(|reply| (reply, body)), then);
+        } else {
+            if let Some(reply) = reply {
+                self.reply(reply, 0, body);
+            }
+            if let Some(id) = &holds {
+                self.credential_done(id);
+            }
         }
     }
 
@@ -1330,7 +1476,59 @@ impl State {
         reply: Option<u64>,
         password: Option<String>,
     ) {
-        self.write(change, reply, password, false);
+        let credential = password.is_some() || matches!(change, Change::Remove(_));
+        match change.account().map(str::to_owned) {
+            Some(id) if credential => self.credential_start(
+                &id,
+                CredentialOp::Write {
+                    change,
+                    reply,
+                    password,
+                },
+            ),
+            _ => self.write(change, reply, password, false, None),
+        }
+    }
+
+    /// Run credential operation `op` on `id` now, or after the one in
+    /// flight there.
+    fn credential_start(&mut self, id: &str, op: CredentialOp) {
+        if self.credential_busy.contains(id) {
+            self.credential_queue
+                .entry(id.to_owned())
+                .or_default()
+                .push_back(op);
+            return;
+        }
+        self.credential_busy.insert(id.to_owned());
+        self.credential_run(id, op);
+    }
+
+    fn credential_run(&mut self, id: &str, op: CredentialOp) {
+        match op {
+            CredentialOp::Write {
+                change,
+                reply,
+                password,
+            } => self.write(change, reply, password, false, Some(id.to_owned())),
+            CredentialOp::Password { password, reply } => self.password_now(id, &password, reply),
+            CredentialOp::Forget { reply } => self.forget_now(id, reply),
+        }
+    }
+
+    /// `id`'s credential operation settled: the next one runs.
+    fn credential_done(&mut self, id: &str) {
+        let next = self
+            .credential_queue
+            .get_mut(id)
+            .and_then(std::collections::VecDeque::pop_front);
+        match next {
+            Some(op) => self.credential_run(id, op),
+            None => {
+                self.credential_busy.remove(id);
+                self.credential_queue.remove(id);
+            }
+        }
     }
 
     fn write(
@@ -1339,6 +1537,7 @@ impl State {
         reply: Option<u64>,
         password: Option<String>,
         migration: bool,
+        holds: Option<String>,
     ) {
         // #17: removing an account shown only because settingsd showed none
         // (it is no longer in settingsd) removes it here, and its secret.
@@ -1350,7 +1549,7 @@ impl State {
                 .is_some_and(|h| h.iter().any(|a| a.id == *id))
         {
             let id = id.clone();
-            return self.remove_held(&id, reply);
+            return self.remove_held(&id, reply, holds);
         }
         let credential = change.account().map_or(0, |id| self.credential(id));
         let op = self.ticket();
@@ -1363,6 +1562,7 @@ impl State {
             awaiting_look: false,
             credential,
             op,
+            holds,
             migration,
             sent: None,
             base: 0,
@@ -1523,10 +1723,19 @@ impl State {
         if let Some((id, true)) = &renewed {
             self.reconnect(id);
         }
+        let then = pending
+            .holds
+            .clone()
+            .map_or(AfterSave::Nothing, AfterSave::Credential);
         if save {
-            self.save_secrets(pending.reply.map(|reply| (reply, body)));
-        } else if let Some(reply) = pending.reply {
-            self.reply(reply, 0, body);
+            self.save_secrets_then(pending.reply.map(|reply| (reply, body)), then);
+        } else {
+            if let Some(reply) = pending.reply {
+                self.reply(reply, 0, body);
+            }
+            if let Some(id) = &pending.holds {
+                self.credential_done(id);
+            }
         }
     }
 
@@ -1569,6 +1778,9 @@ impl State {
         if let Some(reply) = pending.reply {
             self.refuse(reply, code, message);
         }
+        if let Some(id) = &pending.holds {
+            self.credential_done(id);
+        }
     }
 
     /// Hold `password` for account `id` and reconnect it, answering `reply`
@@ -1577,33 +1789,45 @@ impl State {
         if self.account(id).is_none() {
             return false;
         }
+        let password = password.to_owned();
+        self.credential_start(id, CredentialOp::Password { password, reply });
+        true
+    }
+
+    fn password_now(&mut self, id: &str, password: &str, reply: Option<u64>) {
         self.credential_op(id);
         self.hold(id, password);
         self.mark(id);
-        self.save_secrets(reply.map(|reply| {
-            (
-                reply,
-                json!({ "id": id, "has_password": !password.is_empty() }),
-            )
-        }));
+        let body = json!({ "id": id, "has_password": !password.is_empty() });
+        self.save_secrets_then(
+            reply.map(|reply| (reply, body)),
+            AfterSave::Credential(id.to_owned()),
+        );
         self.reconnect(id);
-        true
     }
 
     /// Forget account `id`'s password, whether or not an account has that
     /// id now, answering `reply` with `forgotten` (whether one was held)
     /// once the secrets file no longer has it.
     pub fn forget_password(&mut self, id: &str, reply: u64) {
+        self.credential_start(id, CredentialOp::Forget { reply });
+    }
+
+    fn forget_now(&mut self, id: &str, reply: u64) {
         let body =
             |forgotten: bool| json!({ "id": id, "has_password": false, "forgotten": forgotten });
         self.credential_op(id);
         if !self.secrets.has(id) && !self.unsaved.contains_key(id) {
-            return self.reply(reply, 0, body(false));
+            self.reply(reply, 0, body(false));
+            return self.credential_done(id);
         }
         let held = self.secrets.has(id);
         self.hold(id, "");
         self.mark(id);
-        self.save_secrets(Some((reply, body(held))));
+        self.save_secrets_then(
+            Some((reply, body(held))),
+            AfterSave::Credential(id.to_owned()),
+        );
         // A shown account has no password from now on.
         if self.account(id).is_some() {
             self.reconnect(id);
@@ -1641,6 +1865,10 @@ impl State {
                 self.status = crate::label_with("secrets-failed", &[("message", message)]);
             }
         }
+        let release = match &then {
+            AfterSave::Credential(id) => Some(id.clone()),
+            _ => None,
+        };
         match (then, &refused) {
             (AfterSave::Migration, None) => {
                 if let Some(m) = self.migration.as_mut()
@@ -1655,13 +1883,18 @@ impl State {
                 let message = message.clone();
                 self.stop_migration(&message);
             }
-            (AfterSave::Nothing, _) => {}
+            (AfterSave::Nothing | AfterSave::Credential(_), _) => {}
         }
         if let Some((reply, body)) = owed {
             match refused {
                 None => self.reply(reply, 0, body),
                 Some(message) => self.refuse(reply, code::SECRETS, &message),
             }
+        }
+        // The account's next credential operation runs after this one's
+        // caller has heard.
+        if let Some(id) = release {
+            self.credential_done(&id);
         }
     }
 
@@ -1989,6 +2222,7 @@ impl State {
             });
         }
         view.open_email(id, Some(reply), &mut self.work);
+        self.outstanding.insert(reply, false);
     }
 
     /// Ask `account`'s server `query` for Bus request `reply`.
@@ -1999,6 +2233,7 @@ impl State {
         query: crate::verbs::Query,
         then: crate::verbs::Then,
     ) {
+        self.outstanding.insert(reply, false);
         self.queue(Work::Query {
             account,
             reply,
@@ -2015,20 +2250,38 @@ impl State {
         reply: Option<u64>,
         write: crate::verbs::Write,
     ) {
+        if let Some(reply) = reply {
+            self.outstanding.insert(reply, true);
+        }
         self.queue(Work::Write {
             account,
             reply,
             form: None,
+            expect: None,
             write,
         });
     }
 
     /// A form's change on `account`'s server, under operation `op`.
     fn write_form(&mut self, account: String, op: u64, write: crate::verbs::Write) {
+        let generation = self.generation_of(&account);
+        self.write_bound(account, Some(op), generation, write);
+    }
+
+    /// A form's change, sent only through connection `generation`: the
+    /// shell refuses it as stale on any other.
+    fn write_bound(
+        &mut self,
+        account: String,
+        form: Option<u64>,
+        generation: u64,
+        write: crate::verbs::Write,
+    ) {
         self.queue(Work::Write {
             account,
             reply: None,
-            form: Some(op),
+            form,
+            expect: Some(generation),
             write,
         });
     }
@@ -2225,6 +2478,17 @@ impl State {
         Some((view.entry.id.clone(), view.mail.open.clone()?))
     }
 
+    /// `account`'s connection generation, for a form to be bound to.
+    fn generation_of(&self, account: &str) -> u64 {
+        self.account(account).map_or(0, AccountView::generation)
+    }
+
+    /// Open `form`; a note left by an earlier one goes.
+    fn open_form(&mut self, form: Form) {
+        self.form_note = None;
+        self.form = Some(form);
+    }
+
     /// Delete the open email: confirm first when the settings ask to.
     pub fn delete_open(&mut self) {
         let Some((account, email)) = self.reading() else {
@@ -2232,7 +2496,12 @@ impl State {
         };
         let ids = vec![email.id];
         if self.settings.mail.confirm_delete {
-            self.form = Some(Form::Delete { account, ids });
+            let generation = self.generation_of(&account);
+            self.open_form(Form::Delete {
+                account,
+                generation,
+                ids,
+            });
         } else {
             self.write_server(
                 account,
@@ -2248,8 +2517,10 @@ impl State {
     /// Choose where the open email moves to.
     pub fn move_open(&mut self) {
         if let Some((account, email)) = self.reading() {
-            self.form = Some(Form::Move {
+            let generation = self.generation_of(&account);
+            self.open_form(Form::Move {
                 account,
+                generation,
                 ids: vec![email.id],
             });
         }
@@ -2333,13 +2604,15 @@ impl State {
         let format = |t: chrono::DateTime<chrono::Local>| {
             t.to_rfc3339_opts(chrono::SecondsFormat::Secs, false)
         };
-        self.form = Some(Form::Event(EventForm {
+        let form = Form::Event(EventForm {
             account: view.entry.id.clone(),
+            generation: view.generation,
             calendar,
             start: format(hour),
             end: format(hour + chrono::Duration::hours(1)),
             ..EventForm::default()
-        }));
+        });
+        self.open_form(form);
     }
 
     /// Open the New Contact form on the current account's selected book.
@@ -2355,11 +2628,13 @@ impl State {
         else {
             return;
         };
-        self.form = Some(Form::Contact(ContactForm {
+        let form = Form::Contact(ContactForm {
             account: view.entry.id.clone(),
+            generation: view.generation,
             book,
             ..ContactForm::default()
-        }));
+        });
+        self.open_form(form);
     }
 
     /// The form's answer: Delete confirmed, a Move target chosen, or Save.
@@ -2367,22 +2642,27 @@ impl State {
         let Some(form) = self.form.clone() else {
             return;
         };
+        // Bound to the connection it was opened on: after a login change it
+        // says so and must be reopened, never submitted to the new server.
+        if self.generation_of(form_account(&form)) != form_generation(&form) {
+            self.form_note = Some(crate::label("form-account-changed"));
+            return;
+        }
+        let generation = form_generation(&form);
         match form {
-            Form::Delete { account, ids } => {
+            Form::Delete { account, ids, .. } => {
                 self.form = None;
-                self.write_server(
-                    account,
-                    None,
-                    crate::verbs::Write::Delete {
-                        ids,
-                        destroy: false,
-                    },
-                );
+                let write = crate::verbs::Write::Delete {
+                    ids,
+                    destroy: false,
+                };
+                self.write_bound(account, None, generation, write);
             }
-            Form::Move { account, ids } => {
+            Form::Move { account, ids, .. } => {
                 if let Some(mailbox) = choice {
                     self.form = None;
-                    self.write_server(account, None, crate::verbs::Write::Move { ids, mailbox });
+                    let write = crate::verbs::Write::Move { ids, mailbox };
+                    self.write_bound(account, None, generation, write);
                 }
             }
             Form::Event(f) if !f.busy => {
@@ -2543,8 +2823,8 @@ impl State {
             })
         });
         let form = self.form.as_ref().map(|form| match form {
-            Form::Delete { account, ids } => json!({"kind": "delete", "account": account, "ids": ids}),
-            Form::Move { account, ids } => json!({"kind": "move", "account": account, "ids": ids}),
+            Form::Delete { account, ids, .. } => json!({"kind": "delete", "account": account, "ids": ids}),
+            Form::Move { account, ids, .. } => json!({"kind": "move", "account": account, "ids": ids}),
             Form::Event(f) => json!({"kind": "event", "account": f.account, "calendar": f.calendar, "title": f.title, "start": f.start, "end": f.end, "location": f.location, "busy": f.busy, "error": f.error}),
             Form::Contact(f) => json!({"kind": "contact", "account": f.account, "book": f.book, "name": f.name, "email": f.email, "phone": f.phone, "organization": f.organization, "busy": f.busy, "error": f.error}),
         });
@@ -3049,6 +3329,9 @@ impl State {
                     }
                     compose.account = account;
                     compose.draft.from = email;
+                    // The new account's From is its current address.
+                    compose.stale = None;
+                    compose.error = None;
                 }
             }
             UiEvent::ComposeField(field, value) => {
@@ -3069,10 +3352,16 @@ impl State {
             }
             UiEvent::CloseCompose => self.compose = None,
             UiEvent::ComposeUseNewFrom => {
+                // Only for the account and connection the address came from.
+                let current = self.compose.as_ref().and_then(|c| {
+                    let view = self.account(&c.account)?;
+                    Some((c.account.clone(), view.generation))
+                });
                 if let Some(compose) = &mut self.compose
-                    && let Some(from) = compose.stale.take()
+                    && let Some(stale) = compose.stale.take()
+                    && current == Some((stale.account.clone(), stale.generation))
                 {
-                    compose.draft.from = from;
+                    compose.draft.from = stale.address;
                     compose.error = None;
                 }
             }
@@ -3111,7 +3400,10 @@ impl State {
                 _ => {}
             },
             UiEvent::FormSubmit(choice) => self.submit_form(choice),
-            UiEvent::FormCancel => self.form = None,
+            UiEvent::FormCancel => {
+                self.form = None;
+                self.form_note = None;
+            }
             UiEvent::CloseDialog => self.ui.dialog = None,
             UiEvent::SetMode(mode) => {
                 self.ui.theme.mode = Some(mode);
@@ -3136,10 +3428,11 @@ impl State {
             return;
         }
         let account = compose.account.clone();
+        // State-wide, so a removed and restored account never reuses one.
+        let ticket = self.ticket();
         let Some(view) = self.accounts.iter_mut().find(|v| v.entry.id == account) else {
             return;
         };
-        let ticket = view.tickets.send + 1;
         let Some(compose) = &mut self.compose else {
             return;
         };
@@ -3265,6 +3558,24 @@ impl State {
             design::Mode::Light => design::Mode::Dark,
         };
         self.apply_ui(crate::view::UiEvent::SetMode(target));
+    }
+}
+
+/// The account a form is for.
+fn form_account(form: &Form) -> &str {
+    match form {
+        Form::Delete { account, .. } | Form::Move { account, .. } => account,
+        Form::Event(f) => &f.account,
+        Form::Contact(f) => &f.account,
+    }
+}
+
+/// The connection a form was opened on.
+fn form_generation(form: &Form) -> u64 {
+    match form {
+        Form::Delete { generation, .. } | Form::Move { generation, .. } => *generation,
+        Form::Event(f) => f.generation,
+        Form::Contact(f) => f.generation,
     }
 }
 
@@ -4424,7 +4735,9 @@ pub(crate) mod tests {
         assert!(!changes.to_string().contains("pw-1"));
         assert_eq!(state.account(&id).unwrap().phase, Phase::Connecting);
         state.settled(ticket, Settled::Accepted);
-        assert!(!state.migrating() && state.take_migrated());
+        assert!(state.take_migrated());
+        state.migration_rewritten(Ok(true));
+        assert!(!state.migrating());
         assert!(state.has_password(&id));
         // The read that follows changes nothing, and nothing is sent again.
         let mut after = EmailSettings::default();
@@ -4470,7 +4783,9 @@ pub(crate) mod tests {
         assert!(state.migrating() && !state.take_migrated());
         assert!(state.has_password("a"));
         land(&mut state, &work, Ok(true));
-        assert!(!state.migrating() && state.take_migrated());
+        assert!(state.take_migrated());
+        state.migration_rewritten(Ok(true));
+        assert!(!state.migrating());
         assert_eq!(state.accounts.len(), 1);
     }
 
@@ -4863,7 +5178,9 @@ pub(crate) mod tests {
         assert!(state.has_password("a") && state.has_password("acct-legacy"));
         assert_eq!(saves(&work), 1);
         land(&mut state, &work, Ok(true));
-        assert!(!state.migrating() && state.take_migrated());
+        assert!(state.take_migrated());
+        state.migration_rewritten(Ok(true));
+        assert!(!state.migrating());
     }
 
     /// Review finding 3: a secrets save refused by the poison pill
@@ -5096,6 +5413,7 @@ pub(crate) mod tests {
         let (ticket, _) = settings_ticket(&mut state);
         state.set_password("a", "pw-2", Some(2));
         state.settled(ticket, Settled::Accepted);
+        drive(&mut state);
         assert_eq!(state.secrets.password("a"), Some("pw-2"));
         // A newer forget wins.
         let mut state = connected();
@@ -5103,6 +5421,7 @@ pub(crate) mod tests {
         let (ticket, _) = settings_ticket(&mut state);
         state.forget_password("a", 2);
         state.settled(ticket, Settled::Accepted);
+        drive(&mut state);
         assert!(!state.has_password("a"));
         // A removal's forget yields to a newer password set.
         let mut state = connected();
@@ -5110,6 +5429,7 @@ pub(crate) mod tests {
         let (ticket, _) = settings_ticket(&mut state);
         state.set_password("a", "pw-3", Some(2));
         state.settled(ticket, Settled::Accepted);
+        drive(&mut state);
         assert_eq!(state.secrets.password("a"), Some("pw-3"));
     }
 
@@ -5216,7 +5536,10 @@ pub(crate) mod tests {
         state.set_settings(next);
         state.take_work();
         let compose = state.compose.clone().unwrap();
-        assert_eq!(compose.stale.as_deref(), Some("new@a.example.invalid"));
+        assert_eq!(
+            compose.stale.as_ref().map(|s| s.address.as_str()),
+            Some("new@a.example.invalid")
+        );
         assert_eq!(
             compose.draft.from, "ann@a.example.invalid",
             "unchanged until taken"
@@ -5249,7 +5572,9 @@ pub(crate) mod tests {
     /// version it saved; a later change stays unsaved.
     #[test]
     fn review_19_a_late_save_ack_never_clears_a_newer_change() {
-        let mut state = connected();
+        // Two accounts, so the two saves are in flight together (one
+        // account's credential operations run one at a time).
+        let mut state = connected_many(&["a", "b"]);
         state.set_password("a", "pw-1", None);
         let first = state.secrets_snapshot().0;
         let ticket = state
@@ -5260,13 +5585,255 @@ pub(crate) mod tests {
                 _ => None,
             })
             .unwrap();
-        state.set_password("a", "pw-2", None);
+        state.set_password("b", "pw-2", None);
         let second = state.secrets_snapshot().0;
         assert!(second > first);
         state.secrets_saved(ticket, first, Ok(true));
-        assert!(state.unsaved.contains_key("a"), "pw-2 is not durable yet");
+        assert!(!state.unsaved.contains_key("a"), "pw-1 was in the saved snapshot");
+        assert!(state.unsaved.contains_key("b"), "pw-2 is not durable yet");
         let work = state.take_work();
         land(&mut state, &work, Ok(true));
-        assert!(!state.unsaved.contains_key("a"));
+        assert!(!state.unsaved.contains_key("b"));
+    }
+
+    /// Settle everything the state asks of settingsd and the secrets file
+    /// (every apply accepted, every save landed) until nothing is left.
+    fn drive(state: &mut State) {
+        for _ in 0..32 {
+            let work = state.take_work();
+            if !work
+                .iter()
+                .any(|w| matches!(w, Work::Settings { .. } | Work::SaveSecrets { .. }))
+            {
+                return;
+            }
+            for w in &work {
+                if let Work::Settings { ticket, .. } = w {
+                    state.settled(*ticket, Settled::Accepted);
+                }
+            }
+            land(state, &work, Ok(true));
+        }
+    }
+
+    /// Round 4, #4: two account writes carrying passwords for one account,
+    /// sent before either settled, end with the later password stored, and
+    /// both callers hear rc 0.
+    #[test]
+    fn round4_4_concurrent_password_writes_keep_the_later_one() {
+        let mut state = connected();
+        state.change_accounts(rename(), Some(1), Some("pw-1".into()));
+        state.change_accounts(rename(), Some(2), Some("pw-2".into()));
+        drive(&mut state);
+        assert_eq!(state.secrets.password("a"), Some("pw-2"));
+        let replies = state.take_replies();
+        let ids: Vec<(u64, u8)> = replies.iter().map(|r| (r.id, r.rc)).collect();
+        assert_eq!(ids, [(1, 0), (2, 0)]);
+    }
+
+    /// Round 4, #18: switching the draft's From to another account never
+    /// lets the first account's new address be taken for it.
+    #[test]
+    fn round4_18_switching_from_drops_the_other_accounts_new_address() {
+        let mut state = connected_many(&["a", "b"]);
+        state.apply_ui(UiEvent::Compose);
+        let mut next = settings(&["a", "b"]);
+        next.accounts[0].email = "new@a.example.invalid".into();
+        state.set_settings(next);
+        state.take_work();
+        assert!(state.compose.as_ref().unwrap().stale.is_some());
+        state.apply_ui(UiEvent::ComposeAccount("b".into()));
+        state.apply_ui(UiEvent::ComposeUseNewFrom);
+        let compose = state.compose.clone().unwrap();
+        assert_eq!(compose.account, "b");
+        assert_eq!(compose.draft.from, "ann@b.example.invalid");
+        assert!(compose.stale.is_none(), "b's login did not change");
+    }
+
+    /// Round 4, #20: send ids are state-wide: an account removed and
+    /// restored never reuses one, so an old completion leaves a new
+    /// send alone.
+    #[test]
+    fn round4_20_a_restored_account_never_reuses_a_send_id() {
+        let mut state = connected_many(&["a", "b"]);
+        let send = |state: &mut State| {
+            state.apply_ui(UiEvent::Compose);
+            state.apply_ui(UiEvent::ComposeField(
+                ComposeField::To,
+                "bob@example.invalid".into(),
+            ));
+            state.apply_ui(UiEvent::SendCompose);
+            sent_ticket(state).1
+        };
+        let first = send(&mut state);
+        let old = tag(&state, "a");
+        state.set_settings(settings(&["b"]));
+        state.set_settings(settings(&["a", "b"]));
+        let fresh = tag(&state, "a");
+        state.apply(Event::Connected(fresh, Ok(info())));
+        state.take_work();
+        let second = send(&mut state);
+        assert_ne!(first, second);
+        state.apply(Event::Account(old, Done::Sent(first, Ok(()))));
+        assert!(
+            state.compose.as_ref().is_some_and(|c| c.busy),
+            "the old completion leaves the new send pending"
+        );
+    }
+
+    /// Round 4, #22: a form opened before the account's login changed
+    /// does not submit through the new connection.
+    #[test]
+    fn round4_22_a_form_from_an_old_connection_does_not_submit() {
+        let mut state = reading();
+        state.delete_open();
+        assert!(matches!(state.form, Some(Form::Delete { .. })));
+        let mut next = settings(&["a"]);
+        next.accounts[0].url = "https://moved.example.invalid".into();
+        state.set_settings(next);
+        state.take_work();
+        state.apply_ui(UiEvent::FormSubmit(None));
+        assert!(writes(&mut state).is_empty(), "no delete through the new server");
+    }
+
+    /// Round 4, #21: the migration (and its password lock) is not finished
+    /// when settingsd takes the account: the schema-2 rewrite must land
+    /// first.
+    #[test]
+    fn round4_21_the_migration_holds_until_the_config_is_rewritten() {
+        let mut state = State::new(
+            UiState::default(),
+            Mode::Mail,
+            None,
+            EmailSettings::default(),
+            Secrets::default(),
+        );
+        state.begin_migration(entry("legacy"), "pw-1");
+        let work = state.take_work();
+        land(&mut state, &work, Ok(true));
+        state.set_settings(EmailSettings::default());
+        let (ticket, _) = settings_ticket(&mut state);
+        state.settled(ticket, Settled::Accepted);
+        assert!(state.take_migrated(), "the shell is asked to rewrite");
+        assert!(state.migrating(), "still locked until the rewrite lands");
+        assert!(state.migration_locks("legacy"));
+    }
+
+    /// Round 4, #24: an unchanged read resumes a migration whose apply
+    /// came back with an unknown outcome.
+    #[test]
+    fn round4_24_an_unchanged_read_resumes_a_ready_migration() {
+        let mut state = State::new(
+            UiState::default(),
+            Mode::Mail,
+            None,
+            EmailSettings::default(),
+            Secrets::default(),
+        );
+        state.begin_migration(entry("legacy"), "pw-1");
+        let work = state.take_work();
+        land(&mut state, &work, Ok(true));
+        state.set_settings(EmailSettings::default());
+        let (ticket, _) = settings_ticket(&mut state);
+        state.settled(ticket, Settled::Unknown("timed out".into()));
+        state.take_work();
+        state.settings_unchanged();
+        assert!(
+            state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::Settings { .. })),
+            "the migration is sent again"
+        );
+    }
+
+    /// Round 4, #21 (new API): a failed schema-2 rewrite keeps the
+    /// migration and its lock, and says why; a confirmed one ends it.
+    #[test]
+    fn round4_21_a_failed_rewrite_keeps_the_migration() {
+        let mut state = State::new(
+            UiState::default(),
+            Mode::Mail,
+            None,
+            EmailSettings::default(),
+            Secrets::default(),
+        );
+        state.begin_migration(entry("legacy"), "pw-1");
+        let work = state.take_work();
+        land(&mut state, &work, Ok(true));
+        state.set_settings(EmailSettings::default());
+        let (ticket, _) = settings_ticket(&mut state);
+        state.settled(ticket, Settled::Accepted);
+        assert!(state.take_migrated());
+        state.migration_rewritten(Err("read-only file system".into()));
+        assert!(state.migrating() && state.migration_locks("legacy"));
+        assert!(state.status.contains("read-only file system"), "{}", state.status);
+        // A later confirmation for a stopped migration changes nothing.
+        state.migration_rewritten(Ok(true));
+        assert!(state.migrating());
+    }
+
+    /// Round 4, #22 (new API): the note shows at once on a login change,
+    /// and a form write is bound to the connection it was opened on.
+    #[test]
+    fn round4_22_a_login_change_marks_the_open_form() {
+        let mut state = reading();
+        state.move_open();
+        let mut next = settings(&["a"]);
+        next.accounts[0].email = "new@a.example.invalid".into();
+        state.set_settings(next);
+        assert_eq!(
+            state.form_note.as_deref(),
+            Some(crate::label("form-account-changed").as_str())
+        );
+        state.apply_ui(UiEvent::FormSubmit(Some("m-archive".into())));
+        assert!(writes(&mut state).is_empty());
+        // A form opened now is bound to the new connection.
+        state.apply_ui(UiEvent::FormCancel);
+        state.account_mut("a").unwrap().mail.open = Some(unread_email("E1"));
+        state.move_open();
+        assert!(state.form_note.is_none());
+        state.apply_ui(UiEvent::FormSubmit(Some("m-archive".into())));
+        let expect = state.take_work().into_iter().find_map(|w| match w {
+            Work::Write { expect, .. } => expect,
+            _ => None,
+        });
+        assert_eq!(expect, Some(tag(&state, "a").generation));
+    }
+
+    /// Round 4, #23: closing answers every caller still waiting: a sent
+    /// settings write and a server write may have happened, a query and
+    /// a queued credential operation are cancelled.
+    #[test]
+    fn round4_23_closing_answers_every_outstanding_caller() {
+        let mut state = connected();
+        state.change_accounts(rename(), Some(1), Some("pw-1".into()));
+        settings_ticket(&mut state);
+        state.set_password("a", "pw-2", Some(2));
+        state.query("a".into(), 3, crate::verbs::Query::Mailboxes, Then::Answer);
+        state.write_server(
+            "a".into(),
+            Some(4),
+            Write::DeleteMailbox { id: "m".into() },
+        );
+        state.take_work();
+        state.close_out();
+        let codes: Vec<(u64, String)> = state
+            .take_replies()
+            .into_iter()
+            .map(|r| (r.id, r.body["error_code"].as_str().unwrap_or("").to_owned()))
+            .collect();
+        for (id, expected) in [
+            (1, code::OUTCOME_UNKNOWN),
+            (2, code::CANCELLED),
+            (3, code::CANCELLED),
+            (4, code::OUTCOME_UNKNOWN),
+        ] {
+            assert!(
+                codes.iter().any(|(i, c)| *i == id && c == expected),
+                "{id}: {codes:?}"
+            );
+        }
+        assert!(state.take_work().is_empty(), "nothing more is started");
     }
 }

@@ -116,6 +116,8 @@ pub struct Shell {
     /// The secrets saver: a serial worker thread that writes each snapshot
     /// in order, off the UI thread (a stalled disk never freezes the window).
     saver: Option<mpsc::Sender<(u64, u64, Secrets)>>,
+    /// The saver's thread, joined (bounded) on close so a queued save lands.
+    saver_thread: Option<std::thread::JoinHandle<()>>,
     /// Settings writes sent, for unique operation ids.
     applies: u64,
     /// Bus commands waiting behind drive input accepted before them.
@@ -234,7 +236,10 @@ fn saver(
     file: SecretsFile,
     events: mpsc::Sender<Event>,
     wake: egui::Context,
-) -> mpsc::Sender<(u64, u64, Secrets)> {
+) -> (
+    mpsc::Sender<(u64, u64, Secrets)>,
+    Option<std::thread::JoinHandle<()>>,
+) {
     let (tx, rx) = mpsc::channel::<(u64, u64, Secrets)>();
     let spawned = std::thread::Builder::new()
         .name("email-secrets".into())
@@ -253,11 +258,18 @@ fn saver(
                 wake.request_repaint();
             }
         });
-    if let Err(error) = spawned {
-        eprintln!("email: no secrets saver: {error}");
-    }
-    tx
+    let thread = match spawned {
+        Ok(thread) => Some(thread),
+        Err(error) => {
+            eprintln!("email: no secrets saver: {error}");
+            None
+        }
+    };
+    (tx, thread)
 }
+
+/// How long closing waits for the secrets saver to finish its queue.
+const SAVER_DRAIN: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// The state a launch starts in, from the app's config directory: the
 /// window's shape, the accounts cache, the passwords, and a schema-1
@@ -353,7 +365,10 @@ impl Shell {
         });
         let dir: Option<PathBuf> = config::AppDirs::resolve(APP).map(|dirs| dirs.config());
         let (state, config, secrets) = start(dir.as_deref());
-        let saver = secrets.map(|file| saver(file, tx.clone(), ctx.clone()));
+        let (saver, saver_thread) = match secrets.map(|file| saver(file, tx.clone(), ctx.clone())) {
+            Some((saver, thread)) => (Some(saver), thread),
+            None => (None, None),
+        };
         let mut shell = Self {
             state,
             commands: commands::registry(),
@@ -376,6 +391,7 @@ impl Shell {
             look_retry: 0,
             config,
             saver,
+            saver_thread,
             applies: 0,
             held: std::collections::VecDeque::new(),
             comp: std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into()),
@@ -566,10 +582,17 @@ impl Shell {
                 account,
                 reply,
                 form,
+                expect,
                 write,
             } => {
                 let sent = self.state.sent_mailbox_id(&account);
                 match self.client(&account) {
+                    // A form's write through a connection other than the one
+                    // it was opened on is refused as stale.
+                    Some((tag, _)) if expect.is_some_and(|g| g != tag.generation) => {
+                        let error = jmap::Error::Protocol(label("stale-connection"));
+                        self.state.wrote(&tag, reply, form, write, Err(error));
+                    }
                     Some((tag, client)) => {
                         self.spawn(async move {
                             let answer =
@@ -814,6 +837,29 @@ impl Shell {
         self.release();
     }
 
+    /// Closing: no more saves are queued; the saver finishes the ones it
+    /// has (waiting at most [`SAVER_DRAIN`]) and their answers are applied,
+    /// so a password the caller was told about is on disk.
+    fn drain_saver(&mut self) {
+        self.saver = None;
+        if let Some(thread) = self.saver_thread.take() {
+            let deadline = std::time::Instant::now() + SAVER_DRAIN;
+            while !thread.is_finished() && std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            if thread.is_finished() {
+                let _ = thread.join();
+            } else {
+                eprintln!("email: the secrets saver did not finish in time");
+            }
+        }
+        while let Ok(event) = self.rx.try_recv() {
+            if let Event::SecretsSaved(..) = event {
+                self.state.apply(event);
+            }
+        }
+    }
+
     fn refuse_closing(&self, id: u64) {
         self.bus.reply(
             id,
@@ -866,11 +912,30 @@ impl Shell {
     /// Persist the config when the state says it changed, and rewrite it as
     /// schema 2 once the schema-1 account has migrated.
     fn save_config_if_dirty(&mut self) {
-        let migrated = self.state.take_migrated();
-        if let (true, Some(file)) = (migrated, &mut self.config) {
-            file.migrated();
+        // The migration's schema-2 rewrite: confirmed, or the schema-1 form
+        // is kept and the migration stays unfinished (and locked).
+        if self.state.take_migrated() {
+            let result = match &mut self.config {
+                Some(file) => {
+                    let legacy = file.migrated();
+                    let result = file.save(&crate::config::EmailConfig::from(&self.state));
+                    if result != Ok(true) {
+                        file.restore(legacy);
+                    }
+                    result
+                }
+                None => Ok(true),
+            };
+            if let Err(error) = &result {
+                eprintln!("email: {error}");
+            }
+            if result == Ok(true) {
+                self.state.config_saved();
+            }
+            self.state.migration_rewritten(result);
+            return;
         }
-        if !self.state.config_dirty() && !migrated {
+        if !self.state.config_dirty() {
             return;
         }
         if let Some(file) = &self.config {
@@ -1048,6 +1113,8 @@ impl Shell {
             for (id, _, _) in std::mem::take(&mut self.held) {
                 self.refuse_closing(id);
             }
+            self.drain_saver();
+            self.state.close_out();
             for reply in self.state.take_replies() {
                 self.bus.reply(reply.id, reply.rc, reply.body);
             }
@@ -1253,7 +1320,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (_, file) = SecretsFile::load(dir.path());
         let (events, received) = mpsc::channel();
-        let saver = saver(file, events, egui::Context::default());
+        let (saver, thread) = saver(file, events, egui::Context::default());
         let ui = std::thread::current().id();
         for (ticket, version, password) in [(1, 5, "pw-1"), (2, 6, "pw-2")] {
             let mut secrets = Secrets::default();
@@ -1275,6 +1342,9 @@ mod tests {
             Some("pw-2"),
             "the later save is the one kept"
         );
+        // Dropping the sender ends the thread: closing can join it.
+        drop(saver);
+        thread.unwrap().join().unwrap();
     }
 
     /// Review finding 13: a CA path must name a small regular file; a

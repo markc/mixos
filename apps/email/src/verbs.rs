@@ -931,6 +931,11 @@ fn dispatch(
         "email.account.set" => account_set(state, id, args)?,
         "email.account.remove" => {
             let account = account_id(state, args)?;
+            // Removing it mid-migration would forget its password while the
+            // schema-1 file still holds it: refused until the migration ends.
+            if state.migration_locks(&account) {
+                return Err(Bad(code::MIGRATION_PENDING, crate::label("migration-pending")));
+            }
             state.change_accounts(Change::Remove(account), Some(id), None);
         }
         "email.account.password.set" => {
@@ -1534,6 +1539,27 @@ mod tests {
         assert_eq!(
             state.take_replies()[0].body["error_code"],
             code::MIGRATION_PENDING
+        );
+        assert!(state.has_password("legacy"));
+    }
+
+    /// Round 4, #15: removing the account still migrating is refused too.
+    #[test]
+    fn round4_15_removing_the_migrating_account_is_refused() {
+        let mut state = State::new(
+            crate::state::UiState::default(),
+            Mode::Mail,
+            None,
+            settings::email::Email::default(),
+            crate::secrets::Secrets::default(),
+        );
+        state.begin_migration(crate::state::tests::entry("legacy"), "pw-old");
+        state.take_work();
+        run(&mut state, "email.account.remove", json!({"id": "legacy"}));
+        let replies = state.take_replies();
+        assert_eq!(
+            replies.first().map(|r| r.body["error_code"].clone()),
+            Some(json!(code::MIGRATION_PENDING))
         );
         assert!(state.has_password("legacy"));
     }
