@@ -327,6 +327,7 @@ resolved design.
 | `email.mail.page_size` | integer 10–500 | 100 |
 | `email.mail.mark_read_on_open` | boolean | true |
 | `email.mail.confirm_delete` | boolean | true |
+| `email.reader.font_size` | number 10–32 (pt), step 0.5: the message reader's text size | 15 |
 
 Each account is a record of exactly these keys:
 
@@ -344,7 +345,7 @@ A refused account is named by position: `email.accounts[2].url`. The default
 account must name an account, so removing it from the list needs
 `email.default_account` changed or reset in the same batch. Apply and reset
 take each path, or `email` for the whole group (null resets it too);
-`email.mail` alone is not a path. The summary carries `email` when any value
+`email.mail` and `email.reader` alone are not paths. The summary carries `email` when any value
 is set; `settings::email::from_snapshot` and `from_summary` read it.
 
 ## Topics and storage

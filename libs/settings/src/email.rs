@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The email app's settings (`email.*`): its JMAP accounts, in tree order,
-//! the default From account and the mail list options.
+//! the default From account, the mail list options and the reader's text
+//! size.
 //!
 //! **Nothing here is secret, and nothing secret can be put here.** The
 //! snapshot and summary are retained on the Bus for every client to read, so
@@ -11,7 +12,8 @@
 //! file.
 //!
 //! Like [`crate::terminal`], the group is omitted from the serialised form at
-//! its defaults (no accounts, no default, the default mail options), so a
+//! its defaults (no accounts, no default, the default mail and reader
+//! options), so a
 //! profile written before it re-serialises byte for byte and its seals still
 //! verify. It does not touch the resolved design.
 use crate::model::{Diagnostic, Snapshot, Summary, deserialize_integer_u32, integer_u32};
@@ -29,6 +31,11 @@ pub const CA_PATH_MAX_BYTES: usize = 4096;
 pub const SIGNATURE_MAX_CHARS: usize = 4096;
 pub const PAGE_SIZE_MIN: u32 = 10;
 pub const PAGE_SIZE_MAX: u32 = 500;
+/// The message reader's text size, in points, and its step.
+pub const READER_FONT_MIN: f64 = 10.0;
+pub const READER_FONT_MAX: f64 = 32.0;
+pub const READER_FONT_STEP: f64 = 0.5;
+pub const READER_FONT_DEFAULT: f64 = 15.0;
 
 fn is_default<T: Default + PartialEq>(value: &T) -> bool {
     *value == T::default()
@@ -51,6 +58,8 @@ pub struct Email {
     pub default_account: Option<String>,
     #[serde(skip_serializing_if = "is_default")]
     pub mail: MailOptions,
+    #[serde(skip_serializing_if = "is_default")]
+    pub reader: ReaderOptions,
 }
 
 impl Email {
@@ -144,6 +153,33 @@ impl Default for MailOptions {
             confirm_delete: true,
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ReaderOptions {
+    /// The message body's text size in points, [`READER_FONT_MIN`] to
+    /// [`READER_FONT_MAX`] in steps of [`READER_FONT_STEP`].
+    #[serde(skip_serializing_if = "is_default_reader_font")]
+    pub font_size: f64,
+}
+fn is_default_reader_font(size: &f64) -> bool {
+    *size == READER_FONT_DEFAULT
+}
+impl Default for ReaderOptions {
+    fn default() -> Self {
+        Self {
+            font_size: READER_FONT_DEFAULT,
+        }
+    }
+}
+
+/// Whether `size` is a reader text size this group takes: finite, in range
+/// and on a [`READER_FONT_STEP`].
+pub fn valid_reader_font_size(size: f64) -> bool {
+    size.is_finite()
+        && (READER_FONT_MIN..=READER_FONT_MAX).contains(&size)
+        && (size / READER_FONT_STEP).fract() == 0.0
 }
 
 /// Whether `id` is an account id this group takes.
@@ -311,6 +347,12 @@ pub fn validate(email: &Email) -> Result<(), Diagnostic> {
             format!("Expected {PAGE_SIZE_MIN}..{PAGE_SIZE_MAX}"),
         ));
     }
+    if !valid_reader_font_size(email.reader.font_size) {
+        return Err(error(
+            "email.reader.font_size",
+            format!("Expected {READER_FONT_MIN}..{READER_FONT_MAX} in steps of {READER_FONT_STEP}"),
+        ));
+    }
     Ok(())
 }
 
@@ -353,7 +395,8 @@ pub fn describe() -> Value {
         "email.default_account": {"type":"string|null", "names":"an id in email.accounts", "default":null, "null":"the first enabled account"},
         "email.mail.page_size": {"type":"integer", "minimum":PAGE_SIZE_MIN, "maximum":PAGE_SIZE_MAX, "default":100},
         "email.mail.mark_read_on_open": {"type":"boolean", "default":true},
-        "email.mail.confirm_delete": {"type":"boolean", "default":true}
+        "email.mail.confirm_delete": {"type":"boolean", "default":true},
+        "email.reader.font_size": {"type":"number", "minimum":READER_FONT_MIN, "maximum":READER_FONT_MAX, "step":READER_FONT_STEP, "default":READER_FONT_DEFAULT, "unit":"pt"}
     })
 }
 
@@ -394,6 +437,9 @@ pub(crate) fn set(
         ["mail", "confirm_delete"] => {
             email.mail.confirm_delete =
                 value.map_or(Ok(defaults.confirm_delete), |v| typed(path, v))?
+        }
+        ["reader", "font_size"] => {
+            email.reader.font_size = value.map_or(Ok(READER_FONT_DEFAULT), |v| typed(path, v))?
         }
         _ => return Err(error(path, "Unknown field or scope")),
     }
@@ -450,9 +496,11 @@ mod tests {
             ),
             (100, true, true)
         );
+        assert_eq!(e.reader.font_size, 15.0);
         validate(&e).unwrap();
         let full = json!({"accounts":[], "default_account":null,
-            "mail":{"page_size":100, "mark_read_on_open":true, "confirm_delete":true}});
+            "mail":{"page_size":100, "mark_read_on_open":true, "confirm_delete":true},
+            "reader":{"font_size":15.0}});
         let read: Email = serde_json::from_value(full).unwrap();
         assert_eq!(read, e);
         assert_eq!(serde_json::to_value(&read).unwrap(), json!({}));
@@ -475,16 +523,17 @@ mod tests {
                 confirm_delete: false,
                 ..Default::default()
             },
+            reader: ReaderOptions { font_size: 18.5 },
         };
         let text = serde_json::to_string(&changed).unwrap();
         assert_eq!(
             text,
-            r#"{"accounts":[{"id":"acct-1","name":"Gold Coast","url":"https://mail.example.org","email":"admin@example.org","ca_path":null,"enabled":true,"signature":""}],"default_account":"acct-1","mail":{"page_size":50,"confirm_delete":false}}"#
+            r#"{"accounts":[{"id":"acct-1","name":"Gold Coast","url":"https://mail.example.org","email":"admin@example.org","ca_path":null,"enabled":true,"signature":""}],"default_account":"acct-1","mail":{"page_size":50,"confirm_delete":false},"reader":{"font_size":18.5}}"#
         );
         assert_eq!(serde_json::from_str::<Email>(&text).unwrap(), changed);
         assert_eq!(
             strict::from_str::<Email>(
-                r#"{accounts: [{id: "acct-1", name: "Gold Coast", url: "https://mail.example.org", email: "admin@example.org"}], default_account: "acct-1", mail: {page_size: 50.0, confirm_delete: false}}"#
+                r#"{accounts: [{id: "acct-1", name: "Gold Coast", url: "https://mail.example.org", email: "admin@example.org"}], default_account: "acct-1", mail: {page_size: 50.0, confirm_delete: false}, reader: {font_size: 18.5}}"#
             )
             .unwrap(),
             changed
@@ -500,6 +549,7 @@ mod tests {
             "email.mail.page_size",
             "email.mail.mark_read_on_open",
             "email.mail.confirm_delete",
+            "email.reader.font_size",
         ];
         let reset: Vec<String> = paths.iter().map(|p| (*p).into()).collect();
         assert_eq!(
@@ -568,6 +618,34 @@ mod tests {
     }
 
     #[test]
+    fn the_reader_font_size_applies_resets_and_is_omitted_at_its_default() {
+        // A 0.8.0 profile, with email set but no reader, reads as the
+        // default size and re-serialises as written.
+        let old = json!({"mail":{"page_size":50}});
+        let read: Email = serde_json::from_value(old.clone()).unwrap();
+        assert_eq!(read.reader.font_size, READER_FONT_DEFAULT);
+        assert_eq!(serde_json::to_value(&read).unwrap(), old);
+        let big = apply("email.reader.font_size", json!(21.5)).unwrap();
+        assert_eq!(big.email.reader.font_size, 21.5);
+        assert_eq!(
+            serde_json::to_value(&big.email).unwrap(),
+            json!({"reader":{"font_size":21.5}})
+        );
+        let reset = patch(&big, &BTreeMap::new(), &["email.reader.font_size".into()]).unwrap();
+        assert_eq!(reset, Desktop::default());
+        assert_eq!(
+            apply("email.reader.font_size", json!(40)).unwrap_err().path,
+            "email.reader.font_size",
+            "out of range"
+        );
+        assert_eq!(
+            crate::digest(&resolve(&big).unwrap()).unwrap(),
+            crate::digest(&resolve(&Desktop::default()).unwrap()).unwrap(),
+            "the design is untouched"
+        );
+    }
+
+    #[test]
     fn boundaries_are_accepted_and_one_step_outside_refused() {
         for (path, inside, outside) in [
             (
@@ -595,6 +673,18 @@ mod tests {
                 "email.default_account",
                 vec![json!(null)],
                 vec![json!("acct-missing"), json!(1)],
+            ),
+            (
+                "email.reader.font_size",
+                vec![json!(10.0), json!(32.0), json!(15), json!(12.5)],
+                vec![
+                    json!(9.5),
+                    json!(32.5),
+                    json!(12.25),
+                    json!(15.1),
+                    json!("15"),
+                    json!(null),
+                ],
             ),
         ] {
             for value in inside {
@@ -781,6 +871,9 @@ mod tests {
             "email.signature",
             "email.accounts.0",
             "email.mail.typo",
+            "email.reader",
+            "email.reader.typo",
+            "email.reader.font_size.x",
         ] {
             assert!(apply(path, json!(1)).is_err(), "{path}");
         }

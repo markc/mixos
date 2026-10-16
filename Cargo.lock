@@ -6913,7 +6913,7 @@ dependencies = [
 
 [[package]]
 name = "settings"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "blake3",
  "bus",

@@ -8,6 +8,20 @@ generated: by docs/_build/gen-site.mix from libs/settings/CHANGELOG.md; do not e
 
 > Mirrored from [`libs/settings/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/libs/settings/CHANGELOG.md), where releases update it. The component's page is [settings](README.md). This page describes the current `main` branch of MixOS.
 
+## 0.9.0
+
+Additive, store format unchanged (3):
+
+- `Email.reader` (`email::ReaderOptions { font_size: f64 }`): the message
+  reader's text size under `email.reader.font_size`, in points,
+  `READER_FONT_MIN` 10 to `READER_FONT_MAX` 32 in steps of
+  `READER_FONT_STEP` 0.5, default `READER_FONT_DEFAULT` 15. Omitted at its
+  default, so older profiles keep their seals. A profile that sets it will
+  not load in a 0.8.0 build: reset `email.reader.font_size` first.
+- `email::valid_reader_font_size` checks a value as settingsd does.
+- `email.reader` alone is not a path, as `email.mail` is not;
+  `settings.describe` lists `email.reader.font_size`.
+
 ## 0.8.0
 
 Additive, store format unchanged (3):
