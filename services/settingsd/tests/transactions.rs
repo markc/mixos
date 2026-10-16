@@ -297,6 +297,11 @@ fn email_accounts_apply_reach_the_summary_and_never_take_a_password() {
         "email.mail.page_size",
         "email.mail.mark_read_on_open",
         "email.mail.confirm_delete",
+        "email.reader.font_size",
+        "email.reader.theme",
+        "email.compose.quote_on_reply",
+        "email.compose.reply_position",
+        "email.compose.autosave",
     ] {
         assert!(described["fields"].get(path).is_some(), "{path}");
     }

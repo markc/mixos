@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 {
-  status:"accepted", version:"0.8.0", schema:1,
+  status:"accepted", version:"0.9.0", schema:1,
   service:"settingsd", topic:"settingsd.desktop.changed.default",
   revision_encoding:"canonical_decimal_u64_string",
   limits:{receipts:128,source_bytes:262144,request_bytes:393216,snapshot_bytes:983040},
@@ -14,7 +14,11 @@
     {name:"invalid_chord",changes:{"keymaps.dopus.nav.back":["Hyper+X"]},expected:"validation_failed"},
     {name:"terminal",changes:{"terminal.padding":8.0,"terminal.focus.ring":"neutral","terminal.env.term":"xterm-kitty"},reset:[]},
     {name:"invalid_padding",changes:{"terminal.padding":3},expected:"validation_failed"},
-    {name:"email",changes:{"email.accounts":[{id:"acct-1",name:"Home",url:"https://mail.example.org",email:"me@example.org"}],"email.default_account":"acct-1","email.mail.page_size":50.0},reset:[]},
+    {name:"email",changes:{"email.accounts":[{id:"acct-1",name:"Home",url:"https://mail.example.org",email:"me@example.org"}],"email.default_account":"acct-1","email.mail.page_size":50.0,"email.reader.font_size":18.5,"email.reader.theme":"dark","email.compose.quote_on_reply":false,"email.compose.reply_position":"below","email.compose.autosave":false},reset:[]},
+    {name:"invalid_reader_font",changes:{"email.reader.font_size":40.0},expected:"validation_failed"},
+    {name:"invalid_reader_theme",changes:{"email.reader.theme":"sepia"},expected:"validation_failed"},
+    {name:"invalid_reply_position",changes:{"email.compose.reply_position":"top"},expected:"validation_failed"},
+    {name:"compose_scope",changes:{"email.compose":{autosave:false}},expected:"validation_failed"},
     {name:"email_password",changes:{"email.accounts":[{id:"acct-1",name:"Home",url:"https://mail.example.org",email:"me@example.org",password:"never"}]},expected:"validation_failed"},
     {name:"invalid_default_account",changes:{"email.default_account":"acct-missing"},expected:"validation_failed"},
     {name:"reset_app",changes:{},reset:["apps.term"]}

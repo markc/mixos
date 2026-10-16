@@ -782,7 +782,7 @@ checked separately by the layering gate.
 | [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.116.0 |
 | [props](https://github.com/markc/mixos/blob/main/libs/props/Cargo.toml) | props | lib | core | none | 0.1.1 |
 | [scene](https://github.com/markc/mixos/blob/main/libs/scene/Cargo.toml) | scene | lib | core | none | 0.1.1 |
-| [settings](https://github.com/markc/mixos/blob/main/libs/settings/Cargo.toml) | settings | lib | core | public | 0.8.0 |
+| [settings](https://github.com/markc/mixos/blob/main/libs/settings/Cargo.toml) | settings | lib | core | public | 0.9.0 |
 | [strict](https://github.com/markc/mixos/blob/main/libs/strict/Cargo.toml) | strict | lib | core | none | 0.1.1 |
 | [syntax](https://github.com/markc/mixos/blob/main/libs/syntax/Cargo.toml) | syntax | lib | core | none | 0.1.1 |
 | [test-broker](https://github.com/markc/mixos/blob/main/libs/test-broker/Cargo.toml) | test-broker | lib | core | none | 0.1.1 |
@@ -5859,6 +5859,11 @@ resolved design.
 | `email.mail.page_size` | integer 10–500 | 100 |
 | `email.mail.mark_read_on_open` | boolean | true |
 | `email.mail.confirm_delete` | boolean | true |
+| `email.reader.font_size` | number 10–32 (pt), step 0.5: the message reader's text size | 15 |
+| `email.reader.theme` | `auto` (the session theme), `light` or `dark`: the message body's colours | `auto` |
+| `email.compose.quote_on_reply` | boolean: quote the original in a reply | true |
+| `email.compose.reply_position` | `above` or `below`: the reply's text relative to the quote | `above` |
+| `email.compose.autosave` | boolean: save drafts as they are written | true |
 
 Each account is a record of exactly these keys:
 
@@ -5876,7 +5881,7 @@ A refused account is named by position: `email.accounts[2].url`. The default
 account must name an account, so removing it from the list needs
 `email.default_account` changed or reset in the same batch. Apply and reset
 take each path, or `email` for the whole group (null resets it too);
-`email.mail` alone is not a path. The summary carries `email` when any value
+`email.mail`, `email.reader` and `email.compose` alone are not paths. The summary carries `email` when any value
 is set; `settings::email::from_snapshot` and `from_summary` read it.
 
 ## Topics and storage
@@ -31475,6 +31480,28 @@ Use strict MixOS configuration and owned shutdown signalling.
 # settings contract changes
 
 > Mirrored from [`libs/settings/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/libs/settings/CHANGELOG.md), where releases update it. The component's page is [settings](README.md). This page describes the current `main` branch of MixOS.
+
+## 0.9.0
+
+Additive, store format unchanged (3):
+
+- `Email.reader` (`email::ReaderOptions { font_size: f64 }`): the message
+  reader's text size under `email.reader.font_size`, in points,
+  `READER_FONT_MIN` 10 to `READER_FONT_MAX` 32 in steps of
+  `READER_FONT_STEP` 0.5, default `READER_FONT_DEFAULT` 15. Omitted at its
+  default, so older profiles keep their seals. A profile that sets it will
+  not load in a 0.8.0 build: reset `email.reader.font_size` first.
+- `email.reader.theme` (`ReaderOptions.theme: email::ReaderTheme`):
+  `auto` (the session theme, default), `light` or `dark`.
+- `Email.compose` (`email::ComposeOptions`): `email.compose.quote_on_reply`
+  (default true), `email.compose.reply_position`
+  (`email::ReplyPosition`: `above`, default, or `below`) and
+  `email.compose.autosave` (default true).
+- Every new value is omitted at its default; unknown enum values are
+  refused.
+- `email::valid_reader_font_size` checks a value as settingsd does.
+- `email.reader` and `email.compose` alone are not paths, as `email.mail`
+  is not; `settings.describe` lists each new path.
 
 ## 0.8.0
 
