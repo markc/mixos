@@ -146,6 +146,11 @@ desktop. It was transplanted from `cosmix-lib-mix` at cosmix
 and public language version. The shell is [mix-shell](https://mixos.dev/mix-shell/),
 and the `mix` binary is built by [system](https://mixos.dev/system/).
 
+## Changes
+
+- **[changelog](changelog.md)**: the Mix library's change history, generated from
+  `libs/mix/CHANGELOG.md`.
+
 ## See also
 
 ```
