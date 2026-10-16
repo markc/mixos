@@ -76,6 +76,9 @@ type SortCommand = (
     fn(&mut State),
 );
 
+/// One View › Sort By direction: id, label, order, run.
+type OrderCommand = (&'static str, &'static str, Order, fn(&mut State));
+
 const fn key(modifiers: Modifiers, key: Key) -> Option<KeyboardShortcut> {
     Some(KeyboardShortcut::new(modifiers, key))
 }
@@ -325,7 +328,7 @@ pub fn registry() -> Registry<State> {
         );
     }
     // …then the direction, under a rule.
-    let orders: [(&'static str, &'static str, Order, fn(&mut State)); 2] = [
+    let orders: [OrderCommand; 2] = [
         ("view.sort_ascending", "sort-ascending", Order::Ascending, |s| {
             s.sort_order(Order::Ascending)
         }),
