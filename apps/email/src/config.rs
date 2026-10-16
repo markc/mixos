@@ -116,8 +116,9 @@ impl ConfigFile {
                 }
                 Err(error) => {
                     eprintln!(
-                        "email: refusing to overwrite invalid config {}: {error}",
-                        path.display()
+                        "email: refusing to overwrite invalid config {}: {}",
+                        path.display(),
+                        diagnostic(&error.to_string())
                     );
                     (
                         EmailConfig::default(),
@@ -156,41 +157,43 @@ impl ConfigFile {
         }
         let content = config::to_conf_mix_string(config)
             .map_err(|error| format!("serialising email config: {error}"))?;
-        write_private(&self.path, content.as_bytes())
-            .map(|()| true)
-            .map_err(|error| format!("writing {}: {error}", self.path.display()))
+        write_private(&self.path, content.as_bytes()).map(|()| true)
     }
 }
 
-/// Write a file only this user can read: a sibling temporary created new,
-/// chmodded to 0600 before any byte lands, renamed into place so a reader
-/// sees either the old file or the new one, never a partial write.
-fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-    let temp = path.with_extension("conf.mix.tmp");
-    let _ = std::fs::remove_file(&temp);
-    // The mode is set at creation, so the password is never readable under
-    // the umask; the file is renamed into place only after the bytes are in.
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&temp)?;
-    // A failed write or rename must not leave a partial private file behind.
-    // The bytes reach the disk before the rename makes them the config; a
-    // crash between the two must not leave an empty file in its place.
-    let result = file
-        .write_all(bytes)
-        .and_then(|()| file.sync_all())
-        .and_then(|()| {
-            drop(file);
-            std::fs::rename(&temp, path)
-        });
-    if result.is_err() {
-        let _ = std::fs::remove_file(&temp);
+/// A parse diagnostic safe to print. The file holds the account password and
+/// the parser quotes the token it stopped at, so only the position and the
+/// kind of failure are kept.
+fn diagnostic(message: &str) -> String {
+    let position = message.split_once("at line ").and_then(|(_, rest)| {
+        let end = rest
+            .find(|c: char| !(c.is_ascii_digit() || c == ':'))
+            .unwrap_or(rest.len());
+        let position = rest[..end].trim_end_matches(':');
+        (!position.is_empty()).then(|| position.to_owned())
+    });
+    match position {
+        Some(position) => format!("not valid strict data at line {position} (details withheld)"),
+        None => "does not match the config schema (details withheld)".to_owned(),
     }
-    result
+}
+
+/// Write a file only this user can read through `config::atomic`: the
+/// directory is created private (0700) on first run, the temporary is created
+/// 0600 before any byte lands, and the file and the directory are synced
+/// around the rename, so a crash leaves the old config or the new one.
+fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let dir = path
+        .parent()
+        .ok_or_else(|| format!("{}: no directory", path.display()))?;
+    config::atomic::create_directory(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    config::atomic::replace(path, bytes).map_err(|e| {
+        if e.may_have_replaced {
+            format!("writing {}: {e} (the new config may be in place)", path.display())
+        } else {
+            format!("writing {}: {e}", path.display())
+        }
+    })
 }
 
 impl From<&State> for EmailConfig {
@@ -265,6 +268,41 @@ mod tests {
         assert!(!file.allow_save);
         file.save(&EmailConfig::default()).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), raw);
+    }
+
+    #[test]
+    fn the_first_save_creates_a_private_config_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("dev.mixos.email");
+        let file = ConfigFile {
+            path: dir.join("config.conf.mix"),
+            allow_save: true,
+        };
+        let config = EmailConfig {
+            account: Some(account()),
+            ..EmailConfig::default()
+        };
+        assert!(file.save(&config).unwrap());
+        assert_eq!(ConfigFile::load(&dir).0, config);
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&dir).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700);
+        let mode = std::fs::metadata(&file.path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+
+    #[test]
+    fn an_invalid_config_diagnostic_never_quotes_the_password() {
+        let raw = "schema_version: 1\naccount: {url: \"https://x\", email: \"a\", password \"secret\"}\n";
+        let error = config::from_conf_mix_str::<EmailConfig>(raw)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("secret"), "the raw parser error quotes it: {error}");
+        let shown = diagnostic(&error);
+        assert!(!shown.contains("secret"), "{shown}");
+        assert!(shown.contains("line 2:"), "{shown}");
+        let schema = diagnostic("invalid type: string \"secret\", expected u32");
+        assert!(!schema.contains("secret"), "{schema}");
     }
 
     #[test]

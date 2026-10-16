@@ -280,10 +280,11 @@ impl Client {
 
     /// Upload raw bytes as a blob and return its id.
     pub async fn upload_blob(&self, data: Vec<u8>, content_type: &str) -> Result<String> {
+        let upload = self.endpoint(&self.session().upload_for(self.account_id()))?;
         let response = self
             .authorize(
                 self.pool()
-                    .post(self.session().upload_for(self.account_id()))
+                    .post(upload)
                     .header(reqwest::header::CONTENT_TYPE, content_type)
                     .body(data),
             )
@@ -298,20 +299,20 @@ impl Client {
             #[serde(rename = "blobId")]
             blob_id: String,
         }
-        let uploaded: Uploaded = response.json().await?;
+        let uploaded: Uploaded = crate::client::read_json(response).await?;
         Ok(uploaded.blob_id)
     }
 
-    /// Download one blob's bytes (an attachment, a raw message).
+    /// Download one blob's bytes (an attachment, a raw message), at most
+    /// [`crate::client::MAX_BLOB_BYTES`].
     pub async fn download_blob(&self, blob_id: &str) -> Result<Vec<u8>> {
-        let bytes = self
-            .authorize(self.pool().get(self.session().download_for(blob_id)))
+        let download = self.endpoint(&self.session().download_for(blob_id))?;
+        let response = self
+            .authorize(self.pool().get(download))
             .send()
             .await?
-            .error_for_status()?
-            .bytes()
-            .await?;
-        Ok(bytes.to_vec())
+            .error_for_status()?;
+        crate::client::read_capped(response, crate::client::MAX_BLOB_BYTES).await
     }
 }
 

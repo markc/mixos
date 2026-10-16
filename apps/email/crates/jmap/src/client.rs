@@ -13,7 +13,10 @@
 //! offers no token endpoint falls back to Basic auth on every request.
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
+use reqwest::Url;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -23,6 +26,95 @@ use crate::session::Session;
 
 /// The token label this client asks for, so server logs name its tokens.
 const LABEL: &str = "mixos-email";
+
+/// The largest JSON body read: a token, the Session, one request's replies.
+pub(crate) const MAX_JSON_BYTES: usize = 16 * 1024 * 1024;
+/// The largest blob downloaded: an attachment or a raw message.
+pub(crate) const MAX_BLOB_BYTES: usize = 64 * 1024 * 1024;
+/// How long a connection may take to open.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+/// How long one request may take, body included (a large upload or download
+/// on a slow link fits; a server that never answers does not hang the shell).
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Whether credentials may travel to this URL at all: HTTPS, or plain HTTP
+/// to a loopback host only.
+fn secure(url: &Url) -> bool {
+    match url.scheme() {
+        "https" => true,
+        "http" => url.host_str().is_some_and(|host| {
+            host == "localhost"
+                || host
+                    .trim_start_matches('[')
+                    .trim_end_matches(']')
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|ip| ip.is_loopback())
+        }),
+        _ => false,
+    }
+}
+
+/// The account's base URL, refused unless credentials may be sent to it.
+pub(crate) fn account_base(url: &str) -> Result<Url> {
+    let base = Url::parse(url)
+        .map_err(|e| Error::Protocol(format!("account URL {url:?}: {e}")))?;
+    if !secure(&base) {
+        return Err(Error::Protocol(format!(
+            "account URL {}: credentials are sent only over HTTPS",
+            base.origin().ascii_serialization()
+        )));
+    }
+    Ok(base)
+}
+
+/// A server-advertised endpoint, refused unless it is on the account's own
+/// origin (scheme, host and port): the Session must not redirect the
+/// credentials anywhere else.
+pub(crate) fn same_origin(base: &Url, url: &str) -> Result<Url> {
+    let target =
+        Url::parse(url).map_err(|e| Error::Protocol(format!("Session endpoint {url:?}: {e}")))?;
+    if target.origin() != base.origin() {
+        return Err(Error::Protocol(format!(
+            "refusing to send credentials to {}: not the account's origin {}",
+            target.origin().ascii_serialization(),
+            base.origin().ascii_serialization()
+        )));
+    }
+    Ok(target)
+}
+
+/// Append one chunk to a body, refusing past the cap.
+fn push_capped(body: &mut Vec<u8>, chunk: &[u8], cap: usize) -> Result<()> {
+    if body.len().saturating_add(chunk.len()) > cap {
+        return Err(too_large(cap));
+    }
+    body.extend_from_slice(chunk);
+    Ok(())
+}
+
+fn too_large(cap: usize) -> Error {
+    Error::Protocol(format!("response body exceeds {cap} bytes"))
+}
+
+/// Read a response body, at most `cap` bytes: a declared length over the cap
+/// is refused before any byte is read, and a streamed body is cut off there.
+pub(crate) async fn read_capped(mut response: reqwest::Response, cap: usize) -> Result<Vec<u8>> {
+    if response.content_length().is_some_and(|n| n > cap as u64) {
+        return Err(too_large(cap));
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        push_capped(&mut body, &chunk, cap)?;
+    }
+    Ok(body)
+}
+
+/// Read a bounded JSON body.
+pub(crate) async fn read_json<T: DeserializeOwned>(response: reqwest::Response) -> Result<T> {
+    Ok(serde_json::from_slice(
+        &read_capped(response, MAX_JSON_BYTES).await?,
+    )?)
+}
 
 /// One methodCall: method name, arguments, client call id. Serialises as
 /// the protocol's `[method, args, callId]` triple.
@@ -59,6 +151,8 @@ struct Reply {
 pub struct Client {
     pool: reqwest::Client,
     account: Account,
+    /// The account URL, parsed: every credentialed request stays on its origin.
+    base: Url,
     /// The shared Bearer token, when one has been issued.
     token: Arc<Mutex<Option<String>>>,
     session: Session,
@@ -69,7 +163,13 @@ impl Client {
     /// CA bundle when the server's certificate is self-issued. Never a
     /// global invalid-certificate acceptance.
     fn pool_for(account: &Account) -> Result<reqwest::Client> {
-        let mut builder = reqwest::Client::builder();
+        // Bounded: a server that accepts and never answers fails the request
+        // rather than holding setup or sending open forever. Redirects are not
+        // followed, so credentials never leave the account's origin that way.
+        let mut builder = reqwest::Client::builder()
+            .connect_timeout(CONNECT_TIMEOUT)
+            .timeout(REQUEST_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::none());
         if let Some(pem) = &account.ca_pem {
             // A bundle may hold several certificates (a root and its intermediate).
             let certificates = reqwest::Certificate::from_pem_bundle(pem.as_bytes())
@@ -84,10 +184,12 @@ impl Client {
     /// Discover the Session and exchange the password for a token. Two or
     /// three HTTPS calls; every call after this goes through [`call`].
     pub async fn connect(account: &Account) -> Result<Self> {
+        let base = account_base(&account.url)?;
         let pool = Self::pool_for(account)?;
         let mut client = Self {
             pool,
             account: account.clone(),
+            base,
             token: Arc::new(Mutex::new(None)),
             session: Session {
                 using: Vec::new(),
@@ -132,7 +234,7 @@ impl Client {
             }
             status if !status.is_success() => Err(Error::Status(status)),
             _ => {
-                let token: Token = response.json().await?;
+                let token: Token = read_json(response).await?;
                 // The token goes into a header on every call; refuse anything
                 // that is not a plain header value.
                 if token.token.is_empty() || token.token.chars().any(char::is_control) {
@@ -154,15 +256,25 @@ impl Client {
             "{}/.well-known/jmap",
             self.account.url.trim_end_matches('/')
         );
-        let value = self
+        let response = self
             .authorize(self.pool.get(&url))
             .send()
             .await?
-            .and_then_ok_status()?
-            .json::<Value>()
-            .await?;
-        self.session = Session::from_json(&value)?;
+            .and_then_ok_status()?;
+        let value: Value = read_json(response).await?;
+        let session = Session::from_json(&value)?;
+        // Refuse a Session that points the credentials at another origin
+        // before any call is made through it.
+        same_origin(&self.base, &session.api_url)?;
+        same_origin(&self.base, &session.upload_url)?;
+        same_origin(&self.base, &session.download_url)?;
+        self.session = session;
         Ok(())
+    }
+
+    /// A Session endpoint, checked against the account's origin.
+    pub(crate) fn endpoint(&self, url: &str) -> Result<Url> {
+        same_origin(&self.base, url)
     }
 
     /// The Session this client is connected through.
@@ -226,8 +338,9 @@ impl Client {
             using: &self.session.using,
             method_calls: calls,
         };
+        let api = self.endpoint(&self.session.api_url)?;
         let response = self
-            .authorize(self.pool.post(&self.session.api_url))
+            .authorize(self.pool.post(api))
             .json(&envelope)
             .send()
             .await?;
@@ -238,7 +351,7 @@ impl Client {
         if !status.is_success() {
             return Err(Error::Status(status));
         }
-        let reply: Reply = response.json().await?;
+        let reply: Reply = read_json(response).await?;
         let mut out = Vec::with_capacity(reply.method_responses.len());
         for (name, value, _) in reply.method_responses {
             if name == "error" {
@@ -293,5 +406,52 @@ impl StatusCheck for reqwest::Response {
             return Err(Error::Status(status));
         }
         Ok(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn credentials_travel_only_over_https_or_to_loopback() {
+        assert!(account_base("https://mail.example.invalid").is_ok());
+        assert!(account_base("http://127.0.0.1:8443").is_ok());
+        assert!(account_base("http://[::1]:8443").is_ok());
+        assert!(account_base("http://localhost:8443").is_ok());
+        assert!(matches!(
+            account_base("http://mail.example.invalid"),
+            Err(Error::Protocol(_))
+        ));
+        assert!(matches!(
+            account_base("ftp://mail.example.invalid"),
+            Err(Error::Protocol(_))
+        ));
+    }
+
+    #[test]
+    fn a_session_endpoint_off_the_account_origin_is_refused() {
+        let base = account_base("https://mail.example.invalid").unwrap();
+        assert!(same_origin(&base, "https://mail.example.invalid/jmap").is_ok());
+        assert!(same_origin(&base, "https://mail.example.invalid:443/jmap/blob/{blobId}").is_ok());
+        for other in [
+            "https://attacker.example/jmap",
+            "http://mail.example.invalid/jmap",
+            "https://mail.example.invalid:8443/jmap",
+            "https://sub.mail.example.invalid/jmap",
+        ] {
+            let refused = same_origin(&base, other).unwrap_err().to_string();
+            assert!(refused.contains("not the account's origin"), "{other}: {refused}");
+        }
+    }
+
+    #[test]
+    fn a_body_past_its_cap_is_refused() {
+        let mut body = Vec::new();
+        push_capped(&mut body, &[0; 6], 10).unwrap();
+        push_capped(&mut body, &[0; 4], 10).unwrap();
+        assert_eq!(body.len(), 10);
+        assert!(matches!(push_capped(&mut body, &[0], 10), Err(Error::Protocol(_))));
+        assert_eq!(body.len(), 10, "nothing past the cap is kept");
     }
 }
