@@ -37,6 +37,34 @@ fn pick($open, $flash, $now)
   return nil
 end
 
+-- The host's text widget draws one line, so the body is broken here: at
+-- word boundaries, about LINE_CHARS a line, at most LINES lines, the last
+-- ending in "…" when the body is longer. Each line also elides on screen.
+$LINE_CHARS = 48
+$LINES = 6
+fn wrap($text)
+  $lines = []
+  $cur = ""
+  for each $word in split(trim($text), " ")
+    if $word == "" then continue end
+    if $cur == "" then
+      $cur = $word
+    elif len($cur) + 1 + len($word) <= $LINE_CHARS then
+      $cur = $cur .. " " .. $word
+    else
+      push($lines, $cur)
+      $cur = $word
+    end
+  end
+  if $cur != "" then push($lines, $cur) end
+  if len($lines) > $LINES then
+    $kept = slice($lines, 0, $LINES)
+    $kept[$LINES - 1] = $kept[$LINES - 1] .. " …"
+    return $kept
+  end
+  return $lines
+end
+
 fn model_of($note, $more)
   $labels = ["", "", "", ""]
   $shown = [false, false, false, false]
@@ -49,16 +77,25 @@ fn model_of($note, $more)
     $i = $i + 1
   end
   $body = $note.body ?? ""
+  $wrapped = wrap($body)
+  $lines = ["", "", "", "", "", ""]
+  $line_shown = [false, false, false, false, false, false]
+  $j = 0
+  for each $l in $wrapped
+    $lines[$j] = $l
+    $line_shown[$j] = true
+    $j = $j + 1
+  end
   return {id: $note.id, app: $note.app ?? "", summary: $note.summary ?? "", body: $body,
-    has_body: $body != "", labels: $labels, shown: $shown,
+    has_body: len($wrapped) > 0, lines: $lines, line_shown: $line_shown, line_count: len($wrapped),
+    labels: $labels, shown: $shown,
     more: if $more > 0 then "+" .. to_string($more) .. " more" else "" end}
 end
 
--- The seat height: the body (about 48 characters a line at 12 px in the
--- 360 px card, up to 8 lines) and the button row add to the bare toast.
+-- The seat height: each body line and the button row add to the bare toast.
 fn height_of($m)
   $h = 64
-  if $m.has_body then $h = $h + 6 + 18 * min(8, ceil(len($m.body) / 48)) end
+  if $m.has_body then $h = $h + 6 + 18 * $m.line_count end
   if $m.shown[0] then $h = $h + 34 end
   return $h
 end
