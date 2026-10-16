@@ -521,7 +521,11 @@ on toast_ensure async
   end
   if not $known then
     $add = $r.call($ctx.loader, "scenes.install", {template: $TOAST, enable: false})
-    if not $add.ok then eprint("panel: toast install refused: " .. json_encode($add.value)); return end
+    -- Two ensures can race (start and notifyd's registration): an
+    -- installation that already exists is what we wanted.
+    if not $add.ok and not contains(json_encode($add.value), "SCENES_COLLISION") then
+      eprint("panel: toast install refused: " .. json_encode($add.value)); return
+    end
   end
   $on = $r.call($ctx.loader, "scenes.enable", {name: $TOAST})
   if not $on.ok then eprint("panel: toast enable refused: " .. json_encode($on.value)) end

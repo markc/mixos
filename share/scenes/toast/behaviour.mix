@@ -56,9 +56,9 @@ end
 
 -- The seat height: the body and the button row add to the bare toast.
 fn height_of($m)
-  $h = 76
-  if $m.has_body then $h = $h + 36 end
-  if $m.shown[0] then $h = $h + 40 end
+  $h = 64
+  if $m.has_body then $h = $h + 24 end
+  if $m.shown[0] then $h = $h + 34 end
   return $h
 end
 
