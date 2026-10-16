@@ -2140,7 +2140,10 @@ mod tests {
         e.select_email_account("a");
         e.forget_email_password();
         assert_eq!(e.ui.dialog, Some(Dialog::ForgetPassword("a".into())));
-        assert!(mail_calls(&e.take_effects()).is_empty(), "nothing before the confirm");
+        assert!(
+            mail_calls(&e.take_effects()).is_empty(),
+            "nothing before the confirm"
+        );
         e.close_dialog();
         e.confirm_email();
         assert!(mail_calls(&e.take_effects()).is_empty());
@@ -2153,7 +2156,10 @@ mod tests {
         e.mailed(calls[0].0, missing());
         let calls = mail_calls(&e.take_effects());
         assert_eq!((calls[0].1, calls[0].2), (APPS, "apps.launch"));
-        e.mailed(calls[0].0, reply(0, json!({"argv":[],"id":EMAIL_APP_ID,"pid":7})));
+        e.mailed(
+            calls[0].0,
+            reply(0, json!({"argv":[],"id":EMAIL_APP_ID,"pid":7})),
+        );
         let wait = e
             .take_effects()
             .into_iter()
@@ -2167,7 +2173,11 @@ mod tests {
         assert_eq!(calls[0].3, json!({"id":"a","password":""}));
         e.mailed(calls[0].0, reply(0, json!({"id":"a","has_password":false})));
         assert!(!e.failed);
-        assert!(e.status.starts_with("email-password-forgotten"), "{}", e.status);
+        assert!(
+            e.status.starts_with("email-password-forgotten"),
+            "{}",
+            e.status
+        );
     }
 
     /// An empty password goes out only as a forget: typed Set password and
@@ -2187,15 +2197,26 @@ mod tests {
         };
         e.command(1, "prefs.email.password", r#"{"id":"a","password":""}"#);
         assert!(refused(&mut e, 1));
-        e.command(2, "prefs.email.password", r#"{"id":"a","forget":true,"password":"x"}"#);
+        e.command(
+            2,
+            "prefs.email.password",
+            r#"{"id":"a","forget":true,"password":"x"}"#,
+        );
         assert!(refused(&mut e, 2));
         e.command(3, "prefs.email.password", r#"{"id":"a","forget":"yes"}"#);
         assert!(refused(&mut e, 3));
         // A forget takes any valid id, a removed account's too.
-        e.command(4, "prefs.email.password", r#"{"id":"acct-gone","forget":true}"#);
+        e.command(
+            4,
+            "prefs.email.password",
+            r#"{"id":"acct-gone","forget":true}"#,
+        );
         let calls = mail_calls(&e.take_effects());
         assert_eq!(calls[0].3, json!({"id":"acct-gone","password":""}));
-        e.mailed(calls[0].0, reply(0, json!({"id":"acct-gone","has_password":false})));
+        e.mailed(
+            calls[0].0,
+            reply(0, json!({"id":"acct-gone","has_password":false})),
+        );
         assert!(
             e.take_effects()
                 .iter()
@@ -2230,7 +2251,8 @@ mod tests {
         );
         assert!(e.failed);
         assert!(
-            e.status.starts_with("email-forget-after-remove-failed account=Home"),
+            e.status
+                .starts_with("email-forget-after-remove-failed account=Home"),
             "{}",
             e.status
         );
@@ -2240,7 +2262,10 @@ mod tests {
         let calls = mail_calls(&e.take_effects());
         e.mailed(
             calls[0].0,
-            reply(10, json!({"error_code":"UNKNOWN_ACCOUNT","message":"no such account"})),
+            reply(
+                10,
+                json!({"error_code":"UNKNOWN_ACCOUNT","message":"no such account"}),
+            ),
         );
         assert!(!e.failed, "{}", e.status);
         // Email known to be away: a note, no call.
@@ -2258,7 +2283,10 @@ mod tests {
         e.remove_email_account();
         e.confirm_email();
         let calls = settings_calls(&mut e);
-        e.settled(calls[0].0, reply(10, json!({"status":"invalid","message":"no"})));
+        e.settled(
+            calls[0].0,
+            reply(10, json!({"status":"invalid","message":"no"})),
+        );
         settle_read(&mut e, "7", json!(two()));
         assert!(mail_calls(&e.take_effects()).is_empty());
     }

@@ -1062,7 +1062,9 @@ fn dialogs(
         return;
     };
     match dialog {
-        Dialog::RemoveAccount(_) | Dialog::ResetEmail | Dialog::ForgetPassword(_) => email::confirmation(ui, engine, events),
+        Dialog::RemoveAccount(_) | Dialog::ResetEmail | Dialog::ForgetPassword(_) => {
+            email::confirmation(ui, engine, events)
+        }
         Dialog::About | Dialog::Shortcuts => {
             let about = *dialog == Dialog::About;
             let title = if about { "about" } else { "shortcuts" };
