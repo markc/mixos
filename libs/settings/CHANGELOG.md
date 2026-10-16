@@ -10,9 +10,17 @@ Additive, store format unchanged (3):
   `READER_FONT_STEP` 0.5, default `READER_FONT_DEFAULT` 15. Omitted at its
   default, so older profiles keep their seals. A profile that sets it will
   not load in a 0.8.0 build: reset `email.reader.font_size` first.
+- `email.reader.theme` (`ReaderOptions.theme: email::ReaderTheme`):
+  `auto` (the session theme, default), `light` or `dark`.
+- `Email.compose` (`email::ComposeOptions`): `email.compose.quote_on_reply`
+  (default true), `email.compose.reply_position`
+  (`email::ReplyPosition`: `above`, default, or `below`) and
+  `email.compose.autosave` (default true).
+- Every new value is omitted at its default; unknown enum values are
+  refused.
 - `email::valid_reader_font_size` checks a value as settingsd does.
-- `email.reader` alone is not a path, as `email.mail` is not;
-  `settings.describe` lists `email.reader.font_size`.
+- `email.reader` and `email.compose` alone are not paths, as `email.mail`
+  is not; `settings.describe` lists each new path.
 
 ## 0.8.0
 
