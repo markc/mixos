@@ -1716,7 +1716,11 @@ mod tests {
         assert_eq!(schedule.current(), good.as_path());
         assert_eq!(image.original_size, [2, 2]);
         let refused = prepare(slideshow_of(vec![bad.clone(), dir.join("missing.png")]), 2);
-        assert!(refused.unwrap_err().contains("no slideshow image could be decoded"));
+        assert!(
+            refused
+                .unwrap_err()
+                .contains("no slideshow image could be decoded")
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
