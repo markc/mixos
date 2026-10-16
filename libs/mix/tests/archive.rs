@@ -512,16 +512,21 @@ async fn refuse_corrupt_zstd_checksum() {
     let mid = bytes.len() / 2;
     bytes[mid] ^= 0xff;
     fs::write(&arc, bytes).unwrap();
+    let dest = d.join("dest");
     let err = run_err(&format!(
         "tar_unpack(\"{}\", \"{}\")",
         arc.display(),
-        d.join("dest").display()
+        dest.display()
     ))
     .await;
-    assert!(
-        err.contains("verification failed") || err.contains("checksum") || err.contains("corrupt"),
-        "{err}"
-    );
+    // The flipped byte lands wherever the (mtime-dependent) frame puts it:
+    // a block the decoder rejects, data that decodes to a garbled tar
+    // header, or file bytes the content checksum then refuses. Each is a
+    // refusal with nothing committed; the footer-only case is
+    // a_zstd_frame_with_a_corrupt_checksum_footer_is_refused.
+    assert!(!err.is_empty());
+    assert!(!dest.exists(), "a corrupt archive must not commit: {err}");
+    assert_no_staging(&d);
 }
 
 // ---------------------------------------------------------------------------
