@@ -429,7 +429,11 @@ fn email_reader_studio_dark() {
         None,
     );
     assert!(e.can_reset_reader_font());
-    draw(chrome(Scheme::Studio, Mode::Dark), "email_reader_studio_dark", e);
+    draw(
+        chrome(Scheme::Studio, Mode::Dark),
+        "email_reader_studio_dark",
+        e,
+    );
 }
 
 /// No accounts yet: the list says so and Add account is the way in.

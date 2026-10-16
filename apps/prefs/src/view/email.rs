@@ -390,10 +390,26 @@ fn reader(
         });
     });
     // The preview is set at the size itself: what the reader will show.
-    ui.add(egui::Label::new(RichText::new(label("email-reader-preview")).size(current as f32)).wrap());
+    ui.add(
+        egui::Label::new(RichText::new(label("email-reader-preview")).size(current as f32)).wrap(),
+    );
     ui.horizontal(|ui| {
-        command_button(ui, engine, commands, strings, "email.reader.reset", false, events);
-        let note = label_with("email-reader-default", &[("size", &format_size(preferences::email::READER_FONT_DEFAULT))]);
+        command_button(
+            ui,
+            engine,
+            commands,
+            strings,
+            "email.reader.reset",
+            false,
+            events,
+        );
+        let note = label_with(
+            "email-reader-default",
+            &[(
+                "size",
+                &format_size(preferences::email::READER_FONT_DEFAULT),
+            )],
+        );
         ui.label(RichText::new(note).weak());
     });
 }

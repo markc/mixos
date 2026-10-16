@@ -515,10 +515,7 @@ fn edit_between(old: &Email, new: &Email) -> BTreeMap<String, Value> {
         changes.insert("email.mail.confirm_delete".into(), json!(b.confirm_delete));
     }
     if old.reader.font_size != new.reader.font_size {
-        changes.insert(
-            "email.reader.font_size".into(),
-            json!(new.reader.font_size),
-        );
+        changes.insert("email.reader.font_size".into(), json!(new.reader.font_size));
     }
     changes
 }
