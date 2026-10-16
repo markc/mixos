@@ -186,8 +186,14 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let dir = path
         .parent()
         .ok_or_else(|| format!("{}: no directory", path.display()))?;
-    config::atomic::create_directory(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    config::atomic::replace(path, bytes).map_err(|e| {
+    let name = path
+        .file_name()
+        .ok_or_else(|| format!("{}: no file name", path.display()))?;
+    // Keep the provisioned descriptor: reopening by path could find a
+    // replacement directory whose entry was never synced.
+    let held =
+        config::atomic::create_directory(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    config::atomic::replace_in(&held, name, bytes).map_err(|e| {
         if e.may_have_replaced {
             format!(
                 "writing {}: {e} (the new config may be in place)",

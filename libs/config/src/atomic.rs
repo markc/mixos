@@ -55,14 +55,16 @@ fn directory(path: &Path, create: bool) -> io::Result<File> {
         if fd < 0 {
             return Err(io::Error::last_os_error());
         }
+        // Own the child before anything fallible, so an error cannot leak it.
+        let child = unsafe { File::from_raw_fd(fd) };
         if create {
             // Each entry lives in its parent: sync the parent so a crash cannot
             // drop the directory after a save that reported success. Found or
             // made alike, since a racing creator may not have synced it yet.
-            // The leaf is synced by `replace` when the file lands in it.
+            // The leaf is synced by `replace_in` when the file lands in it.
             directory.sync_all()?;
         }
-        directory = unsafe { File::from_raw_fd(fd) };
+        directory = child;
     }
     Ok(directory)
 }
