@@ -293,9 +293,10 @@ fn a_double_click_activates() {
                 pressed,
                 modifiers: egui::Modifiers::NONE,
             });
-            h.step();
         }
     }
+    // One pass: a kittest step is a quarter second, past the double-click
+    // window.
     h.run();
     assert!(
         h.state()

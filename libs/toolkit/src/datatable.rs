@@ -448,6 +448,9 @@ impl<'a> DataTable<'a> {
                     response.ctx.accesskit_node_builder(response.id, |node| {
                         node.set_role(Role::Row);
                         node.set_bounds(bounds(whole));
+                        // A row is selected, not toggled.
+                        node.clear_toggled();
+                        node.set_selected(selected);
                     });
                     if response.double_clicked() {
                         events.push(TableEvent::Activated {
