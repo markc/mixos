@@ -24,5 +24,5 @@ is the shell.
 `cargo test -p system` runs the identity test (`tests/personalities.rs`) and
 the shell's process-level tests, which moved here from `cli/mix-shell` so they
 test the shipped binary. Their scripts moved with them (`tests/scripts`); the
-manual they check stays with the shell (`../mix-shell/share/man`), and the
+manual they check is the site source (`../../docs/mix`), and the
 source guards read `../mix-shell/src`.

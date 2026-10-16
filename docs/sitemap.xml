@@ -38,6 +38,47 @@
   <url><loc>https://mixos.dev/edit/</loc></url>
   <url><loc>https://mixos.dev/hostd/</loc></url>
   <url><loc>https://mixos.dev/mix/</loc></url>
+  <url><loc>https://mixos.dev/mix/buffer/</loc></url>
+  <url><loc>https://mixos.dev/mix/builtins/</loc></url>
+  <url><loc>https://mixos.dev/mix/bus/</loc></url>
+  <url><loc>https://mixos.dev/mix/capabilities/</loc></url>
+  <url><loc>https://mixos.dev/mix/cli/</loc></url>
+  <url><loc>https://mixos.dev/mix/collections/</loc></url>
+  <url><loc>https://mixos.dev/mix/control-flow/</loc></url>
+  <url><loc>https://mixos.dev/mix/cosmix-lib-mix/</loc></url>
+  <url><loc>https://mixos.dev/mix/data/</loc></url>
+  <url><loc>https://mixos.dev/mix/datastar/</loc></url>
+  <url><loc>https://mixos.dev/mix/datetime/</loc></url>
+  <url><loc>https://mixos.dev/mix/errors/</loc></url>
+  <url><loc>https://mixos.dev/mix/expr-eval/</loc></url>
+  <url><loc>https://mixos.dev/mix/functions/</loc></url>
+  <url><loc>https://mixos.dev/mix/gotchas/</loc></url>
+  <url><loc>https://mixos.dev/mix/hof/</loc></url>
+  <url><loc>https://mixos.dev/mix/http/</loc></url>
+  <url><loc>https://mixos.dev/mix/invocation/</loc></url>
+  <url><loc>https://mixos.dev/mix/io/</loc></url>
+  <url><loc>https://mixos.dev/mix/job-control/</loc></url>
+  <url><loc>https://mixos.dev/mix/keywords/</loc></url>
+  <url><loc>https://mixos.dev/mix/lint/</loc></url>
+  <url><loc>https://mixos.dev/mix/math/</loc></url>
+  <url><loc>https://mixos.dev/mix/mix-bench/</loc></url>
+  <url><loc>https://mixos.dev/mix/mix-shell/</loc></url>
+  <url><loc>https://mixos.dev/mix/mix-shell/cli/</loc></url>
+  <url><loc>https://mixos.dev/mix/mix-shell/serve-mode/</loc></url>
+  <url><loc>https://mixos.dev/mix/modules/</loc></url>
+  <url><loc>https://mixos.dev/mix/numbers/</loc></url>
+  <url><loc>https://mixos.dev/mix/operators/</loc></url>
+  <url><loc>https://mixos.dev/mix/overview/</loc></url>
+  <url><loc>https://mixos.dev/mix/owned-editor/</loc></url>
+  <url><loc>https://mixos.dev/mix/regex/</loc></url>
+  <url><loc>https://mixos.dev/mix/remote/</loc></url>
+  <url><loc>https://mixos.dev/mix/serve/</loc></url>
+  <url><loc>https://mixos.dev/mix/shell-mode/</loc></url>
+  <url><loc>https://mixos.dev/mix/stats/</loc></url>
+  <url><loc>https://mixos.dev/mix/strings/</loc></url>
+  <url><loc>https://mixos.dev/mix/syntax/</loc></url>
+  <url><loc>https://mixos.dev/mix/system/</loc></url>
+  <url><loc>https://mixos.dev/mix/variables/</loc></url>
   <url><loc>https://mixos.dev/noded/</loc></url>
   <url><loc>https://mixos.dev/portal/</loc></url>
   <url><loc>https://mixos.dev/prefs/</loc></url>
