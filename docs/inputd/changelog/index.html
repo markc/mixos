@@ -272,7 +272,13 @@ while another holder has it. Without <code>--vt</code> the grab is held always.<
 the compositor; inputd waits ungrabbed until the keyboard is quiet.</li>
 <li><strong>Dropped events (<code>SYN_DROPPED</code>) are recovered:</strong> the key state is
 re-read, every key passed on is released, and keys still held are
-swallowed until their release.</li>
+swallowed until their release. While a modifier is held that way, keys
+that would go to the apps are held back too, so none goes out without
+its modifier.</li>
+<li>A frame written to the re-emitter is always ended with a report, on
+recovery and on switch-away, so no release is left buffered.</li>
+<li>While waiting for a quiet keyboard, inputd retries on the grab backoff
+schedule (to 2 s) as well as at each report.</li>
 <li><code>input.mode</code> refuses a malformed body; only an empty body or <code>{}</code>
 toggles.</li>
 <li>The re-emitter is <code>inputd virtual keyboard</code>, created once at start; the

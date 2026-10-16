@@ -188,6 +188,14 @@ impl Interceptor {
             return self.key(resolver, code, 2);
         }
         let press = resolver.resolve(code, self.mods, Edge::Press);
+        // A quarantined modifier counts for matching (it is physically
+        // down) but the apps never saw its press. A key that would go to
+        // the apps now would reach them without it (Shift+A as a bare A),
+        // so it is quarantined too, until its release.
+        if !press.swallow && self.modifier_quarantined() {
+            self.latches.insert(code, Latch::Swallowed { repeat: None });
+            return Step::DROP;
+        }
         if !press.swallow {
             self.latches.insert(code, Latch::Emitted);
             return Step::EMIT;
@@ -198,6 +206,14 @@ impl Interceptor {
             fire: Fire::from_resolution(press),
             ..Step::DROP
         }
+    }
+
+    /// True while a modifier is held under quarantine. Modifiers are never
+    /// swallowed otherwise, so a swallowed modifier latch is one.
+    fn modifier_quarantined(&self) -> bool {
+        self.latches.iter().any(|(&code, latch)| {
+            SideModifiers::is_modifier(code) && matches!(latch, Latch::Swallowed { .. })
+        })
     }
 
     fn modifier(&mut self, code: u16, value: i32) -> Step {

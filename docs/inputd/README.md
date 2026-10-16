@@ -55,16 +55,35 @@ grab only while one of those VTs is the active console:
   down**. A key held across the grab would stay down in the compositor,
   which saw its press but would never see its release. So while the
   switch chord (Ctrl+Alt+Fn) is still held, inputd waits ungrabbed and
-  tries again at each report from the keyboard. While another holder still
-  has the device, it retries with a backoff from 50 ms up to 2 s.
+  checks again at each report from the keyboard, and also on a timed retry
+  with a backoff from 50 ms up to 2 s (in case another holder takes the
+  last release). While another holder still has the device, it retries on
+  the same backoff.
 - **If the kernel drops events** (`SYN_DROPPED`), inputd re-reads which
   keys are down, releases every key it had passed on, and swallows any key
   still held until it is released.
 
 It watches `/sys/class/tty/tty0/active` with `poll(2)`, so a switch wakes it
-at once and nothing is polled on a timer. The re-emitter is made once, at
+at once: the active VT is never polled on a timer. The only timers are the
+bounded grab retries above. The re-emitter is made once, at
 start, and kept: a compositor in a container cannot see an input device that
 appears after it started.
+
+## Known limits
+
+Both happen only while inputd takes the grab (at startup or on switching
+to its VT) with keys in motion, and neither can be closed from inputd. They
+close where the compositor enforces the user keys itself: compd's user-key
+layer.
+
+- **A key can stay down in the compositor.** If a key is pressed before the
+  grab and released in the brief window while inputd checks, grabs and
+  discards queued events, the release is consumed under the grab. The
+  compositor saw the press on the original keyboard and never sees its
+  release; `EVIOCGRAB` offers no way to hand it back on that device.
+- **User keys pass while inputd waits.** While a key is held at switch-to,
+  inputd is not grabbed, so a user key pressed in that time reaches the
+  apps unclassified.
 
 ## Running it
 
