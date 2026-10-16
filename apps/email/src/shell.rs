@@ -42,7 +42,12 @@ pub enum Done {
     /// A Bus query's answer, for request `reply`.
     Answered(u64, Then, Result<Value, jmap::Error>),
     /// A server write finished (`reply`: the Bus request, if any).
-    Wrote(Option<u64>, Option<u64>, Write, Result<Value, jmap::Error>),
+    Wrote(
+        Option<u64>,
+        Option<u64>,
+        Box<Write>,
+        Result<Value, jmap::Error>,
+    ),
     Marked(Result<(), jmap::Error>),
     Sent(u64, Result<(), jmap::Error>),
     Calendars(Result<Vec<jmap::Calendar>, jmap::Error>),
@@ -533,7 +538,7 @@ impl Shell {
                         self.spawn(async move {
                             let answer =
                                 crate::verbs::run_write(&client, write.clone(), sent).await;
-                            Event::Account(tag, Done::Wrote(reply, form, write, answer))
+                            Event::Account(tag, Done::Wrote(reply, form, Box::new(write), answer))
                         });
                     }
                     // Settled at once, so neither a caller nor a form waits

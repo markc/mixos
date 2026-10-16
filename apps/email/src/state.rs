@@ -1479,7 +1479,7 @@ impl State {
                 self.answered(&tag, reply, then, result);
             }
             Event::Account(tag, Done::Wrote(reply, form, write, result)) => {
-                self.wrote(&tag, reply, form, write, result);
+                self.wrote(&tag, reply, form, *write, result);
             }
             // A send is settled by its own ticket even when the account has
             // reconnected since: the person must hear whether it went.
@@ -4290,7 +4290,7 @@ pub(crate) mod tests {
         let tag = tag(&state, "a");
         state.apply(Event::Account(
             tag,
-            Done::Wrote(Some(5), None, delete, Ok(json!({"ids": ["E1"]}))),
+            Done::Wrote(Some(5), None, Box::new(delete), Ok(json!({"ids": ["E1"]}))),
         ));
         let view = state.account("a").unwrap();
         assert_eq!(view.mail.emails.len(), 1, "E1 left the list at once");
@@ -4323,7 +4323,7 @@ pub(crate) mod tests {
             Done::Wrote(
                 Some(9),
                 None,
-                Write::DeleteMailbox { id: "m".into() },
+                Box::new(Write::DeleteMailbox { id: "m".into() }),
                 Err(jmap::Error::method("notFound", None)),
             ),
         ));
@@ -4444,7 +4444,7 @@ pub(crate) mod tests {
         let tag = tag(&state, "a");
         state.apply(Event::Account(
             tag,
-            Done::Wrote(None, op, write, Ok(json!({"id": "ev-1"}))),
+            Done::Wrote(None, op, Box::new(write), Ok(json!({"id": "ev-1"}))),
         ));
         assert!(state.form.is_none());
         assert!(
@@ -4775,7 +4775,7 @@ pub(crate) mod tests {
         let other = Write::DeleteMailbox { id: "m".into() };
         state.apply(Event::Account(
             tag.clone(),
-            Done::Wrote(Some(4), None, other, Err(jmap::Error::Protocol("x".into()))),
+            Done::Wrote(Some(4), None, Box::new(other), Err(jmap::Error::Protocol("x".into()))),
         ));
         assert!(
             matches!(&state.form, Some(Form::Event(f)) if f.busy),
@@ -4790,7 +4790,7 @@ pub(crate) mod tests {
         };
         state.apply(Event::Account(
             tag.clone(),
-            Done::Wrote(None, first, create.clone(), Ok(json!({"id": "ev-1"}))),
+            Done::Wrote(None, first, Box::new(create.clone()), Ok(json!({"id": "ev-1"}))),
         ));
         assert!(
             matches!(&state.form, Some(Form::Event(f)) if f.busy),
@@ -4798,7 +4798,7 @@ pub(crate) mod tests {
         );
         state.apply(Event::Account(
             tag,
-            Done::Wrote(None, second, create, Ok(json!({"id": "ev-2"}))),
+            Done::Wrote(None, second, Box::new(create), Ok(json!({"id": "ev-2"}))),
         ));
         assert!(state.form.is_none());
     }
