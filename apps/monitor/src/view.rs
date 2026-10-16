@@ -469,7 +469,7 @@ fn graph_size(ui: &Ui, share: f32) -> Vec2 {
 fn cpu(ui: &mut Ui, engine: &Engine, s: &Snapshot) {
     heading(ui, &label("cpu"), s.cpu.model.as_deref());
     ui.small(format!("{} % · 60 s", label("utilisation")));
-    graph::line(ui, graph_size(ui, 0.4), &engine.rings.get("cpu.busy"), 100.0, Kind::Cpu);
+    graph::line(ui, graph_size(ui, 0.3), &engine.rings.get("cpu.busy"), 100.0, Kind::Cpu);
     ui.add_space(8.0);
     // Each logical processor, in as square a grid as the width allows.
     let n = s.cpu.per_core.len();

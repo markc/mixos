@@ -20,14 +20,22 @@ pub enum Kind {
 
 /// The resource's line colour, from the installed theme.
 pub fn tint(ui: &Ui, kind: Kind) -> Color32 {
-    let v = ui.visuals();
     let palette = toolkit::chrome::Chrome::of(ui.ctx()).palette;
     match kind {
         Kind::Cpu => palette.accent,
-        Kind::Memory => v.hyperlink_color,
+        // A third of the way round the colour wheel from the accent, each
+        // way: distinct from it in every scheme, and still the theme's.
+        Kind::Memory => turned(palette.accent, 1.0 / 3.0),
         Kind::Disk => palette.warning,
-        Kind::Net => v.selection.stroke.color,
+        Kind::Net => turned(palette.accent, -1.0 / 3.0),
     }
+}
+
+/// `colour` with its hue turned by `turns` of the wheel.
+fn turned(colour: Color32, turns: f32) -> Color32 {
+    let mut hsva = egui::ecolor::Hsva::from(colour);
+    hsva.h = (hsva.h + turns).rem_euclid(1.0);
+    hsva.into()
 }
 
 /// The x of reading `i` of `n`, the newest at the right edge.
