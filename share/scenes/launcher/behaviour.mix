@@ -6,7 +6,19 @@ $m = require($LIB .. "/models.mix")
 $p = require($LIB .. "/data.mix")
 $ctx = $r.scene_context("launcher")
 $APPS = env("APPS_SERVICE", "apps")
-$state = {query: "", category: "", apps: [], icons: {}, sequence: 0, model_sequence: -1, queued: false, ready: false, model: $m.launcher([], "", "", {})}
+$state = {query: "", category: $p.PINNED_CATEGORY, apps: [], icons: {}, sequence: 0, model_sequence: -1, queued: false, ready: false, model: $m.launcher([], "", $p.PINNED_CATEGORY, {})}
+
+-- Pinned is the launcher's own view, not a freedesktop category. With no
+-- query it is the short list; a search looks through every application, so
+-- nothing is out of reach.
+fn list_apps($query, $category)
+  $pinned = $category == $p.PINNED_CATEGORY
+  $out = $r.call($APPS, "apps.list", {query: $query, category: $pinned ? "" : $category})
+  if not $out.ok then return $out end
+  if type($out.value) != "list" then return $r.failure("apps_invalid_reply", "apps.list must return a list") end
+  if $pinned and $query == "" then $out.value = $p.pinned($out.value) end
+  return $out
+end
 
 fn schedule()
   $state.sequence = $state.sequence + 1
@@ -21,9 +33,8 @@ fn refresh()
   $sequence = $state.sequence
   $query = $state.query
   $category = $state.category
-  $out = $r.call($APPS, "apps.list", {query: $query, category: $category})
+  $out = list_apps($query, $category)
   if not $out.ok then return $out end
-  if type($out.value) != "list" then return $r.failure("apps_invalid_reply", "apps.list must return a list") end
   $apps = $out.value
   $icons = $state.icons
   $n = 0
@@ -127,9 +138,8 @@ on launcher.search async
   if type($limit) != "number" or $limit < 1 or $limit > 50 or floor($limit) != $limit then
     $r.respond($r.failure("invalid_args", "limit must be an integer from 1 to 50")); return
   end
-  $out = $r.call($APPS, "apps.list", {query: $a.query, category: $a.category ?? ""})
+  $out = list_apps($a.query, $a.category ?? "")
   if not $out.ok then $r.respond($out); return end
-  if type($out.value) != "list" then $r.respond($r.failure("apps_invalid_reply", "apps.list must return a list")); return end
   reply(0, json_encode({query: $a.query, category: $a.category ?? "", count: length($out.value), items: slice($out.value, 0, $limit)}))
 end
 on apps.changed

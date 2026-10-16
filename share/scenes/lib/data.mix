@@ -107,9 +107,25 @@ fn short_title($title, $limit)
   return slice($s, 0, $limit - 1) .. "…"
 end
 
-$CATEGORY_LABELS = {"": "All", Network: "Internet", Office: "Office", Development: "Development",
-  Graphics: "Graphics", AudioVideo: "Media", Game: "Games", System: "System",
-  Utility: "Utilities", Settings: "Settings"}
+-- "Pinned" is not a freedesktop category: it is the launcher's default view,
+-- the MixOS apps plus $PINNED_APPS (pinned() below), and never reaches apps.list.
+$CATEGORY_LABELS = {"": "All", Pinned: "Pinned", Network: "Internet", Office: "Office",
+  Development: "Development", Graphics: "Graphics", AudioVideo: "Media", Game: "Games",
+  System: "System", Utility: "Utilities", Settings: "Settings"}
+$PINNED_CATEGORY = "Pinned"
+$PINNED_APPS = ["firefox", "org.mozilla.firefox", "thunderbird", "org.mozilla.Thunderbird",
+  "net.thunderbird.Thunderbird"]
+
+-- The launcher's default view: every dev.mixos.* app, plus Firefox and
+-- Thunderbird under their usual desktop IDs.
+fn pinned($apps)
+  $out = []
+  for each $a in $apps
+    $id = $a.id ?? ""
+    if starts_with($id, "dev.mixos.") or contains($PINNED_APPS, $id) then push($out, $a) end
+  end
+  return $out
+end
 
 fn category_label($cat)
   return $CATEGORY_LABELS[$cat] ?? $cat

@@ -104,6 +104,11 @@ for each $case in $cases
 end
 if $record then write_file($fixtures .. "/cases.json", json_encode($manifest) .. "\n") end
 check(length($models.launcher($apps, "", "", {}).rows) == 500, "launcher cap")
+$data = require($root .. "/share/scenes/lib/data.mix")
+$kept = $data.pinned([{id: "dev.mixos.email"}, {id: "firefox"}, {id: "org.mozilla.Thunderbird"}, {id: "xterm"}, {id: "dev.mixosx"}, {}])
+check(deep_eq(map($kept, fn($a) = $a.id), ["dev.mixos.email", "firefox", "org.mozilla.Thunderbird"]), "pinned keeps MixOS apps, Firefox and Thunderbird only")
+check($data.category_from_node("cat_pinned") == "Pinned", "pinned chip node")
+check($models.launcher([], "", "Pinned", {}).chips.cat_pinned.bold, "pinned chip lights")
 $note_model = $models.notes($notes)
 check(length($note_model.rows) == 50 and $note_model.rows[0].id == "55" and $note_model.rows[49].id == "6", "newest-first 50-row cap")
 check($note_model.rows[0].cells[0] == "Notification", "empty application fallback")
