@@ -179,13 +179,7 @@ impl Patch {
             && let Some(key) = object.keys().find(|k| {
                 !matches!(
                     k.as_str(),
-                    "op" | "id"
-                        | "name"
-                        | "url"
-                        | "email"
-                        | "ca_path"
-                        | "signature"
-                        | "enabled"
+                    "op" | "id" | "name" | "url" | "email" | "ca_path" | "signature" | "enabled"
                 )
             })
         {
@@ -216,9 +210,7 @@ impl Patch {
 /// Every field of `account` settingsd would refuse, by the settings crate's
 /// rules.
 pub fn refusals(account: &AccountEntry) -> Refusals {
-    use settings::email::{
-        valid_address, valid_ca_path, valid_name, valid_signature, valid_url,
-    };
+    use settings::email::{valid_address, valid_ca_path, valid_name, valid_signature, valid_url};
     let mut out = Refusals::new();
     let checks = [
         (Field::Name, valid_name(&account.name)),
@@ -578,9 +570,7 @@ pub struct EmailEditor {
 /// The `has_password` per account in an `email.accounts` answer: a list of
 /// accounts, or an object holding one as `accounts`.
 fn passwords(value: &Value) -> Option<BTreeMap<String, bool>> {
-    let list = value
-        .as_array()
-        .or_else(|| value["accounts"].as_array())?;
+    let list = value.as_array().or_else(|| value["accounts"].as_array())?;
     Some(
         list.iter()
             .filter_map(|a| Some((a["id"].as_str()?.to_owned(), a["has_password"].as_bool()?)))
@@ -1524,7 +1514,8 @@ mod tests {
 
     #[test]
     fn moves_defaults_and_enables_send_the_list_or_the_default() {
-        let changes = applied(plan(&two(), &Change::Move("b".into(), Direction::Up), mint).unwrap());
+        let changes =
+            applied(plan(&two(), &Change::Move("b".into(), Direction::Up), mint).unwrap());
         let ids: Vec<_> = changes["email.accounts"]
             .as_array()
             .unwrap()
@@ -1745,10 +1736,16 @@ mod tests {
         e.select_email_account("a");
         e.remove_email_account();
         assert_eq!(e.ui.dialog, Some(Dialog::RemoveAccount("a".into())));
-        assert!(settings_calls(&mut e).is_empty(), "nothing before the confirm");
+        assert!(
+            settings_calls(&mut e).is_empty(),
+            "nothing before the confirm"
+        );
         e.close_dialog();
         e.confirm_email();
-        assert!(settings_calls(&mut e).is_empty(), "a closed dialog confirms nothing");
+        assert!(
+            settings_calls(&mut e).is_empty(),
+            "a closed dialog confirms nothing"
+        );
         e.remove_email_account();
         e.confirm_email();
         let calls = settings_calls(&mut e);
@@ -1757,7 +1754,10 @@ mod tests {
         assert_eq!(verb, "settings.apply");
         assert_eq!(body["expected_revision"], "7");
         assert_eq!(body["changes"]["email.default_account"], Value::Null);
-        assert_eq!(body["changes"]["email.accounts"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            body["changes"]["email.accounts"].as_array().unwrap().len(),
+            1
+        );
         assert!(!e.can_edit_email(), "one apply at a time");
         e.settled(ticket, reply(0, json!({"status":"changed","receipt":{}})));
         let mut after = two();
@@ -1785,18 +1785,29 @@ mod tests {
         );
         assert!(e.failed);
         e.edit_email_field(Field::Url, "https://mail.example.com".into());
-        assert!(e.email.form.as_ref().unwrap().errors.is_empty(), "typing clears it");
+        assert!(
+            e.email.form.as_ref().unwrap().errors.is_empty(),
+            "typing clears it"
+        );
         e.save_email_account();
         let calls = settings_calls(&mut e);
         let list = calls[0].2["changes"]["email.accounts"].clone();
         let id = list[2]["id"].as_str().unwrap().to_owned();
         assert!(id.starts_with("acct-"));
-        e.settled(calls[0].0, reply(0, json!({"status":"changed","receipt":{}})));
+        e.settled(
+            calls[0].0,
+            reply(0, json!({"status":"changed","receipt":{}})),
+        );
         let mut after = two();
-        after.accounts.push(serde_json::from_value(list[2].clone()).unwrap());
+        after
+            .accounts
+            .push(serde_json::from_value(list[2].clone()).unwrap());
         settle_read(&mut e, "8", json!(after));
         assert_eq!(e.ui.email_account.as_deref(), Some(id.as_str()));
-        assert_eq!(e.email.form.as_ref().unwrap().id.as_deref(), Some(id.as_str()));
+        assert_eq!(
+            e.email.form.as_ref().unwrap().id.as_deref(),
+            Some(id.as_str())
+        );
     }
 
     #[test]
@@ -1814,10 +1825,22 @@ mod tests {
             ),
         );
         assert!(e.failed);
-        assert!(e.status.contains("Name must be a plain label"), "{}", e.status);
+        assert!(
+            e.status.contains("Name must be a plain label"),
+            "{}",
+            e.status
+        );
         settle_read(&mut e, "7", json!(two()));
-        assert_eq!(e.email().unwrap().accounts[1].name, "Home", "settingsd's value");
-        assert_eq!(e.email.form.as_ref().unwrap().name, "Family", "the typing stays");
+        assert_eq!(
+            e.email().unwrap().accounts[1].name,
+            "Home",
+            "settingsd's value"
+        );
+        assert_eq!(
+            e.email.form.as_ref().unwrap().name,
+            "Family",
+            "the typing stays"
+        );
         assert!(e.can_revert_email_account());
         e.revert_email_account();
         assert_eq!(e.email.form.as_ref().unwrap().name, "Home");
@@ -1866,7 +1889,10 @@ mod tests {
         let calls = mail_calls(&e.take_effects());
         e.mailed(calls[0].0, missing());
         assert_eq!(e.email.service, Service::Absent);
-        assert!(e.email.passwords.is_empty(), "not known while Email is away");
+        assert!(
+            e.email.passwords.is_empty(),
+            "not known while Email is away"
+        );
     }
 
     /// The password goes to Email in the effect's secret, never its body;
@@ -1958,7 +1984,10 @@ mod tests {
         assert_eq!(calls[0].2, "email.account.connect");
         e.mailed(
             calls[0].0,
-            reply(10, json!({"error_code":"UNKNOWN_VERB","message":"unknown Email verb"})),
+            reply(
+                10,
+                json!({"error_code":"UNKNOWN_VERB","message":"unknown Email verb"}),
+            ),
         );
         assert!(e.failed && e.status == "email-unsupported");
         assert!(mail_calls(&e.take_effects()).is_empty());
@@ -1978,16 +2007,26 @@ mod tests {
             })
             .unwrap();
         assert_eq!(apply.1["changes"], json!({"email.default_account":"b"}));
-        assert!(effects
-            .iter()
-            .any(|x| matches!(x, Effect::Reply { id: 1, rc: 0, .. })));
-        e.command(2, "prefs.email.set", r#"{"op":"enable","id":"b","enabled":false}"#);
+        assert!(
+            effects
+                .iter()
+                .any(|x| matches!(x, Effect::Reply { id: 1, rc: 0, .. }))
+        );
+        e.command(
+            2,
+            "prefs.email.set",
+            r#"{"op":"enable","id":"b","enabled":false}"#,
+        );
         assert!(e.take_effects().iter().any(
             |x| matches!(x, Effect::Reply { id: 2, rc: 10, body } if body["error_code"] == "BUSY")
         ));
         e.settled(apply.0, reply(0, json!({"status":"changed"})));
         settle_read(&mut e, "8", json!(two()));
-        e.command(3, "prefs.email.set", r#"{"op":"add","name":"x","url":"ftp://x","email":"x@y"}"#);
+        e.command(
+            3,
+            "prefs.email.set",
+            r#"{"op":"add","name":"x","url":"ftp://x","email":"x@y"}"#,
+        );
         assert!(e.take_effects().iter().any(
             |x| matches!(x, Effect::Reply { id: 3, rc: 10, body } if body["message"].as_str().unwrap().starts_with("url:"))
         ));
@@ -1996,12 +2035,24 @@ mod tests {
             |x| matches!(x, Effect::Reply { id: 4, rc: 0, body } if body["accounts"].as_array().unwrap().len() == 2)
         ));
         // A password over the Bus is answered when Email has answered.
-        e.command(5, "prefs.email.password", r#"{"id":"a","password":"hunter2"}"#);
+        e.command(
+            5,
+            "prefs.email.password",
+            r#"{"id":"a","password":"hunter2"}"#,
+        );
         let effects = e.take_effects();
-        assert!(!effects.iter().any(|x| matches!(x, Effect::Reply { id: 5, .. })));
+        assert!(
+            !effects
+                .iter()
+                .any(|x| matches!(x, Effect::Reply { id: 5, .. }))
+        );
         let calls = mail_calls(&effects);
         e.mailed(calls[0].0, reply(0, json!({})));
-        assert!(e.take_effects().iter().any(|x| matches!(x, Effect::Reply { id: 5, rc: 0, .. })));
+        assert!(
+            e.take_effects()
+                .iter()
+                .any(|x| matches!(x, Effect::Reply { id: 5, rc: 0, .. }))
+        );
         e.command(6, "prefs.email.password", r#"{"id":"zz","password":"x"}"#);
         assert!(e.take_effects().iter().any(
             |x| matches!(x, Effect::Reply { id: 6, rc: 10, body } if body["error_code"] == "ARGUMENT")

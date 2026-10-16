@@ -491,10 +491,7 @@ impl Engine {
                     && !self.quitting
             }
             Panel::AppSettings => {
-                !self.look.working()
-                    && self.connected
-                    && self.ui.dialog.is_none()
-                    && !self.quitting
+                !self.look.working() && self.connected && self.ui.dialog.is_none() && !self.quitting
             }
         }
     }

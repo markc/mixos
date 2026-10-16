@@ -422,7 +422,11 @@ fn email_engine(email: serde_json::Value, passwords: Option<serde_json::Value>) 
 #[test]
 fn email_empty_studio_dark() {
     let e = email_engine(json!({}), None);
-    draw(chrome(Scheme::Studio, Mode::Dark), "email_empty_studio_dark", e);
+    draw(
+        chrome(Scheme::Studio, Mode::Dark),
+        "email_empty_studio_dark",
+        e,
+    );
 }
 
 /// Two accounts, Work the default and Home disabled; Home selected, its
@@ -435,7 +439,9 @@ fn email_accounts_studio_dark() {
             {"id":"acct-9b21","name":"Home","url":"https://jmap.example.net","email":"mark@example.net",
              "enabled":false,"signature":"-- \nMark"}
         ],"default_account":"acct-0f3a","mail":{"page_size":50}}),
-        Some(json!({"accounts":[{"id":"acct-0f3a","has_password":true},{"id":"acct-9b21","has_password":true}]})),
+        Some(
+            json!({"accounts":[{"id":"acct-0f3a","has_password":true},{"id":"acct-9b21","has_password":true}]}),
+        ),
     );
     e.select_email_account("acct-9b21");
     draw_at_size(
@@ -463,7 +469,11 @@ fn email_invalid_pro_light() {
     e.save_email_account();
     assert!(e.failed, "{}", e.status);
     assert_eq!(e.email.form.as_ref().map(|f| f.errors.len()), Some(2));
-    draw(chrome(Scheme::Pro, Mode::Light), "email_invalid_pro_light", e);
+    draw(
+        chrome(Scheme::Pro, Mode::Light),
+        "email_invalid_pro_light",
+        e,
+    );
 }
 
 /// The releases service is not on the Bus: the panel says so.

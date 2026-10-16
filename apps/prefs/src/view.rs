@@ -166,7 +166,9 @@ pub fn view(
                             wallpaper::controls(ui, engine, commands, strings, &mut events)
                         }
                         Section::Fonts => fonts(ui),
-                        Section::Email => email::section(ui, engine, commands, strings, &mut events),
+                        Section::Email => {
+                            email::section(ui, engine, commands, strings, &mut events)
+                        }
                         _ => unreachable!(),
                     });
             }

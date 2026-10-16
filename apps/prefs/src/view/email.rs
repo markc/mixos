@@ -199,8 +199,24 @@ fn account(
             });
     });
     ui.horizontal(|ui| {
-        command_button(ui, engine, commands, strings, "email.account.save", true, events);
-        command_button(ui, engine, commands, strings, "email.account.revert", false, events);
+        command_button(
+            ui,
+            engine,
+            commands,
+            strings,
+            "email.account.save",
+            true,
+            events,
+        );
+        command_button(
+            ui,
+            engine,
+            commands,
+            strings,
+            "email.account.revert",
+            false,
+            events,
+        );
     });
     if let Some(saved) = saved {
         bars::hairline(ui);
@@ -238,13 +254,33 @@ fn password(
                 if response.changed() {
                     events.push(UiEvent::EmailPassword(Secret::new(typed)));
                 }
-                ui.label(RichText::new(password_state(engine, &saved.id)).small().weak());
+                ui.label(
+                    RichText::new(password_state(engine, &saved.id))
+                        .small()
+                        .weak(),
+                );
             });
             ui.end_row();
         });
     ui.horizontal(|ui| {
-        command_button(ui, engine, commands, strings, "email.password.set", true, events);
-        command_button(ui, engine, commands, strings, "email.account.connect", false, events);
+        command_button(
+            ui,
+            engine,
+            commands,
+            strings,
+            "email.password.set",
+            true,
+            events,
+        );
+        command_button(
+            ui,
+            engine,
+            commands,
+            strings,
+            "email.account.connect",
+            false,
+            events,
+        );
     });
     if let Some((text, failed)) = &engine.email.outcome {
         let text = if *failed {
