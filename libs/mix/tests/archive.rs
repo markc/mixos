@@ -817,7 +817,7 @@ async fn declared_file_size_is_refused_before_reading_data() {
 #[tokio::test]
 async fn extension_sizes_are_bounded_before_buffering() {
     let d = tmpdir("metadata-budget");
-    for kind in [b'L', b'K', b'x', b'g'] {
+    for kind in *b"LKxg" {
         for size in [65_537, 1 << 30] {
             let arc = d.join(format!("{kind}-{size}.tar"));
             let mut header = Header::new_gnu();
@@ -843,7 +843,7 @@ async fn extension_sizes_are_bounded_before_buffering() {
         }
     }
     // GNU extension bodies also respect max_name plus one terminating NUL.
-    for kind in [b'L', b'K'] {
+    for kind in *b"LK" {
         let arc = d.join(format!("name-{kind}.tar"));
         let mut header = Header::new_gnu();
         header.set_entry_type(tar::EntryType::new(kind));
