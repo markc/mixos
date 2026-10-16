@@ -371,6 +371,32 @@ RFC 8621 server builds an Email from uploaded MIME with <code>Email/import</code
 so it refuses the send; <code>Email/import</code> is future work.</p>
 </li>
 <li>
+<p><strong>Drafts</strong> are saved to the account's Drafts mailbox as you write, five
+seconds after the last edit. Nothing runs while nobody types. Each save
+is one <code>Email/set</code> that creates the new draft (<code>$draft $seen</code>, its Bcc
+kept in the bytes) and destroys the one it replaces. Only one save runs
+at a time per compose; edits made during it go when it lands. A quiet
+line under the body says <strong>Saving…</strong>, <strong>Saved hh:mm</strong> or <strong>Not saved:</strong>
+and why (no Drafts mailbox, or the server's refusal). Closing with unsaved
+work asks <strong>Save Draft / Discard / Cancel</strong>, with Cancel the default.
+Discard destroys the saved draft, and so does a send that goes. Opening
+a message in Drafts (or one marked <code>$draft</code>) resumes it in compose with
+its To, Cc, Bcc, subject, body and the message it replies to, and later
+saves replace it. Quitting saves the open draft within the close's
+five-second budget. Autosave follows <code>email.compose.autosave</code> (Prefs ›
+Email); Ctrl+S saves now either way.</p>
+</li>
+<li>
+<p><strong>Address completion</strong> in To, Cc and Bcc: from two characters, the entry
+being typed (the one after the last <code>,</code> or <code>;</code> outside quotes) is looked
+up once typing pauses. Contacts across every address book come first,
+one per address on the card. After them come the people the loaded Sent
+pages went to and the loaded inbox pages came from, held in memory only
+and never fetched for this. Addresses already in the field are skipped.
+Up and Down move, Enter or Tab take one (<code>Name &lt;addr&gt;, </code>, the name quoted
+when it needs it), and Esc closes the list.</p>
+</li>
+<li>
 <p><strong>Mail actions</strong>: delete to Trash (confirmed when the settings ask),
 move to a mailbox, flag, and mark unread.</p>
 </li>
@@ -384,6 +410,7 @@ instants.</p>
 <tr><td>Ctrl+R</td><td>Refresh the account</td></tr>
 <tr><td>Ctrl+Q</td><td>Quit</td></tr>
 <tr><td>Ctrl+N</td><td>Compose</td></tr>
+<tr><td>Ctrl+S</td><td>Save the open compose as a draft</td></tr>
 <tr><td>Ctrl+Shift+R</td><td>Reply</td></tr>
 <tr><td>Ctrl+Shift+A</td><td>Reply all</td></tr>
 <tr><td>Ctrl+L</td><td>Forward</td></tr>
@@ -427,6 +454,7 @@ never waits on them.</p>
 <tr><td><code>email.get {account?, id}</code></td><td>query</td><td>one email's headers and <code>text</code> body</td></tr>
 <tr><td><code>email.calendars</code>, <code>email.events {calendar?, from?, to?}</code>, <code>email.event.get {id}</code></td><td>query</td><td>calendars and events</td></tr>
 <tr><td><code>email.books</code>, <code>email.contacts {book?, filter?}</code>, <code>email.contact.get {id}</code></td><td>query</td><td>address books and contacts</td></tr>
+<tr><td><code>email.contacts.suggest {account?, text, limit?}</code></td><td>query</td><td>address completions: contacts across every book, then recent correspondents (<code>{suggestions: [{name, email, address, source}]}</code>)</td></tr>
 <tr><td><code>email.show</code>, <code>email.quit</code></td><td>system, intent</td><td>raise, close</td></tr>
 <tr><td><code>email.execute {id}</code></td><td>intent</td><td>run any registry command (published with origin <code>bus</code>)</td></tr>
 <tr><td><code>email.mode {name}</code>, <code>email.refresh {account?}</code></td><td>intent</td><td>switch surface; fetch again (a failed account reconnects)</td></tr>
@@ -438,7 +466,8 @@ never waits on them.</p>
 <tr><td><code>email.open {id}</code></td><td>intent</td><td>show an email in the reader; answers once loaded</td></tr>
 <tr><td><code>email.mark {ids, read?, flagged?}</code>, <code>email.move {ids, mailbox}</code>, <code>email.delete {ids, destroy?}</code></td><td>intent</td><td>the list and counts refresh after</td></tr>
 <tr><td><code>email.send {to, cc?, bcc?, subject, body, in_reply_to?}</code></td><td>intent</td><td>send without the dialog</td></tr>
-<tr><td><code>email.compose {…}</code>, <code>email.reply {id, all?}</code>, <code>email.forward {id, to?}</code></td><td>intent</td><td>open the compose dialog, filled in</td></tr>
+<tr><td><code>email.compose {…}</code>, <code>email.reply {id, all?}</code>, <code>email.forward {id, to?}</code></td><td>intent</td><td>open the compose dialog, filled in; answers with its <code>compose</code> id</td></tr>
+<tr><td><code>email.draft.save {compose?}</code></td><td>intent</td><td>save the open compose to Drafts now; answers <code>{id, compose}</code> once the server confirms (<code>OUTCOME_UNKNOWN</code> if Email closes first)</td></tr>
 <tr><td><code>email.calendar.select</code>, <code>email.event.create/update/delete</code></td><td>intent</td><td><code>create</code> answers <code>{id}</code>; <code>end</code> or an ISO 8601 <code>duration</code></td></tr>
 <tr><td><code>email.book.select</code>, <code>email.contact.create/update/delete</code></td><td>intent</td><td><code>create</code> answers <code>{id}</code></td></tr>
 <tr><td><code>email.ui.*</code>, <code>email.window</code>, <code>email.window.state</code></td><td>input, query</td><td>the toolkit <a href="/docs/drive/">drive verbs</a></td></tr>
@@ -449,6 +478,10 @@ is published on <code>email.command.executed</code> with how it was reached.</p>
 <code>mail.reader</code>: <code>{"format": "markdown" | "plain", "auto": true | false}</code>,
 where <code>auto</code> is false once the person (or <code>email.execute {"id":"view.reader.markdown"}</code>) has flipped it. The command is disabled
 when the open email has no text body.</p>
+<p>Its <code>compose</code> object carries the compose <code>id</code>, the close prompt
+(<code>closing</code>), the address dropdown (<code>suggest</code>: field, query, cursor,
+suggestions), and <code>draft</code>: <code>{id, state, saved_at, error, queued, autosave, line}</code>. <code>state</code> is <code>none</code>, <code>unsaved</code>, <code>saving</code>, <code>saved</code> or
+<code>failed</code>, and <code>line</code> is what the dialog's save line says.</p>
 <p>From Mix:</p>
 <pre><code>send email email.accounts
 send email email.list body='{"account":"acct-3f9a1c2b4d5e","mailbox":"m-inbox","limit":20}'

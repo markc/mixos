@@ -30,6 +30,9 @@ use crate::secrets::Secrets;
 use crate::work::{Login, Work};
 use crate::writer::{self, Change, Refusal};
 
+pub mod drafts;
+pub mod suggest;
+
 /// Which surface the centre pane shows.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -182,6 +185,14 @@ pub struct ComposeState {
     /// The account's new address, when its login (URL or address) changed
     /// while this draft was open: Send waits until the person takes it.
     pub stale: Option<StaleFrom>,
+    /// This compose's id: Bus callers name it, its draft saves carry it.
+    pub id: u64,
+    /// Its draft on the server ([`drafts`]).
+    pub save: drafts::Autosave,
+    /// The address field's completions ([`suggest`]).
+    pub suggest: Option<suggest::Suggest>,
+    /// Close was asked with unsaved work: Save draft, Discard or Cancel.
+    pub closing: bool,
 }
 
 /// A replacement From, bound to the account and connection it came from:
@@ -211,6 +222,10 @@ impl ComposeState {
             error: None,
             sending: None,
             stale: None,
+            id: 0,
+            save: drafts::Autosave::default(),
+            suggest: None,
+            closing: false,
         }
     }
 }
@@ -243,6 +258,9 @@ pub struct AccountView {
     tickets: Tickets,
     /// Bumped on every connect: answers from an older connection are void.
     generation: u64,
+    /// Whom this account's loaded Sent pages went to and its loaded inbox
+    /// pages came from, for address completion ([`suggest`]). Memory only.
+    pub recent: Vec<EmailAddress>,
 }
 
 impl AccountView {
@@ -256,6 +274,7 @@ impl AccountView {
             contacts: ContactState::default(),
             tickets: Tickets::default(),
             generation: 0,
+            recent: Vec::new(),
         }
     }
 
@@ -273,6 +292,7 @@ impl AccountView {
     fn forget(&mut self) {
         self.session = None;
         self.mail = MailState::default();
+        self.recent.clear();
         self.calendars = CalendarState::default();
         let filter = std::mem::take(&mut self.contacts.filter);
         self.contacts = ContactState {
@@ -877,6 +897,13 @@ pub struct State {
     next_ticket: u64,
     /// Whether the persisted config (shape, cache) has changed.
     config_dirty: bool,
+    /// Draft saves in flight, by operation ticket ([`drafts`]).
+    draft_ops: BTreeMap<u64, drafts::DraftOp>,
+    /// The draft each send in flight replaces, by send ticket, as (account,
+    /// id): a send that goes destroys it, its compose open or not.
+    send_drafts: BTreeMap<u64, (String, String)>,
+    /// The draft resume asked for last: (ticket, account, email id).
+    resuming: Option<(u64, String, String)>,
 }
 
 impl State {
@@ -922,6 +949,9 @@ impl State {
             saves: BTreeMap::new(),
             next_ticket: 0,
             config_dirty: false,
+            draft_ops: BTreeMap::new(),
+            send_drafts: BTreeMap::new(),
+            resuming: None,
         };
         state.reconcile();
         state.config_dirty = false;
@@ -1102,6 +1132,9 @@ impl State {
                 self.refuse(reply, code::CANCELLED, &cancelled);
             }
         }
+        // A draft save still unanswered was answered OUTCOME_UNKNOWN above
+        // (its callers are outstanding writes): the server may have it.
+        self.draft_ops.clear();
         self.work.clear();
     }
 
@@ -1195,7 +1228,7 @@ impl State {
                 .as_ref()
                 .is_some_and(|c| c.account == gone.entry.id)
             {
-                self.compose = None;
+                self.drop_compose();
             }
         }
         self.accounts = next;
@@ -1994,6 +2027,13 @@ impl State {
             // A send is settled by its own ticket even when the account has
             // reconnected since: the person must hear whether it went.
             Event::Account(tag, Done::Sent(ticket, result)) => self.sent(&tag, ticket, result),
+            // A draft save likewise: its compose, or the cleanup of the
+            // draft it made, depends on the save, not the connection.
+            Event::Account(tag, Done::DraftSaved(op, result)) => {
+                self.draft_saved(&tag, op, result)
+            }
+            Event::DraftDue(compose, edits) => self.draft_due(compose, edits),
+            Event::SuggestDue(compose, ticket) => self.suggest_due(compose, ticket),
             Event::Account(tag, Done::Opened(ticket, Some(reply), result)) => {
                 // The caller hears "loaded" only if the reader will show it:
                 // the same connection, and still the latest open.
@@ -2058,6 +2098,8 @@ impl State {
                         view.mail.busy = false;
                         view.mail.emails = page.emails;
                         view.mail.total = page.total;
+                        let emails = view.mail.emails.clone();
+                        self.remember_recipients(&tag.account, &emails);
                     }
                     Done::Page(_, Err(error)) => {
                         view.mail.busy = false;
@@ -2077,7 +2119,9 @@ impl State {
                         account: tag.account.clone(),
                     }),
                     // Settled above, before the generation check.
-                    Done::Sent(..) => {}
+                    Done::Sent(..) | Done::DraftSaved(..) => {}
+                    Done::Resumed(ticket, result) => self.resumed(&tag, ticket, *result),
+                    Done::Suggested(ticket, result) => self.suggested(&tag, ticket, result),
                     Done::Calendars(Ok(calendars)) => {
                         view.calendars.calendars = calendars;
                         let selected = view
@@ -2277,6 +2321,18 @@ impl State {
         let Some(view) = self.accounts.iter_mut().find(|v| v.entry.id == account) else {
             return false;
         };
+        // A draft (in Drafts, or marked `$draft`) opens in compose to go on
+        // writing, not in the reader.
+        let drafts = view.mail.selected_mailbox().and_then(|m| m.role.as_deref()) == Some("drafts");
+        if view
+            .mail
+            .emails
+            .iter()
+            .any(|email| email.id == id && (drafts || email.is_draft()))
+        {
+            self.resume_draft(account, id);
+            return true;
+        }
         // Only a row of the shown page opens: a click that raced a mailbox
         // change names a row that is gone.
         let Some(email) = view.mail.emails.iter_mut().find(|email| email.id == id) else {
@@ -2406,6 +2462,10 @@ impl State {
         };
         let email = match then {
             Then::Answer => return self.reply(reply, 0, value),
+            Then::Suggest { text, limit } => {
+                let body = self.suggest_answer(&tag.account, &text, limit, &value);
+                return self.reply(reply, 0, body);
+            }
             _ => serde_json::from_value::<Email>(value),
         };
         let email = match email {
@@ -2424,14 +2484,15 @@ impl State {
         let opened = match then {
             Then::Reply(all) => self.reply_to(account, &email, all),
             Then::Forward(to) => self.forward(account, &email, &to),
-            Then::Answer => false,
+            Then::Answer | Then::Suggest { .. } => false,
         };
         if opened {
             let subject = self.compose.as_ref().map(|c| c.draft.subject.clone());
+            let compose = self.compose.as_ref().map(|c| c.id);
             self.reply(
                 reply,
                 0,
-                json!({ "composing": account, "subject": subject }),
+                json!({ "composing": account, "subject": subject, "compose": compose }),
             );
         } else {
             self.refuse(reply, code::UNKNOWN_ACCOUNT, &crate::label("no-account"));
@@ -2539,10 +2600,15 @@ impl State {
         let mine = self.compose.as_ref().is_some_and(|compose| {
             compose.account == tag.account && compose.sending == Some(ticket)
         });
+        let draft = self.send_drafts.remove(&ticket);
         match result {
             Ok(()) => {
                 if mine {
-                    self.compose = None;
+                    self.drop_compose();
+                }
+                // The message went: its draft goes with it.
+                if let Some((account, id)) = draft {
+                    self.destroy_draft(account, id);
                 }
                 self.status = crate::label("sent");
                 let limit = self.settings.mail.page_size;
@@ -2922,6 +2988,10 @@ impl State {
                 "stale": c.stale,
                 "busy": c.busy,
                 "error": c.error,
+                "id": c.id,
+                "draft": self.draft_info(c),
+                "closing": c.closing,
+                "suggest": Self::suggest_info(c),
             })
         });
         let form = self.form.as_ref().map(|form| match form {
@@ -3257,7 +3327,9 @@ impl State {
         if draft.body.is_empty() {
             draft.body = self.signed_body(&account);
         }
-        self.compose = Some(ComposeState::new(&account, draft));
+        let mut compose = ComposeState::new(&account, draft);
+        compose.id = self.ticket();
+        self.compose = Some(compose);
         true
     }
 
@@ -3425,16 +3497,29 @@ impl State {
                 // An untouched signature follows the account.
                 let old = signed(self, &compose.account);
                 let new = signed(self, &account);
+                let mut moved = None;
                 if let Some(compose) = &mut self.compose {
                     if compose.draft.body == old {
                         compose.draft.body = new;
                     }
+                    // The saved draft is the old account's: it goes, and the
+                    // next save is the new account's.
+                    moved = compose
+                        .save
+                        .draft_id
+                        .take()
+                        .map(|id| (compose.account.clone(), id));
                     compose.account = account;
                     compose.draft.from = email;
                     // The new account's From is its current address.
                     compose.stale = None;
                     compose.error = None;
+                    compose.suggest = None;
                 }
+                if let Some((old_account, id)) = moved {
+                    self.destroy_draft(old_account, id);
+                }
+                self.note_edit();
             }
             UiEvent::ComposeField(field, value) => {
                 // While a send is in flight the dialog shows what was sent:
@@ -3450,9 +3535,16 @@ impl State {
                         ComposeField::Subject => compose.draft.subject = value,
                         ComposeField::Body => compose.draft.body = value,
                     }
+                    if matches!(field, ComposeField::To | ComposeField::Cc | ComposeField::Bcc) {
+                        self.address_edited(field);
+                    }
+                    self.note_edit();
                 }
             }
-            UiEvent::CloseCompose => self.compose = None,
+            UiEvent::CloseCompose => self.ask_close(),
+            UiEvent::ComposeClose(choice) => self.close_choice(choice),
+            UiEvent::SuggestKey(key) => self.suggest_key(key),
+            UiEvent::SuggestAccept(index) => self.suggest_accept(index),
             UiEvent::ComposeUseNewFrom => {
                 // Only for the account and connection the address came from.
                 let current = self.compose.as_ref().and_then(|c| {
@@ -3565,7 +3657,11 @@ impl State {
                 compose.busy = true;
                 compose.error = None;
                 compose.sending = Some(ticket);
+                compose.suggest = None;
                 let draft = compose.draft.clone();
+                if let Some(id) = compose.save.draft_id.clone() {
+                    self.send_drafts.insert(ticket, (account.clone(), id));
+                }
                 view.tickets.send = ticket;
                 self.work.push(Work::Send {
                     account,
