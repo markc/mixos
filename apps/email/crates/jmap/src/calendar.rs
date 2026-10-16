@@ -481,8 +481,13 @@ mod tests {
         let bad_calendar = event_create_args("A1", "uid-1", "not-a-uuid", &draft());
         assert!(matches!(bad_calendar, Err(Error::Protocol(_))));
         assert!(
-            event_create_args("A1", "uid-1", "0196c0de-0000-7000-8000-000000000001", &draft())
-                .is_ok()
+            event_create_args(
+                "A1",
+                "uid-1",
+                "0196c0de-0000-7000-8000-000000000001",
+                &draft()
+            )
+            .is_ok()
         );
     }
 
