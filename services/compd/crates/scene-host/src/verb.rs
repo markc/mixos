@@ -19,6 +19,9 @@ pub enum SceneVerb {
     /// Map / unmap the dialog seat (Scene Editor plan §4.3 Q2).
     DialogShow,
     DialogHide,
+    /// Map / unmap the pointer-only toast seat.
+    ToastShow,
+    ToastHide,
     /// `shell.ping`: `{service, status: "ok"}`, as Quoin answers it (the
     /// liveness probe loaders and gates wait on).
     Ping,
@@ -74,6 +77,8 @@ impl SceneVerb {
             "scenes.list" => Self::List,
             "dialog.show" => Self::DialogShow,
             "dialog.hide" => Self::DialogHide,
+            "toast.show" => Self::ToastShow,
+            "toast.hide" => Self::ToastHide,
             "ping" => Self::Ping,
             "info" => Self::Info,
             "props.get" => Self::PropsGet,
@@ -143,6 +148,8 @@ impl SceneVerb {
                 | Self::Unload
                 | Self::DialogShow
                 | Self::DialogHide
+                | Self::ToastShow
+                | Self::ToastHide
                 | Self::PanelMode
                 | Self::PanelPageSet
                 | Self::PanelOrder
@@ -168,6 +175,8 @@ impl SceneVerb {
             "scenes.list",
             "dialog.show",
             "dialog.hide",
+            "toast.show",
+            "toast.hide",
             "ping",
             "info",
             "props.get",

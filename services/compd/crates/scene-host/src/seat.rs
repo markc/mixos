@@ -1,5 +1,5 @@
-//! The host's mount reservations: edge pages by page id, and the one dialog
-//! seat.
+//! The host's mount reservations: edge pages by page id, a dialog seat and
+//! an independent toast seat.
 //!
 //! Quoin keeps these beside its panel carousel; compd has no carousel, so
 //! the registry here is the whole page namespace and the renderer places
@@ -159,6 +159,45 @@ pub struct DialogSlot {
     seat: Option<DialogSeat>,
 }
 
+/// The toast seat carries the same geometry and loader receipt as a dialog,
+/// but has its own reservation and never pre-empts another toast.
+pub type ToastSeat = DialogSeat;
+
+#[derive(Clone, Debug, Default)]
+pub struct ToastSlot {
+    seat: Option<ToastSeat>,
+}
+
+impl ToastSlot {
+    pub fn seat(&self) -> Option<&ToastSeat> {
+        self.seat.as_ref()
+    }
+
+    pub fn register(&mut self, seat: ToastSeat) -> Result<(), DialogError> {
+        if seat.scene.trim().is_empty() {
+            return Err(DialogError::EmptyName);
+        }
+        if let Some(held) = &self.seat
+            && (held.scene != seat.scene || held.owner != seat.owner)
+        {
+            return Err(DialogError::Busy {
+                scene: held.scene.clone(),
+                owner: held.owner.clone(),
+            });
+        }
+        self.seat = Some(seat);
+        Ok(())
+    }
+
+    pub fn release(&mut self, scene: &str) -> Option<ToastSeat> {
+        if self.seat.as_ref().is_some_and(|seat| seat.scene == scene) {
+            self.seat.take()
+        } else {
+            None
+        }
+    }
+}
+
 impl DialogSlot {
     pub fn seat(&self) -> Option<&DialogSeat> {
         self.seat.as_ref()
@@ -220,6 +259,26 @@ mod tests {
             title: None,
             chrome: true,
         }
+    }
+
+    #[test]
+    fn toast_seat_updates_refuses_busy_and_releases_only_its_holder() {
+        let mut toast = ToastSlot::default();
+        toast.register(seat("toast", "loader")).unwrap();
+        let held = toast.seat().unwrap().clone();
+        for other in [seat("other", "loader"), seat("toast", "other")] {
+            assert!(matches!(
+                toast.register(other),
+                Err(DialogError::Busy { .. })
+            ));
+            assert_eq!(toast.seat(), Some(&held));
+        }
+        assert!(toast.release("other").is_none());
+        let mut resized = held.clone();
+        resized.h = 240.0;
+        toast.register(resized.clone()).unwrap();
+        assert_eq!(toast.release("toast"), Some(resized));
+        assert!(toast.seat().is_none());
     }
 
     #[test]

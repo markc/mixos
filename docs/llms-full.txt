@@ -2061,6 +2061,31 @@ persistence.
 The settings come from [settingsd](../settingsd/README.md) through the
 [settings](../settings/README.md) library.
 
+## Toast scenes
+
+A scene with `window: {"kind":"toast","w":360,"h":120}` uses a
+separate, pointer-interactive toast seat. It never takes keyboard focus,
+including on click or with an authored autofocus field. It draws above
+windows and edge panels, below the dialog and session lock.
+
+The draft intent verbs are `shell.toast.show {scene, output?, h?}` and
+`shell.toast.hide {scene}`. Both reply `{scene, visible, applied:true}`.
+Scenes load hidden; show reserves the one toast seat and hide releases it.
+A different scene's show returns rc 10 `TOAST_BUSY` with
+`holder:{scene, owner}`. Unknown scenes return `NOT_FOUND`, other mount
+kinds `NOT_TOAST`, and a nonnumeric height `INVALID_HEIGHT`.
+
+The output defaults to the selected output, as for dialogs. Width clamps
+to 240–2048 logical px and height to 60–2048 (defaults 360×120). A show can
+override height; showing the same scene again resizes it, and omitting
+height preserves its current override. Reload updates the authored geometry
+and keeps visibility; changing kind requires an unload first.
+
+Placement is top right, 12 logical px inside the usable area left by
+layer-shell exclusive zones and docked scene panels. The drawn size fits
+inside that area on small outputs. Chrome defaults to false; `chrome:true`
+adds a title frame and a close button that hides the toast.
+
 ## Layout
 
 | Path | What |
@@ -28584,6 +28609,12 @@ The node fence is parsed by [strict](../strict/README.md) and never
 executed. A binding may read `$model` anywhere and `$item` inside a list
 template; calls, assignments, statements and shell or Bus forms are refused
 at compile time with `binding-policy`.
+
+Window declarations accept `kind:"edge"`, `kind:"dialog"` and
+`kind:"toast"`. Toasts are pointer-only overlays in compd, with optional
+`w`, `h`, `title` and `chrome` (false by default). The host clamps their
+geometry and manages visibility through its
+[toast verbs](../compd/README.md#toast-scenes).
 
 Test: `cargo test -p scene`.
 

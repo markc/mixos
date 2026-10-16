@@ -334,7 +334,7 @@ impl Panels {
         self.popup_routes.clear();
         for (name, entry) in store.scenes() {
             let tree = entry.tree();
-            if crate::mount::is_dialog(tree) {
+            if crate::mount::is_overlay(tree) {
                 continue;
             }
             let page = page_id(tree);

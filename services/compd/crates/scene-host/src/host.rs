@@ -82,6 +82,13 @@ impl Host {
     fn mapped_output(&self, scene: &str) -> Option<String> {
         let entry = self.store.scene(scene)?;
         let tree = entry.tree();
+        if crate::mount::is_toast(tree) {
+            return self
+                .store
+                .toast_seat()
+                .filter(|seat| seat.scene == scene && entry.visible())
+                .map(|seat| seat.output.clone());
+        }
         if crate::mount::is_dialog(tree) {
             return self
                 .store
@@ -527,6 +534,40 @@ impl Host {
                     answer
                 }
             }
+            SceneVerb::ToastShow | SceneVerb::ToastHide => {
+                let scene = argument(request, &args, "scene").unwrap_or_default();
+                let visible = request.verb == SceneVerb::ToastShow;
+                let height = if visible && args.get("h").is_some() {
+                    let Some(h) = number_argument(&args, "h") else {
+                        return Answer {
+                            rc: 10,
+                            body: json!({"error_code":"INVALID_HEIGHT", "message":"h must be a finite number"}).to_string(),
+                            publish: Vec::new(),
+                            changed: false,
+                        };
+                    };
+                    Some(h.clamp(60.0, 2048.0) as f32)
+                } else {
+                    None
+                };
+                let output = argument(request, &args, "output")
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(output);
+                match self.store.set_toast_visible(scene, visible, output, height) {
+                    Ok(()) => Answer {
+                        rc: 0,
+                        body: json!({"scene":scene, "visible":visible, "applied":true}).to_string(),
+                        publish: Vec::new(),
+                        changed: true,
+                    },
+                    Err(body) => Answer {
+                        rc: 10,
+                        body: body.to_string(),
+                        publish: Vec::new(),
+                        changed: false,
+                    },
+                }
+            }
             SceneVerb::DialogShow | SceneVerb::DialogHide => {
                 // Frozen in shell-verbs.json: `{scene, visible, applied}`, or
                 // NOT_FOUND / NOT_DIALOG.
@@ -780,6 +821,13 @@ impl SceneHost {
                 Action::HideDialog(scene) => {
                     serviced.changed |= self.host.store.set_dialog_visible(&scene, false)
                 }
+                Action::HideToast(scene) => {
+                    serviced.changed |= self
+                        .host
+                        .store
+                        .set_toast_visible(&scene, false, output, None)
+                        .is_ok()
+                }
                 Action::EscapeEdge(scene) => {
                     if let Some(surface) = self.surfaces.get(&scene)
                         && lp
@@ -837,7 +885,7 @@ impl SceneHost {
                                     && Some(other.handle()) == focused
                             })
                             .and_then(|(name, _)| self.host.store.scene(name))
-                            .filter(|entry| !crate::mount::is_dialog(entry.tree()))
+                            .filter(|entry| !crate::mount::is_overlay(entry.tree()))
                             .filter(|entry| {
                                 let edge = crate::mount::scene_edge(entry.tree());
                                 !self.host.panels.hidden(surface.output(), edge)
@@ -1143,7 +1191,8 @@ impl SceneHost {
                 entry.mounted()?;
                 let &(x, y, width, height) = self.placed.get(name)?;
                 let dialog = crate::mount::is_dialog(entry.tree());
-                let edge = (!dialog).then(|| crate::mount::scene_edge(entry.tree()));
+                let edge = (!crate::mount::is_overlay(entry.tree()))
+                    .then(|| crate::mount::scene_edge(entry.tree()));
                 // Quoin's layers: the dialog and an undocked (pinned or
                 // sliding) page are Overlay; a docked page is Top and
                 // reserves its thickness.
@@ -1858,6 +1907,96 @@ mod tests {
             host.store.dialog_seat().unwrap().output,
             "HDMI-A-1",
             "shown on the selected output"
+        );
+    }
+
+    #[test]
+    fn toast_verbs_show_resize_retarget_refuse_busy_and_hide() {
+        let mut host = Host::default();
+        let body = |answer: &Answer| serde_json::from_str::<Value>(&answer.body).unwrap();
+        let call = |host: &mut Host, verb, args| {
+            host.answer(
+                &request(verb, "loader", LOCAL, args),
+                "DP-1",
+                Some(1),
+                &mut no_layout,
+            )
+        };
+        let missing = call(
+            &mut host,
+            SceneVerb::ToastShow,
+            json!({"scene":"toast-probe"}),
+        );
+        assert_eq!(body(&missing)["error_code"], "NOT_FOUND");
+        call(&mut host, SceneVerb::Load, json!({"source":EDGE}));
+        let edge = call(&mut host, SceneVerb::ToastHide, json!({"scene":"notes"}));
+        assert_eq!(body(&edge)["error_code"], "NOT_TOAST");
+        let source = "---\nscene: 1\nname: toast-probe\ncitizen: c\nwindow: {\"kind\":\"toast\",\"w\":360,\"h\":120}\n---\n```mix\nroot: {widget: \"column\", children: []}\n```\n";
+        for source in [
+            source.to_owned(),
+            source.replace("toast-probe", "other-toast"),
+        ] {
+            assert_eq!(
+                call(&mut host, SceneVerb::Load, json!({"source":source})).rc,
+                0
+            );
+        }
+        let shown = call(
+            &mut host,
+            SceneVerb::ToastShow,
+            json!({"scene":"toast-probe"}),
+        );
+        assert_eq!((shown.rc, shown.changed), (0, true));
+        assert_eq!(
+            body(&shown),
+            json!({"scene":"toast-probe", "visible":true, "applied":true})
+        );
+        assert_eq!(host.mapped_output("toast-probe").as_deref(), Some("DP-1"));
+        assert_eq!(host.store.toast_seat().unwrap().h, 120.0);
+        assert_eq!(
+            call(
+                &mut host,
+                SceneVerb::ToastShow,
+                json!({"scene":"toast-probe", "output":"DP-2", "h":280})
+            )
+            .rc,
+            0
+        );
+        assert_eq!(host.store.toast_seat().unwrap().h, 280.0);
+        assert_eq!(host.store.toast_seat().unwrap().output, "DP-2");
+        let invalid = call(
+            &mut host,
+            SceneVerb::ToastShow,
+            json!({"scene":"toast-probe", "h":"bad"}),
+        );
+        assert_eq!(body(&invalid)["error_code"], "INVALID_HEIGHT");
+        let busy = call(
+            &mut host,
+            SceneVerb::ToastShow,
+            json!({"scene":"other-toast"}),
+        );
+        assert_eq!((busy.rc, busy.changed), (10, false));
+        assert_eq!(body(&busy)["error_code"], "TOAST_BUSY");
+        assert_eq!(host.store.toast_seat().unwrap().h, 280.0);
+        let hidden = call(
+            &mut host,
+            SceneVerb::ToastHide,
+            json!({"scene":"toast-probe"}),
+        );
+        assert_eq!(
+            body(&hidden),
+            json!({"scene":"toast-probe", "visible":false, "applied":true})
+        );
+        assert!(host.store.toast_seat().is_none());
+        assert_eq!(host.mapped_output("toast-probe"), None);
+        assert_eq!(
+            call(
+                &mut host,
+                SceneVerb::ToastShow,
+                json!({"scene":"other-toast"})
+            )
+            .rc,
+            0
         );
     }
 
