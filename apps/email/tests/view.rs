@@ -11,9 +11,7 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use email::secrets::Secrets;
 use email::shell::{Done, Event};
-use email::state::{
-    ComposeField, Mode as Surface, Node, Phase, SessionInfo, State, Tag, UiState,
-};
+use email::state::{ComposeField, Mode as Surface, Node, Phase, SessionInfo, State, Tag, UiState};
 use email::view::{UiEvent, view};
 use email::work::Work;
 use email::{commands, label, strings};
@@ -451,13 +449,17 @@ fn no_accounts_studio_dark() {
 /// with a recipient, a subject and a body.
 fn composing() -> State {
     let mut state = fixture();
-    let boxes = [("m-in", "Inbox", "inbox"), ("m-drafts", "Drafts", "drafts"), ("m-sent", "Sent", "sent")]
-        .map(|(id, name, role)| jmap::Mailbox {
-            id: id.into(),
-            name: name.into(),
-            role: Some(role.into()),
-            ..jmap::Mailbox::default()
-        });
+    let boxes = [
+        ("m-in", "Inbox", "inbox"),
+        ("m-drafts", "Drafts", "drafts"),
+        ("m-sent", "Sent", "sent"),
+    ]
+    .map(|(id, name, role)| jmap::Mailbox {
+        id: id.into(),
+        name: name.into(),
+        role: Some(role.into()),
+        ..jmap::Mailbox::default()
+    });
     done(&mut state, "home", Done::Mailboxes(Ok(boxes.to_vec())));
     state.apply_ui(UiEvent::Compose);
     for (field, text) in [
@@ -475,7 +477,10 @@ fn composing() -> State {
 /// dropdown open under the field.
 fn suggesting() -> State {
     let mut state = composing();
-    state.apply_ui(UiEvent::ComposeField(ComposeField::To, "Bob <bob@example.invalid>, an".into()));
+    state.apply_ui(UiEvent::ComposeField(
+        ComposeField::To,
+        "Bob <bob@example.invalid>, an".into(),
+    ));
     let ticket = state
         .take_work()
         .into_iter()
@@ -505,11 +510,30 @@ fn the_dropdown_takes_its_keys_while_the_field_has_the_keyboard() {
     h.run();
     h.key_press(egui::Key::ArrowDown);
     h.run();
-    assert_eq!(h.state().state.compose.as_ref().unwrap().suggest.as_ref().unwrap().cursor, 1);
+    assert_eq!(
+        h.state()
+            .state
+            .compose
+            .as_ref()
+            .unwrap()
+            .suggest
+            .as_ref()
+            .unwrap()
+            .cursor,
+        1
+    );
     h.key_press(egui::Key::Enter);
     h.run();
-    let compose = h.state().state.compose.clone().expect("Enter took a suggestion, not Send");
-    assert_eq!(compose.to_text, "Bob <bob@example.invalid>, Joanne Andrews <joanne@example.invalid>, ");
+    let compose = h
+        .state()
+        .state
+        .compose
+        .clone()
+        .expect("Enter took a suggestion, not Send");
+    assert_eq!(
+        compose.to_text,
+        "Bob <bob@example.invalid>, Joanne Andrews <joanne@example.invalid>, "
+    );
     assert!(compose.suggest.is_none());
     // Esc with no dropdown open is the dialog's again: it asks to close.
     h.key_press(egui::Key::Escape);
@@ -527,12 +551,20 @@ fn compose_draft_saved_pro_light() {
         compose.save.saved_at = Some("14:05".into());
     }
     assert_eq!(state.draft_line().as_deref(), Some("Saved 14:05"));
-    snapshot("compose_draft_saved_pro_light", state, &theme(Scheme::Pro, Mode::Light));
+    snapshot(
+        "compose_draft_saved_pro_light",
+        state,
+        &theme(Scheme::Pro, Mode::Light),
+    );
 }
 
 #[test]
 fn compose_suggestions_studio_dark() {
-    snapshot("compose_suggestions_studio_dark", suggesting(), &theme(Scheme::Studio, Mode::Dark));
+    snapshot(
+        "compose_suggestions_studio_dark",
+        suggesting(),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
 }
 
 #[test]
@@ -540,5 +572,9 @@ fn compose_close_prompt_pro_light() {
     let mut state = composing();
     state.apply_ui(UiEvent::CloseCompose);
     assert!(state.compose.as_ref().unwrap().closing);
-    snapshot("compose_close_prompt_pro_light", state, &theme(Scheme::Pro, Mode::Light));
+    snapshot(
+        "compose_close_prompt_pro_light",
+        state,
+        &theme(Scheme::Pro, Mode::Light),
+    );
 }

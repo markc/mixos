@@ -2029,9 +2029,7 @@ impl State {
             Event::Account(tag, Done::Sent(ticket, result)) => self.sent(&tag, ticket, result),
             // A draft save likewise: its compose, or the cleanup of the
             // draft it made, depends on the save, not the connection.
-            Event::Account(tag, Done::DraftSaved(op, result)) => {
-                self.draft_saved(&tag, op, result)
-            }
+            Event::Account(tag, Done::DraftSaved(op, result)) => self.draft_saved(&tag, op, result),
             Event::DraftDue(compose, edits) => self.draft_due(compose, edits),
             Event::SuggestDue(compose, ticket) => self.suggest_due(compose, ticket),
             Event::Account(tag, Done::Opened(ticket, Some(reply), result)) => {
@@ -3535,7 +3533,10 @@ impl State {
                         ComposeField::Subject => compose.draft.subject = value,
                         ComposeField::Body => compose.draft.body = value,
                     }
-                    if matches!(field, ComposeField::To | ComposeField::Cc | ComposeField::Bcc) {
+                    if matches!(
+                        field,
+                        ComposeField::To | ComposeField::Cc | ComposeField::Bcc
+                    ) {
                         self.address_edited(field);
                     }
                     self.note_edit();

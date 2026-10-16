@@ -819,7 +819,9 @@ impl Shell {
             } => match self.client(&account) {
                 Some((tag, client)) => {
                     self.spawn(async move {
-                        let saved = client.save_draft(&draft, &mailbox, replaces.as_deref()).await;
+                        let saved = client
+                            .save_draft(&draft, &mailbox, replaces.as_deref())
+                            .await;
                         Event::Account(tag, Done::DraftSaved(op, saved))
                     });
                 }
@@ -964,7 +966,9 @@ impl Shell {
         let thread = self.saver_thread.take();
         let deadline = std::time::Instant::now() + SAVER_DRAIN;
         loop {
-            let saved = thread.as_ref().is_none_or(std::thread::JoinHandle::is_finished);
+            let saved = thread
+                .as_ref()
+                .is_none_or(std::thread::JoinHandle::is_finished);
             let left = deadline.saturating_duration_since(std::time::Instant::now());
             if (saved && !self.state.drafts_pending()) || left.is_zero() {
                 break;

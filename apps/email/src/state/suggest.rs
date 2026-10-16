@@ -215,10 +215,7 @@ impl State {
         let Some(view) = self.accounts.iter_mut().find(|v| v.entry.id == account) else {
             return;
         };
-        let role = view
-            .mail
-            .selected_mailbox()
-            .and_then(|m| m.role.as_deref());
+        let role = view.mail.selected_mailbox().and_then(|m| m.role.as_deref());
         let found: Vec<EmailAddress> = match role {
             Some("sent") => emails
                 .iter()
@@ -238,7 +235,11 @@ impl State {
             if key == me || !key.contains('@') {
                 continue;
             }
-            match view.recent.iter_mut().find(|a| a.email.to_lowercase() == key) {
+            match view
+                .recent
+                .iter_mut()
+                .find(|a| a.email.to_lowercase() == key)
+            {
                 // A name learned later fills in a bare one.
                 Some(known) => {
                     if known.name.is_none() {
@@ -352,13 +353,7 @@ impl State {
         };
         let present = field_text(compose, field).map(present).unwrap_or_default();
         if let Some(suggest) = &mut compose.suggest {
-            suggest.items = merge(
-                &suggest.query,
-                contacts,
-                &recent,
-                &present,
-                MAX_SUGGESTIONS,
-            );
+            suggest.items = merge(&suggest.query, contacts, &recent, &present, MAX_SUGGESTIONS);
             suggest.cursor = 0;
         }
     }
@@ -407,7 +402,13 @@ impl State {
 
     /// `email.contacts.suggest`'s answer: the contacts the server found,
     /// merged with `account`'s recent correspondents.
-    pub(super) fn suggest_answer(&self, account: &str, text: &str, limit: usize, contacts: &Value) -> Value {
+    pub(super) fn suggest_answer(
+        &self,
+        account: &str,
+        text: &str,
+        limit: usize,
+        contacts: &Value,
+    ) -> Value {
         let cards: Vec<Contact> = contacts
             .get("contacts")
             .cloned()
@@ -568,7 +569,10 @@ mod tests {
         let mut state = composing();
         let compose = state.compose.as_ref().unwrap().id;
         type_to(&mut state, "a");
-        assert!(state.compose.as_ref().unwrap().suggest.is_none(), "one character");
+        assert!(
+            state.compose.as_ref().unwrap().suggest.is_none(),
+            "one character"
+        );
         type_to(&mut state, "an");
         type_to(&mut state, "ann");
         let timers = suggest_timers(&state.take_work());
@@ -579,7 +583,14 @@ mod tests {
         assert!(state.take_work().is_empty(), "a later edit voids it");
         state.suggest_due(compose, newest);
         match state.take_work().as_slice() {
-            [Work::Suggest { ticket, text, limit: 8, .. }] => {
+            [
+                Work::Suggest {
+                    ticket,
+                    text,
+                    limit: 8,
+                    ..
+                },
+            ] => {
                 assert_eq!((*ticket, text.as_str()), (newest, "ann"));
             }
             other => panic!("{other:?}"),
@@ -587,7 +598,17 @@ mod tests {
         let tag = crate::state::tests::tag(&state, "a");
         let late = Ok(vec![card("Bob", "bob@example.invalid")]);
         state.apply(Event::Account(tag.clone(), Done::Suggested(older, late)));
-        assert!(state.compose.as_ref().unwrap().suggest.as_ref().unwrap().items.is_empty());
+        assert!(
+            state
+                .compose
+                .as_ref()
+                .unwrap()
+                .suggest
+                .as_ref()
+                .unwrap()
+                .items
+                .is_empty()
+        );
         let found = Ok(vec![
             card("Ann Example", "ann@example.invalid"),
             card("Joanne Ann", "jo@example.invalid"),
@@ -618,7 +639,10 @@ mod tests {
                 ..jmap::Mailbox::default()
             }
         });
-        state.apply(Event::Account(tag.clone(), Done::Mailboxes(Ok(boxes.to_vec()))));
+        state.apply(Event::Account(
+            tag.clone(),
+            Done::Mailboxes(Ok(boxes.to_vec())),
+        ));
         let page = |emails: Value| {
             Ok(jmap::EmailPage {
                 emails: serde_json::from_value(emails).unwrap(),
@@ -627,27 +651,58 @@ mod tests {
         };
         let ticket = |state: &State| state.account("a").unwrap().tickets.page;
         let t = ticket(&state);
-        state.apply(Event::Account(tag.clone(), Done::Page(t, page(json!([{
-            "id": "E1",
-            "from": [{ "name": "Cy", "email": "cy@example.invalid" }],
-            "to": [{ "email": "ann@a.example.invalid" }]
-        }])))));
+        state.apply(Event::Account(
+            tag.clone(),
+            Done::Page(
+                t,
+                page(json!([{
+                    "id": "E1",
+                    "from": [{ "name": "Cy", "email": "cy@example.invalid" }],
+                    "to": [{ "email": "ann@a.example.invalid" }]
+                }])),
+            ),
+        ));
         state.select_mailbox("a", "st".into());
         let t = ticket(&state);
-        state.apply(Event::Account(tag.clone(), Done::Page(t, page(json!([{
-            "id": "E2",
-            "from": [{ "email": "ann@a.example.invalid" }],
-            "to": [{ "name": "Dee", "email": "dee@example.invalid" }],
-            "cc": [{ "email": "eve@example.invalid" }]
-        }])))));
+        state.apply(Event::Account(
+            tag.clone(),
+            Done::Page(
+                t,
+                page(json!([{
+                    "id": "E2",
+                    "from": [{ "email": "ann@a.example.invalid" }],
+                    "to": [{ "name": "Dee", "email": "dee@example.invalid" }],
+                    "cc": [{ "email": "eve@example.invalid" }]
+                }])),
+            ),
+        ));
         state.select_mailbox("a", "x".into());
         let t = ticket(&state);
-        state.apply(Event::Account(tag, Done::Page(t, page(json!([{
-            "id": "E3",
-            "from": [{ "email": "zed@example.invalid" }]
-        }])))));
-        let recent: Vec<&str> = state.account("a").unwrap().recent.iter().map(|a| a.email.as_str()).collect();
-        assert_eq!(recent, ["cy@example.invalid", "dee@example.invalid", "eve@example.invalid"]);
+        state.apply(Event::Account(
+            tag,
+            Done::Page(
+                t,
+                page(json!([{
+                    "id": "E3",
+                    "from": [{ "email": "zed@example.invalid" }]
+                }])),
+            ),
+        ));
+        let recent: Vec<&str> = state
+            .account("a")
+            .unwrap()
+            .recent
+            .iter()
+            .map(|a| a.email.as_str())
+            .collect();
+        assert_eq!(
+            recent,
+            [
+                "cy@example.invalid",
+                "dee@example.invalid",
+                "eve@example.invalid"
+            ]
+        );
     }
 
     #[test]

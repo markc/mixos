@@ -128,9 +128,14 @@ impl State {
     /// subject, or a body beyond the account's signature.
     pub fn compose_has_content(&self, compose: &ComposeState) -> bool {
         let body = compose.draft.body.trim();
-        [&compose.to_text, &compose.cc_text, &compose.bcc_text, &compose.draft.subject]
-            .iter()
-            .any(|field| !field.trim().is_empty())
+        [
+            &compose.to_text,
+            &compose.cc_text,
+            &compose.bcc_text,
+            &compose.draft.subject,
+        ]
+        .iter()
+        .any(|field| !field.trim().is_empty())
             || (!body.is_empty() && body != self.signed_body(&compose.account).trim())
     }
 
@@ -500,7 +505,12 @@ impl State {
 
     /// A draft was read: it opens in compose (when none is open), and its
     /// later saves replace it.
-    pub(super) fn resumed(&mut self, tag: &Tag, ticket: u64, result: Result<Composed, jmap::Error>) {
+    pub(super) fn resumed(
+        &mut self,
+        tag: &Tag,
+        ticket: u64,
+        result: Result<Composed, jmap::Error>,
+    ) {
         let Some((_, account, id)) = self
             .resuming
             .take_if(|(t, account, _)| *t == ticket && *account == tag.account)
@@ -636,7 +646,10 @@ mod tests {
         assert!(saves(&work).is_empty(), "nothing saves while typing");
         state.draft_due(compose, 1);
         state.draft_due(compose, 2);
-        assert!(saves(&state.take_work()).is_empty(), "older timers are void");
+        assert!(
+            saves(&state.take_work()).is_empty(),
+            "older timers are void"
+        );
         state.draft_due(compose, 3);
         let work = state.take_work();
         match work.as_slice() {
@@ -696,7 +709,10 @@ mod tests {
         assert_eq!(replaces.as_deref(), Some("E1"));
         landed(&mut state, op3, "E3");
         let save = &state.compose.as_ref().unwrap().save;
-        assert_eq!((save.draft_id.as_deref(), save.name()), (Some("E3"), "saved"));
+        assert_eq!(
+            (save.draft_id.as_deref(), save.name()),
+            (Some("E3"), "saved")
+        );
     }
 
     /// A send that goes destroys the saved draft; a save still in flight
@@ -754,10 +770,19 @@ mod tests {
         state.take_work();
         assert!(state.open_email("a", "E9".into()));
         let ticket = match state.take_work().as_slice() {
-            [Work::ResumeDraft { account, ticket, id }] if account == "a" && id == "E9" => *ticket,
+            [
+                Work::ResumeDraft {
+                    account,
+                    ticket,
+                    id,
+                },
+            ] if account == "a" && id == "E9" => *ticket,
             other => panic!("{other:?}"),
         };
-        assert!(state.account("a").unwrap().mail.open.is_none(), "not the reader");
+        assert!(
+            state.account("a").unwrap().mail.open.is_none(),
+            "not the reader"
+        );
         let draft = Composed {
             to: jmap::draft_addresses("Ann <ann@example.invalid>, bo"),
             bcc: jmap::draft_addresses("dave@example.invalid"),
@@ -766,11 +791,17 @@ mod tests {
             in_reply_to: Some("<m1@example.invalid>".into()),
             ..Composed::default()
         };
-        state.apply(Event::Account(tag, Done::Resumed(ticket, Box::new(Ok(draft)))));
+        state.apply(Event::Account(
+            tag,
+            Done::Resumed(ticket, Box::new(Ok(draft))),
+        ));
         let compose = state.compose.clone().expect("resumed in compose");
         assert_eq!(compose.to_text, "Ann <ann@example.invalid>, bo");
         assert_eq!(compose.bcc_text, "dave@example.invalid");
-        assert_eq!(compose.draft.in_reply_to.as_deref(), Some("<m1@example.invalid>"));
+        assert_eq!(
+            compose.draft.in_reply_to.as_deref(),
+            Some("<m1@example.invalid>")
+        );
         assert_eq!(compose.save.draft_id.as_deref(), Some("E9"));
         assert_eq!(compose.draft.from, "ann@a.example.invalid");
         type_in(&mut state, ComposeField::Body, "Draft text, more");

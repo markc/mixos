@@ -47,7 +47,10 @@ pub fn parse_addresses(text: &str) -> std::result::Result<Vec<EmailAddress>, Str
         return Err(format!("nested '<' in {text:?}"));
     }
     if split.open {
-        let last = split.entries.last().map_or("", |range| &text[range.clone()]);
+        let last = split
+            .entries
+            .last()
+            .map_or("", |range| &text[range.clone()]);
         return Err(format!("unterminated quote or '<' in {:?}", last.trim()));
     }
     split
@@ -769,8 +772,14 @@ mod tests {
             ]
         );
         assert_eq!(draft.in_reply_to.as_deref(), Some("<m1@example.invalid>"));
-        assert_eq!((draft.subject.as_str(), draft.body.as_str()), ("Lunch", "Noon?"));
+        assert_eq!(
+            (draft.subject.as_str(), draft.body.as_str()),
+            ("Lunch", "Noon?")
+        );
         // A header in the body is not a header.
-        assert_eq!(header_value(b"A: 1\r\n\r\nBcc: x@example.invalid", "Bcc"), None);
+        assert_eq!(
+            header_value(b"A: 1\r\n\r\nBcc: x@example.invalid", "Bcc"),
+            None
+        );
     }
 }
