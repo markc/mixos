@@ -137,9 +137,23 @@ fn prepare(wallpaper: Wallpaper, revision: u64) -> Result<(Schedule, Decoded), S
     let seed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(revision, |d| d.as_nanos() as u64 ^ revision);
-    let schedule = Schedule::new(files, interval_s, shuffle, seed, Duration::ZERO)?;
-    let image = wallpaper::decode::load(schedule.current())?;
-    Ok((schedule, image))
+    let mut schedule = Schedule::new(files, interval_s, shuffle, seed, Duration::ZERO)?;
+    // A file that fails to decode is skipped, as the timer path skips one. One
+    // lap of the order visits each file once; refuse only when none decodes.
+    let mut first_error = None;
+    for _ in 0..schedule.files.len() {
+        match wallpaper::decode::load(schedule.current()) {
+            Ok(image) => return Ok((schedule, image)),
+            Err(e) => {
+                first_error.get_or_insert(e);
+                schedule.advance(Duration::ZERO);
+            }
+        }
+    }
+    Err(format!(
+        "no slideshow image could be decoded: {}",
+        first_error.unwrap_or_default()
+    ))
 }
 
 /// Always return a completion when the worker unwinds. An abort profile still
@@ -1677,5 +1691,32 @@ mod tests {
         drop(old_view);
         c.decoded(3, "/w/10.png".into(), full_size());
         assert_eq!(c.engine.status().active, 3);
+    }
+
+    fn slideshow_of(paths: Vec<PathBuf>) -> Wallpaper {
+        Wallpaper::Slideshow {
+            source: SlideSource::Images(paths),
+            interval_s: 5,
+            shuffle: false,
+            fallback: None,
+            fit: wallpaper::fit::Fit::Fill,
+        }
+    }
+
+    #[test]
+    fn a_slideshow_whose_first_file_fails_starts_on_the_next() {
+        let dir = std::env::temp_dir().join(format!("backdrop-prepare-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bad = dir.join("a-bad.png");
+        let good = dir.join("b-good.png");
+        std::fs::write(&bad, b"not a png").unwrap();
+        image::RgbaImage::new(2, 2).save(&good).unwrap();
+        let (schedule, image) = prepare(slideshow_of(vec![bad.clone(), good.clone()]), 1)
+            .expect("the decodable file is used");
+        assert_eq!(schedule.current(), good.as_path());
+        assert_eq!(image.original_size, [2, 2]);
+        let refused = prepare(slideshow_of(vec![bad.clone(), dir.join("missing.png")]), 2);
+        assert!(refused.unwrap_err().contains("no slideshow image could be decoded"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

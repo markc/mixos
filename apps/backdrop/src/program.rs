@@ -298,7 +298,8 @@ fn current_texture(
         .iter()
         .any(|side| *side as usize > maximum)
     {
-        slots.clear();
+        // A retry cannot succeed on this device: keep the last good texture on
+        // screen rather than fall back.
         return Err(format!(
             "image texture {} × {} exceeds the device's {maximum}-pixel side limit",
             resident.image.size[0], resident.image.size[1]
@@ -539,7 +540,12 @@ impl Backdrop {
                         Ok(texture) => Some((texture, resident.image.original_size, *fit)),
                         Err(reason) => {
                             error = Some(reason);
-                            None
+                            // A budget refusal has released every slot; a device
+                            // refusal keeps the last good image.
+                            slots
+                                .current
+                                .as_ref()
+                                .map(|slot| (slot.texture.clone(), slot.original, slot.fit))
                         }
                     },
                 };
@@ -859,6 +865,40 @@ mod tests {
         assert_eq!(program.shows, "fallback");
         assert!(program.error.as_deref().unwrap().contains("2048"));
         assert_eq!(program.budget.used(), 0);
+        assert_eq!(uploads(&frame), 0);
+    }
+
+    #[test]
+    fn a_texture_over_the_device_limit_keeps_the_last_good_image() {
+        let (ctx, mut program) = fixture();
+        publish(&program, view(1, "a.png", 1));
+        pass(&ctx, &mut program);
+        assert_eq!(program.shows, "image");
+        let mut large = view(2, "b.png", 2);
+        large.images.insert(
+            "b.png".into(),
+            Arc::new(Resident {
+                serial: 2,
+                image: Decoded {
+                    size: [3840, 1],
+                    original_size: [3840, 1],
+                    rgba: image::RgbaImage::new(3840, 1),
+                },
+                _resident_bytes: None,
+            }),
+        );
+        publish(&program, large);
+        let frame = Headless(ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(64.0, 64.0))),
+                max_texture_side: Some(2048),
+                ..Default::default()
+            },
+            |ui| program.show_pass(ui, &surface()),
+        ));
+        assert_eq!(program.shows, "image", "a.png stays on screen");
+        assert!(program.error.as_deref().unwrap().contains("2048"));
+        assert_eq!(program.budget.used(), 64, "a.png's texture is kept");
         assert_eq!(uploads(&frame), 0);
     }
 
