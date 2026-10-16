@@ -68,6 +68,16 @@ pub enum Work {
         limit: u32,
         position: u64,
         sort: jmap::EmailSort,
+        /// The search's text, matched on the server.
+        text: Option<String>,
+        /// Search every mailbox (`mailbox` is only where the search began).
+        all: bool,
+    },
+    /// The search's debounce: after a pause the state is told, under
+    /// `ticket`, and runs the query only if no keystroke came since.
+    SearchDue {
+        account: String,
+        ticket: u64,
     },
     /// Fetch one email with its bodies; `reply` is the Bus request that
     /// asked for it (`email.open`), answered when it loads.
@@ -144,7 +154,14 @@ pub enum Work {
     },
     /// Launch Prefs on its Email section.
     OpenPrefs,
+    /// Launch Prefs on its Email accounts, on this account.
+    OpenPrefsAt {
+        account: String,
+    },
 }
+
+/// How long typing must pause before a search runs.
+pub const SEARCH_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(300);
 
 impl Work {
     /// The account this work is for, when it is an account's.
@@ -154,6 +171,8 @@ impl Work {
             | Work::Disconnect { account }
             | Work::FetchMailboxes { account }
             | Work::FetchEmails { account, .. }
+            | Work::SearchDue { account, .. }
+            | Work::OpenPrefsAt { account }
             | Work::OpenEmail { account, .. }
             | Work::Query { account, .. }
             | Work::Write { account, .. }

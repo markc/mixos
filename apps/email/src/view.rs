@@ -43,6 +43,18 @@ pub enum UiEvent {
     /// The message list of an account reported a sort, page, selection,
     /// activation or column width.
     MailTable(String, toolkit::datatable::TableEvent),
+    /// A keystroke in an account's search field (debounced in the state).
+    SearchText(String, String),
+    /// The search's This folder / All folders choice.
+    SearchScope(String, crate::state::Scope),
+    /// The search field's × (or Escape with text in it).
+    SearchClear(String),
+    /// The search field took the keyboard it was asked to.
+    SearchFocused,
+    /// A tree row was right-clicked: select it for its context menu.
+    ContextNode(Node),
+    /// The list's rows (keys) were dropped on a tree node.
+    DropOnFolder(Node, Vec<String>),
     SelectEvent(String, usize),
     SelectContact(String, usize),
     ContactFilter(String, String),
@@ -207,7 +219,7 @@ fn window(
         .resizable(true)
         .default_size(total * state.ui.places)
         .frame(bars::dock_frame(ui.ctx()))
-        .show(ui, |ui| tree::show(ui, state, stroke, events));
+        .show(ui, |ui| tree::show(ui, state, commands, strings, stroke, events));
     let split = left.response.rect.width() / total.max(1.0);
     if (split - state.ui.places).abs() > 0.005 {
         events.push(UiEvent::SplitPlaces(split));

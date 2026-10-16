@@ -36,6 +36,9 @@ use crate::secrets::Secrets;
 use crate::work::{Login, Work};
 use crate::writer::{self, Change, Refusal};
 
+mod list;
+pub use list::{FIXED_ROLES, FolderAction, FolderForm, Scope, Search, name_refusal};
+
 /// Which surface the centre pane shows.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -127,6 +130,8 @@ pub struct MailState {
     /// The message list's sort, page and selection: the server sorts and
     /// pages, this says which page of which order is shown.
     pub table: TableState,
+    /// The list's server-side search.
+    pub search: Search,
 }
 
 impl Default for MailState {
@@ -139,6 +144,7 @@ impl Default for MailState {
             open: None,
             busy: false,
             table: list_default(),
+            search: Search::default(),
         }
     }
 }
@@ -148,11 +154,14 @@ pub const COLUMN_FROM: &str = "from";
 pub const COLUMN_SUBJECT: &str = "subject";
 pub const COLUMN_DATE: &str = "date";
 
+pub const COLUMN_FOLDER: &str = "folder";
+
 /// The message list's columns: From (a resizable 30%), Subject (the rest)
 /// and Date (`date_width` points, right-aligned). All three sort on the
-/// server, a date newest first.
-pub fn list_columns(date_width: f32) -> Vec<Column> {
-    vec![
+/// server, a date newest first. A search of every folder adds Folder,
+/// which the server cannot sort by.
+pub fn list_columns(date_width: f32, folders: bool) -> Vec<Column> {
+    let mut columns = vec![
         Column::new(COLUMN_FROM, "column-from")
             .width(Width::Share {
                 share: 0.3,
@@ -162,11 +171,20 @@ pub fn list_columns(date_width: f32) -> Vec<Column> {
         Column::new(COLUMN_SUBJECT, "column-subject")
             .width(Width::Remainder { min: 120.0 })
             .sortable(Order::Ascending),
+    ];
+    if folders {
+        columns.push(Column::new(COLUMN_FOLDER, "column-folder").width(Width::Resizable {
+            initial: 110.0,
+            min: 60.0,
+        }));
+    }
+    columns.push(
         Column::new(COLUMN_DATE, "column-date")
             .width(Width::Fixed(date_width))
             .align(Align::End)
             .sortable(Order::Descending),
-    ]
+    );
+    columns
 }
 
 /// A fresh message list: the newest first.
@@ -307,6 +325,8 @@ impl ComposeState {
 #[derive(Debug, Default)]
 struct Tickets {
     page: u64,
+    /// The latest search keystroke: only its debounce runs the query.
+    search: u64,
     open: u64,
     /// The mailbox the latest open was issued under: its answer is dropped
     /// when the selection has changed since.
@@ -387,6 +407,9 @@ impl AccountView {
             sort,
             ..list_default()
         };
+        // A folder chosen ends the search; a keystroke still waiting is void.
+        self.mail.search = Search::default();
+        self.tickets.search += 1;
         // An open still in flight belongs to the old mailbox.
         self.tickets.open += 1;
         self.mail.busy = true;
@@ -405,6 +428,8 @@ impl AccountView {
             limit,
             position: self.mail.table.offset(),
             sort: email_sort(self.mail.table.sort.as_ref()),
+            text: self.mail.search.query(),
+            all: self.mail.search.all(),
         });
     }
 
@@ -636,6 +661,8 @@ pub enum Form {
     },
     Event(EventForm),
     Contact(ContactForm),
+    /// Name a new or renamed folder, or confirm a folder's delete or empty.
+    Folder(FolderForm),
 }
 
 /// The New Event form. `start` and `end` are RFC 3339 instants as typed.
@@ -683,6 +710,8 @@ pub enum FormField {
     Email,
     Phone,
     Organization,
+    /// A folder dialog's name.
+    FolderName,
 }
 
 /// The modal dialogs.
@@ -717,6 +746,11 @@ pub struct UiState {
     /// The message list as remembered (persisted): the sort a mailbox opens
     /// in, the dragged column widths, the density.
     pub list: TableState,
+    /// The search field is to take the keyboard (`view.search`).
+    pub focus_search: bool,
+    /// The tree node a context menu was opened on: the folder commands'
+    /// target until one runs.
+    pub menu_node: Option<Node>,
 }
 
 impl Default for UiState {
@@ -729,6 +763,8 @@ impl Default for UiState {
             expanded: BTreeMap::new(),
             cursor: None,
             list: list_default(),
+            focus_search: false,
+            menu_node: None,
         }
     }
 }
@@ -2242,6 +2278,10 @@ impl State {
                     | Done::Calendars(Err(error))
                     | Done::Books(Err(error)) => self.status = error.to_string(),
                     // Answered above, before the generation check.
+                    Done::SearchDue(ticket) if ticket == view.tickets.search => {
+                        view.run_search(limit, &mut self.work);
+                    }
+                    Done::SearchDue(_) => {}
                     Done::Answered(..) | Done::Wrote(..) => {}
                 }
             }
@@ -2453,6 +2493,13 @@ impl State {
                 self.ui.list.widths.insert(column.clone(), *width);
                 self.config_dirty = true;
             }
+            // The menu and the drag act on the selection these settle.
+            TableEvent::ContextMenu { .. } | TableEvent::DragStarted { .. } => {
+                view.mail.table.apply(&event, SelectionMode::Single);
+            }
+            TableEvent::ColumnShown { .. } | TableEvent::DensityChanged(_) => {
+                self.list_preference(&event);
+            }
             // The page size is a setting (email.mail.page_size), not the
             // list's; and nothing pages while disconnected.
             TableEvent::PageSizeChanged(_)
@@ -2469,9 +2516,37 @@ impl State {
             return;
         };
         let account = view.entry.id.clone();
-        if let Some(sort) = view.mail.table.next_sort(&list_columns(0.0), column, false) {
+        if let Some(sort) = view
+            .mail
+            .table
+            .next_sort(&list_columns(0.0, false), column, false)
+        {
             self.mail_table(&account, TableEvent::SortChanged(sort));
         }
+    }
+
+    /// Keep the current account's sort column, in `order`.
+    pub fn sort_order(&mut self, order: Order) {
+        let Some(view) = self.current() else {
+            return;
+        };
+        let account = view.entry.id.clone();
+        let column = view
+            .mail
+            .table
+            .sort
+            .as_ref()
+            .map_or(COLUMN_DATE.to_owned(), |s| s.column.clone());
+        if view.mail.table.sort.as_ref().map(|s| s.order) != Some(order) {
+            self.mail_table(&account, TableEvent::SortChanged(Some(Sort::new(column, order))));
+        }
+    }
+
+    /// Whether the current account's list is sorted in `order`.
+    pub fn mail_sorted_in(&self, order: Order) -> bool {
+        self.current()
+            .and_then(|v| v.mail.table.sort.as_ref())
+            .is_some_and(|s| s.order == order)
     }
 
     /// Move the current account's list to another page.
@@ -3044,6 +3119,7 @@ impl State {
                 };
                 self.write_form(f.account, op, write);
             }
+            Form::Folder(f) => self.submit_folder(f),
             Form::Event(_) | Form::Contact(_) => {}
         }
     }
@@ -3109,10 +3185,15 @@ impl State {
                     "open": view.mail.open.as_ref().map(|e| &e.id),
                     "busy": view.mail.busy,
                     "table": view.mail.table.describe(
-                        &list_columns(0.0),
+                        &list_columns(0.0, view.mail.search.all()),
                         view.mail.total_rows(),
                         view.mail.emails.len(),
                     ),
+                    "search": {
+                        "text": view.mail.search.text,
+                        "applied": view.mail.search.applied,
+                        "scope": view.mail.search.scope.name(),
+                    },
                 });
                 out["calendar"] = json!({
                     "calendars": view.calendars.calendars,
@@ -3152,6 +3233,15 @@ impl State {
             Form::Move { account, ids, .. } => json!({"kind": "move", "account": account, "ids": ids}),
             Form::Event(f) => json!({"kind": "event", "account": f.account, "calendar": f.calendar, "title": f.title, "start": f.start, "end": f.end, "location": f.location, "busy": f.busy, "error": f.error}),
             Form::Contact(f) => json!({"kind": "contact", "account": f.account, "book": f.book, "name": f.name, "email": f.email, "phone": f.phone, "organization": f.organization, "busy": f.busy, "error": f.error}),
+            Form::Folder(f) => {
+                let (kind, id, parent) = match &f.action {
+                    FolderAction::New { parent } => ("folder_new", None, parent.as_ref()),
+                    FolderAction::Rename { id } => ("folder_rename", Some(id), None),
+                    FolderAction::Delete { id } => ("folder_delete", Some(id), None),
+                    FolderAction::Empty { id } => ("folder_empty", Some(id), None),
+                };
+                json!({"kind": kind, "account": f.account, "id": id, "parent": parent, "name": f.name, "count": f.count, "error": f.error})
+            }
         });
         json!({
             "schema": crate::verbs::SCHEMA,
@@ -3596,6 +3686,7 @@ impl State {
             }
             UiEvent::Mode(mode) => self.set_mode(mode),
             UiEvent::Select(node) => {
+                self.ui.menu_node = None;
                 self.select_node(&node);
             }
             UiEvent::Expand(node, open) => {
@@ -3607,6 +3698,14 @@ impl State {
                 self.open_email(&account, id);
             }
             UiEvent::MailTable(account, event) => self.mail_table(&account, event),
+            UiEvent::SearchText(account, text) => self.search_typed(&account, text),
+            UiEvent::SearchScope(account, scope) => self.set_search(&account, None, Some(scope)),
+            UiEvent::SearchClear(account) => self.set_search(&account, Some(String::new()), None),
+            UiEvent::SearchFocused => self.ui.focus_search = false,
+            UiEvent::ContextNode(node) => self.context_node(&node),
+            UiEvent::DropOnFolder(node, keys) => {
+                self.drop_on(&node, keys);
+            }
             UiEvent::SelectEvent(account, index) => {
                 if let Some(view) = self.account_mut(&account) {
                     view.calendars.open = Some(index);
@@ -3740,6 +3839,10 @@ impl State {
                     FormField::Organization => f.organization = value,
                     _ => {}
                 },
+                Some(Form::Folder(f)) if field == FormField::FolderName => {
+                    f.name = value;
+                    f.error = None;
+                }
                 _ => {}
             },
             UiEvent::FormSubmit(choice) => self.submit_form(choice),
@@ -3910,6 +4013,7 @@ fn form_account(form: &Form) -> &str {
         Form::Delete { account, .. } | Form::Move { account, .. } => account,
         Form::Event(f) => &f.account,
         Form::Contact(f) => &f.account,
+        Form::Folder(f) => &f.account,
     }
 }
 
@@ -3919,6 +4023,7 @@ fn form_generation(form: &Form) -> u64 {
         Form::Delete { generation, .. } | Form::Move { generation, .. } => *generation,
         Form::Event(f) => f.generation,
         Form::Contact(f) => f.generation,
+        Form::Folder(f) => f.generation,
     }
 }
 

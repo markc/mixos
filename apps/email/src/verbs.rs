@@ -40,6 +40,8 @@ use crate::{APP, APP_ID};
 
 pub const SCHEMA: &str = "email.v1";
 
+mod list;
+
 /// One verb as `HELP` and `app.describe` list it.
 pub struct Verb {
     pub name: &'static str,
@@ -106,9 +108,9 @@ pub const VERBS: &[Verb] = &[
     ),
     verb(
         "email.search",
-        true,
-        r#"{"account":"optional account id","text":"string","mailbox":"optional mailbox id","limit":"optional integer 1..500"}"#,
-        "Emails matching text, in one mailbox or all",
+        false,
+        r#"{"account":"optional account id","text":"string","mailbox":"optional mailbox id","limit":"optional integer 1..500","show":"optional bool: show the result in the window's list (its search field and scope) rather than only answer"}"#,
+        "Emails matching text, in one mailbox or all; with show, the window's list searches too",
     ),
     verb(
         "email.get",
@@ -344,6 +346,12 @@ pub fn describe() -> Value {
             entry
         })
         .collect();
+    // The list's and folders' verbs, then the toolkit's table set.
+    verbs.extend(list::VERBS.iter().map(|v| {
+        json!({"name": v.name, "description": v.description, "read_only": v.read_only,
+            "args": serde_json::from_str::<Value>(v.args).unwrap_or_else(|_| json!({}))})
+    }));
+    verbs.extend(toolkit::datatable::verbs::describe(APP));
     verbs.extend(drive::describe(APP));
     json!({"schema": SCHEMA, "app_id": APP_ID, "version": env!("CARGO_PKG_VERSION"), "verbs": verbs})
 }
@@ -426,6 +434,18 @@ pub enum Write {
         name: String,
     },
     DeleteMailbox {
+        id: String,
+    },
+    /// Move a mailbox's emails to the Trash, then delete it.
+    TrashMailbox {
+        id: String,
+    },
+    /// Mark every unread email in a mailbox read.
+    MarkMailboxRead {
+        id: String,
+    },
+    /// Destroy every email in a mailbox (Trash, Junk).
+    EmptyMailbox {
         id: String,
     },
     Send {
@@ -560,6 +580,15 @@ pub async fn run_write(
         Write::DeleteMailbox { id } => {
             client.delete_mailbox(&id).await?;
             json!({ "id": id })
+        }
+        Write::TrashMailbox { id } => {
+            json!({ "id": id, "moved": client.delete_mailbox_to_trash(&id).await? })
+        }
+        Write::MarkMailboxRead { id } => {
+            json!({ "id": id, "marked": client.mark_mailbox_read(&id).await? })
+        }
+        Write::EmptyMailbox { id } => {
+            json!({ "id": id, "destroyed": client.empty_mailbox(&id).await? })
         }
         Write::Send { draft } => {
             let sent =
@@ -877,6 +906,25 @@ fn dispatch(
             };
             query(state, account, list);
         }
+        "email.search" if list::shows(args)? => {
+            // The window's search: the list shows the result (no mailbox:
+            // every folder; one: that folder).
+            let account = connected(state, args)?;
+            let scope = match text(args, "mailbox")? {
+                Some(mailbox) => {
+                    if !state.select_mailbox(&account, mailbox.clone()) {
+                        return Err(Bad(
+                            code::NOT_FOUND,
+                            crate::label_with("no-such", &[("id", &mailbox)]),
+                        ));
+                    }
+                    crate::state::Scope::Folder
+                }
+                None => crate::state::Scope::All,
+            };
+            state.set_search(&account, Some(required(args, "text")?), Some(scope));
+            state.reply(id, 0, state.table_state(&account));
+        }
         "email.search" => {
             let account = connected(state, args)?;
             let search = Query::List {
@@ -1064,11 +1112,8 @@ fn dispatch(
         }
         "email.move" => {
             let account = connected(state, args)?;
-            let write = Write::Move {
-                ids: ids(args)?,
-                mailbox: required(args, "mailbox")?,
-            };
-            state.write_server(account, Some(id), write);
+            // The path a drop onto a folder takes too.
+            state.move_emails(&account, ids(args)?, required(args, "mailbox")?, Some(id));
         }
         "email.delete" => {
             let account = connected(state, args)?;
@@ -1225,7 +1270,10 @@ fn dispatch(
             let contact = required(args, "id")?;
             state.write_server(account, Some(id), Write::DeleteContact { id: contact });
         }
-        _ => return Err(Bad(code::UNKNOWN_VERB, crate::label("unknown-verb"))),
+        other => {
+            return list::dispatch(state, id, other, args)
+                .unwrap_or_else(|| Err(Bad(code::UNKNOWN_VERB, crate::label("unknown-verb"))));
+        }
     }
     Ok(())
 }

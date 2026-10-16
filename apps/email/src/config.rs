@@ -106,7 +106,7 @@ impl Default for UiConfig {
 /// What of the message list is saved: its sort (one of the list's own
 /// columns, else the default), widths that are real lengths, the density.
 fn saved_list(list: &TableState) -> TableState {
-    let columns = crate::state::list_columns(0.0);
+    let columns = crate::state::list_columns(0.0, true);
     let sort = list
         .sort
         .clone()

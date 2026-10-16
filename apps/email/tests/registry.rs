@@ -65,16 +65,86 @@ fn class_of(name: &str) -> Option<&'static str> {
 /// something is not.
 #[test]
 fn read_only_verbs_are_queries() {
-    for verb in VERBS {
-        if matches!(verb.name, "HELP" | "app.describe") {
+    for verb in describe()["verbs"].as_array().unwrap() {
+        let name = verb["name"].as_str().unwrap();
+        if matches!(name, "HELP" | "app.describe") || class_of(name) == Some("input") {
             continue;
         }
-        let class = class_of(verb.name);
-        if verb.read_only {
-            assert_eq!(class, Some("query"), "{}", verb.name);
+        let class = class_of(name);
+        if verb["read_only"] == true {
+            assert_eq!(class, Some("query"), "{name}");
         } else {
-            assert_ne!(class, Some("query"), "{}", verb.name);
+            assert_ne!(class, Some("query"), "{name}");
         }
+    }
+}
+
+/// Every change the message list's table can raise has an `email.table.*`
+/// verb that raises it too (a drag's is `email.move`), and every verb is
+/// registered.
+#[test]
+fn every_table_event_has_a_verb() {
+    use toolkit::datatable::verbs::verb_for;
+    use toolkit::datatable::{Density, Pick, TableEvent};
+    let described = described();
+    let events = [
+        TableEvent::SortChanged(None),
+        TableEvent::PageChanged(0),
+        TableEvent::PageSizeChanged(1),
+        TableEvent::Selected {
+            index: 0,
+            key: String::new(),
+            pick: Pick::Only,
+        },
+        TableEvent::Activated {
+            index: 0,
+            key: String::new(),
+        },
+        TableEvent::ColumnResized {
+            column: String::new(),
+            width: 1.0,
+        },
+        TableEvent::ColumnShown {
+            column: String::new(),
+            visible: true,
+        },
+        TableEvent::DensityChanged(Density::Compact),
+        TableEvent::ContextMenu {
+            index: 0,
+            key: String::new(),
+        },
+        TableEvent::DragStarted { keys: Vec::new() },
+    ];
+    for event in &events {
+        let verb = match verb_for(event) {
+            Some(verb) => format!("{APP}.{verb}"),
+            None => format!("{APP}.move"),
+        };
+        assert!(described.contains(&verb), "{event:?}: {verb}");
+    }
+}
+
+/// Every control of the list header (Compose, the sort headers, the pager,
+/// the search and its scope) is a registry command, so `email.execute`
+/// reaches it.
+#[test]
+fn every_list_header_control_is_a_command() {
+    let registry = email::commands::registry();
+    for id in [
+        "mail.compose",
+        "view.sort_from",
+        "view.sort_subject",
+        "view.sort_date",
+        "view.sort_ascending",
+        "view.sort_descending",
+        "view.previous_page",
+        "view.next_page",
+        "view.search",
+        "view.search_clear",
+        "view.search_folder",
+        "view.search_all",
+    ] {
+        assert!(registry.get(id).is_some(), "{id}");
     }
 }
 

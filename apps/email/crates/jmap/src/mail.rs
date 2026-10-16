@@ -108,6 +108,9 @@ pub struct Email {
     pub received_at: Option<String>,
     #[serde(rename = "hasAttachment", default)]
     pub has_attachment: Option<bool>,
+    /// The mailboxes holding it (RFC 8621 `Id[Boolean]`).
+    #[serde(rename = "mailboxIds", default)]
+    pub mailbox_ids: Option<std::collections::BTreeMap<String, bool>>,
     #[serde(default)]
     pub keywords: Option<Value>,
     #[serde(rename = "bodyValues", default)]
@@ -342,6 +345,65 @@ impl Client {
         Ok(EmailPage { emails, total })
     }
 
+    /// Every email id in `mailbox` (only the unread ones, `$seen` unset,
+    /// with `unread`), fetched [`BATCH`] at a time.
+    pub async fn mailbox_email_ids(&self, mailbox: &str, unread: bool) -> Result<Vec<String>> {
+        let mut ids = Vec::new();
+        loop {
+            let call = email_ids_call(self.account_id(), mailbox, unread, ids.len() as u64);
+            let replies = self.call(&[call]).await?;
+            let data = replies.into_iter().next().ok_or(empty("Email/query"))?;
+            let page: Vec<String> = data
+                .get("ids")
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()?
+                .unwrap_or_default();
+            let total = data.get("total").and_then(Value::as_u64);
+            let done = page.len() < BATCH
+                || total.is_some_and(|total| ids.len() as u64 + page.len() as u64 >= total);
+            ids.extend(page);
+            if done {
+                return Ok(ids);
+            }
+        }
+    }
+
+    /// Mark every unread email in `mailbox` read, [`BATCH`] ids to an
+    /// Email/set. Returns how many it marked.
+    pub async fn mark_mailbox_read(&self, mailbox: &str) -> Result<usize> {
+        let ids = self.mailbox_email_ids(mailbox, true).await?;
+        for batch in ids.chunks(BATCH) {
+            self.set_keywords(batch, Some(true), None).await?;
+        }
+        Ok(ids.len())
+    }
+
+    /// Destroy every email in `mailbox` (emptying Trash or Junk), [`BATCH`]
+    /// at a time. Returns how many it destroyed.
+    pub async fn empty_mailbox(&self, mailbox: &str) -> Result<usize> {
+        let ids = self.mailbox_email_ids(mailbox, false).await?;
+        for batch in ids.chunks(BATCH) {
+            self.delete_emails(batch, true).await?;
+        }
+        Ok(ids.len())
+    }
+
+    /// Move every email in `mailbox` to the Trash, then delete the mailbox.
+    pub async fn delete_mailbox_to_trash(&self, mailbox: &str) -> Result<usize> {
+        let ids = self.mailbox_email_ids(mailbox, false).await?;
+        if !ids.is_empty() {
+            let mailboxes = self.mailboxes().await?;
+            let trash = trash_mailbox(&mailboxes)
+                .ok_or_else(|| Error::Protocol("no mailbox has the trash role".into()))?;
+            for batch in ids.chunks(BATCH) {
+                self.move_emails(batch, &trash.id).await?;
+            }
+        }
+        self.delete_mailbox(mailbox).await?;
+        Ok(ids.len())
+    }
+
     /// One email with its bodies fetched.
     pub async fn email(&self, id: &str) -> Result<Email> {
         let replies = self
@@ -572,6 +634,30 @@ fn email_query_calls(
     ]
 }
 
+/// How many ids one folder-wide query page or write carries.
+pub const BATCH: usize = 500;
+
+/// One page of `mailbox`'s ids from `position` (only unread ones with
+/// `unread`: maild's flat `notKeyword` filter), newest first.
+fn email_ids_call(account_id: &str, mailbox: &str, unread: bool, position: u64) -> Call {
+    let mut filter = json!({ "inMailbox": mailbox });
+    if unread {
+        filter["notKeyword"] = json!("$seen");
+    }
+    Call(
+        "Email/query".into(),
+        json!({
+            "accountId": account_id,
+            "filter": filter,
+            "sort": EmailSort::default().to_json(),
+            "position": position,
+            "limit": BATCH,
+            "calculateTotal": true,
+        }),
+        "q0".into(),
+    )
+}
+
 /// The keyword patch for `$seen` and `$flagged`: `true` sets a keyword,
 /// `null` clears it, and `None` leaves it out of the patch entirely.
 fn keyword_patch(read: Option<bool>, flagged: Option<bool>) -> Value {
@@ -777,6 +863,35 @@ mod tests {
                 }, "q0"])
             );
         }
+    }
+
+    #[test]
+    fn a_folder_wide_query_pages_its_ids_and_can_ask_only_for_unread() {
+        let body = serde_json::to_value(email_ids_call("A1", "M1", true, 1000)).unwrap();
+        assert_eq!(
+            body,
+            json!(["Email/query", {
+                "accountId": "A1",
+                "filter": { "inMailbox": "M1", "notKeyword": "$seen" },
+                "sort": [{ "property": "receivedAt", "isAscending": false }],
+                "position": 1000,
+                "limit": 500,
+                "calculateTotal": true
+            }, "q0"])
+        );
+        let all = serde_json::to_value(email_ids_call("A1", "M1", false, 0)).unwrap();
+        assert_eq!(all[1]["filter"], json!({ "inMailbox": "M1" }));
+        // 1,201 ids are three writes: 500, 500 and 201.
+        let ids: Vec<u32> = (0..1201).collect();
+        let sizes: Vec<usize> = ids.chunks(BATCH).map(<[u32]>::len).collect();
+        assert_eq!(sizes, [500, 500, 201]);
+    }
+
+    #[test]
+    fn mailbox_ids_are_read() {
+        let email: Email =
+            serde_json::from_value(json!({ "id": "E1", "mailboxIds": { "M1": true } })).unwrap();
+        assert_eq!(email.mailbox_ids.unwrap().keys().collect::<Vec<_>>(), ["M1"]);
     }
 
     #[test]

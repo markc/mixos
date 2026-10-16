@@ -15,7 +15,9 @@
 //! own (AGENTS.md §2.2) until a second owner needs it.
 
 use egui::{EventFilter, Id, Key, Modifiers, RichText, ScrollArea, Sense, Ui};
-use toolkit::{Icon, icons, panel};
+use toolkit::command::Origin;
+use toolkit::datatable::RowsDrag;
+use toolkit::{Icon, Registry, Strings, icons, panel};
 
 use super::UiEvent;
 use crate::state::{Phase, RowKind, State, TreeKey, TreeRow};
@@ -28,7 +30,14 @@ fn tree_id() -> Id {
 }
 
 /// The tree panel.
-pub fn show(ui: &mut Ui, state: &State, stroke: f32, events: &mut Vec<UiEvent>) {
+pub fn show(
+    ui: &mut Ui,
+    state: &State,
+    commands: &Registry<State>,
+    strings: &Strings,
+    stroke: f32,
+    events: &mut Vec<UiEvent>,
+) {
     let id = tree_id();
     let focused = ui.memory(|m| m.has_focus(id));
     if focused {
@@ -68,16 +77,39 @@ pub fn show(ui: &mut Ui, state: &State, stroke: f32, events: &mut Vec<UiEvent>) 
             .id_salt("account-tree-rows")
             .auto_shrink(false)
             .show(ui, |ui| {
+                let menus = Menus {
+                    state,
+                    commands,
+                    strings,
+                };
                 for row in &rows {
                     let cursor = focused && state.ui.cursor.as_ref() == Some(&row.node);
-                    draw(ui, row, cursor, stroke, events);
+                    draw(ui, row, cursor, stroke, &menus, events);
                 }
             });
     });
 }
 
-/// One row: indent, disclosure, icon, label, unread count.
-fn draw(ui: &mut Ui, row: &TreeRow, cursor: bool, stroke: f32, events: &mut Vec<UiEvent>) {
+/// What a row's context menu is drawn from.
+struct Menus<'a> {
+    state: &'a State,
+    commands: &'a Registry<State>,
+    strings: &'a Strings,
+}
+
+/// How long a drag must rest on a collapsed row before it opens.
+const OPEN_AFTER: f64 = 0.7;
+
+/// One row: indent, disclosure, icon, label, unread count; its context
+/// menu; and, while the list's emails are dragged, a drop target.
+fn draw(
+    ui: &mut Ui,
+    row: &TreeRow,
+    cursor: bool,
+    stroke: f32,
+    menus: &Menus,
+    events: &mut Vec<UiEvent>,
+) {
     let weak = ui.visuals().weak_text_color();
     let error = ui.visuals().error_fg_color;
     let indent = ui.spacing().indent * row.depth as f32;
@@ -125,10 +157,25 @@ fn draw(ui: &mut Ui, row: &TreeRow, cursor: bool, stroke: f32, events: &mut Vec<
                 } else {
                     text
                 };
-                if toolkit::selectable(ui, row.selected, text).clicked() {
+                let response = toolkit::selectable(ui, row.selected, text);
+                if response.clicked() {
                     events.push(UiEvent::Select(row.node.clone()));
                     ui.memory_mut(|m| m.request_focus(tree_id()));
                 }
+                if response.secondary_clicked() {
+                    events.push(UiEvent::ContextNode(row.node.clone()));
+                }
+                let ids = menus.state.node_menu(&row.node);
+                response.context_menu(|ui| {
+                    let why = |id: &str| menus.state.folder_why(id);
+                    if let Some(id) =
+                        menus
+                            .commands
+                            .context_menu(ui, menus.state, menus.strings, &ids, &why)
+                    {
+                        events.push(UiEvent::Command(id, Origin::Menu));
+                    }
+                });
             },
             |ui| {
                 if row.unread > 0 {
@@ -137,6 +184,7 @@ fn draw(ui: &mut Ui, row: &TreeRow, cursor: bool, stroke: f32, events: &mut Vec<
             },
         )
     });
+    drop_target(ui, row, shown.response.rect, menus.state, events);
     if cursor {
         let rect = shown.response.rect;
         let visuals = ui.visuals();
@@ -146,6 +194,63 @@ fn draw(ui: &mut Ui, row: &TreeRow, cursor: bool, stroke: f32, events: &mut Vec<
             visuals.selection.stroke,
             egui::StrokeKind::Inside,
         );
+    }
+}
+
+/// While the list's emails are dragged over `rect` (row `row`): a folder
+/// that takes them lights in the accent and takes the drop; any other row
+/// shows the not-allowed cursor and, for another account's folder, says
+/// why. A collapsed row the drag rests on opens.
+fn drop_target(ui: &mut Ui, row: &TreeRow, rect: egui::Rect, state: &State, events: &mut Vec<UiEvent>) {
+    let ctx = ui.ctx().clone();
+    let Some(drag) = egui::DragAndDrop::payload::<RowsDrag>(&ctx) else {
+        return;
+    };
+    if drag.table != super::mail::LIST {
+        return;
+    }
+    let rest = egui::Id::new(("email.drop-rest", row.node.key()));
+    let over = ui.rect_contains_pointer(rect);
+    if !over {
+        ctx.data_mut(|d| d.remove::<f64>(rest));
+        return;
+    }
+    let now = ctx.input(|i| i.time);
+    if row.expandable && !row.expanded {
+        let since = ctx.data_mut(|d| *d.get_temp_mut_or_insert_with(rest, || now));
+        if now - since >= OPEN_AFTER {
+            events.push(UiEvent::Expand(row.node.clone(), true));
+            ctx.data_mut(|d| d.remove::<f64>(rest));
+        } else {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
+    }
+    match state.drop_refusal(&row.node) {
+        None => {
+            let accent = toolkit::chrome::Chrome::of(&ctx).palette.accent;
+            ui.painter().rect_stroke(
+                rect,
+                ui.visuals().widgets.inactive.corner_radius,
+                egui::Stroke::new(2.0, accent),
+                egui::StrokeKind::Inside,
+            );
+            if ctx.input(|i| i.pointer.any_released()) {
+                egui::DragAndDrop::clear_payload(&ctx);
+                events.push(UiEvent::DropOnFolder(row.node.clone(), drag.keys.clone()));
+            }
+        }
+        Some(why) => {
+            ctx.set_cursor_icon(egui::CursorIcon::NotAllowed);
+            if why == "drop-other-account" {
+                egui::Tooltip::always_open(
+                    ctx.clone(),
+                    ui.layer_id(),
+                    egui::Id::new("email.drop-why"),
+                    egui::PopupAnchor::Pointer,
+                )
+                .show(|ui| ui.label(crate::label(why)));
+            }
+        }
     }
 }
 

@@ -4,10 +4,10 @@
 //! from this registry; every run is published on `email.command.executed`.
 
 use egui::{Key, KeyboardShortcut, Modifiers};
-use toolkit::datatable::PageMove;
+use toolkit::datatable::{Order, PageMove};
 use toolkit::{Command, Icon, Registry};
 
-use crate::state::{COLUMN_DATE, COLUMN_FROM, COLUMN_SUBJECT, Mode, State};
+use crate::state::{COLUMN_DATE, COLUMN_FROM, COLUMN_SUBJECT, Mode, Scope, State};
 
 fn idle(state: &State) -> bool {
     state.compose.is_none() && state.form.is_none() && state.ui.dialog.is_none()
@@ -324,6 +324,83 @@ pub fn registry() -> Registry<State> {
             move |s: &State| s.mail_sorted_by(column),
         );
     }
+    // …then the direction, under a rule.
+    let orders: [(&'static str, &'static str, Order, fn(&mut State)); 2] = [
+        ("view.sort_ascending", "sort-ascending", Order::Ascending, |s| {
+            s.sort_order(Order::Ascending)
+        }),
+        ("view.sort_descending", "sort-descending", Order::Descending, |s| {
+            s.sort_order(Order::Descending)
+        }),
+    ];
+    for (id, label, order, run) in orders {
+        r.add_toggle(
+            Command {
+                id,
+                submenu: Some("sort-by"),
+                group: 3,
+                label,
+                menu: Some("view"),
+                shortcut: None,
+                icon: None,
+                enabled: listing,
+                run,
+            },
+            move |s: &State| s.mail_sorted_in(order),
+        );
+    }
+    // The list header's search: focus, clear, and where it looks.
+    r.add(Command {
+        id: "view.search",
+        submenu: None,
+        group: 4,
+        label: "search-messages",
+        menu: Some("view"),
+        shortcut: key(Modifiers::COMMAND, Key::F),
+        icon: Some(Icon::Search),
+        enabled: listing,
+        run: State::focus_search,
+    })
+    .add(Command {
+        id: "view.search_clear",
+        submenu: None,
+        group: 4,
+        label: "search-clear",
+        menu: Some("view"),
+        shortcut: None,
+        icon: None,
+        enabled: |s| listing(s) && s.current().is_some_and(|v| !v.mail.search.text.is_empty()),
+        run: State::clear_search,
+    });
+    for (id, label, scope, run) in [
+        (
+            "view.search_folder",
+            "search-this-folder",
+            Scope::Folder,
+            (|s| s.search_scope(Scope::Folder)) as fn(&mut State),
+        ),
+        (
+            "view.search_all",
+            "search-all-folders",
+            Scope::All,
+            |s| s.search_scope(Scope::All),
+        ),
+    ] {
+        r.add_toggle(
+            Command {
+                id,
+                submenu: Some("search-in"),
+                group: 4,
+                label,
+                menu: Some("view"),
+                shortcut: None,
+                icon: None,
+                enabled: listing,
+                run,
+            },
+            move |s: &State| s.searching_in(scope),
+        );
+    }
     r.add(Command {
         id: "view.previous_page",
         submenu: None,
@@ -345,6 +422,106 @@ pub fn registry() -> Registry<State> {
         icon: Some(Icon::ChevronRight),
         enabled: |s| listing(s) && s.can_page_mail(PageMove::Next),
         run: |s| s.page_mail(PageMove::Next),
+    })
+    // Folder: the tree node's own actions, also its context menu.
+    .add(Command {
+        id: "folder.new",
+        submenu: None,
+        group: 0,
+        label: "folder-new",
+        menu: Some("folder"),
+        shortcut: None,
+        icon: Some(Icon::FolderPlus),
+        enabled: State::folder_targeted,
+        run: State::folder_new,
+    })
+    .add(Command {
+        id: "folder.rename",
+        submenu: None,
+        group: 0,
+        label: "folder-rename",
+        menu: Some("folder"),
+        shortcut: None,
+        icon: Some(Icon::Pencil),
+        enabled: State::folder_editable,
+        run: State::folder_rename,
+    })
+    .add(Command {
+        id: "folder.delete",
+        submenu: None,
+        group: 0,
+        label: "folder-delete",
+        menu: Some("folder"),
+        shortcut: None,
+        icon: Some(Icon::Trash),
+        enabled: State::folder_editable,
+        run: State::folder_delete,
+    })
+    .add(Command {
+        id: "folder.mark_read",
+        submenu: None,
+        group: 1,
+        label: "folder-mark-read",
+        menu: Some("folder"),
+        shortcut: None,
+        icon: Some(Icon::Check),
+        enabled: State::folder_unread,
+        run: State::folder_mark_read,
+    })
+    .add(Command {
+        id: "folder.empty",
+        submenu: None,
+        group: 1,
+        label: "folder-empty",
+        menu: Some("folder"),
+        shortcut: None,
+        icon: None,
+        enabled: State::folder_emptiable,
+        run: State::folder_empty,
+    })
+    .add(Command {
+        id: "folder.refresh",
+        submenu: None,
+        group: 2,
+        label: "folder-refresh",
+        menu: Some("folder"),
+        shortcut: None,
+        icon: Some(Icon::RefreshCw),
+        enabled: State::account_targeted,
+        run: State::folder_refresh,
+    })
+    .add(Command {
+        id: "account.compose",
+        submenu: None,
+        group: 3,
+        label: "account-compose",
+        menu: Some("folder"),
+        shortcut: None,
+        icon: Some(Icon::SquarePen),
+        enabled: State::account_targeted,
+        run: State::account_compose,
+    })
+    .add(Command {
+        id: "account.reconnect",
+        submenu: None,
+        group: 3,
+        label: "account-reconnect",
+        menu: Some("folder"),
+        shortcut: None,
+        icon: Some(Icon::Plug),
+        enabled: State::account_targeted,
+        run: State::account_reconnect,
+    })
+    .add(Command {
+        id: "account.settings",
+        submenu: None,
+        group: 3,
+        label: "account-settings",
+        menu: Some("folder"),
+        shortcut: None,
+        icon: Some(Icon::Settings),
+        enabled: State::account_targeted,
+        run: State::account_settings,
     })
     .add(Command {
         id: "help.shortcuts",

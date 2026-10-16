@@ -10,11 +10,13 @@ use egui::{RichText, ScrollArea, Ui};
 use jmap::Email;
 use toolkit::button::PushButton;
 use toolkit::command::Origin;
-use toolkit::datatable::{Cell, DataTable, RowStyle, Rows, TableState};
+use toolkit::datatable::{Cell, DataTable, RowStyle, Rows};
 use toolkit::{Icon, Registry, Strings, panel};
 
 use super::UiEvent;
-use crate::state::{AccountView, COLUMN_FROM, COLUMN_SUBJECT, State, list_columns};
+use crate::state::{
+    AccountView, COLUMN_FOLDER, COLUMN_FROM, COLUMN_SUBJECT, Scope, State, list_columns,
+};
 
 /// The centre pane's email list: the selected mailbox's page in a data
 /// table, one compact row per email, sorted and paged by the server.
@@ -32,69 +34,217 @@ pub fn list(
         .map(|mailbox| mailbox.name.clone())
         .unwrap_or_else(|| crate::label("mail"));
     panel::group(ui, "emails", &[title.as_str()], |ui, _| {
-        // Reply works from the open email; the button sits where the reader
-        // is not (a person reading in the reader panel replies from the
-        // menu or the shortcut).
-        ui.horizontal(|ui| {
-            let Some(command) = commands.get("mail.reply") else {
-                return;
-            };
-            let text = strings.get(command.label);
-            let response = ui.add_enabled((command.enabled)(state), PushButton::secondary(text));
-            if response.on_hover_text(strings.get("reply")).clicked() {
-                events.push(UiEvent::Command(command.id, Origin::Ui));
-            }
-        });
-        let columns = list_columns(date_width(ui));
-        // The list's own state, with the remembered widths and density; an
-        // email opened some other way (the Bus, a reply) shows as selected.
-        let mut table = TableState {
-            widths: state.ui.list.widths.clone(),
-            density: state.ui.list.density,
-            ..view.mail.table.clone()
-        };
-        if let Some(open) = &view.mail.open
-            && table.selection.is_empty()
-        {
-            table.selection = vec![open.id.clone()];
-        }
+        header(ui, state, view, commands, strings, events);
+        let search = &view.mail.search;
+        let columns = list_columns(date_width(ui), search.all());
+        // The list's own state, with the remembered widths, hidden columns
+        // and density; an email opened some other way shows as selected.
+        let table = state.list_table(view);
         let rows = EmailRows {
-            emails: &view.mail.emails,
+            view,
             now: clock(ui.ctx()),
         };
-        let empty = if view.mail.busy { "loading" } else { "empty" };
-        let fired = DataTable::new("emails", &columns, &table)
+        let empty = if view.mail.busy {
+            "loading"
+        } else if search.active() {
+            "no-match"
+        } else {
+            "empty"
+        };
+        // The row menu: the message commands, run on the selection.
+        let mut message = commands.ids_in("message");
+        if message.is_empty() {
+            message = commands
+                .ids_in("mail")
+                .into_iter()
+                .filter(|id| *id != "mail.compose")
+                .collect();
+        }
+        let mut chosen = None;
+        let mut menu = |ui: &mut Ui, _row: usize| {
+            if let Some(id) = commands.context_menu(ui, state, strings, &message, &|_| None) {
+                chosen = Some(id);
+            }
+        };
+        let dragging = |count: usize| {
+            if count == 1 {
+                crate::label("dragging-message")
+            } else {
+                crate::label_with("dragging-messages", &[("count", &count.to_string())])
+            }
+        };
+        let fired = DataTable::new(LIST, &columns, &table)
             .total(view.mail.total_rows())
             .strings(strings)
             .empty_text(crate::label(empty))
+            .context_menu(&mut menu)
+            .draggable(&dragging)
             .show(ui, &rows);
         for event in fired {
             events.push(UiEvent::MailTable(view.id().to_owned(), event));
         }
+        if let Some(id) = chosen {
+            events.push(UiEvent::Command(id, Origin::Menu));
+        }
     });
+}
+
+/// The message list's target id: its drive label and focus target.
+pub const LIST: &str = "emails";
+
+/// The search field's egui id.
+pub fn search_id() -> egui::Id {
+    egui::Id::new("email.search")
+}
+
+/// The scope dropdown's widths: room for its longest choice.
+const SCOPE_WIDTH: f32 = 118.0;
+
+/// Below this the search field is too narrow to use: Compose gives way
+/// to its icon first.
+const SEARCH_MIN: f32 = 160.0;
+
+/// The list header: Compose, the count, the search field and its scope.
+fn header(
+    ui: &mut Ui,
+    state: &State,
+    view: &AccountView,
+    commands: &Registry<State>,
+    strings: &Strings,
+    events: &mut Vec<UiEvent>,
+) {
+    let account = view.id().to_owned();
+    let search = &view.mail.search;
+    let count = if search.active() {
+        crate::label_with("results-count", &[("count", &view.mail.total.to_string())])
+    } else {
+        crate::label_with("messages-count", &[("count", &view.mail.total.to_string())])
+    };
+    ui.horizontal(|ui| {
+        let gap = ui.spacing().item_spacing.x;
+        let count_width = ui
+            .painter()
+            .layout_no_wrap(
+                count.clone(),
+                egui::TextStyle::Body.resolve(ui.style()),
+                ui.visuals().text_color(),
+            )
+            .size()
+            .x;
+        if let Some(command) = commands.get("mail.compose") {
+            let label = toolkit::command::label_text(strings, command.label);
+            let mut button = PushButton::primary(label).icon(Icon::SquarePen);
+            let left = ui.available_width() - count_width - SCOPE_WIDTH - 4.0 * gap;
+            button = button.icon_only(left - button.width(ui) < SEARCH_MIN);
+            let tooltip = toolkit::tooltip::for_command(ui.ctx(), command, strings);
+            let response = ui
+                .add_enabled((command.enabled)(state), button)
+                .on_hover_text(tooltip);
+            if response.clicked() {
+                events.push(UiEvent::Command(command.id, Origin::Ui));
+            }
+        }
+        ui.label(RichText::new(count).weak());
+        let width = (ui.available_width() - SCOPE_WIDTH - gap).max(SEARCH_MIN / 2.0);
+        let mut text = search.text.clone();
+        let (field, cleared) = ui
+            .push_id(search_id(), |ui| {
+                toolkit::field::search_clearable(ui, &mut text, &crate::label("search-hint"), width)
+            })
+            .inner;
+        search_keys(ui, state, &field, &account, &text, events);
+        if cleared {
+            events.push(UiEvent::SearchClear(account.clone()));
+            field.request_focus();
+        } else if field.changed() {
+            events.push(UiEvent::SearchText(account.clone(), text));
+        }
+        let options = [crate::label("search-this-folder"), crate::label("search-all-folders")];
+        let mut scope = usize::from(search.scope == Scope::All);
+        if toolkit::combo::show(ui, "email.search-scope", &mut scope, &options, Some(SCOPE_WIDTH))
+            .changed()
+        {
+            let scope = if scope == 1 { Scope::All } else { Scope::Folder };
+            events.push(UiEvent::SearchScope(account, scope));
+        }
+    });
+}
+
+/// The search field's keys: asked-for focus (`view.search`, or `/` from
+/// the list), Escape clears it or (empty) lets go, Down goes to the list.
+fn search_keys(
+    ui: &mut Ui,
+    state: &State,
+    field: &egui::Response,
+    account: &str,
+    text: &str,
+    events: &mut Vec<UiEvent>,
+) {
+    let ctx = ui.ctx().clone();
+    let elsewhere = ctx.memory(|m| m.focused().is_none())
+        || toolkit::datatable::is_focused(&ctx, LIST);
+    if state.ui.focus_search {
+        field.request_focus();
+        events.push(UiEvent::SearchFocused);
+    } else if elsewhere && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Slash)) {
+        field.request_focus();
+    }
+    // egui lets go of a field on Escape: with text in it, clear and keep it.
+    if field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) && !text.is_empty() {
+        events.push(UiEvent::SearchClear(account.to_owned()));
+        field.request_focus();
+    }
+    if field.has_focus() && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown)) {
+        toolkit::datatable::focus(&ctx, LIST);
+        let first = state
+            .account(account)
+            .and_then(|v| v.mail.emails.first())
+            .map(|e| e.id.clone());
+        let none = state
+            .account(account)
+            .is_some_and(|v| v.mail.table.selection.is_empty());
+        if let Some(key) = first.filter(|_| none) {
+            events.push(UiEvent::MailTable(
+                account.to_owned(),
+                toolkit::datatable::TableEvent::Selected {
+                    index: 0,
+                    key,
+                    pick: toolkit::datatable::Pick::Only,
+                },
+            ));
+        }
+    }
 }
 
 /// The shown page as the table's rows: From (the name, else the address),
 /// Subject with flag and attachment markers, the compact date; unread rows
 /// strong, a read row's date weak.
 struct EmailRows<'a> {
-    emails: &'a [Email],
+    view: &'a AccountView,
     now: DateTime<FixedOffset>,
 }
 
 impl Rows for EmailRows<'_> {
     fn len(&self) -> usize {
-        self.emails.len()
+        self.view.mail.emails.len()
     }
 
     fn key(&self, row: usize) -> String {
-        self.emails[row].id.clone()
+        self.view.mail.emails[row].id.clone()
     }
 
     fn cell(&self, row: usize, column: &str) -> Cell {
-        let email = &self.emails[row];
+        let email = &self.view.mail.emails[row];
         match column {
             COLUMN_FROM => Cell::new(email.from_display()),
+            COLUMN_FOLDER => Cell::new(
+                email
+                    .mailbox_ids
+                    .as_ref()
+                    .and_then(|ids| ids.keys().find_map(|id| self.view.mailbox_name(id)))
+                    .unwrap_or_default(),
+            )
+            .weak(true),
             COLUMN_SUBJECT => {
                 let mut cell = Cell::new(email.subject.clone().unwrap_or_default());
                 // The first marker sits at the cell's end.
@@ -112,7 +262,7 @@ impl Rows for EmailRows<'_> {
 
     fn style(&self, row: usize) -> RowStyle {
         RowStyle {
-            strong: !self.emails[row].is_read(),
+            strong: !self.view.mail.emails[row].is_read(),
             weak: false,
         }
     }

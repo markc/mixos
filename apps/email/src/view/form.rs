@@ -10,7 +10,7 @@ use toolkit::dialog::{self, Choice};
 use toolkit::field;
 
 use super::UiEvent;
-use crate::state::{Form, FormField, State};
+use crate::state::{FolderAction, FolderForm, Form, FormField, State};
 
 /// The open form, when there is one.
 pub fn dialog(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
@@ -34,7 +34,24 @@ pub fn dialog(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
             crate::label("new-contact-title"),
             Some(crate::label("save")),
         ),
+        Form::Folder(f) => {
+            let (title, confirm) = match f.action {
+                FolderAction::New { .. } => ("folder-new-title", "folder-create"),
+                FolderAction::Rename { .. } => ("folder-rename-title", "folder-rename-confirm"),
+                FolderAction::Delete { .. } => ("folder-delete-title", "folder-delete-confirm"),
+                FolderAction::Empty { .. } => ("folder-empty-title", "folder-empty-confirm"),
+            };
+            ("form-folder", crate::label(title), Some(crate::label(confirm)))
+        }
     };
+    // A delete or an empty is undone by nothing: Cancel is the default.
+    let destructive = matches!(
+        form,
+        Form::Folder(FolderForm {
+            action: FolderAction::Delete { .. } | FolderAction::Empty { .. },
+            ..
+        })
+    );
     let id = egui::Id::new(key);
     let busy = match form {
         Form::Event(f) => f.busy,
@@ -42,12 +59,17 @@ pub fn dialog(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
         _ => false,
     };
     let mut choices = Vec::new();
+    let (go, stop) = if destructive {
+        (dialog::Role::Other, dialog::Role::Default)
+    } else {
+        (dialog::Role::Default, dialog::Role::Cancel)
+    };
     if let Some(confirm) = confirm {
-        let mut button = Choice::new(confirm, dialog::Role::Default);
+        let mut button = Choice::new(confirm, go);
         button.enabled = !busy;
         choices.push(button);
     }
-    choices.push(Choice::new(crate::label("cancel"), dialog::Role::Cancel));
+    choices.push(Choice::new(crate::label("cancel"), stop));
     let confirmable = choices.len() == 2;
     let shown = dialog::Dialog::new(id, title)
         .buttons(choices)
@@ -141,6 +163,27 @@ fn body(ui: &mut Ui, state: &State, form: &Form, events: &mut Vec<UiEvent>) {
                     );
                 });
             });
+            error(ui, &f.error);
+        }
+        Form::Folder(f) => {
+            match f.action {
+                FolderAction::New { .. } | FolderAction::Rename { .. } => {
+                    grid(ui, "folder-form", &mut |ui| {
+                        line(ui, "folder-name", "", FormField::FolderName, &f.name, events);
+                    });
+                }
+                FolderAction::Delete { .. } | FolderAction::Empty { .. } => {
+                    let key = if matches!(f.action, FolderAction::Delete { .. }) {
+                        "folder-delete-body"
+                    } else {
+                        "folder-empty-body"
+                    };
+                    ui.label(crate::label_with(
+                        key,
+                        &[("name", &f.name), ("count", &f.count.to_string())],
+                    ));
+                }
+            }
             error(ui, &f.error);
         }
         Form::Contact(f) => {

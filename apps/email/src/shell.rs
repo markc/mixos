@@ -54,6 +54,8 @@ pub enum Done {
     Events(u64, Result<Vec<jmap::CalendarEvent>, jmap::Error>),
     Books(Result<Vec<jmap::AddressBook>, jmap::Error>),
     Contacts(u64, Result<Vec<jmap::Contact>, jmap::Error>),
+    /// The search debounce `ticket` elapsed.
+    SearchDue(u64),
 }
 
 /// What finished off the UI thread. Completions carry their result; the
@@ -586,19 +588,30 @@ impl Shell {
                 limit,
                 position,
                 sort,
+                text,
+                all,
             } => {
                 if let Some((tag, client)) = self.client(&account) {
                     self.spawn(async move {
+                        let mailbox = (!all).then_some(mailbox.as_str());
                         let page = client
                             .email_query_sorted(
-                                Some(&mailbox),
-                                None,
+                                mailbox,
+                                text.as_deref(),
                                 sort,
                                 position,
                                 u64::from(limit),
                             )
                             .await;
                         Event::Account(tag, Done::Page(ticket, page))
+                    });
+                }
+            }
+            Work::SearchDue { account, ticket } => {
+                if let Some((tag, _)) = self.client(&account) {
+                    self.spawn(async move {
+                        tokio::time::sleep(crate::work::SEARCH_DEBOUNCE).await;
+                        Event::Account(tag, Done::SearchDue(ticket))
                     });
                 }
             }
@@ -799,7 +812,10 @@ impl Shell {
                     self.state.secrets_saved(ticket, version, Err(error));
                 }
             }
-            Work::OpenPrefs => self.open_prefs(),
+            Work::OpenPrefs => self.open_prefs(json!({"name": "email"})),
+            Work::OpenPrefsAt { account } => self.open_prefs(
+                json!({"name": "email", "tab": "accounts", "account": account}),
+            ),
         }
     }
 
@@ -807,10 +823,9 @@ impl Shell {
     /// session's launcher (`apps.launch`, as Prefs launches Email) start it
     /// and ask again once it registers. The app has no launcher of its own:
     /// without one, the status line says so.
-    fn open_prefs(&mut self) {
+    fn open_prefs(&mut self, section: Value) {
         let bus = self.bus.clone();
         self.spawn(async move {
-            let section = json!({"name": "email"});
             let asked = bus.call("prefs", "prefs.section", section.clone()).await;
             if asked.as_ref().is_ok_and(|r| r.rc == 0) {
                 return Event::PrefsOpened(Ok(()));
