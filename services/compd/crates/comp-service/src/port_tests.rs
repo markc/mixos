@@ -1233,6 +1233,60 @@ async fn saturated_ingress_returns_busy_before_set_reaches_calloop() {
 }
 
 #[tokio::test]
+async fn session_edges_wake_the_publisher_without_another_engine_pass() {
+    let lost = Arc::new(AtomicU64::new(0));
+    let (mut producer, receiver) = crate::outbox::test_outbox(Arc::clone(&lost), 4);
+    let notifier = producer.notifier();
+    let (client, _commands, _states) = FakeClient::new(ConnState::Connected, false);
+    let publications = Arc::clone(&client.publications);
+    let (shutdown_tx, shutdown) = watch::channel(false);
+    let task = tokio::spawn(publisher_loop(
+        Arc::new(client),
+        Arc::from("comp"),
+        receiver,
+        notifier,
+        Arc::clone(&lost),
+        Arc::new(AtomicU64::new(0)),
+        shutdown,
+    ));
+    for (index, active) in [true, false, true].into_iter().enumerate() {
+        let since_ms = 100 + index as u64;
+        producer.offer_next(|event_seq| ObservationRecord::SessionChanged {
+            active,
+            vt: Some(3),
+            since_ms,
+            event_seq,
+        });
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if publications.lock().unwrap().len() == index + 1 {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the session record alone wakes the publisher, including the pause edge");
+        let published = publications.lock().unwrap();
+        assert_eq!(
+            published[index].0.get("name").map(String::as_str),
+            Some("comp.session.changed")
+        );
+        let message = bus::parse(&published[index].1).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&message.body).unwrap(),
+            json!({
+                "version": 1, "active": active, "vt": 3,
+                "since_ms": since_ms, "event_seq": index + 1,
+            })
+        );
+    }
+    shutdown_tx.send_replace(true);
+    task.await.expect("publisher exits");
+    assert_eq!(lost.load(Ordering::Acquire), 0);
+}
+
+#[tokio::test]
 async fn publisher_gaps_each_topic_no_later_than_its_next_record_or_idle_flush() {
     let lost = Arc::new(AtomicU64::new(0));
     let (mut producer, receiver) = crate::outbox::test_outbox(Arc::clone(&lost), 2);

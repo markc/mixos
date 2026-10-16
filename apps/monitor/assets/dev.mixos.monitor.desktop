@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Desktop Entry]
+Type=Application
+Name=Monitor
+Comment=Processes and performance for this node and the mesh
+Exec=/opt/mixos/bin/monitor
+TryExec=/opt/mixos/bin/monitor
+Icon=dev.mixos.monitor-symbolic
+Terminal=false
+Categories=System;Monitor;
+Keywords=task;manager;process;cpu;memory;
+StartupWMClass=dev.mixos.monitor

@@ -15,7 +15,7 @@ the [desktop](desktop.md) list. This page describes the current `main` branch of
 
 On every MixOS system.
 
-None yet.
+- [monitord](../monitord/README.md) (service): How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read verbs on the Bus, so any node's load can be read from anywhere on the…
 
 ## Server components
 

@@ -23,6 +23,7 @@ struct FakeEngine {
 
 fn snapshot(context: &PortContext) -> CompSnapshot {
     CompSnapshot {
+        session: None,
         occlusion: Default::default(),
         info: InfoSnapshot {
             service: Arc::clone(&context.service),

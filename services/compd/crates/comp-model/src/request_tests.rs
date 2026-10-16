@@ -301,6 +301,10 @@ fn read_scope_names_each_snapshot_verbs_subtree() {
         Some("info".to_string())
     );
     assert_eq!(read_scope("comp.windows.list", &json!({})), None);
+    assert_eq!(
+        read_scope("comp.session.get", &json!({})),
+        Some("session".to_string())
+    );
     // A scope reaches its own subtree and no sibling; a mid-segment
     // prefix scopes nothing, exactly as the list itself matches nothing.
     let mut scopes = ReadScopes::Paths(Vec::new());
@@ -310,6 +314,21 @@ fn read_scope_names_each_snapshot_verbs_subtree() {
     let mut partial = ReadScopes::Paths(Vec::new());
     partial.add(list("windows.s").as_deref());
     assert!(!partial.wants("windows.s3.presentation"));
+}
+
+#[test]
+fn session_get_is_a_snapshot_read_and_refuses_malformed_json() {
+    for args in [Value::Null, json!({})] {
+        assert!(matches!(
+            classify("comp.session.get", &args, false),
+            Ok(Request::Read {
+                verb: "comp.session.get",
+                scope: Some(scope),
+            }) if scope == "session"
+        ));
+    }
+    assert!(classify("comp.session.get", &Value::Null, true).is_err());
+    assert!(classify("comp-nested.session.get", &json!({}), false).is_err());
 }
 
 #[test]

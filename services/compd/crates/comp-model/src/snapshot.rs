@@ -99,6 +99,9 @@ impl FullTreeCache {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CompSnapshot {
+    /// Query-only session state, supplied by the compd Bus adapter.
+    #[serde(skip)]
+    pub session: Option<SessionSnapshot>,
     pub occlusion: OcclusionSnapshot,
     pub info: InfoSnapshot,
     pub outputs: BTreeMap<String, OutputSnapshot>,
@@ -119,6 +122,13 @@ pub struct CompSnapshot {
     pub port: PortSnapshot,
     #[serde(skip)]
     pub full_tree: FullTreeCache,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SessionSnapshot {
+    pub active: bool,
+    pub vt: Option<u32>,
+    pub since_ms: u64,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -2288,6 +2298,26 @@ pub fn dispatch_read_with_limit(
     args: &Value,
     limit_bytes: usize,
 ) -> (u8, Arc<str>) {
+    if command == "comp.session.get" {
+        let Some(session) = snapshot.session else {
+            return error("busy");
+        };
+        return enforce_reply_limit(
+            (
+                0,
+                Arc::from(
+                    json!({
+                        "version": 1,
+                        "active": session.active,
+                        "vt": session.vt,
+                        "since_ms": session.since_ms,
+                    })
+                    .to_string(),
+                ),
+            ),
+            limit_bytes,
+        );
+    }
     if command == "comp.info" {
         return enforce_reply_limit(
             (

@@ -677,6 +677,49 @@ fn props_changed_carries_path_and_cause_headers_and_a_timestamp() {
 }
 
 #[test]
+fn session_changed_names_its_topic_and_carries_the_state_and_transition_time() {
+    for (active, vt) in [(true, Some(3)), (false, Some(3)), (true, None)] {
+        let record = ObservationRecord::SessionChanged {
+            active,
+            vt,
+            since_ms: 1_792_108_800_123,
+            event_seq: 12,
+        };
+        assert_eq!(record.topic_suffix(), SESSION_TOPIC_SUFFIX);
+        assert_eq!(
+            topic_name("comp", record.topic_suffix()),
+            "comp.session.changed"
+        );
+        let wire = record.wire();
+        assert_eq!(wire.get("command"), Some("session.changed"));
+        assert_eq!(wire.get("event_seq"), Some("12"));
+        assert_eq!(
+            serde_json::from_str::<Value>(&wire.body).unwrap(),
+            json!({
+                "version": 1, "active": active, "vt": vt,
+                "since_ms": 1_792_108_800_123_u64, "event_seq": 12,
+            })
+        );
+        let renumbered = record.with_event_seq(13);
+        assert_eq!(renumbered.event_seq(), 13);
+        assert_eq!(
+            serde_json::from_str::<Value>(&renumbered.wire().body).unwrap()["event_seq"],
+            13
+        );
+        let loss = LossInterval::from_record(&renumbered, LossCause::OutboxOverflow);
+        assert_eq!(
+            loss.topics.bits(),
+            1 << 12,
+            "append to the existing bit order"
+        );
+        assert_eq!(
+            loss.topics.iter().collect::<Vec<_>>(),
+            [SESSION_TOPIC_SUFFIX]
+        );
+    }
+}
+
+#[test]
 fn every_topic_body_carries_its_event_seq() {
     let row = OutputSnapshot {
         name: "DP-1".into(),

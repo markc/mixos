@@ -17,6 +17,15 @@ use world::environment::interface::lifecycle::lifecycle;
 use world::state::Loop;
 use world::state::state::StatusSession;
 
+/// Wall-clock milliseconds for a session edge (`session.changed` `since_ms`).
+fn unix_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| {
+            u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
+        })
+}
+
 pub fn register(
     event_loop: &mut EventLoop<'static, Loop>,
     session_notifier: LibSeatSessionNotifier,
@@ -35,6 +44,7 @@ pub fn register(
             match event {
                 smithay::backend::session::Event::PauseSession => {
                     state.inner.status_session = StatusSession::Paused;
+                    state.inner.session_edges.push((false, unix_ms()));
                     world::comp::scenes::pointer_motion(state, None);
                     info!("Session paused (TTY switch away)");
                     // Drain copies already waiting behind a flip that can no
@@ -91,6 +101,7 @@ pub fn register(
                 smithay::backend::session::Event::ActivateSession => {
                     info!("Session activated");
                     state.inner.status_session = StatusSession::Active;
+                    state.inner.session_edges.push((true, unix_ms()));
                     crate::render::execute::diagnostics::activated();
 
                     // Resume protocol (seat.lifecycle): input, activate

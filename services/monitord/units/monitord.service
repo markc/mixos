@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# One per host, not per session. Unprivileged: monitord only reads, and
+# reads what any user may (docs/docs/decisions/2026-10-16-monitord-and-monitor.md).
+[Unit]
+Description=MixOS system monitor
+After=local-fs.target
+
+[Service]
+Type=simple
+User=monitord
+Group=monitord
+ExecStart=/opt/mixos/bin/monitord serve
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=10
+# The history database (/var/lib/monitord/history.db). It is a cache.
+StateDirectory=monitord
+StateDirectoryMode=0750
+# Sandbox. monitord reads /proc and /sys and measures each filesystem with
+# statvfs, so /home stays visible (read-only) and /proc is not hidden.
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+NoNewPrivileges=yes
+# Unix sockets and loopback inet for the Bus broker.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+# A monitor must not be what slows the host down.
+Nice=5
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

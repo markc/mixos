@@ -2,3 +2,7 @@
 target/
 # Release tarballs from tools/package.mix.
 dist/
+# egui_kittest's comparison images, written beside a snapshot that changed.
+*.diff.png
+*.old.png
+*.new.png

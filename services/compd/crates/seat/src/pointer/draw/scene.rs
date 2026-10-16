@@ -1,7 +1,8 @@
+use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
 use smithay::backend::renderer::element::{AsRenderElements, Kind};
 use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
-use smithay::utils::{Physical, Point, Rectangle, Scale, Size};
+use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size};
 use std::os::linux::raw::stat;
 use world::seat::pointer::element::element::PointerRenderElement;
 use world::state::state::CoordinateTrait;
@@ -21,6 +22,7 @@ where
     // While a touch sequence owns the active output the shared cursor "disappears"
     // — it reappears where it was once a pointer device is used again.
     if state.inner.saved_cursor.is_some() {
+        elements.extend(agent_arrow(state, renderer));
         return elements;
     }
 
@@ -173,5 +175,48 @@ where
         elements.push(el);
     }
 
+    elements.extend(agent_arrow(state, renderer));
     elements
+}
+
+/// The agent seat's pointer, so a human sees where an agent points: its own
+/// amber arrow at the agent's location (the same space as the human's
+/// `current_location()`). The caller pushes it after the human cursor, so it
+/// draws behind it (first-pushed is front-most); `Kind::Unspecified` keeps it
+/// off the one hardware cursor plane. Gone once the agent seat is cleared.
+/// Drawn during a touch sequence too: touch hides the human sprite only.
+///
+/// Limit: projected through the pane the HUMAN cursor is in, like the whole
+/// cursor layer, which is also drawn only on the human cursor's output. Right
+/// on one output with one pane; with split panes or a second output an agent
+/// elsewhere is drawn through the wrong camera, or not at all. A per-point
+/// pane lookup is the fix (motion plan follow-up).
+fn agent_arrow<R>(state: &mut Loop, renderer: &mut R) -> Option<PointerRenderElement<R>>
+where
+    R: smithay::backend::renderer::Renderer + ImportAll + ImportMem,
+    R::TextureId: Texture + Clone + Send + 'static,
+{
+    let (x, y) = state.inner.comp.injection.agent_pointer?;
+    let size_context = state.focus_pane_context();
+    let theme = std::sync::Arc::clone(&state.inner.pointer_mut().element.theme);
+    let cursor = theme.agent_arrow(size_context.scale);
+    let at: Point<i32, Physical> = Transform::from(((x, y, 0.0, 0.0), size_context)).into();
+    let ratio = f64::from(theme.base_size()) / f64::from(cursor.nominal.max(1));
+    let pixels = (f64::from(cursor.size.w), f64::from(cursor.size.h));
+    let src = Rectangle::<f64, Logical>::from_size(pixels.into());
+    let logical = Size::<i32, Logical>::from((
+        (pixels.0 * ratio).round().max(1.0) as i32,
+        (pixels.1 * ratio).round().max(1.0) as i32,
+    ));
+    MemoryRenderBufferRenderElement::from_buffer(
+        renderer,
+        at.to_f64(),
+        &cursor.frames[0].buffer,
+        None,
+        Some(src),
+        Some(logical),
+        Kind::Unspecified,
+    )
+    .ok()
+    .map(PointerRenderElement::from)
 }
