@@ -115,7 +115,7 @@ pub struct Shell {
     config: Option<crate::config::ConfigFile>,
     /// The secrets saver: a serial worker thread that writes each snapshot
     /// in order, off the UI thread (a stalled disk never freezes the window).
-    saver: Option<mpsc::Sender<(u64, u64, Secrets)>>,
+    saver: Option<mpsc::Sender<SaveJob>>,
     /// The saver's thread, joined (bounded) on close so a queued save lands.
     saver_thread: Option<std::thread::JoinHandle<()>>,
     /// Settings writes sent, for unique operation ids.
@@ -230,17 +230,16 @@ pub fn without_userinfo(url: &str) -> (String, bool) {
     }
 }
 
+/// One save for the saver: its ticket, the snapshot version, the passwords.
+type SaveJob = (u64, u64, Secrets);
+
+/// The saver's queue and its thread.
+type Saver = (mpsc::Sender<SaveJob>, Option<std::thread::JoinHandle<()>>);
+
 /// The secrets saver: one thread, so saves land in the order they were
 /// asked for; each answers with the snapshot version it wrote.
-fn saver(
-    file: SecretsFile,
-    events: mpsc::Sender<Event>,
-    wake: egui::Context,
-) -> (
-    mpsc::Sender<(u64, u64, Secrets)>,
-    Option<std::thread::JoinHandle<()>>,
-) {
-    let (tx, rx) = mpsc::channel::<(u64, u64, Secrets)>();
+fn saver(file: SecretsFile, events: mpsc::Sender<Event>, wake: egui::Context) -> Saver {
+    let (tx, rx) = mpsc::channel::<SaveJob>();
     let spawned = std::thread::Builder::new()
         .name("email-secrets".into())
         .spawn(move || {

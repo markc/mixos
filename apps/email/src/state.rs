@@ -1843,11 +1843,8 @@ impl State {
         }
     }
 
-    /// Queue a secrets save that answers `reply` when it lands.
-    fn save_secrets(&mut self, reply: Option<(u64, Value)>) {
-        self.save_secrets_then(reply, AfterSave::Nothing);
-    }
-
+    /// Queue a secrets save that answers `reply` when it lands and then
+    /// moves `then` on.
     fn save_secrets_then(&mut self, reply: Option<(u64, Value)>, then: AfterSave) {
         let ticket = self.ticket();
         self.saves.insert(ticket, (reply, then));
