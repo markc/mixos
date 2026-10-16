@@ -6550,6 +6550,17 @@ A malformed file loads defaults and is never overwritten.
   so it refuses the send; `Email/import` is future work.
 - **Mail actions**: delete to Trash (confirmed when the settings ask),
   move to a mailbox, flag, and mark unread.
+- **Print** (Ctrl+P). MixOS has no print service, so Email writes the open
+  email as one self-contained page, in `$XDG_RUNTIME_DIR/email-print/`
+  (private to you, pages older than a day pruned), and opens it in the
+  browser, whose print dialog appears at once. That dialog also offers
+  **Save to PDF**. The page carries From, To, Cc, Date and Subject, then
+  the body as the reader shows it (rendered Markdown, or the plain text
+  wrapped) at the reader's text size, on light paper styles. Nothing from
+  the message is passed through as markup: raw HTML is printed as text,
+  remote images are left out (their alt text stays), and the page's
+  security policy forbids it from fetching anything. If no browser opens
+  it, the status line names the page so you can open it yourself.
 - **New Event** and **New Contact** forms. Start and end are RFC 3339
   instants.
 
@@ -6567,6 +6578,7 @@ A malformed file loads defaults and is never overwritten.
 | Ctrl+Shift+M | Move the open email |
 | Ctrl+Shift+S | Flag or unflag |
 | Ctrl+Shift+U | Mark unread |
+| Ctrl+P | Print the open email |
 | Ctrl+Shift+E | New event |
 | Ctrl+Shift+K | New contact |
 | Ctrl+1 / 2 / 3 | Mail / Calendar / Contacts |
@@ -6591,7 +6603,7 @@ was pending, so its answer would come from the old connection),
 from the old config, so its password cannot change, and it cannot be
 removed, until that finishes), `CANCELLED` (Email closed before the
 request ran; a write that may have run answers `OUTCOME_UNKNOWN`),
-`SERVER`,
+`SERVER`, `FILE` (a file could not be written, or nothing opened it),
 `BUSY`, `UNKNOWN_VERB`, `UNKNOWN_COMMAND` and `DISABLED`.
 
 Queries that need the server answer when the server does. The window
@@ -6619,6 +6631,7 @@ never waits on them.
 | `email.mark {ids, read?, flagged?}`, `email.move {ids, mailbox}`, `email.delete {ids, destroy?}` | intent | the list and counts refresh after |
 | `email.send {to, cc?, bcc?, subject, body, in_reply_to?}` | intent | send without the dialog |
 | `email.compose {…}`, `email.reply {id, all?}`, `email.forward {id, to?}` | intent | open the compose dialog, filled in |
+| `email.print {id?}` | intent | print an email (default the open one) through the browser; answers `{path}` of the page, or `FILE` naming it when no browser opened it |
 | `email.calendar.select`, `email.event.create/update/delete` | intent | `create` answers `{id}`; `end` or an ISO 8601 `duration` |
 | `email.book.select`, `email.contact.create/update/delete` | intent | `create` answers `{id}` |
 | `email.ui.*`, `email.window`, `email.window.state` | input, query | the toolkit [drive verbs](../docs/drive.md) |

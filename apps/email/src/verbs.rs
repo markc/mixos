@@ -281,6 +281,12 @@ pub const VERBS: &[Verb] = &[
         "Open the compose dialog forwarding an email",
     ),
     verb(
+        "email.print",
+        false,
+        r#"{"account":"optional account id","id":"optional email id (default the open email)"}"#,
+        "Print an email through the browser's print dialog; answers {path} of the page",
+    ),
+    verb(
         "email.calendar.select",
         false,
         r#"{"account":"optional account id","id":"calendar id"}"#,
@@ -398,6 +404,8 @@ pub enum Then {
     Reply(bool),
     /// Open a compose forwarding the email fetched, to these addresses.
     Forward(String),
+    /// Print the email fetched, answering with the page's path.
+    Print,
 }
 
 /// A change on the account's server.
@@ -1086,6 +1094,23 @@ fn dispatch(
                 Then::Forward(list(args, "to")?.unwrap_or_default().join(", "))
             };
             state.query(account, id, Query::Get { id: email }, then);
+        }
+        "email.print" => {
+            let account = account(state, args)?;
+            // The account's open email prints as its reader shows it; any
+            // other is fetched first.
+            let open = state.account(&account).and_then(|v| v.mail.open.clone());
+            match (text(args, "id")?, open) {
+                (None, Some(email)) => state.print_email(&account, &email, Some(id)),
+                (None, None) => return Err(Bad(code::NOT_FOUND, crate::label("no-open-email"))),
+                (Some(wanted), Some(email)) if wanted == email.id => {
+                    state.print_email(&account, &email, Some(id));
+                }
+                (Some(wanted), _) => {
+                    let account = connected(state, args)?;
+                    state.query(account, id, Query::Get { id: wanted }, Then::Print);
+                }
+            }
         }
         "email.calendar.select" => {
             let account = account(state, args)?;

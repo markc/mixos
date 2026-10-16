@@ -29,7 +29,7 @@ use crate::state::{Mode, SessionInfo, Settled, State, Tag, UiState, code};
 use crate::verbs::{Forward, Then, Write};
 use crate::view::{UiEvent, view};
 use crate::work::{Login, Work};
-use crate::{APP, APP_ID, label};
+use crate::{APP, APP_ID, label, label_with};
 
 /// One account's answer, addressed by [`Tag`] in [`Event::Account`]. The
 /// tickets are the requests' (see [`crate::work::Work`]).
@@ -80,6 +80,9 @@ pub enum Event {
     Shown(u64, Result<Value, String>),
     /// Open Email Settings finished; an error is for the status line.
     PrefsOpened(Result<(), String>),
+    /// A print page was written and handed to the browser (its path), for
+    /// Bus request `reply` if one asked.
+    Printed(Option<u64>, Result<String, String>),
 }
 
 pub struct Shell {
@@ -299,7 +302,8 @@ fn closing(event: &Event) -> Closing {
         | Event::Account(..)
         | Event::Settled(..)
         | Event::SecretsSaved(..)
-        | Event::WriteDeadline(_) => Closing::Apply,
+        | Event::WriteDeadline(_)
+        | Event::Printed(..) => Closing::Apply,
         Event::Delivery(citizen::Delivery::Command { id, .. }) => Closing::Cancel(*id),
         Event::Shown(..) => Closing::Shown,
         Event::Delivery(_) | Event::Look(..) | Event::LookRetry(_) | Event::PrefsOpened(_) => {
@@ -789,6 +793,26 @@ impl Shell {
                 }
             }
             Work::OpenPrefs => self.open_prefs(),
+            Work::Print { html, reply } => {
+                let bus = self.bus.clone();
+                self.spawn(async move {
+                    let written =
+                        tokio::task::spawn_blocking(move || crate::print::write_page(&html))
+                            .await
+                            .unwrap_or_else(|e| Err(e.to_string()));
+                    let result = match written {
+                        Ok(path) => launch(&bus, crate::print::BROWSER, &path)
+                            .await
+                            .map(|()| path.display().to_string())
+                            .map_err(|_| {
+                                let path = path.display().to_string();
+                                label_with("print-no-browser", &[("path", &path)])
+                            }),
+                        Err(error) => Err(error),
+                    };
+                    Event::Printed(reply, result)
+                });
+            }
         }
     }
 
@@ -1266,6 +1290,20 @@ fn open_links(ctx: &egui::Context) {
             }
             Err(error) => eprintln!("email: opening a link: {error}"),
         }
+    }
+}
+
+/// Open `path` in desktop app `id` through the session's launcher
+/// (`apps.launch` on `apps`); the launcher's refusal when it would not.
+async fn launch(bus: &citizen::Handle, id: &str, path: &Path) -> Result<(), String> {
+    let uris = [crate::print::file_uri(path)];
+    match bus
+        .call("apps", "apps.launch", json!({"id": id, "uris": uris}))
+        .await
+    {
+        Ok(reply) if reply.rc == 0 => Ok(()),
+        Ok(reply) => Err(reply.error.unwrap_or(reply.body)),
+        Err(error) => Err(error),
     }
 }
 

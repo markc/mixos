@@ -375,6 +375,19 @@ so it refuses the send; <code>Email/import</code> is future work.</p>
 move to a mailbox, flag, and mark unread.</p>
 </li>
 <li>
+<p><strong>Print</strong> (Ctrl+P). MixOS has no print service, so Email writes the open
+email as one self-contained page, in <code>$XDG_RUNTIME_DIR/email-print/</code>
+(private to you, pages older than a day pruned), and opens it in the
+browser, whose print dialog appears at once. That dialog also offers
+<strong>Save to PDF</strong>. The page carries From, To, Cc, Date and Subject, then
+the body as the reader shows it (rendered Markdown, or the plain text
+wrapped) at the reader's text size, on light paper styles. Nothing from
+the message is passed through as markup: raw HTML is printed as text,
+remote images are left out (their alt text stays), and the page's
+security policy forbids it from fetching anything. If no browser opens
+it, the status line names the page so you can open it yourself.</p>
+</li>
+<li>
 <p><strong>New Event</strong> and <strong>New Contact</strong> forms. Start and end are RFC 3339
 instants.</p>
 </li>
@@ -391,6 +404,7 @@ instants.</p>
 <tr><td>Ctrl+Shift+M</td><td>Move the open email</td></tr>
 <tr><td>Ctrl+Shift+S</td><td>Flag or unflag</td></tr>
 <tr><td>Ctrl+Shift+U</td><td>Mark unread</td></tr>
+<tr><td>Ctrl+P</td><td>Print the open email</td></tr>
 <tr><td>Ctrl+Shift+E</td><td>New event</td></tr>
 <tr><td>Ctrl+Shift+K</td><td>New contact</td></tr>
 <tr><td>Ctrl+1 / 2 / 3</td><td>Mail / Calendar / Contacts</td></tr>
@@ -414,7 +428,7 @@ was pending, so its answer would come from the old connection),
 from the old config, so its password cannot change, and it cannot be
 removed, until that finishes), <code>CANCELLED</code> (Email closed before the
 request ran; a write that may have run answers <code>OUTCOME_UNKNOWN</code>),
-<code>SERVER</code>,
+<code>SERVER</code>, <code>FILE</code> (a file could not be written, or nothing opened it),
 <code>BUSY</code>, <code>UNKNOWN_VERB</code>, <code>UNKNOWN_COMMAND</code> and <code>DISABLED</code>.</p>
 <p>Queries that need the server answer when the server does. The window
 never waits on them.</p>
@@ -439,6 +453,7 @@ never waits on them.</p>
 <tr><td><code>email.mark {ids, read?, flagged?}</code>, <code>email.move {ids, mailbox}</code>, <code>email.delete {ids, destroy?}</code></td><td>intent</td><td>the list and counts refresh after</td></tr>
 <tr><td><code>email.send {to, cc?, bcc?, subject, body, in_reply_to?}</code></td><td>intent</td><td>send without the dialog</td></tr>
 <tr><td><code>email.compose {…}</code>, <code>email.reply {id, all?}</code>, <code>email.forward {id, to?}</code></td><td>intent</td><td>open the compose dialog, filled in</td></tr>
+<tr><td><code>email.print {id?}</code></td><td>intent</td><td>print an email (default the open one) through the browser; answers <code>{path}</code> of the page, or <code>FILE</code> naming it when no browser opened it</td></tr>
 <tr><td><code>email.calendar.select</code>, <code>email.event.create/update/delete</code></td><td>intent</td><td><code>create</code> answers <code>{id}</code>; <code>end</code> or an ISO 8601 <code>duration</code></td></tr>
 <tr><td><code>email.book.select</code>, <code>email.contact.create/update/delete</code></td><td>intent</td><td><code>create</code> answers <code>{id}</code></td></tr>
 <tr><td><code>email.ui.*</code>, <code>email.window</code>, <code>email.window.state</code></td><td>input, query</td><td>the toolkit <a href="/docs/drive/">drive verbs</a></td></tr>

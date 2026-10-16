@@ -30,6 +30,8 @@ use crate::secrets::Secrets;
 use crate::work::{Login, Work};
 use crate::writer::{self, Change, Refusal};
 
+mod files;
+
 /// Which surface the centre pane shows.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -698,6 +700,8 @@ pub mod code {
     pub const UNKNOWN_VERB: &str = "UNKNOWN_VERB";
     pub const UNKNOWN_COMMAND: &str = "UNKNOWN_COMMAND";
     pub const DISABLED: &str = "DISABLED";
+    /// A file could not be written, or nothing could open it.
+    pub const FILE: &str = "FILE";
 }
 
 /// A refusal body.
@@ -2135,6 +2139,7 @@ impl State {
             Event::SecretsSaved(ticket, version, result) => {
                 self.secrets_saved(ticket, version, result)
             }
+            Event::Printed(reply, result) => self.printed(reply, result),
             Event::Delivery(..)
             | Event::Look(..)
             | Event::LookRetry(_)
@@ -2418,13 +2423,16 @@ impl State {
         if self.account(account).map(AccountView::generation) != Some(tag.generation) {
             return self.refuse(reply, code::STALE, &crate::label("stale-connection"));
         }
+        if matches!(then, Then::Print) {
+            return self.print_email(account, &email, Some(reply));
+        }
         if self.compose.is_some() {
             return self.refuse(reply, code::BUSY, &crate::label("compose-open"));
         }
         let opened = match then {
             Then::Reply(all) => self.reply_to(account, &email, all),
             Then::Forward(to) => self.forward(account, &email, &to),
-            Then::Answer => false,
+            Then::Answer | Then::Print => false,
         };
         if opened {
             let subject = self.compose.as_ref().map(|c| c.draft.subject.clone());

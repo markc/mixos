@@ -196,6 +196,17 @@ pub fn registry() -> Registry<State> {
         run: State::delete_open,
     })
     .add(Command {
+        id: "mail.print",
+        submenu: None,
+        group: 4,
+        label: "print",
+        menu: Some("mail"),
+        shortcut: key(Modifiers::COMMAND, Key::P),
+        icon: None,
+        enabled: reading,
+        run: State::print_open,
+    })
+    .add(Command {
         id: "calendar.new_event",
         submenu: None,
         group: 0,
